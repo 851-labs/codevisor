@@ -113,6 +113,7 @@ struct NewChatView: View {
                 title: title,
                 harnessId: controller.selectedHarnessId
             )
+            controller.serverSession = session
             // The eager connection may already hold an agent session id; persist
             // it, and capture any future-created id too.
             if let agentSessionId = controller.connectedAgentSessionId {

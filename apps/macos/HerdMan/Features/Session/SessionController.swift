@@ -31,6 +31,8 @@ final class SessionController {
 
     /// The agent session to resume (existing session); nil for a brand-new chat.
     var resumeAgentSessionId: String?
+    /// The durable HerdMan session mirrored by the server. Nil for a draft until first send.
+    var serverSession: ChatSession?
     /// Called with the agent session id once a brand-new session is created.
     var onAgentSessionCreated: ((String) -> Void)?
     /// The agent session id currently connected (resumed or newly created).
@@ -41,6 +43,7 @@ final class SessionController {
     private let settings: AppSettingsModel?
     private var delegate: AppClientDelegate?
     private var client: ACPClient?
+    private let serverClient: (any HerdManServerClienting)?
     private var hasSentFirst = false
     private var connectedHarnessId: String?
     /// Config changes made before connecting, applied once the agent connects.
@@ -50,12 +53,14 @@ final class SessionController {
         workspace: Workspace,
         agentService: any AgentServicing,
         configCache: ConfigOptionCache,
-        settings: AppSettingsModel? = nil
+        settings: AppSettingsModel? = nil,
+        serverClient: (any HerdManServerClienting)? = nil
     ) {
         self.workspace = workspace
         self.agentService = agentService
         self.configCache = configCache
         self.settings = settings
+        self.serverClient = serverClient
     }
 
     var isPrepared: Bool { !harnesses.isEmpty }
@@ -151,6 +156,7 @@ final class SessionController {
     /// message. Safe to call repeatedly.
     func connectIfNeeded() async {
         guard model == nil, !isConnecting, let harness = selectedHarness else { return }
+        guard serverClient == nil || serverSession != nil else { return }
         status = .connecting("Starting \(harness.name)…")
         do {
             model = try await connect(harness)
@@ -164,6 +170,10 @@ final class SessionController {
     func selectHarness(_ id: String) async {
         guard id != selectedHarnessId else { return }
         selectedHarnessId = id
+        if var serverSession {
+            serverSession.harnessId = id
+            self.serverSession = serverSession
+        }
         await reconnect()
     }
 
@@ -238,6 +248,10 @@ final class SessionController {
     // MARK: - Connection
 
     private func connect(_ harness: DiscoveredAgent) async throws -> SessionModel {
+        if let serverClient, var serverSession {
+            return try await connectServerSession(harness, serverClient: serverClient, session: &serverSession)
+        }
+
         let delegate = AppClientDelegate()
         self.delegate = delegate
         let client = try await agentService.launch(
@@ -295,6 +309,48 @@ final class SessionController {
         pendingConfig.removeAll()
 
         // Refresh the cache with the live options (stale-while-revalidate).
+        configCache.store(model.configOptions, forHarness: harness.id)
+        return model
+    }
+
+    private func connectServerSession(
+        _ harness: DiscoveredAgent,
+        serverClient: any HerdManServerClienting,
+        session: inout ChatSession
+    ) async throws -> SessionModel {
+        if session.harnessId.isEmpty {
+            session.harnessId = harness.id
+        }
+        if session.agentSessionId == nil, let resumeAgentSessionId {
+            session.agentSessionId = resumeAgentSessionId
+        }
+
+        _ = try await serverClient.upsertWorkspace(workspace)
+        let remoteSession = try await serverClient.upsertSession(session)
+        session = try remoteSession.chatSession()
+        self.serverSession = session
+
+        connectedHarnessId = harness.id
+        if let agentSessionId = session.agentSessionId {
+            connectedAgentSessionId = agentSessionId
+            onAgentSessionCreated?(agentSessionId)
+        }
+
+        let transport = ServerSessionTransport(client: serverClient, sessionId: session.id)
+        let model = SessionModel(
+            serverTransport: transport,
+            sessionId: session.id.uuidString,
+            configOptions: configCache.options(forHarness: harness.id)
+        )
+        if resumeAgentSessionId != nil {
+            await model.loadHistory()
+        }
+
+        for (configId, value) in pendingConfig {
+            await model.setConfigOption(configId: configId, value: value)
+        }
+        pendingConfig.removeAll()
+
         configCache.store(model.configOptions, forHarness: harness.id)
         return model
     }

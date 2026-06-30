@@ -140,6 +140,7 @@ describe("@herdman/db", () => {
     await run(db.appendConversationItem(firstSession.id, "user", "hello", false))
     await run(db.appendConversationItem(firstSession.id, "assistant", "streaming", true))
     const detail = await run(db.getSessionDetail(firstSession.id))
+    expect(detail.eventCursor).toBe(0)
     expect(detail.conversation.map((item) => [item.role, item.text, item.isGenerating])).toEqual([
       ["user", "hello", false],
       ["assistant", "streaming", true]
@@ -153,6 +154,7 @@ describe("@herdman/db", () => {
       { id: 1, kind: "session.output", payload: { text: "chunk", index: 1 } }
     ])
     expect(await run(db.listEvents(1))).toEqual([])
+    expect((await run(db.getSessionDetail(firstSession.id))).eventCursor).toBe(1)
 
     const sqlite = new Database(filename)
     sqlite

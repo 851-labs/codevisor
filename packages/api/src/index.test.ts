@@ -3,6 +3,7 @@ import {
   CreateSessionRequest,
   CreateWorkspaceRequest,
   EventEnvelope,
+  SessionDetail,
   TerminalClientFrame,
   Workspace,
   decode,
@@ -86,6 +87,33 @@ describe("@herdman/api", () => {
       payload: { text: "hello" }
     })
     expect(event.payload).toEqual({ text: "hello" })
+  })
+
+  it("decodes session details with an event replay cursor", () => {
+    const detail = decode(SessionDetail)({
+      session: {
+        id: "session-1",
+        workspaceId: "workspace-1",
+        serverId: "local",
+        harnessId: "codex",
+        title: "Synced",
+        origin: "herdman",
+        isArchived: false,
+        createdAt: "2026-06-30T00:00:00.000Z"
+      },
+      conversation: [
+        {
+          id: "item-1",
+          role: "user",
+          text: "hello",
+          createdAt: "2026-06-30T00:00:01.000Z",
+          isGenerating: false
+        }
+      ],
+      eventCursor: 7
+    })
+    expect(detail.eventCursor).toBe(7)
+    expect(detail.conversation[0]?.role).toBe("user")
   })
 
   it("exports the server endpoint inventory as OpenAPI metadata", () => {

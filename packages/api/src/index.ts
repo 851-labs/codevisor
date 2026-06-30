@@ -96,7 +96,8 @@ export type ConversationItem = typeof ConversationItem.Type
 
 export const SessionDetail = Schema.Struct({
   session: SessionSummary,
-  conversation: Schema.Array(ConversationItem)
+  conversation: Schema.Array(ConversationItem),
+  eventCursor: Schema.Number
 })
 export type SessionDetail = typeof SessionDetail.Type
 

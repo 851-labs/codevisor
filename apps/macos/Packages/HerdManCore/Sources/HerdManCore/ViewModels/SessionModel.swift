@@ -17,9 +17,10 @@ public final class SessionModel {
     /// Latest context-window + cost usage reported by the agent (`usage_update`).
     public private(set) var usage: SessionUsage?
 
-    private let client: any ACPClientProtocol
+    private let backend: Backend
     private let sessionId: String
     private let now: @Sendable () -> Date
+    private var serverEventCursor: Int?
 
     /// A single long-lived consumer of the session's update stream. ACP delivers
     /// `session/update` notifications continuously, and the per-session
@@ -36,7 +37,21 @@ public final class SessionModel {
         configOptions: [SessionConfigOption] = [],
         now: @escaping @Sendable () -> Date = { Date() }
     ) {
-        self.client = client
+        self.backend = .acp(client)
+        self.sessionId = sessionId
+        self.modeState = modeState
+        self.configOptions = configOptions
+        self.now = now
+    }
+
+    public init(
+        serverTransport: ServerSessionTransport,
+        sessionId: String,
+        modeState: SessionModeState? = nil,
+        configOptions: [SessionConfigOption] = [],
+        now: @escaping @Sendable () -> Date = { Date() }
+    ) {
+        self.backend = .server(serverTransport)
         self.sessionId = sessionId
         self.modeState = modeState
         self.configOptions = configOptions
@@ -49,7 +64,17 @@ public final class SessionModel {
     /// consumer has started. Routes each update to history vs live handling.
     private func startConsumer() async {
         guard consumerTask == nil else { return }
-        let updates = await client.updates(for: sessionId)
+        let updates: AsyncStream<SessionUpdate>
+        switch backend {
+        case let .acp(client):
+            updates = await client.updates(for: sessionId)
+        case let .server(transport):
+            if let serverEventCursor {
+                updates = transport.updates(since: serverEventCursor)
+            } else {
+                updates = transport.updates()
+            }
+        }
         consumerTask = Task { @MainActor [weak self] in
             for await update in updates {
                 guard let self else { break }
@@ -70,10 +95,18 @@ public final class SessionModel {
     /// Sets a config option's value and applies the agent's updated option set.
     public func setConfigOption(configId: String, value: String) async {
         do {
-            let response = try await client.setConfigOption(
-                SetSessionConfigOptionRequest(sessionId: sessionId, configId: configId, value: value)
-            )
-            configOptions = response.configOptions
+            switch backend {
+            case let .acp(client):
+                let response = try await client.setConfigOption(
+                    SetSessionConfigOptionRequest(sessionId: sessionId, configId: configId, value: value)
+                )
+                configOptions = response.configOptions
+            case let .server(transport):
+                try await transport.setConfigOption(configId: configId, value: value)
+                if let index = configOptions.firstIndex(where: { $0.id == configId }) {
+                    configOptions[index].currentValue = value
+                }
+            }
         } catch {
             errorMessage = String(describing: error)
         }
@@ -102,7 +135,13 @@ public final class SessionModel {
         await startConsumer()
 
         do {
-            let response = try await client.prompt(PromptRequest(sessionId: sessionId, prompt: [.text(trimmed)]))
+            let response: PromptResponse
+            switch backend {
+            case let .acp(client):
+                response = try await client.prompt(PromptRequest(sessionId: sessionId, prompt: [.text(trimmed)]))
+            case let .server(transport):
+                response = try await transport.prompt(trimmed)
+            }
             await drain()
             finish(stopReason: response.stopReason)
         } catch {
@@ -116,12 +155,22 @@ public final class SessionModel {
     /// Requests cancellation of the in-flight turn.
     public func cancel() async {
         guard isSending else { return }
-        try? await client.cancel(sessionId: sessionId)
+        switch backend {
+        case let .acp(client):
+            try? await client.cancel(sessionId: sessionId)
+        case let .server(transport):
+            try? await transport.cancel()
+        }
     }
 
     /// Switches the session mode.
     public func setMode(_ modeId: String) async {
-        try? await client.setMode(SetSessionModeRequest(sessionId: sessionId, modeId: modeId))
+        switch backend {
+        case let .acp(client):
+            try? await client.setMode(SetSessionModeRequest(sessionId: sessionId, modeId: modeId))
+        case let .server(transport):
+            try? await transport.setMode(modeId)
+        }
         if var state = modeState {
             state.currentModeId = modeId
             modeState = state
@@ -136,6 +185,18 @@ public final class SessionModel {
     /// `session/update`s after `session/load`) and rebuilds the conversation,
     /// splitting it into user messages and assistant turns.
     public func loadHistory() async {
+        if case let .server(transport) = backend {
+            do {
+                let snapshot = try await transport.snapshot()
+                conversation = snapshot.conversation
+                serverEventCursor = snapshot.eventCursor
+                await startConsumer()
+            } catch {
+                errorMessage = String(describing: error)
+            }
+            return
+        }
+
         // Reconstruct the replayed history through the shared consumer, then
         // switch it back to live application for subsequent prompts.
         isLoadingHistory = true
@@ -242,4 +303,9 @@ public final class SessionModel {
         message.turn.endedAt = now()
         conversation[conversation.count - 1] = .assistant(message)
     }
+}
+
+private enum Backend: Sendable {
+    case acp(any ACPClientProtocol)
+    case server(ServerSessionTransport)
 }

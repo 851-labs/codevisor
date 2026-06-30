@@ -14,6 +14,7 @@ public final class AppEnvironment {
     public let configCache: ConfigOptionCache
     public let settings: AppSettingsModel
     public let sessionImporter: SessionImporter
+    public let serverClient: (any HerdManServerClienting)?
 
     public init(
         workspaceRepository: any WorkspaceRepository,
@@ -31,6 +32,7 @@ public final class AppEnvironment {
         self.agentService = agentService
         self.configCache = configCache
         self.settings = settings
+        self.serverClient = serverClient
         self.sessionImporter = SessionImporter(agentService: agentService)
         workspaceList.showsImportedSessions = settings.importExternalSessions
     }

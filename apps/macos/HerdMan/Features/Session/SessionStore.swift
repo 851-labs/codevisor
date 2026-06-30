@@ -14,17 +14,20 @@ final class SessionStore {
     private let configCache: ConfigOptionCache
     private let workspaceList: WorkspaceListModel
     private let settings: AppSettingsModel?
+    private let serverClient: (any HerdManServerClienting)?
 
     init(
         agentService: any AgentServicing,
         configCache: ConfigOptionCache,
         workspaceList: WorkspaceListModel,
-        settings: AppSettingsModel? = nil
+        settings: AppSettingsModel? = nil,
+        serverClient: (any HerdManServerClienting)? = nil
     ) {
         self.agentService = agentService
         self.configCache = configCache
         self.workspaceList = workspaceList
         self.settings = settings
+        self.serverClient = serverClient
     }
 
     /// Returns the cached controller for a session, creating + configuring it
@@ -32,9 +35,17 @@ final class SessionStore {
     func controller(for session: ChatSession, workspace: Workspace) -> SessionController {
         if let existing = controllers[session.id] {
             existing.workspace = workspace
+            existing.serverSession = session
             return existing
         }
-        let controller = SessionController(workspace: workspace, agentService: agentService, configCache: configCache, settings: settings)
+        let controller = SessionController(
+            workspace: workspace,
+            agentService: agentService,
+            configCache: configCache,
+            settings: settings,
+            serverClient: serverClient
+        )
+        controller.serverSession = session
         controller.resumeAgentSessionId = session.agentSessionId
         if !session.harnessId.isEmpty {
             controller.selectedHarnessId = session.harnessId
@@ -48,7 +59,13 @@ final class SessionStore {
 
     /// Creates a fresh, unregistered controller for the new-chat page.
     func makeDraft(workspace: Workspace) -> SessionController {
-        SessionController(workspace: workspace, agentService: agentService, configCache: configCache, settings: settings)
+        SessionController(
+            workspace: workspace,
+            agentService: agentService,
+            configCache: configCache,
+            settings: settings,
+            serverClient: serverClient
+        )
     }
 
     /// Returns the cached terminal for a session, creating it (scoped to the

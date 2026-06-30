@@ -1,4 +1,5 @@
 import Foundation
+import ACPKit
 
 public enum HerdManServerClientError: Error, Equatable, Sendable {
     case invalidURL(String)
@@ -16,9 +17,15 @@ public protocol HerdManServerClienting: Sendable {
     func updateWorkspace(_ workspace: Workspace) async throws -> ServerWorkspace
     func deleteWorkspace(id: UUID) async throws
     func listSessions() async throws -> [ServerSession]
+    func sessionDetail(id: UUID) async throws -> ServerSessionDetail
     func upsertSession(_ session: ChatSession) async throws -> ServerSession
     func updateSession(_ session: ChatSession) async throws -> ServerSession
     func deleteSession(id: UUID) async throws
+    func promptSession(id: UUID, text: String) async throws -> StopReason
+    func cancelSession(id: UUID) async throws
+    func setSessionMode(id: UUID, modeId: String) async throws
+    func setSessionConfig(id: UUID, configId: String, value: String) async throws
+    func eventStream(since: Int) -> AsyncThrowingStream<ServerEventEnvelope, any Error>
 }
 
 public struct HerdManServerConfig: Equatable, Sendable {
@@ -123,6 +130,35 @@ public struct ServerSession: Decodable, Equatable, Sendable {
     }
 }
 
+public enum ServerConversationRole: String, Decodable, Equatable, Sendable {
+    case user
+    case assistant
+    case system
+}
+
+public struct ServerConversationItem: Decodable, Equatable, Sendable {
+    public var id: String
+    public var role: ServerConversationRole
+    public var text: String
+    public var createdAt: String
+    public var isGenerating: Bool
+}
+
+public struct ServerSessionDetail: Decodable, Equatable, Sendable {
+    public var session: ServerSession
+    public var conversation: [ServerConversationItem]
+    public var eventCursor: Int
+}
+
+public struct ServerEventEnvelope: Decodable, Equatable, Sendable {
+    public var id: Int
+    public var serverId: String
+    public var kind: String
+    public var subjectId: String
+    public var createdAt: String
+    public var payload: JSONValue
+}
+
 public final class HerdManServerClient: HerdManServerClienting, @unchecked Sendable {
     private let config: HerdManServerConfig
     private let urlSession: URLSession
@@ -173,6 +209,10 @@ public final class HerdManServerClient: HerdManServerClienting, @unchecked Senda
         try await get("/v1/sessions")
     }
 
+    public func sessionDetail(id: UUID) async throws -> ServerSessionDetail {
+        try await get("/v1/sessions/\(id.uuidString)")
+    }
+
     public func upsertSession(_ session: ChatSession) async throws -> ServerSession {
         let remoteSessions = try await listSessions()
         if remoteSessions.contains(where: { $0.id == session.id.uuidString }) {
@@ -191,6 +231,70 @@ public final class HerdManServerClient: HerdManServerClienting, @unchecked Senda
 
     public func deleteSession(id: UUID) async throws {
         try await sendNoResponse("/v1/sessions/\(id.uuidString)", method: "DELETE")
+    }
+
+    public func promptSession(id: UUID, text: String) async throws -> StopReason {
+        let response: PromptActionResponse = try await send(
+            "/v1/sessions/\(id.uuidString)/prompt",
+            method: "POST",
+            body: PromptBody(text: text)
+        )
+        return response.stopReason
+    }
+
+    public func cancelSession(id: UUID) async throws {
+        try await sendNoResponse("/v1/sessions/\(id.uuidString)/cancel", method: "POST")
+    }
+
+    public func setSessionMode(id: UUID, modeId: String) async throws {
+        try await sendNoResponse(
+            "/v1/sessions/\(id.uuidString)/mode",
+            method: "POST",
+            body: SetModeBody(modeId: modeId)
+        )
+    }
+
+    public func setSessionConfig(id: UUID, configId: String, value: String) async throws {
+        try await sendNoResponse(
+            "/v1/sessions/\(id.uuidString)/config",
+            method: "POST",
+            body: SetConfigBody(configId: configId, value: value)
+        )
+    }
+
+    public func eventStream(since: Int = 0) -> AsyncThrowingStream<ServerEventEnvelope, any Error> {
+        AsyncThrowingStream { continuation in
+            let task = Task {
+                do {
+                    var request = URLRequest(url: try url(for: "/v1/events?since=\(since)"))
+                    request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
+                    applyAuthorization(to: &request)
+
+                    let (bytes, response) = try await urlSession.bytes(for: request)
+                    guard let httpResponse = response as? HTTPURLResponse else {
+                        throw HerdManServerClientError.invalidResponse
+                    }
+                    guard (200..<300).contains(httpResponse.statusCode) else {
+                        throw HerdManServerClientError.httpStatus(httpResponse.statusCode, "")
+                    }
+
+                    for try await line in bytes.lines {
+                        guard line.hasPrefix("data: ") else { continue }
+                        let raw = line.dropFirst("data: ".count)
+                        guard let data = raw.data(using: .utf8) else { continue }
+                        continuation.yield(try decoder.decode(ServerEventEnvelope.self, from: data))
+                    }
+                    continuation.finish()
+                } catch {
+                    if Task.isCancelled {
+                        continuation.finish()
+                    } else {
+                        continuation.finish(throwing: error)
+                    }
+                }
+            }
+            continuation.onTermination = { _ in task.cancel() }
+        }
     }
 
     private func createWorkspace(_ workspace: Workspace) async throws -> ServerWorkspace {
@@ -227,7 +331,15 @@ public final class HerdManServerClient: HerdManServerClienting, @unchecked Senda
     }
 
     private func sendNoResponse(_ path: String, method: String) async throws {
-        _ = try await perform(path, method: method, body: Optional<EmptyBody>.none)
+        try await sendNoResponse(path, method: method, body: Optional<EmptyBody>.none)
+    }
+
+    private func sendNoResponse<Body: Encodable>(
+        _ path: String,
+        method: String,
+        body: Body?
+    ) async throws {
+        _ = try await perform(path, method: method, body: body)
     }
 
     @discardableResult
@@ -239,9 +351,7 @@ public final class HerdManServerClient: HerdManServerClienting, @unchecked Senda
         var request = URLRequest(url: try url(for: path))
         request.httpMethod = method
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        if let bearerToken = config.bearerToken {
-            request.setValue("Bearer \(bearerToken)", forHTTPHeaderField: "Authorization")
-        }
+        applyAuthorization(to: &request)
         if let body {
             request.httpBody = try encoder.encode(body)
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -256,6 +366,11 @@ public final class HerdManServerClient: HerdManServerClienting, @unchecked Senda
             throw HerdManServerClientError.httpStatus(httpResponse.statusCode, message)
         }
         return data
+    }
+
+    private func applyAuthorization(to request: inout URLRequest) {
+        guard let bearerToken = config.bearerToken else { return }
+        request.setValue("Bearer \(bearerToken)", forHTTPHeaderField: "Authorization")
     }
 
     private func url(for path: String) throws -> URL {
@@ -292,6 +407,23 @@ private enum ServerDateCoding {
 }
 
 private struct EmptyBody: Encodable {}
+
+private struct PromptActionResponse: Decodable {
+    var stopReason: StopReason
+}
+
+private struct PromptBody: Encodable {
+    var text: String
+}
+
+private struct SetModeBody: Encodable {
+    var modeId: String
+}
+
+private struct SetConfigBody: Encodable {
+    var configId: String
+    var value: String
+}
 
 private struct CreateWorkspaceBody: Encodable {
     var id: String

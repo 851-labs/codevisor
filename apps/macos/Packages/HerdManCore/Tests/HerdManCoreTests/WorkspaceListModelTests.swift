@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import ACPKit
 @testable import HerdManCore
 
 @MainActor
@@ -234,6 +235,10 @@ private actor FakeServerClient: HerdManServerClienting {
 
     func listSessions() async throws -> [ServerSession] { sessions }
 
+    func sessionDetail(id: UUID) async throws -> ServerSessionDetail {
+        fatalError("unused")
+    }
+
     func upsertSession(_ session: ChatSession) async throws -> ServerSession {
         let serverSession = serverSession(from: session)
         upsertedSessionIDs.append(serverSession.id)
@@ -249,6 +254,22 @@ private actor FakeServerClient: HerdManServerClienting {
     func deleteSession(id: UUID) async throws {
         deletedSessionIDs.append(id.uuidString)
         sessions.removeAll { $0.id == id.uuidString }
+    }
+
+    func promptSession(id: UUID, text: String) async throws -> StopReason {
+        .endTurn
+    }
+
+    func cancelSession(id: UUID) async throws {}
+
+    func setSessionMode(id: UUID, modeId: String) async throws {}
+
+    func setSessionConfig(id: UUID, configId: String, value: String) async throws {}
+
+    nonisolated func eventStream(since: Int) -> AsyncThrowingStream<ServerEventEnvelope, any Error> {
+        AsyncThrowingStream { continuation in
+            continuation.finish()
+        }
     }
 
     func snapshot() -> FakeServerSnapshot {

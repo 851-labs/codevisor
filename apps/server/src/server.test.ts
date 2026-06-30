@@ -37,41 +37,68 @@ const harnesses: ReadonlyArray<Harness> = [
   }
 ]
 
-const makeAcp = (): AcpRuntimeService => ({
-  discoverHarnesses: Effect.succeed(harnesses),
-  createAgentSession: (harnessId, cwd) =>
-    Effect.succeed(`agent-${harnessId}-${cwd.split("/").at(-1) ?? "root"}`),
-  loadAgentSession: (_harnessId, agentSessionId) => Effect.succeed(agentSessionId),
-  prompt: (sessionId, text) =>
-    Effect.succeed({
-      stopReason: "end_turn",
-      events: [
-        {
-          kind: "session.output",
-          subjectId: sessionId,
-          payload: { role: "assistant", text: `Echo: ${text}` }
+const makeAcp = (): AcpRuntimeService & {
+  readonly prompts: Array<readonly [string, string]>
+  readonly cancellations: Array<string>
+  readonly modes: Array<readonly [string, string]>
+  readonly configs: Array<readonly [string, string, string]>
+} => {
+  const prompts: Array<readonly [string, string]> = []
+  const cancellations: Array<string> = []
+  const modes: Array<readonly [string, string]> = []
+  const configs: Array<readonly [string, string, string]> = []
+  return {
+    prompts,
+    cancellations,
+    modes,
+    configs,
+    discoverHarnesses: Effect.succeed(harnesses),
+    createAgentSession: (harnessId, cwd) =>
+      Effect.succeed(`agent-${harnessId}-${cwd.split("/").at(-1) ?? "root"}`),
+    loadAgentSession: (_harnessId, agentSessionId) => Effect.succeed(agentSessionId),
+    prompt: (sessionId, text) =>
+      Effect.sync(() => {
+        prompts.push([sessionId, text])
+        return {
+          stopReason: "end_turn" as const,
+          events: [
+            {
+              kind: "session.output" as const,
+              subjectId: sessionId,
+              payload: { role: "assistant", text: `Echo: ${text}` }
+            }
+          ]
         }
-      ]
-    }),
-  cancel: (sessionId) =>
-    Effect.succeed({
-      kind: "session.updated",
-      subjectId: sessionId,
-      payload: "cancelled"
-    }),
-  setMode: (sessionId, modeId) =>
-    Effect.succeed({
-      kind: "session.updated",
-      subjectId: sessionId,
-      payload: { modeId }
-    }),
-  setConfigOption: (sessionId, configId, value) =>
-    Effect.succeed({
-      kind: "session.updated",
-      subjectId: sessionId,
-      payload: { configId, value }
-    })
-})
+      }),
+    cancel: (sessionId) =>
+      Effect.sync(() => {
+        cancellations.push(sessionId)
+        return {
+          kind: "session.updated" as const,
+          subjectId: sessionId,
+          payload: "cancelled"
+        }
+      }),
+    setMode: (sessionId, modeId) =>
+      Effect.sync(() => {
+        modes.push([sessionId, modeId])
+        return {
+          kind: "session.updated" as const,
+          subjectId: sessionId,
+          payload: { modeId }
+        }
+      }),
+    setConfigOption: (sessionId, configId, value) =>
+      Effect.sync(() => {
+        configs.push([sessionId, configId, value])
+        return {
+          kind: "session.updated" as const,
+          subjectId: sessionId,
+          payload: { configId, value }
+        }
+      })
+  }
+}
 
 class FakeProcess implements TerminalProcess {
   readonly writes: Array<string> = []
@@ -136,9 +163,11 @@ const makeServices = async (serverId = "test") => {
   const db = await run(makeDatabase({ filename: join(dir, "herdman.sqlite"), serverId }))
   databases.push(db)
   const spawner = makeSpawner()
+  const acp = makeAcp()
   return {
+    acp,
     services: {
-      acp: makeAcp(),
+      acp,
       db,
       terminal: makeTerminalManager({ defaultShell: "/bin/sh", env: {}, spawner })
     },
@@ -147,7 +176,7 @@ const makeServices = async (serverId = "test") => {
 }
 
 const start = async (auth = { allowLocalhostWithoutAuth: true, requireBearerToken: false }) => {
-  const { services, spawner } = await makeServices("server-a")
+  const { acp, services, spawner } = await makeServices("server-a")
   const server = await run(
     startHerdManServer(
       services,
@@ -159,7 +188,7 @@ const start = async (auth = { allowLocalhostWithoutAuth: true, requireBearerToke
     )
   )
   runningServers.push(server)
-  return { server, services, spawner }
+  return { acp, server, services, spawner }
 }
 
 const jsonRequest = async (
@@ -324,7 +353,7 @@ describe("@herdman/server", () => {
   })
 
   it("manages workspaces, harnesses, sessions, actions, and event replay", async () => {
-    const { server } = await start()
+    const { acp, server, services } = await start()
     const badJson = await fetch(`${server.url}/v1/workspaces`, {
       body: "{",
       headers: { "Content-Type": "application/json" },
@@ -398,6 +427,7 @@ describe("@herdman/server", () => {
         })
       ).body
     ).toEqual({ stopReason: "end_turn" })
+    expect(acp.prompts).toEqual([[session.agentSessionId, "hello"]])
     expect(
       (
         await jsonRequest(server, `/v1/sessions/${session.id}/cancel`, {
@@ -406,6 +436,7 @@ describe("@herdman/server", () => {
         })
       ).status
     ).toBe(202)
+    expect(acp.cancellations).toEqual([session.agentSessionId])
     expect(
       (
         await jsonRequest(server, `/v1/sessions/${session.id}/mode`, {
@@ -414,6 +445,7 @@ describe("@herdman/server", () => {
         })
       ).body
     ).toEqual({ modeId: "plan" })
+    expect(acp.modes).toEqual([[session.agentSessionId, "plan"]])
     expect(
       (
         await jsonRequest(server, `/v1/sessions/${session.id}/config`, {
@@ -422,6 +454,7 @@ describe("@herdman/server", () => {
         })
       ).body
     ).toEqual({ configId: "model" })
+    expect(acp.configs).toEqual([[session.agentSessionId, "model", "gpt-5"]])
     expect(
       (
         await jsonRequest(server, `/v1/sessions/${session.id}`, {
@@ -467,6 +500,28 @@ describe("@herdman/server", () => {
       method: "POST"
     })
     expect(await liveEvent).toEqual([expect.objectContaining({ kind: "workspace.created" })])
+
+    const legacyWorkspace = await run(
+      services.db.createWorkspace({ folderPath: "/tmp/legacy-agent-session" })
+    )
+    const legacySession = await run(
+      services.db.createSession({
+        harnessId: "codex",
+        id: "legacy-session",
+        title: "Legacy session",
+        workspaceId: legacyWorkspace.id
+      })
+    )
+    expect(legacySession.agentSessionId).toBeUndefined()
+    expect(
+      (
+        await jsonRequest(server, `/v1/sessions/${legacySession.id}/prompt`, {
+          body: JSON.stringify({ text: "legacy hello" }),
+          method: "POST"
+        })
+      ).body
+    ).toEqual({ stopReason: "end_turn" })
+    expect(acp.prompts).toContainEqual([legacySession.id, "legacy hello"])
   })
 
   it("bridges terminal create and websocket traffic", async () => {

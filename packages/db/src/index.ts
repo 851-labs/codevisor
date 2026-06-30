@@ -412,7 +412,14 @@ const createService = (
         conversation: sqlite
           .prepare("select * from conversation_items where session_id = ? order by created_at asc")
           .all(id)
-          .map((row) => conversationFromRow(row as ConversationRow))
+          .map((row) => conversationFromRow(row as ConversationRow)),
+        eventCursor: Number(
+          (
+            sqlite.prepare("select coalesce(max(id), 0) as cursor from events").get() as {
+              readonly cursor: number
+            }
+          ).cursor
+        )
       })),
     updateSession: (id, request) =>
       attempt("updateSession", () => {

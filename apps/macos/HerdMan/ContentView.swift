@@ -48,7 +48,8 @@ struct RootView: View {
                     agentService: environment.agentService,
                     configCache: environment.configCache,
                     workspaceList: environment.workspaceList,
-                    settings: environment.settings
+                    settings: environment.settings,
+                    serverClient: environment.serverClient
                 )
             }
             // Warm the harness config cache in the background so the composer
