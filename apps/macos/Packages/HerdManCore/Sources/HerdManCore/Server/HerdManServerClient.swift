@@ -11,6 +11,9 @@ public enum HerdManServerClientError: Error, Equatable, Sendable {
 
 public protocol HerdManServerClienting: Sendable {
     func health() async throws -> ServerHealth
+    func info() async throws -> ServerInfo
+    func updateInfo() async throws -> ServerUpdateInfo
+    func issuePairingToken() async throws -> ServerPairingToken
     func listHarnesses() async throws -> [ServerHarness]
     func setHarnessEnabled(id: String, enabled: Bool) async throws -> ServerHarness
     func listWorkspaces() async throws -> [ServerWorkspace]
@@ -48,6 +51,29 @@ public struct ServerHealth: Decodable, Equatable, Sendable {
     public var ok: Bool
     public var version: String
     public var database: String
+}
+
+public struct ServerInfo: Decodable, Equatable, Sendable {
+    public var id: String
+    public var name: String
+    public var kind: String
+    public var version: String
+    public var platform: String
+    public var bindHost: String
+}
+
+public struct ServerUpdateInfo: Decodable, Equatable, Sendable {
+    public var currentVersion: String
+    public var latestVersion: String
+    public var updateAvailable: Bool
+    public var channel: String
+    public var checkedAt: String?
+    public var migrationState: String
+}
+
+public struct ServerPairingToken: Decodable, Equatable, Sendable {
+    public var token: String
+    public var createdAt: String
 }
 
 public struct ServerHarnessReadiness: Decodable, Equatable, Sendable {
@@ -177,6 +203,18 @@ public final class HerdManServerClient: HerdManServerClienting, @unchecked Senda
 
     public func health() async throws -> ServerHealth {
         try await get("/v1/health")
+    }
+
+    public func info() async throws -> ServerInfo {
+        try await get("/v1/info")
+    }
+
+    public func updateInfo() async throws -> ServerUpdateInfo {
+        try await get("/v1/update")
+    }
+
+    public func issuePairingToken() async throws -> ServerPairingToken {
+        try await send("/v1/auth/pairing-token", method: "POST", body: Optional<EmptyBody>.none)
     }
 
     public func listHarnesses() async throws -> [ServerHarness] {

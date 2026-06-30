@@ -213,6 +213,12 @@ private actor FakeServerClient: HerdManServerClienting {
         ServerHealth(ok: true, version: "0.1.0", database: "ready")
     }
 
+    func info() async throws -> ServerInfo { fatalError("unused") }
+
+    func updateInfo() async throws -> ServerUpdateInfo { fatalError("unused") }
+
+    func issuePairingToken() async throws -> ServerPairingToken { fatalError("unused") }
+
     func listHarnesses() async throws -> [ServerHarness] { [] }
 
     func setHarnessEnabled(id: String, enabled: Bool) async throws -> ServerHarness { fatalError("unused") }

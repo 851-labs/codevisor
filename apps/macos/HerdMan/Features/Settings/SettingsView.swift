@@ -20,9 +20,18 @@ struct SettingsView: View {
 struct GeneralSettingsView: View {
     @Environment(AppEnvironment.self) private var environment
     @State private var showingConfirmation = false
+    @State private var serverStatus: ServerStatusModel?
 
     var body: some View {
         Form {
+            Section {
+                serverStatusContent
+            } header: {
+                Text("Server")
+            } footer: {
+                Text("The local HerdMan server owns ACP sessions, storage, events, and terminal processes.")
+            }
+
             Section {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Delete all data")
@@ -52,6 +61,83 @@ struct GeneralSettingsView: View {
         } message: {
             Text("This can't be undone. You'll be taken back through setup.")
         }
+        .task { await refreshServerStatus() }
+    }
+
+    @ViewBuilder
+    private var serverStatusContent: some View {
+        if let serverStatus {
+            if let errorMessage = serverStatus.errorMessage {
+                Label(errorMessage, systemImage: "exclamationmark.triangle")
+                    .foregroundStyle(.secondary)
+            }
+            settingsRow("Name", value: serverStatus.info?.name ?? "Local HerdMan")
+            settingsRow("Version", value: serverStatus.info?.version ?? serverStatus.health?.version ?? "Checking…")
+            settingsRow("Database", value: serverStatus.health?.database.capitalized ?? "Checking…")
+            if let info = serverStatus.info {
+                settingsRow("Endpoint", value: "\(info.bindHost) (\(info.kind))")
+            }
+            updateRow(serverStatus.update)
+
+            Button {
+                Task { await refreshServerStatus() }
+            } label: {
+                if serverStatus.isRefreshing {
+                    HStack(spacing: 6) { ProgressView().controlSize(.small); Text("Refreshing…") }
+                } else {
+                    Label("Refresh", systemImage: "arrow.clockwise")
+                }
+            }
+            .disabled(serverStatus.isRefreshing)
+        } else if environment.serverClient == nil {
+            Text("No server configured.")
+                .foregroundStyle(.secondary)
+        } else {
+            HStack(spacing: 8) {
+                ProgressView().controlSize(.small)
+                Text("Checking server…")
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func settingsRow(_ title: String, value: String) -> some View {
+        HStack {
+            Text(title)
+            Spacer()
+            Text(value)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    @ViewBuilder
+    private func updateRow(_ update: ServerUpdateInfo?) -> some View {
+        if let update {
+            HStack {
+                Label(
+                    update.updateAvailable ? "Update available" : "Up to date",
+                    systemImage: update.updateAvailable ? "arrow.down.circle" : "checkmark.circle"
+                )
+                Spacer()
+                Text(update.updateAvailable
+                     ? "\(update.currentVersion) → \(update.latestVersion)"
+                     : update.currentVersion)
+                    .foregroundStyle(.secondary)
+            }
+            if update.migrationState != "idle" {
+                settingsRow("Migration", value: update.migrationState.capitalized)
+            }
+        } else {
+            settingsRow("Update", value: "Checking…")
+        }
+    }
+
+    private func refreshServerStatus() async {
+        guard let serverClient = environment.serverClient else { return }
+        if serverStatus == nil {
+            serverStatus = ServerStatusModel(client: serverClient)
+        }
+        await serverStatus?.refresh()
     }
 }
 
