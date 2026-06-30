@@ -11,12 +11,13 @@
 #     *beta* SDK (its libSystem.tbd lacks the plain arm64 slice), so build this
 #     on a machine with a released SDK, or once Zig supports the beta SDK.
 #
-# Usage:  scripts/build-ghostty.sh
+# Usage:  apps/macos/scripts/build-ghostty.sh
 set -euo pipefail
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+MACOS_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+REPO_ROOT="$(cd "$MACOS_ROOT/../.." && pwd)"
 GHOSTTY_DIR="$REPO_ROOT/references/ghostty"
-DEST_DIR="$REPO_ROOT/HerdMan/Frameworks"
+DEST_DIR="$MACOS_ROOT/Frameworks"
 
 if ! command -v zig >/dev/null 2>&1; then
   echo "error: zig not found on PATH. Install Zig 0.15.2 (https://ziglang.org/download/)." >&2
@@ -47,4 +48,4 @@ mkdir -p "$DEST_DIR"
 rm -rf "$DEST_DIR/GhosttyKit.xcframework"
 cp -R "$SRC" "$DEST_DIR/"
 echo "Copied GhosttyKit.xcframework to $DEST_DIR"
-echo "Next: link it into the HerdMan app target in Xcode (see HerdMan/Features/Terminal/README.md)."
+echo "Next: link it into the HerdMan app target in Xcode (see apps/macos/HerdMan/Features/Terminal/README.md)."

@@ -1,1 +1,15 @@
 references/
+node_modules/
+dist/
+coverage/
+.turbo/
+.cache/
+*.tsbuildinfo
+*.log
+*.pid
+.env
+.env.*
+!.env.example
+apps/server/data/
+apps/macos/Packages/.build/
+apps/macos/Packages/.swiftpm/
