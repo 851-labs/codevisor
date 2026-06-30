@@ -1,0 +1,26 @@
+{
+  "name": "@herdman/db",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b tsconfig.json",
+    "typecheck": "tsc -b tsconfig.json --pretty false",
+    "test": "vitest run src --passWithNoTests",
+    "test:coverage": "vitest run src --coverage"
+  },
+  "dependencies": {
+    "@herdman/api": "workspace:*",
+    "better-sqlite3": "12.9.0",
+    "effect": "4.0.0-beta.92"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "7.6.13",
+    "vitest": "4.1.4"
+  }
+}
