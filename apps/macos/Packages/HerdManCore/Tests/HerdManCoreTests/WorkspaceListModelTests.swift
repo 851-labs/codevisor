@@ -27,6 +27,7 @@ struct WorkspaceListModelTests {
         let session = ChatSession(
             id: UUID(),
             workspaceId: workspace.id,
+            serverId: "mac-mini",
             harnessId: "codex",
             agentSessionId: "agent-remote",
             title: "Remote session",
@@ -300,7 +301,7 @@ private func serverSession(from session: ChatSession) -> ServerSession {
     ServerSession(
         id: session.id.uuidString,
         workspaceId: session.workspaceId.uuidString,
-        serverId: "local",
+        serverId: session.serverId,
         harnessId: session.harnessId,
         agentSessionId: session.agentSessionId,
         title: session.title,

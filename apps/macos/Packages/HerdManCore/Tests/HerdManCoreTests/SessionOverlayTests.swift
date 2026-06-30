@@ -19,6 +19,7 @@ struct SessionOverlayTests {
         let json = #"{"id":"\#(UUID().uuidString)","workspaceId":"\#(UUID().uuidString)","title":"Legacy","createdAt":768000000}"#
         let session = try JSONDecoder().decode(ChatSession.self, from: Data(json.utf8))
         #expect(session.title == "Legacy")
+        #expect(session.serverId == "local")
         #expect(session.harnessId == "")
         #expect(session.origin == .herdman)
         #expect(session.isArchived == false)

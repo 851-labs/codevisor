@@ -120,6 +120,7 @@ public struct ServerSession: Decodable, Equatable, Sendable {
         return ChatSession(
             id: uuid,
             workspaceId: workspaceUUID,
+            serverId: serverId,
             harnessId: harnessId,
             agentSessionId: agentSessionId,
             title: title,

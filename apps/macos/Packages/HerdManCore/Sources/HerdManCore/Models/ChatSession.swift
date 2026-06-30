@@ -15,6 +15,9 @@ public enum SessionOrigin: String, Sendable, Codable, Equatable {
 public struct ChatSession: Identifiable, Sendable, Codable, Equatable {
     public var id: UUID
     public var workspaceId: UUID
+    /// The HerdMan server that owns this session. Legacy/local sessions default
+    /// to "local"; remote servers provide their configured server id.
+    public var serverId: String
     /// The harness this session belongs to (e.g. "claude-code", "codex").
     public var harnessId: String
     /// The agent-side session id used to resume via `session/load`. Nil until a
@@ -29,6 +32,7 @@ public struct ChatSession: Identifiable, Sendable, Codable, Equatable {
     public init(
         id: UUID = UUID(),
         workspaceId: UUID,
+        serverId: String = "local",
         harnessId: String = "",
         agentSessionId: String? = nil,
         title: String = "New Session",
@@ -39,6 +43,7 @@ public struct ChatSession: Identifiable, Sendable, Codable, Equatable {
     ) {
         self.id = id
         self.workspaceId = workspaceId
+        self.serverId = serverId
         self.harnessId = harnessId
         self.agentSessionId = agentSessionId
         self.title = title
@@ -49,7 +54,7 @@ public struct ChatSession: Identifiable, Sendable, Codable, Equatable {
     }
 
     private enum Keys: String, CodingKey {
-        case id, workspaceId, harnessId, agentSessionId, title, origin, isArchived, createdAt, updatedAt
+        case id, workspaceId, serverId, harnessId, agentSessionId, title, origin, isArchived, createdAt, updatedAt
     }
 
     // Custom decoding tolerates older persisted sessions missing newer fields.
@@ -57,6 +62,7 @@ public struct ChatSession: Identifiable, Sendable, Codable, Equatable {
         let container = try decoder.container(keyedBy: Keys.self)
         id = try container.decode(UUID.self, forKey: .id)
         workspaceId = try container.decode(UUID.self, forKey: .workspaceId)
+        serverId = try container.decodeIfPresent(String.self, forKey: .serverId) ?? "local"
         harnessId = try container.decodeIfPresent(String.self, forKey: .harnessId) ?? ""
         agentSessionId = try container.decodeIfPresent(String.self, forKey: .agentSessionId)
         title = try container.decodeIfPresent(String.self, forKey: .title) ?? "Session"
