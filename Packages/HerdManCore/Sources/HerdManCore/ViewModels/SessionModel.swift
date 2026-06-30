@@ -14,6 +14,8 @@ public final class SessionModel {
     public private(set) var modeState: SessionModeState?
     public private(set) var configOptions: [SessionConfigOption]
     public private(set) var errorMessage: String?
+    /// Latest context-window + cost usage reported by the agent (`usage_update`).
+    public private(set) var usage: SessionUsage?
 
     private let client: any ACPClientProtocol
     private let sessionId: String
@@ -133,6 +135,8 @@ public final class SessionModel {
             if var state = modeState { state.currentModeId = modeId; modeState = state }
         case let .configOptionUpdate(options):
             configOptions = options
+        case let .usageUpdate(usage):
+            self.usage = usage
         default:
             // A non-user update finalizes the pending user message into a turn.
             flushLoadingUser()
@@ -193,6 +197,8 @@ public final class SessionModel {
             }
         case let .configOptionUpdate(options):
             configOptions = options
+        case let .usageUpdate(usage):
+            self.usage = usage
         default:
             guard case .assistant(var message) = conversation.last else { return }
             TranscriptReducer.apply(update, to: &message.turn)
@@ -201,9 +207,10 @@ public final class SessionModel {
     }
 
     /// Seeds conversation state for previews. Not for production use.
-    public func applyPreviewState(conversation: [ConversationItem], isSending: Bool) {
+    public func applyPreviewState(conversation: [ConversationItem], isSending: Bool, usage: SessionUsage? = nil) {
         self.conversation = conversation
         self.isSending = isSending
+        self.usage = usage
     }
 
     private func finish(stopReason: StopReason?) {

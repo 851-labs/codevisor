@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import HerdManCore
+import ACPKit
 
 /// The bottom terminal panel for a session: just the terminal surface. Its
 /// height is driven by `TerminalSession.panel`; the resize handle and toggle
@@ -15,17 +16,19 @@ struct TerminalPanel: View {
     }
 }
 
-/// The status bar pinned to the bottom of the session page. Acts as the drag
-/// handle for the bottom panel (terminal) and holds the bottom-panel toggle on
-/// the far right.
+/// The status bar pinned to the bottom of the session page. Shows the session's
+/// cost + token usage on the left, acts as the drag handle for the bottom panel
+/// (terminal), and holds the bottom-panel toggle on the far right.
 struct SessionStatusBar: View {
+    var controller: SessionController
     @Bindable var terminal: TerminalSession
     var onToggle: () -> Void
 
     @State private var dragStartHeight: CGFloat?
 
     var body: some View {
-        HStack(spacing: 0) {
+        HStack(spacing: 12) {
+            usageView
             Spacer(minLength: 0)
             Button(action: onToggle) {
                 Image(systemName: "rectangle.bottomthird.inset.filled")
@@ -37,7 +40,7 @@ struct SessionStatusBar: View {
             .buttonStyle(.plain)
             .help("Toggle bottom panel (⌘J)")
         }
-        .padding(.horizontal, 8)
+        .padding(.horizontal, 10)
         .frame(height: 28)
         .frame(maxWidth: .infinity)
         .background(Color(nsColor: .windowBackgroundColor))
@@ -55,6 +58,46 @@ struct SessionStatusBar: View {
                 NSCursor.pop()
             }
         }
+    }
+
+    /// Cost + token usage reported by the agent (`usage_update`), if any.
+    @ViewBuilder
+    private var usageView: some View {
+        if let usage = controller.usage, usage.cost != nil || usage.used != nil {
+            HStack(spacing: 12) {
+                if let cost = usage.cost {
+                    Text(Self.formatCost(cost))
+                }
+                if let used = usage.used {
+                    Text(Self.formatTokens(used, size: usage.size))
+                }
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+        }
+    }
+
+    static func formatCost(_ cost: SessionCost) -> String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .currency
+        formatter.currencyCode = cost.currency
+        formatter.maximumFractionDigits = cost.amount < 1 ? 4 : 2
+        return formatter.string(from: NSNumber(value: cost.amount)) ?? String(format: "%.4f", cost.amount)
+    }
+
+    static func formatTokens(_ used: UInt64, size: UInt64?) -> String {
+        if let size, size > 0 {
+            return "\(abbreviate(used)) / \(abbreviate(size)) tokens"
+        }
+        return "\(abbreviate(used)) tokens"
+    }
+
+    private static func abbreviate(_ n: UInt64) -> String {
+        let value = Double(n)
+        if value >= 1_000_000 { return String(format: "%.1fM", value / 1_000_000) }
+        if value >= 1_000 { return String(format: "%.1fK", value / 1_000) }
+        return "\(n)"
     }
 
     /// Dragging the status bar resizes the bottom panel (drag up = taller).

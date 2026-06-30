@@ -30,7 +30,7 @@ public enum TranscriptReducer {
         case let .plan(plan):
             turn.plan = plan
 
-        case .availableCommandsUpdate, .currentModeUpdate, .configOptionUpdate:
+        case .availableCommandsUpdate, .currentModeUpdate, .configOptionUpdate, .usageUpdate:
             break
         }
     }

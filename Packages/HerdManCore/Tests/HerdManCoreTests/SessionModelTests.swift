@@ -32,6 +32,20 @@ struct SessionModelTests {
         #expect(model.isSending == false)
     }
 
+    @Test("usage_update is captured as session cost + tokens")
+    func usageCaptured() async {
+        let client = FakeACPClient()
+        client.scriptedUpdates = [
+            .agentMessageChunk(.text("hi")),
+            .usageUpdate(SessionUsage(used: 1234, size: 200_000, cost: SessionCost(amount: 0.05, currency: "USD")))
+        ]
+        let model = makeModel(client)
+        await model.send("hi")
+        #expect(model.usage?.used == 1234)
+        #expect(model.usage?.size == 200_000)
+        #expect(model.usage?.cost == SessionCost(amount: 0.05, currency: "USD"))
+    }
+
     @Test("Composer text is cleared and used by send()")
     func composerSend() async {
         let client = FakeACPClient()

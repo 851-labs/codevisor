@@ -98,7 +98,8 @@ public extension SessionModel {
             currentModeId: "default",
             availableModes: [SessionMode(id: "default", name: "Default"), SessionMode(id: "plan", name: "Plan")]
         ),
-        configOptions: [SessionConfigOption] = SampleData.configOptions
+        configOptions: [SessionConfigOption] = SampleData.configOptions,
+        usage: SessionUsage? = SessionUsage(used: 18_432, size: 200_000, cost: SessionCost(amount: 0.0142, currency: "USD"))
     ) -> SessionModel {
         let model = SessionModel(
             client: ACPClient(transport: MockTransport()),
@@ -106,7 +107,7 @@ public extension SessionModel {
             modeState: modeState,
             configOptions: configOptions
         )
-        model.applyPreviewState(conversation: conversation, isSending: isSending)
+        model.applyPreviewState(conversation: conversation, isSending: isSending, usage: usage)
         return model
     }
 }

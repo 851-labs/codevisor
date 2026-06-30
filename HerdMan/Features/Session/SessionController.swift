@@ -66,6 +66,7 @@ final class SessionController {
     var isConnected: Bool { model != nil }
     var modeState: SessionModeState? { model?.modeState }
     var errorMessage: String? { model?.errorMessage }
+    var usage: SessionUsage? { model?.usage }
 
     /// Selectable config options: live when connected, otherwise the cached
     /// (stale) options for the selected harness with any pending edits applied.

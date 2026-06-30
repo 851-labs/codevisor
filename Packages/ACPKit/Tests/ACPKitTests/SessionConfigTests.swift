@@ -65,6 +65,29 @@ struct SessionConfigTests {
         #expect(try ACPJSON.decoder.decode(SessionUpdate.self, from: data) == update)
     }
 
+    @Test("usage_update session update decodes cost + context tokens")
+    func usageUpdate() throws {
+        let json = #"{"sessionUpdate":"usage_update","used":12345,"size":200000,"cost":{"amount":0.0123,"currency":"USD"}}"#
+        let update = try ACPJSON.decoder.decode(SessionUpdate.self, from: Data(json.utf8))
+        guard case let .usageUpdate(usage) = update else {
+            Issue.record("expected usageUpdate, got \(update)")
+            return
+        }
+        #expect(usage.used == 12345)
+        #expect(usage.size == 200_000)
+        #expect(usage.cost == SessionCost(amount: 0.0123, currency: "USD"))
+        // Round-trips.
+        let data = try ACPJSON.encoder.encode(update)
+        #expect(try ACPJSON.decoder.decode(SessionUpdate.self, from: data) == update)
+    }
+
+    @Test("usage_update tolerates a missing cost")
+    func usageUpdateNoCost() throws {
+        let json = #"{"sessionUpdate":"usage_update","used":10}"#
+        let update = try ACPJSON.decoder.decode(SessionUpdate.self, from: Data(json.utf8))
+        #expect(update == .usageUpdate(SessionUsage(used: 10)))
+    }
+
     @Test("NewSessionResponse carries config options")
     func newSessionConfig() throws {
         let response = NewSessionResponse(

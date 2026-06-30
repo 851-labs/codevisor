@@ -19,7 +19,7 @@ struct SessionScreen: View {
 
             // The status bar sits directly under the chat; when the panel is
             // open it becomes the panel's top bar / resize handle.
-            SessionStatusBar(terminal: terminal, onToggle: { toggleTerminal() })
+            SessionStatusBar(controller: controller, terminal: terminal, onToggle: { toggleTerminal() })
 
             if terminal.panel.isVisible {
                 TerminalPanel(session: terminal)

@@ -1,5 +1,34 @@
 import Foundation
 
+/// Cumulative cost information for a session (from a `usage_update`).
+public struct SessionCost: Sendable, Codable, Equatable {
+    /// Total cumulative cost for the session.
+    public var amount: Double
+    /// ISO 4217 currency code (e.g. "USD").
+    public var currency: String
+
+    public init(amount: Double, currency: String) {
+        self.amount = amount
+        self.currency = currency
+    }
+}
+
+/// Context-window and cost usage for a session (from a `usage_update`).
+public struct SessionUsage: Sendable, Codable, Equatable {
+    /// Tokens currently in context.
+    public var used: UInt64?
+    /// Total context-window size in tokens.
+    public var size: UInt64?
+    /// Cumulative session cost, if the agent reports it.
+    public var cost: SessionCost?
+
+    public init(used: UInt64? = nil, size: UInt64? = nil, cost: SessionCost? = nil) {
+        self.used = used
+        self.size = size
+        self.cost = cost
+    }
+}
+
 /// A streaming update emitted by the agent during a prompt turn.
 ///
 /// Discriminated by the `sessionUpdate` field. For `tool_call` and
@@ -14,9 +43,11 @@ public enum SessionUpdate: Sendable, Codable, Equatable {
     case availableCommandsUpdate([AvailableCommand])
     case currentModeUpdate(currentModeId: String)
     case configOptionUpdate([SessionConfigOption])
+    case usageUpdate(SessionUsage)
 
     private enum Keys: String, CodingKey {
         case sessionUpdate, content, entries, availableCommands, currentModeId, configOptions
+        case used, size, cost
     }
 
     public init(from decoder: any Decoder) throws {
@@ -47,6 +78,12 @@ public enum SessionUpdate: Sendable, Codable, Equatable {
             self = .configOptionUpdate(
                 try container.decode([SessionConfigOption].self, forKey: .configOptions)
             )
+        case "usage_update":
+            self = .usageUpdate(SessionUsage(
+                used: try container.decodeIfPresent(UInt64.self, forKey: .used),
+                size: try container.decodeIfPresent(UInt64.self, forKey: .size),
+                cost: try container.decodeIfPresent(SessionCost.self, forKey: .cost)
+            ))
         default:
             throw DecodingError.dataCorruptedError(
                 forKey: .sessionUpdate,
@@ -86,6 +123,11 @@ public enum SessionUpdate: Sendable, Codable, Equatable {
         case let .configOptionUpdate(options):
             try container.encode("config_option_update", forKey: .sessionUpdate)
             try container.encode(options, forKey: .configOptions)
+        case let .usageUpdate(usage):
+            try container.encode("usage_update", forKey: .sessionUpdate)
+            try container.encodeIfPresent(usage.used, forKey: .used)
+            try container.encodeIfPresent(usage.size, forKey: .size)
+            try container.encodeIfPresent(usage.cost, forKey: .cost)
         }
     }
 }
