@@ -9,6 +9,7 @@ import HerdManCore
 @Observable
 final class SessionStore {
     private var controllers: [UUID: SessionController] = [:]
+    private var terminals: [UUID: TerminalSession] = [:]
     private let agentService: any AgentServicing
     private let configCache: ConfigOptionCache
     private let workspaceList: WorkspaceListModel
@@ -50,6 +51,16 @@ final class SessionStore {
         SessionController(workspace: workspace, agentService: agentService, configCache: configCache, settings: settings)
     }
 
+    /// Returns the cached terminal for a session, creating it (scoped to the
+    /// workspace folder) on first use. Mirrors `controller(for:workspace:)` so
+    /// the terminal survives panel close + navigation away and back.
+    func terminal(for session: ChatSession, workspace: Workspace) -> TerminalSession {
+        if let existing = terminals[session.id] { return existing }
+        let terminal = TerminalSession(id: session.id, workingDirectory: workspace.folderURL)
+        terminals[session.id] = terminal
+        return terminal
+    }
+
     /// Whether the session with this id is actively generating a response.
     func isRunning(_ sessionId: UUID) -> Bool {
         controllers[sessionId]?.isSending ?? false
@@ -62,5 +73,7 @@ final class SessionStore {
 
     func discard(_ sessionId: UUID) {
         controllers[sessionId] = nil
+        terminals[sessionId]?.terminate()
+        terminals[sessionId] = nil
     }
 }

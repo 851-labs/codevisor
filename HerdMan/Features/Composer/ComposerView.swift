@@ -10,6 +10,9 @@ import ACPAgents
 struct ComposerCard: View {
     @Bindable var controller: SessionController
     var placeholder: String = "Do anything"
+    /// Surfaces the composer's text view so the terminal focus handoff can move
+    /// first-responder focus to it.
+    var onTextViewReady: ((NSView) -> Void)? = nil
 
     @State private var editorHeight: CGFloat = 24
 
@@ -19,7 +22,8 @@ struct ComposerCard: View {
                 ChatInputEditor(
                     text: $controller.composerText,
                     calculatedHeight: $editorHeight,
-                    onSubmit: { Task { await controller.send() } }
+                    onSubmit: { Task { await controller.send() } },
+                    onTextViewReady: onTextViewReady
                 )
                 .frame(height: editorHeight)
 

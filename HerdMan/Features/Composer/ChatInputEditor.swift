@@ -9,11 +9,15 @@ struct ChatInputEditor: NSViewRepresentable {
     var minHeight: CGFloat = 24
     var maxHeight: CGFloat = 240
     var onSubmit: () -> Void
+    /// Called once with the underlying text view so callers can move focus to it
+    /// (used by the terminal's ⌘J focus handoff).
+    var onTextViewReady: ((NSView) -> Void)? = nil
 
     func makeNSView(context: Context) -> NSScrollView {
         let textView = SubmittingTextView()
         textView.delegate = context.coordinator
         textView.onSubmit = { onSubmit() }
+        onTextViewReady?(textView)
         textView.string = text
         textView.font = .preferredFont(forTextStyle: .body)
         textView.isRichText = false

@@ -13,7 +13,7 @@ struct SessionContainerView: View {
     var body: some View {
         Group {
             if let controller {
-                SessionScreen(controller: controller)
+                SessionScreen(controller: controller, terminal: store.terminal(for: session, workspace: workspace))
             } else {
                 ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
             }

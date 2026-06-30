@@ -11,6 +11,9 @@ struct HerdManApp: App {
                 .environment(environment)
         }
         .defaultSize(width: 1100, height: 760)
+        .commands {
+            TerminalCommands()
+        }
 
         Settings {
             SettingsView()
@@ -57,6 +60,9 @@ struct RootView: View {
                         cache: environment.configCache
                     ).warmMissing()
                 }
+                // Initialize the terminal runtime up front, in a clean context,
+                // so opening the terminal later can't re-enter its dispatch_once.
+                TerminalRuntime.prewarm()
             }
         }
     }

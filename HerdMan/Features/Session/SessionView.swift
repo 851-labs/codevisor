@@ -7,11 +7,34 @@ import HerdManCore
 /// last message can scroll clear of the composer.
 struct SessionScreen: View {
     @Bindable var controller: SessionController
+    var terminal: TerminalSession
     @State private var isAtBottom = true
     @State private var composerHeight: CGFloat = 96
+    @State private var focus = TerminalFocusController()
     private let bottomID = "session-bottom"
 
     var body: some View {
+        VStack(spacing: 0) {
+            chatArea
+
+            // The status bar sits directly under the chat; when the panel is
+            // open it becomes the panel's top bar / resize handle.
+            SessionStatusBar(terminal: terminal, onToggle: { toggleTerminal() })
+
+            if terminal.panel.isVisible {
+                TerminalPanel(session: terminal)
+                    .frame(height: terminal.panel.height)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .animation(.snappy(duration: 0.25), value: terminal.panel.isVisible)
+        .focusedSceneValue(\.terminalToggle, TerminalToggleAction(sessionId: terminal.id) {
+            toggleTerminal()
+        })
+        .onAppear { focus.terminal = terminal }
+    }
+
+    private var chatArea: some View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 20) {
@@ -53,6 +76,14 @@ struct SessionScreen: View {
         }
     }
 
+    /// Toggles the terminal panel and moves keyboard focus to match (terminal on
+    /// open, composer on close).
+    private func toggleTerminal() {
+        let target = terminal.togglePanel()
+        // Defer focus until SwiftUI has mounted/removed the panel.
+        DispatchQueue.main.async { focus.apply(target) }
+    }
+
     private func scrollToBottomButton(_ proxy: ScrollViewProxy) -> some View {
         Button {
             withAnimation(.snappy(duration: 0.25)) {
@@ -72,7 +103,11 @@ struct SessionScreen: View {
 
     private var composerOverlay: some View {
         VStack(spacing: 6) {
-            ComposerCard(controller: controller, placeholder: "Ask for follow-up changes")
+            ComposerCard(
+                controller: controller,
+                placeholder: "Ask for follow-up changes",
+                onTextViewReady: { focus.composerTextView = $0 }
+            )
             statusLabel
         }
         .padding(.horizontal, 24)
@@ -138,7 +173,17 @@ struct SessionScreen: View {
 
 #if DEBUG
 #Preview("Conversation") {
-    SessionScreen(controller: .preview(model: .preview()))
+    SessionScreen(
+        controller: .preview(model: .preview()),
+        terminal: TerminalSession(id: UUID(), workingDirectory: URL(fileURLWithPath: "/tmp/shepherd"))
+    )
+    .frame(width: 900, height: 680)
+}
+
+#Preview("With terminal") {
+    let terminal = TerminalSession(id: UUID(), workingDirectory: URL(fileURLWithPath: "/tmp/shepherd"))
+    terminal.panel.isVisible = true
+    return SessionScreen(controller: .preview(model: .preview()), terminal: terminal)
         .frame(width: 900, height: 680)
 }
 #endif
