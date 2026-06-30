@@ -20,11 +20,13 @@ public final class AppEnvironment {
         sessionRepository: any SessionRepository,
         agentService: any AgentServicing,
         configCache: ConfigOptionCache,
-        settings: AppSettingsModel
+        settings: AppSettingsModel,
+        serverClient: (any HerdManServerClienting)? = nil
     ) {
         self.workspaceList = WorkspaceListModel(
             workspaceRepository: workspaceRepository,
-            sessionRepository: sessionRepository
+            sessionRepository: sessionRepository,
+            serverClient: serverClient
         )
         self.agentService = agentService
         self.configCache = configCache
@@ -72,12 +74,14 @@ public final class AppEnvironment {
     /// discovery/launching.
     public static func live() -> AppEnvironment {
         let store = FileSystemStore()
+        let serverClient = HerdManServerClient(config: .localDefault)
         return AppEnvironment(
             workspaceRepository: DefaultWorkspaceRepository(store: store),
             sessionRepository: DefaultSessionRepository(store: store),
-            agentService: AgentService(),
+            agentService: ServerAgentService(client: serverClient),
             configCache: ConfigOptionCache(store: store),
-            settings: AppSettingsModel(store: store)
+            settings: AppSettingsModel(store: store),
+            serverClient: serverClient
         )
     }
 

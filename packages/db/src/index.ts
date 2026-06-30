@@ -173,6 +173,7 @@ export interface HerdManDatabaseService {
     id: string,
     request: UpdateWorkspaceRequest
   ) => Effect.Effect<Workspace, DatabaseError>
+  readonly deleteWorkspace: (id: string) => Effect.Effect<void, DatabaseError>
   readonly createSession: (
     request: CreateSessionRequest
   ) => Effect.Effect<SessionSummary, DatabaseError>
@@ -226,6 +227,7 @@ export const makeDatabase = (
 ): Effect.Effect<HerdManDatabaseService, DatabaseError> =>
   Effect.gen(function* () {
     const sqlite = yield* attempt("open", () => new Database(config.filename))
+    sqlite.pragma("foreign_keys = ON")
     sqlite.pragma("journal_mode = WAL")
     const service = createService(sqlite, config)
     yield* service.migrate
@@ -300,13 +302,13 @@ const createService = (
     return yield* attempt("createWorkspace", () => {
       const now = isoTimestamp()
       const workspace: Workspace = {
-        id: randomUUID(),
+        id: request.id ?? randomUUID(),
         name: request.name ?? basename(request.folderPath),
         folderPath: request.folderPath,
-        isArchived: false,
-        symbolName: "folder",
-        origin: "herdman",
-        createdAt: now
+        isArchived: request.isArchived ?? false,
+        symbolName: request.symbolName ?? "folder",
+        origin: request.origin ?? "herdman",
+        createdAt: request.createdAt ?? now
       }
       sqlite
         .prepare(
@@ -318,7 +320,7 @@ const createService = (
           workspace.id,
           workspace.name,
           workspace.folderPath,
-          0,
+          workspace.isArchived ? 1 : 0,
           workspace.symbolName,
           workspace.origin,
           workspace.createdAt
@@ -333,21 +335,22 @@ const createService = (
     return yield* attempt("createSession", () => {
       const now = isoTimestamp()
       const session: SessionSummary = {
-        id: randomUUID(),
+        id: request.id ?? randomUUID(),
         workspaceId: request.workspaceId,
         serverId: config.serverId,
         harnessId: request.harnessId,
         ...(request.agentSessionId === undefined ? {} : { agentSessionId: request.agentSessionId }),
         title: request.title ?? "New Session",
-        origin: "herdman",
-        isArchived: false,
-        createdAt: now
+        origin: request.origin ?? "herdman",
+        isArchived: request.isArchived ?? false,
+        createdAt: request.createdAt ?? now,
+        ...(request.updatedAt === undefined ? {} : { updatedAt: request.updatedAt })
       }
       sqlite
         .prepare(
           `insert into sessions (
-            id, workspace_id, server_id, harness_id, agent_session_id, title, origin, is_archived, created_at
-          ) values (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+            id, workspace_id, server_id, harness_id, agent_session_id, title, origin, is_archived, created_at, updated_at
+          ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
         )
         .run(
           session.id,
@@ -357,8 +360,9 @@ const createService = (
           request.agentSessionId ?? null,
           session.title,
           session.origin,
-          0,
-          session.createdAt
+          session.isArchived ? 1 : 0,
+          session.createdAt,
+          request.updatedAt ?? null
         )
       return session
     })
@@ -388,6 +392,13 @@ const createService = (
           .run(updated.name, updated.isArchived ? 1 : 0, updated.symbolName, id)
         return updated
       }),
+    deleteWorkspace: (id) =>
+      attempt("deleteWorkspace", () => {
+        const result = sqlite.prepare("delete from workspaces where id = ?").run(id)
+        if (result.changes === 0) {
+          throw new Error(`Workspace not found: ${id}`)
+        }
+      }),
     createSession,
     listSessions: attempt("listSessions", () =>
       sqlite
@@ -408,10 +419,13 @@ const createService = (
         const current = getSession(sqlite, id)
         const now = isoTimestamp()
         sqlite
-          .prepare("update sessions set title = ?, is_archived = ?, updated_at = ? where id = ?")
+          .prepare(
+            "update sessions set title = ?, is_archived = ?, agent_session_id = ?, updated_at = ? where id = ?"
+          )
           .run(
             request.title ?? current.title,
             (request.isArchived ?? current.isArchived) ? 1 : 0,
+            request.agentSessionId ?? current.agentSessionId ?? null,
             now,
             id
           )

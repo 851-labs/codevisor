@@ -42,8 +42,13 @@ export const Workspace = Schema.Struct({
 export type Workspace = typeof Workspace.Type
 
 export const CreateWorkspaceRequest = Schema.Struct({
+  id: Schema.optional(Schema.String),
   folderPath: Schema.String,
-  name: Schema.optional(Schema.String)
+  name: Schema.optional(Schema.String),
+  isArchived: Schema.optional(Schema.Boolean),
+  symbolName: Schema.optional(Schema.String),
+  origin: Schema.optional(SessionOrigin),
+  createdAt: Schema.optional(Schema.String)
 })
 export type CreateWorkspaceRequest = typeof CreateWorkspaceRequest.Type
 
@@ -96,14 +101,20 @@ export const SessionDetail = Schema.Struct({
 export type SessionDetail = typeof SessionDetail.Type
 
 export const CreateSessionRequest = Schema.Struct({
+  id: Schema.optional(Schema.String),
   workspaceId: Schema.String,
   harnessId: Schema.String,
   agentSessionId: Schema.optional(Schema.String),
-  title: Schema.optional(Schema.String)
+  title: Schema.optional(Schema.String),
+  origin: Schema.optional(SessionOrigin),
+  isArchived: Schema.optional(Schema.Boolean),
+  createdAt: Schema.optional(Schema.String),
+  updatedAt: Schema.optional(Schema.String)
 })
 export type CreateSessionRequest = typeof CreateSessionRequest.Type
 
 export const UpdateSessionRequest = Schema.Struct({
+  agentSessionId: Schema.optional(Schema.String),
   isArchived: Schema.optional(Schema.Boolean),
   title: Schema.optional(Schema.String)
 })
@@ -161,6 +172,7 @@ export type PairingTokenResponse = typeof PairingTokenResponse.Type
 export const EventKind = Schema.Literals([
   "workspace.created",
   "workspace.updated",
+  "workspace.deleted",
   "session.created",
   "session.updated",
   "session.archived",
@@ -230,6 +242,7 @@ export const endpoints = [
   "GET /v1/workspaces",
   "POST /v1/workspaces",
   "PATCH /v1/workspaces/:id",
+  "DELETE /v1/workspaces/:id",
   "GET /v1/harnesses",
   "PATCH /v1/harnesses/:id",
   "GET /v1/sessions",

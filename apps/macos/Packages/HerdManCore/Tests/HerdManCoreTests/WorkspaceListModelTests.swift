@@ -15,6 +15,64 @@ struct WorkspaceListModelTests {
         return (model, workspaceStore, sessionStore)
     }
 
+    @Test("Server refresh merges remote workspaces and sessions into the local cache")
+    func serverRefresh() async throws {
+        let workspace = Workspace(
+            id: UUID(),
+            name: "Remote",
+            folderURL: URL(fileURLWithPath: "/tmp/remote"),
+            createdAt: Date(timeIntervalSince1970: 10)
+        )
+        let session = ChatSession(
+            id: UUID(),
+            workspaceId: workspace.id,
+            harnessId: "codex",
+            agentSessionId: "agent-remote",
+            title: "Remote session",
+            createdAt: Date(timeIntervalSince1970: 11)
+        )
+        let fakeServer = FakeServerClient(
+            workspaces: [serverWorkspace(from: workspace)],
+            sessions: [serverSession(from: session)]
+        )
+        let model = WorkspaceListModel(
+            workspaceRepository: DefaultWorkspaceRepository(store: InMemoryStore()),
+            sessionRepository: DefaultSessionRepository(store: InMemoryStore()),
+            serverClient: fakeServer
+        )
+
+        try await waitUntil {
+            model.workspaces.contains(workspace) && model.sessions.contains(session)
+        }
+    }
+
+    @Test("Local mutations are mirrored to the configured server")
+    func serverMutationMirroring() async throws {
+        let fakeServer = FakeServerClient()
+        let model = WorkspaceListModel(
+            workspaceRepository: DefaultWorkspaceRepository(store: InMemoryStore()),
+            sessionRepository: DefaultSessionRepository(store: InMemoryStore()),
+            serverClient: fakeServer
+        )
+        let workspace = model.addWorkspace(folderURL: URL(fileURLWithPath: "/tmp/mirrored"))
+        let session = model.newSession(in: workspace, title: "First", harnessId: "codex")
+        model.renameSession(session, to: "Renamed")
+        model.deleteSession(session)
+        model.removeWorkspace(workspace)
+
+        for _ in 0..<50 {
+            let snapshot = await fakeServer.snapshot()
+            if snapshot.upsertedWorkspaceIDs.contains(workspace.id.uuidString),
+               snapshot.upsertedSessionIDs.contains(session.id.uuidString),
+               snapshot.deletedSessionIDs.contains(session.id.uuidString),
+               snapshot.deletedWorkspaceIDs.contains(workspace.id.uuidString) {
+                return
+            }
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        Issue.record("Timed out waiting for server mirror calls")
+    }
+
     @Test("Adding a folder creates and persists a workspace")
     func addWorkspace() {
         let (model, store, _) = makeModel()
@@ -118,4 +176,121 @@ struct WorkspaceListModelTests {
         #expect(model.workspaces.isEmpty)
         #expect(model.sessions.isEmpty)
     }
+}
+
+@MainActor
+private func waitUntil(_ predicate: () -> Bool) async throws {
+    for _ in 0..<50 {
+        if predicate() { return }
+        try await Task.sleep(nanoseconds: 10_000_000)
+    }
+    Issue.record("Timed out waiting for condition")
+}
+
+private struct FakeServerSnapshot: Sendable {
+    var upsertedWorkspaceIDs: [String]
+    var upsertedSessionIDs: [String]
+    var deletedWorkspaceIDs: [String]
+    var deletedSessionIDs: [String]
+}
+
+private actor FakeServerClient: HerdManServerClienting {
+    private var workspaces: [ServerWorkspace]
+    private var sessions: [ServerSession]
+    private var upsertedWorkspaceIDs: [String] = []
+    private var upsertedSessionIDs: [String] = []
+    private var deletedWorkspaceIDs: [String] = []
+    private var deletedSessionIDs: [String] = []
+
+    init(workspaces: [ServerWorkspace] = [], sessions: [ServerSession] = []) {
+        self.workspaces = workspaces
+        self.sessions = sessions
+    }
+
+    func health() async throws -> ServerHealth {
+        ServerHealth(ok: true, version: "0.1.0", database: "ready")
+    }
+
+    func listHarnesses() async throws -> [ServerHarness] { [] }
+
+    func listWorkspaces() async throws -> [ServerWorkspace] { workspaces }
+
+    func upsertWorkspace(_ workspace: Workspace) async throws -> ServerWorkspace {
+        let serverWorkspace = serverWorkspace(from: workspace)
+        upsertedWorkspaceIDs.append(serverWorkspace.id)
+        workspaces.removeAll { $0.id == serverWorkspace.id }
+        workspaces.append(serverWorkspace)
+        return serverWorkspace
+    }
+
+    func updateWorkspace(_ workspace: Workspace) async throws -> ServerWorkspace {
+        try await upsertWorkspace(workspace)
+    }
+
+    func deleteWorkspace(id: UUID) async throws {
+        deletedWorkspaceIDs.append(id.uuidString)
+        workspaces.removeAll { $0.id == id.uuidString }
+    }
+
+    func listSessions() async throws -> [ServerSession] { sessions }
+
+    func upsertSession(_ session: ChatSession) async throws -> ServerSession {
+        let serverSession = serverSession(from: session)
+        upsertedSessionIDs.append(serverSession.id)
+        sessions.removeAll { $0.id == serverSession.id }
+        sessions.append(serverSession)
+        return serverSession
+    }
+
+    func updateSession(_ session: ChatSession) async throws -> ServerSession {
+        try await upsertSession(session)
+    }
+
+    func deleteSession(id: UUID) async throws {
+        deletedSessionIDs.append(id.uuidString)
+        sessions.removeAll { $0.id == id.uuidString }
+    }
+
+    func snapshot() -> FakeServerSnapshot {
+        FakeServerSnapshot(
+            upsertedWorkspaceIDs: upsertedWorkspaceIDs,
+            upsertedSessionIDs: upsertedSessionIDs,
+            deletedWorkspaceIDs: deletedWorkspaceIDs,
+            deletedSessionIDs: deletedSessionIDs
+        )
+    }
+}
+
+private func serverWorkspace(from workspace: Workspace) -> ServerWorkspace {
+    ServerWorkspace(
+        id: workspace.id.uuidString,
+        name: workspace.name,
+        folderPath: workspace.folderURL.path,
+        isArchived: workspace.isArchived,
+        symbolName: workspace.symbolName,
+        origin: workspace.origin,
+        createdAt: serverDateString(from: workspace.createdAt)
+    )
+}
+
+private func serverSession(from session: ChatSession) -> ServerSession {
+    ServerSession(
+        id: session.id.uuidString,
+        workspaceId: session.workspaceId.uuidString,
+        serverId: "local",
+        harnessId: session.harnessId,
+        agentSessionId: session.agentSessionId,
+        title: session.title,
+        origin: session.origin,
+        isArchived: session.isArchived,
+        createdAt: serverDateString(from: session.createdAt),
+        updatedAt: session.updatedAt.map(serverDateString),
+        usage: nil
+    )
+}
+
+private func serverDateString(from date: Date) -> String {
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    return formatter.string(from: date)
 }

@@ -334,11 +334,12 @@ describe("@herdman/server", () => {
     expect((await jsonRequest(server, "/v1/missing")).status).toBe(404)
 
     const workspaceResponse = await jsonRequest(server, "/v1/workspaces", {
-      body: JSON.stringify({ folderPath: "/tmp/herdman" }),
+      body: JSON.stringify({ folderPath: "/tmp/herdman", id: "workspace-client-id" }),
       method: "POST"
     })
     expect(workspaceResponse.status).toBe(201)
     const workspace = workspaceResponse.body as { readonly id: string }
+    expect(workspace.id).toBe("workspace-client-id")
     expect((await jsonRequest(server, "/v1/workspaces")).body).toMatchObject([{ id: workspace.id }])
     expect(
       (
@@ -440,6 +441,9 @@ describe("@herdman/server", () => {
     expect(
       (await jsonRequest(server, `/v1/sessions/${session.id}`, { method: "DELETE" })).status
     ).toBe(204)
+    expect(
+      (await jsonRequest(server, `/v1/workspaces/${workspace.id}`, { method: "DELETE" })).status
+    ).toBe(204)
 
     expect(await readSseEvents(server, 1)).toEqual([
       expect.objectContaining({ kind: "workspace.created" })
@@ -447,16 +451,17 @@ describe("@herdman/server", () => {
     expect(await readSseEvents(server, 1, "not-a-number")).toEqual([
       expect.objectContaining({ kind: "workspace.created" })
     ])
-    const events = await readSseEvents(server, 10, 0)
+    const events = await readSseEvents(server, 11, 0)
     expect(events).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ kind: "workspace.created" }),
+        expect.objectContaining({ kind: "workspace.deleted" }),
         expect.objectContaining({ kind: "session.created" }),
         expect.objectContaining({ kind: "session.deleted" })
       ])
     )
 
-    const liveEvent = readSseEvents(server, 1, 10)
+    const liveEvent = readSseEvents(server, 1, 11)
     await jsonRequest(server, "/v1/workspaces", {
       body: JSON.stringify({ folderPath: "/tmp/live" }),
       method: "POST"

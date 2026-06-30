@@ -12,14 +12,18 @@ public final class WorkspaceListModel {
 
     private let workspaceRepository: any WorkspaceRepository
     private let sessionRepository: any SessionRepository
+    private let serverClient: (any HerdManServerClienting)?
 
     public init(
         workspaceRepository: any WorkspaceRepository,
-        sessionRepository: any SessionRepository
+        sessionRepository: any SessionRepository,
+        serverClient: (any HerdManServerClienting)? = nil
     ) {
         self.workspaceRepository = workspaceRepository
         self.sessionRepository = sessionRepository
+        self.serverClient = serverClient
         load()
+        refreshFromServerIfConfigured()
     }
 
     public func load() {
@@ -51,11 +55,13 @@ public final class WorkspaceListModel {
         if let index = workspaces.firstIndex(where: { $0.folderURL == folderURL }) {
             workspaces[index].isArchived = false
             persistWorkspaces()
+            syncWorkspace(workspaces[index])
             return workspaces[index]
         }
         let workspace = Workspace.fromFolder(folderURL)
         workspaces.append(workspace)
         persistWorkspaces()
+        syncWorkspace(workspace)
         return workspace
     }
 
@@ -72,13 +78,16 @@ public final class WorkspaceListModel {
         guard let index = workspaces.firstIndex(where: { $0.id == workspace.id }) else { return }
         workspaces[index].symbolName = symbolName
         persistWorkspaces()
+        syncWorkspace(workspaces[index])
     }
 
     public func removeWorkspace(_ workspace: Workspace) {
+        let removedSessionIDs = sessions.filter { $0.workspaceId == workspace.id }.map(\.id)
         workspaces.removeAll { $0.id == workspace.id }
         sessions.removeAll { $0.workspaceId == workspace.id }
         persistWorkspaces()
         persistSessions()
+        deleteWorkspaceFromServer(workspace.id, removedSessionIDs: removedSessionIDs)
     }
 
     /// Active sessions belonging to a workspace, newest first. Imported sessions
@@ -103,6 +112,7 @@ public final class WorkspaceListModel {
         guard let index = sessions.firstIndex(where: { $0.id == session.id }) else { return }
         sessions[index].isArchived = true
         persistSessions()
+        syncSession(sessions[index])
     }
 
     @discardableResult
@@ -110,6 +120,7 @@ public final class WorkspaceListModel {
         let session = ChatSession(workspaceId: workspace.id, harnessId: harnessId ?? "", title: title, origin: .herdman)
         sessions.append(session)
         persistSessions()
+        syncSession(session)
         return session
     }
 
@@ -118,6 +129,7 @@ public final class WorkspaceListModel {
         guard let index = sessions.firstIndex(where: { $0.id == sessionId }) else { return }
         sessions[index].agentSessionId = agentSessionId
         persistSessions()
+        syncSession(sessions[index])
     }
 
     /// Imports sessions discovered from harnesses, creating workspaces by cwd and
@@ -142,25 +154,31 @@ public final class WorkspaceListModel {
         }
         persistWorkspaces()
         persistSessions()
+        syncAllToServer()
     }
 
     public func renameSession(_ session: ChatSession, to title: String) {
         guard let index = sessions.firstIndex(where: { $0.id == session.id }) else { return }
         sessions[index].title = title
         persistSessions()
+        syncSession(sessions[index])
     }
 
     public func deleteSession(_ session: ChatSession) {
         sessions.removeAll { $0.id == session.id }
         persistSessions()
+        deleteSessionFromServer(session.id)
     }
 
     /// Removes all workspaces and sessions (used by "Delete all data").
     public func removeAll() {
+        let workspaceIDs = workspaces.map(\.id)
+        let sessionIDs = sessions.map(\.id)
         workspaces = []
         sessions = []
         persistWorkspaces()
         persistSessions()
+        deleteAllFromServer(workspaceIDs: workspaceIDs, sessionIDs: sessionIDs)
     }
 
     // MARK: - Private
@@ -180,6 +198,7 @@ public final class WorkspaceListModel {
         guard let index = workspaces.firstIndex(where: { $0.id == workspace.id }) else { return }
         workspaces[index].isArchived = archived
         persistWorkspaces()
+        syncWorkspace(workspaces[index])
     }
 
     private func persistWorkspaces() {
@@ -188,5 +207,103 @@ public final class WorkspaceListModel {
 
     private func persistSessions() {
         sessionRepository.save(sessions)
+    }
+
+    private func refreshFromServerIfConfigured() {
+        guard serverClient != nil else { return }
+        Task { await refreshFromServer() }
+    }
+
+    private func refreshFromServer() async {
+        guard let serverClient else { return }
+        do {
+            let serverWorkspaces = try await serverClient.listWorkspaces()
+            let serverSessions = try await serverClient.listSessions()
+            workspaces = mergeWorkspaces(
+                local: workspaces,
+                remote: serverWorkspaces.compactMap { try? $0.workspace() }
+            )
+            sessions = mergeSessions(
+                local: sessions,
+                remote: serverSessions.compactMap { try? $0.chatSession() }
+            )
+            persistWorkspaces()
+            persistSessions()
+        } catch {
+            // The local file cache remains authoritative until the server is reachable.
+        }
+    }
+
+    private func mergeWorkspaces(local: [Workspace], remote: [Workspace]) -> [Workspace] {
+        var merged = Dictionary(uniqueKeysWithValues: local.map { ($0.id, $0) })
+        for workspace in remote {
+            merged[workspace.id] = workspace
+        }
+        return merged.values.sorted { $0.createdAt > $1.createdAt }
+    }
+
+    private func mergeSessions(local: [ChatSession], remote: [ChatSession]) -> [ChatSession] {
+        var merged = Dictionary(uniqueKeysWithValues: local.map { ($0.id, $0) })
+        for session in remote {
+            merged[session.id] = session
+        }
+        return merged.values.sorted { ($0.updatedAt ?? $0.createdAt) > ($1.updatedAt ?? $1.createdAt) }
+    }
+
+    private func syncWorkspace(_ workspace: Workspace) {
+        guard let serverClient else { return }
+        Task { _ = try? await serverClient.upsertWorkspace(workspace) }
+    }
+
+    private func syncSession(_ session: ChatSession) {
+        guard let serverClient, !session.harnessId.isEmpty else { return }
+        let workspace = workspaces.first { $0.id == session.workspaceId }
+        Task {
+            if let workspace {
+                _ = try? await serverClient.upsertWorkspace(workspace)
+            }
+            _ = try? await serverClient.upsertSession(session)
+        }
+    }
+
+    private func syncAllToServer() {
+        guard let serverClient else { return }
+        let currentWorkspaces = workspaces
+        let currentSessions = sessions.filter { !$0.harnessId.isEmpty }
+        Task {
+            for workspace in currentWorkspaces {
+                _ = try? await serverClient.upsertWorkspace(workspace)
+            }
+            for session in currentSessions {
+                _ = try? await serverClient.upsertSession(session)
+            }
+        }
+    }
+
+    private func deleteSessionFromServer(_ sessionID: UUID) {
+        guard let serverClient else { return }
+        Task { try? await serverClient.deleteSession(id: sessionID) }
+    }
+
+    private func deleteWorkspaceFromServer(_ workspaceID: UUID, removedSessionIDs: [UUID]) {
+        guard let serverClient else { return }
+        Task {
+            for sessionID in removedSessionIDs {
+                try? await serverClient.deleteSession(id: sessionID)
+            }
+            try? await serverClient.deleteWorkspace(id: workspaceID)
+        }
+    }
+
+    private func deleteAllFromServer(workspaceIDs: [UUID], sessionIDs: [UUID]) {
+        guard let serverClient else { return }
+        Task {
+            for sessionID in sessionIDs {
+                try? await serverClient.deleteSession(id: sessionID)
+            }
+            for workspaceID in workspaceIDs {
+                try? await serverClient.deleteWorkspace(id: workspaceID)
+            }
+        }
     }
 }

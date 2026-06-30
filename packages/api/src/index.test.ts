@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest"
 import {
+  CreateSessionRequest,
+  CreateWorkspaceRequest,
   EventEnvelope,
   TerminalClientFrame,
   Workspace,
@@ -30,6 +32,43 @@ describe("@herdman/api", () => {
       symbolName: "folder",
       origin: "herdman",
       createdAt: "2026-06-30T00:00:00.000Z"
+    })
+  })
+
+  it("accepts client-provided creation metadata", () => {
+    expect(
+      decode(CreateWorkspaceRequest)({
+        id: "workspace-1",
+        folderPath: "/Users/me/src/HerdMan",
+        name: "HerdMan",
+        isArchived: true,
+        symbolName: "archivebox",
+        origin: "imported",
+        createdAt: "2026-06-30T00:00:00.000Z"
+      })
+    ).toMatchObject({
+      id: "workspace-1",
+      isArchived: true,
+      origin: "imported",
+      symbolName: "archivebox"
+    })
+
+    expect(
+      decode(CreateSessionRequest)({
+        id: "session-1",
+        workspaceId: "workspace-1",
+        harnessId: "codex",
+        agentSessionId: "agent-1",
+        title: "Synced",
+        origin: "herdman",
+        isArchived: false,
+        createdAt: "2026-06-30T00:00:00.000Z",
+        updatedAt: "2026-06-30T00:01:00.000Z"
+      })
+    ).toMatchObject({
+      agentSessionId: "agent-1",
+      id: "session-1",
+      title: "Synced"
     })
   })
 

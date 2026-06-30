@@ -282,6 +282,15 @@ const routeWorkspaces = async (
     return true
   }
 
+  if (workspaceId !== undefined && request.method === "DELETE") {
+    await run(services.db.deleteWorkspace(workspaceId))
+    await appendAndPublish(services.db, fanout, "workspace.deleted", workspaceId, {
+      id: workspaceId
+    })
+    writeJson(response, 204, undefined)
+    return true
+  }
+
   return false
 }
 

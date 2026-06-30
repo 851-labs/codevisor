@@ -35,9 +35,29 @@ describe("@herdman/db", () => {
       db.createWorkspace({ folderPath: "/tmp/named", name: "Named Workspace" })
     )
     const emptyWorkspace = await run(db.createWorkspace({ folderPath: "" }))
+    const clientWorkspace = await run(
+      db.createWorkspace({
+        id: "workspace-client-id",
+        folderPath: "/tmp/client",
+        name: "Client Workspace",
+        isArchived: true,
+        symbolName: "externaldrive",
+        origin: "imported",
+        createdAt: "2026-06-30T00:00:00.000Z"
+      })
+    )
     expect(firstWorkspace.name).toBe("herdman")
     expect(secondWorkspace.name).toBe("Named Workspace")
     expect(emptyWorkspace.name).toBe("")
+    expect(clientWorkspace).toEqual({
+      id: "workspace-client-id",
+      name: "Client Workspace",
+      folderPath: "/tmp/client",
+      isArchived: true,
+      symbolName: "externaldrive",
+      origin: "imported",
+      createdAt: "2026-06-30T00:00:00.000Z"
+    })
 
     const updatedWorkspace = await run(
       db.updateWorkspace(firstWorkspace.id, {
@@ -74,11 +94,38 @@ describe("@herdman/db", () => {
         title: "Explicit title"
       })
     )
+    const clientSession = await run(
+      db.createSession({
+        id: "session-client-id",
+        workspaceId: clientWorkspace.id,
+        harnessId: "codex",
+        agentSessionId: "agent-client-id",
+        title: "Client Session",
+        origin: "imported",
+        isArchived: true,
+        createdAt: "2026-06-30T00:00:00.000Z",
+        updatedAt: "2026-06-30T00:01:00.000Z"
+      })
+    )
     expect(firstSession.title).toBe("New Session")
     expect(firstSession.agentSessionId).toBe("agent-1")
     expect(secondSession.title).toBe("Explicit title")
+    expect(clientSession).toMatchObject({
+      agentSessionId: "agent-client-id",
+      id: "session-client-id",
+      isArchived: true,
+      origin: "imported",
+      title: "Client Session",
+      updatedAt: "2026-06-30T00:01:00.000Z"
+    })
     expect(await run(db.updateSession(secondSession.id, {}))).toMatchObject({
       isArchived: false,
+      title: "Explicit title"
+    })
+    expect(
+      await run(db.updateSession(secondSession.id, { agentSessionId: "agent-2" }))
+    ).toMatchObject({
+      agentSessionId: "agent-2",
       title: "Explicit title"
     })
 
@@ -133,6 +180,9 @@ describe("@herdman/db", () => {
     await expect(run(db.archiveSession("missing"))).rejects.toBeInstanceOf(DatabaseError)
     await run(db.deleteSession(secondSession.id))
     await expect(run(db.getSessionDetail(secondSession.id))).rejects.toBeInstanceOf(DatabaseError)
+    await run(db.deleteWorkspace(clientWorkspace.id))
+    await expect(run(db.getSessionDetail(clientSession.id))).rejects.toBeInstanceOf(DatabaseError)
+    await expect(run(db.deleteWorkspace("missing"))).rejects.toBeInstanceOf(DatabaseError)
 
     await Effect.runPromise(db.close)
   })
