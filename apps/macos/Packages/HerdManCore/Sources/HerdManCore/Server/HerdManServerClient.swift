@@ -12,6 +12,7 @@ public enum HerdManServerClientError: Error, Equatable, Sendable {
 public protocol HerdManServerClienting: Sendable {
     func health() async throws -> ServerHealth
     func listHarnesses() async throws -> [ServerHarness]
+    func setHarnessEnabled(id: String, enabled: Bool) async throws -> ServerHarness
     func listWorkspaces() async throws -> [ServerWorkspace]
     func upsertWorkspace(_ workspace: Workspace) async throws -> ServerWorkspace
     func updateWorkspace(_ workspace: Workspace) async throws -> ServerWorkspace
@@ -179,6 +180,14 @@ public final class HerdManServerClient: HerdManServerClienting, @unchecked Senda
 
     public func listHarnesses() async throws -> [ServerHarness] {
         try await get("/v1/harnesses")
+    }
+
+    public func setHarnessEnabled(id: String, enabled: Bool) async throws -> ServerHarness {
+        try await send(
+            "/v1/harnesses/\(id)",
+            method: "PATCH",
+            body: UpdateHarnessBody(enabled: enabled)
+        )
     }
 
     public func listWorkspaces() async throws -> [ServerWorkspace] {
@@ -423,6 +432,10 @@ private struct SetModeBody: Encodable {
 private struct SetConfigBody: Encodable {
     var configId: String
     var value: String
+}
+
+private struct UpdateHarnessBody: Encodable {
+    var enabled: Bool
 }
 
 private struct CreateWorkspaceBody: Encodable {

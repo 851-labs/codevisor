@@ -93,6 +93,7 @@ private final class FakeLocalServerClient: HerdManServerClienting, @unchecked Se
     }
 
     func listHarnesses() async throws -> [ServerHarness] { [] }
+    func setHarnessEnabled(id: String, enabled: Bool) async throws -> ServerHarness { fatalError("unused") }
     func listWorkspaces() async throws -> [ServerWorkspace] { [] }
     func upsertWorkspace(_ workspace: Workspace) async throws -> ServerWorkspace { fatalError("unused") }
     func updateWorkspace(_ workspace: Workspace) async throws -> ServerWorkspace { fatalError("unused") }
