@@ -397,7 +397,7 @@ const routeSessionActions = async (
   const promptSessionId = matchRoute(url.pathname, "/v1/sessions/:id/prompt")
   if (promptSessionId !== undefined && request.method === "POST") {
     const payload = await readSchema(request, PromptRequest)
-    const agentSessionId = await agentSessionIdFor(services.db, promptSessionId)
+    const agentSessionId = await ensureAgentSessionFor(services, promptSessionId)
     await run(services.db.appendConversationItem(promptSessionId, "user", payload.text, false))
     const result = await run(services.acp.prompt(agentSessionId, payload.text))
     for (const event of result.events) {
@@ -409,7 +409,7 @@ const routeSessionActions = async (
 
   const cancelSessionId = matchRoute(url.pathname, "/v1/sessions/:id/cancel")
   if (cancelSessionId !== undefined && request.method === "POST") {
-    const agentSessionId = await agentSessionIdFor(services.db, cancelSessionId)
+    const agentSessionId = await ensureAgentSessionFor(services, cancelSessionId)
     await materializeRuntimeEvent(
       services.db,
       fanout,
@@ -424,7 +424,7 @@ const routeSessionActions = async (
   const modeSessionId = matchRoute(url.pathname, "/v1/sessions/:id/mode")
   if (modeSessionId !== undefined && request.method === "POST") {
     const payload = await readSchema(request, SetModeRequest)
-    const agentSessionId = await agentSessionIdFor(services.db, modeSessionId)
+    const agentSessionId = await ensureAgentSessionFor(services, modeSessionId)
     await materializeRuntimeEvent(
       services.db,
       fanout,
@@ -439,7 +439,7 @@ const routeSessionActions = async (
   const configSessionId = matchRoute(url.pathname, "/v1/sessions/:id/config")
   if (configSessionId !== undefined && request.method === "POST") {
     const payload = await readSchema(request, SetConfigRequest)
-    const agentSessionId = await agentSessionIdFor(services.db, configSessionId)
+    const agentSessionId = await ensureAgentSessionFor(services, configSessionId)
     await materializeRuntimeEvent(
       services.db,
       fanout,
@@ -581,15 +581,16 @@ const getWorkspaceOrFail = async (
   return workspace
 }
 
-const agentSessionIdFor = async (
-  db: HerdManDatabaseService,
+const ensureAgentSessionFor = async (
+  services: HerdManServerServices,
   sessionId: string
 ): Promise<string> => {
-  const agentSessionId = (await run(db.getSessionDetail(sessionId))).session.agentSessionId
-  if (agentSessionId !== undefined) {
-    return agentSessionId
-  }
-  return sessionId
+  const detail = await run(services.db.getSessionDetail(sessionId))
+  const workspace = await getWorkspaceOrFail(services.db, detail.session.workspaceId)
+  const agentSessionId = detail.session.agentSessionId ?? sessionId
+  return run(
+    services.acp.loadAgentSession(detail.session.harnessId, agentSessionId, workspace.folderPath)
+  )
 }
 
 const materializeRuntimeEvent = async (

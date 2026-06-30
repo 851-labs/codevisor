@@ -38,16 +38,19 @@ const harnesses: ReadonlyArray<Harness> = [
 ]
 
 const makeAcp = (): AcpRuntimeService & {
+  readonly loads: Array<readonly [string, string, string]>
   readonly prompts: Array<readonly [string, string]>
   readonly cancellations: Array<string>
   readonly modes: Array<readonly [string, string]>
   readonly configs: Array<readonly [string, string, string]>
 } => {
+  const loads: Array<readonly [string, string, string]> = []
   const prompts: Array<readonly [string, string]> = []
   const cancellations: Array<string> = []
   const modes: Array<readonly [string, string]> = []
   const configs: Array<readonly [string, string, string]> = []
   return {
+    loads,
     prompts,
     cancellations,
     modes,
@@ -55,7 +58,11 @@ const makeAcp = (): AcpRuntimeService & {
     discoverHarnesses: Effect.succeed(harnesses),
     createAgentSession: (harnessId, cwd) =>
       Effect.succeed(`agent-${harnessId}-${cwd.split("/").at(-1) ?? "root"}`),
-    loadAgentSession: (_harnessId, agentSessionId) => Effect.succeed(agentSessionId),
+    loadAgentSession: (harnessId, agentSessionId, cwd) =>
+      Effect.sync(() => {
+        loads.push([harnessId, agentSessionId, cwd])
+        return agentSessionId
+      }),
     prompt: (sessionId, text) =>
       Effect.sync(() => {
         prompts.push([sessionId, text])
@@ -428,6 +435,7 @@ describe("@herdman/server", () => {
       ).body
     ).toEqual({ stopReason: "end_turn" })
     expect(acp.prompts).toEqual([[session.agentSessionId, "hello"]])
+    expect(acp.loads).toContainEqual(["codex", session.agentSessionId, "/tmp/herdman"])
     expect(
       (
         await jsonRequest(server, `/v1/sessions/${session.id}/cancel`, {
@@ -522,6 +530,7 @@ describe("@herdman/server", () => {
       ).body
     ).toEqual({ stopReason: "end_turn" })
     expect(acp.prompts).toContainEqual([legacySession.id, "legacy hello"])
+    expect(acp.loads).toContainEqual(["codex", legacySession.id, "/tmp/legacy-agent-session"])
   })
 
   it("bridges terminal create and websocket traffic", async () => {
