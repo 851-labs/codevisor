@@ -21,6 +21,14 @@ public final class SessionModel {
     private let sessionId: String
     private let now: @Sendable () -> Date
 
+    /// A single long-lived consumer of the session's update stream. ACP delivers
+    /// `session/update` notifications continuously, and the per-session
+    /// `AsyncStream` only supports one iteration — so we must NOT start a fresh
+    /// `for await` per prompt (that breaks every follow-up). One consumer runs
+    /// for the model's lifetime and routes updates to history vs live handling.
+    private var consumerTask: Task<Void, Never>?
+    private var isLoadingHistory = false
+
     public init(
         client: any ACPClientProtocol,
         sessionId: String,
@@ -33,6 +41,25 @@ public final class SessionModel {
         self.modeState = modeState
         self.configOptions = configOptions
         self.now = now
+    }
+
+    /// Starts the single long-lived update consumer (idempotent). The update
+    /// stream is obtained here (before the loop) so the consumer begins applying
+    /// immediately — `drain()` must not declare the buffer empty before the
+    /// consumer has started. Routes each update to history vs live handling.
+    private func startConsumer() async {
+        guard consumerTask == nil else { return }
+        let updates = await client.updates(for: sessionId)
+        consumerTask = Task { @MainActor [weak self] in
+            for await update in updates {
+                guard let self else { break }
+                if self.isLoadingHistory {
+                    self.applyHistory(update)
+                } else {
+                    self.apply(update)
+                }
+            }
+        }
     }
 
     /// Config options of a given category (e.g. model, thought_level, mode).
@@ -70,12 +97,9 @@ public final class SessionModel {
         )))
         isSending = true
 
-        let updates = await client.updates(for: sessionId)
-        let consumer = Task { @MainActor [weak self] in
-            for await update in updates {
-                self?.apply(update)
-            }
-        }
+        // Updates are consumed by the long-lived consumer (started here if it
+        // isn't already), so every prompt — first and follow-ups — streams.
+        await startConsumer()
 
         do {
             let response = try await client.prompt(PromptRequest(sessionId: sessionId, prompt: [.text(trimmed)]))
@@ -86,7 +110,6 @@ public final class SessionModel {
             errorMessage = String(describing: error)
             finish(stopReason: nil)
         }
-        consumer.cancel()
         isSending = false
     }
 
@@ -113,15 +136,13 @@ public final class SessionModel {
     /// `session/update`s after `session/load`) and rebuilds the conversation,
     /// splitting it into user messages and assistant turns.
     public func loadHistory() async {
-        let updates = await client.updates(for: sessionId)
-        let consumer = Task { @MainActor [weak self] in
-            for await update in updates {
-                self?.applyHistory(update)
-            }
-        }
+        // Reconstruct the replayed history through the shared consumer, then
+        // switch it back to live application for subsequent prompts.
+        isLoadingHistory = true
+        await startConsumer()
         await drain()
         flushLoadingUser()
-        consumer.cancel()
+        isLoadingHistory = false
     }
 
     private func applyHistory(_ update: SessionUpdate) {

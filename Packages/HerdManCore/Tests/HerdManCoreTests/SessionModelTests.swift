@@ -32,6 +32,24 @@ struct SessionModelTests {
         #expect(model.isSending == false)
     }
 
+    @Test("Follow-up messages stream too (single long-lived consumer)")
+    func followUpStreams() async {
+        let client = FakeACPClient()
+        client.scriptedUpdates = [.agentMessageChunk(.text("reply"))]
+        let model = makeModel(client)
+
+        await model.send("first")
+        await model.send("second")
+
+        #expect(model.conversation.count == 4)
+        guard case let .assistant(first) = model.conversation[1] else { Issue.record("a1"); return }
+        guard case let .assistant(second) = model.conversation[3] else { Issue.record("a2"); return }
+        #expect(first.turn.finalText == .text(id: "t0", markdown: "reply"))
+        // The follow-up turn must also receive its streamed content.
+        #expect(second.turn.finalText == .text(id: "t0", markdown: "reply"))
+        #expect(second.turn.isGenerating == false)
+    }
+
     @Test("usage_update is captured as session cost + tokens")
     func usageCaptured() async {
         let client = FakeACPClient()
