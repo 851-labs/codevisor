@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "references": [
+    {
+      "url": "https://github.com/agentclientprotocol/agent-client-protocol"
+    },
+    {
+      "url": "https://github.com/agentclientprotocol/claude-agent-acp"
+    },
+    {
+      "url": "https://github.com/agentclientprotocol/codex-acp"
+    },
+    {
+      "url": "https://github.com/ghostty-org/ghostty"
+    },
+    {
+      "url": "https://github.com/agentclientprotocol/rust-sdk"
+    },
+    {
+      "url": "https://github.com/vercel/streamdown"
+    },
+    {
+      "url": "https://github.com/agentclientprotocol/typescript-sdk"
+    }
+  ]
+}
