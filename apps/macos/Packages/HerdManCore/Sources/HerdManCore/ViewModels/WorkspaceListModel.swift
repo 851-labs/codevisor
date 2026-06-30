@@ -214,7 +214,7 @@ public final class WorkspaceListModel {
         Task { await refreshFromServer() }
     }
 
-    private func refreshFromServer() async {
+    public func refreshFromServer() async {
         guard let serverClient else { return }
         do {
             let serverWorkspaces = try await serverClient.listWorkspaces()

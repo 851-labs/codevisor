@@ -15,6 +15,7 @@ public final class AppEnvironment {
     public let settings: AppSettingsModel
     public let sessionImporter: SessionImporter
     public let serverClient: (any HerdManServerClienting)?
+    public let localServer: LocalHerdManServer?
 
     public init(
         workspaceRepository: any WorkspaceRepository,
@@ -22,7 +23,8 @@ public final class AppEnvironment {
         agentService: any AgentServicing,
         configCache: ConfigOptionCache,
         settings: AppSettingsModel,
-        serverClient: (any HerdManServerClienting)? = nil
+        serverClient: (any HerdManServerClienting)? = nil,
+        localServer: LocalHerdManServer? = nil
     ) {
         self.workspaceList = WorkspaceListModel(
             workspaceRepository: workspaceRepository,
@@ -33,6 +35,7 @@ public final class AppEnvironment {
         self.configCache = configCache
         self.settings = settings
         self.serverClient = serverClient
+        self.localServer = localServer
         self.sessionImporter = SessionImporter(agentService: agentService)
         workspaceList.showsImportedSessions = settings.importExternalSessions
     }
@@ -42,6 +45,15 @@ public final class AppEnvironment {
         let imported = await sessionImporter.fetchAll()
         workspaceList.importSessions(imported)
         workspaceList.showsImportedSessions = settings.importExternalSessions
+    }
+
+    /// Starts the bundled/development local server when needed, then refreshes
+    /// cached server state. Best-effort: local persistence stays usable if the
+    /// server binary is missing or cannot start.
+    public func prepareLocalServer() async {
+        guard let localServer else { return }
+        _ = await localServer.ensureRunning()
+        await workspaceList.refreshFromServer()
     }
 
     /// Deletes all HerdMan data (workspaces, sessions, cached config, settings)
@@ -83,7 +95,8 @@ public final class AppEnvironment {
             agentService: ServerAgentService(client: serverClient),
             configCache: ConfigOptionCache(store: store),
             settings: AppSettingsModel(store: store),
-            serverClient: serverClient
+            serverClient: serverClient,
+            localServer: LocalHerdManServer(client: serverClient)
         )
     }
 

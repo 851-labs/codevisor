@@ -55,6 +55,7 @@ struct RootView: View {
             // Warm the harness config cache in the background so the composer
             // pickers are populated instantly.
             if !AppPreview.isRunning {
+                await environment.prepareLocalServer()
                 Task {
                     await ConfigPrefetcher(
                         agentService: environment.agentService,
