@@ -11,6 +11,7 @@
 import AppKit
 import Foundation
 import GhosttyKit
+import HerdManCore
 
 /// Holds the global `ghostty_app_t` outside `GhosttyRuntime.shared` so the
 /// `wakeup` callback can reach it WITHOUT touching the `shared` `static let`
@@ -81,7 +82,9 @@ final class GhosttyRuntime {
               let support = try? fm.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
         else { return nil }
 
-        let base = support.appendingPathComponent("HerdMan/ghostty-resources", isDirectory: true)
+        let base = support
+            .appendingPathComponent(HerdManAppVariant.applicationSupportDirectoryName, isDirectory: true)
+            .appendingPathComponent("ghostty-resources", isDirectory: true)
         let ghosttyDir = base.appendingPathComponent("ghostty", isDirectory: true)
         do {
             try fm.createDirectory(at: base, withIntermediateDirectories: true)

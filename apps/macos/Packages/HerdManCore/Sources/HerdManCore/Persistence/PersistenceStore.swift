@@ -16,7 +16,7 @@ public final class FileSystemStore: PersistenceStore, @unchecked Sendable {
     public init(
         directory: URL? = nil,
         fileManager: FileManager = .default,
-        appFolderName: String = "HerdMan"
+        appFolderName: String = HerdManAppVariant.applicationSupportDirectoryName
     ) {
         self.fileManager = fileManager
         if let directory {

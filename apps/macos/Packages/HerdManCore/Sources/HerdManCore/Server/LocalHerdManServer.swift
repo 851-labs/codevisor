@@ -195,16 +195,6 @@ public final class LocalHerdManServer {
     }
 
     private static func applicationSupportURL() -> URL {
-        let fileManager = FileManager.default
-        let base = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-            ?? fileManager.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support")
-        #if DEBUG
-        let appDirectoryName = "HerdMan Development"
-        #else
-        let appDirectoryName = "HerdMan"
-        #endif
-        let directory = base.appendingPathComponent(appDirectoryName, isDirectory: true)
-        try? fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
-        return directory
+        HerdManAppVariant.applicationSupportURL()
     }
 }

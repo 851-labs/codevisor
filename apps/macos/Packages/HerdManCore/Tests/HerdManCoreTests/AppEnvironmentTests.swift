@@ -7,6 +7,19 @@ import ACPAgents
 @MainActor
 @Suite("AppEnvironment and AgentService")
 struct AppEnvironmentTests {
+    @Test("Debug builds use isolated development defaults")
+    func debugVariantDefaults() {
+        #if DEBUG
+        #expect(HerdManAppVariant.isDevelopment)
+        #expect(HerdManAppVariant.localServerPort == HerdManAppVariant.developmentPort)
+        #expect(HerdManAppVariant.applicationSupportDirectoryName == "HerdMan Development")
+        #else
+        #expect(!HerdManAppVariant.isDevelopment)
+        #expect(HerdManAppVariant.localServerPort == HerdManAppVariant.productionPort)
+        #expect(HerdManAppVariant.applicationSupportDirectoryName == "HerdMan")
+        #endif
+    }
+
     @Test("Preview environment seeds sample workspaces")
     func previewSeed() {
         let environment = AppEnvironment.preview()

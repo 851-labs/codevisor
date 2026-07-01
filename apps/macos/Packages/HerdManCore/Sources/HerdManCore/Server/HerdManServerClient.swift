@@ -53,15 +53,11 @@ public extension HerdManServerClienting {
 }
 
 public struct HerdManServerConfig: Equatable, Sendable {
-    public static let productionPort = 49_361
-    public static let developmentPort = 49_362
+    public static let productionPort = HerdManAppVariant.productionPort
+    public static let developmentPort = HerdManAppVariant.developmentPort
 
     public static var localPort: Int {
-        #if DEBUG
-        developmentPort
-        #else
-        productionPort
-        #endif
+        HerdManAppVariant.localServerPort
     }
 
     public var baseURL: URL
