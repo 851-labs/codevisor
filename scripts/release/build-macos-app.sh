@@ -140,11 +140,12 @@ xcode_args=(
 ghostty_framework="$repo_root/apps/macos/Frameworks/GhosttyKit.xcframework"
 ghostty_library=""
 while IFS= read -r candidate; do
+  lipo -info "$candidate" || true
   if lipo -verify_arch arm64 x86_64 "$candidate" >/dev/null 2>&1; then
     ghostty_library="$candidate"
     break
   fi
-done < <(find "$ghostty_framework" -name "libghostty-internal-fat.a" -type f -print 2>/dev/null | sort)
+done < <(find "$ghostty_framework" -name "*.a" -type f -print 2>/dev/null | sort)
 ghostty_slice_dir="$(dirname "$ghostty_library")"
 ghostty_headers="$ghostty_slice_dir/Headers/ghostty.h"
 ghostty_resources="$repo_root/apps/macos/HerdMan/Resources/ghostty-resources.tar.gz"
