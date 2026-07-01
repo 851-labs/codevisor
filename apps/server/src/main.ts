@@ -69,6 +69,11 @@ const main = Effect.gen(function* () {
       auth: {
         allowLocalhostWithoutAuth: authMode === "token" && host === "127.0.0.1",
         requireBearerToken: authMode === "token"
+      },
+      onShutdownRequested: () => {
+        console.log("HerdMan server shutting down (requested by client)")
+        // Let the 202 response flush before the process exits.
+        setTimeout(() => process.exit(0), 250)
       }
     })
   )

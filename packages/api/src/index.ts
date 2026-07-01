@@ -338,6 +338,7 @@ export const endpoints = [
   "GET /v1/health",
   "GET /v1/info",
   "GET /v1/update",
+  "POST /v1/shutdown",
   "GET /v1/capabilities",
   "POST /v1/auth/pairing-token",
   "GET /v1/workspaces",

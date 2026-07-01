@@ -92,6 +92,22 @@ public final class LocalHerdManServer {
         }
     }
 
+    /// Stops the running local server so a newer bundled runtime can take over
+    /// on the next launch. Asks politely over HTTP first (the server may not be
+    /// a process we own), then force-terminates any owned process that lingers.
+    public func shutdown() async {
+        try? await client.requestShutdown()
+        for _ in 0..<20 {
+            if !(await isHealthy()) { break }
+            try? await Task.sleep(for: .milliseconds(150))
+        }
+        if let process, process.isRunning {
+            process.terminate()
+        }
+        process = nil
+        state = .idle
+    }
+
     private var host: String {
         config.baseURL.host ?? "127.0.0.1"
     }

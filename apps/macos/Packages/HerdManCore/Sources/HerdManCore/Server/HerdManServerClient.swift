@@ -33,11 +33,16 @@ public protocol HerdManServerClienting: Sendable {
     func cancelSession(id: UUID) async throws
     func setSessionMode(id: UUID, modeId: String) async throws
     func setSessionConfig(id: UUID, configId: String, value: String) async throws
+    func requestShutdown() async throws
     func eventStream(since: Int) -> AsyncThrowingStream<ServerEventEnvelope, any Error>
 }
 
 public extension HerdManServerClienting {
     func promptQueue(id: UUID) async throws -> [ServerPromptQueueItem] { [] }
+
+    /// Default no-op so fakes and older transports keep compiling; the HTTP
+    /// client overrides this with `POST /v1/shutdown`.
+    func requestShutdown() async throws {}
 
     func updateQueuedPrompt(sessionId: UUID, queueItemId: String, text: String) async throws -> ServerPromptQueueItem {
         ServerPromptQueueItem(
@@ -413,6 +418,10 @@ public final class HerdManServerClient: HerdManServerClienting, @unchecked Senda
             method: "POST",
             body: SetConfigBody(configId: configId, value: value)
         )
+    }
+
+    public func requestShutdown() async throws {
+        try await sendNoResponse("/v1/shutdown", method: "POST")
     }
 
     public func eventStream(since: Int = 0) -> AsyncThrowingStream<ServerEventEnvelope, any Error> {

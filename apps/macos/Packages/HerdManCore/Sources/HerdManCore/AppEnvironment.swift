@@ -14,6 +14,7 @@ public final class AppEnvironment {
     public let settings: AppSettingsModel
     public let machines: MachineController
     public let localServer: LocalHerdManServer?
+    public let appUpdate: AppUpdateModel
     private let fallbackAgentService: any AgentServicing
 
     public var serverClient: any HerdManServerClienting {
@@ -35,9 +36,14 @@ public final class AppEnvironment {
         configCache: ConfigOptionCache,
         settings: AppSettingsModel,
         machineStore: any PersistenceStore = InMemoryStore(),
-        localServer: LocalHerdManServer? = nil
+        localServer: LocalHerdManServer? = nil,
+        appUpdate: AppUpdateModel? = nil
     ) {
         self.fallbackAgentService = agentService
+        self.appUpdate = appUpdate ?? AppUpdateModel(
+            currentVersion: AppUpdateModel.bundleVersion(),
+            checker: DisabledUpdateChecker()
+        )
         self.workspaceList = WorkspaceListModel(
             workspaceRepository: workspaceRepository,
             sessionRepository: sessionRepository
@@ -58,6 +64,33 @@ public final class AppEnvironment {
         let imported = await sessionImporter.fetchAll()
         workspaceList.importSessions(imported)
         workspaceList.showsImportedSessions = settings.importExternalSessions
+    }
+
+    /// A couple of project-folder suggestions based on the user's most recent
+    /// harness sessions (used by onboarding's workspace step).
+    public func recommendedWorkspaces(limit: Int = 2) async -> [WorkspaceRecommendation] {
+        WorkspaceRecommender.recommend(from: await sessionImporter.fetchAll(), limit: limit)
+    }
+
+    /// Harness sessions whose working directory is the given folder and that
+    /// aren't already tracked by HerdMan.
+    public func findImportableSessions(for folderURL: URL) async -> [ImportedSession] {
+        let folderPath = folderURL.standardizedFileURL.path
+        return await sessionImporter.fetchAll().filter { item in
+            let matchesFolder = URL(fileURLWithPath: item.info.cwd).standardizedFileURL.path == folderPath
+            let alreadyKnown = workspaceList.sessions.contains {
+                $0.harnessId == item.harnessId && $0.agentSessionId == item.info.sessionId
+            }
+            return matchesFolder && !alreadyKnown
+        }
+    }
+
+    /// Imports the given sessions into a workspace the user just added. The
+    /// import was explicitly requested, so imported sessions are made visible.
+    public func importSessions(_ imported: [ImportedSession], into workspace: Workspace) {
+        workspaceList.importSessions(imported, into: workspace)
+        settings.setImportExternalSessions(true)
+        workspaceList.showsImportedSessions = true
     }
 
     /// Starts the selected machine if it is local, then refreshes cached server
@@ -98,8 +131,24 @@ public final class AppEnvironment {
         return workspaceList.addWorkspace(folderURL: projectFolder)
     }
 
+    /// Completes onboarding for the chosen project folder: adds the workspace
+    /// and imports any existing harness sessions found in that folder, so the
+    /// user's first project starts with their recent chats already in place.
+    @discardableResult
+    public func finishOnboarding(projectFolder: URL) async -> Workspace {
+        settings.completeOnboarding(importExternalSessions: true)
+        workspaceList.showsImportedSessions = true
+        let workspace = workspaceList.addWorkspace(folderURL: projectFolder)
+        let importable = await findImportableSessions(for: projectFolder)
+        workspaceList.importSessions(importable, into: workspace)
+        return workspace
+    }
+
     /// The production environment: file-backed persistence and real agent
     /// discovery/launching.
+    /// The GitHub repository whose releases distribute the app and server.
+    public static let releaseRepository = "851-labs/herdman"
+
     public static func live() -> AppEnvironment {
         let store = FileSystemStore()
         let serverClient = HerdManServerClient(config: .localDefault)
@@ -111,7 +160,11 @@ public final class AppEnvironment {
             configCache: ConfigOptionCache(store: store),
             settings: AppSettingsModel(store: store),
             machineStore: store,
-            localServer: localServer
+            localServer: localServer,
+            appUpdate: AppUpdateModel(
+                currentVersion: AppUpdateModel.bundleVersion(),
+                checker: GitHubAppUpdateChecker(repository: releaseRepository)
+            )
         )
     }
 

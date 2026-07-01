@@ -506,6 +506,28 @@ describe("@herdman/server", () => {
     })
     expect(defaultDatabasePath()).toContain("herdman-server.sqlite")
 
+    // Shutdown is acknowledged even when the host process installed no handler.
+    expect((await jsonRequest(server, "/v1/shutdown", { method: "POST" })).status).toBe(202)
+
+    let shutdownRequests = 0
+    const stoppable = await run(
+      startHerdManServer(
+        services,
+        defaultServerConfig({
+          id: "server-stoppable",
+          onShutdownRequested: () => {
+            shutdownRequests += 1
+          },
+          port: 0
+        })
+      )
+    )
+    runningServers.push(stoppable)
+    const shutdownResponse = await jsonRequest(stoppable, "/v1/shutdown", { method: "POST" })
+    expect(shutdownResponse.status).toBe(202)
+    expect(shutdownResponse.body).toMatchObject({ ok: true })
+    expect(shutdownRequests).toBe(1)
+
     const token = await run(services.db.issuePairingToken)
     const secured = await run(
       startHerdManServer(

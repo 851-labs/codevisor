@@ -56,6 +56,9 @@ export interface HerdManServerConfig {
   readonly host: string
   readonly port: number
   readonly auth: HerdManServerAuthConfig
+  /// Invoked after `POST /v1/shutdown` is acknowledged so the host process can
+  /// exit (used by the macOS app to swap in an updated server runtime).
+  readonly onShutdownRequested?: (() => void) | undefined
 }
 
 export interface HerdManServerServices {
@@ -133,7 +136,8 @@ export const defaultServerConfig = (
   auth: overrides.auth ?? {
     allowLocalhostWithoutAuth: true,
     requireBearerToken: false
-  }
+  },
+  onShutdownRequested: overrides.onShutdownRequested
 })
 
 export const makeHerdManServerApp = (
@@ -238,6 +242,12 @@ const handleRequest = async (
 
     if (request.method === "GET" && url.pathname === "/v1/update") {
       writeJson(response, 200, await run(services.db.getUpdateInfo))
+      return
+    }
+
+    if (request.method === "POST" && url.pathname === "/v1/shutdown") {
+      writeJson(response, 202, { ok: true })
+      config.onShutdownRequested?.()
       return
     }
 
