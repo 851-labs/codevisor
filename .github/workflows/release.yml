@@ -11,14 +11,14 @@ on:
         required: false
         type: string
       macos_runner:
-        description: "Apple Silicon macOS runner label. Use an image with the Xcode SDK required by the project."
+        description: "Apple Silicon macOS runner label. Defaults to the self-hosted runner."
         required: false
-        default: "macos-26"
+        default: "MacOS-ARM64"
         type: string
       macos_intel_runner:
-        description: "Intel macOS runner label used to build x64 server runtimes."
+        description: "Intel macOS runner label used to build x64 server runtimes. Defaults to the self-hosted runner."
         required: false
-        default: "macos-26-intel"
+        default: "MacOS-x64"
         type: string
 
 permissions:
@@ -87,7 +87,7 @@ jobs:
 
   build-server-macos-x64:
     needs: metadata
-    runs-on: ${{ inputs.macos_intel_runner || vars.HERDMAN_MACOS_INTEL_RUNNER || 'macos-26-intel' }}
+    runs-on: ${{ inputs.macos_intel_runner || vars.HERDMAN_MACOS_INTEL_RUNNER || 'MacOS-x64' }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v6
@@ -117,7 +117,7 @@ jobs:
 
   build-macos:
     needs: metadata
-    runs-on: ${{ inputs.macos_runner || vars.HERDMAN_MACOS_ARM_RUNNER || vars.HERDMAN_MACOS_RUNNER || 'macos-26' }}
+    runs-on: ${{ inputs.macos_runner || vars.HERDMAN_MACOS_ARM_RUNNER || vars.HERDMAN_MACOS_RUNNER || 'MacOS-ARM64' }}
     env:
       APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
       APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
@@ -137,13 +137,29 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: ${{ env.BUN_VERSION }}
+      - name: Restore GhosttyKit cache
+        id: ghosttykit-cache
+        uses: actions/cache@v6
+        with:
+          path: apps/macos/Frameworks/GhosttyKit.xcframework
+          key: ghosttykit-${{ env.GHOSTTY_REF }}-${{ hashFiles('apps/macos/scripts/build-ghostty.sh') }}
       - name: Fetch Ghostty source
+        if: steps.ghosttykit-cache.outputs.cache-hit != 'true'
         run: apps/macos/scripts/build-ghostty.sh --fetch-only
       - uses: DeterminateSystems/nix-installer-action@main
+        if: steps.ghosttykit-cache.outputs.cache-hit != 'true'
         with:
           determinate: true
       - name: Build GhosttyKit
+        if: steps.ghosttykit-cache.outputs.cache-hit != 'true'
         run: nix develop ./references/ghostty -c apps/macos/scripts/build-ghostty.sh
+      - name: Verify GhosttyKit cache
+        shell: bash
+        run: |
+          if [[ ! -d apps/macos/Frameworks/GhosttyKit.xcframework ]]; then
+            echo "GhosttyKit.xcframework was not restored or built." >&2
+            exit 1
+          fi
       - name: Import Developer ID certificate
         if: env.APPLE_CERTIFICATE_BASE64 != ''
         shell: bash

@@ -17,6 +17,9 @@ runtime at launch so Apple Silicon and Intel Macs both use native Node addons.
 The app release script requires a universal
 `apps/macos/Frameworks/GhosttyKit.xcframework` with `arm64` and `x86_64` macOS
 slices. Missing or single-architecture GhosttyKit assets fail the release.
+The release workflow caches this xcframework by `GHOSTTY_REF` and
+`apps/macos/scripts/build-ghostty.sh`; Ghostty only rebuilds when that cache is
+cold or the Ghostty build inputs change.
 
 ## Required Repository Secret
 
@@ -49,9 +52,8 @@ git push origin v0.1.0
 You can also run the workflow manually and provide a version. Manual releases
 create or update the matching `v<version>` GitHub release for the current commit.
 
-The app build job must run on an Apple Silicon image with an Xcode SDK that can
-build the current project deployment target. Override it with the `macos_runner`
-workflow input or the `HERDMAN_MACOS_ARM_RUNNER` repository variable when needed.
-It defaults to `macos-26`. The Intel server runtime job defaults to
-`macos-26-intel` and can be overridden with `macos_intel_runner` or
-`HERDMAN_MACOS_INTEL_RUNNER`.
+The app build job defaults to the self-hosted `MacOS-ARM64` runner. Override it
+with the `macos_runner` workflow input or the `HERDMAN_MACOS_ARM_RUNNER`
+repository variable when needed. The Intel server runtime job defaults to the
+self-hosted `MacOS-x64` runner and can be overridden with `macos_intel_runner`
+or `HERDMAN_MACOS_INTEL_RUNNER`.
