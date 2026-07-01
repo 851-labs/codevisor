@@ -93,6 +93,7 @@ private final class FakeStatusServerClient: HerdManServerClienting, @unchecked S
         return ServerPairingToken(token: "hm_test", createdAt: "2026-06-30T00:00:00.000Z")
     }
 
+    func capabilities(cwd: String) async throws -> ServerCapabilities { ServerCapabilities(harnesses: []) }
     func listHarnesses() async throws -> [ServerHarness] { [] }
     func setHarnessEnabled(id: String, enabled: Bool) async throws -> ServerHarness { fatalError("unused") }
     func listWorkspaces() async throws -> [ServerWorkspace] { [] }

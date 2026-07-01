@@ -2,7 +2,9 @@ import type { AcpRuntimeService, RuntimeEvent } from "@herdman/acp-runtime"
 import type {
   EventEnvelope,
   Harness,
+  HarnessCapability,
   ServerKind,
+  SessionSummary,
   TerminalClientFrame,
   Workspace
 } from "@herdman/api"
@@ -222,6 +224,11 @@ const handleRequest = async (
       return
     }
 
+    if (request.method === "GET" && url.pathname === "/v1/capabilities") {
+      writeJson(response, 200, await discoverCapabilities(services, url))
+      return
+    }
+
     if (request.method === "POST" && url.pathname === "/v1/auth/pairing-token") {
       writeJson(response, 201, {
         token: await run(services.db.issuePairingToken),
@@ -323,6 +330,36 @@ const routeHarnesses = async (
   return false
 }
 
+const discoverCapabilities = async (
+  services: HerdManServerServices,
+  url: URL
+): Promise<{ readonly harnesses: ReadonlyArray<HarnessCapability> }> => {
+  const cwd = url.searchParams.get("cwd") ?? tmpdir()
+  const harnesses = await discoverHarnesses(services)
+  const readyHarnesses = harnesses.filter(
+    (harness) => harness.enabled && harness.readiness.state === "ready"
+  )
+  return {
+    harnesses: await Promise.all(
+      readyHarnesses.map(async (harness) => {
+        try {
+          const metadata = await run(services.acp.inspectHarness(harness.id, cwd))
+          return {
+            harness,
+            ...(metadata.modes === undefined ? {} : { modes: metadata.modes }),
+            configOptions: metadata.configOptions
+          }
+        } catch {
+          return {
+            harness,
+            configOptions: []
+          }
+        }
+      })
+    )
+  }
+}
+
 const routeSessions = async (
   services: HerdManServerServices,
   fanout: EventFanout,
@@ -338,6 +375,13 @@ const routeSessions = async (
 
   if (request.method === "POST" && url.pathname === "/v1/sessions") {
     const payload = await readSchema(request, CreateSessionRequestSchema)
+    if (payload.id !== undefined) {
+      const existing = await findSession(services.db, payload.id)
+      if (existing !== undefined) {
+        writeJson(response, 200, existing)
+        return true
+      }
+    }
     const workspace = await getWorkspaceOrFail(services.db, payload.workspaceId)
     const agentSessionId =
       payload.agentSessionId ??
@@ -385,6 +429,17 @@ const routeSessions = async (
   }
 
   return false
+}
+
+const findSession = async (
+  db: HerdManDatabaseService,
+  id: string
+): Promise<SessionSummary | undefined> => {
+  try {
+    return (await run(db.getSessionDetail(id))).session
+  } catch {
+    return undefined
+  }
 }
 
 const routeSessionActions = async (

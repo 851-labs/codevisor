@@ -3,6 +3,7 @@ import {
   CreateSessionRequest,
   CreateWorkspaceRequest,
   EventEnvelope,
+  ServerCapabilities,
   SessionDetail,
   TerminalClientFrame,
   Workspace,
@@ -114,6 +115,47 @@ describe("@herdman/api", () => {
     })
     expect(detail.eventCursor).toBe(7)
     expect(detail.conversation[0]?.role).toBe("user")
+  })
+
+  it("decodes harness capabilities with modes and config options", () => {
+    const capabilities = decode(ServerCapabilities)({
+      harnesses: [
+        {
+          harness: {
+            id: "codex",
+            name: "Codex",
+            symbolName: "chevron.left.forwardslash.chevron.right",
+            source: "registry",
+            launchKind: "npx",
+            enabled: true,
+            readiness: { state: "ready" }
+          },
+          modes: {
+            currentModeId: "default",
+            availableModes: [{ id: "default", name: "Default" }]
+          },
+          configOptions: [
+            {
+              id: "model",
+              name: "Model",
+              category: "model",
+              currentValue: "gpt-5",
+              options: [{ value: "gpt-5", name: "GPT-5" }]
+            },
+            {
+              id: "grouped",
+              name: "Grouped",
+              currentValue: "a",
+              options: [{ group: "main", name: "Main", options: [{ value: "a", name: "A" }] }]
+            }
+          ]
+        }
+      ]
+    })
+    expect(capabilities.harnesses[0]?.configOptions.map((option) => option.id)).toEqual([
+      "model",
+      "grouped"
+    ])
   })
 
   it("exports the server endpoint inventory as OpenAPI metadata", () => {

@@ -1,6 +1,21 @@
-import type { EventEnvelope, EventKind, Harness } from "@herdman/api"
+import type {
+  EventEnvelope,
+  EventKind,
+  Harness,
+  SessionConfigOption,
+  SessionConfigSelectGroup,
+  SessionConfigSelectOption,
+  SessionModeState
+} from "@herdman/api"
 import { isoTimestamp } from "@herdman/api"
 import * as acp from "@agentclientprotocol/sdk"
+import type {
+  NewSessionResponse,
+  SessionConfigOption as AcpSessionConfigOption,
+  SessionConfigSelectGroup as AcpSessionConfigSelectGroup,
+  SessionConfigSelectOption as AcpSessionConfigSelectOption,
+  SessionModeState as AcpSessionModeState
+} from "@agentclientprotocol/sdk"
 import { spawn } from "node:child_process"
 import type { ChildProcessWithoutNullStreams } from "node:child_process"
 import { accessSync, constants } from "node:fs"
@@ -25,6 +40,12 @@ export interface PromptResult {
   readonly events: ReadonlyArray<RuntimeEvent>
 }
 
+export interface AgentSessionMetadata {
+  readonly sessionId: string
+  readonly modes?: SessionModeState
+  readonly configOptions: ReadonlyArray<SessionConfigOption>
+}
+
 export interface AcpHarnessLaunchRequest {
   readonly harnessId: string
   readonly command: string
@@ -34,7 +55,7 @@ export interface AcpHarnessLaunchRequest {
 }
 
 export interface AcpAgentConnection {
-  readonly createSession: (cwd: string) => Effect.Effect<string, AcpRuntimeError>
+  readonly createSession: (cwd: string) => Effect.Effect<AgentSessionMetadata, AcpRuntimeError>
   readonly loadSession: (sessionId: string, cwd: string) => Effect.Effect<string, AcpRuntimeError>
   readonly prompt: (sessionId: string, text: string) => Effect.Effect<PromptResult, AcpRuntimeError>
   readonly cancel: (sessionId: string) => Effect.Effect<RuntimeEvent, AcpRuntimeError>
@@ -69,6 +90,10 @@ export interface AcpRuntimeService {
     harnessId: string,
     cwd: string
   ) => Effect.Effect<string, AcpRuntimeError>
+  readonly inspectHarness: (
+    harnessId: string,
+    cwd: string
+  ) => Effect.Effect<AgentSessionMetadata, AcpRuntimeError>
   readonly loadAgentSession: (
     harnessId: string,
     agentSessionId: string,
@@ -248,8 +273,15 @@ export const makeAcpRuntime = (config: AcpRuntimeConfig = {}): AcpRuntimeService
     createAgentSession: (harnessId, cwd) =>
       Effect.gen(function* () {
         const connection = yield* connectHarness(harnessId, cwd)
-        const sessionId = yield* connection.createSession(cwd)
-        return manageSession(harnessId, sessionId, cwd, connection)
+        const metadata = yield* connection.createSession(cwd)
+        return manageSession(harnessId, metadata.sessionId, cwd, connection)
+      }),
+    inspectHarness: (harnessId, cwd) =>
+      Effect.gen(function* () {
+        const connection = yield* connectHarness(harnessId, cwd)
+        const metadata = yield* connection.createSession(cwd)
+        void Effect.runPromise(connection.close).catch(() => undefined)
+        return metadata
       }),
     loadAgentSession: (harnessId, agentSessionId, cwd) =>
       Effect.gen(function* () {
@@ -302,6 +334,14 @@ export const stdioAcpConnector: AcpConnector = {
         env: request.env,
         stdio: ["pipe", "pipe", "pipe"]
       })
+      let closeConnection: ((error: Error) => void) | undefined
+      const spawnFailure = new Promise<never>((_resolve, reject) => {
+        child.once("error", (error) => {
+          closeConnection?.(error)
+          reject(error)
+        })
+      })
+      spawnFailure.catch(() => undefined)
       const stderr = captureStderr(child)
       const events = new Map<string, Array<RuntimeEvent>>()
       const connection = createClientApp((notification) => {
@@ -314,20 +354,26 @@ export const stdioAcpConnector: AcpConnector = {
           Readable.toWeb(child.stdout) as ReadableStream<Uint8Array>
         )
       )
+      closeConnection = (error) => connection.close(error)
       child.once("exit", () => connection.close(new Error(stderr())))
-      await connection.agent.request(acp.methods.agent.initialize, {
-        clientCapabilities: {
-          plan: {},
-          terminal: false
-        },
-        clientInfo: {
-          name: "HerdMan",
-          title: "HerdMan",
-          version: "0.1.0"
-        },
-        protocolVersion: acp.PROTOCOL_VERSION
+      await Promise.race([
+        connection.agent.request(acp.methods.agent.initialize, {
+          clientCapabilities: {
+            plan: {},
+            terminal: false
+          },
+          clientInfo: {
+            name: "HerdMan",
+            title: "HerdMan",
+            version: "0.1.0"
+          },
+          protocolVersion: acp.PROTOCOL_VERSION
+        }),
+        spawnFailure
+      ])
+      return sdkConnection(connection, stderr, events, () => {
+        child.kill()
       })
-      return sdkConnection(connection, stderr, events)
     })
 }
 
@@ -347,7 +393,8 @@ export const toEventEnvelope = (
 const sdkConnection = (
   connection: acp.ClientConnection,
   stderr: () => string,
-  events: Map<string, Array<RuntimeEvent>>
+  events: Map<string, Array<RuntimeEvent>>,
+  terminate: () => void = () => undefined
 ): AcpAgentConnection => {
   const takeEvents = (sessionId: string, startIndex: number): ReadonlyArray<RuntimeEvent> =>
     (events.get(sessionId) ?? []).slice(startIndex)
@@ -363,7 +410,7 @@ const sdkConnection = (
           cwd,
           mcpServers: []
         })
-        return response.sessionId
+        return sessionMetadata(response)
       }),
     loadSession: (sessionId, cwd) =>
       adapterPromise("loadSession", async () => {
@@ -419,9 +466,76 @@ const sdkConnection = (
       }),
     close: runtimeEffect("close", () => {
       connection.close(new Error(stderr()))
+      terminate()
     })
   }
 }
+
+const sessionMetadata = (response: NewSessionResponse): AgentSessionMetadata => ({
+  sessionId: response.sessionId,
+  ...(response.modes === undefined || response.modes === null
+    ? {}
+    : { modes: normalizeModeState(response.modes) }),
+  configOptions: normalizeConfigOptions(response.configOptions ?? [])
+})
+
+const normalizeModeState = (state: AcpSessionModeState): SessionModeState => ({
+  currentModeId: state.currentModeId,
+  availableModes: state.availableModes.map((mode) => ({
+    id: mode.id,
+    name: mode.name,
+    ...(mode.description === undefined || mode.description === null
+      ? {}
+      : { description: mode.description })
+  }))
+})
+
+const normalizeConfigOptions = (
+  options: ReadonlyArray<AcpSessionConfigOption>
+): ReadonlyArray<SessionConfigOption> =>
+  options.flatMap((option) => {
+    if (option.type !== "select" || typeof option.currentValue !== "string") {
+      return []
+    }
+    return [
+      {
+        id: option.id,
+        name: option.name,
+        ...(option.description === undefined || option.description === null
+          ? {}
+          : { description: option.description }),
+        ...(option.category === undefined || option.category === null
+          ? {}
+          : { category: option.category }),
+        currentValue: option.currentValue,
+        options: normalizeSelectOptions(option.options)
+      }
+    ]
+  })
+
+const normalizeSelectOptions = (
+  options: ReadonlyArray<AcpSessionConfigSelectOption> | ReadonlyArray<AcpSessionConfigSelectGroup>
+): ReadonlyArray<SessionConfigSelectOption> | ReadonlyArray<SessionConfigSelectGroup> => {
+  const first = options[0]
+  if (first !== undefined && "group" in first) {
+    return (options as ReadonlyArray<AcpSessionConfigSelectGroup>).map((group) => ({
+      group: group.group,
+      name: group.name,
+      options: group.options.map(normalizeSelectOption)
+    }))
+  }
+  return (options as ReadonlyArray<AcpSessionConfigSelectOption>).map(normalizeSelectOption)
+}
+
+const normalizeSelectOption = (
+  option: AcpSessionConfigSelectOption
+): SessionConfigSelectOption => ({
+  value: option.value,
+  name: option.name,
+  ...(option.description === undefined || option.description === null
+    ? {}
+    : { description: option.description })
+})
 
 const createClientApp = (
   onSessionUpdate: (notification: acp.SessionNotification) => void

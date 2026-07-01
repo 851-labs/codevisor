@@ -25,13 +25,17 @@ class FakeConnection implements AcpAgentConnection {
   closeCount = 0
   failClose = false
 
-  constructor(readonly request: AcpHarnessLaunchRequest) {}
+  constructor(readonly request: AcpHarnessLaunchRequest) {
+    this.failClose = request.cwd.includes("fail-close")
+  }
 
-  createSession(cwd: string): Effect.Effect<string, AcpRuntimeError> {
+  createSession(
+    cwd: string
+  ): Effect.Effect<{ readonly sessionId: string; readonly configOptions: [] }, AcpRuntimeError> {
     return Effect.sync(() => {
       const sessionId = `agent-${this.request.harnessId}-${this.created.length + 1}`
       this.created.push(cwd)
-      return sessionId
+      return { configOptions: [], sessionId }
     })
   }
 
@@ -160,11 +164,13 @@ describe("@herdman/acp-runtime", () => {
     })
 
     const created = await run(runtime.createAgentSession("codex", "/tmp/project"))
+    const inspected = await run(runtime.inspectHarness("codex", "/tmp/project"))
+    const inspectedWithCloseFailure = await run(runtime.inspectHarness("codex", "/tmp/fail-close"))
     const loaded = await run(runtime.loadAgentSession("codex", "agent-existing", "/tmp/project"))
     const loadedAgain = await run(
       runtime.loadAgentSession("codex", "agent-existing", "/tmp/project")
     )
-    const previousLoadedConnection = connector.connections[1]
+    const previousLoadedConnection = connector.connections[3]
     if (previousLoadedConnection === undefined) {
       throw new Error("expected a loaded fake connection")
     }
@@ -175,19 +181,21 @@ describe("@herdman/acp-runtime", () => {
     await new Promise((resolve) => setTimeout(resolve, 0))
 
     expect(created).toBe("agent-codex-1")
+    expect(inspected).toEqual({ configOptions: [], sessionId: "agent-codex-1" })
+    expect(inspectedWithCloseFailure).toEqual({ configOptions: [], sessionId: "agent-codex-1" })
     expect(loaded).toBe("agent-existing")
     expect(loadedAgain).toBe("agent-existing")
     expect(reloadedElsewhere).toBe("agent-existing")
-    expect(connector.requests).toHaveLength(3)
+    expect(connector.requests).toHaveLength(5)
     expect(connector.requests[0]).toMatchObject({
       args: ["-y", "@agentclientprotocol/codex-acp@1.0.2"],
       command: "/bin/npx",
       cwd: "/tmp/project",
       harnessId: "codex"
     })
-    expect(connector.connections[1]?.loaded).toEqual([["agent-existing", "/tmp/project"]])
+    expect(connector.connections[3]?.loaded).toEqual([["agent-existing", "/tmp/project"]])
     expect(previousLoadedConnection.closeCount).toBe(1)
-    expect(connector.connections[2]?.loaded).toEqual([["agent-existing", "/tmp/other"]])
+    expect(connector.connections[4]?.loaded).toEqual([["agent-existing", "/tmp/other"]])
   })
 
   it("falls back to executable names when PATH lookup is delegated", async () => {

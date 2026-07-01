@@ -43,21 +43,60 @@ const makeAcp = (): AcpRuntimeService & {
   readonly cancellations: Array<string>
   readonly modes: Array<readonly [string, string]>
   readonly configs: Array<readonly [string, string, string]>
+  readonly inspections: Array<readonly [string, string]>
 } => {
   const loads: Array<readonly [string, string, string]> = []
   const prompts: Array<readonly [string, string]> = []
   const cancellations: Array<string> = []
   const modes: Array<readonly [string, string]> = []
   const configs: Array<readonly [string, string, string]> = []
+  const inspections: Array<readonly [string, string]> = []
   return {
     loads,
     prompts,
     cancellations,
     modes,
     configs,
+    inspections,
     discoverHarnesses: Effect.succeed(harnesses),
     createAgentSession: (harnessId, cwd) =>
       Effect.succeed(`agent-${harnessId}-${cwd.split("/").at(-1) ?? "root"}`),
+    inspectHarness: (harnessId, cwd) =>
+      Effect.sync(() => {
+        inspections.push([harnessId, cwd])
+        if (cwd.includes("capability-fail")) {
+          throw new Error("capability probe failed")
+        }
+        if (cwd.includes("no-modes")) {
+          return {
+            sessionId: `inspect-${harnessId}`,
+            configOptions: []
+          }
+        }
+        return {
+          sessionId: `inspect-${harnessId}`,
+          modes: {
+            currentModeId: "default",
+            availableModes: [{ id: "default", name: "Default" }]
+          },
+          configOptions: [
+            {
+              id: "model",
+              name: "Model",
+              category: "model",
+              currentValue: "gpt-5",
+              options: [{ value: "gpt-5", name: "GPT-5" }]
+            },
+            {
+              id: "reasoning",
+              name: "Reasoning",
+              category: "thought_level",
+              currentValue: "medium",
+              options: [{ value: "medium", name: "Medium" }]
+            }
+          ]
+        }
+      }),
     loadAgentSession: (harnessId, agentSessionId, cwd) =>
       Effect.sync(() => {
         loads.push([harnessId, agentSessionId, cwd])
@@ -389,6 +428,33 @@ describe("@herdman/server", () => {
     expect((await jsonRequest(server, "/v1/harnesses")).body).toMatchObject([
       { id: "codex", enabled: true }
     ])
+    const capabilitiesResponse = await jsonRequest(server, "/v1/capabilities?cwd=%2Ftmp%2Fherdman")
+    expect(capabilitiesResponse.body).toMatchObject({
+      harnesses: [
+        {
+          harness: { id: "codex" },
+          modes: { currentModeId: "default" },
+          configOptions: [
+            { category: "model", currentValue: "gpt-5", id: "model" },
+            { category: "thought_level", currentValue: "medium", id: "reasoning" }
+          ]
+        }
+      ]
+    })
+    expect(acp.inspections).toEqual([["codex", "/tmp/herdman"]])
+    expect((await jsonRequest(server, "/v1/capabilities")).body).toMatchObject({
+      harnesses: [{ harness: { id: "codex" } }]
+    })
+    expect(
+      (await jsonRequest(server, "/v1/capabilities?cwd=%2Ftmp%2Fno-modes")).body
+    ).toMatchObject({
+      harnesses: [{ configOptions: [], harness: { id: "codex" } }]
+    })
+    expect(
+      (await jsonRequest(server, "/v1/capabilities?cwd=%2Ftmp%2Fcapability-fail")).body
+    ).toMatchObject({
+      harnesses: [{ configOptions: [], harness: { id: "codex" } }]
+    })
     expect(
       (
         await jsonRequest(server, "/v1/harnesses/codex", {
@@ -412,6 +478,19 @@ describe("@herdman/server", () => {
     })
     const session = sessionResponse.body as { readonly id: string; readonly agentSessionId: string }
     expect(session.agentSessionId).toBe("agent-codex-herdman")
+    expect(
+      (
+        await jsonRequest(server, "/v1/sessions", {
+          body: JSON.stringify({
+            id: session.id,
+            workspaceId: workspace.id,
+            harnessId: "codex",
+            title: "First chat"
+          }),
+          method: "POST"
+        })
+      ).body
+    ).toMatchObject({ agentSessionId: "agent-codex-herdman", id: session.id })
     expect((await jsonRequest(server, "/v1/sessions")).body).toMatchObject([{ id: session.id }])
     expect((await jsonRequest(server, `/v1/sessions/${session.id}`)).body).toMatchObject({
       session: { id: session.id }
@@ -419,7 +498,11 @@ describe("@herdman/server", () => {
     expect(
       (
         await jsonRequest(server, "/v1/sessions", {
-          body: JSON.stringify({ workspaceId: "missing", harnessId: "codex" }),
+          body: JSON.stringify({
+            id: "client-session-id",
+            workspaceId: "missing",
+            harnessId: "codex"
+          }),
           method: "POST"
         })
       ).status

@@ -96,6 +96,7 @@ private final class FakeLocalServerClient: HerdManServerClienting, @unchecked Se
     func info() async throws -> ServerInfo { fatalError("unused") }
     func updateInfo() async throws -> ServerUpdateInfo { fatalError("unused") }
     func issuePairingToken() async throws -> ServerPairingToken { fatalError("unused") }
+    func capabilities(cwd: String) async throws -> ServerCapabilities { ServerCapabilities(harnesses: []) }
     func setHarnessEnabled(id: String, enabled: Bool) async throws -> ServerHarness { fatalError("unused") }
     func listWorkspaces() async throws -> [ServerWorkspace] { [] }
     func upsertWorkspace(_ workspace: Workspace) async throws -> ServerWorkspace { fatalError("unused") }

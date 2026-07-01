@@ -37,15 +37,11 @@ struct ComposerCard: View {
 
             HStack(spacing: 10) {
                 harnessMenu
-                if controller.isConnected {
-                    let options = controller.pickerOptions
-                    if options.isEmpty {
-                        modeMenu
-                    } else {
-                        ForEach(options) { option in
-                            configMenu(option)
-                        }
-                    }
+                ForEach(controller.pickerOptions) { option in
+                    configMenu(option)
+                }
+                if !controller.hasModeConfigPicker {
+                    modeMenu
                 }
                 Spacer(minLength: 0)
                 sendButton
@@ -91,7 +87,7 @@ struct ComposerCard: View {
             Menu {
                 ForEach(modes.availableModes) { mode in
                     Button {
-                        Task { await controller.model?.setMode(mode.id) }
+                        Task { await controller.setMode(mode.id) }
                     } label: {
                         if mode.id == modes.currentModeId {
                             Label(mode.name, systemImage: "checkmark")

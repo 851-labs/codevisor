@@ -61,7 +61,7 @@ public struct ServerAgentService: AgentServicing {
     }
 }
 
-private extension ServerHarness {
+public extension ServerHarness {
     var discoveredAgent: DiscoveredAgent {
         DiscoveredAgent(
             id: id,

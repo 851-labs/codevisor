@@ -14,6 +14,7 @@ public protocol HerdManServerClienting: Sendable {
     func info() async throws -> ServerInfo
     func updateInfo() async throws -> ServerUpdateInfo
     func issuePairingToken() async throws -> ServerPairingToken
+    func capabilities(cwd: String) async throws -> ServerCapabilities
     func listHarnesses() async throws -> [ServerHarness]
     func setHarnessEnabled(id: String, enabled: Bool) async throws -> ServerHarness
     func listWorkspaces() async throws -> [ServerWorkspace]
@@ -89,6 +90,16 @@ public struct ServerHarness: Decodable, Equatable, Sendable {
     public var launchKind: String
     public var enabled: Bool
     public var readiness: ServerHarnessReadiness
+}
+
+public struct ServerHarnessCapability: Decodable, Equatable, Sendable {
+    public var harness: ServerHarness
+    public var modes: SessionModeState?
+    public var configOptions: [SessionConfigOption]
+}
+
+public struct ServerCapabilities: Decodable, Equatable, Sendable {
+    public var harnesses: [ServerHarnessCapability]
 }
 
 public struct ServerWorkspace: Decodable, Equatable, Sendable {
@@ -216,6 +227,11 @@ public final class HerdManServerClient: HerdManServerClienting, @unchecked Senda
 
     public func issuePairingToken() async throws -> ServerPairingToken {
         try await send("/v1/auth/pairing-token", method: "POST", body: Optional<EmptyBody>.none)
+    }
+
+    public func capabilities(cwd: String) async throws -> ServerCapabilities {
+        let encoded = cwd.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? cwd
+        return try await get("/v1/capabilities?cwd=\(encoded)")
     }
 
     public func listHarnesses() async throws -> [ServerHarness] {

@@ -24,43 +24,46 @@ struct SidebarView: View {
     private var list: WorkspaceListModel { environment.workspaceList }
 
     var body: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 1) {
-                machinePicker
-                Divider().padding(.vertical, 6)
-
-                actionRow("New Chat", systemImage: "square.and.pencil", id: "new") {
-                    selection = .newChat(nil)
-                }
-
-                projectsHeader
-
-                ForEach(list.activeWorkspaces) { workspace in
-                    workspaceFolder(workspace)
-                }
-                if list.activeWorkspaces.isEmpty {
-                    Text("Add a workspace with +")
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 4)
-                }
-
-                if list.hasArchivedWorkspaces {
-                    Spacer().frame(height: 8)
-                    disclosureRow(id: "archived", title: "Archived", systemImage: "archivebox", isOpen: showArchived) {
-                        showArchived.toggle()
+        VStack(spacing: 0) {
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 1) {
+                    actionRow("New Chat", systemImage: "square.and.pencil", id: "new") {
+                        selection = .newChat(nil)
                     }
-                    if showArchived {
-                        ForEach(list.archivedWorkspaces) { workspace in
-                            archivedRow(workspace)
+
+                    projectsHeader
+
+                    ForEach(list.activeWorkspaces) { workspace in
+                        workspaceFolder(workspace)
+                    }
+                    if list.activeWorkspaces.isEmpty {
+                        Text("Add a workspace with +")
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 4)
+                    }
+
+                    if list.hasArchivedWorkspaces {
+                        Spacer().frame(height: 8)
+                        disclosureRow(id: "archived", title: "Archived", systemImage: "archivebox", isOpen: showArchived) {
+                            showArchived.toggle()
+                        }
+                        if showArchived {
+                            ForEach(list.archivedWorkspaces) { workspace in
+                                archivedRow(workspace)
+                            }
                         }
                     }
                 }
+                .padding(8)
             }
-            .padding(8)
+            .scrollContentBackground(.hidden)
+
+            Divider()
+            machinePicker
+                .padding(8)
         }
-        .scrollContentBackground(.hidden)
         .background(.regularMaterial)
         .fileImporter(isPresented: $showingImporter, allowedContentTypes: [.folder]) { result in
             if case let .success(url) = result {

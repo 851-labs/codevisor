@@ -71,6 +71,12 @@ struct SessionScreen: View {
                         .transition(.opacity.combined(with: .scale(scale: 0.85)))
                 }
             }
+            .overlay {
+                if controller.isConnecting {
+                    ProgressView()
+                        .controlSize(.large)
+                }
+            }
             .overlay(alignment: .bottom) { composerOverlay }
             .animation(.snappy(duration: 0.2), value: isAtBottom)
         }
@@ -133,12 +139,8 @@ struct SessionScreen: View {
     @ViewBuilder
     private var statusLabel: some View {
         switch controller.status {
-        case let .connecting(message):
-            HStack(spacing: 6) {
-                ProgressView().controlSize(.small)
-                Text(message).foregroundStyle(.secondary)
-            }
-            .font(.callout)
+        case .connecting:
+            EmptyView()
         case let .failed(message):
             Label(message, systemImage: "exclamationmark.triangle.fill")
                 .font(.callout)

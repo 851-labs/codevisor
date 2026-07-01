@@ -140,9 +140,22 @@ public struct ServerSessionTransport: Sendable {
     }
 
     private static func metadataUpdates(from payload: JSONValue) -> [SessionUpdate] {
+        if let configOptions = decodeConfigOptions(payload["configOptions"]) {
+            return [.configOptionUpdate(configOptions)]
+        }
         if let modeId = payload["modeId"]?.stringValue {
             return [.currentModeUpdate(currentModeId: modeId)]
         }
         return []
+    }
+
+    private static func decodeConfigOptions(_ value: JSONValue?) -> [SessionConfigOption]? {
+        guard let value else { return nil }
+        do {
+            let data = try JSONEncoder().encode(value)
+            return try JSONDecoder().decode([SessionConfigOption].self, from: data)
+        } catch {
+            return nil
+        }
     }
 }

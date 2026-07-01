@@ -48,6 +48,8 @@ final class SessionController {
     private var connectedHarnessId: String?
     /// Config changes made before connecting, applied once the agent connects.
     private var pendingConfig: [String: String] = [:]
+    private var pendingModeId: String?
+    private var modeStateByHarness: [String: SessionModeState] = [:]
 
     init(
         workspace: Workspace,
@@ -69,7 +71,12 @@ final class SessionController {
 
     var conversation: [ConversationItem] { model?.conversation ?? [] }
     var isConnected: Bool { model != nil }
-    var modeState: SessionModeState? { model?.modeState }
+    var modeState: SessionModeState? {
+        if let model { return model.modeState }
+        guard let selectedHarnessId, var state = modeStateByHarness[selectedHarnessId] else { return nil }
+        if let pendingModeId { state.currentModeId = pendingModeId }
+        return state
+    }
     var errorMessage: String? { model?.errorMessage }
     var usage: SessionUsage? { model?.usage }
 
@@ -88,10 +95,26 @@ final class SessionController {
 
     /// The config options shown as composer pickers, in a sensible order.
     var pickerOptions: [SessionConfigOption] {
-        let order = [SessionConfigOption.Category.model, SessionConfigOption.Category.thoughtLevel]
+        let order = [
+            SessionConfigOption.Category.model,
+            SessionConfigOption.Category.thoughtLevel,
+            SessionConfigOption.Category.modelConfig,
+            SessionConfigOption.Category.mode
+        ]
         return configOptions
-            .filter { !$0.options.isEmpty && order.contains($0.category ?? "") }
-            .sorted { order.firstIndex(of: $0.category ?? "") ?? 99 < order.firstIndex(of: $1.category ?? "") ?? 99 }
+            .filter { !$0.options.isEmpty }
+            .sorted { left, right in
+                let leftIndex = order.firstIndex(of: left.category ?? "") ?? 99
+                let rightIndex = order.firstIndex(of: right.category ?? "") ?? 99
+                if leftIndex == rightIndex { return left.name < right.name }
+                return leftIndex < rightIndex
+            }
+    }
+
+    var hasModeConfigPicker: Bool {
+        pickerOptions.contains { option in
+            option.category == SessionConfigOption.Category.mode || option.id == "mode"
+        }
     }
 
     func setConfigOption(_ configId: String, _ value: String) async {
@@ -134,6 +157,12 @@ final class SessionController {
     /// honors the user's enabled set (falling back to all installed if they've
     /// disabled everything); a resumed session always keeps its own harness.
     func prepare() async {
+        if let serverClient {
+            if await prepareFromServerCapabilities(serverClient) {
+                return
+            }
+        }
+
         let installed = await agentService.discoverAgents()
         let isNewChat = resumeAgentSessionId == nil
         if let settings, isNewChat {
@@ -233,7 +262,11 @@ final class SessionController {
     }
 
     func setMode(_ modeId: String) async {
-        await model?.setMode(modeId)
+        if let model {
+            await model.setMode(modeId)
+        } else {
+            pendingModeId = modeId
+        }
     }
 
     func retry() async {
@@ -302,6 +335,11 @@ final class SessionController {
             )
         }
 
+        if let pendingModeId {
+            await model.setMode(pendingModeId)
+        }
+        pendingModeId = nil
+
         // Apply any config the user picked before connecting.
         for (configId, value) in pendingConfig {
             await model.setConfigOption(configId: configId, value: value)
@@ -340,11 +378,17 @@ final class SessionController {
         let model = SessionModel(
             serverTransport: transport,
             sessionId: session.id.uuidString,
+            modeState: modeStateByHarness[harness.id],
             configOptions: configCache.options(forHarness: harness.id)
         )
         if resumeAgentSessionId != nil {
             await model.loadHistory()
         }
+
+        if let pendingModeId {
+            await model.setMode(pendingModeId)
+        }
+        pendingModeId = nil
 
         for (configId, value) in pendingConfig {
             await model.setConfigOption(configId: configId, value: value)
@@ -353,6 +397,39 @@ final class SessionController {
 
         configCache.store(model.configOptions, forHarness: harness.id)
         return model
+    }
+
+    private func prepareFromServerCapabilities(_ serverClient: any HerdManServerClienting) async -> Bool {
+        do {
+            let response = try await serverClient.capabilities(cwd: workspace.folderURL.path)
+            let isNewChat = resumeAgentSessionId == nil
+            let capabilities = response.harnesses.filter { capability in
+                capability.harness.enabled && capability.harness.readiness.state == "ready"
+            }
+            let agents = capabilities.map(\.harness.discoveredAgent)
+            if let settings, isNewChat {
+                let enabled = agents.filter { settings.isHarnessEnabled($0.id) }
+                harnesses = enabled.isEmpty ? agents : enabled
+            } else {
+                harnesses = agents
+            }
+            for capability in capabilities {
+                configCache.store(capability.configOptions, forHarness: capability.harness.id)
+                if let modes = capability.modes {
+                    modeStateByHarness[capability.harness.id] = modes
+                }
+            }
+            if isNewChat {
+                if selectedHarnessId == nil || !harnesses.contains(where: { $0.id == selectedHarnessId }) {
+                    selectedHarnessId = harnesses.first?.id
+                }
+            } else if selectedHarnessId == nil {
+                selectedHarnessId = harnesses.first?.id
+            }
+            return true
+        } catch {
+            return false
+        }
     }
 }
 

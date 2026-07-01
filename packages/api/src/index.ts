@@ -30,6 +30,58 @@ export const UpdateHarnessRequest = Schema.Struct({
 })
 export type UpdateHarnessRequest = typeof UpdateHarnessRequest.Type
 
+export const SessionMode = Schema.Struct({
+  id: Schema.String,
+  name: Schema.String,
+  description: Schema.optional(Schema.String)
+})
+export type SessionMode = typeof SessionMode.Type
+
+export const SessionModeState = Schema.Struct({
+  currentModeId: Schema.String,
+  availableModes: Schema.Array(SessionMode)
+})
+export type SessionModeState = typeof SessionModeState.Type
+
+export const SessionConfigSelectOption = Schema.Struct({
+  value: Schema.String,
+  name: Schema.String,
+  description: Schema.optional(Schema.String)
+})
+export type SessionConfigSelectOption = typeof SessionConfigSelectOption.Type
+
+export const SessionConfigSelectGroup = Schema.Struct({
+  group: Schema.String,
+  name: Schema.String,
+  options: Schema.Array(SessionConfigSelectOption)
+})
+export type SessionConfigSelectGroup = typeof SessionConfigSelectGroup.Type
+
+export const SessionConfigOption = Schema.Struct({
+  id: Schema.String,
+  name: Schema.String,
+  description: Schema.optional(Schema.String),
+  category: Schema.optional(Schema.String),
+  currentValue: Schema.String,
+  options: Schema.Union([
+    Schema.Array(SessionConfigSelectOption),
+    Schema.Array(SessionConfigSelectGroup)
+  ])
+})
+export type SessionConfigOption = typeof SessionConfigOption.Type
+
+export const HarnessCapability = Schema.Struct({
+  harness: Harness,
+  modes: Schema.optional(SessionModeState),
+  configOptions: Schema.Array(SessionConfigOption)
+})
+export type HarnessCapability = typeof HarnessCapability.Type
+
+export const ServerCapabilities = Schema.Struct({
+  harnesses: Schema.Array(HarnessCapability)
+})
+export type ServerCapabilities = typeof ServerCapabilities.Type
+
 export const Workspace = Schema.Struct({
   id: Schema.String,
   name: Schema.String,
@@ -262,6 +314,7 @@ export const endpoints = [
   "GET /v1/health",
   "GET /v1/info",
   "GET /v1/update",
+  "GET /v1/capabilities",
   "POST /v1/auth/pairing-token",
   "GET /v1/workspaces",
   "POST /v1/workspaces",
