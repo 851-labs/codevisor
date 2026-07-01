@@ -79,10 +79,7 @@ fi
 plist_path="$app_path/Contents/Info.plist"
 # Xcode's Icon Composer pipeline owns app icon generation. Keep the compiled
 # asset catalog in the bundle so LaunchServices resolves the .icon file output.
-if [[ "$(/usr/libexec/PlistBuddy -c "Print :CFBundleIconFile" "$plist_path")" != "AppIcon" ]]; then
-  echo "error: expected CFBundleIconFile=AppIcon in $plist_path" >&2
-  exit 1
-fi
+# CFBundleIconFile is legacy and can be omitted by Xcode's asset catalog path.
 if [[ "$(/usr/libexec/PlistBuddy -c "Print :CFBundleIconName" "$plist_path")" != "AppIcon" ]]; then
   echo "error: expected CFBundleIconName=AppIcon in $plist_path" >&2
   exit 1
