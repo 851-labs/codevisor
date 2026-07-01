@@ -5,7 +5,7 @@ import { basename, join } from "node:path"
 
 const tapDir = process.argv[2]
 const version = process.env.VERSION
-const repository = process.env.REPOSITORY ?? "851-labs/HerdMan-v2"
+const repository = process.env.REPOSITORY ?? process.env.GITHUB_REPOSITORY ?? "851-labs/herdman"
 const artifactDir = process.env.ARTIFACT_DIR ?? "dist/release"
 const artifactBaseUrl =
   process.env.ARTIFACT_BASE_URL ?? `https://github.com/${repository}/releases/download/v#{version}`
