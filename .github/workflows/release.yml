@@ -11,14 +11,14 @@ on:
         required: false
         type: string
       macos_runner:
-        description: "Apple Silicon macOS runner labels as JSON. Defaults to the self-hosted ARM64 runner."
+        description: "Apple Silicon macOS runner label. Defaults to GitHub-hosted macOS."
         required: false
-        default: '["self-hosted","macOS","ARM64"]'
+        default: "macos-26"
         type: string
       macos_intel_runner:
-        description: "Intel macOS runner labels as JSON. Defaults to the self-hosted X64 runner."
+        description: "Intel macOS runner label used to build x64 server runtimes. Defaults to GitHub-hosted Intel macOS."
         required: false
-        default: '["self-hosted","macOS","X64"]'
+        default: "macos-26-intel"
         type: string
 
 permissions:
@@ -87,7 +87,7 @@ jobs:
 
   build-server-macos-x64:
     needs: metadata
-    runs-on: ${{ fromJSON(inputs.macos_intel_runner || vars.HERDMAN_MACOS_INTEL_RUNNER || '["self-hosted","macOS","X64"]') }}
+    runs-on: ${{ inputs.macos_intel_runner || vars.HERDMAN_MACOS_INTEL_RUNNER || 'macos-26-intel' }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v6
@@ -117,7 +117,7 @@ jobs:
 
   build-macos:
     needs: metadata
-    runs-on: ${{ fromJSON(inputs.macos_runner || vars.HERDMAN_MACOS_ARM_RUNNER || vars.HERDMAN_MACOS_RUNNER || '["self-hosted","macOS","ARM64"]') }}
+    runs-on: ${{ inputs.macos_runner || vars.HERDMAN_MACOS_ARM_RUNNER || vars.HERDMAN_MACOS_RUNNER || 'macos-26' }}
     env:
       APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
       APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
@@ -139,7 +139,7 @@ jobs:
           bun-version: ${{ env.BUN_VERSION }}
       - name: Restore GhosttyKit cache
         id: ghosttykit-cache
-        uses: actions/cache@v6
+        uses: actions/cache/restore@v6
         with:
           path: apps/macos/Frameworks/GhosttyKit.xcframework
           key: ghosttykit-${{ env.GHOSTTY_REF }}-${{ hashFiles('apps/macos/scripts/build-ghostty.sh') }}
@@ -160,6 +160,12 @@ jobs:
             echo "GhosttyKit.xcframework was not restored or built." >&2
             exit 1
           fi
+      - name: Save GhosttyKit cache
+        if: steps.ghosttykit-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: apps/macos/Frameworks/GhosttyKit.xcframework
+          key: ghosttykit-${{ env.GHOSTTY_REF }}-${{ hashFiles('apps/macos/scripts/build-ghostty.sh') }}
       - name: Import Developer ID certificate
         if: env.APPLE_CERTIFICATE_BASE64 != ''
         shell: bash
