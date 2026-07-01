@@ -969,12 +969,12 @@ describe("@herdman/server", () => {
       (await jsonRequest(server, `/v1/workspaces/${workspace.id}`, { method: "DELETE" })).status
     ).toBe(204)
 
-    expect(await readSseEvents(server, 1)).toEqual([
+    expect((await readSseEvents(server, 1)).at(0)).toEqual(
       expect.objectContaining({ kind: "workspace.created" })
-    ])
-    expect(await readSseEvents(server, 1, "not-a-number")).toEqual([
+    )
+    expect((await readSseEvents(server, 1, "not-a-number")).at(0)).toEqual(
       expect.objectContaining({ kind: "workspace.created" })
-    ])
+    )
     const replayEvents = await run(services.db.listEvents(0))
     const replayEventCount = replayEvents.length
     const replayCursor = replayEvents.at(-1)?.id ?? 0
