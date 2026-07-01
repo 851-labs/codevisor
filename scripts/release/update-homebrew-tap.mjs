@@ -7,6 +7,8 @@ const tapDir = process.argv[2]
 const version = process.env.VERSION
 const repository = process.env.REPOSITORY ?? "851-labs/HerdMan-v2"
 const artifactDir = process.env.ARTIFACT_DIR ?? "dist/release"
+const artifactBaseUrl =
+  process.env.ARTIFACT_BASE_URL ?? `https://github.com/${repository}/releases/download/v#{version}`
 
 if (tapDir === undefined || tapDir.length === 0) {
   throw new Error("usage: update-homebrew-tap.mjs <tap-dir>")
@@ -30,8 +32,7 @@ const sha256 = (file) =>
   createHash("sha256")
     .update(readFileSync(join(artifactDir, file)))
     .digest("hex")
-const releaseUrl = (file) =>
-  `https://github.com/${repository}/releases/download/v#{version}/${file}`
+const releaseUrl = (file) => `${artifactBaseUrl.replace(/\/$/, "")}/${file}`
 
 writeFileSync(
   join(tapDir, "Casks", "herdman.rb"),
