@@ -10,7 +10,8 @@ struct HerdManApp: App {
             RootView()
                 .environment(environment)
         }
-        .defaultSize(width: 1100, height: 760)
+        .defaultSize(width: 980, height: 640)
+        .windowResizability(.contentMinSize)
         .commands {
             TerminalCommands()
         }

@@ -30,21 +30,32 @@ struct OnboardingView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Spacer(minLength: 0)
-            content
-                .frame(maxWidth: 440)
-                .padding(.horizontal, 40)
-                .transition(.asymmetric(
-                    insertion: .move(edge: .trailing).combined(with: .opacity),
-                    removal: .move(edge: .leading).combined(with: .opacity)
-                ))
-                .id(step)
-            Spacer(minLength: 0)
+            GeometryReader { geometry in
+                ScrollView {
+                    VStack(spacing: 0) {
+                        Spacer(minLength: 0)
+                        content
+                            .frame(maxWidth: 440)
+                            .padding(.horizontal, 40)
+                            .transition(.asymmetric(
+                                insertion: .move(edge: .trailing).combined(with: .opacity),
+                                removal: .move(edge: .leading).combined(with: .opacity)
+                            ))
+                            .id(step)
+                        Spacer(minLength: 0)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .frame(minHeight: geometry.size.height)
+                    .padding(.vertical, 32)
+                }
+                .scrollIndicators(.hidden)
+            }
             footer
                 .frame(maxWidth: 440)
                 .padding(.horizontal, 40)
-                .padding(.bottom, 32)
+                .padding(.vertical, 24)
         }
+        .frame(minWidth: 640, minHeight: 460)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .animation(.smooth(duration: 0.3), value: step)
         .task {

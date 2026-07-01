@@ -76,6 +76,22 @@ if [[ ! -d "$app_path" ]]; then
   exit 1
 fi
 
+plist_path="$app_path/Contents/Info.plist"
+# Xcode's generated plist has omitted the legacy macOS icon keys in CI even
+# though the icon resources are present. Set them explicitly before signing.
+/usr/libexec/PlistBuddy -c "Set :CFBundleIconFile AppIcon" "$plist_path" 2>/dev/null \
+  || /usr/libexec/PlistBuddy -c "Add :CFBundleIconFile string AppIcon" "$plist_path"
+/usr/libexec/PlistBuddy -c "Set :CFBundleIconName AppIcon" "$plist_path" 2>/dev/null \
+  || /usr/libexec/PlistBuddy -c "Add :CFBundleIconName string AppIcon" "$plist_path"
+if [[ "$(/usr/libexec/PlistBuddy -c "Print :CFBundleIconFile" "$plist_path")" != "AppIcon" ]]; then
+  echo "error: failed to set CFBundleIconFile in $plist_path" >&2
+  exit 1
+fi
+if [[ "$(/usr/libexec/PlistBuddy -c "Print :CFBundleIconName" "$plist_path")" != "AppIcon" ]]; then
+  echo "error: failed to set CFBundleIconName in $plist_path" >&2
+  exit 1
+fi
+
 server_resources="$app_path/Contents/Resources/server"
 rm -rf "$server_resources"
 mkdir -p "$server_resources"
