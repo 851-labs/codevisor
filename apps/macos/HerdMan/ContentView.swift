@@ -83,7 +83,20 @@ struct RootView: View {
         }
     }
 
+    /// Development builds tint the whole window toolbar blue — that color is
+    /// how you tell the dev app apart from the production release.
+    @ViewBuilder
     private var mainSplit: some View {
+        if HerdManAppVariant.isDevelopment {
+            splitView
+                .toolbarBackground(Color.blue, for: .windowToolbar)
+                .toolbarBackgroundVisibility(.visible, for: .windowToolbar)
+        } else {
+            splitView
+        }
+    }
+
+    private var splitView: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
             SidebarView(selection: $selection, store: store)
                 .navigationSplitViewColumnWidth(min: 230, ideal: 270, max: 360)
@@ -92,16 +105,6 @@ struct RootView: View {
                 detail(store)
             } else {
                 ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
-            }
-        }
-        .toolbar {
-            if HerdManAppVariant.isDevelopment {
-                // Right of the page title, without the liquid-glass capsule
-                // toolbar items get by default.
-                ToolbarItem(placement: .principal) {
-                    DevelopmentBadge()
-                }
-                .sharedBackgroundVisibility(.hidden)
             }
         }
     }
@@ -134,21 +137,6 @@ struct RootView: View {
 enum SidebarSelection: Hashable {
     case session(UUID)
     case newChat(UUID?)
-}
-
-/// A small blue badge in the window toolbar so development builds are easy to
-/// tell apart from the production app at a glance.
-private struct DevelopmentBadge: View {
-    var body: some View {
-        Text("DEV")
-            .font(.caption2.weight(.bold))
-            .foregroundStyle(.white)
-            .padding(.horizontal, 7)
-            .padding(.vertical, 2)
-            .background(Capsule().fill(Color.blue))
-            .help("Development build of HerdMan")
-            .accessibilityLabel("Development build")
-    }
 }
 
 #Preview("Root") {
