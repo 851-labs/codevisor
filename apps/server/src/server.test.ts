@@ -9,7 +9,7 @@ import type {
 } from "@herdman/terminal"
 import { makeTerminalManager } from "@herdman/terminal"
 import { Effect } from "effect"
-import { mkdtempSync, rmSync } from "node:fs"
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { WebSocket } from "ws"
@@ -44,6 +44,7 @@ const makeAcp = (): AcpRuntimeService & {
   readonly modes: Array<readonly [string, string]>
   readonly configs: Array<readonly [string, string, string]>
   readonly inspections: Array<readonly [string, string]>
+  readonly creations: Array<readonly [string, string]>
 } => {
   const loads: Array<readonly [string, string, string]> = []
   const prompts: Array<readonly [string, string]> = []
@@ -51,6 +52,7 @@ const makeAcp = (): AcpRuntimeService & {
   const modes: Array<readonly [string, string]> = []
   const configs: Array<readonly [string, string, string]> = []
   const inspections: Array<readonly [string, string]> = []
+  const creations: Array<readonly [string, string]> = []
   return {
     loads,
     prompts,
@@ -58,9 +60,16 @@ const makeAcp = (): AcpRuntimeService & {
     modes,
     configs,
     inspections,
+    creations,
     discoverHarnesses: Effect.succeed(harnesses),
     createAgentSession: (harnessId, cwd) =>
-      Effect.succeed(`agent-${harnessId}-${cwd.split("/").at(-1) ?? "root"}`),
+      Effect.promise(
+        () =>
+          new Promise<string>((resolve) => {
+            creations.push([harnessId, cwd])
+            setTimeout(() => resolve(`agent-${harnessId}-${cwd.split("/").at(-1) ?? "root"}`), 5)
+          })
+      ),
     inspectHarness: (harnessId, cwd) =>
       Effect.sync(() => {
         inspections.push([harnessId, cwd])
@@ -400,6 +409,20 @@ describe("@herdman/server", () => {
 
   it("manages workspaces, harnesses, sessions, actions, and event replay", async () => {
     const { acp, server, services } = await start()
+    const workspaceRoot = mkdtempSync(join(tmpdir(), "herdman-server-workspace-"))
+    tempDirs.push(workspaceRoot)
+    const workspaceFolder = join(workspaceRoot, "herdman")
+    const noModesFolder = join(workspaceRoot, "no-modes")
+    const capabilityFailFolder = join(workspaceRoot, "capability-fail")
+    const cwdFile = join(workspaceRoot, "cwd-file")
+    mkdirSync(workspaceFolder)
+    mkdirSync(noModesFolder)
+    mkdirSync(capabilityFailFolder)
+    writeFileSync(cwdFile, "")
+    const legacyRoot = mkdtempSync(join(tmpdir(), "herdman-server-legacy-"))
+    tempDirs.push(legacyRoot)
+    const legacyWorkspaceFolder = join(legacyRoot, "legacy-agent-session")
+    mkdirSync(legacyWorkspaceFolder)
     const badJson = await fetch(`${server.url}/v1/workspaces`, {
       body: "{",
       headers: { "Content-Type": "application/json" },
@@ -409,7 +432,7 @@ describe("@herdman/server", () => {
     expect((await jsonRequest(server, "/v1/missing")).status).toBe(404)
 
     const workspaceResponse = await jsonRequest(server, "/v1/workspaces", {
-      body: JSON.stringify({ folderPath: "/tmp/herdman", id: "workspace-client-id" }),
+      body: JSON.stringify({ folderPath: workspaceFolder, id: "workspace-client-id" }),
       method: "POST"
     })
     expect(workspaceResponse.status).toBe(201)
@@ -428,7 +451,10 @@ describe("@herdman/server", () => {
     expect((await jsonRequest(server, "/v1/harnesses")).body).toMatchObject([
       { id: "codex", enabled: true }
     ])
-    const capabilitiesResponse = await jsonRequest(server, "/v1/capabilities?cwd=%2Ftmp%2Fherdman")
+    const capabilitiesResponse = await jsonRequest(
+      server,
+      `/v1/capabilities?cwd=${encodeURIComponent(workspaceFolder)}`
+    )
     expect(capabilitiesResponse.body).toMatchObject({
       harnesses: [
         {
@@ -441,17 +467,45 @@ describe("@herdman/server", () => {
         }
       ]
     })
-    expect(acp.inspections).toEqual([["codex", "/tmp/herdman"]])
+    expect(acp.inspections).toEqual([["codex", workspaceFolder]])
     expect((await jsonRequest(server, "/v1/capabilities")).body).toMatchObject({
       harnesses: [{ harness: { id: "codex" } }]
     })
+    const missingCwdCapabilities = await jsonRequest(
+      server,
+      "/v1/capabilities?cwd=%2Ftmp%2Fmissing-herdman-workspace"
+    )
+    expect(missingCwdCapabilities.body).toMatchObject({
+      harnesses: [{ harness: { id: "codex" } }]
+    })
     expect(
-      (await jsonRequest(server, "/v1/capabilities?cwd=%2Ftmp%2Fno-modes")).body
+      (
+        missingCwdCapabilities.body as {
+          readonly harnesses: ReadonlyArray<{
+            readonly configOptions: ReadonlyArray<{ readonly id: string }>
+          }>
+        }
+      ).harnesses[0]?.configOptions.map((option) => option.id)
+    ).toContain("model")
+    expect(acp.inspections.at(-1)).toEqual(["codex", tmpdir()])
+    expect(
+      (await jsonRequest(server, `/v1/capabilities?cwd=${encodeURIComponent(cwdFile)}`)).body
+    ).toMatchObject({
+      harnesses: [{ harness: { id: "codex" } }]
+    })
+    expect(acp.inspections.at(-1)).toEqual(["codex", tmpdir()])
+    expect(
+      (await jsonRequest(server, `/v1/capabilities?cwd=${encodeURIComponent(noModesFolder)}`)).body
     ).toMatchObject({
       harnesses: [{ configOptions: [], harness: { id: "codex" } }]
     })
     expect(
-      (await jsonRequest(server, "/v1/capabilities?cwd=%2Ftmp%2Fcapability-fail")).body
+      (
+        await jsonRequest(
+          server,
+          `/v1/capabilities?cwd=${encodeURIComponent(capabilityFailFolder)}`
+        )
+      ).body
     ).toMatchObject({
       harnesses: [{ configOptions: [], harness: { id: "codex" } }]
     })
@@ -491,7 +545,34 @@ describe("@herdman/server", () => {
         })
       ).body
     ).toMatchObject({ agentSessionId: "agent-codex-herdman", id: session.id })
-    expect((await jsonRequest(server, "/v1/sessions")).body).toMatchObject([{ id: session.id }])
+
+    const concurrentSessionBody = JSON.stringify({
+      id: "client-session-concurrent",
+      workspaceId: workspace.id,
+      harnessId: "codex",
+      title: "Concurrent chat"
+    })
+    const [firstConcurrent, secondConcurrent] = await Promise.all([
+      jsonRequest(server, "/v1/sessions", {
+        body: concurrentSessionBody,
+        method: "POST"
+      }),
+      jsonRequest(server, "/v1/sessions", {
+        body: concurrentSessionBody,
+        method: "POST"
+      })
+    ])
+    expect([firstConcurrent.status, secondConcurrent.status].sort()).toEqual([200, 201])
+    expect(firstConcurrent.body).toMatchObject({
+      agentSessionId: "agent-codex-herdman",
+      id: "client-session-concurrent"
+    })
+    expect(secondConcurrent.body).toEqual(firstConcurrent.body)
+    expect(acp.creations.filter((creation) => creation[1] === workspaceFolder)).toHaveLength(2)
+
+    expect(await jsonRequest(server, "/v1/sessions")).toMatchObject({
+      body: expect.arrayContaining([expect.objectContaining({ id: session.id })])
+    })
     expect((await jsonRequest(server, `/v1/sessions/${session.id}`)).body).toMatchObject({
       session: { id: session.id }
     })
@@ -507,6 +588,26 @@ describe("@herdman/server", () => {
         })
       ).status
     ).toBe(404)
+    const missingWorkspaceResponse = await jsonRequest(server, "/v1/workspaces", {
+      body: JSON.stringify({
+        folderPath: "/tmp/herdman-missing-session-workspace",
+        id: "missing-folder-workspace"
+      }),
+      method: "POST"
+    })
+    expect(missingWorkspaceResponse.status).toBe(201)
+    expect(
+      await jsonRequest(server, "/v1/sessions", {
+        body: JSON.stringify({
+          workspaceId: "missing-folder-workspace",
+          harnessId: "codex"
+        }),
+        method: "POST"
+      })
+    ).toEqual({
+      body: { error: "Workspace folder does not exist: /tmp/herdman-missing-session-workspace" },
+      status: 400
+    })
     expect((await jsonRequest(server, "/v1/sessions/missing")).status).toBe(500)
 
     expect(
@@ -538,7 +639,7 @@ describe("@herdman/server", () => {
       [session.agentSessionId, "hello"],
       [session.agentSessionId, "retry once"]
     ])
-    expect(acp.loads).toContainEqual(["codex", session.agentSessionId, "/tmp/herdman"])
+    expect(acp.loads).toContainEqual(["codex", session.agentSessionId, workspaceFolder])
     expect(
       (
         await jsonRequest(server, `/v1/sessions/${session.id}/cancel`, {
@@ -603,7 +704,7 @@ describe("@herdman/server", () => {
     expect(await readSseEvents(server, 1, "not-a-number")).toEqual([
       expect.objectContaining({ kind: "workspace.created" })
     ])
-    const replayEventCount = 12
+    const replayEventCount = 14
     const events = await readSseEvents(server, replayEventCount, 0)
     expect(events).toEqual(
       expect.arrayContaining([
@@ -622,7 +723,7 @@ describe("@herdman/server", () => {
     expect(await liveEvent).toEqual([expect.objectContaining({ kind: "workspace.created" })])
 
     const legacyWorkspace = await run(
-      services.db.createWorkspace({ folderPath: "/tmp/legacy-agent-session" })
+      services.db.createWorkspace({ folderPath: legacyWorkspaceFolder })
     )
     const legacySession = await run(
       services.db.createSession({
@@ -642,7 +743,7 @@ describe("@herdman/server", () => {
       ).body
     ).toEqual({ stopReason: "end_turn" })
     expect(acp.prompts).toContainEqual([legacySession.id, "legacy hello"])
-    expect(acp.loads).toContainEqual(["codex", legacySession.id, "/tmp/legacy-agent-session"])
+    expect(acp.loads).toContainEqual(["codex", legacySession.id, legacyWorkspaceFolder])
   })
 
   it("bridges terminal create and websocket traffic", async () => {

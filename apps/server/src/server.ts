@@ -1,5 +1,6 @@
 import type { AcpRuntimeService, RuntimeEvent } from "@herdman/acp-runtime"
 import type {
+  CreateSessionRequest,
   EventEnvelope,
   Harness,
   HarnessCapability,
@@ -26,6 +27,7 @@ import {
 import type { HerdManDatabaseService } from "@herdman/db"
 import type { TerminalManagerService } from "@herdman/terminal"
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http"
+import { statSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import type { Socket } from "node:net"
@@ -70,6 +72,10 @@ export interface HerdManServerApp {
   readonly handleRequest: (request: IncomingMessage, response: ServerResponse) => void
   readonly handleUpgrade: (request: IncomingMessage, socket: Socket, head: Buffer) => void
   readonly close: Effect.Effect<void, ServerError>
+}
+
+interface RouteState {
+  readonly pendingSessionCreates: Map<string, Promise<SessionSummary>>
 }
 
 export class HerdManServer extends Context.Service<HerdManServer, HerdManServerServices>()(
@@ -131,9 +137,12 @@ export const makeHerdManServerApp = (
   fanout: EventFanout,
   webSocketServer = new WebSocketServer({ noServer: true })
 ): HerdManServerApp => {
+  const routeState: RouteState = {
+    pendingSessionCreates: new Map()
+  }
   const app = {
     handleRequest: (request: IncomingMessage, response: ServerResponse): void => {
-      void handleRequest(services, config, fanout, request, response)
+      void handleRequest(services, config, fanout, routeState, request, response)
     },
     handleUpgrade: (request: IncomingMessage, socket: Socket, head: Buffer): void => {
       void handleUpgrade(services, config, request, socket, head, webSocketServer)
@@ -184,6 +193,7 @@ const handleRequest = async (
   services: HerdManServerServices,
   config: HerdManServerConfig,
   fanout: EventFanout,
+  routeState: RouteState,
   request: IncomingMessage,
   response: ServerResponse
 ): Promise<void> => {
@@ -243,7 +253,7 @@ const handleRequest = async (
     if (await routeHarnesses(services, request, response, url)) {
       return
     }
-    if (await routeSessions(services, fanout, request, response, url, config)) {
+    if (await routeSessions(services, fanout, routeState, request, response, url, config)) {
       return
     }
     if (await routeTerminals(services, request, response, url)) {
@@ -334,7 +344,7 @@ const discoverCapabilities = async (
   services: HerdManServerServices,
   url: URL
 ): Promise<{ readonly harnesses: ReadonlyArray<HarnessCapability> }> => {
-  const cwd = url.searchParams.get("cwd") ?? tmpdir()
+  const cwd = existingDirectory(url.searchParams.get("cwd")) ?? tmpdir()
   const harnesses = await discoverHarnesses(services)
   const readyHarnesses = harnesses.filter(
     (harness) => harness.enabled && harness.readiness.state === "ready"
@@ -363,6 +373,7 @@ const discoverCapabilities = async (
 const routeSessions = async (
   services: HerdManServerServices,
   fanout: EventFanout,
+  routeState: RouteState,
   request: IncomingMessage,
   response: ServerResponse,
   url: URL,
@@ -381,17 +392,22 @@ const routeSessions = async (
         writeJson(response, 200, existing)
         return true
       }
+      const pending = routeState.pendingSessionCreates.get(payload.id)
+      if (pending !== undefined) {
+        writeJson(response, 200, await pending)
+        return true
+      }
     }
     const workspace = await getWorkspaceOrFail(services.db, payload.workspaceId)
-    const agentSessionId =
-      payload.agentSessionId ??
-      (await run(services.acp.createAgentSession(payload.harnessId, workspace.folderPath)))
-    const session = await run(
-      services.db.createSession({
-        ...payload,
-        agentSessionId
-      })
-    )
+    const create = createServerSession(services, payload, workspace)
+    if (payload.id !== undefined) {
+      routeState.pendingSessionCreates.set(payload.id, create)
+    }
+    const session = await create.finally(() => {
+      if (payload.id !== undefined) {
+        routeState.pendingSessionCreates.delete(payload.id)
+      }
+    })
     await appendAndPublish(services.db, fanout, "session.created", session.id, session)
     writeJson(response, 201, session)
     return true
@@ -429,6 +445,23 @@ const routeSessions = async (
   }
 
   return false
+}
+
+const createServerSession = async (
+  services: HerdManServerServices,
+  payload: CreateSessionRequest,
+  workspace: Workspace
+): Promise<SessionSummary> => {
+  assertWorkspaceFolderExists(workspace)
+  const agentSessionId =
+    payload.agentSessionId ??
+    (await run(services.acp.createAgentSession(payload.harnessId, workspace.folderPath)))
+  return run(
+    services.db.createSession({
+      ...payload,
+      agentSessionId
+    })
+  )
 }
 
 const findSession = async (
@@ -705,10 +738,28 @@ const ensureAgentSessionFor = async (
 ): Promise<string> => {
   const detail = await run(services.db.getSessionDetail(sessionId))
   const workspace = await getWorkspaceOrFail(services.db, detail.session.workspaceId)
+  assertWorkspaceFolderExists(workspace)
   const agentSessionId = detail.session.agentSessionId ?? sessionId
   return run(
     services.acp.loadAgentSession(detail.session.harnessId, agentSessionId, workspace.folderPath)
   )
+}
+
+const existingDirectory = (folderPath: string | null): string | undefined => {
+  if (folderPath === null || folderPath.length === 0) {
+    return undefined
+  }
+  try {
+    return statSync(folderPath).isDirectory() ? folderPath : undefined
+  } catch {
+    return undefined
+  }
+}
+
+const assertWorkspaceFolderExists = (workspace: Workspace): void => {
+  if (existingDirectory(workspace.folderPath) === undefined) {
+    throw new HttpFailure(400, `Workspace folder does not exist: ${workspace.folderPath}`)
+  }
 }
 
 const materializeRuntimeEvent = async (

@@ -50,6 +50,7 @@ final class SessionController {
     private var pendingConfig: [String: String] = [:]
     private var pendingModeId: String?
     private var modeStateByHarness: [String: SessionModeState] = [:]
+    private var configOptionsByHarness: [String: [SessionConfigOption]] = [:]
 
     init(
         workspace: Workspace,
@@ -85,7 +86,7 @@ final class SessionController {
     var configOptions: [SessionConfigOption] {
         if let model { return model.configOptions }
         guard let harnessId = selectedHarnessId else { return [] }
-        return configCache.options(forHarness: harnessId).map { option in
+        return (configOptionsByHarness[harnessId] ?? configCache.options(forHarness: harnessId)).map { option in
             guard let pending = pendingConfig[option.id] else { return option }
             var updated = option
             updated.currentValue = pending
@@ -122,10 +123,18 @@ final class SessionController {
             await model.setConfigOption(configId: configId, value: value)
             if let harnessId = connectedHarnessId {
                 configCache.store(model.configOptions, forHarness: harnessId)
+                configOptionsByHarness[harnessId] = model.configOptions
             }
         } else {
             // Not connected yet: remember it and apply on connect.
             pendingConfig[configId] = value
+            if let harnessId = selectedHarnessId {
+                var options = configOptionsByHarness[harnessId] ?? configCache.options(forHarness: harnessId)
+                if let index = options.firstIndex(where: { $0.id == configId }) {
+                    options[index].currentValue = value
+                    configOptionsByHarness[harnessId] = options
+                }
+            }
         }
     }
 
@@ -379,7 +388,7 @@ final class SessionController {
             serverTransport: transport,
             sessionId: session.id.uuidString,
             modeState: modeStateByHarness[harness.id],
-            configOptions: configCache.options(forHarness: harness.id)
+            configOptions: configOptionsByHarness[harness.id] ?? configCache.options(forHarness: harness.id)
         )
         if resumeAgentSessionId != nil {
             await model.loadHistory()
@@ -396,6 +405,7 @@ final class SessionController {
         pendingConfig.removeAll()
 
         configCache.store(model.configOptions, forHarness: harness.id)
+        configOptionsByHarness[harness.id] = model.configOptions
         return model
     }
 
@@ -415,6 +425,7 @@ final class SessionController {
             }
             for capability in capabilities {
                 configCache.store(capability.configOptions, forHarness: capability.harness.id)
+                configOptionsByHarness[capability.harness.id] = capability.configOptions
                 if let modes = capability.modes {
                     modeStateByHarness[capability.harness.id] = modes
                 }

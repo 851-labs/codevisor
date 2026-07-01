@@ -130,6 +130,23 @@ struct WorkspaceListModelTests {
         Issue.record("Timed out waiting for server mirror calls")
     }
 
+    @Test("Draft sessions can be held locally until first send")
+    func draftSessionSkipsImmediateServerSync() async throws {
+        let fakeServer = FakeServerClient()
+        let model = WorkspaceListModel(
+            workspaceRepository: DefaultWorkspaceRepository(store: InMemoryStore()),
+            sessionRepository: DefaultSessionRepository(store: InMemoryStore()),
+            serverClient: fakeServer
+        )
+
+        let workspace = model.addWorkspace(folderURL: URL(fileURLWithPath: "/tmp/draft"))
+        _ = model.newSession(in: workspace, title: "Draft", harnessId: "codex", syncToServer: false)
+        try await Task.sleep(nanoseconds: 20_000_000)
+
+        let snapshot = await fakeServer.snapshot()
+        #expect(snapshot.upsertedSessionIDs.isEmpty)
+    }
+
     @Test("Adding a folder creates and persists a workspace")
     func addWorkspace() {
         let (model, store, _) = makeModel()

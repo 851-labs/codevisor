@@ -111,7 +111,8 @@ struct NewChatView: View {
             let session = environment.workspaceList.newSession(
                 in: workspace,
                 title: title,
-                harnessId: controller.selectedHarnessId
+                harnessId: controller.selectedHarnessId,
+                syncToServer: false
             )
             controller.serverSession = session
             // The eager connection may already hold an agent session id; persist

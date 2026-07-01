@@ -128,7 +128,12 @@ public final class WorkspaceListModel {
     }
 
     @discardableResult
-    public func newSession(in workspace: Workspace, title: String = "New Session", harnessId: String? = nil) -> ChatSession {
+    public func newSession(
+        in workspace: Workspace,
+        title: String = "New Session",
+        harnessId: String? = nil,
+        syncToServer: Bool = true
+    ) -> ChatSession {
         let session = ChatSession(
             workspaceId: workspace.id,
             serverId: selectedServerId,
@@ -138,7 +143,9 @@ public final class WorkspaceListModel {
         )
         sessions.append(session)
         persistSessions()
-        syncSession(session)
+        if syncToServer {
+            syncSession(session)
+        }
         return session
     }
 
