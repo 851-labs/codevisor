@@ -46,17 +46,25 @@ mkdir -p "$output_dir"
 "$script_dir/build-server-runtime.sh" "$version" "$runtime_dir"
 
 rm -rf "$derived_data"
-xcodebuild \
+xcode_args=(
   -project "$repo_root/apps/macos/HerdMan.xcodeproj" \
   -scheme "$scheme" \
   -configuration Release \
   -derivedDataPath "$derived_data" \
   MARKETING_VERSION="$version" \
   CURRENT_PROJECT_VERSION="$build_number" \
-  CODE_SIGNING_ALLOWED=NO \
-  OTHER_LDFLAGS="" \
-  SWIFT_INCLUDE_PATHS="" \
-  build
+  CODE_SIGNING_ALLOWED=NO
+)
+
+ghostty_library="$repo_root/apps/macos/Frameworks/GhosttyKit.xcframework/macos-arm64/libghostty-internal-fat.a"
+if [[ -f "$ghostty_library" ]]; then
+  echo "Building with GhosttyKit from $ghostty_library"
+else
+  echo "GhosttyKit.xcframework not found; building with the placeholder terminal backend."
+  xcode_args+=(OTHER_LDFLAGS="" SWIFT_INCLUDE_PATHS="")
+fi
+
+xcodebuild "${xcode_args[@]}" build
 
 app_path="$derived_data/Build/Products/Release/HerdMan.app"
 if [[ ! -d "$app_path" ]]; then

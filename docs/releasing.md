@@ -13,6 +13,12 @@ The macOS app bundle includes the Node server runtime under
 `HerdMan.app/Contents/Resources/server`. The app still depends on a Node runtime,
 so the generated cask declares `depends_on formula: "node"`.
 
+The app release script links `apps/macos/Frameworks/GhosttyKit.xcframework` when
+it is present. If it is absent, the release still builds with the placeholder
+terminal backend. Run `apps/macos/scripts/build-ghostty.sh` before the app
+release step on a machine that can build GhosttyKit when the release should ship
+the live libghostty terminal.
+
 ## Required Repository Secret
 
 - `HOMEBREW_TAP_TOKEN`: a GitHub token with write access to
