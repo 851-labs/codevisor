@@ -9,16 +9,25 @@ import ACPKit
 public final class ConfigOptionCache {
     private let store: any PersistenceStore
     private let key: String
+    private let capabilitiesKey: String
     private var cache: [String: [SessionConfigOption]]
+    private var capabilitiesCache: [String: [ServerHarnessCapability]]
 
     public init(store: any PersistenceStore, key: String = "harness-config") {
         self.store = store
         self.key = key
+        capabilitiesKey = "\(key)-server-capabilities"
         if let data = store.loadData(forKey: key),
            let decoded = try? JSONDecoder().decode([String: [SessionConfigOption]].self, from: data) {
             cache = decoded
         } else {
             cache = [:]
+        }
+        if let data = store.loadData(forKey: capabilitiesKey),
+           let decoded = try? JSONDecoder().decode([String: [ServerHarnessCapability]].self, from: data) {
+            capabilitiesCache = decoded
+        } else {
+            capabilitiesCache = [:]
         }
     }
 
@@ -33,14 +42,31 @@ public final class ConfigOptionCache {
         persist()
     }
 
+    public func capabilities(forServer serverId: String) -> [ServerHarnessCapability] {
+        capabilitiesCache[serverId] ?? []
+    }
+
+    public func store(_ capabilities: [ServerHarnessCapability], forServer serverId: String) {
+        capabilitiesCache[serverId] = capabilities
+        for capability in capabilities {
+            cache[capability.harness.id] = capability.configOptions
+        }
+        persist()
+    }
+
     /// Clears all cached config (used by "Delete all data").
     public func clear() {
         cache = [:]
+        capabilitiesCache = [:]
         persist()
     }
 
     private func persist() {
-        guard let data = try? JSONEncoder().encode(cache) else { return }
-        try? store.saveData(data, forKey: key)
+        if let data = try? JSONEncoder().encode(cache) {
+            try? store.saveData(data, forKey: key)
+        }
+        if let data = try? JSONEncoder().encode(capabilitiesCache) {
+            try? store.saveData(data, forKey: capabilitiesKey)
+        }
     }
 }

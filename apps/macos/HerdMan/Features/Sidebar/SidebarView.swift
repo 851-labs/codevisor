@@ -137,7 +137,9 @@ struct SidebarView: View {
             .padding(.horizontal, 8)
             .padding(.vertical, 7)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: 6).fill(Color.secondary.opacity(0.10)))
+            .contentShape(Rectangle())
+            .background(rowBackground(id: "machine-picker", isSelected: false))
+            .onHover { hovered = $0 ? "machine-picker" : (hovered == "machine-picker" ? nil : hovered) }
         }
         .menuStyle(.button)
         .buttonStyle(.plain)

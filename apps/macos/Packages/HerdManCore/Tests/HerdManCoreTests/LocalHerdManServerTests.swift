@@ -107,7 +107,9 @@ private final class FakeLocalServerClient: HerdManServerClienting, @unchecked Se
     func upsertSession(_ session: ChatSession) async throws -> ServerSession { fatalError("unused") }
     func updateSession(_ session: ChatSession) async throws -> ServerSession { fatalError("unused") }
     func deleteSession(id: UUID) async throws {}
-    func promptSession(id: UUID, text: String) async throws -> StopReason { .endTurn }
+    func promptSession(id: UUID, text: String) async throws -> ServerPromptAccepted {
+        ServerPromptAccepted(accepted: true, sessionId: id.uuidString)
+    }
     func cancelSession(id: UUID) async throws {}
     func setSessionMode(id: UUID, modeId: String) async throws {}
     func setSessionConfig(id: UUID, configId: String, value: String) async throws {}

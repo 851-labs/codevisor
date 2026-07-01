@@ -179,6 +179,12 @@ export const PromptRequest = Schema.Struct({
 })
 export type PromptRequest = typeof PromptRequest.Type
 
+export const PromptAcceptedResponse = Schema.Struct({
+  accepted: Schema.Boolean,
+  sessionId: Schema.String
+})
+export type PromptAcceptedResponse = typeof PromptAcceptedResponse.Type
+
 export const CancelRequest = Schema.Struct({
   clientActionId: Schema.optional(Schema.String)
 })
@@ -332,6 +338,7 @@ export const endpoints = [
   "POST /v1/sessions/:id/mode",
   "POST /v1/sessions/:id/config",
   "GET /v1/events",
+  "GET /v1/events/socket",
   "POST /v1/terminals",
   "GET /v1/terminals/:id/socket"
 ] as const

@@ -64,6 +64,7 @@ final class SessionController {
         self.configCache = configCache
         self.settings = settings
         self.serverClient = serverClient
+        seedFromCachedServerCapabilities()
     }
 
     var isPrepared: Bool { !harnesses.isEmpty }
@@ -167,6 +168,10 @@ final class SessionController {
     /// disabled everything); a resumed session always keeps its own harness.
     func prepare() async {
         if let serverClient {
+            if seedFromCachedServerCapabilities() {
+                Task { await self.prepareFromServerCapabilities(serverClient) }
+                return
+            }
             if await prepareFromServerCapabilities(serverClient) {
                 return
             }
@@ -219,6 +224,7 @@ final class SessionController {
     func selectWorkspace(_ workspace: Workspace) async {
         guard workspace.id != self.workspace.id else { return }
         self.workspace = workspace
+        seedFromCachedServerCapabilities()
         await reconnect()
     }
 
@@ -430,6 +436,7 @@ final class SessionController {
                     modeStateByHarness[capability.harness.id] = modes
                 }
             }
+            configCache.store(capabilities, forServer: workspace.serverId)
             if isNewChat {
                 if selectedHarnessId == nil || !harnesses.contains(where: { $0.id == selectedHarnessId }) {
                     selectedHarnessId = harnesses.first?.id
@@ -441,6 +448,37 @@ final class SessionController {
         } catch {
             return false
         }
+    }
+
+    @discardableResult
+    private func seedFromCachedServerCapabilities() -> Bool {
+        guard serverClient != nil else { return false }
+        let cached = configCache.capabilities(forServer: workspace.serverId).filter { capability in
+            capability.harness.enabled && capability.harness.readiness.state == "ready"
+        }
+        guard !cached.isEmpty else { return false }
+        let agents = cached.map(\.harness.discoveredAgent)
+        let isNewChat = resumeAgentSessionId == nil
+        if let settings, isNewChat {
+            let enabled = agents.filter { settings.isHarnessEnabled($0.id) }
+            harnesses = enabled.isEmpty ? agents : enabled
+        } else {
+            harnesses = agents
+        }
+        for capability in cached {
+            configOptionsByHarness[capability.harness.id] = capability.configOptions
+            if let modes = capability.modes {
+                modeStateByHarness[capability.harness.id] = modes
+            }
+        }
+        if isNewChat {
+            if selectedHarnessId == nil || !harnesses.contains(where: { $0.id == selectedHarnessId }) {
+                selectedHarnessId = harnesses.first?.id
+            }
+        } else if selectedHarnessId == nil {
+            selectedHarnessId = harnesses.first?.id
+        }
+        return true
     }
 }
 

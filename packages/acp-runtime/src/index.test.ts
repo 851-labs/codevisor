@@ -10,7 +10,8 @@ import {
   type AcpHarnessLaunchRequest,
   type AcpRuntimeError,
   type PromptResult,
-  type RuntimeEvent
+  type RuntimeEvent,
+  type RuntimeEventSink
 } from "./index.js"
 
 const run = <A>(effect: Effect.Effect<A, unknown>): Promise<A> => Effect.runPromise(effect)
@@ -46,14 +47,22 @@ class FakeConnection implements AcpAgentConnection {
     })
   }
 
-  prompt(sessionId: string, text: string): Effect.Effect<PromptResult, AcpRuntimeError> {
-    return Effect.sync(() => {
+  prompt(
+    sessionId: string,
+    text: string,
+    onEvent?: RuntimeEventSink
+  ): Effect.Effect<PromptResult, AcpRuntimeError> {
+    return Effect.promise(async () => {
       this.prompts.push([sessionId, text])
+      const events = [
+        conversationEvent(sessionId, "user", text),
+        conversationEvent(sessionId, "assistant", `Echo: ${text}`)
+      ]
+      for (const event of events) {
+        await onEvent?.(event)
+      }
       return {
-        events: [
-          conversationEvent(sessionId, "user", text),
-          conversationEvent(sessionId, "assistant", `Echo: ${text}`)
-        ],
+        events: onEvent === undefined ? events : [],
         stopReason: "end_turn"
       }
     })
@@ -250,6 +259,17 @@ describe("@herdman/acp-runtime", () => {
       conversationEvent(sessionId, "assistant", "Echo: hello")
     ])
     expect(connector.connections[0]?.prompts).toEqual([[sessionId, "hello"]])
+    const liveEvents: Array<RuntimeEvent> = []
+    const liveResult = await run(
+      runtime.prompt(sessionId, "stream", (event) => {
+        liveEvents.push(event)
+      })
+    )
+    expect(liveResult).toEqual({ events: [], stopReason: "end_turn" })
+    expect(liveEvents).toEqual([
+      conversationEvent(sessionId, "user", "stream"),
+      conversationEvent(sessionId, "assistant", "Echo: stream")
+    ])
     expect(await run(runtime.cancel(sessionId))).toMatchObject({
       kind: "session.updated",
       payload: { stopReason: "cancelled" }

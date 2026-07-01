@@ -6,6 +6,12 @@ public struct ServerSessionSnapshot: Equatable, Sendable {
     public var eventCursor: Int
 }
 
+public enum ServerSessionStreamEvent: Equatable, Sendable {
+    case update(SessionUpdate)
+    case finished(StopReason)
+    case failed(String)
+}
+
 public struct ServerSessionTransport: Sendable {
     public static let liveOnlyEventCursor = 9_007_199_254_740_991
 
@@ -17,8 +23,8 @@ public struct ServerSessionTransport: Sendable {
         self.sessionId = sessionId
     }
 
-    public func prompt(_ text: String) async throws -> PromptResponse {
-        PromptResponse(stopReason: try await client.promptSession(id: sessionId, text: text))
+    public func prompt(_ text: String) async throws -> ServerPromptAccepted {
+        try await client.promptSession(id: sessionId, text: text)
     }
 
     public func cancel() async throws {
@@ -44,12 +50,25 @@ public struct ServerSessionTransport: Sendable {
     public func updates(since: Int = Self.liveOnlyEventCursor) -> AsyncStream<SessionUpdate> {
         AsyncStream { continuation in
             let task = Task {
+                for await streamEvent in streamEvents(since: since) {
+                    guard case let .update(update) = streamEvent else { continue }
+                    continuation.yield(update)
+                }
+                continuation.finish()
+            }
+            continuation.onTermination = { _ in task.cancel() }
+        }
+    }
+
+    public func streamEvents(since: Int = Self.liveOnlyEventCursor) -> AsyncStream<ServerSessionStreamEvent> {
+        AsyncStream { continuation in
+            let task = Task {
                 do {
                     for try await event in client.eventStream(since: since) {
                         guard event.subjectId.caseInsensitiveCompare(sessionId.uuidString) == .orderedSame else {
                             continue
                         }
-                        for update in Self.sessionUpdates(from: event) {
+                        for update in Self.sessionStreamEvents(from: event) {
                             continuation.yield(update)
                         }
                     }
@@ -98,16 +117,21 @@ public struct ServerSessionTransport: Sendable {
         UUID(uuidString: id) ?? UUID()
     }
 
-    private static func sessionUpdates(from event: ServerEventEnvelope) -> [SessionUpdate] {
+    private static func sessionStreamEvents(from event: ServerEventEnvelope) -> [ServerSessionStreamEvent] {
         if let rawUpdate = decodeRawSessionUpdate(event.payload) {
-            return [rawUpdate]
+            return [.update(rawUpdate)]
         }
 
         switch event.kind {
         case "session.output":
-            return textUpdates(from: event.payload)
+            return textUpdates(from: event.payload).map(ServerSessionStreamEvent.update)
         case "session.updated":
-            return metadataUpdates(from: event.payload)
+            if let stopReason = stopReason(from: event.payload) {
+                return [.finished(stopReason)]
+            }
+            return metadataUpdates(from: event.payload).map(ServerSessionStreamEvent.update)
+        case "session.error":
+            return [.failed(errorMessage(from: event.payload))]
         default:
             return []
         }
@@ -147,6 +171,15 @@ public struct ServerSessionTransport: Sendable {
             return [.currentModeUpdate(currentModeId: modeId)]
         }
         return []
+    }
+
+    private static func stopReason(from payload: JSONValue) -> StopReason? {
+        guard let raw = payload["stopReason"]?.stringValue else { return nil }
+        return StopReason(rawValue: raw)
+    }
+
+    private static func errorMessage(from payload: JSONValue) -> String {
+        payload["message"]?.stringValue ?? "The server reported an error."
     }
 
     private static func decodeConfigOptions(_ value: JSONValue?) -> [SessionConfigOption]? {

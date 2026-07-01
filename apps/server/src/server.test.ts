@@ -1,4 +1,4 @@
-import type { AcpRuntimeService } from "@herdman/acp-runtime"
+import type { AcpRuntimeService, RuntimeEventSink } from "@herdman/acp-runtime"
 import type { Harness } from "@herdman/api"
 import { makeDatabase, type HerdManDatabaseService } from "@herdman/db"
 import type {
@@ -9,6 +9,7 @@ import type {
 } from "@herdman/terminal"
 import { makeTerminalManager } from "@herdman/terminal"
 import { Effect } from "effect"
+import { createServer } from "node:http"
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -17,7 +18,9 @@ import { afterEach, describe, expect, it } from "vitest"
 import {
   defaultDatabasePath,
   defaultServerConfig,
+  EventFanout,
   HerdManServer,
+  makeHerdManServerApp,
   makeEventFanout,
   startHerdManServer,
   type RunningHerdManServer
@@ -111,18 +114,63 @@ const makeAcp = (): AcpRuntimeService & {
         loads.push([harnessId, agentSessionId, cwd])
         return agentSessionId
       }),
-    prompt: (sessionId, text) =>
-      Effect.sync(() => {
+    prompt: (sessionId, text, onEvent?: RuntimeEventSink) =>
+      Effect.promise(async () => {
         prompts.push([sessionId, text])
+        if (text === "prompt fails") {
+          throw new Error("prompt failed")
+        }
+        const events =
+          text === "raw chunks" || text === "returned events"
+            ? [
+                {
+                  kind: "session.output" as const,
+                  subjectId: sessionId,
+                  payload: {
+                    content: { text, type: "text" },
+                    sessionUpdate: "user_message_chunk"
+                  }
+                },
+                {
+                  kind: "session.output" as const,
+                  subjectId: sessionId,
+                  payload: {
+                    content: { text: "Raw answer", type: "text" },
+                    sessionUpdate: "agent_message_chunk"
+                  }
+                },
+                {
+                  kind: "session.output" as const,
+                  subjectId: sessionId,
+                  payload: {
+                    content: { text: "thought", type: "text" },
+                    sessionUpdate: "agent_thought_chunk"
+                  }
+                },
+                {
+                  kind: "session.output" as const,
+                  subjectId: sessionId,
+                  payload: {
+                    content: { type: "image" },
+                    sessionUpdate: "agent_message_chunk"
+                  }
+                }
+              ]
+            : [
+                {
+                  kind: "session.output" as const,
+                  subjectId: sessionId,
+                  payload: { role: "assistant", text: `Echo: ${text}` }
+                }
+              ]
+        if (text !== "returned events") {
+          for (const event of events) {
+            await onEvent?.(event)
+          }
+        }
         return {
           stopReason: "end_turn" as const,
-          events: [
-            {
-              kind: "session.output" as const,
-              subjectId: sessionId,
-              payload: { role: "assistant", text: `Echo: ${text}` }
-            }
-          ]
+          events: onEvent === undefined || text === "returned events" ? events : []
         }
       }),
     cancel: (sessionId) =>
@@ -246,6 +294,40 @@ const start = async (auth = { allowLocalhostWithoutAuth: true, requireBearerToke
   return { acp, server, services, spawner }
 }
 
+const startWithApp = async (
+  services: Awaited<ReturnType<typeof makeServices>>["services"],
+  fanout?: EventFanout
+): Promise<RunningHerdManServer> => {
+  const appFanout = fanout ?? (await run(makeEventFanout))
+  return await new Promise((resolve, reject) => {
+    const app = makeHerdManServerApp(
+      services,
+      defaultServerConfig({ id: "server-a", port: 0 }),
+      appFanout
+    )
+    const httpServer = createServer(app.handleRequest)
+    httpServer.on("upgrade", app.handleUpgrade)
+    httpServer.once("error", reject)
+    httpServer.listen(0, "127.0.0.1", () => {
+      httpServer.off("error", reject)
+      const address = httpServer.address()
+      const port = typeof address === "object" && address !== null ? address.port : 0
+      resolve({
+        close: Effect.promise(
+          () =>
+            new Promise<void>((closeResolve) => {
+              void run(app.close)
+              httpServer.close(() => closeResolve())
+            })
+        ),
+        host: "127.0.0.1",
+        port,
+        url: `http://127.0.0.1:${port}`
+      })
+    })
+  })
+}
+
 const jsonRequest = async (
   server: RunningHerdManServer,
   path: string,
@@ -299,12 +381,51 @@ const readSseEvents = async (
   return events
 }
 
+const readWebSocketEvents = async (
+  server: RunningHerdManServer,
+  expectedCount: number,
+  since?: number | string
+): Promise<ReadonlyArray<unknown>> => {
+  const eventsUrl =
+    since === undefined
+      ? `${server.url.replace("http:", "ws:")}/v1/events/socket`
+      : `${server.url.replace("http:", "ws:")}/v1/events/socket?since=${since}`
+  const webSocket = new WebSocket(eventsUrl)
+  const events: Array<unknown> = []
+  let isDone = false
+  const received = new Promise<ReadonlyArray<unknown>>((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      isDone = true
+      webSocket.close()
+      reject(new Error(`Timed out waiting for ${expectedCount} websocket events`))
+    }, 1_000)
+    webSocket.on("message", (data) => {
+      if (isDone) {
+        return
+      }
+      events.push(JSON.parse(data.toString()) as unknown)
+      if (events.length >= expectedCount) {
+        isDone = true
+        clearTimeout(timeout)
+        webSocket.close()
+        resolve(events.slice(0, expectedCount))
+      }
+    })
+    webSocket.on("error", reject)
+  })
+  await new Promise<void>((resolve, reject) => {
+    webSocket.once("open", resolve)
+    webSocket.once("error", reject)
+  })
+  return await received
+}
+
 const waitFor = async (
-  predicate: () => boolean,
+  predicate: () => boolean | Promise<boolean>,
   describeState: () => string = () => ""
 ): Promise<void> => {
   for (let attempt = 0; attempt < 50; attempt += 1) {
-    if (predicate()) {
+    if (await predicate()) {
       return
     }
     await new Promise((resolve) => setTimeout(resolve, 10))
@@ -617,7 +738,8 @@ describe("@herdman/server", () => {
           method: "POST"
         })
       ).body
-    ).toEqual({ stopReason: "end_turn" })
+    ).toEqual({ accepted: true, sessionId: session.id })
+    await waitFor(() => acp.prompts.length === 1)
     expect(acp.prompts).toEqual([[session.agentSessionId, "hello"]])
     expect(
       (
@@ -626,7 +748,7 @@ describe("@herdman/server", () => {
           method: "POST"
         })
       ).body
-    ).toEqual({ stopReason: "end_turn" })
+    ).toEqual({ accepted: true, sessionId: session.id })
     expect(
       (
         await jsonRequest(server, `/v1/sessions/${session.id}/prompt`, {
@@ -634,11 +756,55 @@ describe("@herdman/server", () => {
           method: "POST"
         })
       ).body
-    ).toEqual({ stopReason: "end_turn" })
+    ).toEqual({ accepted: true, sessionId: session.id })
+    await waitFor(() => acp.prompts.length === 2)
     expect(acp.prompts).toEqual([
       [session.agentSessionId, "hello"],
       [session.agentSessionId, "retry once"]
     ])
+    expect(
+      (
+        await jsonRequest(server, `/v1/sessions/${session.id}/prompt`, {
+          body: JSON.stringify({ text: "raw chunks" }),
+          method: "POST"
+        })
+      ).body
+    ).toEqual({ accepted: true, sessionId: session.id })
+    await waitFor(() => acp.prompts.length === 3)
+    expect(
+      (await run(services.db.getSessionDetail(session.id))).conversation.map((item) => item.text)
+    ).toEqual(expect.arrayContaining(["hello", "Echo: hello", "raw chunks", "Raw answer"]))
+    expect(await run(services.db.listEvents(0))).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "session.output",
+          payload: expect.objectContaining({ sessionUpdate: "agent_message_chunk" })
+        })
+      ])
+    )
+    expect(
+      (
+        await jsonRequest(server, `/v1/sessions/${session.id}/prompt`, {
+          body: JSON.stringify({ text: "returned events" }),
+          method: "POST"
+        })
+      ).body
+    ).toEqual({ accepted: true, sessionId: session.id })
+    await waitFor(() => acp.prompts.length === 4)
+    expect(
+      (await run(services.db.getSessionDetail(session.id))).conversation.map((item) => item.text)
+    ).toEqual(expect.arrayContaining(["returned events", "Raw answer"]))
+    expect(
+      (
+        await jsonRequest(server, `/v1/sessions/${session.id}/prompt`, {
+          body: JSON.stringify({ text: "prompt fails" }),
+          method: "POST"
+        })
+      ).body
+    ).toEqual({ accepted: true, sessionId: session.id })
+    await waitFor(async () =>
+      (await run(services.db.listEvents(0))).some((event) => event.kind === "session.error")
+    )
     expect(acp.loads).toContainEqual(["codex", session.agentSessionId, workspaceFolder])
     expect(
       (
@@ -704,7 +870,9 @@ describe("@herdman/server", () => {
     expect(await readSseEvents(server, 1, "not-a-number")).toEqual([
       expect.objectContaining({ kind: "workspace.created" })
     ])
-    const replayEventCount = 14
+    const replayEvents = await run(services.db.listEvents(0))
+    const replayEventCount = replayEvents.length
+    const replayCursor = replayEvents.at(-1)?.id ?? 0
     const events = await readSseEvents(server, replayEventCount, 0)
     expect(events).toEqual(
       expect.arrayContaining([
@@ -715,12 +883,25 @@ describe("@herdman/server", () => {
       ])
     )
 
-    const liveEvent = readSseEvents(server, 1, replayEventCount)
+    const liveEvent = readSseEvents(server, 1, replayCursor)
     await jsonRequest(server, "/v1/workspaces", {
       body: JSON.stringify({ folderPath: "/tmp/live" }),
       method: "POST"
     })
     expect(await liveEvent).toEqual([expect.objectContaining({ kind: "workspace.created" })])
+    const websocketReplay = await readWebSocketEvents(server, 2, 0)
+    expect(websocketReplay).toEqual([
+      expect.objectContaining({ kind: "workspace.created" }),
+      expect.objectContaining({ kind: "workspace.updated" })
+    ])
+    const socketReplayEvents = await run(services.db.listEvents(0))
+    const socketReplayCursor = socketReplayEvents.at(-1)?.id ?? 0
+    const websocketLive = readWebSocketEvents(server, 1, socketReplayCursor)
+    await jsonRequest(server, "/v1/workspaces", {
+      body: JSON.stringify({ folderPath: "/tmp/live-socket" }),
+      method: "POST"
+    })
+    expect(await websocketLive).toEqual([expect.objectContaining({ kind: "workspace.created" })])
 
     const legacyWorkspace = await run(
       services.db.createWorkspace({ folderPath: legacyWorkspaceFolder })
@@ -741,7 +922,8 @@ describe("@herdman/server", () => {
           method: "POST"
         })
       ).body
-    ).toEqual({ stopReason: "end_turn" })
+    ).toEqual({ accepted: true, sessionId: legacySession.id })
+    await waitFor(() => acp.prompts.some((prompt) => prompt[1] === "legacy hello"))
     expect(acp.prompts).toContainEqual([legacySession.id, "legacy hello"])
     expect(acp.loads).toContainEqual(["codex", legacySession.id, legacyWorkspaceFolder])
   })
@@ -866,6 +1048,49 @@ describe("@herdman/server", () => {
       badPathSocket.once("close", resolve)
       badPathSocket.once("error", () => resolve())
     })
+  })
+
+  it("buffers event websocket fanout that arrives during replay", async () => {
+    const { services } = await makeServices("server-a")
+    const fanout = await run(makeEventFanout)
+    const replayEvent = {
+      createdAt: "2026-06-30T00:00:00.000Z",
+      id: 1,
+      kind: "workspace.created" as const,
+      payload: { id: "replay" },
+      serverId: "server-a",
+      subjectId: "replay"
+    }
+    const liveEvent = {
+      createdAt: "2026-06-30T00:00:01.000Z",
+      id: 2,
+      kind: "workspace.updated" as const,
+      payload: { id: "live" },
+      serverId: "server-a",
+      subjectId: "live"
+    }
+    const server = await startWithApp(
+      {
+        ...services,
+        db: {
+          ...services.db,
+          listEvents: () =>
+            Effect.promise(async () => {
+              await run(fanout.publish(liveEvent))
+              return [replayEvent]
+            })
+        }
+      },
+      fanout
+    )
+    runningServers.push(server)
+
+    expect(await readWebSocketEvents(server, 2, 0)).toEqual([replayEvent, liveEvent])
+    expect(await readWebSocketEvents(server, 1, 1)).toEqual([liveEvent])
+    expect(await readWebSocketEvents(server, 2, Number.MAX_SAFE_INTEGER)).toEqual([
+      replayEvent,
+      liveEvent
+    ])
   })
 
   it("exposes an Effect service layer and EventFanout subscription", async () => {

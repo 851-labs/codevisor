@@ -26,7 +26,7 @@ public protocol HerdManServerClienting: Sendable {
     func upsertSession(_ session: ChatSession) async throws -> ServerSession
     func updateSession(_ session: ChatSession) async throws -> ServerSession
     func deleteSession(id: UUID) async throws
-    func promptSession(id: UUID, text: String) async throws -> StopReason
+    func promptSession(id: UUID, text: String) async throws -> ServerPromptAccepted
     func cancelSession(id: UUID) async throws
     func setSessionMode(id: UUID, modeId: String) async throws
     func setSessionConfig(id: UUID, configId: String, value: String) async throws
@@ -77,12 +77,12 @@ public struct ServerPairingToken: Decodable, Equatable, Sendable {
     public var createdAt: String
 }
 
-public struct ServerHarnessReadiness: Decodable, Equatable, Sendable {
+public struct ServerHarnessReadiness: Codable, Equatable, Sendable {
     public var state: String
     public var detail: String?
 }
 
-public struct ServerHarness: Decodable, Equatable, Sendable {
+public struct ServerHarness: Codable, Equatable, Sendable {
     public var id: String
     public var name: String
     public var symbolName: String
@@ -92,14 +92,19 @@ public struct ServerHarness: Decodable, Equatable, Sendable {
     public var readiness: ServerHarnessReadiness
 }
 
-public struct ServerHarnessCapability: Decodable, Equatable, Sendable {
+public struct ServerHarnessCapability: Codable, Equatable, Sendable {
     public var harness: ServerHarness
     public var modes: SessionModeState?
     public var configOptions: [SessionConfigOption]
 }
 
-public struct ServerCapabilities: Decodable, Equatable, Sendable {
+public struct ServerCapabilities: Codable, Equatable, Sendable {
     public var harnesses: [ServerHarnessCapability]
+}
+
+public struct ServerPromptAccepted: Decodable, Equatable, Sendable {
+    public var accepted: Bool
+    public var sessionId: String
 }
 
 public struct ServerWorkspace: Decodable, Equatable, Sendable {
@@ -298,13 +303,12 @@ public final class HerdManServerClient: HerdManServerClienting, @unchecked Senda
         try await sendNoResponse("/v1/sessions/\(id.uuidString)", method: "DELETE")
     }
 
-    public func promptSession(id: UUID, text: String) async throws -> StopReason {
-        let response: PromptActionResponse = try await send(
+    public func promptSession(id: UUID, text: String) async throws -> ServerPromptAccepted {
+        try await send(
             "/v1/sessions/\(id.uuidString)/prompt",
             method: "POST",
             body: PromptBody(text: text)
         )
-        return response.stopReason
     }
 
     public func cancelSession(id: UUID) async throws {
@@ -338,23 +342,16 @@ public final class HerdManServerClient: HerdManServerClienting, @unchecked Senda
                 var failures = 0
                 while !Task.isCancelled {
                     do {
-                        var request = URLRequest(url: try url(for: "/v1/events?since=\(cursor)"))
-                        request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
+                        var request = URLRequest(url: try websocketURL(for: "/v1/events/socket?since=\(cursor)"))
                         applyAuthorization(to: &request)
-
-                        let (bytes, response) = try await urlSession.bytes(for: request)
-                        guard let httpResponse = response as? HTTPURLResponse else {
-                            throw HerdManServerClientError.invalidResponse
-                        }
-                        guard (200..<300).contains(httpResponse.statusCode) else {
-                            throw HerdManServerClientError.httpStatus(httpResponse.statusCode, "")
-                        }
+                        let socket = urlSession.webSocketTask(with: request)
+                        socket.resume()
+                        defer { socket.cancel(with: .goingAway, reason: nil) }
                         failures = 0
 
-                        for try await line in bytes.lines {
-                            guard line.hasPrefix("data: ") else { continue }
-                            let raw = line.dropFirst("data: ".count)
-                            guard let data = raw.data(using: .utf8) else { continue }
+                        while !Task.isCancelled {
+                            let message = try await socket.receive()
+                            guard let data = Self.data(from: message) else { continue }
                             let event = try decoder.decode(ServerEventEnvelope.self, from: data)
                             cursor = max(cursor, event.id)
                             continuation.yield(event)
@@ -378,6 +375,17 @@ public final class HerdManServerClient: HerdManServerClienting, @unchecked Senda
         let base = min(5_000, 250 * (1 << min(failures, 5)))
         let jitter = Int.random(in: 0...250)
         return .milliseconds(base + jitter)
+    }
+
+    private static func data(from message: URLSessionWebSocketTask.Message) -> Data? {
+        switch message {
+        case let .data(data):
+            return data
+        case let .string(text):
+            return text.data(using: .utf8)
+        @unknown default:
+            return nil
+        }
     }
 
     private func createWorkspace(_ workspace: Workspace) async throws -> ServerWorkspace {
@@ -463,6 +471,25 @@ public final class HerdManServerClient: HerdManServerClienting, @unchecked Senda
         }
         return url
     }
+
+    private func websocketURL(for path: String) throws -> URL {
+        let baseURL = try url(for: path)
+        guard var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false) else {
+            throw HerdManServerClientError.invalidURL(path)
+        }
+        switch components.scheme {
+        case "http":
+            components.scheme = "ws"
+        case "https":
+            components.scheme = "wss"
+        default:
+            break
+        }
+        guard let url = components.url else {
+            throw HerdManServerClientError.invalidURL(path)
+        }
+        return url
+    }
 }
 
 private enum ServerDateCoding {
@@ -490,10 +517,6 @@ private enum ServerDateCoding {
 }
 
 private struct EmptyBody: Encodable {}
-
-private struct PromptActionResponse: Decodable {
-    var stopReason: StopReason
-}
 
 private struct PromptBody: Encodable {
     var text: String

@@ -28,6 +28,32 @@ struct ConfigOptionCacheTests {
         #expect(reopened.options(forHarness: "codex").first?.currentValue == "gpt-5.5")
     }
 
+    @Test("Persists full server capabilities per machine")
+    func serverCapabilitiesPersist() {
+        let store = InMemoryStore()
+        let capability = ServerHarnessCapability(
+            harness: ServerHarness(
+                id: "codex",
+                name: "Codex",
+                symbolName: "chevron.left.forwardslash.chevron.right",
+                source: "registry",
+                launchKind: "npx",
+                enabled: true,
+                readiness: ServerHarnessReadiness(state: "ready", detail: nil)
+            ),
+            modes: SessionModeState(
+                currentModeId: "default",
+                availableModes: [SessionMode(id: "default", name: "Default")]
+            ),
+            configOptions: [option("gpt-5.6")]
+        )
+        ConfigOptionCache(store: store).store([capability], forServer: "local")
+
+        let reopened = ConfigOptionCache(store: store)
+        #expect(reopened.capabilities(forServer: "local").first?.harness.id == "codex")
+        #expect(reopened.options(forHarness: "codex").first?.currentValue == "gpt-5.6")
+    }
+
     @Test("Corrupted cache decodes as empty")
     func corrupted() {
         let store = InMemoryStore(storage: ["harness-config": Data("nope".utf8)])

@@ -15,7 +15,9 @@ struct SessionContainerView: View {
             if let controller {
                 SessionScreen(controller: controller, terminal: store.terminal(for: session, workspace: workspace))
             } else {
-                ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+                ProgressView()
+                    .controlSize(.small)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
         .navigationTitle(session.title)

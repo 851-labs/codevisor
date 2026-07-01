@@ -403,7 +403,7 @@ private final class FakeSessionServerClient: HerdManServerClienting, @unchecked 
     func updateSession(_ session: ChatSession) async throws -> ServerSession { fatalError("unused") }
     func deleteSession(id: UUID) async throws {}
 
-    func promptSession(id: UUID, text: String) async throws -> StopReason {
+    func promptSession(id: UUID, text: String) async throws -> ServerPromptAccepted {
         lock.withLock { _promptedTexts.append(text) }
         continuation.yield(ServerEventEnvelope(
             id: 1,
@@ -416,7 +416,17 @@ private final class FakeSessionServerClient: HerdManServerClienting, @unchecked 
                 "text": .string("Echo: \(text)")
             ])
         ))
-        return .endTurn
+        continuation.yield(ServerEventEnvelope(
+            id: 2,
+            serverId: "local",
+            kind: "session.updated",
+            subjectId: id.uuidString,
+            createdAt: "2026-06-30T00:00:01.000Z",
+            payload: .object([
+                "stopReason": .string("end_turn")
+            ])
+        ))
+        return ServerPromptAccepted(accepted: true, sessionId: id.uuidString)
     }
 
     func cancelSession(id: UUID) async throws {}

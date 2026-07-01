@@ -35,6 +35,8 @@ export interface RuntimeEvent {
   readonly payload: unknown
 }
 
+export type RuntimeEventSink = (event: RuntimeEvent) => void | Promise<void>
+
 export interface PromptResult {
   readonly stopReason: acp.StopReason
   readonly events: ReadonlyArray<RuntimeEvent>
@@ -57,7 +59,11 @@ export interface AcpHarnessLaunchRequest {
 export interface AcpAgentConnection {
   readonly createSession: (cwd: string) => Effect.Effect<AgentSessionMetadata, AcpRuntimeError>
   readonly loadSession: (sessionId: string, cwd: string) => Effect.Effect<string, AcpRuntimeError>
-  readonly prompt: (sessionId: string, text: string) => Effect.Effect<PromptResult, AcpRuntimeError>
+  readonly prompt: (
+    sessionId: string,
+    text: string,
+    onEvent?: RuntimeEventSink
+  ) => Effect.Effect<PromptResult, AcpRuntimeError>
   readonly cancel: (sessionId: string) => Effect.Effect<RuntimeEvent, AcpRuntimeError>
   readonly setMode: (
     sessionId: string,
@@ -99,7 +105,11 @@ export interface AcpRuntimeService {
     agentSessionId: string,
     cwd: string
   ) => Effect.Effect<string, AcpRuntimeError>
-  readonly prompt: (sessionId: string, text: string) => Effect.Effect<PromptResult, AcpRuntimeError>
+  readonly prompt: (
+    sessionId: string,
+    text: string,
+    onEvent?: RuntimeEventSink
+  ) => Effect.Effect<PromptResult, AcpRuntimeError>
   readonly cancel: (sessionId: string) => Effect.Effect<RuntimeEvent, AcpRuntimeError>
   readonly setMode: (
     sessionId: string,
@@ -293,10 +303,10 @@ export const makeAcpRuntime = (config: AcpRuntimeConfig = {}): AcpRuntimeService
         const loadedSessionId = yield* connection.loadSession(agentSessionId, cwd)
         return manageSession(harnessId, loadedSessionId, cwd, connection)
       }),
-    prompt: (sessionId, text) =>
+    prompt: (sessionId, text, onEvent) =>
       Effect.gen(function* () {
         const session = yield* sessionFor(sessionId)
-        return yield* session.connection.prompt(sessionId, text)
+        return yield* session.connection.prompt(sessionId, text, onEvent)
       }),
     cancel: (sessionId) =>
       Effect.gen(function* () {
@@ -344,10 +354,20 @@ export const stdioAcpConnector: AcpConnector = {
       spawnFailure.catch(() => undefined)
       const stderr = captureStderr(child)
       const events = new Map<string, Array<RuntimeEvent>>()
+      const eventSinks = new Map<string, RuntimeEventSink>()
+      const pendingSinkEvents = new Map<string, Array<Promise<void>>>()
       const connection = createClientApp((notification) => {
         const sessionEvents = events.get(notification.sessionId) ?? []
-        sessionEvents.push(runtimeEventFromNotification(notification))
+        const event = runtimeEventFromNotification(notification)
+        sessionEvents.push(event)
         events.set(notification.sessionId, sessionEvents)
+        const sink = eventSinks.get(notification.sessionId)
+        if (sink !== undefined) {
+          const pending = pendingSinkEvents.get(notification.sessionId) ?? []
+          const pendingEvent = Promise.resolve(sink(event))
+          pending.push(pendingEvent)
+          pendingSinkEvents.set(notification.sessionId, pending)
+        }
       }).connect(
         acp.ndJsonStream(
           Writable.toWeb(child.stdin) as WritableStream<Uint8Array>,
@@ -371,7 +391,7 @@ export const stdioAcpConnector: AcpConnector = {
         }),
         spawnFailure
       ])
-      return sdkConnection(connection, stderr, events, () => {
+      return sdkConnection(connection, stderr, events, eventSinks, pendingSinkEvents, () => {
         child.kill()
       })
     })
@@ -394,6 +414,8 @@ const sdkConnection = (
   connection: acp.ClientConnection,
   stderr: () => string,
   events: Map<string, Array<RuntimeEvent>>,
+  eventSinks: Map<string, RuntimeEventSink>,
+  pendingSinkEvents: Map<string, Array<Promise<void>>>,
   terminate: () => void = () => undefined
 ): AcpAgentConnection => {
   const takeEvents = (sessionId: string, startIndex: number): ReadonlyArray<RuntimeEvent> =>
@@ -421,16 +443,31 @@ const sdkConnection = (
         })
         return sessionId
       }),
-    prompt: (sessionId, text) =>
+    prompt: (sessionId, text, onEvent) =>
       adapterPromise("prompt", async () => {
         const startIndex = eventCount(sessionId)
-        const response = await connection.agent.request(acp.methods.agent.session.prompt, {
-          prompt: [{ text, type: "text" }],
-          sessionId
-        })
-        return {
-          events: takeEvents(sessionId, startIndex),
-          stopReason: response.stopReason
+        if (onEvent !== undefined) {
+          eventSinks.set(sessionId, onEvent)
+          pendingSinkEvents.set(sessionId, [])
+        }
+        try {
+          const response = await connection.agent.request(acp.methods.agent.session.prompt, {
+            prompt: [{ text, type: "text" }],
+            sessionId
+          })
+          const pending = pendingSinkEvents.get(sessionId) ?? []
+          if (onEvent !== undefined) {
+            await Promise.all(pending)
+          }
+          return {
+            events: onEvent === undefined ? takeEvents(sessionId, startIndex) : [],
+            stopReason: response.stopReason
+          }
+        } finally {
+          if (onEvent !== undefined) {
+            eventSinks.delete(sessionId)
+            pendingSinkEvents.delete(sessionId)
+          }
         }
       }),
     cancel: (sessionId) =>
@@ -553,11 +590,17 @@ const runtimeEventFromNotification = (notification: acp.SessionNotification): Ru
   const update = notification.update
   switch (update.sessionUpdate) {
     case "user_message_chunk":
-      return contentChunkEvent(notification.sessionId, "user", update)
     case "agent_message_chunk":
-      return contentChunkEvent(notification.sessionId, "assistant", update)
     case "agent_thought_chunk":
-      return contentChunkEvent(notification.sessionId, "assistant", update)
+    case "tool_call":
+    case "tool_call_update":
+    case "plan":
+    case "available_commands_update":
+      return {
+        kind: "session.output",
+        subjectId: notification.sessionId,
+        payload: update
+      }
     case "session_info_update":
       return {
         kind: "session.updated",
@@ -578,34 +621,6 @@ const runtimeEventFromNotification = (notification: acp.SessionNotification): Ru
       }
   }
 }
-
-const contentChunkEvent = (
-  sessionId: string,
-  role: "user" | "assistant",
-  update: Extract<
-    acp.SessionUpdate,
-    {
-      readonly sessionUpdate: "user_message_chunk" | "agent_message_chunk" | "agent_thought_chunk"
-    }
-  >
-): RuntimeEvent => {
-  const text = textFromContent(update.content)
-  return {
-    kind: "session.output",
-    subjectId: sessionId,
-    payload:
-      text === undefined
-        ? update
-        : {
-            messageId: update.messageId,
-            role,
-            text
-          }
-  }
-}
-
-const textFromContent = (content: acp.ContentBlock): string | undefined =>
-  content.type === "text" ? content.text : undefined
 
 const captureStderr = (child: ChildProcessWithoutNullStreams): (() => string) => {
   let buffer = ""

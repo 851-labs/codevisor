@@ -64,24 +64,25 @@ public final class SessionModel {
     /// consumer has started. Routes each update to history vs live handling.
     private func startConsumer() async {
         guard consumerTask == nil else { return }
-        let updates: AsyncStream<SessionUpdate>
         switch backend {
         case let .acp(client):
-            updates = await client.updates(for: sessionId)
-        case let .server(transport):
-            if let serverEventCursor {
-                updates = transport.updates(since: serverEventCursor)
-            } else {
-                updates = transport.updates()
+            let updates = await client.updates(for: sessionId)
+            consumerTask = Task { @MainActor [weak self] in
+                for await update in updates {
+                    guard let self else { break }
+                    if self.isLoadingHistory {
+                        self.applyHistory(update)
+                    } else {
+                        self.apply(update)
+                    }
+                }
             }
-        }
-        consumerTask = Task { @MainActor [weak self] in
-            for await update in updates {
-                guard let self else { break }
-                if self.isLoadingHistory {
-                    self.applyHistory(update)
-                } else {
-                    self.apply(update)
+        case let .server(transport):
+            let events = serverEventCursor.map { transport.streamEvents(since: $0) } ?? transport.streamEvents()
+            consumerTask = Task { @MainActor [weak self] in
+                for await event in events {
+                    guard let self else { break }
+                    self.apply(event)
                 }
             }
         }
@@ -135,21 +136,22 @@ public final class SessionModel {
         await startConsumer()
 
         do {
-            let response: PromptResponse
             switch backend {
             case let .acp(client):
-                response = try await client.prompt(PromptRequest(sessionId: sessionId, prompt: [.text(trimmed)]))
+                let response = try await client.prompt(PromptRequest(sessionId: sessionId, prompt: [.text(trimmed)]))
+                await drain()
+                finish(stopReason: response.stopReason)
+                isSending = false
             case let .server(transport):
-                response = try await transport.prompt(trimmed)
+                _ = try await transport.prompt(trimmed)
+                await drain()
             }
-            await drain()
-            finish(stopReason: response.stopReason)
         } catch {
             await drain()
             errorMessage = String(describing: error)
             finish(stopReason: nil)
+            isSending = false
         }
-        isSending = false
     }
 
     /// Requests cancellation of the in-flight turn.
@@ -270,6 +272,8 @@ public final class SessionModel {
     private func apply(_ update: SessionUpdate) {
         appliedUpdateCount += 1
         switch update {
+        case let .userMessageChunk(block):
+            appendRemoteUserIfNeeded(text: block.textValue ?? "")
         case let .availableCommandsUpdate(commands):
             availableCommands = commands
         case let .currentModeUpdate(modeId):
@@ -282,9 +286,26 @@ public final class SessionModel {
         case let .usageUpdate(usage):
             self.usage = usage
         default:
+            ensureAssistantTurn()
             guard case .assistant(var message) = conversation.last else { return }
+            message.turn.isGenerating = true
+            isSending = true
             TranscriptReducer.apply(update, to: &message.turn)
             conversation[conversation.count - 1] = .assistant(message)
+        }
+    }
+
+    private func apply(_ event: ServerSessionStreamEvent) {
+        switch event {
+        case let .update(update):
+            apply(update)
+        case let .finished(stopReason):
+            finish(stopReason: stopReason)
+            isSending = false
+        case let .failed(message):
+            errorMessage = message
+            finish(stopReason: nil)
+            isSending = false
         }
     }
 
@@ -302,6 +323,33 @@ public final class SessionModel {
         message.turn.stopReason = stopReason
         message.turn.endedAt = now()
         conversation[conversation.count - 1] = .assistant(message)
+    }
+
+    private func appendRemoteUserIfNeeded(text: String) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        if conversation.count >= 2,
+           case let .user(user) = conversation[conversation.count - 2],
+           case let .assistant(assistant) = conversation.last,
+           user.text == trimmed,
+           assistant.turn.isGenerating {
+            return
+        }
+        conversation.append(.user(UserMessage(text: text)))
+        conversation.append(.assistant(AssistantMessage(
+            turn: AssistantTurn(isGenerating: true, isThinking: true, startedAt: now())
+        )))
+        isSending = true
+    }
+
+    private func ensureAssistantTurn() {
+        if case .assistant = conversation.last {
+            return
+        }
+        conversation.append(.assistant(AssistantMessage(
+            turn: AssistantTurn(isGenerating: true, isThinking: true, startedAt: now())
+        )))
+        isSending = true
     }
 }
 

@@ -4,6 +4,7 @@ import type {
   EventEnvelope,
   Harness,
   HarnessCapability,
+  PromptAcceptedResponse,
   ServerKind,
   SessionSummary,
   TerminalClientFrame,
@@ -76,6 +77,7 @@ export interface HerdManServerApp {
 
 interface RouteState {
   readonly pendingSessionCreates: Map<string, Promise<SessionSummary>>
+  readonly pendingPromptActions: Set<string>
 }
 
 export class HerdManServer extends Context.Service<HerdManServer, HerdManServerServices>()(
@@ -138,6 +140,7 @@ export const makeHerdManServerApp = (
   webSocketServer = new WebSocketServer({ noServer: true })
 ): HerdManServerApp => {
   const routeState: RouteState = {
+    pendingPromptActions: new Set(),
     pendingSessionCreates: new Map()
   }
   const app = {
@@ -145,7 +148,7 @@ export const makeHerdManServerApp = (
       void handleRequest(services, config, fanout, routeState, request, response)
     },
     handleUpgrade: (request: IncomingMessage, socket: Socket, head: Buffer): void => {
-      void handleUpgrade(services, config, request, socket, head, webSocketServer)
+      void handleUpgrade(services, config, fanout, request, socket, head, webSocketServer)
     },
     close: serverAttempt("closeApp", () => {
       webSocketServer.close()
@@ -440,7 +443,7 @@ const routeSessions = async (
     return true
   }
 
-  if (await routeSessionActions(services, fanout, request, response, url, config)) {
+  if (await routeSessionActions(services, fanout, routeState, request, response, url, config)) {
     return true
   }
 
@@ -478,6 +481,7 @@ const findSession = async (
 const routeSessionActions = async (
   services: HerdManServerServices,
   fanout: EventFanout,
+  routeState: RouteState,
   request: IncomingMessage,
   response: ServerResponse,
   url: URL,
@@ -486,20 +490,38 @@ const routeSessionActions = async (
   const promptSessionId = matchRoute(url.pathname, "/v1/sessions/:id/prompt")
   if (promptSessionId !== undefined && request.method === "POST") {
     const payload = await readSchema(request, PromptRequest)
-    await writeIdempotentAction(
-      services,
-      response,
-      promptSessionId,
-      "prompt",
-      payload,
-      async () => {
-        const agentSessionId = await ensureAgentSessionFor(services, promptSessionId)
-        await run(services.db.appendConversationItem(promptSessionId, "user", payload.text, false))
-        const result = await run(services.acp.prompt(agentSessionId, payload.text))
-        for (const event of result.events) {
-          await materializeRuntimeEvent(services.db, fanout, config.id, event, promptSessionId)
+    const result: PromptAcceptedResponse = { accepted: true, sessionId: promptSessionId }
+    const actionKey = actionIdKey(promptSessionId, payload.clientActionId)
+    if (payload.clientActionId !== undefined) {
+      const existing = await run(
+        services.db.getSessionActionResult(promptSessionId, payload.clientActionId)
+      )
+      if (existing !== undefined) {
+        writeJson(response, 202, existing)
+        return true
+      }
+      await run(
+        services.db.saveSessionActionResult(
+          promptSessionId,
+          payload.clientActionId,
+          "prompt",
+          result
+        )
+      )
+    }
+    writeJson(response, 202, result)
+    /* v8 ignore next 3 -- duplicate in-flight requests normally hit the saved idempotency row above. */
+    if (actionKey !== undefined && routeState.pendingPromptActions.has(actionKey)) {
+      return true
+    }
+    if (actionKey !== undefined) {
+      routeState.pendingPromptActions.add(actionKey)
+    }
+    void runPromptInBackground(services, fanout, config.id, promptSessionId, payload.text).finally(
+      () => {
+        if (actionKey !== undefined) {
+          routeState.pendingPromptActions.delete(actionKey)
         }
-        return { stopReason: result.stopReason }
       }
     )
     return true
@@ -599,6 +621,55 @@ const writeIdempotentAction = async (
   writeJson(response, 202, result)
 }
 
+const actionIdKey = (sessionId: string, clientActionId: string | undefined): string | undefined =>
+  clientActionId === undefined ? undefined : `${sessionId}:${clientActionId}`
+
+const runPromptInBackground = async (
+  services: HerdManServerServices,
+  fanout: EventFanout,
+  serverId: string,
+  sessionId: string,
+  text: string
+): Promise<void> => {
+  try {
+    const agentSessionId = await ensureAgentSessionFor(services, sessionId)
+    await materializeRuntimeEvent(
+      services.db,
+      fanout,
+      serverId,
+      {
+        kind: "session.output",
+        subjectId: agentSessionId,
+        payload: { role: "user", text }
+      },
+      sessionId
+    )
+    const result = await run(
+      services.acp.prompt(agentSessionId, text, async (event) => {
+        if (isUserRuntimeEvent(event)) {
+          return
+        }
+        await materializeRuntimeEvent(services.db, fanout, serverId, event, sessionId)
+      })
+    )
+    for (const event of result.events) {
+      if (isUserRuntimeEvent(event)) {
+        continue
+      }
+      await materializeRuntimeEvent(services.db, fanout, serverId, event, sessionId)
+    }
+    await appendAndPublish(services.db, fanout, "session.updated", sessionId, {
+      serverId,
+      stopReason: result.stopReason
+    })
+  } catch (cause) {
+    await appendAndPublish(services.db, fanout, "session.error", sessionId, {
+      message: failureMessage(cause),
+      serverId
+    })
+  }
+}
+
 const routeTerminals = async (
   services: HerdManServerServices,
   request: IncomingMessage,
@@ -639,6 +710,7 @@ const handleEvents = async (
 const handleUpgrade = async (
   services: HerdManServerServices,
   config: HerdManServerConfig,
+  fanout: EventFanout,
   request: IncomingMessage,
   socket: Socket,
   head: Buffer,
@@ -647,6 +719,13 @@ const handleUpgrade = async (
   try {
     await authorize(services.db, config, request)
     const url = parseRequestUrl(request)
+    if (request.method === "GET" && url.pathname === "/v1/events/socket") {
+      webSocketServer.handleUpgrade(request, socket, head, (webSocket) => {
+        void attachEventSocket(services.db, fanout, numberSearchParam(url, "since"), webSocket)
+      })
+      return
+    }
+
     const terminalId = matchRoute(url.pathname, "/v1/terminals/:id/socket")
     if (terminalId === undefined) {
       socket.destroy()
@@ -664,6 +743,48 @@ const handleUpgrade = async (
   } catch {
     socket.write("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n")
     socket.destroy()
+  }
+}
+
+const attachEventSocket = async (
+  db: HerdManDatabaseService,
+  fanout: EventFanout,
+  since: number,
+  webSocket: WebSocket
+): Promise<void> => {
+  let cursor = since >= Number.MAX_SAFE_INTEGER ? 0 : since
+  let isReplaying = true
+  const liveQueue: Array<EventEnvelope> = []
+  const sendEvent = (event: EventEnvelope): void => {
+    if (event.id <= cursor) {
+      return
+    }
+    cursor = event.id
+    if (webSocket.readyState === WebSocket.OPEN) {
+      webSocket.send(JSON.stringify(event))
+    }
+  }
+  const unsubscribe = fanout.subscribe((event) => {
+    if (isReplaying) {
+      liveQueue.push(event)
+      return
+    }
+    sendEvent(event)
+  })
+  webSocket.on("close", unsubscribe)
+  try {
+    for (const event of await run(db.listEvents(since))) {
+      sendEvent(event)
+    }
+    isReplaying = false
+    for (const event of liveQueue) {
+      sendEvent(event)
+    }
+  } catch {
+    /* v8 ignore next -- defensive close path for database failures during websocket replay. */
+    unsubscribe()
+    /* v8 ignore next -- defensive close path for database failures during websocket replay. */
+    webSocket.close()
   }
 }
 
@@ -769,8 +890,9 @@ const materializeRuntimeEvent = async (
   event: RuntimeEvent,
   subjectId: string
 ): Promise<void> => {
-  if (event.kind === "session.output" && isConversationPayload(event.payload)) {
-    await run(db.appendConversationItem(subjectId, event.payload.role, event.payload.text, false))
+  const conversation = conversationPayload(event.payload)
+  if (event.kind === "session.output" && conversation !== undefined) {
+    await run(db.appendConversationItem(subjectId, conversation.role, conversation.text, false))
   }
   await appendAndPublish(db, fanout, event.kind, subjectId, {
     ...objectPayload(event.payload),
@@ -920,10 +1042,42 @@ const isConversationPayload = (
   conversationRoles.has(String(payload.role)) &&
   typeof payload.text === "string"
 
+const conversationPayload = (
+  payload: unknown
+): { readonly role: "user" | "assistant" | "system"; readonly text: string } | undefined => {
+  if (isConversationPayload(payload)) {
+    return payload
+  }
+  if (!isRecord(payload) || typeof payload.sessionUpdate !== "string") {
+    return undefined
+  }
+  const text = textFromRawContent(payload.content)
+  if (text === undefined) {
+    return undefined
+  }
+  switch (payload.sessionUpdate) {
+    case "user_message_chunk":
+      return { role: "user", text }
+    case "agent_message_chunk":
+      return { role: "assistant", text }
+    default:
+      return undefined
+  }
+}
+
+const isUserRuntimeEvent = (event: RuntimeEvent): boolean =>
+  conversationPayload(event.payload)?.role === "user"
+
+const textFromRawContent = (content: unknown): string | undefined =>
+  isRecord(content) && content.type === "text" && typeof content.text === "string"
+    ? content.text
+    : undefined
+
 const objectPayload = (payload: unknown): Record<string, unknown> =>
-  typeof payload === "object" && payload !== null && !Array.isArray(payload)
-    ? (payload as Record<string, unknown>)
-    : { value: payload }
+  isRecord(payload) ? payload : { value: payload }
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value)
 
 /* v8 ignore next -- route/runtime failures use Error-compatible values. */
 const failureMessage = (cause: unknown): string =>

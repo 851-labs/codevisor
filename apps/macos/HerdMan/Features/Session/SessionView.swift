@@ -74,7 +74,7 @@ struct SessionScreen: View {
             .overlay {
                 if controller.isConnecting {
                     ProgressView()
-                        .controlSize(.large)
+                        .controlSize(.small)
                 }
             }
             .overlay(alignment: .bottom) { composerOverlay }

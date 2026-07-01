@@ -339,8 +339,8 @@ private actor FakeServerClient: HerdManServerClienting {
         sessions.removeAll { $0.id == id.uuidString }
     }
 
-    func promptSession(id: UUID, text: String) async throws -> StopReason {
-        .endTurn
+    func promptSession(id: UUID, text: String) async throws -> ServerPromptAccepted {
+        ServerPromptAccepted(accepted: true, sessionId: id.uuidString)
     }
 
     func cancelSession(id: UUID) async throws {}
