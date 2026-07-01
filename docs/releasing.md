@@ -52,5 +52,6 @@ create or update the matching `v<version>` GitHub release for the current commit
 The app build job must run on an Apple Silicon image with an Xcode SDK that can
 build the current project deployment target. Override it with the `macos_runner`
 workflow input or the `HERDMAN_MACOS_ARM_RUNNER` repository variable when needed.
-The Intel server runtime job defaults to `macos-26-intel` and can be overridden
-with `macos_intel_runner` or `HERDMAN_MACOS_INTEL_RUNNER`.
+It defaults to `macos-26`. The Intel server runtime job defaults to
+`macos-26-intel` and can be overridden with `macos_intel_runner` or
+`HERDMAN_MACOS_INTEL_RUNNER`.

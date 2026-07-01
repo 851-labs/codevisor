@@ -13,7 +13,7 @@ on:
       macos_runner:
         description: "Apple Silicon macOS runner label. Use an image with the Xcode SDK required by the project."
         required: false
-        default: "macos-26-arm64"
+        default: "macos-26"
         type: string
       macos_intel_runner:
         description: "Intel macOS runner label used to build x64 server runtimes."
@@ -118,7 +118,7 @@ jobs:
     needs:
       - metadata
       - build-server-macos-x64
-    runs-on: ${{ inputs.macos_runner || vars.HERDMAN_MACOS_ARM_RUNNER || vars.HERDMAN_MACOS_RUNNER || 'macos-26-arm64' }}
+    runs-on: ${{ inputs.macos_runner || vars.HERDMAN_MACOS_ARM_RUNNER || vars.HERDMAN_MACOS_RUNNER || 'macos-26' }}
     env:
       APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
       APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
