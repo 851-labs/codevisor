@@ -15,13 +15,25 @@ struct TerminalLaunchDescriptor: Equatable {
         TerminalLaunchDescriptor(
             sessionId: session.id,
             machine: machine,
-            workingDirectory: workspace.folderURL,
+            workingDirectory: localWorkingDirectory(for: workspace.folderURL),
             command: TerminalProxyCommand.command(
                 server: machine.baseURL,
                 sessionId: session.id,
                 cwd: workspace.folderURL.path
             )
         )
+    }
+
+    /// Ghostty spawns the proxy locally, so its working directory must exist on
+    /// this Mac. Remote workspaces point at paths on the other machine (the pty
+    /// still starts in the workspace folder remotely, via the proxy's --cwd).
+    private static func localWorkingDirectory(for folderURL: URL) -> URL {
+        var isDirectory: ObjCBool = false
+        if FileManager.default.fileExists(atPath: folderURL.path, isDirectory: &isDirectory),
+           isDirectory.boolValue {
+            return folderURL
+        }
+        return FileManager.default.homeDirectoryForCurrentUser
     }
 }
 
@@ -47,6 +59,16 @@ enum TerminalProxyCommand {
             let node = LocalHerdManServer.defaultNodeExecutable()
             let prefix = node.lastPathComponent == "env" ? ["node", entrypoint.path] : [entrypoint.path]
             return (node.path, prefix)
+        }
+        // Ghostty launches the command through `bash --noprofile --norc`, which
+        // only sees the minimal system PATH — Homebrew's bin directories are
+        // not on it, so resolve the brew-installed proxy by absolute path.
+        let installedCandidates = [
+            "/opt/homebrew/bin/herdman-terminal-proxy",
+            "/usr/local/bin/herdman-terminal-proxy"
+        ]
+        if let installed = installedCandidates.first(where: { FileManager.default.isExecutableFile(atPath: $0) }) {
+            return (installed, [])
         }
         return ("/usr/bin/env", ["herdman-terminal-proxy"])
     }
