@@ -2,15 +2,37 @@ import SwiftUI
 import HerdManCore
 import ACPAgents
 
-/// The app's Settings window (⌘, / HerdMan ▸ Settings…), with General and
-/// Harnesses tabs in the standard macOS preferences style.
+enum SettingsTab: String {
+    case general
+    case machines
+    case harnesses
+}
+
+/// Routes programmatic Settings navigation (e.g. the sidebar's
+/// "Manage machines…" opens Settings on the Machines tab).
+@MainActor
+@Observable
+final class SettingsRouter {
+    static let shared = SettingsRouter()
+    var selectedTab: SettingsTab = .general
+}
+
+/// The app's Settings window (⌘, / HerdMan ▸ Settings…), with General,
+/// Machines, and Harnesses tabs in the standard macOS preferences style.
 struct SettingsView: View {
+    @Bindable private var router = SettingsRouter.shared
+
     var body: some View {
-        TabView {
+        TabView(selection: $router.selectedTab) {
             GeneralSettingsView()
                 .tabItem { Label("General", systemImage: "gearshape") }
+                .tag(SettingsTab.general)
+            MachinesSettingsView()
+                .tabItem { Label("Machines", systemImage: "desktopcomputer") }
+                .tag(SettingsTab.machines)
             HarnessesSettingsView()
                 .tabItem { Label("Harnesses", systemImage: "cpu") }
+                .tag(SettingsTab.harnesses)
         }
         .frame(width: 520, height: 420)
     }

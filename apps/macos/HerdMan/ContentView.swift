@@ -31,6 +31,7 @@ struct RootView: View {
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @State private var store: SessionStore?
     @State private var preferredWorkspaceId: UUID?
+    @State private var preparedMachineId: String?
 
     var body: some View {
         Group {
@@ -58,10 +59,16 @@ struct RootView: View {
             // Warm the harness config cache in the background so the composer
             // pickers are populated instantly.
             if !AppPreview.isRunning {
-                // Note: don't reset `selection` after this await — the sidebar's
-                // machine picker already resets it when the user switches
-                // machines, and resetting here races with (and clobbers) any
-                // session the user clicked while the machine was preparing.
+                // Machine switches (from the picker or Settings) leave the old
+                // machine's session behind. This must happen synchronously,
+                // before any await: resetting after `prepare` finishes would
+                // race with (and clobber) a session the user clicked meanwhile.
+                let machineId = environment.machines.selectedMachineId
+                if let preparedMachineId, preparedMachineId != machineId {
+                    selection = .newChat(nil)
+                    preferredWorkspaceId = nil
+                }
+                preparedMachineId = machineId
                 await environment.prepareSelectedMachine()
                 Task {
                     await ConfigPrefetcher(
