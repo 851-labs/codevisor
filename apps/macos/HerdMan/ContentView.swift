@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 import HerdManCore
 
 @main
@@ -84,10 +85,14 @@ struct RootView: View {
     }
 
     /// Development builds tint the whole window toolbar blue — that color is
-    /// how you tell the dev app apart from the production release. A
-    /// translucent system blue sits on the toolbar material, so it stays
-    /// subtle and adapts to light and dark mode.
-    private static let developmentToolbarTint = Color(nsColor: .systemBlue).opacity(0.32)
+    /// how you tell the dev app apart from the production release. An opaque
+    /// muted slate blue: softer in light mode, deeper in dark mode, so it
+    /// reads as part of the theme rather than a painted stripe.
+    private static let developmentToolbarTint = Color(nsColor: NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            ? NSColor(srgbRed: 0.20, green: 0.29, blue: 0.44, alpha: 1) // deep slate
+            : NSColor(srgbRed: 0.55, green: 0.66, blue: 0.82, alpha: 1) // soft steel blue
+    })
 
     @ViewBuilder
     private var mainSplit: some View {
