@@ -45,8 +45,6 @@ writeFileSync(
   desc "ACP chat client and local HerdMan server"
   homepage "https://github.com/${repository}"
 
-  depends_on formula: "node"
-
   app "HerdMan.app"
 end
 `
@@ -103,8 +101,6 @@ ${urlBlock}
   else
     odie "No HerdMan server archive is available for this platform. Supported targets: ${supportedTargets}"
   end
-
-  depends_on "node"
 
   def install
     libexec.install Dir["*"]

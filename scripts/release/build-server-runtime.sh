@@ -8,7 +8,7 @@ usage: scripts/release/build-server-runtime.sh <version> <runtime-dir>
 
 Builds a self-contained Node runtime directory for herdman-server and
 herdman-terminal-proxy. The runtime includes compiled JS, production
-node_modules, and launcher scripts under bin/.
+node_modules, a pinned Node executable, and launcher scripts under bin/.
 EOF
 }
 
@@ -31,6 +31,24 @@ repo_root="$(cd "$script_dir/../.." && pwd)"
 if [[ ! -f "$repo_root/apps/server/dist/main.js" ]]; then
   (cd "$repo_root" && bun run build)
 fi
+
+node_runtime="${HERDMAN_RELEASE_NODE:-$(command -v node || true)}"
+if [[ -z "$node_runtime" || ! -x "$node_runtime" ]]; then
+  echo "error: a Node executable is required to package the HerdMan server runtime." >&2
+  exit 1
+fi
+
+if ! node_version="$("$node_runtime" --version 2>/dev/null)"; then
+  echo "error: failed to read Node version from $node_runtime" >&2
+  exit 1
+fi
+case "$node_version" in
+  v24.*) ;;
+  *)
+    echo "error: HerdMan release artifacts must bundle Node 24.x; found $node_version at $node_runtime" >&2
+    exit 1
+    ;;
+esac
 
 rm -rf "$runtime_dir"
 mkdir -p \
@@ -58,6 +76,9 @@ if [[ ! -x "$node_gyp" ]]; then
 fi
 
 (cd "$runtime_dir" && npm_config_node_gyp="$node_gyp" bun install --production --frozen-lockfile)
+cp "$node_runtime" "$runtime_dir/bin/node"
+chmod +x "$runtime_dir/bin/node"
+echo "Bundled $node_version from $node_runtime"
 
 find "$runtime_dir/apps/server/dist" "$runtime_dir/packages" \
   \( -name "*.test.js" -o -name "*.test.d.ts" \) \
@@ -79,14 +100,22 @@ cat > "$runtime_dir/bin/herdman-server" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-exec "${HERDMAN_NODE:-node}" "$root/main.js" "$@"
+node_bin="${HERDMAN_NODE:-}"
+if [[ -z "$node_bin" && -x "$root/bin/node" ]]; then
+  node_bin="$root/bin/node"
+fi
+exec "${node_bin:-node}" "$root/main.js" "$@"
 EOF
 
 cat > "$runtime_dir/bin/herdman-terminal-proxy" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-exec "${HERDMAN_NODE:-node}" "$root/terminal-proxy.js" "$@"
+node_bin="${HERDMAN_NODE:-}"
+if [[ -z "$node_bin" && -x "$root/bin/node" ]]; then
+  node_bin="$root/bin/node"
+fi
+exec "${node_bin:-node}" "$root/terminal-proxy.js" "$@"
 EOF
 
 chmod +x "$runtime_dir/bin/herdman-server" "$runtime_dir/bin/herdman-terminal-proxy"

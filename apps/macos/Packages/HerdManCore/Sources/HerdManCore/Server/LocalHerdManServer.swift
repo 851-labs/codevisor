@@ -184,6 +184,9 @@ public final class LocalHerdManServer {
         if let override = environment["HERDMAN_NODE"], !override.isEmpty {
             return URL(fileURLWithPath: override)
         }
+        if let bundled = bundledNodeExecutable() {
+            return bundled
+        }
         let candidates = [
             "/opt/homebrew/bin/node",
             "/usr/local/bin/node",
@@ -193,6 +196,16 @@ public final class LocalHerdManServer {
             return URL(fileURLWithPath: path)
         }
         return URL(fileURLWithPath: "/usr/bin/env")
+    }
+
+    nonisolated private static func bundledNodeExecutable(
+        fileManager: FileManager = .default
+    ) -> URL? {
+        let candidates = [
+            Bundle.main.url(forResource: "node", withExtension: nil, subdirectory: "server/bin"),
+            Bundle.main.url(forResource: "node", withExtension: nil, subdirectory: "Server/bin")
+        ].compactMap { $0 }
+        return candidates.first { fileManager.isExecutableFile(atPath: $0.path) }
     }
 
     public static func defaultServerEnvironment() async -> [String: String] {
