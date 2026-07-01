@@ -84,8 +84,18 @@ find "$app_path" -name "._*" -delete
 
 identity="${APPLE_CODESIGN_IDENTITY:-}"
 if [[ -n "$identity" ]]; then
+  while IFS= read -r -d '' candidate; do
+    if file -b "$candidate" | grep -q "Mach-O"; then
+      codesign --force --options runtime --timestamp --sign "$identity" "$candidate"
+    fi
+  done < <(find "$server_resources" -type f -print0)
   codesign --force --deep --options runtime --timestamp --sign "$identity" "$app_path"
 else
+  while IFS= read -r -d '' candidate; do
+    if file -b "$candidate" | grep -q "Mach-O"; then
+      codesign --force --sign - "$candidate"
+    fi
+  done < <(find "$server_resources" -type f -print0)
   codesign --force --deep --sign - "$app_path"
 fi
 
