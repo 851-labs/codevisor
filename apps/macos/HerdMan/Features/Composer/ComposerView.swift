@@ -16,8 +16,13 @@ struct ComposerCard: View {
 
     @State private var editorHeight: CGFloat = 24
     @State private var slashSelection = 0
+    @State private var isSlashMenuDismissed = false
+    @State private var slashMenuContentHeight: CGFloat = 0
     @State private var isStopButtonHovered = false
     @State private var isSendButtonHovered = false
+
+    /// Tallest the slash-command menu can grow before it scrolls (~6 rows).
+    private static let slashMenuMaxHeight: CGFloat = 220
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -66,42 +71,39 @@ struct ComposerCard: View {
             RoundedRectangle(cornerRadius: 16)
                 .strokeBorder(.separator, lineWidth: 1)
         )
+        .onChange(of: slashQuery) { _, _ in
+            // A new query invalidates both the keyboard selection and any
+            // Escape-dismissal of the previous menu.
+            slashSelection = 0
+            isSlashMenuDismissed = false
+        }
     }
 
     @ViewBuilder
     private var slashCommandPopup: some View {
-        let matches = slashMatches
+        let matches = visibleSlashMatches
         if !matches.isEmpty {
-            VStack(alignment: .leading, spacing: 2) {
-                ForEach(Array(matches.enumerated()), id: \.element.id) { index, command in
-                    Button {
-                        acceptSlashCommand(command)
-                    } label: {
-                        HStack(spacing: 10) {
-                            Text("/\(command.name)")
-                                .fontWeight(.medium)
-                            Text(command.description)
-                                .lineLimit(1)
-                                .foregroundStyle(.secondary)
-                            Spacer(minLength: 0)
-                            if let hint = command.input?.hint {
-                                Text(hint)
-                                    .lineLimit(1)
-                                    .foregroundStyle(.tertiary)
-                            }
+            let selectedIndex = min(slashSelection, matches.count - 1)
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 2) {
+                        ForEach(Array(matches.enumerated()), id: \.element.id) { index, command in
+                            slashCommandRow(command, isSelected: index == selectedIndex)
+                                .id(command.id)
                         }
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
-                        .background(
-                            RoundedRectangle(cornerRadius: 6)
-                                .fill(index == slashSelection ? Color.primary.opacity(0.08) : .clear)
-                        )
                     }
-                    .buttonStyle(.plain)
+                    .padding(6)
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: {
+                        slashMenuContentHeight = $0
+                    }
+                }
+                .frame(height: min(slashMenuContentHeight, Self.slashMenuMaxHeight))
+                .onChange(of: selectedIndex) { _, index in
+                    guard matches.indices.contains(index) else { return }
+                    proxy.scrollTo(matches[index].id)
                 }
             }
             .frame(maxWidth: 520)
-            .padding(6)
             .background(
                 RoundedRectangle(cornerRadius: 10)
                     .fill(Color(nsColor: .controlBackgroundColor))
@@ -111,7 +113,41 @@ struct ComposerCard: View {
                 RoundedRectangle(cornerRadius: 10)
                     .strokeBorder(.separator, lineWidth: 1)
             )
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel("Slash commands")
+            .accessibilityHint("Use the up and down arrows to choose a command, Return to accept, Escape to close")
         }
+    }
+
+    private func slashCommandRow(_ command: AvailableCommand, isSelected: Bool) -> some View {
+        Button {
+            acceptSlashCommand(command)
+        } label: {
+            HStack(spacing: 10) {
+                Text("/\(command.name)")
+                    .fontWeight(.medium)
+                Text(command.description)
+                    .lineLimit(1)
+                    .foregroundStyle(isSelected ? AnyShapeStyle(.white.opacity(0.85)) : AnyShapeStyle(.secondary))
+                Spacer(minLength: 0)
+                if let hint = command.input?.hint {
+                    Text(hint)
+                        .lineLimit(1)
+                        .foregroundStyle(isSelected ? AnyShapeStyle(.white.opacity(0.7)) : AnyShapeStyle(.tertiary))
+                }
+            }
+            .foregroundStyle(isSelected ? Color.white : Color.primary)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(isSelected ? Color.accentColor : .clear)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 6))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("/\(command.name), \(command.description)")
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
     private func configMenu(_ option: SessionConfigOption) -> some View {
@@ -224,7 +260,7 @@ struct ComposerCard: View {
 
     @ViewBuilder
     private var sendButton: some View {
-        let isEnabled = controller.canSend || !slashMatches.isEmpty
+        let isEnabled = controller.canSend || !visibleSlashMatches.isEmpty
         Button { submitOrAcceptSlash() } label: {
             Image(systemName: "arrow.up")
                 .font(.system(size: 12, weight: .bold))
@@ -264,6 +300,11 @@ struct ComposerCard: View {
         return exact + prefixed
     }
 
+    /// The matches actually shown: empty while the menu is dismissed with Escape.
+    private var visibleSlashMatches: [AvailableCommand] {
+        isSlashMenuDismissed ? [] : slashMatches
+    }
+
     private func submitOrAcceptSlash() {
         if let command = selectedSlashCommand {
             acceptSlashCommand(command)
@@ -273,7 +314,7 @@ struct ComposerCard: View {
     }
 
     private var selectedSlashCommand: AvailableCommand? {
-        let matches = slashMatches
+        let matches = visibleSlashMatches
         guard !matches.isEmpty else { return nil }
         return matches[min(slashSelection, matches.count - 1)]
     }
@@ -284,7 +325,7 @@ struct ComposerCard: View {
     }
 
     private func handleKeyCommand(_ command: ComposerKeyCommand) -> Bool {
-        let matches = slashMatches
+        let matches = visibleSlashMatches
         guard !matches.isEmpty else { return false }
         switch command {
         case .moveSelectionUp:
@@ -297,8 +338,9 @@ struct ComposerCard: View {
             acceptSlashCommand(matches[min(slashSelection, matches.count - 1)])
             return true
         case .dismissSelection:
+            isSlashMenuDismissed = true
             slashSelection = 0
-            return false
+            return true
         }
     }
 }

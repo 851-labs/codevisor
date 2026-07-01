@@ -82,26 +82,40 @@ struct ChatInputEditor: NSViewRepresentable {
             parent.text = textView.string
             parent.recalculateHeight(textView)
         }
+
+        /// Routes navigation commands to the composer (slash-command menu) via
+        /// the standard key-binding pipeline, so arrow keys, Tab, and Escape
+        /// steer the menu instead of the text view while it is open.
+        func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+            switch commandSelector {
+            case #selector(NSResponder.moveUp(_:)):
+                return parent.onKeyCommand?(.moveSelectionUp) == true
+            case #selector(NSResponder.moveDown(_:)):
+                return parent.onKeyCommand?(.moveSelectionDown) == true
+            case #selector(NSResponder.insertTab(_:)):
+                return parent.onKeyCommand?(.acceptSelection) == true
+            case #selector(NSResponder.cancelOperation(_:)):
+                return parent.onKeyCommand?(.dismissSelection) == true
+            default:
+                return false
+            }
+        }
     }
 }
 
 /// An `NSTextView` that submits on Return and inserts a newline on Shift+Return.
+/// Menu navigation (arrows, Tab, Escape) is handled by the coordinator's
+/// `textView(_:doCommandBy:)`; only Return needs special-casing here because the
+/// Shift modifier isn't visible at the command-selector level.
 final class SubmittingTextView: NSTextView {
     var onSubmit: (() -> Void)?
     var onKeyCommand: ((ComposerKeyCommand) -> Bool)?
 
     override func keyDown(with event: NSEvent) {
-        switch event.keyCode {
-        case 53:
-            if onKeyCommand?(.dismissSelection) == true { return }
-        case 48:
-            if onKeyCommand?(.acceptSelection) == true { return }
-        case 125:
-            if onKeyCommand?(.moveSelectionDown) == true { return }
-        case 126:
-            if onKeyCommand?(.moveSelectionUp) == true { return }
-        default:
-            break
+        // 53 = Escape. Consume it here as well as in the delegate so it can
+        // never fall through to NSTextView's default `complete:` behavior.
+        if event.keyCode == 53, onKeyCommand?(.dismissSelection) == true {
+            return
         }
         // 36 = Return, 76 = numeric keypad Enter.
         if event.keyCode == 36 || event.keyCode == 76 {
