@@ -139,9 +139,15 @@ xcode_args=(
 
 ghostty_framework="$repo_root/apps/macos/Frameworks/GhosttyKit.xcframework"
 ghostty_library=""
+# Note: `lipo -verify_arch` only accepts a single architecture in newer Xcode
+# toolchains (passing two mis-parses and always fails), so check the slice
+# list from `lipo -archs` instead.
+library_has_arch() {
+  lipo -archs "$1" 2>/dev/null | tr " " "\n" | grep -qx "$2"
+}
 while IFS= read -r candidate; do
   lipo -info "$candidate" || true
-  if lipo -verify_arch arm64 x86_64 "$candidate" >/dev/null 2>&1; then
+  if library_has_arch "$candidate" arm64 && library_has_arch "$candidate" x86_64; then
     ghostty_library="$candidate"
     break
   fi
