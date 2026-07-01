@@ -9,6 +9,7 @@ import ACPKit
 public final class SessionModel {
     public private(set) var conversation: [ConversationItem] = []
     public private(set) var isSending = false
+    public private(set) var queuedPrompts: [ServerPromptQueueItem] = []
     public var composerText: String = ""
     public private(set) var availableCommands: [AvailableCommand] = []
     public private(set) var modeState: SessionModeState?
@@ -121,10 +122,16 @@ public final class SessionModel {
     /// Sends a prompt and streams the response into the conversation.
     public func send(_ text: String) async {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, !isSending else { return }
+        guard !trimmed.isEmpty else { return }
 
         composerText = ""
         errorMessage = nil
+
+        if isSending {
+            await enqueueWhileSending(trimmed)
+            return
+        }
+
         conversation.append(.user(UserMessage(text: trimmed)))
         conversation.append(.assistant(AssistantMessage(
             turn: AssistantTurn(isGenerating: true, isThinking: true, startedAt: now())
@@ -142,6 +149,7 @@ public final class SessionModel {
                 await drain()
                 finish(stopReason: response.stopReason)
                 isSending = false
+                drainLocalQueueIfNeeded()
             case let .server(transport):
                 _ = try await transport.prompt(trimmed)
                 await drain()
@@ -151,6 +159,37 @@ public final class SessionModel {
             errorMessage = String(describing: error)
             finish(stopReason: nil)
             isSending = false
+            drainLocalQueueIfNeeded()
+        }
+    }
+
+    public func updateQueuedPrompt(id: String, text: String) async {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        switch backend {
+        case .acp:
+            guard let index = queuedPrompts.firstIndex(where: { $0.id == id }) else { return }
+            queuedPrompts[index].text = trimmed
+            queuedPrompts[index].updatedAt = ISO8601DateFormatter().string(from: now())
+        case let .server(transport):
+            do {
+                _ = try await transport.updateQueuedPrompt(id: id, text: trimmed)
+            } catch {
+                errorMessage = String(describing: error)
+            }
+        }
+    }
+
+    public func deleteQueuedPrompt(id: String) async {
+        switch backend {
+        case .acp:
+            queuedPrompts.removeAll { $0.id == id }
+        case let .server(transport):
+            do {
+                try await transport.deleteQueuedPrompt(id: id)
+            } catch {
+                errorMessage = String(describing: error)
+            }
         }
     }
 
@@ -191,6 +230,7 @@ public final class SessionModel {
             do {
                 let snapshot = try await transport.snapshot()
                 conversation = snapshot.conversation
+                queuedPrompts = snapshot.promptQueue
                 serverEventCursor = snapshot.eventCursor
                 await startConsumer()
             } catch {
@@ -211,7 +251,7 @@ public final class SessionModel {
     private func applyHistory(_ update: SessionUpdate) {
         appliedUpdateCount += 1
         switch update {
-        case let .userMessageChunk(block):
+        case let .userMessageChunk(block, _):
             loadingUserText = (loadingUserText ?? "") + (block.textValue ?? "")
         case let .availableCommandsUpdate(commands):
             availableCommands = commands
@@ -272,7 +312,7 @@ public final class SessionModel {
     private func apply(_ update: SessionUpdate) {
         appliedUpdateCount += 1
         switch update {
-        case let .userMessageChunk(block):
+        case let .userMessageChunk(block, _):
             appendRemoteUserIfNeeded(text: block.textValue ?? "")
         case let .availableCommandsUpdate(commands):
             availableCommands = commands
@@ -302,10 +342,13 @@ public final class SessionModel {
         case let .finished(stopReason):
             finish(stopReason: stopReason)
             isSending = false
+            drainLocalQueueIfNeeded()
         case let .failed(message):
             errorMessage = message
             finish(stopReason: nil)
             isSending = false
+        case let .queueUpdated(queue):
+            queuedPrompts = queue
         }
     }
 
@@ -323,6 +366,34 @@ public final class SessionModel {
         message.turn.stopReason = stopReason
         message.turn.endedAt = now()
         conversation[conversation.count - 1] = .assistant(message)
+    }
+
+    private func enqueueWhileSending(_ text: String) async {
+        switch backend {
+        case .acp:
+            let nowString = ISO8601DateFormatter().string(from: now())
+            queuedPrompts.append(ServerPromptQueueItem(
+                id: UUID().uuidString,
+                sessionId: sessionId,
+                text: text,
+                createdAt: nowString,
+                updatedAt: nowString
+            ))
+        case let .server(transport):
+            do {
+                _ = try await transport.prompt(text)
+            } catch {
+                errorMessage = String(describing: error)
+            }
+        }
+    }
+
+    private func drainLocalQueueIfNeeded() {
+        guard case .acp = backend, !isSending, !queuedPrompts.isEmpty else { return }
+        let next = queuedPrompts.removeFirst()
+        Task { @MainActor in
+            await send(next.text)
+        }
     }
 
     private func appendRemoteUserIfNeeded(text: String) {

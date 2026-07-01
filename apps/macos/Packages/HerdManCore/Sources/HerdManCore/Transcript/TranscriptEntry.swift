@@ -55,16 +55,22 @@ public struct AssistantTurn: Sendable, Equatable {
 }
 
 public extension AssistantTurn {
-    /// The trailing text span, rendered expanded at the bottom as the final answer.
+    /// The last assistant text message, rendered expanded at the bottom as the final answer.
+    ///
+    /// ACP agents may interleave tool calls after chunks for the final message.
+    /// Treating "physically last entry" as final hides valid answers in that shape.
     var finalText: TranscriptEntry? {
-        guard let last = entries.last, last.isText else { return nil }
-        return last
+        guard let index = finalTextIndex else { return nil }
+        return entries[index]
     }
 
-    /// Everything before the final answer — intermediate text and all tool
+    /// Everything except the final answer — intermediate text and all tool
     /// calls — collapsed into the "Worked for…" disclosure.
     var workedEntries: [TranscriptEntry] {
-        finalText == nil ? entries : Array(entries.dropLast())
+        guard let finalTextIndex else { return entries }
+        return entries.enumerated().compactMap { offset, entry in
+            offset == finalTextIndex ? nil : entry
+        }
     }
 
     var hasWorkedContent: Bool { !workedEntries.isEmpty }
@@ -78,6 +84,10 @@ public extension AssistantTurn {
     var duration: TimeInterval? {
         guard let startedAt, let endedAt else { return nil }
         return max(0, endedAt.timeIntervalSince(startedAt))
+    }
+
+    private var finalTextIndex: Int? {
+        entries.indices.reversed().first { entries[$0].isText }
     }
 }
 

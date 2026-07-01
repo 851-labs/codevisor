@@ -10,6 +10,7 @@ import type {
 import { isoTimestamp } from "@herdman/api"
 import * as acp from "@agentclientprotocol/sdk"
 import type {
+  NewSessionRequest,
   NewSessionResponse,
   SessionConfigOption as AcpSessionConfigOption,
   SessionConfigSelectGroup as AcpSessionConfigSelectGroup,
@@ -57,7 +58,10 @@ export interface AcpHarnessLaunchRequest {
 }
 
 export interface AcpAgentConnection {
-  readonly createSession: (cwd: string) => Effect.Effect<AgentSessionMetadata, AcpRuntimeError>
+  readonly createSession: (
+    cwd: string,
+    harnessId: string
+  ) => Effect.Effect<AgentSessionMetadata, AcpRuntimeError>
   readonly loadSession: (sessionId: string, cwd: string) => Effect.Effect<string, AcpRuntimeError>
   readonly prompt: (
     sessionId: string,
@@ -216,6 +220,36 @@ export const harnessCatalog: ReadonlyArray<HarnessDefinition> = [
   npxHarness("kilo", "Kilo", "shippingbox", ["kilo"], "@kilocode/cli@7.3.54", ["acp"])
 ]
 
+export const claudeForegroundDisallowedTools = [
+  "Agent",
+  "Task",
+  "Monitor",
+  "ScheduleWakeup",
+  "TaskStop"
+] as const
+
+export const newSessionRequest = (cwd: string, harnessId: string): NewSessionRequest => {
+  const request: NewSessionRequest = {
+    cwd,
+    mcpServers: []
+  }
+  if (harnessId !== "claude-code") {
+    return request
+  }
+  return {
+    ...request,
+    _meta: {
+      claudeCode: {
+        options: {
+          // Temporary mitigation: Claude ACP background subagents can end a turn
+          // before their completion is forwarded, leaving HerdMan with no final answer.
+          disallowedTools: [...claudeForegroundDisallowedTools]
+        }
+      }
+    }
+  }
+}
+
 export const makeAcpRuntime = (config: AcpRuntimeConfig = {}): AcpRuntimeService => {
   const env = config.env ?? process.env
   const locateExecutable = config.locateExecutable ?? locateExecutableOnPath
@@ -283,13 +317,13 @@ export const makeAcpRuntime = (config: AcpRuntimeConfig = {}): AcpRuntimeService
     createAgentSession: (harnessId, cwd) =>
       Effect.gen(function* () {
         const connection = yield* connectHarness(harnessId, cwd)
-        const metadata = yield* connection.createSession(cwd)
+        const metadata = yield* connection.createSession(cwd, harnessId)
         return manageSession(harnessId, metadata.sessionId, cwd, connection)
       }),
     inspectHarness: (harnessId, cwd) =>
       Effect.gen(function* () {
         const connection = yield* connectHarness(harnessId, cwd)
-        const metadata = yield* connection.createSession(cwd)
+        const metadata = yield* connection.createSession(cwd, harnessId)
         void Effect.runPromise(connection.close).catch(() => undefined)
         return metadata
       }),
@@ -426,12 +460,12 @@ const sdkConnection = (
   connection.closed.catch(() => undefined)
 
   return {
-    createSession: (cwd) =>
+    createSession: (cwd, harnessId) =>
       adapterPromise("createSession", async () => {
-        const response = await connection.agent.request(acp.methods.agent.session.new, {
-          cwd,
-          mcpServers: []
-        })
+        const response = await connection.agent.request(
+          acp.methods.agent.session.new,
+          newSessionRequest(cwd, harnessId)
+        )
         return sessionMetadata(response)
       }),
     loadSession: (sessionId, cwd) =>

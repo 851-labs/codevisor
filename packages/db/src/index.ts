@@ -4,6 +4,7 @@ import type {
   EventEnvelope,
   EventKind,
   Harness,
+  PromptQueueItem,
   SessionDetail,
   SessionSummary,
   UpdateSessionRequest,
@@ -56,6 +57,7 @@ interface SessionRow {
 interface ConversationRow {
   readonly id: string
   readonly role: "user" | "assistant" | "system"
+  readonly message_id: string | null
   readonly text: string
   readonly created_at: string
   readonly is_generating: number
@@ -76,6 +78,14 @@ interface SessionActionRow {
   readonly action_kind: string
   readonly response: string
   readonly created_at: string
+}
+
+interface PromptQueueRow {
+  readonly id: string
+  readonly session_id: string
+  readonly text: string
+  readonly created_at: string
+  readonly updated_at: string
 }
 
 interface UpdateRow {
@@ -181,6 +191,31 @@ const migrations = [
         primary key (session_id, client_action_id)
       );
     `
+  },
+  {
+    id: 3,
+    name: "conversation message ids",
+    sql: `
+      alter table conversation_items add column message_id text;
+      create index if not exists conversation_items_session_message_idx
+        on conversation_items(session_id, message_id);
+    `
+  },
+  {
+    id: 4,
+    name: "session prompt queue",
+    sql: `
+      create table if not exists prompt_queue_items (
+        id text primary key,
+        session_id text not null references sessions(id) on delete cascade,
+        text text not null,
+        created_at text not null,
+        updated_at text not null
+      );
+
+      create index if not exists prompt_queue_items_session_created_idx
+        on prompt_queue_items(session_id, created_at);
+    `
   }
 ] as const
 
@@ -210,6 +245,7 @@ export interface HerdManDatabaseService {
   readonly appendConversationItem: (
     sessionId: string,
     role: "user" | "assistant" | "system",
+    messageId: string | undefined,
     text: string,
     isGenerating: boolean
   ) => Effect.Effect<void, DatabaseError>
@@ -219,6 +255,25 @@ export interface HerdManDatabaseService {
     payload: unknown
   ) => Effect.Effect<EventEnvelope, DatabaseError>
   readonly listEvents: (since: number) => Effect.Effect<ReadonlyArray<EventEnvelope>, DatabaseError>
+  readonly createPromptQueueItem: (
+    sessionId: string,
+    text: string
+  ) => Effect.Effect<PromptQueueItem, DatabaseError>
+  readonly listPromptQueue: (
+    sessionId: string
+  ) => Effect.Effect<ReadonlyArray<PromptQueueItem>, DatabaseError>
+  readonly updatePromptQueueItem: (
+    sessionId: string,
+    queueItemId: string,
+    text: string
+  ) => Effect.Effect<PromptQueueItem, DatabaseError>
+  readonly deletePromptQueueItem: (
+    sessionId: string,
+    queueItemId: string
+  ) => Effect.Effect<void, DatabaseError>
+  readonly shiftPromptQueueItem: (
+    sessionId: string
+  ) => Effect.Effect<PromptQueueItem | undefined, DatabaseError>
   readonly getSessionActionResult: (
     sessionId: string,
     clientActionId: string
@@ -442,9 +497,12 @@ const createService = (
       attempt("getSessionDetail", () => ({
         session: getSession(sqlite, id),
         conversation: sqlite
-          .prepare("select * from conversation_items where session_id = ? order by created_at asc")
+          .prepare(
+            "select * from conversation_items where session_id = ? order by created_at asc, rowid asc"
+          )
           .all(id)
           .map((row) => conversationFromRow(row as ConversationRow)),
+        promptQueue: listPromptQueueSync(sqlite, id),
         eventCursor: Number(
           (
             sqlite.prepare("select coalesce(max(id), 0) as cursor from events").get() as {
@@ -482,16 +540,16 @@ const createService = (
       attempt("deleteSession", () => {
         sqlite.prepare("delete from sessions where id = ?").run(id)
       }),
-    appendConversationItem: (sessionId, role, text, isGenerating) =>
+    appendConversationItem: (sessionId, role, messageId, text, isGenerating) =>
       attempt("appendConversationItem", () => {
         const now = isoTimestamp()
         sqlite
           .prepare(
             `insert into conversation_items (
-              id, session_id, role, text, created_at, is_generating
-            ) values (?, ?, ?, ?, ?, ?)`
+              id, session_id, role, message_id, text, created_at, is_generating
+            ) values (?, ?, ?, ?, ?, ?, ?)`
           )
-          .run(randomUUID(), sessionId, role, text, now, isGenerating ? 1 : 0)
+          .run(randomUUID(), sessionId, role, messageId ?? null, text, now, isGenerating ? 1 : 0)
         sqlite.prepare("update sessions set updated_at = ? where id = ?").run(now, sessionId)
       }),
     appendEvent,
@@ -502,6 +560,76 @@ const createService = (
           .all(since)
           .map((row) => eventFromRow(row as EventRow))
       ),
+    createPromptQueueItem: (sessionId, text) =>
+      attempt("createPromptQueueItem", () => {
+        getSession(sqlite, sessionId)
+        const now = isoTimestamp()
+        const item: PromptQueueItem = {
+          id: randomUUID(),
+          sessionId,
+          text,
+          createdAt: now,
+          updatedAt: now
+        }
+        sqlite
+          .prepare(
+            `insert into prompt_queue_items (
+              id, session_id, text, created_at, updated_at
+            ) values (?, ?, ?, ?, ?)`
+          )
+          .run(item.id, sessionId, text, now, now)
+        return item
+      }),
+    listPromptQueue: (sessionId) =>
+      attempt("listPromptQueue", () => {
+        getSession(sqlite, sessionId)
+        return listPromptQueueSync(sqlite, sessionId)
+      }),
+    updatePromptQueueItem: (sessionId, queueItemId, text) =>
+      attempt("updatePromptQueueItem", () => {
+        const now = isoTimestamp()
+        const result = sqlite
+          .prepare(
+            "update prompt_queue_items set text = ?, updated_at = ? where session_id = ? and id = ?"
+          )
+          .run(text, now, sessionId, queueItemId)
+        if (result.changes === 0) {
+          throw new Error(`Prompt queue item not found: ${queueItemId}`)
+        }
+        return promptQueueFromRow(
+          sqlite
+            .prepare("select * from prompt_queue_items where session_id = ? and id = ?")
+            .get(sessionId, queueItemId) as PromptQueueRow
+        )
+      }),
+    deletePromptQueueItem: (sessionId, queueItemId) =>
+      attempt("deletePromptQueueItem", () => {
+        const result = sqlite
+          .prepare("delete from prompt_queue_items where session_id = ? and id = ?")
+          .run(sessionId, queueItemId)
+        if (result.changes === 0) {
+          throw new Error(`Prompt queue item not found: ${queueItemId}`)
+        }
+      }),
+    shiftPromptQueueItem: (sessionId) =>
+      attempt("shiftPromptQueueItem", () => {
+        const transaction = sqlite.transaction(() => {
+          const row = sqlite
+            .prepare(
+              `select * from prompt_queue_items
+               where session_id = ?
+               order by created_at asc, rowid asc
+               limit 1`
+            )
+            .get(sessionId) as PromptQueueRow | undefined
+          if (row === undefined) {
+            return undefined
+          }
+          sqlite.prepare("delete from prompt_queue_items where id = ?").run(row.id)
+          return promptQueueFromRow(row)
+        })
+        return transaction()
+      }),
     getSessionActionResult: (sessionId, clientActionId) =>
       attempt("getSessionActionResult", () => {
         const row = sqlite
@@ -629,10 +757,32 @@ const sessionFromRow = (row: SessionRow): SessionSummary => ({
 const conversationFromRow = (row: ConversationRow): SessionDetail["conversation"][number] => ({
   id: row.id,
   role: row.role,
+  ...(row.message_id === null ? {} : { messageId: row.message_id }),
   text: row.text,
   createdAt: row.created_at,
   isGenerating: row.is_generating === 1
 })
+
+const promptQueueFromRow = (row: PromptQueueRow): PromptQueueItem => ({
+  id: row.id,
+  sessionId: row.session_id,
+  text: row.text,
+  createdAt: row.created_at,
+  updatedAt: row.updated_at
+})
+
+const listPromptQueueSync = (
+  sqlite: Database.Database,
+  sessionId: string
+): ReadonlyArray<PromptQueueItem> =>
+  sqlite
+    .prepare(
+      `select * from prompt_queue_items
+       where session_id = ?
+       order by created_at asc, rowid asc`
+    )
+    .all(sessionId)
+    .map((row) => promptQueueFromRow(row as PromptQueueRow))
 
 const eventFromRow = (row: EventRow): EventEnvelope => ({
   id: row.id,

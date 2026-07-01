@@ -5,7 +5,7 @@ import StreamMarkdown
 
 /// Renders one assistant turn: reasoning text and tool-call groups collapse into
 /// a "Worked for…" disclosure, the final answer renders expanded at the bottom,
-/// and a shimmering "Thinking…" indicator shows while the agent is working.
+/// and a shimmering "Thinking..." indicator shows while the agent is working.
 struct AssistantTurnView: View {
     let turn: AssistantTurn
     @State private var isExpanded: Bool
@@ -30,7 +30,7 @@ struct AssistantTurnView: View {
             }
 
             if turn.isThinking {
-                ShimmeringText(text: "Thinking…")
+                ShimmeringText.thinking
             }
 
             if let final = turn.finalText, case let .text(_, markdown) = final {
@@ -40,9 +40,13 @@ struct AssistantTurnView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .onChange(of: turn.isGenerating) { _, generating in
+            if generating {
+                isExpanded = true
+                return
+            }
             // Collapse only once the assistant message is fully finished, when we
             // know the real final text. Stays collapsed afterward.
-            if !generating && !hasAutoCollapsed {
+            if !hasAutoCollapsed {
                 hasAutoCollapsed = true
                 withAnimation(.snappy(duration: 0.28)) { isExpanded = false }
             }
@@ -51,22 +55,17 @@ struct AssistantTurnView: View {
 
     private var workedSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Button {
-                withAnimation(.snappy(duration: 0.28)) { isExpanded.toggle() }
-            } label: {
-                HStack(spacing: 6) {
-                    label
-                    Image(systemName: "chevron.right")
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(.tertiary)
-                        .rotationEffect(.degrees(isExpanded ? 90 : 0))
-                    Spacer(minLength: 0)
+            if turn.isGenerating {
+                workedHeader(showsChevron: false)
+            } else {
+                Button {
+                    withAnimation(.snappy(duration: 0.28)) { isExpanded.toggle() }
+                } label: {
+                    workedHeader(showsChevron: true)
+                        .contentShape(Rectangle())
                 }
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .contentShape(Rectangle())
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
 
             if isExpanded && !turn.workedItems.isEmpty {
                 VStack(alignment: .leading, spacing: 12) {
@@ -81,10 +80,25 @@ struct AssistantTurnView: View {
                         }
                     }
                 }
-                .transition(.move(edge: .top).combined(with: .opacity))
+                .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
             }
         }
         .clipped()
+    }
+
+    private func workedHeader(showsChevron: Bool) -> some View {
+        HStack(spacing: 6) {
+            label
+            if showsChevron {
+                Image(systemName: "chevron.right")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+                    .rotationEffect(.degrees(isExpanded ? 90 : 0))
+            }
+            Spacer(minLength: 0)
+        }
+        .font(.callout)
+        .foregroundStyle(.secondary)
     }
 
     /// The worked-for label: a live-incrementing "Working for Xs" while the turn

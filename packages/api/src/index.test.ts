@@ -106,15 +106,27 @@ describe("@herdman/api", () => {
         {
           id: "item-1",
           role: "user",
+          messageId: "user-1",
           text: "hello",
           createdAt: "2026-06-30T00:00:01.000Z",
           isGenerating: false
+        }
+      ],
+      promptQueue: [
+        {
+          id: "queue-1",
+          sessionId: "session-1",
+          text: "follow up",
+          createdAt: "2026-06-30T00:00:02.000Z",
+          updatedAt: "2026-06-30T00:00:02.000Z"
         }
       ],
       eventCursor: 7
     })
     expect(detail.eventCursor).toBe(7)
     expect(detail.conversation[0]?.role).toBe("user")
+    expect(detail.conversation[0]?.messageId).toBe("user-1")
+    expect(detail.promptQueue[0]?.text).toBe("follow up")
   })
 
   it("decodes harness capabilities with modes and config options", () => {

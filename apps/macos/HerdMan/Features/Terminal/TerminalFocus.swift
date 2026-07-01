@@ -66,7 +66,7 @@ private struct TerminalToggleMenuItem: View {
     @FocusedValue(\.terminalToggle) private var action
 
     var body: some View {
-        Button("Toggle Terminal") { action?.toggle() }
+        Button("Toggle terminal") { action?.toggle() }
             .keyboardShortcut("j", modifiers: .command)
             .disabled(action == nil)
     }

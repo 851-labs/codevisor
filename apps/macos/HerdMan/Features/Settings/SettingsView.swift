@@ -40,7 +40,7 @@ struct GeneralSettingsView: View {
                         .font(.callout)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
-                    Button("Delete All Data…", role: .destructive) {
+                    Button("Delete all data…", role: .destructive) {
                         showingConfirmation = true
                     }
                     .padding(.top, 4)
@@ -54,7 +54,7 @@ struct GeneralSettingsView: View {
             isPresented: $showingConfirmation,
             titleVisibility: .visible
         ) {
-            Button("Delete Everything", role: .destructive) {
+            Button("Delete everything", role: .destructive) {
                 environment.deleteAllData()
             }
             Button("Cancel", role: .cancel) {}
@@ -149,7 +149,6 @@ struct HarnessesSettingsView: View {
     @State private var all: [DiscoveredAgent] = []
     @State private var serverHarnesses: [ServerHarness]?
     @State private var isScanning = true
-    @State private var isImporting = false
     @State private var showsNotInstalled = false
 
     private var installed: [DiscoveredAgent] { all.filter { $0.readiness.isReady } }
@@ -220,26 +219,6 @@ struct HarnessesSettingsView: View {
                         Label("Refresh", systemImage: "arrow.clockwise")
                     }
                     .disabled(isScanning)
-
-                    Spacer()
-
-                    Button {
-                        isImporting = true
-                        Task {
-                            await environment.importSessions()
-                            isImporting = false
-                        }
-                    } label: {
-                        if isImporting {
-                            HStack(spacing: 6) { ProgressView().controlSize(.small); Text("Importing…") }
-                        } else {
-                            Label("Re-import sessions", systemImage: "square.and.arrow.down")
-                        }
-                    }
-                    .disabled(isImporting || !environment.settings.importExternalSessions)
-                    .help(environment.settings.importExternalSessions
-                          ? "Refresh sessions from all installed harnesses"
-                          : "Enable importing during setup to use this")
                 }
             }
         }

@@ -1,6 +1,13 @@
 import SwiftUI
 import AppKit
 
+enum ComposerKeyCommand {
+    case moveSelectionUp
+    case moveSelectionDown
+    case acceptSelection
+    case dismissSelection
+}
+
 /// A multiline text editor where **Return submits** and **Shift+Return inserts a
 /// newline**. Grows with its content between `minHeight` and `maxHeight`.
 struct ChatInputEditor: NSViewRepresentable {
@@ -9,6 +16,7 @@ struct ChatInputEditor: NSViewRepresentable {
     var minHeight: CGFloat = 24
     var maxHeight: CGFloat = 240
     var onSubmit: () -> Void
+    var onKeyCommand: ((ComposerKeyCommand) -> Bool)? = nil
     /// Called once with the underlying text view so callers can move focus to it
     /// (used by the terminal's ⌘J focus handoff).
     var onTextViewReady: ((NSView) -> Void)? = nil
@@ -17,6 +25,7 @@ struct ChatInputEditor: NSViewRepresentable {
         let textView = SubmittingTextView()
         textView.delegate = context.coordinator
         textView.onSubmit = { onSubmit() }
+        textView.onKeyCommand = onKeyCommand
         onTextViewReady?(textView)
         textView.string = text
         textView.font = .preferredFont(forTextStyle: .body)
@@ -41,7 +50,9 @@ struct ChatInputEditor: NSViewRepresentable {
 
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         guard let textView = scrollView.documentView as? SubmittingTextView else { return }
+        context.coordinator.parent = self
         textView.onSubmit = { onSubmit() }
+        textView.onKeyCommand = onKeyCommand
         if textView.string != text {
             textView.string = text
         }
@@ -61,7 +72,7 @@ struct ChatInputEditor: NSViewRepresentable {
     }
 
     final class Coordinator: NSObject, NSTextViewDelegate {
-        private let parent: ChatInputEditor
+        var parent: ChatInputEditor
         weak var textView: SubmittingTextView?
 
         init(_ parent: ChatInputEditor) { self.parent = parent }
@@ -77,14 +88,29 @@ struct ChatInputEditor: NSViewRepresentable {
 /// An `NSTextView` that submits on Return and inserts a newline on Shift+Return.
 final class SubmittingTextView: NSTextView {
     var onSubmit: (() -> Void)?
+    var onKeyCommand: ((ComposerKeyCommand) -> Bool)?
 
     override func keyDown(with event: NSEvent) {
+        switch event.keyCode {
+        case 53:
+            if onKeyCommand?(.dismissSelection) == true { return }
+        case 48:
+            if onKeyCommand?(.acceptSelection) == true { return }
+        case 125:
+            if onKeyCommand?(.moveSelectionDown) == true { return }
+        case 126:
+            if onKeyCommand?(.moveSelectionUp) == true { return }
+        default:
+            break
+        }
         // 36 = Return, 76 = numeric keypad Enter.
         if event.keyCode == 36 || event.keyCode == 76 {
             if event.modifierFlags.contains(.shift) {
                 super.keyDown(with: event) // newline
             } else {
-                onSubmit?()
+                if onKeyCommand?(.acceptSelection) != true {
+                    onSubmit?()
+                }
             }
             return
         }

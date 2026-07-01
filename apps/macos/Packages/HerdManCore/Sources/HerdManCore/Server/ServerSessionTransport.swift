@@ -3,11 +3,13 @@ import ACPKit
 
 public struct ServerSessionSnapshot: Equatable, Sendable {
     public var conversation: [ConversationItem]
+    public var promptQueue: [ServerPromptQueueItem]
     public var eventCursor: Int
 }
 
 public enum ServerSessionStreamEvent: Equatable, Sendable {
     case update(SessionUpdate)
+    case queueUpdated([ServerPromptQueueItem])
     case finished(StopReason)
     case failed(String)
 }
@@ -27,6 +29,14 @@ public struct ServerSessionTransport: Sendable {
         try await client.promptSession(id: sessionId, text: text)
     }
 
+    public func updateQueuedPrompt(id: String, text: String) async throws -> ServerPromptQueueItem {
+        try await client.updateQueuedPrompt(sessionId: sessionId, queueItemId: id, text: text)
+    }
+
+    public func deleteQueuedPrompt(id: String) async throws {
+        try await client.deleteQueuedPrompt(sessionId: sessionId, queueItemId: id)
+    }
+
     public func cancel() async throws {
         try await client.cancelSession(id: sessionId)
     }
@@ -43,6 +53,7 @@ public struct ServerSessionTransport: Sendable {
         let detail = try await client.sessionDetail(id: sessionId)
         return ServerSessionSnapshot(
             conversation: Self.conversationItems(from: detail.conversation),
+            promptQueue: detail.promptQueue,
             eventCursor: detail.eventCursor
         )
     }
@@ -102,7 +113,10 @@ public struct ServerSessionTransport: Sendable {
                     id: uuid(from: item.id),
                     turn: AssistantTurn(isGenerating: item.isGenerating)
                 )
-                TranscriptReducer.apply(.agentMessageChunk(.text(item.text)), to: &assistant.turn)
+                TranscriptReducer.apply(
+                    .agentMessageChunk(.text(item.text), messageId: item.messageId),
+                    to: &assistant.turn
+                )
                 assistant.turn.isGenerating = item.isGenerating
                 pendingAssistant = assistant
             case .system:
@@ -123,6 +137,8 @@ public struct ServerSessionTransport: Sendable {
         }
 
         switch event.kind {
+        case "session.queue.updated":
+            return [.queueUpdated(promptQueue(from: event.payload))]
         case "session.output":
             return textUpdates(from: event.payload).map(ServerSessionStreamEvent.update)
         case "session.updated":
@@ -133,6 +149,16 @@ public struct ServerSessionTransport: Sendable {
         case "session.error":
             return [.failed(errorMessage(from: event.payload))]
         default:
+            return []
+        }
+    }
+
+    private static func promptQueue(from payload: JSONValue) -> [ServerPromptQueueItem] {
+        guard let queue = payload["queue"]?.arrayValue else { return [] }
+        do {
+            let data = try JSONEncoder().encode(JSONValue.array(queue))
+            return try JSONDecoder().decode([ServerPromptQueueItem].self, from: data)
+        } catch {
             return []
         }
     }
@@ -155,9 +181,9 @@ public struct ServerSessionTransport: Sendable {
         }
         switch role {
         case "assistant":
-            return [.agentMessageChunk(.text(text))]
+            return [.agentMessageChunk(.text(text), messageId: payload["messageId"]?.stringValue)]
         case "user":
-            return [.userMessageChunk(.text(text))]
+            return [.userMessageChunk(.text(text), messageId: payload["messageId"]?.stringValue)]
         default:
             return []
         }

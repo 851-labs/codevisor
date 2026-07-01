@@ -140,15 +140,26 @@ export type ConversationRole = typeof ConversationRole.Type
 export const ConversationItem = Schema.Struct({
   id: Schema.String,
   role: ConversationRole,
+  messageId: Schema.optional(Schema.String),
   text: Schema.String,
   createdAt: Schema.String,
   isGenerating: Schema.Boolean
 })
 export type ConversationItem = typeof ConversationItem.Type
 
+export const PromptQueueItem = Schema.Struct({
+  id: Schema.String,
+  sessionId: Schema.String,
+  text: Schema.String,
+  createdAt: Schema.String,
+  updatedAt: Schema.String
+})
+export type PromptQueueItem = typeof PromptQueueItem.Type
+
 export const SessionDetail = Schema.Struct({
   session: SessionSummary,
   conversation: Schema.Array(ConversationItem),
+  promptQueue: Schema.Array(PromptQueueItem),
   eventCursor: Schema.Number
 })
 export type SessionDetail = typeof SessionDetail.Type
@@ -181,9 +192,15 @@ export type PromptRequest = typeof PromptRequest.Type
 
 export const PromptAcceptedResponse = Schema.Struct({
   accepted: Schema.Boolean,
-  sessionId: Schema.String
+  sessionId: Schema.String,
+  queueItemId: Schema.optional(Schema.String)
 })
 export type PromptAcceptedResponse = typeof PromptAcceptedResponse.Type
+
+export const UpdateQueuedPromptRequest = Schema.Struct({
+  text: Schema.String
+})
+export type UpdateQueuedPromptRequest = typeof UpdateQueuedPromptRequest.Type
 
 export const CancelRequest = Schema.Struct({
   clientActionId: Schema.optional(Schema.String)
@@ -245,6 +262,7 @@ export const EventKind = Schema.Literals([
   "session.archived",
   "session.deleted",
   "session.output",
+  "session.queue.updated",
   "session.error",
   "terminal.output",
   "terminal.exit",
@@ -333,6 +351,9 @@ export const endpoints = [
   "GET /v1/sessions/:id",
   "PATCH /v1/sessions/:id",
   "DELETE /v1/sessions/:id",
+  "GET /v1/sessions/:id/queue",
+  "PATCH /v1/sessions/:id/queue/:queueId",
+  "DELETE /v1/sessions/:id/queue/:queueId",
   "POST /v1/sessions/:id/prompt",
   "POST /v1/sessions/:id/cancel",
   "POST /v1/sessions/:id/mode",

@@ -32,7 +32,7 @@ struct ToolCallRow: View {
 
             if isExpanded, hasContent {
                 ToolCallContentCard(call: call)
-                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
             }
         }
         .clipped()

@@ -35,7 +35,7 @@ struct NewChatView: View {
             Spacer()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .navigationTitle("New Chat")
+        .navigationTitle("New chat")
         .task(id: preferredWorkspaceId) { setUpController() }
     }
 
@@ -47,7 +47,7 @@ struct NewChatView: View {
             VStack(spacing: 10) {
                 Text("Add a workspace to start")
                     .font(.system(size: 26, weight: .semibold))
-                Text("Use the + next to Projects in the sidebar.")
+                Text("Use the + next to projects in the sidebar.")
                     .foregroundStyle(.secondary)
             }
         } else {
@@ -135,8 +135,8 @@ struct NewChatView: View {
 
     private static func title(from prompt: String) -> String {
         let trimmed = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
-        let firstLine = trimmed.split(separator: "\n").first.map(String.init) ?? "New Session"
-        return firstLine.count > 48 ? String(firstLine.prefix(48)) + "…" : (firstLine.isEmpty ? "New Session" : firstLine)
+        let firstLine = trimmed.split(separator: "\n").first.map(String.init) ?? "New session"
+        return firstLine.count > 48 ? String(firstLine.prefix(48)) + "…" : (firstLine.isEmpty ? "New session" : firstLine)
     }
 }
 

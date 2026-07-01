@@ -3,7 +3,9 @@ import { describe, expect, it } from "vitest"
 import {
   AcpRuntime,
   acpProtocolVersion,
+  claudeForegroundDisallowedTools,
   makeAcpRuntime,
+  newSessionRequest,
   toEventEnvelope,
   type AcpAgentConnection,
   type AcpConnector,
@@ -17,7 +19,7 @@ import {
 const run = <A>(effect: Effect.Effect<A, unknown>): Promise<A> => Effect.runPromise(effect)
 
 class FakeConnection implements AcpAgentConnection {
-  readonly created: Array<string> = []
+  readonly created: Array<readonly [string, string]> = []
   readonly loaded: Array<readonly [string, string]> = []
   readonly prompts: Array<readonly [string, string]> = []
   readonly cancellations: Array<string> = []
@@ -31,11 +33,12 @@ class FakeConnection implements AcpAgentConnection {
   }
 
   createSession(
-    cwd: string
+    cwd: string,
+    harnessId: string
   ): Effect.Effect<{ readonly sessionId: string; readonly configOptions: [] }, AcpRuntimeError> {
     return Effect.sync(() => {
       const sessionId = `agent-${this.request.harnessId}-${this.created.length + 1}`
-      this.created.push(cwd)
+      this.created.push([cwd, harnessId])
       return { configOptions: [], sessionId }
     })
   }
@@ -202,6 +205,7 @@ describe("@herdman/acp-runtime", () => {
       cwd: "/tmp/project",
       harnessId: "codex"
     })
+    expect(connector.connections[0]?.created).toEqual([["/tmp/project", "codex"]])
     expect(connector.connections[3]?.loaded).toEqual([["agent-existing", "/tmp/project"]])
     expect(previousLoadedConnection.closeCount).toBe(1)
     expect(connector.connections[4]?.loaded).toEqual([["agent-existing", "/tmp/other"]])
@@ -337,5 +341,23 @@ describe("@herdman/acp-runtime", () => {
       payload: { text: "chunk" }
     })
     expect(acpProtocolVersion).toBe(1)
+  })
+
+  it("keeps Claude ACP sessions in the foreground until upstream background tasks stabilize", () => {
+    expect(newSessionRequest("/tmp/project", "codex")).toEqual({
+      cwd: "/tmp/project",
+      mcpServers: []
+    })
+    expect(newSessionRequest("/tmp/project", "claude-code")).toEqual({
+      cwd: "/tmp/project",
+      mcpServers: [],
+      _meta: {
+        claudeCode: {
+          options: {
+            disallowedTools: [...claudeForegroundDisallowedTools]
+          }
+        }
+      }
+    })
   })
 })

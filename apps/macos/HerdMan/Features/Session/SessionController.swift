@@ -72,6 +72,8 @@ final class SessionController {
     // MARK: - Derived state
 
     var conversation: [ConversationItem] { model?.conversation ?? [] }
+    var queuedPrompts: [ServerPromptQueueItem] { model?.queuedPrompts ?? [] }
+    var availableCommands: [AvailableCommand] { model?.availableCommands ?? [] }
     var isConnected: Bool { model != nil }
     var modeState: SessionModeState? {
         if let model { return model.modeState }
@@ -157,7 +159,7 @@ final class SessionController {
 
     var canSend: Bool {
         !composerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            && !isBusy
+            && !isConnecting
             && (isConnected || selectedHarness != nil)
     }
 
@@ -242,7 +244,7 @@ final class SessionController {
     /// Sends the composer text, connecting the harness first if needed.
     func send() async {
         let text = composerText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty, !isBusy else { return }
+        guard !text.isEmpty, !isConnecting else { return }
 
         if !hasSentFirst {
             hasSentFirst = true
@@ -274,6 +276,14 @@ final class SessionController {
 
     func stop() async {
         await model?.cancel()
+    }
+
+    func updateQueuedPrompt(id: String, text: String) async {
+        await model?.updateQueuedPrompt(id: id, text: text)
+    }
+
+    func deleteQueuedPrompt(id: String) async {
+        await model?.deleteQueuedPrompt(id: id)
     }
 
     func setMode(_ modeId: String) async {
@@ -312,7 +322,8 @@ final class SessionController {
         _ = try await client.initialize(InitializeRequest(
             protocolVersion: .acpProtocolVersion,
             clientCapabilities: ClientCapabilities(
-                fs: FileSystemCapabilities(readTextFile: true, writeTextFile: true)
+                fs: FileSystemCapabilities(readTextFile: true, writeTextFile: true),
+                plan: true
             ),
             clientInfo: Implementation(name: "HerdMan", version: "1.0")
         ))

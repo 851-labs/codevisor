@@ -48,7 +48,7 @@ struct LocalHerdManServerTests {
         #expect(launches.first?.entrypoint == entrypoint)
         #expect(launches.first?.databasePath == "/tmp/herdman.sqlite")
         #expect(launches.first?.host == "127.0.0.1")
-        #expect(launches.first?.port == 8765)
+        #expect(launches.first?.port == HerdManServerConfig.localPort)
     }
 
     @Test("Reports unavailable when no server entrypoint can be found")

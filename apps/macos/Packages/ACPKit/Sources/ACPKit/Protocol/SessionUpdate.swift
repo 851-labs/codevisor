@@ -34,9 +34,9 @@ public struct SessionUsage: Sendable, Codable, Equatable {
 /// Discriminated by the `sessionUpdate` field. For `tool_call` and
 /// `tool_call_update` the payload fields are inline alongside the discriminator.
 public enum SessionUpdate: Sendable, Codable, Equatable {
-    case agentMessageChunk(ContentBlock)
-    case agentThoughtChunk(ContentBlock)
-    case userMessageChunk(ContentBlock)
+    case agentMessageChunk(ContentBlock, messageId: String?)
+    case agentThoughtChunk(ContentBlock, messageId: String?)
+    case userMessageChunk(ContentBlock, messageId: String?)
     case toolCall(ToolCall)
     case toolCallUpdate(ToolCallUpdate)
     case plan(Plan)
@@ -46,7 +46,7 @@ public enum SessionUpdate: Sendable, Codable, Equatable {
     case usageUpdate(SessionUsage)
 
     private enum Keys: String, CodingKey {
-        case sessionUpdate, content, entries, availableCommands, currentModeId, configOptions
+        case sessionUpdate, messageId, content, entries, availableCommands, currentModeId, configOptions
         case used, size, cost
     }
 
@@ -55,11 +55,20 @@ public enum SessionUpdate: Sendable, Codable, Equatable {
         let kind = try container.decode(String.self, forKey: .sessionUpdate)
         switch kind {
         case "agent_message_chunk":
-            self = .agentMessageChunk(try container.decode(ContentBlock.self, forKey: .content))
+            self = .agentMessageChunk(
+                try container.decode(ContentBlock.self, forKey: .content),
+                messageId: try container.decodeIfPresent(String.self, forKey: .messageId)
+            )
         case "agent_thought_chunk":
-            self = .agentThoughtChunk(try container.decode(ContentBlock.self, forKey: .content))
+            self = .agentThoughtChunk(
+                try container.decode(ContentBlock.self, forKey: .content),
+                messageId: try container.decodeIfPresent(String.self, forKey: .messageId)
+            )
         case "user_message_chunk":
-            self = .userMessageChunk(try container.decode(ContentBlock.self, forKey: .content))
+            self = .userMessageChunk(
+                try container.decode(ContentBlock.self, forKey: .content),
+                messageId: try container.decodeIfPresent(String.self, forKey: .messageId)
+            )
         case "tool_call":
             self = .toolCall(try ToolCall(from: decoder))
         case "tool_call_update":
@@ -96,14 +105,17 @@ public enum SessionUpdate: Sendable, Codable, Equatable {
     public func encode(to encoder: any Encoder) throws {
         var container = encoder.container(keyedBy: Keys.self)
         switch self {
-        case let .agentMessageChunk(content):
+        case let .agentMessageChunk(content, messageId):
             try container.encode("agent_message_chunk", forKey: .sessionUpdate)
+            try container.encodeIfPresent(messageId, forKey: .messageId)
             try container.encode(content, forKey: .content)
-        case let .agentThoughtChunk(content):
+        case let .agentThoughtChunk(content, messageId):
             try container.encode("agent_thought_chunk", forKey: .sessionUpdate)
+            try container.encodeIfPresent(messageId, forKey: .messageId)
             try container.encode(content, forKey: .content)
-        case let .userMessageChunk(content):
+        case let .userMessageChunk(content, messageId):
             try container.encode("user_message_chunk", forKey: .sessionUpdate)
+            try container.encodeIfPresent(messageId, forKey: .messageId)
             try container.encode(content, forKey: .content)
         case let .toolCall(toolCall):
             try container.encode("tool_call", forKey: .sessionUpdate)
@@ -129,6 +141,20 @@ public enum SessionUpdate: Sendable, Codable, Equatable {
             try container.encodeIfPresent(usage.size, forKey: .size)
             try container.encodeIfPresent(usage.cost, forKey: .cost)
         }
+    }
+}
+
+public extension SessionUpdate {
+    static func agentMessageChunk(_ content: ContentBlock) -> SessionUpdate {
+        .agentMessageChunk(content, messageId: nil)
+    }
+
+    static func agentThoughtChunk(_ content: ContentBlock) -> SessionUpdate {
+        .agentThoughtChunk(content, messageId: nil)
+    }
+
+    static func userMessageChunk(_ content: ContentBlock) -> SessionUpdate {
+        .userMessageChunk(content, messageId: nil)
     }
 }
 

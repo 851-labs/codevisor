@@ -137,13 +137,19 @@ describe("@herdman/db", () => {
       title: "Renamed session"
     })
 
-    await run(db.appendConversationItem(firstSession.id, "user", "hello", false))
-    await run(db.appendConversationItem(firstSession.id, "assistant", "streaming", true))
+    await run(db.appendConversationItem(firstSession.id, "user", "user-1", "hello", false))
+    await run(
+      db.appendConversationItem(firstSession.id, "assistant", "assistant-1", "streaming", true)
+    )
+    await run(db.appendConversationItem(firstSession.id, "assistant", undefined, "no id", false))
     const detail = await run(db.getSessionDetail(firstSession.id))
     expect(detail.eventCursor).toBe(0)
-    expect(detail.conversation.map((item) => [item.role, item.text, item.isGenerating])).toEqual([
-      ["user", "hello", false],
-      ["assistant", "streaming", true]
+    expect(
+      detail.conversation.map((item) => [item.role, item.messageId, item.text, item.isGenerating])
+    ).toEqual([
+      ["user", "user-1", "hello", false],
+      ["assistant", "assistant-1", "streaming", true],
+      ["assistant", undefined, "no id", false]
     ])
 
     const event = await run(
@@ -170,6 +176,28 @@ describe("@herdman/db", () => {
     expect(await run(db.getSessionActionResult(firstSession.id, "prompt-1"))).toEqual({
       stopReason: "end_turn"
     })
+
+    const queuedA = await run(db.createPromptQueueItem(firstSession.id, "queued a"))
+    const queuedB = await run(db.createPromptQueueItem(firstSession.id, "queued b"))
+    expect(
+      (await run(db.getSessionDetail(firstSession.id))).promptQueue.map((item) => item.text)
+    ).toEqual(["queued a", "queued b"])
+    expect(
+      await run(db.updatePromptQueueItem(firstSession.id, queuedB.id, "queued b edited"))
+    ).toMatchObject({ text: "queued b edited" })
+    expect(await run(db.shiftPromptQueueItem(firstSession.id))).toMatchObject({
+      id: queuedA.id,
+      text: "queued a"
+    })
+    await run(db.deletePromptQueueItem(firstSession.id, queuedB.id))
+    expect(await run(db.listPromptQueue(firstSession.id))).toEqual([])
+    await expect(
+      run(db.updatePromptQueueItem(firstSession.id, "missing-queue-item", "nope"))
+    ).rejects.toBeInstanceOf(DatabaseError)
+    await expect(
+      run(db.deletePromptQueueItem(firstSession.id, "missing-queue-item"))
+    ).rejects.toBeInstanceOf(DatabaseError)
+    expect(await run(db.shiftPromptQueueItem(firstSession.id))).toBeUndefined()
 
     const sqlite = new Database(filename)
     sqlite

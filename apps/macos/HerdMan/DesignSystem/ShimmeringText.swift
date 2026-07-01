@@ -1,9 +1,9 @@
 import SwiftUI
 
-/// A text label with a horizontal shimmer sweep, used for the ephemeral
-/// "Thinking…" indicator while the agent is working.
+/// A text label with a horizontal shimmer sweep, used for ephemeral agent
+/// status while the agent is working.
 struct ShimmeringText: View {
-    var text: String = "Thinking…"
+    var text: String = "Thinking..."
     var font: Font = .callout
 
     var body: some View {
@@ -32,7 +32,44 @@ struct ShimmeringText: View {
     }
 }
 
+extension ShimmeringText {
+    static var thinking: ShimmeringText {
+        ShimmeringText(text: "Thinking...")
+    }
+
+    static var startingAgent: ShimmeringText {
+        ShimmeringText(text: "Starting agent...")
+    }
+
+    static var compactingContext: ShimmeringText {
+        ShimmeringText(text: "Compacting context...")
+    }
+}
+
+struct AgentStatusText: View {
+    var text: String
+    var font: Font = .callout
+
+    var body: some View {
+        Text(text)
+            .font(font)
+            .foregroundStyle(.secondary)
+            .accessibilityLabel(text)
+    }
+}
+
+extension AgentStatusText {
+    static var contextCompacted: AgentStatusText {
+        AgentStatusText(text: "Context compacted")
+    }
+}
+
 #Preview {
-    ShimmeringText()
-        .padding()
+    VStack(alignment: .leading, spacing: 8) {
+        ShimmeringText.thinking
+        ShimmeringText.startingAgent
+        ShimmeringText.compactingContext
+        AgentStatusText.contextCompacted
+    }
+    .padding()
 }

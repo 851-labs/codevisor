@@ -155,7 +155,7 @@ struct SessionModelTests {
         guard case let .user(u1) = model.conversation[0] else { Issue.record("expected user"); return }
         #expect(u1.text == "what does this repo do")
         guard case let .assistant(a1) = model.conversation[1] else { Issue.record("expected assistant"); return }
-        #expect(a1.turn.finalText == nil) // ends on a tool call
+        #expect(a1.turn.finalText == .text(id: "t0", markdown: "It is a game."))
         #expect(a1.turn.toolCalls.count == 1)
         #expect(a1.turn.isGenerating == false)
         guard case let .user(u2) = model.conversation[2] else { Issue.record("expected user"); return }
@@ -246,6 +246,7 @@ struct SessionModelTests {
             ServerConversationItem(
                 id: userItemId.uuidString,
                 role: .user,
+                messageId: "user-1",
                 text: "what changed?",
                 createdAt: "2026-06-30T00:00:00.000Z",
                 isGenerating: false
@@ -253,6 +254,7 @@ struct SessionModelTests {
             ServerConversationItem(
                 id: assistantItemId.uuidString,
                 role: .assistant,
+                messageId: "assistant-1",
                 text: "Server-backed ",
                 createdAt: "2026-06-30T00:00:01.000Z",
                 isGenerating: false
@@ -260,6 +262,7 @@ struct SessionModelTests {
             ServerConversationItem(
                 id: UUID().uuidString,
                 role: .assistant,
+                messageId: "assistant-1",
                 text: "history.",
                 createdAt: "2026-06-30T00:00:02.000Z",
                 isGenerating: false
@@ -286,7 +289,95 @@ struct SessionModelTests {
             return
         }
         #expect(assistant.id == assistantItemId)
-        #expect(assistant.turn.finalText == .text(id: "t0", markdown: "Server-backed history."))
+        #expect(assistant.turn.finalText == .text(id: "acp:assistant-1", markdown: "Server-backed history."))
+    }
+
+    @Test("Server-backed event stream keeps final answer visible after interleaved tool events")
+    func serverBackedMessageIdsMergeInterleavedOutput() async {
+        let sessionId = UUID()
+        let client = FakeSessionServerClient(sessionId: sessionId)
+        let model = SessionModel(
+            serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
+            sessionId: sessionId.uuidString,
+            now: { Date(timeIntervalSince1970: 100) }
+        )
+
+        await model.loadHistory()
+        client.emit(ServerEventEnvelope(
+            id: 10,
+            serverId: "local",
+            kind: "session.output",
+            subjectId: sessionId.uuidString,
+            createdAt: "2026-06-30T00:00:10.000Z",
+            payload: .object([
+                "sessionUpdate": .string("agent_message_chunk"),
+                "messageId": .string("msg-final"),
+                "content": .object(["type": .string("text"), "text": .string("The repo is ")])
+            ])
+        ))
+        client.emit(ServerEventEnvelope(
+            id: 11,
+            serverId: "local",
+            kind: "session.output",
+            subjectId: sessionId.uuidString,
+            createdAt: "2026-06-30T00:00:11.000Z",
+            payload: .object([
+                "sessionUpdate": .string("tool_call"),
+                "toolCallId": .string("readme"),
+                "title": .string("Read README"),
+                "kind": .string("read"),
+                "status": .string("completed")
+            ])
+        ))
+        client.emit(ServerEventEnvelope(
+            id: 12,
+            serverId: "local",
+            kind: "session.output",
+            subjectId: sessionId.uuidString,
+            createdAt: "2026-06-30T00:00:12.000Z",
+            payload: .object([
+                "sessionUpdate": .string("agent_message_chunk"),
+                "messageId": .string("msg-final"),
+                "content": .object(["type": .string("text"), "text": .string("a game.")])
+            ])
+        ))
+        client.emit(ServerEventEnvelope(
+            id: 13,
+            serverId: "local",
+            kind: "session.output",
+            subjectId: sessionId.uuidString,
+            createdAt: "2026-06-30T00:00:13.000Z",
+            payload: .object([
+                "sessionUpdate": .string("tool_call"),
+                "toolCallId": .string("package"),
+                "title": .string("Read package"),
+                "kind": .string("read"),
+                "status": .string("completed")
+            ])
+        ))
+        client.emit(ServerEventEnvelope(
+            id: 14,
+            serverId: "local",
+            kind: "session.updated",
+            subjectId: sessionId.uuidString,
+            createdAt: "2026-06-30T00:00:14.000Z",
+            payload: .object(["stopReason": .string("end_turn")])
+        ))
+        for _ in 0..<20 {
+            await Task.yield()
+            if case let .assistant(assistant) = model.conversation.last,
+               assistant.turn.finalText == .text(id: "acp:msg-final", markdown: "The repo is a game."),
+               assistant.turn.workedEntries.map(\.id) == ["tool:readme", "tool:package"] {
+                break
+            }
+        }
+
+        guard case let .assistant(assistant) = model.conversation.last else {
+            Issue.record("expected assistant")
+            return
+        }
+        #expect(assistant.turn.finalText == .text(id: "acp:msg-final", markdown: "The repo is a game."))
+        #expect(assistant.turn.workedEntries.map(\.id) == ["tool:readme", "tool:package"])
     }
 
     @Test("Server-backed config updates are sent and reflected optimistically")
@@ -362,6 +453,10 @@ private final class FakeSessionServerClient: HerdManServerClienting, @unchecked 
 
     var eventSinceValues: [Int] {
         lock.withLock { _eventSinceValues }
+    }
+
+    func emit(_ event: ServerEventEnvelope) {
+        continuation.yield(event)
     }
 
     func health() async throws -> ServerHealth {

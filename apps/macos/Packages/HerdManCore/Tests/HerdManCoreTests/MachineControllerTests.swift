@@ -16,7 +16,7 @@ struct MachineControllerTests {
 
     @Test("Remote host input normalizes to an HTTP server URL")
     func normalizedRemoteURL() throws {
-        #expect(try MachineController.normalizedRemoteURL(from: "mac-mini.tailnet.ts.net").absoluteString == "http://mac-mini.tailnet.ts.net:8765")
+        #expect(try MachineController.normalizedRemoteURL(from: "mac-mini.tailnet.ts.net").absoluteString == "http://mac-mini.tailnet.ts.net:49361")
         #expect(try MachineController.normalizedRemoteURL(from: "https://10.0.0.5:9999/path?x=1").absoluteString == "https://10.0.0.5:9999")
         #expect(throws: MachineControllerError.invalidHost(" ")) {
             _ = try MachineController.normalizedRemoteURL(from: " ")
@@ -29,7 +29,7 @@ struct MachineControllerTests {
         let first = makeController(store: store)
         let remote = try first.controller.addRemote(host: "mac-mini.tailnet.ts.net")
 
-        #expect(remote.id == "remote-mac-mini-tailnet-ts-net-8765")
+        #expect(remote.id == "remote-mac-mini-tailnet-ts-net-49361")
         #expect(remote.name == "mac-mini.tailnet.ts.net")
         #expect(first.controller.selectedMachine == remote)
         #expect(first.workspaceList.selectedServerId == remote.id)
@@ -42,7 +42,7 @@ struct MachineControllerTests {
         #expect(second.controller.selectedMachine == .local)
         #expect(second.workspaceList.selectedServerId == "local")
 
-        let duplicate = try second.controller.addRemote(host: "http://mac-mini.tailnet.ts.net:8765")
+        let duplicate = try second.controller.addRemote(host: "http://mac-mini.tailnet.ts.net:49361")
         #expect(duplicate == remote)
         #expect(second.controller.machines.filter { $0 == remote }.count == 1)
     }

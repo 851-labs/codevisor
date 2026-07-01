@@ -5,6 +5,7 @@ import type {
   Harness,
   HarnessCapability,
   PromptAcceptedResponse,
+  PromptQueueItem,
   ServerKind,
   SessionSummary,
   TerminalClientFrame,
@@ -19,6 +20,7 @@ import {
   SetModeRequest,
   TerminalClientFrame as TerminalClientFrameSchema,
   TerminalCreateRequest,
+  UpdateQueuedPromptRequest,
   UpdateHarnessRequest as UpdateHarnessRequestSchema,
   UpdateSessionRequest as UpdateSessionRequestSchema,
   UpdateWorkspaceRequest as UpdateWorkspaceRequestSchema,
@@ -78,6 +80,7 @@ export interface HerdManServerApp {
 interface RouteState {
   readonly pendingSessionCreates: Map<string, Promise<SessionSummary>>
   readonly pendingPromptActions: Set<string>
+  readonly activePromptSessions: Set<string>
 }
 
 export class HerdManServer extends Context.Service<HerdManServer, HerdManServerServices>()(
@@ -126,7 +129,7 @@ export const defaultServerConfig = (
   version: overrides.version ?? "0.1.0",
   kind: overrides.kind ?? "local",
   host: overrides.host ?? "127.0.0.1",
-  port: overrides.port ?? 8765,
+  port: overrides.port ?? 49361,
   auth: overrides.auth ?? {
     allowLocalhostWithoutAuth: true,
     requireBearerToken: false
@@ -140,6 +143,7 @@ export const makeHerdManServerApp = (
   webSocketServer = new WebSocketServer({ noServer: true })
 ): HerdManServerApp => {
   const routeState: RouteState = {
+    activePromptSessions: new Set(),
     pendingPromptActions: new Set(),
     pendingSessionCreates: new Map()
   }
@@ -487,10 +491,33 @@ const routeSessionActions = async (
   url: URL,
   config: HerdManServerConfig
 ): Promise<boolean> => {
+  const queueSessionId = matchRoute(url.pathname, "/v1/sessions/:id/queue")
+  if (queueSessionId !== undefined && request.method === "GET") {
+    writeJson(response, 200, await run(services.db.listPromptQueue(queueSessionId)))
+    return true
+  }
+
+  const queueItemRoute = matchRouteParams(url.pathname, "/v1/sessions/:id/queue/:queueId")
+  if (queueItemRoute !== undefined && request.method === "PATCH") {
+    const { id, queueId } = queueItemRoute as { readonly id: string; readonly queueId: string }
+    const payload = await readSchema(request, UpdateQueuedPromptRequest)
+    const item = await run(services.db.updatePromptQueueItem(id, queueId, payload.text))
+    await publishPromptQueue(services.db, fanout, id)
+    writeJson(response, 200, item)
+    return true
+  }
+
+  if (queueItemRoute !== undefined && request.method === "DELETE") {
+    const { id, queueId } = queueItemRoute as { readonly id: string; readonly queueId: string }
+    await run(services.db.deletePromptQueueItem(id, queueId))
+    await publishPromptQueue(services.db, fanout, id)
+    writeNoContent(response)
+    return true
+  }
+
   const promptSessionId = matchRoute(url.pathname, "/v1/sessions/:id/prompt")
   if (promptSessionId !== undefined && request.method === "POST") {
     const payload = await readSchema(request, PromptRequest)
-    const result: PromptAcceptedResponse = { accepted: true, sessionId: promptSessionId }
     const actionKey = actionIdKey(promptSessionId, payload.clientActionId)
     if (payload.clientActionId !== undefined) {
       const existing = await run(
@@ -500,6 +527,22 @@ const routeSessionActions = async (
         writeJson(response, 202, existing)
         return true
       }
+    }
+    /* v8 ignore next 4 -- duplicate in-flight requests normally hit the saved idempotency row above. */
+    if (actionKey !== undefined && routeState.pendingPromptActions.has(actionKey)) {
+      writeJson(response, 202, { accepted: true, sessionId: promptSessionId })
+      return true
+    }
+    if (actionKey !== undefined) {
+      routeState.pendingPromptActions.add(actionKey)
+    }
+    const queueItem = await run(services.db.createPromptQueueItem(promptSessionId, payload.text))
+    const result: PromptAcceptedResponse = {
+      accepted: true,
+      sessionId: promptSessionId,
+      queueItemId: queueItem.id
+    }
+    if (payload.clientActionId !== undefined) {
       await run(
         services.db.saveSessionActionResult(
           promptSessionId,
@@ -509,21 +552,13 @@ const routeSessionActions = async (
         )
       )
     }
+    await publishPromptQueue(services.db, fanout, promptSessionId)
     writeJson(response, 202, result)
-    /* v8 ignore next 3 -- duplicate in-flight requests normally hit the saved idempotency row above. */
-    if (actionKey !== undefined && routeState.pendingPromptActions.has(actionKey)) {
-      return true
-    }
-    if (actionKey !== undefined) {
-      routeState.pendingPromptActions.add(actionKey)
-    }
-    void runPromptInBackground(services, fanout, config.id, promptSessionId, payload.text).finally(
-      () => {
-        if (actionKey !== undefined) {
-          routeState.pendingPromptActions.delete(actionKey)
-        }
+    void drainPromptQueue(services, fanout, routeState, config.id, promptSessionId).finally(() => {
+      if (actionKey !== undefined) {
+        routeState.pendingPromptActions.delete(actionKey)
       }
-    )
+    })
     return true
   }
 
@@ -623,6 +658,42 @@ const writeIdempotentAction = async (
 
 const actionIdKey = (sessionId: string, clientActionId: string | undefined): string | undefined =>
   clientActionId === undefined ? undefined : `${sessionId}:${clientActionId}`
+
+const publishPromptQueue = async (
+  db: HerdManDatabaseService,
+  fanout: EventFanout,
+  sessionId: string
+): Promise<ReadonlyArray<PromptQueueItem>> => {
+  const queue = await run(db.listPromptQueue(sessionId))
+  await appendAndPublish(db, fanout, "session.queue.updated", sessionId, { queue })
+  return queue
+}
+
+const drainPromptQueue = async (
+  services: HerdManServerServices,
+  fanout: EventFanout,
+  routeState: RouteState,
+  serverId: string,
+  sessionId: string
+): Promise<void> => {
+  if (routeState.activePromptSessions.has(sessionId)) {
+    return
+  }
+  routeState.activePromptSessions.add(sessionId)
+  try {
+    while (true) {
+      const item = await run(services.db.shiftPromptQueueItem(sessionId))
+      if (item === undefined) {
+        await publishPromptQueue(services.db, fanout, sessionId)
+        return
+      }
+      await publishPromptQueue(services.db, fanout, sessionId)
+      await runPromptInBackground(services, fanout, serverId, sessionId, item.text)
+    }
+  } finally {
+    routeState.activePromptSessions.delete(sessionId)
+  }
+}
 
 const runPromptInBackground = async (
   services: HerdManServerServices,
@@ -892,7 +963,15 @@ const materializeRuntimeEvent = async (
 ): Promise<void> => {
   const conversation = conversationPayload(event.payload)
   if (event.kind === "session.output" && conversation !== undefined) {
-    await run(db.appendConversationItem(subjectId, conversation.role, conversation.text, false))
+    await run(
+      db.appendConversationItem(
+        subjectId,
+        conversation.role,
+        conversation.messageId,
+        conversation.text,
+        false
+      )
+    )
   }
   await appendAndPublish(db, fanout, event.kind, subjectId, {
     ...objectPayload(event.payload),
@@ -975,6 +1054,10 @@ const writeJson = (response: ServerResponse, status: number, body: unknown): voi
   response.end(JSON.stringify(body))
 }
 
+const writeNoContent = (response: ServerResponse): void => {
+  writeJson(response, 204, {})
+}
+
 const writeFailure = (response: ServerResponse, cause: unknown): void => {
   /* v8 ignore next -- errors after SSE headers are ended defensively. */
   if (response.headersSent) {
@@ -1018,6 +1101,28 @@ const matchRoute = (pathname: string, pattern: string): string | undefined => {
   return captured
 }
 
+const matchRouteParams = (
+  pathname: string,
+  pattern: string
+): Record<string, string> | undefined => {
+  const pathParts = pathname.split("/").filter(Boolean)
+  const patternParts = pattern.split("/").filter(Boolean)
+  if (pathParts.length !== patternParts.length) {
+    return undefined
+  }
+  const params: Record<string, string> = {}
+  for (let index = 0; index < patternParts.length; index += 1) {
+    const patternPart = patternParts[index] as string
+    const pathPart = pathParts[index] as string
+    if (patternPart.startsWith(":")) {
+      params[patternPart.slice(1)] = decodeURIComponent(pathPart)
+    } else if (patternPart !== pathPart) {
+      return undefined
+    }
+  }
+  return params
+}
+
 const parseBearerToken = (header: string | undefined): string | undefined => {
   if (header === undefined || !header.startsWith("Bearer ")) {
     return undefined
@@ -1034,17 +1139,28 @@ const conversationRoles = new Set(["user", "assistant", "system"])
 
 const isConversationPayload = (
   payload: unknown
-): payload is { readonly role: "user" | "assistant" | "system"; readonly text: string } =>
+): payload is {
+  readonly role: "user" | "assistant" | "system"
+  readonly text: string
+  readonly messageId?: string
+} =>
   typeof payload === "object" &&
   payload !== null &&
   "role" in payload &&
   "text" in payload &&
   conversationRoles.has(String(payload.role)) &&
-  typeof payload.text === "string"
+  typeof payload.text === "string" &&
+  (!("messageId" in payload) || typeof payload.messageId === "string")
 
 const conversationPayload = (
   payload: unknown
-): { readonly role: "user" | "assistant" | "system"; readonly text: string } | undefined => {
+):
+  | {
+      readonly role: "user" | "assistant" | "system"
+      readonly text: string
+      readonly messageId?: string
+    }
+  | undefined => {
   if (isConversationPayload(payload)) {
     return payload
   }
@@ -1057,9 +1173,17 @@ const conversationPayload = (
   }
   switch (payload.sessionUpdate) {
     case "user_message_chunk":
-      return { role: "user", text }
+      return {
+        role: "user",
+        text,
+        ...(typeof payload.messageId === "string" ? { messageId: payload.messageId } : {})
+      }
     case "agent_message_chunk":
-      return { role: "assistant", text }
+      return {
+        role: "assistant",
+        text,
+        ...(typeof payload.messageId === "string" ? { messageId: payload.messageId } : {})
+      }
     default:
       return undefined
   }

@@ -115,9 +115,9 @@ struct ACPClientTests {
             if collected.count == 3 { break }
         }
         #expect(collected.count == 3)
-        if case .agentMessageChunk(let block) = collected[0] { #expect(block.textValue == "one") } else { Issue.record("order") }
+        if case .agentMessageChunk(let block, _) = collected[0] { #expect(block.textValue == "one") } else { Issue.record("order") }
         if case .toolCall = collected[1] {} else { Issue.record("expected tool call second") }
-        if case .agentMessageChunk(let block) = collected[2] { #expect(block.textValue == "two") } else { Issue.record("order") }
+        if case .agentMessageChunk(let block, _) = collected[2] { #expect(block.textValue == "two") } else { Issue.record("order") }
     }
 
     @Test("cancel emits a session/cancel notification")

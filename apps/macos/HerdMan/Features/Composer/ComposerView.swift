@@ -15,6 +15,9 @@ struct ComposerCard: View {
     var onTextViewReady: ((NSView) -> Void)? = nil
 
     @State private var editorHeight: CGFloat = 24
+    @State private var slashSelection = 0
+    @State private var isStopButtonHovered = false
+    @State private var isSendButtonHovered = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -22,7 +25,8 @@ struct ComposerCard: View {
                 ChatInputEditor(
                     text: $controller.composerText,
                     calculatedHeight: $editorHeight,
-                    onSubmit: { Task { await controller.send() } },
+                    onSubmit: submitOrAcceptSlash,
+                    onKeyCommand: handleKeyCommand,
                     onTextViewReady: onTextViewReady
                 )
                 .frame(height: editorHeight)
@@ -34,6 +38,10 @@ struct ComposerCard: View {
                         .allowsHitTesting(false)
                 }
             }
+            .overlay(alignment: .bottomLeading) {
+                slashCommandPopup
+                    .offset(y: -editorHeight - 10)
+            }
 
             HStack(spacing: 10) {
                 harnessMenu
@@ -44,6 +52,7 @@ struct ComposerCard: View {
                     modeMenu
                 }
                 Spacer(minLength: 0)
+                stopButton
                 sendButton
             }
             .font(.callout)
@@ -57,6 +66,52 @@ struct ComposerCard: View {
             RoundedRectangle(cornerRadius: 16)
                 .strokeBorder(.separator, lineWidth: 1)
         )
+    }
+
+    @ViewBuilder
+    private var slashCommandPopup: some View {
+        let matches = slashMatches
+        if !matches.isEmpty {
+            VStack(alignment: .leading, spacing: 2) {
+                ForEach(Array(matches.enumerated()), id: \.element.id) { index, command in
+                    Button {
+                        acceptSlashCommand(command)
+                    } label: {
+                        HStack(spacing: 10) {
+                            Text("/\(command.name)")
+                                .fontWeight(.medium)
+                            Text(command.description)
+                                .lineLimit(1)
+                                .foregroundStyle(.secondary)
+                            Spacer(minLength: 0)
+                            if let hint = command.input?.hint {
+                                Text(hint)
+                                    .lineLimit(1)
+                                    .foregroundStyle(.tertiary)
+                            }
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6)
+                                .fill(index == slashSelection ? Color.primary.opacity(0.08) : .clear)
+                        )
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .frame(maxWidth: 520)
+            .padding(6)
+            .background(
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(Color(nsColor: .controlBackgroundColor))
+                    .shadow(radius: 12, y: 4)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 10)
+                    .strokeBorder(.separator, lineWidth: 1)
+            )
+        }
     }
 
     private func configMenu(_ option: SessionConfigOption) -> some View {
@@ -144,24 +199,106 @@ struct ComposerCard: View {
     }
 
     @ViewBuilder
-    private var sendButton: some View {
+    private var stopButton: some View {
         if controller.isSending {
             Button { Task { await controller.stop() } } label: {
-                Image(systemName: "stop.circle.fill")
-                    .font(.system(size: 24))
-                    .foregroundStyle(.secondary)
+                Image(systemName: "stop.fill")
+                    .font(.system(size: 10, weight: .bold))
+                    .frame(width: 28, height: 28)
+                    .background(
+                        Circle()
+                            .fill(isStopButtonHovered ? Color.primary.opacity(0.06) : .clear)
+                    )
+                    .overlay(
+                        Circle()
+                            .strokeBorder(Color.secondary.opacity(isStopButtonHovered ? 0.55 : 0.35), lineWidth: 1)
+                    )
+                    .contentShape(Circle())
             }
             .buttonStyle(.plain)
+            .foregroundStyle(isStopButtonHovered ? .primary : .secondary)
+            .onHover { isStopButtonHovered = $0 }
             .help("Stop")
+        }
+    }
+
+    @ViewBuilder
+    private var sendButton: some View {
+        let isEnabled = controller.canSend || !slashMatches.isEmpty
+        Button { submitOrAcceptSlash() } label: {
+            Image(systemName: "arrow.up")
+                .font(.system(size: 12, weight: .bold))
+                .frame(width: 28, height: 28)
+                .foregroundStyle(isEnabled ? Color(nsColor: .windowBackgroundColor) : Color.secondary.opacity(0.75))
+                .background(
+                    Circle()
+                        .fill(isEnabled ? Color.primary.opacity(isSendButtonHovered ? 0.92 : 0.82) : Color.secondary.opacity(0.16))
+                )
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!isEnabled)
+        .onHover { isSendButtonHovered = $0 }
+        .help("Send (↩)")
+    }
+
+    private var slashQuery: String? {
+        guard controller.composerText.hasPrefix("/") else { return nil }
+        let firstLine = controller.composerText.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false).first ?? ""
+        let token = firstLine.dropFirst()
+        guard !token.contains(" ") else { return nil }
+        return String(token).lowercased()
+    }
+
+    private var slashMatches: [AvailableCommand] {
+        guard let query = slashQuery else { return [] }
+        let commands = controller.availableCommands
+        guard !commands.isEmpty else { return [] }
+        if query.isEmpty {
+            return commands
+        }
+        let exact = commands.filter { $0.name.lowercased() == query }
+        let prefixed = commands.filter { command in
+            command.name.lowercased().hasPrefix(query) && !exact.contains(where: { $0.id == command.id })
+        }
+        return exact + prefixed
+    }
+
+    private func submitOrAcceptSlash() {
+        if let command = selectedSlashCommand {
+            acceptSlashCommand(command)
         } else {
-            Button { Task { await controller.send() } } label: {
-                Image(systemName: "arrow.up.circle.fill")
-                    .font(.system(size: 24))
-                    .foregroundStyle(controller.canSend ? .white : Color.secondary)
-            }
-            .buttonStyle(.plain)
-            .disabled(!controller.canSend)
-            .help("Send (↩)")
+            Task { await controller.send() }
+        }
+    }
+
+    private var selectedSlashCommand: AvailableCommand? {
+        let matches = slashMatches
+        guard !matches.isEmpty else { return nil }
+        return matches[min(slashSelection, matches.count - 1)]
+    }
+
+    private func acceptSlashCommand(_ command: AvailableCommand) {
+        controller.composerText = "/\(command.name) "
+        slashSelection = 0
+    }
+
+    private func handleKeyCommand(_ command: ComposerKeyCommand) -> Bool {
+        let matches = slashMatches
+        guard !matches.isEmpty else { return false }
+        switch command {
+        case .moveSelectionUp:
+            slashSelection = (slashSelection - 1 + matches.count) % matches.count
+            return true
+        case .moveSelectionDown:
+            slashSelection = (slashSelection + 1) % matches.count
+            return true
+        case .acceptSelection:
+            acceptSlashCommand(matches[min(slashSelection, matches.count - 1)])
+            return true
+        case .dismissSelection:
+            slashSelection = 0
+            return false
         }
     }
 }

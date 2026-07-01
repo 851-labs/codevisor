@@ -24,7 +24,6 @@ struct OnboardingView: View {
     @State private var step: Step
     @State private var harnesses: [DiscoveredAgent] = []
     @State private var isDetecting = true
-    @State private var importExisting = false
     @State private var projectFolder: URL?
     @State private var showingFolderPicker = false
     @State private var isFinishing = false
@@ -125,17 +124,6 @@ struct OnboardingView: View {
                 .background(RoundedRectangle(cornerRadius: 12).fill(.quaternary.opacity(0.5)))
             }
 
-            Toggle(isOn: $importExisting) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Import existing chats").fontWeight(.medium)
-                    Text("Show sessions you've already created in these harnesses.")
-                        .font(.callout).foregroundStyle(.secondary)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .toggleStyle(.switch)
-            .padding(.horizontal, 14)
-            .padding(.top, 4)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -240,7 +228,7 @@ struct OnboardingView: View {
 
     private var primaryTitle: String {
         switch step {
-        case .welcome: return "Get Started"
+        case .welcome: return "Get started"
         case .harnesses: return "Continue"
         case .project: return "Finish"
         }
@@ -276,10 +264,9 @@ struct OnboardingView: View {
     private func finish() {
         guard let folder = projectFolder else { return }
         isFinishing = true
-        let shouldImport = !harnesses.isEmpty && importExisting
         Task {
             let workspace = await environment.finishOnboarding(
-                importExternalSessions: shouldImport,
+                importExternalSessions: false,
                 projectFolder: folder
             )
             onComplete(workspace)

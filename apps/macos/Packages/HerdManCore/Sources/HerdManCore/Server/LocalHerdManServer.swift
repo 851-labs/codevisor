@@ -27,6 +27,8 @@ public final class LocalHerdManServer {
     private let databasePath: String
     private let logURL: URL
     private let launcher: Launcher
+    /// The server is intentionally not terminated with the app; it owns durable
+    /// sessions and should keep running so clients can reconnect to live work.
     private var process: Process?
 
     public private(set) var state: LocalHerdManServerState = .idle
@@ -47,12 +49,6 @@ public final class LocalHerdManServer {
         self.databasePath = databasePath
         self.logURL = logURL
         self.launcher = launcher
-    }
-
-    deinit {
-        if process?.isRunning == true {
-            process?.terminate()
-        }
     }
 
     @discardableResult
@@ -93,7 +89,7 @@ public final class LocalHerdManServer {
     }
 
     private var port: Int {
-        config.baseURL.port ?? 8765
+        config.baseURL.port ?? HerdManServerConfig.localPort
     }
 
     private func isHealthy() async -> Bool {
@@ -202,7 +198,12 @@ public final class LocalHerdManServer {
         let fileManager = FileManager.default
         let base = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? fileManager.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support")
-        let directory = base.appendingPathComponent("HerdMan", isDirectory: true)
+        #if DEBUG
+        let appDirectoryName = "HerdMan Development"
+        #else
+        let appDirectoryName = "HerdMan"
+        #endif
+        let directory = base.appendingPathComponent(appDirectoryName, isDirectory: true)
         try? fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
         return directory
     }

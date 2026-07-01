@@ -117,6 +117,9 @@ const makeAcp = (): AcpRuntimeService & {
     prompt: (sessionId, text, onEvent?: RuntimeEventSink) =>
       Effect.promise(async () => {
         prompts.push([sessionId, text])
+        if (text === "slow prompt") {
+          await new Promise((resolve) => setTimeout(resolve, 250))
+        }
         if (text === "prompt fails") {
           throw new Error("prompt failed")
         }
@@ -128,6 +131,15 @@ const makeAcp = (): AcpRuntimeService & {
                   subjectId: sessionId,
                   payload: {
                     content: { text, type: "text" },
+                    messageId: "user-raw",
+                    sessionUpdate: "user_message_chunk"
+                  }
+                },
+                {
+                  kind: "session.output" as const,
+                  subjectId: sessionId,
+                  payload: {
+                    content: { text: "raw user without id", type: "text" },
                     sessionUpdate: "user_message_chunk"
                   }
                 },
@@ -136,6 +148,15 @@ const makeAcp = (): AcpRuntimeService & {
                   subjectId: sessionId,
                   payload: {
                     content: { text: "Raw answer", type: "text" },
+                    messageId: "assistant-raw",
+                    sessionUpdate: "agent_message_chunk"
+                  }
+                },
+                {
+                  kind: "session.output" as const,
+                  subjectId: sessionId,
+                  payload: {
+                    content: { text: "Raw answer without id", type: "text" },
                     sessionUpdate: "agent_message_chunk"
                   }
                 },
@@ -144,6 +165,7 @@ const makeAcp = (): AcpRuntimeService & {
                   subjectId: sessionId,
                   payload: {
                     content: { text: "thought", type: "text" },
+                    messageId: "thought-raw",
                     sessionUpdate: "agent_thought_chunk"
                   }
                 },
@@ -152,7 +174,25 @@ const makeAcp = (): AcpRuntimeService & {
                   subjectId: sessionId,
                   payload: {
                     content: { type: "image" },
+                    messageId: "image-raw",
                     sessionUpdate: "agent_message_chunk"
+                  }
+                },
+                {
+                  kind: "session.output" as const,
+                  subjectId: sessionId,
+                  payload: {
+                    role: "assistant",
+                    text: 42
+                  }
+                },
+                {
+                  kind: "session.output" as const,
+                  subjectId: sessionId,
+                  payload: {
+                    role: "assistant",
+                    text: "bad message id",
+                    messageId: 42
                   }
                 }
               ]
@@ -456,7 +496,7 @@ describe("@herdman/server", () => {
       id: "local",
       kind: "local",
       name: "Local HerdMan",
-      port: 8765,
+      port: 49361,
       version: "0.1.0"
     })
     expect(
@@ -551,6 +591,7 @@ describe("@herdman/server", () => {
     })
     expect(badJson.status).toBe(400)
     expect((await jsonRequest(server, "/v1/missing")).status).toBe(404)
+    expect((await jsonRequest(server, "/v1/not-sessions/session-a/queue/item-a")).status).toBe(404)
 
     const workspaceResponse = await jsonRequest(server, "/v1/workspaces", {
       body: JSON.stringify({ folderPath: workspaceFolder, id: "workspace-client-id" }),
@@ -738,7 +779,7 @@ describe("@herdman/server", () => {
           method: "POST"
         })
       ).body
-    ).toEqual({ accepted: true, sessionId: session.id })
+    ).toMatchObject({ accepted: true, sessionId: session.id })
     await waitFor(() => acp.prompts.length === 1)
     expect(acp.prompts).toEqual([[session.agentSessionId, "hello"]])
     expect(
@@ -748,7 +789,7 @@ describe("@herdman/server", () => {
           method: "POST"
         })
       ).body
-    ).toEqual({ accepted: true, sessionId: session.id })
+    ).toMatchObject({ accepted: true, sessionId: session.id })
     expect(
       (
         await jsonRequest(server, `/v1/sessions/${session.id}/prompt`, {
@@ -756,7 +797,7 @@ describe("@herdman/server", () => {
           method: "POST"
         })
       ).body
-    ).toEqual({ accepted: true, sessionId: session.id })
+    ).toMatchObject({ accepted: true, sessionId: session.id })
     await waitFor(() => acp.prompts.length === 2)
     expect(acp.prompts).toEqual([
       [session.agentSessionId, "hello"],
@@ -769,11 +810,25 @@ describe("@herdman/server", () => {
           method: "POST"
         })
       ).body
-    ).toEqual({ accepted: true, sessionId: session.id })
+    ).toMatchObject({ accepted: true, sessionId: session.id })
     await waitFor(() => acp.prompts.length === 3)
     expect(
       (await run(services.db.getSessionDetail(session.id))).conversation.map((item) => item.text)
-    ).toEqual(expect.arrayContaining(["hello", "Echo: hello", "raw chunks", "Raw answer"]))
+    ).toEqual(
+      expect.arrayContaining([
+        "hello",
+        "Echo: hello",
+        "raw chunks",
+        "Raw answer",
+        "Raw answer without id"
+      ])
+    )
+    expect(
+      (await run(services.db.getSessionDetail(session.id))).conversation.map((item) => [
+        item.messageId,
+        item.text
+      ])
+    ).toEqual(expect.arrayContaining([["assistant-raw", "Raw answer"]]))
     expect(await run(services.db.listEvents(0))).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -789,11 +844,61 @@ describe("@herdman/server", () => {
           method: "POST"
         })
       ).body
-    ).toEqual({ accepted: true, sessionId: session.id })
+    ).toMatchObject({ accepted: true, sessionId: session.id })
     await waitFor(() => acp.prompts.length === 4)
     expect(
       (await run(services.db.getSessionDetail(session.id))).conversation.map((item) => item.text)
     ).toEqual(expect.arrayContaining(["returned events", "Raw answer"]))
+
+    const slowResponse = (
+      await jsonRequest(server, `/v1/sessions/${session.id}/prompt`, {
+        body: JSON.stringify({ text: "slow prompt" }),
+        method: "POST"
+      })
+    ).body as { readonly queueItemId: string }
+    expect(slowResponse.queueItemId).toBeTypeOf("string")
+    await waitFor(() => acp.prompts.length === 5)
+    const queuedResponse = (
+      await jsonRequest(server, `/v1/sessions/${session.id}/prompt`, {
+        body: JSON.stringify({ text: "queued original" }),
+        method: "POST"
+      })
+    ).body as { readonly queueItemId: string }
+    const removedResponse = (
+      await jsonRequest(server, `/v1/sessions/${session.id}/prompt`, {
+        body: JSON.stringify({ text: "queued remove" }),
+        method: "POST"
+      })
+    ).body as { readonly queueItemId: string }
+    expect((await jsonRequest(server, `/v1/sessions/${session.id}/queue`)).body).toMatchObject([
+      { id: queuedResponse.queueItemId, text: "queued original" },
+      { id: removedResponse.queueItemId, text: "queued remove" }
+    ])
+    expect(
+      (
+        await jsonRequest(
+          server,
+          `/v1/sessions/${session.id}/queue/${queuedResponse.queueItemId}`,
+          {
+            body: JSON.stringify({ text: "queued edited" }),
+            method: "PATCH"
+          }
+        )
+      ).body
+    ).toMatchObject({ text: "queued edited" })
+    expect(
+      (
+        await jsonRequest(
+          server,
+          `/v1/sessions/${session.id}/queue/${removedResponse.queueItemId}`,
+          { method: "DELETE" }
+        )
+      ).status
+    ).toBe(204)
+    await waitFor(() => acp.prompts.length === 6)
+    expect(acp.prompts).toContainEqual([session.agentSessionId, "queued edited"])
+    expect(acp.prompts).not.toContainEqual([session.agentSessionId, "queued remove"])
+
     expect(
       (
         await jsonRequest(server, `/v1/sessions/${session.id}/prompt`, {
@@ -801,7 +906,7 @@ describe("@herdman/server", () => {
           method: "POST"
         })
       ).body
-    ).toEqual({ accepted: true, sessionId: session.id })
+    ).toMatchObject({ accepted: true, sessionId: session.id })
     await waitFor(async () =>
       (await run(services.db.listEvents(0))).some((event) => event.kind === "session.error")
     )
@@ -922,7 +1027,7 @@ describe("@herdman/server", () => {
           method: "POST"
         })
       ).body
-    ).toEqual({ accepted: true, sessionId: legacySession.id })
+    ).toMatchObject({ accepted: true, sessionId: legacySession.id })
     await waitFor(() => acp.prompts.some((prompt) => prompt[1] === "legacy hello"))
     expect(acp.prompts).toContainEqual([legacySession.id, "legacy hello"])
     expect(acp.loads).toContainEqual(["codex", legacySession.id, legacyWorkspaceFolder])

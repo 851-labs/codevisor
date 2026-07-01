@@ -23,22 +23,52 @@ public protocol HerdManServerClienting: Sendable {
     func deleteWorkspace(id: UUID) async throws
     func listSessions() async throws -> [ServerSession]
     func sessionDetail(id: UUID) async throws -> ServerSessionDetail
+    func promptQueue(id: UUID) async throws -> [ServerPromptQueueItem]
     func upsertSession(_ session: ChatSession) async throws -> ServerSession
     func updateSession(_ session: ChatSession) async throws -> ServerSession
     func deleteSession(id: UUID) async throws
     func promptSession(id: UUID, text: String) async throws -> ServerPromptAccepted
+    func updateQueuedPrompt(sessionId: UUID, queueItemId: String, text: String) async throws -> ServerPromptQueueItem
+    func deleteQueuedPrompt(sessionId: UUID, queueItemId: String) async throws
     func cancelSession(id: UUID) async throws
     func setSessionMode(id: UUID, modeId: String) async throws
     func setSessionConfig(id: UUID, configId: String, value: String) async throws
     func eventStream(since: Int) -> AsyncThrowingStream<ServerEventEnvelope, any Error>
 }
 
+public extension HerdManServerClienting {
+    func promptQueue(id: UUID) async throws -> [ServerPromptQueueItem] { [] }
+
+    func updateQueuedPrompt(sessionId: UUID, queueItemId: String, text: String) async throws -> ServerPromptQueueItem {
+        ServerPromptQueueItem(
+            id: queueItemId,
+            sessionId: sessionId.uuidString,
+            text: text,
+            createdAt: ServerDateCoding.string(from: Date()),
+            updatedAt: ServerDateCoding.string(from: Date())
+        )
+    }
+
+    func deleteQueuedPrompt(sessionId: UUID, queueItemId: String) async throws {}
+}
+
 public struct HerdManServerConfig: Equatable, Sendable {
+    public static let productionPort = 49_361
+    public static let developmentPort = 49_362
+
+    public static var localPort: Int {
+        #if DEBUG
+        developmentPort
+        #else
+        productionPort
+        #endif
+    }
+
     public var baseURL: URL
     public var bearerToken: String?
 
     public init(
-        baseURL: URL = URL(string: "http://127.0.0.1:8765")!,
+        baseURL: URL = URL(string: "http://127.0.0.1:\(HerdManServerConfig.localPort)")!,
         bearerToken: String? = nil
     ) {
         self.baseURL = baseURL
@@ -105,6 +135,15 @@ public struct ServerCapabilities: Codable, Equatable, Sendable {
 public struct ServerPromptAccepted: Decodable, Equatable, Sendable {
     public var accepted: Bool
     public var sessionId: String
+    public var queueItemId: String?
+}
+
+public struct ServerPromptQueueItem: Codable, Identifiable, Equatable, Sendable {
+    public var id: String
+    public var sessionId: String
+    public var text: String
+    public var createdAt: String
+    public var updatedAt: String
 }
 
 public struct ServerWorkspace: Decodable, Equatable, Sendable {
@@ -184,6 +223,7 @@ public enum ServerConversationRole: String, Decodable, Equatable, Sendable {
 public struct ServerConversationItem: Decodable, Equatable, Sendable {
     public var id: String
     public var role: ServerConversationRole
+    public var messageId: String?
     public var text: String
     public var createdAt: String
     public var isGenerating: Bool
@@ -192,7 +232,35 @@ public struct ServerConversationItem: Decodable, Equatable, Sendable {
 public struct ServerSessionDetail: Decodable, Equatable, Sendable {
     public var session: ServerSession
     public var conversation: [ServerConversationItem]
+    public var promptQueue: [ServerPromptQueueItem]
     public var eventCursor: Int
+
+    public init(
+        session: ServerSession,
+        conversation: [ServerConversationItem],
+        promptQueue: [ServerPromptQueueItem] = [],
+        eventCursor: Int
+    ) {
+        self.session = session
+        self.conversation = conversation
+        self.promptQueue = promptQueue
+        self.eventCursor = eventCursor
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case session
+        case conversation
+        case promptQueue
+        case eventCursor
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        session = try container.decode(ServerSession.self, forKey: .session)
+        conversation = try container.decode([ServerConversationItem].self, forKey: .conversation)
+        promptQueue = try container.decodeIfPresent([ServerPromptQueueItem].self, forKey: .promptQueue) ?? []
+        eventCursor = try container.decode(Int.self, forKey: .eventCursor)
+    }
 }
 
 public struct ServerEventEnvelope: Decodable, Equatable, Sendable {
@@ -283,6 +351,10 @@ public final class HerdManServerClient: HerdManServerClienting, @unchecked Senda
         try await get("/v1/sessions/\(id.uuidString)")
     }
 
+    public func promptQueue(id: UUID) async throws -> [ServerPromptQueueItem] {
+        try await get("/v1/sessions/\(id.uuidString)/queue")
+    }
+
     public func upsertSession(_ session: ChatSession) async throws -> ServerSession {
         let remoteSessions = try await listSessions()
         if remoteSessions.contains(where: { $0.id == session.id.uuidString }) {
@@ -309,6 +381,18 @@ public final class HerdManServerClient: HerdManServerClienting, @unchecked Senda
             method: "POST",
             body: PromptBody(text: text)
         )
+    }
+
+    public func updateQueuedPrompt(sessionId: UUID, queueItemId: String, text: String) async throws -> ServerPromptQueueItem {
+        try await send(
+            "/v1/sessions/\(sessionId.uuidString)/queue/\(queueItemId)",
+            method: "PATCH",
+            body: UpdateQueuedPromptBody(text: text)
+        )
+    }
+
+    public func deleteQueuedPrompt(sessionId: UUID, queueItemId: String) async throws {
+        try await sendNoResponse("/v1/sessions/\(sessionId.uuidString)/queue/\(queueItemId)", method: "DELETE")
     }
 
     public func cancelSession(id: UUID) async throws {
@@ -521,6 +605,10 @@ private struct EmptyBody: Encodable {}
 private struct PromptBody: Encodable {
     var text: String
     var clientActionId = UUID().uuidString
+}
+
+private struct UpdateQueuedPromptBody: Encodable {
+    var text: String
 }
 
 private struct CancelBody: Encodable {

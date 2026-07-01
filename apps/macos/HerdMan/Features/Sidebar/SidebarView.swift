@@ -2,6 +2,37 @@ import SwiftUI
 import UniformTypeIdentifiers
 import HerdManCore
 
+private enum SidebarOrganization: String, CaseIterable {
+    case byProject
+    case chronological
+
+    var title: String {
+        switch self {
+        case .byProject: return "By project"
+        case .chronological: return "Chronological"
+        }
+    }
+}
+
+private enum SidebarOrder: String, CaseIterable {
+    case updated
+    case created
+
+    var title: String {
+        switch self {
+        case .updated: return "Last updated"
+        case .created: return "Created"
+        }
+    }
+}
+
+private struct SidebarSessionListItem: Identifiable {
+    let session: ChatSession
+    let workspace: Workspace
+
+    var id: UUID { session.id }
+}
+
 /// The sidebar: a New Chat action, a Projects section (with a + to add a
 /// workspace) listing workspace folders and their sessions, and an archived
 /// section.
@@ -17,46 +48,106 @@ struct SidebarView: View {
     @State private var showingRemoteMachine = false
     @State private var showingRemoteWorkspace = false
     @State private var expanded: Set<UUID> = []
-    @State private var showArchived = false
     @State private var hovered: String?
     @State private var iconEditing: Workspace?
+    @State private var draggingWorkspaceID: UUID?
+    @AppStorage("sidebar.organization") private var organizationRaw = SidebarOrganization.byProject.rawValue
+    @AppStorage("sidebar.order") private var orderRaw = SidebarOrder.updated.rawValue
+    @AppStorage("sidebar.manualProjectOrder") private var manualProjectOrderRaw = ""
 
     private var list: WorkspaceListModel { environment.workspaceList }
+    private var organization: SidebarOrganization { SidebarOrganization(rawValue: organizationRaw) ?? .byProject }
+    private var order: SidebarOrder { SidebarOrder(rawValue: orderRaw) ?? .updated }
+
+    private var projectOrder: [UUID] {
+        manualProjectOrderRaw
+            .split(separator: "\n")
+            .compactMap { UUID(uuidString: String($0)) }
+    }
+
+    private var visibleWorkspaces: [Workspace] {
+        let active = list.activeWorkspaces
+        guard organization == .byProject else {
+            return sortedWorkspaces(active)
+        }
+
+        let indexes = Dictionary(uniqueKeysWithValues: projectOrder.enumerated().map { ($0.element, $0.offset) })
+        return active.sorted { left, right in
+            let leftIndex = indexes[left.id]
+            let rightIndex = indexes[right.id]
+            switch (leftIndex, rightIndex) {
+            case let (leftIndex?, rightIndex?):
+                return leftIndex < rightIndex
+            case (_?, nil):
+                return true
+            case (nil, _?):
+                return false
+            case (nil, nil):
+                return compareWorkspaces(left, right)
+            }
+        }
+    }
+
+    private var chronologicalSessions: [SidebarSessionListItem] {
+        visibleWorkspaces
+            .flatMap { workspace in
+                list.sessions(in: workspace).map { SidebarSessionListItem(session: $0, workspace: workspace) }
+            }
+            .sorted { left, right in
+                compareSessions(left.session, right.session)
+            }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 1) {
-                    actionRow("New Chat", systemImage: "square.and.pencil", id: "new") {
+                    actionRow("New chat", systemImage: "square.and.pencil", id: "new") {
                         selection = .newChat(nil)
                     }
 
                     projectsHeader
 
-                    ForEach(list.activeWorkspaces) { workspace in
-                        workspaceFolder(workspace)
+                    if organization == .byProject {
+                        ForEach(visibleWorkspaces) { workspace in
+                            workspaceFolder(workspace)
+                                .onDrag {
+                                    draggingWorkspaceID = workspace.id
+                                    return NSItemProvider(object: workspace.id.uuidString as NSString)
+                                }
+                                .onDrop(
+                                    of: [.text],
+                                    delegate: WorkspaceDropDelegate(
+                                        workspaceID: workspace.id,
+                                        draggingWorkspaceID: $draggingWorkspaceID,
+                                        moveWorkspace: moveWorkspace
+                                    )
+                                )
+                        }
+                    } else {
+                        ForEach(chronologicalSessions) { item in
+                            chronologicalSessionRow(item.session, workspace: item.workspace)
+                        }
                     }
-                    if list.activeWorkspaces.isEmpty {
+                    if visibleWorkspaces.isEmpty {
                         Text("Add a workspace with +")
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 4)
+                    } else if organization == .chronological && chronologicalSessions.isEmpty {
+                        Text("No sessions yet")
                             .font(.caption)
                             .foregroundStyle(.tertiary)
                             .padding(.horizontal, 10)
                             .padding(.vertical, 4)
                     }
 
-                    if list.hasArchivedWorkspaces {
-                        Spacer().frame(height: 8)
-                        disclosureRow(id: "archived", title: "Archived", systemImage: "archivebox", isOpen: showArchived) {
-                            showArchived.toggle()
-                        }
-                        if showArchived {
-                            ForEach(list.archivedWorkspaces) { workspace in
-                                archivedRow(workspace)
-                            }
-                        }
-                    }
                 }
                 .padding(8)
+                .animation(.snappy(duration: 0.22), value: visibleWorkspaces.map(\.id))
+                .animation(.snappy(duration: 0.22), value: chronologicalSessions.map(\.id))
+                .animation(.snappy(duration: 0.22), value: expanded)
             }
             .scrollContentBackground(.hidden)
 
@@ -113,7 +204,7 @@ struct SidebarView: View {
             Button {
                 showingRemoteMachine = true
             } label: {
-                Label("Add Remote Machine…", systemImage: "plus")
+                Label("Add remote machine…", systemImage: "plus")
             }
         } label: {
             HStack(spacing: 8) {
@@ -167,6 +258,38 @@ struct SidebarView: View {
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.secondary)
             Spacer()
+            Menu {
+                Picker("Organization", selection: Binding(
+                    get: { organization },
+                    set: { organizationRaw = $0.rawValue }
+                )) {
+                    ForEach(SidebarOrganization.allCases, id: \.self) { option in
+                        Text(option.title).tag(option)
+                    }
+                }
+                Picker("Order by", selection: Binding(
+                    get: { order },
+                    set: { orderRaw = $0.rawValue }
+                )) {
+                    ForEach(SidebarOrder.allCases, id: \.self) { option in
+                        Text(option.title).tag(option)
+                    }
+                }
+                if organization == .byProject {
+                    Divider()
+                    Button("Reset project order") {
+                        saveProjectOrder(sortedWorkspaces(list.activeWorkspaces).map(\.id))
+                    }
+                }
+            } label: {
+                Image(systemName: "line.3.horizontal.decrease")
+                    .font(.callout.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+            .menuStyle(.button)
+            .buttonStyle(.plain)
+            .help("Organize projects")
+
             Button {
                 if environment.machines.selectedMachine.isLocal {
                     showingImporter = true
@@ -174,7 +297,7 @@ struct SidebarView: View {
                     showingRemoteWorkspace = true
                 }
             } label: {
-                Image(systemName: "plus")
+                Image(systemName: "folder.badge.plus")
                     .font(.callout.weight(.semibold))
                     .foregroundStyle(.secondary)
             }
@@ -193,26 +316,31 @@ struct SidebarView: View {
         let id = "folder-\(workspace.id)"
         let isHovered = hovered == id
         HStack(spacing: 6) {
-            // On hover the project icon becomes a disclosure chevron.
-            ZStack {
-                Image(systemName: workspace.symbolName)
-                    .foregroundStyle(.secondary)
-                    .opacity(isHovered ? 0 : 1)
-                Image(systemName: "chevron.right")
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .rotationEffect(.degrees(expanded.contains(workspace.id) ? 90 : 0))
-                    .opacity(isHovered ? 1 : 0)
+            HStack(spacing: 6) {
+                // On hover the project icon becomes a disclosure chevron.
+                ZStack {
+                    Image(systemName: workspace.symbolName)
+                        .foregroundStyle(.secondary)
+                        .opacity(isHovered ? 0 : 1)
+                    Image(systemName: "chevron.right")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .rotationEffect(.degrees(expanded.contains(workspace.id) ? 90 : 0))
+                        .opacity(isHovered ? 1 : 0)
+                }
+                .frame(width: 18)
+                Text(workspace.name).fontWeight(.medium).lineLimit(1)
+                Spacer(minLength: 6)
             }
-            .frame(width: 18)
-            Text(workspace.name).fontWeight(.medium).lineLimit(1)
-            Spacer(minLength: 6)
+            .contentShape(Rectangle())
+            .onTapGesture { toggle(workspace.id) }
+
             if isHovered {
                 Button {
                     expanded.insert(workspace.id)
                     selection = .newChat(workspace.id)
                 } label: {
-                    Image(systemName: "plus").font(.callout.weight(.semibold))
+                    Image(systemName: "square.and.pencil").font(.callout.weight(.semibold))
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(.secondary)
@@ -225,22 +353,19 @@ struct SidebarView: View {
         .contentShape(Rectangle())
         .background(rowBackground(id: id, isSelected: false))
         .onHover { hovered = $0 ? id : (hovered == id ? nil : hovered) }
-        .onTapGesture { toggle(workspace.id) }
         .help(workspace.folderURL.path)
         .contextMenu {
-            Button("New Chat Here") { selection = .newChat(workspace.id) }
-            Button("Change Icon…") { iconEditing = workspace }
+            Button("New chat here") { selection = .newChat(workspace.id) }
+            Button("Change icon…") { iconEditing = workspace }
             Button("Archive") { list.archive(workspace) }
-            Divider()
-            Button("Remove", role: .destructive) { list.removeWorkspace(workspace) }
         }
 
         if expanded.contains(workspace.id) {
-            ForEach(list.sessions(in: workspace)) { session in
+            ForEach(orderedSessions(in: workspace)) { session in
                 sessionRow(session)
-                    .transition(.opacity.combined(with: .move(edge: .top)))
+                    .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
             }
-            if list.sessions(in: workspace).isEmpty {
+            if orderedSessions(in: workspace).isEmpty {
                 Text("No sessions yet")
                     .font(.subheadline)
                     .foregroundStyle(.tertiary)
@@ -306,7 +431,7 @@ struct SidebarView: View {
                     .foregroundStyle(.secondary)
                     .help("Archive chat")
                 } else {
-                    Text(RelativeTime.short(from: session.createdAt))
+                    Text(RelativeTime.short(from: timestamp(for: session)))
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
                 }
@@ -325,22 +450,55 @@ struct SidebarView: View {
         }
     }
 
-    private func archivedRow(_ workspace: Workspace) -> some View {
-        HStack(spacing: 6) {
+    private func chronologicalSessionRow(_ session: ChatSession, workspace: Workspace) -> some View {
+        let id = "chronological-session-\(session.id)"
+        let isSelected = selection == .session(session.id)
+        return HStack(spacing: 7) {
             Image(systemName: workspace.symbolName)
                 .frame(width: 18)
-                .foregroundStyle(.tertiary)
-            Text(workspace.name).lineLimit(1).foregroundStyle(.secondary)
-            Spacer(minLength: 0)
+                .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(session.title)
+                    .font(.subheadline)
+                    .lineLimit(1)
+                Text(workspace.name)
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 6)
+            Group {
+                if store?.isRunning(session.id) == true {
+                    ProgressView().controlSize(.mini)
+                } else if hovered == id {
+                    Button {
+                        list.archiveSession(session)
+                        if selection == .session(session.id) { selection = .newChat(nil) }
+                    } label: {
+                        Image(systemName: "archivebox")
+                            .font(.caption2)
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
+                    .help("Archive chat")
+                } else {
+                    Text(RelativeTime.short(from: timestamp(for: session)))
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+            }
+            .frame(width: 24, height: 14, alignment: .trailing)
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 5)
-        .padding(.leading, 22)
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
+        .foregroundStyle(isSelected ? Color.primary : .secondary)
+        .background(rowBackground(id: id, isSelected: isSelected))
+        .onHover { hovered = $0 ? id : (hovered == id ? nil : hovered) }
+        .onTapGesture { selection = .session(session.id) }
         .contextMenu {
-            Button("Unarchive") { list.unarchive(workspace) }
-            Button("Remove", role: .destructive) { list.removeWorkspace(workspace) }
+            Button("Archive") { list.archiveSession(session) }
         }
     }
 
@@ -356,6 +514,85 @@ struct SidebarView: View {
             if expanded.contains(id) { expanded.remove(id) } else { expanded.insert(id) }
         }
     }
+
+    private func orderedSessions(in workspace: Workspace) -> [ChatSession] {
+        list.sessions(in: workspace).sorted(by: compareSessions)
+    }
+
+    private func sortedWorkspaces(_ workspaces: [Workspace]) -> [Workspace] {
+        workspaces.sorted(by: compareWorkspaces)
+    }
+
+    private func compareWorkspaces(_ left: Workspace, _ right: Workspace) -> Bool {
+        let leftTimestamp = projectTimestamp(for: left)
+        let rightTimestamp = projectTimestamp(for: right)
+        if leftTimestamp != rightTimestamp {
+            return leftTimestamp > rightTimestamp
+        }
+        return left.name.localizedCaseInsensitiveCompare(right.name) == .orderedAscending
+    }
+
+    private func compareSessions(_ left: ChatSession, _ right: ChatSession) -> Bool {
+        let leftTimestamp = timestamp(for: left)
+        let rightTimestamp = timestamp(for: right)
+        if leftTimestamp != rightTimestamp {
+            return leftTimestamp > rightTimestamp
+        }
+        return left.title.localizedCaseInsensitiveCompare(right.title) == .orderedAscending
+    }
+
+    private func timestamp(for session: ChatSession) -> Date {
+        switch order {
+        case .updated:
+            return session.updatedAt ?? session.createdAt
+        case .created:
+            return session.createdAt
+        }
+    }
+
+    private func projectTimestamp(for workspace: Workspace) -> Date {
+        guard order == .updated else { return workspace.createdAt }
+        return list.sessions(in: workspace)
+            .map { $0.updatedAt ?? $0.createdAt }
+            .max() ?? workspace.createdAt
+    }
+
+    private func moveWorkspace(_ sourceID: UUID, before destinationID: UUID) {
+        guard sourceID != destinationID else { return }
+        var ids = visibleWorkspaces.map(\.id)
+        guard let sourceIndex = ids.firstIndex(of: sourceID),
+              let destinationIndex = ids.firstIndex(of: destinationID)
+        else { return }
+        withAnimation(.snappy(duration: 0.22)) {
+            let moved = ids.remove(at: sourceIndex)
+            ids.insert(moved, at: destinationIndex)
+            saveProjectOrder(ids)
+        }
+    }
+
+    private func saveProjectOrder(_ ids: [UUID]) {
+        manualProjectOrderRaw = ids.map(\.uuidString).joined(separator: "\n")
+    }
+}
+
+private struct WorkspaceDropDelegate: DropDelegate {
+    let workspaceID: UUID
+    @Binding var draggingWorkspaceID: UUID?
+    let moveWorkspace: (UUID, UUID) -> Void
+
+    func dropEntered(info: DropInfo) {
+        guard let draggingWorkspaceID, draggingWorkspaceID != workspaceID else { return }
+        moveWorkspace(draggingWorkspaceID, workspaceID)
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        DropProposal(operation: .move)
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        draggingWorkspaceID = nil
+        return true
+    }
 }
 
 private struct RemoteMachineSheet: View {
@@ -365,9 +602,9 @@ private struct RemoteMachineSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Add Remote Machine")
+            Text("Add remote machine")
                 .font(.headline)
-            TextField("mac-mini.tailnet.ts.net or 100.64.0.10:8765", text: $host)
+            TextField("mac-mini.tailnet.ts.net or 100.64.0.10:49361", text: $host)
                 .textFieldStyle(.roundedBorder)
             HStack {
                 Spacer()
@@ -392,7 +629,7 @@ private struct RemoteWorkspaceSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Add Remote Workspace")
+            Text("Add remote workspace")
                 .font(.headline)
             TextField("/home/dylan/project", text: $path)
                 .textFieldStyle(.roundedBorder)

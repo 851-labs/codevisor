@@ -28,10 +28,34 @@ public struct FileSystemCapabilities: Sendable, Codable, Equatable {
 public struct ClientCapabilities: Sendable, Codable, Equatable {
     public var fs: FileSystemCapabilities?
     public var terminal: Bool?
+    public var plan: Bool?
 
-    public init(fs: FileSystemCapabilities? = nil, terminal: Bool? = nil) {
+    private enum Keys: String, CodingKey {
+        case fs
+        case terminal
+        case plan
+    }
+
+    public init(fs: FileSystemCapabilities? = nil, terminal: Bool? = nil, plan: Bool? = nil) {
         self.fs = fs
         self.terminal = terminal
+        self.plan = plan
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: Keys.self)
+        fs = try container.decodeIfPresent(FileSystemCapabilities.self, forKey: .fs)
+        terminal = try container.decodeIfPresent(Bool.self, forKey: .terminal)
+        plan = container.contains(.plan) ? true : nil
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: Keys.self)
+        try container.encodeIfPresent(fs, forKey: .fs)
+        try container.encodeIfPresent(terminal, forKey: .terminal)
+        if plan == true {
+            try container.encode([String: String](), forKey: .plan)
+        }
     }
 }
 

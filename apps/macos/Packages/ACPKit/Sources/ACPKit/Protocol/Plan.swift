@@ -38,12 +38,22 @@ public struct Plan: Sendable, Codable, Equatable {
 
 /// A slash command advertised by the agent.
 public struct AvailableCommand: Sendable, Codable, Equatable, Identifiable {
+    public struct Input: Sendable, Codable, Equatable {
+        public var hint: String?
+
+        public init(hint: String? = nil) {
+            self.hint = hint
+        }
+    }
+
     public var name: String
     public var description: String
+    public var input: Input?
     public var id: String { name }
 
-    public init(name: String, description: String) {
+    public init(name: String, description: String, input: Input? = nil) {
         self.name = name
         self.description = description
+        self.input = input
     }
 }

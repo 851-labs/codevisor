@@ -48,6 +48,33 @@ struct TranscriptReducerTests {
         #expect(turn.entries[2] == .text(id: "t1", markdown: "after"))
     }
 
+    @Test("ACP message ids merge chunks across interleaved tool calls")
+    func messageIdMergesAcrossTools() {
+        let turn = reduce([
+            .agentMessageChunk(.text("I'll check."), messageId: "msg-prelude"),
+            .toolCall(ToolCall(toolCallId: "a", title: "Read README", kind: .read, status: .completed)),
+            .agentMessageChunk(.text("Barnsong is "), messageId: "msg-final"),
+            .toolCall(ToolCall(toolCallId: "b", title: "Read package", kind: .read, status: .completed)),
+            .agentMessageChunk(.text("a game."), messageId: "msg-final"),
+            .toolCall(ToolCall(toolCallId: "c", title: "Run tests", kind: .execute, status: .completed))
+        ])
+
+        #expect(turn.entries.map(\.id) == [
+            "text:acp:msg-prelude",
+            "tool:a",
+            "text:acp:msg-final",
+            "tool:b",
+            "tool:c"
+        ])
+        #expect(turn.finalText == .text(id: "acp:msg-final", markdown: "Barnsong is a game."))
+        #expect(turn.workedEntries.map(\.id) == [
+            "text:acp:msg-prelude",
+            "tool:a",
+            "tool:b",
+            "tool:c"
+        ])
+    }
+
     @Test("Tool call updates merge into the existing entry in place")
     func toolUpdateMerges() {
         let turn = reduce([
@@ -114,14 +141,14 @@ struct TranscriptReducerTests {
         #expect(turn.toolCalls.count == 1)
     }
 
-    @Test("A turn ending on a tool call has no final answer")
+    @Test("A turn ending on a tool call still exposes the last text answer")
     func endsOnTool() {
         let turn = reduce([
             .agentMessageChunk(.text("working")),
             .toolCall(ToolCall(toolCallId: "a", title: "Run"))
         ])
-        #expect(turn.finalText == nil)
-        #expect(turn.workedEntries.count == 2)
+        #expect(turn.finalText == .text(id: "t0", markdown: "working"))
+        #expect(turn.workedEntries.map(\.id) == ["tool:a"])
     }
 
     @Test("Duration computes from start and end timestamps")

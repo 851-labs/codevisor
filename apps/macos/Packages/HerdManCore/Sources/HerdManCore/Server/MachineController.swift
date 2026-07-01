@@ -28,7 +28,7 @@ public struct HerdManMachine: Identifiable, Sendable, Codable, Equatable {
     public static let local = HerdManMachine(
         id: "local",
         name: "Local",
-        baseURL: URL(string: "http://127.0.0.1:8765")!,
+        baseURL: URL(string: "http://127.0.0.1:\(HerdManServerConfig.localPort)")!,
         kind: "local"
     )
 }
@@ -176,7 +176,7 @@ public final class MachineController {
             components.scheme = "http"
         }
         if components.port == nil {
-            components.port = 8765
+            components.port = HerdManServerConfig.productionPort
         }
         components.path = ""
         components.query = nil
@@ -196,7 +196,7 @@ public final class MachineController {
 
     private static func remoteId(for url: URL) -> String {
         let host = url.host ?? "remote"
-        let port = url.port ?? 8765
+        let port = url.port ?? HerdManServerConfig.productionPort
         let raw = "remote-\(host)-\(port)".lowercased()
         let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-"))
         return String(raw.unicodeScalars.map { allowed.contains($0) ? Character($0) : "-" })

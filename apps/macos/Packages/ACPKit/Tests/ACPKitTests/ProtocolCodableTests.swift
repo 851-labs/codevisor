@@ -37,8 +37,11 @@ struct ProtocolCodableTests {
     @Test("SessionUpdate variants round-trip")
     func sessionUpdates() throws {
         try roundTrip(SessionUpdate.agentMessageChunk(.text("a")))
+        try roundTrip(SessionUpdate.agentMessageChunk(.text("a"), messageId: "msg-1"))
         try roundTrip(SessionUpdate.agentThoughtChunk(.text("thinking")))
+        try roundTrip(SessionUpdate.agentThoughtChunk(.text("thinking"), messageId: "thought-1"))
         try roundTrip(SessionUpdate.userMessageChunk(.text("u")))
+        try roundTrip(SessionUpdate.userMessageChunk(.text("u"), messageId: "user-1"))
         try roundTrip(SessionUpdate.toolCall(ToolCall(toolCallId: "t1", title: "Read", kind: .read, status: .pending)))
         try roundTrip(SessionUpdate.toolCallUpdate(ToolCallUpdate(toolCallId: "t1", status: .completed)))
         try roundTrip(SessionUpdate.plan(Plan(entries: [PlanEntry(content: "step", priority: .high, status: .pending)])))

@@ -26,7 +26,7 @@ struct UserMessageView: View {
                 .textSelection(.enabled)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
-                .background(RoundedRectangle(cornerRadius: 14).fill(Color.accentColor.opacity(0.18)))
+                .background(RoundedRectangle(cornerRadius: 14).fill(Color.primary.opacity(0.08)))
                 .frame(alignment: .trailing)
         }
     }
