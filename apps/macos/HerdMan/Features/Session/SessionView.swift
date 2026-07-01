@@ -71,6 +71,21 @@ struct SessionScreen: View {
                     scrollToBottom(proxy, animated: false)
                 }
             }
+            .onChange(of: terminal.panel.isVisible) { _, _ in
+                // Toggling the terminal resizes the chat area; when the user was
+                // reading the latest messages, keep them pinned to the bottom
+                // instead of letting the panel push the newest content out of view.
+                guard isAtBottom else { return }
+                scrollToBottom(proxy, animated: true)
+                // Re-pin once the panel's show/hide animation has settled.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    scrollToBottom(proxy, animated: false)
+                }
+            }
+            .onChange(of: terminal.panel.height) { _, _ in
+                guard terminal.panel.isVisible, isAtBottom else { return }
+                scrollToBottom(proxy, animated: false)
+            }
             .overlay(alignment: .bottom) {
                 if !isAtBottom {
                     scrollToBottomButton(proxy)
