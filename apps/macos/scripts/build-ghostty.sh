@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
 #
 # Builds GhosttyKit.xcframework from the vendored Ghostty source and copies it
-# next to the app for linking. The terminal feature is gated behind
-# `#if canImport(GhosttyKit)`, so the app builds fine without this; run this to
-# enable the real libghostty-backed terminal.
+# next to the app for linking. HerdMan requires the real libghostty-backed
+# terminal; app and release builds should fail if this framework is missing.
 #
 # Requirements:
 #   - Zig 0.15.2 (Ghostty pins this exact version in build.zig).
@@ -48,4 +47,4 @@ mkdir -p "$DEST_DIR"
 rm -rf "$DEST_DIR/GhosttyKit.xcframework"
 cp -R "$SRC" "$DEST_DIR/"
 echo "Copied GhosttyKit.xcframework to $DEST_DIR"
-echo "Next: link it into the HerdMan app target in Xcode (see apps/macos/HerdMan/Features/Terminal/README.md)."
+echo "Next: verify the HerdMan app target build settings still point at this framework."

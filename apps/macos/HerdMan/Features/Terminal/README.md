@@ -4,8 +4,8 @@ Each session has a terminal panel docked at the bottom of the session page,
 scoped to the session's working directory.
 
 > **Status: live.** `GhosttyKit.xcframework` is built and linked, so the panel
-> runs a real libghostty terminal. If the framework is ever removed, the code
-> falls back to the placeholder automatically (`#if canImport(GhosttyKit)`).
+> runs a real libghostty terminal. The framework and runtime resources are
+> required build inputs; missing Ghostty assets should fail the build.
 
 ## How GhosttyKit was built & linked (for rebuilds)
 
@@ -51,15 +51,10 @@ shell integration. To regenerate the tarball after a Ghostty bump:
   The surface (and its shell/scrollback) survives closing the panel and navigating
   to other sessions and back.
 
-The terminal backend is selected at launch via `TerminalRuntime`:
-- `#if canImport(GhosttyKit)` → real libghostty surface (`GhosttyTerminalSurface`).
-- otherwise → a buildable `PlaceholderTerminalSurface` (a styled panel that names the
-  cwd and explains how to enable the real terminal).
+The terminal backend is selected at launch via `TerminalRuntime`, and the only
+supported backend is the real libghostty surface (`GhosttyTerminalSurface`).
 
-Everything is wired through the `TerminalSurface` protocol, so the real terminal
-drops in unchanged once `GhosttyKit` is linked — no other code changes.
-
-## Enabling the real terminal
+## Rebuilding the terminal
 
 1. **Build the framework** (needs Zig 0.15.2 and a *stable* macOS SDK — see the
    caveat below):
@@ -70,16 +65,12 @@ drops in unchanged once `GhosttyKit` is linked — no other code changes.
 
    This produces `HerdMan/Frameworks/GhosttyKit.xcframework`.
 
-2. **Link it into the app target** in Xcode (the project's source files are
-   file-system-synchronized, but framework linking is a project setting and must be
-   done in the Xcode UI):
-   - Target *HerdMan* → *General* → *Frameworks, Libraries, and Embedded Content* →
-     **+** → Add Other → add `HerdMan/Frameworks/GhosttyKit.xcframework` →
-     *Embed & Sign*.
-   - The module map in the xcframework exposes `import GhosttyKit`. Once it links,
-     `canImport(GhosttyKit)` flips on and `GhosttyTerminalSurface` is compiled.
+2. **Keep it linked into the app target** through the Xcode build settings:
+   `SWIFT_INCLUDE_PATHS` must point at the GhosttyKit headers and
+   `OTHER_LDFLAGS` must force-load `libghostty-internal-fat.a`.
 
-3. Build & run. The placeholder is replaced by a live shell in the session's cwd.
+3. Build & run. If GhosttyKit or the bundled resources are missing, fix the
+   packaging issue instead of shipping a degraded terminal.
 
 ### SDK caveat (why it isn't built here)
 

@@ -62,12 +62,21 @@ xcode_args=(
 )
 
 ghostty_library="$repo_root/apps/macos/Frameworks/GhosttyKit.xcframework/macos-arm64/libghostty-internal-fat.a"
-if [[ -f "$ghostty_library" ]]; then
-  echo "Building with GhosttyKit from $ghostty_library"
-else
-  echo "GhosttyKit.xcframework not found; building with the placeholder terminal backend."
-  xcode_args+=(OTHER_LDFLAGS="" SWIFT_INCLUDE_PATHS="")
+ghostty_headers="$repo_root/apps/macos/Frameworks/GhosttyKit.xcframework/macos-arm64/Headers/ghostty.h"
+ghostty_resources="$repo_root/apps/macos/HerdMan/Resources/ghostty-resources.tar.gz"
+if [[ ! -f "$ghostty_library" ]]; then
+  echo "error: GhosttyKit static library is required at $ghostty_library" >&2
+  exit 1
 fi
+if [[ ! -f "$ghostty_headers" ]]; then
+  echo "error: GhosttyKit headers are required at $ghostty_headers" >&2
+  exit 1
+fi
+if [[ ! -f "$ghostty_resources" ]]; then
+  echo "error: Ghostty runtime resources are required at $ghostty_resources" >&2
+  exit 1
+fi
+echo "Building with GhosttyKit from $ghostty_library"
 
 xcodebuild "${xcode_args[@]}" build
 

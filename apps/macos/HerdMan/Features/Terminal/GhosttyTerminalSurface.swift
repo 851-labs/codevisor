@@ -1,13 +1,11 @@
 //  Terminal backend powered by libghostty.
 //
-//  Compiled only when GhosttyKit.xcframework is linked (`#if canImport(GhosttyKit)`),
-//  so the app builds without it. Modeled on Ghostty's own macOS SurfaceView
-//  (references/ghostty/macos/Sources/Ghostty, MIT-licensed). This is a focused
+//  GhosttyKit.xcframework is a required build input. Modeled on Ghostty's own
+//  macOS SurfaceView (references/ghostty/macos/Sources/Ghostty, MIT-licensed). This is a focused
 //  single-surface integration covering lifecycle, render, focus, resize, and
 //  keyboard/mouse forwarding; for full IME/marked-text fidelity, vendor
 //  Ghostty's SurfaceView_AppKit input layer.
 
-#if canImport(GhosttyKit)
 import AppKit
 import Foundation
 import GhosttyKit
@@ -26,16 +24,19 @@ private nonisolated(unsafe) var gGhosttyApp: ghostty_app_t?
 final class GhosttyRuntime {
     static let shared = GhosttyRuntime()
 
-    var app: ghostty_app_t? { gGhosttyApp }
+    var app: ghostty_app_t {
+        guard let app = gGhosttyApp else {
+            fatalError("Ghostty runtime did not create an app instance.")
+        }
+        return app
+    }
     private var config: ghostty_config_t?
 
     private init() {
         // Point libghostty at the bundled resources (xterm-ghostty terminfo +
         // shell integration) so the shell gets TERM=xterm-ghostty and shell
         // integration. Must be set BEFORE ghostty_init, which captures it.
-        if let resourcesDir = Self.prepareBundledResources() {
-            setenv("GHOSTTY_RESOURCES_DIR", resourcesDir, 1)
-        }
+        setenv("GHOSTTY_RESOURCES_DIR", Self.prepareBundledResources(), 1)
 
         _ = ghostty_init(UInt(CommandLine.argc), CommandLine.unsafeArgv)
 
@@ -63,7 +64,10 @@ final class GhosttyRuntime {
         // Publish the app pointer to the global BEFORE set_focus (which can
         // trigger a wakeup) so the callback always sees a valid app.
         gGhosttyApp = ghostty_app_new(&runtime, cfg)
-        if let app = gGhosttyApp { ghostty_app_set_focus(app, true) }
+        guard let app = gGhosttyApp else {
+            fatalError("ghostty_app_new returned nil.")
+        }
+        ghostty_app_set_focus(app, true)
     }
 
     func tick() {
@@ -74,13 +78,15 @@ final class GhosttyRuntime {
     /// into Application Support and returns the path to use as
     /// `GHOSTTY_RESOURCES_DIR` — the `ghostty` subdir, with `terminfo` adjacent
     /// as libghostty expects (it reads `dirname(resources)/terminfo`).
-    private static func prepareBundledResources() -> String? {
+    private static func prepareBundledResources() -> String {
         let fm = FileManager.default
         guard let tarball = Bundle.main.url(forResource: "ghostty-resources", withExtension: "tar.gz")
             ?? Bundle.main.resourceURL?.appendingPathComponent("ghostty-resources.tar.gz"),
               fm.fileExists(atPath: tarball.path),
               let support = try? fm.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
-        else { return nil }
+        else {
+            fatalError("Missing bundled ghostty-resources.tar.gz.")
+        }
 
         let base = support
             .appendingPathComponent(HerdManAppVariant.applicationSupportDirectoryName, isDirectory: true)
@@ -93,10 +99,12 @@ final class GhosttyRuntime {
             tar.arguments = ["-xzf", tarball.path, "-C", base.path]
             try tar.run()
             tar.waitUntilExit()
-            guard tar.terminationStatus == 0, fm.fileExists(atPath: ghosttyDir.path) else { return nil }
+            guard tar.terminationStatus == 0, fm.fileExists(atPath: ghosttyDir.path) else {
+                fatalError("Failed to extract Ghostty resources from \(tarball.path).")
+            }
             return ghosttyDir.path
         } catch {
-            return nil
+            fatalError("Failed to prepare Ghostty resources: \(error).")
         }
     }
 
@@ -147,7 +155,7 @@ final class GhosttySurfaceView: NSView {
         super.init(frame: .zero)
         wantsLayer = true
 
-        guard let app = GhosttyRuntime.shared.app else { return }
+        let app = GhosttyRuntime.shared.app
         var config = ghostty_surface_config_new()
         config.platform_tag = GHOSTTY_PLATFORM_MACOS
         config.platform.macos.nsview = Unmanaged.passUnretained(self).toOpaque()
@@ -160,6 +168,9 @@ final class GhosttySurfaceView: NSView {
                 config.command = command
                 surface = ghostty_surface_new(app, &config)
             }
+        }
+        guard surface != nil else {
+            fatalError("ghostty_surface_new returned nil for \(descriptor.workingDirectory.path).")
         }
         // libghostty drives its own rendering (internal vsync/CVDisplayLink tied
         // to this NSView) — we must NOT call ghostty_surface_draw ourselves.
@@ -300,4 +311,3 @@ struct GhosttyTerminalFactory: TerminalSurfaceFactory {
         GhosttyTerminalSurface(descriptor: descriptor)
     }
 }
-#endif
