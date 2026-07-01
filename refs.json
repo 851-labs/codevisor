@@ -11,7 +11,13 @@
       "url": "https://github.com/agentclientprotocol/codex-acp"
     },
     {
+      "url": "https://github.com/Effect-TS/effect-smol"
+    },
+    {
       "url": "https://github.com/ghostty-org/ghostty"
+    },
+    {
+      "url": "https://github.com/mobile-shell/mosh"
     },
     {
       "url": "https://github.com/agentclientprotocol/rust-sdk"

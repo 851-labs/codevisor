@@ -1,0 +1,5 @@
+pre-commit:
+  parallel: false
+  commands:
+    full-suite:
+      run: bun run check

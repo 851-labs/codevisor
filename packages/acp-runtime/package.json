@@ -1,0 +1,26 @@
+{
+  "name": "@herdman/acp-runtime",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b tsconfig.json",
+    "typecheck": "tsc -b tsconfig.json --pretty false",
+    "test": "vitest run src --passWithNoTests",
+    "test:coverage": "vitest run src --coverage"
+  },
+  "dependencies": {
+    "@agentclientprotocol/sdk": "1.1.0",
+    "@herdman/api": "workspace:*",
+    "effect": "4.0.0-beta.92",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "vitest": "4.1.4"
+  }
+}

@@ -1,0 +1,72 @@
+import Foundation
+import ACPKit
+
+/// A persisted cache of an agent's selectable config options (model, reasoning
+/// effort, …) keyed by harness id. Enables a stale-while-revalidate flow: the
+/// composer shows the last-known options instantly, then the live session
+/// refreshes them once the agent connects.
+@MainActor
+public final class ConfigOptionCache {
+    private let store: any PersistenceStore
+    private let key: String
+    private let capabilitiesKey: String
+    private var cache: [String: [SessionConfigOption]]
+    private var capabilitiesCache: [String: [ServerHarnessCapability]]
+
+    public init(store: any PersistenceStore, key: String = "harness-config") {
+        self.store = store
+        self.key = key
+        capabilitiesKey = "\(key)-server-capabilities"
+        if let data = store.loadData(forKey: key),
+           let decoded = try? JSONDecoder().decode([String: [SessionConfigOption]].self, from: data) {
+            cache = decoded
+        } else {
+            cache = [:]
+        }
+        if let data = store.loadData(forKey: capabilitiesKey),
+           let decoded = try? JSONDecoder().decode([String: [ServerHarnessCapability]].self, from: data) {
+            capabilitiesCache = decoded
+        } else {
+            capabilitiesCache = [:]
+        }
+    }
+
+    /// The cached options for a harness, or an empty list if none are cached.
+    public func options(forHarness harnessId: String) -> [SessionConfigOption] {
+        cache[harnessId] ?? []
+    }
+
+    /// Stores the latest options for a harness and persists them.
+    public func store(_ options: [SessionConfigOption], forHarness harnessId: String) {
+        cache[harnessId] = options
+        persist()
+    }
+
+    public func capabilities(forServer serverId: String) -> [ServerHarnessCapability] {
+        capabilitiesCache[serverId] ?? []
+    }
+
+    public func store(_ capabilities: [ServerHarnessCapability], forServer serverId: String) {
+        capabilitiesCache[serverId] = capabilities
+        for capability in capabilities {
+            cache[capability.harness.id] = capability.configOptions
+        }
+        persist()
+    }
+
+    /// Clears all cached config (used by "Delete all data").
+    public func clear() {
+        cache = [:]
+        capabilitiesCache = [:]
+        persist()
+    }
+
+    private func persist() {
+        if let data = try? JSONEncoder().encode(cache) {
+            try? store.saveData(data, forKey: key)
+        }
+        if let data = try? JSONEncoder().encode(capabilitiesCache) {
+            try? store.saveData(data, forKey: capabilitiesKey)
+        }
+    }
+}
