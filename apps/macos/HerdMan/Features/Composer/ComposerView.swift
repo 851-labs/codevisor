@@ -168,6 +168,7 @@ struct ComposerCard: View {
         }
         .menuStyle(.button)
         .buttonStyle(.plain)
+        .menuIndicator(.hidden)
         .fixedSize()
         .help(option.name)
     }
@@ -192,6 +193,7 @@ struct ComposerCard: View {
             }
             .menuStyle(.button)
             .buttonStyle(.plain)
+            .menuIndicator(.hidden)
             .fixedSize()
         }
     }
@@ -221,6 +223,7 @@ struct ComposerCard: View {
                 }
                 .menuStyle(.button)
                 .buttonStyle(.plain)
+                .menuIndicator(.hidden)
                 .fixedSize()
             }
         }
@@ -232,6 +235,9 @@ struct ComposerCard: View {
             Image(systemName: "chevron.down").font(.caption2)
         }
         .foregroundStyle(.secondary)
+        // Cover the whole chip (including the gap before the chevron) so a
+        // click anywhere on it opens the menu.
+        .contentShape(Rectangle())
     }
 
     @ViewBuilder
