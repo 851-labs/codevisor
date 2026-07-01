@@ -16,6 +16,9 @@
     "test": "turbo run test",
     "test:coverage": "turbo run test:coverage",
     "check": "bun run format:check && bun run lint && bun run typecheck && bun run test:coverage && bun run swift:test",
+    "release:server": "scripts/release/build-server-archive.sh",
+    "release:macos": "scripts/release/build-macos-app.sh",
+    "release:tap": "node scripts/release/update-homebrew-tap.mjs",
     "swift:test": "swift test --package-path apps/macos/Packages",
     "xcode:list": "xcodebuild -list -project apps/macos/HerdMan.xcodeproj"
   },
