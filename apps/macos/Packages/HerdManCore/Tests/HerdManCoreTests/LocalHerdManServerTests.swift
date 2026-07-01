@@ -36,6 +36,9 @@ struct LocalHerdManServerTests {
             nodeExecutable: URL(fileURLWithPath: "/usr/bin/node"),
             databasePath: "/tmp/herdman.sqlite",
             logURL: URL(fileURLWithPath: "/tmp/herdman-server.log"),
+            serverEnvironmentProvider: {
+                ["PATH": "/opt/homebrew/bin:/usr/bin", "HERDMAN_TEST": "1"]
+            },
             launcher: { request in
                 launches.append(request)
                 return Process()
@@ -49,6 +52,8 @@ struct LocalHerdManServerTests {
         #expect(launches.first?.databasePath == "/tmp/herdman.sqlite")
         #expect(launches.first?.host == "127.0.0.1")
         #expect(launches.first?.port == HerdManServerConfig.localPort)
+        #expect(launches.first?.environment["PATH"] == "/opt/homebrew/bin:/usr/bin")
+        #expect(launches.first?.environment["HERDMAN_TEST"] == "1")
     }
 
     @Test("Reports unavailable when no server entrypoint can be found")

@@ -51,7 +51,13 @@ for package_name in acp-runtime api db terminal; do
   cp -R "$repo_root/packages/$package_name/dist" "$runtime_dir/packages/$package_name/dist"
 done
 
-(cd "$runtime_dir" && bun install --production --frozen-lockfile)
+node_gyp="$repo_root/node_modules/.bin/node-gyp"
+if [[ ! -x "$node_gyp" ]]; then
+  echo "error: node-gyp is required to build the packaged server runtime. Run bun install first." >&2
+  exit 1
+fi
+
+(cd "$runtime_dir" && npm_config_node_gyp="$node_gyp" bun install --production --frozen-lockfile)
 
 find "$runtime_dir/apps/server/dist" "$runtime_dir/packages" \
   \( -name "*.test.js" -o -name "*.test.d.ts" \) \

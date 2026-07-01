@@ -1,3 +1,4 @@
+import ACPAgents
 import Foundation
 
 public enum LocalHerdManServerState: Equatable, Sendable {
@@ -14,11 +15,13 @@ public struct LocalHerdManServerLaunchRequest: Equatable, Sendable {
     public var logURL: URL
     public var host: String
     public var port: Int
+    public var environment: [String: String]
 }
 
 @MainActor
 public final class LocalHerdManServer {
     public typealias Launcher = @MainActor (LocalHerdManServerLaunchRequest) throws -> Process
+    public typealias ServerEnvironmentProvider = @MainActor () async -> [String: String]
 
     private let client: any HerdManServerClienting
     private let config: HerdManServerConfig
@@ -27,6 +30,7 @@ public final class LocalHerdManServer {
     private let databasePath: String
     private let logURL: URL
     private let launcher: Launcher
+    private let serverEnvironmentProvider: ServerEnvironmentProvider
     /// The server is intentionally not terminated with the app; it owns durable
     /// sessions and should keep running so clients can reconnect to live work.
     private var process: Process?
@@ -40,6 +44,7 @@ public final class LocalHerdManServer {
         nodeExecutable: URL = LocalHerdManServer.defaultNodeExecutable(),
         databasePath: String = LocalHerdManServer.defaultDatabasePath(),
         logURL: URL = LocalHerdManServer.defaultLogURL(),
+        serverEnvironmentProvider: @escaping ServerEnvironmentProvider = LocalHerdManServer.defaultServerEnvironment,
         launcher: @escaping Launcher = LocalHerdManServer.launchProcess
     ) {
         self.client = client
@@ -48,6 +53,7 @@ public final class LocalHerdManServer {
         self.nodeExecutable = nodeExecutable
         self.databasePath = databasePath
         self.logURL = logURL
+        self.serverEnvironmentProvider = serverEnvironmentProvider
         self.launcher = launcher
     }
 
@@ -68,13 +74,15 @@ public final class LocalHerdManServer {
         }
 
         do {
+            let serverEnvironment = await serverEnvironmentProvider()
             let request = LocalHerdManServerLaunchRequest(
                 nodeExecutable: nodeExecutable,
                 entrypoint: entrypoint,
                 databasePath: databasePath,
                 logURL: logURL,
                 host: host,
-                port: port
+                port: port,
+                environment: serverEnvironment
             )
             process = try launcher(request)
             return await waitUntilHealthy(process: process)
@@ -138,6 +146,7 @@ public final class LocalHerdManServer {
             "--port", String(request.port),
             "--db", request.databasePath
         ]
+        process.environment = request.environment
         process.standardOutput = logHandle
         process.standardError = logHandle
         try process.run()
@@ -184,6 +193,15 @@ public final class LocalHerdManServer {
             return URL(fileURLWithPath: path)
         }
         return URL(fileURLWithPath: "/usr/bin/env")
+    }
+
+    public static func defaultServerEnvironment() async -> [String: String] {
+        let probe = EnvironmentProbe()
+        let path = await probe.resolvedPath()
+        // Finder-launched production apps inherit a minimal PATH, so the Node
+        // server must receive the same login-shell PATH that local ACP discovery
+        // used before discovery moved server-side.
+        return probe.resolvedEnvironment(path: path)
     }
 
     public static func defaultDatabasePath() -> String {
