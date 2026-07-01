@@ -183,6 +183,33 @@ public final class WorkspaceListModel {
         syncAllToServer()
     }
 
+    /// Imports sessions into a specific workspace (they were discovered for its
+    /// folder), skipping any already known (by harness + agent session id).
+    public func importSessions(_ imported: [ImportedSession], into workspace: Workspace) {
+        var didImport = false
+        for item in imported {
+            let alreadyKnown = sessions.contains {
+                $0.harnessId == item.harnessId && $0.agentSessionId == item.info.sessionId
+            }
+            if alreadyKnown { continue }
+            let timestamp = ISO8601DateFormatter().date(from: item.info.updatedAt ?? "")
+            sessions.append(ChatSession(
+                workspaceId: workspace.id,
+                serverId: selectedServerId,
+                harnessId: item.harnessId,
+                agentSessionId: item.info.sessionId,
+                title: item.info.title ?? "Session",
+                origin: .imported,
+                createdAt: timestamp ?? Date(),
+                updatedAt: timestamp
+            ))
+            didImport = true
+        }
+        guard didImport else { return }
+        persistSessions()
+        syncAllToServer()
+    }
+
     public func renameSession(_ session: ChatSession, to title: String) {
         guard let index = sessions.firstIndex(where: { $0.id == session.id }) else { return }
         sessions[index].title = title

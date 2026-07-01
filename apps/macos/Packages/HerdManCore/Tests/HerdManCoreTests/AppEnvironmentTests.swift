@@ -47,6 +47,58 @@ struct AppEnvironmentTests {
         await client.close()
     }
 
+    @Test("Onboarding with a project folder imports that folder's existing sessions")
+    func onboardingImportsProjectSessions() async {
+        let environment = AppEnvironment.preview(seedWorkspaces: [], hasOnboarded: false)
+
+        // PreviewAgentService reports the "ext-1" session in
+        // /Users/me/src/website for each of its two ready harnesses.
+        let workspace = await environment.finishOnboarding(
+            projectFolder: URL(fileURLWithPath: "/Users/me/src/website")
+        )
+
+        #expect(environment.settings.hasCompletedOnboarding)
+        #expect(environment.settings.importExternalSessions)
+        #expect(environment.workspaceList.showsImportedSessions)
+        let imported = environment.workspaceList.sessions(in: workspace)
+        #expect(imported.count == 2)
+        #expect(imported.allSatisfy { $0.agentSessionId == "ext-1" && $0.origin == .imported })
+        #expect(Set(imported.map(\.harnessId)) == ["claude-code", "codex"])
+    }
+
+    @Test("Importable sessions are scoped to the folder and exclude known ones")
+    func importableSessionsScopedToFolder() async {
+        let environment = AppEnvironment.preview(seedWorkspaces: [])
+
+        let found = await environment.findImportableSessions(
+            for: URL(fileURLWithPath: "/Users/me/src/website")
+        )
+        #expect(found.map(\.info.sessionId) == ["ext-1", "ext-1"])
+        #expect(found.allSatisfy { $0.info.cwd == "/Users/me/src/website" })
+
+        // Once imported, the same discovery is no longer offered.
+        let workspace = environment.workspaceList.addWorkspace(
+            folderURL: URL(fileURLWithPath: "/Users/me/src/website")
+        )
+        environment.importSessions(found, into: workspace)
+        #expect(environment.settings.importExternalSessions)
+        let remaining = await environment.findImportableSessions(
+            for: URL(fileURLWithPath: "/Users/me/src/website")
+        )
+        #expect(remaining.isEmpty)
+    }
+
+    @Test("Workspace recommendations come from recent harness sessions")
+    func workspaceRecommendations() async {
+        let environment = AppEnvironment.preview(seedWorkspaces: [])
+
+        // PreviewAgentService's sessions live in folders that don't exist on
+        // the test machine, so the default directory filter drops them.
+        let recommendations = await environment.recommendedWorkspaces()
+
+        #expect(recommendations.isEmpty)
+    }
+
     @Test("AgentService surfaces installed harnesses only")
     func agentServiceDiscovery() async {
         // claude + npx present -> the Claude Code harness is installed; codex absent.

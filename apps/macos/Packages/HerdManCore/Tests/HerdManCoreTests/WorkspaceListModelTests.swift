@@ -250,6 +250,34 @@ struct WorkspaceListModelTests {
         #expect(model.workspaces.isEmpty)
         #expect(model.sessions.isEmpty)
     }
+
+    @Test("Importing sessions into a workspace skips known ones and persists")
+    func importIntoWorkspace() {
+        let (model, _, sessionStore) = makeModel()
+        model.showsImportedSessions = true
+        let workspace = model.addWorkspace(folderURL: URL(fileURLWithPath: "/tmp/a"))
+        let imported = [
+            ImportedSession(
+                harnessId: "claude-code",
+                info: SessionInfo(sessionId: "ext-1", cwd: "/tmp/a", title: "Old chat", updatedAt: "2026-06-01T00:00:00Z")
+            ),
+            ImportedSession(
+                harnessId: "claude-code",
+                info: SessionInfo(sessionId: "ext-2", cwd: "/tmp/a")
+            )
+        ]
+
+        model.importSessions(imported, into: workspace)
+        // Importing the same discoveries again must not duplicate anything.
+        model.importSessions(imported, into: workspace)
+
+        let sessions = model.sessions(in: workspace)
+        #expect(sessions.count == 2)
+        #expect(sessions.allSatisfy { $0.origin == .imported })
+        #expect(sessions.contains { $0.agentSessionId == "ext-1" && $0.title == "Old chat" })
+        #expect(sessions.contains { $0.agentSessionId == "ext-2" && $0.title == "Session" })
+        #expect(DefaultSessionRepository(store: sessionStore).load().count == 2)
+    }
 }
 
 @MainActor

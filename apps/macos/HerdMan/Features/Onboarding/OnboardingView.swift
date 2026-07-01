@@ -27,6 +27,7 @@ struct OnboardingView: View {
     @State private var projectFolder: URL?
     @State private var showingFolderPicker = false
     @State private var isFinishing = false
+    @State private var recommendations: [WorkspaceRecommendation] = []
 
     var body: some View {
         VStack(spacing: 0) {
@@ -61,6 +62,9 @@ struct OnboardingView: View {
         .task {
             harnesses = await environment.agentService.discoverAgents()
             isDetecting = false
+            // Suggest project folders from the user's most recent harness
+            // sessions so the workspace step can offer a one-click choice.
+            recommendations = await environment.recommendedWorkspaces()
         }
         .fileImporter(
             isPresented: $showingFolderPicker,
@@ -156,23 +160,38 @@ struct OnboardingView: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text("Open a project")
                     .font(.system(size: 28, weight: .bold))
-                Text("Pick a folder to work in. HerdMan opens a new chat scoped to this project.")
+                Text("Pick a folder to work in. HerdMan opens a new chat scoped to this project and brings in your existing agent chats.")
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if !recommendations.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Based on your recent agent chats")
+                        .font(.callout.weight(.medium))
+                        .foregroundStyle(.secondary)
+                    VStack(spacing: 6) {
+                        ForEach(recommendations) { recommendation in
+                            recommendationRow(recommendation)
+                        }
+                    }
+                }
             }
 
             Button {
                 showingFolderPicker = true
             } label: {
                 HStack(spacing: 12) {
-                    Image(systemName: projectFolder == nil ? "folder.badge.plus" : "folder.fill")
+                    Image(systemName: isCustomFolderSelected ? "folder.fill" : "folder.badge.plus")
                         .font(.title2)
                         .foregroundStyle(.tint)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(projectFolder?.lastPathComponent ?? "Choose a folder…")
+                        Text(isCustomFolderSelected
+                             ? (projectFolder?.lastPathComponent ?? "")
+                             : (recommendations.isEmpty ? "Choose a folder…" : "Choose another folder…"))
                             .fontWeight(.medium)
                             .foregroundStyle(.primary)
-                        if let projectFolder {
+                        if isCustomFolderSelected, let projectFolder {
                             Text(projectFolder.path)
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
@@ -181,6 +200,9 @@ struct OnboardingView: View {
                         }
                     }
                     Spacer()
+                    if isCustomFolderSelected {
+                        selectionCheckmark
+                    }
                 }
                 .padding(14)
                 .background(RoundedRectangle(cornerRadius: 12).fill(.quaternary.opacity(0.5)))
@@ -188,6 +210,65 @@ struct OnboardingView: View {
             .buttonStyle(.plain)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// Whether the chosen folder came from the folder picker rather than a
+    /// recommendation.
+    private var isCustomFolderSelected: Bool {
+        guard let projectFolder else { return false }
+        return !recommendations.contains { $0.folderURL.standardizedFileURL.path == projectFolder.standardizedFileURL.path }
+    }
+
+    private func recommendationRow(_ recommendation: WorkspaceRecommendation) -> some View {
+        let isSelected = projectFolder?.standardizedFileURL.path == recommendation.folderURL.standardizedFileURL.path
+        return Button {
+            projectFolder = recommendation.folderURL
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "clock.arrow.circlepath")
+                    .font(.title3)
+                    .foregroundStyle(.tint)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(recommendation.name)
+                        .fontWeight(.medium)
+                        .foregroundStyle(.primary)
+                    Text(recommendationSubtitle(recommendation))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+                Spacer()
+                if isSelected {
+                    selectionCheckmark
+                }
+            }
+            .padding(14)
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(.quaternary.opacity(isSelected ? 0.8 : 0.5))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .strokeBorder(isSelected ? AnyShapeStyle(.tint) : AnyShapeStyle(.clear), lineWidth: 1)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 12))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(recommendation.name), \(recommendationSubtitle(recommendation))")
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+
+    private var selectionCheckmark: some View {
+        Image(systemName: "checkmark.circle.fill")
+            .foregroundStyle(.tint)
+            .accessibilityHidden(true)
+    }
+
+    private func recommendationSubtitle(_ recommendation: WorkspaceRecommendation) -> String {
+        let chats = recommendation.sessionCount == 1 ? "1 chat" : "\(recommendation.sessionCount) chats"
+        return "\(chats) · \(recommendation.folderURL.path)"
     }
 
     // MARK: - Footer
@@ -276,10 +357,8 @@ struct OnboardingView: View {
         guard let folder = projectFolder else { return }
         isFinishing = true
         Task {
-            let workspace = await environment.finishOnboarding(
-                importExternalSessions: false,
-                projectFolder: folder
-            )
+            // Adds the workspace and imports its existing agent chats by default.
+            let workspace = await environment.finishOnboarding(projectFolder: folder)
             onComplete(workspace)
         }
     }

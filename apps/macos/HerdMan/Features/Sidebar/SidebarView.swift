@@ -33,6 +33,15 @@ private struct SidebarSessionListItem: Identifiable {
     var id: UUID { session.id }
 }
 
+/// Existing harness sessions found in a just-added workspace folder, pending
+/// the user's decision to import them.
+private struct PendingSessionImport: Identifiable {
+    let workspace: Workspace
+    let sessions: [ImportedSession]
+
+    var id: UUID { workspace.id }
+}
+
 /// The sidebar: a New Chat action, a Projects section (with a + to add a
 /// workspace) listing workspace folders and their sessions, and an archived
 /// section.
@@ -47,6 +56,7 @@ struct SidebarView: View {
     @State private var showingImporter = false
     @State private var showingRemoteMachine = false
     @State private var showingRemoteWorkspace = false
+    @State private var pendingImport: PendingSessionImport?
     @State private var expanded: Set<UUID> = []
     @State private var hovered: String?
     @State private var iconEditing: Workspace?
@@ -54,6 +64,7 @@ struct SidebarView: View {
     @AppStorage("sidebar.organization") private var organizationRaw = SidebarOrganization.byProject.rawValue
     @AppStorage("sidebar.order") private var orderRaw = SidebarOrder.updated.rawValue
     @AppStorage("sidebar.manualProjectOrder") private var manualProjectOrderRaw = ""
+    @AppStorage("update.skippedVersion") private var skippedUpdateVersion = ""
 
     private var list: WorkspaceListModel { environment.workspaceList }
     private var organization: SidebarOrganization { SidebarOrganization(rawValue: organizationRaw) ?? .byProject }
@@ -100,6 +111,16 @@ struct SidebarView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            if let release = environment.appUpdate.availableRelease,
+               release.version != skippedUpdateVersion {
+                UpdateBannerView(
+                    model: environment.appUpdate,
+                    release: release,
+                    onDismiss: { skippedUpdateVersion = release.version }
+                )
+                .padding(8)
+                .transition(.move(edge: .top).combined(with: .opacity))
+            }
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 1) {
                     actionRow("New chat", systemImage: "square.and.pencil", id: "new") {
@@ -161,7 +182,23 @@ struct SidebarView: View {
                 let workspace = list.addWorkspace(folderURL: url)
                 expanded.insert(workspace.id)
                 selection = .newChat(workspace.id)
+                offerSessionImport(for: workspace)
             }
+        }
+        .alert(
+            "Import Existing Chats?",
+            isPresented: Binding(
+                get: { pendingImport != nil },
+                set: { if !$0 { pendingImport = nil } }
+            ),
+            presenting: pendingImport
+        ) { pending in
+            Button("Import") {
+                environment.importSessions(pending.sessions, into: pending.workspace)
+            }
+            Button("Not Now", role: .cancel) {}
+        } message: { pending in
+            Text(importPromptMessage(for: pending))
         }
         .sheet(item: $iconEditing) { workspace in
             IconPickerView(currentSymbol: workspace.symbolName) { symbol in
@@ -180,8 +217,25 @@ struct SidebarView: View {
                 let workspace = list.addWorkspace(folderURL: URL(fileURLWithPath: path))
                 expanded.insert(workspace.id)
                 selection = .newChat(workspace.id)
+                offerSessionImport(for: workspace)
             }
         }
+    }
+
+    /// After a workspace is added, look for existing harness sessions in its
+    /// folder and — only when some are found — offer to import them.
+    private func offerSessionImport(for workspace: Workspace) {
+        Task {
+            let importable = await environment.findImportableSessions(for: workspace.folderURL)
+            guard !importable.isEmpty else { return }
+            pendingImport = PendingSessionImport(workspace: workspace, sessions: importable)
+        }
+    }
+
+    private func importPromptMessage(for pending: PendingSessionImport) -> String {
+        let count = pending.sessions.count
+        let chats = count == 1 ? "1 existing agent chat" : "\(count) existing agent chats"
+        return "HerdMan found \(chats) in “\(pending.workspace.name)”. Import them to continue those conversations here."
     }
 
     // MARK: - Header rows
@@ -356,7 +410,7 @@ struct SidebarView: View {
         .help(workspace.folderURL.path)
         .contextMenu {
             Button("New chat here") { selection = .newChat(workspace.id) }
-            Button("Change icon…") { iconEditing = workspace }
+            Button("Change icon") { iconEditing = workspace }
             Button("Archive") { list.archive(workspace) }
         }
 
