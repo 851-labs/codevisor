@@ -26,6 +26,7 @@ env:
   R2_BUCKET: "herdman"
   R2_PUBLIC_BASE_URL: "https://pub-d2d6eb72b71c4986a742c0527774c9f0.r2.dev/releases/herdman"
   WRANGLER_VERSION: "4.90.1"
+  GHOSTTY_REF: "28f9367bee11ad42f40f8aa589eb8c6db62d34be"
 
 jobs:
   metadata:
@@ -100,6 +101,13 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: ${{ env.BUN_VERSION }}
+      - name: Fetch Ghostty source
+        run: apps/macos/scripts/build-ghostty.sh --fetch-only
+      - uses: DeterminateSystems/nix-installer-action@main
+        with:
+          determinate: true
+      - name: Build GhosttyKit
+        run: nix develop ./references/ghostty -c apps/macos/scripts/build-ghostty.sh
       - name: Import Developer ID certificate
         if: env.APPLE_CERTIFICATE_BASE64 != ''
         shell: bash
