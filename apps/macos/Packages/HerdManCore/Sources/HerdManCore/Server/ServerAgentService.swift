@@ -2,13 +2,23 @@ import Foundation
 import ACPKit
 import ACPAgents
 
+public enum ServerAgentServiceError: Error, Equatable, Sendable {
+    /// Agents on a remote machine can only be reached through its server;
+    /// there is no in-process launch path for them.
+    case remoteLaunchUnsupported
+}
+
 public struct ServerAgentService: AgentServicing {
     private let client: any HerdManServerClienting
-    private let fallback: any AgentServicing
+    /// In-process discovery/launch used when the server is unreachable. Only
+    /// valid for the local machine — a remote machine's agents live on the
+    /// other end, so falling back to local discovery would show this Mac's
+    /// harnesses, models, and sessions as if they were the remote's.
+    private let fallback: (any AgentServicing)?
 
     public init(
         client: any HerdManServerClienting,
-        fallback: any AgentServicing = AgentService()
+        fallback: (any AgentServicing)? = nil
     ) {
         self.client = client
         self.fallback = fallback
@@ -20,6 +30,7 @@ public struct ServerAgentService: AgentServicing {
                 .filter { $0.enabled && $0.readiness.state == "ready" }
                 .map(\.discoveredAgent)
         } catch {
+            guard let fallback else { return [] }
             return await fallback.discoverAgents()
         }
     }
@@ -28,6 +39,7 @@ public struct ServerAgentService: AgentServicing {
         do {
             return try await client.listHarnesses().map(\.discoveredAgent)
         } catch {
+            guard let fallback else { return [] }
             return await fallback.discoverAllHarnesses()
         }
     }
@@ -37,7 +49,8 @@ public struct ServerAgentService: AgentServicing {
         workingDirectory: URL,
         delegate: (any ACPClientDelegate)?
     ) async throws -> ACPClient {
-        try await fallback.launch(agent, workingDirectory: workingDirectory, delegate: delegate)
+        guard let fallback else { throw ServerAgentServiceError.remoteLaunchUnsupported }
+        return try await fallback.launch(agent, workingDirectory: workingDirectory, delegate: delegate)
     }
 
     public func listSessions(for agent: DiscoveredAgent) async throws -> [SessionInfo] {
@@ -56,6 +69,7 @@ public struct ServerAgentService: AgentServicing {
                     )
                 }
         } catch {
+            guard let fallback else { throw error }
             return try await fallback.listSessions(for: agent)
         }
     }

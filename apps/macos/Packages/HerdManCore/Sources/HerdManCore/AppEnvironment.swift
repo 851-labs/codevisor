@@ -100,7 +100,14 @@ public final class AppEnvironment {
     }
 
     public func agentService(for serverId: String) -> any AgentServicing {
-        ServerAgentService(client: machines.client(for: serverId), fallback: fallbackAgentService)
+        // The in-process fallback only makes sense for the local machine (e.g.
+        // while its server is still starting). A remote machine's harnesses,
+        // models, and sessions must come from its server or not at all.
+        let isLocal = serverId == HerdManMachine.local.id
+        return ServerAgentService(
+            client: machines.client(for: serverId),
+            fallback: isLocal ? fallbackAgentService : nil
+        )
     }
 
     /// Deletes all HerdMan data (workspaces, sessions, cached config, settings)
