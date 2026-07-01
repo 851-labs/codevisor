@@ -111,7 +111,7 @@ prepare_server_runtime() {
   fi
   local expected_arch
   expected_arch="$(node_arch_for_target "$target")"
-  if ! lipo -verify_arch "$expected_arch" "$destination/bin/node" >/dev/null 2>&1; then
+  if ! lipo -archs "$destination/bin/node" | tr " " "\n" | grep -qx "$expected_arch"; then
     echo "error: $target server runtime has a Node binary without $expected_arch support" >&2
     lipo -info "$destination/bin/node" >&2 || true
     exit 1
