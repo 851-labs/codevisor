@@ -84,30 +84,19 @@ struct RootView: View {
         }
     }
 
-    /// Development builds tint the whole window toolbar blue — that color is
-    /// how you tell the dev app apart from the production release. An opaque
-    /// muted slate blue: softer in light mode, deeper in dark mode, so it
-    /// reads as part of the theme rather than a painted stripe.
+    /// Development builds tint the sidebar's slice of the top bar blue — that
+    /// color is how you tell the dev app apart from the production release.
+    /// An opaque muted slate blue: softer in light mode, deeper in dark mode,
+    /// so it reads as part of the theme rather than a painted stripe.
     private static let developmentToolbarTint = Color(nsColor: NSColor(name: nil) { appearance in
         appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
             ? NSColor(srgbRed: 0.20, green: 0.29, blue: 0.44, alpha: 1) // deep slate
             : NSColor(srgbRed: 0.55, green: 0.66, blue: 0.82, alpha: 1) // soft steel blue
     })
 
-    @ViewBuilder
     private var mainSplit: some View {
-        if HerdManAppVariant.isDevelopment {
-            splitView
-                .toolbarBackground(Self.developmentToolbarTint, for: .windowToolbar)
-                .toolbarBackgroundVisibility(.visible, for: .windowToolbar)
-        } else {
-            splitView
-        }
-    }
-
-    private var splitView: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
-            SidebarView(selection: $selection, store: store)
+            sidebarColumn
                 .navigationSplitViewColumnWidth(min: 230, ideal: 270, max: 360)
         } detail: {
             if let store {
@@ -115,6 +104,17 @@ struct RootView: View {
             } else {
                 ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
             }
+        }
+    }
+
+    @ViewBuilder
+    private var sidebarColumn: some View {
+        if HerdManAppVariant.isDevelopment {
+            SidebarView(selection: $selection, store: store)
+                .toolbarBackground(Self.developmentToolbarTint, for: .windowToolbar)
+                .toolbarBackgroundVisibility(.visible, for: .windowToolbar)
+        } else {
+            SidebarView(selection: $selection, store: store)
         }
     }
 
