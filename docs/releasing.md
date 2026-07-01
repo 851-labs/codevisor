@@ -52,8 +52,8 @@ git push origin v0.1.0
 You can also run the workflow manually and provide a version. Manual releases
 create or update the matching `v<version>` GitHub release for the current commit.
 
-The app build job defaults to the self-hosted `MacOS-ARM64` runner. Override it
-with the `macos_runner` workflow input or the `HERDMAN_MACOS_ARM_RUNNER`
-repository variable when needed. The Intel server runtime job defaults to the
-self-hosted `MacOS-x64` runner and can be overridden with `macos_intel_runner`
-or `HERDMAN_MACOS_INTEL_RUNNER`.
+The app build job defaults to self-hosted runner labels
+`["self-hosted","macOS","ARM64"]`. Override it with the `macos_runner` workflow
+input or the `HERDMAN_MACOS_ARM_RUNNER` repository variable when needed. The
+Intel server runtime job defaults to `["self-hosted","macOS","X64"]` and can be
+overridden with `macos_intel_runner` or `HERDMAN_MACOS_INTEL_RUNNER`.
