@@ -509,6 +509,9 @@ describe("@herdman/server", () => {
     // Shutdown is acknowledged even when the host process installed no handler.
     expect((await jsonRequest(server, "/v1/shutdown", { method: "POST" })).status).toBe(202)
 
+    // Servers without an updater refuse remote update requests.
+    expect((await jsonRequest(server, "/v1/update/apply", { method: "POST" })).status).toBe(409)
+
     let shutdownRequests = 0
     const stoppable = await run(
       startHerdManServer(
@@ -527,6 +530,56 @@ describe("@herdman/server", () => {
     expect(shutdownResponse.status).toBe(202)
     expect(shutdownResponse.body).toMatchObject({ ok: true })
     expect(shutdownRequests).toBe(1)
+
+    // Servers with an updater report fresh update state and apply on request.
+    const updaterState = { available: true, applyCalls: 0, applyFails: false }
+    const updatable = await run(
+      startHerdManServer(
+        services,
+        defaultServerConfig({
+          id: "server-updatable",
+          port: 0,
+          updater: {
+            apply: async () => {
+              updaterState.applyCalls += 1
+              if (updaterState.applyFails) {
+                throw new Error("apply failed")
+              }
+            },
+            check: async () => ({
+              channel: "stable",
+              checkedAt: "2026-06-30T00:00:00.000Z",
+              currentVersion: "0.1.0",
+              latestVersion: updaterState.available ? "0.2.0" : "0.1.0",
+              migrationState: "idle" as const,
+              updateAvailable: updaterState.available
+            })
+          }
+        })
+      )
+    )
+    runningServers.push(updatable)
+
+    expect((await jsonRequest(updatable, "/v1/update")).body).toMatchObject({
+      latestVersion: "0.2.0",
+      updateAvailable: true
+    })
+    const applied = await jsonRequest(updatable, "/v1/update/apply", { method: "POST" })
+    expect(applied.status).toBe(202)
+    expect(applied.body).toMatchObject({ accepted: true, targetVersion: "0.2.0" })
+    await waitFor(() => updaterState.applyCalls === 1)
+
+    // A failing apply is swallowed after the 202 acknowledgement.
+    updaterState.applyFails = true
+    expect((await jsonRequest(updatable, "/v1/update/apply", { method: "POST" })).status).toBe(202)
+    await waitFor(() => updaterState.applyCalls === 2)
+
+    // Nothing to apply when already up to date.
+    updaterState.available = false
+    const upToDate = await jsonRequest(updatable, "/v1/update/apply", { method: "POST" })
+    expect(upToDate.status).toBe(200)
+    expect(upToDate.body).toMatchObject({ accepted: false, targetVersion: "0.1.0" })
+    expect(updaterState.applyCalls).toBe(2)
 
     const token = await run(services.db.issuePairingToken)
     const secured = await run(

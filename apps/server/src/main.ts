@@ -1,12 +1,21 @@
 #!/usr/bin/env node
 import { makeAcpRuntime } from "@herdman/acp-runtime"
-import { makeDatabase } from "@herdman/db"
+import type { UpdateInfo } from "@herdman/api"
+import { makeDatabase, type HerdManDatabaseService } from "@herdman/db"
 import { makeTerminalManager } from "@herdman/terminal"
 import { Effect } from "effect"
-import { existsSync, readFileSync } from "node:fs"
+import { spawn } from "node:child_process"
+import { createWriteStream, existsSync, mkdirSync, readFileSync } from "node:fs"
+import { Readable } from "node:stream"
+import { pipeline } from "node:stream/promises"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
-import { defaultDatabasePath, defaultServerConfig, startHerdManServer } from "./server.js"
+import {
+  defaultDatabasePath,
+  defaultServerConfig,
+  startHerdManServer,
+  type HerdManServerUpdater
+} from "./server.js"
 
 const parseArgs = (args: ReadonlyArray<string>): Record<string, string> => {
   const parsed: Record<string, string> = {}
@@ -34,6 +43,133 @@ const bundledVersion = (): string | undefined => {
   return version.length > 0 ? version : undefined
 }
 
+const RELEASE_REPOSITORY = process.env.HERDMAN_RELEASE_REPOSITORY ?? "851-labs/herdman"
+
+/// "darwin-arm64", "linux-x64", … matching the published server archives.
+const releaseTarget = (): string | undefined => {
+  const platform =
+    process.platform === "darwin" ? "darwin" : process.platform === "linux" ? "linux" : undefined
+  const arch = process.arch === "arm64" ? "arm64" : process.arch === "x64" ? "x64" : undefined
+  return platform !== undefined && arch !== undefined ? `${platform}-${arch}` : undefined
+}
+
+const isNewerVersion = (candidate: string, current: string): boolean => {
+  const parse = (version: string): ReadonlyArray<number> =>
+    (version.replace(/^v/, "").split("-")[0] ?? "").split(".").map((part) => Number(part) || 0)
+  const left = parse(candidate)
+  const right = parse(current)
+  for (let index = 0; index < Math.max(left.length, right.length); index += 1) {
+    const a = left[index] ?? 0
+    const b = right[index] ?? 0
+    if (a !== b) {
+      return a > b
+    }
+  }
+  return false
+}
+
+/// Self-updater for standalone server installs: checks the GitHub latest
+/// release, and on apply downloads the matching server archive, unpacks it
+/// next to the database, hands off to the new runtime, and exits.
+const makeSelfUpdater = (options: {
+  readonly currentVersion: string
+  readonly db: HerdManDatabaseService
+  readonly dataDir: string
+  readonly serveArgs: ReadonlyArray<string>
+}): HerdManServerUpdater => {
+  let cached: { readonly at: number; readonly info: UpdateInfo } | undefined
+
+  const check = async (): Promise<UpdateInfo> => {
+    if (cached !== undefined && Date.now() - cached.at < 60_000) {
+      return cached.info
+    }
+    let latestVersion = options.currentVersion
+    try {
+      const response = await fetch(
+        `https://api.github.com/repos/${RELEASE_REPOSITORY}/releases/latest`,
+        {
+          headers: { accept: "application/vnd.github+json" },
+          signal: AbortSignal.timeout(10_000)
+        }
+      )
+      if (response.ok) {
+        const release = (await response.json()) as { readonly tag_name?: string }
+        const tag = (release.tag_name ?? "").replace(/^v/, "")
+        if (tag.length > 0) {
+          latestVersion = tag
+        }
+      }
+    } catch {
+      // Offline or rate-limited: report the last known state.
+    }
+    const info: UpdateInfo = {
+      currentVersion: options.currentVersion,
+      latestVersion,
+      updateAvailable: isNewerVersion(latestVersion, options.currentVersion),
+      channel: "stable",
+      checkedAt: new Date().toISOString(),
+      migrationState: "idle"
+    }
+    await Effect.runPromise(options.db.setUpdateInfo(info)).catch(() => undefined)
+    cached = { at: Date.now(), info }
+    return info
+  }
+
+  const apply = async (): Promise<void> => {
+    const info = await check()
+    if (!info.updateAvailable) {
+      return
+    }
+    const target = releaseTarget()
+    if (target === undefined) {
+      throw new Error(`Self-update is not supported on ${process.platform}/${process.arch}`)
+    }
+
+    const updateDir = join(options.dataDir, "server-updates", info.latestVersion)
+    const archivePath = join(updateDir, `herdman-server-${target}.tar.gz`)
+    const runtimeDir = join(updateDir, "runtime")
+    mkdirSync(runtimeDir, { recursive: true })
+
+    const url = `https://github.com/${RELEASE_REPOSITORY}/releases/download/v${info.latestVersion}/herdman-server-${target}.tar.gz`
+    console.log(`Downloading HerdMan server ${info.latestVersion} from ${url}`)
+    const response = await fetch(url, { signal: AbortSignal.timeout(300_000) })
+    if (!response.ok || response.body === null) {
+      throw new Error(`Failed to download ${url}: HTTP ${response.status}`)
+    }
+    await pipeline(
+      Readable.fromWeb(response.body as import("node:stream/web").ReadableStream),
+      createWriteStream(archivePath)
+    )
+
+    await new Promise<void>((resolve, reject) => {
+      const untar = spawn("tar", ["-xzf", archivePath, "-C", runtimeDir], { stdio: "ignore" })
+      untar.once("error", reject)
+      untar.once("exit", (code) =>
+        code === 0 ? resolve() : reject(new Error(`tar exited with ${code}`))
+      )
+    })
+
+    const entrypoint = join(runtimeDir, "main.js")
+    const nodeBinary = join(runtimeDir, "bin", "node")
+    if (!existsSync(entrypoint) || !existsSync(nodeBinary)) {
+      throw new Error(`Downloaded runtime at ${runtimeDir} is incomplete`)
+    }
+
+    // Hand off: the replacement waits a beat for this process to release the
+    // port, then execs the new runtime with the same serve arguments.
+    console.log(`Restarting into HerdMan server ${info.latestVersion}`)
+    const handoff = spawn(
+      "/bin/sh",
+      ["-c", 'sleep 1; exec "$@"', "sh", nodeBinary, entrypoint, "serve", ...options.serveArgs],
+      { detached: true, stdio: "ignore" }
+    )
+    handoff.unref()
+    setTimeout(() => process.exit(0), 300)
+  }
+
+  return { check, apply }
+}
+
 const main = Effect.gen(function* () {
   const command = process.argv[2] ?? "serve"
   if (command !== "serve") {
@@ -49,10 +185,35 @@ const main = Effect.gen(function* () {
   if (authMode !== "none" && authMode !== "token") {
     throw new Error("--auth must be either none or token")
   }
+  const databasePath = args.db ?? defaultDatabasePath()
   const db = yield* makeDatabase({
-    filename: args.db ?? defaultDatabasePath(),
+    filename: databasePath,
     serverId
   })
+  // Self-update needs a known current version to compare against; dev runs
+  // without a VERSION file simply don't offer it. The new runtime reads its
+  // own bundled VERSION, so --version is not forwarded.
+  const updater =
+    version === undefined
+      ? undefined
+      : makeSelfUpdater({
+          currentVersion: version,
+          db,
+          dataDir: dirname(databasePath),
+          serveArgs: [
+            "--host",
+            host,
+            "--port",
+            String(port),
+            "--db",
+            databasePath,
+            "--serverId",
+            serverId,
+            "--auth",
+            authMode,
+            ...(args.name === undefined ? [] : ["--name", args.name])
+          ]
+        })
   const server = yield* startHerdManServer(
     {
       acp: makeAcpRuntime(),
@@ -74,7 +235,8 @@ const main = Effect.gen(function* () {
         console.log("HerdMan server shutting down (requested by client)")
         // Let the 202 response flush before the process exits.
         setTimeout(() => process.exit(0), 250)
-      }
+      },
+      updater
     })
   )
   console.log(`HerdMan server listening at ${server.url}`)

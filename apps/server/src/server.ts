@@ -9,6 +9,7 @@ import type {
   ServerKind,
   SessionSummary,
   TerminalClientFrame,
+  UpdateInfo,
   Workspace
 } from "@herdman/api"
 import {
@@ -48,6 +49,14 @@ export interface HerdManServerAuthConfig {
   readonly allowLocalhostWithoutAuth: boolean
 }
 
+/// Lets the host process implement self-updating: `check` refreshes and
+/// returns the update state, `apply` installs the newer release and restarts
+/// the server process. Wired up in main.ts; absent in tests and embedded runs.
+export interface HerdManServerUpdater {
+  readonly check: () => Promise<UpdateInfo>
+  readonly apply: () => Promise<void>
+}
+
 export interface HerdManServerConfig {
   readonly id: string
   readonly name: string
@@ -59,6 +68,7 @@ export interface HerdManServerConfig {
   /// Invoked after `POST /v1/shutdown` is acknowledged so the host process can
   /// exit (used by the macOS app to swap in an updated server runtime).
   readonly onShutdownRequested?: (() => void) | undefined
+  readonly updater?: HerdManServerUpdater | undefined
 }
 
 export interface HerdManServerServices {
@@ -137,7 +147,8 @@ export const defaultServerConfig = (
     allowLocalhostWithoutAuth: true,
     requireBearerToken: false
   },
-  onShutdownRequested: overrides.onShutdownRequested
+  onShutdownRequested: overrides.onShutdownRequested,
+  updater: overrides.updater
 })
 
 export const makeHerdManServerApp = (
@@ -241,7 +252,27 @@ const handleRequest = async (
     }
 
     if (request.method === "GET" && url.pathname === "/v1/update") {
+      if (config.updater !== undefined) {
+        writeJson(response, 200, await config.updater.check())
+        return
+      }
       writeJson(response, 200, await run(services.db.getUpdateInfo))
+      return
+    }
+
+    if (request.method === "POST" && url.pathname === "/v1/update/apply") {
+      if (config.updater === undefined) {
+        throw new HttpFailure(409, "This server does not support remote updates")
+      }
+      const info = await config.updater.check()
+      if (!info.updateAvailable) {
+        writeJson(response, 200, { accepted: false, targetVersion: info.currentVersion })
+        return
+      }
+      // Acknowledge first: applying restarts the process, so this response
+      // must be on the wire before the server goes away.
+      writeJson(response, 202, { accepted: true, targetVersion: info.latestVersion })
+      config.updater.apply().catch(() => undefined)
       return
     }
 
