@@ -52,6 +52,13 @@ enum TerminalProxyCommand {
     }
 
     nonisolated private static func proxyEntrypoint() -> URL? {
+        if let runtimeDirectory = LocalHerdManServer.bundledServerRuntimeDirectory() {
+            let entrypoint = runtimeDirectory.appendingPathComponent("terminal-proxy.js")
+            if FileManager.default.fileExists(atPath: entrypoint.path) {
+                return entrypoint
+            }
+        }
+
         let bundledCandidates = [
             Bundle.main.url(forResource: "terminal-proxy", withExtension: "js", subdirectory: "server"),
             Bundle.main.url(forResource: "terminal-proxy", withExtension: "js", subdirectory: "Server"),

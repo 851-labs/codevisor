@@ -17,11 +17,11 @@ scoped to the session's working directory.
    # shim: make `xcrun --show-sdk-path` return a stable arm64 SDK
    #   e.g. /Library/Developer/CommandLineTools/SDKs/MacOSX15.2.sdk
    cd references/ghostty
-   zig build -Demit-xcframework=true -Dxcframework-target=native -Doptimize=ReleaseFast
+   zig build -Demit-xcframework=true -Dxcframework-target=universal -Doptimize=ReleaseFast
    # → references/ghostty/macos/GhosttyKit.xcframework ; copied to repo Frameworks/
    ```
-2. Linked into the HerdMan target via build settings (pbxproj edits are blocked):
-   - `SWIFT_INCLUDE_PATHS = $(SRCROOT)/Frameworks/GhosttyKit.xcframework/macos-arm64/Headers`
+2. Linked into the HerdMan target via build settings:
+   - `SWIFT_INCLUDE_PATHS` points at the GhosttyKit macOS slice headers.
    - `OTHER_LDFLAGS = -force_load .../libghostty-internal-fat.a -lc++` + Metal,
      MetalKit, QuartzCore, CoreText, CoreGraphics, CoreVideo, IOSurface, IOKit,
      Carbon, AppKit, Foundation, CoreFoundation, Security, ApplicationServices,
@@ -65,9 +65,9 @@ supported backend is the real libghostty surface (`GhosttyTerminalSurface`).
 
    This produces `HerdMan/Frameworks/GhosttyKit.xcframework`.
 
-2. **Keep it linked into the app target** through the Xcode build settings:
-   `SWIFT_INCLUDE_PATHS` must point at the GhosttyKit headers and
-   `OTHER_LDFLAGS` must force-load `libghostty-internal-fat.a`.
+2. **Keep it linked into the app target** through the Xcode build settings or
+   release-script overrides: `SWIFT_INCLUDE_PATHS` must point at the GhosttyKit
+   headers and `OTHER_LDFLAGS` must force-load `libghostty-internal-fat.a`.
 
 3. Build & run. If GhosttyKit or the bundled resources are missing, fix the
    packaging issue instead of shipping a degraded terminal.

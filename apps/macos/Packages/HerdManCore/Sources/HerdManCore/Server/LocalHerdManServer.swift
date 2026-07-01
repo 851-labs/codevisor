@@ -159,13 +159,11 @@ public final class LocalHerdManServer {
             return URL(fileURLWithPath: override)
         }
 
-        let bundledCandidates = [
-            Bundle.main.url(forResource: "main", withExtension: "js", subdirectory: "server"),
-            Bundle.main.url(forResource: "main", withExtension: "js", subdirectory: "Server"),
-            Bundle.main.url(forResource: "herdman-server", withExtension: "js")
-        ].compactMap { $0 }
-        if let bundled = bundledCandidates.first(where: { FileManager.default.fileExists(atPath: $0.path) }) {
-            return bundled
+        if let bundledRuntimeDirectory = bundledServerRuntimeDirectory() {
+            let entrypoint = bundledRuntimeDirectory.appendingPathComponent("main.js")
+            if FileManager.default.fileExists(atPath: entrypoint.path) {
+                return entrypoint
+            }
         }
 
         var directory = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
@@ -198,14 +196,37 @@ public final class LocalHerdManServer {
         return URL(fileURLWithPath: "/usr/bin/env")
     }
 
-    nonisolated private static func bundledNodeExecutable(
+    nonisolated public static func bundledServerRuntimeDirectory(
         fileManager: FileManager = .default
     ) -> URL? {
         let candidates = [
-            Bundle.main.url(forResource: "node", withExtension: nil, subdirectory: "server/bin"),
-            Bundle.main.url(forResource: "node", withExtension: nil, subdirectory: "Server/bin")
+            Bundle.main.url(forResource: nil, withExtension: nil, subdirectory: "server/\(bundledServerTarget)"),
+            Bundle.main.url(forResource: nil, withExtension: nil, subdirectory: "Server/\(bundledServerTarget)"),
+            Bundle.main.url(forResource: nil, withExtension: nil, subdirectory: "server"),
+            Bundle.main.url(forResource: nil, withExtension: nil, subdirectory: "Server")
         ].compactMap { $0 }
-        return candidates.first { fileManager.isExecutableFile(atPath: $0.path) }
+        return candidates.first { candidate in
+            fileManager.fileExists(atPath: candidate.appendingPathComponent("main.js").path)
+                && fileManager.isExecutableFile(atPath: candidate.appendingPathComponent("bin/node").path)
+        }
+    }
+
+    nonisolated private static var bundledServerTarget: String {
+        #if arch(x86_64)
+            "darwin-x64"
+        #else
+            "darwin-arm64"
+        #endif
+    }
+
+    nonisolated private static func bundledNodeExecutable(
+        fileManager: FileManager = .default
+    ) -> URL? {
+        guard let runtimeDirectory = bundledServerRuntimeDirectory(fileManager: fileManager) else {
+            return nil
+        }
+        let executable = runtimeDirectory.appendingPathComponent("bin/node")
+        return fileManager.isExecutableFile(atPath: executable.path) ? executable : nil
     }
 
     public static func defaultServerEnvironment() async -> [String: String] {

@@ -4,11 +4,15 @@ export COPYFILE_DISABLE=1
 
 usage() {
   cat >&2 <<'EOF'
-usage: scripts/release/build-server-runtime.sh <version> <runtime-dir>
+usage: scripts/release/build-server-runtime.sh <version> <runtime-dir> [target]
 
 Builds a self-contained Node runtime directory for herdman-server and
 herdman-terminal-proxy. The runtime includes compiled JS, production
 node_modules, a pinned Node executable, and launcher scripts under bin/.
+
+The optional target must match the current machine. Native Node addons are
+compiled during packaging, so cross-building the runtime would produce an app
+that fails on the target CPU.
 EOF
 }
 
@@ -19,6 +23,7 @@ fi
 
 version="${1:-}"
 runtime_dir="${2:-}"
+target="${3:-}"
 
 if [[ -z "$version" || -z "$runtime_dir" ]]; then
   usage
@@ -27,6 +32,14 @@ fi
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "$script_dir/../.." && pwd)"
+host_target="$("$script_dir/detect-target.sh")"
+if [[ -z "$target" ]]; then
+  target="$host_target"
+fi
+if [[ "$target" != "$host_target" ]]; then
+  echo "error: cannot build $target runtime on $host_target. Use a native $target runner." >&2
+  exit 1
+fi
 
 if [[ ! -f "$repo_root/apps/server/dist/main.js" ]]; then
   (cd "$repo_root" && bun run build)
@@ -121,3 +134,4 @@ EOF
 
 chmod +x "$runtime_dir/bin/herdman-server" "$runtime_dir/bin/herdman-terminal-proxy"
 printf "%s\n" "$version" > "$runtime_dir/VERSION"
+printf "%s\n" "$target" > "$runtime_dir/TARGET"

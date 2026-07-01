@@ -9,15 +9,14 @@ HerdMan releases are cut by `.github/workflows/release.yml`.
 - `Casks/herdman.rb` in `851-labs/homebrew-tap`.
 - `Formula/herdman-server.rb` in `851-labs/homebrew-tap`.
 
-The macOS app bundle includes the Node server runtime under
-`HerdMan.app/Contents/Resources/server`. The app still depends on a Node runtime,
-so the generated cask declares `depends_on formula: "node"`.
+The macOS app bundle includes architecture-specific Node server runtimes under
+`HerdMan.app/Contents/Resources/server/darwin-arm64` and
+`HerdMan.app/Contents/Resources/server/darwin-x64`. The app selects the matching
+runtime at launch so Apple Silicon and Intel Macs both use native Node addons.
 
-The app release script links `apps/macos/Frameworks/GhosttyKit.xcframework` when
-it is present. If it is absent, the release still builds with the placeholder
-terminal backend. Run `apps/macos/scripts/build-ghostty.sh` before the app
-release step on a machine that can build GhosttyKit when the release should ship
-the live libghostty terminal.
+The app release script requires a universal
+`apps/macos/Frameworks/GhosttyKit.xcframework` with `arm64` and `x86_64` macOS
+slices. Missing or single-architecture GhosttyKit assets fail the release.
 
 ## Required Repository Secret
 
@@ -50,6 +49,8 @@ git push origin v0.1.0
 You can also run the workflow manually and provide a version. Manual releases
 create or update the matching `v<version>` GitHub release for the current commit.
 
-The macOS job must run on an image with an Xcode SDK that can build the current
-project deployment target. Override the runner with the `macos_runner` workflow
-input or the `HERDMAN_MACOS_RUNNER` repository variable when needed.
+The app build job must run on an Apple Silicon image with an Xcode SDK that can
+build the current project deployment target. Override it with the `macos_runner`
+workflow input or the `HERDMAN_MACOS_ARM_RUNNER` repository variable when needed.
+The Intel server runtime job defaults to `macos-26-intel` and can be overridden
+with `macos_intel_runner` or `HERDMAN_MACOS_INTEL_RUNNER`.

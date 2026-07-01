@@ -37,7 +37,7 @@ archive_name="herdman-server-$target.tar.gz"
 archive_path="$output_dir/$archive_name"
 
 mkdir -p "$output_dir"
-"$script_dir/build-server-runtime.sh" "$version" "$runtime_dir"
+"$script_dir/build-server-runtime.sh" "$version" "$runtime_dir" "$target"
 
 rm -f "$archive_path"
 tar -C "$runtime_dir" -czf "$archive_path" .

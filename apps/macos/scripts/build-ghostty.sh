@@ -59,7 +59,7 @@ echo "Building GhosttyKit.xcframework (this takes a while)…"
 cd "$GHOSTTY_DIR"
 zig build \
   -Demit-xcframework=true \
-  -Dxcframework-target=native \
+  -Dxcframework-target=universal \
   -Demit-macos-app=false \
   -Doptimize=ReleaseFast
 

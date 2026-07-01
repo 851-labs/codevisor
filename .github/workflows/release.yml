@@ -11,9 +11,14 @@ on:
         required: false
         type: string
       macos_runner:
-        description: "macOS runner label. Use an image with the Xcode SDK required by the project."
+        description: "Apple Silicon macOS runner label. Use an image with the Xcode SDK required by the project."
         required: false
-        default: "macos-latest"
+        default: "macos-26-arm64"
+        type: string
+      macos_intel_runner:
+        description: "Intel macOS runner label used to build x64 server runtimes."
+        required: false
+        default: "macos-26-intel"
         type: string
 
 permissions:
@@ -60,8 +65,8 @@ jobs:
     needs: metadata
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
       - uses: oven-sh/setup-bun@v2
@@ -71,7 +76,7 @@ jobs:
         run: bun install --frozen-lockfile
       - name: Build Linux server archive
         run: scripts/release/build-server-archive.sh "${{ needs.metadata.outputs.version }}" dist/release
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: herdman-server-linux
           path: |
@@ -79,9 +84,41 @@ jobs:
             dist/release/herdman-server-*.tar.gz.sha256
           if-no-files-found: error
 
-  build-macos:
+  build-server-macos-x64:
     needs: metadata
-    runs-on: ${{ inputs.macos_runner || vars.HERDMAN_MACOS_RUNNER || 'macos-latest' }}
+    runs-on: ${{ inputs.macos_intel_runner || vars.HERDMAN_MACOS_INTEL_RUNNER || 'macos-26-intel' }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Build Intel macOS server runtime
+        shell: bash
+        run: |
+          runtime_dir="dist/release/work/app-server-runtime-darwin-x64"
+          scripts/release/build-server-runtime.sh "${{ needs.metadata.outputs.version }}" "$runtime_dir" darwin-x64
+          tar -C "$runtime_dir" -czf dist/release/herdman-app-server-runtime-darwin-x64.tar.gz .
+      - name: Build Intel macOS server archive
+        run: scripts/release/build-server-archive.sh "${{ needs.metadata.outputs.version }}" dist/release darwin-x64
+      - uses: actions/upload-artifact@v7
+        with:
+          name: herdman-macos-x64-runtime
+          path: |
+            dist/release/herdman-app-server-runtime-darwin-x64.tar.gz
+            dist/release/herdman-server-darwin-x64.tar.gz
+            dist/release/herdman-server-darwin-x64.tar.gz.sha256
+          if-no-files-found: error
+
+  build-macos:
+    needs:
+      - metadata
+      - build-server-macos-x64
+    runs-on: ${{ inputs.macos_runner || vars.HERDMAN_MACOS_ARM_RUNNER || vars.HERDMAN_MACOS_RUNNER || 'macos-26-arm64' }}
     env:
       APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
       APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
@@ -94,10 +131,14 @@ jobs:
       APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
       HERDMAN_BUILD_NUMBER: ${{ github.run_number }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
+      - uses: actions/download-artifact@v8
+        with:
+          name: herdman-macos-x64-runtime
+          path: dist/release
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: ${{ env.BUN_VERSION }}
@@ -142,10 +183,13 @@ jobs:
       - name: Run release checks
         run: bun run check
       - name: Build macOS app archive
+        env:
+          HERDMAN_DARWIN_X64_RUNTIME_ARCHIVE: dist/release/herdman-app-server-runtime-darwin-x64.tar.gz
+          HERDMAN_REQUIRE_UNIVERSAL_MACOS_APP: "1"
         run: scripts/release/build-macos-app.sh "${{ needs.metadata.outputs.version }}" dist/release
       - name: Build macOS server archive
         run: scripts/release/build-server-archive.sh "${{ needs.metadata.outputs.version }}" dist/release
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: herdman-macos
           path: |
@@ -159,6 +203,7 @@ jobs:
     needs:
       - metadata
       - build-server-linux
+      - build-server-macos-x64
       - build-macos
     runs-on: ubuntu-latest
     env:
@@ -167,8 +212,8 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
         with:
           path: dist/release
           merge-multiple: true
@@ -183,7 +228,7 @@ jobs:
               --title "HerdMan $VERSION" \
               --generate-notes
           fi
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
       - name: Upload R2 release assets
