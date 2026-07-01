@@ -22,6 +22,7 @@ on:
         type: string
 
 permissions:
+  actions: read
   contents: write
 
 env:
@@ -115,9 +116,7 @@ jobs:
           if-no-files-found: error
 
   build-macos:
-    needs:
-      - metadata
-      - build-server-macos-x64
+    needs: metadata
     runs-on: ${{ inputs.macos_runner || vars.HERDMAN_MACOS_ARM_RUNNER || vars.HERDMAN_MACOS_RUNNER || 'macos-26' }}
     env:
       APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
@@ -135,10 +134,6 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
-      - uses: actions/download-artifact@v8
-        with:
-          name: herdman-macos-x64-runtime
-          path: dist/release
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: ${{ env.BUN_VERSION }}
@@ -182,6 +177,22 @@ jobs:
         run: bun install --frozen-lockfile
       - name: Run release checks
         run: bun run check
+      - name: Download Intel macOS server runtime
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for attempt in {1..45}; do
+            if gh run download "$GITHUB_RUN_ID" \
+              --name herdman-macos-x64-runtime \
+              --dir dist/release; then
+              exit 0
+            fi
+            echo "Intel macOS runtime artifact is not ready yet; retrying in 20s ($attempt/45)."
+            sleep 20
+          done
+          echo "error: timed out waiting for herdman-macos-x64-runtime artifact." >&2
+          exit 1
       - name: Build macOS app archive
         env:
           HERDMAN_DARWIN_X64_RUNTIME_ARCHIVE: dist/release/herdman-app-server-runtime-darwin-x64.tar.gz
