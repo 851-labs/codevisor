@@ -223,6 +223,25 @@ describe("@herdman/acp-runtime", () => {
     expect(connector.requests[1]?.args).toEqual(["acp"])
   })
 
+  it("uses located executable paths for executable harnesses", async () => {
+    const connector = makeConnector()
+    const runtime = makeAcpRuntime({
+      connector,
+      env: { PATH: "/bin" },
+      executableExists: (name) => name === "opencode",
+      locateExecutable: (name) => (name === "opencode" ? "/opt/herdman/bin/opencode" : undefined)
+    })
+
+    await run(runtime.createAgentSession("opencode", "/tmp/project"))
+
+    expect(connector.requests[0]).toMatchObject({
+      args: ["acp"],
+      command: "/opt/herdman/bin/opencode",
+      cwd: "/tmp/project",
+      harnessId: "opencode"
+    })
+  })
+
   it("constructs the Effect service layer and handles missing PATH", async () => {
     await expect(run(makeAcpRuntime().discoverHarnesses)).resolves.toEqual(expect.any(Array))
 
