@@ -94,6 +94,13 @@ struct RootView: View {
                 ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
+        .toolbar {
+            if HerdManAppVariant.isDevelopment {
+                ToolbarItem(placement: .navigation) {
+                    DevelopmentBadge()
+                }
+            }
+        }
     }
 
     @ViewBuilder
@@ -124,6 +131,21 @@ struct RootView: View {
 enum SidebarSelection: Hashable {
     case session(UUID)
     case newChat(UUID?)
+}
+
+/// A small blue badge in the window toolbar so development builds are easy to
+/// tell apart from the production app at a glance.
+private struct DevelopmentBadge: View {
+    var body: some View {
+        Text("DEV")
+            .font(.caption2.weight(.bold))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 2)
+            .background(Capsule().fill(Color.blue))
+            .help("Development build of HerdMan")
+            .accessibilityLabel("Development build")
+    }
 }
 
 #Preview("Root") {
