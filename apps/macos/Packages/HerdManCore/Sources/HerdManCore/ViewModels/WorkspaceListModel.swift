@@ -7,20 +7,23 @@ import Observation
 public final class WorkspaceListModel {
     public private(set) var workspaces: [Workspace] = []
     public private(set) var sessions: [ChatSession] = []
+    public private(set) var selectedServerId: String
     /// Whether imported (non-HerdMan) sessions are shown. Synced from settings.
     public var showsImportedSessions: Bool = true
 
     private let workspaceRepository: any WorkspaceRepository
     private let sessionRepository: any SessionRepository
-    private let serverClient: (any HerdManServerClienting)?
+    private var serverClient: (any HerdManServerClienting)?
 
     public init(
         workspaceRepository: any WorkspaceRepository,
         sessionRepository: any SessionRepository,
+        selectedServerId: String = "local",
         serverClient: (any HerdManServerClienting)? = nil
     ) {
         self.workspaceRepository = workspaceRepository
         self.sessionRepository = sessionRepository
+        self.selectedServerId = selectedServerId
         self.serverClient = serverClient
         load()
         refreshFromServerIfConfigured()
@@ -35,30 +38,36 @@ public final class WorkspaceListModel {
     /// imported ones only when they have a visible session.
     public var activeWorkspaces: [Workspace] {
         workspaces
-            .filter { !$0.isArchived && ($0.origin == .herdman || hasVisibleSessions(in: $0)) }
+            .filter {
+                $0.serverId == selectedServerId
+                    && !$0.isArchived
+                    && ($0.origin == .herdman || hasVisibleSessions(in: $0))
+            }
             .sorted { $0.createdAt > $1.createdAt }
     }
 
     /// Workspaces in the archived section.
     public var archivedWorkspaces: [Workspace] {
-        workspaces.filter(\.isArchived).sorted { $0.createdAt > $1.createdAt }
+        workspaces
+            .filter { $0.serverId == selectedServerId && $0.isArchived }
+            .sorted { $0.createdAt > $1.createdAt }
     }
 
     public var hasArchivedWorkspaces: Bool {
-        workspaces.contains(where: \.isArchived)
+        workspaces.contains { $0.serverId == selectedServerId && $0.isArchived }
     }
 
     /// Adds a workspace for a folder, reusing an existing entry if the folder
     /// is already present (un-archiving it if needed).
     @discardableResult
     public func addWorkspace(folderURL: URL) -> Workspace {
-        if let index = workspaces.firstIndex(where: { $0.folderURL == folderURL }) {
+        if let index = workspaces.firstIndex(where: { $0.serverId == selectedServerId && $0.folderURL == folderURL }) {
             workspaces[index].isArchived = false
             persistWorkspaces()
             syncWorkspace(workspaces[index])
             return workspaces[index]
         }
-        let workspace = Workspace.fromFolder(folderURL)
+        let workspace = Workspace.fromFolder(folderURL, serverId: selectedServerId)
         workspaces.append(workspace)
         persistWorkspaces()
         syncWorkspace(workspace)
@@ -82,9 +91,11 @@ public final class WorkspaceListModel {
     }
 
     public func removeWorkspace(_ workspace: Workspace) {
-        let removedSessionIDs = sessions.filter { $0.workspaceId == workspace.id }.map(\.id)
+        let removedSessionIDs = sessions
+            .filter { $0.serverId == selectedServerId && $0.workspaceId == workspace.id }
+            .map(\.id)
         workspaces.removeAll { $0.id == workspace.id }
-        sessions.removeAll { $0.workspaceId == workspace.id }
+        sessions.removeAll { $0.serverId == selectedServerId && $0.workspaceId == workspace.id }
         persistWorkspaces()
         persistSessions()
         deleteWorkspaceFromServer(workspace.id, removedSessionIDs: removedSessionIDs)
@@ -96,6 +107,7 @@ public final class WorkspaceListModel {
         sessions
             .filter { session in
                 session.workspaceId == workspace.id
+                    && session.serverId == selectedServerId
                     && !session.isArchived
                     && (session.origin == .herdman || showsImportedSessions)
             }
@@ -117,7 +129,13 @@ public final class WorkspaceListModel {
 
     @discardableResult
     public func newSession(in workspace: Workspace, title: String = "New Session", harnessId: String? = nil) -> ChatSession {
-        let session = ChatSession(workspaceId: workspace.id, harnessId: harnessId ?? "", title: title, origin: .herdman)
+        let session = ChatSession(
+            workspaceId: workspace.id,
+            serverId: selectedServerId,
+            harnessId: harnessId ?? "",
+            title: title,
+            origin: .herdman
+        )
         sessions.append(session)
         persistSessions()
         syncSession(session)
@@ -144,6 +162,7 @@ public final class WorkspaceListModel {
             let timestamp = ISO8601DateFormatter().date(from: item.info.updatedAt ?? "")
             sessions.append(ChatSession(
                 workspaceId: workspace.id,
+                serverId: selectedServerId,
                 harnessId: item.harnessId,
                 agentSessionId: item.info.sessionId,
                 title: item.info.title ?? "Session",
@@ -172,13 +191,25 @@ public final class WorkspaceListModel {
 
     /// Removes all workspaces and sessions (used by "Delete all data").
     public func removeAll() {
-        let workspaceIDs = workspaces.map(\.id)
-        let sessionIDs = sessions.map(\.id)
-        workspaces = []
-        sessions = []
+        let workspaceIDs = workspaces.filter { $0.serverId == selectedServerId }.map(\.id)
+        let sessionIDs = sessions.filter { $0.serverId == selectedServerId }.map(\.id)
+        workspaces.removeAll { $0.serverId == selectedServerId }
+        sessions.removeAll { $0.serverId == selectedServerId }
         persistWorkspaces()
         persistSessions()
         deleteAllFromServer(workspaceIDs: workspaceIDs, sessionIDs: sessionIDs)
+    }
+
+    public func selectServer(
+        serverId: String,
+        serverClient: (any HerdManServerClienting)?,
+        refresh: Bool = true
+    ) {
+        selectedServerId = serverId
+        self.serverClient = serverClient
+        if refresh {
+            Task { await refreshFromServer() }
+        }
     }
 
     // MARK: - Private
@@ -186,10 +217,10 @@ public final class WorkspaceListModel {
     /// Finds a workspace by folder, or creates one (without changing archive
     /// state). Used by the importer so it doesn't un-archive existing folders.
     private func findOrCreateWorkspace(folderURL: URL) -> Workspace {
-        if let existing = workspaces.first(where: { $0.folderURL == folderURL }) {
+        if let existing = workspaces.first(where: { $0.serverId == selectedServerId && $0.folderURL == folderURL }) {
             return existing
         }
-        let workspace = Workspace.fromFolder(folderURL, origin: .imported)
+        let workspace = Workspace.fromFolder(folderURL, serverId: selectedServerId, origin: .imported)
         workspaces.append(workspace)
         return workspace
     }
@@ -221,11 +252,11 @@ public final class WorkspaceListModel {
             let serverSessions = try await serverClient.listSessions()
             workspaces = mergeWorkspaces(
                 local: workspaces,
-                remote: serverWorkspaces.compactMap { try? $0.workspace() }
+                remote: serverWorkspaces.compactMap { try? $0.workspace(serverId: selectedServerId) }
             )
             sessions = mergeSessions(
                 local: sessions,
-                remote: serverSessions.compactMap { try? $0.chatSession() }
+                remote: serverSessions.compactMap { try? $0.chatSession(serverId: selectedServerId) }
             )
             persistWorkspaces()
             persistSessions()
@@ -235,19 +266,23 @@ public final class WorkspaceListModel {
     }
 
     private func mergeWorkspaces(local: [Workspace], remote: [Workspace]) -> [Workspace] {
-        var merged = Dictionary(uniqueKeysWithValues: local.map { ($0.id, $0) })
+        let otherServers = local.filter { $0.serverId != selectedServerId }
+        let selectedLocal = local.filter { $0.serverId == selectedServerId }
+        var merged = Dictionary(uniqueKeysWithValues: selectedLocal.map { ($0.id, $0) })
         for workspace in remote {
             merged[workspace.id] = workspace
         }
-        return merged.values.sorted { $0.createdAt > $1.createdAt }
+        return (otherServers + merged.values).sorted { $0.createdAt > $1.createdAt }
     }
 
     private func mergeSessions(local: [ChatSession], remote: [ChatSession]) -> [ChatSession] {
-        var merged = Dictionary(uniqueKeysWithValues: local.map { ($0.id, $0) })
+        let otherServers = local.filter { $0.serverId != selectedServerId }
+        let selectedLocal = local.filter { $0.serverId == selectedServerId }
+        var merged = Dictionary(uniqueKeysWithValues: selectedLocal.map { ($0.id, $0) })
         for session in remote {
             merged[session.id] = session
         }
-        return merged.values.sorted { ($0.updatedAt ?? $0.createdAt) > ($1.updatedAt ?? $1.createdAt) }
+        return (otherServers + merged.values).sorted { ($0.updatedAt ?? $0.createdAt) > ($1.updatedAt ?? $1.createdAt) }
     }
 
     private func syncWorkspace(_ workspace: Workspace) {
@@ -257,7 +292,7 @@ public final class WorkspaceListModel {
 
     private func syncSession(_ session: ChatSession) {
         guard let serverClient, !session.harnessId.isEmpty else { return }
-        let workspace = workspaces.first { $0.id == session.workspaceId }
+        let workspace = workspaces.first { $0.serverId == selectedServerId && $0.id == session.workspaceId }
         Task {
             if let workspace {
                 _ = try? await serverClient.upsertWorkspace(workspace)
@@ -268,8 +303,8 @@ public final class WorkspaceListModel {
 
     private func syncAllToServer() {
         guard let serverClient else { return }
-        let currentWorkspaces = workspaces
-        let currentSessions = sessions.filter { !$0.harnessId.isEmpty }
+        let currentWorkspaces = workspaces.filter { $0.serverId == selectedServerId }
+        let currentSessions = sessions.filter { $0.serverId == selectedServerId && !$0.harnessId.isEmpty }
         Task {
             for workspace in currentWorkspaces {
                 _ = try? await serverClient.upsertWorkspace(workspace)

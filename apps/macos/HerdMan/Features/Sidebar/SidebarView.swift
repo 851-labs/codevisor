@@ -14,6 +14,8 @@ struct SidebarView: View {
     var store: SessionStore? = nil
 
     @State private var showingImporter = false
+    @State private var showingRemoteMachine = false
+    @State private var showingRemoteWorkspace = false
     @State private var expanded: Set<UUID> = []
     @State private var showArchived = false
     @State private var hovered: String?
@@ -24,6 +26,9 @@ struct SidebarView: View {
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 1) {
+                machinePicker
+                Divider().padding(.vertical, 6)
+
                 actionRow("New Chat", systemImage: "square.and.pencil", id: "new") {
                     selection = .newChat(nil)
                 }
@@ -69,9 +74,72 @@ struct SidebarView: View {
                 list.setIcon(symbol, for: workspace)
             }
         }
+        .sheet(isPresented: $showingRemoteMachine) {
+            RemoteMachineSheet { host in
+                if (try? environment.machines.addRemote(host: host)) != nil {
+                    selection = .newChat(nil)
+                }
+            }
+        }
+        .sheet(isPresented: $showingRemoteWorkspace) {
+            RemoteWorkspaceSheet { path in
+                let workspace = list.addWorkspace(folderURL: URL(fileURLWithPath: path))
+                expanded.insert(workspace.id)
+                selection = .newChat(workspace.id)
+            }
+        }
     }
 
     // MARK: - Header rows
+
+    private var machinePicker: some View {
+        Menu {
+            ForEach(environment.machines.machines) { machine in
+                Button {
+                    environment.machines.selectMachine(machine.id)
+                    selection = .newChat(nil)
+                } label: {
+                    if machine.id == environment.machines.selectedMachineId {
+                        Label(machine.name, systemImage: "checkmark")
+                    } else {
+                        Text(machine.name)
+                    }
+                }
+            }
+            Divider()
+            Button {
+                showingRemoteMachine = true
+            } label: {
+                Label("Add Remote Machine…", systemImage: "plus")
+            }
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: environment.machines.selectedMachine.isLocal ? "desktopcomputer" : "network")
+                    .foregroundStyle(.secondary)
+                    .frame(width: 18)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(environment.machines.selectedMachine.name)
+                        .font(.subheadline.weight(.semibold))
+                        .lineLimit(1)
+                    Text(environment.machines.selectedMachine.baseURL.host ?? environment.machines.selectedMachine.baseURL.absoluteString)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 4)
+                Image(systemName: "chevron.down")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 7)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: 6).fill(Color.secondary.opacity(0.10)))
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .help("Select machine")
+    }
 
     private func actionRow(_ title: String, systemImage: String, id: String, action: @escaping () -> Void) -> some View {
         HStack(spacing: 8) {
@@ -94,7 +162,13 @@ struct SidebarView: View {
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.secondary)
             Spacer()
-            Button { showingImporter = true } label: {
+            Button {
+                if environment.machines.selectedMachine.isLocal {
+                    showingImporter = true
+                } else {
+                    showingRemoteWorkspace = true
+                }
+            } label: {
                 Image(systemName: "plus")
                     .font(.callout.weight(.semibold))
                     .foregroundStyle(.secondary)
@@ -276,6 +350,60 @@ struct SidebarView: View {
         withAnimation(.snappy(duration: 0.28)) {
             if expanded.contains(id) { expanded.remove(id) } else { expanded.insert(id) }
         }
+    }
+}
+
+private struct RemoteMachineSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var host = ""
+    let onAdd: (String) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Add Remote Machine")
+                .font(.headline)
+            TextField("mac-mini.tailnet.ts.net or 100.64.0.10:8765", text: $host)
+                .textFieldStyle(.roundedBorder)
+            HStack {
+                Spacer()
+                Button("Cancel") { dismiss() }
+                Button("Add") {
+                    onAdd(host)
+                    dismiss()
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(host.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+        }
+        .padding(20)
+        .frame(width: 420)
+    }
+}
+
+private struct RemoteWorkspaceSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var path = ""
+    let onAdd: (String) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Add Remote Workspace")
+                .font(.headline)
+            TextField("/home/dylan/project", text: $path)
+                .textFieldStyle(.roundedBorder)
+            HStack {
+                Spacer()
+                Button("Cancel") { dismiss() }
+                Button("Add") {
+                    onAdd(path)
+                    dismiss()
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(!path.hasPrefix("/"))
+            }
+        }
+        .padding(20)
+        .frame(width: 420)
     }
 }
 

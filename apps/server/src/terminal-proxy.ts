@@ -128,7 +128,11 @@ const main = async (): Promise<void> => {
     try {
       const activeTerminal = await createTerminal(options)
       await new Promise<void>((resolve) => {
-        const websocketUrl = websocketUrlFor(options.server, activeTerminal.websocketPath, lastOutputSeq)
+        const websocketUrl = websocketUrlFor(
+          options.server,
+          activeTerminal.websocketPath,
+          lastOutputSeq
+        )
         const nextSocket = new WebSocket(websocketUrl)
         socket = nextSocket
         nextSocket.on("open", () => {

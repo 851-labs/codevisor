@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import HerdManCore
 
 /// A stand-in terminal used until `GhosttyKit` is linked. It renders a dark,
 /// terminal-styled panel that names the working directory and explains how to
@@ -8,11 +9,11 @@ import Foundation
 @MainActor
 final class PlaceholderTerminalSurface: TerminalSurface {
     let nsView: NSView
-    private let workingDirectory: URL
+    private let descriptor: TerminalLaunchDescriptor
 
-    init(workingDirectory: URL) {
-        self.workingDirectory = workingDirectory
-        self.nsView = PlaceholderTerminalView(workingDirectory: workingDirectory)
+    init(descriptor: TerminalLaunchDescriptor) {
+        self.descriptor = descriptor
+        self.nsView = PlaceholderTerminalView(descriptor: descriptor)
     }
 
     func setFocused(_ focused: Bool) {
@@ -24,8 +25,8 @@ final class PlaceholderTerminalSurface: TerminalSurface {
 
 @MainActor
 struct PlaceholderTerminalFactory: TerminalSurfaceFactory {
-    func makeSurface(workingDirectory: URL) -> any TerminalSurface {
-        PlaceholderTerminalSurface(workingDirectory: workingDirectory)
+    func makeSurface(descriptor: TerminalLaunchDescriptor) -> any TerminalSurface {
+        PlaceholderTerminalSurface(descriptor: descriptor)
     }
 }
 
@@ -33,12 +34,12 @@ struct PlaceholderTerminalFactory: TerminalSurfaceFactory {
 private final class PlaceholderTerminalView: NSView {
     private let caret = NSView()
 
-    init(workingDirectory: URL) {
+    init(descriptor: TerminalLaunchDescriptor) {
         super.init(frame: .zero)
         wantsLayer = true
         layer?.backgroundColor = NSColor(calibratedWhite: 0.07, alpha: 1).cgColor
 
-        let prompt = NSTextField(labelWithString: "\(workingDirectory.lastPathComponent) %")
+        let prompt = NSTextField(labelWithString: "\(descriptor.machine.name) %")
         prompt.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
         prompt.textColor = NSColor(calibratedRed: 0.55, green: 0.85, blue: 0.6, alpha: 1)
         prompt.translatesAutoresizingMaskIntoConstraints = false
@@ -48,7 +49,7 @@ private final class PlaceholderTerminalView: NSView {
         caret.translatesAutoresizingMaskIntoConstraints = false
 
         let note = NSTextField(wrappingLabelWithString:
-            "Terminal preview — link GhosttyKit.xcframework to run a real shell here.\nWorking directory: \(workingDirectory.path)")
+            "Terminal preview — link GhosttyKit.xcframework to run the HerdMan terminal proxy.\nServer: \(descriptor.machine.baseURL.absoluteString)\nWorking directory: \(descriptor.workingDirectory.path)")
         note.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
         note.textColor = NSColor(calibratedWhite: 0.5, alpha: 1)
         note.translatesAutoresizingMaskIntoConstraints = false

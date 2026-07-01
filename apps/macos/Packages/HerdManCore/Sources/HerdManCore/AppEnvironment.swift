@@ -10,12 +10,23 @@ import ACPAgents
 @Observable
 public final class AppEnvironment {
     public let workspaceList: WorkspaceListModel
-    public let agentService: any AgentServicing
     public let configCache: ConfigOptionCache
     public let settings: AppSettingsModel
-    public let sessionImporter: SessionImporter
-    public let serverClient: (any HerdManServerClienting)?
+    public let machines: MachineController
     public let localServer: LocalHerdManServer?
+    private let fallbackAgentService: any AgentServicing
+
+    public var serverClient: any HerdManServerClienting {
+        machines.selectedClient
+    }
+
+    public var agentService: any AgentServicing {
+        agentService(for: machines.selectedMachineId)
+    }
+
+    public var sessionImporter: SessionImporter {
+        SessionImporter(agentService: agentService)
+    }
 
     public init(
         workspaceRepository: any WorkspaceRepository,
@@ -23,20 +34,22 @@ public final class AppEnvironment {
         agentService: any AgentServicing,
         configCache: ConfigOptionCache,
         settings: AppSettingsModel,
-        serverClient: (any HerdManServerClienting)? = nil,
+        machineStore: any PersistenceStore = InMemoryStore(),
         localServer: LocalHerdManServer? = nil
     ) {
+        self.fallbackAgentService = agentService
         self.workspaceList = WorkspaceListModel(
             workspaceRepository: workspaceRepository,
-            sessionRepository: sessionRepository,
-            serverClient: serverClient
+            sessionRepository: sessionRepository
         )
-        self.agentService = agentService
         self.configCache = configCache
         self.settings = settings
-        self.serverClient = serverClient
         self.localServer = localServer
-        self.sessionImporter = SessionImporter(agentService: agentService)
+        self.machines = MachineController(
+            store: machineStore,
+            workspaceList: workspaceList,
+            localServer: localServer
+        )
         workspaceList.showsImportedSessions = settings.importExternalSessions
     }
 
@@ -47,13 +60,14 @@ public final class AppEnvironment {
         workspaceList.showsImportedSessions = settings.importExternalSessions
     }
 
-    /// Starts the bundled/development local server when needed, then refreshes
-    /// cached server state. Best-effort: local persistence stays usable if the
-    /// server binary is missing or cannot start.
-    public func prepareLocalServer() async {
-        guard let localServer else { return }
-        _ = await localServer.ensureRunning()
-        await workspaceList.refreshFromServer()
+    /// Starts the selected machine if it is local, then refreshes cached server
+    /// state. Remote machines are never auto-started.
+    public func prepareSelectedMachine() async {
+        await machines.prepareSelectedMachine()
+    }
+
+    public func agentService(for serverId: String) -> any AgentServicing {
+        ServerAgentService(client: machines.client(for: serverId), fallback: fallbackAgentService)
     }
 
     /// Deletes all HerdMan data (workspaces, sessions, cached config, settings)
@@ -89,14 +103,15 @@ public final class AppEnvironment {
     public static func live() -> AppEnvironment {
         let store = FileSystemStore()
         let serverClient = HerdManServerClient(config: .localDefault)
+        let localServer = LocalHerdManServer(client: serverClient)
         return AppEnvironment(
             workspaceRepository: DefaultWorkspaceRepository(store: store),
             sessionRepository: DefaultSessionRepository(store: store),
-            agentService: ServerAgentService(client: serverClient),
+            agentService: AgentService(),
             configCache: ConfigOptionCache(store: store),
             settings: AppSettingsModel(store: store),
-            serverClient: serverClient,
-            localServer: LocalHerdManServer(client: serverClient)
+            machineStore: store,
+            localServer: localServer
         )
     }
 
@@ -116,7 +131,8 @@ public final class AppEnvironment {
             sessionRepository: sessionRepository,
             agentService: PreviewAgentService(),
             configCache: ConfigOptionCache(store: InMemoryStore()),
-            settings: settings
+            settings: settings,
+            machineStore: InMemoryStore()
         )
     }
 

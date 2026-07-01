@@ -100,12 +100,13 @@ public struct ServerWorkspace: Decodable, Equatable, Sendable {
     public var origin: SessionOrigin
     public var createdAt: String
 
-    public func workspace() throws -> Workspace {
+    public func workspace(serverId: String = "local") throws -> Workspace {
         guard let uuid = UUID(uuidString: id) else {
             throw HerdManServerClientError.invalidUUID(id)
         }
         return Workspace(
             id: uuid,
+            serverId: serverId,
             name: name,
             folderURL: URL(fileURLWithPath: folderPath),
             isArchived: isArchived,
@@ -136,7 +137,7 @@ public struct ServerSession: Decodable, Equatable, Sendable {
     public var updatedAt: String?
     public var usage: ServerSessionUsage?
 
-    public func chatSession() throws -> ChatSession {
+    public func chatSession(serverId scopedServerId: String? = nil) throws -> ChatSession {
         guard let uuid = UUID(uuidString: id) else {
             throw HerdManServerClientError.invalidUUID(id)
         }
@@ -146,7 +147,7 @@ public struct ServerSession: Decodable, Equatable, Sendable {
         return ChatSession(
             id: uuid,
             workspaceId: workspaceUUID,
-            serverId: serverId,
+            serverId: scopedServerId ?? serverId,
             harnessId: harnessId,
             agentSessionId: agentSessionId,
             title: title,
@@ -291,7 +292,11 @@ public final class HerdManServerClient: HerdManServerClienting, @unchecked Senda
     }
 
     public func cancelSession(id: UUID) async throws {
-        try await sendNoResponse("/v1/sessions/\(id.uuidString)/cancel", method: "POST")
+        try await sendNoResponse(
+            "/v1/sessions/\(id.uuidString)/cancel",
+            method: "POST",
+            body: CancelBody()
+        )
     }
 
     public func setSessionMode(id: UUID, modeId: String) async throws {
@@ -313,36 +318,50 @@ public final class HerdManServerClient: HerdManServerClienting, @unchecked Senda
     public func eventStream(since: Int = 0) -> AsyncThrowingStream<ServerEventEnvelope, any Error> {
         AsyncThrowingStream { continuation in
             let task = Task {
-                do {
-                    var request = URLRequest(url: try url(for: "/v1/events?since=\(since)"))
-                    request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
-                    applyAuthorization(to: &request)
+                var cursor = since
+                var failures = 0
+                while !Task.isCancelled {
+                    do {
+                        var request = URLRequest(url: try url(for: "/v1/events?since=\(cursor)"))
+                        request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
+                        applyAuthorization(to: &request)
 
-                    let (bytes, response) = try await urlSession.bytes(for: request)
-                    guard let httpResponse = response as? HTTPURLResponse else {
-                        throw HerdManServerClientError.invalidResponse
-                    }
-                    guard (200..<300).contains(httpResponse.statusCode) else {
-                        throw HerdManServerClientError.httpStatus(httpResponse.statusCode, "")
-                    }
+                        let (bytes, response) = try await urlSession.bytes(for: request)
+                        guard let httpResponse = response as? HTTPURLResponse else {
+                            throw HerdManServerClientError.invalidResponse
+                        }
+                        guard (200..<300).contains(httpResponse.statusCode) else {
+                            throw HerdManServerClientError.httpStatus(httpResponse.statusCode, "")
+                        }
+                        failures = 0
 
-                    for try await line in bytes.lines {
-                        guard line.hasPrefix("data: ") else { continue }
-                        let raw = line.dropFirst("data: ".count)
-                        guard let data = raw.data(using: .utf8) else { continue }
-                        continuation.yield(try decoder.decode(ServerEventEnvelope.self, from: data))
-                    }
-                    continuation.finish()
-                } catch {
-                    if Task.isCancelled {
-                        continuation.finish()
-                    } else {
-                        continuation.finish(throwing: error)
+                        for try await line in bytes.lines {
+                            guard line.hasPrefix("data: ") else { continue }
+                            let raw = line.dropFirst("data: ".count)
+                            guard let data = raw.data(using: .utf8) else { continue }
+                            let event = try decoder.decode(ServerEventEnvelope.self, from: data)
+                            cursor = max(cursor, event.id)
+                            continuation.yield(event)
+                        }
+                    } catch {
+                        if Task.isCancelled {
+                            continuation.finish()
+                            return
+                        }
+                        failures += 1
+                        try? await Task.sleep(for: Self.eventReconnectDelay(failures: failures))
                     }
                 }
+                continuation.finish()
             }
             continuation.onTermination = { _ in task.cancel() }
         }
+    }
+
+    private static func eventReconnectDelay(failures: Int) -> Duration {
+        let base = min(5_000, 250 * (1 << min(failures, 5)))
+        let jitter = Int.random(in: 0...250)
+        return .milliseconds(base + jitter)
     }
 
     private func createWorkspace(_ workspace: Workspace) async throws -> ServerWorkspace {
@@ -462,15 +481,22 @@ private struct PromptActionResponse: Decodable {
 
 private struct PromptBody: Encodable {
     var text: String
+    var clientActionId = UUID().uuidString
+}
+
+private struct CancelBody: Encodable {
+    var clientActionId = UUID().uuidString
 }
 
 private struct SetModeBody: Encodable {
     var modeId: String
+    var clientActionId = UUID().uuidString
 }
 
 private struct SetConfigBody: Encodable {
     var configId: String
     var value: String
+    var clientActionId = UUID().uuidString
 }
 
 private struct UpdateHarnessBody: Encodable {

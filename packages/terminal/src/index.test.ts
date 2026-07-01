@@ -154,12 +154,8 @@ describe("@herdman/terminal", () => {
 
     await run(manager.handleClientFrame(terminal.terminalId, inputFrame(1, "ls\n")))
     await run(manager.handleClientFrame(terminal.terminalId, inputFrame(1, "duplicate\n")))
-    await run(
-      manager.handleClientFrame(terminal.terminalId, resizeFrame(2, 140, 50))
-    )
-    await run(
-      manager.handleClientFrame(terminal.terminalId, resizeFrame(2, 1, 1))
-    )
+    await run(manager.handleClientFrame(terminal.terminalId, resizeFrame(2, 140, 50)))
+    await run(manager.handleClientFrame(terminal.terminalId, resizeFrame(2, 1, 1)))
     spawner.handlers[0]?.onOutput("hello")
     spawner.handlers[0]?.onExit(7)
     disconnect()
@@ -182,8 +178,28 @@ describe("@herdman/terminal", () => {
       { type: "exit", seq: 2, exitCode: 7 },
       { type: "output", seq: 3, data: "after-disconnect" }
     ])
+    const replacement = await run(
+      manager.createTerminal({
+        sessionId: "session-2",
+        cwd: "/tmp/other",
+        cols: 100,
+        rows: 40
+      })
+    )
+    expect(replacement.terminalId).not.toBe(terminal.terminalId)
+    expect(spawner.requests).toHaveLength(2)
 
     await run(manager.closeTerminal(terminal.terminalId))
+    const stillReplacement = await run(
+      manager.createTerminal({
+        sessionId: "session-2",
+        cwd: "/tmp/other",
+        cols: 100,
+        rows: 40
+      })
+    )
+    expect(stillReplacement.terminalId).toBe(replacement.terminalId)
+    await run(manager.closeTerminal(replacement.terminalId))
     expect(process?.killCount).toBe(1)
     await expect(
       run(manager.connectTerminal(terminal.terminalId, 0, () => undefined))

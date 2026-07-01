@@ -9,21 +9,21 @@ import HerdManCore
 @Observable
 final class TerminalSession: Identifiable {
     let id: UUID
-    let workingDirectory: URL
+    let descriptor: TerminalLaunchDescriptor
     /// Panel open/closed + height (see `TerminalPanelState`).
     var panel = TerminalPanelState()
 
     @ObservationIgnored private var _surface: (any TerminalSurface)?
 
-    init(id: UUID, workingDirectory: URL) {
+    init(id: UUID, descriptor: TerminalLaunchDescriptor) {
         self.id = id
-        self.workingDirectory = workingDirectory
+        self.descriptor = descriptor
     }
 
     /// The surface, created lazily on first use (first time the panel opens).
     func ensureSurface() -> any TerminalSurface {
         if let surface = _surface { return surface }
-        let surface = TerminalRuntime.factory.makeSurface(workingDirectory: workingDirectory)
+        let surface = TerminalRuntime.factory.makeSurface(descriptor: descriptor)
         _surface = surface
         return surface
     }

@@ -435,11 +435,39 @@ describe("@herdman/server", () => {
       ).body
     ).toEqual({ stopReason: "end_turn" })
     expect(acp.prompts).toEqual([[session.agentSessionId, "hello"]])
+    expect(
+      (
+        await jsonRequest(server, `/v1/sessions/${session.id}/prompt`, {
+          body: JSON.stringify({ clientActionId: "prompt-retry-1", text: "retry once" }),
+          method: "POST"
+        })
+      ).body
+    ).toEqual({ stopReason: "end_turn" })
+    expect(
+      (
+        await jsonRequest(server, `/v1/sessions/${session.id}/prompt`, {
+          body: JSON.stringify({ clientActionId: "prompt-retry-1", text: "retry once" }),
+          method: "POST"
+        })
+      ).body
+    ).toEqual({ stopReason: "end_turn" })
+    expect(acp.prompts).toEqual([
+      [session.agentSessionId, "hello"],
+      [session.agentSessionId, "retry once"]
+    ])
     expect(acp.loads).toContainEqual(["codex", session.agentSessionId, "/tmp/herdman"])
     expect(
       (
         await jsonRequest(server, `/v1/sessions/${session.id}/cancel`, {
-          body: JSON.stringify({}),
+          body: JSON.stringify({ clientActionId: "cancel-retry-1" }),
+          method: "POST"
+        })
+      ).status
+    ).toBe(202)
+    expect(
+      (
+        await jsonRequest(server, `/v1/sessions/${session.id}/cancel`, {
+          body: JSON.stringify({ clientActionId: "cancel-retry-1" }),
           method: "POST"
         })
       ).status
@@ -492,7 +520,8 @@ describe("@herdman/server", () => {
     expect(await readSseEvents(server, 1, "not-a-number")).toEqual([
       expect.objectContaining({ kind: "workspace.created" })
     ])
-    const events = await readSseEvents(server, 11, 0)
+    const replayEventCount = 12
+    const events = await readSseEvents(server, replayEventCount, 0)
     expect(events).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ kind: "workspace.created" }),
@@ -502,7 +531,7 @@ describe("@herdman/server", () => {
       ])
     )
 
-    const liveEvent = readSseEvents(server, 1, 11)
+    const liveEvent = readSseEvents(server, 1, replayEventCount)
     await jsonRequest(server, "/v1/workspaces", {
       body: JSON.stringify({ folderPath: "/tmp/live" }),
       method: "POST"
@@ -557,7 +586,9 @@ describe("@herdman/server", () => {
     await new Promise((resolve) => setTimeout(resolve, 20))
     webSocket.send("{")
     await waitFor(() => messages.length === 1)
-    webSocket.send(JSON.stringify({ type: "input", clientId: "client-a", clientSeq: 1, data: "pwd\n" }))
+    webSocket.send(
+      JSON.stringify({ type: "input", clientId: "client-a", clientSeq: 1, data: "pwd\n" })
+    )
     webSocket.send(
       JSON.stringify({ type: "resize", clientId: "client-a", clientSeq: 2, cols: 120, rows: 30 })
     )
@@ -597,6 +628,39 @@ describe("@herdman/server", () => {
       { type: "exit", seq: 2, exitCode: 0 },
       expect.objectContaining({ type: "error" })
     ])
+
+    const replaySocket = new WebSocket(
+      `${server.url.replace("http:", "ws:")}${terminal.websocketPath}?lastOutputSeq=not-a-number`
+    )
+    const replayMessages: Array<unknown> = []
+    replaySocket.on("message", (data) =>
+      replayMessages.push(JSON.parse(data.toString()) as unknown)
+    )
+    await new Promise<void>((resolve, reject) => {
+      replaySocket.once("open", resolve)
+      replaySocket.once("error", reject)
+    })
+    await waitFor(() => replayMessages.length === 2)
+    expect(replayMessages).toEqual([
+      { type: "output", seq: 1, data: "terminal-output" },
+      { type: "exit", seq: 2, exitCode: 0 }
+    ])
+    replaySocket.close()
+
+    const cursorReplaySocket = new WebSocket(
+      `${server.url.replace("http:", "ws:")}${terminal.websocketPath}?lastOutputSeq=1`
+    )
+    const cursorReplayMessages: Array<unknown> = []
+    cursorReplaySocket.on("message", (data) =>
+      cursorReplayMessages.push(JSON.parse(data.toString()) as unknown)
+    )
+    await new Promise<void>((resolve, reject) => {
+      cursorReplaySocket.once("open", resolve)
+      cursorReplaySocket.once("error", reject)
+    })
+    await waitFor(() => cursorReplayMessages.length === 1)
+    expect(cursorReplayMessages).toEqual([{ type: "exit", seq: 2, exitCode: 0 }])
+    cursorReplaySocket.close()
 
     const missingSocket = new WebSocket(
       `${server.url.replace("http:", "ws:")}/v1/terminals/missing/socket`

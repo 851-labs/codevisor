@@ -44,18 +44,15 @@ struct RootView: View {
         }
         .task {
             if store == nil {
-                store = SessionStore(
-                    agentService: environment.agentService,
-                    configCache: environment.configCache,
-                    workspaceList: environment.workspaceList,
-                    settings: environment.settings,
-                    serverClient: environment.serverClient
-                )
+                store = SessionStore(environment: environment)
             }
+        }
+        .task(id: environment.machines.selectedMachineId) {
             // Warm the harness config cache in the background so the composer
             // pickers are populated instantly.
             if !AppPreview.isRunning {
-                await environment.prepareLocalServer()
+                await environment.prepareSelectedMachine()
+                selection = .newChat(nil)
                 Task {
                     await ConfigPrefetcher(
                         agentService: environment.agentService,

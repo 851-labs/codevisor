@@ -29,7 +29,7 @@ struct GeneralSettingsView: View {
             } header: {
                 Text("Server")
             } footer: {
-                Text("The local HerdMan server owns ACP sessions, storage, events, and terminal processes.")
+                Text("The selected HerdMan server owns ACP sessions, storage, events, and terminal processes.")
             }
 
             Section {
@@ -61,7 +61,10 @@ struct GeneralSettingsView: View {
         } message: {
             Text("This can't be undone. You'll be taken back through setup.")
         }
-        .task { await refreshServerStatus() }
+        .task(id: environment.machines.selectedMachineId) {
+            serverStatus = ServerStatusModel(client: environment.serverClient)
+            await refreshServerStatus()
+        }
     }
 
     @ViewBuilder
@@ -89,9 +92,6 @@ struct GeneralSettingsView: View {
                 }
             }
             .disabled(serverStatus.isRefreshing)
-        } else if environment.serverClient == nil {
-            Text("No server configured.")
-                .foregroundStyle(.secondary)
         } else {
             HStack(spacing: 8) {
                 ProgressView().controlSize(.small)
@@ -133,9 +133,8 @@ struct GeneralSettingsView: View {
     }
 
     private func refreshServerStatus() async {
-        guard let serverClient = environment.serverClient else { return }
         if serverStatus == nil {
-            serverStatus = ServerStatusModel(client: serverClient)
+            serverStatus = ServerStatusModel(client: environment.serverClient)
         }
         await serverStatus?.refresh()
     }
@@ -310,8 +309,7 @@ struct HarnessesSettingsView: View {
 
     private func scan() async {
         isScanning = true
-        if let serverClient = environment.serverClient,
-           let harnesses = try? await serverClient.listHarnesses() {
+        if let harnesses = try? await environment.serverClient.listHarnesses() {
             serverHarnesses = harnesses
             all = []
         } else {
@@ -323,12 +321,8 @@ struct HarnessesSettingsView: View {
 
     private func setServerHarness(_ id: String, enabled: Bool) async {
         updateServerHarness(id, enabled: enabled)
-        guard let serverClient = environment.serverClient else {
-            environment.settings.setHarness(id, enabled: enabled)
-            return
-        }
         do {
-            let updated = try await serverClient.setHarnessEnabled(id: id, enabled: enabled)
+            let updated = try await environment.serverClient.setHarnessEnabled(id: id, enabled: enabled)
             replaceServerHarness(updated)
         } catch {
             updateServerHarness(id, enabled: !enabled)

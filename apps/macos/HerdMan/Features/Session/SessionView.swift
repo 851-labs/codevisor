@@ -175,15 +175,21 @@ struct SessionScreen: View {
 #Preview("Conversation") {
     SessionScreen(
         controller: .preview(model: .preview()),
-        terminal: TerminalSession(id: UUID(), workingDirectory: URL(fileURLWithPath: "/tmp/shepherd"))
+        terminal: TerminalSession(id: UUID(), descriptor: previewTerminalDescriptor())
     )
     .frame(width: 900, height: 680)
 }
 
 #Preview("With terminal") {
-    let terminal = TerminalSession(id: UUID(), workingDirectory: URL(fileURLWithPath: "/tmp/shepherd"))
+    let terminal = TerminalSession(id: UUID(), descriptor: previewTerminalDescriptor())
     terminal.panel.isVisible = true
     return SessionScreen(controller: .preview(model: .preview()), terminal: terminal)
         .frame(width: 900, height: 680)
+}
+
+private func previewTerminalDescriptor() -> TerminalLaunchDescriptor {
+    let workspace = Workspace(name: "shepherd", folderURL: URL(fileURLWithPath: "/tmp/shepherd"))
+    let session = ChatSession(workspaceId: workspace.id, title: "Preview")
+    return TerminalLaunchDescriptor.make(session: session, workspace: workspace, machine: .local)
 }
 #endif

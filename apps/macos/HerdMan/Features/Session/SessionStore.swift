@@ -10,24 +10,10 @@ import HerdManCore
 final class SessionStore {
     private var controllers: [UUID: SessionController] = [:]
     private var terminals: [UUID: TerminalSession] = [:]
-    private let agentService: any AgentServicing
-    private let configCache: ConfigOptionCache
-    private let workspaceList: WorkspaceListModel
-    private let settings: AppSettingsModel?
-    private let serverClient: (any HerdManServerClienting)?
+    private let environment: AppEnvironment
 
-    init(
-        agentService: any AgentServicing,
-        configCache: ConfigOptionCache,
-        workspaceList: WorkspaceListModel,
-        settings: AppSettingsModel? = nil,
-        serverClient: (any HerdManServerClienting)? = nil
-    ) {
-        self.agentService = agentService
-        self.configCache = configCache
-        self.workspaceList = workspaceList
-        self.settings = settings
-        self.serverClient = serverClient
+    init(environment: AppEnvironment) {
+        self.environment = environment
     }
 
     /// Returns the cached controller for a session, creating + configuring it
@@ -40,17 +26,17 @@ final class SessionStore {
         }
         let controller = SessionController(
             workspace: workspace,
-            agentService: agentService,
-            configCache: configCache,
-            settings: settings,
-            serverClient: serverClient
+            agentService: environment.agentService(for: session.serverId),
+            configCache: environment.configCache,
+            settings: environment.settings,
+            serverClient: environment.machines.client(for: session.serverId)
         )
         controller.serverSession = session
         controller.resumeAgentSessionId = session.agentSessionId
         if !session.harnessId.isEmpty {
             controller.selectedHarnessId = session.harnessId
         }
-        controller.onAgentSessionCreated = { [weak workspaceList] agentSessionId in
+        controller.onAgentSessionCreated = { [weak workspaceList = environment.workspaceList] agentSessionId in
             workspaceList?.setAgentSessionId(agentSessionId, for: session.id)
         }
         controllers[session.id] = controller
@@ -61,10 +47,10 @@ final class SessionStore {
     func makeDraft(workspace: Workspace) -> SessionController {
         SessionController(
             workspace: workspace,
-            agentService: agentService,
-            configCache: configCache,
-            settings: settings,
-            serverClient: serverClient
+            agentService: environment.agentService(for: environment.machines.selectedMachineId),
+            configCache: environment.configCache,
+            settings: environment.settings,
+            serverClient: environment.serverClient
         )
     }
 
@@ -73,7 +59,9 @@ final class SessionStore {
     /// the terminal survives panel close + navigation away and back.
     func terminal(for session: ChatSession, workspace: Workspace) -> TerminalSession {
         if let existing = terminals[session.id] { return existing }
-        let terminal = TerminalSession(id: session.id, workingDirectory: workspace.folderURL)
+        let machine = environment.machines.machine(for: session.serverId) ?? HerdManMachine.local
+        let descriptor = TerminalLaunchDescriptor.make(session: session, workspace: workspace, machine: machine)
+        let terminal = TerminalSession(id: session.id, descriptor: descriptor)
         terminals[session.id] = terminal
         return terminal
     }

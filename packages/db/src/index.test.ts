@@ -156,6 +156,21 @@ describe("@herdman/db", () => {
     expect(await run(db.listEvents(1))).toEqual([])
     expect((await run(db.getSessionDetail(firstSession.id))).eventCursor).toBe(1)
 
+    expect(await run(db.getSessionActionResult(firstSession.id, "prompt-1"))).toBeUndefined()
+    await run(
+      db.saveSessionActionResult(firstSession.id, "prompt-1", "prompt", {
+        stopReason: "end_turn"
+      })
+    )
+    await run(
+      db.saveSessionActionResult(firstSession.id, "prompt-1", "prompt", {
+        stopReason: "duplicate_should_not_replace"
+      })
+    )
+    expect(await run(db.getSessionActionResult(firstSession.id, "prompt-1"))).toEqual({
+      stopReason: "end_turn"
+    })
+
     const sqlite = new Database(filename)
     sqlite
       .prepare(

@@ -70,6 +70,14 @@ interface EventRow {
   readonly payload: string
 }
 
+interface SessionActionRow {
+  readonly session_id: string
+  readonly client_action_id: string
+  readonly action_kind: string
+  readonly response: string
+  readonly created_at: string
+}
+
 interface UpdateRow {
   readonly current_version: string
   readonly latest_version: string
@@ -159,6 +167,20 @@ const migrations = [
         updated_at text not null
       );
     `
+  },
+  {
+    id: 2,
+    name: "session action idempotency",
+    sql: `
+      create table if not exists session_actions (
+        session_id text not null references sessions(id) on delete cascade,
+        client_action_id text not null,
+        action_kind text not null,
+        response text not null,
+        created_at text not null,
+        primary key (session_id, client_action_id)
+      );
+    `
   }
 ] as const
 
@@ -197,6 +219,16 @@ export interface HerdManDatabaseService {
     payload: unknown
   ) => Effect.Effect<EventEnvelope, DatabaseError>
   readonly listEvents: (since: number) => Effect.Effect<ReadonlyArray<EventEnvelope>, DatabaseError>
+  readonly getSessionActionResult: (
+    sessionId: string,
+    clientActionId: string
+  ) => Effect.Effect<unknown | undefined, DatabaseError>
+  readonly saveSessionActionResult: (
+    sessionId: string,
+    clientActionId: string,
+    actionKind: string,
+    response: unknown
+  ) => Effect.Effect<void, DatabaseError>
   readonly setHarnessEnabled: (
     harnessId: string,
     enabled: boolean
@@ -470,6 +502,24 @@ const createService = (
           .all(since)
           .map((row) => eventFromRow(row as EventRow))
       ),
+    getSessionActionResult: (sessionId, clientActionId) =>
+      attempt("getSessionActionResult", () => {
+        const row = sqlite
+          .prepare("select * from session_actions where session_id = ? and client_action_id = ?")
+          .get(sessionId, clientActionId) as SessionActionRow | undefined
+        return row === undefined ? undefined : (JSON.parse(row.response) as unknown)
+      }),
+    saveSessionActionResult: (sessionId, clientActionId, actionKind, response) =>
+      attempt("saveSessionActionResult", () => {
+        sqlite
+          .prepare(
+            `insert into session_actions (
+              session_id, client_action_id, action_kind, response, created_at
+            ) values (?, ?, ?, ?, ?)
+            on conflict(session_id, client_action_id) do nothing`
+          )
+          .run(sessionId, clientActionId, actionKind, JSON.stringify(response), isoTimestamp())
+      }),
     setHarnessEnabled: (harnessId, enabled) =>
       attempt("setHarnessEnabled", () => {
         sqlite

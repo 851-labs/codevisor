@@ -82,7 +82,6 @@ interface RunningTerminal {
 type TerminalFramePayload =
   | { readonly type: "output"; readonly data: string }
   | { readonly type: "exit"; readonly exitCode?: number }
-  | { readonly type: "error"; readonly message: string }
 
 export const makeTerminalManager = (config: TerminalManagerConfig = {}): TerminalManagerService => {
   const terminals = new Map<string, RunningTerminal>()
@@ -93,7 +92,10 @@ export const makeTerminalManager = (config: TerminalManagerConfig = {}): Termina
   /* v8 ignore next -- the final fallback depends on host SHELL environment state. */
   const defaultShell = config.defaultShell ?? process.env.SHELL ?? "/bin/sh"
 
-  const pushFrame = (terminal: RunningTerminal, frame: TerminalFramePayload): TerminalServerFrame => {
+  const pushFrame = (
+    terminal: RunningTerminal,
+    frame: TerminalFramePayload
+  ): TerminalServerFrame => {
     const sequenced = sequenceFrame(terminal.nextOutputSeq, frame)
     terminal.nextOutputSeq += 1
     terminal.frames.push(sequenced)
@@ -111,6 +113,12 @@ export const makeTerminalManager = (config: TerminalManagerConfig = {}): Termina
     return terminal
   }
 
+  const clearSessionMapping = (terminal: RunningTerminal): void => {
+    if (terminalsBySession.get(terminal.sessionId) === terminal.terminalId) {
+      terminalsBySession.delete(terminal.sessionId)
+    }
+  }
+
   return {
     createTerminal: (request) =>
       Effect.gen(function* () {
@@ -125,8 +133,8 @@ export const makeTerminalManager = (config: TerminalManagerConfig = {}): Termina
 
         const existingTerminalId = terminalsBySession.get(request.sessionId)
         if (existingTerminalId !== undefined) {
-          const existing = terminals.get(existingTerminalId)
-          if (existing !== undefined && !existing.closed) {
+          const existing = terminals.get(existingTerminalId)!
+          if (!existing.closed) {
             return terminalResponse(existing)
           }
         }
@@ -212,22 +220,22 @@ export const makeTerminalManager = (config: TerminalManagerConfig = {}): Termina
           case "close": {
             terminal.closed = true
             terminal.process.kill()
-            terminalsBySession.delete(terminal.sessionId)
+            clearSessionMapping(terminal)
             break
           }
         }
       }),
     terminalFrames: (terminalId, since = 0) =>
-      terminalAttempt("terminalFrames", () => [
-        ...getTerminal(terminalId, "terminalFrames").frames.filter((frame) => frame.seq > since)
-      ]),
+      terminalAttempt("terminalFrames", () =>
+        getTerminal(terminalId, "terminalFrames").frames.filter((frame) => frame.seq > since)
+      ),
     closeTerminal: (terminalId) =>
       terminalAttempt("closeTerminal", () => {
         const terminal = getTerminal(terminalId, "closeTerminal")
         terminal.closed = true
         terminal.process.kill()
         terminals.delete(terminalId)
-        terminalsBySession.delete(terminal.sessionId)
+        clearSessionMapping(terminal)
       })
   }
 }
@@ -289,9 +297,6 @@ const sequenceFrame = (seq: number, frame: TerminalFramePayload): TerminalServer
       return frame.exitCode === undefined
         ? { type: "exit", seq }
         : { type: "exit", seq, exitCode: frame.exitCode }
-    }
-    case "error": {
-      return { type: "error", seq, message: frame.message }
     }
   }
 }

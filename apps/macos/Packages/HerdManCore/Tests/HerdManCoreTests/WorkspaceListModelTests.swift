@@ -24,7 +24,7 @@ struct WorkspaceListModelTests {
             folderURL: URL(fileURLWithPath: "/tmp/remote"),
             createdAt: Date(timeIntervalSince1970: 10)
         )
-        let session = ChatSession(
+        let remoteSession = ChatSession(
             id: UUID(),
             workspaceId: workspace.id,
             serverId: "mac-mini",
@@ -33,9 +33,18 @@ struct WorkspaceListModelTests {
             title: "Remote session",
             createdAt: Date(timeIntervalSince1970: 11)
         )
+        let scopedSession = ChatSession(
+            id: remoteSession.id,
+            workspaceId: workspace.id,
+            serverId: "local",
+            harnessId: remoteSession.harnessId,
+            agentSessionId: remoteSession.agentSessionId,
+            title: remoteSession.title,
+            createdAt: remoteSession.createdAt
+        )
         let fakeServer = FakeServerClient(
             workspaces: [serverWorkspace(from: workspace)],
-            sessions: [serverSession(from: session)]
+            sessions: [serverSession(from: remoteSession)]
         )
         let model = WorkspaceListModel(
             workspaceRepository: DefaultWorkspaceRepository(store: InMemoryStore()),
@@ -44,8 +53,54 @@ struct WorkspaceListModelTests {
         )
 
         try await waitUntil {
-            model.workspaces.contains(workspace) && model.sessions.contains(session)
+            model.workspaces.contains(workspace) && model.sessions.contains(scopedSession)
         }
+    }
+
+    @Test("Server refresh is scoped to the selected machine")
+    func serverRefreshScopesToSelectedMachine() async throws {
+        let localWorkspace = Workspace(
+            id: UUID(),
+            serverId: "local",
+            name: "Local",
+            folderURL: URL(fileURLWithPath: "/tmp/local"),
+            createdAt: Date(timeIntervalSince1970: 1)
+        )
+        let remoteWorkspace = Workspace(
+            id: UUID(),
+            name: "Remote",
+            folderURL: URL(fileURLWithPath: "/srv/remote"),
+            createdAt: Date(timeIntervalSince1970: 2)
+        )
+        let remoteSession = ChatSession(
+            id: UUID(),
+            workspaceId: remoteWorkspace.id,
+            serverId: "server-internal-id",
+            harnessId: "codex",
+            title: "Remote",
+            createdAt: Date(timeIntervalSince1970: 3)
+        )
+        let workspaceStore = InMemoryStore()
+        let sessionStore = InMemoryStore()
+        DefaultWorkspaceRepository(store: workspaceStore).save([localWorkspace])
+        let model = WorkspaceListModel(
+            workspaceRepository: DefaultWorkspaceRepository(store: workspaceStore),
+            sessionRepository: DefaultSessionRepository(store: sessionStore),
+            serverClient: FakeServerClient()
+        )
+        let remoteServer = FakeServerClient(
+            workspaces: [serverWorkspace(from: remoteWorkspace)],
+            sessions: [serverSession(from: remoteSession)]
+        )
+
+        model.selectServer(serverId: "remote-mac-mini", serverClient: remoteServer)
+
+        try await waitUntil {
+            model.workspaces.contains { $0.id == localWorkspace.id && $0.serverId == "local" }
+                && model.workspaces.contains { $0.id == remoteWorkspace.id && $0.serverId == "remote-mac-mini" }
+                && model.sessions.contains { $0.id == remoteSession.id && $0.serverId == "remote-mac-mini" }
+        }
+        #expect(model.activeWorkspaces.map(\.id) == [remoteWorkspace.id])
     }
 
     @Test("Local mutations are mirrored to the configured server")

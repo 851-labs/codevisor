@@ -174,7 +174,7 @@ public final class LocalHerdManServer {
         return nil
     }
 
-    public static func defaultNodeExecutable() -> URL {
+    nonisolated public static func defaultNodeExecutable() -> URL {
         let environment = ProcessInfo.processInfo.environment
         if let override = environment["HERDMAN_NODE"], !override.isEmpty {
             return URL(fileURLWithPath: override)

@@ -6,6 +6,9 @@ public struct Workspace: Identifiable, Sendable, Codable, Equatable {
     public static let defaultSymbolName = "folder"
 
     public var id: UUID
+    /// The HerdMan server that owns this workspace. Legacy/local workspaces
+    /// default to "local".
+    public var serverId: String
     public var name: String
     public var folderURL: URL
     public var isArchived: Bool
@@ -18,6 +21,7 @@ public struct Workspace: Identifiable, Sendable, Codable, Equatable {
 
     public init(
         id: UUID = UUID(),
+        serverId: String = "local",
         name: String,
         folderURL: URL,
         isArchived: Bool = false,
@@ -26,6 +30,7 @@ public struct Workspace: Identifiable, Sendable, Codable, Equatable {
         createdAt: Date = Date()
     ) {
         self.id = id
+        self.serverId = serverId
         self.name = name
         self.folderURL = folderURL
         self.isArchived = isArchived
@@ -38,11 +43,13 @@ public struct Workspace: Identifiable, Sendable, Codable, Equatable {
     public static func fromFolder(
         _ url: URL,
         id: UUID = UUID(),
+        serverId: String = "local",
         origin: SessionOrigin = .herdman,
         createdAt: Date = Date()
     ) -> Workspace {
         Workspace(
             id: id,
+            serverId: serverId,
             name: url.lastPathComponent.isEmpty ? url.path : url.lastPathComponent,
             folderURL: url,
             origin: origin,
@@ -51,12 +58,13 @@ public struct Workspace: Identifiable, Sendable, Codable, Equatable {
     }
 
     private enum Keys: String, CodingKey {
-        case id, name, folderURL, isArchived, symbolName, origin, createdAt
+        case id, serverId, name, folderURL, isArchived, symbolName, origin, createdAt
     }
 
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: Keys.self)
         id = try container.decode(UUID.self, forKey: .id)
+        serverId = try container.decodeIfPresent(String.self, forKey: .serverId) ?? "local"
         name = try container.decode(String.self, forKey: .name)
         folderURL = try container.decode(URL.self, forKey: .folderURL)
         isArchived = try container.decodeIfPresent(Bool.self, forKey: .isArchived) ?? false

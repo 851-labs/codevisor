@@ -140,7 +140,7 @@ final class GhosttyRuntime {
 final class GhosttySurfaceView: NSView {
     private var surface: ghostty_surface_t?
 
-    init(workingDirectory: URL) {
+    init(descriptor: TerminalLaunchDescriptor) {
         super.init(frame: .zero)
         wantsLayer = true
 
@@ -149,10 +149,14 @@ final class GhosttySurfaceView: NSView {
         config.platform_tag = GHOSTTY_PLATFORM_MACOS
         config.platform.macos.nsview = Unmanaged.passUnretained(self).toOpaque()
         config.scale_factor = Double(NSScreen.main?.backingScaleFactor ?? 2)
+        config.wait_after_command = true
 
-        workingDirectory.path.withCString { cwd in
+        descriptor.workingDirectory.path.withCString { cwd in
             config.working_directory = cwd
-            surface = ghostty_surface_new(app, &config)
+            descriptor.command.withCString { command in
+                config.command = command
+                surface = ghostty_surface_new(app, &config)
+            }
         }
         // libghostty drives its own rendering (internal vsync/CVDisplayLink tied
         // to this NSView) — we must NOT call ghostty_surface_draw ourselves.
@@ -277,8 +281,8 @@ final class GhosttyTerminalSurface: TerminalSurface {
     let nsView: NSView
     private let surfaceView: GhosttySurfaceView
 
-    init(workingDirectory: URL) {
-        surfaceView = GhosttySurfaceView(workingDirectory: workingDirectory)
+    init(descriptor: TerminalLaunchDescriptor) {
+        surfaceView = GhosttySurfaceView(descriptor: descriptor)
         nsView = surfaceView
     }
 
@@ -289,8 +293,8 @@ final class GhosttyTerminalSurface: TerminalSurface {
 @MainActor
 struct GhosttyTerminalFactory: TerminalSurfaceFactory {
     static let shared = GhosttyTerminalFactory()
-    func makeSurface(workingDirectory: URL) -> any TerminalSurface {
-        GhosttyTerminalSurface(workingDirectory: workingDirectory)
+    func makeSurface(descriptor: TerminalLaunchDescriptor) -> any TerminalSurface {
+        GhosttyTerminalSurface(descriptor: descriptor)
     }
 }
 #endif

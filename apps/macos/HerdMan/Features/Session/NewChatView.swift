@@ -143,11 +143,7 @@ struct NewChatView: View {
     @Previewable @State var selection: SidebarSelection?
     let environment = AppEnvironment.preview()
     return NewChatView(
-        store: SessionStore(
-            agentService: environment.agentService,
-            configCache: environment.configCache,
-            workspaceList: environment.workspaceList
-        ),
+        store: SessionStore(environment: environment),
         selection: $selection,
         preferredWorkspaceId: nil
     )

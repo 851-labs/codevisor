@@ -9,6 +9,7 @@ import type {
 import {
   CreateSessionRequest as CreateSessionRequestSchema,
   CreateWorkspaceRequest as CreateWorkspaceRequestSchema,
+  CancelRequest,
   PromptRequest,
   SetConfigRequest,
   SetModeRequest,
@@ -397,61 +398,117 @@ const routeSessionActions = async (
   const promptSessionId = matchRoute(url.pathname, "/v1/sessions/:id/prompt")
   if (promptSessionId !== undefined && request.method === "POST") {
     const payload = await readSchema(request, PromptRequest)
-    const agentSessionId = await ensureAgentSessionFor(services, promptSessionId)
-    await run(services.db.appendConversationItem(promptSessionId, "user", payload.text, false))
-    const result = await run(services.acp.prompt(agentSessionId, payload.text))
-    for (const event of result.events) {
-      await materializeRuntimeEvent(services.db, fanout, config.id, event, promptSessionId)
-    }
-    writeJson(response, 202, { stopReason: result.stopReason })
+    await writeIdempotentAction(
+      services,
+      response,
+      promptSessionId,
+      "prompt",
+      payload,
+      async () => {
+        const agentSessionId = await ensureAgentSessionFor(services, promptSessionId)
+        await run(services.db.appendConversationItem(promptSessionId, "user", payload.text, false))
+        const result = await run(services.acp.prompt(agentSessionId, payload.text))
+        for (const event of result.events) {
+          await materializeRuntimeEvent(services.db, fanout, config.id, event, promptSessionId)
+        }
+        return { stopReason: result.stopReason }
+      }
+    )
     return true
   }
 
   const cancelSessionId = matchRoute(url.pathname, "/v1/sessions/:id/cancel")
   if (cancelSessionId !== undefined && request.method === "POST") {
-    const agentSessionId = await ensureAgentSessionFor(services, cancelSessionId)
-    await materializeRuntimeEvent(
-      services.db,
-      fanout,
-      config.id,
-      await run(services.acp.cancel(agentSessionId)),
-      cancelSessionId
+    const payload = await readSchema(request, CancelRequest)
+    await writeIdempotentAction(
+      services,
+      response,
+      cancelSessionId,
+      "cancel",
+      payload,
+      async () => {
+        const agentSessionId = await ensureAgentSessionFor(services, cancelSessionId)
+        await materializeRuntimeEvent(
+          services.db,
+          fanout,
+          config.id,
+          await run(services.acp.cancel(agentSessionId)),
+          cancelSessionId
+        )
+        return { cancelled: true }
+      }
     )
-    writeJson(response, 202, { cancelled: true })
     return true
   }
 
   const modeSessionId = matchRoute(url.pathname, "/v1/sessions/:id/mode")
   if (modeSessionId !== undefined && request.method === "POST") {
     const payload = await readSchema(request, SetModeRequest)
-    const agentSessionId = await ensureAgentSessionFor(services, modeSessionId)
-    await materializeRuntimeEvent(
-      services.db,
-      fanout,
-      config.id,
-      await run(services.acp.setMode(agentSessionId, payload.modeId)),
-      modeSessionId
-    )
-    writeJson(response, 202, { modeId: payload.modeId })
+    await writeIdempotentAction(services, response, modeSessionId, "mode", payload, async () => {
+      const agentSessionId = await ensureAgentSessionFor(services, modeSessionId)
+      await materializeRuntimeEvent(
+        services.db,
+        fanout,
+        config.id,
+        await run(services.acp.setMode(agentSessionId, payload.modeId)),
+        modeSessionId
+      )
+      return { modeId: payload.modeId }
+    })
     return true
   }
 
   const configSessionId = matchRoute(url.pathname, "/v1/sessions/:id/config")
   if (configSessionId !== undefined && request.method === "POST") {
     const payload = await readSchema(request, SetConfigRequest)
-    const agentSessionId = await ensureAgentSessionFor(services, configSessionId)
-    await materializeRuntimeEvent(
-      services.db,
-      fanout,
-      config.id,
-      await run(services.acp.setConfigOption(agentSessionId, payload.configId, payload.value)),
-      configSessionId
+    await writeIdempotentAction(
+      services,
+      response,
+      configSessionId,
+      "config",
+      payload,
+      async () => {
+        const agentSessionId = await ensureAgentSessionFor(services, configSessionId)
+        await materializeRuntimeEvent(
+          services.db,
+          fanout,
+          config.id,
+          await run(services.acp.setConfigOption(agentSessionId, payload.configId, payload.value)),
+          configSessionId
+        )
+        return { configId: payload.configId }
+      }
     )
-    writeJson(response, 202, { configId: payload.configId })
     return true
   }
 
   return false
+}
+
+const writeIdempotentAction = async (
+  services: HerdManServerServices,
+  response: ServerResponse,
+  sessionId: string,
+  actionKind: string,
+  payload: { readonly clientActionId?: string | undefined },
+  runAction: () => Promise<unknown>
+): Promise<void> => {
+  if (payload.clientActionId !== undefined) {
+    const existing = await run(
+      services.db.getSessionActionResult(sessionId, payload.clientActionId)
+    )
+    if (existing !== undefined) {
+      writeJson(response, 202, existing)
+      return
+    }
+  }
+  const result = await runAction()
+  if (payload.clientActionId !== undefined) {
+    await run(
+      services.db.saveSessionActionResult(sessionId, payload.clientActionId, actionKind, result)
+    )
+  }
+  writeJson(response, 202, result)
 }
 
 const routeTerminals = async (
