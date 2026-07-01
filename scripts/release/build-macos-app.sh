@@ -77,19 +77,18 @@ if [[ ! -d "$app_path" ]]; then
 fi
 
 plist_path="$app_path/Contents/Info.plist"
-# Xcode compiles the .icon source into a small AppIcon.icns in release builds.
-# Overwrite it with the full macOS icon set and use the legacy plist key so
-# Finder/Dock do not prefer the compiled asset-catalog icon.
-cp "$repo_root/apps/macos/HerdMan/Resources/AppIcon.icns" "$app_path/Contents/Resources/AppIcon.icns"
-/usr/libexec/PlistBuddy -c "Set :CFBundleIconFile AppIcon" "$plist_path" 2>/dev/null \
-  || /usr/libexec/PlistBuddy -c "Add :CFBundleIconFile string AppIcon" "$plist_path"
-/usr/libexec/PlistBuddy -c "Delete :CFBundleIconName" "$plist_path" 2>/dev/null || true
+# Xcode's Icon Composer pipeline owns app icon generation. Keep the compiled
+# asset catalog in the bundle so LaunchServices resolves the .icon file output.
 if [[ "$(/usr/libexec/PlistBuddy -c "Print :CFBundleIconFile" "$plist_path")" != "AppIcon" ]]; then
-  echo "error: failed to set CFBundleIconFile in $plist_path" >&2
+  echo "error: expected CFBundleIconFile=AppIcon in $plist_path" >&2
   exit 1
 fi
-if /usr/libexec/PlistBuddy -c "Print :CFBundleIconName" "$plist_path" >/dev/null 2>&1; then
-  echo "error: CFBundleIconName should not be present in release plist" >&2
+if [[ "$(/usr/libexec/PlistBuddy -c "Print :CFBundleIconName" "$plist_path")" != "AppIcon" ]]; then
+  echo "error: expected CFBundleIconName=AppIcon in $plist_path" >&2
+  exit 1
+fi
+if [[ ! -e "$app_path/Contents/Resources/Assets.car" ]]; then
+  echo "error: expected Xcode to compile Icon Composer assets into Assets.car" >&2
   exit 1
 fi
 
