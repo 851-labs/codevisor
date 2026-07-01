@@ -223,6 +223,23 @@ public final class WorkspaceListModel {
         deleteSessionFromServer(session.id)
     }
 
+    /// Applies a deletion that already happened on the server (from another
+    /// client's event); intentionally does not call back to the server.
+    public func removeSessionLocally(id: UUID) {
+        guard sessions.contains(where: { $0.id == id }) else { return }
+        sessions.removeAll { $0.id == id }
+        persistSessions()
+    }
+
+    /// Applies a workspace deletion that already happened on the server.
+    public func removeWorkspaceLocally(id: UUID) {
+        guard workspaces.contains(where: { $0.id == id }) else { return }
+        workspaces.removeAll { $0.id == id }
+        sessions.removeAll { $0.workspaceId == id }
+        persistWorkspaces()
+        persistSessions()
+    }
+
     /// Removes all workspaces and sessions (used by "Delete all data").
     public func removeAll() {
         let workspaceIDs = workspaces.filter { $0.serverId == selectedServerId }.map(\.id)

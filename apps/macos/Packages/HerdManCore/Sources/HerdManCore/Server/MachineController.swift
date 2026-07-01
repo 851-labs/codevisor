@@ -54,19 +54,26 @@ public final class MachineController {
     public private(set) var registry: MachineRegistry
     public private(set) var statusByMachineId: [String: MachineStatus] = [:]
 
+    public typealias ClientFactory = @MainActor (HerdManMachine) -> any HerdManServerClienting
+
     private let store: any PersistenceStore
     private let workspaceList: WorkspaceListModel
     private let localServer: LocalHerdManServer?
+    private let clientFactory: ClientFactory
     private let key = "machines"
+    @ObservationIgnored private var eventSyncTask: Task<Void, Never>?
+    @ObservationIgnored private var pendingRefreshTask: Task<Void, Never>?
 
     public init(
         store: any PersistenceStore,
         workspaceList: WorkspaceListModel,
-        localServer: LocalHerdManServer? = nil
+        localServer: LocalHerdManServer? = nil,
+        clientFactory: ClientFactory? = nil
     ) {
         self.store = store
         self.workspaceList = workspaceList
         self.localServer = localServer
+        self.clientFactory = clientFactory ?? { HerdManServerClient(config: $0.serverConfig) }
         if let data = store.loadData(forKey: key),
            let decoded = try? JSONDecoder().decode(MachineRegistry.self, from: data) {
             registry = decoded.normalized()
@@ -102,7 +109,7 @@ public final class MachineController {
 
     public func client(for machineId: String) -> any HerdManServerClienting {
         let machine = machine(for: machineId) ?? HerdManMachine.local
-        return HerdManServerClient(config: machine.serverConfig)
+        return clientFactory(machine)
     }
 
     public func selectMachine(_ id: String) {
@@ -152,6 +159,67 @@ public final class MachineController {
         }
         await refreshStatus(for: selectedMachine.id)
         await workspaceList.refreshFromServer()
+        startEventSync()
+    }
+
+    // MARK: - Live sync
+
+    /// Follows the selected server's event stream so workspaces and sessions
+    /// stay in sync across every client connected to that server. Replaces any
+    /// previous subscription (e.g. after switching machines).
+    public func startEventSync() {
+        eventSyncTask?.cancel()
+        let serverId = selectedMachine.id
+        let client = selectedClient
+        eventSyncTask = Task { [weak self] in
+            do {
+                for try await event in client.eventStream(since: 0) {
+                    guard let self, !Task.isCancelled else { return }
+                    self.handleSyncEvent(event, serverId: serverId)
+                }
+            } catch {
+                // The stream reconnects internally; it only ends on cancellation.
+            }
+        }
+    }
+
+    public func stopEventSync() {
+        eventSyncTask?.cancel()
+        eventSyncTask = nil
+        pendingRefreshTask?.cancel()
+        pendingRefreshTask = nil
+    }
+
+    private func handleSyncEvent(_ event: ServerEventEnvelope, serverId: String) {
+        guard serverId == selectedMachine.id else { return }
+        switch event.kind {
+        case "workspace.deleted":
+            if let id = UUID(uuidString: event.subjectId) {
+                workspaceList.removeWorkspaceLocally(id: id)
+            }
+        case "session.deleted":
+            if let id = UUID(uuidString: event.subjectId) {
+                workspaceList.removeSessionLocally(id: id)
+            }
+        case "workspace.created", "workspace.updated",
+             "session.created", "session.updated", "session.archived":
+            scheduleWorkspaceRefresh()
+        default:
+            // Prompt/queue/error events are handled by the session transports.
+            break
+        }
+    }
+
+    /// Coalesces bursts of events (including the initial replay) into a single
+    /// refresh from the server.
+    private func scheduleWorkspaceRefresh() {
+        guard pendingRefreshTask == nil else { return }
+        pendingRefreshTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(300))
+            guard let self, !Task.isCancelled else { return }
+            self.pendingRefreshTask = nil
+            await self.workspaceList.refreshFromServer()
+        }
     }
 
     public func refreshStatus(for id: String) async {
