@@ -84,12 +84,16 @@ struct RootView: View {
     }
 
     /// Development builds tint the whole window toolbar blue — that color is
-    /// how you tell the dev app apart from the production release.
+    /// how you tell the dev app apart from the production release. A
+    /// translucent system blue sits on the toolbar material, so it stays
+    /// subtle and adapts to light and dark mode.
+    private static let developmentToolbarTint = Color(nsColor: .systemBlue).opacity(0.32)
+
     @ViewBuilder
     private var mainSplit: some View {
         if HerdManAppVariant.isDevelopment {
             splitView
-                .toolbarBackground(Color.blue, for: .windowToolbar)
+                .toolbarBackground(Self.developmentToolbarTint, for: .windowToolbar)
                 .toolbarBackgroundVisibility(.visible, for: .windowToolbar)
         } else {
             splitView
