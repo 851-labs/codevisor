@@ -12,6 +12,7 @@ struct NewChatView: View {
 
     @State private var controller: SessionController?
     @State private var selectedWorkspaceId: UUID?
+    @State private var focus = TerminalFocusController()
 
     private var workspaces: [Workspace] { environment.workspaceList.activeWorkspaces }
     private var selectedWorkspace: Workspace? {
@@ -24,8 +25,17 @@ struct NewChatView: View {
             VStack(spacing: 22) {
                 title
                 if let controller {
-                    ComposerCard(controller: controller, placeholder: "Do anything")
-                        .frame(maxWidth: 720)
+                    ComposerCard(
+                        controller: controller,
+                        placeholder: "Do anything",
+                        onTextViewReady: { textView in
+                            focus.composerTextView = textView
+                            // The text view isn't attached to a window yet during
+                            // makeNSView; focus once it is.
+                            DispatchQueue.main.async { focus.focusComposer() }
+                        }
+                    )
+                    .frame(maxWidth: 720)
                     statusLabel(controller)
                 }
             }
@@ -37,6 +47,9 @@ struct NewChatView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .navigationTitle("New chat")
         .task(id: preferredWorkspaceId) { setUpController() }
+        .focusedSceneValue(\.newChatComposerFocus, NewChatComposerFocus(
+            focus: { focus.focusComposer() }
+        ))
     }
 
     // MARK: - Title with project dropdown

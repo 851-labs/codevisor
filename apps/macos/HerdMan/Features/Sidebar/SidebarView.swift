@@ -237,6 +237,19 @@ struct SidebarView: View {
                 offerSessionImport(for: workspace)
             }
         }
+        .focusedSceneValue(\.sidebarActions, SidebarActions(
+            newChat: { selection = .newChat(nil) },
+            newProject: { startAddWorkspace() }
+        ))
+    }
+
+    /// Local machines pick a folder; remote machines prompt for a path.
+    private func startAddWorkspace() {
+        if environment.machines.selectedMachine.isLocal {
+            showingImporter = true
+        } else {
+            showingRemoteWorkspace = true
+        }
     }
 
     /// One skip entry per machine + version, so dismissing one machine's
@@ -374,11 +387,7 @@ struct SidebarView: View {
             .help("Organize projects")
 
             Button {
-                if environment.machines.selectedMachine.isLocal {
-                    showingImporter = true
-                } else {
-                    showingRemoteWorkspace = true
-                }
+                startAddWorkspace()
             } label: {
                 Image(systemName: "folder.badge.plus")
                     .font(.callout.weight(.semibold))

@@ -4,7 +4,7 @@ import HerdManCore
 
 /// Moves AppKit first-responder focus between the composer's text view and the
 /// terminal surface for a session. Holds weak references so it never keeps views
-/// alive. Owned by the session screen.
+/// alive. Owned by the session screen and (composer-only) the new-chat page.
 @MainActor
 final class TerminalFocusController {
     weak var composerTextView: NSView?

@@ -14,6 +14,8 @@ struct HerdManApp: App {
         .defaultSize(width: 980, height: 640)
         .windowResizability(.contentMinSize)
         .commands {
+            AppUpdateCommands(appUpdate: environment.appUpdate)
+            FileCommands()
             TerminalCommands()
         }
 
