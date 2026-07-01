@@ -15,6 +15,10 @@ Optional environment:
   APPLE_ID                      Apple ID used for notarization.
   APPLE_APP_SPECIFIC_PASSWORD   App-specific password for notarytool.
   APPLE_TEAM_ID                 Apple team id for notarytool.
+  APP_STORE_CONNECT_API_KEY_PATH
+                                Path to App Store Connect API key .p8 for notarization.
+  APP_STORE_CONNECT_API_KEY_ID  App Store Connect API key id for notarization.
+  APP_STORE_CONNECT_ISSUER_ID   App Store Connect issuer id for notarization.
   HERDMAN_XCODE_SCHEME          Defaults to HerdMan.
   HERDMAN_BUILD_NUMBER          Defaults to GITHUB_RUN_NUMBER or 1.
 EOF
@@ -88,7 +92,16 @@ fi
 rm -f "$archive_path"
 ditto --norsrc -c -k --keepParent "$app_path" "$archive_path"
 
-if [[ -n "${APPLE_ID:-}" && -n "${APPLE_APP_SPECIFIC_PASSWORD:-}" && -n "${APPLE_TEAM_ID:-}" ]]; then
+if [[ -n "${APP_STORE_CONNECT_API_KEY_PATH:-}" && -n "${APP_STORE_CONNECT_API_KEY_ID:-}" && -n "${APP_STORE_CONNECT_ISSUER_ID:-}" ]]; then
+  xcrun notarytool submit "$archive_path" \
+    --key "$APP_STORE_CONNECT_API_KEY_PATH" \
+    --key-id "$APP_STORE_CONNECT_API_KEY_ID" \
+    --issuer "$APP_STORE_CONNECT_ISSUER_ID" \
+    --wait
+  xcrun stapler staple "$app_path"
+  rm -f "$archive_path"
+  ditto --norsrc -c -k --keepParent "$app_path" "$archive_path"
+elif [[ -n "${APPLE_ID:-}" && -n "${APPLE_APP_SPECIFIC_PASSWORD:-}" && -n "${APPLE_TEAM_ID:-}" ]]; then
   xcrun notarytool submit "$archive_path" \
     --apple-id "$APPLE_ID" \
     --password "$APPLE_APP_SPECIFIC_PASSWORD" \
