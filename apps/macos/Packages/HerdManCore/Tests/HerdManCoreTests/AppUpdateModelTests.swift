@@ -16,8 +16,37 @@ private struct UpdateTestError: LocalizedError {
     var errorDescription: String? { "download failed" }
 }
 
+/// Serves canned HTTP responses to the manifest checker's URLSession.
+private final class StubURLProtocol: URLProtocol {
+    nonisolated(unsafe) static var handler: ((URLRequest) -> (status: Int, body: Data))?
+
+    static func makeSession() -> URLSession {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [StubURLProtocol.self]
+        return URLSession(configuration: configuration)
+    }
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        guard let handler = Self.handler, let url = request.url else {
+            client?.urlProtocol(self, didFailWithError: UpdateTestError())
+            return
+        }
+        let (status, body) = handler(request)
+        let response = HTTPURLResponse(url: url, statusCode: status, httpVersion: nil, headerFields: nil)!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: body)
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
+    override func stopLoading() {}
+}
+
+// Serialized: the manifest checker tests share StubURLProtocol's static handler.
 @MainActor
-@Suite("AppUpdateModel")
+@Suite("AppUpdateModel", .serialized)
 struct AppUpdateModelTests {
     @Test("A newer release becomes available")
     func newerReleaseAvailable() async {
@@ -84,6 +113,39 @@ struct AppUpdateModelTests {
         #expect(installed == release)
         #expect(model.phase == .updating(release))
         #expect(model.isUpdating)
+    }
+
+    @Test("Manifest checker reads latest.json and builds the archive URL")
+    func manifestCheckerReadsManifest() async throws {
+        let base = URL(string: "https://releases.example.com/herdman")!
+        var requestedURLs: [URL] = []
+        StubURLProtocol.handler = { request in
+            if let url = request.url { requestedURLs.append(url) }
+            return (200, Data(#"{"version":"0.3.0"}"#.utf8))
+        }
+        defer { StubURLProtocol.handler = nil }
+        let checker = ManifestAppUpdateChecker(baseURL: base, urlSession: StubURLProtocol.makeSession())
+
+        let release = try await checker.latestRelease()
+
+        #expect(requestedURLs == [URL(string: "https://releases.example.com/herdman/latest.json")!])
+        #expect(release?.version == "0.3.0")
+        #expect(release?.archiveURL == URL(string: "https://releases.example.com/herdman/v0.3.0/HerdMan-macOS.zip"))
+        #expect(release?.releasePageURL == nil)
+    }
+
+    @Test("Manifest checker reports no release when the manifest is missing")
+    func manifestCheckerHandlesMissingManifest() async throws {
+        StubURLProtocol.handler = { _ in (404, Data()) }
+        defer { StubURLProtocol.handler = nil }
+        let checker = ManifestAppUpdateChecker(
+            baseURL: URL(string: "https://releases.example.com/herdman")!,
+            urlSession: StubURLProtocol.makeSession()
+        )
+
+        let release = try await checker.latestRelease()
+
+        #expect(release == nil)
     }
 
     @Test("Version comparison handles v-prefixes, lengths, and prereleases")

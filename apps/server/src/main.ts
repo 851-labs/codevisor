@@ -43,7 +43,12 @@ const bundledVersion = (): string | undefined => {
   return version.length > 0 ? version : undefined
 }
 
-const RELEASE_REPOSITORY = process.env.HERDMAN_RELEASE_REPOSITORY ?? "851-labs/herdman"
+/// The public artifact bucket that distributes server releases (the same one
+/// the Homebrew formula installs from). The source repository is private, so
+/// update checks go through this bucket, not the GitHub API.
+const RELEASE_BASE_URL =
+  process.env.HERDMAN_RELEASE_BASE_URL ??
+  "https://pub-d2d6eb72b71c4986a742c0527774c9f0.r2.dev/releases/herdman"
 
 /// "darwin-arm64", "linux-x64", … matching the published server archives.
 const releaseTarget = (): string | undefined => {
@@ -68,9 +73,9 @@ const isNewerVersion = (candidate: string, current: string): boolean => {
   return false
 }
 
-/// Self-updater for standalone server installs: checks the GitHub latest
-/// release, and on apply downloads the matching server archive, unpacks it
-/// next to the database, hands off to the new runtime, and exits.
+/// Self-updater for standalone server installs: checks the release manifest
+/// on the artifact bucket, and on apply downloads the matching server archive,
+/// unpacks it next to the database, hands off to the new runtime, and exits.
 const makeSelfUpdater = (options: {
   readonly currentVersion: string
   readonly db: HerdManDatabaseService
@@ -85,22 +90,19 @@ const makeSelfUpdater = (options: {
     }
     let latestVersion = options.currentVersion
     try {
-      const response = await fetch(
-        `https://api.github.com/repos/${RELEASE_REPOSITORY}/releases/latest`,
-        {
-          headers: { accept: "application/vnd.github+json" },
-          signal: AbortSignal.timeout(10_000)
-        }
-      )
+      const response = await fetch(`${RELEASE_BASE_URL}/latest.json`, {
+        headers: { "cache-control": "no-cache" },
+        signal: AbortSignal.timeout(10_000)
+      })
       if (response.ok) {
-        const release = (await response.json()) as { readonly tag_name?: string }
-        const tag = (release.tag_name ?? "").replace(/^v/, "")
-        if (tag.length > 0) {
-          latestVersion = tag
+        const manifest = (await response.json()) as { readonly version?: string }
+        const version = (manifest.version ?? "").replace(/^v/, "")
+        if (version.length > 0) {
+          latestVersion = version
         }
       }
     } catch {
-      // Offline or rate-limited: report the last known state.
+      // Offline or unreachable: report the last known state.
     }
     const info: UpdateInfo = {
       currentVersion: options.currentVersion,
@@ -130,7 +132,7 @@ const makeSelfUpdater = (options: {
     const runtimeDir = join(updateDir, "runtime")
     mkdirSync(runtimeDir, { recursive: true })
 
-    const url = `https://github.com/${RELEASE_REPOSITORY}/releases/download/v${info.latestVersion}/herdman-server-${target}.tar.gz`
+    const url = `${RELEASE_BASE_URL}/v${info.latestVersion}/herdman-server-${target}.tar.gz`
     console.log(`Downloading HerdMan server ${info.latestVersion} from ${url}`)
     const response = await fetch(url, { signal: AbortSignal.timeout(300_000) })
     if (!response.ok || response.body === null) {

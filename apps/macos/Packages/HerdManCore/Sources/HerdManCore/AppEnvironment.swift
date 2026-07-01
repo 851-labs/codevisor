@@ -153,8 +153,12 @@ public final class AppEnvironment {
 
     /// The production environment: file-backed persistence and real agent
     /// discovery/launching.
-    /// The GitHub repository whose releases distribute the app and server.
-    public static let releaseRepository = "851-labs/herdman"
+    /// The public artifact bucket that distributes app and server releases —
+    /// the same one the Homebrew tap installs from. The source repository is
+    /// private, so update checks go through this bucket, not the GitHub API.
+    public static let releaseArtifactBaseURL = URL(
+        string: "https://pub-d2d6eb72b71c4986a742c0527774c9f0.r2.dev/releases/herdman"
+    )!
 
     public static func live() -> AppEnvironment {
         let store = FileSystemStore()
@@ -170,7 +174,7 @@ public final class AppEnvironment {
             localServer: localServer,
             appUpdate: AppUpdateModel(
                 currentVersion: AppUpdateModel.bundleVersion(),
-                checker: GitHubAppUpdateChecker(repository: releaseRepository)
+                checker: ManifestAppUpdateChecker(baseURL: releaseArtifactBaseURL)
             )
         )
     }

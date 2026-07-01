@@ -61,3 +61,16 @@ for artifact in "${artifacts[@]}"; do
     --cache-control "$cache_control" \
     --remote
 done
+
+# The manifest the app and server update checks read (the GitHub repository is
+# private, so the bucket is the one public source of release truth). Uploaded
+# last so it never points at a partially uploaded release, and with a short
+# cache so new releases are visible promptly.
+manifest="$(mktemp)"
+trap 'rm -f "$manifest"' EXIT
+printf '{"version":"%s"}\n' "$version" > "$manifest"
+wrangler r2 object put "$bucket/$prefix/latest.json" \
+  --file "$manifest" \
+  --content-type "application/json" \
+  --cache-control "${R2_LATEST_CACHE_CONTROL:-public, max-age=60}" \
+  --remote

@@ -8,6 +8,14 @@ HerdMan releases are cut by `.github/workflows/release.yml`.
 - `herdman-server-<target>.tar.gz`: standalone server and terminal proxy runtime archives for Homebrew.
 - `Casks/herdman.rb` in `851-labs/homebrew-tap`.
 - `Formula/herdman-server.rb` in `851-labs/homebrew-tap`.
+- `latest.json` at the root of the R2 release prefix: `{"version": "<version>"}`.
+
+All artifacts are uploaded to the public R2 bucket; the tap installs from R2,
+not from GitHub. Because this repository is private, `latest.json` is the one
+public source of release truth: the app's update check
+(`ManifestAppUpdateChecker`) and the server's self-updater both read it and
+download artifacts from the versioned R2 paths next to it. GitHub releases
+exist for provenance but are not reachable from user machines.
 
 The macOS app bundle includes architecture-specific Node server runtimes under
 `HerdMan.app/Contents/Resources/server/darwin-arm64` and

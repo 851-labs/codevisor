@@ -30,67 +30,46 @@ public struct DisabledUpdateChecker: AppUpdateChecking {
     public func latestRelease() async throws -> AppUpdateRelease? { nil }
 }
 
-/// Checks the GitHub "latest release" endpoint of the repository that
-/// distributes the app (the same releases the Homebrew cask installs from).
-public struct GitHubAppUpdateChecker: AppUpdateChecking {
+/// Checks the release manifest on the public artifact bucket that distributes
+/// the app (the same bucket the Homebrew cask installs from). The source
+/// repository is private, so the GitHub releases API is unreachable from user
+/// machines; the bucket is the one public source of release truth.
+public struct ManifestAppUpdateChecker: AppUpdateChecking {
     /// The released macOS app archive produced by scripts/release/build-macos-app.sh.
     public static let appArchiveName = "HerdMan-macOS.zip"
 
-    private let repository: String
+    private let baseURL: URL
     private let urlSession: URLSession
 
-    public init(repository: String, urlSession: URLSession = .shared) {
-        self.repository = repository
+    /// - Parameter baseURL: the release prefix that contains `latest.json`
+    ///   and the `v<version>/` artifact directories.
+    public init(baseURL: URL, urlSession: URLSession = .shared) {
+        self.baseURL = baseURL
         self.urlSession = urlSession
     }
 
     public func latestRelease() async throws -> AppUpdateRelease? {
-        guard let url = URL(string: "https://api.github.com/repos/\(repository)/releases/latest") else {
-            return nil
-        }
-        var request = URLRequest(url: url)
-        request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+        // Skip local caches: the manifest is tiny and must reflect the
+        // current release, not the one cached at the previous check.
+        var request = URLRequest(url: baseURL.appendingPathComponent("latest.json"))
+        request.cachePolicy = .reloadIgnoringLocalCacheData
         let (data, response) = try await urlSession.data(for: request)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
             return nil
         }
-        let release = try JSONDecoder().decode(GitHubRelease.self, from: data)
-        let version = release.tagName.hasPrefix("v") ? String(release.tagName.dropFirst()) : release.tagName
-        let archive = release.assets.first { $0.name == Self.appArchiveName }
+        let manifest = try JSONDecoder().decode(ReleaseManifest.self, from: data)
+        let version = manifest.version.hasPrefix("v") ? String(manifest.version.dropFirst()) : manifest.version
+        guard !version.isEmpty else { return nil }
         return AppUpdateRelease(
             version: version,
-            archiveURL: archive.flatMap { URL(string: $0.browserDownloadUrl) },
-            releasePageURL: release.htmlUrl.flatMap { URL(string: $0) }
+            archiveURL: baseURL
+                .appendingPathComponent("v\(version)")
+                .appendingPathComponent(Self.appArchiveName)
         )
     }
 
-    private struct GitHubRelease: Decodable {
-        var tagName: String
-        var htmlUrl: String?
-        var assets: [Asset]
-
-        struct Asset: Decodable {
-            var name: String
-            var browserDownloadUrl: String
-
-            enum CodingKeys: String, CodingKey {
-                case name
-                case browserDownloadUrl = "browser_download_url"
-            }
-        }
-
-        enum CodingKeys: String, CodingKey {
-            case tagName = "tag_name"
-            case htmlUrl = "html_url"
-            case assets
-        }
-
-        init(from decoder: any Decoder) throws {
-            let container = try decoder.container(keyedBy: CodingKeys.self)
-            tagName = try container.decode(String.self, forKey: .tagName)
-            htmlUrl = try container.decodeIfPresent(String.self, forKey: .htmlUrl)
-            assets = try container.decodeIfPresent([Asset].self, forKey: .assets) ?? []
-        }
+    private struct ReleaseManifest: Decodable {
+        var version: String
     }
 }
 
