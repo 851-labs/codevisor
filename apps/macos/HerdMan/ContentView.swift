@@ -47,13 +47,22 @@ struct RootView: View {
             if store == nil {
                 store = SessionStore(environment: environment)
             }
+            if !AppPreview.isRunning {
+                environment.appUpdate.installHandler = { [environment] release in
+                    try await AppUpdateInstaller(environment: environment).install(release)
+                }
+                await environment.appUpdate.checkForUpdates()
+            }
         }
         .task(id: environment.machines.selectedMachineId) {
             // Warm the harness config cache in the background so the composer
             // pickers are populated instantly.
             if !AppPreview.isRunning {
+                // Note: don't reset `selection` after this await — the sidebar's
+                // machine picker already resets it when the user switches
+                // machines, and resetting here races with (and clobbers) any
+                // session the user clicked while the machine was preparing.
                 await environment.prepareSelectedMachine()
-                selection = .newChat(nil)
                 Task {
                     await ConfigPrefetcher(
                         agentService: environment.agentService,
