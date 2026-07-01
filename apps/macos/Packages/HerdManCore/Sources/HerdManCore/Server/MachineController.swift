@@ -49,11 +49,20 @@ public struct MachineStatus: Sendable, Equatable {
     public var label: String
 }
 
+/// Progress of a client-triggered update of the selected machine's server.
+public enum ServerUpdatePhase: Equatable, Sendable {
+    case idle
+    case updating
+    case failed(String)
+}
+
 @MainActor
 @Observable
 public final class MachineController {
     public private(set) var registry: MachineRegistry
     public private(set) var statusByMachineId: [String: MachineStatus] = [:]
+    public private(set) var updateInfoByMachineId: [String: ServerUpdateInfo] = [:]
+    public private(set) var serverUpdatePhase: ServerUpdatePhase = .idle
 
     public typealias ClientFactory = @MainActor (HerdManMachine) -> any HerdManServerClienting
 
@@ -62,6 +71,10 @@ public final class MachineController {
     private let localServer: LocalHerdManServer?
     private let clientFactory: ClientFactory
     private let key = "machines"
+    /// How long to wait between reachability probes while the remote server
+    /// restarts into its updated version. Injectable so tests run fast.
+    private let updatePollInterval: Duration
+    private let updatePollAttempts: Int
     @ObservationIgnored private var eventSyncTask: Task<Void, Never>?
     @ObservationIgnored private var pendingRefreshTask: Task<Void, Never>?
 
@@ -69,12 +82,16 @@ public final class MachineController {
         store: any PersistenceStore,
         workspaceList: WorkspaceListModel,
         localServer: LocalHerdManServer? = nil,
-        clientFactory: ClientFactory? = nil
+        clientFactory: ClientFactory? = nil,
+        updatePollInterval: Duration = .seconds(2),
+        updatePollAttempts: Int = 90
     ) {
         self.store = store
         self.workspaceList = workspaceList
         self.localServer = localServer
         self.clientFactory = clientFactory ?? { HerdManServerClient(config: $0.serverConfig) }
+        self.updatePollInterval = updatePollInterval
+        self.updatePollAttempts = updatePollAttempts
         if let data = store.loadData(forKey: key),
            let decoded = try? JSONDecoder().decode(MachineRegistry.self, from: data) {
             registry = decoded.normalized()
@@ -249,8 +266,52 @@ public final class MachineController {
         do {
             let info = try await client.info()
             statusByMachineId[id] = MachineStatus(isReachable: true, label: "\(info.name) \(info.version)")
+            updateInfoByMachineId[id] = try? await client.updateInfo()
         } catch {
             statusByMachineId[id] = MachineStatus(isReachable: false, label: "Unreachable")
+        }
+    }
+
+    /// The selected machine's server update state, when known.
+    public var selectedServerUpdate: ServerUpdateInfo? {
+        updateInfoByMachineId[selectedMachineId]
+    }
+
+    /// Asks the selected machine's server to update itself, then waits for it
+    /// to restart into the newer version before refreshing everything and
+    /// resubscribing to its event stream.
+    public func updateSelectedServer() async {
+        guard serverUpdatePhase != .updating else { return }
+        let machineId = selectedMachineId
+        let client = selectedClient
+        serverUpdatePhase = .updating
+        do {
+            let applied = try await client.applyServerUpdate()
+            guard applied.accepted else {
+                // Nothing to do (already up to date); refresh the banner state.
+                await refreshStatus(for: machineId)
+                serverUpdatePhase = .idle
+                return
+            }
+            for _ in 0..<updatePollAttempts {
+                try? await Task.sleep(for: updatePollInterval)
+                // The user moved on to a different machine; stop waiting.
+                guard machineId == selectedMachineId else {
+                    serverUpdatePhase = .idle
+                    return
+                }
+                guard let info = try? await client.info() else { continue }
+                if applied.targetVersion == nil || info.version == applied.targetVersion {
+                    await refreshStatus(for: machineId)
+                    await workspaceList.refreshFromServer()
+                    startEventSync()
+                    serverUpdatePhase = .idle
+                    return
+                }
+            }
+            serverUpdatePhase = .failed("The server did not come back after updating. Check it on the machine directly.")
+        } catch {
+            serverUpdatePhase = .failed(String(describing: error))
         }
     }
 

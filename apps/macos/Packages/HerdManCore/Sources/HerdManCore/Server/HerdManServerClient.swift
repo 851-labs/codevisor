@@ -34,6 +34,7 @@ public protocol HerdManServerClienting: Sendable {
     func setSessionMode(id: UUID, modeId: String) async throws
     func setSessionConfig(id: UUID, configId: String, value: String) async throws
     func requestShutdown() async throws
+    func applyServerUpdate() async throws -> ServerUpdateApplied
     func eventStream(since: Int) -> AsyncThrowingStream<ServerEventEnvelope, any Error>
 }
 
@@ -43,6 +44,11 @@ public extension HerdManServerClienting {
     /// Default no-op so fakes and older transports keep compiling; the HTTP
     /// client overrides this with `POST /v1/shutdown`.
     func requestShutdown() async throws {}
+
+    /// Default for fakes/older transports: the server declined the update.
+    func applyServerUpdate() async throws -> ServerUpdateApplied {
+        ServerUpdateApplied(accepted: false, targetVersion: nil)
+    }
 
     func updateQueuedPrompt(sessionId: UUID, queueItemId: String, text: String) async throws -> ServerPromptQueueItem {
         ServerPromptQueueItem(
@@ -101,6 +107,33 @@ public struct ServerUpdateInfo: Decodable, Equatable, Sendable {
     public var channel: String
     public var checkedAt: String?
     public var migrationState: String
+
+    public init(
+        currentVersion: String,
+        latestVersion: String,
+        updateAvailable: Bool,
+        channel: String,
+        checkedAt: String?,
+        migrationState: String
+    ) {
+        self.currentVersion = currentVersion
+        self.latestVersion = latestVersion
+        self.updateAvailable = updateAvailable
+        self.channel = channel
+        self.checkedAt = checkedAt
+        self.migrationState = migrationState
+    }
+}
+
+/// Response of `POST /v1/update/apply`.
+public struct ServerUpdateApplied: Decodable, Equatable, Sendable {
+    public var accepted: Bool
+    public var targetVersion: String?
+
+    public init(accepted: Bool, targetVersion: String?) {
+        self.accepted = accepted
+        self.targetVersion = targetVersion
+    }
 }
 
 public struct ServerPairingToken: Decodable, Equatable, Sendable {
@@ -422,6 +455,10 @@ public final class HerdManServerClient: HerdManServerClienting, @unchecked Senda
 
     public func requestShutdown() async throws {
         try await sendNoResponse("/v1/shutdown", method: "POST")
+    }
+
+    public func applyServerUpdate() async throws -> ServerUpdateApplied {
+        try await send("/v1/update/apply", method: "POST", body: Optional<EmptyBody>.none)
     }
 
     public func eventStream(since: Int = 0) -> AsyncThrowingStream<ServerEventEnvelope, any Error> {

@@ -66,6 +66,7 @@ struct SidebarView: View {
     @AppStorage("sidebar.order") private var orderRaw = SidebarOrder.updated.rawValue
     @AppStorage("sidebar.manualProjectOrder") private var manualProjectOrderRaw = ""
     @AppStorage("update.skippedVersion") private var skippedUpdateVersion = ""
+    @AppStorage("update.skippedServerVersion") private var skippedServerUpdate = ""
 
     private var list: WorkspaceListModel { environment.workspaceList }
     private var organization: SidebarOrganization { SidebarOrganization(rawValue: organizationRaw) ?? .byProject }
@@ -118,6 +119,21 @@ struct SidebarView: View {
                     model: environment.appUpdate,
                     release: release,
                     onDismiss: { skippedUpdateVersion = release.version }
+                )
+                .padding(8)
+                .transition(.move(edge: .top).combined(with: .opacity))
+            }
+            // The selected remote machine's server has a newer release. (For
+            // the local machine the app banner above covers app + server.)
+            if let serverUpdate = environment.machines.selectedServerUpdate,
+               serverUpdate.updateAvailable,
+               !environment.machines.selectedMachine.isLocal,
+               skippedServerUpdate != serverUpdateSkipKey(serverUpdate) {
+                ServerUpdateBannerView(
+                    machines: environment.machines,
+                    machine: environment.machines.selectedMachine,
+                    update: serverUpdate,
+                    onDismiss: { skippedServerUpdate = serverUpdateSkipKey(serverUpdate) }
                 )
                 .padding(8)
                 .transition(.move(edge: .top).combined(with: .opacity))
@@ -226,6 +242,12 @@ struct SidebarView: View {
                 offerSessionImport(for: workspace)
             }
         }
+    }
+
+    /// One skip entry per machine + version, so dismissing one machine's
+    /// server update doesn't hide another's.
+    private func serverUpdateSkipKey(_ update: ServerUpdateInfo) -> String {
+        "\(environment.machines.selectedMachineId):\(update.latestVersion)"
     }
 
     /// After a workspace is added, look for existing harness sessions in its

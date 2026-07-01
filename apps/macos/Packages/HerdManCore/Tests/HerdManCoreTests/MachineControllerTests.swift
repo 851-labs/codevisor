@@ -152,6 +152,42 @@ struct MachineControllerTests {
         controller.stopEventSync()
     }
 
+    @Test("Client-triggered server update waits for the restart and reconnects")
+    func remoteServerUpdate() async throws {
+        let fake = SyncFakeServerClient(workspaces: [], sessions: [])
+        fake.configureUpdate(current: "0.1.0", latest: "0.2.0")
+        let workspaceList = WorkspaceListModel(
+            workspaceRepository: DefaultWorkspaceRepository(store: InMemoryStore()),
+            sessionRepository: DefaultSessionRepository(store: InMemoryStore())
+        )
+        let controller = MachineController(
+            store: InMemoryStore(),
+            workspaceList: workspaceList,
+            clientFactory: { _ in fake },
+            updatePollInterval: .milliseconds(2),
+            updatePollAttempts: 50
+        )
+
+        await controller.refreshStatus(for: "local")
+        #expect(controller.selectedServerUpdate?.updateAvailable == true)
+        #expect(controller.selectedServerUpdate?.latestVersion == "0.2.0")
+
+        await controller.updateSelectedServer()
+
+        #expect(fake.appliedUpdates == 1)
+        #expect(controller.serverUpdatePhase == .idle)
+        // After the restart the banner state clears and the status shows the
+        // new version.
+        #expect(controller.selectedServerUpdate?.updateAvailable == false)
+        #expect(controller.statusByMachineId["local"]?.label.contains("0.2.0") == true)
+        controller.stopEventSync()
+
+        // Triggering again is a no-op that just refreshes state.
+        await controller.updateSelectedServer()
+        #expect(controller.serverUpdatePhase == .idle)
+        #expect(fake.appliedUpdates == 2)
+    }
+
     private func waitForSync(_ predicate: () -> Bool) async throws {
         for _ in 0..<200 {
             if predicate() { return }
@@ -228,19 +264,62 @@ private final class SyncFakeServerClient: HerdManServerClienting, @unchecked Sen
     func listWorkspaces() async throws -> [ServerWorkspace] { lock.withLock { _workspaces } }
     func listSessions() async throws -> [ServerSession] { lock.withLock { _sessions } }
 
-    func health() async throws -> ServerHealth { ServerHealth(ok: true, version: "0.1.0", database: "ready") }
+    // MARK: - Simulated server versioning / self-update
+
+    private var currentVersion = "0.1.0"
+    private var latestVersion = "0.1.0"
+    private var downtimeRemaining = 0
+    private var _appliedUpdates = 0
+
+    struct ServerDownError: Error {}
+
+    var appliedUpdates: Int { lock.withLock { _appliedUpdates } }
+
+    /// Makes the fake report an available update to `latest`.
+    func configureUpdate(current: String, latest: String) {
+        lock.withLock {
+            currentVersion = current
+            latestVersion = latest
+        }
+    }
+
+    func health() async throws -> ServerHealth {
+        ServerHealth(ok: true, version: lock.withLock { currentVersion }, database: "ready")
+    }
     func info() async throws -> ServerInfo {
-        ServerInfo(id: "local", name: "Local", kind: "local", version: "0.1.0", platform: "darwin", bindHost: "127.0.0.1")
+        let version: String = try lock.withLock {
+            if downtimeRemaining > 0 {
+                downtimeRemaining -= 1
+                throw ServerDownError()
+            }
+            return currentVersion
+        }
+        return ServerInfo(id: "local", name: "Local", kind: "local", version: version, platform: "darwin", bindHost: "127.0.0.1")
     }
     func updateInfo() async throws -> ServerUpdateInfo {
-        ServerUpdateInfo(
-            currentVersion: "0.1.0",
-            latestVersion: "0.1.0",
-            updateAvailable: false,
-            channel: "development",
-            checkedAt: nil,
-            migrationState: "idle"
-        )
+        lock.withLock {
+            ServerUpdateInfo(
+                currentVersion: currentVersion,
+                latestVersion: latestVersion,
+                updateAvailable: currentVersion != latestVersion,
+                channel: "stable",
+                checkedAt: nil,
+                migrationState: "idle"
+            )
+        }
+    }
+    func applyServerUpdate() async throws -> ServerUpdateApplied {
+        lock.withLock {
+            _appliedUpdates += 1
+            guard currentVersion != latestVersion else {
+                return ServerUpdateApplied(accepted: false, targetVersion: currentVersion)
+            }
+            // The server restarts: unreachable for a few probes, then back on
+            // the new version.
+            downtimeRemaining = 3
+            currentVersion = latestVersion
+            return ServerUpdateApplied(accepted: true, targetVersion: latestVersion)
+        }
     }
     func issuePairingToken() async throws -> ServerPairingToken {
         ServerPairingToken(token: "hm_test", createdAt: "2026-06-30T00:00:00.000Z")
