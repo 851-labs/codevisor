@@ -268,7 +268,13 @@ public final class MachineController {
             statusByMachineId[id] = MachineStatus(isReachable: true, label: "\(info.name) \(info.version)")
             updateInfoByMachineId[id] = try? await client.updateInfo()
         } catch {
-            statusByMachineId[id] = MachineStatus(isReachable: false, label: "Unreachable")
+            // A local server that failed to start has a more useful story
+            // than "Unreachable" — surface why instead.
+            if id == HerdManMachine.local.id, case let .unavailable(message) = localServer?.state {
+                statusByMachineId[id] = MachineStatus(isReachable: false, label: message)
+            } else {
+                statusByMachineId[id] = MachineStatus(isReachable: false, label: "Unreachable")
+            }
         }
     }
 

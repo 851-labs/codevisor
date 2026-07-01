@@ -22,6 +22,7 @@ public struct LocalHerdManServerLaunchRequest: Equatable, Sendable {
 public final class LocalHerdManServer {
     public typealias Launcher = @MainActor (LocalHerdManServerLaunchRequest) throws -> Process
     public typealias ServerEnvironmentProvider = @MainActor () async -> [String: String]
+    public typealias ListenerTerminator = @MainActor (Int) async -> Void
 
     private let client: any HerdManServerClienting
     private let config: HerdManServerConfig
@@ -31,6 +32,7 @@ public final class LocalHerdManServer {
     private let logURL: URL
     private let launcher: Launcher
     private let serverEnvironmentProvider: ServerEnvironmentProvider
+    private let staleListenerTerminator: ListenerTerminator
     /// The server is intentionally not terminated with the app; it owns durable
     /// sessions and should keep running so clients can reconnect to live work.
     private var process: Process?
@@ -45,7 +47,8 @@ public final class LocalHerdManServer {
         databasePath: String = LocalHerdManServer.defaultDatabasePath(),
         logURL: URL = LocalHerdManServer.defaultLogURL(),
         serverEnvironmentProvider: @escaping ServerEnvironmentProvider = LocalHerdManServer.defaultServerEnvironment,
-        launcher: @escaping Launcher = LocalHerdManServer.launchProcess
+        launcher: @escaping Launcher = LocalHerdManServer.launchProcess,
+        staleListenerTerminator: @escaping ListenerTerminator = { await LocalHerdManServer.terminateListeners(onPort: $0) }
     ) {
         self.client = client
         self.config = config
@@ -55,13 +58,30 @@ public final class LocalHerdManServer {
         self.logURL = logURL
         self.serverEnvironmentProvider = serverEnvironmentProvider
         self.launcher = launcher
+        self.staleListenerTerminator = staleListenerTerminator
     }
 
     @discardableResult
     public func ensureRunning() async -> LocalHerdManServerState {
-        if await isHealthy() {
-            state = .alreadyRunning
-            return state
+        if let health = await currentHealth() {
+            // A durable server left behind by an older app install keeps
+            // serving across upgrades (`brew upgrade` replaces the bundle but
+            // never touches the process). Replace it when the bundled runtime
+            // is newer; the database lives outside the bundle, so the new
+            // runtime picks it up and runs its own migrations.
+            guard let bundledVersion = bundledServerVersion(),
+                  AppUpdateModel.isVersion(bundledVersion, newerThan: health.version)
+            else {
+                state = .alreadyRunning
+                return state
+            }
+            await stopStaleServer()
+            if await isHealthy() {
+                // The stale server survived both the shutdown request and the
+                // signal; keep using it rather than failing outright.
+                state = .alreadyRunning
+                return state
+            }
         }
 
         if let process, process.isRunning {
@@ -106,6 +126,68 @@ public final class LocalHerdManServer {
         }
         process = nil
         state = .idle
+    }
+
+    /// The version stamped into the bundled runtime next to its entrypoint.
+    /// Nil in development runs (the repo tree has no VERSION file), which
+    /// intentionally disables the stale-server replacement there.
+    private func bundledServerVersion() -> String? {
+        guard let entrypoint else { return nil }
+        let versionURL = entrypoint.deletingLastPathComponent().appendingPathComponent("VERSION")
+        guard let raw = try? String(contentsOf: versionURL, encoding: .utf8) else { return nil }
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    /// Stops a healthy-but-outdated server: politely over HTTP first, then —
+    /// for servers that predate the shutdown endpoint — by signalling whatever
+    /// still listens on the port.
+    private func stopStaleServer() async {
+        await shutdown()
+        guard await isHealthy() else { return }
+        await staleListenerTerminator(port)
+        for _ in 0..<20 {
+            if !(await isHealthy()) { return }
+            try? await Task.sleep(for: .milliseconds(150))
+        }
+    }
+
+    /// Sends SIGTERM to processes listening on the port. Only ever invoked
+    /// against a confirmed stale HerdMan server that ignored `POST /v1/shutdown`.
+    nonisolated public static func terminateListeners(onPort port: Int) async {
+        let ownPid = ProcessInfo.processInfo.processIdentifier
+        for pid in await listeningPids(onPort: port) where pid != ownPid {
+            kill(pid, SIGTERM)
+        }
+    }
+
+    nonisolated private static func listeningPids(onPort port: Int) async -> [pid_t] {
+        await withCheckedContinuation { continuation in
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/sbin/lsof")
+            process.arguments = ["-ti", "tcp:\(port)", "-sTCP:LISTEN"]
+            let pipe = Pipe()
+            process.standardOutput = pipe
+            process.standardError = FileHandle.nullDevice
+            process.terminationHandler = { _ in
+                let data = pipe.fileHandleForReading.readDataToEndOfFile()
+                let pids = String(decoding: data, as: UTF8.self)
+                    .split(whereSeparator: \.isNewline)
+                    .compactMap { pid_t($0.trimmingCharacters(in: .whitespaces)) }
+                continuation.resume(returning: pids)
+            }
+            do {
+                try process.run()
+            } catch {
+                process.terminationHandler = nil
+                continuation.resume(returning: [])
+            }
+        }
+    }
+
+    private func currentHealth() async -> ServerHealth? {
+        guard let health = try? await client.health(), health.ok else { return nil }
+        return health
     }
 
     private var host: String {
@@ -213,14 +295,19 @@ public final class LocalHerdManServer {
     }
 
     nonisolated public static func bundledServerRuntimeDirectory(
-        fileManager: FileManager = .default
+        fileManager: FileManager = .default,
+        resourcesURL: URL? = Bundle.main.resourceURL
     ) -> URL? {
+        // Plain path arithmetic, not `Bundle.url(forResource:)`: that API
+        // returns nil for resource directories in release bundles, which left
+        // production installs unable to find the runtime at all.
+        guard let resourcesURL else { return nil }
         let candidates = [
-            Bundle.main.url(forResource: nil, withExtension: nil, subdirectory: "server/\(bundledServerTarget)"),
-            Bundle.main.url(forResource: nil, withExtension: nil, subdirectory: "Server/\(bundledServerTarget)"),
-            Bundle.main.url(forResource: nil, withExtension: nil, subdirectory: "server"),
-            Bundle.main.url(forResource: nil, withExtension: nil, subdirectory: "Server")
-        ].compactMap { $0 }
+            resourcesURL.appendingPathComponent("server/\(bundledServerTarget)", isDirectory: true),
+            resourcesURL.appendingPathComponent("Server/\(bundledServerTarget)", isDirectory: true),
+            resourcesURL.appendingPathComponent("server", isDirectory: true),
+            resourcesURL.appendingPathComponent("Server", isDirectory: true)
+        ]
         return candidates.first { candidate in
             fileManager.fileExists(atPath: candidate.appendingPathComponent("main.js").path)
                 && fileManager.isExecutableFile(atPath: candidate.appendingPathComponent("bin/node").path)
