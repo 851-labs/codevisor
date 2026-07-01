@@ -4,6 +4,7 @@ import type {
   TerminalSpawnRequest,
   TerminalSpawner
 } from "./index.js"
+import type { TerminalClientFrame } from "@herdman/api"
 import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
 import { makeTerminalManager, TerminalError, TerminalManager } from "./index.js"
@@ -111,17 +112,20 @@ describe("@herdman/terminal", () => {
     )
     const frames: Array<unknown> = []
     const disconnect = await run(
-      manager.connectTerminal(terminal.terminalId, (frame) => frames.push(frame))
+      manager.connectTerminal(terminal.terminalId, 0, (frame) => frames.push(frame))
     )
     disconnect()
 
-    expect(frames).toEqual([{ type: "output", data: "booting" }, { type: "exit" }])
+    expect(frames).toEqual([
+      { type: "output", seq: 1, data: "booting" },
+      { type: "exit", seq: 2 }
+    ])
     await expect(
-      run(manager.handleClientFrame(terminal.terminalId, { type: "input", data: "ignored" }))
+      run(manager.handleClientFrame(terminal.terminalId, inputFrame(1, "ignored")))
     ).rejects.toBeInstanceOf(TerminalError)
   })
 
-  it("handles input, resize, live output, exit, replay, and removal", async () => {
+  it("handles idempotent creation, input, resize, live output, replay, and removal", async () => {
     const spawner = makeSpawner()
     const manager = makeTerminalManager({ defaultShell: "/bin/sh", env: { PATH: "/bin" }, spawner })
     const terminal = await run(
@@ -135,12 +139,26 @@ describe("@herdman/terminal", () => {
     )
     const firstSink: Array<unknown> = []
     const disconnect = await run(
-      manager.connectTerminal(terminal.terminalId, (frame) => firstSink.push(frame))
+      manager.connectTerminal(terminal.terminalId, 0, (frame) => firstSink.push(frame))
     )
 
-    await run(manager.handleClientFrame(terminal.terminalId, { type: "input", data: "ls\n" }))
+    const sameTerminal = await run(
+      manager.createTerminal({
+        sessionId: "session-2",
+        cwd: "/tmp/other",
+        cols: 100,
+        rows: 40
+      })
+    )
+    expect(sameTerminal.terminalId).toBe(terminal.terminalId)
+
+    await run(manager.handleClientFrame(terminal.terminalId, inputFrame(1, "ls\n")))
+    await run(manager.handleClientFrame(terminal.terminalId, inputFrame(1, "duplicate\n")))
     await run(
-      manager.handleClientFrame(terminal.terminalId, { type: "resize", cols: 140, rows: 50 })
+      manager.handleClientFrame(terminal.terminalId, resizeFrame(2, 140, 50))
+    )
+    await run(
+      manager.handleClientFrame(terminal.terminalId, resizeFrame(2, 1, 1))
     )
     spawner.handlers[0]?.onOutput("hello")
     spawner.handlers[0]?.onExit(7)
@@ -152,19 +170,23 @@ describe("@herdman/terminal", () => {
     expect(process?.writes).toEqual(["ls\n"])
     expect(process?.resizes).toEqual([[140, 50]])
     expect(firstSink).toEqual([
-      { type: "output", data: "hello" },
-      { type: "exit", exitCode: 7 }
+      { type: "output", seq: 1, data: "hello" },
+      { type: "exit", seq: 2, exitCode: 7 }
     ])
     expect(await run(manager.terminalFrames(terminal.terminalId))).toEqual([
-      { type: "output", data: "hello" },
-      { type: "exit", exitCode: 7 },
-      { type: "output", data: "after-disconnect" }
+      { type: "output", seq: 1, data: "hello" },
+      { type: "exit", seq: 2, exitCode: 7 },
+      { type: "output", seq: 3, data: "after-disconnect" }
+    ])
+    expect(await run(manager.terminalFrames(terminal.terminalId, 1))).toEqual([
+      { type: "exit", seq: 2, exitCode: 7 },
+      { type: "output", seq: 3, data: "after-disconnect" }
     ])
 
     await run(manager.closeTerminal(terminal.terminalId))
     expect(process?.killCount).toBe(1)
     await expect(
-      run(manager.connectTerminal(terminal.terminalId, () => undefined))
+      run(manager.connectTerminal(terminal.terminalId, 0, () => undefined))
     ).rejects.toBeInstanceOf(TerminalError)
   })
 
@@ -180,7 +202,7 @@ describe("@herdman/terminal", () => {
       })
     )
 
-    await run(manager.handleClientFrame(terminal.terminalId, { type: "close" }))
+    await run(manager.handleClientFrame(terminal.terminalId, closeFrame(1)))
     expect(spawner.processes[0]?.killCount).toBe(1)
     await expect(run(manager.terminalFrames("missing"))).rejects.toBeInstanceOf(TerminalError)
     await expect(run(manager.closeTerminal("missing"))).rejects.toBeInstanceOf(TerminalError)
@@ -203,10 +225,31 @@ describe("@herdman/terminal", () => {
 
     await expect(
       run(
-        manager.connectTerminal(terminal.terminalId, () => {
+        manager.connectTerminal(terminal.terminalId, 0, () => {
           throw cause
         })
       )
     ).rejects.toBeInstanceOf(TerminalError)
   })
+})
+
+const inputFrame = (clientSeq: number, data: string): TerminalClientFrame => ({
+  type: "input",
+  clientId: "test-client",
+  clientSeq,
+  data
+})
+
+const resizeFrame = (clientSeq: number, cols: number, rows: number): TerminalClientFrame => ({
+  type: "resize",
+  clientId: "test-client",
+  clientSeq,
+  cols,
+  rows
+})
+
+const closeFrame = (clientSeq: number): TerminalClientFrame => ({
+  type: "close",
+  clientId: "test-client",
+  clientSeq
 })

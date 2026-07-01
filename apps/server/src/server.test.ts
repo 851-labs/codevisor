@@ -545,7 +545,7 @@ describe("@herdman/server", () => {
       readonly websocketPath: string
     }
     const webSocket = new WebSocket(
-      `${server.url.replace("http:", "ws:")}${terminal.websocketPath}`
+      `${server.url.replace("http:", "ws:")}${terminal.websocketPath}?lastOutputSeq=0`
     )
     const messages: Array<unknown> = []
 
@@ -557,8 +557,10 @@ describe("@herdman/server", () => {
     await new Promise((resolve) => setTimeout(resolve, 20))
     webSocket.send("{")
     await waitFor(() => messages.length === 1)
-    webSocket.send(JSON.stringify({ type: "input", data: "pwd\n" }))
-    webSocket.send(JSON.stringify({ type: "resize", cols: 120, rows: 30 }))
+    webSocket.send(JSON.stringify({ type: "input", clientId: "client-a", clientSeq: 1, data: "pwd\n" }))
+    webSocket.send(
+      JSON.stringify({ type: "resize", clientId: "client-a", clientSeq: 2, cols: 120, rows: 30 })
+    )
     await waitFor(
       () => spawner.processes[0]?.writes.length === 1 && spawner.processes[0]?.resizes.length === 1,
       () =>
@@ -581,7 +583,9 @@ describe("@herdman/server", () => {
           writes: spawner.processes[0]?.writes ?? []
         })
     )
-    webSocket.send(JSON.stringify({ type: "input", data: "after-exit" }))
+    webSocket.send(
+      JSON.stringify({ type: "input", clientId: "client-a", clientSeq: 3, data: "after-exit" })
+    )
     await waitFor(() => messages.length === 4)
     webSocket.close()
 
@@ -589,8 +593,8 @@ describe("@herdman/server", () => {
     expect(spawner.processes[0]?.resizes).toEqual([[120, 30]])
     expect(messages).toEqual([
       expect.objectContaining({ type: "error" }),
-      { type: "output", data: "terminal-output" },
-      { type: "exit", exitCode: 0 },
+      { type: "output", seq: 1, data: "terminal-output" },
+      { type: "exit", seq: 2, exitCode: 0 },
       expect.objectContaining({ type: "error" })
     ])
 

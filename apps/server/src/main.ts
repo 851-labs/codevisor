@@ -27,6 +27,10 @@ const main = Effect.gen(function* () {
   const host = args.host ?? "127.0.0.1"
   const port = Number(args.port ?? "8765")
   const serverId = args.serverId ?? "local"
+  const authMode = args.auth ?? (host === "127.0.0.1" ? "none" : "token")
+  if (authMode !== "none" && authMode !== "token") {
+    throw new Error("--auth must be either none or token")
+  }
   const db = yield* makeDatabase({
     filename: args.db ?? defaultDatabasePath(),
     serverId
@@ -41,10 +45,11 @@ const main = Effect.gen(function* () {
       host,
       id: serverId,
       kind: host === "127.0.0.1" ? "local" : "remote",
+      name: args.name ?? (host === "127.0.0.1" ? "Local HerdMan" : serverId),
       port,
       auth: {
-        allowLocalhostWithoutAuth: host === "127.0.0.1",
-        requireBearerToken: host !== "127.0.0.1"
+        allowLocalhostWithoutAuth: authMode === "token" && host === "127.0.0.1",
+        requireBearerToken: authMode === "token"
       }
     })
   )

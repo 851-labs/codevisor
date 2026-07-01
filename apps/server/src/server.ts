@@ -509,7 +509,12 @@ const handleUpgrade = async (
     }
 
     webSocketServer.handleUpgrade(request, socket, head, (webSocket) => {
-      void attachTerminalSocket(services.terminal, terminalId, webSocket)
+      void attachTerminalSocket(
+        services.terminal,
+        terminalId,
+        numberSearchParam(url, "lastOutputSeq"),
+        webSocket
+      )
     })
   } catch {
     socket.write("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n")
@@ -520,11 +525,12 @@ const handleUpgrade = async (
 const attachTerminalSocket = async (
   terminal: TerminalManagerService,
   terminalId: string,
+  lastOutputSeq: number,
   webSocket: WebSocket
 ): Promise<void> => {
   try {
     const disconnect = await run(
-      terminal.connectTerminal(terminalId, (frame) => {
+      terminal.connectTerminal(terminalId, lastOutputSeq, (frame) => {
         /* v8 ignore next -- the close event removes this sink before normal closed-socket output. */
         if (webSocket.readyState === WebSocket.OPEN) {
           webSocket.send(JSON.stringify(frame))
@@ -537,12 +543,12 @@ const attachTerminalSocket = async (
         return
       }
       void run(terminal.handleClientFrame(terminalId, frame)).catch((cause: unknown) => {
-        webSocket.send(JSON.stringify({ type: "error", message: failureMessage(cause) }))
+        webSocket.send(JSON.stringify({ type: "error", seq: 0, message: failureMessage(cause) }))
       })
     })
     webSocket.on("close", disconnect)
   } catch (cause) {
-    webSocket.send(JSON.stringify({ type: "error", message: failureMessage(cause) }))
+    webSocket.send(JSON.stringify({ type: "error", seq: 0, message: failureMessage(cause) }))
     webSocket.close()
   }
 }
@@ -664,9 +670,14 @@ const parseTerminalFrameOrSend = (
   try {
     return parseTerminalFrame(raw)
   } catch (cause) {
-    webSocket.send(JSON.stringify({ type: "error", message: failureMessage(cause) }))
+    webSocket.send(JSON.stringify({ type: "error", seq: 0, message: failureMessage(cause) }))
     return undefined
   }
+}
+
+const numberSearchParam = (url: URL, name: string): number => {
+  const parsed = Number(url.searchParams.get(name) ?? "0")
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0
 }
 
 const writeJson = (response: ServerResponse, status: number, body: unknown): void => {

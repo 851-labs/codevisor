@@ -122,18 +122,26 @@ export const UpdateSessionRequest = Schema.Struct({
 export type UpdateSessionRequest = typeof UpdateSessionRequest.Type
 
 export const PromptRequest = Schema.Struct({
-  text: Schema.String
+  text: Schema.String,
+  clientActionId: Schema.optional(Schema.String)
 })
 export type PromptRequest = typeof PromptRequest.Type
 
+export const CancelRequest = Schema.Struct({
+  clientActionId: Schema.optional(Schema.String)
+})
+export type CancelRequest = typeof CancelRequest.Type
+
 export const SetModeRequest = Schema.Struct({
-  modeId: Schema.String
+  modeId: Schema.String,
+  clientActionId: Schema.optional(Schema.String)
 })
 export type SetModeRequest = typeof SetModeRequest.Type
 
 export const SetConfigRequest = Schema.Struct({
   configId: Schema.String,
-  value: Schema.String
+  value: Schema.String,
+  clientActionId: Schema.optional(Schema.String)
 })
 export type SetConfigRequest = typeof SetConfigRequest.Type
 
@@ -207,21 +215,36 @@ export type TerminalCreateRequest = typeof TerminalCreateRequest.Type
 
 export const TerminalCreateResponse = Schema.Struct({
   terminalId: Schema.String,
-  websocketPath: Schema.String
+  websocketPath: Schema.String,
+  nextOutputSeq: Schema.Number
 })
 export type TerminalCreateResponse = typeof TerminalCreateResponse.Type
 
+const TerminalClientFrameBase = {
+  clientId: Schema.String,
+  clientSeq: Schema.Number
+} as const
+
 export const TerminalClientFrame = Schema.Union([
-  Schema.Struct({ type: Schema.Literal("input"), data: Schema.String }),
-  Schema.Struct({ type: Schema.Literal("resize"), cols: Schema.Number, rows: Schema.Number }),
-  Schema.Struct({ type: Schema.Literal("close") })
+  Schema.Struct({ ...TerminalClientFrameBase, type: Schema.Literal("input"), data: Schema.String }),
+  Schema.Struct({
+    ...TerminalClientFrameBase,
+    type: Schema.Literal("resize"),
+    cols: Schema.Number,
+    rows: Schema.Number
+  }),
+  Schema.Struct({ ...TerminalClientFrameBase, type: Schema.Literal("close") })
 ])
 export type TerminalClientFrame = typeof TerminalClientFrame.Type
 
 export const TerminalServerFrame = Schema.Union([
-  Schema.Struct({ type: Schema.Literal("output"), data: Schema.String }),
-  Schema.Struct({ type: Schema.Literal("exit"), exitCode: Schema.optional(Schema.Number) }),
-  Schema.Struct({ type: Schema.Literal("error"), message: Schema.String })
+  Schema.Struct({ type: Schema.Literal("output"), seq: Schema.Number, data: Schema.String }),
+  Schema.Struct({
+    type: Schema.Literal("exit"),
+    seq: Schema.Number,
+    exitCode: Schema.optional(Schema.Number)
+  }),
+  Schema.Struct({ type: Schema.Literal("error"), seq: Schema.Number, message: Schema.String })
 ])
 export type TerminalServerFrame = typeof TerminalServerFrame.Type
 

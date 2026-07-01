@@ -3,7 +3,8 @@
   "private": true,
   "type": "module",
   "bin": {
-    "herdman-server": "./dist/main.js"
+    "herdman-server": "./dist/main.js",
+    "herdman-terminal-proxy": "./dist/terminal-proxy.js"
   },
   "scripts": {
     "build": "tsc -b tsconfig.json",

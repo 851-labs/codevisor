@@ -47,6 +47,7 @@ export interface TerminalManagerService {
   ) => Effect.Effect<TerminalCreateResponse, TerminalError>
   readonly connectTerminal: (
     terminalId: string,
+    lastOutputSeq: number,
     sink: (frame: TerminalServerFrame) => void
   ) => Effect.Effect<() => void, TerminalError>
   readonly handleClientFrame: (
@@ -54,7 +55,8 @@ export interface TerminalManagerService {
     frame: TerminalClientFrame
   ) => Effect.Effect<void, TerminalError>
   readonly terminalFrames: (
-    terminalId: string
+    terminalId: string,
+    since?: number
   ) => Effect.Effect<ReadonlyArray<TerminalServerFrame>, TerminalError>
   readonly closeTerminal: (terminalId: string) => Effect.Effect<void, TerminalError>
 }
@@ -67,25 +69,38 @@ export class TerminalManager extends Context.Service<TerminalManager, TerminalMa
 }
 
 interface RunningTerminal {
+  readonly terminalId: string
+  readonly sessionId: string
   readonly process: TerminalProcess
   readonly sinks: Set<(frame: TerminalServerFrame) => void>
   readonly frames: Array<TerminalServerFrame>
+  readonly clientSeqs: Map<string, number>
+  nextOutputSeq: number
   closed: boolean
 }
 
+type TerminalFramePayload =
+  | { readonly type: "output"; readonly data: string }
+  | { readonly type: "exit"; readonly exitCode?: number }
+  | { readonly type: "error"; readonly message: string }
+
 export const makeTerminalManager = (config: TerminalManagerConfig = {}): TerminalManagerService => {
   const terminals = new Map<string, RunningTerminal>()
+  const terminalsBySession = new Map<string, string>()
   /* v8 ignore next -- real node-pty spawning is covered by packaging smoke tests. */
   const spawner = config.spawner ?? nodePtySpawner
   const env = config.env ?? process.env
   /* v8 ignore next -- the final fallback depends on host SHELL environment state. */
   const defaultShell = config.defaultShell ?? process.env.SHELL ?? "/bin/sh"
 
-  const pushFrame = (terminal: RunningTerminal, frame: TerminalServerFrame): void => {
-    terminal.frames.push(frame)
+  const pushFrame = (terminal: RunningTerminal, frame: TerminalFramePayload): TerminalServerFrame => {
+    const sequenced = sequenceFrame(terminal.nextOutputSeq, frame)
+    terminal.nextOutputSeq += 1
+    terminal.frames.push(sequenced)
     for (const sink of terminal.sinks) {
-      sink(frame)
+      sink(sequenced)
     }
+    return sequenced
   }
 
   const getTerminal = (terminalId: string, operation: string): RunningTerminal => {
@@ -108,16 +123,24 @@ export const makeTerminalManager = (config: TerminalManagerConfig = {}): Termina
           )
         }
 
+        const existingTerminalId = terminalsBySession.get(request.sessionId)
+        if (existingTerminalId !== undefined) {
+          const existing = terminals.get(existingTerminalId)
+          if (existing !== undefined && !existing.closed) {
+            return terminalResponse(existing)
+          }
+        }
+
         const terminalId = randomUUID()
         const spawnRequest: TerminalSpawnRequest = {
           ...request,
           shell: request.shell ?? defaultShell,
           env
         }
-        const pendingFrames: Array<TerminalServerFrame> = []
+        const pendingFrames: Array<TerminalFramePayload> = []
         let runningTerminal: RunningTerminal | undefined
         let exitedBeforeRegistration = false
-        const publishFrame = (frame: TerminalServerFrame): void => {
+        const publishFrame = (frame: TerminalFramePayload): void => {
           if (runningTerminal === undefined) {
             pendingFrames.push(frame)
           } else {
@@ -136,9 +159,13 @@ export const makeTerminalManager = (config: TerminalManagerConfig = {}): Termina
           }
         })
         const terminal: RunningTerminal = {
+          terminalId,
+          sessionId: request.sessionId,
           process,
           sinks: new Set(),
           frames: [],
+          clientSeqs: new Map(),
+          nextOutputSeq: 1,
           closed: exitedBeforeRegistration
         }
         runningTerminal = terminal
@@ -146,16 +173,16 @@ export const makeTerminalManager = (config: TerminalManagerConfig = {}): Termina
           pushFrame(terminal, frame)
         }
         terminals.set(terminalId, terminal)
-        return {
-          terminalId,
-          websocketPath: `/v1/terminals/${terminalId}/socket`
+        if (!terminal.closed) {
+          terminalsBySession.set(request.sessionId, terminalId)
         }
+        return terminalResponse(terminal)
       }),
-    connectTerminal: (terminalId, sink) =>
+    connectTerminal: (terminalId, lastOutputSeq, sink) =>
       terminalAttempt("connectTerminal", () => {
         const terminal = getTerminal(terminalId, "connectTerminal")
         terminal.sinks.add(sink)
-        for (const frame of terminal.frames) {
+        for (const frame of terminal.frames.filter((candidate) => candidate.seq > lastOutputSeq)) {
           sink(frame)
         }
         return () => {
@@ -168,6 +195,10 @@ export const makeTerminalManager = (config: TerminalManagerConfig = {}): Termina
         if (terminal.closed) {
           throw new Error(`Terminal already closed: ${terminalId}`)
         }
+        if (isDuplicateClientFrame(terminal, frame.clientId, frame.clientSeq)) {
+          return
+        }
+        terminal.clientSeqs.set(frame.clientId, frame.clientSeq)
 
         switch (frame.type) {
           case "input": {
@@ -181,13 +212,14 @@ export const makeTerminalManager = (config: TerminalManagerConfig = {}): Termina
           case "close": {
             terminal.closed = true
             terminal.process.kill()
+            terminalsBySession.delete(terminal.sessionId)
             break
           }
         }
       }),
-    terminalFrames: (terminalId) =>
+    terminalFrames: (terminalId, since = 0) =>
       terminalAttempt("terminalFrames", () => [
-        ...getTerminal(terminalId, "terminalFrames").frames
+        ...getTerminal(terminalId, "terminalFrames").frames.filter((frame) => frame.seq > since)
       ]),
     closeTerminal: (terminalId) =>
       terminalAttempt("closeTerminal", () => {
@@ -195,6 +227,7 @@ export const makeTerminalManager = (config: TerminalManagerConfig = {}): Termina
         terminal.closed = true
         terminal.process.kill()
         terminals.delete(terminalId)
+        terminalsBySession.delete(terminal.sessionId)
       })
   }
 }
@@ -240,3 +273,34 @@ const terminalAttempt = <A>(operation: string, run: () => A): Effect.Effect<A, T
             message: cause instanceof Error ? cause.message : String(cause)
           })
   })
+
+const terminalResponse = (terminal: RunningTerminal): TerminalCreateResponse => ({
+  terminalId: terminal.terminalId,
+  websocketPath: `/v1/terminals/${terminal.terminalId}/socket`,
+  nextOutputSeq: terminal.nextOutputSeq
+})
+
+const sequenceFrame = (seq: number, frame: TerminalFramePayload): TerminalServerFrame => {
+  switch (frame.type) {
+    case "output": {
+      return { type: "output", seq, data: frame.data }
+    }
+    case "exit": {
+      return frame.exitCode === undefined
+        ? { type: "exit", seq }
+        : { type: "exit", seq, exitCode: frame.exitCode }
+    }
+    case "error": {
+      return { type: "error", seq, message: frame.message }
+    }
+  }
+}
+
+const isDuplicateClientFrame = (
+  terminal: RunningTerminal,
+  clientId: string,
+  clientSeq: number
+): boolean => {
+  const lastSeq = terminal.clientSeqs.get(clientId)
+  return lastSeq !== undefined && clientSeq <= lastSeq
+}
