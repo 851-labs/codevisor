@@ -37,6 +37,7 @@ if [[ -z "$node_runtime" || ! -x "$node_runtime" ]]; then
   echo "error: a Node executable is required to package the HerdMan server runtime." >&2
   exit 1
 fi
+node_runtime_dir="$(cd "$(dirname "$node_runtime")" && pwd)"
 
 if ! node_version="$("$node_runtime" --version 2>/dev/null)"; then
   echo "error: failed to read Node version from $node_runtime" >&2
@@ -75,7 +76,7 @@ if [[ ! -x "$node_gyp" ]]; then
   exit 1
 fi
 
-(cd "$runtime_dir" && npm_config_node_gyp="$node_gyp" bun install --production --frozen-lockfile)
+(cd "$runtime_dir" && PATH="$node_runtime_dir:$PATH" npm_config_node_gyp="$node_gyp" bun install --production --frozen-lockfile)
 cp "$node_runtime" "$runtime_dir/bin/node"
 chmod +x "$runtime_dir/bin/node"
 echo "Bundled $node_version from $node_runtime"

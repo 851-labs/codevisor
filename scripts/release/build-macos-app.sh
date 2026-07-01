@@ -44,6 +44,7 @@ build_number="${HERDMAN_BUILD_NUMBER:-${GITHUB_RUN_NUMBER:-1}}"
 derived_data="$repo_root/dist/release/DerivedData"
 runtime_dir="$repo_root/dist/release/work/app-server-runtime"
 archive_path="$output_dir/HerdMan-macOS.zip"
+node_entitlements="$script_dir/node-entitlements.plist"
 
 mkdir -p "$output_dir"
 (cd "$repo_root" && bun run build)
@@ -99,18 +100,30 @@ identity="${APPLE_CODESIGN_IDENTITY:-}"
 if [[ -n "$identity" ]]; then
   while IFS= read -r -d '' candidate; do
     if file -b "$candidate" | grep -q "Mach-O"; then
-      codesign --force --options runtime --timestamp --sign "$identity" "$candidate"
+      if [[ "$candidate" == "$server_resources/bin/node" ]]; then
+        codesign --force --options runtime --timestamp --entitlements "$node_entitlements" --sign "$identity" "$candidate"
+      else
+        codesign --force --options runtime --timestamp --sign "$identity" "$candidate"
+      fi
     fi
   done < <(find "$server_resources" -type f -print0)
-  codesign --force --deep --options runtime --timestamp --sign "$identity" "$app_path"
+  codesign --force --options runtime --timestamp --sign "$identity" "$app_path"
 else
   while IFS= read -r -d '' candidate; do
     if file -b "$candidate" | grep -q "Mach-O"; then
-      codesign --force --sign - "$candidate"
+      if [[ "$candidate" == "$server_resources/bin/node" ]]; then
+        codesign --force --entitlements "$node_entitlements" --sign - "$candidate"
+      else
+        codesign --force --sign - "$candidate"
+      fi
     fi
   done < <(find "$server_resources" -type f -print0)
-  codesign --force --deep --sign - "$app_path"
+  codesign --force --sign - "$app_path"
 fi
+
+# Exercise the signed runtime before archiving. This catches production-only
+# signing and native-addon ABI drift that the Debug app cannot expose.
+(cd "$server_resources" && ./bin/node -e 'require("better-sqlite3"); console.log(`Packaged Node runtime smoke passed: ${process.version}`)')
 
 rm -f "$archive_path"
 ditto --norsrc -c -k --keepParent "$app_path" "$archive_path"
