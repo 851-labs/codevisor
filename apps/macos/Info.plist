@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	  HerdMan servers speak plain HTTP: the local server on 127.0.0.1 and
+	  remote machines over private networks (e.g. Tailscale, which encrypts
+	  the transport itself). App Transport Security would otherwise reject
+	  every remote machine connection with NSURLError -1022.
+	-->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsArbitraryLoads</key>
+		<true/>
+	</dict>
+</dict>
+</plist>
