@@ -110,9 +110,20 @@ struct RootView: View {
     @ViewBuilder
     private var sidebarColumn: some View {
         if HerdManAppVariant.isDevelopment {
+            // Paint only the sidebar's slice of the title bar: a band the
+            // height of the top safe area (the toolbar region), drawn just
+            // above the sidebar content. `.windowToolbar` backgrounds can't do
+            // this — they always tint the toolbar across the whole window.
             SidebarView(selection: $selection, store: store)
-                .toolbarBackground(Self.developmentToolbarTint, for: .windowToolbar)
-                .toolbarBackgroundVisibility(.visible, for: .windowToolbar)
+                .overlay {
+                    GeometryReader { proxy in
+                        Self.developmentToolbarTint
+                            .frame(height: proxy.safeAreaInsets.top)
+                            .offset(y: -proxy.safeAreaInsets.top)
+                            .allowsHitTesting(false)
+                            .accessibilityHidden(true)
+                    }
+                }
         } else {
             SidebarView(selection: $selection, store: store)
         }
