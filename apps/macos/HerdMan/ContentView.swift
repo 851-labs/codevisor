@@ -96,9 +96,12 @@ struct RootView: View {
         }
         .toolbar {
             if HerdManAppVariant.isDevelopment {
-                ToolbarItem(placement: .navigation) {
+                // Right of the page title, without the liquid-glass capsule
+                // toolbar items get by default.
+                ToolbarItem(placement: .principal) {
                     DevelopmentBadge()
                 }
+                .sharedBackgroundVisibility(.hidden)
             }
         }
     }
