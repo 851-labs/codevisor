@@ -56,6 +56,7 @@ struct SidebarView: View {
     @State private var showingImporter = false
     @State private var showingRemoteMachine = false
     @State private var showingRemoteWorkspace = false
+    @State private var renamingMachine: HerdManMachine?
     @State private var pendingImport: PendingSessionImport?
     @State private var expanded: Set<UUID> = []
     @State private var hovered: String?
@@ -206,10 +207,15 @@ struct SidebarView: View {
             }
         }
         .sheet(isPresented: $showingRemoteMachine) {
-            RemoteMachineSheet { host in
-                if (try? environment.machines.addRemote(host: host)) != nil {
+            RemoteMachineSheet { host, name in
+                if (try? environment.machines.addRemote(host: host, name: name)) != nil {
                     selection = .newChat(nil)
                 }
+            }
+        }
+        .sheet(item: $renamingMachine) { machine in
+            RenameMachineSheet(machine: machine) { name in
+                try? environment.machines.renameMachine(machine.id, to: name)
             }
         }
         .sheet(isPresented: $showingRemoteWorkspace) {
@@ -259,6 +265,13 @@ struct SidebarView: View {
                 showingRemoteMachine = true
             } label: {
                 Label("Add remote machine…", systemImage: "plus")
+            }
+            if !environment.machines.selectedMachine.isLocal {
+                Button {
+                    renamingMachine = environment.machines.selectedMachine
+                } label: {
+                    Label("Rename “\(environment.machines.selectedMachine.name)”…", systemImage: "pencil")
+                }
             }
         } label: {
             HStack(spacing: 8) {
@@ -652,23 +665,74 @@ private struct WorkspaceDropDelegate: DropDelegate {
 private struct RemoteMachineSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var host = ""
-    let onAdd: (String) -> Void
+    @State private var name = ""
+    let onAdd: (String, String?) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Add remote machine")
                 .font(.headline)
-            TextField("mac-mini.tailnet.ts.net or 100.64.0.10:49361", text: $host)
-                .textFieldStyle(.roundedBorder)
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Address")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
+                TextField("mac-mini.tailnet.ts.net or 100.64.0.10:49361", text: $host)
+                    .textFieldStyle(.roundedBorder)
+            }
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Name")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
+                TextField("Optional, e.g. Mac mini", text: $name)
+                    .textFieldStyle(.roundedBorder)
+            }
             HStack {
                 Spacer()
                 Button("Cancel") { dismiss() }
                 Button("Add") {
-                    onAdd(host)
+                    let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+                    onAdd(host, trimmedName.isEmpty ? nil : trimmedName)
                     dismiss()
                 }
                 .keyboardShortcut(.defaultAction)
                 .disabled(host.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+        }
+        .padding(20)
+        .frame(width: 420)
+    }
+}
+
+private struct RenameMachineSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var name: String
+    let machine: HerdManMachine
+    let onRename: (String) -> Void
+
+    init(machine: HerdManMachine, onRename: @escaping (String) -> Void) {
+        self.machine = machine
+        self.onRename = onRename
+        _name = State(initialValue: machine.name)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Rename machine")
+                .font(.headline)
+            TextField("Name", text: $name)
+                .textFieldStyle(.roundedBorder)
+            Text(machine.baseURL.absoluteString)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            HStack {
+                Spacer()
+                Button("Cancel") { dismiss() }
+                Button("Save") {
+                    onRename(name)
+                    dismiss()
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         }
         .padding(20)

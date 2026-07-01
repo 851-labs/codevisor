@@ -4,6 +4,7 @@ import Observation
 public enum MachineControllerError: Error, Equatable, Sendable {
     case invalidHost(String)
     case cannotRemoveLocal
+    case cannotRenameLocal
 }
 
 public struct HerdManMachine: Identifiable, Sendable, Codable, Equatable {
@@ -120,9 +121,14 @@ public final class MachineController {
     }
 
     @discardableResult
-    public func addRemote(host input: String) throws -> HerdManMachine {
+    public func addRemote(host input: String, name: String? = nil) throws -> HerdManMachine {
         let baseURL = try Self.normalizedRemoteURL(from: input)
-        if let existing = registry.remoteMachines.first(where: { $0.baseURL == baseURL }) {
+        let customName = Self.normalizedName(name)
+        if let index = registry.remoteMachines.firstIndex(where: { $0.baseURL == baseURL }) {
+            if let customName {
+                registry.remoteMachines[index].name = customName
+            }
+            let existing = registry.remoteMachines[index]
             registry.selectedMachineId = existing.id
             persist()
             workspaceList.selectServer(serverId: existing.id, serverClient: client(for: existing.id))
@@ -132,7 +138,7 @@ public final class MachineController {
         let id = uniqueMachineId(baseId)
         let machine = HerdManMachine(
             id: id,
-            name: baseURL.host ?? id,
+            name: customName ?? baseURL.host ?? id,
             baseURL: baseURL,
             kind: "remote"
         )
@@ -141,6 +147,22 @@ public final class MachineController {
         persist()
         workspaceList.selectServer(serverId: machine.id, serverClient: client(for: machine.id))
         return machine
+    }
+
+    /// Renames a remote machine. Blank names are ignored; the local machine
+    /// can't be renamed.
+    public func renameMachine(_ id: String, to name: String) throws {
+        guard id != HerdManMachine.local.id else { throw MachineControllerError.cannotRenameLocal }
+        guard let customName = Self.normalizedName(name),
+              let index = registry.remoteMachines.firstIndex(where: { $0.id == id })
+        else { return }
+        registry.remoteMachines[index].name = customName
+        persist()
+    }
+
+    private static func normalizedName(_ name: String?) -> String? {
+        let trimmed = name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? nil : trimmed
     }
 
     public func removeMachine(_ id: String) throws {

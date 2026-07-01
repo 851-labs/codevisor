@@ -48,6 +48,35 @@ struct MachineControllerTests {
         #expect(second.controller.machines.filter { $0 == remote }.count == 1)
     }
 
+    @Test("Remotes can be named on add and renamed later, persisted")
+    func namedAndRenamedRemote() throws {
+        let store = InMemoryStore()
+        let first = makeController(store: store)
+
+        let remote = try first.controller.addRemote(host: "mac-mini.tailnet.ts.net", name: "  Mac mini  ")
+        #expect(remote.name == "Mac mini")
+
+        // Re-adding the same host with a name updates it; without one keeps it.
+        let renamedViaAdd = try first.controller.addRemote(host: "mac-mini.tailnet.ts.net", name: "Studio")
+        #expect(renamedViaAdd.id == remote.id)
+        #expect(first.controller.machine(for: remote.id)?.name == "Studio")
+        _ = try first.controller.addRemote(host: "mac-mini.tailnet.ts.net")
+        #expect(first.controller.machine(for: remote.id)?.name == "Studio")
+
+        try first.controller.renameMachine(remote.id, to: "Build box")
+        #expect(first.controller.machine(for: remote.id)?.name == "Build box")
+        // Blank names are ignored.
+        try first.controller.renameMachine(remote.id, to: "   ")
+        #expect(first.controller.machine(for: remote.id)?.name == "Build box")
+
+        #expect(throws: MachineControllerError.cannotRenameLocal) {
+            try first.controller.renameMachine("local", to: "My Mac")
+        }
+
+        let second = makeController(store: store)
+        #expect(second.controller.machine(for: remote.id)?.name == "Build box")
+    }
+
     @Test("Removing the selected remote falls back to local")
     func removeSelectedRemote() throws {
         let (controller, workspaceList, _) = makeController()
