@@ -1,0 +1,42 @@
+name: Deploy www
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "apps/www/**"
+      - "bun.lock"
+      - ".github/workflows/deploy-www.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-www
+  cancel-in-progress: false
+
+env:
+  BUN_VERSION: "1.3.13"
+  NODE_VERSION: "24.x"
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Build and typecheck
+        working-directory: apps/www
+        run: bun run build && bun run typecheck
+      - name: Deploy to Cloudflare
+        working-directory: apps/www
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: bunx wrangler deploy

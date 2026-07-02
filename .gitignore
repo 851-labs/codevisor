@@ -23,3 +23,5 @@ apps/server/data/
 apps/macos/Frameworks/
 apps/macos/Packages/.build/
 apps/macos/Packages/.swiftpm/
+.wrangler/
+.playwright-mcp/

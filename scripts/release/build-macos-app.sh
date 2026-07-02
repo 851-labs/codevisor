@@ -293,4 +293,37 @@ elif [[ -n "${APPLE_ID:-}" && -n "${APPLE_APP_SPECIFIC_PASSWORD:-}" && -n "${APP
 fi
 
 shasum -a 256 "$archive_path" | awk '{print $1}' > "$archive_path.sha256"
+
+# DMG for direct download from www.herdman.dev (installs without Homebrew).
+# The app inside is already notarized and stapled; the image is signed and
+# notarized as well so Gatekeeper accepts it straight from a browser download.
+dmg_path="$output_dir/HerdMan.dmg"
+dmg_root="$repo_root/dist/release/work/dmg-root"
+rm -rf "$dmg_root" "$dmg_path"
+mkdir -p "$dmg_root"
+ditto "$app_path" "$dmg_root/HerdMan.app"
+ln -s /Applications "$dmg_root/Applications"
+hdiutil create -volname "HerdMan" -srcfolder "$dmg_root" -fs HFS+ -format UDZO -ov "$dmg_path"
+
+if [[ -n "${APPLE_CODESIGN_IDENTITY:-}" ]]; then
+  codesign --force --sign "$APPLE_CODESIGN_IDENTITY" "$dmg_path"
+fi
+
+if [[ -n "${APP_STORE_CONNECT_API_KEY_PATH:-}" && -n "${APP_STORE_CONNECT_API_KEY_ID:-}" && -n "${APP_STORE_CONNECT_ISSUER_ID:-}" ]]; then
+  xcrun notarytool submit "$dmg_path" \
+    --key "$APP_STORE_CONNECT_API_KEY_PATH" \
+    --key-id "$APP_STORE_CONNECT_API_KEY_ID" \
+    --issuer "$APP_STORE_CONNECT_ISSUER_ID" \
+    --wait
+  xcrun stapler staple "$dmg_path"
+elif [[ -n "${APPLE_ID:-}" && -n "${APPLE_APP_SPECIFIC_PASSWORD:-}" && -n "${APPLE_TEAM_ID:-}" ]]; then
+  xcrun notarytool submit "$dmg_path" \
+    --apple-id "$APPLE_ID" \
+    --password "$APPLE_APP_SPECIFIC_PASSWORD" \
+    --team-id "$APPLE_TEAM_ID" \
+    --wait
+  xcrun stapler staple "$dmg_path"
+fi
+
+shasum -a 256 "$dmg_path" | awk '{print $1}' > "$dmg_path.sha256"
 echo "$archive_path"

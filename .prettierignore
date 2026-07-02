@@ -7,3 +7,4 @@ references/
 bun.lock
 *.xcworkspace/
 *.xcodeproj/
+**/routeTree.gen.ts

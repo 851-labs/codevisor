@@ -1,0 +1,87 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Schibsted Grotesk", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Spline Sans Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  --color-ink: #0a0a0c;
+  --color-ink-raised: #131318;
+  --color-ink-border: #26262e;
+  --color-cloud: #f5f5f7;
+  --color-wool: #a1a1aa;
+  --color-meadow: #a3e635;
+  --color-mint: #4ade80;
+  --color-sky: #38bdf8;
+
+  --animate-rise: rise 0.9s cubic-bezier(0.22, 1, 0.36, 1) both;
+
+  @keyframes rise {
+    from {
+      opacity: 0;
+      transform: translateY(28px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background-color: var(--color-ink);
+  color: var(--color-cloud);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Film-grain overlay for the cinematic dark background. */
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 50;
+  opacity: 0.35;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.04 0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* Gradient keyword treatment used in section headlines. */
+.text-meadow-gradient {
+  background: linear-gradient(
+    100deg,
+    var(--color-meadow) 0%,
+    var(--color-mint) 45%,
+    var(--color-sky) 100%
+  );
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+}
+
+/* Scroll-triggered reveals: .reveal starts hidden, .is-visible plays the rise.
+   Hiding is gated on html.js so content stays visible without JavaScript. */
+html.js .reveal {
+  opacity: 0;
+}
+
+.reveal.is-visible {
+  animation: var(--animate-rise);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  .reveal,
+  .reveal.is-visible,
+  .animate-rise {
+    opacity: 1 !important;
+    animation: none !important;
+    transform: none !important;
+  }
+}

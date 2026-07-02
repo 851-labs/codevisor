@@ -228,6 +228,8 @@ jobs:
           path: |
             dist/release/HerdMan-macOS.zip
             dist/release/HerdMan-macOS.zip.sha256
+            dist/release/HerdMan.dmg
+            dist/release/HerdMan.dmg.sha256
             dist/release/herdman-server-*.tar.gz
             dist/release/herdman-server-*.tar.gz.sha256
           if-no-files-found: error
@@ -254,9 +256,9 @@ jobs:
         shell: bash
         run: |
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" dist/release/*.zip dist/release/*.tar.gz --clobber
+            gh release upload "$TAG" dist/release/*.zip dist/release/*.tar.gz dist/release/*.dmg --clobber
           else
-            gh release create "$TAG" dist/release/*.zip dist/release/*.tar.gz \
+            gh release create "$TAG" dist/release/*.zip dist/release/*.tar.gz dist/release/*.dmg \
               --target "$GITHUB_SHA" \
               --title "HerdMan $VERSION" \
               --generate-notes

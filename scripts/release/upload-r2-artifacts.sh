@@ -33,11 +33,11 @@ prefix="${R2_PREFIX:-releases/herdman}"
 cache_control="${R2_CACHE_CONTROL:-public, max-age=31536000, immutable}"
 
 shopt -s nullglob
-artifacts=("$artifact_dir"/*.zip "$artifact_dir"/*.tar.gz)
+artifacts=("$artifact_dir"/*.zip "$artifact_dir"/*.tar.gz "$artifact_dir"/*.dmg)
 shopt -u nullglob
 
 if [[ "${#artifacts[@]}" -eq 0 ]]; then
-  echo "No .zip or .tar.gz release artifacts found in $artifact_dir" >&2
+  echo "No .zip, .tar.gz, or .dmg release artifacts found in $artifact_dir" >&2
   exit 1
 fi
 
@@ -49,6 +49,9 @@ for artifact in "${artifacts[@]}"; do
       ;;
     *.tar.gz)
       content_type="application/gzip"
+      ;;
+    *.dmg)
+      content_type="application/x-apple-diskimage"
       ;;
     *)
       content_type="application/octet-stream"

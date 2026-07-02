@@ -1,0 +1,14 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "herdman-www",
+  "compatibility_date": "2026-06-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "main": "src/server.ts",
+  "routes": [
+    { "pattern": "www.herdman.dev", "custom_domain": true },
+    { "pattern": "herdman.dev", "custom_domain": true }
+  ],
+  "observability": {
+    "enabled": true
+  }
+}
