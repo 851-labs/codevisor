@@ -25,7 +25,9 @@ struct DiffView: View {
         VStack(alignment: .leading, spacing: 0) {
             header
             Divider()
-            ScrollView(.horizontal, showsIndicators: false) {
+            // Long diffs scroll inside the card instead of laying the whole
+            // file change out on the page.
+            ScrollView([.vertical, .horizontal], showsIndicators: true) {
                 VStack(alignment: .leading, spacing: 0) {
                     ForEach(cachedRows) { row in
                         rowView(row)
@@ -33,6 +35,7 @@ struct DiffView: View {
                 }
                 .padding(.vertical, 4)
             }
+            .frame(maxHeight: 320)
         }
         .background(RoundedRectangle(cornerRadius: 8).fill(theme.cardBackground))
         .clipShape(RoundedRectangle(cornerRadius: 8))

@@ -61,4 +61,21 @@ struct WorkedItemsTests {
     private func call(_ kind: ToolKind) -> ToolCall {
         ToolCall(toolCallId: UUID().uuidString, title: "t", kind: kind)
     }
+
+    @Test("A tool group trails until non-empty text follows it")
+    func trailingToolGroup() {
+        var turn = AssistantTurn(isGenerating: true)
+        TranscriptReducer.apply(.toolCall(ToolCall(toolCallId: "a", title: "Read")), to: &turn)
+        TranscriptReducer.apply(.toolCall(ToolCall(toolCallId: "b", title: "Edit")), to: &turn)
+        #expect(turn.isTrailingToolGroup(lastToolCallId: "b"))
+        // Text after the group ends its trailing state; the group before it
+        // was never trailing once "b" existed... but by id "a" is inside the
+        // same run, so text is what flips it.
+        TranscriptReducer.apply(.agentMessageChunk(.text("Now the answer.")), to: &turn)
+        #expect(!turn.isTrailingToolGroup(lastToolCallId: "b"))
+        // A later tool group trails again.
+        TranscriptReducer.apply(.toolCall(ToolCall(toolCallId: "c", title: "Run")), to: &turn)
+        #expect(turn.isTrailingToolGroup(lastToolCallId: "c"))
+        #expect(!turn.isTrailingToolGroup(lastToolCallId: "missing"))
+    }
 }

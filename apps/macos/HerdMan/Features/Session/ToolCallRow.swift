@@ -15,6 +15,14 @@ struct ToolCallRow: View {
 
     private var hasContent: Bool { !(call.content?.isEmpty ?? true) }
 
+    private var hasOnlyDiffContent: Bool {
+        guard let content = call.content, !content.isEmpty else { return false }
+        return content.allSatisfy { block in
+            if case .diff = block { return true }
+            return false
+        }
+    }
+
     /// Counters render for any edit call from the moment it starts (`+0 −0`)
     /// so the roll-up is visible, and for any call reporting diff stats.
     private var counterTotals: LineDiff.Totals? {
@@ -46,8 +54,21 @@ struct ToolCallRow: View {
             }
 
             if isExpanded, hasContent {
-                ToolCallContentCard(call: call)
+                // Diffs carry their own card; wrapping them in the labeled
+                // output card double-borders them for no benefit.
+                if hasOnlyDiffContent {
+                    VStack(alignment: .leading, spacing: 8) {
+                        ForEach(Array((call.content ?? []).enumerated()), id: \.offset) { _, content in
+                            if case let .diff(path, oldText, newText) = content {
+                                DiffView(path: path, oldText: oldText, newText: newText)
+                            }
+                        }
+                    }
                     .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
+                } else {
+                    ToolCallContentCard(call: call)
+                        .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
+                }
             }
         }
         .clipped()
@@ -93,7 +114,9 @@ struct ToolCallContentCard: View {
                 contentView(content)
             }
 
-            if call.isSettled {
+            // The status badge only earns its place on command output —
+            // reads/edits/searches signal success by their content.
+            if call.isSettled, call.kind == .execute || call.status == .failed || call.status == .cancelled {
                 HStack { Spacer(); statusBadge }
             }
         }

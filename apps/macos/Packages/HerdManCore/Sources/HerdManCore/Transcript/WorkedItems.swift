@@ -40,6 +40,23 @@ public extension AssistantTurn {
         flush()
         return items
     }
+
+    /// True while the tool group ending in `toolCallId` is still the tail of
+    /// the streamed transcript — no text has followed it yet. Drives the
+    /// group's auto-expansion: open while the model is working through it,
+    /// collapsed once it moves on to prose.
+    func isTrailingToolGroup(lastToolCallId toolCallId: String) -> Bool {
+        guard let index = entries.lastIndex(where: {
+            if case let .tool(call) = $0 { return call.toolCallId == toolCallId }
+            return false
+        }) else { return false }
+        return !entries[entries.index(after: index)...].contains { entry in
+            if case let .text(_, markdown) = entry {
+                return !markdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            }
+            return false
+        }
+    }
 }
 
 /// Summarizes a group of tool calls into a one-line description and an icon,

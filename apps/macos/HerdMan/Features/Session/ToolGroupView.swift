@@ -7,6 +7,9 @@ import HerdManCore
 struct ToolGroupView: View {
     let calls: [ToolCall]
     var isTurnActive: Bool = false
+    /// Kept open while the model is still working through this group (no text
+    /// has followed it yet); collapses when the model moves on to prose.
+    var autoExpanded: Bool = false
     @State private var isExpanded = false
 
     private var hasRunningCalls: Bool {
@@ -43,14 +46,14 @@ struct ToolGroupView: View {
             }
         }
         .clipped()
-        // The group follows the work: open while a call is running so the
-        // live rows (shimmer, counters) are visible, closed once it settles.
-        // Manual toggles still work in between.
+        // The group follows the work: open while the model is working through
+        // it so the live rows (shimmer, counters) are visible, closed once
+        // the next text part arrives. Manual toggles still work in between.
         .onAppear {
-            if hasRunningCalls { isExpanded = true }
+            if autoExpanded { isExpanded = true }
         }
-        .onChange(of: hasRunningCalls) { _, running in
-            withAnimation(.snappy(duration: 0.25)) { isExpanded = running }
+        .onChange(of: autoExpanded) { _, expanded in
+            withAnimation(.snappy(duration: 0.25)) { isExpanded = expanded }
         }
     }
 }
