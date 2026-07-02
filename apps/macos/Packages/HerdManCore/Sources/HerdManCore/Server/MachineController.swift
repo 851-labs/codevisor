@@ -12,18 +12,22 @@ public struct HerdManMachine: Identifiable, Sendable, Codable, Equatable {
     public var name: String
     public var baseURL: URL
     public var kind: String
+    /// Bearer token for this machine's server. Nil for the local machine —
+    /// same-machine connections are exempt from the server's token auth.
+    public var token: String?
 
-    public init(id: String, name: String, baseURL: URL, kind: String) {
+    public init(id: String, name: String, baseURL: URL, kind: String, token: String? = nil) {
         self.id = id
         self.name = name
         self.baseURL = baseURL
         self.kind = kind
+        self.token = token
     }
 
     public var isLocal: Bool { id == Self.local.id }
 
     public var serverConfig: HerdManServerConfig {
-        HerdManServerConfig(baseURL: baseURL)
+        HerdManServerConfig(baseURL: baseURL, bearerToken: token)
     }
 
     public static let local = HerdManMachine(
@@ -138,12 +142,16 @@ public final class MachineController {
     }
 
     @discardableResult
-    public func addRemote(host input: String, name: String? = nil) throws -> HerdManMachine {
+    public func addRemote(host input: String, name: String? = nil, token: String? = nil) throws -> HerdManMachine {
         let baseURL = try Self.normalizedRemoteURL(from: input)
         let customName = Self.normalizedName(name)
+        let normalizedToken = Self.normalizedName(token)
         if let index = registry.remoteMachines.firstIndex(where: { $0.baseURL == baseURL }) {
             if let customName {
                 registry.remoteMachines[index].name = customName
+            }
+            if let normalizedToken {
+                registry.remoteMachines[index].token = normalizedToken
             }
             let existing = registry.remoteMachines[index]
             registry.selectedMachineId = existing.id
@@ -157,13 +165,21 @@ public final class MachineController {
             id: id,
             name: customName ?? baseURL.host ?? id,
             baseURL: baseURL,
-            kind: "remote"
+            kind: "remote",
+            token: normalizedToken
         )
         registry.remoteMachines.append(machine)
         registry.selectedMachineId = machine.id
         persist()
         workspaceList.selectServer(serverId: machine.id, serverClient: client(for: machine.id))
         return machine
+    }
+
+    /// Issues a fresh connection token from this machine's own server (the
+    /// loopback call is exempt from token auth), for pasting into another
+    /// device's Add Remote Machine sheet.
+    public func issueLocalConnectionToken() async throws -> String {
+        try await client(for: HerdManMachine.local.id).issuePairingToken().token
     }
 
     /// Renames a remote machine. Blank names are ignored; the local machine

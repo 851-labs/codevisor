@@ -19,7 +19,8 @@ struct TerminalLaunchDescriptor: Equatable {
             command: TerminalProxyCommand.command(
                 server: machine.baseURL,
                 sessionId: session.id,
-                cwd: workspace.folderURL.path
+                cwd: workspace.folderURL.path,
+                token: machine.token
             )
         )
     }
@@ -38,12 +39,12 @@ struct TerminalLaunchDescriptor: Equatable {
 }
 
 enum TerminalProxyCommand {
-    nonisolated static func command(server: URL, sessionId: UUID, cwd: String) -> String {
+    nonisolated static func command(server: URL, sessionId: UUID, cwd: String, token: String? = nil) -> String {
         let args = [
             "--server", server.absoluteString,
             "--session-id", sessionId.uuidString,
             "--cwd", cwd
-        ]
+        ] + (token.map { ["--token", $0] } ?? [])
         let executable = proxyExecutable()
         return ([executable.command] + executable.prefixArgs + args)
             .map(shellQuote)

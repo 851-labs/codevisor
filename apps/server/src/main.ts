@@ -187,6 +187,10 @@ const main = Effect.gen(function* () {
   if (authMode !== "none" && authMode !== "token") {
     throw new Error("--auth must be either none or token")
   }
+  const kind = args.kind
+  if (kind !== undefined && kind !== "local" && kind !== "remote") {
+    throw new Error("--kind must be either local or remote")
+  }
   const databasePath = args.db ?? defaultDatabasePath()
   const db = yield* makeDatabase({
     filename: databasePath,
@@ -213,7 +217,8 @@ const main = Effect.gen(function* () {
             serverId,
             "--auth",
             authMode,
-            ...(args.name === undefined ? [] : ["--name", args.name])
+            ...(args.name === undefined ? [] : ["--name", args.name]),
+            ...(args.kind === undefined ? [] : ["--kind", args.kind])
           ]
         })
   const server = yield* startHerdManServer(
@@ -225,12 +230,17 @@ const main = Effect.gen(function* () {
     defaultServerConfig({
       host,
       id: serverId,
-      kind: host === "127.0.0.1" ? "local" : "remote",
+      // The app launches its own server bound to 0.0.0.0 so remote clients
+      // can connect; --kind lets it stay "local" despite the network bind.
+      kind: kind ?? (host === "127.0.0.1" ? "local" : "remote"),
       name: args.name ?? (host === "127.0.0.1" ? "Local HerdMan" : serverId),
       port,
       ...(version === undefined ? {} : { version }),
       auth: {
-        allowLocalhostWithoutAuth: authMode === "token" && host === "127.0.0.1",
+        // Same-machine clients (the app that launched this server, the
+        // terminal proxy) are trusted without a token; only connections
+        // arriving over the network must present one.
+        allowLocalhostWithoutAuth: authMode === "token",
         requireBearerToken: authMode === "token"
       },
       onShutdownRequested: () => {

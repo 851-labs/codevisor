@@ -10,6 +10,9 @@ interface ProxyOptions {
   readonly cwd: string
   readonly shell?: string
   readonly clientId: string
+  /// Bearer token for servers that require auth (remote machines; same-machine
+  /// connections are exempt server-side).
+  readonly token?: string
 }
 
 type TerminalClientFramePayload =
@@ -40,14 +43,24 @@ const parseArgs = (args: ReadonlyArray<string>): ProxyOptions => {
     throw new Error("Missing --cwd")
   }
   const shell = optionalArg(parsed.get("shell"))
-  const options = {
+  const token = optionalArg(parsed.get("token"))
+  let options: ProxyOptions = {
     server,
     sessionId,
     cwd,
     clientId: optionalArg(parsed.get("client-id")) ?? randomUUID()
   }
-  return shell === undefined ? options : { ...options, shell }
+  if (shell !== undefined) {
+    options = { ...options, shell }
+  }
+  if (token !== undefined) {
+    options = { ...options, token }
+  }
+  return options
 }
+
+const authHeaders = (options: ProxyOptions): Record<string, string> =>
+  options.token === undefined ? {} : { Authorization: `Bearer ${options.token}` }
 
 const optionalArg = (value: string | undefined): string | undefined =>
   value === undefined || value.length === 0 ? undefined : value
@@ -76,7 +89,11 @@ const createTerminal = async (options: ProxyOptions): Promise<TerminalCreateResp
         }
   const response = await fetch(urlFor(options.server, "/v1/terminals"), {
     body: JSON.stringify(body),
-    headers: { Accept: "application/json", "Content-Type": "application/json" },
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      ...authHeaders(options)
+    },
     method: "POST"
   })
   if (!response.ok) {
@@ -133,7 +150,7 @@ const main = async (): Promise<void> => {
           activeTerminal.websocketPath,
           lastOutputSeq
         )
-        const nextSocket = new WebSocket(websocketUrl)
+        const nextSocket = new WebSocket(websocketUrl, { headers: authHeaders(options) })
         socket = nextSocket
         nextSocket.on("open", () => {
           while (pendingFrames.length > 0 && nextSocket.readyState === WebSocket.OPEN) {

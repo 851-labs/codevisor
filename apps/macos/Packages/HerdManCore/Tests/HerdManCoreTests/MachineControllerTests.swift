@@ -48,6 +48,30 @@ struct MachineControllerTests {
         #expect(second.controller.machines.filter { $0 == remote }.count == 1)
     }
 
+    @Test("Remote tokens persist and flow into the server config")
+    func remoteTokens() throws {
+        let store = InMemoryStore()
+        let first = makeController(store: store)
+
+        let remote = try first.controller.addRemote(host: "mac-mini.tailnet.ts.net", token: " hm_secret ")
+        #expect(remote.token == "hm_secret")
+        #expect(remote.serverConfig.bearerToken == "hm_secret")
+
+        // Re-adding with a new token rotates it; without one keeps it.
+        _ = try first.controller.addRemote(host: "mac-mini.tailnet.ts.net", token: "hm_rotated")
+        #expect(first.controller.machine(for: remote.id)?.token == "hm_rotated")
+        _ = try first.controller.addRemote(host: "mac-mini.tailnet.ts.net")
+        #expect(first.controller.machine(for: remote.id)?.token == "hm_rotated")
+
+        // The token survives a reload from the persisted registry.
+        let second = makeController(store: store)
+        #expect(second.controller.machine(for: remote.id)?.token == "hm_rotated")
+
+        // The local machine never carries a token.
+        #expect(HerdManMachine.local.token == nil)
+        #expect(HerdManMachine.local.serverConfig.bearerToken == nil)
+    }
+
     @Test("Remotes can be named on add and renamed later, persisted")
     func namedAndRenamedRemote() throws {
         let store = InMemoryStore()

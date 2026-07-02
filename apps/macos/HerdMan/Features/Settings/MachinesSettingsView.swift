@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 import HerdManCore
 
 /// Machines settings — every HerdMan server this app knows about: connect to
@@ -9,6 +10,7 @@ struct MachinesSettingsView: View {
     @State private var showingAdd = false
     @State private var renaming: HerdManMachine?
     @State private var removing: HerdManMachine?
+    @State private var tokenNotice: String?
 
     private var machines: MachineController { environment.machines }
 
@@ -34,8 +36,8 @@ struct MachinesSettingsView: View {
         }
         .formStyle(.grouped)
         .sheet(isPresented: $showingAdd) {
-            RemoteMachineSheet { host, name in
-                if (try? machines.addRemote(host: host, name: name)) != nil {
+            RemoteMachineSheet { host, name, token in
+                if (try? machines.addRemote(host: host, name: name, token: token)) != nil {
                     Task { await machines.refreshStatus(for: machines.selectedMachineId) }
                 }
             }
@@ -62,6 +64,33 @@ struct MachinesSettingsView: View {
             Text("HerdMan will forget “\(machine.name)”. Nothing on the machine itself is changed.")
         }
         .task { await refreshStatuses() }
+        .alert(
+            "Connection Token",
+            isPresented: Binding(
+                get: { tokenNotice != nil },
+                set: { if !$0 { tokenNotice = nil } }
+            ),
+            presenting: tokenNotice
+        ) { _ in
+            Button("OK") {}
+        } message: { notice in
+            Text(notice)
+        }
+    }
+
+    /// Issues a fresh token from this machine's server and puts it on the
+    /// clipboard, for pasting into another device's Add Remote Machine sheet.
+    private func copyConnectionToken() {
+        Task {
+            do {
+                let token = try await machines.issueLocalConnectionToken()
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(token, forType: .string)
+                tokenNotice = "Copied to the clipboard. Paste it into “Add Remote Machine” on the other device to let it connect to this Mac."
+            } catch {
+                tokenNotice = "Couldn't issue a token: the local server isn't running."
+            }
+        }
     }
 
     private func machineRow(_ machine: HerdManMachine) -> some View {
@@ -98,7 +127,20 @@ struct MachinesSettingsView: View {
                 }
                 .controlSize(.small)
             }
-            if !machine.isLocal {
+            if machine.isLocal {
+                Menu {
+                    Button("Copy Connection Token") { copyConnectionToken() }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                        .foregroundStyle(.secondary)
+                }
+                .menuStyle(.button)
+                .buttonStyle(.plain)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .help("Machine actions")
+                .accessibilityLabel("Actions for \(machine.name)")
+            } else {
                 Menu {
                     Button("Rename…") { renaming = machine }
                     Divider()
@@ -127,12 +169,14 @@ struct MachinesSettingsView: View {
                     .fill(status.isReachable ? Color.green : Color.red)
                     .frame(width: 7, height: 7)
                     .accessibilityHidden(true)
-                Text(status.isReachable ? status.label : "Unreachable")
+                // The label carries the failure reason when unreachable (e.g.
+                // the local server's launch error), not just "Unreachable".
+                Text(status.label)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
-            .accessibilityLabel(status.isReachable ? "Reachable, \(status.label)" : "Unreachable")
+            .accessibilityLabel(status.isReachable ? "Reachable, \(status.label)" : status.label)
         } else {
             ProgressView()
                 .controlSize(.mini)

@@ -15,6 +15,7 @@ public struct LocalHerdManServerLaunchRequest: Equatable, Sendable {
     public var logURL: URL
     public var host: String
     public var port: Int
+    public var name: String
     public var environment: [String: String]
 }
 
@@ -100,8 +101,9 @@ public final class LocalHerdManServer {
                 entrypoint: entrypoint,
                 databasePath: databasePath,
                 logURL: logURL,
-                host: host,
+                host: Self.bindHost,
                 port: port,
+                name: Self.serverDisplayName(),
                 environment: serverEnvironment
             )
             process = try launcher(request)
@@ -190,8 +192,16 @@ public final class LocalHerdManServer {
         return health
     }
 
-    private var host: String {
-        config.baseURL.host ?? "127.0.0.1"
+    /// The server binds every interface so paired remote clients can reach it;
+    /// only same-machine connections are exempt from its token auth. The app's
+    /// own client still talks to it over loopback (`config.baseURL`).
+    static let bindHost = "0.0.0.0"
+
+    /// The server's advertised display name: the Mac's name, so a remote
+    /// client's machine list shows "George's MacBook Pro 0.2.0" rather than a
+    /// generic label.
+    nonisolated static func serverDisplayName() -> String {
+        Host.current().localizedName ?? "Local HerdMan"
     }
 
     private var port: Int {
@@ -242,7 +252,13 @@ public final class LocalHerdManServer {
             "serve",
             "--host", request.host,
             "--port", String(request.port),
-            "--db", request.databasePath
+            "--db", request.databasePath,
+            // Network binds require a token from remote clients (loopback is
+            // exempt), and --kind keeps the server identifying as this
+            // machine's local server despite the 0.0.0.0 bind.
+            "--auth", "token",
+            "--kind", "local",
+            "--name", request.name
         ]
         process.environment = request.environment
         process.standardOutput = logHandle

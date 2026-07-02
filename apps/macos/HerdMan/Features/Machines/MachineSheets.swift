@@ -7,7 +7,8 @@ struct RemoteMachineSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var host = ""
     @State private var name = ""
-    let onAdd: (String, String?) -> Void
+    @State private var token = ""
+    let onAdd: (String, String?, String?) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -18,6 +19,13 @@ struct RemoteMachineSheet: View {
                     .font(.caption.weight(.medium))
                     .foregroundStyle(.secondary)
                 TextField("mac-mini.tailnet.ts.net or 100.64.0.10:49361", text: $host)
+                    .textFieldStyle(.roundedBorder)
+            }
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Connection token")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
+                TextField("hm_… — copy it from the other machine's Machines settings", text: $token)
                     .textFieldStyle(.roundedBorder)
             }
             VStack(alignment: .leading, spacing: 6) {
@@ -32,7 +40,8 @@ struct RemoteMachineSheet: View {
                 Button("Cancel") { dismiss() }
                 Button("Add") {
                     let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
-                    onAdd(host, trimmedName.isEmpty ? nil : trimmedName)
+                    let trimmedToken = token.trimmingCharacters(in: .whitespacesAndNewlines)
+                    onAdd(host, trimmedName.isEmpty ? nil : trimmedName, trimmedToken.isEmpty ? nil : trimmedToken)
                     dismiss()
                 }
                 .keyboardShortcut(.defaultAction)

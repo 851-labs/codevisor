@@ -223,8 +223,8 @@ struct SidebarView: View {
             }
         }
         .sheet(isPresented: $showingRemoteMachine) {
-            RemoteMachineSheet { host, name in
-                if (try? environment.machines.addRemote(host: host, name: name)) != nil {
+            RemoteMachineSheet { host, name, token in
+                if (try? environment.machines.addRemote(host: host, name: name, token: token)) != nil {
                     selection = .newChat(nil)
                 }
             }
