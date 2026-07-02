@@ -105,64 +105,6 @@ struct ProtocolCodableTests {
         }
     }
 
-    @Test("Initialize types round-trip")
-    func initialize() throws {
-        try roundTrip(InitializeRequest(
-            protocolVersion: .acpProtocolVersion,
-            clientCapabilities: ClientCapabilities(fs: FileSystemCapabilities(readTextFile: true, writeTextFile: true), terminal: true),
-            clientInfo: Implementation(name: "HerdMan", version: "1.0", title: "HerdMan")
-        ))
-        try roundTrip(InitializeResponse(
-            protocolVersion: 1,
-            agentCapabilities: AgentCapabilities(loadSession: true, promptCapabilities: PromptCapabilities(image: true, audio: false, embeddedContext: true)),
-            authMethods: [AuthMethod(id: "oauth", name: "OAuth", description: "Browser login")],
-            agentInfo: Implementation(name: "agent", version: "2.0")
-        ))
-        try roundTrip(AuthenticateRequest(methodId: "oauth"))
-    }
-
-    @Test("Session types round-trip")
-    func sessions() throws {
-        try roundTrip(NewSessionRequest(cwd: "/tmp", mcpServers: [], additionalDirectories: ["/extra"]))
-        try roundTrip(NewSessionResponse(sessionId: "s1", modes: SessionModeState(currentModeId: "fast", availableModes: [SessionMode(id: "fast", name: "Fast", description: "Quick")])))
-        try roundTrip(SetSessionModeRequest(sessionId: "s1", modeId: "deep"))
-        try roundTrip(PromptRequest(sessionId: "s1", prompt: [.text("hello")]))
-        try roundTrip(CancelNotification(sessionId: "s1"))
-        for reason in StopReason.allCases {
-            try roundTrip(PromptResponse(stopReason: reason))
-        }
-    }
-
-    @Test("Permission types round-trip both outcomes")
-    func permissions() throws {
-        try roundTrip(RequestPermissionRequest(
-            sessionId: "s1",
-            toolCall: ToolCallUpdate(toolCallId: "t1", title: "Run"),
-            options: [PermissionOption(optionId: "ok", name: "Allow", kind: .allowOnce)]
-        ))
-        try roundTrip(RequestPermissionResponse(outcome: .selected(optionId: "ok")))
-        try roundTrip(RequestPermissionResponse(outcome: .cancelled))
-    }
-
-    @Test("Unknown permission outcome throws")
-    func unknownOutcome() {
-        #expect(throws: (any Error).self) {
-            _ = try ACPJSON.decoder.decode(RequestPermissionOutcome.self, from: Data(#"{"outcome":"maybe"}"#.utf8))
-        }
-    }
-
-    @Test("File system and terminal types round-trip")
-    func fsAndTerminal() throws {
-        try roundTrip(ReadTextFileRequest(sessionId: "s", path: "/a", line: 1, limit: 10))
-        try roundTrip(ReadTextFileResponse(content: "data"))
-        try roundTrip(WriteTextFileRequest(sessionId: "s", path: "/a", content: "x"))
-        try roundTrip(CreateTerminalRequest(sessionId: "s", command: "ls", args: ["-la"], env: [EnvVariable(name: "A", value: "B")], cwd: "/tmp", outputByteLimit: 1024))
-        try roundTrip(CreateTerminalResponse(terminalId: "t"))
-        try roundTrip(TerminalRequest(sessionId: "s", terminalId: "t"))
-        try roundTrip(TerminalOutputResponse(output: "out", truncated: true, exitStatus: TerminalExitStatus(exitCode: 0, signal: nil)))
-        try roundTrip(WaitForExitResponse(exitCode: 1, signal: "SIGTERM"))
-    }
-
     @Test("ToolKind decodes unknown values as other")
     func toolKindLenient() throws {
         let kind = try ACPJSON.decoder.decode(ToolKind.self, from: Data("\"telepathy\"".utf8))

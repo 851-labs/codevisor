@@ -77,12 +77,6 @@ struct RootView: View {
                 }
                 preparedMachineId = machineId
                 await environment.prepareSelectedMachine()
-                Task {
-                    await ConfigPrefetcher(
-                        agentService: environment.agentService,
-                        cache: environment.configCache
-                    ).warmMissing()
-                }
                 // Initialize the terminal runtime up front, in a clean context,
                 // so opening the terminal later can't re-enter its dispatch_once.
                 TerminalRuntime.prewarm()

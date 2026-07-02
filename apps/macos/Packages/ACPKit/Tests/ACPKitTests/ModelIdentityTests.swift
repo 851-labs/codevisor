@@ -7,9 +7,7 @@ struct ModelIdentityTests {
     @Test("Identifiable models expose stable ids")
     func ids() {
         #expect(AvailableCommand(name: "test", description: "run").id == "test")
-        #expect(PermissionOption(optionId: "ok", name: "Allow", kind: .allowOnce).id == "ok")
         #expect(SessionMode(id: "fast", name: "Fast").id == "fast")
-        #expect(AuthMethod(id: "oauth", name: "OAuth").id == "oauth")
     }
 
     @Test("Plan entries compare by value")
@@ -24,7 +22,6 @@ struct ModelIdentityTests {
     func enumCases() {
         #expect(ToolCallStatus.allCases.count == 4)
         #expect(ToolKind.allCases.contains(.switchMode))
-        #expect(PermissionOptionKind.allCases.count == 4)
         #expect(PlanEntryPriority.allCases.count == 3)
         #expect(PlanEntryStatus.allCases.count == 3)
         #expect(StopReason.allCases.count == 5)

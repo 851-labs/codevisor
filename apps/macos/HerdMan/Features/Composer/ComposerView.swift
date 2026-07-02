@@ -2,7 +2,6 @@ import SwiftUI
 import AppKit
 import HerdManCore
 import ACPKit
-import ACPAgents
 
 /// The chat composer card: a multiline input (Return sends, Shift+Return adds a
 /// newline) with an inline toolbar holding the harness picker (before

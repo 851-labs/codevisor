@@ -1,11 +1,10 @@
 import Foundation
 import Testing
 import ACPKit
-import ACPAgents
 @testable import HerdManCore
 
 @MainActor
-@Suite("AppEnvironment and AgentService")
+@Suite("AppEnvironment and harness services")
 struct AppEnvironmentTests {
     @Test("Debug builds use isolated development defaults")
     func debugVariantDefaults() {
@@ -33,25 +32,21 @@ struct AppEnvironmentTests {
         #expect(environment.projectList.projects.isEmpty)
     }
 
-    @Test("Preview agent service returns sample agents and launches a client")
-    func previewAgentService() async throws {
-        let service = PreviewAgentService()
-        let agents = await service.discoverAgents()
-        #expect(agents.contains { $0.id == "claude-code" })
-        // Launch returns a constructed client over a mock transport.
-        let client = try await service.launch(
-            agents[0],
-            workingDirectory: URL(fileURLWithPath: "/tmp"),
-            delegate: nil
-        )
-        await client.close()
+    @Test("Preview harness service returns sample harnesses")
+    func previewHarnessService() async throws {
+        let service = PreviewHarnessService()
+        let ready = await service.readyHarnesses()
+        #expect(ready.contains { $0.id == "claude-code" })
+        let all = await service.allHarnesses()
+        #expect(all.count > ready.count)
+        #expect(all.contains { !$0.isReady })
     }
 
     @Test("Onboarding with a project folder imports that folder's existing sessions")
     func onboardingImportsProjectSessions() async {
         let environment = AppEnvironment.preview(seedProjects: [], hasOnboarded: false)
 
-        // PreviewAgentService reports the "ext-1" session in
+        // PreviewHarnessService reports the "ext-1" session in
         // /Users/me/src/website for each of its two ready harnesses.
         let project = await environment.finishOnboarding(
             projectFolder: URL(fileURLWithPath: "/Users/me/src/website")
@@ -92,35 +87,11 @@ struct AppEnvironmentTests {
     func projectRecommendations() async {
         let environment = AppEnvironment.preview(seedProjects: [])
 
-        // PreviewAgentService's sessions live in folders that don't exist on
+        // PreviewHarnessService's sessions live in folders that don't exist on
         // the test machine, so the default directory filter drops them.
         let recommendations = await environment.recommendedProjects()
 
         #expect(recommendations.isEmpty)
     }
 
-    @Test("AgentService surfaces installed harnesses only")
-    func agentServiceDiscovery() async {
-        // claude + npx present -> the Claude Code harness is installed; codex absent.
-        let probe = EnvironmentProbe(
-            runner: StubRunner(),
-            fileProbe: StubProbe(installed: ["/usr/bin/claude", "/usr/bin/npx"]),
-            baseEnvironment: [:]
-        )
-        let service = AgentService(discovery: HarnessDiscovery(probe: probe))
-        let agents = await service.discoverAgents()
-        #expect(agents.contains { $0.id == "claude-code" })
-        #expect(!agents.contains { $0.id == "codex" })
-    }
-}
-
-private struct StubRunner: CommandRunner {
-    func run(executableURL: URL, arguments: [String], environment: [String: String]?) async throws -> CommandResult {
-        CommandResult(standardOutput: "/usr/bin", standardError: "", exitCode: 0)
-    }
-}
-
-private struct StubProbe: FileProbing {
-    let installed: Set<String>
-    func isExecutableFile(atPath path: String) -> Bool { installed.contains(path) }
 }

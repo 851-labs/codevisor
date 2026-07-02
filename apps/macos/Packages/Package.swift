@@ -11,7 +11,6 @@ let package = Package(
     ],
     products: [
         .library(name: "ACPKit", targets: ["ACPKit"]),
-        .library(name: "ACPAgents", targets: ["ACPAgents"]),
         .library(name: "StreamMarkdown", targets: ["StreamMarkdown"]),
         .library(name: "HerdManTheming", targets: ["HerdManTheming"]),
         .library(name: "CodeHighlighter", targets: ["CodeHighlighter"]),
@@ -46,21 +45,6 @@ let package = Package(
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),
 
-        // MARK: ACPAgents
-        .target(
-            name: "ACPAgents",
-            dependencies: ["ACPKit"],
-            path: "ACPAgents/Sources/ACPAgents",
-            resources: [.copy("Resources/registry-fallback.json")],
-            swiftSettings: [.swiftLanguageMode(.v6)]
-        ),
-        .testTarget(
-            name: "ACPAgentsTests",
-            dependencies: ["ACPAgents", "ACPKit"],
-            path: "ACPAgents/Tests/ACPAgentsTests",
-            swiftSettings: [.swiftLanguageMode(.v6)]
-        ),
-
         // MARK: StreamMarkdown
         .target(
             name: "StreamMarkdown",
@@ -92,13 +76,13 @@ let package = Package(
         // MARK: HerdManCore (app logic: models, repositories, DI, view models)
         .target(
             name: "HerdManCore",
-            dependencies: ["ACPKit", "ACPAgents", "HerdManTheming"],
+            dependencies: ["ACPKit", "HerdManTheming"],
             path: "HerdManCore/Sources/HerdManCore",
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),
         .testTarget(
             name: "HerdManCoreTests",
-            dependencies: ["HerdManCore", "ACPKit", "ACPAgents"],
+            dependencies: ["HerdManCore", "ACPKit"],
             path: "HerdManCore/Tests/HerdManCoreTests",
             swiftSettings: [.swiftLanguageMode(.v6)]
         )

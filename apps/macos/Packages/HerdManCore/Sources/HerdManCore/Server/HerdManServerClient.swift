@@ -159,6 +159,11 @@ public struct ServerPairingToken: Decodable, Equatable, Sendable {
 public struct ServerHarnessReadiness: Codable, Equatable, Sendable {
     public var state: String
     public var detail: String?
+
+    public init(state: String, detail: String? = nil) {
+        self.state = state
+        self.detail = detail
+    }
 }
 
 public struct ServerHarness: Codable, Equatable, Sendable {
@@ -169,6 +174,24 @@ public struct ServerHarness: Codable, Equatable, Sendable {
     public var launchKind: String
     public var enabled: Bool
     public var readiness: ServerHarnessReadiness
+
+    public init(
+        id: String,
+        name: String,
+        symbolName: String,
+        source: String,
+        launchKind: String,
+        enabled: Bool,
+        readiness: ServerHarnessReadiness
+    ) {
+        self.id = id
+        self.name = name
+        self.symbolName = symbolName
+        self.source = source
+        self.launchKind = launchKind
+        self.enabled = enabled
+        self.readiness = readiness
+    }
 }
 
 public struct ServerHarnessCapability: Codable, Equatable, Sendable {

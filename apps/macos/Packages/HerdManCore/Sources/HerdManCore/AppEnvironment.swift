@@ -1,7 +1,6 @@
 import Foundation
 import Observation
 import ACPKit
-import ACPAgents
 import HerdManTheming
 
 /// The composition root: wires repositories and services together and vends the
@@ -17,32 +16,33 @@ public final class AppEnvironment {
     public let machines: MachineController
     public let localServer: LocalHerdManServer?
     public let appUpdate: AppUpdateModel
-    private let fallbackAgentService: any AgentServicing
+    /// Overrides server-backed harness discovery (previews/tests only).
+    private let harnessServiceOverride: (any HarnessServicing)?
 
     public var serverClient: any HerdManServerClienting {
         machines.selectedClient
     }
 
-    public var agentService: any AgentServicing {
-        agentService(for: machines.selectedMachineId)
+    public var harnessService: any HarnessServicing {
+        harnessService(for: machines.selectedMachineId)
     }
 
     public var sessionImporter: SessionImporter {
-        SessionImporter(agentService: agentService)
+        SessionImporter(harnessService: harnessService)
     }
 
     public init(
         projectRepository: any ProjectRepository,
         sessionRepository: any SessionRepository,
-        agentService: any AgentServicing,
         configCache: ConfigOptionCache,
         settings: AppSettingsModel,
         machineStore: any PersistenceStore = InMemoryStore(),
         localServer: LocalHerdManServer? = nil,
         appUpdate: AppUpdateModel? = nil,
-        customThemesDirectory: URL? = nil
+        customThemesDirectory: URL? = nil,
+        harnessService: (any HarnessServicing)? = nil
     ) {
-        self.fallbackAgentService = agentService
+        self.harnessServiceOverride = harnessService
         self.theme = ThemeManager(
             settings: settings,
             catalog: ThemeCatalog(
@@ -110,15 +110,8 @@ public final class AppEnvironment {
         await machines.prepareSelectedMachine()
     }
 
-    public func agentService(for serverId: String) -> any AgentServicing {
-        // The in-process fallback only makes sense for the local machine (e.g.
-        // while its server is still starting). A remote machine's harnesses,
-        // models, and sessions must come from its server or not at all.
-        let isLocal = serverId == HerdManMachine.local.id
-        return ServerAgentService(
-            client: machines.client(for: serverId),
-            fallback: isLocal ? fallbackAgentService : nil
-        )
+    public func harnessService(for serverId: String) -> any HarnessServicing {
+        harnessServiceOverride ?? ServerHarnessService(client: machines.client(for: serverId))
     }
 
     /// Deletes all HerdMan data (projects, sessions, cached config, settings)
@@ -178,7 +171,6 @@ public final class AppEnvironment {
         return AppEnvironment(
             projectRepository: DefaultProjectRepository(store: store),
             sessionRepository: DefaultSessionRepository(store: store),
-            agentService: AgentService(),
             configCache: ConfigOptionCache(store: store),
             settings: AppSettingsModel(store: store),
             machineStore: store,
@@ -205,10 +197,10 @@ public final class AppEnvironment {
         return AppEnvironment(
             projectRepository: projectRepository,
             sessionRepository: sessionRepository,
-            agentService: PreviewAgentService(),
             configCache: ConfigOptionCache(store: InMemoryStore()),
             settings: settings,
-            machineStore: InMemoryStore()
+            machineStore: InMemoryStore(),
+            harnessService: PreviewHarnessService()
         )
     }
 
@@ -225,34 +217,41 @@ public final class AppEnvironment {
     }
 }
 
-/// A no-op agent service used in previews.
-public struct PreviewAgentService: AgentServicing {
+/// A no-op harness service used in previews.
+public struct PreviewHarnessService: HarnessServicing {
     public init() {}
 
-    public func discoverAgents() async -> [DiscoveredAgent] {
+    public func readyHarnesses() async -> [ServerHarness] {
         [
-            DiscoveredAgent(id: "claude-code", name: "Claude Code", source: .registry, method: .npx, readiness: .ready, symbolName: "sparkle"),
-            DiscoveredAgent(id: "codex", name: "Codex", source: .registry, method: .npx, readiness: .ready, symbolName: "chevron.left.forwardslash.chevron.right")
+            ServerHarness(
+                id: "claude-code", name: "Claude Code", symbolName: "sparkle", source: "registry",
+                launchKind: "executable", enabled: true,
+                readiness: ServerHarnessReadiness(state: "ready")
+            ),
+            ServerHarness(
+                id: "codex", name: "Codex", symbolName: "chevron.left.forwardslash.chevron.right",
+                source: "registry", launchKind: "executable", enabled: true,
+                readiness: ServerHarnessReadiness(state: "ready")
+            )
         ]
     }
 
-    public func discoverAllHarnesses() async -> [DiscoveredAgent] {
-        await discoverAgents() + [
-            DiscoveredAgent(id: "gemini", name: "Gemini CLI", source: .registry, method: .npx, readiness: .unavailable("Not installed"), symbolName: "diamond"),
-            DiscoveredAgent(id: "opencode", name: "OpenCode", source: .registry, method: .executable, readiness: .unavailable("Not installed"), symbolName: "curlybraces"),
-            DiscoveredAgent(id: "goose", name: "goose", source: .registry, method: .executable, readiness: .unavailable("Not installed"), symbolName: "bird")
+    public func allHarnesses() async -> [ServerHarness] {
+        await readyHarnesses() + [
+            ServerHarness(
+                id: "gemini", name: "Gemini CLI", symbolName: "diamond", source: "registry",
+                launchKind: "npx", enabled: true,
+                readiness: ServerHarnessReadiness(state: "unavailable", detail: "Not installed")
+            ),
+            ServerHarness(
+                id: "opencode", name: "OpenCode", symbolName: "curlybraces", source: "registry",
+                launchKind: "executable", enabled: true,
+                readiness: ServerHarnessReadiness(state: "unavailable", detail: "Not installed")
+            )
         ]
     }
 
-    public func launch(
-        _ agent: DiscoveredAgent,
-        workingDirectory: URL,
-        delegate: (any ACPClientDelegate)?
-    ) async throws -> ACPClient {
-        ACPClient(transport: MockTransport(), delegate: delegate)
-    }
-
-    public func listSessions(for agent: DiscoveredAgent) async throws -> [SessionInfo] {
+    public func listSessions(forHarnessId harnessId: String) async throws -> [SessionInfo] {
         [
             SessionInfo(sessionId: "ext-1", cwd: "/Users/me/src/website", title: "Fix the landing page"),
             SessionInfo(sessionId: "ext-2", cwd: "/Users/me/src/HerdMan", title: "Add tests")

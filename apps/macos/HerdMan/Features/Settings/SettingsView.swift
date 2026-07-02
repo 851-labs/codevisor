@@ -1,7 +1,6 @@
 import SwiftUI
 import AppKit
 import HerdManCore
-import ACPAgents
 
 enum SettingsTab: String {
     case general
@@ -222,15 +221,12 @@ struct GeneralSettingsView: View {
 struct HarnessesSettingsView: View {
     @Environment(AppEnvironment.self) private var environment
 
-    @State private var all: [DiscoveredAgent] = []
-    @State private var serverHarnesses: [ServerHarness]?
+    @State private var serverHarnesses: [ServerHarness] = []
     @State private var isScanning = true
     @State private var showsNotInstalled = false
 
-    private var installed: [DiscoveredAgent] { all.filter { $0.readiness.isReady } }
-    private var notInstalled: [DiscoveredAgent] { all.filter { !$0.readiness.isReady } }
-    private var serverInstalled: [ServerHarness] { (serverHarnesses ?? []).filter { $0.readiness.state == "ready" } }
-    private var serverNotInstalled: [ServerHarness] { (serverHarnesses ?? []).filter { $0.readiness.state != "ready" } }
+    private var serverInstalled: [ServerHarness] { serverHarnesses.filter(\.isReady) }
+    private var serverNotInstalled: [ServerHarness] { serverHarnesses.filter { !$0.isReady } }
 
     var body: some View {
         Form {
@@ -240,21 +236,12 @@ struct HarnessesSettingsView: View {
                         ProgressView().controlSize(.small)
                         Text("Scanning for harnesses…").foregroundStyle(.secondary)
                     }
-                } else if serverHarnesses != nil {
-                    if serverInstalled.isEmpty {
-                        Text("No harnesses installed. Install Claude Code, Codex, or another ACP agent, then rescan.")
-                            .foregroundStyle(.secondary)
-                    } else {
-                        ForEach(serverInstalled, id: \.id) { harness in
-                            serverInstalledRow(harness)
-                        }
-                    }
-                } else if installed.isEmpty {
+                } else if serverInstalled.isEmpty {
                     Text("No harnesses installed. Install Claude Code, Codex, or another ACP agent, then rescan.")
                         .foregroundStyle(.secondary)
                 } else {
-                    ForEach(installed) { harness in
-                        installedRow(harness)
+                    ForEach(serverInstalled, id: \.id) { harness in
+                        serverInstalledRow(harness)
                     }
                 }
             } header: {
@@ -263,7 +250,7 @@ struct HarnessesSettingsView: View {
                 Text("Enabled harnesses appear in the chat composer's harness picker.")
             }
 
-            if serverHarnesses != nil, !serverNotInstalled.isEmpty {
+            if !serverNotInstalled.isEmpty {
                 Section {
                     DisclosureGroup(isExpanded: $showsNotInstalled) {
                         ForEach(serverNotInstalled, id: \.id) { harness in
@@ -271,17 +258,6 @@ struct HarnessesSettingsView: View {
                         }
                     } label: {
                         Text("Not installed (\(serverNotInstalled.count))")
-                            .foregroundStyle(.secondary)
-                    }
-                }
-            } else if !notInstalled.isEmpty {
-                Section {
-                    DisclosureGroup(isExpanded: $showsNotInstalled) {
-                        ForEach(notInstalled) { harness in
-                            notInstalledRow(harness)
-                        }
-                    } label: {
-                        Text("Not installed (\(notInstalled.count))")
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -302,21 +278,6 @@ struct HarnessesSettingsView: View {
         .task { await scan() }
     }
 
-    private func installedRow(_ harness: DiscoveredAgent) -> some View {
-        Toggle(isOn: Binding(
-            get: { environment.settings.isHarnessEnabled(harness.id) },
-            set: { environment.settings.setHarness(harness.id, enabled: $0) }
-        )) {
-            HStack(spacing: 10) {
-                HarnessIcon(harnessId: harness.id, fallbackSymbolName: harness.symbolName, size: 15)
-                    .foregroundStyle(.secondary)
-                    .frame(width: 20)
-                Text(harness.name)
-            }
-        }
-        .toggleStyle(.switch)
-    }
-
     private func serverInstalledRow(_ harness: ServerHarness) -> some View {
         Toggle(isOn: Binding(
             get: { harness.enabled },
@@ -332,20 +293,6 @@ struct HarnessesSettingsView: View {
             }
         }
         .toggleStyle(.switch)
-    }
-
-    private func notInstalledRow(_ harness: DiscoveredAgent) -> some View {
-        HStack(spacing: 10) {
-            HarnessIcon(harnessId: harness.id, fallbackSymbolName: harness.symbolName, size: 15)
-                .foregroundStyle(.tertiary)
-                .frame(width: 20)
-            Text(harness.name)
-                .foregroundStyle(.secondary)
-            Spacer()
-            Text(harness.readiness.detail ?? "Not installed")
-                .font(.callout)
-                .foregroundStyle(.tertiary)
-        }
     }
 
     private func serverNotInstalledRow(_ harness: ServerHarness) -> some View {
@@ -364,13 +311,7 @@ struct HarnessesSettingsView: View {
 
     private func scan() async {
         isScanning = true
-        if let harnesses = try? await environment.serverClient.listHarnesses() {
-            serverHarnesses = harnesses
-            all = []
-        } else {
-            serverHarnesses = nil
-            all = await environment.agentService.discoverAllHarnesses()
-        }
+        serverHarnesses = (try? await environment.serverClient.listHarnesses()) ?? []
         isScanning = false
     }
 
@@ -385,17 +326,13 @@ struct HarnessesSettingsView: View {
     }
 
     private func updateServerHarness(_ id: String, enabled: Bool) {
-        guard var harnesses = serverHarnesses,
-              let index = harnesses.firstIndex(where: { $0.id == id }) else { return }
-        harnesses[index].enabled = enabled
-        serverHarnesses = harnesses
+        guard let index = serverHarnesses.firstIndex(where: { $0.id == id }) else { return }
+        serverHarnesses[index].enabled = enabled
     }
 
     private func replaceServerHarness(_ harness: ServerHarness) {
-        guard var harnesses = serverHarnesses,
-              let index = harnesses.firstIndex(where: { $0.id == harness.id }) else { return }
-        harnesses[index] = harness
-        serverHarnesses = harnesses
+        guard let index = serverHarnesses.firstIndex(where: { $0.id == harness.id }) else { return }
+        serverHarnesses[index] = harness
     }
 }
 

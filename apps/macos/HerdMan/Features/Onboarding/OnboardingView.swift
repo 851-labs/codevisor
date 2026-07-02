@@ -1,6 +1,5 @@
 import SwiftUI
 import HerdManCore
-import ACPAgents
 import UniformTypeIdentifiers
 
 /// First-launch onboarding, presented as a short paginated flow:
@@ -23,7 +22,7 @@ struct OnboardingView: View {
     }
 
     @State private var step: Step
-    @State private var harnesses: [DiscoveredAgent] = []
+    @State private var harnesses: [ServerHarness] = []
     @State private var isDetecting = true
     @State private var projectFolder: URL?
     @State private var showingFolderPicker = false
@@ -61,7 +60,7 @@ struct OnboardingView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .animation(.smooth(duration: 0.3), value: step)
         .task {
-            harnesses = await environment.agentService.discoverAgents()
+            harnesses = await environment.harnessService.readyHarnesses()
             isDetecting = false
             // Suggest project folders from the user's most recent harness
             // sessions so the project step can offer a one-click choice.
@@ -144,7 +143,7 @@ struct OnboardingView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private func harnessToggle(_ harness: DiscoveredAgent) -> some View {
+    private func harnessToggle(_ harness: ServerHarness) -> some View {
         Toggle(isOn: Binding(
             get: { environment.settings.isHarnessEnabled(harness.id) },
             set: { environment.settings.setHarness(harness.id, enabled: $0) }

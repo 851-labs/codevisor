@@ -102,12 +102,57 @@ public extension SessionModel {
         usage: SessionUsage? = SessionUsage(used: 18_432, size: 200_000, cost: SessionCost(amount: 0.0142, currency: "USD"))
     ) -> SessionModel {
         let model = SessionModel(
-            client: ACPClient(transport: MockTransport()),
+            serverTransport: ServerSessionTransport(client: PreviewServerClient(), sessionId: UUID()),
             sessionId: "preview",
             modeState: modeState,
             configOptions: configOptions
         )
         model.applyPreviewState(conversation: conversation, isSending: isSending, usage: usage)
         return model
+    }
+}
+
+/// A no-op server client for previews: the event stream never yields, and no
+/// preview flow sends prompts, so `fatalError` paths stay unreached.
+private struct PreviewServerClient: HerdManServerClienting {
+    func health() async throws -> ServerHealth {
+        ServerHealth(ok: true, version: "0.0.0", database: "ready")
+    }
+
+    func info() async throws -> ServerInfo { throw HerdManServerClientError.invalidResponse }
+    func updateInfo() async throws -> ServerUpdateInfo { throw HerdManServerClientError.invalidResponse }
+    func issuePairingToken() async throws -> ServerPairingToken { throw HerdManServerClientError.invalidResponse }
+    func capabilities(cwd: String) async throws -> ServerCapabilities { ServerCapabilities(harnesses: []) }
+    func listHarnesses() async throws -> [ServerHarness] { [] }
+    func setHarnessEnabled(id: String, enabled: Bool) async throws -> ServerHarness {
+        throw HerdManServerClientError.invalidResponse
+    }
+    func listProjects() async throws -> [ServerProject] { [] }
+    func upsertProject(_ project: Project) async throws -> ServerProject {
+        throw HerdManServerClientError.invalidResponse
+    }
+    func updateProject(_ project: Project) async throws -> ServerProject {
+        throw HerdManServerClientError.invalidResponse
+    }
+    func deleteProject(id: UUID) async throws {}
+    func listSessions() async throws -> [ServerSession] { [] }
+    func sessionDetail(id: UUID) async throws -> ServerSessionDetail {
+        throw HerdManServerClientError.invalidResponse
+    }
+    func upsertSession(_ session: ChatSession) async throws -> ServerSession {
+        throw HerdManServerClientError.invalidResponse
+    }
+    func updateSession(_ session: ChatSession) async throws -> ServerSession {
+        throw HerdManServerClientError.invalidResponse
+    }
+    func deleteSession(id: UUID) async throws {}
+    func promptSession(id: UUID, text: String) async throws -> ServerPromptAccepted {
+        ServerPromptAccepted(accepted: true, sessionId: id.uuidString)
+    }
+    func cancelSession(id: UUID) async throws {}
+    func setSessionMode(id: UUID, modeId: String) async throws {}
+    func setSessionConfig(id: UUID, configId: String, value: String) async throws {}
+    func eventStream(since: Int) -> AsyncThrowingStream<ServerEventEnvelope, any Error> {
+        AsyncThrowingStream { _ in }
     }
 }

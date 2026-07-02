@@ -1,7 +1,6 @@
 import Foundation
 import Testing
 import ACPKit
-import ACPAgents
 @testable import HerdManCore
 
 @MainActor
@@ -147,21 +146,23 @@ struct SessionOverlayTests {
 
     @Test("SessionImporter fetches across ready harnesses")
     func importer() async {
-        let importer = SessionImporter(agentService: FakeImportService())
+        let importer = SessionImporter(harnessService: FakeImportService())
         let imported = await importer.fetchAll()
         #expect(imported.contains { $0.harnessId == "codex" && $0.info.sessionId == "s1" })
     }
 }
 
-/// A fake agent service that returns scripted sessions for import tests.
-private struct FakeImportService: AgentServicing {
-    func discoverAgents() async -> [DiscoveredAgent] {
-        [DiscoveredAgent(id: "codex", name: "Codex", source: .registry, method: .npx, readiness: .ready)]
+/// A fake harness service that returns scripted sessions for import tests.
+private struct FakeImportService: HarnessServicing {
+    func readyHarnesses() async -> [ServerHarness] {
+        [ServerHarness(
+            id: "codex", name: "Codex", symbolName: "chevron.left.forwardslash.chevron.right",
+            source: "registry", launchKind: "executable", enabled: true,
+            readiness: ServerHarnessReadiness(state: "ready")
+        )]
     }
-    func launch(_ agent: DiscoveredAgent, workingDirectory: URL, delegate: (any ACPClientDelegate)?) async throws -> ACPClient {
-        ACPClient(transport: MockTransport())
-    }
-    func listSessions(for agent: DiscoveredAgent) async throws -> [SessionInfo] {
+    func allHarnesses() async -> [ServerHarness] { await readyHarnesses() }
+    func listSessions(forHarnessId harnessId: String) async throws -> [SessionInfo] {
         [SessionInfo(sessionId: "s1", cwd: "/x", title: "T")]
     }
 }

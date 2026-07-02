@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import ACPAgents
+@testable import HerdManCore
 
 @Suite("EnvironmentProbe")
 struct EnvironmentProbeTests {

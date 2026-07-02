@@ -26,7 +26,6 @@ final class SessionStore {
         }
         let controller = SessionController(
             project: project,
-            agentService: environment.agentService(for: session.serverId),
             configCache: environment.configCache,
             settings: environment.settings,
             serverClient: environment.machines.client(for: session.serverId)
@@ -39,9 +38,6 @@ final class SessionStore {
         controller.onAgentSessionCreated = { [weak projectList = environment.projectList] agentSessionId in
             projectList?.setAgentSessionId(agentSessionId, for: session.id)
         }
-        controller.onTurnFinished = { [weak projectList = environment.projectList] in
-            projectList?.touchSession(session.id)
-        }
         controllers[session.id] = controller
         return controller
     }
@@ -50,7 +46,6 @@ final class SessionStore {
     func makeDraft(project: Project) -> SessionController {
         SessionController(
             project: project,
-            agentService: environment.agentService(for: environment.machines.selectedMachineId),
             configCache: environment.configCache,
             settings: environment.settings,
             serverClient: environment.serverClient

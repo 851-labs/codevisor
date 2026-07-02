@@ -237,9 +237,6 @@ struct NewChatView: View {
             controller.onAgentSessionCreated = { [weak projectList = environment.projectList] agentSessionId in
                 projectList?.setAgentSessionId(agentSessionId, for: session.id)
             }
-            controller.onTurnFinished = { [weak projectList = environment.projectList] in
-                projectList?.touchSession(session.id)
-            }
             store.register(controller, for: session.id)
             selection = .session(session.id)
         }

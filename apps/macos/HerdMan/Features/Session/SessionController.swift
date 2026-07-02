@@ -2,11 +2,10 @@ import Foundation
 import Observation
 import HerdManCore
 import ACPKit
-import ACPAgents
 
 /// The facade for a session screen. Holds the composer text and harness
-/// selection, lazily launches the chosen harness on first send, then forwards
-/// to the live `SessionModel`.
+/// selection, connects the session through the HerdMan server on first send,
+/// then forwards to the live `SessionModel`.
 @MainActor
 @Observable
 final class SessionController {
@@ -17,7 +16,7 @@ final class SessionController {
     }
 
     var composerText: String = ""
-    private(set) var harnesses: [DiscoveredAgent] = []
+    private(set) var harnesses: [ServerHarness] = []
     var selectedHarnessId: String?
     private(set) var model: SessionModel?
     private(set) var status: Status = .idle
@@ -43,17 +42,11 @@ final class SessionController {
     private(set) var sessionCwdOverride: String?
     /// Called with the agent session id once a brand-new session is created.
     var onAgentSessionCreated: ((String) -> Void)?
-    /// Called when an in-app agent finishes a turn, so the sidebar's recency
-    /// stamp can advance. Server-run sessions bump server-side instead.
-    var onTurnFinished: (() -> Void)?
     /// The agent session id currently connected (resumed or newly created).
     private(set) var connectedAgentSessionId: String?
 
-    private let agentService: any AgentServicing
     private let configCache: ConfigOptionCache
     private let settings: AppSettingsModel?
-    private var delegate: AppClientDelegate?
-    private var client: ACPClient?
     private let serverClient: (any HerdManServerClienting)?
     private var hasSentFirst = false
     private var connectedHarnessId: String?
@@ -65,13 +58,11 @@ final class SessionController {
 
     init(
         project: Project,
-        agentService: any AgentServicing,
         configCache: ConfigOptionCache,
         settings: AppSettingsModel? = nil,
         serverClient: (any HerdManServerClienting)? = nil
     ) {
         self.project = project
-        self.agentService = agentService
         self.configCache = configCache
         self.settings = settings
         self.serverClient = serverClient
@@ -161,7 +152,7 @@ final class SessionController {
         }
     }
 
-    var selectedHarness: DiscoveredAgent? {
+    var selectedHarness: ServerHarness? {
         harnesses.first { $0.id == selectedHarnessId }
     }
 
@@ -185,35 +176,18 @@ final class SessionController {
 
     // MARK: - Actions
 
-    /// Discovers installed harnesses for the picker. For a new chat the list
-    /// honors the user's enabled set (falling back to all installed if they've
-    /// disabled everything); a resumed session always keeps its own harness.
+    /// Loads the harness list for the picker from the server (cached
+    /// capabilities first for instant display, then a live refresh). For a new
+    /// chat the list honors the user's enabled set (falling back to all ready
+    /// harnesses if they've disabled everything); a resumed session always
+    /// keeps its own harness.
     func prepare() async {
-        if let serverClient {
-            if seedFromCachedServerCapabilities() {
-                Task { await self.prepareFromServerCapabilities(serverClient) }
-                return
-            }
-            if await prepareFromServerCapabilities(serverClient) {
-                return
-            }
+        guard let serverClient else { return }
+        if seedFromCachedServerCapabilities() {
+            Task { await self.prepareFromServerCapabilities(serverClient) }
+            return
         }
-
-        let installed = await agentService.discoverAgents()
-        let isNewChat = resumeAgentSessionId == nil
-        if let settings, isNewChat {
-            let enabled = installed.filter { settings.isHarnessEnabled($0.id) }
-            harnesses = enabled.isEmpty ? installed : enabled
-        } else {
-            harnesses = installed
-        }
-        if isNewChat {
-            if selectedHarnessId == nil || !harnesses.contains(where: { $0.id == selectedHarnessId }) {
-                selectedHarnessId = harnesses.first?.id
-            }
-        } else if selectedHarnessId == nil {
-            selectedHarnessId = harnesses.first?.id
-        }
+        _ = await prepareFromServerCapabilities(serverClient)
     }
 
     /// Eagerly connects the selected harness (without sending) so model and
@@ -224,7 +198,7 @@ final class SessionController {
         // A worktree draft has no cwd until the worktree is created on first
         // send; connecting now would pin the agent to the project folder.
         guard !wantsNewWorktree || sessionCwdOverride != nil else { return }
-        guard serverClient == nil || serverSession != nil else { return }
+        guard serverSession != nil else { return }
         status = .connecting("Starting \(harness.name)…")
         do {
             model = try await connect(harness)
@@ -245,7 +219,7 @@ final class SessionController {
         await reconnect()
     }
 
-    /// Changes the project/project (user action) and reconnects.
+    /// Changes the project (user action) and reconnects.
     func selectProject(_ project: Project) async {
         guard project.id != self.project.id else { return }
         self.project = project
@@ -256,9 +230,6 @@ final class SessionController {
     /// Tears down any connection and reconnects — used when the harness or
     /// project changes on the new-chat page.
     func reconnect() async {
-        await client?.close()
-        client = nil
-        delegate = nil
         model = nil
         status = .idle
         await connectIfNeeded()
@@ -288,7 +259,6 @@ final class SessionController {
 
         if let model {
             await model.send(text)
-            notifyTurnFinishedIfLocal()
             return
         }
 
@@ -303,18 +273,10 @@ final class SessionController {
             self.model = model
             status = .idle
             await model.send(text)
-            notifyTurnFinishedIfLocal()
         } catch {
             status = .failed(String(describing: error))
             composerText = text
         }
-    }
-
-    /// Only in-app agents (spawned via `client`) need the client-side activity
-    /// stamp; server-run sessions get bumped by the server as items land.
-    private func notifyTurnFinishedIfLocal() {
-        guard client != nil else { return }
-        onTurnFinished?()
     }
 
     /// Asks the server to create a git worktree for this draft. The server
@@ -379,86 +341,17 @@ final class SessionController {
         await prepare()
     }
 
-    func shutdown() async {
-        await client?.close()
-    }
-
     // MARK: - Connection
 
-    private func connect(_ harness: DiscoveredAgent) async throws -> SessionModel {
-        if let serverClient, var serverSession {
-            return try await connectServerSession(harness, serverClient: serverClient, session: &serverSession)
+    private func connect(_ harness: ServerHarness) async throws -> SessionModel {
+        guard let serverClient, var serverSession else {
+            throw SessionControllerError.serverUnavailable
         }
-
-        let delegate = AppClientDelegate()
-        self.delegate = delegate
-        let client = try await agentService.launch(
-            harness,
-            workingDirectory: sessionCwdURL,
-            delegate: delegate
-        )
-        self.client = client
-
-        _ = try await client.initialize(InitializeRequest(
-            protocolVersion: .acpProtocolVersion,
-            clientCapabilities: ClientCapabilities(
-                fs: FileSystemCapabilities(readTextFile: true, writeTextFile: true),
-                plan: true
-            ),
-            clientInfo: Implementation(name: "HerdMan", version: "1.0")
-        ))
-        connectedHarnessId = harness.id
-
-        let model: SessionModel
-        if let resumeAgentSessionId {
-            // Resume an existing agent session and replay its history.
-            let response = try await client.loadSession(LoadSessionRequest(
-                sessionId: resumeAgentSessionId,
-                cwd: sessionCwdURL.path,
-                mcpServers: []
-            ))
-            connectedAgentSessionId = resumeAgentSessionId
-            model = SessionModel(
-                client: client,
-                sessionId: resumeAgentSessionId,
-                modeState: response.modes,
-                configOptions: response.configOptions ?? []
-            )
-            await model.loadHistory()
-        } else {
-            // Create a brand-new agent session.
-            let session = try await client.newSession(NewSessionRequest(
-                cwd: sessionCwdURL.path,
-                mcpServers: []
-            ))
-            connectedAgentSessionId = session.sessionId
-            onAgentSessionCreated?(session.sessionId)
-            model = SessionModel(
-                client: client,
-                sessionId: session.sessionId,
-                modeState: session.modes,
-                configOptions: session.configOptions ?? []
-            )
-        }
-
-        if let pendingModeId {
-            await model.setMode(pendingModeId)
-        }
-        pendingModeId = nil
-
-        // Apply any config the user picked before connecting.
-        for (configId, value) in pendingConfig {
-            await model.setConfigOption(configId: configId, value: value)
-        }
-        pendingConfig.removeAll()
-
-        // Refresh the cache with the live options (stale-while-revalidate).
-        configCache.store(model.configOptions, forHarness: harness.id)
-        return model
+        return try await connectServerSession(harness, serverClient: serverClient, session: &serverSession)
     }
 
     private func connectServerSession(
-        _ harness: DiscoveredAgent,
+        _ harness: ServerHarness,
         serverClient: any HerdManServerClienting,
         session: inout ChatSession
     ) async throws -> SessionModel {
@@ -506,35 +399,18 @@ final class SessionController {
         return model
     }
 
+    @discardableResult
     private func prepareFromServerCapabilities(_ serverClient: any HerdManServerClienting) async -> Bool {
         do {
             let response = try await serverClient.capabilities(cwd: project.folderURL.path)
-            let isNewChat = resumeAgentSessionId == nil
             let capabilities = response.harnesses.filter { capability in
-                capability.harness.enabled && capability.harness.readiness.state == "ready"
+                capability.harness.enabled && capability.harness.isReady
             }
-            let agents = capabilities.map(\.harness.discoveredAgent)
-            if let settings, isNewChat {
-                let enabled = agents.filter { settings.isHarnessEnabled($0.id) }
-                harnesses = enabled.isEmpty ? agents : enabled
-            } else {
-                harnesses = agents
-            }
+            applyHarnessCapabilities(capabilities)
             for capability in capabilities {
                 configCache.store(capability.configOptions, forHarness: capability.harness.id)
-                configOptionsByHarness[capability.harness.id] = capability.configOptions
-                if let modes = capability.modes {
-                    modeStateByHarness[capability.harness.id] = modes
-                }
             }
             configCache.store(capabilities, forServer: project.serverId)
-            if isNewChat {
-                if selectedHarnessId == nil || !harnesses.contains(where: { $0.id == selectedHarnessId }) {
-                    selectedHarnessId = harnesses.first?.id
-                }
-            } else if selectedHarnessId == nil {
-                selectedHarnessId = harnesses.first?.id
-            }
             return true
         } catch {
             return false
@@ -545,18 +421,23 @@ final class SessionController {
     private func seedFromCachedServerCapabilities() -> Bool {
         guard serverClient != nil else { return false }
         let cached = configCache.capabilities(forServer: project.serverId).filter { capability in
-            capability.harness.enabled && capability.harness.readiness.state == "ready"
+            capability.harness.enabled && capability.harness.isReady
         }
         guard !cached.isEmpty else { return false }
-        let agents = cached.map(\.harness.discoveredAgent)
+        applyHarnessCapabilities(cached)
+        return true
+    }
+
+    private func applyHarnessCapabilities(_ capabilities: [ServerHarnessCapability]) {
+        let available = capabilities.map(\.harness)
         let isNewChat = resumeAgentSessionId == nil
         if let settings, isNewChat {
-            let enabled = agents.filter { settings.isHarnessEnabled($0.id) }
-            harnesses = enabled.isEmpty ? agents : enabled
+            let enabled = available.filter { settings.isHarnessEnabled($0.id) }
+            harnesses = enabled.isEmpty ? available : enabled
         } else {
-            harnesses = agents
+            harnesses = available
         }
-        for capability in cached {
+        for capability in capabilities {
             configOptionsByHarness[capability.harness.id] = capability.configOptions
             if let modes = capability.modes {
                 modeStateByHarness[capability.harness.id] = modes
@@ -569,8 +450,13 @@ final class SessionController {
         } else if selectedHarnessId == nil {
             selectedHarnessId = harnesses.first?.id
         }
-        return true
     }
+}
+
+enum SessionControllerError: Error {
+    /// Sessions run through the HerdMan server; without it there is nothing to
+    /// connect to.
+    case serverUnavailable
 }
 
 #if DEBUG
@@ -579,11 +465,10 @@ extension SessionController {
     static func preview(
         project: Project = Project.fromFolder(URL(fileURLWithPath: "/tmp/shepherd")),
         model: SessionModel? = nil,
-        harnesses: [DiscoveredAgent] = SessionController.previewHarnesses
+        harnesses: [ServerHarness] = SessionController.previewHarnesses
     ) -> SessionController {
         let controller = SessionController(
             project: project,
-            agentService: PreviewAgentService(),
             configCache: ConfigOptionCache(store: InMemoryStore())
         )
         controller.harnesses = harnesses
@@ -592,10 +477,18 @@ extension SessionController {
         return controller
     }
 
-    nonisolated static var previewHarnesses: [DiscoveredAgent] {
+    nonisolated static var previewHarnesses: [ServerHarness] {
         [
-            DiscoveredAgent(id: "claude-code", name: "Claude Code", source: .registry, method: .npx, readiness: .ready, symbolName: "sparkle"),
-            DiscoveredAgent(id: "codex", name: "Codex", source: .registry, method: .npx, readiness: .ready, symbolName: "chevron.left.forwardslash.chevron.right")
+            ServerHarness(
+                id: "claude-code", name: "Claude Code", symbolName: "sparkle", source: "registry",
+                launchKind: "executable", enabled: true,
+                readiness: ServerHarnessReadiness(state: "ready")
+            ),
+            ServerHarness(
+                id: "codex", name: "Codex", symbolName: "chevron.left.forwardslash.chevron.right",
+                source: "registry", launchKind: "executable", enabled: true,
+                readiness: ServerHarnessReadiness(state: "ready")
+            )
         ]
     }
 }
