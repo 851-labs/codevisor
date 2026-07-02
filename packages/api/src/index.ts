@@ -1,5 +1,7 @@
 import { Schema } from "effect"
 
+export * from "./session-updates.js"
+
 export const isoTimestamp = (): string => new Date().toISOString()
 
 export const ServerKind = Schema.Literals(["local", "remote"])
