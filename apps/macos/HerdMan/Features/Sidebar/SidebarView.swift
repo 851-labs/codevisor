@@ -239,7 +239,8 @@ struct SidebarView: View {
         }
         .focusedSceneValue(\.sidebarActions, SidebarActions(
             newChat: { selection = .newChat(nil) },
-            newProject: { startAddWorkspace() }
+            newProject: { startAddWorkspace() },
+            addRemoteMachine: { showingRemoteMachine = true }
         ))
     }
 

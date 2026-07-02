@@ -57,6 +57,29 @@ struct WorkspaceListModelTests {
         }
     }
 
+    @Test("Server refresh pushes local-only records up to the server")
+    func serverRefreshPushesLocalOnlyRecords() async throws {
+        // Created while no server was reachable: cache-only until a refresh.
+        let (model, _, _) = makeModel()
+        let workspace = model.addWorkspace(folderURL: URL(fileURLWithPath: "/tmp/offline"))
+        let session = model.newSession(in: workspace, title: "Offline chat", harnessId: "codex", syncToServer: false)
+        model.setAgentSessionId("agent-offline", for: session.id)
+
+        let fakeServer = FakeServerClient()
+        model.selectServer(serverId: "local", serverClient: fakeServer)
+
+        var pushed = false
+        for _ in 0..<50 where !pushed {
+            let snapshot = await fakeServer.snapshot()
+            pushed = snapshot.upsertedWorkspaceIDs.contains(workspace.id.uuidString)
+                && snapshot.upsertedSessionIDs.contains(session.id.uuidString)
+            if !pushed {
+                try await Task.sleep(nanoseconds: 10_000_000)
+            }
+        }
+        #expect(pushed, "local-only workspace and session should be upserted to the server")
+    }
+
     @Test("Server refresh is scoped to the selected machine")
     func serverRefreshScopesToSelectedMachine() async throws {
         let localWorkspace = Workspace(

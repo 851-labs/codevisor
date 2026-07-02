@@ -16,6 +16,7 @@ struct HerdManApp: App {
         .commands {
             AppUpdateCommands(appUpdate: environment.appUpdate)
             FileCommands()
+            MachineCommands(machines: environment.machines)
             TerminalCommands()
         }
 

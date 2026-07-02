@@ -5,51 +5,62 @@ import HerdManCore
 /// Used from the sidebar's machine picker and the Machines settings tab.
 struct RemoteMachineSheet: View {
     @Environment(\.dismiss) private var dismiss
-    @State private var host = ""
     @State private var name = ""
+    @State private var host = ""
     @State private var token = ""
     let onAdd: (String, String?, String?) -> Void
+
+    private var trimmedName: String { name.trimmingCharacters(in: .whitespacesAndNewlines) }
+    private var trimmedHost: String { host.trimmingCharacters(in: .whitespacesAndNewlines) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Add remote machine")
                 .font(.headline)
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Address")
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(.secondary)
-                TextField("mac-mini.tailnet.ts.net or 100.64.0.10:49361", text: $host)
+            labeledField("Name") {
+                TextField("Mac mini", text: $name)
                     .textFieldStyle(.roundedBorder)
             }
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Connection token")
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(.secondary)
-                TextField("hm_… — copy it from the other machine's Machines settings", text: $token)
+            labeledField("Host") {
+                TextField("100.64.0.10", text: $host)
                     .textFieldStyle(.roundedBorder)
             }
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Name")
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(.secondary)
-                TextField("Optional, e.g. Mac mini", text: $name)
+            labeledField("Connection token", hint: "Copy it from Settings → General → Remote Access on the other machine.") {
+                TextField("hm_…", text: $token)
                     .textFieldStyle(.roundedBorder)
             }
             HStack {
                 Spacer()
                 Button("Cancel") { dismiss() }
                 Button("Add") {
-                    let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
                     let trimmedToken = token.trimmingCharacters(in: .whitespacesAndNewlines)
-                    onAdd(host, trimmedName.isEmpty ? nil : trimmedName, trimmedToken.isEmpty ? nil : trimmedToken)
+                    onAdd(trimmedHost, trimmedName, trimmedToken.isEmpty ? nil : trimmedToken)
                     dismiss()
                 }
                 .keyboardShortcut(.defaultAction)
-                .disabled(host.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .disabled(trimmedName.isEmpty || trimmedHost.isEmpty)
             }
         }
         .padding(20)
         .frame(width: 420)
+    }
+
+    private func labeledField(_ title: String, hint: String? = nil, @ViewBuilder field: () -> some View) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 4) {
+                Text(title)
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
+                if let hint {
+                    Image(systemName: "info.circle")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                        .help(hint)
+                        .accessibilityLabel(hint)
+                }
+            }
+            field()
+        }
     }
 }
 

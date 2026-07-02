@@ -7,6 +7,7 @@ import SwiftUI
 struct SidebarActions: Equatable {
     let newChat: @MainActor () -> Void
     let newProject: @MainActor () -> Void
+    let addRemoteMachine: @MainActor () -> Void
 
     /// The closures capture stable references (bindings and the app
     /// environment), so any published instance is interchangeable.

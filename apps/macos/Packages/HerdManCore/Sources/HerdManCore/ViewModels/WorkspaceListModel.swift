@@ -299,20 +299,42 @@ public final class WorkspaceListModel {
     public func refreshFromServer() async {
         guard let serverClient else { return }
         do {
-            let serverWorkspaces = try await serverClient.listWorkspaces()
-            let serverSessions = try await serverClient.listSessions()
-            workspaces = mergeWorkspaces(
-                local: workspaces,
-                remote: serverWorkspaces.compactMap { try? $0.workspace(serverId: selectedServerId) }
-            )
-            sessions = mergeSessions(
-                local: sessions,
-                remote: serverSessions.compactMap { try? $0.chatSession(serverId: selectedServerId) }
-            )
+            let remoteWorkspaces = try await serverClient.listWorkspaces()
+                .compactMap { try? $0.workspace(serverId: selectedServerId) }
+            let remoteSessions = try await serverClient.listSessions()
+                .compactMap { try? $0.chatSession(serverId: selectedServerId) }
+            workspaces = mergeWorkspaces(local: workspaces, remote: remoteWorkspaces)
+            sessions = mergeSessions(local: sessions, remote: remoteSessions)
             persistWorkspaces()
             persistSessions()
+            // Reconcile upward too: anything created while this server was
+            // unreachable (or before it ever ran) exists only in the local
+            // cache. Push it so the server — and every other client of it —
+            // catches up.
+            await pushMissingToServer(
+                knownWorkspaceIds: Set(remoteWorkspaces.map(\.id)),
+                knownSessionIds: Set(remoteSessions.map(\.id))
+            )
         } catch {
             // The local file cache remains authoritative until the server is reachable.
+        }
+    }
+
+    private func pushMissingToServer(knownWorkspaceIds: Set<UUID>, knownSessionIds: Set<UUID>) async {
+        guard let serverClient else { return }
+        let missingWorkspaces = workspaces.filter {
+            $0.serverId == selectedServerId && !knownWorkspaceIds.contains($0.id)
+        }
+        // Drafts (no agent session yet) stay local until their first send.
+        let missingSessions = sessions.filter {
+            $0.serverId == selectedServerId && !$0.harnessId.isEmpty
+                && $0.agentSessionId != nil && !knownSessionIds.contains($0.id)
+        }
+        for workspace in missingWorkspaces {
+            _ = try? await serverClient.upsertWorkspace(workspace)
+        }
+        for session in missingSessions {
+            _ = try? await serverClient.upsertSession(session)
         }
     }
 

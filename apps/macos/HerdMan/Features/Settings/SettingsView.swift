@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 import HerdManCore
 import ACPAgents
 
@@ -43,6 +44,8 @@ struct GeneralSettingsView: View {
     @Environment(AppEnvironment.self) private var environment
     @State private var showingConfirmation = false
     @State private var serverStatus: ServerStatusModel?
+    @State private var tokenCopied = false
+    @State private var tokenError: String?
 
     var body: some View {
         Form {
@@ -50,8 +53,29 @@ struct GeneralSettingsView: View {
                 serverStatusContent
             } header: {
                 Text("Server")
-            } footer: {
-                Text("The selected HerdMan server owns ACP sessions, storage, events, and terminal processes.")
+            }
+
+            Section {
+                HStack(alignment: .center) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Connection token")
+                        Text(tokenError ?? "Lets another device running HerdMan connect to this Mac.")
+                            .font(.callout)
+                            .foregroundStyle(tokenError == nil ? AnyShapeStyle(.secondary) : AnyShapeStyle(.orange))
+                    }
+                    Spacer()
+                    Button {
+                        copyConnectionToken()
+                    } label: {
+                        if tokenCopied {
+                            Label("Copied", systemImage: "checkmark")
+                        } else {
+                            Label("Copy", systemImage: "doc.on.doc")
+                        }
+                    }
+                }
+            } header: {
+                Text("Remote Access")
             }
 
             Section {
@@ -159,6 +183,24 @@ struct GeneralSettingsView: View {
             serverStatus = ServerStatusModel(client: environment.serverClient)
         }
         await serverStatus?.refresh()
+    }
+
+    /// Issues a fresh token from this Mac's server and puts it on the
+    /// clipboard, for pasting into another device's Add Remote Machine form.
+    private func copyConnectionToken() {
+        Task {
+            do {
+                let token = try await environment.machines.issueLocalConnectionToken()
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(token, forType: .string)
+                tokenError = nil
+                tokenCopied = true
+                try? await Task.sleep(for: .seconds(2))
+                tokenCopied = false
+            } catch {
+                tokenError = "Couldn't issue a token: this Mac's server isn't running."
+            }
+        }
     }
 }
 

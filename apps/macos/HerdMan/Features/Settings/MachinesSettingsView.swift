@@ -22,8 +22,6 @@ struct MachinesSettingsView: View {
                 }
             } header: {
                 Text("Machines")
-            } footer: {
-                Text("Each machine runs its own HerdMan server; chats, projects, and terminals live on the machine that owns them. Removing a machine only makes this app forget it.")
             }
 
             Section {
