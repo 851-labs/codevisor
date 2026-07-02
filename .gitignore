@@ -10,6 +10,7 @@ coverage/
 build/
 Build/
 DerivedData/
+.derivedData/
 *.tsbuildinfo
 *.log
 *.pid
@@ -25,3 +26,7 @@ apps/macos/Packages/.build/
 apps/macos/Packages/.swiftpm/
 .wrangler/
 .playwright-mcp/
+apps/desktop/src-tauri/target/
+apps/desktop/src-tauri/gen/
+apps/desktop/src-tauri/resources/server/*
+!apps/desktop/src-tauri/resources/server/.gitkeep

@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>HerdMan</title>
+    <!-- Pre-paint theme bootstrap: sets the light/dark class before the module
+         bundle loads so the first frame matches the persisted color mode.
+         Storage key mirrors themeController.ts (this inline script can't
+         import it); keep them in sync. -->
+    <script>
+      ;(function applyInitialTheme() {
+        try {
+          var storedMode = window.localStorage.getItem("herdman-color-mode")
+          var mode = storedMode === "light" || storedMode === "dark" ? storedMode : "system"
+          var resolved =
+            mode === "system"
+              ? window.matchMedia("(prefers-color-scheme: dark)").matches
+                ? "dark"
+                : "light"
+              : mode
+          var root = document.documentElement
+          root.classList.remove("light", "dark")
+          root.classList.add(resolved)
+          root.style.colorScheme = resolved
+        } catch (error) {
+          // Ignore storage/media failures and let CSS defaults apply.
+        }
+      })()
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

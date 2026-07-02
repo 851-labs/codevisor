@@ -8,3 +8,7 @@ bun.lock
 *.xcworkspace/
 *.xcodeproj/
 **/routeTree.gen.ts
+apps/desktop/src-tauri/target/
+apps/desktop/src-tauri/gen/
+apps/desktop/src-tauri/icons/
+.repos/

@@ -191,6 +191,12 @@ const main = Effect.gen(function* () {
   if (kind !== undefined && kind !== "local" && kind !== "remote") {
     throw new Error("--kind must be either local or remote")
   }
+  // Browser origins allowed to call the API cross-origin (comma-separated),
+  // e.g. the Tauri webview's tauri://localhost. Never pass a wildcard here.
+  const corsOrigins = (args["cors-origins"] ?? "")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter((origin) => origin.length > 0)
   const databasePath = args.db ?? defaultDatabasePath()
   const db = yield* makeDatabase({
     filename: databasePath,
@@ -218,7 +224,8 @@ const main = Effect.gen(function* () {
             "--auth",
             authMode,
             ...(args.name === undefined ? [] : ["--name", args.name]),
-            ...(args.kind === undefined ? [] : ["--kind", args.kind])
+            ...(args.kind === undefined ? [] : ["--kind", args.kind]),
+            ...(corsOrigins.length === 0 ? [] : ["--cors-origins", corsOrigins.join(",")])
           ]
         })
   const server = yield* startHerdManServer(
@@ -236,6 +243,7 @@ const main = Effect.gen(function* () {
       name: args.name ?? (host === "127.0.0.1" ? "Local HerdMan" : serverId),
       port,
       ...(version === undefined ? {} : { version }),
+      ...(corsOrigins.length === 0 ? {} : { corsOrigins }),
       auth: {
         // Same-machine clients (the app that launched this server, the
         // terminal proxy) are trusted without a token; only connections

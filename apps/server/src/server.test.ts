@@ -643,6 +643,59 @@ describe("@herdman/server", () => {
     expect((await jsonRequest(localhostSecured, "/v1/info")).status).toBe(200)
   })
 
+  it("applies the CORS allowlist to browser origins", async () => {
+    const { services } = await makeServices("server-cors")
+    const server = await run(
+      startHerdManServer(
+        services,
+        defaultServerConfig({
+          corsOrigins: ["tauri://localhost"],
+          id: "server-cors",
+          port: 0
+        })
+      )
+    )
+    runningServers.push(server)
+
+    // Allowlisted origins are echoed on responses and granted on preflight.
+    const allowed = await fetch(`${server.url}/v1/health`, {
+      headers: { Origin: "tauri://localhost" }
+    })
+    expect(allowed.headers.get("access-control-allow-origin")).toBe("tauri://localhost")
+    expect(allowed.headers.get("vary")).toBe("Origin")
+
+    const preflight = await fetch(`${server.url}/v1/workspaces`, {
+      headers: { "Access-Control-Request-Method": "POST", Origin: "tauri://localhost" },
+      method: "OPTIONS"
+    })
+    expect(preflight.status).toBe(204)
+    expect(preflight.headers.get("access-control-allow-origin")).toBe("tauri://localhost")
+    expect(preflight.headers.get("access-control-allow-methods")).toContain("POST")
+    expect(preflight.headers.get("access-control-allow-headers")).toContain("Authorization")
+
+    // Unknown origins get no grant; their preflight carries no allow-origin.
+    const denied = await fetch(`${server.url}/v1/health`, {
+      headers: { Origin: "https://evil.example" }
+    })
+    expect(denied.headers.get("access-control-allow-origin")).toBeNull()
+    const deniedPreflight = await fetch(`${server.url}/v1/health`, {
+      headers: { Origin: "https://evil.example" },
+      method: "OPTIONS"
+    })
+    expect(deniedPreflight.headers.get("access-control-allow-origin")).toBeNull()
+
+    // Without a configured allowlist, no CORS headers are emitted at all.
+    const { services: plainServices } = await makeServices("server-no-cors")
+    const plain = await run(
+      startHerdManServer(plainServices, defaultServerConfig({ id: "server-no-cors", port: 0 }))
+    )
+    runningServers.push(plain)
+    const noCors = await fetch(`${plain.url}/v1/health`, {
+      headers: { Origin: "tauri://localhost" }
+    })
+    expect(noCors.headers.get("access-control-allow-origin")).toBeNull()
+  })
+
   it("manages workspaces, harnesses, sessions, actions, and event replay", async () => {
     const { acp, server, services } = await start()
     const workspaceRoot = mkdtempSync(join(tmpdir(), "herdman-server-workspace-"))
