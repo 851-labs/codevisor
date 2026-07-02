@@ -1,0 +1,18 @@
+[submodule ".repos/acp-typescript-sdk"]
+	path = .repos/acp-typescript-sdk
+	url = https://github.com/agentclientprotocol/typescript-sdk.git
+[submodule ".repos/codex-acp"]
+	path = .repos/codex-acp
+	url = https://github.com/agentclientprotocol/codex-acp.git
+[submodule ".repos/claude-agent-acp"]
+	path = .repos/claude-agent-acp
+	url = https://github.com/agentclientprotocol/claude-agent-acp.git
+[submodule ".repos/opencode"]
+	path = .repos/opencode
+	url = https://github.com/anomalyco/opencode.git
+[submodule ".repos/effect-smol"]
+	path = .repos/effect-smol
+	url = https://github.com/effect-ts/effect-smol.git
+[submodule ".repos/pierre"]
+	path = .repos/pierre
+	url = https://github.com/pierrecomputer/pierre.git
