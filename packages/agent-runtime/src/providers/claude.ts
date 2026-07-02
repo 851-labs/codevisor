@@ -35,9 +35,10 @@ const MINIMUM_CLAUDE_VERSION = "2.0.0"
 /// the events table.
 const STREAM_STATS_INTERVAL_MS = 250
 
-/// Effort levels the SDK's flag settings accept (`max` appears in some model
-/// capabilities but is not settable through applyFlagSettings).
-const SETTABLE_EFFORT_LEVELS = new Set(["low", "medium", "high", "xhigh"])
+/// Effort levels the CLI's flag settings accept. `max` is valid (verified
+/// against a live CLI) even though the SDK's `Settings` type lags its own
+/// `EffortLevel` union.
+const SETTABLE_EFFORT_LEVELS = new Set(["low", "medium", "high", "xhigh", "max"])
 
 interface ClaudeModel {
   readonly value: string
@@ -353,7 +354,7 @@ export const makeClaudeProvider = (
         options: [
           { name: "Default", value: "default" },
           ...effortLevels.map((level) => ({
-            name: level === "xhigh" ? "X-High" : level[0]?.toUpperCase() + level.slice(1),
+            name: level === "xhigh" ? "X-High" : (level[0]?.toUpperCase() ?? "") + level.slice(1),
             value: level
           }))
         ]
@@ -403,10 +404,11 @@ export const makeClaudeProvider = (
             session.currentEffort = "default"
           }
         } else if (configId === "effort") {
+          // Cast: the CLI accepts "max" but the SDK Settings type doesn't
+          // list it yet.
           await session.q.applyFlagSettings({
-            effortLevel:
-              value === "default" ? null : (value as "low" | "medium" | "high" | "xhigh")
-          })
+            effortLevel: value === "default" ? null : value
+          } as Parameters<Query["applyFlagSettings"]>[0])
           session.currentEffort = value
         } else {
           throw new Error(`Unknown config option: ${configId}`)

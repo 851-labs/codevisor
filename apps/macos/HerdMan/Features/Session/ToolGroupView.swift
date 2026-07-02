@@ -43,6 +43,15 @@ struct ToolGroupView: View {
             }
         }
         .clipped()
+        // The group follows the work: open while a call is running so the
+        // live rows (shimmer, counters) are visible, closed once it settles.
+        // Manual toggles still work in between.
+        .onAppear {
+            if hasRunningCalls { isExpanded = true }
+        }
+        .onChange(of: hasRunningCalls) { _, running in
+            withAnimation(.snappy(duration: 0.25)) { isExpanded = running }
+        }
     }
 }
 
