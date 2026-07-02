@@ -1,21 +1,26 @@
 import type {
+  CreateProjectRequest,
   CreateSessionRequest,
-  CreateWorkspaceRequest,
   EventEnvelope,
   EventKind,
   Harness,
+  Project,
+  ProjectLocation,
   PromptQueueItem,
   SessionDetail,
   SessionSummary,
+  UpdateProjectRequest,
   UpdateSessionRequest,
   UpdateInfo,
-  UpdateWorkspaceRequest,
-  Workspace
+  Worktree
 } from "@herdman/api"
 import { isoTimestamp } from "@herdman/api"
 import Database from "better-sqlite3"
 import { createHash, randomBytes, randomUUID } from "node:crypto"
 import { Context, Effect, Layer, Schema } from "effect"
+import { resolveSessionCwd, worktreePath } from "./paths.js"
+
+export { resolveSessionCwd, worktreePath, worktreesRoot } from "./paths.js"
 
 export class DatabaseError extends Schema.TaggedErrorClass<DatabaseError>()("DatabaseError", {
   operation: Schema.String,
@@ -27,25 +32,42 @@ export interface HerdManDatabaseConfig {
   readonly serverId: string
 }
 
-interface WorkspaceRow {
+interface ProjectRow {
   readonly id: string
   readonly name: string
-  readonly folder_path: string
   readonly is_archived: number
   readonly symbol_name: string
-  readonly origin: Workspace["origin"]
+  readonly origin: Project["origin"]
+  readonly created_at: string
+}
+
+interface ProjectLocationRow {
+  readonly id: string
+  readonly project_id: string
+  readonly server_id: string
+  readonly folder_path: string
+  readonly created_at: string
+}
+
+interface WorktreeRow {
+  readonly id: string
+  readonly project_id: string
+  readonly server_id: string
+  readonly name: string
+  readonly branch: string
   readonly created_at: string
 }
 
 interface SessionRow {
   readonly id: string
-  readonly workspace_id: string
+  readonly project_id: string
   readonly server_id: string
   readonly harness_id: string
   readonly agent_session_id: string | null
   readonly title: string
   readonly origin: SessionSummary["origin"]
   readonly is_archived: number
+  readonly worktree_name: string | null
   readonly created_at: string
   readonly updated_at: string | null
   readonly usage_used: number | null
@@ -97,7 +119,15 @@ interface UpdateRow {
   readonly migration_state: UpdateInfo["migrationState"]
 }
 
-const migrations = [
+interface Migration {
+  readonly id: number
+  readonly name: string
+  readonly sql: string
+  /** Runs inside the migration transaction, after `sql`; use for backfills that need config values. */
+  readonly run?: (sqlite: Database.Database, config: HerdManDatabaseConfig) => void
+}
+
+const migrations: ReadonlyArray<Migration> = [
   {
     id: 1,
     name: "initial",
@@ -216,21 +246,104 @@ const migrations = [
       create index if not exists prompt_queue_items_session_created_idx
         on prompt_queue_items(session_id, created_at);
     `
+  },
+  {
+    id: 5,
+    name: "projects and worktrees",
+    sql: `
+      create table if not exists projects (
+        id text primary key,
+        name text not null,
+        is_archived integer not null default 0,
+        symbol_name text not null default 'folder',
+        origin text not null,
+        created_at text not null
+      );
+
+      insert into projects (id, name, is_archived, symbol_name, origin, created_at)
+        select id, name, is_archived, symbol_name, origin, created_at from workspaces;
+
+      create table if not exists project_locations (
+        id text primary key,
+        project_id text not null references projects(id) on delete cascade,
+        server_id text not null,
+        folder_path text not null,
+        created_at text not null,
+        unique (project_id, server_id),
+        unique (server_id, folder_path)
+      );
+
+      create table if not exists worktrees (
+        id text primary key,
+        project_id text not null references projects(id) on delete cascade,
+        server_id text not null,
+        name text not null,
+        branch text not null,
+        created_at text not null,
+        unique (project_id, server_id, name)
+      );
+
+      create table if not exists sessions_next (
+        id text primary key,
+        project_id text not null references projects(id) on delete cascade,
+        server_id text not null,
+        harness_id text not null,
+        agent_session_id text,
+        title text not null,
+        origin text not null,
+        is_archived integer not null default 0,
+        worktree_name text,
+        created_at text not null,
+        updated_at text,
+        usage_used integer,
+        usage_size integer,
+        cost_amount real,
+        cost_currency text
+      );
+
+      insert into sessions_next (
+        id, project_id, server_id, harness_id, agent_session_id, title, origin,
+        is_archived, created_at, updated_at, usage_used, usage_size, cost_amount, cost_currency
+      )
+        select
+          id, workspace_id, server_id, harness_id, agent_session_id, title, origin,
+          is_archived, created_at, updated_at, usage_used, usage_size, cost_amount, cost_currency
+        from sessions;
+
+      drop table sessions;
+      alter table sessions_next rename to sessions;
+    `,
+    run: (sqlite, config) => {
+      sqlite
+        .prepare(
+          `insert into project_locations (id, project_id, server_id, folder_path, created_at)
+           select id, id, ?, folder_path, created_at from workspaces`
+        )
+        .run(config.serverId)
+      sqlite.exec("drop table workspaces")
+    }
   }
-] as const
+]
 
 export interface HerdManDatabaseService {
   readonly migrate: Effect.Effect<ReadonlyArray<string>, DatabaseError>
   readonly close: Effect.Effect<void>
-  readonly createWorkspace: (
-    request: CreateWorkspaceRequest
-  ) => Effect.Effect<Workspace, DatabaseError>
-  readonly listWorkspaces: Effect.Effect<ReadonlyArray<Workspace>, DatabaseError>
-  readonly updateWorkspace: (
+  readonly createProject: (
+    request: CreateProjectRequest
+  ) => Effect.Effect<Project, DatabaseError>
+  readonly listProjects: Effect.Effect<ReadonlyArray<Project>, DatabaseError>
+  readonly updateProject: (
     id: string,
-    request: UpdateWorkspaceRequest
-  ) => Effect.Effect<Workspace, DatabaseError>
-  readonly deleteWorkspace: (id: string) => Effect.Effect<void, DatabaseError>
+    request: UpdateProjectRequest
+  ) => Effect.Effect<Project, DatabaseError>
+  readonly deleteProject: (id: string) => Effect.Effect<void, DatabaseError>
+  readonly createWorktree: (
+    projectId: string,
+    name: string,
+    branch: string
+  ) => Effect.Effect<Worktree, DatabaseError>
+  readonly listWorktrees: (projectId: string) => Effect.Effect<ReadonlyArray<Worktree>, DatabaseError>
+  readonly deleteWorktree: (id: string) => Effect.Effect<void, DatabaseError>
   readonly createSession: (
     request: CreateSessionRequest
   ) => Effect.Effect<SessionSummary, DatabaseError>
@@ -336,27 +449,39 @@ const createService = (
         .map((row) => (row as { readonly id: number }).id)
     )
     const names: Array<string> = []
-    const transaction = sqlite.transaction(() => {
-      for (const migration of migrations) {
-        if (applied.has(migration.id)) {
-          continue
+    // Table rebuilds (drop + rename) would cascade-delete child rows under enforced foreign
+    // keys, and `pragma foreign_keys` is a no-op inside a transaction — toggle it out here.
+    sqlite.pragma("foreign_keys = OFF")
+    try {
+      const transaction = sqlite.transaction(() => {
+        for (const migration of migrations) {
+          if (applied.has(migration.id)) {
+            continue
+          }
+          sqlite.exec(migration.sql)
+          migration.run?.(sqlite, config)
+          sqlite
+            .prepare("insert into schema_migrations (id, name) values (?, ?)")
+            .run(migration.id, migration.name)
+          names.push(migration.name)
         }
-        sqlite.exec(migration.sql)
         sqlite
-          .prepare("insert into schema_migrations (id, name) values (?, ?)")
-          .run(migration.id, migration.name)
-        names.push(migration.name)
-      }
-      sqlite
-        .prepare(
-          `insert into update_state (
-            id, current_version, latest_version, update_available, channel, checked_at, migration_state
-          ) values (1, '0.1.0', '0.1.0', 0, 'development', null, 'idle')
-          on conflict(id) do nothing`
-        )
-        .run()
-    })
-    transaction()
+          .prepare(
+            `insert into update_state (
+              id, current_version, latest_version, update_available, channel, checked_at, migration_state
+            ) values (1, '0.1.0', '0.1.0', 0, 'development', null, 'idle')
+            on conflict(id) do nothing`
+          )
+          .run()
+        const violations = sqlite.pragma("foreign_key_check") as ReadonlyArray<unknown>
+        if (violations.length > 0) {
+          throw new Error(`Migration left foreign key violations: ${JSON.stringify(violations)}`)
+        }
+      })
+      transaction()
+    } finally {
+      sqlite.pragma("foreign_keys = ON")
+    }
     return names
   })
 
@@ -383,36 +508,84 @@ const createService = (
     })
   })
 
-  const createWorkspace = Effect.fn("HerdManDatabase.createWorkspace")(function* (
-    request: CreateWorkspaceRequest
+  const locationRowsFor = (projectId: string): ReadonlyArray<ProjectLocationRow> =>
+    sqlite
+      .prepare("select * from project_locations where project_id = ? order by created_at asc")
+      .all(projectId) as ReadonlyArray<ProjectLocationRow>
+
+  const localLocationFor = (projectId: string): ProjectLocationRow | undefined =>
+    sqlite
+      .prepare("select * from project_locations where project_id = ? and server_id = ?")
+      .get(projectId, config.serverId) as ProjectLocationRow | undefined
+
+  const getProject = (id: string): Project => {
+    const row = sqlite.prepare("select * from projects where id = ?").get(id) as
+      | ProjectRow
+      | undefined
+    if (row === undefined) {
+      throw new Error(`Project not found: ${id}`)
+    }
+    return projectFromRow(row, locationRowsFor(id))
+  }
+
+  const getSession = (id: string): SessionSummary => {
+    const row = sqlite.prepare("select * from sessions where id = ?").get(id) as
+      | SessionRow
+      | undefined
+    if (row === undefined) {
+      throw new Error(`Session not found: ${id}`)
+    }
+    return sessionFromRow(row, localLocationFor(row.project_id)?.folder_path)
+  }
+
+  const createProject = Effect.fn("HerdManDatabase.createProject")(function* (
+    request: CreateProjectRequest
   ) {
-    return yield* attempt("createWorkspace", () => {
+    return yield* attempt("createProject", () => {
       const now = isoTimestamp()
-      const workspace: Workspace = {
-        id: request.id ?? randomUUID(),
-        name: request.name ?? basename(request.folderPath),
+      const projectId = request.id ?? randomUUID()
+      const createdAt = request.createdAt ?? now
+      const location: ProjectLocation = {
+        id: randomUUID(),
+        projectId,
+        serverId: config.serverId,
         folderPath: request.folderPath,
-        isArchived: request.isArchived ?? false,
-        symbolName: request.symbolName ?? "folder",
-        origin: request.origin ?? "herdman",
-        createdAt: request.createdAt ?? now
+        createdAt
       }
-      sqlite
-        .prepare(
-          `insert into workspaces (
-            id, name, folder_path, is_archived, symbol_name, origin, created_at
-          ) values (?, ?, ?, ?, ?, ?, ?)`
-        )
-        .run(
-          workspace.id,
-          workspace.name,
-          workspace.folderPath,
-          workspace.isArchived ? 1 : 0,
-          workspace.symbolName,
-          workspace.origin,
-          workspace.createdAt
-        )
-      return workspace
+      const project: Project = {
+        id: projectId,
+        name: request.name ?? basename(request.folderPath),
+        isArchived: request.isArchived ?? false,
+        symbolName: request.symbolName ?? "folder.fill",
+        origin: request.origin ?? "herdman",
+        createdAt,
+        locations: [location]
+      }
+      const transaction = sqlite.transaction(() => {
+        sqlite
+          .prepare(
+            `insert into projects (
+              id, name, is_archived, symbol_name, origin, created_at
+            ) values (?, ?, ?, ?, ?, ?)`
+          )
+          .run(
+            project.id,
+            project.name,
+            project.isArchived ? 1 : 0,
+            project.symbolName,
+            project.origin,
+            project.createdAt
+          )
+        sqlite
+          .prepare(
+            `insert into project_locations (
+              id, project_id, server_id, folder_path, created_at
+            ) values (?, ?, ?, ?, ?)`
+          )
+          .run(location.id, location.projectId, location.serverId, location.folderPath, location.createdAt)
+      })
+      transaction()
+      return project
     })
   })
 
@@ -421,81 +594,109 @@ const createService = (
   ) {
     return yield* attempt("createSession", () => {
       const now = isoTimestamp()
-      const session: SessionSummary = {
-        id: request.id ?? randomUUID(),
-        workspaceId: request.workspaceId,
-        serverId: config.serverId,
-        harnessId: request.harnessId,
-        ...(request.agentSessionId === undefined ? {} : { agentSessionId: request.agentSessionId }),
-        title: request.title ?? "New Session",
-        origin: request.origin ?? "herdman",
-        isArchived: request.isArchived ?? false,
-        createdAt: request.createdAt ?? now,
-        ...(request.updatedAt === undefined ? {} : { updatedAt: request.updatedAt })
-      }
+      const id = request.id ?? randomUUID()
       sqlite
         .prepare(
           `insert into sessions (
-            id, workspace_id, server_id, harness_id, agent_session_id, title, origin, is_archived, created_at, updated_at
-          ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+            id, project_id, server_id, harness_id, agent_session_id, title, origin, is_archived, worktree_name, created_at, updated_at
+          ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
         )
         .run(
-          session.id,
-          session.workspaceId,
-          session.serverId,
-          session.harnessId,
+          id,
+          request.projectId,
+          config.serverId,
+          request.harnessId,
           request.agentSessionId ?? null,
-          session.title,
-          session.origin,
-          session.isArchived ? 1 : 0,
-          session.createdAt,
+          request.title ?? "New Session",
+          request.origin ?? "herdman",
+          (request.isArchived ?? false) ? 1 : 0,
+          request.worktreeName ?? null,
+          request.createdAt ?? now,
           request.updatedAt ?? null
         )
-      return session
+      return getSession(id)
     })
   })
 
   return {
     migrate,
     close: Effect.sync(() => sqlite.close()),
-    createWorkspace,
-    listWorkspaces: attempt("listWorkspaces", () =>
+    createProject,
+    listProjects: attempt("listProjects", () =>
       sqlite
-        .prepare("select * from workspaces order by created_at desc")
+        .prepare("select * from projects order by created_at desc")
         .all()
-        .map((row) => workspaceFromRow(row as WorkspaceRow))
+        .map((row) => projectFromRow(row as ProjectRow, locationRowsFor((row as ProjectRow).id)))
     ),
-    updateWorkspace: (id, request) =>
-      attempt("updateWorkspace", () => {
-        const current = getWorkspace(sqlite, id)
-        const updated: Workspace = {
+    updateProject: (id, request) =>
+      attempt("updateProject", () => {
+        const current = getProject(id)
+        const updated: Project = {
           ...current,
           name: request.name ?? current.name,
           isArchived: request.isArchived ?? current.isArchived,
           symbolName: request.symbolName ?? current.symbolName
         }
         sqlite
-          .prepare("update workspaces set name = ?, is_archived = ?, symbol_name = ? where id = ?")
+          .prepare("update projects set name = ?, is_archived = ?, symbol_name = ? where id = ?")
           .run(updated.name, updated.isArchived ? 1 : 0, updated.symbolName, id)
         return updated
       }),
-    deleteWorkspace: (id) =>
-      attempt("deleteWorkspace", () => {
-        const result = sqlite.prepare("delete from workspaces where id = ?").run(id)
+    deleteProject: (id) =>
+      attempt("deleteProject", () => {
+        const result = sqlite.prepare("delete from projects where id = ?").run(id)
         if (result.changes === 0) {
-          throw new Error(`Workspace not found: ${id}`)
+          throw new Error(`Project not found: ${id}`)
         }
+      }),
+    createWorktree: (projectId, name, branch) =>
+      attempt("createWorktree", () => {
+        getProject(projectId)
+        const worktree: Worktree = {
+          id: randomUUID(),
+          projectId,
+          serverId: config.serverId,
+          name,
+          branch,
+          path: worktreePath(projectId, name),
+          createdAt: isoTimestamp()
+        }
+        sqlite
+          .prepare(
+            `insert into worktrees (
+              id, project_id, server_id, name, branch, created_at
+            ) values (?, ?, ?, ?, ?, ?)`
+          )
+          .run(worktree.id, projectId, worktree.serverId, name, branch, worktree.createdAt)
+        return worktree
+      }),
+    listWorktrees: (projectId) =>
+      attempt("listWorktrees", () =>
+        (
+          sqlite
+            .prepare("select * from worktrees where project_id = ? order by created_at asc")
+            .all(projectId) as ReadonlyArray<WorktreeRow>
+        ).map(worktreeFromRow)
+      ),
+    deleteWorktree: (id) =>
+      attempt("deleteWorktree", () => {
+        sqlite.prepare("delete from worktrees where id = ?").run(id)
       }),
     createSession,
     listSessions: attempt("listSessions", () =>
       sqlite
         .prepare("select * from sessions order by coalesce(updated_at, created_at) desc")
         .all()
-        .map((row) => sessionFromRow(row as SessionRow))
+        .map((row) =>
+          sessionFromRow(
+            row as SessionRow,
+            localLocationFor((row as SessionRow).project_id)?.folder_path
+          )
+        )
     ),
     getSessionDetail: (id) =>
       attempt("getSessionDetail", () => ({
-        session: getSession(sqlite, id),
+        session: getSession(id),
         conversation: sqlite
           .prepare(
             "select * from conversation_items where session_id = ? order by created_at asc, rowid asc"
@@ -511,10 +712,13 @@ const createService = (
           ).cursor
         )
       })),
+    // Metadata updates deliberately leave updated_at alone: recency ordering
+    // tracks conversation activity (appendConversationItem stamps it as items
+    // land, the last being the finished assistant response), so opening or
+    // renaming a session must not reshuffle the sidebar.
     updateSession: (id, request) =>
       attempt("updateSession", () => {
-        const current = getSession(sqlite, id)
-        const now = isoTimestamp()
+        const current = getSession(id)
         sqlite
           .prepare(
             "update sessions set title = ?, is_archived = ?, agent_session_id = ?, updated_at = ? where id = ?"
@@ -523,18 +727,15 @@ const createService = (
             request.title ?? current.title,
             (request.isArchived ?? current.isArchived) ? 1 : 0,
             request.agentSessionId ?? current.agentSessionId ?? null,
-            now,
+            request.updatedAt ?? current.updatedAt ?? null,
             id
           )
-        return getSession(sqlite, id)
+        return getSession(id)
       }),
     archiveSession: (id) =>
       attempt("archiveSession", () => {
-        const now = isoTimestamp()
-        sqlite
-          .prepare("update sessions set is_archived = 1, updated_at = ? where id = ?")
-          .run(now, id)
-        return getSession(sqlite, id)
+        sqlite.prepare("update sessions set is_archived = 1 where id = ?").run(id)
+        return getSession(id)
       }),
     deleteSession: (id) =>
       attempt("deleteSession", () => {
@@ -562,7 +763,7 @@ const createService = (
       ),
     createPromptQueueItem: (sessionId, text) =>
       attempt("createPromptQueueItem", () => {
-        getSession(sqlite, sessionId)
+        getSession(sessionId)
         const now = isoTimestamp()
         const item: PromptQueueItem = {
           id: randomUUID(),
@@ -582,7 +783,7 @@ const createService = (
       }),
     listPromptQueue: (sessionId) =>
       attempt("listPromptQueue", () => {
-        getSession(sqlite, sessionId)
+        getSession(sessionId)
         return listPromptQueueSync(sqlite, sessionId)
       }),
     updatePromptQueueItem: (sessionId, queueItemId, text) =>
@@ -725,34 +926,60 @@ const attempt = <A>(operation: string, run: () => A): Effect.Effect<A, DatabaseE
 
 const basename = (path: string): string => path.split("/").filter(Boolean).at(-1) ?? path
 
-const workspaceFromRow = (row: WorkspaceRow): Workspace => ({
+const projectLocationFromRow = (row: ProjectLocationRow): ProjectLocation => ({
   id: row.id,
-  name: row.name,
+  projectId: row.project_id,
+  serverId: row.server_id,
   folderPath: row.folder_path,
-  isArchived: row.is_archived === 1,
-  symbolName: row.symbol_name,
-  origin: row.origin,
   createdAt: row.created_at
 })
 
-const sessionFromRow = (row: SessionRow): SessionSummary => ({
+const projectFromRow = (
+  row: ProjectRow,
+  locations: ReadonlyArray<ProjectLocationRow>
+): Project => ({
   id: row.id,
-  workspaceId: row.workspace_id,
-  serverId: row.server_id,
-  harnessId: row.harness_id,
-  ...(row.agent_session_id === null ? {} : { agentSessionId: row.agent_session_id }),
-  title: row.title,
-  origin: row.origin,
+  name: row.name,
   isArchived: row.is_archived === 1,
+  symbolName: row.symbol_name,
+  origin: row.origin,
   createdAt: row.created_at,
-  ...(row.updated_at === null ? {} : { updatedAt: row.updated_at }),
-  usage: {
-    ...(row.usage_used === null ? {} : { used: row.usage_used }),
-    ...(row.usage_size === null ? {} : { size: row.usage_size }),
-    ...(row.cost_amount === null ? {} : { costAmount: row.cost_amount }),
-    ...(row.cost_currency === null ? {} : { costCurrency: row.cost_currency })
-  }
+  locations: locations.map(projectLocationFromRow)
 })
+
+const worktreeFromRow = (row: WorktreeRow): Worktree => ({
+  id: row.id,
+  projectId: row.project_id,
+  serverId: row.server_id,
+  name: row.name,
+  branch: row.branch,
+  path: worktreePath(row.project_id, row.name),
+  createdAt: row.created_at
+})
+
+const sessionFromRow = (row: SessionRow, folderPath: string | undefined): SessionSummary => {
+  const cwd = resolveSessionCwd(folderPath, row.project_id, row.worktree_name ?? undefined)
+  return {
+    id: row.id,
+    projectId: row.project_id,
+    serverId: row.server_id,
+    harnessId: row.harness_id,
+    ...(row.agent_session_id === null ? {} : { agentSessionId: row.agent_session_id }),
+    title: row.title,
+    origin: row.origin,
+    isArchived: row.is_archived === 1,
+    ...(row.worktree_name === null ? {} : { worktreeName: row.worktree_name }),
+    ...(cwd === undefined ? {} : { cwd }),
+    createdAt: row.created_at,
+    ...(row.updated_at === null ? {} : { updatedAt: row.updated_at }),
+    usage: {
+      ...(row.usage_used === null ? {} : { used: row.usage_used }),
+      ...(row.usage_size === null ? {} : { size: row.usage_size }),
+      ...(row.cost_amount === null ? {} : { costAmount: row.cost_amount }),
+      ...(row.cost_currency === null ? {} : { costCurrency: row.cost_currency })
+    }
+  }
+}
 
 const conversationFromRow = (row: ConversationRow): SessionDetail["conversation"][number] => ({
   id: row.id,
@@ -801,25 +1028,5 @@ const updateFromRow = (row: UpdateRow): UpdateInfo => ({
   ...(row.checked_at === null ? {} : { checkedAt: row.checked_at }),
   migrationState: row.migration_state
 })
-
-const getWorkspace = (sqlite: Database.Database, id: string): Workspace => {
-  const row = sqlite.prepare("select * from workspaces where id = ?").get(id) as
-    | WorkspaceRow
-    | undefined
-  if (row === undefined) {
-    throw new Error(`Workspace not found: ${id}`)
-  }
-  return workspaceFromRow(row)
-}
-
-const getSession = (sqlite: Database.Database, id: string): SessionSummary => {
-  const row = sqlite.prepare("select * from sessions where id = ?").get(id) as
-    | SessionRow
-    | undefined
-  if (row === undefined) {
-    throw new Error(`Session not found: ${id}`)
-  }
-  return sessionFromRow(row)
-}
 
 const hashToken = (token: string): string => createHash("sha256").update(token).digest("hex")

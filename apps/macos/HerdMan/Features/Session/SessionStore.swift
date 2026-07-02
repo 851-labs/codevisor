@@ -18,14 +18,14 @@ final class SessionStore {
 
     /// Returns the cached controller for a session, creating + configuring it
     /// (resume id, harness, persistence callback) if needed.
-    func controller(for session: ChatSession, workspace: Workspace) -> SessionController {
+    func controller(for session: ChatSession, project: Project) -> SessionController {
         if let existing = controllers[session.id] {
-            existing.workspace = workspace
+            existing.project = project
             existing.serverSession = session
             return existing
         }
         let controller = SessionController(
-            workspace: workspace,
+            project: project,
             agentService: environment.agentService(for: session.serverId),
             configCache: environment.configCache,
             settings: environment.settings,
@@ -36,17 +36,20 @@ final class SessionStore {
         if !session.harnessId.isEmpty {
             controller.selectedHarnessId = session.harnessId
         }
-        controller.onAgentSessionCreated = { [weak workspaceList = environment.workspaceList] agentSessionId in
-            workspaceList?.setAgentSessionId(agentSessionId, for: session.id)
+        controller.onAgentSessionCreated = { [weak projectList = environment.projectList] agentSessionId in
+            projectList?.setAgentSessionId(agentSessionId, for: session.id)
+        }
+        controller.onTurnFinished = { [weak projectList = environment.projectList] in
+            projectList?.touchSession(session.id)
         }
         controllers[session.id] = controller
         return controller
     }
 
     /// Creates a fresh, unregistered controller for the new-chat page.
-    func makeDraft(workspace: Workspace) -> SessionController {
+    func makeDraft(project: Project) -> SessionController {
         SessionController(
-            workspace: workspace,
+            project: project,
             agentService: environment.agentService(for: environment.machines.selectedMachineId),
             configCache: environment.configCache,
             settings: environment.settings,
@@ -55,12 +58,12 @@ final class SessionStore {
     }
 
     /// Returns the cached terminal for a session, creating it (scoped to the
-    /// workspace folder) on first use. Mirrors `controller(for:workspace:)` so
+    /// project folder) on first use. Mirrors `controller(for:project:)` so
     /// the terminal survives panel close + navigation away and back.
-    func terminal(for session: ChatSession, workspace: Workspace) -> TerminalSession {
+    func terminal(for session: ChatSession, project: Project) -> TerminalSession {
         if let existing = terminals[session.id] { return existing }
         let machine = environment.machines.machine(for: session.serverId) ?? HerdManMachine.local
-        let descriptor = TerminalLaunchDescriptor.make(session: session, workspace: workspace, machine: machine)
+        let descriptor = TerminalLaunchDescriptor.make(session: session, project: project, machine: machine)
         let terminal = TerminalSession(id: session.id, descriptor: descriptor)
         terminals[session.id] = terminal
         return terminal

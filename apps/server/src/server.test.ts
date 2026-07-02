@@ -9,10 +9,12 @@ import type {
 } from "@herdman/terminal"
 import { makeTerminalManager } from "@herdman/terminal"
 import { Effect } from "effect"
+import { execFile } from "node:child_process"
 import { createServer } from "node:http"
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { promisify } from "node:util"
 import { WebSocket } from "ws"
 import { afterEach, describe, expect, it } from "vitest"
 import {
@@ -712,7 +714,7 @@ describe("@herdman/server", () => {
     tempDirs.push(legacyRoot)
     const legacyWorkspaceFolder = join(legacyRoot, "legacy-agent-session")
     mkdirSync(legacyWorkspaceFolder)
-    const badJson = await fetch(`${server.url}/v1/workspaces`, {
+    const badJson = await fetch(`${server.url}/v1/projects`, {
       body: "{",
       headers: { "Content-Type": "application/json" },
       method: "POST"
@@ -721,17 +723,17 @@ describe("@herdman/server", () => {
     expect((await jsonRequest(server, "/v1/missing")).status).toBe(404)
     expect((await jsonRequest(server, "/v1/not-sessions/session-a/queue/item-a")).status).toBe(404)
 
-    const workspaceResponse = await jsonRequest(server, "/v1/workspaces", {
+    const workspaceResponse = await jsonRequest(server, "/v1/projects", {
       body: JSON.stringify({ folderPath: workspaceFolder, id: "workspace-client-id" }),
       method: "POST"
     })
     expect(workspaceResponse.status).toBe(201)
     const workspace = workspaceResponse.body as { readonly id: string }
     expect(workspace.id).toBe("workspace-client-id")
-    expect((await jsonRequest(server, "/v1/workspaces")).body).toMatchObject([{ id: workspace.id }])
+    expect((await jsonRequest(server, "/v1/projects")).body).toMatchObject([{ id: workspace.id }])
     expect(
       (
-        await jsonRequest(server, `/v1/workspaces/${workspace.id}`, {
+        await jsonRequest(server, `/v1/projects/${workspace.id}`, {
           body: JSON.stringify({ name: "Renamed" }),
           method: "PATCH"
         })
@@ -817,7 +819,7 @@ describe("@herdman/server", () => {
     ).toBe(404)
 
     const sessionResponse = await jsonRequest(server, "/v1/sessions", {
-      body: JSON.stringify({ workspaceId: workspace.id, harnessId: "codex", title: "First chat" }),
+      body: JSON.stringify({ projectId: workspace.id, harnessId: "codex", title: "First chat" }),
       method: "POST"
     })
     const session = sessionResponse.body as { readonly id: string; readonly agentSessionId: string }
@@ -827,7 +829,7 @@ describe("@herdman/server", () => {
         await jsonRequest(server, "/v1/sessions", {
           body: JSON.stringify({
             id: session.id,
-            workspaceId: workspace.id,
+            projectId: workspace.id,
             harnessId: "codex",
             title: "First chat"
           }),
@@ -838,7 +840,7 @@ describe("@herdman/server", () => {
 
     const concurrentSessionBody = JSON.stringify({
       id: "client-session-concurrent",
-      workspaceId: workspace.id,
+      projectId: workspace.id,
       harnessId: "codex",
       title: "Concurrent chat"
     })
@@ -871,14 +873,14 @@ describe("@herdman/server", () => {
         await jsonRequest(server, "/v1/sessions", {
           body: JSON.stringify({
             id: "client-session-id",
-            workspaceId: "missing",
+            projectId: "missing",
             harnessId: "codex"
           }),
           method: "POST"
         })
       ).status
     ).toBe(404)
-    const missingWorkspaceResponse = await jsonRequest(server, "/v1/workspaces", {
+    const missingWorkspaceResponse = await jsonRequest(server, "/v1/projects", {
       body: JSON.stringify({
         folderPath: "/tmp/herdman-missing-session-workspace",
         id: "missing-folder-workspace"
@@ -889,13 +891,13 @@ describe("@herdman/server", () => {
     expect(
       await jsonRequest(server, "/v1/sessions", {
         body: JSON.stringify({
-          workspaceId: "missing-folder-workspace",
+          projectId: "missing-folder-workspace",
           harnessId: "codex"
         }),
         method: "POST"
       })
     ).toEqual({
-      body: { error: "Workspace folder does not exist: /tmp/herdman-missing-session-workspace" },
+      body: { error: "Project folder does not exist: /tmp/herdman-missing-session-workspace" },
       status: 400
     })
     expect((await jsonRequest(server, "/v1/sessions/missing")).status).toBe(500)
@@ -1094,14 +1096,14 @@ describe("@herdman/server", () => {
       (await jsonRequest(server, `/v1/sessions/${session.id}`, { method: "DELETE" })).status
     ).toBe(204)
     expect(
-      (await jsonRequest(server, `/v1/workspaces/${workspace.id}`, { method: "DELETE" })).status
+      (await jsonRequest(server, `/v1/projects/${workspace.id}`, { method: "DELETE" })).status
     ).toBe(204)
 
     expect((await readSseEvents(server, 1)).at(0)).toEqual(
-      expect.objectContaining({ kind: "workspace.created" })
+      expect.objectContaining({ kind: "project.created" })
     )
     expect((await readSseEvents(server, 1, "not-a-number")).at(0)).toEqual(
-      expect.objectContaining({ kind: "workspace.created" })
+      expect.objectContaining({ kind: "project.created" })
     )
     const replayEvents = await run(services.db.listEvents(0))
     const replayEventCount = replayEvents.length
@@ -1109,42 +1111,42 @@ describe("@herdman/server", () => {
     const events = await readSseEvents(server, replayEventCount, 0)
     expect(events).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ kind: "workspace.created" }),
-        expect.objectContaining({ kind: "workspace.deleted" }),
+        expect.objectContaining({ kind: "project.created" }),
+        expect.objectContaining({ kind: "project.deleted" }),
         expect.objectContaining({ kind: "session.created" }),
         expect.objectContaining({ kind: "session.deleted" })
       ])
     )
 
     const liveEvent = readSseEvents(server, 1, replayCursor)
-    await jsonRequest(server, "/v1/workspaces", {
+    await jsonRequest(server, "/v1/projects", {
       body: JSON.stringify({ folderPath: "/tmp/live" }),
       method: "POST"
     })
-    expect(await liveEvent).toEqual([expect.objectContaining({ kind: "workspace.created" })])
+    expect(await liveEvent).toEqual([expect.objectContaining({ kind: "project.created" })])
     const websocketReplay = await readWebSocketEvents(server, 2, 0)
     expect(websocketReplay).toEqual([
-      expect.objectContaining({ kind: "workspace.created" }),
-      expect.objectContaining({ kind: "workspace.updated" })
+      expect.objectContaining({ kind: "project.created" }),
+      expect.objectContaining({ kind: "project.updated" })
     ])
     const socketReplayEvents = await run(services.db.listEvents(0))
     const socketReplayCursor = socketReplayEvents.at(-1)?.id ?? 0
     const websocketLive = readWebSocketEvents(server, 1, socketReplayCursor)
-    await jsonRequest(server, "/v1/workspaces", {
+    await jsonRequest(server, "/v1/projects", {
       body: JSON.stringify({ folderPath: "/tmp/live-socket" }),
       method: "POST"
     })
-    expect(await websocketLive).toEqual([expect.objectContaining({ kind: "workspace.created" })])
+    expect(await websocketLive).toEqual([expect.objectContaining({ kind: "project.created" })])
 
     const legacyWorkspace = await run(
-      services.db.createWorkspace({ folderPath: legacyWorkspaceFolder })
+      services.db.createProject({ folderPath: legacyWorkspaceFolder })
     )
     const legacySession = await run(
       services.db.createSession({
         harnessId: "codex",
         id: "legacy-session",
         title: "Legacy session",
-        workspaceId: legacyWorkspace.id
+        projectId: legacyWorkspace.id
       })
     )
     expect(legacySession.agentSessionId).toBeUndefined()
@@ -1159,6 +1161,154 @@ describe("@herdman/server", () => {
     await waitFor(() => acp.prompts.some((prompt) => prompt[1] === "legacy hello"))
     expect(acp.prompts).toContainEqual([legacySession.id, "legacy hello"])
     expect(acp.loads).toContainEqual(["codex", legacySession.id, legacyWorkspaceFolder])
+  })
+
+  it("creates worktrees and runs worktree sessions in them", async () => {
+    const execFileAsync = promisify(execFile)
+    const git = (args: ReadonlyArray<string>, cwd: string) =>
+      execFileAsync("git", [...args], { cwd })
+
+    const worktreesRoot = mkdtempSync(join(tmpdir(), "herdman-worktrees-"))
+    tempDirs.push(worktreesRoot)
+    process.env["HERDMAN_WORKTREES_ROOT"] = worktreesRoot
+    try {
+      const { acp, server } = await start()
+      const repoRoot = mkdtempSync(join(tmpdir(), "herdman-repo-"))
+      tempDirs.push(repoRoot)
+      const repoFolder = join(repoRoot, "repo")
+      const plainFolder = join(repoRoot, "plain")
+      mkdirSync(repoFolder)
+      mkdirSync(plainFolder)
+      await git(["init"], repoFolder)
+      await git(
+        ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "--allow-empty", "-m", "init"],
+        repoFolder
+      )
+
+      const projectResponse = await jsonRequest(server, "/v1/projects", {
+        body: JSON.stringify({ folderPath: repoFolder, id: "git-project" }),
+        method: "POST"
+      })
+      expect(projectResponse.status).toBe(201)
+      expect(projectResponse.body).toMatchObject({
+        id: "git-project",
+        locations: [{ serverId: "server-a", folderPath: repoFolder, isGitRepository: true }]
+      })
+
+      const plainResponse = await jsonRequest(server, "/v1/projects", {
+        body: JSON.stringify({ folderPath: plainFolder, id: "plain-project" }),
+        method: "POST"
+      })
+      expect(plainResponse.body).toMatchObject({
+        locations: [{ isGitRepository: false }]
+      })
+
+      // Worktree creation on a non-git project is refused.
+      expect(
+        (
+          await jsonRequest(server, "/v1/projects/plain-project/worktrees", {
+            body: JSON.stringify({ name: "nope" }),
+            method: "POST"
+          })
+        ).status
+      ).toBe(422)
+
+      const worktreeResponse = await jsonRequest(server, "/v1/projects/git-project/worktrees", {
+        body: JSON.stringify({ name: "Fix Auth!" }),
+        method: "POST"
+      })
+      expect(worktreeResponse.status).toBe(201)
+      const worktree = worktreeResponse.body as { readonly name: string; readonly path: string }
+      expect(worktree).toMatchObject({
+        projectId: "git-project",
+        serverId: "server-a",
+        name: "fix-auth",
+        branch: "herdman/fix-auth",
+        path: join(worktreesRoot, "git-project", "fix-auth")
+      })
+      expect(existsSync(join(worktree.path, ".git"))).toBe(true)
+
+      // Same requested name gets uniquified.
+      const secondWorktree = await jsonRequest(server, "/v1/projects/git-project/worktrees", {
+        body: JSON.stringify({ name: "fix auth" }),
+        method: "POST"
+      })
+      expect(secondWorktree.body).toMatchObject({
+        name: "fix-auth-2",
+        branch: "herdman/fix-auth-2"
+      })
+      // Missing name gets a random memorable slug like "ferocious-walrus".
+      const randomNamed = (
+        await jsonRequest(server, "/v1/projects/git-project/worktrees", {
+          method: "POST"
+        })
+      ).body as { readonly name: string; readonly branch: string }
+      expect(randomNamed.name).toMatch(/^[a-z]+-[a-z]+$/)
+      expect(randomNamed.branch).toBe(`herdman/${randomNamed.name}`)
+      expect(
+        ((await jsonRequest(server, "/v1/projects/git-project/worktrees")).body as Array<unknown>)
+          .length
+      ).toBe(3)
+
+      // A failing git operation (branch already exists) surfaces as 422 and
+      // releases the reserved name for a retry.
+      await git(["branch", "herdman/doomed"], repoFolder)
+      const failed = await jsonRequest(server, "/v1/projects/git-project/worktrees", {
+        body: JSON.stringify({ name: "doomed" }),
+        method: "POST"
+      })
+      expect(failed.status).toBe(422)
+      expect((failed.body as { readonly error: string }).error).toContain("doomed")
+      expect(
+        ((await jsonRequest(server, "/v1/projects/git-project/worktrees")).body as Array<unknown>)
+          .length
+      ).toBe(3)
+
+      // Sessions created with a worktree run the agent inside the worktree.
+      const sessionResponse = await jsonRequest(server, "/v1/sessions", {
+        body: JSON.stringify({
+          projectId: "git-project",
+          harnessId: "codex",
+          worktreeName: "fix-auth",
+          title: "Worktree chat"
+        }),
+        method: "POST"
+      })
+      expect(sessionResponse.status).toBe(201)
+      const session = sessionResponse.body as {
+        readonly id: string
+        readonly agentSessionId: string
+        readonly cwd: string
+        readonly worktreeName: string
+      }
+      expect(session.worktreeName).toBe("fix-auth")
+      expect(session.cwd).toBe(worktree.path)
+      expect(acp.creations).toContainEqual(["codex", worktree.path])
+
+      // Reattaching (prompt after restart) resolves the same worktree cwd.
+      await jsonRequest(server, `/v1/sessions/${session.id}/prompt`, {
+        body: JSON.stringify({ text: "hello worktree" }),
+        method: "POST"
+      })
+      await waitFor(() => acp.prompts.some((prompt) => prompt[1] === "hello worktree"))
+      expect(acp.loads).toContainEqual(["codex", session.agentSessionId, worktree.path])
+
+      // Unknown worktree names are rejected.
+      expect(
+        (
+          await jsonRequest(server, "/v1/sessions", {
+            body: JSON.stringify({
+              projectId: "git-project",
+              harnessId: "codex",
+              worktreeName: "does-not-exist"
+            }),
+            method: "POST"
+          })
+        ).status
+      ).toBe(400)
+    } finally {
+      delete process.env["HERDMAN_WORKTREES_ROOT"]
+    }
   })
 
   it("bridges terminal create and websocket traffic", async () => {
@@ -1289,7 +1439,7 @@ describe("@herdman/server", () => {
     const replayEvent = {
       createdAt: "2026-06-30T00:00:00.000Z",
       id: 1,
-      kind: "workspace.created" as const,
+      kind: "project.created" as const,
       payload: { id: "replay" },
       serverId: "server-a",
       subjectId: "replay"
@@ -1297,7 +1447,7 @@ describe("@herdman/server", () => {
     const liveEvent = {
       createdAt: "2026-06-30T00:00:01.000Z",
       id: 2,
-      kind: "workspace.updated" as const,
+      kind: "project.updated" as const,
       payload: { id: "live" },
       serverId: "server-a",
       subjectId: "live"

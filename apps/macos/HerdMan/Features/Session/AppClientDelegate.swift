@@ -2,7 +2,7 @@ import Foundation
 import ACPKit
 
 /// Handles the agent's callbacks to the client: file reads/writes within the
-/// workspace, and tool permission requests.
+/// project, and tool permission requests.
 ///
 /// Permissions currently auto-approve "allow once" so tool calls proceed; this
 /// is the integration point for an interactive permission prompt.

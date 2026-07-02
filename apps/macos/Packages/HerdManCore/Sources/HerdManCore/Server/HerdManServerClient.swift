@@ -17,15 +17,18 @@ public protocol HerdManServerClienting: Sendable {
     func capabilities(cwd: String) async throws -> ServerCapabilities
     func listHarnesses() async throws -> [ServerHarness]
     func setHarnessEnabled(id: String, enabled: Bool) async throws -> ServerHarness
-    func listWorkspaces() async throws -> [ServerWorkspace]
-    func upsertWorkspace(_ workspace: Workspace) async throws -> ServerWorkspace
-    func updateWorkspace(_ workspace: Workspace) async throws -> ServerWorkspace
-    func deleteWorkspace(id: UUID) async throws
+    func listProjects() async throws -> [ServerProject]
+    func upsertProject(_ project: Project) async throws -> ServerProject
+    func updateProject(_ project: Project) async throws -> ServerProject
+    func deleteProject(id: UUID) async throws
+    func listWorktrees(projectId: UUID) async throws -> [ServerWorktree]
+    func createWorktree(projectId: UUID, name: String?) async throws -> ServerWorktree
     func listSessions() async throws -> [ServerSession]
     func sessionDetail(id: UUID) async throws -> ServerSessionDetail
     func promptQueue(id: UUID) async throws -> [ServerPromptQueueItem]
     func upsertSession(_ session: ChatSession) async throws -> ServerSession
     func updateSession(_ session: ChatSession) async throws -> ServerSession
+    func touchSession(id: UUID, updatedAt: Date) async throws
     func deleteSession(id: UUID) async throws
     func promptSession(id: UUID, text: String) async throws -> ServerPromptAccepted
     func updateQueuedPrompt(sessionId: UUID, queueItemId: String, text: String) async throws -> ServerPromptQueueItem
@@ -61,6 +64,18 @@ public extension HerdManServerClienting {
     }
 
     func deleteQueuedPrompt(sessionId: UUID, queueItemId: String) async throws {}
+
+    /// Default no-op so fakes and older transports keep compiling; the HTTP
+    /// client overrides this with a PATCH carrying the activity stamp.
+    func touchSession(id: UUID, updatedAt: Date) async throws {}
+
+    /// Defaults so fakes and older transports keep compiling; the HTTP client
+    /// overrides these with the real worktree endpoints.
+    func listWorktrees(projectId: UUID) async throws -> [ServerWorktree] { [] }
+
+    func createWorktree(projectId: UUID, name: String?) async throws -> ServerWorktree {
+        throw HerdManServerClientError.invalidResponse
+    }
 }
 
 public struct HerdManServerConfig: Equatable, Sendable {
@@ -180,30 +195,57 @@ public struct ServerPromptQueueItem: Codable, Identifiable, Equatable, Sendable 
     public var updatedAt: String
 }
 
-public struct ServerWorkspace: Decodable, Equatable, Sendable {
+public struct ServerProjectLocation: Decodable, Equatable, Sendable {
+    public var id: String
+    public var projectId: String
+    public var serverId: String
+    public var folderPath: String
+    public var createdAt: String
+    public var isGitRepository: Bool?
+}
+
+public struct ServerProject: Decodable, Equatable, Sendable {
     public var id: String
     public var name: String
-    public var folderPath: String
     public var isArchived: Bool
     public var symbolName: String
     public var origin: SessionOrigin
     public var createdAt: String
+    public var locations: [ServerProjectLocation]
 
-    public func workspace(serverId: String = "local") throws -> Workspace {
+    public func project(serverId: String = "local") throws -> Project {
         guard let uuid = UUID(uuidString: id) else {
             throw HerdManServerClientError.invalidUUID(id)
         }
-        return Workspace(
+        return Project(
             id: uuid,
             serverId: serverId,
             name: name,
-            folderURL: URL(fileURLWithPath: folderPath),
             isArchived: isArchived,
             symbolName: symbolName,
             origin: origin,
-            createdAt: try ServerDateCoding.date(from: createdAt)
+            createdAt: try ServerDateCoding.date(from: createdAt),
+            locations: locations.map { location in
+                ProjectLocation(
+                    id: location.id,
+                    projectId: uuid,
+                    serverId: location.serverId,
+                    folderPath: location.folderPath,
+                    isGitRepository: location.isGitRepository
+                )
+            }
         )
     }
+}
+
+public struct ServerWorktree: Decodable, Equatable, Sendable {
+    public var id: String
+    public var projectId: String
+    public var serverId: String
+    public var name: String
+    public var branch: String
+    public var path: String
+    public var createdAt: String
 }
 
 public struct ServerSessionUsage: Decodable, Equatable, Sendable {
@@ -215,13 +257,15 @@ public struct ServerSessionUsage: Decodable, Equatable, Sendable {
 
 public struct ServerSession: Decodable, Equatable, Sendable {
     public var id: String
-    public var workspaceId: String
+    public var projectId: String
     public var serverId: String
     public var harnessId: String
     public var agentSessionId: String?
     public var title: String
     public var origin: SessionOrigin
     public var isArchived: Bool
+    public var worktreeName: String?
+    public var cwd: String?
     public var createdAt: String
     public var updatedAt: String?
     public var usage: ServerSessionUsage?
@@ -230,18 +274,20 @@ public struct ServerSession: Decodable, Equatable, Sendable {
         guard let uuid = UUID(uuidString: id) else {
             throw HerdManServerClientError.invalidUUID(id)
         }
-        guard let workspaceUUID = UUID(uuidString: workspaceId) else {
-            throw HerdManServerClientError.invalidUUID(workspaceId)
+        guard let projectUUID = UUID(uuidString: projectId) else {
+            throw HerdManServerClientError.invalidUUID(projectId)
         }
         return ChatSession(
             id: uuid,
-            workspaceId: workspaceUUID,
+            projectId: projectUUID,
             serverId: scopedServerId ?? serverId,
             harnessId: harnessId,
             agentSessionId: agentSessionId,
             title: title,
             origin: origin,
             isArchived: isArchived,
+            worktreeName: worktreeName,
+            cwd: cwd,
             createdAt: try ServerDateCoding.date(from: createdAt),
             updatedAt: try updatedAt.map(ServerDateCoding.date)
         )
@@ -353,28 +399,40 @@ public final class HerdManServerClient: HerdManServerClienting, @unchecked Senda
         )
     }
 
-    public func listWorkspaces() async throws -> [ServerWorkspace] {
-        try await get("/v1/workspaces")
+    public func listProjects() async throws -> [ServerProject] {
+        try await get("/v1/projects")
     }
 
-    public func upsertWorkspace(_ workspace: Workspace) async throws -> ServerWorkspace {
-        let remoteWorkspaces = try await listWorkspaces()
-        if remoteWorkspaces.contains(where: { $0.id == workspace.id.uuidString }) {
-            return try await updateWorkspace(workspace)
+    public func upsertProject(_ project: Project) async throws -> ServerProject {
+        let remoteProjects = try await listProjects()
+        if remoteProjects.contains(where: { $0.id == project.id.uuidString }) {
+            return try await updateProject(project)
         }
-        return try await createWorkspace(workspace)
+        return try await createProject(project)
     }
 
-    public func updateWorkspace(_ workspace: Workspace) async throws -> ServerWorkspace {
+    public func updateProject(_ project: Project) async throws -> ServerProject {
         try await send(
-            "/v1/workspaces/\(workspace.id.uuidString)",
+            "/v1/projects/\(project.id.uuidString)",
             method: "PATCH",
-            body: UpdateWorkspaceBody(workspace: workspace)
+            body: UpdateProjectBody(project: project)
         )
     }
 
-    public func deleteWorkspace(id: UUID) async throws {
-        try await sendNoResponse("/v1/workspaces/\(id.uuidString)", method: "DELETE")
+    public func deleteProject(id: UUID) async throws {
+        try await sendNoResponse("/v1/projects/\(id.uuidString)", method: "DELETE")
+    }
+
+    public func listWorktrees(projectId: UUID) async throws -> [ServerWorktree] {
+        try await get("/v1/projects/\(projectId.uuidString)/worktrees")
+    }
+
+    public func createWorktree(projectId: UUID, name: String?) async throws -> ServerWorktree {
+        try await send(
+            "/v1/projects/\(projectId.uuidString)/worktrees",
+            method: "POST",
+            body: CreateWorktreeBody(name: name)
+        )
     }
 
     public func listSessions() async throws -> [ServerSession] {
@@ -402,6 +460,16 @@ public final class HerdManServerClient: HerdManServerClienting, @unchecked Senda
             "/v1/sessions/\(session.id.uuidString)",
             method: "PATCH",
             body: UpdateSessionBody(session: session)
+        )
+    }
+
+    /// Marks conversation activity (a finished turn) without touching other
+    /// fields — the server orders sessions by this stamp.
+    public func touchSession(id: UUID, updatedAt: Date) async throws {
+        try await sendNoResponse(
+            "/v1/sessions/\(id.uuidString)",
+            method: "PATCH",
+            body: TouchSessionBody(updatedAt: ServerDateCoding.string(from: updatedAt))
         )
     }
 
@@ -514,11 +582,11 @@ public final class HerdManServerClient: HerdManServerClienting, @unchecked Senda
         }
     }
 
-    private func createWorkspace(_ workspace: Workspace) async throws -> ServerWorkspace {
+    private func createProject(_ project: Project) async throws -> ServerProject {
         try await send(
-            "/v1/workspaces",
+            "/v1/projects",
             method: "POST",
-            body: CreateWorkspaceBody(workspace: workspace)
+            body: CreateProjectBody(project: project)
         )
     }
 
@@ -672,7 +740,7 @@ private struct UpdateHarnessBody: Encodable {
     var enabled: Bool
 }
 
-private struct CreateWorkspaceBody: Encodable {
+private struct CreateProjectBody: Encodable {
     var id: String
     var folderPath: String
     var name: String
@@ -681,51 +749,57 @@ private struct CreateWorkspaceBody: Encodable {
     var origin: SessionOrigin
     var createdAt: String
 
-    init(workspace: Workspace) {
-        id = workspace.id.uuidString
-        folderPath = workspace.folderURL.path
-        name = workspace.name
-        isArchived = workspace.isArchived
-        symbolName = workspace.symbolName
-        origin = workspace.origin
-        createdAt = ServerDateCoding.string(from: workspace.createdAt)
+    init(project: Project) {
+        id = project.id.uuidString
+        folderPath = project.folderURL.path
+        name = project.name
+        isArchived = project.isArchived
+        symbolName = project.symbolName
+        origin = project.origin
+        createdAt = ServerDateCoding.string(from: project.createdAt)
     }
 }
 
-private struct UpdateWorkspaceBody: Encodable {
+private struct UpdateProjectBody: Encodable {
     var name: String
     var isArchived: Bool
     var symbolName: String
 
-    init(workspace: Workspace) {
-        name = workspace.name
-        isArchived = workspace.isArchived
-        symbolName = workspace.symbolName
+    init(project: Project) {
+        name = project.name
+        isArchived = project.isArchived
+        symbolName = project.symbolName
     }
 }
 
 private struct CreateSessionBody: Encodable {
     var id: String
-    var workspaceId: String
+    var projectId: String
     var harnessId: String
     var agentSessionId: String?
     var title: String
     var origin: SessionOrigin
     var isArchived: Bool
+    var worktreeName: String?
     var createdAt: String
     var updatedAt: String?
 
     init(session: ChatSession) {
         id = session.id.uuidString
-        workspaceId = session.workspaceId.uuidString
+        projectId = session.projectId.uuidString
         harnessId = session.harnessId
         agentSessionId = session.agentSessionId
         title = session.title
         origin = session.origin
         isArchived = session.isArchived
+        worktreeName = session.worktreeName
         createdAt = ServerDateCoding.string(from: session.createdAt)
         updatedAt = session.updatedAt.map(ServerDateCoding.string)
     }
+}
+
+private struct CreateWorktreeBody: Encodable {
+    var name: String?
 }
 
 private struct UpdateSessionBody: Encodable {
@@ -738,4 +812,8 @@ private struct UpdateSessionBody: Encodable {
         isArchived = session.isArchived
         title = session.title
     }
+}
+
+private struct TouchSessionBody: Encodable {
+    var updatedAt: String
 }

@@ -82,18 +82,28 @@ export const ServerCapabilities = Schema.Struct({
 })
 export type ServerCapabilities = typeof ServerCapabilities.Type
 
-export const Workspace = Schema.Struct({
+export const ProjectLocation = Schema.Struct({
+  id: Schema.String,
+  projectId: Schema.String,
+  serverId: Schema.String,
+  folderPath: Schema.String,
+  createdAt: Schema.String,
+  isGitRepository: Schema.optional(Schema.Boolean)
+})
+export type ProjectLocation = typeof ProjectLocation.Type
+
+export const Project = Schema.Struct({
   id: Schema.String,
   name: Schema.String,
-  folderPath: Schema.String,
   isArchived: Schema.Boolean,
   symbolName: Schema.String,
   origin: SessionOrigin,
-  createdAt: Schema.String
+  createdAt: Schema.String,
+  locations: Schema.Array(ProjectLocation)
 })
-export type Workspace = typeof Workspace.Type
+export type Project = typeof Project.Type
 
-export const CreateWorkspaceRequest = Schema.Struct({
+export const CreateProjectRequest = Schema.Struct({
   id: Schema.optional(Schema.String),
   folderPath: Schema.String,
   name: Schema.optional(Schema.String),
@@ -102,14 +112,30 @@ export const CreateWorkspaceRequest = Schema.Struct({
   origin: Schema.optional(SessionOrigin),
   createdAt: Schema.optional(Schema.String)
 })
-export type CreateWorkspaceRequest = typeof CreateWorkspaceRequest.Type
+export type CreateProjectRequest = typeof CreateProjectRequest.Type
 
-export const UpdateWorkspaceRequest = Schema.Struct({
+export const UpdateProjectRequest = Schema.Struct({
   name: Schema.optional(Schema.String),
   isArchived: Schema.optional(Schema.Boolean),
   symbolName: Schema.optional(Schema.String)
 })
-export type UpdateWorkspaceRequest = typeof UpdateWorkspaceRequest.Type
+export type UpdateProjectRequest = typeof UpdateProjectRequest.Type
+
+export const Worktree = Schema.Struct({
+  id: Schema.String,
+  projectId: Schema.String,
+  serverId: Schema.String,
+  name: Schema.String,
+  branch: Schema.String,
+  path: Schema.String,
+  createdAt: Schema.String
+})
+export type Worktree = typeof Worktree.Type
+
+export const CreateWorktreeRequest = Schema.Struct({
+  name: Schema.optional(Schema.String)
+})
+export type CreateWorktreeRequest = typeof CreateWorktreeRequest.Type
 
 export const SessionUsage = Schema.Struct({
   used: Schema.optional(Schema.Number),
@@ -121,13 +147,15 @@ export type SessionUsage = typeof SessionUsage.Type
 
 export const SessionSummary = Schema.Struct({
   id: Schema.String,
-  workspaceId: Schema.String,
+  projectId: Schema.String,
   serverId: Schema.String,
   harnessId: Schema.String,
   agentSessionId: Schema.optional(Schema.String),
   title: Schema.String,
   origin: SessionOrigin,
   isArchived: Schema.Boolean,
+  worktreeName: Schema.optional(Schema.String),
+  cwd: Schema.optional(Schema.String),
   createdAt: Schema.String,
   updatedAt: Schema.optional(Schema.String),
   usage: Schema.optional(SessionUsage)
@@ -166,12 +194,13 @@ export type SessionDetail = typeof SessionDetail.Type
 
 export const CreateSessionRequest = Schema.Struct({
   id: Schema.optional(Schema.String),
-  workspaceId: Schema.String,
+  projectId: Schema.String,
   harnessId: Schema.String,
   agentSessionId: Schema.optional(Schema.String),
   title: Schema.optional(Schema.String),
   origin: Schema.optional(SessionOrigin),
   isArchived: Schema.optional(Schema.Boolean),
+  worktreeName: Schema.optional(Schema.String),
   createdAt: Schema.optional(Schema.String),
   updatedAt: Schema.optional(Schema.String)
 })
@@ -180,7 +209,10 @@ export type CreateSessionRequest = typeof CreateSessionRequest.Type
 export const UpdateSessionRequest = Schema.Struct({
   agentSessionId: Schema.optional(Schema.String),
   isArchived: Schema.optional(Schema.Boolean),
-  title: Schema.optional(Schema.String)
+  title: Schema.optional(Schema.String),
+  /// Explicit activity stamp, sent only when a turn finishes; plain metadata
+  /// updates must omit it so recency ordering ignores opens/renames.
+  updatedAt: Schema.optional(Schema.String)
 })
 export type UpdateSessionRequest = typeof UpdateSessionRequest.Type
 
@@ -254,9 +286,10 @@ export const PairingTokenResponse = Schema.Struct({
 export type PairingTokenResponse = typeof PairingTokenResponse.Type
 
 export const EventKind = Schema.Literals([
-  "workspace.created",
-  "workspace.updated",
-  "workspace.deleted",
+  "project.created",
+  "project.updated",
+  "project.deleted",
+  "worktree.created",
   "session.created",
   "session.updated",
   "session.archived",
@@ -342,10 +375,12 @@ export const endpoints = [
   "POST /v1/shutdown",
   "GET /v1/capabilities",
   "POST /v1/auth/pairing-token",
-  "GET /v1/workspaces",
-  "POST /v1/workspaces",
-  "PATCH /v1/workspaces/:id",
-  "DELETE /v1/workspaces/:id",
+  "GET /v1/projects",
+  "POST /v1/projects",
+  "PATCH /v1/projects/:id",
+  "DELETE /v1/projects/:id",
+  "GET /v1/projects/:id/worktrees",
+  "POST /v1/projects/:id/worktrees",
   "GET /v1/harnesses",
   "PATCH /v1/harnesses/:id",
   "GET /v1/sessions",

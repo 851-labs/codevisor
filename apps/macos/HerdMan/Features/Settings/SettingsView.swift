@@ -82,7 +82,7 @@ struct GeneralSettingsView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Delete all data")
                         .font(.headline)
-                    Text("Removes all workspaces, sessions, cached settings, and onboarding state, then restarts setup. Your agents' own sessions are not affected.")
+                    Text("Removes all projects, sessions, cached settings, and onboarding state, then restarts setup. Your agents' own sessions are not affected.")
                         .font(.callout)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -296,7 +296,7 @@ struct HarnessesSettingsView: View {
             set: { environment.settings.setHarness(harness.id, enabled: $0) }
         )) {
             HStack(spacing: 10) {
-                Image(systemName: harness.symbolName)
+                HarnessIcon(harnessId: harness.id, fallbackSymbolName: harness.symbolName, size: 15)
                     .foregroundStyle(.secondary)
                     .frame(width: 20)
                 Text(harness.name)
@@ -313,7 +313,7 @@ struct HarnessesSettingsView: View {
             }
         )) {
             HStack(spacing: 10) {
-                Image(systemName: harness.symbolName)
+                HarnessIcon(harnessId: harness.id, fallbackSymbolName: harness.symbolName, size: 15)
                     .foregroundStyle(.secondary)
                     .frame(width: 20)
                 Text(harness.name)
@@ -324,7 +324,7 @@ struct HarnessesSettingsView: View {
 
     private func notInstalledRow(_ harness: DiscoveredAgent) -> some View {
         HStack(spacing: 10) {
-            Image(systemName: harness.symbolName)
+            HarnessIcon(harnessId: harness.id, fallbackSymbolName: harness.symbolName, size: 15)
                 .foregroundStyle(.tertiary)
                 .frame(width: 20)
             Text(harness.name)
@@ -338,7 +338,7 @@ struct HarnessesSettingsView: View {
 
     private func serverNotInstalledRow(_ harness: ServerHarness) -> some View {
         HStack(spacing: 10) {
-            Image(systemName: harness.symbolName)
+            HarnessIcon(harnessId: harness.id, fallbackSymbolName: harness.symbolName, size: 15)
                 .foregroundStyle(.tertiary)
                 .frame(width: 20)
             Text(harness.name)

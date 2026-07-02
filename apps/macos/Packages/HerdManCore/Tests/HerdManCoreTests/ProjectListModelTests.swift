@@ -4,29 +4,27 @@ import ACPKit
 @testable import HerdManCore
 
 @MainActor
-@Suite("WorkspaceListModel")
-struct WorkspaceListModelTests {
-    private func makeModel() -> (WorkspaceListModel, InMemoryStore, InMemoryStore) {
-        let workspaceStore = InMemoryStore()
+@Suite("ProjectListModel")
+struct ProjectListModelTests {
+    private func makeModel() -> (ProjectListModel, InMemoryStore, InMemoryStore) {
+        let projectStore = InMemoryStore()
         let sessionStore = InMemoryStore()
-        let model = WorkspaceListModel(
-            workspaceRepository: DefaultWorkspaceRepository(store: workspaceStore),
+        let model = ProjectListModel(
+            projectRepository: DefaultProjectRepository(store: projectStore),
             sessionRepository: DefaultSessionRepository(store: sessionStore)
         )
-        return (model, workspaceStore, sessionStore)
+        return (model, projectStore, sessionStore)
     }
 
-    @Test("Server refresh merges remote workspaces and sessions into the local cache")
+    @Test("Server refresh merges remote projects and sessions into the local cache")
     func serverRefresh() async throws {
-        let workspace = Workspace(
-            id: UUID(),
-            name: "Remote",
-            folderURL: URL(fileURLWithPath: "/tmp/remote"),
+        let project = Project.fromFolder(
+            URL(fileURLWithPath: "/tmp/remote"),
             createdAt: Date(timeIntervalSince1970: 10)
         )
         let remoteSession = ChatSession(
             id: UUID(),
-            workspaceId: workspace.id,
+            projectId: project.id,
             serverId: "mac-mini",
             harnessId: "codex",
             agentSessionId: "agent-remote",
@@ -35,7 +33,7 @@ struct WorkspaceListModelTests {
         )
         let scopedSession = ChatSession(
             id: remoteSession.id,
-            workspaceId: workspace.id,
+            projectId: project.id,
             serverId: "local",
             harnessId: remoteSession.harnessId,
             agentSessionId: remoteSession.agentSessionId,
@@ -43,17 +41,17 @@ struct WorkspaceListModelTests {
             createdAt: remoteSession.createdAt
         )
         let fakeServer = FakeServerClient(
-            workspaces: [serverWorkspace(from: workspace)],
+            projects: [serverProject(from: project)],
             sessions: [serverSession(from: remoteSession)]
         )
-        let model = WorkspaceListModel(
-            workspaceRepository: DefaultWorkspaceRepository(store: InMemoryStore()),
+        let model = ProjectListModel(
+            projectRepository: DefaultProjectRepository(store: InMemoryStore()),
             sessionRepository: DefaultSessionRepository(store: InMemoryStore()),
             serverClient: fakeServer
         )
 
         try await waitUntil {
-            model.workspaces.contains(workspace) && model.sessions.contains(scopedSession)
+            model.projects.contains(project) && model.sessions.contains(scopedSession)
         }
     }
 
@@ -61,8 +59,8 @@ struct WorkspaceListModelTests {
     func serverRefreshPushesLocalOnlyRecords() async throws {
         // Created while no server was reachable: cache-only until a refresh.
         let (model, _, _) = makeModel()
-        let workspace = model.addWorkspace(folderURL: URL(fileURLWithPath: "/tmp/offline"))
-        let session = model.newSession(in: workspace, title: "Offline chat", harnessId: "codex", syncToServer: false)
+        let project = model.addProject(folderURL: URL(fileURLWithPath: "/tmp/offline"))
+        let session = model.newSession(in: project, title: "Offline chat", harnessId: "codex", syncToServer: false)
         model.setAgentSessionId("agent-offline", for: session.id)
 
         let fakeServer = FakeServerClient()
@@ -71,81 +69,77 @@ struct WorkspaceListModelTests {
         var pushed = false
         for _ in 0..<50 where !pushed {
             let snapshot = await fakeServer.snapshot()
-            pushed = snapshot.upsertedWorkspaceIDs.contains(workspace.id.uuidString)
+            pushed = snapshot.upsertedProjectIDs.contains(project.id.uuidString)
                 && snapshot.upsertedSessionIDs.contains(session.id.uuidString)
             if !pushed {
                 try await Task.sleep(nanoseconds: 10_000_000)
             }
         }
-        #expect(pushed, "local-only workspace and session should be upserted to the server")
+        #expect(pushed, "local-only project and session should be upserted to the server")
     }
 
     @Test("Server refresh is scoped to the selected machine")
     func serverRefreshScopesToSelectedMachine() async throws {
-        let localWorkspace = Workspace(
-            id: UUID(),
+        let localProject = Project.fromFolder(
+            URL(fileURLWithPath: "/tmp/local"),
             serverId: "local",
-            name: "Local",
-            folderURL: URL(fileURLWithPath: "/tmp/local"),
             createdAt: Date(timeIntervalSince1970: 1)
         )
-        let remoteWorkspace = Workspace(
-            id: UUID(),
-            name: "Remote",
-            folderURL: URL(fileURLWithPath: "/srv/remote"),
+        let remoteProject = Project.fromFolder(
+            URL(fileURLWithPath: "/srv/remote"),
             createdAt: Date(timeIntervalSince1970: 2)
         )
         let remoteSession = ChatSession(
             id: UUID(),
-            workspaceId: remoteWorkspace.id,
+            projectId: remoteProject.id,
             serverId: "server-internal-id",
             harnessId: "codex",
             title: "Remote",
             createdAt: Date(timeIntervalSince1970: 3)
         )
-        let workspaceStore = InMemoryStore()
+        let projectStore = InMemoryStore()
         let sessionStore = InMemoryStore()
-        DefaultWorkspaceRepository(store: workspaceStore).save([localWorkspace])
-        let model = WorkspaceListModel(
-            workspaceRepository: DefaultWorkspaceRepository(store: workspaceStore),
+        DefaultProjectRepository(store: projectStore).save([localProject])
+        let model = ProjectListModel(
+            projectRepository: DefaultProjectRepository(store: projectStore),
             sessionRepository: DefaultSessionRepository(store: sessionStore),
             serverClient: FakeServerClient()
         )
         let remoteServer = FakeServerClient(
-            workspaces: [serverWorkspace(from: remoteWorkspace)],
+            projects: [serverProject(from: remoteProject)],
             sessions: [serverSession(from: remoteSession)]
         )
 
         model.selectServer(serverId: "remote-mac-mini", serverClient: remoteServer)
 
         try await waitUntil {
-            model.workspaces.contains { $0.id == localWorkspace.id && $0.serverId == "local" }
-                && model.workspaces.contains { $0.id == remoteWorkspace.id && $0.serverId == "remote-mac-mini" }
+            model.projects.contains { $0.id == localProject.id && $0.serverId == "local" }
+                && model.projects.contains { $0.id == remoteProject.id && $0.serverId == "remote-mac-mini" }
                 && model.sessions.contains { $0.id == remoteSession.id && $0.serverId == "remote-mac-mini" }
         }
-        #expect(model.activeWorkspaces.map(\.id) == [remoteWorkspace.id])
+        #expect(model.activeProjects.map(\.id) == [remoteProject.id])
     }
 
     @Test("Local mutations are mirrored to the configured server")
     func serverMutationMirroring() async throws {
         let fakeServer = FakeServerClient()
-        let model = WorkspaceListModel(
-            workspaceRepository: DefaultWorkspaceRepository(store: InMemoryStore()),
+        let model = ProjectListModel(
+            projectRepository: DefaultProjectRepository(store: InMemoryStore()),
             sessionRepository: DefaultSessionRepository(store: InMemoryStore()),
             serverClient: fakeServer
         )
-        let workspace = model.addWorkspace(folderURL: URL(fileURLWithPath: "/tmp/mirrored"))
-        let session = model.newSession(in: workspace, title: "First", harnessId: "codex")
+        let project = model.addProject(folderURL: URL(fileURLWithPath: "/tmp/mirrored"))
+        let session = model.newSession(in: project, title: "First", harnessId: "codex")
         model.renameSession(session, to: "Renamed")
         model.deleteSession(session)
-        model.removeWorkspace(workspace)
+        model.removeProject(project)
 
         for _ in 0..<50 {
             let snapshot = await fakeServer.snapshot()
-            if snapshot.upsertedWorkspaceIDs.contains(workspace.id.uuidString),
+            if snapshot.upsertedProjectIDs.contains(project.id.uuidString),
                snapshot.upsertedSessionIDs.contains(session.id.uuidString),
                snapshot.deletedSessionIDs.contains(session.id.uuidString),
-               snapshot.deletedWorkspaceIDs.contains(workspace.id.uuidString) {
+               snapshot.deletedProjectIDs.contains(project.id.uuidString) {
                 return
             }
             try await Task.sleep(nanoseconds: 10_000_000)
@@ -156,86 +150,86 @@ struct WorkspaceListModelTests {
     @Test("Draft sessions can be held locally until first send")
     func draftSessionSkipsImmediateServerSync() async throws {
         let fakeServer = FakeServerClient()
-        let model = WorkspaceListModel(
-            workspaceRepository: DefaultWorkspaceRepository(store: InMemoryStore()),
+        let model = ProjectListModel(
+            projectRepository: DefaultProjectRepository(store: InMemoryStore()),
             sessionRepository: DefaultSessionRepository(store: InMemoryStore()),
             serverClient: fakeServer
         )
 
-        let workspace = model.addWorkspace(folderURL: URL(fileURLWithPath: "/tmp/draft"))
-        _ = model.newSession(in: workspace, title: "Draft", harnessId: "codex", syncToServer: false)
+        let project = model.addProject(folderURL: URL(fileURLWithPath: "/tmp/draft"))
+        _ = model.newSession(in: project, title: "Draft", harnessId: "codex", syncToServer: false)
         try await Task.sleep(nanoseconds: 20_000_000)
 
         let snapshot = await fakeServer.snapshot()
         #expect(snapshot.upsertedSessionIDs.isEmpty)
     }
 
-    @Test("Adding a folder creates and persists a workspace")
-    func addWorkspace() {
+    @Test("Adding a folder creates and persists a project")
+    func addProject() {
         let (model, store, _) = makeModel()
-        let workspace = model.addWorkspace(folderURL: URL(fileURLWithPath: "/tmp/proj"))
-        #expect(workspace.name == "proj")
-        #expect(model.workspaces.count == 1)
+        let project = model.addProject(folderURL: URL(fileURLWithPath: "/tmp/proj"))
+        #expect(project.name == "proj")
+        #expect(model.projects.count == 1)
         // Persisted: a fresh model reads it back.
-        let reloaded = WorkspaceListModel(
-            workspaceRepository: DefaultWorkspaceRepository(store: store),
+        let reloaded = ProjectListModel(
+            projectRepository: DefaultProjectRepository(store: store),
             sessionRepository: DefaultSessionRepository(store: InMemoryStore())
         )
-        #expect(reloaded.workspaces.count == 1)
+        #expect(reloaded.projects.count == 1)
     }
 
     @Test("Adding the same folder twice does not duplicate and un-archives")
     func addDeduplicates() {
         let (model, _, _) = makeModel()
         let url = URL(fileURLWithPath: "/tmp/proj")
-        let first = model.addWorkspace(folderURL: url)
+        let first = model.addProject(folderURL: url)
         model.archive(first)
-        let second = model.addWorkspace(folderURL: url)
-        #expect(model.workspaces.count == 1)
+        let second = model.addProject(folderURL: url)
+        #expect(model.projects.count == 1)
         #expect(second.id == first.id)
         #expect(second.isArchived == false)
     }
 
-    @Test("Archiving moves a workspace between sections")
+    @Test("Archiving moves a project between sections")
     func archiving() {
         let (model, _, _) = makeModel()
-        let workspace = model.addWorkspace(folderURL: URL(fileURLWithPath: "/tmp/a"))
-        #expect(model.activeWorkspaces.count == 1)
-        #expect(model.hasArchivedWorkspaces == false)
+        let project = model.addProject(folderURL: URL(fileURLWithPath: "/tmp/a"))
+        #expect(model.activeProjects.count == 1)
+        #expect(model.hasArchivedProjects == false)
 
-        model.archive(workspace)
-        #expect(model.activeWorkspaces.isEmpty)
-        #expect(model.archivedWorkspaces.count == 1)
-        #expect(model.hasArchivedWorkspaces)
+        model.archive(project)
+        #expect(model.activeProjects.isEmpty)
+        #expect(model.archivedProjects.count == 1)
+        #expect(model.hasArchivedProjects)
 
-        model.unarchive(workspace)
-        #expect(model.activeWorkspaces.count == 1)
-        #expect(model.hasArchivedWorkspaces == false)
+        model.unarchive(project)
+        #expect(model.activeProjects.count == 1)
+        #expect(model.hasArchivedProjects == false)
     }
 
-    @Test("Active and archived workspaces are sorted newest-first")
+    @Test("Active and archived projects are sorted newest-first")
     func sorting() {
         let store = InMemoryStore()
-        let repository = DefaultWorkspaceRepository(store: store)
+        let repository = DefaultProjectRepository(store: store)
         repository.save([
-            Workspace(name: "old", folderURL: URL(fileURLWithPath: "/o"), createdAt: Date(timeIntervalSince1970: 1)),
-            Workspace(name: "new", folderURL: URL(fileURLWithPath: "/n"), createdAt: Date(timeIntervalSince1970: 9))
+            Project(name: "old", createdAt: Date(timeIntervalSince1970: 1)),
+            Project(name: "new", createdAt: Date(timeIntervalSince1970: 9))
         ])
-        let model = WorkspaceListModel(
-            workspaceRepository: repository,
+        let model = ProjectListModel(
+            projectRepository: repository,
             sessionRepository: DefaultSessionRepository(store: InMemoryStore())
         )
-        #expect(model.activeWorkspaces.map(\.name) == ["new", "old"])
+        #expect(model.activeProjects.map(\.name) == ["new", "old"])
     }
 
-    @Test("New sessions are scoped to a workspace and persisted")
+    @Test("New sessions are scoped to a project and persisted")
     func sessions() {
         let (model, _, sessionStore) = makeModel()
-        let workspace = model.addWorkspace(folderURL: URL(fileURLWithPath: "/tmp/a"))
-        let other = model.addWorkspace(folderURL: URL(fileURLWithPath: "/tmp/b"))
-        let session = model.newSession(in: workspace, title: "First", harnessId: "claude")
+        let project = model.addProject(folderURL: URL(fileURLWithPath: "/tmp/a"))
+        let other = model.addProject(folderURL: URL(fileURLWithPath: "/tmp/b"))
+        let session = model.newSession(in: project, title: "First", harnessId: "claude")
         model.newSession(in: other)
-        #expect(model.sessions(in: workspace).map(\.id) == [session.id])
+        #expect(model.sessions(in: project).map(\.id) == [session.id])
 
         // Persisted.
         let reloaded = DefaultSessionRepository(store: sessionStore).load()
@@ -245,40 +239,40 @@ struct WorkspaceListModelTests {
     @Test("Renaming and deleting sessions update state")
     func renameDelete() {
         let (model, _, _) = makeModel()
-        let workspace = model.addWorkspace(folderURL: URL(fileURLWithPath: "/tmp/a"))
-        let session = model.newSession(in: workspace)
+        let project = model.addProject(folderURL: URL(fileURLWithPath: "/tmp/a"))
+        let session = model.newSession(in: project)
         model.renameSession(session, to: "Renamed")
-        #expect(model.sessions(in: workspace).first?.title == "Renamed")
+        #expect(model.sessions(in: project).first?.title == "Renamed")
         model.deleteSession(session)
-        #expect(model.sessions(in: workspace).isEmpty)
+        #expect(model.sessions(in: project).isEmpty)
     }
 
     @Test("Archiving a session hides it from the active list but keeps it")
     func archiveSession() {
         let (model, _, sessionStore) = makeModel()
-        let workspace = model.addWorkspace(folderURL: URL(fileURLWithPath: "/tmp/a"))
-        let session = model.newSession(in: workspace)
+        let project = model.addProject(folderURL: URL(fileURLWithPath: "/tmp/a"))
+        let session = model.newSession(in: project)
         model.archiveSession(session)
-        #expect(model.sessions(in: workspace).isEmpty)
+        #expect(model.sessions(in: project).isEmpty)
         // Still persisted (not deleted).
         #expect(DefaultSessionRepository(store: sessionStore).load().contains { $0.id == session.id && $0.isArchived })
     }
 
-    @Test("Removing a workspace also removes its sessions")
-    func removeWorkspace() {
+    @Test("Removing a project also removes its sessions")
+    func removeProject() {
         let (model, _, _) = makeModel()
-        let workspace = model.addWorkspace(folderURL: URL(fileURLWithPath: "/tmp/a"))
-        model.newSession(in: workspace)
-        model.removeWorkspace(workspace)
-        #expect(model.workspaces.isEmpty)
+        let project = model.addProject(folderURL: URL(fileURLWithPath: "/tmp/a"))
+        model.newSession(in: project)
+        model.removeProject(project)
+        #expect(model.projects.isEmpty)
         #expect(model.sessions.isEmpty)
     }
 
-    @Test("Importing sessions into a workspace skips known ones and persists")
-    func importIntoWorkspace() {
+    @Test("Importing sessions into a project skips known ones and persists")
+    func importIntoProject() {
         let (model, _, sessionStore) = makeModel()
         model.showsImportedSessions = true
-        let workspace = model.addWorkspace(folderURL: URL(fileURLWithPath: "/tmp/a"))
+        let project = model.addProject(folderURL: URL(fileURLWithPath: "/tmp/a"))
         let imported = [
             ImportedSession(
                 harnessId: "claude-code",
@@ -290,11 +284,11 @@ struct WorkspaceListModelTests {
             )
         ]
 
-        model.importSessions(imported, into: workspace)
+        model.importSessions(imported, into: project)
         // Importing the same discoveries again must not duplicate anything.
-        model.importSessions(imported, into: workspace)
+        model.importSessions(imported, into: project)
 
-        let sessions = model.sessions(in: workspace)
+        let sessions = model.sessions(in: project)
         #expect(sessions.count == 2)
         #expect(sessions.allSatisfy { $0.origin == .imported })
         #expect(sessions.contains { $0.agentSessionId == "ext-1" && $0.title == "Old chat" })
@@ -313,22 +307,22 @@ private func waitUntil(_ predicate: () -> Bool) async throws {
 }
 
 private struct FakeServerSnapshot: Sendable {
-    var upsertedWorkspaceIDs: [String]
+    var upsertedProjectIDs: [String]
     var upsertedSessionIDs: [String]
-    var deletedWorkspaceIDs: [String]
+    var deletedProjectIDs: [String]
     var deletedSessionIDs: [String]
 }
 
 private actor FakeServerClient: HerdManServerClienting {
-    private var workspaces: [ServerWorkspace]
+    private var projects: [ServerProject]
     private var sessions: [ServerSession]
-    private var upsertedWorkspaceIDs: [String] = []
+    private var upsertedProjectIDs: [String] = []
     private var upsertedSessionIDs: [String] = []
-    private var deletedWorkspaceIDs: [String] = []
+    private var deletedProjectIDs: [String] = []
     private var deletedSessionIDs: [String] = []
 
-    init(workspaces: [ServerWorkspace] = [], sessions: [ServerSession] = []) {
-        self.workspaces = workspaces
+    init(projects: [ServerProject] = [], sessions: [ServerSession] = []) {
+        self.projects = projects
         self.sessions = sessions
     }
 
@@ -348,23 +342,23 @@ private actor FakeServerClient: HerdManServerClienting {
 
     func setHarnessEnabled(id: String, enabled: Bool) async throws -> ServerHarness { fatalError("unused") }
 
-    func listWorkspaces() async throws -> [ServerWorkspace] { workspaces }
+    func listProjects() async throws -> [ServerProject] { projects }
 
-    func upsertWorkspace(_ workspace: Workspace) async throws -> ServerWorkspace {
-        let serverWorkspace = serverWorkspace(from: workspace)
-        upsertedWorkspaceIDs.append(serverWorkspace.id)
-        workspaces.removeAll { $0.id == serverWorkspace.id }
-        workspaces.append(serverWorkspace)
-        return serverWorkspace
+    func upsertProject(_ project: Project) async throws -> ServerProject {
+        let serverProject = serverProject(from: project)
+        upsertedProjectIDs.append(serverProject.id)
+        projects.removeAll { $0.id == serverProject.id }
+        projects.append(serverProject)
+        return serverProject
     }
 
-    func updateWorkspace(_ workspace: Workspace) async throws -> ServerWorkspace {
-        try await upsertWorkspace(workspace)
+    func updateProject(_ project: Project) async throws -> ServerProject {
+        try await upsertProject(project)
     }
 
-    func deleteWorkspace(id: UUID) async throws {
-        deletedWorkspaceIDs.append(id.uuidString)
-        workspaces.removeAll { $0.id == id.uuidString }
+    func deleteProject(id: UUID) async throws {
+        deletedProjectIDs.append(id.uuidString)
+        projects.removeAll { $0.id == id.uuidString }
     }
 
     func listSessions() async throws -> [ServerSession] { sessions }
@@ -408,36 +402,47 @@ private actor FakeServerClient: HerdManServerClienting {
 
     func snapshot() -> FakeServerSnapshot {
         FakeServerSnapshot(
-            upsertedWorkspaceIDs: upsertedWorkspaceIDs,
+            upsertedProjectIDs: upsertedProjectIDs,
             upsertedSessionIDs: upsertedSessionIDs,
-            deletedWorkspaceIDs: deletedWorkspaceIDs,
+            deletedProjectIDs: deletedProjectIDs,
             deletedSessionIDs: deletedSessionIDs
         )
     }
 }
 
-private func serverWorkspace(from workspace: Workspace) -> ServerWorkspace {
-    ServerWorkspace(
-        id: workspace.id.uuidString,
-        name: workspace.name,
-        folderPath: workspace.folderURL.path,
-        isArchived: workspace.isArchived,
-        symbolName: workspace.symbolName,
-        origin: workspace.origin,
-        createdAt: serverDateString(from: workspace.createdAt)
+private func serverProject(from project: Project) -> ServerProject {
+    ServerProject(
+        id: project.id.uuidString,
+        name: project.name,
+        isArchived: project.isArchived,
+        symbolName: project.symbolName,
+        origin: project.origin,
+        createdAt: serverDateString(from: project.createdAt),
+        locations: project.locations.map { location in
+            ServerProjectLocation(
+                id: location.id,
+                projectId: project.id.uuidString,
+                serverId: location.serverId,
+                folderPath: location.folderPath,
+                createdAt: serverDateString(from: project.createdAt),
+                isGitRepository: location.isGitRepository
+            )
+        }
     )
 }
 
 private func serverSession(from session: ChatSession) -> ServerSession {
     ServerSession(
         id: session.id.uuidString,
-        workspaceId: session.workspaceId.uuidString,
+        projectId: session.projectId.uuidString,
         serverId: session.serverId,
         harnessId: session.harnessId,
         agentSessionId: session.agentSessionId,
         title: session.title,
         origin: session.origin,
         isArchived: session.isArchived,
+        worktreeName: session.worktreeName,
+        cwd: session.cwd,
         createdAt: serverDateString(from: session.createdAt),
         updatedAt: session.updatedAt.map(serverDateString),
         usage: nil

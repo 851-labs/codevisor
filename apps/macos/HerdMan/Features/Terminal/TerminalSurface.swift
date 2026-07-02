@@ -11,23 +11,26 @@ struct TerminalLaunchDescriptor: Equatable {
     let workingDirectory: URL
     let command: String
 
-    static func make(session: ChatSession, workspace: Workspace, machine: HerdManMachine) -> TerminalLaunchDescriptor {
-        TerminalLaunchDescriptor(
+    static func make(session: ChatSession, project: Project, machine: HerdManMachine) -> TerminalLaunchDescriptor {
+        // Worktree sessions open their terminal in the worktree, not the
+        // project folder. The server resolves session.cwd either way.
+        let sessionFolder = session.cwd.map(URL.init(fileURLWithPath:)) ?? project.folderURL
+        return TerminalLaunchDescriptor(
             sessionId: session.id,
             machine: machine,
-            workingDirectory: localWorkingDirectory(for: workspace.folderURL),
+            workingDirectory: localWorkingDirectory(for: sessionFolder),
             command: TerminalProxyCommand.command(
                 server: machine.baseURL,
                 sessionId: session.id,
-                cwd: workspace.folderURL.path,
+                cwd: sessionFolder.path,
                 token: machine.token
             )
         )
     }
 
     /// Ghostty spawns the proxy locally, so its working directory must exist on
-    /// this Mac. Remote workspaces point at paths on the other machine (the pty
-    /// still starts in the workspace folder remotely, via the proxy's --cwd).
+    /// this Mac. Remote projects point at paths on the other machine (the pty
+    /// still starts in the project folder remotely, via the proxy's --cwd).
     private static func localWorkingDirectory(for folderURL: URL) -> URL {
         var isDirectory: ObjCBool = false
         if FileManager.default.fileExists(atPath: folderURL.path, isDirectory: &isDirectory),

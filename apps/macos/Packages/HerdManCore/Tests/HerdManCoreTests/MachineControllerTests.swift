@@ -8,11 +8,11 @@ import ACPKit
 struct MachineControllerTests {
     @Test("Registry starts with local machine selected")
     func localDefault() {
-        let (controller, workspaceList, _) = makeController()
+        let (controller, projectList, _) = makeController()
 
         #expect(controller.machines == [.local])
         #expect(controller.selectedMachine == .local)
-        #expect(workspaceList.selectedServerId == "local")
+        #expect(projectList.selectedServerId == "local")
     }
 
     @Test("Remote host input normalizes to an HTTP server URL")
@@ -33,15 +33,15 @@ struct MachineControllerTests {
         #expect(remote.id == "remote-mac-mini-tailnet-ts-net-49361")
         #expect(remote.name == "mac-mini.tailnet.ts.net")
         #expect(first.controller.selectedMachine == remote)
-        #expect(first.workspaceList.selectedServerId == remote.id)
+        #expect(first.projectList.selectedServerId == remote.id)
 
         first.controller.selectMachine("local")
-        #expect(first.workspaceList.selectedServerId == "local")
+        #expect(first.projectList.selectedServerId == "local")
 
         let second = makeController(store: store)
         #expect(second.controller.machines.contains(remote))
         #expect(second.controller.selectedMachine == .local)
-        #expect(second.workspaceList.selectedServerId == "local")
+        #expect(second.projectList.selectedServerId == "local")
 
         let duplicate = try second.controller.addRemote(host: "http://mac-mini.tailnet.ts.net:49361")
         #expect(duplicate == remote)
@@ -103,44 +103,53 @@ struct MachineControllerTests {
 
     @Test("Removing the selected remote falls back to local")
     func removeSelectedRemote() throws {
-        let (controller, workspaceList, _) = makeController()
+        let (controller, projectList, _) = makeController()
         let remote = try controller.addRemote(host: "10.0.0.5")
 
         try controller.removeMachine(remote.id)
 
         #expect(controller.selectedMachine == .local)
         #expect(controller.machines == [.local])
-        #expect(workspaceList.selectedServerId == "local")
+        #expect(projectList.selectedServerId == "local")
         #expect(throws: MachineControllerError.cannotRemoveLocal) {
             try controller.removeMachine("local")
         }
     }
 
-    @Test("Server events keep workspaces and sessions in sync across clients")
+    @Test("Server events keep projects and sessions in sync across clients")
     func eventSyncRefreshesAndRemoves() async throws {
-        let workspaceId = UUID()
+        let projectId = UUID()
         let sessionId = UUID()
         let fake = SyncFakeServerClient(
-            workspaces: [
-                ServerWorkspace(
-                    id: workspaceId.uuidString,
+            projects: [
+                ServerProject(
+                    id: projectId.uuidString,
                     name: "Shared",
-                    folderPath: "/tmp/shared",
                     isArchived: false,
                     symbolName: "folder",
                     origin: .herdman,
-                    createdAt: "2026-06-30T00:00:00.000Z"
+                    createdAt: "2026-06-30T00:00:00.000Z",
+                    locations: [
+                        ServerProjectLocation(
+                            id: UUID().uuidString,
+                            projectId: projectId.uuidString,
+                            serverId: "local",
+                            folderPath: "/tmp/shared",
+                            createdAt: "2026-06-30T00:00:00.000Z",
+                            isGitRepository: nil
+                        )
+                    ]
                 )
             ],
             sessions: []
         )
-        let workspaceList = WorkspaceListModel(
-            workspaceRepository: DefaultWorkspaceRepository(store: InMemoryStore()),
+        let projectList = ProjectListModel(
+            projectRepository: DefaultProjectRepository(store: InMemoryStore()),
             sessionRepository: DefaultSessionRepository(store: InMemoryStore())
         )
         let controller = MachineController(
             store: InMemoryStore(),
-            workspaceList: workspaceList,
+            projectList: projectList,
             clientFactory: { _ in fake }
         )
 
@@ -149,7 +158,7 @@ struct MachineControllerTests {
         fake.setSessions([
             ServerSession(
                 id: sessionId.uuidString,
-                workspaceId: workspaceId.uuidString,
+                projectId: projectId.uuidString,
                 serverId: "local",
                 harnessId: "claude-code",
                 agentSessionId: nil,
@@ -162,31 +171,31 @@ struct MachineControllerTests {
             )
         ])
         fake.emit(kind: "session.created", subjectId: sessionId.uuidString)
-        try await waitForSync { workspaceList.sessions.contains { $0.id == sessionId } }
-        #expect(workspaceList.workspaces.contains { $0.id == workspaceId })
+        try await waitForSync { projectList.sessions.contains { $0.id == sessionId } }
+        #expect(projectList.projects.contains { $0.id == projectId })
 
-        // Another client deletes the session, then the workspace.
+        // Another client deletes the session, then the project.
         fake.setSessions([])
         fake.emit(kind: "session.deleted", subjectId: sessionId.uuidString)
-        try await waitForSync { !workspaceList.sessions.contains { $0.id == sessionId } }
+        try await waitForSync { !projectList.sessions.contains { $0.id == sessionId } }
 
-        fake.emit(kind: "workspace.deleted", subjectId: workspaceId.uuidString)
-        try await waitForSync { !workspaceList.workspaces.contains { $0.id == workspaceId } }
+        fake.emit(kind: "project.deleted", subjectId: projectId.uuidString)
+        try await waitForSync { !projectList.projects.contains { $0.id == projectId } }
 
         controller.stopEventSync()
     }
 
     @Test("Client-triggered server update waits for the restart and reconnects")
     func remoteServerUpdate() async throws {
-        let fake = SyncFakeServerClient(workspaces: [], sessions: [])
+        let fake = SyncFakeServerClient(projects: [], sessions: [])
         fake.configureUpdate(current: "0.1.0", latest: "0.2.0")
-        let workspaceList = WorkspaceListModel(
-            workspaceRepository: DefaultWorkspaceRepository(store: InMemoryStore()),
+        let projectList = ProjectListModel(
+            projectRepository: DefaultProjectRepository(store: InMemoryStore()),
             sessionRepository: DefaultSessionRepository(store: InMemoryStore())
         )
         let controller = MachineController(
             store: InMemoryStore(),
-            workspaceList: workspaceList,
+            projectList: projectList,
             clientFactory: { _ in fake },
             updatePollInterval: .milliseconds(2),
             updatePollAttempts: 50
@@ -222,29 +231,29 @@ struct MachineControllerTests {
 
     private func makeController(store: InMemoryStore = InMemoryStore()) -> (
         controller: MachineController,
-        workspaceList: WorkspaceListModel,
+        projectList: ProjectListModel,
         store: InMemoryStore
     ) {
-        let workspaceList = WorkspaceListModel(
-            workspaceRepository: DefaultWorkspaceRepository(store: InMemoryStore()),
+        let projectList = ProjectListModel(
+            projectRepository: DefaultProjectRepository(store: InMemoryStore()),
             sessionRepository: DefaultSessionRepository(store: InMemoryStore())
         )
-        let controller = MachineController(store: store, workspaceList: workspaceList)
-        return (controller, workspaceList, store)
+        let controller = MachineController(store: store, projectList: projectList)
+        return (controller, projectList, store)
     }
 }
 
 /// A fake server whose event stream and list endpoints are test-driven.
 private final class SyncFakeServerClient: HerdManServerClienting, @unchecked Sendable {
     private let lock = NSLock()
-    private var _workspaces: [ServerWorkspace]
+    private var _projects: [ServerProject]
     private var _sessions: [ServerSession]
     private var continuations: [AsyncThrowingStream<ServerEventEnvelope, any Error>.Continuation] = []
     private var emittedEvents: [ServerEventEnvelope] = []
     private var nextEventId = 1
 
-    init(workspaces: [ServerWorkspace], sessions: [ServerSession]) {
-        _workspaces = workspaces
+    init(projects: [ServerProject], sessions: [ServerSession]) {
+        _projects = projects
         _sessions = sessions
     }
 
@@ -285,7 +294,7 @@ private final class SyncFakeServerClient: HerdManServerClienting, @unchecked Sen
         }
     }
 
-    func listWorkspaces() async throws -> [ServerWorkspace] { lock.withLock { _workspaces } }
+    func listProjects() async throws -> [ServerProject] { lock.withLock { _projects } }
     func listSessions() async throws -> [ServerSession] { lock.withLock { _sessions } }
 
     // MARK: - Simulated server versioning / self-update
@@ -351,9 +360,9 @@ private final class SyncFakeServerClient: HerdManServerClienting, @unchecked Sen
     func capabilities(cwd: String) async throws -> ServerCapabilities { ServerCapabilities(harnesses: []) }
     func listHarnesses() async throws -> [ServerHarness] { [] }
     func setHarnessEnabled(id: String, enabled: Bool) async throws -> ServerHarness { fatalError("unused") }
-    func upsertWorkspace(_ workspace: Workspace) async throws -> ServerWorkspace { fatalError("unused") }
-    func updateWorkspace(_ workspace: Workspace) async throws -> ServerWorkspace { fatalError("unused") }
-    func deleteWorkspace(id: UUID) async throws {}
+    func upsertProject(_ project: Project) async throws -> ServerProject { fatalError("unused") }
+    func updateProject(_ project: Project) async throws -> ServerProject { fatalError("unused") }
+    func deleteProject(id: UUID) async throws {}
     func sessionDetail(id: UUID) async throws -> ServerSessionDetail { fatalError("unused") }
     func upsertSession(_ session: ChatSession) async throws -> ServerSession { fatalError("unused") }
     func updateSession(_ session: ChatSession) async throws -> ServerSession { fatalError("unused") }

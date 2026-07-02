@@ -10,6 +10,9 @@ import ACPAgents
 struct ComposerCard: View {
     @Bindable var controller: SessionController
     var placeholder: String = "Do anything"
+    /// The new-chat page hosts the harness picker in its own row below the
+    /// composer; session pages keep it inline.
+    var showsHarnessPicker: Bool = true
     /// Surfaces the composer's text view so the terminal focus handoff can move
     /// first-responder focus to it.
     var onTextViewReady: ((NSView) -> Void)? = nil
@@ -49,7 +52,9 @@ struct ComposerCard: View {
             }
 
             HStack(spacing: 10) {
-                harnessMenu
+                if showsHarnessPicker {
+                    HarnessPickerMenu(controller: controller)
+                }
                 ForEach(controller.pickerOptions) { option in
                     configMenu(option)
                 }
@@ -198,37 +203,6 @@ struct ComposerCard: View {
         }
     }
 
-    /// The harness picker is only shown before the first message (the new-chat
-    /// page); on a session page the harness can't change, so it's hidden.
-    @ViewBuilder
-    private var harnessMenu: some View {
-        if controller.conversation.isEmpty {
-            if controller.harnesses.isEmpty {
-                chipLabel("No agent installed")
-            } else {
-                Menu {
-                    ForEach(controller.harnesses) { harness in
-                        Button {
-                            Task { await controller.selectHarness(harness.id) }
-                        } label: {
-                            if harness.id == controller.selectedHarnessId {
-                                Label(harness.name, systemImage: "checkmark")
-                            } else {
-                                Text(harness.name)
-                            }
-                        }
-                    }
-                } label: {
-                    chipLabel(controller.selectedHarness?.name ?? "Choose agent")
-                }
-                .menuStyle(.button)
-                .buttonStyle(.plain)
-                .menuIndicator(.hidden)
-                .fixedSize()
-            }
-        }
-    }
-
     private func chipLabel(_ text: String) -> some View {
         HStack(spacing: 4) {
             Text(text)
@@ -347,6 +321,68 @@ struct ComposerCard: View {
             isSlashMenuDismissed = true
             slashSelection = 0
             return true
+        }
+    }
+}
+
+/// The label for composer accessory dropdowns: icon, text, and a chevron with
+/// one shared styling so the pickers in the row read identically.
+struct PickerChip<Icon: View>: View {
+    let text: String
+    @ViewBuilder let icon: Icon
+
+    var body: some View {
+        HStack(spacing: 5) {
+            icon
+            Text(text)
+            Image(systemName: "chevron.down").font(.caption2)
+        }
+        .foregroundStyle(.secondary)
+        .contentShape(Rectangle())
+    }
+}
+
+/// The harness picker chip. Only shown before the first message (drafts); on a
+/// session page the harness can't change, so it renders nothing.
+struct HarnessPickerMenu: View {
+    @Bindable var controller: SessionController
+
+    var body: some View {
+        if controller.conversation.isEmpty {
+            if controller.harnesses.isEmpty {
+                PickerChip(text: "No agent installed") { EmptyView() }
+            } else {
+                Menu {
+                    ForEach(controller.harnesses) { harness in
+                        Toggle(isOn: Binding(
+                            get: { harness.id == controller.selectedHarnessId },
+                            set: { isOn in
+                                guard isOn else { return }
+                                Task { await controller.selectHarness(harness.id) }
+                            }
+                        )) {
+                            Label {
+                                Text(harness.name)
+                            } icon: {
+                                HarnessIcon(
+                                    harnessId: harness.id,
+                                    fallbackSymbolName: harness.symbolName
+                                )
+                            }
+                        }
+                    }
+                } label: {
+                    PickerChip(text: controller.selectedHarness?.name ?? "Choose agent") {
+                        if let harness = controller.selectedHarness {
+                            HarnessIcon(harnessId: harness.id, fallbackSymbolName: harness.symbolName)
+                        }
+                    }
+                }
+                .menuStyle(.button)
+                .buttonStyle(.plain)
+                .menuIndicator(.hidden)
+                .fixedSize()
+            }
         }
     }
 }

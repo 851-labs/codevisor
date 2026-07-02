@@ -5,7 +5,7 @@ import HerdManCore
 /// shows the session screen.
 struct SessionContainerView: View {
     let session: ChatSession
-    let workspace: Workspace
+    let project: Project
     let store: SessionStore
 
     @State private var controller: SessionController?
@@ -13,7 +13,7 @@ struct SessionContainerView: View {
     var body: some View {
         Group {
             if let controller {
-                SessionScreen(controller: controller, terminal: store.terminal(for: session, workspace: workspace))
+                SessionScreen(controller: controller, terminal: store.terminal(for: session, project: project))
             } else {
                 ProgressView()
                     .controlSize(.small)
@@ -22,7 +22,7 @@ struct SessionContainerView: View {
         }
         .navigationTitle(session.title)
         .task(id: session.id) {
-            let controller = store.controller(for: session, workspace: workspace)
+            let controller = store.controller(for: session, project: project)
             self.controller = controller
             if !controller.isPrepared && !controller.isConnected {
                 await controller.prepare()

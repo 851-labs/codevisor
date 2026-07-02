@@ -55,12 +55,18 @@ public struct ServerAgentService: AgentServicing {
 
     public func listSessions(for agent: DiscoveredAgent) async throws -> [SessionInfo] {
         do {
-            let workspaces = try await client.listWorkspaces()
-            let workspacePaths = Dictionary(uniqueKeysWithValues: workspaces.map { ($0.id, $0.folderPath) })
+            let projects = try await client.listProjects()
+            let projectLocations = Dictionary(
+                uniqueKeysWithValues: projects.map { ($0.id, $0.locations) }
+            )
             return try await client.listSessions()
                 .filter { $0.harnessId == agent.id }
                 .compactMap { session in
-                    guard let cwd = workspacePaths[session.workspaceId] else { return nil }
+                    // The server resolves cwd (project folder or worktree);
+                    // fall back to the project's location on the session's server.
+                    let locationPath = projectLocations[session.projectId]?
+                        .first { $0.serverId == session.serverId }?.folderPath
+                    guard let cwd = session.cwd ?? locationPath else { return nil }
                     return SessionInfo(
                         sessionId: session.agentSessionId ?? session.id,
                         cwd: cwd,

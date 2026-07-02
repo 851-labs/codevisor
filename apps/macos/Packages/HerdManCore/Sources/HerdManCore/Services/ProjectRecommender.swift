@@ -1,7 +1,7 @@
 import Foundation
 
-/// A workspace suggestion derived from the user's existing harness sessions.
-public struct WorkspaceRecommendation: Equatable, Sendable, Identifiable {
+/// A project suggestion derived from the user's existing harness sessions.
+public struct ProjectRecommendation: Equatable, Sendable, Identifiable {
     public var folderURL: URL
     public var name: String
     public var sessionCount: Int
@@ -19,7 +19,7 @@ public struct WorkspaceRecommendation: Equatable, Sendable, Identifiable {
 
 /// Turns sessions discovered across harnesses (`session/list`) into a short
 /// list of suggested project folders, most recently active first.
-public enum WorkspaceRecommender {
+public enum ProjectRecommender {
     public static func recommend(
         from sessions: [ImportedSession],
         limit: Int = 2,
@@ -27,7 +27,7 @@ public enum WorkspaceRecommender {
             var isDirectory: ObjCBool = false
             return FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory) && isDirectory.boolValue
         }
-    ) -> [WorkspaceRecommendation] {
+    ) -> [ProjectRecommendation] {
         var grouped: [String: (count: Int, lastActivity: Date?)] = [:]
         for session in sessions {
             let path = URL(fileURLWithPath: session.info.cwd).standardizedFileURL.path
@@ -44,7 +44,7 @@ public enum WorkspaceRecommender {
             .filter { directoryExists($0.key) }
             .map { path, info in
                 let url = URL(fileURLWithPath: path)
-                return WorkspaceRecommendation(
+                return ProjectRecommendation(
                     folderURL: url,
                     name: url.lastPathComponent.isEmpty ? path : url.lastPathComponent,
                     sessionCount: info.count,

@@ -20,17 +20,17 @@ struct AppEnvironmentTests {
         #endif
     }
 
-    @Test("Preview environment seeds sample workspaces")
+    @Test("Preview environment seeds sample projects")
     func previewSeed() {
         let environment = AppEnvironment.preview()
-        #expect(environment.workspaceList.workspaces.count == AppEnvironment.sampleWorkspaces.count)
-        #expect(environment.workspaceList.hasArchivedWorkspaces)
+        #expect(environment.projectList.projects.count == AppEnvironment.sampleProjects.count)
+        #expect(environment.projectList.hasArchivedProjects)
     }
 
     @Test("Preview environment can use a custom seed")
     func customSeed() {
-        let environment = AppEnvironment.preview(seedWorkspaces: [])
-        #expect(environment.workspaceList.workspaces.isEmpty)
+        let environment = AppEnvironment.preview(seedProjects: [])
+        #expect(environment.projectList.projects.isEmpty)
     }
 
     @Test("Preview agent service returns sample agents and launches a client")
@@ -49,18 +49,18 @@ struct AppEnvironmentTests {
 
     @Test("Onboarding with a project folder imports that folder's existing sessions")
     func onboardingImportsProjectSessions() async {
-        let environment = AppEnvironment.preview(seedWorkspaces: [], hasOnboarded: false)
+        let environment = AppEnvironment.preview(seedProjects: [], hasOnboarded: false)
 
         // PreviewAgentService reports the "ext-1" session in
         // /Users/me/src/website for each of its two ready harnesses.
-        let workspace = await environment.finishOnboarding(
+        let project = await environment.finishOnboarding(
             projectFolder: URL(fileURLWithPath: "/Users/me/src/website")
         )
 
         #expect(environment.settings.hasCompletedOnboarding)
         #expect(environment.settings.importExternalSessions)
-        #expect(environment.workspaceList.showsImportedSessions)
-        let imported = environment.workspaceList.sessions(in: workspace)
+        #expect(environment.projectList.showsImportedSessions)
+        let imported = environment.projectList.sessions(in: project)
         #expect(imported.count == 2)
         #expect(imported.allSatisfy { $0.agentSessionId == "ext-1" && $0.origin == .imported })
         #expect(Set(imported.map(\.harnessId)) == ["claude-code", "codex"])
@@ -68,7 +68,7 @@ struct AppEnvironmentTests {
 
     @Test("Importable sessions are scoped to the folder and exclude known ones")
     func importableSessionsScopedToFolder() async {
-        let environment = AppEnvironment.preview(seedWorkspaces: [])
+        let environment = AppEnvironment.preview(seedProjects: [])
 
         let found = await environment.findImportableSessions(
             for: URL(fileURLWithPath: "/Users/me/src/website")
@@ -77,10 +77,10 @@ struct AppEnvironmentTests {
         #expect(found.allSatisfy { $0.info.cwd == "/Users/me/src/website" })
 
         // Once imported, the same discovery is no longer offered.
-        let workspace = environment.workspaceList.addWorkspace(
+        let project = environment.projectList.addProject(
             folderURL: URL(fileURLWithPath: "/Users/me/src/website")
         )
-        environment.importSessions(found, into: workspace)
+        environment.importSessions(found, into: project)
         #expect(environment.settings.importExternalSessions)
         let remaining = await environment.findImportableSessions(
             for: URL(fileURLWithPath: "/Users/me/src/website")
@@ -88,13 +88,13 @@ struct AppEnvironmentTests {
         #expect(remaining.isEmpty)
     }
 
-    @Test("Workspace recommendations come from recent harness sessions")
-    func workspaceRecommendations() async {
-        let environment = AppEnvironment.preview(seedWorkspaces: [])
+    @Test("Project recommendations come from recent harness sessions")
+    func projectRecommendations() async {
+        let environment = AppEnvironment.preview(seedProjects: [])
 
         // PreviewAgentService's sessions live in folders that don't exist on
         // the test machine, so the default directory filter drops them.
-        let recommendations = await environment.recommendedWorkspaces()
+        let recommendations = await environment.recommendedProjects()
 
         #expect(recommendations.isEmpty)
     }

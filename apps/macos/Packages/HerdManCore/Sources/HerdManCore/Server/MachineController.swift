@@ -71,7 +71,7 @@ public final class MachineController {
     public typealias ClientFactory = @MainActor (HerdManMachine) -> any HerdManServerClienting
 
     private let store: any PersistenceStore
-    private let workspaceList: WorkspaceListModel
+    private let projectList: ProjectListModel
     private let localServer: LocalHerdManServer?
     private let clientFactory: ClientFactory
     private let key = "machines"
@@ -84,14 +84,14 @@ public final class MachineController {
 
     public init(
         store: any PersistenceStore,
-        workspaceList: WorkspaceListModel,
+        projectList: ProjectListModel,
         localServer: LocalHerdManServer? = nil,
         clientFactory: ClientFactory? = nil,
         updatePollInterval: Duration = .seconds(2),
         updatePollAttempts: Int = 90
     ) {
         self.store = store
-        self.workspaceList = workspaceList
+        self.projectList = projectList
         self.localServer = localServer
         self.clientFactory = clientFactory ?? { HerdManServerClient(config: $0.serverConfig) }
         self.updatePollInterval = updatePollInterval
@@ -102,7 +102,7 @@ public final class MachineController {
         } else {
             registry = MachineRegistry()
         }
-        workspaceList.selectServer(
+        projectList.selectServer(
             serverId: selectedMachine.id,
             serverClient: selectedClient,
             refresh: false
@@ -138,7 +138,7 @@ public final class MachineController {
         guard let machine = machine(for: id) else { return }
         registry.selectedMachineId = machine.id
         persist()
-        workspaceList.selectServer(serverId: machine.id, serverClient: client(for: machine.id))
+        projectList.selectServer(serverId: machine.id, serverClient: client(for: machine.id))
     }
 
     @discardableResult
@@ -156,7 +156,7 @@ public final class MachineController {
             let existing = registry.remoteMachines[index]
             registry.selectedMachineId = existing.id
             persist()
-            workspaceList.selectServer(serverId: existing.id, serverClient: client(for: existing.id))
+            projectList.selectServer(serverId: existing.id, serverClient: client(for: existing.id))
             return existing
         }
         let baseId = Self.remoteId(for: baseURL)
@@ -171,7 +171,7 @@ public final class MachineController {
         registry.remoteMachines.append(machine)
         registry.selectedMachineId = machine.id
         persist()
-        workspaceList.selectServer(serverId: machine.id, serverClient: client(for: machine.id))
+        projectList.selectServer(serverId: machine.id, serverClient: client(for: machine.id))
         return machine
     }
 
@@ -203,7 +203,7 @@ public final class MachineController {
         registry.remoteMachines.removeAll { $0.id == id }
         if registry.selectedMachineId == id {
             registry.selectedMachineId = HerdManMachine.local.id
-            workspaceList.selectServer(serverId: HerdManMachine.local.id, serverClient: selectedClient)
+            projectList.selectServer(serverId: HerdManMachine.local.id, serverClient: selectedClient)
         }
         persist()
     }
@@ -213,13 +213,13 @@ public final class MachineController {
             _ = await localServer?.ensureRunning()
         }
         await refreshStatus(for: selectedMachine.id)
-        await workspaceList.refreshFromServer()
+        await projectList.refreshFromServer()
         startEventSync()
     }
 
     // MARK: - Live sync
 
-    /// Follows the selected server's event stream so workspaces and sessions
+    /// Follows the selected server's event stream so projects and sessions
     /// stay in sync across every client connected to that server. Replaces any
     /// previous subscription (e.g. after switching machines).
     public func startEventSync() {
@@ -248,17 +248,17 @@ public final class MachineController {
     private func handleSyncEvent(_ event: ServerEventEnvelope, serverId: String) {
         guard serverId == selectedMachine.id else { return }
         switch event.kind {
-        case "workspace.deleted":
+        case "project.deleted":
             if let id = UUID(uuidString: event.subjectId) {
-                workspaceList.removeWorkspaceLocally(id: id)
+                projectList.removeProjectLocally(id: id)
             }
         case "session.deleted":
             if let id = UUID(uuidString: event.subjectId) {
-                workspaceList.removeSessionLocally(id: id)
+                projectList.removeSessionLocally(id: id)
             }
-        case "workspace.created", "workspace.updated",
+        case "project.created", "project.updated", "worktree.created",
              "session.created", "session.updated", "session.archived":
-            scheduleWorkspaceRefresh()
+            scheduleProjectRefresh()
         default:
             // Prompt/queue/error events are handled by the session transports.
             break
@@ -267,13 +267,13 @@ public final class MachineController {
 
     /// Coalesces bursts of events (including the initial replay) into a single
     /// refresh from the server.
-    private func scheduleWorkspaceRefresh() {
+    private func scheduleProjectRefresh() {
         guard pendingRefreshTask == nil else { return }
         pendingRefreshTask = Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(300))
             guard let self, !Task.isCancelled else { return }
             self.pendingRefreshTask = nil
-            await self.workspaceList.refreshFromServer()
+            await self.projectList.refreshFromServer()
         }
     }
 
@@ -325,7 +325,7 @@ public final class MachineController {
                 guard let info = try? await client.info() else { continue }
                 if applied.targetVersion == nil || info.version == applied.targetVersion {
                     await refreshStatus(for: machineId)
-                    await workspaceList.refreshFromServer()
+                    await projectList.refreshFromServer()
                     startEventSync()
                     serverUpdatePhase = .idle
                     return

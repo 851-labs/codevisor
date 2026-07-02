@@ -2,10 +2,10 @@ import type { Harness } from "@herdman/api"
 import Database from "better-sqlite3"
 import { Effect } from "effect"
 import { mkdtempSync, rmSync } from "node:fs"
-import { tmpdir } from "node:os"
+import { homedir, tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
-import { DatabaseError, HerdManDatabase, makeDatabase } from "./index.js"
+import { DatabaseError, HerdManDatabase, makeDatabase, worktreePath } from "./index.js"
 
 const tempDirs: Array<string> = []
 
@@ -23,73 +23,233 @@ afterEach(() => {
   }
 })
 
+/** Recreates the on-disk shape of a database last touched by migration 4. */
+const buildV4Fixture = (filename: string): void => {
+  const sqlite = new Database(filename)
+  sqlite.exec(`
+    create table schema_migrations (id integer primary key, name text not null);
+    insert into schema_migrations (id, name) values
+      (1, 'initial'), (2, 'session action idempotency'),
+      (3, 'conversation message ids'), (4, 'session prompt queue');
+
+    create table workspaces (
+      id text primary key,
+      name text not null,
+      folder_path text not null unique,
+      is_archived integer not null default 0,
+      symbol_name text not null default 'folder',
+      origin text not null,
+      created_at text not null
+    );
+
+    create table sessions (
+      id text primary key,
+      workspace_id text not null references workspaces(id) on delete cascade,
+      server_id text not null,
+      harness_id text not null,
+      agent_session_id text,
+      title text not null,
+      origin text not null,
+      is_archived integer not null default 0,
+      created_at text not null,
+      updated_at text,
+      usage_used integer,
+      usage_size integer,
+      cost_amount real,
+      cost_currency text
+    );
+
+    create table conversation_items (
+      id text primary key,
+      session_id text not null references sessions(id) on delete cascade,
+      role text not null,
+      text text not null,
+      created_at text not null,
+      is_generating integer not null default 0,
+      message_id text
+    );
+
+    create table events (
+      id integer primary key autoincrement,
+      server_id text not null,
+      kind text not null,
+      subject_id text not null,
+      created_at text not null,
+      payload text not null
+    );
+
+    create table harness_settings (harness_id text primary key, enabled integer not null);
+
+    create table auth_tokens (
+      id text primary key,
+      token_hash text not null unique,
+      scope text not null,
+      created_at text not null
+    );
+
+    create table update_state (
+      id integer primary key check (id = 1),
+      current_version text not null,
+      latest_version text not null,
+      update_available integer not null,
+      channel text not null,
+      checked_at text,
+      migration_state text not null
+    );
+
+    create table backfill_jobs (
+      id text primary key,
+      name text not null,
+      state text not null,
+      cursor text,
+      updated_at text not null
+    );
+
+    create table session_actions (
+      session_id text not null references sessions(id) on delete cascade,
+      client_action_id text not null,
+      action_kind text not null,
+      response text not null,
+      created_at text not null,
+      primary key (session_id, client_action_id)
+    );
+
+    create table prompt_queue_items (
+      id text primary key,
+      session_id text not null references sessions(id) on delete cascade,
+      text text not null,
+      created_at text not null,
+      updated_at text not null
+    );
+
+    insert into workspaces (id, name, folder_path, is_archived, symbol_name, origin, created_at)
+      values ('ws-1', 'HerdMan', '/tmp/herdman', 0, 'folder', 'herdman', '2026-06-01T00:00:00.000Z');
+    insert into sessions (id, workspace_id, server_id, harness_id, agent_session_id, title, origin, is_archived, created_at)
+      values ('sess-1', 'ws-1', 'local', 'codex', 'agent-1', 'Old Session', 'herdman', 0, '2026-06-01T01:00:00.000Z');
+    insert into conversation_items (id, session_id, role, text, created_at, is_generating, message_id)
+      values ('conv-1', 'sess-1', 'user', 'hello', '2026-06-01T01:01:00.000Z', 0, 'user-1');
+    insert into prompt_queue_items (id, session_id, text, created_at, updated_at)
+      values ('queue-1', 'sess-1', 'queued', '2026-06-01T01:02:00.000Z', '2026-06-01T01:02:00.000Z');
+    insert into session_actions (session_id, client_action_id, action_kind, response, created_at)
+      values ('sess-1', 'action-1', 'prompt', '{}', '2026-06-01T01:03:00.000Z');
+  `)
+  sqlite.close()
+}
+
 describe("@herdman/db", () => {
-  it("migrates once and persists workspaces, sessions, conversation, and events", async () => {
+  it("migrates a v4 database to projects without losing session children", async () => {
+    const filename = tempDatabase()
+    buildV4Fixture(filename)
+
+    const db = await run(makeDatabase({ filename, serverId: "machine-a" }))
+
+    const projects = await run(db.listProjects)
+    expect(projects).toHaveLength(1)
+    expect(projects[0]).toMatchObject({ id: "ws-1", name: "HerdMan", origin: "herdman" })
+    expect(projects[0]?.locations).toEqual([
+      {
+        id: "ws-1",
+        projectId: "ws-1",
+        serverId: "machine-a",
+        folderPath: "/tmp/herdman",
+        createdAt: "2026-06-01T00:00:00.000Z"
+      }
+    ])
+
+    const detail = await run(db.getSessionDetail("sess-1"))
+    expect(detail.session).toMatchObject({
+      projectId: "ws-1",
+      harnessId: "codex",
+      agentSessionId: "agent-1",
+      cwd: "/tmp/herdman"
+    })
+    expect(detail.session.worktreeName).toBeUndefined()
+    expect(detail.conversation.map((item) => item.text)).toEqual(["hello"])
+    expect(detail.promptQueue.map((item) => item.text)).toEqual(["queued"])
+    expect(await run(db.getSessionActionResult("sess-1", "action-1"))).toEqual({})
+
+    const sqlite = new Database(filename)
+    expect(
+      sqlite.prepare("select name from sqlite_master where type = 'table' and name = 'workspaces'").get()
+    ).toBeUndefined()
+    expect(sqlite.pragma("foreign_key_check")).toEqual([])
+    sqlite.close()
+
+    expect(await run(db.migrate)).toEqual([])
+    await Effect.runPromise(db.close)
+  })
+
+  it("migrates once and persists projects, sessions, conversation, and events", async () => {
     const filename = tempDatabase()
     const db = await run(makeDatabase({ filename, serverId: "local" }))
 
     expect(await run(db.migrate)).toEqual([])
 
-    const firstWorkspace = await run(db.createWorkspace({ folderPath: "/tmp/herdman" }))
-    const secondWorkspace = await run(
-      db.createWorkspace({ folderPath: "/tmp/named", name: "Named Workspace" })
+    const firstProject = await run(db.createProject({ folderPath: "/tmp/herdman" }))
+    const secondProject = await run(
+      db.createProject({ folderPath: "/tmp/named", name: "Named Project" })
     )
-    const emptyWorkspace = await run(db.createWorkspace({ folderPath: "" }))
-    const clientWorkspace = await run(
-      db.createWorkspace({
-        id: "workspace-client-id",
+    const emptyProject = await run(db.createProject({ folderPath: "" }))
+    const clientProject = await run(
+      db.createProject({
+        id: "project-client-id",
         folderPath: "/tmp/client",
-        name: "Client Workspace",
+        name: "Client Project",
         isArchived: true,
         symbolName: "externaldrive",
         origin: "imported",
         createdAt: "2026-06-30T00:00:00.000Z"
       })
     )
-    expect(firstWorkspace.name).toBe("herdman")
-    expect(secondWorkspace.name).toBe("Named Workspace")
-    expect(emptyWorkspace.name).toBe("")
-    expect(clientWorkspace).toEqual({
-      id: "workspace-client-id",
-      name: "Client Workspace",
-      folderPath: "/tmp/client",
+    expect(firstProject.name).toBe("herdman")
+    expect(secondProject.name).toBe("Named Project")
+    expect(emptyProject.name).toBe("")
+    expect(clientProject).toMatchObject({
+      id: "project-client-id",
+      name: "Client Project",
       isArchived: true,
       symbolName: "externaldrive",
       origin: "imported",
       createdAt: "2026-06-30T00:00:00.000Z"
     })
+    expect(clientProject.locations).toHaveLength(1)
+    expect(clientProject.locations[0]).toMatchObject({
+      projectId: "project-client-id",
+      serverId: "local",
+      folderPath: "/tmp/client"
+    })
 
-    const updatedWorkspace = await run(
-      db.updateWorkspace(firstWorkspace.id, {
+    const updatedProject = await run(
+      db.updateProject(firstProject.id, {
         isArchived: true,
         name: "Archived HerdMan",
         symbolName: "archivebox"
       })
     )
-    expect(updatedWorkspace).toMatchObject({
+    expect(updatedProject).toMatchObject({
       isArchived: true,
       name: "Archived HerdMan",
       symbolName: "archivebox"
     })
-    expect(await run(db.updateWorkspace(secondWorkspace.id, {}))).toMatchObject({
+    expect(await run(db.updateProject(secondProject.id, {}))).toMatchObject({
       isArchived: false,
-      name: "Named Workspace",
-      symbolName: "folder"
+      name: "Named Project",
+      symbolName: "folder.fill"
     })
-    await expect(run(db.updateWorkspace("missing", { name: "nope" }))).rejects.toBeInstanceOf(
+    await expect(run(db.updateProject("missing", { name: "nope" }))).rejects.toBeInstanceOf(
       DatabaseError
     )
 
     const firstSession = await run(
       db.createSession({
-        workspaceId: firstWorkspace.id,
+        projectId: firstProject.id,
         harnessId: "codex",
         agentSessionId: "agent-1"
       })
     )
     const secondSession = await run(
       db.createSession({
-        workspaceId: secondWorkspace.id,
+        projectId: secondProject.id,
         harnessId: "claude-code",
         title: "Explicit title"
       })
@@ -97,7 +257,7 @@ describe("@herdman/db", () => {
     const clientSession = await run(
       db.createSession({
         id: "session-client-id",
-        workspaceId: clientWorkspace.id,
+        projectId: clientProject.id,
         harnessId: "codex",
         agentSessionId: "agent-client-id",
         title: "Client Session",
@@ -109,6 +269,8 @@ describe("@herdman/db", () => {
     )
     expect(firstSession.title).toBe("New Session")
     expect(firstSession.agentSessionId).toBe("agent-1")
+    expect(firstSession.cwd).toBe("/tmp/herdman")
+    expect(firstSession.worktreeName).toBeUndefined()
     expect(secondSession.title).toBe("Explicit title")
     expect(clientSession).toMatchObject({
       agentSessionId: "agent-client-id",
@@ -214,9 +376,7 @@ describe("@herdman/db", () => {
     })
 
     expect((await run(db.listSessions)).map((session) => session.id)).toContain(firstSession.id)
-    expect((await run(db.listWorkspaces)).map((workspace) => workspace.id)).toContain(
-      secondWorkspace.id
-    )
+    expect((await run(db.listProjects)).map((project) => project.id)).toContain(secondProject.id)
 
     expect((await run(db.archiveSession(firstSession.id))).isArchived).toBe(true)
     await expect(run(db.updateSession("missing", { title: "Missing" }))).rejects.toBeInstanceOf(
@@ -225,9 +385,51 @@ describe("@herdman/db", () => {
     await expect(run(db.archiveSession("missing"))).rejects.toBeInstanceOf(DatabaseError)
     await run(db.deleteSession(secondSession.id))
     await expect(run(db.getSessionDetail(secondSession.id))).rejects.toBeInstanceOf(DatabaseError)
-    await run(db.deleteWorkspace(clientWorkspace.id))
+    await run(db.deleteProject(clientProject.id))
     await expect(run(db.getSessionDetail(clientSession.id))).rejects.toBeInstanceOf(DatabaseError)
-    await expect(run(db.deleteWorkspace("missing"))).rejects.toBeInstanceOf(DatabaseError)
+    await expect(run(db.deleteProject("missing"))).rejects.toBeInstanceOf(DatabaseError)
+
+    await Effect.runPromise(db.close)
+  })
+
+  it("tracks worktrees and derives worktree session cwds", async () => {
+    const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
+    const project = await run(db.createProject({ folderPath: "/tmp/worktree-project" }))
+
+    const worktree = await run(db.createWorktree(project.id, "fix-auth", "herdman/fix-auth"))
+    expect(worktree).toMatchObject({
+      projectId: project.id,
+      serverId: "local",
+      name: "fix-auth",
+      branch: "herdman/fix-auth",
+      path: join(homedir(), "herdman", project.id, "fix-auth")
+    })
+    expect(worktree.path).toBe(worktreePath(project.id, "fix-auth"))
+
+    expect(await run(db.listWorktrees(project.id))).toEqual([worktree])
+    expect(await run(db.listWorktrees("missing"))).toEqual([])
+
+    // Same name for the same project on the same server is rejected.
+    await expect(
+      run(db.createWorktree(project.id, "fix-auth", "herdman/fix-auth-2"))
+    ).rejects.toBeInstanceOf(DatabaseError)
+    await expect(
+      run(db.createWorktree("missing", "fix-auth", "herdman/fix-auth"))
+    ).rejects.toBeInstanceOf(DatabaseError)
+
+    const session = await run(
+      db.createSession({
+        projectId: project.id,
+        harnessId: "codex",
+        worktreeName: "fix-auth"
+      })
+    )
+    expect(session.worktreeName).toBe("fix-auth")
+    expect(session.cwd).toBe(worktreePath(project.id, "fix-auth"))
+
+    // Worktree rows are removed with their project.
+    await run(db.deleteProject(project.id))
+    expect(await run(db.listWorktrees(project.id))).toEqual([])
 
     await Effect.runPromise(db.close)
   })
@@ -330,8 +532,8 @@ describe("@herdman/db", () => {
 
   it("surfaces sqlite errors as tagged database errors", async () => {
     const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
-    await run(db.createWorkspace({ folderPath: "/tmp/duplicate" }))
-    const failed = await Effect.runPromiseExit(db.createWorkspace({ folderPath: "/tmp/duplicate" }))
+    await run(db.createProject({ folderPath: "/tmp/duplicate" }))
+    const failed = await Effect.runPromiseExit(db.createProject({ folderPath: "/tmp/duplicate" }))
     expect(String(failed)).toContain("DatabaseError")
     await Effect.runPromise(db.close)
   })

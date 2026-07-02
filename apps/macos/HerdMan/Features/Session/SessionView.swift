@@ -351,8 +351,8 @@ private struct PromptQueueView: View {
 }
 
 private func previewTerminalDescriptor() -> TerminalLaunchDescriptor {
-    let workspace = Workspace(name: "shepherd", folderURL: URL(fileURLWithPath: "/tmp/shepherd"))
-    let session = ChatSession(workspaceId: workspace.id, title: "Preview")
-    return TerminalLaunchDescriptor.make(session: session, workspace: workspace, machine: .local)
+    let project = Project.fromFolder(URL(fileURLWithPath: "/tmp/shepherd"))
+    let session = ChatSession(projectId: project.id, title: "Preview")
+    return TerminalLaunchDescriptor.make(session: session, project: project, machine: .local)
 }
 #endif

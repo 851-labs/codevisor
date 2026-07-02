@@ -3,8 +3,8 @@ import Testing
 import ACPKit
 @testable import HerdManCore
 
-@Suite("WorkspaceRecommender")
-struct WorkspaceRecommenderTests {
+@Suite("ProjectRecommender")
+struct ProjectRecommenderTests {
     private func session(
         _ id: String,
         cwd: String,
@@ -23,7 +23,7 @@ struct WorkspaceRecommenderTests {
             session("d", cwd: "/src/recent", updatedAt: "2026-06-10T00:00:00Z")
         ]
 
-        let recommendations = WorkspaceRecommender.recommend(
+        let recommendations = ProjectRecommender.recommend(
             from: sessions,
             limit: 2,
             directoryExists: { _ in true }
@@ -41,7 +41,7 @@ struct WorkspaceRecommenderTests {
             session("b", cwd: "/src/kept", updatedAt: "2026-01-01T00:00:00Z")
         ]
 
-        let recommendations = WorkspaceRecommender.recommend(
+        let recommendations = ProjectRecommender.recommend(
             from: sessions,
             limit: 2,
             directoryExists: { $0 == "/src/kept" }
@@ -59,7 +59,7 @@ struct WorkspaceRecommenderTests {
             session("d", cwd: "/src/dated", updatedAt: "2026-06-01T00:00:00Z")
         ]
 
-        let recommendations = WorkspaceRecommender.recommend(
+        let recommendations = ProjectRecommender.recommend(
             from: sessions,
             limit: 3,
             directoryExists: { _ in true }
@@ -78,7 +78,7 @@ struct WorkspaceRecommenderTests {
             session("d", cwd: "/src/three", updatedAt: "2026-06-01T00:00:00Z")
         ]
 
-        let recommendations = WorkspaceRecommender.recommend(
+        let recommendations = ProjectRecommender.recommend(
             from: sessions,
             limit: 2,
             directoryExists: { _ in true }

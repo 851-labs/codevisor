@@ -1,7 +1,7 @@
 import SwiftUI
 import AppKit
 
-/// A sheet for choosing an SF Symbol icon for a workspace. Presents a searchable
+/// A sheet for choosing an SF Symbol icon for a project. Presents a searchable
 /// grid of system symbols; selecting one applies it immediately.
 struct IconPickerView: View {
     let currentSymbol: String
@@ -28,6 +28,7 @@ struct IconPickerView: View {
             .lowercased()
             .replacingOccurrences(of: " ", with: ".")
         guard !symbol.isEmpty,
+              symbol.contains(".fill"),
               !filtered.contains(symbol),
               SFSymbolLibrary.isAvailable(symbol)
         else { return nil }
@@ -98,8 +99,9 @@ private enum SFSymbolLibrary {
     static let symbols: [String] = {
         let loaded = loadSymbolOrder() ?? loadSymbolAvailability()
         var seen = Set<String>()
+        // The sidebar sticks to filled icons, so only offer filled variants.
         return (loaded ?? fallbackSymbols).filter { symbol in
-            seen.insert(symbol).inserted && isAvailable(symbol)
+            symbol.contains(".fill") && seen.insert(symbol).inserted && isAvailable(symbol)
         }
     }()
 
@@ -160,5 +162,5 @@ private enum SFSymbolLibrary {
 }
 
 #Preview {
-    IconPickerView(currentSymbol: "folder") { _ in }
+    IconPickerView(currentSymbol: "folder.fill") { _ in }
 }

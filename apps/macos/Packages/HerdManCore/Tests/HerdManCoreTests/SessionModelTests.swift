@@ -426,7 +426,7 @@ final class TimeBox: @unchecked Sendable {
 
 private final class FakeSessionServerClient: HerdManServerClienting, @unchecked Sendable {
     private let sessionId: UUID
-    private let workspaceId = UUID()
+    private let projectId = UUID()
     private let stream: AsyncThrowingStream<ServerEventEnvelope, any Error>
     private let continuation: AsyncThrowingStream<ServerEventEnvelope, any Error>.Continuation
     private let lock = NSLock()
@@ -469,16 +469,16 @@ private final class FakeSessionServerClient: HerdManServerClienting, @unchecked 
     func issuePairingToken() async throws -> ServerPairingToken { fatalError("unused") }
     func capabilities(cwd: String) async throws -> ServerCapabilities { ServerCapabilities(harnesses: []) }
     func setHarnessEnabled(id: String, enabled: Bool) async throws -> ServerHarness { fatalError("unused") }
-    func listWorkspaces() async throws -> [ServerWorkspace] { [] }
-    func upsertWorkspace(_ workspace: Workspace) async throws -> ServerWorkspace { fatalError("unused") }
-    func updateWorkspace(_ workspace: Workspace) async throws -> ServerWorkspace { fatalError("unused") }
-    func deleteWorkspace(id: UUID) async throws {}
+    func listProjects() async throws -> [ServerProject] { [] }
+    func upsertProject(_ project: Project) async throws -> ServerProject { fatalError("unused") }
+    func updateProject(_ project: Project) async throws -> ServerProject { fatalError("unused") }
+    func deleteProject(id: UUID) async throws {}
     func listSessions() async throws -> [ServerSession] { [] }
     func sessionDetail(id: UUID) async throws -> ServerSessionDetail {
         ServerSessionDetail(
             session: ServerSession(
                 id: sessionId.uuidString,
-                workspaceId: workspaceId.uuidString,
+                projectId: projectId.uuidString,
                 serverId: "local",
                 harnessId: "codex",
                 agentSessionId: "agent-session",

@@ -34,7 +34,7 @@ struct RootView: View {
     @State private var selection: SidebarSelection?
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @State private var store: SessionStore?
-    @State private var preferredWorkspaceId: UUID?
+    @State private var preferredProjectId: UUID?
     @State private var preparedMachineId: String?
 
     var body: some View {
@@ -42,9 +42,9 @@ struct RootView: View {
             if environment.settings.hasCompletedOnboarding {
                 mainSplit
             } else {
-                OnboardingView { workspace in
-                    preferredWorkspaceId = workspace?.id
-                    selection = .newChat(workspace?.id)
+                OnboardingView { project in
+                    preferredProjectId = project?.id
+                    selection = .newChat(project?.id)
                 }
             }
         }
@@ -70,7 +70,7 @@ struct RootView: View {
                 let machineId = environment.machines.selectedMachineId
                 if let preparedMachineId, preparedMachineId != machineId {
                     selection = .newChat(nil)
-                    preferredWorkspaceId = nil
+                    preferredProjectId = nil
                 }
                 preparedMachineId = machineId
                 await environment.prepareSelectedMachine()
@@ -136,23 +136,23 @@ struct RootView: View {
     private func detail(_ store: SessionStore) -> some View {
         switch selection {
         case let .session(sessionId):
-            if let session = environment.workspaceList.sessions.first(where: { $0.id == sessionId }),
-               let workspace = environment.workspaceList.workspaces.first(where: { $0.id == session.workspaceId }) {
-                SessionContainerView(session: session, workspace: workspace, store: store)
+            if let session = environment.projectList.sessions.first(where: { $0.id == sessionId }),
+               let project = environment.projectList.projects.first(where: { $0.id == session.projectId }) {
+                SessionContainerView(session: session, project: project, store: store)
                     .id(session.id)
-                    .onAppear { preferredWorkspaceId = workspace.id }
+                    .onAppear { preferredProjectId = project.id }
             } else {
-                newChat(store, preferred: preferredWorkspaceId)
+                newChat(store, preferred: preferredProjectId)
             }
-        case let .newChat(workspaceId):
-            newChat(store, preferred: workspaceId ?? preferredWorkspaceId)
+        case let .newChat(projectId):
+            newChat(store, preferred: projectId ?? preferredProjectId)
         case .none:
-            newChat(store, preferred: preferredWorkspaceId)
+            newChat(store, preferred: preferredProjectId)
         }
     }
 
     private func newChat(_ store: SessionStore, preferred: UUID?) -> some View {
-        NewChatView(store: store, selection: $selection, preferredWorkspaceId: preferred)
+        NewChatView(store: store, selection: $selection, preferredProjectId: preferred)
     }
 }
 

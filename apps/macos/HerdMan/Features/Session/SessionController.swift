@@ -22,9 +22,9 @@ final class SessionController {
     private(set) var model: SessionModel?
     private(set) var status: Status = .idle
 
-    /// The workspace whose folder is used as the agent cwd. Settable so the
+    /// The project whose folder is used as the agent cwd. Settable so the
     /// new-chat page can change projects before the first send.
-    var workspace: Workspace
+    var project: Project
     /// Called once, on the first send — used by the new-chat page to create and
     /// register the real session and navigate to it.
     var onFirstSend: (() -> Void)?
@@ -33,8 +33,19 @@ final class SessionController {
     var resumeAgentSessionId: String?
     /// The durable HerdMan session mirrored by the server. Nil for a draft until first send.
     var serverSession: ChatSession?
+    /// When true, the draft runs in a new git worktree created on the first
+    /// send. Until the worktree exists there is no cwd to connect with, so the
+    /// eager pre-connect is skipped.
+    var wantsNewWorktree = false
+    /// The worktree created for this draft on first send (server-assigned slug).
+    private(set) var worktreeName: String?
+    /// The created worktree's path; overrides the project folder as the agent cwd.
+    private(set) var sessionCwdOverride: String?
     /// Called with the agent session id once a brand-new session is created.
     var onAgentSessionCreated: ((String) -> Void)?
+    /// Called when an in-app agent finishes a turn, so the sidebar's recency
+    /// stamp can advance. Server-run sessions bump server-side instead.
+    var onTurnFinished: (() -> Void)?
     /// The agent session id currently connected (resumed or newly created).
     private(set) var connectedAgentSessionId: String?
 
@@ -53,13 +64,13 @@ final class SessionController {
     private var configOptionsByHarness: [String: [SessionConfigOption]] = [:]
 
     init(
-        workspace: Workspace,
+        project: Project,
         agentService: any AgentServicing,
         configCache: ConfigOptionCache,
         settings: AppSettingsModel? = nil,
         serverClient: (any HerdManServerClienting)? = nil
     ) {
-        self.workspace = workspace
+        self.project = project
         self.agentService = agentService
         self.configCache = configCache
         self.settings = settings
@@ -68,6 +79,15 @@ final class SessionController {
     }
 
     var isPrepared: Bool { !harnesses.isEmpty }
+
+    /// The directory the agent runs in: the session's server-resolved cwd
+    /// (project folder or worktree), a just-created worktree, or the project
+    /// folder for plain drafts.
+    var sessionCwdURL: URL {
+        if let cwd = serverSession?.cwd { return URL(fileURLWithPath: cwd) }
+        if let sessionCwdOverride { return URL(fileURLWithPath: sessionCwdOverride) }
+        return project.folderURL
+    }
 
     // MARK: - Derived state
 
@@ -201,6 +221,9 @@ final class SessionController {
     /// message. Safe to call repeatedly.
     func connectIfNeeded() async {
         guard model == nil, !isConnecting, let harness = selectedHarness else { return }
+        // A worktree draft has no cwd until the worktree is created on first
+        // send; connecting now would pin the agent to the project folder.
+        guard !wantsNewWorktree || sessionCwdOverride != nil else { return }
         guard serverClient == nil || serverSession != nil else { return }
         status = .connecting("Starting \(harness.name)…")
         do {
@@ -222,10 +245,10 @@ final class SessionController {
         await reconnect()
     }
 
-    /// Changes the project/workspace (user action) and reconnects.
-    func selectWorkspace(_ workspace: Workspace) async {
-        guard workspace.id != self.workspace.id else { return }
-        self.workspace = workspace
+    /// Changes the project/project (user action) and reconnects.
+    func selectProject(_ project: Project) async {
+        guard project.id != self.project.id else { return }
+        self.project = project
         seedFromCachedServerCapabilities()
         await reconnect()
     }
@@ -246,20 +269,32 @@ final class SessionController {
         let text = composerText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty, !isConnecting else { return }
 
+        // Materialize the worktree before the session record or agent exist,
+        // so both are born with the worktree cwd.
+        if wantsNewWorktree, sessionCwdOverride == nil {
+            guard await createWorktree() else { return }
+        }
+
         if !hasSentFirst {
             hasSentFirst = true
             onFirstSend?()
             onFirstSend = nil
         }
 
+        // Clear before any await: the session page reuses this controller, and
+        // the sent text lingering in the composer next to the optimistic user
+        // message reads as a duplicate. Failure paths restore it.
+        composerText = ""
+
         if let model {
-            composerText = ""
             await model.send(text)
+            notifyTurnFinishedIfLocal()
             return
         }
 
         guard let harness = selectedHarness else {
             status = .failed("No agent is installed. Install Claude Code or Codex and try again.")
+            composerText = text
             return
         }
         status = .connecting("Starting \(harness.name)…")
@@ -267,11 +302,56 @@ final class SessionController {
             let model = try await connect(harness)
             self.model = model
             status = .idle
-            composerText = ""
             await model.send(text)
+            notifyTurnFinishedIfLocal()
         } catch {
             status = .failed(String(describing: error))
+            composerText = text
         }
+    }
+
+    /// Only in-app agents (spawned via `client`) need the client-side activity
+    /// stamp; server-run sessions get bumped by the server as items land.
+    private func notifyTurnFinishedIfLocal() {
+        guard client != nil else { return }
+        onTurnFinished?()
+    }
+
+    /// Asks the server to create a git worktree for this draft. The server
+    /// owns the fixed location (~/herdman/{projectId}/{name}) and picks a
+    /// random memorable name ("ferocious-walrus"); the app never computes
+    /// either. Returns false on failure, leaving a status the composer surfaces.
+    private func createWorktree() async -> Bool {
+        guard let serverClient else {
+            status = .failed("Worktrees need the HerdMan server. Start it and try again.")
+            return false
+        }
+        status = .connecting("Creating worktree…")
+        do {
+            let worktree = try await serverClient.createWorktree(
+                projectId: project.id,
+                name: nil
+            )
+            sessionCwdOverride = worktree.path
+            worktreeName = worktree.name
+            status = .idle
+            return true
+        } catch let HerdManServerClientError.httpStatus(_, message) {
+            status = .failed(worktreeFailureMessage(from: message))
+            return false
+        } catch {
+            status = .failed(String(describing: error))
+            return false
+        }
+    }
+
+    private func worktreeFailureMessage(from body: String) -> String {
+        guard let data = body.data(using: .utf8),
+              let payload = try? JSONDecoder().decode([String: String].self, from: data),
+              let error = payload["error"] else {
+            return body.isEmpty ? "Could not create the worktree." : body
+        }
+        return error
     }
 
     func stop() async {
@@ -314,7 +394,7 @@ final class SessionController {
         self.delegate = delegate
         let client = try await agentService.launch(
             harness,
-            workingDirectory: workspace.folderURL,
+            workingDirectory: sessionCwdURL,
             delegate: delegate
         )
         self.client = client
@@ -334,7 +414,7 @@ final class SessionController {
             // Resume an existing agent session and replay its history.
             let response = try await client.loadSession(LoadSessionRequest(
                 sessionId: resumeAgentSessionId,
-                cwd: workspace.folderURL.path,
+                cwd: sessionCwdURL.path,
                 mcpServers: []
             ))
             connectedAgentSessionId = resumeAgentSessionId
@@ -348,7 +428,7 @@ final class SessionController {
         } else {
             // Create a brand-new agent session.
             let session = try await client.newSession(NewSessionRequest(
-                cwd: workspace.folderURL.path,
+                cwd: sessionCwdURL.path,
                 mcpServers: []
             ))
             connectedAgentSessionId = session.sessionId
@@ -389,7 +469,7 @@ final class SessionController {
             session.agentSessionId = resumeAgentSessionId
         }
 
-        _ = try await serverClient.upsertWorkspace(workspace)
+        _ = try await serverClient.upsertProject(project)
         let remoteSession = try await serverClient.upsertSession(session)
         session = try remoteSession.chatSession()
         self.serverSession = session
@@ -428,7 +508,7 @@ final class SessionController {
 
     private func prepareFromServerCapabilities(_ serverClient: any HerdManServerClienting) async -> Bool {
         do {
-            let response = try await serverClient.capabilities(cwd: workspace.folderURL.path)
+            let response = try await serverClient.capabilities(cwd: project.folderURL.path)
             let isNewChat = resumeAgentSessionId == nil
             let capabilities = response.harnesses.filter { capability in
                 capability.harness.enabled && capability.harness.readiness.state == "ready"
@@ -447,7 +527,7 @@ final class SessionController {
                     modeStateByHarness[capability.harness.id] = modes
                 }
             }
-            configCache.store(capabilities, forServer: workspace.serverId)
+            configCache.store(capabilities, forServer: project.serverId)
             if isNewChat {
                 if selectedHarnessId == nil || !harnesses.contains(where: { $0.id == selectedHarnessId }) {
                     selectedHarnessId = harnesses.first?.id
@@ -464,7 +544,7 @@ final class SessionController {
     @discardableResult
     private func seedFromCachedServerCapabilities() -> Bool {
         guard serverClient != nil else { return false }
-        let cached = configCache.capabilities(forServer: workspace.serverId).filter { capability in
+        let cached = configCache.capabilities(forServer: project.serverId).filter { capability in
             capability.harness.enabled && capability.harness.readiness.state == "ready"
         }
         guard !cached.isEmpty else { return false }
@@ -497,12 +577,12 @@ final class SessionController {
 extension SessionController {
     /// A controller pre-populated for previews.
     static func preview(
-        workspace: Workspace = Workspace(name: "shepherd", folderURL: URL(fileURLWithPath: "/tmp/shepherd")),
+        project: Project = Project.fromFolder(URL(fileURLWithPath: "/tmp/shepherd")),
         model: SessionModel? = nil,
         harnesses: [DiscoveredAgent] = SessionController.previewHarnesses
     ) -> SessionController {
         let controller = SessionController(
-            workspace: workspace,
+            project: project,
             agentService: PreviewAgentService(),
             configCache: ConfigOptionCache(store: InMemoryStore())
         )

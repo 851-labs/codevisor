@@ -4,30 +4,43 @@ import Testing
 
 @Suite("Repositories")
 struct RepositoryTests {
-    @Test("Workspaces round-trip through the store")
-    func workspaceRoundTrip() {
+    @Test("Projects round-trip through the store")
+    func projectRoundTrip() {
         let store = InMemoryStore()
-        let repository = DefaultWorkspaceRepository(store: store)
+        let repository = DefaultProjectRepository(store: store)
         #expect(repository.load().isEmpty)
 
-        let workspace = Workspace(name: "Demo", folderURL: URL(fileURLWithPath: "/tmp/demo"))
-        repository.save([workspace])
-        #expect(repository.load() == [workspace])
+        let project = Project.fromFolder(URL(fileURLWithPath: "/tmp/demo"))
+        repository.save([project])
+        #expect(repository.load() == [project])
+    }
+
+    @Test("Projects migrate from the legacy workspaces cache key")
+    func legacyCacheMigration() throws {
+        let legacy = Project.fromFolder(URL(fileURLWithPath: "/tmp/old-cache"))
+        let store = InMemoryStore()
+        try store.saveData(JSONEncoder().encode([legacy]), forKey: "workspaces")
+
+        let repository = DefaultProjectRepository(store: store)
+        let migrated = repository.load()
+        #expect(migrated == [legacy])
+        // Migration persists under the new key so later saves win.
+        #expect(store.loadData(forKey: "projects") != nil)
     }
 
     @Test("Sessions round-trip through the store")
     func sessionRoundTrip() {
         let store = InMemoryStore()
         let repository = DefaultSessionRepository(store: store)
-        let session = ChatSession(workspaceId: UUID(), harnessId: "demo", title: "Chat")
+        let session = ChatSession(projectId: UUID(), harnessId: "demo", title: "Chat")
         repository.save([session])
         #expect(repository.load() == [session])
     }
 
     @Test("Corrupted data decodes as empty")
     func corruptedData() {
-        let store = InMemoryStore(storage: ["workspaces": Data("not json".utf8)])
-        let repository = DefaultWorkspaceRepository(store: store)
+        let store = InMemoryStore(storage: ["projects": Data("not json".utf8)])
+        let repository = DefaultProjectRepository(store: store)
         #expect(repository.load().isEmpty)
     }
 
@@ -39,7 +52,7 @@ struct RepositoryTests {
 
         let store = FileSystemStore(directory: directory)
         let repository = DefaultSessionRepository(store: store)
-        let session = ChatSession(workspaceId: UUID(), title: "Persisted")
+        let session = ChatSession(projectId: UUID(), title: "Persisted")
         repository.save([session])
 
         // A fresh store reading the same directory sees the data.

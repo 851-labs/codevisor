@@ -4,17 +4,19 @@ import type {
   EventEnvelope,
   Harness,
   HarnessCapability,
+  Project,
+  ProjectLocation,
   PromptAcceptedResponse,
   PromptQueueItem,
   ServerKind,
   SessionSummary,
   TerminalClientFrame,
-  UpdateInfo,
-  Workspace
+  UpdateInfo
 } from "@herdman/api"
 import {
+  CreateProjectRequest as CreateProjectRequestSchema,
   CreateSessionRequest as CreateSessionRequestSchema,
-  CreateWorkspaceRequest as CreateWorkspaceRequestSchema,
+  CreateWorktreeRequest as CreateWorktreeRequestSchema,
   CancelRequest,
   PromptRequest,
   SetConfigRequest,
@@ -23,17 +25,18 @@ import {
   TerminalCreateRequest,
   UpdateQueuedPromptRequest,
   UpdateHarnessRequest as UpdateHarnessRequestSchema,
+  UpdateProjectRequest as UpdateProjectRequestSchema,
   UpdateSessionRequest as UpdateSessionRequestSchema,
-  UpdateWorkspaceRequest as UpdateWorkspaceRequestSchema,
   decode,
   makeOpenApiDocument
 } from "@herdman/api"
 import type { HerdManDatabaseService } from "@herdman/db"
 import type { TerminalManagerService } from "@herdman/terminal"
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http"
-import { statSync } from "node:fs"
+import { mkdirSync, statSync } from "node:fs"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { dirname, join } from "node:path"
+import { GitError, addWorktree, isGitWorkTree } from "./git.js"
 import type { Socket } from "node:net"
 import type { AddressInfo } from "node:net"
 import { Context, Effect, Layer, PubSub, Schema } from "effect"
@@ -314,7 +317,7 @@ const handleRequest = async (
       return
     }
 
-    if (await routeWorkspaces(services, fanout, request, response, url)) {
+    if (await routeProjects(services, config.id, fanout, request, response, url)) {
       return
     }
     if (await routeHarnesses(services, request, response, url)) {
@@ -333,51 +336,158 @@ const handleRequest = async (
   }
 }
 
-const routeWorkspaces = async (
+const routeProjects = async (
   services: HerdManServerServices,
+  serverId: string,
   fanout: EventFanout,
   request: IncomingMessage,
   response: ServerResponse,
   url: URL
 ): Promise<boolean> => {
-  if (request.method === "GET" && url.pathname === "/v1/workspaces") {
-    writeJson(response, 200, await run(services.db.listWorkspaces))
-    return true
-  }
-
-  if (request.method === "POST" && url.pathname === "/v1/workspaces") {
-    const workspace = await run(
-      services.db.createWorkspace(await readSchema(request, CreateWorkspaceRequestSchema))
+  if (request.method === "GET" && url.pathname === "/v1/projects") {
+    const projects = await run(services.db.listProjects)
+    writeJson(
+      response,
+      200,
+      await Promise.all(projects.map((project) => probeProject(serverId, project)))
     )
-    await appendAndPublish(services.db, fanout, "workspace.created", workspace.id, workspace)
-    writeJson(response, 201, workspace)
     return true
   }
 
-  const workspaceId = matchRoute(url.pathname, "/v1/workspaces/:id")
-  if (workspaceId !== undefined && request.method === "PATCH") {
-    const workspace = await run(
-      services.db.updateWorkspace(
-        workspaceId,
-        await readSchema(request, UpdateWorkspaceRequestSchema)
-      )
+  if (request.method === "POST" && url.pathname === "/v1/projects") {
+    const project = await run(
+      services.db.createProject(await readSchema(request, CreateProjectRequestSchema))
     )
-    await appendAndPublish(services.db, fanout, "workspace.updated", workspace.id, workspace)
-    writeJson(response, 200, workspace)
+    await appendAndPublish(services.db, fanout, "project.created", project.id, project)
+    writeJson(response, 201, await probeProject(serverId, project))
     return true
   }
 
-  if (workspaceId !== undefined && request.method === "DELETE") {
-    await run(services.db.deleteWorkspace(workspaceId))
-    await appendAndPublish(services.db, fanout, "workspace.deleted", workspaceId, {
-      id: workspaceId
+  const projectId = matchRoute(url.pathname, "/v1/projects/:id")
+  if (projectId !== undefined && request.method === "PATCH") {
+    const project = await run(
+      services.db.updateProject(projectId, await readSchema(request, UpdateProjectRequestSchema))
+    )
+    await appendAndPublish(services.db, fanout, "project.updated", project.id, project)
+    writeJson(response, 200, await probeProject(serverId, project))
+    return true
+  }
+
+  if (projectId !== undefined && request.method === "DELETE") {
+    await run(services.db.deleteProject(projectId))
+    await appendAndPublish(services.db, fanout, "project.deleted", projectId, {
+      id: projectId
     })
     writeJson(response, 204, undefined)
     return true
   }
 
+  const worktreeProjectId = matchRoute(url.pathname, "/v1/projects/:id/worktrees")
+  if (worktreeProjectId !== undefined && request.method === "GET") {
+    writeJson(response, 200, await run(services.db.listWorktrees(worktreeProjectId)))
+    return true
+  }
+
+  if (worktreeProjectId !== undefined && request.method === "POST") {
+    const payload = await readSchema(request, CreateWorktreeRequestSchema)
+    const project = await getProjectOrFail(services.db, worktreeProjectId)
+    const location = localLocationOrFail(serverId, project)
+    assertLocationFolderExists(location)
+    if (!(await isGitWorkTree(location.folderPath))) {
+      throw new HttpFailure(422, `Project folder is not a git repository: ${location.folderPath}`)
+    }
+    const existing = new Set((await run(services.db.listWorktrees(project.id))).map((w) => w.name))
+    const requested = slugifyWorktreeName(payload.name)
+    const name =
+      requested === undefined
+        ? randomWorktreeName(existing)
+        : uniquifyWorktreeName(requested, existing)
+    const branch = `herdman/${name}`
+    const worktree = await run(services.db.createWorktree(project.id, name, branch))
+    try {
+      mkdirSync(dirname(worktree.path), { recursive: true })
+      await addWorktree(location.folderPath, worktree.path, branch)
+    } catch (cause) {
+      // The directory never materialized; drop the record so the name can be retried.
+      await run(services.db.deleteWorktree(worktree.id)).catch(() => undefined)
+      throw cause
+    }
+    await appendAndPublish(services.db, fanout, "worktree.created", worktree.id, worktree)
+    writeJson(response, 201, worktree)
+    return true
+  }
+
   return false
 }
+
+const slugifyWorktreeName = (name: string | undefined): string | undefined => {
+  const slug = (name ?? "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 64)
+    .replace(/-+$/g, "")
+  return slug.length > 0 ? slug : undefined
+}
+
+const worktreeAdjectives = [
+  "amber", "bold", "brave", "breezy", "bright", "calm", "cheeky", "clever",
+  "cosmic", "crafty", "curious", "daring", "dashing", "eager", "electric",
+  "fearless", "ferocious", "fluffy", "gentle", "giddy", "golden", "graceful",
+  "happy", "jolly", "keen", "lively", "lucky", "mellow", "mighty", "nimble",
+  "plucky", "quiet", "rapid", "rustic", "silver", "sly", "snazzy", "spry",
+  "sturdy", "sunny", "swift", "tidy", "velvet", "vivid", "wandering", "witty",
+  "zany", "zesty"
+] as const
+
+const worktreeAnimals = [
+  "badger", "beaver", "bison", "capybara", "cheetah", "condor", "cougar",
+  "coyote", "crane", "dingo", "dolphin", "falcon", "ferret", "finch", "fox",
+  "gazelle", "gecko", "heron", "hedgehog", "ibex", "jackal", "kestrel",
+  "lemur", "lynx", "magpie", "manatee", "marmot", "mongoose", "narwhal",
+  "ocelot", "orca", "osprey", "otter", "owl", "panda", "pelican", "puffin",
+  "quokka", "raccoon", "raven", "salamander", "seal", "stoat", "tapir",
+  "toucan", "walrus", "wombat", "yak"
+] as const
+
+/// A memorable default worktree name ("ferocious-walrus"); retries a few
+/// random draws before falling back to numeric uniquification.
+const randomWorktreeName = (existing: ReadonlySet<string>): string => {
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    const adjective = worktreeAdjectives[Math.floor(Math.random() * worktreeAdjectives.length)]
+    const animal = worktreeAnimals[Math.floor(Math.random() * worktreeAnimals.length)]
+    const candidate = `${adjective}-${animal}`
+    if (!existing.has(candidate)) {
+      return candidate
+    }
+  }
+  return uniquifyWorktreeName("worktree", existing)
+}
+
+const uniquifyWorktreeName = (base: string, existing: ReadonlySet<string>): string => {
+  if (!existing.has(base)) {
+    return base
+  }
+  for (let suffix = 2; ; suffix += 1) {
+    const candidate = `${base}-${suffix}`
+    if (!existing.has(candidate)) {
+      return candidate
+    }
+  }
+}
+
+/// Annotates this server's locations with whether their folder is a git
+/// repository so clients can decide if the worktree option is available.
+const probeProject = async (serverId: string, project: Project): Promise<Project> => ({
+  ...project,
+  locations: await Promise.all(
+    project.locations.map(async (location) =>
+      location.serverId === serverId && existingDirectory(location.folderPath) !== undefined
+        ? { ...location, isGitRepository: await isGitWorkTree(location.folderPath) }
+        : location
+    )
+  )
+})
 
 const routeHarnesses = async (
   services: HerdManServerServices,
@@ -465,8 +575,8 @@ const routeSessions = async (
         return true
       }
     }
-    const workspace = await getWorkspaceOrFail(services.db, payload.workspaceId)
-    const create = createServerSession(services, payload, workspace)
+    const project = await getProjectOrFail(services.db, payload.projectId)
+    const create = createServerSession(services, config.id, payload, project)
     if (payload.id !== undefined) {
       routeState.pendingSessionCreates.set(payload.id, create)
     }
@@ -516,19 +626,46 @@ const routeSessions = async (
 
 const createServerSession = async (
   services: HerdManServerServices,
+  serverId: string,
   payload: CreateSessionRequest,
-  workspace: Workspace
+  project: Project
 ): Promise<SessionSummary> => {
-  assertWorkspaceFolderExists(workspace)
+  const cwd = await resolveSessionCwdOrFail(services, serverId, project, payload.worktreeName)
   const agentSessionId =
     payload.agentSessionId ??
-    (await run(services.acp.createAgentSession(payload.harnessId, workspace.folderPath)))
+    (await run(services.acp.createAgentSession(payload.harnessId, cwd)))
   return run(
     services.db.createSession({
       ...payload,
       agentSessionId
     })
   )
+}
+
+/// Derives the directory a session runs in: the project's folder on this
+/// server, or its worktree at ~/herdman/{projectId}/{worktreeName}. The result
+/// must stay deterministic per session so the acp-runtime session cache hits.
+const resolveSessionCwdOrFail = async (
+  services: HerdManServerServices,
+  serverId: string,
+  project: Project,
+  worktreeName: string | undefined
+): Promise<string> => {
+  const location = localLocationOrFail(serverId, project)
+  if (worktreeName === undefined) {
+    assertLocationFolderExists(location)
+    return location.folderPath
+  }
+  const worktree = (await run(services.db.listWorktrees(project.id))).find(
+    (candidate) => candidate.name === worktreeName && candidate.serverId === serverId
+  )
+  if (worktree === undefined) {
+    throw new HttpFailure(400, `Worktree not found for project ${project.id}: ${worktreeName}`)
+  }
+  if (existingDirectory(worktree.path) === undefined) {
+    throw new HttpFailure(400, `Worktree folder does not exist: ${worktree.path}`)
+  }
+  return worktree.path
 }
 
 const findSession = async (
@@ -632,7 +769,7 @@ const routeSessionActions = async (
       "cancel",
       payload,
       async () => {
-        const agentSessionId = await ensureAgentSessionFor(services, cancelSessionId)
+        const agentSessionId = await ensureAgentSessionFor(services, config.id, cancelSessionId)
         await materializeRuntimeEvent(
           services.db,
           fanout,
@@ -650,7 +787,7 @@ const routeSessionActions = async (
   if (modeSessionId !== undefined && request.method === "POST") {
     const payload = await readSchema(request, SetModeRequest)
     await writeIdempotentAction(services, response, modeSessionId, "mode", payload, async () => {
-      const agentSessionId = await ensureAgentSessionFor(services, modeSessionId)
+      const agentSessionId = await ensureAgentSessionFor(services, config.id, modeSessionId)
       await materializeRuntimeEvent(
         services.db,
         fanout,
@@ -673,7 +810,7 @@ const routeSessionActions = async (
       "config",
       payload,
       async () => {
-        const agentSessionId = await ensureAgentSessionFor(services, configSessionId)
+        const agentSessionId = await ensureAgentSessionFor(services, config.id, configSessionId)
         await materializeRuntimeEvent(
           services.db,
           fanout,
@@ -763,7 +900,7 @@ const runPromptInBackground = async (
   text: string
 ): Promise<void> => {
   try {
-    const agentSessionId = await ensureAgentSessionFor(services, sessionId)
+    const agentSessionId = await ensureAgentSessionFor(services, serverId, sessionId)
     await materializeRuntimeEvent(
       services.db,
       fanout,
@@ -990,28 +1127,32 @@ const discoverHarnesses = async (
 ): Promise<ReadonlyArray<Harness>> =>
   run(services.db.applyHarnessSettings(await run(services.acp.discoverHarnesses)))
 
-const getWorkspaceOrFail = async (
-  db: HerdManDatabaseService,
-  workspaceId: string
-): Promise<Workspace> => {
-  const workspace = (await run(db.listWorkspaces)).find((candidate) => candidate.id === workspaceId)
-  if (workspace === undefined) {
-    throw new HttpFailure(404, `Workspace not found: ${workspaceId}`)
+const getProjectOrFail = async (db: HerdManDatabaseService, projectId: string): Promise<Project> => {
+  const project = (await run(db.listProjects)).find((candidate) => candidate.id === projectId)
+  if (project === undefined) {
+    throw new HttpFailure(404, `Project not found: ${projectId}`)
   }
-  return workspace
+  return project
+}
+
+const localLocationOrFail = (serverId: string, project: Project): ProjectLocation => {
+  const location = project.locations.find((candidate) => candidate.serverId === serverId)
+  if (location === undefined) {
+    throw new HttpFailure(400, `Project has no folder on this machine: ${project.id}`)
+  }
+  return location
 }
 
 const ensureAgentSessionFor = async (
   services: HerdManServerServices,
+  serverId: string,
   sessionId: string
 ): Promise<string> => {
   const detail = await run(services.db.getSessionDetail(sessionId))
-  const workspace = await getWorkspaceOrFail(services.db, detail.session.workspaceId)
-  assertWorkspaceFolderExists(workspace)
+  const project = await getProjectOrFail(services.db, detail.session.projectId)
+  const cwd = await resolveSessionCwdOrFail(services, serverId, project, detail.session.worktreeName)
   const agentSessionId = detail.session.agentSessionId ?? sessionId
-  return run(
-    services.acp.loadAgentSession(detail.session.harnessId, agentSessionId, workspace.folderPath)
-  )
+  return run(services.acp.loadAgentSession(detail.session.harnessId, agentSessionId, cwd))
 }
 
 const existingDirectory = (folderPath: string | null): string | undefined => {
@@ -1025,9 +1166,9 @@ const existingDirectory = (folderPath: string | null): string | undefined => {
   }
 }
 
-const assertWorkspaceFolderExists = (workspace: Workspace): void => {
-  if (existingDirectory(workspace.folderPath) === undefined) {
-    throw new HttpFailure(400, `Workspace folder does not exist: ${workspace.folderPath}`)
+const assertLocationFolderExists = (location: ProjectLocation): void => {
+  if (existingDirectory(location.folderPath) === undefined) {
+    throw new HttpFailure(400, `Project folder does not exist: ${location.folderPath}`)
   }
 }
 
@@ -1143,6 +1284,10 @@ const writeFailure = (response: ServerResponse, cause: unknown): void => {
   }
   if (cause instanceof HttpFailure) {
     writeJson(response, cause.status, { error: cause.message })
+    return
+  }
+  if (cause instanceof GitError) {
+    writeJson(response, 422, { error: cause.message })
     return
   }
   writeJson(response, 500, { error: failureMessage(cause) })

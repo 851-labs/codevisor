@@ -96,10 +96,10 @@ private final class FakeStatusServerClient: HerdManServerClienting, @unchecked S
     func capabilities(cwd: String) async throws -> ServerCapabilities { ServerCapabilities(harnesses: []) }
     func listHarnesses() async throws -> [ServerHarness] { [] }
     func setHarnessEnabled(id: String, enabled: Bool) async throws -> ServerHarness { fatalError("unused") }
-    func listWorkspaces() async throws -> [ServerWorkspace] { [] }
-    func upsertWorkspace(_ workspace: Workspace) async throws -> ServerWorkspace { fatalError("unused") }
-    func updateWorkspace(_ workspace: Workspace) async throws -> ServerWorkspace { fatalError("unused") }
-    func deleteWorkspace(id: UUID) async throws {}
+    func listProjects() async throws -> [ServerProject] { [] }
+    func upsertProject(_ project: Project) async throws -> ServerProject { fatalError("unused") }
+    func updateProject(_ project: Project) async throws -> ServerProject { fatalError("unused") }
+    func deleteProject(id: UUID) async throws {}
     func listSessions() async throws -> [ServerSession] { [] }
     func sessionDetail(id: UUID) async throws -> ServerSessionDetail { fatalError("unused") }
     func upsertSession(_ session: ChatSession) async throws -> ServerSession { fatalError("unused") }

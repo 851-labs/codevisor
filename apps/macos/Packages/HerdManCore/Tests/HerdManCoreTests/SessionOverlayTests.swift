@@ -7,16 +7,16 @@ import ACPAgents
 @MainActor
 @Suite("Session overlay, settings, import")
 struct SessionOverlayTests {
-    private func makeModel() -> WorkspaceListModel {
-        WorkspaceListModel(
-            workspaceRepository: DefaultWorkspaceRepository(store: InMemoryStore()),
+    private func makeModel() -> ProjectListModel {
+        ProjectListModel(
+            projectRepository: DefaultProjectRepository(store: InMemoryStore()),
             sessionRepository: DefaultSessionRepository(store: InMemoryStore())
         )
     }
 
     @Test("Old persisted sessions decode with defaults")
     func backwardCompatible() throws {
-        let json = #"{"id":"\#(UUID().uuidString)","workspaceId":"\#(UUID().uuidString)","title":"Legacy","createdAt":768000000}"#
+        let json = #"{"id":"\#(UUID().uuidString)","projectId":"\#(UUID().uuidString)","title":"Legacy","createdAt":768000000}"#
         let session = try JSONDecoder().decode(ChatSession.self, from: Data(json.utf8))
         #expect(session.title == "Legacy")
         #expect(session.serverId == "local")
@@ -35,7 +35,7 @@ struct SessionOverlayTests {
         #expect(AppSettingsModel(store: store).importExternalSessions)
     }
 
-    @Test("Importing creates workspaces by cwd and dedups")
+    @Test("Importing creates projects by cwd and dedups")
     func importing() {
         let model = makeModel()
         let imported = [
@@ -46,64 +46,64 @@ struct SessionOverlayTests {
         model.importSessions(imported)
         model.importSessions(imported) // second time should not duplicate
 
-        #expect(model.workspaces.count == 2)
+        #expect(model.projects.count == 2)
         #expect(model.sessions.count == 3)
         #expect(model.sessions.allSatisfy { $0.origin == .imported })
-        let proj = model.workspaces.first { $0.folderURL.path == "/Users/x/proj" }!
+        let proj = model.projects.first { $0.folderURL.path == "/Users/x/proj" }!
         #expect(model.sessions(in: proj).count == 2)
     }
 
-    @Test("Imported sessions and their workspaces hide when import is off")
+    @Test("Imported sessions and their projects hide when import is off")
     func gating() {
         let model = makeModel()
         model.importSessions([
             ImportedSession(harnessId: "codex", info: SessionInfo(sessionId: "a", cwd: "/Users/x/proj", title: "Build"))
         ])
-        let proj = model.workspaces.first!
+        let proj = model.projects.first!
 
         model.showsImportedSessions = false
         #expect(model.sessions(in: proj).isEmpty)
-        #expect(model.activeWorkspaces.isEmpty) // imported-only workspace hidden
+        #expect(model.activeProjects.isEmpty) // imported-only project hidden
 
         model.showsImportedSessions = true
         #expect(model.sessions(in: proj).count == 1)
-        #expect(model.activeWorkspaces.count == 1)
+        #expect(model.activeProjects.count == 1)
     }
 
-    @Test("User-added workspaces stay visible even when empty")
-    func userWorkspaceVisible() {
+    @Test("User-added projects stay visible even when empty")
+    func userProjectVisible() {
         let model = makeModel()
-        model.addWorkspace(folderURL: URL(fileURLWithPath: "/tmp/mine"))
+        model.addProject(folderURL: URL(fileURLWithPath: "/tmp/mine"))
         model.showsImportedSessions = false
-        #expect(model.activeWorkspaces.count == 1)
+        #expect(model.activeProjects.count == 1)
     }
 
     @Test("setAgentSessionId records the agent session id")
     func setAgentSessionId() {
         let model = makeModel()
-        let ws = model.addWorkspace(folderURL: URL(fileURLWithPath: "/tmp/a"))
+        let ws = model.addProject(folderURL: URL(fileURLWithPath: "/tmp/a"))
         let session = model.newSession(in: ws, harnessId: "claude-code")
         #expect(session.agentSessionId == nil)
         model.setAgentSessionId("agent-123", for: session.id)
         #expect(model.sessions.first { $0.id == session.id }?.agentSessionId == "agent-123")
     }
 
-    @Test("setIcon updates and persists a workspace symbol")
+    @Test("setIcon updates and persists a project symbol")
     func setIcon() {
         let model = makeModel()
-        let ws = model.addWorkspace(folderURL: URL(fileURLWithPath: "/tmp/iconme"))
-        #expect(ws.symbolName == Workspace.defaultSymbolName)
+        let ws = model.addProject(folderURL: URL(fileURLWithPath: "/tmp/iconme"))
+        #expect(ws.symbolName == Project.defaultSymbolName)
         model.setIcon("hammer", for: ws)
-        #expect(model.workspaces.first { $0.id == ws.id }?.symbolName == "hammer")
+        #expect(model.projects.first { $0.id == ws.id }?.symbolName == "hammer")
     }
 
-    @Test("removeAll clears workspaces and sessions")
+    @Test("removeAll clears projects and sessions")
     func removeAll() {
         let model = makeModel()
-        let ws = model.addWorkspace(folderURL: URL(fileURLWithPath: "/tmp/a"))
+        let ws = model.addProject(folderURL: URL(fileURLWithPath: "/tmp/a"))
         model.newSession(in: ws)
         model.removeAll()
-        #expect(model.workspaces.isEmpty)
+        #expect(model.projects.isEmpty)
         #expect(model.sessions.isEmpty)
     }
 
@@ -112,12 +112,12 @@ struct SessionOverlayTests {
         let environment = AppEnvironment.preview()
         environment.configCache.store([], forHarness: "claude-code")
         #expect(environment.settings.hasCompletedOnboarding)
-        #expect(!environment.workspaceList.workspaces.isEmpty)
+        #expect(!environment.projectList.projects.isEmpty)
 
         environment.deleteAllData()
 
-        #expect(environment.workspaceList.workspaces.isEmpty)
-        #expect(environment.workspaceList.sessions.isEmpty)
+        #expect(environment.projectList.projects.isEmpty)
+        #expect(environment.projectList.sessions.isEmpty)
         #expect(environment.configCache.options(forHarness: "claude-code").isEmpty)
         #expect(!environment.settings.hasCompletedOnboarding)
     }
@@ -135,14 +135,14 @@ struct SessionOverlayTests {
         #expect(model.isHarnessEnabled("codex"))
     }
 
-    @Test("finishOnboarding with a project folder adds a workspace")
+    @Test("finishOnboarding with a project folder adds a project")
     func onboardingAddsProject() async {
-        let environment = AppEnvironment.preview(seedWorkspaces: [], hasOnboarded: false)
+        let environment = AppEnvironment.preview(seedProjects: [], hasOnboarded: false)
         let folder = URL(fileURLWithPath: "/tmp/my-project")
-        let workspace = await environment.finishOnboarding(importExternalSessions: false, projectFolder: folder)
+        let project = await environment.finishOnboarding(importExternalSessions: false, projectFolder: folder)
         #expect(environment.settings.hasCompletedOnboarding)
-        #expect(workspace?.folderURL == folder)
-        #expect(environment.workspaceList.workspaces.contains { $0.folderURL == folder })
+        #expect(project?.folderURL == folder)
+        #expect(environment.projectList.projects.contains { $0.folderURL == folder })
     }
 
     @Test("SessionImporter fetches across ready harnesses")

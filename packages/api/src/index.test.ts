@@ -1,12 +1,14 @@
 import { describe, expect, it } from "vitest"
 import {
+  CreateProjectRequest,
   CreateSessionRequest,
-  CreateWorkspaceRequest,
+  CreateWorktreeRequest,
   EventEnvelope,
+  Project,
   ServerCapabilities,
   SessionDetail,
   TerminalClientFrame,
-  Workspace,
+  Worktree,
   decode,
   encode,
   endpoints,
@@ -15,32 +17,50 @@ import {
 } from "./index.js"
 
 describe("@herdman/api", () => {
-  it("decodes and encodes workspace payloads", () => {
-    const workspace = decode(Workspace)({
-      id: "workspace-1",
+  it("decodes and encodes project payloads", () => {
+    const project = decode(Project)({
+      id: "project-1",
       name: "HerdMan",
-      folderPath: "/Users/me/src/HerdMan",
       isArchived: false,
       symbolName: "folder",
       origin: "herdman",
-      createdAt: "2026-06-30T00:00:00.000Z"
+      createdAt: "2026-06-30T00:00:00.000Z",
+      locations: [
+        {
+          id: "location-1",
+          projectId: "project-1",
+          serverId: "local",
+          folderPath: "/Users/me/src/HerdMan",
+          createdAt: "2026-06-30T00:00:00.000Z",
+          isGitRepository: true
+        }
+      ]
     })
 
-    expect(encode(Workspace)(workspace)).toEqual({
-      id: "workspace-1",
+    expect(encode(Project)(project)).toEqual({
+      id: "project-1",
       name: "HerdMan",
-      folderPath: "/Users/me/src/HerdMan",
       isArchived: false,
       symbolName: "folder",
       origin: "herdman",
-      createdAt: "2026-06-30T00:00:00.000Z"
+      createdAt: "2026-06-30T00:00:00.000Z",
+      locations: [
+        {
+          id: "location-1",
+          projectId: "project-1",
+          serverId: "local",
+          folderPath: "/Users/me/src/HerdMan",
+          createdAt: "2026-06-30T00:00:00.000Z",
+          isGitRepository: true
+        }
+      ]
     })
   })
 
   it("accepts client-provided creation metadata", () => {
     expect(
-      decode(CreateWorkspaceRequest)({
-        id: "workspace-1",
+      decode(CreateProjectRequest)({
+        id: "project-1",
         folderPath: "/Users/me/src/HerdMan",
         name: "HerdMan",
         isArchived: true,
@@ -49,7 +69,7 @@ describe("@herdman/api", () => {
         createdAt: "2026-06-30T00:00:00.000Z"
       })
     ).toMatchObject({
-      id: "workspace-1",
+      id: "project-1",
       isArchived: true,
       origin: "imported",
       symbolName: "archivebox"
@@ -58,20 +78,39 @@ describe("@herdman/api", () => {
     expect(
       decode(CreateSessionRequest)({
         id: "session-1",
-        workspaceId: "workspace-1",
+        projectId: "project-1",
         harnessId: "codex",
         agentSessionId: "agent-1",
         title: "Synced",
         origin: "herdman",
         isArchived: false,
+        worktreeName: "fix-auth",
         createdAt: "2026-06-30T00:00:00.000Z",
         updatedAt: "2026-06-30T00:01:00.000Z"
       })
     ).toMatchObject({
       agentSessionId: "agent-1",
       id: "session-1",
-      title: "Synced"
+      title: "Synced",
+      worktreeName: "fix-auth"
     })
+  })
+
+  it("decodes worktrees and worktree creation requests", () => {
+    expect(
+      decode(Worktree)({
+        id: "worktree-1",
+        projectId: "project-1",
+        serverId: "local",
+        name: "fix-auth",
+        branch: "herdman/fix-auth",
+        path: "/Users/me/herdman/project-1/fix-auth",
+        createdAt: "2026-06-30T00:00:00.000Z"
+      }).branch
+    ).toBe("herdman/fix-auth")
+
+    expect(decode(CreateWorktreeRequest)({})).toEqual({})
+    expect(decode(CreateWorktreeRequest)({ name: "fix-auth" })).toEqual({ name: "fix-auth" })
   })
 
   it("rejects invalid terminal frames", () => {
@@ -94,7 +133,7 @@ describe("@herdman/api", () => {
     const detail = decode(SessionDetail)({
       session: {
         id: "session-1",
-        workspaceId: "workspace-1",
+        projectId: "project-1",
         serverId: "local",
         harnessId: "codex",
         title: "Synced",

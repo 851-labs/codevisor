@@ -9,14 +9,14 @@ import UniformTypeIdentifiers
 struct OnboardingView: View {
     @Environment(AppEnvironment.self) private var environment
 
-    /// Called when setup finishes, with the workspace for the chosen folder.
-    var onComplete: (Workspace?) -> Void
+    /// Called when setup finishes, with the project for the chosen folder.
+    var onComplete: (Project?) -> Void
 
     enum Step: Int, CaseIterable {
         case welcome, harnesses, project
     }
 
-    init(onComplete: @escaping (Workspace?) -> Void, debugInitialStep: Step = .welcome) {
+    init(onComplete: @escaping (Project?) -> Void, debugInitialStep: Step = .welcome) {
         self.onComplete = onComplete
         _step = State(initialValue: debugInitialStep)
     }
@@ -27,7 +27,7 @@ struct OnboardingView: View {
     @State private var projectFolder: URL?
     @State private var showingFolderPicker = false
     @State private var isFinishing = false
-    @State private var recommendations: [WorkspaceRecommendation] = []
+    @State private var recommendations: [ProjectRecommendation] = []
 
     var body: some View {
         VStack(spacing: 0) {
@@ -63,8 +63,8 @@ struct OnboardingView: View {
             harnesses = await environment.agentService.discoverAgents()
             isDetecting = false
             // Suggest project folders from the user's most recent harness
-            // sessions so the workspace step can offer a one-click choice.
-            recommendations = await environment.recommendedWorkspaces()
+            // sessions so the project step can offer a one-click choice.
+            recommendations = await environment.recommendedProjects()
         }
         .fileImporter(
             isPresented: $showingFolderPicker,
@@ -219,7 +219,7 @@ struct OnboardingView: View {
         return !recommendations.contains { $0.folderURL.standardizedFileURL.path == projectFolder.standardizedFileURL.path }
     }
 
-    private func recommendationRow(_ recommendation: WorkspaceRecommendation) -> some View {
+    private func recommendationRow(_ recommendation: ProjectRecommendation) -> some View {
         let isSelected = projectFolder?.standardizedFileURL.path == recommendation.folderURL.standardizedFileURL.path
         return Button {
             projectFolder = recommendation.folderURL
@@ -266,7 +266,7 @@ struct OnboardingView: View {
             .accessibilityHidden(true)
     }
 
-    private func recommendationSubtitle(_ recommendation: WorkspaceRecommendation) -> String {
+    private func recommendationSubtitle(_ recommendation: ProjectRecommendation) -> String {
         let chats = recommendation.sessionCount == 1 ? "1 chat" : "\(recommendation.sessionCount) chats"
         return "\(chats) · \(recommendation.folderURL.path)"
     }
@@ -357,9 +357,9 @@ struct OnboardingView: View {
         guard let folder = projectFolder else { return }
         isFinishing = true
         Task {
-            // Adds the workspace and imports its existing agent chats by default.
-            let workspace = await environment.finishOnboarding(projectFolder: folder)
-            onComplete(workspace)
+            // Adds the project and imports its existing agent chats by default.
+            let project = await environment.finishOnboarding(projectFolder: folder)
+            onComplete(project)
         }
     }
 }
