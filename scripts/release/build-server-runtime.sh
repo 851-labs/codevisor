@@ -112,6 +112,18 @@ find "$runtime_dir/apps/server/dist" "$runtime_dir/packages" \
   \( -name "*.test.js" -o -name "*.test.d.ts" \) \
   -delete
 
+# The Claude provider drives the user's own `claude` binary via
+# pathToClaudeCodeExecutable; the Agent SDK's vendored CLI runtime (~200MB per
+# platform, shipped as optionalDependencies) is never executed and must not
+# ship in the runtime.
+rm -rf "$runtime_dir"/node_modules/@anthropic-ai/claude-agent-sdk-*
+rm -rf "$runtime_dir"/node_modules/.bun/@anthropic-ai+claude-agent-sdk-* 2>/dev/null || true
+leftover=$(find "$runtime_dir/node_modules" -maxdepth 3 -type d -name "claude-agent-sdk-*" | head -1)
+if [[ -n "$leftover" ]]; then
+  echo "error: Claude Agent SDK platform runtime survived the prune: $leftover" >&2
+  exit 1
+fi
+
 mkdir -p "$runtime_dir/node_modules/@herdman"
 for package_name in agent-runtime api db terminal; do
   rm -f "$runtime_dir/node_modules/@herdman/$package_name"

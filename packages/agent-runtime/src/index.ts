@@ -3,6 +3,7 @@ import { isoTimestamp } from "@herdman/api"
 import { accessSync, constants } from "node:fs"
 import { Context, Effect, Layer } from "effect"
 import { makeAcpProvider, type AcpConnector } from "./providers/acp.js"
+import { makeClaudeProvider } from "./providers/claude.js"
 import {
   runtimeEffect,
   type AgentProvider,
@@ -26,6 +27,8 @@ export {
   stdioAcpConnector
 } from "./providers/acp.js"
 export type { AcpAgentConnection, AcpConnector, AcpHarnessLaunchRequest } from "./providers/acp.js"
+export { makeClaudeProvider } from "./providers/claude.js"
+export type { ClaudeProviderConfig, ClaudeQueryFn } from "./providers/claude.js"
 
 export interface AgentRuntimeConfig {
   readonly env?: NodeJS.ProcessEnv
@@ -75,13 +78,15 @@ export class AgentRuntime extends Context.Service<AgentRuntime, AgentRuntimeServ
 }
 
 export const harnessCatalog: ReadonlyArray<HarnessDefinition> = [
-  npxHarness(
-    "claude-code",
-    "Claude Code",
-    "sparkle",
-    ["claude"],
-    "@agentclientprotocol/claude-agent-acp@0.53.0"
-  ),
+  // Claude Code is driven directly through the Agent SDK against the user's
+  // own `claude` binary — no npx adapter, no Node requirement.
+  {
+    detectBinaries: ["claude"],
+    id: "claude-code",
+    name: "Claude Code",
+    provider: "claude",
+    symbolName: "sparkle"
+  },
   npxHarness(
     "codex",
     "Codex",
@@ -152,6 +157,7 @@ export const makeAgentRuntime = (config: AgentRuntimeConfig = {}): AgentRuntimeS
       config.connector === undefined ? {} : { connector: config.connector }
     )
   )
+  providers.set("claude", makeClaudeProvider(environment))
   for (const provider of Object.values(config.providers ?? {})) {
     providers.set(provider.id, provider)
   }
