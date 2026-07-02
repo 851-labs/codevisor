@@ -258,6 +258,17 @@ fi
 # signing and native-addon ABI drift that the Debug app cannot expose.
 (cd "$server_resources/$host_target" && ./bin/node -e 'require("better-sqlite3"); console.log(`Packaged Node runtime smoke passed: ${process.version}`)')
 
+# Exercise the Intel runtime under Rosetta too, when available: executing any
+# JS is enough to catch hardened-runtime entitlement mistakes that only crash
+# x86_64 V8 (arm64 JIT uses MAP_JIT and different entitlement rules).
+if [[ "$host_target" == "darwin-arm64" && -x "$server_resources/darwin-x64/bin/node" ]]; then
+  if arch -x86_64 /usr/bin/true 2>/dev/null; then
+    (cd "$server_resources/darwin-x64" && arch -x86_64 ./bin/node -e 'require("better-sqlite3"); console.log(`Packaged Intel Node runtime smoke passed: ${process.version}`)')
+  else
+    echo "Rosetta unavailable; skipping Intel runtime smoke" >&2
+  fi
+fi
+
 rm -f "$archive_path"
 ditto --norsrc -c -k --keepParent "$app_path" "$archive_path"
 

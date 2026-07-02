@@ -7,5 +7,12 @@
 	     crashes as soon as the bundled server executes real JS. -->
 	<key>com.apple.security.cs.allow-jit</key>
 	<true/>
+	<!-- allow-jit only covers MAP_JIT allocations, which V8 uses on arm64.
+	     x86_64 V8 maps its code range without MAP_JIT, so the hardened runtime
+	     kills node during V8 heap setup (a fatal in
+	     v8::base::OS::SetPermissions) unless unsigned executable memory is
+	     allowed as well. -->
+	<key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+	<true/>
 </dict>
 </plist>
