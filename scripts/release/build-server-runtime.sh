@@ -68,7 +68,7 @@ rm -rf "$runtime_dir"
 mkdir -p \
   "$runtime_dir/apps/server" \
   "$runtime_dir/bin" \
-  "$runtime_dir/packages/acp-runtime" \
+  "$runtime_dir/packages/agent-runtime" \
   "$runtime_dir/packages/api" \
   "$runtime_dir/packages/db" \
   "$runtime_dir/packages/terminal"
@@ -78,7 +78,7 @@ cp "$repo_root/bun.lock" "$runtime_dir/bun.lock"
 cp "$repo_root/apps/server/package.json" "$runtime_dir/apps/server/package.json"
 cp -R "$repo_root/apps/server/dist" "$runtime_dir/apps/server/dist"
 
-for package_name in acp-runtime api db terminal; do
+for package_name in agent-runtime api db terminal; do
   cp "$repo_root/packages/$package_name/package.json" "$runtime_dir/packages/$package_name/package.json"
   cp -R "$repo_root/packages/$package_name/dist" "$runtime_dir/packages/$package_name/dist"
 done
@@ -113,7 +113,7 @@ find "$runtime_dir/apps/server/dist" "$runtime_dir/packages" \
   -delete
 
 mkdir -p "$runtime_dir/node_modules/@herdman"
-for package_name in acp-runtime api db terminal; do
+for package_name in agent-runtime api db terminal; do
   rm -f "$runtime_dir/node_modules/@herdman/$package_name"
   ln -s "../../packages/$package_name" "$runtime_dir/node_modules/@herdman/$package_name"
 done

@@ -1,4 +1,8 @@
-import type { AcpRuntimeService, RuntimeEventSink } from "@herdman/acp-runtime"
+import type {
+  AgentRuntimeService,
+  RuntimeEvent,
+  RuntimeEventSink
+} from "@herdman/agent-runtime"
 import type { Harness } from "@herdman/api"
 import { makeDatabase, type HerdManDatabaseService } from "@herdman/db"
 import Database from "better-sqlite3"
@@ -43,7 +47,7 @@ const harnesses: ReadonlyArray<Harness> = [
   }
 ]
 
-const makeAcp = (): AcpRuntimeService & {
+const makeAgents = (): AgentRuntimeService & {
   readonly loads: Array<readonly [string, string, string]>
   readonly prompts: Array<readonly [string, string]>
   readonly cancellations: Array<string>
@@ -51,6 +55,8 @@ const makeAcp = (): AcpRuntimeService & {
   readonly configs: Array<readonly [string, string, string]>
   readonly inspections: Array<readonly [string, string]>
   readonly creations: Array<readonly [string, string]>
+  readonly sinks: Map<string, RuntimeEventSink>
+  readonly emit: (sessionId: string, event: RuntimeEvent) => Promise<void>
 } => {
   const loads: Array<readonly [string, string, string]> = []
   const prompts: Array<readonly [string, string]> = []
@@ -59,6 +65,10 @@ const makeAcp = (): AcpRuntimeService & {
   const configs: Array<readonly [string, string, string]> = []
   const inspections: Array<readonly [string, string]> = []
   const creations: Array<readonly [string, string]> = []
+  const sinks = new Map<string, RuntimeEventSink>()
+  const emit = async (sessionId: string, event: RuntimeEvent): Promise<void> => {
+    await sinks.get(sessionId)?.(event)
+  }
   return {
     loads,
     prompts,
@@ -67,13 +77,19 @@ const makeAcp = (): AcpRuntimeService & {
     configs,
     inspections,
     creations,
+    sinks,
+    emit,
     discoverHarnesses: Effect.succeed(harnesses),
-    createAgentSession: (harnessId, cwd) =>
+    createAgentSession: (harnessId, cwd, sink) =>
       Effect.promise(
         () =>
           new Promise<string>((resolve) => {
             creations.push([harnessId, cwd])
-            setTimeout(() => resolve(`agent-${harnessId}-${cwd.split("/").at(-1) ?? "root"}`), 5)
+            setTimeout(() => {
+              const sessionId = `agent-${harnessId}-${cwd.split("/").at(-1) ?? "root"}`
+              sinks.set(sessionId, sink)
+              resolve(sessionId)
+            }, 5)
           })
       ),
     inspectHarness: (harnessId, cwd) =>
@@ -112,12 +128,13 @@ const makeAcp = (): AcpRuntimeService & {
           ]
         }
       }),
-    loadAgentSession: (harnessId, agentSessionId, cwd) =>
+    loadAgentSession: (harnessId, agentSessionId, cwd, sink) =>
       Effect.sync(() => {
         loads.push([harnessId, agentSessionId, cwd])
+        sinks.set(agentSessionId, sink)
         return agentSessionId
       }),
-    prompt: (sessionId, text, onEvent?: RuntimeEventSink) =>
+    prompt: (sessionId, text) =>
       Effect.promise(async () => {
         prompts.push([sessionId, text])
         if (text === "slow prompt") {
@@ -126,6 +143,12 @@ const makeAcp = (): AcpRuntimeService & {
         if (text === "prompt fails") {
           throw new Error("prompt failed")
         }
+        const turnId = `turn-${prompts.length}`
+        await emit(sessionId, {
+          kind: "session.updated",
+          subjectId: sessionId,
+          payload: { initiatedBy: "user", turnId, turnState: "started" }
+        })
         const events =
           text === "raw chunks" || text === "returned events"
             ? [
@@ -206,42 +229,37 @@ const makeAcp = (): AcpRuntimeService & {
                   payload: { role: "assistant", text: `Echo: ${text}` }
                 }
               ]
-        if (text !== "returned events") {
-          for (const event of events) {
-            await onEvent?.(event)
-          }
+        for (const event of events) {
+          await emit(sessionId, event)
         }
-        return {
-          stopReason: "end_turn" as const,
-          events: onEvent === undefined || text === "returned events" ? events : []
-        }
+        await emit(sessionId, {
+          kind: "session.updated",
+          subjectId: sessionId,
+          payload: { initiatedBy: "user", stopReason: "end_turn", turnId, turnState: "ended" }
+        })
+        return { stopReason: "end_turn" }
       }),
     cancel: (sessionId) =>
       Effect.sync(() => {
         cancellations.push(sessionId)
-        return {
-          kind: "session.updated" as const,
-          subjectId: sessionId,
-          payload: "cancelled"
-        }
       }),
     setMode: (sessionId, modeId) =>
-      Effect.sync(() => {
+      Effect.promise(async () => {
         modes.push([sessionId, modeId])
-        return {
-          kind: "session.updated" as const,
+        await emit(sessionId, {
+          kind: "session.updated",
           subjectId: sessionId,
           payload: { modeId }
-        }
+        })
       }),
     setConfigOption: (sessionId, configId, value) =>
-      Effect.sync(() => {
+      Effect.promise(async () => {
         configs.push([sessionId, configId, value])
-        return {
-          kind: "session.updated" as const,
+        await emit(sessionId, {
+          kind: "session.updated",
           subjectId: sessionId,
-          payload: { configId, value }
-        }
+          payload: { configId, configOptions: [], value }
+        })
       })
   }
 }
@@ -309,11 +327,11 @@ const makeServices = async (serverId = "test") => {
   const db = await run(makeDatabase({ filename: join(dir, "herdman.sqlite"), serverId }))
   databases.push(db)
   const spawner = makeSpawner()
-  const acp = makeAcp()
+  const agents = makeAgents()
   return {
-    acp,
+    agents,
     services: {
-      acp,
+      agents,
       db,
       terminal: makeTerminalManager({ defaultShell: "/bin/sh", env: {}, spawner })
     },
@@ -322,7 +340,7 @@ const makeServices = async (serverId = "test") => {
 }
 
 const start = async (auth = { allowLocalhostWithoutAuth: true, requireBearerToken: false }) => {
-  const { acp, services, spawner } = await makeServices("server-a")
+  const { agents, services, spawner } = await makeServices("server-a")
   const server = await run(
     startHerdManServer(
       services,
@@ -334,7 +352,7 @@ const start = async (auth = { allowLocalhostWithoutAuth: true, requireBearerToke
     )
   )
   runningServers.push(server)
-  return { acp, server, services, spawner }
+  return { agents, server, services, spawner }
 }
 
 const startWithApp = async (
@@ -700,7 +718,7 @@ describe("@herdman/server", () => {
   })
 
   it("manages workspaces, harnesses, sessions, actions, and event replay", async () => {
-    const { acp, server, services } = await start()
+    const { agents, server, services } = await start()
     const workspaceRoot = mkdtempSync(join(tmpdir(), "herdman-server-workspace-"))
     tempDirs.push(workspaceRoot)
     const workspaceFolder = join(workspaceRoot, "herdman")
@@ -760,7 +778,7 @@ describe("@herdman/server", () => {
         }
       ]
     })
-    expect(acp.inspections).toEqual([["codex", workspaceFolder]])
+    expect(agents.inspections).toEqual([["codex", workspaceFolder]])
     expect((await jsonRequest(server, "/v1/capabilities")).body).toMatchObject({
       harnesses: [{ harness: { id: "codex" } }]
     })
@@ -780,13 +798,13 @@ describe("@herdman/server", () => {
         }
       ).harnesses[0]?.configOptions.map((option) => option.id)
     ).toContain("model")
-    expect(acp.inspections.at(-1)).toEqual(["codex", tmpdir()])
+    expect(agents.inspections.at(-1)).toEqual(["codex", tmpdir()])
     expect(
       (await jsonRequest(server, `/v1/capabilities?cwd=${encodeURIComponent(cwdFile)}`)).body
     ).toMatchObject({
       harnesses: [{ harness: { id: "codex" } }]
     })
-    expect(acp.inspections.at(-1)).toEqual(["codex", tmpdir()])
+    expect(agents.inspections.at(-1)).toEqual(["codex", tmpdir()])
     expect(
       (await jsonRequest(server, `/v1/capabilities?cwd=${encodeURIComponent(noModesFolder)}`)).body
     ).toMatchObject({
@@ -861,7 +879,7 @@ describe("@herdman/server", () => {
       id: "client-session-concurrent"
     })
     expect(secondConcurrent.body).toEqual(firstConcurrent.body)
-    expect(acp.creations.filter((creation) => creation[1] === workspaceFolder)).toHaveLength(2)
+    expect(agents.creations.filter((creation) => creation[1] === workspaceFolder)).toHaveLength(2)
 
     expect(await jsonRequest(server, "/v1/sessions")).toMatchObject({
       body: expect.arrayContaining([expect.objectContaining({ id: session.id })])
@@ -911,8 +929,8 @@ describe("@herdman/server", () => {
         })
       ).body
     ).toMatchObject({ accepted: true, sessionId: session.id })
-    await waitFor(() => acp.prompts.length === 1)
-    expect(acp.prompts).toEqual([[session.agentSessionId, "hello"]])
+    await waitFor(() => agents.prompts.length === 1)
+    expect(agents.prompts).toEqual([[session.agentSessionId, "hello"]])
     expect(
       (
         await jsonRequest(server, `/v1/sessions/${session.id}/prompt`, {
@@ -929,8 +947,8 @@ describe("@herdman/server", () => {
         })
       ).body
     ).toMatchObject({ accepted: true, sessionId: session.id })
-    await waitFor(() => acp.prompts.length === 2)
-    expect(acp.prompts).toEqual([
+    await waitFor(() => agents.prompts.length === 2)
+    expect(agents.prompts).toEqual([
       [session.agentSessionId, "hello"],
       [session.agentSessionId, "retry once"]
     ])
@@ -942,7 +960,7 @@ describe("@herdman/server", () => {
         })
       ).body
     ).toMatchObject({ accepted: true, sessionId: session.id })
-    await waitFor(() => acp.prompts.length === 3)
+    await waitFor(() => agents.prompts.length === 3)
     expect(
       (await run(services.db.getSessionDetail(session.id))).conversation.map((item) => item.text)
     ).toEqual(
@@ -976,7 +994,7 @@ describe("@herdman/server", () => {
         })
       ).body
     ).toMatchObject({ accepted: true, sessionId: session.id })
-    await waitFor(() => acp.prompts.length === 4)
+    await waitFor(() => agents.prompts.length === 4)
     expect(
       (await run(services.db.getSessionDetail(session.id))).conversation.map((item) => item.text)
     ).toEqual(expect.arrayContaining(["returned events", "Raw answer"]))
@@ -988,7 +1006,7 @@ describe("@herdman/server", () => {
       })
     ).body as { readonly queueItemId: string }
     expect(slowResponse.queueItemId).toBeTypeOf("string")
-    await waitFor(() => acp.prompts.length === 5)
+    await waitFor(() => agents.prompts.length === 5)
     const queuedResponse = (
       await jsonRequest(server, `/v1/sessions/${session.id}/prompt`, {
         body: JSON.stringify({ text: "queued original" }),
@@ -1026,9 +1044,9 @@ describe("@herdman/server", () => {
         )
       ).status
     ).toBe(204)
-    await waitFor(() => acp.prompts.length === 6)
-    expect(acp.prompts).toContainEqual([session.agentSessionId, "queued edited"])
-    expect(acp.prompts).not.toContainEqual([session.agentSessionId, "queued remove"])
+    await waitFor(() => agents.prompts.length === 6)
+    expect(agents.prompts).toContainEqual([session.agentSessionId, "queued edited"])
+    expect(agents.prompts).not.toContainEqual([session.agentSessionId, "queued remove"])
 
     expect(
       (
@@ -1041,7 +1059,7 @@ describe("@herdman/server", () => {
     await waitFor(async () =>
       (await run(services.db.listEvents(0))).some((event) => event.kind === "session.error")
     )
-    expect(acp.loads).toContainEqual(["codex", session.agentSessionId, workspaceFolder])
+    expect(agents.loads).toContainEqual(["codex", session.agentSessionId, workspaceFolder])
     expect(
       (
         await jsonRequest(server, `/v1/sessions/${session.id}/cancel`, {
@@ -1058,7 +1076,7 @@ describe("@herdman/server", () => {
         })
       ).status
     ).toBe(202)
-    expect(acp.cancellations).toEqual([session.agentSessionId])
+    expect(agents.cancellations).toEqual([session.agentSessionId])
     expect(
       (
         await jsonRequest(server, `/v1/sessions/${session.id}/mode`, {
@@ -1067,7 +1085,7 @@ describe("@herdman/server", () => {
         })
       ).body
     ).toEqual({ modeId: "plan" })
-    expect(acp.modes).toEqual([[session.agentSessionId, "plan"]])
+    expect(agents.modes).toEqual([[session.agentSessionId, "plan"]])
     expect(
       (
         await jsonRequest(server, `/v1/sessions/${session.id}/config`, {
@@ -1076,7 +1094,7 @@ describe("@herdman/server", () => {
         })
       ).body
     ).toEqual({ configId: "model" })
-    expect(acp.configs).toEqual([[session.agentSessionId, "model", "gpt-5"]])
+    expect(agents.configs).toEqual([[session.agentSessionId, "model", "gpt-5"]])
     expect(
       (
         await jsonRequest(server, `/v1/sessions/${session.id}`, {
@@ -1159,9 +1177,77 @@ describe("@herdman/server", () => {
         })
       ).body
     ).toMatchObject({ accepted: true, sessionId: legacySession.id })
-    await waitFor(() => acp.prompts.some((prompt) => prompt[1] === "legacy hello"))
-    expect(acp.prompts).toContainEqual([legacySession.id, "legacy hello"])
-    expect(acp.loads).toContainEqual(["codex", legacySession.id, legacyWorkspaceFolder])
+    await waitFor(() => agents.prompts.some((prompt) => prompt[1] === "legacy hello"))
+    expect(agents.prompts).toContainEqual([legacySession.id, "legacy hello"])
+    expect(agents.loads).toContainEqual(["codex", legacySession.id, legacyWorkspaceFolder])
+  })
+
+  it("persists and fans out agent-initiated events with no prompt in flight", async () => {
+    const { agents, server, services } = await start()
+    const workspaceRoot = mkdtempSync(join(tmpdir(), "herdman-server-background-"))
+    tempDirs.push(workspaceRoot)
+    const workspaceFolder = join(workspaceRoot, "herdman")
+    mkdirSync(workspaceFolder)
+    const workspace = (
+      await jsonRequest(server, "/v1/projects", {
+        body: JSON.stringify({ folderPath: workspaceFolder }),
+        method: "POST"
+      })
+    ).body as { readonly id: string }
+    const session = (
+      await jsonRequest(server, "/v1/sessions", {
+        body: JSON.stringify({ projectId: workspace.id, harnessId: "codex", title: "Background" }),
+        method: "POST"
+      })
+    ).body as { readonly id: string; readonly agentSessionId: string }
+
+    // The standing sink was registered at session create; the agent now pushes
+    // a whole background turn without any client prompt in flight.
+    await agents.emit(session.agentSessionId, {
+      kind: "session.updated",
+      subjectId: session.agentSessionId,
+      payload: { initiatedBy: "agent", turnId: "turn-bg", turnState: "started" }
+    })
+    await agents.emit(session.agentSessionId, {
+      kind: "session.output",
+      subjectId: session.agentSessionId,
+      payload: {
+        content: { text: "Background task finished.", type: "text" },
+        messageId: "assistant-bg",
+        sessionUpdate: "agent_message_chunk"
+      }
+    })
+    await agents.emit(session.agentSessionId, {
+      kind: "session.updated",
+      subjectId: session.agentSessionId,
+      payload: {
+        initiatedBy: "agent",
+        stopReason: "end_turn",
+        turnId: "turn-bg",
+        turnState: "ended"
+      }
+    })
+
+    const events = await run(services.db.listEvents(0))
+    const sessionEvents = events.filter((event) => event.subjectId === session.id)
+    expect(sessionEvents).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "session.updated",
+          payload: expect.objectContaining({ initiatedBy: "agent", turnState: "started" })
+        }),
+        expect.objectContaining({
+          kind: "session.output",
+          payload: expect.objectContaining({ messageId: "assistant-bg" })
+        }),
+        expect.objectContaining({
+          kind: "session.updated",
+          payload: expect.objectContaining({ stopReason: "end_turn", turnState: "ended" })
+        })
+      ])
+    )
+    const detail = await run(services.db.getSessionDetail(session.id))
+    expect(detail.conversation.map((item) => item.text)).toContain("Background task finished.")
   })
 
   it("creates worktrees and runs worktree sessions in them", async () => {
@@ -1173,7 +1259,7 @@ describe("@herdman/server", () => {
     tempDirs.push(worktreesRoot)
     process.env["HERDMAN_WORKTREES_ROOT"] = worktreesRoot
     try {
-      const { acp, server } = await start()
+      const { agents, server } = await start()
       // makeServices' temp dir (the newest entry) holds the server database.
       const serverDatabasePath = join(tempDirs[tempDirs.length - 1] as string, "herdman.sqlite")
       const repoRoot = mkdtempSync(join(tmpdir(), "herdman-repo-"))
@@ -1286,15 +1372,15 @@ describe("@herdman/server", () => {
       }
       expect(session.worktreeName).toBe("fix-auth")
       expect(session.cwd).toBe(worktree.path)
-      expect(acp.creations).toContainEqual(["codex", worktree.path])
+      expect(agents.creations).toContainEqual(["codex", worktree.path])
 
       // Reattaching (prompt after restart) resolves the same worktree cwd.
       await jsonRequest(server, `/v1/sessions/${session.id}/prompt`, {
         body: JSON.stringify({ text: "hello worktree" }),
         method: "POST"
       })
-      await waitFor(() => acp.prompts.some((prompt) => prompt[1] === "hello worktree"))
-      expect(acp.loads).toContainEqual(["codex", session.agentSessionId, worktree.path])
+      await waitFor(() => agents.prompts.some((prompt) => prompt[1] === "hello worktree"))
+      expect(agents.loads).toContainEqual(["codex", session.agentSessionId, worktree.path])
 
       // Requesting a taken name twice more walks the numeric suffixes.
       await jsonRequest(server, "/v1/projects/git-project/worktrees", {

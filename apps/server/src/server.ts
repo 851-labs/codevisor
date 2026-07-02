@@ -1,4 +1,5 @@
-import type { AcpRuntimeService, RuntimeEvent } from "@herdman/acp-runtime"
+import type { AgentRuntimeService, RuntimeEvent, RuntimeEventSink } from "@herdman/agent-runtime"
+import { randomUUID } from "node:crypto"
 import type {
   CreateSessionRequest,
   EventEnvelope,
@@ -81,7 +82,7 @@ export interface HerdManServerConfig {
 
 export interface HerdManServerServices {
   readonly db: HerdManDatabaseService
-  readonly acp: AcpRuntimeService
+  readonly agents: AgentRuntimeService
   readonly terminal: TerminalManagerService
 }
 
@@ -614,7 +615,7 @@ const discoverCapabilities = async (
     harnesses: await Promise.all(
       readyHarnesses.map(async (harness) => {
         try {
-          const metadata = await run(services.acp.inspectHarness(harness.id, cwd))
+          const metadata = await run(services.agents.inspectHarness(harness.id, cwd))
           return {
             harness,
             ...(metadata.modes === undefined ? {} : { modes: metadata.modes }),
@@ -660,7 +661,7 @@ const routeSessions = async (
       }
     }
     const project = await getProjectOrFail(services.db, payload.projectId)
-    const create = createServerSession(services, config.id, payload, project)
+    const create = createServerSession(services, fanout, config.id, payload, project)
     if (payload.id !== undefined) {
       routeState.pendingSessionCreates.set(payload.id, create)
     }
@@ -710,24 +711,54 @@ const routeSessions = async (
 
 const createServerSession = async (
   services: HerdManServerServices,
+  fanout: EventFanout,
   serverId: string,
   payload: CreateSessionRequest,
   project: Project
 ): Promise<SessionSummary> => {
   const cwd = await resolveSessionCwdOrFail(services, serverId, project, payload.worktreeName)
+  // The session id is generated up front so the standing event sink can bind
+  // to it before the agent session exists.
+  const sessionId = payload.id ?? randomUUID()
   const agentSessionId =
-    payload.agentSessionId ?? (await run(services.acp.createAgentSession(payload.harnessId, cwd)))
+    payload.agentSessionId ??
+    (await run(
+      services.agents.createAgentSession(
+        payload.harnessId,
+        cwd,
+        sessionEventSink(services, fanout, serverId, sessionId)
+      )
+    ))
   return run(
     services.db.createSession({
       ...payload,
+      id: sessionId,
       agentSessionId
     })
   )
 }
 
+/// The standing per-session sink: every runtime event — in-turn or
+/// agent-initiated — is persisted and fanned out here. User echoes are
+/// filtered because the server materializes its own copy when a prompt is
+/// accepted.
+const sessionEventSink =
+  (
+    services: HerdManServerServices,
+    fanout: EventFanout,
+    serverId: string,
+    sessionId: string
+  ): RuntimeEventSink =>
+  (event) => {
+    if (isUserRuntimeEvent(event)) {
+      return
+    }
+    return materializeRuntimeEvent(services.db, fanout, serverId, event, sessionId)
+  }
+
 /// Derives the directory a session runs in: the project's folder on this
 /// server, or its worktree at ~/herdman/{projectId}/{worktreeName}. The result
-/// must stay deterministic per session so the acp-runtime session cache hits.
+/// must stay deterministic per session so the agent-runtime session cache hits.
 const resolveSessionCwdOrFail = async (
   services: HerdManServerServices,
   serverId: string,
@@ -852,14 +883,13 @@ const routeSessionActions = async (
       "cancel",
       payload,
       async () => {
-        const agentSessionId = await ensureAgentSessionFor(services, config.id, cancelSessionId)
-        await materializeRuntimeEvent(
-          services.db,
+        const agentSessionId = await ensureAgentSessionFor(
+          services,
           fanout,
           config.id,
-          await run(services.acp.cancel(agentSessionId)),
           cancelSessionId
         )
+        await run(services.agents.cancel(agentSessionId))
         return { cancelled: true }
       }
     )
@@ -870,14 +900,8 @@ const routeSessionActions = async (
   if (modeSessionId !== undefined && request.method === "POST") {
     const payload = await readSchema(request, SetModeRequest)
     await writeIdempotentAction(services, response, modeSessionId, "mode", payload, async () => {
-      const agentSessionId = await ensureAgentSessionFor(services, config.id, modeSessionId)
-      await materializeRuntimeEvent(
-        services.db,
-        fanout,
-        config.id,
-        await run(services.acp.setMode(agentSessionId, payload.modeId)),
-        modeSessionId
-      )
+      const agentSessionId = await ensureAgentSessionFor(services, fanout, config.id, modeSessionId)
+      await run(services.agents.setMode(agentSessionId, payload.modeId))
       return { modeId: payload.modeId }
     })
     return true
@@ -893,14 +917,13 @@ const routeSessionActions = async (
       "config",
       payload,
       async () => {
-        const agentSessionId = await ensureAgentSessionFor(services, config.id, configSessionId)
-        await materializeRuntimeEvent(
-          services.db,
+        const agentSessionId = await ensureAgentSessionFor(
+          services,
           fanout,
           config.id,
-          await run(services.acp.setConfigOption(agentSessionId, payload.configId, payload.value)),
           configSessionId
         )
+        await run(services.agents.setConfigOption(agentSessionId, payload.configId, payload.value))
         return { configId: payload.configId }
       }
     )
@@ -983,7 +1006,7 @@ const runPromptInBackground = async (
   text: string
 ): Promise<void> => {
   try {
-    const agentSessionId = await ensureAgentSessionFor(services, serverId, sessionId)
+    const agentSessionId = await ensureAgentSessionFor(services, fanout, serverId, sessionId)
     await materializeRuntimeEvent(
       services.db,
       fanout,
@@ -995,24 +1018,9 @@ const runPromptInBackground = async (
       },
       sessionId
     )
-    const result = await run(
-      services.acp.prompt(agentSessionId, text, async (event) => {
-        if (isUserRuntimeEvent(event)) {
-          return
-        }
-        await materializeRuntimeEvent(services.db, fanout, serverId, event, sessionId)
-      })
-    )
-    for (const event of result.events) {
-      if (isUserRuntimeEvent(event)) {
-        continue
-      }
-      await materializeRuntimeEvent(services.db, fanout, serverId, event, sessionId)
-    }
-    await appendAndPublish(services.db, fanout, "session.updated", sessionId, {
-      serverId,
-      stopReason: result.stopReason
-    })
+    // Session output, turn lifecycle, and the final stopReason all flow
+    // through the standing sink registered at session create/load time.
+    await run(services.agents.prompt(agentSessionId, text))
   } catch (cause) {
     await appendAndPublish(services.db, fanout, "session.error", sessionId, {
       message: failureMessage(cause),
@@ -1208,7 +1216,7 @@ const authorize = async (
 const discoverHarnesses = async (
   services: HerdManServerServices
 ): Promise<ReadonlyArray<Harness>> =>
-  run(services.db.applyHarnessSettings(await run(services.acp.discoverHarnesses)))
+  run(services.db.applyHarnessSettings(await run(services.agents.discoverHarnesses)))
 
 const getProjectOrFail = async (
   db: HerdManDatabaseService,
@@ -1231,6 +1239,7 @@ const localLocationOrFail = (serverId: string, project: Project): ProjectLocatio
 
 const ensureAgentSessionFor = async (
   services: HerdManServerServices,
+  fanout: EventFanout,
   serverId: string,
   sessionId: string
 ): Promise<string> => {
@@ -1243,7 +1252,14 @@ const ensureAgentSessionFor = async (
     detail.session.worktreeName
   )
   const agentSessionId = detail.session.agentSessionId ?? sessionId
-  return run(services.acp.loadAgentSession(detail.session.harnessId, agentSessionId, cwd))
+  return run(
+    services.agents.loadAgentSession(
+      detail.session.harnessId,
+      agentSessionId,
+      cwd,
+      sessionEventSink(services, fanout, serverId, sessionId)
+    )
+  )
 }
 
 const existingDirectory = (folderPath: string | null): string | undefined => {

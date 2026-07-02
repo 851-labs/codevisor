@@ -9,7 +9,7 @@
   "references": [
     { "path": "../../packages/api" },
     { "path": "../../packages/db" },
-    { "path": "../../packages/acp-runtime" },
+    { "path": "../../packages/agent-runtime" },
     { "path": "../../packages/terminal" }
   ]
 }

@@ -47,10 +47,11 @@
       "name": "@herdman/server",
       "bin": {
         "herdman-server": "./dist/main.js",
+        "herdman-terminal-proxy": "./dist/terminal-proxy.js",
       },
       "dependencies": {
         "@effect/platform-node": "4.0.0-beta.92",
-        "@herdman/acp-runtime": "workspace:*",
+        "@herdman/agent-runtime": "workspace:*",
         "@herdman/api": "workspace:*",
         "@herdman/db": "workspace:*",
         "@herdman/terminal": "workspace:*",
@@ -119,8 +120,8 @@
         "wrangler": "^4.90.1",
       },
     },
-    "packages/acp-runtime": {
-      "name": "@herdman/acp-runtime",
+    "packages/agent-runtime": {
+      "name": "@herdman/agent-runtime",
       "dependencies": {
         "@agentclientprotocol/sdk": "1.1.0",
         "@herdman/api": "workspace:*",
@@ -316,7 +317,7 @@
 
     "@floating-ui/utils": ["@floating-ui/utils@0.2.11", "", {}, "sha512-RiB/yIh78pcIxl6lLMG0CgBXAZ2Y0eVHqMPYugu+9U0AeT6YBeiJpf7lbdJNIugFP5SIjwNRgo4DhR1Qxi26Gg=="],
 
-    "@herdman/acp-runtime": ["@herdman/acp-runtime@workspace:packages/acp-runtime"],
+    "@herdman/agent-runtime": ["@herdman/agent-runtime@workspace:packages/agent-runtime"],
 
     "@herdman/api": ["@herdman/api@workspace:packages/api"],
 

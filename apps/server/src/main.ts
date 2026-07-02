@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { makeAcpRuntime } from "@herdman/acp-runtime"
+import { makeAgentRuntime } from "@herdman/agent-runtime"
 import type { UpdateInfo } from "@herdman/api"
 import { makeDatabase, type HerdManDatabaseService } from "@herdman/db"
 import { makeTerminalManager } from "@herdman/terminal"
@@ -230,7 +230,7 @@ const main = Effect.gen(function* () {
         })
   const server = yield* startHerdManServer(
     {
-      acp: makeAcpRuntime(),
+      agents: makeAgentRuntime(),
       db,
       terminal: makeTerminalManager()
     },
