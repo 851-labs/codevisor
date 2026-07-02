@@ -100,7 +100,10 @@ if [[ ! -x "$node_gyp" ]]; then
   exit 1
 fi
 
-(cd "$runtime_dir" && PATH="$node_runtime_dir:$PATH" npm_config_node_gyp="$node_gyp" bun install --production --frozen-lockfile)
+# Filtered to the server workspace so the other apps' dependency trees stay
+# out of the runtime; hoisted keeps the classic node_modules layout that the
+# bundled Node resolves (and that survives zipping into the app bundle).
+(cd "$runtime_dir" && PATH="$node_runtime_dir:$PATH" npm_config_node_gyp="$node_gyp" bun install --production --frozen-lockfile --filter '@herdman/server' --linker hoisted)
 cp "$node_runtime" "$runtime_dir/bin/node"
 chmod +x "$runtime_dir/bin/node"
 echo "Bundled $node_version from $node_runtime"
