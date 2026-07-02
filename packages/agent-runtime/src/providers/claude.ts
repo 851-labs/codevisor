@@ -201,8 +201,15 @@ export const makeClaudeProvider = (
     const claudePath = locateClaude(definition)
     await guardVersion(claudePath)
 
+    // In streaming-input mode the SDK emits `system:init` only once the first
+    // user message is sent, so session creation must not block on it. The
+    // session id is assigned up front via the CLI's --session-id flag; init
+    // later confirms it and fills in the model.
+    const sessionKey = resume ?? randomUUID()
     const input = new InputQueue()
     const abort = new AbortController()
+    // Filled in below; the hook and pump close over it.
+    let session: ClaudeSession | undefined
     const options: ClaudeOptions = {
       abortController: abort,
       cwd,
@@ -219,8 +226,8 @@ export const makeClaudeProvider = (
           {
             hooks: [
               async (hookInput) => {
-                if (hookInput.hook_event_name === "PostToolUse") {
-                  onPostToolUse(hookInput)
+                if (hookInput.hook_event_name === "PostToolUse" && session !== undefined) {
+                  emitAuthoritativeDiff(session, hookInput, readFile)
                 }
                 return {}
               }
@@ -228,88 +235,66 @@ export const makeClaudeProvider = (
           }
         ]
       },
-      ...(resume === undefined ? {} : { resume })
+      ...(resume === undefined ? { extraArgs: { "session-id": sessionKey } } : { resume })
     }
     const q = queryFn({ prompt: input, options })
 
-    const initDeferred = deferred<{ sessionId: string; model: string }>()
-    // Filled in once init resolves; the pump captures it by reference.
-    let session: ClaudeSession | undefined
-    let postToolUseQueue: Array<{
-      tool_name: string
-      tool_input: unknown
-      tool_response: unknown
-      tool_use_id: string
-    }> = []
-
-    const onPostToolUse = (hookInput: {
-      tool_name: string
-      tool_input: unknown
-      tool_response: unknown
-      tool_use_id: string
-    }): void => {
-      if (session === undefined) {
-        postToolUseQueue.push(hookInput)
-        return
-      }
-      emitAuthoritativeDiff(session, hookInput, readFile)
-    }
-
-    const pump = async (): Promise<void> => {
-      try {
-        for await (const message of q) {
-          if (session === undefined && message.type === "system" && message.subtype === "init") {
-            initDeferred.resolve({ model: message.model, sessionId: message.session_id })
-            continue
-          }
-          if (session !== undefined) {
-            handleMessage(session, message, readFile)
-          }
-        }
-      } catch (cause) {
-        initDeferred.reject(cause)
-        if (session !== undefined) {
-          const failure = cause instanceof Error ? cause.message : String(cause)
-          session.pendingPrompt?.reject(runtimeError("prompt", cause))
-          session.pendingPrompt = undefined
-          void session.emit({
-            kind: "session.error",
-            payload: { message: failure },
-            subjectId: session.key
-          })
-        }
-      }
-    }
-    const pumpPromise = pump()
-    pumpPromise.catch(() => undefined)
-
-    const init = await initDeferred.promise
     const created: ClaudeSession = {
       abort,
       accumulators: new Map(),
       currentMessageId: undefined,
-      currentModel: init.model,
+      currentModel: "",
       cwd,
       emit,
       initiatedBy: "user",
       input,
       interruptRequested: false,
-      key: resume ?? init.sessionId,
+      key: sessionKey,
       models: [],
       openToolCalls: new Set(),
       pendingPrompt: undefined,
       q,
-      sdkSessionId: init.sessionId,
+      sdkSessionId: sessionKey,
       turnActive: false,
       turnId: randomUUID()
     }
     session = created
-    for (const queued of postToolUseQueue.splice(0)) {
-      emitAuthoritativeDiff(created, queued, readFile)
+
+    const pump = async (): Promise<void> => {
+      try {
+        for await (const message of q) {
+          if (message.type === "system" && message.subtype === "init") {
+            created.currentModel = message.model
+            continue
+          }
+          handleMessage(created, message, readFile)
+        }
+      } catch (cause) {
+        const failure = cause instanceof Error ? cause.message : String(cause)
+        created.pendingPrompt?.reject(runtimeError("prompt", cause))
+        created.pendingPrompt = undefined
+        void created.emit({
+          kind: "session.error",
+          payload: { message: failure },
+          subjectId: created.key
+        })
+      }
     }
+    pump().catch(() => undefined)
+
+    // Best-effort model list: the control channel usually answers before the
+    // first turn, but session creation must not hang on it.
     try {
-      const models = await q.supportedModels()
-      created.models = models.map((model) => ({ name: model.displayName, value: model.value }))
+      const models = await Promise.race([
+        q.supportedModels(),
+        new Promise<undefined>((resolvePromise) => setTimeout(() => resolvePromise(undefined), 3000))
+      ])
+      if (models !== undefined) {
+        created.models = models.map((model) => ({ name: model.displayName, value: model.value }))
+        if (created.currentModel.length === 0 && created.models[0] !== undefined) {
+          created.currentModel = created.models[0].value
+        }
+      }
     } catch {
       created.models = []
     }

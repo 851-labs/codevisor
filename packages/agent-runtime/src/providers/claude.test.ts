@@ -157,7 +157,9 @@ describe("ClaudeProvider", () => {
     fake.push(initMessage())
     const created = await createPromise
 
-    expect(created.metadata.sessionId).toBe("sdk-session-1")
+    // The session id is assigned client-side and handed to the CLI.
+    expect(created.metadata.sessionId).toBeTruthy()
+    expect(fake.options?.extraArgs?.["session-id"]).toBe(created.metadata.sessionId)
     expect(created.metadata.modes?.currentModeId).toBe("default")
     expect(created.metadata.configOptions[0]?.id).toBe("model")
     expect(created.metadata.configOptions[0]?.currentValue).toBe("claude-fable-5")
