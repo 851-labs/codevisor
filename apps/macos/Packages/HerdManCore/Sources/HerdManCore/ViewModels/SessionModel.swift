@@ -67,7 +67,7 @@ public final class SessionModel {
                 configOptions[index].currentValue = value
             }
         } catch {
-            errorMessage = String(describing: error)
+            errorMessage = serverErrorMessage(error)
         }
     }
 
@@ -104,7 +104,7 @@ public final class SessionModel {
             await drain()
         } catch {
             await drain()
-            errorMessage = String(describing: error)
+            errorMessage = serverErrorMessage(error)
             finish(stopReason: nil, outcome: .failed)
             isSending = false
         }
@@ -116,7 +116,7 @@ public final class SessionModel {
         do {
             _ = try await transport.updateQueuedPrompt(id: id, text: trimmed)
         } catch {
-            errorMessage = String(describing: error)
+            errorMessage = serverErrorMessage(error)
         }
     }
 
@@ -124,7 +124,7 @@ public final class SessionModel {
         do {
             try await transport.deleteQueuedPrompt(id: id)
         } catch {
-            errorMessage = String(describing: error)
+            errorMessage = serverErrorMessage(error)
         }
     }
 
@@ -155,7 +155,7 @@ public final class SessionModel {
             serverEventCursor = snapshot.eventCursor
             await startConsumer()
         } catch {
-            errorMessage = String(describing: error)
+            errorMessage = serverErrorMessage(error)
         }
     }
 
@@ -257,7 +257,7 @@ public final class SessionModel {
         do {
             _ = try await transport.prompt(text)
         } catch {
-            errorMessage = String(describing: error)
+            errorMessage = serverErrorMessage(error)
         }
     }
 

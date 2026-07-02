@@ -204,7 +204,7 @@ final class SessionController {
             model = try await connect(harness)
             status = .idle
         } catch {
-            status = .failed(String(describing: error))
+            status = .failed(serverErrorMessage(error))
         }
     }
 
@@ -274,7 +274,7 @@ final class SessionController {
             status = .idle
             await model.send(text)
         } catch {
-            status = .failed(String(describing: error))
+            status = .failed(serverErrorMessage(error))
             composerText = text
         }
     }
@@ -302,7 +302,7 @@ final class SessionController {
             status = .failed(worktreeFailureMessage(from: message))
             return false
         } catch {
-            status = .failed(String(describing: error))
+            status = .failed(serverErrorMessage(error))
             return false
         }
     }

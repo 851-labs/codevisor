@@ -9,6 +9,21 @@ public enum HerdManServerClientError: Error, Equatable, Sendable {
     case invalidUUID(String)
 }
 
+/// A human-readable message for errors surfaced in the UI: HTTP failures
+/// carry a JSON `{"error": "..."}` body from the server — show that sentence,
+/// not the wrapped enum description.
+public func serverErrorMessage(_ error: any Error) -> String {
+    if case let HerdManServerClientError.httpStatus(_, body) = error {
+        if let data = body.data(using: .utf8),
+           let payload = try? JSONDecoder().decode([String: String].self, from: data),
+           let message = payload["error"] {
+            return message
+        }
+        return body.isEmpty ? "The HerdMan server rejected the request." : body
+    }
+    return String(describing: error)
+}
+
 public protocol HerdManServerClienting: Sendable {
     func health() async throws -> ServerHealth
     func info() async throws -> ServerInfo

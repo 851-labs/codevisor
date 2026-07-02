@@ -35,6 +35,16 @@ const MINIMUM_CLAUDE_VERSION = "2.0.0"
 /// the events table.
 const STREAM_STATS_INTERVAL_MS = 250
 
+/// Effort levels the SDK's flag settings accept (`max` appears in some model
+/// capabilities but is not settable through applyFlagSettings).
+const SETTABLE_EFFORT_LEVELS = new Set(["low", "medium", "high", "xhigh"])
+
+interface ClaudeModel {
+  readonly value: string
+  readonly name: string
+  readonly supportedEffortLevels: ReadonlyArray<string>
+}
+
 const PERMISSION_MODES: SessionModeState = {
   currentModeId: "default",
   availableModes: [
@@ -148,7 +158,8 @@ interface ClaudeSession {
   interruptRequested: boolean
   currentMessageId: string | undefined
   currentModel: string
-  models: ReadonlyArray<{ value: string; name: string }>
+  currentEffort: string
+  models: ReadonlyArray<ClaudeModel>
   readonly accumulators: Map<string, ToolInputAccumulator>
   readonly openToolCalls: Set<string>
 }
@@ -242,6 +253,7 @@ export const makeClaudeProvider = (
     const created: ClaudeSession = {
       abort,
       accumulators: new Map(),
+      currentEffort: "default",
       currentMessageId: undefined,
       currentModel: "",
       cwd,
@@ -290,8 +302,22 @@ export const makeClaudeProvider = (
         new Promise<undefined>((resolvePromise) => setTimeout(() => resolvePromise(undefined), 3000))
       ])
       if (models !== undefined) {
-        created.models = models.map((model) => ({ name: model.displayName, value: model.value }))
-        if (created.currentModel.length === 0 && created.models[0] !== undefined) {
+        // The CLI's "default" pseudo-model is an alias, not a model — the
+        // picker shows real models only.
+        created.models = models
+          .filter((model) => model.value !== "default")
+          .map((model) => ({
+            name: model.displayName,
+            supportedEffortLevels: (model.supportsEffort === true
+              ? (model.supportedEffortLevels ?? [])
+              : []
+            ).filter((level) => SETTABLE_EFFORT_LEVELS.has(level)),
+            value: model.value
+          }))
+        if (
+          (created.currentModel.length === 0 || created.currentModel === "default") &&
+          created.models[0] !== undefined
+        ) {
           created.currentModel = created.models[0].value
         }
       }
@@ -304,21 +330,41 @@ export const makeClaudeProvider = (
   const metadataFor = (session: ClaudeSession): {
     modes: SessionModeState
     configOptions: ReadonlyArray<SessionConfigOption>
-  } => ({
-    configOptions:
-      session.models.length === 0
-        ? []
-        : [
-            {
-              category: "model",
-              currentValue: session.currentModel,
-              id: "model",
-              name: "Model",
-              options: session.models.map((model) => ({ name: model.name, value: model.value }))
-            }
-          ],
-    modes: PERMISSION_MODES
-  })
+  } => {
+    const options: Array<SessionConfigOption> = []
+    if (session.models.length > 0) {
+      options.push({
+        category: "model",
+        currentValue: session.currentModel,
+        id: "model",
+        name: "Model",
+        options: session.models.map((model) => ({ name: model.name, value: model.value }))
+      })
+    }
+    const effortLevels = effortLevelsFor(session)
+    if (effortLevels.length > 0) {
+      options.push({
+        category: "thought_level",
+        currentValue: effortLevels.includes(session.currentEffort)
+          ? session.currentEffort
+          : "default",
+        id: "effort",
+        name: "Effort",
+        options: [
+          { name: "Default", value: "default" },
+          ...effortLevels.map((level) => ({
+            name: level === "xhigh" ? "X-High" : level[0]?.toUpperCase() + level.slice(1),
+            value: level
+          }))
+        ]
+      })
+    }
+    return { configOptions: options, modes: PERMISSION_MODES }
+  }
+
+  const effortLevelsFor = (session: ClaudeSession): ReadonlyArray<string> =>
+    session.models.find((model) => model.value === session.currentModel)
+      ?.supportedEffortLevels ?? []
 
   const handleFor = (session: ClaudeSession): AgentSessionHandle => ({
     cancel: adapterPromise("cancel", async () => {
@@ -348,11 +394,23 @@ export const makeClaudeProvider = (
       }),
     setConfigOption: (configId, value) =>
       adapterPromise("setConfigOption", async () => {
-        if (configId !== "model") {
+        if (configId === "model") {
+          await session.q.setModel(value)
+          session.currentModel = value
+          // Effort validity depends on the model; reset rather than carry an
+          // unsupported level over.
+          if (!effortLevelsFor(session).includes(session.currentEffort)) {
+            session.currentEffort = "default"
+          }
+        } else if (configId === "effort") {
+          await session.q.applyFlagSettings({
+            effortLevel:
+              value === "default" ? null : (value as "low" | "medium" | "high" | "xhigh")
+          })
+          session.currentEffort = value
+        } else {
           throw new Error(`Unknown config option: ${configId}`)
         }
-        await session.q.setModel(value)
-        session.currentModel = value
         await session.emit({
           kind: "session.updated",
           payload: {

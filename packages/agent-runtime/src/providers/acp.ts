@@ -364,9 +364,19 @@ const createClientApp = (
     .onNotification(acp.methods.client.session.update, ({ params }) => {
       onSessionUpdate(params)
     })
-    .onRequest(acp.methods.client.session.requestPermission, () => ({
-      outcome: { outcome: "cancelled" }
-    }))
+    // Auto-approve, matching the Claude/Codex providers' posture (and the old
+    // in-app client's behavior). Declining here breaks agents that gate every
+    // step on permission — cursor-agent retries denied steps until it gives
+    // up with "exceeded max retries".
+    .onRequest(acp.methods.client.session.requestPermission, ({ params }) => {
+      const options = params.options ?? []
+      const allow =
+        options.find((option) => option.kind === "allow_always") ??
+        options.find((option) => option.kind === "allow_once")
+      return allow === undefined
+        ? { outcome: { outcome: "cancelled" as const } }
+        : { outcome: { optionId: allow.optionId, outcome: "selected" as const } }
+    })
 
 export const runtimeEventFromNotification = (
   notification: acp.SessionNotification

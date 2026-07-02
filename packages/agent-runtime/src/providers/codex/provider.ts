@@ -1,4 +1,4 @@
-import type { DiffStat, SessionConfigOption } from "@herdman/api"
+import type { DiffStat, SessionConfigOption, SessionModeState } from "@herdman/api"
 import { randomUUID } from "node:crypto"
 import { Effect } from "effect"
 import { diffStatsFromUnified } from "../../diff-stats.js"
@@ -22,7 +22,55 @@ export interface CodexProviderConfig {
   readonly connector?: CodexConnector
 }
 
-const REASONING_EFFORTS = ["low", "medium", "high"] as const
+interface CodexModel {
+  readonly value: string
+  readonly name: string
+  readonly efforts: ReadonlyArray<string>
+  readonly defaultEffort: string
+}
+
+/// Approval/sandbox presets, mirroring the modes the codex-acp adapter (and
+/// the Codex IDE extensions) expose. Applied as sticky turn/start overrides.
+interface CodexMode {
+  readonly id: string
+  readonly name: string
+  readonly description: string
+  readonly approvalPolicy: string
+  readonly sandboxPolicy: Record<string, unknown>
+}
+
+const CODEX_MODES: ReadonlyArray<CodexMode> = [
+  {
+    approvalPolicy: "on-request",
+    description: "Requires approval to edit files and run commands.",
+    id: "read-only",
+    name: "Read-only",
+    sandboxPolicy: { networkAccess: false, type: "readOnly" }
+  },
+  {
+    approvalPolicy: "on-request",
+    description: "Read and edit files, and run commands.",
+    id: "agent",
+    name: "Agent",
+    sandboxPolicy: {
+      excludeSlashTmp: false,
+      excludeTmpdirEnvVar: false,
+      networkAccess: false,
+      type: "workspaceWrite",
+      writableRoots: []
+    }
+  },
+  {
+    approvalPolicy: "never",
+    description:
+      "Codex can edit files outside this workspace and run commands with network access.",
+    id: "agent-full-access",
+    name: "Agent (full access)",
+    sandboxPolicy: { type: "dangerFullAccess" }
+  }
+]
+
+const DEFAULT_CODEX_MODE = "agent"
 
 interface CodexSession {
   readonly key: string
@@ -35,6 +83,8 @@ interface CodexSession {
   interruptRequested: boolean
   currentModel: string
   currentEffort: string | undefined
+  currentModeId: string
+  models: ReadonlyArray<CodexModel>
   /// item id → tool-call kind, so completions map back without re-parsing.
   readonly itemKinds: Map<string, string>
 }
@@ -94,14 +144,52 @@ export const makeCodexProvider = (
       activeTurnId: undefined,
       client,
       currentEffort: undefined,
+      currentModeId: DEFAULT_CODEX_MODE,
       currentModel: response.model ?? "",
       cwd,
       emit,
       interruptRequested: false,
       itemKinds: new Map(),
       key: resumeThreadId ?? threadId,
+      models: [],
       pendingPrompt: undefined,
       threadId
+    }
+    try {
+      const modelList = await client.request<{ data?: Array<Record<string, unknown>> }>(
+        "model/list",
+        {}
+      )
+      session.models = (modelList.data ?? []).flatMap((model) => {
+        if (model.hidden === true) return []
+        const value = typeof model.model === "string" ? model.model : undefined
+        if (value === undefined) return []
+        const efforts = Array.isArray(model.supportedReasoningEfforts)
+          ? model.supportedReasoningEfforts.flatMap((option) =>
+              typeof option === "object" && option !== null &&
+              typeof (option as Record<string, unknown>).reasoningEffort === "string"
+                ? [(option as Record<string, unknown>).reasoningEffort as string]
+                : []
+            )
+          : []
+        return [
+          {
+            defaultEffort:
+              typeof model.defaultReasoningEffort === "string"
+                ? model.defaultReasoningEffort
+                : "medium",
+            efforts,
+            name: typeof model.displayName === "string" ? model.displayName : value,
+            value
+          }
+        ]
+      })
+      const current = session.models.find((model) => model.value === session.currentModel)
+      if (current !== undefined) {
+        session.currentEffort = current.defaultEffort
+      }
+    } catch {
+      session.models = []
     }
     client.onNotification((method, params) => {
       handleNotification(session, method, params)
@@ -119,29 +207,53 @@ export const makeCodexProvider = (
     return session
   }
 
-  const configOptionsFor = (session: CodexSession): ReadonlyArray<SessionConfigOption> => [
-    ...(session.currentModel.length === 0
-      ? []
-      : [
-          {
-            category: "model",
-            currentValue: session.currentModel,
-            id: "model",
-            name: "Model",
-            options: [{ name: session.currentModel, value: session.currentModel }]
-          }
-        ]),
-    {
-      category: "thought_level",
-      currentValue: session.currentEffort ?? "medium",
-      id: "effort",
-      name: "Reasoning",
-      options: REASONING_EFFORTS.map((effort) => ({
-        name: effort[0]?.toUpperCase() + effort.slice(1),
-        value: effort
-      }))
+  const configOptionsFor = (session: CodexSession): ReadonlyArray<SessionConfigOption> => {
+    const options: Array<SessionConfigOption> = []
+    if (session.models.length > 0) {
+      options.push({
+        category: "model",
+        currentValue: session.currentModel,
+        id: "model",
+        name: "Model",
+        options: session.models.map((model) => ({ name: model.name, value: model.value }))
+      })
+    } else if (session.currentModel.length > 0) {
+      options.push({
+        category: "model",
+        currentValue: session.currentModel,
+        id: "model",
+        name: "Model",
+        options: [{ name: session.currentModel, value: session.currentModel }]
+      })
     }
-  ]
+    const current = session.models.find((model) => model.value === session.currentModel)
+    const efforts = current?.efforts ?? []
+    if (efforts.length > 0) {
+      options.push({
+        category: "thought_level",
+        currentValue:
+          session.currentEffort !== undefined && efforts.includes(session.currentEffort)
+            ? session.currentEffort
+            : (current?.defaultEffort ?? efforts[0] ?? "medium"),
+        id: "effort",
+        name: "Reasoning",
+        options: efforts.map((effort) => ({
+          name: effort === "xhigh" ? "X-High" : effort[0]?.toUpperCase() + effort.slice(1),
+          value: effort
+        }))
+      })
+    }
+    return options
+  }
+
+  const modesFor = (session: CodexSession): SessionModeState => ({
+    availableModes: CODEX_MODES.map((mode) => ({
+      description: mode.description,
+      id: mode.id,
+      name: mode.name
+    })),
+    currentModeId: session.currentModeId
+  })
 
   const handleFor = (session: CodexSession): AgentSessionHandle => ({
     cancel: adapterPromise("cancel", async () => {
@@ -165,11 +277,15 @@ export const makeCodexProvider = (
         const pending = new Promise<{ stopReason: string }>((resolve) => {
           session.pendingPrompt = { resolve }
         })
+        const mode = CODEX_MODES.find((candidate) => candidate.id === session.currentModeId)
         await session.client.request("turn/start", {
           input: [{ text, type: "text" }],
           threadId: session.threadId,
           ...(session.currentModel.length === 0 ? {} : { model: session.currentModel }),
-          ...(session.currentEffort === undefined ? {} : { effort: session.currentEffort })
+          ...(session.currentEffort === undefined ? {} : { effort: session.currentEffort }),
+          ...(mode === undefined
+            ? {}
+            : { approvalPolicy: mode.approvalPolicy, sandboxPolicy: mode.sandboxPolicy })
         })
         return pending
       }),
@@ -178,6 +294,10 @@ export const makeCodexProvider = (
         // Applied as sticky turn/start overrides on subsequent turns.
         if (configId === "model") {
           session.currentModel = value
+          const model = session.models.find((candidate) => candidate.value === value)
+          if (model !== undefined && (session.currentEffort === undefined || !model.efforts.includes(session.currentEffort))) {
+            session.currentEffort = model.defaultEffort
+          }
         } else if (configId === "effort") {
           session.currentEffort = value
         } else {
@@ -189,9 +309,17 @@ export const makeCodexProvider = (
           subjectId: session.key
         })
       }),
-    setMode: () =>
+    setMode: (modeId) =>
       adapterPromise("setMode", async () => {
-        throw new Error("Codex sessions do not expose ACP modes")
+        if (!CODEX_MODES.some((mode) => mode.id === modeId)) {
+          throw new Error(`Unknown Codex mode: ${modeId}`)
+        }
+        session.currentModeId = modeId
+        await session.emit({
+          kind: "session.updated",
+          payload: { modeId },
+          subjectId: session.key
+        })
       })
   })
 
@@ -205,7 +333,11 @@ export const makeCodexProvider = (
         const session = await startSession(definition, cwd, emit, undefined)
         return {
           handle: handleFor(session),
-          metadata: { configOptions: configOptionsFor(session), sessionId: session.key }
+          metadata: {
+            configOptions: configOptionsFor(session),
+            modes: modesFor(session),
+            sessionId: session.key
+          }
         }
       }),
     id: "codex",

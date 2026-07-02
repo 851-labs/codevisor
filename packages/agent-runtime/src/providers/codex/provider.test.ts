@@ -44,6 +44,42 @@ class FakeCodexClient implements CodexClient {
         return { turn: { id: "turn-1", status: "inProgress" } } as T
       case "turn/interrupt":
         return {} as T
+      case "model/list":
+        return {
+          data: [
+            {
+              defaultReasoningEffort: "medium",
+              description: "",
+              displayName: "GPT-5.2 Codex",
+              hidden: false,
+              id: "gpt-5.2-codex",
+              model: "gpt-5.2-codex",
+              supportedReasoningEfforts: [
+                { description: "", reasoningEffort: "low" },
+                { description: "", reasoningEffort: "medium" },
+                { description: "", reasoningEffort: "xhigh" }
+              ]
+            },
+            {
+              defaultReasoningEffort: "high",
+              description: "",
+              displayName: "GPT-5.5",
+              hidden: false,
+              id: "gpt-5.5",
+              model: "gpt-5.5",
+              supportedReasoningEfforts: [
+                { description: "", reasoningEffort: "medium" },
+                { description: "", reasoningEffort: "high" }
+              ]
+            },
+            {
+              displayName: "Hidden model",
+              hidden: true,
+              id: "secret",
+              model: "secret"
+            }
+          ]
+        } as T
       default:
         throw new Error(`Unexpected request: ${method}`)
     }
@@ -110,12 +146,59 @@ describe("CodexProvider", () => {
   it("handshakes, starts a thread, and reports config options", async () => {
     const { client, created, spawns } = await setup()
     expect(spawns[0]).toMatchObject({ command: "/bin/codex", cwd: "/tmp/project" })
-    expect(client.requests.map((request) => request.method)).toEqual(["initialize", "thread/start"])
+    expect(client.requests.map((request) => request.method)).toEqual([
+      "initialize",
+      "thread/start",
+      "model/list"
+    ])
     expect(client.notifications).toEqual([{ method: "initialized", params: undefined }])
     expect(created?.metadata.sessionId).toBe("thread-new")
     const options = created?.metadata.configOptions ?? []
-    expect(options.find((option) => option.id === "model")?.currentValue).toBe("gpt-5.2-codex")
-    expect(options.find((option) => option.id === "effort")?.currentValue).toBe("medium")
+    const modelOption = options.find((option) => option.id === "model")
+    expect(modelOption?.currentValue).toBe("gpt-5.2-codex")
+    // Full catalog minus hidden models.
+    expect(modelOption?.options.map((option) => ("value" in option ? option.value : ""))).toEqual([
+      "gpt-5.2-codex",
+      "gpt-5.5"
+    ])
+    // Efforts come from the current model's capabilities, defaulted per model.
+    const effortOption = options.find((option) => option.id === "effort")
+    expect(effortOption?.currentValue).toBe("medium")
+    expect(effortOption?.options.map((option) => ("value" in option ? option.value : ""))).toEqual([
+      "low",
+      "medium",
+      "xhigh"
+    ])
+    // Approval/sandbox presets are exposed as session modes.
+    expect(created?.metadata.modes?.currentModeId).toBe("agent")
+    expect(created?.metadata.modes?.availableModes.map((mode) => mode.id)).toEqual([
+      "read-only",
+      "agent",
+      "agent-full-access"
+    ])
+  })
+
+  it("applies modes as approval/sandbox turn overrides and syncs effort to the model", async () => {
+    const { client, created, events } = await setup()
+    await run(created!.handle.setMode("agent-full-access"))
+    expect(events.at(-1)?.payload).toMatchObject({ modeId: "agent-full-access" })
+    await expect(run(created!.handle.setMode("nonsense"))).rejects.toThrow("Unknown Codex mode")
+
+    // An effort the new model doesn't support clamps to that model's default;
+    // xhigh is valid for gpt-5.2-codex but not gpt-5.5.
+    await run(created!.handle.setConfigOption("effort", "xhigh"))
+    await run(created!.handle.setConfigOption("model", "gpt-5.5"))
+    const promptPromise = run(created!.handle.prompt("go"))
+    await Promise.resolve()
+    client.emit("turn/completed", { threadId: "thread-new", turn: { id: "t", status: "completed" } })
+    await promptPromise
+    const turnStart = client.requests.find((request) => request.method === "turn/start")
+    expect(turnStart?.params).toMatchObject({
+      approvalPolicy: "never",
+      effort: "high",
+      model: "gpt-5.5",
+      sandboxPolicy: { type: "dangerFullAccess" }
+    })
   })
 
   it("maps a full turn: lifecycle, streamed patch stats, command items", async () => {
