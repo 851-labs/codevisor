@@ -17,6 +17,7 @@ struct ConversationItemView: View {
 
 /// A right-aligned user prompt bubble.
 struct UserMessageView: View {
+    @Environment(\.theme) private var theme
     let message: UserMessage
 
     var body: some View {
@@ -26,7 +27,7 @@ struct UserMessageView: View {
                 .textSelection(.enabled)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
-                .background(RoundedRectangle(cornerRadius: 14).fill(Color.primary.opacity(0.08)))
+                .background(RoundedRectangle(cornerRadius: 14).fill(theme.bubbleBackground))
                 .frame(alignment: .trailing)
         }
     }

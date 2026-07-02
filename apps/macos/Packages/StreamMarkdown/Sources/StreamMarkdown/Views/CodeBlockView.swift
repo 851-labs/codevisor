@@ -5,6 +5,9 @@ import AppKit
 
 /// Renders a fenced code block with a language label and a copy button.
 /// While streaming (`isComplete == false`) a subtle progress indicator shows.
+/// When the theme provides a `codeHighlighter`, plain text renders first and
+/// the highlighted version swaps in as it resolves (debounced mid-stream so
+/// large blocks don't re-tokenize on every chunk).
 struct CodeBlockView: View {
     let language: String?
     let code: String
@@ -12,6 +15,7 @@ struct CodeBlockView: View {
 
     @Environment(\.markdownTheme) private var theme
     @State private var didCopy = false
+    @State private var highlighted: AttributedString?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -40,7 +44,7 @@ struct CodeBlockView: View {
             Divider()
 
             ScrollView(.horizontal, showsIndicators: false) {
-                Text(code)
+                Text(highlighted ?? AttributedString(code))
                     .font(theme.codeFont)
                     .textSelection(.enabled)
                     .padding(10)
@@ -49,6 +53,25 @@ struct CodeBlockView: View {
         }
         .background(theme.codeBackground)
         .clipShape(RoundedRectangle(cornerRadius: 8))
+        .task(id: highlightTaskKey) {
+            guard let highlighter = theme.codeHighlighter else { return }
+            // Mid-stream, wait out further chunks before re-tokenizing; the
+            // task(id:) cancellation makes this a trailing-edge debounce.
+            if !isComplete {
+                try? await Task.sleep(for: .milliseconds(150))
+                if Task.isCancelled { return }
+            }
+            if let result = await highlighter(code, language), !Task.isCancelled {
+                highlighted = result
+            }
+        }
+    }
+
+    // Re-highlight when the content grows, the block completes, or the theme
+    // changes (via codeThemeKey — the highlighter closure itself can't be
+    // compared).
+    private var highlightTaskKey: String {
+        "\(theme.codeThemeKey)|\(isComplete)|\(language ?? "")|\(code.count)"
     }
 
     private func copy() {

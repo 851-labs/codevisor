@@ -4,6 +4,7 @@ import ACPKit
 /// Displays the agent's execution plan as a checklist.
 struct PlanView: View {
     let plan: Plan
+    @Environment(\.theme) private var theme
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -24,7 +25,7 @@ struct PlanView: View {
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 8).fill(.quaternary.opacity(0.4)))
+        .background(RoundedRectangle(cornerRadius: 8).fill(theme.cardBackground))
     }
 
     private func symbol(for status: PlanEntryStatus) -> String {
@@ -38,8 +39,8 @@ struct PlanView: View {
     private func color(for status: PlanEntryStatus) -> Color {
         switch status {
         case .pending: return .secondary
-        case .inProgress: return .accentColor
-        case .completed: return .green
+        case .inProgress: return theme.accent
+        case .completed: return theme.statusOK
         }
     }
 }

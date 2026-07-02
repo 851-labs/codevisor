@@ -5,6 +5,7 @@ import ACPAgents
 
 enum SettingsTab: String {
     case general
+    case appearance
     case machines
     case harnesses
 }
@@ -19,15 +20,20 @@ final class SettingsRouter {
 }
 
 /// The app's Settings window (⌘, / HerdMan ▸ Settings…), with General,
-/// Machines, and Harnesses tabs in the standard macOS preferences style.
+/// Appearance, Machines, and Harnesses tabs in the standard macOS
+/// preferences style.
 struct SettingsView: View {
     @Bindable private var router = SettingsRouter.shared
+    @Environment(\.theme) private var theme
 
     var body: some View {
         TabView(selection: $router.selectedTab) {
             GeneralSettingsView()
                 .tabItem { Label("General", systemImage: "gearshape") }
                 .tag(SettingsTab.general)
+            AppearanceSettingsView()
+                .tabItem { Label("Appearance", systemImage: "paintpalette") }
+                .tag(SettingsTab.appearance)
             MachinesSettingsView()
                 .tabItem { Label("Machines", systemImage: "desktopcomputer") }
                 .tag(SettingsTab.machines)
@@ -36,12 +42,18 @@ struct SettingsView: View {
                 .tag(SettingsTab.harnesses)
         }
         .frame(width: 520, height: 420)
+        // When themed, drop the grouped forms' own backdrop so the theme
+        // surface (painted by ThemedRoot) shows through, and paint the tab
+        // strip opaquely on-theme; system themes keep the native look.
+        .scrollContentBackground(theme.isSystem ? .automatic : .hidden)
+        .themedToolbarBackground(theme, surface: theme.windowBackground)
     }
 }
 
 /// General settings — currently just "Delete all data".
 struct GeneralSettingsView: View {
     @Environment(AppEnvironment.self) private var environment
+    @Environment(\.theme) private var theme
     @State private var showingConfirmation = false
     @State private var serverStatus: ServerStatusModel?
     @State private var tokenCopied = false
@@ -61,7 +73,7 @@ struct GeneralSettingsView: View {
                         Text("Connection token")
                         Text(tokenError ?? "Lets another device running HerdMan connect to this Mac.")
                             .font(.callout)
-                            .foregroundStyle(tokenError == nil ? AnyShapeStyle(.secondary) : AnyShapeStyle(.orange))
+                            .foregroundStyle(tokenError == nil ? AnyShapeStyle(.secondary) : AnyShapeStyle(theme.statusWarn))
                     }
                     Spacer()
                     Button {

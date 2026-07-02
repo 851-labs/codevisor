@@ -2,6 +2,7 @@ import Foundation
 import Observation
 import ACPKit
 import ACPAgents
+import HerdManTheming
 
 /// The composition root: wires repositories and services together and vends the
 /// top-level view models. Inject a configured instance into the SwiftUI
@@ -12,6 +13,7 @@ public final class AppEnvironment {
     public let projectList: ProjectListModel
     public let configCache: ConfigOptionCache
     public let settings: AppSettingsModel
+    public let theme: ThemeManager
     public let machines: MachineController
     public let localServer: LocalHerdManServer?
     public let appUpdate: AppUpdateModel
@@ -37,9 +39,18 @@ public final class AppEnvironment {
         settings: AppSettingsModel,
         machineStore: any PersistenceStore = InMemoryStore(),
         localServer: LocalHerdManServer? = nil,
-        appUpdate: AppUpdateModel? = nil
+        appUpdate: AppUpdateModel? = nil,
+        customThemesDirectory: URL? = nil
     ) {
         self.fallbackAgentService = agentService
+        self.theme = ThemeManager(
+            settings: settings,
+            catalog: ThemeCatalog(
+                customThemesDirectory: customThemesDirectory
+                    ?? FileManager.default.temporaryDirectory
+                        .appendingPathComponent("herdman-themes-\(UUID().uuidString)")
+            )
+        )
         self.appUpdate = appUpdate ?? AppUpdateModel(
             currentVersion: AppUpdateModel.bundleVersion(),
             checker: DisabledUpdateChecker()
@@ -175,7 +186,8 @@ public final class AppEnvironment {
             appUpdate: AppUpdateModel(
                 currentVersion: AppUpdateModel.bundleVersion(),
                 checker: ManifestAppUpdateChecker(baseURL: releaseArtifactBaseURL)
-            )
+            ),
+            customThemesDirectory: ThemeManager.defaultCustomThemesDirectory()
         )
     }
 

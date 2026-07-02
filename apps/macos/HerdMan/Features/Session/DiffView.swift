@@ -7,6 +7,7 @@ struct DiffView: View {
     let path: String
     let oldText: String?
     let newText: String
+    @Environment(\.theme) private var theme
 
     private var rows: [Line] { Self.diff(old: oldText, new: newText) }
 
@@ -16,9 +17,9 @@ struct DiffView: View {
                 Text((path as NSString).lastPathComponent)
                     .font(.caption.monospaced().weight(.semibold))
                 Text("+\(rows.filter { $0.kind == .added }.count)")
-                    .font(.caption2.monospaced()).foregroundStyle(.green)
+                    .font(.caption2.monospaced()).foregroundStyle(theme.diffAddedFg)
                 Text("-\(rows.filter { $0.kind == .removed }.count)")
-                    .font(.caption2.monospaced()).foregroundStyle(.red)
+                    .font(.caption2.monospaced()).foregroundStyle(theme.diffRemovedFg)
                 Spacer()
             }
             .padding(.horizontal, 10)
@@ -35,7 +36,7 @@ struct DiffView: View {
                                 .foregroundStyle(.tertiary)
                             Text(row.marker)
                                 .frame(width: 8)
-                                .foregroundStyle(row.kind.tint)
+                                .foregroundStyle(row.kind.tint(theme))
                             Text(row.text.isEmpty ? " " : row.text)
                                 .foregroundStyle(row.kind == .removed ? .secondary : .primary)
                             Spacer(minLength: 0)
@@ -43,13 +44,13 @@ struct DiffView: View {
                         .font(.caption.monospaced())
                         .padding(.vertical, 1)
                         .padding(.horizontal, 8)
-                        .background(row.kind.background)
+                        .background(row.kind.background(theme))
                     }
                 }
                 .padding(.vertical, 4)
             }
         }
-        .background(RoundedRectangle(cornerRadius: 8).fill(.quaternary.opacity(0.4)))
+        .background(RoundedRectangle(cornerRadius: 8).fill(theme.cardBackground))
         .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 
@@ -58,18 +59,18 @@ struct DiffView: View {
     struct Line: Identifiable {
         enum Kind {
             case context, added, removed
-            var tint: Color {
+            func tint(_ theme: Theme) -> Color {
                 switch self {
                 case .context: return .clear
-                case .added: return .green
-                case .removed: return .red
+                case .added: return theme.diffAddedFg
+                case .removed: return theme.diffRemovedFg
                 }
             }
-            var background: Color {
+            func background(_ theme: Theme) -> Color {
                 switch self {
                 case .context: return .clear
-                case .added: return .green.opacity(0.12)
-                case .removed: return .red.opacity(0.12)
+                case .added: return theme.diffAddedBg
+                case .removed: return theme.diffRemovedBg
                 }
             }
         }

@@ -43,6 +43,7 @@ struct ToolCallRow: View {
 /// success/failure badge.
 struct ToolCallContentCard: View {
     let call: ToolCall
+    @Environment(\.theme) private var theme
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -63,7 +64,7 @@ struct ToolCallContentCard: View {
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 8).fill(.quaternary.opacity(0.4)))
+        .background(RoundedRectangle(cornerRadius: 8).fill(theme.cardBackground))
     }
 
     @ViewBuilder
@@ -102,11 +103,11 @@ struct ToolCallContentCard: View {
         case .completed:
             Label("Success", systemImage: "checkmark")
                 .font(.caption2)
-                .foregroundStyle(.green)
+                .foregroundStyle(theme.statusOK)
         case .failed:
             Label("Failed", systemImage: "xmark")
                 .font(.caption2)
-                .foregroundStyle(.red)
+                .foregroundStyle(theme.statusError)
         default:
             EmptyView()
         }

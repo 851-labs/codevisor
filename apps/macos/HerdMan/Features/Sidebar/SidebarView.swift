@@ -51,6 +51,7 @@ private struct PendingSessionImport: Identifiable {
 struct SidebarView: View {
     @Environment(AppEnvironment.self) private var environment
     @Environment(\.openSettings) private var openSettings
+    @Environment(\.theme) private var theme
     @Binding var selection: SidebarSelection?
     var store: SessionStore? = nil
 
@@ -191,7 +192,7 @@ struct SidebarView: View {
             machinePicker
                 .padding(8)
         }
-        .background(.regularMaterial)
+        .background(theme.sidebarBackground)
         .fileImporter(isPresented: $showingImporter, allowedContentTypes: [.folder]) { result in
             if case let .success(url) = result {
                 let project = list.addProject(folderURL: url)
@@ -604,8 +605,8 @@ struct SidebarView: View {
     @ViewBuilder
     private func rowBackground(id: String, isSelected: Bool) -> some View {
         RoundedRectangle(cornerRadius: 6)
-            .fill(isSelected ? Color.primary.opacity(0.14)
-                  : (hovered == id ? Color.secondary.opacity(0.12) : .clear))
+            .fill(isSelected ? theme.rowSelectedBackground
+                  : (hovered == id ? theme.rowHoverBackground : .clear))
     }
 
     private func toggle(_ id: UUID) {

@@ -1,8 +1,10 @@
 import Foundation
+import HerdManTheming
 import Observation
 
-/// Persisted app settings: onboarding completion and whether to surface sessions
-/// that were created outside HerdMan (imported via `session/list`).
+/// Persisted app settings: onboarding completion, whether to surface sessions
+/// that were created outside HerdMan (imported via `session/list`), and the
+/// appearance/theme selection.
 public struct AppSettings: Sendable, Codable, Equatable {
     public var hasCompletedOnboarding: Bool
     public var importExternalSessions: Bool
@@ -10,19 +12,32 @@ public struct AppSettings: Sendable, Codable, Equatable {
     /// (shown in the composer picker) when its id is not in this set, so the
     /// default — an empty set — enables every installed harness.
     public var disabledHarnessIds: Set<String>
+    /// Appearance: force light/dark or follow the OS.
+    public var themeMode: ThemeMode
+    /// The theme id used when the effective appearance is light/dark. The
+    /// defaults are the system entries, which render the stock Apple look.
+    public var lightThemeId: String
+    public var darkThemeId: String
 
     public init(
         hasCompletedOnboarding: Bool = false,
         importExternalSessions: Bool = false,
-        disabledHarnessIds: Set<String> = []
+        disabledHarnessIds: Set<String> = [],
+        themeMode: ThemeMode = .system,
+        lightThemeId: String = ThemeCatalog.systemLightID,
+        darkThemeId: String = ThemeCatalog.systemDarkID
     ) {
         self.hasCompletedOnboarding = hasCompletedOnboarding
         self.importExternalSessions = importExternalSessions
         self.disabledHarnessIds = disabledHarnessIds
+        self.themeMode = themeMode
+        self.lightThemeId = lightThemeId
+        self.darkThemeId = darkThemeId
     }
 
     private enum CodingKeys: String, CodingKey {
         case hasCompletedOnboarding, importExternalSessions, disabledHarnessIds
+        case themeMode, lightThemeId, darkThemeId
     }
 
     public init(from decoder: any Decoder) throws {
@@ -30,6 +45,9 @@ public struct AppSettings: Sendable, Codable, Equatable {
         hasCompletedOnboarding = try container.decodeIfPresent(Bool.self, forKey: .hasCompletedOnboarding) ?? false
         importExternalSessions = try container.decodeIfPresent(Bool.self, forKey: .importExternalSessions) ?? false
         disabledHarnessIds = try container.decodeIfPresent(Set<String>.self, forKey: .disabledHarnessIds) ?? []
+        themeMode = try container.decodeIfPresent(ThemeMode.self, forKey: .themeMode) ?? .system
+        lightThemeId = try container.decodeIfPresent(String.self, forKey: .lightThemeId) ?? ThemeCatalog.systemLightID
+        darkThemeId = try container.decodeIfPresent(String.self, forKey: .darkThemeId) ?? ThemeCatalog.systemDarkID
     }
 }
 
@@ -83,6 +101,21 @@ public final class AppSettingsModel {
 
     public func setImportExternalSessions(_ value: Bool) {
         settings.importExternalSessions = value
+        persist()
+    }
+
+    public func setThemeMode(_ mode: ThemeMode) {
+        settings.themeMode = mode
+        persist()
+    }
+
+    public func setLightThemeId(_ id: String) {
+        settings.lightThemeId = id
+        persist()
+    }
+
+    public func setDarkThemeId(_ id: String) {
+        settings.darkThemeId = id
         persist()
     }
 

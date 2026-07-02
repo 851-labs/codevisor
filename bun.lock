@@ -34,6 +34,15 @@
         "@tauri-apps/cli": "^2.9.0",
       },
     },
+    "apps/macos": {
+      "name": "@herdman/macos",
+      "devDependencies": {
+        "@shikijs/core": "^4",
+        "@shikijs/engine-javascript": "^4",
+        "@shikijs/langs": "^4",
+        "@shikijs/themes": "^4",
+      },
+    },
     "apps/server": {
       "name": "@herdman/server",
       "bin": {
@@ -313,6 +322,8 @@
     "@herdman/db": ["@herdman/db@workspace:packages/db"],
 
     "@herdman/desktop": ["@herdman/desktop@workspace:apps/desktop"],
+
+    "@herdman/macos": ["@herdman/macos@workspace:apps/macos"],
 
     "@herdman/server": ["@herdman/server@workspace:apps/server"],
 

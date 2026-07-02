@@ -10,6 +10,7 @@ import AppKit
 import Foundation
 import GhosttyKit
 import HerdManCore
+import HerdManTheming
 
 /// Holds the global `ghostty_app_t` outside `GhosttyRuntime.shared` so the
 /// `wakeup` callback can reach it WITHOUT touching the `shared` `static let`
@@ -24,6 +25,24 @@ private nonisolated(unsafe) var gGhosttyApp: ghostty_app_t?
 final class GhosttyRuntime {
     static let shared = GhosttyRuntime()
 
+    /// The active terminal theme. Seeded by ThemedRoot before `prewarm()`
+    /// runs (so the first config is already themed) and updated on theme
+    /// switches. Static so setting it never instantiates the runtime.
+    private static var currentTheme: TerminalPalette?
+    /// Flipped at the end of init; applyTheme only reloads a runtime that
+    /// actually exists.
+    private static var runtimeInitialized = false
+
+    /// Applies a theme (nil = system look): stores it for a not-yet-created
+    /// runtime, or rebuilds the live config and pushes it to the app and all
+    /// open surfaces.
+    static func applyTheme(_ theme: TerminalPalette?) {
+        guard theme != currentTheme else { return }
+        currentTheme = theme
+        guard runtimeInitialized else { return }
+        shared.reloadConfig()
+    }
+
     var app: ghostty_app_t {
         guard let app = gGhosttyApp else {
             fatalError("Ghostty runtime did not create an app instance.")
@@ -31,6 +50,8 @@ final class GhosttyRuntime {
         return app
     }
     private var config: ghostty_config_t?
+    /// Live surfaces that receive config updates on theme switches.
+    private var liveSurfaces: [ObjectIdentifier: ghostty_surface_t] = [:]
 
     private init() {
         // Point libghostty at the bundled resources (xterm-ghostty terminfo +
@@ -40,15 +61,7 @@ final class GhosttyRuntime {
 
         _ = ghostty_init(UInt(CommandLine.argc), CommandLine.unsafeArgv)
 
-        let cfg = ghostty_config_new()
-        ghostty_config_load_default_files(cfg)
-        // Override the font (a guaranteed-present system monospace so the
-        // renderer always has a font) and the background (match the app's dark
-        // window instead of pure black).
-        if let overrideFile = Self.writeOverrideConfig() {
-            ghostty_config_load_file(cfg, overrideFile)
-        }
-        ghostty_config_finalize(cfg)
+        let cfg = Self.buildConfig(theme: Self.currentTheme)
         config = cfg
 
         var runtime = ghostty_runtime_config_s(
@@ -68,6 +81,46 @@ final class GhosttyRuntime {
             fatalError("ghostty_app_new returned nil.")
         }
         ghostty_app_set_focus(app, true)
+        Self.runtimeInitialized = true
+    }
+
+    // MARK: - Surface registry
+
+    func register(_ surface: ghostty_surface_t, for view: GhosttySurfaceView) {
+        liveSurfaces[ObjectIdentifier(view)] = surface
+    }
+
+    func unregister(_ view: GhosttySurfaceView) {
+        liveSurfaces.removeValue(forKey: ObjectIdentifier(view))
+    }
+
+    // MARK: - Config
+
+    /// Builds a finalized config: default files + our override file (font,
+    /// background, and — when themed — the full terminal palette).
+    private static func buildConfig(theme: TerminalPalette?) -> ghostty_config_t {
+        let cfg = ghostty_config_new()
+        ghostty_config_load_default_files(cfg)
+        // Override the font (a guaranteed-present system monospace so the
+        // renderer always has a font) and the colors (theme palette, or the
+        // app's window background so the terminal blends with the app).
+        if let overrideFile = writeOverrideConfig(theme: theme) {
+            ghostty_config_load_file(cfg, overrideFile)
+        }
+        ghostty_config_finalize(cfg)
+        guard let cfg else { fatalError("ghostty_config_new returned nil.") }
+        return cfg
+    }
+
+    /// Rebuilds the config for the current theme and pushes it to the app and
+    /// every live surface. The old config is freed only after both update
+    /// paths have taken the new one.
+    private func reloadConfig() {
+        let cfg = Self.buildConfig(theme: Self.currentTheme)
+        if let app = gGhosttyApp { ghostty_app_update_config(app, cfg) }
+        for surface in liveSurfaces.values { ghostty_surface_update_config(surface, cfg) }
+        if let old = config { ghostty_config_free(old) }
+        config = cfg
     }
 
     func tick() {
@@ -108,12 +161,34 @@ final class GhosttyRuntime {
         }
     }
 
-    /// Writes a tiny config file with our font + background overrides, and
-    /// returns its path. Returns nil on failure (config load is then skipped).
-    private static func writeOverrideConfig() -> String? {
+    /// Writes a tiny config file with our font + color overrides, and returns
+    /// its path. Returns nil on failure (config load is then skipped). With no
+    /// theme, only the background is overridden (the app's window background);
+    /// with a theme, the terminal takes the theme's full palette. All theme
+    /// colors are opaque sRGB (composited upstream) since Ghostty hex carries
+    /// no alpha.
+    private static func writeOverrideConfig(theme: TerminalPalette?) -> String? {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("herdman-ghostty.conf")
         var contents = "font-family = Menlo\n"
-        if let background = resolvedBackgroundHex() {
+        if let theme {
+            contents += "background = \(theme.background.hexString())\n"
+            contents += "foreground = \(theme.foreground.hexString())\n"
+            if let cursor = theme.cursorColor {
+                contents += "cursor-color = \(cursor.hexString())\n"
+            }
+            if let selectionBg = theme.selectionBackground {
+                contents += "selection-background = \(selectionBg.hexString())\n"
+            }
+            if let selectionFg = theme.selectionForeground {
+                contents += "selection-foreground = \(selectionFg.hexString())\n"
+            }
+            // ANSI 0-15; slots the theme doesn't define keep Ghostty defaults.
+            for (index, color) in theme.ansi.enumerated() {
+                if let color {
+                    contents += "palette = \(index)=\(color.hexString())\n"
+                }
+            }
+        } else if let background = resolvedBackgroundHex() {
             contents += "background = \(background)\n"
         }
         do {
@@ -169,9 +244,11 @@ final class GhosttySurfaceView: NSView {
                 surface = ghostty_surface_new(app, &config)
             }
         }
-        guard surface != nil else {
+        guard let surface else {
             fatalError("ghostty_surface_new returned nil for \(descriptor.workingDirectory.path).")
         }
+        // Receive config updates when the app theme changes.
+        GhosttyRuntime.shared.register(surface, for: self)
         // libghostty drives its own rendering (internal vsync/CVDisplayLink tied
         // to this NSView) — we must NOT call ghostty_surface_draw ourselves.
     }
@@ -186,6 +263,7 @@ final class GhosttySurfaceView: NSView {
 
     func terminate() {
         if let surface {
+            GhosttyRuntime.shared.unregister(self)
             ghostty_surface_free(surface)
             self.surface = nil
         }

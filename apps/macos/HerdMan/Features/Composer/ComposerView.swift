@@ -17,6 +17,7 @@ struct ComposerCard: View {
     /// first-responder focus to it.
     var onTextViewReady: ((NSView) -> Void)? = nil
 
+    @Environment(\.theme) private var theme
     @State private var editorHeight: CGFloat = 24
     @State private var slashSelection = 0
     @State private var isSlashMenuDismissed = false
@@ -70,7 +71,7 @@ struct ComposerCard: View {
         .padding(12)
         .background(
             RoundedRectangle(cornerRadius: 16)
-                .fill(Color(nsColor: .controlBackgroundColor))
+                .fill(theme.composerBackground)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 16)
@@ -111,7 +112,7 @@ struct ComposerCard: View {
             .frame(maxWidth: 520)
             .background(
                 RoundedRectangle(cornerRadius: 10)
-                    .fill(Color(nsColor: .controlBackgroundColor))
+                    .fill(theme.composerBackground)
                     .shadow(radius: 12, y: 4)
             )
             .overlay(
@@ -146,7 +147,7 @@ struct ComposerCard: View {
             .padding(.vertical, 6)
             .background(
                 RoundedRectangle(cornerRadius: 6)
-                    .fill(isSelected ? Color.accentColor : .clear)
+                    .fill(isSelected ? theme.accent : .clear)
             )
             .contentShape(RoundedRectangle(cornerRadius: 6))
         }
@@ -245,7 +246,7 @@ struct ComposerCard: View {
             Image(systemName: "arrow.up")
                 .font(.system(size: 12, weight: .bold))
                 .frame(width: 28, height: 28)
-                .foregroundStyle(isEnabled ? Color(nsColor: .windowBackgroundColor) : Color.secondary.opacity(0.75))
+                .foregroundStyle(isEnabled ? theme.windowBackground : Color.secondary.opacity(0.75))
                 .background(
                     Circle()
                         .fill(isEnabled ? Color.primary.opacity(isSendButtonHovered ? 0.92 : 0.82) : Color.secondary.opacity(0.16))

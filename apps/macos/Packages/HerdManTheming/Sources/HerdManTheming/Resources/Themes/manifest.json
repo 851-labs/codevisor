@@ -1,0 +1,184 @@
+[
+  {
+    "id": "pierre:pierre-light",
+    "file": "pierre-light.json",
+    "displayName": "Pierre Light",
+    "type": "light",
+    "group": "pierre"
+  },
+  {
+    "id": "pierre:pierre-light-soft",
+    "file": "pierre-light-soft.json",
+    "displayName": "Pierre Light Soft",
+    "type": "light",
+    "group": "pierre"
+  },
+  {
+    "id": "pierre:pierre-light-vibrant",
+    "file": "pierre-light-vibrant.json",
+    "displayName": "Pierre Light Vibrant",
+    "type": "light",
+    "group": "pierre"
+  },
+  {
+    "id": "pierre:pierre-light-protanopia-deuteranopia",
+    "file": "pierre-light-protanopia-deuteranopia.json",
+    "displayName": "Pierre Light Protanopia & Deuteranopia",
+    "type": "light",
+    "group": "pierre"
+  },
+  {
+    "id": "pierre:pierre-light-tritanopia",
+    "file": "pierre-light-tritanopia.json",
+    "displayName": "Pierre Light Tritanopia",
+    "type": "light",
+    "group": "pierre"
+  },
+  {
+    "id": "pierre:pierre-dark",
+    "file": "pierre-dark.json",
+    "displayName": "Pierre Dark",
+    "type": "dark",
+    "group": "pierre"
+  },
+  {
+    "id": "pierre:pierre-dark-soft",
+    "file": "pierre-dark-soft.json",
+    "displayName": "Pierre Dark Soft",
+    "type": "dark",
+    "group": "pierre"
+  },
+  {
+    "id": "pierre:pierre-dark-vibrant",
+    "file": "pierre-dark-vibrant.json",
+    "displayName": "Pierre Dark Vibrant",
+    "type": "dark",
+    "group": "pierre"
+  },
+  {
+    "id": "pierre:pierre-dark-protanopia-deuteranopia",
+    "file": "pierre-dark-protanopia-deuteranopia.json",
+    "displayName": "Pierre Dark Protanopia & Deuteranopia",
+    "type": "dark",
+    "group": "pierre"
+  },
+  {
+    "id": "pierre:pierre-dark-tritanopia",
+    "file": "pierre-dark-tritanopia.json",
+    "displayName": "Pierre Dark Tritanopia",
+    "type": "dark",
+    "group": "pierre"
+  },
+  {
+    "id": "shiki:one-dark-pro",
+    "file": "one-dark-pro.json",
+    "displayName": "One Dark Pro",
+    "type": "dark",
+    "group": "shiki"
+  },
+  {
+    "id": "shiki:dracula",
+    "file": "dracula.json",
+    "displayName": "Dracula Theme",
+    "type": "dark",
+    "group": "shiki"
+  },
+  {
+    "id": "shiki:github-light",
+    "file": "github-light.json",
+    "displayName": "GitHub Light",
+    "type": "light",
+    "group": "shiki"
+  },
+  {
+    "id": "shiki:github-dark",
+    "file": "github-dark.json",
+    "displayName": "GitHub Dark",
+    "type": "dark",
+    "group": "shiki"
+  },
+  {
+    "id": "shiki:catppuccin-latte",
+    "file": "catppuccin-latte.json",
+    "displayName": "Catppuccin Latte",
+    "type": "light",
+    "group": "shiki"
+  },
+  {
+    "id": "shiki:catppuccin-mocha",
+    "file": "catppuccin-mocha.json",
+    "displayName": "Catppuccin Mocha",
+    "type": "dark",
+    "group": "shiki"
+  },
+  {
+    "id": "shiki:tokyo-night",
+    "file": "tokyo-night.json",
+    "displayName": "Tokyo Night",
+    "type": "dark",
+    "group": "shiki"
+  },
+  {
+    "id": "shiki:nord",
+    "file": "nord.json",
+    "displayName": "Nord",
+    "type": "dark",
+    "group": "shiki"
+  },
+  {
+    "id": "shiki:solarized-light",
+    "file": "solarized-light.json",
+    "displayName": "Solarized Light",
+    "type": "light",
+    "group": "shiki"
+  },
+  {
+    "id": "shiki:solarized-dark",
+    "file": "solarized-dark.json",
+    "displayName": "Solarized Dark",
+    "type": "dark",
+    "group": "shiki"
+  },
+  {
+    "id": "shiki:gruvbox-dark-medium",
+    "file": "gruvbox-dark-medium.json",
+    "displayName": "Gruvbox Dark Medium",
+    "type": "dark",
+    "group": "shiki"
+  },
+  {
+    "id": "shiki:vitesse-light",
+    "file": "vitesse-light.json",
+    "displayName": "Vitesse Light",
+    "type": "light",
+    "group": "shiki"
+  },
+  {
+    "id": "shiki:vitesse-dark",
+    "file": "vitesse-dark.json",
+    "displayName": "Vitesse Dark",
+    "type": "dark",
+    "group": "shiki"
+  },
+  {
+    "id": "shiki:rose-pine",
+    "file": "rose-pine.json",
+    "displayName": "Rosé Pine",
+    "type": "dark",
+    "group": "shiki"
+  },
+  {
+    "id": "shiki:min-light",
+    "file": "min-light.json",
+    "displayName": "Min Light",
+    "type": "light",
+    "group": "shiki"
+  },
+  {
+    "id": "shiki:vesper",
+    "file": "vesper.json",
+    "displayName": "Vesper",
+    "type": "dark",
+    "group": "shiki"
+  }
+]

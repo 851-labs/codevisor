@@ -11,6 +11,8 @@
 		FC8A03212FF3634D00689171 /* ACPKit in Frameworks */ = {isa = PBXBuildFile; productRef = FC8A03202FF3634D00689171 /* ACPKit */; };
 		FC8A03232FF3634D00689171 /* StreamMarkdown in Frameworks */ = {isa = PBXBuildFile; productRef = FC8A03222FF3634D00689171 /* StreamMarkdown */; };
 		FCE74E8D2FF368F000B42227 /* HerdManCore in Frameworks */ = {isa = PBXBuildFile; productRef = FCE74E8C2FF368F000B42227 /* HerdManCore */; };
+		FCE74E8E2FF368F000B42227 /* HerdManTheming in Frameworks */ = {isa = PBXBuildFile; productRef = FCE74E8F2FF368F000B42227 /* HerdManTheming */; };
+		FCE74E902FF368F000B42227 /* CodeHighlighter in Frameworks */ = {isa = PBXBuildFile; productRef = FCE74E912FF368F000B42227 /* CodeHighlighter */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -33,6 +35,8 @@
 				FC8A03232FF3634D00689171 /* StreamMarkdown in Frameworks */,
 				FC8A031F2FF3634D00689171 /* ACPAgents in Frameworks */,
 				FCE74E8D2FF368F000B42227 /* HerdManCore in Frameworks */,
+				FCE74E8E2FF368F000B42227 /* HerdManTheming in Frameworks */,
+				FCE74E902FF368F000B42227 /* CodeHighlighter in Frameworks */,
 			);
 		};
 /* End PBXFrameworksBuildPhase section */
@@ -84,6 +88,8 @@
 				FC8A03202FF3634D00689171 /* ACPKit */,
 				FC8A03222FF3634D00689171 /* StreamMarkdown */,
 				FCE74E8C2FF368F000B42227 /* HerdManCore */,
+				FCE74E8F2FF368F000B42227 /* HerdManTheming */,
+				FCE74E912FF368F000B42227 /* CodeHighlighter */,
 			);
 			productName = MyApp;
 			productReference = 000000000000000000000120 /* HerdMan.app */;
@@ -485,6 +491,14 @@
 		FC8A03222FF3634D00689171 /* StreamMarkdown */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = StreamMarkdown;
+		};
+		FCE74E8F2FF368F000B42227 /* HerdManTheming */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = HerdManTheming;
+		};
+		FCE74E912FF368F000B42227 /* CodeHighlighter */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = CodeHighlighter;
 		};
 		FCE74E8C2FF368F000B42227 /* HerdManCore */ = {
 			isa = XCSwiftPackageProductDependency;

@@ -6,6 +6,7 @@ import HerdManCore
 /// when the user sends.
 struct NewChatView: View {
     @Environment(AppEnvironment.self) private var environment
+    @Environment(\.theme) private var theme
     let store: SessionStore
     @Binding var selection: SidebarSelection?
     var preferredProjectId: UUID?
@@ -65,7 +66,7 @@ struct NewChatView: View {
                                     bottomTrailingRadius: 16,
                                     style: .continuous
                                 )
-                                .fill(Color.secondary.opacity(0.08))
+                                .fill(theme.cardQuietBackground)
                             )
                             .padding(.top, -16)
                         }
@@ -206,7 +207,7 @@ struct NewChatView: View {
         if case let .failed(message) = controller.status {
             Label(message, systemImage: "exclamationmark.triangle.fill")
                 .font(.callout)
-                .foregroundStyle(.orange)
+                .foregroundStyle(theme.statusWarn)
         }
     }
 

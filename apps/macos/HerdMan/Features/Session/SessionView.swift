@@ -6,6 +6,7 @@ import HerdManCore
 /// over the bottom of the history (no divider), and enough bottom inset that the
 /// last message can scroll clear of the composer.
 struct SessionScreen: View {
+    @Environment(\.theme) private var theme
     @Bindable var controller: SessionController
     var terminal: TerminalSession
     @State private var isAtBottom = true
@@ -167,9 +168,9 @@ struct SessionScreen: View {
         .background(
             LinearGradient(
                 colors: [
-                    Color(nsColor: .windowBackgroundColor).opacity(0),
-                    Color(nsColor: .windowBackgroundColor).opacity(0.9),
-                    Color(nsColor: .windowBackgroundColor)
+                    theme.windowBackground.opacity(0),
+                    theme.windowBackground.opacity(0.9),
+                    theme.windowBackground
                 ],
                 startPoint: .top,
                 endPoint: .bottom
@@ -195,7 +196,7 @@ struct SessionScreen: View {
         case let .failed(message):
             Label(message, systemImage: "exclamationmark.triangle.fill")
                 .font(.callout)
-                .foregroundStyle(.orange)
+                .foregroundStyle(theme.statusWarn)
         case .idle:
             EmptyView()
         }
@@ -204,10 +205,10 @@ struct SessionScreen: View {
     private func errorBanner(_ message: String) -> some View {
         Label(message, systemImage: "exclamationmark.triangle.fill")
             .font(.callout)
-            .foregroundStyle(.red)
+            .foregroundStyle(theme.statusError)
             .padding(10)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: 8).fill(.red.opacity(0.1)))
+            .background(RoundedRectangle(cornerRadius: 8).fill(theme.statusError.opacity(0.1)))
     }
 
     private var streamFingerprint: Int {
@@ -225,6 +226,7 @@ struct SessionScreen: View {
 }
 
 private struct PromptQueueView: View {
+    @Environment(\.theme) private var theme
     @Bindable var controller: SessionController
     @Binding var isExpanded: Bool
     @State private var editingQueueId: String?
@@ -266,7 +268,7 @@ private struct PromptQueueView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 10)
-                .fill(Color(nsColor: .controlBackgroundColor).opacity(0.96))
+                .fill(theme.composerBackground.opacity(0.96))
         )
         .overlay(
             RoundedRectangle(cornerRadius: 10)

@@ -1,5 +1,12 @@
 import SwiftUI
 
+/// Asynchronously turns a fenced code block into a syntax-highlighted
+/// attributed string, or nil to keep plain text (unknown language,
+/// highlighter unavailable). Injected by the host app; the package itself
+/// ships no highlighter.
+public typealias CodeHighlighting = @Sendable (_ code: String, _ language: String?) async ->
+    AttributedString?
+
 /// Visual styling for markdown rendering, injected through the environment so
 /// the host app can customize fonts, spacing, and colors.
 public struct MarkdownTheme: Sendable {
@@ -9,6 +16,11 @@ public struct MarkdownTheme: Sendable {
     public var codeBackground: Color
     public var quoteBarColor: Color
     public var tableBorderColor: Color
+    public var codeHighlighter: CodeHighlighting?
+    /// A stable identity for the active highlight theme (e.g. its id).
+    /// Closures can't be compared, so code blocks watch this to know when a
+    /// theme switch requires re-highlighting.
+    public var codeThemeKey: String
 
     public init(
         bodyFont: Font = .body,
@@ -16,7 +28,9 @@ public struct MarkdownTheme: Sendable {
         blockSpacing: CGFloat = 10,
         codeBackground: Color = Color.secondary.opacity(0.12),
         quoteBarColor: Color = Color.secondary.opacity(0.4),
-        tableBorderColor: Color = Color.secondary.opacity(0.25)
+        tableBorderColor: Color = Color.secondary.opacity(0.25),
+        codeHighlighter: CodeHighlighting? = nil,
+        codeThemeKey: String = "default"
     ) {
         self.bodyFont = bodyFont
         self.codeFont = codeFont
@@ -24,6 +38,8 @@ public struct MarkdownTheme: Sendable {
         self.codeBackground = codeBackground
         self.quoteBarColor = quoteBarColor
         self.tableBorderColor = tableBorderColor
+        self.codeHighlighter = codeHighlighter
+        self.codeThemeKey = codeThemeKey
     }
 
     public static let `default` = MarkdownTheme()

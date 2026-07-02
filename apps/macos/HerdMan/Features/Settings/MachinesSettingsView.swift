@@ -6,6 +6,7 @@ import HerdManCore
 /// one, add remotes, rename them, or remove ones you no longer use.
 struct MachinesSettingsView: View {
     @Environment(AppEnvironment.self) private var environment
+    @Environment(\.theme) private var theme
 
     @State private var showingAdd = false
     @State private var renaming: HerdManMachine?
@@ -164,7 +165,7 @@ struct MachinesSettingsView: View {
         if let status = machines.statusByMachineId[machine.id] {
             HStack(spacing: 5) {
                 Circle()
-                    .fill(status.isReachable ? Color.green : Color.red)
+                    .fill(status.isReachable ? theme.statusOK : theme.statusError)
                     .frame(width: 7, height: 7)
                     .accessibilityHidden(true)
                 // The label carries the failure reason when unreachable (e.g.

@@ -7,6 +7,7 @@ import HerdManCore
 struct UpdateBannerView: View {
     var model: AppUpdateModel
     let release: AppUpdateRelease
+    @Environment(\.theme) private var theme
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -41,7 +42,7 @@ struct UpdateBannerView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 8)
-                .fill(.quaternary.opacity(0.5))
+                .fill(theme.cardBackground)
         )
         .accessibilityElement(children: .contain)
         .accessibilityLabel("HerdMan \(release.version) is available")
@@ -55,6 +56,7 @@ struct ServerUpdateBannerView: View {
     var machines: MachineController
     let machine: HerdManMachine
     let update: ServerUpdateInfo
+    @Environment(\.theme) private var theme
 
     private var isUpdating: Bool { machines.serverUpdatePhase == .updating }
 
@@ -92,7 +94,7 @@ struct ServerUpdateBannerView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 8)
-                .fill(.quaternary.opacity(0.5))
+                .fill(theme.cardBackground)
         )
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Server update \(update.latestVersion) is available for \(machine.name)")

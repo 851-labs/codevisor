@@ -9,6 +9,7 @@ struct HerdManApp: App {
     var body: some Scene {
         WindowGroup {
             RootView()
+                .themedRoot()
                 .environment(environment)
         }
         .defaultSize(width: 980, height: 640)
@@ -22,6 +23,7 @@ struct HerdManApp: App {
 
         Settings {
             SettingsView()
+                .themedRoot()
                 .environment(environment)
         }
     }
@@ -31,6 +33,7 @@ struct HerdManApp: App {
 /// new-chat page.
 struct RootView: View {
     @Environment(AppEnvironment.self) private var environment
+    @Environment(\.theme) private var theme
     @State private var selection: SidebarSelection?
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @State private var store: SessionStore?
@@ -87,48 +90,20 @@ struct RootView: View {
         }
     }
 
-    /// Development builds tint the sidebar's slice of the top bar blue — that
-    /// color is how you tell the dev app apart from the production release.
-    /// An opaque muted slate blue: softer in light mode, deeper in dark mode,
-    /// so it reads as part of the theme rather than a painted stripe.
-    private static let developmentToolbarTint = Color(nsColor: NSColor(name: nil) { appearance in
-        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-            ? NSColor(srgbRed: 0.20, green: 0.29, blue: 0.44, alpha: 1) // deep slate
-            : NSColor(srgbRed: 0.55, green: 0.66, blue: 0.82, alpha: 1) // soft steel blue
-    })
-
     private var mainSplit: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
-            sidebarColumn
+            SidebarView(selection: $selection, store: store)
                 .navigationSplitViewColumnWidth(min: 230, ideal: 270, max: 360)
+                .themedToolbarBackground(theme, surface: theme.sidebarBackground)
         } detail: {
-            if let store {
-                detail(store)
-            } else {
-                ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var sidebarColumn: some View {
-        if HerdManAppVariant.isDevelopment {
-            // Paint only the sidebar's slice of the title bar: a band the
-            // height of the top safe area (the toolbar region), drawn just
-            // above the sidebar content. `.windowToolbar` backgrounds can't do
-            // this — they always tint the toolbar across the whole window.
-            SidebarView(selection: $selection, store: store)
-                .overlay {
-                    GeometryReader { proxy in
-                        Self.developmentToolbarTint
-                            .frame(height: proxy.safeAreaInsets.top)
-                            .offset(y: -proxy.safeAreaInsets.top)
-                            .allowsHitTesting(false)
-                            .accessibilityHidden(true)
-                    }
+            Group {
+                if let store {
+                    detail(store)
+                } else {
+                    ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
-        } else {
-            SidebarView(selection: $selection, store: store)
+            }
+            .themedToolbarBackground(theme, surface: theme.windowBackground)
         }
     }
 

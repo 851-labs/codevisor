@@ -8,6 +8,7 @@ import UniformTypeIdentifiers
 /// Completing the last step opens a new chat in the chosen project.
 struct OnboardingView: View {
     @Environment(AppEnvironment.self) private var environment
+    @Environment(\.theme) private var theme
 
     /// Called when setup finishes, with the project for the chosen folder.
     var onComplete: (Project?) -> Void
@@ -124,7 +125,7 @@ struct OnboardingView: View {
                             .font(.callout).foregroundStyle(.secondary)
                     }
                 } icon: {
-                    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(theme.statusWarn)
                 }
                 .padding(.vertical, 4)
             } else {
@@ -136,7 +137,7 @@ struct OnboardingView: View {
                 }
                 .padding(.horizontal, 14)
                 .padding(.vertical, 4)
-                .background(RoundedRectangle(cornerRadius: 12).fill(.quaternary.opacity(0.5)))
+                .background(RoundedRectangle(cornerRadius: 12).fill(theme.cardBackground))
             }
 
         }
@@ -205,7 +206,7 @@ struct OnboardingView: View {
                     }
                 }
                 .padding(14)
-                .background(RoundedRectangle(cornerRadius: 12).fill(.quaternary.opacity(0.5)))
+                .background(RoundedRectangle(cornerRadius: 12).fill(theme.cardBackground))
             }
             .buttonStyle(.plain)
         }
@@ -247,7 +248,7 @@ struct OnboardingView: View {
             .padding(14)
             .background(
                 RoundedRectangle(cornerRadius: 12)
-                    .fill(.quaternary.opacity(isSelected ? 0.8 : 0.5))
+                    .fill(isSelected ? AnyShapeStyle(theme.rowSelectedBackground) : theme.cardBackground)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 12)

@@ -8,6 +8,7 @@ struct IconPickerView: View {
     let onSelect: (String) -> Void
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.theme) private var theme
     @State private var query = ""
 
     private let columns = [GridItem(.adaptive(minimum: 44), spacing: 8)]
@@ -83,7 +84,7 @@ struct IconPickerView: View {
                 .frame(width: 44, height: 44)
                 .background(
                     RoundedRectangle(cornerRadius: 8)
-                        .fill(symbol == currentSymbol ? AnyShapeStyle(.tint.opacity(0.25)) : AnyShapeStyle(.quaternary.opacity(0.4)))
+                        .fill(symbol == currentSymbol ? AnyShapeStyle(.tint.opacity(0.25)) : theme.cardBackground)
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: 8)

@@ -7,12 +7,13 @@ import ACPKit
 /// height is driven by `TerminalSession.panel`; the resize handle and toggle
 /// live in the session's bottom status bar.
 struct TerminalPanel: View {
+    @Environment(\.theme) private var theme
     @Bindable var session: TerminalSession
 
     var body: some View {
         TerminalSurfaceView(session: session)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Color(nsColor: .textBackgroundColor))
+            .background(theme.terminalBackground)
     }
 }
 
@@ -20,6 +21,7 @@ struct TerminalPanel: View {
 /// cost + token usage on the left, acts as the drag handle for the bottom panel
 /// (terminal), and holds the bottom-panel toggle on the far right.
 struct SessionStatusBar: View {
+    @Environment(\.theme) private var theme
     var controller: SessionController
     @Bindable var terminal: TerminalSession
     var onToggle: () -> Void
@@ -33,7 +35,7 @@ struct SessionStatusBar: View {
             Button(action: onToggle) {
                 Image(systemName: "rectangle.bottomthird.inset.filled")
                     .font(.system(size: 13))
-                    .foregroundStyle(terminal.panel.isVisible ? Color.accentColor : Color.white)
+                    .foregroundStyle(terminal.panel.isVisible ? theme.accent : Color.white)
                     .frame(width: 24, height: 20)
                     .contentShape(Rectangle())
             }
@@ -43,7 +45,7 @@ struct SessionStatusBar: View {
         .padding(.horizontal, 10)
         .frame(height: 28)
         .frame(maxWidth: .infinity)
-        .background(Color(nsColor: .windowBackgroundColor))
+        .background(theme.windowBackground)
         .overlay(alignment: .top) { Divider() }
         .overlay(alignment: .bottom) {
             // When the panel is open, separate the status bar from the terminal.
