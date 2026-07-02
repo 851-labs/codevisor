@@ -76,7 +76,7 @@ struct AssistantTurnView: View {
                             StreamingMarkdownView(markdown)
                                 .foregroundStyle(.secondary)
                         case let .toolGroup(_, calls):
-                            ToolGroupView(calls: calls)
+                            ToolGroupView(calls: calls, isTurnActive: turn.isGenerating)
                         }
                     }
                 }

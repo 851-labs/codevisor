@@ -159,4 +159,49 @@ struct TranscriptReducerTests {
         turn.endedAt = nil
         #expect(turn.duration == nil)
     }
+
+    @Test("A full tool_call re-send preserves streamed diffStats and content it omits")
+    func resendPreservesStreamedState() {
+        let turn = reduce([
+            .toolCall(ToolCall(toolCallId: "a", title: "Edit", kind: .edit, status: .pending)),
+            .toolCallUpdate(ToolCallUpdate(
+                toolCallId: "a",
+                diffStats: [ToolCallDiffStat(path: "/a", added: 5, removed: 2)]
+            )),
+            .toolCall(ToolCall(toolCallId: "a", title: "Edited a.txt", kind: .edit, status: .completed))
+        ])
+        guard case let .tool(call) = turn.entries.first else {
+            Issue.record("expected tool entry")
+            return
+        }
+        #expect(call.title == "Edited a.txt")
+        #expect(call.status == .completed)
+        #expect(call.diffStats == [ToolCallDiffStat(path: "/a", added: 5, removed: 2)])
+    }
+
+    @Test("settleToolCalls maps the outcome onto non-terminal calls only")
+    func settleOutcomes() {
+        var turn = reduce([
+            .toolCall(ToolCall(toolCallId: "done", title: "Read", status: .completed)),
+            .toolCall(ToolCall(toolCallId: "running", title: "Edit", status: .inProgress)),
+            .toolCall(ToolCall(toolCallId: "pending", title: "Run", status: .pending)),
+            .toolCall(ToolCall(toolCallId: "statusless", title: "Fetch")),
+            .toolCall(ToolCall(toolCallId: "broken", title: "Bash", status: .failed))
+        ])
+        TranscriptReducer.settleToolCalls(&turn, outcome: .cancelled)
+        let statuses = turn.toolCalls.map(\.status)
+        #expect(statuses == [.completed, .cancelled, .cancelled, .cancelled, .failed])
+
+        var completedTurn = reduce([
+            .toolCall(ToolCall(toolCallId: "running", title: "Edit", status: .inProgress))
+        ])
+        TranscriptReducer.settleToolCalls(&completedTurn, outcome: .completed)
+        #expect(completedTurn.toolCalls.first?.status == .completed)
+
+        var failedTurn = reduce([
+            .toolCall(ToolCall(toolCallId: "running", title: "Edit", status: .inProgress))
+        ])
+        TranscriptReducer.settleToolCalls(&failedTurn, outcome: .failed)
+        #expect(failedTurn.toolCalls.first?.status == .failed)
+    }
 }

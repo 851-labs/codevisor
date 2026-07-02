@@ -81,8 +81,13 @@ public enum TranscriptReducer {
     }
 
     private static func upsertTool(_ call: ToolCall, to turn: inout AssistantTurn) {
-        if let index = toolIndex(call.toolCallId, in: turn) {
-            turn.entries[index] = .tool(call)
+        if let index = toolIndex(call.toolCallId, in: turn), case let .tool(existing) = turn.entries[index] {
+            // A full re-send replaces the call, but must not clobber streamed
+            // state it omits (diffStats/content arrive on separate updates).
+            var merged = call
+            if merged.diffStats == nil { merged.diffStats = existing.diffStats }
+            if merged.content == nil { merged.content = existing.content }
+            turn.entries[index] = .tool(merged)
         } else {
             turn.entries.append(.tool(call))
         }
@@ -93,6 +98,28 @@ public enum TranscriptReducer {
             turn.entries[index] = .tool(existing.applying(update))
         } else {
             turn.entries.append(.tool(update.asToolCall()))
+        }
+    }
+
+    // MARK: - Turn settling
+
+    /// How a turn reached its end, for settling tool calls that never received
+    /// a terminal status of their own.
+    public enum TurnOutcome: Sendable, Equatable {
+        case completed, cancelled, failed
+    }
+
+    /// Marks every non-terminal tool call in the turn with the outcome's
+    /// terminal status, so in-progress indicators can never outlive the turn.
+    public static func settleToolCalls(_ turn: inout AssistantTurn, outcome: TurnOutcome) {
+        for index in turn.entries.indices {
+            guard case var .tool(call) = turn.entries[index], !call.isSettled else { continue }
+            call.status = switch outcome {
+            case .completed: .completed
+            case .cancelled: .cancelled
+            case .failed: .failed
+            }
+            turn.entries[index] = .tool(call)
         }
     }
 }

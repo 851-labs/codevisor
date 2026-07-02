@@ -1,14 +1,25 @@
 import SwiftUI
 import ACPKit
+import HerdManCore
 import StreamMarkdown
 
 /// A single tool call as a one-line title that expands to a content card
-/// (terminal output, diff, or text) with a status badge.
+/// (terminal output, diff, or text) with a status badge. The title shimmers
+/// while the call is running, and edit calls carry an animated +N/−N counter
+/// that rolls as streamed diff stats arrive.
 struct ToolCallRow: View {
     let call: ToolCall
+    var isTurnActive: Bool = false
+    @Environment(\.theme) private var theme
     @State private var isExpanded = false
 
     private var hasContent: Bool { !(call.content?.isEmpty ?? true) }
+
+    /// Counters render for any edit call from the moment it starts (`+0 −0`)
+    /// so the roll-up is visible, and for any call reporting diff stats.
+    private var counterTotals: LineDiff.Totals? {
+        call.diffTotals ?? (call.kind == .edit ? LineDiff.Totals(added: 0, removed: 0) : nil)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -17,6 +28,10 @@ struct ToolCallRow: View {
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .foregroundStyle(.secondary)
+                    .shimmering(isTurnActive && !call.isSettled)
+                if let totals = counterTotals {
+                    DiffCounter(totals: totals)
+                }
                 if hasContent {
                     Image(systemName: "chevron.right")
                         .font(.caption2)
@@ -39,6 +54,26 @@ struct ToolCallRow: View {
     }
 }
 
+/// The +N/−N added/removed-lines counter. Digits roll up and down via
+/// `numericText` as streamed diff stats update the totals.
+struct DiffCounter: View {
+    let totals: LineDiff.Totals
+    @Environment(\.theme) private var theme
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Text("+\(totals.added)")
+                .foregroundStyle(theme.diffAddedFg)
+                .contentTransition(.numericText(value: Double(totals.added)))
+            Text("−\(totals.removed)")
+                .foregroundStyle(theme.diffRemovedFg)
+                .contentTransition(.numericText(value: Double(totals.removed)))
+        }
+        .font(.caption.monospacedDigit())
+        .animation(.snappy(duration: 0.3), value: totals)
+    }
+}
+
 /// The expanded content of a tool call: a labeled card with the output and a
 /// success/failure badge.
 struct ToolCallContentCard: View {
@@ -58,7 +93,7 @@ struct ToolCallContentCard: View {
                 contentView(content)
             }
 
-            if call.status == .completed || call.status == .failed {
+            if call.isSettled {
                 HStack { Spacer(); statusBadge }
             }
         }
@@ -108,6 +143,10 @@ struct ToolCallContentCard: View {
             Label("Failed", systemImage: "xmark")
                 .font(.caption2)
                 .foregroundStyle(theme.statusError)
+        case .cancelled:
+            Label("Cancelled", systemImage: "slash.circle")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
         default:
             EmptyView()
         }
@@ -118,9 +157,15 @@ struct ToolCallContentCard: View {
     VStack(alignment: .leading, spacing: 10) {
         ToolCallRow(call: ToolCall(toolCallId: "1", title: "Ran rg -n \"barnsong|village|farm|MCP\"", kind: .execute, status: .completed,
                                    content: [.content(.text("$ rg -n \"barnsong\"\nzsh:1: no matches found: wrangler*"))]))
-        ToolCallRow(call: ToolCall(toolCallId: "2", title: "Searched for files", kind: .search, status: .completed))
+        ToolCallRow(
+            call: ToolCall(toolCallId: "2", title: "Edited release.yml", kind: .edit, status: .inProgress,
+                           diffStats: [ToolCallDiffStat(path: "release.yml", added: 13, removed: 7)]),
+            isTurnActive: true
+        )
         ToolCallRow(call: ToolCall(toolCallId: "3", title: "Read README.md", kind: .read, status: .completed,
                                    content: [.content(.text("# Barnsong"))]))
+        ToolCallRow(call: ToolCall(toolCallId: "4", title: "Edited main.swift", kind: .edit, status: .cancelled,
+                                   content: [.diff(path: "main.swift", oldText: "let a = 1\n", newText: "let a = 2\n")]))
     }
     .padding()
     .frame(width: 520)

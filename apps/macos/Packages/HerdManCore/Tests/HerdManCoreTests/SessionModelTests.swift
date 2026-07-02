@@ -225,7 +225,149 @@ struct SessionModelTests {
         #expect(client.configUpdates.first?.1 == "large")
         #expect(model.configOptions.first?.currentValue == "large")
     }
+
+    @Test("Turn end settles in-flight tool calls by outcome")
+    func settlesToolCallsOnFinish() async {
+        let sessionId = UUID()
+        let client = FakeSessionServerClient(sessionId: sessionId)
+        let model = SessionModel(
+            serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
+            sessionId: sessionId.uuidString,
+            now: { Date(timeIntervalSince1970: 100) }
+        )
+        await model.loadHistory()
+        client.emit(toolCallEnvelope(id: 1, sessionId: sessionId, toolCallId: "edit-1", status: "in_progress"))
+        client.emit(stopEnvelope(id: 2, sessionId: sessionId, stopReason: "cancelled"))
+        await settleYields(model) { assistant in
+            assistant.turn.toolCalls.first?.status == .cancelled
+        }
+        guard case let .assistant(assistant) = model.conversation.last else {
+            Issue.record("expected assistant")
+            return
+        }
+        #expect(assistant.turn.toolCalls.first?.status == .cancelled)
+        #expect(assistant.turn.isGenerating == false)
+        #expect(model.isSending == false)
+    }
+
+    @Test("Output after a finished turn opens a new agent-initiated turn")
+    func agentInitiatedTurn() async {
+        let sessionId = UUID()
+        let client = FakeSessionServerClient(sessionId: sessionId)
+        let model = SessionModel(
+            serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
+            sessionId: sessionId.uuidString,
+            now: { Date(timeIntervalSince1970: 100) }
+        )
+        await model.send("kick off background work")
+        let countAfterPrompt = model.conversation.count
+
+        client.emit(ServerEventEnvelope(
+            id: 20,
+            serverId: "local",
+            kind: "session.output",
+            subjectId: sessionId.uuidString,
+            createdAt: "2026-06-30T00:01:00.000Z",
+            payload: .object([
+                "sessionUpdate": .string("agent_message_chunk"),
+                "messageId": .string("bg-1"),
+                "content": .object(["type": .string("text"), "text": .string("Background task finished.")])
+            ])
+        ))
+        client.emit(stopEnvelope(id: 21, sessionId: sessionId, stopReason: "end_turn"))
+        await settleYields(model) { assistant in
+            assistant.turn.finalText == .text(id: "acp:bg-1", markdown: "Background task finished.")
+                && !assistant.turn.isGenerating
+        }
+
+        #expect(model.conversation.count == countAfterPrompt + 1)
+        guard case let .assistant(background) = model.conversation.last else {
+            Issue.record("expected assistant")
+            return
+        }
+        #expect(background.turn.finalText == .text(id: "acp:bg-1", markdown: "Background task finished."))
+        #expect(background.turn.isGenerating == false)
+        #expect(model.isSending == false)
+    }
+
+    @Test("A straggler tool update merges into the finished turn without reopening it")
+    func stragglerUpdateDoesNotReopen() async {
+        let sessionId = UUID()
+        let client = FakeSessionServerClient(sessionId: sessionId)
+        let model = SessionModel(
+            serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
+            sessionId: sessionId.uuidString,
+            now: { Date(timeIntervalSince1970: 100) }
+        )
+        await model.loadHistory()
+        client.emit(toolCallEnvelope(id: 1, sessionId: sessionId, toolCallId: "edit-1", status: "in_progress"))
+        client.emit(stopEnvelope(id: 2, sessionId: sessionId, stopReason: "end_turn"))
+        client.emit(ServerEventEnvelope(
+            id: 3,
+            serverId: "local",
+            kind: "session.output",
+            subjectId: sessionId.uuidString,
+            createdAt: "2026-06-30T00:00:03.000Z",
+            payload: .object([
+                "sessionUpdate": .string("tool_call_update"),
+                "toolCallId": .string("edit-1"),
+                "status": .string("failed")
+            ])
+        ))
+        await settleYields(model) { assistant in
+            assistant.turn.toolCalls.first?.status == .failed
+        }
+
+        #expect(model.conversation.count == 1)
+        guard case let .assistant(assistant) = model.conversation.last else {
+            Issue.record("expected assistant")
+            return
+        }
+        #expect(assistant.turn.toolCalls.first?.status == .failed)
+        #expect(assistant.turn.isGenerating == false)
+        #expect(model.isSending == false)
+    }
+
+    private func toolCallEnvelope(id: Int, sessionId: UUID, toolCallId: String, status: String) -> ServerEventEnvelope {
+        ServerEventEnvelope(
+            id: id,
+            serverId: "local",
+            kind: "session.output",
+            subjectId: sessionId.uuidString,
+            createdAt: "2026-06-30T00:00:00.000Z",
+            payload: .object([
+                "sessionUpdate": .string("tool_call"),
+                "toolCallId": .string(toolCallId),
+                "title": .string("Edited file"),
+                "kind": .string("edit"),
+                "status": .string(status)
+            ])
+        )
+    }
+
+    private func stopEnvelope(id: Int, sessionId: UUID, stopReason: String) -> ServerEventEnvelope {
+        ServerEventEnvelope(
+            id: id,
+            serverId: "local",
+            kind: "session.updated",
+            subjectId: sessionId.uuidString,
+            createdAt: "2026-06-30T00:00:01.000Z",
+            payload: .object(["stopReason": .string(stopReason)])
+        )
+    }
+
+    /// Yields until the model's last assistant turn satisfies the predicate
+    /// (bounded), so emitted stream events land before assertions run.
+    private func settleYields(_ model: SessionModel, until predicate: (AssistantMessage) -> Bool) async {
+        for _ in 0..<200 {
+            await Task.yield()
+            if case let .assistant(assistant) = model.conversation.last, predicate(assistant) {
+                return
+            }
+        }
+    }
 }
+
 
 /// A clock that returns scripted timestamps in order, repeating the last value.
 final class TimeBox: @unchecked Sendable {

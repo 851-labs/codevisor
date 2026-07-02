@@ -20,7 +20,7 @@ struct ModelIdentityTests {
 
     @Test("Enum case sets are complete")
     func enumCases() {
-        #expect(ToolCallStatus.allCases.count == 4)
+        #expect(ToolCallStatus.allCases.count == 5)
         #expect(ToolKind.allCases.contains(.switchMode))
         #expect(PlanEntryPriority.allCases.count == 3)
         #expect(PlanEntryStatus.allCases.count == 3)

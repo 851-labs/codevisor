@@ -6,7 +6,12 @@ import HerdManCore
 /// (e.g. "Searched code, ran 2 commands") that expands to the individual calls.
 struct ToolGroupView: View {
     let calls: [ToolCall]
+    var isTurnActive: Bool = false
     @State private var isExpanded = false
+
+    private var hasRunningCalls: Bool {
+        isTurnActive && calls.contains { !$0.isSettled }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -17,6 +22,7 @@ struct ToolGroupView: View {
                     .frame(width: 16)
                 Text(ToolCallSummary.describe(calls))
                     .foregroundStyle(.secondary)
+                    .shimmering(hasRunningCalls)
                 Image(systemName: "chevron.right")
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
@@ -29,7 +35,7 @@ struct ToolGroupView: View {
             if isExpanded {
                 VStack(alignment: .leading, spacing: 8) {
                     ForEach(calls) { call in
-                        ToolCallRow(call: call)
+                        ToolCallRow(call: call, isTurnActive: isTurnActive)
                     }
                 }
                 .padding(.leading, 24)

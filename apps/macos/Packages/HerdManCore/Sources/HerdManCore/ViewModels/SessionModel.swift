@@ -105,7 +105,7 @@ public final class SessionModel {
         } catch {
             await drain()
             errorMessage = String(describing: error)
-            finish(stopReason: nil)
+            finish(stopReason: nil, outcome: .failed)
             isSending = false
         }
     }
@@ -198,6 +198,16 @@ public final class SessionModel {
         case let .usageUpdate(usage):
             self.usage = usage
         default:
+            // A trailing update for a tool call the finished turn already
+            // holds (e.g. a late settle) merges there without reopening it.
+            if case let .toolCallUpdate(toolUpdate) = update,
+               case .assistant(var message) = conversation.last,
+               !message.turn.isGenerating,
+               message.turn.toolCalls.contains(where: { $0.toolCallId == toolUpdate.toolCallId }) {
+                TranscriptReducer.apply(update, to: &message.turn)
+                conversation[conversation.count - 1] = .assistant(message)
+                return
+            }
             ensureAssistantTurn()
             guard case .assistant(var message) = conversation.last else { return }
             message.turn.isGenerating = true
@@ -212,11 +222,11 @@ public final class SessionModel {
         case let .update(update):
             apply(update)
         case let .finished(stopReason):
-            finish(stopReason: stopReason)
+            finish(stopReason: stopReason, outcome: stopReason == .cancelled ? .cancelled : .completed)
             isSending = false
         case let .failed(message):
             errorMessage = message
-            finish(stopReason: nil)
+            finish(stopReason: nil, outcome: .failed)
             isSending = false
         case let .queueUpdated(queue):
             queuedPrompts = queue
@@ -230,12 +240,16 @@ public final class SessionModel {
         self.usage = usage
     }
 
-    private func finish(stopReason: StopReason?) {
+    /// The single choke point for ending a turn: marks it finished and settles
+    /// any tool calls that never received a terminal status, so in-progress
+    /// indicators can't outlive the turn.
+    private func finish(stopReason: StopReason?, outcome: TranscriptReducer.TurnOutcome) {
         guard case .assistant(var message) = conversation.last else { return }
         message.turn.isGenerating = false
         message.turn.isThinking = false
         message.turn.stopReason = stopReason
         message.turn.endedAt = now()
+        TranscriptReducer.settleToolCalls(&message.turn, outcome: outcome)
         conversation[conversation.count - 1] = .assistant(message)
     }
 
@@ -265,8 +279,11 @@ public final class SessionModel {
     }
 
     private func ensureAssistantTurn() {
-        if case .assistant = conversation.last {
-            return
+        if case let .assistant(message) = conversation.last {
+            // A finished turn is never reopened: output arriving after the
+            // stopReason means the agent started a new turn on its own (e.g. a
+            // background task completing), which gets its own bubble.
+            if message.turn.isGenerating { return }
         }
         conversation.append(.assistant(AssistantMessage(
             turn: AssistantTurn(isGenerating: true, isThinking: true, startedAt: now())
