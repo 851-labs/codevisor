@@ -31,7 +31,6 @@ env:
   REPOSITORY: ${{ github.repository }}
   R2_BUCKET: "herdman"
   R2_PUBLIC_BASE_URL: "https://pub-d2d6eb72b71c4986a742c0527774c9f0.r2.dev/releases/herdman"
-  WRANGLER_VERSION: "4.90.1"
   GHOSTTY_REF: "28f9367bee11ad42f40f8aa589eb8c6db62d34be"
 
 jobs:
@@ -269,16 +268,10 @@ jobs:
       - name: Upload R2 release assets
         shell: bash
         env:
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-        run: |
-          if [[ -z "$CLOUDFLARE_ACCOUNT_ID" || -z "$CLOUDFLARE_API_TOKEN" ]]; then
-            echo "CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN are required for R2 release uploads." >&2
-            exit 1
-          fi
-
-          npm install --global "wrangler@$WRANGLER_VERSION"
-          scripts/release/upload-r2-artifacts.sh "$VERSION" dist/release
+          AWS_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.CLOUDFLARE_R2_SECRET_ACCESS_KEY }}
+          R2_S3_API_ENDPOINT: ${{ secrets.CLOUDFLARE_R2_S3_API_ENDPOINT }}
+        run: scripts/release/upload-r2-artifacts.sh "$VERSION" dist/release
       - name: Update Homebrew tap
         shell: bash
         run: |

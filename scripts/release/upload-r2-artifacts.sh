@@ -5,8 +5,10 @@ usage() {
   cat <<'EOF'
 usage: scripts/release/upload-r2-artifacts.sh <version> <artifact-dir>
 
-Uploads Homebrew release artifacts to the HerdMan R2 bucket. Requires Wrangler
-auth via CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID.
+Uploads Homebrew release artifacts to the HerdMan R2 bucket via the S3 API,
+which multipart-uploads large files (wrangler caps out at 300 MiB). Requires
+the aws CLI plus R2 S3 credentials in AWS_ACCESS_KEY_ID,
+AWS_SECRET_ACCESS_KEY, and R2_S3_API_ENDPOINT.
 EOF
 }
 
@@ -23,10 +25,21 @@ if [[ -z "$version" || -z "$artifact_dir" ]]; then
   exit 1
 fi
 
-if ! command -v wrangler >/dev/null 2>&1; then
-  echo "wrangler is required to upload R2 artifacts" >&2
+if ! command -v aws >/dev/null 2>&1; then
+  echo "the aws CLI is required to upload R2 artifacts" >&2
   exit 1
 fi
+
+if [[ -z "${AWS_ACCESS_KEY_ID:-}" || -z "${AWS_SECRET_ACCESS_KEY:-}" || -z "${R2_S3_API_ENDPOINT:-}" ]]; then
+  echo "AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, and R2_S3_API_ENDPOINT are required for R2 uploads" >&2
+  exit 1
+fi
+
+# R2 wants the literal region "auto", and aws CLI >= 2.23 defaults to CRC32
+# request checksums that R2's S3 API rejects.
+export AWS_DEFAULT_REGION="${AWS_DEFAULT_REGION:-auto}"
+export AWS_REQUEST_CHECKSUM_CALCULATION="${AWS_REQUEST_CHECKSUM_CALCULATION:-when_required}"
+export AWS_RESPONSE_CHECKSUM_VALIDATION="${AWS_RESPONSE_CHECKSUM_VALIDATION:-when_required}"
 
 bucket="${R2_BUCKET:-herdman}"
 prefix="${R2_PREFIX:-releases/herdman}"
@@ -58,11 +71,10 @@ for artifact in "${artifacts[@]}"; do
       ;;
   esac
 
-  wrangler r2 object put "$bucket/$prefix/v$version/$name" \
-    --file "$artifact" \
+  aws s3 cp "$artifact" "s3://$bucket/$prefix/v$version/$name" \
+    --endpoint-url "$R2_S3_API_ENDPOINT" \
     --content-type "$content_type" \
-    --cache-control "$cache_control" \
-    --remote
+    --cache-control "$cache_control"
 done
 
 # The manifest the app and server update checks read (the GitHub repository is
@@ -72,8 +84,7 @@ done
 manifest="$(mktemp)"
 trap 'rm -f "$manifest"' EXIT
 printf '{"version":"%s"}\n' "$version" > "$manifest"
-wrangler r2 object put "$bucket/$prefix/latest.json" \
-  --file "$manifest" \
+aws s3 cp "$manifest" "s3://$bucket/$prefix/latest.json" \
+  --endpoint-url "$R2_S3_API_ENDPOINT" \
   --content-type "application/json" \
-  --cache-control "${R2_LATEST_CACHE_CONTROL:-public, max-age=60}" \
-  --remote
+  --cache-control "${R2_LATEST_CACHE_CONTROL:-public, max-age=60}"
