@@ -55,6 +55,10 @@ export interface HarnessDefinition {
   /// Launch spec for the ACP provider's adapter process; native providers
   /// (claude/codex) drive the detected binary directly and omit it.
   readonly launch?: HarnessLaunch
+  /// When set, the harness is reported unavailable with this reason and
+  /// sessions cannot be created — used to pull a known-broken integration
+  /// without deleting its catalog entry (existing sessions keep their name).
+  readonly disabledReason?: string
 }
 
 export interface ProviderEnvironment {

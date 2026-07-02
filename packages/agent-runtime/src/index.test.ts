@@ -148,6 +148,22 @@ describe("@herdman/agent-runtime", () => {
       "CLI not found on PATH"
     )
     expect(harnesses.find((harness) => harness.id === "factory-droid")?.launchKind).toBe("npx")
+    // Cursor is pulled until cursor-agent's ACP mode stabilizes upstream.
+    expect(harnesses.find((harness) => harness.id === "cursor")?.readiness).toMatchObject({
+      state: "unavailable",
+      detail: expect.stringContaining("Temporarily disabled")
+    })
+  })
+
+  it("refuses sessions for disabled harnesses", async () => {
+    const runtime = makeAgentRuntime({
+      env: { PATH: "/bin" },
+      executableExists: () => true,
+      locateExecutable: (name) => `/bin/${name}`
+    })
+    await expect(
+      run(runtime.createAgentSession("cursor", "/tmp/project", () => undefined))
+    ).rejects.toThrow("Cursor is unavailable")
   })
 
   it("creates and loads agent sessions through the connector", async () => {

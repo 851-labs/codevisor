@@ -104,9 +104,18 @@ export const harnessCatalog: ReadonlyArray<HarnessDefinition> = [
   npxHarness("gemini", "Gemini CLI", "diamond", ["gemini"], "@google/gemini-cli@0.49.0", ["--acp"]),
   executableHarness("opencode", "OpenCode", "curlybraces", ["opencode"], "opencode", ["acp"]),
   executableHarness("goose", "goose", "bird", ["goose"], "goose", ["acp"]),
-  executableHarness("cursor", "Cursor", "cursorarrow.rays", ["cursor-agent"], "cursor-agent", [
-    "acp"
-  ]),
+  // Cursor is temporarily pulled: cursor-agent's headless/ACP mode fails with
+  // connection errors to Cursor's backend even where interactive mode works
+  // (their ACP path ignores the network.useHttp1ForAgent workaround).
+  {
+    detectBinaries: ["cursor-agent"],
+    disabledReason: "Temporarily disabled — cursor-agent's ACP mode is unreliable (upstream issue)",
+    id: "cursor",
+    launch: { args: ["acp"], command: "cursor-agent", kind: "executable" },
+    name: "Cursor",
+    provider: "acp",
+    symbolName: "cursorarrow.rays"
+  },
   executableHarness("amp", "Amp", "bolt", ["amp-acp"], "amp-acp"),
   npxHarness("auggie", "Auggie CLI", "a.square", ["auggie"], "@augmentcode/auggie@0.31.0", [
     "--acp"
@@ -201,6 +210,9 @@ export const makeAgentRuntime = (config: AgentRuntimeConfig = {}): AgentRuntimeS
       if (definition === undefined) {
         throw new Error(`Unknown harness: ${harnessId}`)
       }
+      if (definition.disabledReason !== undefined) {
+        throw new Error(`${definition.name} is unavailable: ${definition.disabledReason}`)
+      }
       const provider = providers.get(definition.provider)
       if (provider === undefined) {
         throw new Error(`No provider registered for harness: ${harnessId}`)
@@ -245,9 +257,11 @@ export const makeAgentRuntime = (config: AgentRuntimeConfig = {}): AgentRuntimeS
             definition.launch?.kind === "npx" ? ("npx" as const) : ("executable" as const),
           enabled: true,
           readiness:
-            provider === undefined
-              ? { detail: "Provider not available", state: "unavailable" as const }
-              : provider.readiness(definition)
+            definition.disabledReason !== undefined
+              ? { detail: definition.disabledReason, state: "unavailable" as const }
+              : provider === undefined
+                ? { detail: "Provider not available", state: "unavailable" as const }
+                : provider.readiness(definition)
         }
       })
     ),
