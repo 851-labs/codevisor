@@ -9,34 +9,24 @@ export const Route = createRootRoute({
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "HerdMan — Run your coding agents in one place" },
+      { title: "HerdMan — Every coding agent. One app." },
       {
         name: "description",
         content:
-          "HerdMan is a native macOS app for running your local ACP coding agents — Claude Code, Codex, and more — in one place, on your machines."
+          "HerdMan is a native macOS app that runs Claude Code, Codex, and any ACP coding agent on your machines — in one place."
       },
       { property: "og:title", content: "HerdMan" },
       {
         property: "og:description",
-        content: "Run your coding agents in one place. Native on macOS, remote on anything."
+        content: "Every coding agent. One app. Native on macOS, remote on anything."
       },
       { property: "og:type", content: "website" },
-      { property: "og:url", content: "https://www.herdman.dev" }
+      { property: "og:url", content: "https://www.herdman.dev" },
+      { property: "og:image", content: "https://www.herdman.dev/screenshots/chat.png" }
     ],
     links: [
-      { rel: "preconnect", href: "https://fonts.googleapis.com" },
-      { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
-      {
-        rel: "stylesheet",
-        href: "https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:ital,wght@0,400..900;1,400..900&family=Spline+Sans+Mono:wght@400;500&display=swap"
-      },
       { rel: "stylesheet", href: appCss },
       { rel: "icon", href: "/favicon.svg", type: "image/svg+xml" }
-    ],
-    scripts: [
-      // Gates the scroll-reveal hiding in app.css so content stays visible
-      // when JavaScript is unavailable.
-      { children: "document.documentElement.classList.add('js')" }
     ]
   }),
   component: RootComponent
@@ -52,9 +42,7 @@ function RootComponent() {
 
 function RootDocument({ children }: Readonly<{ children: ReactNode }>) {
   return (
-    // The inline head script adds a "js" class before hydration; suppress the
-    // expected class mismatch.
-    <html lang="en" className="scheme-dark" suppressHydrationWarning>
+    <html lang="en" className="scheme-dark">
       <head>
         <HeadContent />
       </head>
