@@ -1,6 +1,6 @@
 // Sidebar ordering helpers, ported from SidebarView.swift
-// (compareWorkspaces / compareSessions / timestamp / projectTimestamp).
-import type { SessionSummary, Workspace } from "@herdman/api"
+// (compareProjects / compareSessions / timestamp / projectTimestamp).
+import type { SessionSummary, Project } from "@herdman/api"
 
 export type SidebarOrganization = "byProject" | "chronological"
 export type SidebarOrder = "updated" | "created"
@@ -24,12 +24,12 @@ export function compareSessions(
 }
 
 export function projectTimestamp(
-  workspace: Workspace,
+  project: Project,
   sessions: readonly SessionSummary[],
   order: SidebarOrder
 ): string {
-  if (order !== "updated") return workspace.createdAt
-  let latest = workspace.createdAt
+  if (order !== "updated") return project.createdAt
+  let latest = project.createdAt
   for (const session of sessions) {
     const timestamp = session.updatedAt ?? session.createdAt
     if (timestamp > latest) latest = timestamp
@@ -37,14 +37,14 @@ export function projectTimestamp(
   return latest
 }
 
-export function compareWorkspaces(
-  left: Workspace,
-  right: Workspace,
-  sessionsByWorkspace: ReadonlyMap<string, readonly SessionSummary[]>,
+export function compareProjects(
+  left: Project,
+  right: Project,
+  sessionsByProject: ReadonlyMap<string, readonly SessionSummary[]>,
   order: SidebarOrder
 ): number {
-  const leftTimestamp = projectTimestamp(left, sessionsByWorkspace.get(left.id) ?? [], order)
-  const rightTimestamp = projectTimestamp(right, sessionsByWorkspace.get(right.id) ?? [], order)
+  const leftTimestamp = projectTimestamp(left, sessionsByProject.get(left.id) ?? [], order)
+  const rightTimestamp = projectTimestamp(right, sessionsByProject.get(right.id) ?? [], order)
   if (leftTimestamp !== rightTimestamp) {
     return leftTimestamp > rightTimestamp ? -1 : 1
   }
@@ -54,19 +54,19 @@ export function compareWorkspaces(
 // Applies the manual project order (newline-separated ids, like the Swift
 // @AppStorage value): manually placed projects first in saved order, the rest
 // by the comparator.
-export function orderWorkspaces(
-  workspaces: readonly Workspace[],
+export function orderProjects(
+  projects: readonly Project[],
   manualOrder: readonly string[],
-  sessionsByWorkspace: ReadonlyMap<string, readonly SessionSummary[]>,
+  sessionsByProject: ReadonlyMap<string, readonly SessionSummary[]>,
   order: SidebarOrder
-): Workspace[] {
+): Project[] {
   const indexes = new Map(manualOrder.map((id, index) => [id, index]))
-  return [...workspaces].sort((left, right) => {
+  return [...projects].sort((left, right) => {
     const leftIndex = indexes.get(left.id)
     const rightIndex = indexes.get(right.id)
     if (leftIndex != null && rightIndex != null) return leftIndex - rightIndex
     if (leftIndex != null) return -1
     if (rightIndex != null) return 1
-    return compareWorkspaces(left, right, sessionsByWorkspace, order)
+    return compareProjects(left, right, sessionsByProject, order)
   })
 }

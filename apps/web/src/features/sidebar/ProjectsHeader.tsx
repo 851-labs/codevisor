@@ -10,35 +10,35 @@ import {
   MenuTrigger
 } from "../../components/ui/menu"
 import { Tooltip, TooltipContent, TooltipTrigger } from "../../components/ui/tooltip"
-import { useEnsureWorkspace } from "../../lib/queries"
-import { pickWorkspaceFolder } from "../../lib/folder-picker"
+import { useEnsureProject } from "../../lib/queries"
+import { pickProjectFolder } from "../../lib/folder-picker"
 import type { SidebarOrder, SidebarOrganization } from "./sorting"
 
 // "Projects" section header: organize menu (organization + order radio
-// groups) and the add-workspace button (SidebarView.swift projectsHeader).
+// groups) and the add-project button (SidebarView.swift projectsHeader).
 export function ProjectsHeader({
   organization,
   order,
   onOrganizationChange,
   onOrderChange,
-  onWorkspaceAdded
+  onProjectAdded
 }: {
   organization: SidebarOrganization
   order: SidebarOrder
   onOrganizationChange: (next: SidebarOrganization) => void
   onOrderChange: (next: SidebarOrder) => void
-  onWorkspaceAdded: (workspaceId: string) => void
+  onProjectAdded: (projectId: string) => void
 }) {
-  const ensureWorkspace = useEnsureWorkspace()
+  const ensureProject = useEnsureProject()
 
-  const addWorkspace = async () => {
-    const folderPath = await pickWorkspaceFolder()
+  const addProject = async () => {
+    const folderPath = await pickProjectFolder()
     if (folderPath == null) return
     try {
-      const workspace = await ensureWorkspace.mutateAsync(folderPath)
-      onWorkspaceAdded(workspace.id)
+      const project = await ensureProject.mutateAsync(folderPath)
+      onProjectAdded(project.id)
     } catch {
-      // The workspaces query surfaces server state; a failed add is retryable.
+      // The projects query surfaces server state; a failed add is retryable.
     }
   }
 
@@ -91,15 +91,15 @@ export function ProjectsHeader({
           render={
             <button
               type="button"
-              aria-label="Add a workspace folder"
+              aria-label="Add a project folder"
               className="text-muted-foreground hover:text-foreground inline-flex size-5 items-center justify-center rounded outline-none"
-              onClick={() => void addWorkspace()}
+              onClick={() => void addProject()}
             >
               <FolderPlusIcon className="size-4" />
             </button>
           }
         />
-        <TooltipContent>Add a workspace folder</TooltipContent>
+        <TooltipContent>Add a project folder</TooltipContent>
       </Tooltip>
     </div>
   )

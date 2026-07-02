@@ -6,11 +6,11 @@
 import type {
   ConversationItem,
   CreateSessionRequest,
-  CreateWorkspaceRequest,
+  CreateProjectRequest,
   EventEnvelope,
   SessionDetail,
   UpdateSessionRequest,
-  UpdateWorkspaceRequest
+  UpdateProjectRequest
 } from "@herdman/api"
 import { isoTimestamp } from "@herdman/api"
 import { QueryClient, useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
@@ -19,6 +19,7 @@ import { useApi } from "./api"
 import { foldConversation } from "./conversation"
 import type { EventSocket } from "./events"
 import { trackRunningSessions } from "./running-sessions"
+import { projectFolderPath } from "./client"
 import {
   type CommandInfo,
   type PlanEntryInfo,
@@ -29,7 +30,7 @@ import {
 } from "./session-events"
 
 export const queryKeys = {
-  workspaces: ["workspaces"] as const,
+  projects: ["projects"] as const,
   sessions: ["sessions"] as const,
   session: (id: string) => ["session", id] as const,
   harnesses: ["harnesses"] as const,
@@ -221,10 +222,10 @@ export function wireServerEvents(client: QueryClient, events: EventSocket): () =
   return events.subscribe((event) => {
     if (event.kind.startsWith("session.")) trackRunningSessions(event)
     switch (event.kind) {
-      case "workspace.created":
-      case "workspace.updated":
-      case "workspace.deleted":
-        void client.invalidateQueries({ queryKey: queryKeys.workspaces })
+      case "project.created":
+      case "project.updated":
+      case "project.deleted":
+        void client.invalidateQueries({ queryKey: queryKeys.projects })
         return
       case "session.created":
       case "session.archived":
@@ -253,11 +254,11 @@ export function wireServerEvents(client: QueryClient, events: EventSocket): () =
 // Queries
 // ---------------------------------------------------------------------------
 
-export function useWorkspaces() {
+export function useProjects() {
   const { client } = useApi()
   return useQuery({
-    queryKey: queryKeys.workspaces,
-    queryFn: () => client.listWorkspaces()
+    queryKey: queryKeys.projects,
+    queryFn: () => client.listProjects()
   })
 }
 
@@ -304,47 +305,47 @@ export function useCapabilities(cwd: string | undefined) {
 // Mutations (thin wrappers; server events confirm the results)
 // ---------------------------------------------------------------------------
 
-export function useCreateWorkspace() {
+export function useCreateProject() {
   const { client } = useApi()
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (request: CreateWorkspaceRequest) => client.createWorkspace(request),
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: queryKeys.workspaces })
+    mutationFn: (request: CreateProjectRequest) => client.createProject(request),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: queryKeys.projects })
   })
 }
 
-// Adds a workspace folder, reusing (and unarchiving) an existing workspace
+// Adds a project folder, reusing (and unarchiving) an existing project
 // with the same folder path — the database is shared with the macOS app, so
 // "already added" is the common case, and folder_path is UNIQUE server-side.
-export function useEnsureWorkspace() {
+export function useEnsureProject() {
   const { client } = useApi()
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: async (folderPath: string) => {
       const normalized = folderPath.replace(/\/+$/, "")
-      const existing = (await client.listWorkspaces()).find(
-        (workspace) => workspace.folderPath.replace(/\/+$/, "") === normalized
+      const existing = (await client.listProjects()).find(
+        (project) => projectFolderPath(project)?.replace(/\/+$/, "") === normalized
       )
       if (existing != null) {
         if (existing.isArchived) {
-          return client.updateWorkspace(existing.id, { isArchived: false })
+          return client.updateProject(existing.id, { isArchived: false })
         }
         return existing
       }
       const name = normalized.split("/").at(-1) ?? normalized
-      return client.createWorkspace({ folderPath: normalized, name })
+      return client.createProject({ folderPath: normalized, name })
     },
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: queryKeys.workspaces })
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: queryKeys.projects })
   })
 }
 
-export function useUpdateWorkspace() {
+export function useUpdateProject() {
   const { client } = useApi()
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: ({ id, request }: { id: string; request: UpdateWorkspaceRequest }) =>
-      client.updateWorkspace(id, request),
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: queryKeys.workspaces })
+    mutationFn: ({ id, request }: { id: string; request: UpdateProjectRequest }) =>
+      client.updateProject(id, request),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: queryKeys.projects })
   })
 }
 

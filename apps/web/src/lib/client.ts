@@ -5,7 +5,7 @@
 import {
   type CancelRequest,
   type CreateSessionRequest,
-  type CreateWorkspaceRequest,
+  type CreateProjectRequest,
   decode,
   Harness,
   HealthResponse,
@@ -24,8 +24,8 @@ import {
   type UpdateHarnessRequest,
   type UpdateQueuedPromptRequest,
   type UpdateSessionRequest,
-  type UpdateWorkspaceRequest,
-  Workspace
+  type UpdateProjectRequest,
+  Project
 } from "@herdman/api"
 import { Schema } from "effect"
 
@@ -46,8 +46,13 @@ const decodeInfo = decode(ServerInfo)
 const decodeCapabilities = decode(ServerCapabilities)
 const decodeHarness = decode(Harness)
 const decodeHarnesses = decode(Schema.Array(Harness))
-const decodeWorkspace = decode(Workspace)
-const decodeWorkspaces = decode(Schema.Array(Workspace))
+/// The project's folder on the connected server. The web client talks to a
+/// single server, whose location is the only one it can act on.
+export const projectFolderPath = (project: Project): string | undefined =>
+  project.locations[0]?.folderPath
+
+const decodeProject = decode(Project)
+const decodeProjects = decode(Schema.Array(Project))
 const decodeSession = decode(SessionSummary)
 const decodeSessions = decode(Schema.Array(SessionSummary))
 const decodeSessionDetail = decode(SessionDetail)
@@ -91,20 +96,20 @@ export class HerdManClient {
     return this.send(`/v1/harnesses/${encodeURIComponent(id)}`, "PATCH", body, decodeHarness)
   }
 
-  listWorkspaces(): Promise<readonly Workspace[]> {
-    return this.get("/v1/workspaces", decodeWorkspaces)
+  listProjects(): Promise<readonly Project[]> {
+    return this.get("/v1/projects", decodeProjects)
   }
 
-  createWorkspace(request: CreateWorkspaceRequest): Promise<Workspace> {
-    return this.send("/v1/workspaces", "POST", request, decodeWorkspace)
+  createProject(request: CreateProjectRequest): Promise<Project> {
+    return this.send("/v1/projects", "POST", request, decodeProject)
   }
 
-  updateWorkspace(id: string, request: UpdateWorkspaceRequest): Promise<Workspace> {
-    return this.send(`/v1/workspaces/${encodeURIComponent(id)}`, "PATCH", request, decodeWorkspace)
+  updateProject(id: string, request: UpdateProjectRequest): Promise<Project> {
+    return this.send(`/v1/projects/${encodeURIComponent(id)}`, "PATCH", request, decodeProject)
   }
 
-  deleteWorkspace(id: string): Promise<void> {
-    return this.sendVoid(`/v1/workspaces/${encodeURIComponent(id)}`, "DELETE")
+  deleteProject(id: string): Promise<void> {
+    return this.sendVoid(`/v1/projects/${encodeURIComponent(id)}`, "DELETE")
   }
 
   listSessions(): Promise<readonly SessionSummary[]> {

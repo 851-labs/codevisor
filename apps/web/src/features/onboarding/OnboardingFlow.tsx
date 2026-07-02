@@ -6,8 +6,8 @@ import { Button } from "../../components/ui/button"
 import { Spinner } from "../../components/ui/spinner"
 import { Switch } from "../../components/ui/switch"
 import { cn } from "../../lib/cn"
-import { pickWorkspaceFolder, workspaceNameFromPath } from "../../lib/folder-picker"
-import { useEnsureWorkspace, useHarnesses, useSetHarnessEnabled } from "../../lib/queries"
+import { pickProjectFolder, projectNameFromPath } from "../../lib/folder-picker"
+import { useEnsureProject, useHarnesses, useSetHarnessEnabled } from "../../lib/queries"
 
 const STEPS = ["welcome", "harnesses", "project"] as const
 type Step = (typeof STEPS)[number]
@@ -124,7 +124,7 @@ function ProjectStep({
       <button
         type="button"
         onClick={() => {
-          void pickWorkspaceFolder().then((path) => {
+          void pickProjectFolder().then((path) => {
             if (path != null) onPick(path)
           })
         }}
@@ -141,7 +141,7 @@ function ProjectStep({
         )}
         <span className="flex min-w-0 flex-1 flex-col">
           <span className="text-sm font-medium">
-            {folderPath != null ? workspaceNameFromPath(folderPath) : "Choose a folder…"}
+            {folderPath != null ? projectNameFromPath(folderPath) : "Choose a folder…"}
           </span>
           {folderPath != null && (
             <span className="text-muted-foreground truncate text-xs">{folderPath}</span>
@@ -155,10 +155,10 @@ function ProjectStep({
 
 // First-launch onboarding: a short paginated flow — welcome, choose your
 // harnesses, open a project folder. Completing the last step creates the
-// workspace and opens a new chat scoped to it (OnboardingView.swift).
+// project and opens a new chat scoped to it (OnboardingView.swift).
 export function OnboardingFlow() {
   const navigate = useNavigate()
-  const ensureWorkspace = useEnsureWorkspace()
+  const ensureProject = useEnsureProject()
   const [step, setStep] = useState<Step>("welcome")
   const [folderPath, setFolderPath] = useState<string>()
   const [isFinishing, setIsFinishing] = useState(false)
@@ -170,15 +170,15 @@ export function OnboardingFlow() {
     setIsFinishing(true)
     setFinishError(undefined)
     try {
-      let workspaceId: string | undefined
+      let projectId: string | undefined
       if (folderPath != null) {
-        // Reuses an existing workspace for the folder — the database is
+        // Reuses an existing project for the folder — the database is
         // shared with the macOS app, so the folder may already be added.
-        const workspace = await ensureWorkspace.mutateAsync(folderPath)
-        workspaceId = workspace.id
+        const project = await ensureProject.mutateAsync(folderPath)
+        projectId = project.id
       }
       markOnboarded()
-      void navigate({ to: "/", search: workspaceId != null ? { workspace: workspaceId } : {} })
+      void navigate({ to: "/", search: projectId != null ? { project: projectId } : {} })
     } catch (error) {
       setFinishError(error instanceof Error ? error.message : String(error))
     } finally {

@@ -1,4 +1,4 @@
-import type { SessionSummary, Workspace } from "@herdman/api"
+import type { SessionSummary, Project } from "@herdman/api"
 import { useNavigate } from "@tanstack/react-router"
 import { ChevronRightIcon, FolderIcon, SquarePenIcon } from "lucide-react"
 
@@ -10,39 +10,40 @@ import {
   ContextMenuTrigger
 } from "../../components/ui/context-menu"
 import { cn } from "../../lib/cn"
-import { useUpdateWorkspace } from "../../lib/queries"
+import { useUpdateProject } from "../../lib/queries"
 import { SessionRow, sidebarRowClassName } from "./SessionRow"
 import type { SidebarOrder } from "./sorting"
+import { projectFolderPath } from "../../lib/client"
 
-// An expandable workspace folder row and its session rows. On hover the
+// An expandable project folder row and its session rows. On hover the
 // project icon swaps for a disclosure chevron and a "new chat here" pencil
-// appears (SidebarView.swift workspaceFolder).
-export function WorkspaceFolder({
-  workspace,
+// appears (SidebarView.swift projectFolder).
+export function ProjectFolder({
+  project,
   sessions,
   order,
   expanded,
   onToggle
 }: {
-  workspace: Workspace
+  project: Project
   sessions: readonly SessionSummary[]
   order: SidebarOrder
   expanded: boolean
   onToggle: (id: string) => void
 }) {
   const navigate = useNavigate()
-  const updateWorkspace = useUpdateWorkspace()
+  const updateProject = useUpdateProject()
 
   const newChatHere = () => {
-    void navigate({ to: "/", search: { workspace: workspace.id } })
+    void navigate({ to: "/", search: { project: project.id } })
   }
 
   return (
-    <Collapsible open={expanded} onOpenChange={() => onToggle(workspace.id)}>
+    <Collapsible open={expanded} onOpenChange={() => onToggle(project.id)}>
       <ContextMenu>
         <ContextMenuTrigger
           render={
-            <div className={cn(sidebarRowClassName, "font-medium")} title={workspace.folderPath}>
+            <div className={cn(sidebarRowClassName, "font-medium")} title={projectFolderPath(project)}>
               <CollapsibleTrigger className="flex min-w-0 flex-1 items-center gap-1.5 outline-none">
                 <span className="relative flex size-4 shrink-0 items-center justify-center">
                   <FolderIcon className="text-muted-foreground size-4 group-hover:opacity-0" />
@@ -53,12 +54,12 @@ export function WorkspaceFolder({
                     )}
                   />
                 </span>
-                <span className="min-w-0 flex-1 truncate text-left">{workspace.name}</span>
+                <span className="min-w-0 flex-1 truncate text-left">{project.name}</span>
               </CollapsibleTrigger>
               <button
                 type="button"
-                aria-label={`New chat in ${workspace.name}`}
-                title={`New chat in ${workspace.name}`}
+                aria-label={`New chat in ${project.name}`}
+                title={`New chat in ${project.name}`}
                 className="text-muted-foreground hidden shrink-0 group-hover:inline-flex"
                 onClick={newChatHere}
               >
@@ -71,7 +72,7 @@ export function WorkspaceFolder({
           <ContextMenuItem onClick={newChatHere}>New chat here</ContextMenuItem>
           <ContextMenuItem
             onClick={() =>
-              updateWorkspace.mutate({ id: workspace.id, request: { isArchived: true } })
+              updateProject.mutate({ id: project.id, request: { isArchived: true } })
             }
           >
             Archive

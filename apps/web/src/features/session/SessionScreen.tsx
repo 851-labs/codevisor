@@ -10,7 +10,7 @@ import {
   useSessionDetail,
   useSetSessionConfig,
   useSetSessionMode,
-  useWorkspaces
+  useProjects
 } from "../../lib/queries"
 import { ChipMenu } from "../composer/ChipMenu"
 import { Composer } from "../composer/Composer"
@@ -19,6 +19,7 @@ import { TerminalPanel } from "../terminal/TerminalPanel"
 import { PromptQueue } from "./PromptQueue"
 import { StatusBar } from "./StatusBar"
 import { Transcript } from "./Transcript"
+import { projectFolderPath } from "../../lib/client"
 
 const MIN_TERMINAL_HEIGHT = 120
 const MAX_TERMINAL_HEIGHT = 600
@@ -28,7 +29,7 @@ const MAX_TERMINAL_HEIGHT = 600
 // (SessionView.swift SessionScreen).
 export function SessionScreen({ sessionId }: { sessionId: string }) {
   const detailQuery = useSessionDetail(sessionId)
-  const workspacesQuery = useWorkspaces()
+  const projectsQuery = useProjects()
   const promptSession = usePromptSession()
   const cancelSession = useCancelSession()
   const setMode = useSetSessionMode()
@@ -41,13 +42,13 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
   const [composerRef, composerHeight] = useElementHeight()
 
   const detail = detailQuery.data
-  const workspace = workspacesQuery.data?.find(
-    (candidate) => candidate.id === detail?.session.workspaceId
+  const project = projectsQuery.data?.find(
+    (candidate) => candidate.id === detail?.session.projectId
   )
 
   // Mode + config pickers come from the harness capability (matching the
   // Swift ConfigPrefetcher), with the live mode following stream updates.
-  const capabilitiesQuery = useCapabilities(workspace?.folderPath)
+  const capabilitiesQuery = useCapabilities(project == null ? undefined : projectFolderPath(project))
   const capability = capabilitiesQuery.data?.harnesses.find(
     (candidate) => candidate.harness.id === detail?.session.harnessId
   )
@@ -190,9 +191,9 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
           )
         }
       />
-      {terminalVisible && workspace != null && (
+      {terminalVisible && project != null && (
         <div style={{ height: terminalHeight }} className="shrink-0">
-          <TerminalPanel sessionId={sessionId} cwd={workspace.folderPath} />
+          <TerminalPanel sessionId={sessionId} cwd={detail?.session.cwd ?? projectFolderPath(project) ?? ""} />
         </div>
       )}
     </div>

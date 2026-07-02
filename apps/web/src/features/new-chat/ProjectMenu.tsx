@@ -1,18 +1,18 @@
-import type { Workspace } from "@herdman/api"
+import type { Project } from "@herdman/api"
 import { CheckIcon } from "lucide-react"
 
 import { Menu, MenuContent, MenuItem, MenuTrigger } from "../../components/ui/menu"
 
 // The inline project dropdown inside the new-chat title: a quiet pill showing
-// the selected workspace (NewChatView.swift projectMenu).
+// the selected project (NewChatView.swift projectMenu).
 export function ProjectMenu({
-  workspaces,
+  projects,
   selected,
   onSelect
 }: {
-  workspaces: readonly Workspace[]
-  selected: Workspace | undefined
-  onSelect: (workspace: Workspace) => void
+  projects: readonly Project[]
+  selected: Project | undefined
+  onSelect: (project: Project) => void
 }) {
   return (
     <Menu>
@@ -20,12 +20,12 @@ export function ProjectMenu({
         {selected?.name ?? "project"}
       </MenuTrigger>
       <MenuContent align="center">
-        {workspaces.map((workspace) => (
-          <MenuItem key={workspace.id} onClick={() => onSelect(workspace)}>
+        {projects.map((project) => (
+          <MenuItem key={project.id} onClick={() => onSelect(project)}>
             <span className="flex size-4 items-center justify-center">
-              {workspace.id === selected?.id && <CheckIcon className="size-3.5" />}
+              {project.id === selected?.id && <CheckIcon className="size-3.5" />}
             </span>
-            {workspace.name}
+            {project.name}
           </MenuItem>
         ))}
       </MenuContent>

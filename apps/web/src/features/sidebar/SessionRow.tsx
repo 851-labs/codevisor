@@ -1,4 +1,4 @@
-import type { SessionSummary, Workspace } from "@herdman/api"
+import type { SessionSummary, Project } from "@herdman/api"
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router"
 import { ArchiveIcon, FolderIcon } from "lucide-react"
 import { useSyncExternalStore } from "react"
@@ -91,7 +91,7 @@ function useArchiveSession() {
   }
 }
 
-// A session row inside an expanded workspace folder.
+// A session row inside an expanded project folder.
 export function SessionRow({ session, order }: { session: SessionSummary; order: SidebarOrder }) {
   const selectedSessionId = useSelectedSessionId()
   const archive = useArchiveSession()
@@ -124,11 +124,11 @@ export function SessionRow({ session, order }: { session: SessionSummary; order:
 // A session row in chronological organization: icon + title + project name.
 export function ChronologicalSessionRow({
   session,
-  workspace,
+  project,
   order
 }: {
   session: SessionSummary
-  workspace: Workspace
+  project: Project
   order: SidebarOrder
 }) {
   const selectedSessionId = useSelectedSessionId()
@@ -151,7 +151,7 @@ export function ChronologicalSessionRow({
             <span className="flex min-w-0 flex-1 flex-col">
               <span className="truncate text-sm">{session.title}</span>
               <span className="text-muted-foreground/70 truncate text-[10px]">
-                {workspace.name}
+                {project.name}
               </span>
             </span>
             <TrailingSlot session={session} order={order} onArchive={() => archive(session)} />

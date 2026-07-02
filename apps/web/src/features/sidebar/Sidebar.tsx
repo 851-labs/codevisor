@@ -6,17 +6,17 @@ import { useMemo, useState } from "react"
 import { ScrollArea } from "../../components/ui/scroll-area"
 import { cn } from "../../lib/cn"
 import { useLocalStorage } from "../../lib/useLocalStorage"
-import { useSessions, useWorkspaces } from "../../lib/queries"
+import { useSessions, useProjects } from "../../lib/queries"
 import { ThemePicker } from "../theme/ThemePicker"
 import { ProjectsHeader } from "./ProjectsHeader"
 import { ChronologicalSessionRow, sidebarRowClassName } from "./SessionRow"
 import {
   compareSessions,
-  orderWorkspaces,
+  orderProjects,
   type SidebarOrder,
   type SidebarOrganization
 } from "./sorting"
-import { WorkspaceFolder } from "./WorkspaceFolder"
+import { ProjectFolder } from "./ProjectFolder"
 
 function narrowOrganization(raw: string): SidebarOrganization {
   return raw === "chronological" ? "chronological" : "byProject"
@@ -26,11 +26,11 @@ function narrowOrder(raw: string): SidebarOrder {
   return raw === "created" ? "created" : "updated"
 }
 
-// The sidebar: a New Chat action, a Projects section listing workspace
+// The sidebar: a New Chat action, a Projects section listing project
 // folders and their sessions (or a flat chronological session list), and the
 // theme picker footer (the slot the macOS app gives its machine picker).
 export function Sidebar() {
-  const workspacesQuery = useWorkspaces()
+  const projectsQuery = useProjects()
   const sessionsQuery = useSessions()
   const [organizationRaw, setOrganizationRaw] = useLocalStorage(
     "herdman-sidebar-organization",
@@ -43,17 +43,17 @@ export function Sidebar() {
   const organization = narrowOrganization(organizationRaw)
   const order = narrowOrder(orderRaw)
 
-  const activeWorkspaces = useMemo(
-    () => (workspacesQuery.data ?? []).filter((workspace) => !workspace.isArchived),
-    [workspacesQuery.data]
+  const activeProjects = useMemo(
+    () => (projectsQuery.data ?? []).filter((project) => !project.isArchived),
+    [projectsQuery.data]
   )
 
-  const sessionsByWorkspace = useMemo(() => {
+  const sessionsByProject = useMemo(() => {
     const map = new Map<string, SessionSummary[]>()
     for (const session of sessionsQuery.data ?? []) {
       if (session.isArchived) continue
-      const bucket = map.get(session.workspaceId)
-      if (bucket == null) map.set(session.workspaceId, [session])
+      const bucket = map.get(session.projectId)
+      if (bucket == null) map.set(session.projectId, [session])
       else bucket.push(session)
     }
     for (const bucket of map.values()) {
@@ -62,20 +62,20 @@ export function Sidebar() {
     return map
   }, [sessionsQuery.data, order])
 
-  const visibleWorkspaces = useMemo(() => {
+  const visibleProjects = useMemo(() => {
     const manualOrder =
       organization === "byProject" ? manualOrderRaw.split("\n").filter(Boolean) : []
-    return orderWorkspaces(activeWorkspaces, manualOrder, sessionsByWorkspace, order)
-  }, [activeWorkspaces, manualOrderRaw, organization, sessionsByWorkspace, order])
+    return orderProjects(activeProjects, manualOrder, sessionsByProject, order)
+  }, [activeProjects, manualOrderRaw, organization, sessionsByProject, order])
 
   const chronologicalSessions = useMemo(() => {
     if (organization !== "chronological") return []
-    return visibleWorkspaces
-      .flatMap((workspace) =>
-        (sessionsByWorkspace.get(workspace.id) ?? []).map((session) => ({ session, workspace }))
+    return visibleProjects
+      .flatMap((project) =>
+        (sessionsByProject.get(project.id) ?? []).map((session) => ({ session, project }))
       )
       .sort((left, right) => compareSessions(left.session, right.session, order))
-  }, [organization, visibleWorkspaces, sessionsByWorkspace, order])
+  }, [organization, visibleProjects, sessionsByProject, order])
 
   const toggleExpanded = (id: string) => {
     setExpanded((current) => {
@@ -86,7 +86,7 @@ export function Sidebar() {
     })
   }
 
-  const expandWorkspace = (id: string) => {
+  const expandProject = (id: string) => {
     setExpanded((current) => new Set(current).add(id))
   }
 
@@ -104,37 +104,37 @@ export function Sidebar() {
             order={order}
             onOrganizationChange={(next) => setOrganizationRaw(next)}
             onOrderChange={(next) => setOrderRaw(next)}
-            onWorkspaceAdded={expandWorkspace}
+            onProjectAdded={expandProject}
           />
 
           {organization === "byProject" ? (
-            visibleWorkspaces.map((workspace) => (
-              <WorkspaceFolder
-                key={workspace.id}
-                workspace={workspace}
-                sessions={sessionsByWorkspace.get(workspace.id) ?? []}
+            visibleProjects.map((project) => (
+              <ProjectFolder
+                key={project.id}
+                project={project}
+                sessions={sessionsByProject.get(project.id) ?? []}
                 order={order}
-                expanded={expanded.has(workspace.id)}
+                expanded={expanded.has(project.id)}
                 onToggle={toggleExpanded}
               />
             ))
           ) : (
             <>
-              {chronologicalSessions.map(({ session, workspace }) => (
+              {chronologicalSessions.map(({ session, project }) => (
                 <ChronologicalSessionRow
                   key={session.id}
                   session={session}
-                  workspace={workspace}
+                  project={project}
                   order={order}
                 />
               ))}
-              {chronologicalSessions.length === 0 && visibleWorkspaces.length > 0 && (
+              {chronologicalSessions.length === 0 && visibleProjects.length > 0 && (
                 <p className="text-muted-foreground/70 px-2.5 py-1 text-xs">No sessions yet</p>
               )}
             </>
           )}
-          {visibleWorkspaces.length === 0 && (
-            <p className="text-muted-foreground/70 px-2.5 py-1 text-xs">Add a workspace with +</p>
+          {visibleProjects.length === 0 && (
+            <p className="text-muted-foreground/70 px-2.5 py-1 text-xs">Add a project with +</p>
           )}
         </nav>
       </ScrollArea>

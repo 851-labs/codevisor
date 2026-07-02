@@ -2,7 +2,7 @@ import { useNavigate } from "@tanstack/react-router"
 import { TriangleAlertIcon } from "lucide-react"
 import { useMemo, useState } from "react"
 
-import { useCreateSession, useHarnesses, usePromptSession, useWorkspaces } from "../../lib/queries"
+import { useCreateSession, useHarnesses, usePromptSession, useProjects } from "../../lib/queries"
 import { ChipMenu } from "../composer/ChipMenu"
 import { Composer } from "../composer/Composer"
 import { ProjectMenu } from "./ProjectMenu"
@@ -19,24 +19,24 @@ export function sessionTitleFrom(prompt: string): string {
 // The new-chat page: a centered "What should we build in <project>?" title
 // with an inline project dropdown, and the composer. The session is created
 // only when the user sends (NewChatView.swift).
-export function NewChatScreen({ preferredWorkspaceId }: { preferredWorkspaceId?: string }) {
+export function NewChatScreen({ preferredProjectId }: { preferredProjectId?: string }) {
   const navigate = useNavigate()
-  const workspacesQuery = useWorkspaces()
+  const projectsQuery = useProjects()
   const harnessesQuery = useHarnesses()
   const createSession = useCreateSession()
   const promptSession = usePromptSession()
 
-  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState(preferredWorkspaceId)
+  const [selectedProjectId, setSelectedProjectId] = useState(preferredProjectId)
   const [selectedHarnessId, setSelectedHarnessId] = useState<string>()
   const [text, setText] = useState("")
   const [error, setError] = useState<string>()
 
-  const workspaces = useMemo(
-    () => (workspacesQuery.data ?? []).filter((workspace) => !workspace.isArchived),
-    [workspacesQuery.data]
+  const projects = useMemo(
+    () => (projectsQuery.data ?? []).filter((project) => !project.isArchived),
+    [projectsQuery.data]
   )
-  const selectedWorkspace =
-    workspaces.find((workspace) => workspace.id === selectedWorkspaceId) ?? workspaces[0]
+  const selectedProject =
+    projects.find((project) => project.id === selectedProjectId) ?? projects[0]
 
   const harnesses = useMemo(
     () => (harnessesQuery.data ?? []).filter((harness) => harness.enabled),
@@ -48,11 +48,11 @@ export function NewChatScreen({ preferredWorkspaceId }: { preferredWorkspaceId?:
     harnesses[0]
 
   const send = async () => {
-    if (selectedWorkspace == null || selectedHarness == null || text.trim() === "") return
+    if (selectedProject == null || selectedHarness == null || text.trim() === "") return
     setError(undefined)
     try {
       const session = await createSession.mutateAsync({
-        workspaceId: selectedWorkspace.id,
+        projectId: selectedProject.id,
         harnessId: selectedHarness.id,
         title: sessionTitleFrom(text)
       })
@@ -66,23 +66,23 @@ export function NewChatScreen({ preferredWorkspaceId }: { preferredWorkspaceId?:
   return (
     <div className="flex h-full items-center justify-center p-4 pb-24">
       <div className="flex w-full max-w-[720px] flex-col items-center gap-[22px]">
-        {workspaces.length === 0 ? (
+        {projects.length === 0 ? (
           <div className="flex flex-col items-center gap-2.5 text-center">
-            <h1 className="text-[26px] font-semibold">Add a workspace to start</h1>
+            <h1 className="text-[26px] font-semibold">Add a project to start</h1>
             <p className="text-muted-foreground">Use the + next to projects in the sidebar.</p>
           </div>
         ) : (
           <h1 className="flex flex-wrap items-center justify-center text-[26px] font-semibold">
             <span>What should we build in&nbsp;</span>
             <ProjectMenu
-              workspaces={workspaces}
-              selected={selectedWorkspace}
-              onSelect={(workspace) => setSelectedWorkspaceId(workspace.id)}
+              projects={projects}
+              selected={selectedProject}
+              onSelect={(project) => setSelectedProjectId(project.id)}
             />
             <span>?</span>
           </h1>
         )}
-        {workspaces.length > 0 && (
+        {projects.length > 0 && (
           <div className="w-full">
             <Composer
               value={text}
