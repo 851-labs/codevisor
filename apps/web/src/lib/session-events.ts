@@ -13,6 +13,14 @@ export interface ToolCallInfo {
   title?: string
   kind?: string
   status?: string
+  diffStats?: DiffStatInfo[]
+  parentToolCallId?: string
+}
+
+export interface DiffStatInfo {
+  path: string
+  added: number
+  removed: number
 }
 
 export interface PlanEntryInfo {
@@ -85,8 +93,26 @@ function toolCallFrom(payload: Record<string, unknown>): ToolCallInfo | undefine
     toolCallId,
     title: stringOrUndefined(payload.title),
     kind: stringOrUndefined(payload.kind),
-    status: stringOrUndefined(payload.status)
+    status: stringOrUndefined(payload.status),
+    diffStats: diffStatsFrom(payload.diffStats),
+    parentToolCallId: stringOrUndefined(payload.parentToolCallId)
   }
+}
+
+// Streamed cumulative per-path added/removed line counts; malformed entries
+// are dropped rather than failing the event.
+function diffStatsFrom(value: unknown): DiffStatInfo[] | undefined {
+  if (!Array.isArray(value)) return undefined
+  const stats: DiffStatInfo[] = []
+  for (const entry of value) {
+    if (!isRecord(entry)) continue
+    const path = stringOrUndefined(entry.path)
+    const added = numberOrUndefined(entry.added)
+    const removed = numberOrUndefined(entry.removed)
+    if (path == null || added == null || removed == null) continue
+    stats.push({ added, path, removed })
+  }
+  return stats.length > 0 ? stats : undefined
 }
 
 function planEntriesFrom(payload: Record<string, unknown>): PlanEntryInfo[] {

@@ -94,6 +94,46 @@ describe("sessionStreamEvents", () => {
     ])
   })
 
+  it("parses streamed diff stats and drops malformed entries", () => {
+    const events = sessionStreamEvents(
+      envelope("session.output", {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "t1",
+        status: "in_progress",
+        diffStats: [
+          { path: "release.yml", added: 13, removed: 7 },
+          { path: "bad" },
+          "junk"
+        ],
+        parentToolCallId: "task-1"
+      })
+    )
+    expect(events).toEqual([
+      {
+        type: "toolCallUpdate",
+        call: {
+          toolCallId: "t1",
+          title: undefined,
+          kind: undefined,
+          status: "in_progress",
+          diffStats: [{ path: "release.yml", added: 13, removed: 7 }],
+          parentToolCallId: "task-1"
+        }
+      }
+    ])
+  })
+
+  it("passes the cancelled tool-call status through", () => {
+    const events = sessionStreamEvents(
+      envelope("session.output", {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "t1",
+        status: "cancelled"
+      })
+    )
+    expect(events[0]).toMatchObject({ call: { status: "cancelled" } })
+  })
+
   it("maps raw plan updates", () => {
     const events = sessionStreamEvents(
       envelope("session.output", {
