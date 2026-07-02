@@ -1,6 +1,7 @@
 import type { AcpRuntimeService, RuntimeEventSink } from "@herdman/acp-runtime"
 import type { Harness } from "@herdman/api"
 import { makeDatabase, type HerdManDatabaseService } from "@herdman/db"
+import Database from "better-sqlite3"
 import type {
   TerminalHandlers,
   TerminalProcess,
@@ -16,7 +17,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { promisify } from "node:util"
 import { WebSocket } from "ws"
-import { afterEach, describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import {
   defaultDatabasePath,
   defaultServerConfig,
@@ -1173,6 +1174,8 @@ describe("@herdman/server", () => {
     process.env["HERDMAN_WORKTREES_ROOT"] = worktreesRoot
     try {
       const { acp, server } = await start()
+      // makeServices' temp dir (the newest entry) holds the server database.
+      const serverDatabasePath = join(tempDirs[tempDirs.length - 1] as string, "herdman.sqlite")
       const repoRoot = mkdtempSync(join(tmpdir(), "herdman-repo-"))
       tempDirs.push(repoRoot)
       const repoFolder = join(repoRoot, "repo")
@@ -1292,6 +1295,72 @@ describe("@herdman/server", () => {
       })
       await waitFor(() => acp.prompts.some((prompt) => prompt[1] === "hello worktree"))
       expect(acp.loads).toContainEqual(["codex", session.agentSessionId, worktree.path])
+
+      // Requesting a taken name twice more walks the numeric suffixes.
+      await jsonRequest(server, "/v1/projects/git-project/worktrees", {
+        body: JSON.stringify({ name: "fix auth" }),
+        method: "POST"
+      })
+      expect(
+        (
+          await jsonRequest(server, "/v1/projects/git-project/worktrees", {
+            body: JSON.stringify({ name: "fix auth" }),
+            method: "POST"
+          })
+        ).body
+      ).toMatchObject({ name: "fix-auth-4" })
+
+      // Random draws that collide with existing names are retried.
+      const randomSpy = vi.spyOn(Math, "random").mockReturnValue(0)
+      try {
+        const pinned = await jsonRequest(server, "/v1/projects/git-project/worktrees", {
+          method: "POST"
+        })
+        const pinnedName = (pinned.body as { readonly name: string }).name
+        const collided = await jsonRequest(server, "/v1/projects/git-project/worktrees", {
+          method: "POST"
+        })
+        expect((collided.body as { readonly name: string }).name).not.toBe(pinnedName)
+      } finally {
+        randomSpy.mockRestore()
+      }
+
+      // A recorded worktree whose folder vanished is rejected too.
+      rmSync(worktree.path, { force: true, recursive: true })
+      await git(["worktree", "prune"], repoFolder)
+      const missingFolder = await jsonRequest(server, "/v1/sessions", {
+        body: JSON.stringify({
+          projectId: "git-project",
+          harnessId: "codex",
+          worktreeName: "fix-auth",
+          title: "Missing worktree"
+        }),
+        method: "POST"
+      })
+      expect(missingFolder.status).toBe(400)
+      expect((missingFolder.body as { readonly error: string }).error).toContain(
+        "Worktree folder does not exist"
+      )
+
+      // A project whose only folder lives on another machine can't host
+      // sessions here.
+      await jsonRequest(server, "/v1/projects", {
+        body: JSON.stringify({ folderPath: join(repoRoot, "detached"), id: "detached-project" }),
+        method: "POST"
+      })
+      const sqlite = new Database(serverDatabasePath)
+      sqlite
+        .prepare("update project_locations set server_id = 'server-elsewhere' where project_id = ?")
+        .run("detached-project")
+      sqlite.close()
+      const detached = await jsonRequest(server, "/v1/sessions", {
+        body: JSON.stringify({ projectId: "detached-project", harnessId: "codex" }),
+        method: "POST"
+      })
+      expect(detached.status).toBe(400)
+      expect((detached.body as { readonly error: string }).error).toContain(
+        "no folder on this machine"
+      )
 
       // Unknown worktree names are rejected.
       expect(

@@ -43,7 +43,10 @@ export function ProjectFolder({
       <ContextMenu>
         <ContextMenuTrigger
           render={
-            <div className={cn(sidebarRowClassName, "font-medium")} title={projectFolderPath(project)}>
+            <div
+              className={cn(sidebarRowClassName, "font-medium")}
+              title={projectFolderPath(project)}
+            >
               <CollapsibleTrigger className="flex min-w-0 flex-1 items-center gap-1.5 outline-none">
                 <span className="relative flex size-4 shrink-0 items-center justify-center">
                   <FolderIcon className="text-muted-foreground size-4 group-hover:opacity-0" />
@@ -71,9 +74,7 @@ export function ProjectFolder({
         <ContextMenuContent>
           <ContextMenuItem onClick={newChatHere}>New chat here</ContextMenuItem>
           <ContextMenuItem
-            onClick={() =>
-              updateProject.mutate({ id: project.id, request: { isArchived: true } })
-            }
+            onClick={() => updateProject.mutate({ id: project.id, request: { isArchived: true } })}
           >
             Archive
           </ContextMenuItem>

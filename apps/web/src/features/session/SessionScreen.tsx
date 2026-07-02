@@ -48,7 +48,9 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
 
   // Mode + config pickers come from the harness capability (matching the
   // Swift ConfigPrefetcher), with the live mode following stream updates.
-  const capabilitiesQuery = useCapabilities(project == null ? undefined : projectFolderPath(project))
+  const capabilitiesQuery = useCapabilities(
+    project == null ? undefined : projectFolderPath(project)
+  )
   const capability = capabilitiesQuery.data?.harnesses.find(
     (candidate) => candidate.harness.id === detail?.session.harnessId
   )
@@ -193,7 +195,10 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
       />
       {terminalVisible && project != null && (
         <div style={{ height: terminalHeight }} className="shrink-0">
-          <TerminalPanel sessionId={sessionId} cwd={detail?.session.cwd ?? projectFolderPath(project) ?? ""} />
+          <TerminalPanel
+            sessionId={sessionId}
+            cwd={detail?.session.cwd ?? projectFolderPath(project) ?? ""}
+          />
         </div>
       )}
     </div>

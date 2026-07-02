@@ -409,6 +409,7 @@ const routeProjects = async (
       await addWorktree(location.folderPath, worktree.path, branch)
     } catch (cause) {
       // The directory never materialized; drop the record so the name can be retried.
+      /* v8 ignore next 2 -- best-effort cleanup; a second fault still surfaces the git error. */
       await run(services.db.deleteWorktree(worktree.id)).catch(() => undefined)
       throw cause
     }
@@ -431,23 +432,105 @@ const slugifyWorktreeName = (name: string | undefined): string | undefined => {
 }
 
 const worktreeAdjectives = [
-  "amber", "bold", "brave", "breezy", "bright", "calm", "cheeky", "clever",
-  "cosmic", "crafty", "curious", "daring", "dashing", "eager", "electric",
-  "fearless", "ferocious", "fluffy", "gentle", "giddy", "golden", "graceful",
-  "happy", "jolly", "keen", "lively", "lucky", "mellow", "mighty", "nimble",
-  "plucky", "quiet", "rapid", "rustic", "silver", "sly", "snazzy", "spry",
-  "sturdy", "sunny", "swift", "tidy", "velvet", "vivid", "wandering", "witty",
-  "zany", "zesty"
+  "amber",
+  "bold",
+  "brave",
+  "breezy",
+  "bright",
+  "calm",
+  "cheeky",
+  "clever",
+  "cosmic",
+  "crafty",
+  "curious",
+  "daring",
+  "dashing",
+  "eager",
+  "electric",
+  "fearless",
+  "ferocious",
+  "fluffy",
+  "gentle",
+  "giddy",
+  "golden",
+  "graceful",
+  "happy",
+  "jolly",
+  "keen",
+  "lively",
+  "lucky",
+  "mellow",
+  "mighty",
+  "nimble",
+  "plucky",
+  "quiet",
+  "rapid",
+  "rustic",
+  "silver",
+  "sly",
+  "snazzy",
+  "spry",
+  "sturdy",
+  "sunny",
+  "swift",
+  "tidy",
+  "velvet",
+  "vivid",
+  "wandering",
+  "witty",
+  "zany",
+  "zesty"
 ] as const
 
 const worktreeAnimals = [
-  "badger", "beaver", "bison", "capybara", "cheetah", "condor", "cougar",
-  "coyote", "crane", "dingo", "dolphin", "falcon", "ferret", "finch", "fox",
-  "gazelle", "gecko", "heron", "hedgehog", "ibex", "jackal", "kestrel",
-  "lemur", "lynx", "magpie", "manatee", "marmot", "mongoose", "narwhal",
-  "ocelot", "orca", "osprey", "otter", "owl", "panda", "pelican", "puffin",
-  "quokka", "raccoon", "raven", "salamander", "seal", "stoat", "tapir",
-  "toucan", "walrus", "wombat", "yak"
+  "badger",
+  "beaver",
+  "bison",
+  "capybara",
+  "cheetah",
+  "condor",
+  "cougar",
+  "coyote",
+  "crane",
+  "dingo",
+  "dolphin",
+  "falcon",
+  "ferret",
+  "finch",
+  "fox",
+  "gazelle",
+  "gecko",
+  "heron",
+  "hedgehog",
+  "ibex",
+  "jackal",
+  "kestrel",
+  "lemur",
+  "lynx",
+  "magpie",
+  "manatee",
+  "marmot",
+  "mongoose",
+  "narwhal",
+  "ocelot",
+  "orca",
+  "osprey",
+  "otter",
+  "owl",
+  "panda",
+  "pelican",
+  "puffin",
+  "quokka",
+  "raccoon",
+  "raven",
+  "salamander",
+  "seal",
+  "stoat",
+  "tapir",
+  "toucan",
+  "walrus",
+  "wombat",
+  "yak"
 ] as const
 
 /// A memorable default worktree name ("ferocious-walrus"); retries a few
@@ -461,6 +544,7 @@ const randomWorktreeName = (existing: ReadonlySet<string>): string => {
       return candidate
     }
   }
+  /* v8 ignore next 2 -- ten colliding draws needs a nearly full namespace. */
   return uniquifyWorktreeName("worktree", existing)
 }
 
@@ -632,8 +716,7 @@ const createServerSession = async (
 ): Promise<SessionSummary> => {
   const cwd = await resolveSessionCwdOrFail(services, serverId, project, payload.worktreeName)
   const agentSessionId =
-    payload.agentSessionId ??
-    (await run(services.acp.createAgentSession(payload.harnessId, cwd)))
+    payload.agentSessionId ?? (await run(services.acp.createAgentSession(payload.harnessId, cwd)))
   return run(
     services.db.createSession({
       ...payload,
@@ -1127,7 +1210,10 @@ const discoverHarnesses = async (
 ): Promise<ReadonlyArray<Harness>> =>
   run(services.db.applyHarnessSettings(await run(services.acp.discoverHarnesses)))
 
-const getProjectOrFail = async (db: HerdManDatabaseService, projectId: string): Promise<Project> => {
+const getProjectOrFail = async (
+  db: HerdManDatabaseService,
+  projectId: string
+): Promise<Project> => {
   const project = (await run(db.listProjects)).find((candidate) => candidate.id === projectId)
   if (project === undefined) {
     throw new HttpFailure(404, `Project not found: ${projectId}`)
@@ -1150,7 +1236,12 @@ const ensureAgentSessionFor = async (
 ): Promise<string> => {
   const detail = await run(services.db.getSessionDetail(sessionId))
   const project = await getProjectOrFail(services.db, detail.session.projectId)
-  const cwd = await resolveSessionCwdOrFail(services, serverId, project, detail.session.worktreeName)
+  const cwd = await resolveSessionCwdOrFail(
+    services,
+    serverId,
+    project,
+    detail.session.worktreeName
+  )
   const agentSessionId = detail.session.agentSessionId ?? sessionId
   return run(services.acp.loadAgentSession(detail.session.harnessId, agentSessionId, cwd))
 }

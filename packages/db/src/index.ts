@@ -328,9 +328,7 @@ const migrations: ReadonlyArray<Migration> = [
 export interface HerdManDatabaseService {
   readonly migrate: Effect.Effect<ReadonlyArray<string>, DatabaseError>
   readonly close: Effect.Effect<void>
-  readonly createProject: (
-    request: CreateProjectRequest
-  ) => Effect.Effect<Project, DatabaseError>
+  readonly createProject: (request: CreateProjectRequest) => Effect.Effect<Project, DatabaseError>
   readonly listProjects: Effect.Effect<ReadonlyArray<Project>, DatabaseError>
   readonly updateProject: (
     id: string,
@@ -342,7 +340,9 @@ export interface HerdManDatabaseService {
     name: string,
     branch: string
   ) => Effect.Effect<Worktree, DatabaseError>
-  readonly listWorktrees: (projectId: string) => Effect.Effect<ReadonlyArray<Worktree>, DatabaseError>
+  readonly listWorktrees: (
+    projectId: string
+  ) => Effect.Effect<ReadonlyArray<Worktree>, DatabaseError>
   readonly deleteWorktree: (id: string) => Effect.Effect<void, DatabaseError>
   readonly createSession: (
     request: CreateSessionRequest
@@ -582,7 +582,13 @@ const createService = (
               id, project_id, server_id, folder_path, created_at
             ) values (?, ?, ?, ?, ?)`
           )
-          .run(location.id, location.projectId, location.serverId, location.folderPath, location.createdAt)
+          .run(
+            location.id,
+            location.projectId,
+            location.serverId,
+            location.folderPath,
+            location.createdAt
+          )
       })
       transaction()
       return project

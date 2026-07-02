@@ -83,6 +83,17 @@ for package_name in acp-runtime api db terminal; do
   cp -R "$repo_root/packages/$package_name/dist" "$runtime_dir/packages/$package_name/dist"
 done
 
+# The lockfile spans every workspace member, so bun's frozen install needs
+# each manifest present even though the runtime only ships the server code.
+for manifest in "$repo_root"/apps/*/package.json "$repo_root"/packages/*/package.json; do
+  [[ -f "$manifest" ]] || continue
+  relative="${manifest#"$repo_root"/}"
+  if [[ ! -f "$runtime_dir/$relative" ]]; then
+    mkdir -p "$runtime_dir/$(dirname "$relative")"
+    cp "$manifest" "$runtime_dir/$relative"
+  fi
+done
+
 node_gyp="$repo_root/node_modules/.bin/node-gyp"
 if [[ ! -x "$node_gyp" ]]; then
   echo "error: node-gyp is required to build the packaged server runtime. Run bun install first." >&2

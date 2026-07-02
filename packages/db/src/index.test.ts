@@ -170,13 +170,35 @@ describe("@herdman/db", () => {
 
     const sqlite = new Database(filename)
     expect(
-      sqlite.prepare("select name from sqlite_master where type = 'table' and name = 'workspaces'").get()
+      sqlite
+        .prepare("select name from sqlite_master where type = 'table' and name = 'workspaces'")
+        .get()
     ).toBeUndefined()
     expect(sqlite.pragma("foreign_key_check")).toEqual([])
     sqlite.close()
 
     expect(await run(db.migrate)).toEqual([])
     await Effect.runPromise(db.close)
+  })
+
+  it("refuses to migrate a database with orphaned child rows", async () => {
+    const filename = tempDatabase()
+    buildV4Fixture(filename)
+    // With enforcement off an orphan can sneak in; the migration's
+    // foreign_key_check must catch it.
+    const sqlite = new Database(filename)
+    sqlite.pragma("foreign_keys = OFF")
+    sqlite
+      .prepare(
+        `insert into sessions (id, workspace_id, server_id, harness_id, title, origin, is_archived, created_at)
+         values ('orphan', 'missing-workspace', 'local', 'codex', 'Orphan', 'herdman', 0, '2026-06-01T02:00:00.000Z')`
+      )
+      .run()
+    sqlite.close()
+
+    await expect(run(makeDatabase({ filename, serverId: "local" }))).rejects.toBeInstanceOf(
+      DatabaseError
+    )
   })
 
   it("migrates once and persists projects, sessions, conversation, and events", async () => {
@@ -427,11 +449,31 @@ describe("@herdman/db", () => {
     expect(session.worktreeName).toBe("fix-auth")
     expect(session.cwd).toBe(worktreePath(project.id, "fix-auth"))
 
+    const doomed = await run(db.createWorktree(project.id, "doomed", "herdman/doomed"))
+    await run(db.deleteWorktree(doomed.id))
+    expect((await run(db.listWorktrees(project.id))).map((w) => w.name)).toEqual(["fix-auth"])
+    // Deleting an unknown worktree is a no-op rather than an error.
+    await run(db.deleteWorktree("missing"))
+
     // Worktree rows are removed with their project.
     await run(db.deleteProject(project.id))
     expect(await run(db.listWorktrees(project.id))).toEqual([])
 
     await Effect.runPromise(db.close)
+  })
+
+  it("omits session cwd when the project has no folder on this server", async () => {
+    const filename = tempDatabase()
+    const db = await run(makeDatabase({ filename, serverId: "machine-a" }))
+    const project = await run(db.createProject({ folderPath: "/tmp/elsewhere" }))
+    await run(db.createSession({ projectId: project.id, harnessId: "codex" }))
+    await Effect.runPromise(db.close)
+
+    // A server without a location for the project cannot derive a cwd.
+    const other = await run(makeDatabase({ filename, serverId: "machine-b" }))
+    const sessions = await run(other.listSessions)
+    expect(sessions[0]?.cwd).toBeUndefined()
+    await Effect.runPromise(other.close)
   })
 
   it("applies harness settings, auth tokens, and update state", async () => {
