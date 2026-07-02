@@ -4,6 +4,7 @@ import { accessSync, constants } from "node:fs"
 import { Context, Effect, Layer } from "effect"
 import { makeAcpProvider, type AcpConnector } from "./providers/acp.js"
 import { makeClaudeProvider } from "./providers/claude.js"
+import { makeCodexProvider } from "./providers/codex/provider.js"
 import {
   runtimeEffect,
   type AgentProvider,
@@ -29,6 +30,10 @@ export {
 export type { AcpAgentConnection, AcpConnector, AcpHarnessLaunchRequest } from "./providers/acp.js"
 export { makeClaudeProvider } from "./providers/claude.js"
 export type { ClaudeProviderConfig, ClaudeQueryFn } from "./providers/claude.js"
+export { makeCodexProvider } from "./providers/codex/provider.js"
+export type { CodexProviderConfig } from "./providers/codex/provider.js"
+export { spawnCodexClient } from "./providers/codex/client.js"
+export type { CodexClient, CodexConnector, CodexSpawnRequest } from "./providers/codex/client.js"
 
 export interface AgentRuntimeConfig {
   readonly env?: NodeJS.ProcessEnv
@@ -87,13 +92,15 @@ export const harnessCatalog: ReadonlyArray<HarnessDefinition> = [
     provider: "claude",
     symbolName: "sparkle"
   },
-  npxHarness(
-    "codex",
-    "Codex",
-    "chevron.left.forwardslash.chevron.right",
-    ["codex"],
-    "@agentclientprotocol/codex-acp@1.0.2"
-  ),
+  // Codex is driven directly through `codex app-server` (JSONL JSON-RPC) —
+  // no npx adapter, no Node requirement.
+  {
+    detectBinaries: ["codex"],
+    id: "codex",
+    name: "Codex",
+    provider: "codex",
+    symbolName: "chevron.left.forwardslash.chevron.right"
+  },
   npxHarness("gemini", "Gemini CLI", "diamond", ["gemini"], "@google/gemini-cli@0.49.0", ["--acp"]),
   executableHarness("opencode", "OpenCode", "curlybraces", ["opencode"], "opencode", ["acp"]),
   executableHarness("goose", "goose", "bird", ["goose"], "goose", ["acp"]),
@@ -158,6 +165,7 @@ export const makeAgentRuntime = (config: AgentRuntimeConfig = {}): AgentRuntimeS
     )
   )
   providers.set("claude", makeClaudeProvider(environment))
+  providers.set("codex", makeCodexProvider(environment))
   for (const provider of Object.values(config.providers ?? {})) {
     providers.set(provider.id, provider)
   }

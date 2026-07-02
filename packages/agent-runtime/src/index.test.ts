@@ -129,13 +129,17 @@ describe("@herdman/agent-runtime", () => {
   it("discovers ready, missing-runner, and unavailable harnesses", async () => {
     const runtime = makeAgentRuntime({
       env: { PATH: "/bin" },
-      executableExists: (name) => ["codex", "opencode"].includes(name)
+      executableExists: (name) => ["gemini", "opencode", "codex"].includes(name)
     })
 
     const harnesses = await run(runtime.discoverHarnesses)
-    expect(harnesses.find((harness) => harness.id === "codex")?.readiness).toEqual({
+    expect(harnesses.find((harness) => harness.id === "gemini")?.readiness).toEqual({
       state: "unavailable",
       detail: "Requires npx"
+    })
+    // Native providers need only their binary — no npx.
+    expect(harnesses.find((harness) => harness.id === "codex")?.readiness).toEqual({
+      state: "ready"
     })
     expect(harnesses.find((harness) => harness.id === "opencode")?.readiness).toEqual({
       state: "ready"
@@ -151,19 +155,19 @@ describe("@herdman/agent-runtime", () => {
     const runtime = makeAgentRuntime({
       connector,
       env: { PATH: "/bin" },
-      executableExists: (name) => ["codex", "npx"].includes(name),
+      executableExists: (name) => ["gemini", "npx"].includes(name),
       locateExecutable: (name) => `/bin/${name}`
     })
     const sink = (): void => undefined
 
-    const created = await run(runtime.createAgentSession("codex", "/tmp/project", sink))
-    const inspected = await run(runtime.inspectHarness("codex", "/tmp/project"))
-    const inspectedWithCloseFailure = await run(runtime.inspectHarness("codex", "/tmp/fail-close"))
+    const created = await run(runtime.createAgentSession("gemini", "/tmp/project", sink))
+    const inspected = await run(runtime.inspectHarness("gemini", "/tmp/project"))
+    const inspectedWithCloseFailure = await run(runtime.inspectHarness("gemini", "/tmp/fail-close"))
     const loaded = await run(
-      runtime.loadAgentSession("codex", "agent-existing", "/tmp/project", sink)
+      runtime.loadAgentSession("gemini", "agent-existing", "/tmp/project", sink)
     )
     const loadedAgain = await run(
-      runtime.loadAgentSession("codex", "agent-existing", "/tmp/project", sink)
+      runtime.loadAgentSession("gemini", "agent-existing", "/tmp/project", sink)
     )
     const previousLoadedConnection = connector.connections[3]
     if (previousLoadedConnection === undefined) {
@@ -171,22 +175,22 @@ describe("@herdman/agent-runtime", () => {
     }
     previousLoadedConnection.failClose = true
     const reloadedElsewhere = await run(
-      runtime.loadAgentSession("codex", "agent-existing", "/tmp/other", sink)
+      runtime.loadAgentSession("gemini", "agent-existing", "/tmp/other", sink)
     )
     await new Promise((resolve) => setTimeout(resolve, 0))
 
-    expect(created).toBe("agent-codex-1")
-    expect(inspected).toEqual({ configOptions: [], sessionId: "agent-codex-1" })
-    expect(inspectedWithCloseFailure).toEqual({ configOptions: [], sessionId: "agent-codex-1" })
+    expect(created).toBe("agent-gemini-1")
+    expect(inspected).toEqual({ configOptions: [], sessionId: "agent-gemini-1" })
+    expect(inspectedWithCloseFailure).toEqual({ configOptions: [], sessionId: "agent-gemini-1" })
     expect(loaded).toBe("agent-existing")
     expect(loadedAgain).toBe("agent-existing")
     expect(reloadedElsewhere).toBe("agent-existing")
     expect(connector.requests).toHaveLength(5)
     expect(connector.requests[0]).toMatchObject({
-      args: ["-y", "@agentclientprotocol/codex-acp@1.0.2"],
+      args: ["-y", "@google/gemini-cli@0.49.0", "--acp"],
       command: "/bin/npx",
       cwd: "/tmp/project",
-      harnessId: "codex"
+      harnessId: "gemini"
     })
     expect(connector.connections[0]?.created).toEqual(["/tmp/project"])
     expect(connector.connections[3]?.loaded).toEqual([["agent-existing", "/tmp/project"]])
@@ -199,12 +203,12 @@ describe("@herdman/agent-runtime", () => {
     const runtime = makeAgentRuntime({
       connector,
       env: { PATH: "/bin" },
-      executableExists: (name) => ["codex", "npx", "opencode"].includes(name),
+      executableExists: (name) => ["gemini", "npx", "opencode"].includes(name),
       locateExecutable: () => undefined
     })
     const sink = (): void => undefined
 
-    await run(runtime.createAgentSession("codex", "/tmp/project", sink))
+    await run(runtime.createAgentSession("gemini", "/tmp/project", sink))
     await run(runtime.createAgentSession("opencode", "/tmp/project", sink))
 
     expect(connector.requests.map((request) => request.command)).toEqual(["npx", "opencode"])
@@ -254,12 +258,12 @@ describe("@herdman/agent-runtime", () => {
     const runtime = makeAgentRuntime({
       connector,
       env: { PATH: "/bin" },
-      executableExists: (name) => ["codex", "npx"].includes(name),
+      executableExists: (name) => ["gemini", "npx"].includes(name),
       locateExecutable: (name) => `/bin/${name}`
     })
     const events: Array<RuntimeEvent> = []
     const sessionId = await run(
-      runtime.createAgentSession("codex", "/tmp/project", (event) => {
+      runtime.createAgentSession("gemini", "/tmp/project", (event) => {
         events.push(event)
       })
     )
@@ -296,12 +300,12 @@ describe("@herdman/agent-runtime", () => {
     const runtime = makeAgentRuntime({
       connector,
       env: { PATH: "/bin" },
-      executableExists: (name) => ["codex", "npx"].includes(name),
+      executableExists: (name) => ["gemini", "npx"].includes(name),
       locateExecutable: (name) => `/bin/${name}`
     })
     const events: Array<RuntimeEvent> = []
     const sessionId = await run(
-      runtime.createAgentSession("codex", "/tmp/project", (event) => {
+      runtime.createAgentSession("gemini", "/tmp/project", (event) => {
         events.push(event)
       })
     )
@@ -324,12 +328,12 @@ describe("@herdman/agent-runtime", () => {
     const runtime = makeAgentRuntime({
       connector,
       env: { PATH: "/bin" },
-      executableExists: (name) => ["codex", "npx"].includes(name),
+      executableExists: (name) => ["gemini", "npx"].includes(name),
       locateExecutable: (name) => `/bin/${name}`
     })
     const seen: Array<string> = []
     const sessionId = await run(
-      runtime.createAgentSession("codex", "/tmp/project", async (event) => {
+      runtime.createAgentSession("gemini", "/tmp/project", async (event) => {
         // A slow async sink must not reorder events.
         await new Promise((resolve) => setTimeout(resolve, 1))
         seen.push((event.payload as { text?: string }).text ?? "lifecycle")
@@ -351,12 +355,12 @@ describe("@herdman/agent-runtime", () => {
     const runtime = makeAgentRuntime({
       connector,
       env: { PATH: "/bin" },
-      executableExists: (name) => ["codex", "npx"].includes(name),
+      executableExists: (name) => ["gemini", "npx"].includes(name),
       locateExecutable: (name) => `/bin/${name}`
     })
     const events: Array<RuntimeEvent> = []
     const sessionId = await run(
-      runtime.createAgentSession("codex", "/tmp/project", (event) => {
+      runtime.createAgentSession("gemini", "/tmp/project", (event) => {
         events.push(event)
       })
     )
@@ -386,7 +390,7 @@ describe("@herdman/agent-runtime", () => {
     })
 
     await expect(
-      run(runtime.createAgentSession("codex", "/tmp/project", () => undefined))
+      run(runtime.createAgentSession("gemini", "/tmp/project", () => undefined))
     ).rejects.toThrow("ACP harness is unavailable")
     await expect(
       run(runtime.createAgentSession("missing", "/tmp/project", () => undefined))
