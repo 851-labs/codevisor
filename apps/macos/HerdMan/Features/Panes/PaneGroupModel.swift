@@ -120,6 +120,12 @@ final class PaneGroupModel: Identifiable {
         return target
     }
 
+    /// Drag-to-reorder: moves the dragged pane to the hovered tab's slot.
+    func movePane(id: UUID, onto targetId: UUID) {
+        state.movePane(id: id, onto: targetId)
+        persist()
+    }
+
     func setHeight(_ height: CGFloat, isFinal: Bool = false) {
         state.setHeight(height)
         if isFinal {

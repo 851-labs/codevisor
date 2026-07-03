@@ -140,6 +140,20 @@ public struct PaneGroupState: Codable, Sendable, Equatable {
         return removed
     }
 
+    /// Moves the pane with `id` into the slot currently occupied by the pane
+    /// with `targetId` (drag-to-reorder swap-flow semantics: the dragged tab
+    /// takes the hovered tab's position). Selection follows the pane.
+    public mutating func movePane(id: UUID, onto targetId: UUID) {
+        guard id != targetId,
+              let from = panes.firstIndex(where: { $0.id == id }),
+              let target = panes.firstIndex(where: { $0.id == targetId }) else { return }
+        let pane = panes.remove(at: from)
+        // After removal the same index lands the pane after the target when
+        // dragging right and before it when dragging left — both take the
+        // target's visual slot.
+        panes.insert(pane, at: target)
+    }
+
     /// Selects a pane. Selecting while collapsed also opens the group (tab
     /// clicks in the always-visible bar should reveal their content).
     public mutating func selectPane(id: UUID) {
