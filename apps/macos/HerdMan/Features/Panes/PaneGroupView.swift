@@ -264,9 +264,12 @@ private struct PaneTab: View {
 
     /// The tab content's horizontal inset.
     private static let contentPadding: CGFloat = 8
-    /// The tab shape's height: bottom-anchored, with a 10pt top inset so the
-    /// selected overlay sits comfortably clear of the bar's top edge.
-    private static let shapeHeight: CGFloat = 22
+    /// The selected tab shape: bottom-anchored, tall enough to read as the
+    /// pane's "mouth" opening through the bar's bottom border.
+    private static let selectedShapeHeight: CGFloat = 26
+    /// The hover pill: an all-corners rounded rect, vertically centered and
+    /// clearly distinct from the selected tab shape (Chrome-style).
+    private static let hoverShapeHeight: CGFloat = 22
 
     var body: some View {
         HStack(spacing: 4) {
@@ -276,22 +279,25 @@ private struct PaneTab: View {
         .padding(.horizontal, Self.contentPadding)
         .frame(width: width, height: 32)
         .background(alignment: .bottom) {
-            UnevenRoundedRectangle(topLeadingRadius: 6, topTrailingRadius: 6, style: .continuous)
-                .fill(background)
-                .frame(height: Self.shapeHeight)
+            if isSelected {
+                // Solid; identical to the bar's bottom border so the tab
+                // joins it.
+                UnevenRoundedRectangle(topLeadingRadius: 6, topTrailingRadius: 6, style: .continuous)
+                    .fill(selectedFill)
+                    .frame(height: Self.selectedShapeHeight)
+            }
+        }
+        .background {
+            if !isSelected && isHovered {
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(Color.primary.opacity(0.06))
+                    .frame(height: Self.hoverShapeHeight)
+            }
         }
         .shadow(color: .black.opacity(isDragging ? 0.25 : 0), radius: 3, y: 1)
         .contentShape(Rectangle())
         .onTapGesture(perform: onSelect)
         .onHover { isHovered = $0 }
-    }
-
-    private var background: Color {
-        if isSelected {
-            // Solid; identical to the bar's bottom border so the tab joins it.
-            return selectedFill
-        }
-        return isHovered ? Color.primary.opacity(0.06) : .clear
     }
 
     /// The name at natural size, masked with a fixed-width trailing fade so
