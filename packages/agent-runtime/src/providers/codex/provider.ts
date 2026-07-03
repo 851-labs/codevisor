@@ -459,6 +459,21 @@ const handleNotification = (session: CodexSession, method: string, params: unkno
     case "item/started":
     case "item/completed": {
       const item = isRecord(payload.item) ? payload.item : {}
+      // Codex (as of 0.142) emits no reasoning text deltas — the reasoning
+      // item's lifecycle is the only thinking signal, so an empty thought
+      // chunk drives the client's ephemeral "Thinking…" state through the
+      // otherwise silent gap.
+      if (item.type === "reasoning" && method === "item/started") {
+        void session.emit({
+          kind: "session.output",
+          payload: {
+            content: { text: "", type: "text" },
+            sessionUpdate: "agent_thought_chunk"
+          },
+          subjectId: session.key
+        })
+        break
+      }
       emitItemLifecycle(session, item, method === "item/started")
       break
     }

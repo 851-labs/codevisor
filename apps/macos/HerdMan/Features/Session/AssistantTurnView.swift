@@ -33,7 +33,10 @@ struct AssistantTurnView: View {
                 ShimmeringText.thinking
             }
 
-            if let final = turn.finalText, case let .text(_, markdown) = final {
+            // While generating, text streams in place inside the worked
+            // section (strict arrival order); the final answer is split out
+            // below only once the turn finishes.
+            if !turn.isGenerating, let final = turn.finalText, case let .text(_, markdown) = final {
                 StreamingMarkdownView(markdown)
                     .textSelection(.enabled)
             }
@@ -53,6 +56,12 @@ struct AssistantTurnView: View {
         }
     }
 
+    /// Streaming order while generating (text stays in place between tool
+    /// groups); the final text splits out only once the turn finishes.
+    private var displayItems: [WorkedItem] {
+        turn.isGenerating ? turn.streamingItems : turn.workedItems
+    }
+
     private var workedSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             if turn.isGenerating {
@@ -67,10 +76,10 @@ struct AssistantTurnView: View {
                 .buttonStyle(.plain)
             }
 
-            if isExpanded && !turn.workedItems.isEmpty {
+            if isExpanded && !displayItems.isEmpty {
                 VStack(alignment: .leading, spacing: 12) {
                     Divider()
-                    ForEach(turn.workedItems) { item in
+                    ForEach(displayItems) { item in
                         switch item {
                         case let .text(_, markdown):
                             StreamingMarkdownView(markdown)

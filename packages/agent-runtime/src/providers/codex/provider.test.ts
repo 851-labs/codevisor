@@ -305,6 +305,25 @@ describe("CodexProvider", () => {
     })
   })
 
+  it("drives the thinking state from reasoning item lifecycles", async () => {
+    const { client, events } = await setup()
+    client.emit("item/started", {
+      item: { id: "rs_1", type: "reasoning" },
+      threadId: "thread-new",
+      turnId: "turn-1"
+    })
+    expect(events.at(-1)?.payload).toMatchObject({ sessionUpdate: "agent_thought_chunk" })
+    // Completion emits nothing extra; the next message/tool clears the state
+    // client-side.
+    const count = events.length
+    client.emit("item/completed", {
+      item: { id: "rs_1", summary: [], type: "reasoning" },
+      threadId: "thread-new",
+      turnId: "turn-1"
+    })
+    expect(events.length).toBe(count)
+  })
+
   it("interrupts: turn/interrupt is sent and the turn ends cancelled", async () => {
     const { client, created, events } = await setup()
     const promptPromise = run(created!.handle.prompt("long work"))

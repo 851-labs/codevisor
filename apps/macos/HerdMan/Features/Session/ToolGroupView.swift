@@ -19,7 +19,9 @@ struct ToolGroupView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
-                Image(systemName: ToolCallSummary.symbol(calls))
+                // Pinned to the first call's icon — a group's icon flipping
+                // as more calls stream in reads as UI churn.
+                Image(systemName: ToolCallSummary.symbol(calls.first.map { [$0] } ?? []))
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .frame(width: 16)

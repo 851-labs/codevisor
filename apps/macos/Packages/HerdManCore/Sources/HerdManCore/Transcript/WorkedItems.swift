@@ -18,7 +18,19 @@ public enum WorkedItem: Identifiable, Sendable, Equatable {
 public extension AssistantTurn {
     /// The worked-for entries grouped for display: consecutive tool calls are
     /// collapsed into a single `toolGroup`, with reasoning text in between.
+    /// Excludes the final text answer — the finished-turn presentation.
     var workedItems: [WorkedItem] {
+        groupedItems(workedEntries)
+    }
+
+    /// Every entry grouped in strict arrival order, including trailing text.
+    /// Used while the turn is generating so the transcript streams in place —
+    /// text and tool groups must never reorder around each other mid-turn.
+    var streamingItems: [WorkedItem] {
+        groupedItems(entries)
+    }
+
+    private func groupedItems(_ source: [TranscriptEntry]) -> [WorkedItem] {
         var items: [WorkedItem] = []
         var group: [ToolCall] = []
 
@@ -28,7 +40,7 @@ public extension AssistantTurn {
             group = []
         }
 
-        for entry in workedEntries {
+        for entry in source {
             switch entry {
             case let .text(id, markdown):
                 flush()

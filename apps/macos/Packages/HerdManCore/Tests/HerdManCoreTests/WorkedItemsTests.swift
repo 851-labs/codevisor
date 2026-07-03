@@ -78,4 +78,24 @@ struct WorkedItemsTests {
         #expect(turn.isTrailingToolGroup(lastToolCallId: "c"))
         #expect(!turn.isTrailingToolGroup(lastToolCallId: "missing"))
     }
+
+    @Test("streamingItems keep strict arrival order including trailing text")
+    func streamingItemsOrder() {
+        var turn = AssistantTurn(isGenerating: true)
+        TranscriptReducer.apply(.agentMessageChunk(.text("First I will check."), messageId: "m1"), to: &turn)
+        TranscriptReducer.apply(.toolCall(ToolCall(toolCallId: "a", title: "Run", kind: .execute)), to: &turn)
+        TranscriptReducer.apply(.agentMessageChunk(.text("Now editing."), messageId: "m2"), to: &turn)
+        TranscriptReducer.apply(.toolCall(ToolCall(toolCallId: "b", title: "Edit", kind: .edit)), to: &turn)
+        TranscriptReducer.apply(.agentMessageChunk(.text("Done."), messageId: "m3"), to: &turn)
+
+        // Streaming view: everything in arrival order, nothing pulled out.
+        #expect(turn.streamingItems.map(\.id) == [
+            "wtext:acp:m1", "wgroup:a", "wtext:acp:m2", "wgroup:b", "wtext:acp:m3"
+        ])
+        // Finished view: the final text is split out below the worked section.
+        #expect(turn.workedItems.map(\.id) == [
+            "wtext:acp:m1", "wgroup:a", "wtext:acp:m2", "wgroup:b"
+        ])
+        #expect(turn.finalText == .text(id: "acp:m3", markdown: "Done."))
+    }
 }
