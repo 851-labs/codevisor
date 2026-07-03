@@ -28,6 +28,8 @@ struct PaneGroupBar: View {
     /// remaining tabs just slide over, keeping the next ✕ under the pointer)
     /// until the pointer leaves the strip, then widths relax to fit.
     @State private var frozenTabWidth: CGFloat?
+    /// Which strip edges currently hide content (drives the edge fades).
+    @State private var scrollEdges = StripScrollEdges()
 
     private static let barHeight: CGFloat = 32
     /// Scrolling is a last resort: tabs compress hard before overflowing.
@@ -102,16 +104,29 @@ struct PaneGroupBar: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     tabRow(tabWidth: tabWidth, slotWidth: slotWidth)
                 }
+                // No scrolling (or rubber-band overscroll) while everything fits.
+                .scrollDisabled(!isOverflowing)
+                .onScrollGeometryChange(for: StripScrollEdges.self) { geometry in
+                    StripScrollEdges(
+                        hidesLeading: geometry.contentOffset.x > 1,
+                        hidesTrailing: geometry.contentOffset.x + geometry.containerSize.width
+                            < geometry.contentSize.width - 1
+                    )
+                } action: { _, edges in
+                    scrollEdges = edges
+                }
                 .frame(width: min(contentWidth, available), alignment: .leading)
-                // Soften the strip's edges when it overflows into scrolling.
+                // Fade only the edges that actually hide content: no fade at
+                // an edge you're fully scrolled against.
                 .mask(
                     HStack(spacing: 0) {
                         LinearGradient(colors: [.clear, .black], startPoint: .leading, endPoint: .trailing)
-                            .frame(width: isOverflowing ? 14 : 0)
+                            .frame(width: scrollEdges.hidesLeading ? 14 : 0)
                         Rectangle().fill(.black)
                         LinearGradient(colors: [.black, .clear], startPoint: .leading, endPoint: .trailing)
-                            .frame(width: isOverflowing ? 14 : 0)
+                            .frame(width: scrollEdges.hidesTrailing ? 14 : 0)
                     }
+                    .animation(.easeOut(duration: 0.15), value: scrollEdges)
                 )
                 // Pointer left the strip: relax frozen widths back to fitting.
                 .onHover { hovering in
@@ -291,6 +306,12 @@ struct PaneGroupBar: View {
                 dragStartHeight = nil
             }
     }
+}
+
+/// Which edges of the tab strip currently hide scrolled-out content.
+private struct StripScrollEdges: Equatable {
+    var hidesLeading = false
+    var hidesTrailing = false
 }
 
 /// Animates a tab's slot width during insertion/removal transitions: new tabs
