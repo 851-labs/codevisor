@@ -27,13 +27,13 @@ scoped to the session's working directory.
      Carbon, AppKit, Foundation, CoreFoundation, Security, ApplicationServices,
      AudioToolbox, UniformTypeIdentifiers, GameController, Combine.
 
-`GhosttyRuntime` writes a temp `font-family = Menlo` config so the renderer has a
-font even though Ghostty's bundled JetBrains Mono isn't shipped (otherwise
+`HerdManGhosttyApp` writes a temp `font-family = Menlo` config so the renderer
+has a font even though Ghostty's bundled JetBrains Mono isn't shipped (otherwise
 `ghostty_surface_new` fails).
 
 **Resources:** the `xterm-ghostty` terminfo + shell-integration are bundled as
 `HerdMan/Resources/ghostty-resources.tar.gz` (layout: `ghostty/shell-integration`
-+ `terminfo/{67,78}`). On first launch `GhosttyRuntime` extracts it to
++ `terminfo/{67,78}`). On first launch `HerdManGhosttyApp` extracts it to
 `~/Library/Application Support/HerdMan/ghostty-resources/` and sets
 `GHOSTTY_RESOURCES_DIR=<that>/ghostty` **before `ghostty_init`** (it captures the
 dir at init). libghostty then sets `TERM=xterm-ghostty` and injects zsh/bash/etc.
@@ -52,7 +52,29 @@ shell integration. To regenerate the tarball after a Ghostty bump:
   to other sessions and back.
 
 The terminal backend is selected at launch via `TerminalRuntime`, and the only
-supported backend is the real libghostty surface (`GhosttyTerminalSurface`).
+supported backend is the real libghostty surface.
+
+## Architecture (since the vendoring)
+
+The surface/input layer is **upstream Ghostty's own Swift code**, vendored at
+the same commit as the xcframework — see
+`HerdMan/Vendor/GhosttySwift/UPSTREAM.md` for the manifest, patch inventory,
+and re-sync workflow (`scripts/sync-ghostty-swift.sh`). This provides the full
+input stack: NSTextInputClient/IME + marked text, `performKeyEquivalent`
+(⌘V paste, ⌘C copy), correct key encoding (`consumed_mods`,
+`unshifted_codepoint`, kitty keyboard protocol), mouse tracking areas
+(selection anchoring, hover), `viewDidChangeBackingProperties` (multi-DPI),
+clipboard read/write callbacks with paste protection, and secure-input handling.
+
+HerdMan-owned pieces in this directory:
+
+- `HerdManGhosttyApp.swift` — process-wide runtime host (replaces upstream's
+  `Ghostty.App`): owns `ghostty_app_t` + themed `Ghostty.Config`, implements the
+  clipboard/wakeup callbacks and a per-surface `action_cb` subset; window/tab/
+  split actions are unhandled by design.
+- `GhosttyTerminalSurfaceAdapter.swift` — implements `TerminalSurface` by
+  wrapping the vendored `Ghostty.SurfaceView`; maps `TerminalLaunchDescriptor`
+  (cwd + herdman-terminal-proxy command) to `Ghostty.SurfaceConfiguration`.
 
 ## Rebuilding the terminal
 
@@ -82,8 +104,8 @@ macOS SDK (or once toolchain support lands), then drop the xcframework in.
 
 ## Notes / future work
 
-- `GhosttyTerminalSurface` is a focused single-surface integration (lifecycle,
-  render, focus, resize, keyboard/mouse). For full IME / marked-text fidelity,
-  vendor Ghostty's `SurfaceView_AppKit` input layer
-  (`references/ghostty/macos/Sources/Ghostty`).
 - One terminal per session for now.
+- Not vendored (candidates for later): `SurfaceScrollView` (native scrollbar
+  overlay), child-exited message bar, URL-hover banner, terminal inspector UI.
+- Bundle `herdman-terminal-proxy` inside the .app so the terminal works without
+  node/Homebrew on the user's machine (see `TerminalProxyCommand`).
