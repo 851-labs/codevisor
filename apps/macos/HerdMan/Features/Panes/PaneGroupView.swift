@@ -25,8 +25,8 @@ struct PaneGroupBar: View {
     @State private var dragOffset: CGFloat = 0
     @State private var dragAdjustment: CGFloat = 0
 
-    private static let barHeight: CGFloat = 28
-    private static let minTabWidth: CGFloat = 72
+    private static let barHeight: CGFloat = 32
+    private static let minTabWidth: CGFloat = 52
     private static let maxTabWidth: CGFloat = 168
     private static let tabSpacing: CGFloat = 1
 
@@ -81,6 +81,7 @@ struct PaneGroupBar: View {
             let count = max(group.state.panes.count, 1)
             let tabWidth = min(Self.maxTabWidth, max(Self.minTabWidth, available / CGFloat(count)))
             let slotWidth = tabWidth + Self.tabSpacing
+            let isOverflowing = CGFloat(count) * slotWidth + reserved > geometry.size.width
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: Self.tabSpacing) {
@@ -111,7 +112,20 @@ struct PaneGroupBar: View {
                 }
                 .frame(height: Self.barHeight)
                 .animation(.snappy(duration: 0.2), value: group.state.panes.map(\.id))
+                // Adding/removing tabs animates every tab to its new width
+                // instead of snapping.
+                .animation(.snappy(duration: 0.2), value: group.state.panes.count)
             }
+            // Soften the strip's edges when it overflows into scrolling.
+            .mask(
+                HStack(spacing: 0) {
+                    LinearGradient(colors: [.clear, .black], startPoint: .leading, endPoint: .trailing)
+                        .frame(width: isOverflowing ? 14 : 0)
+                    Rectangle().fill(.black)
+                    LinearGradient(colors: [.black, .clear], startPoint: .leading, endPoint: .trailing)
+                        .frame(width: isOverflowing ? 14 : 0)
+                }
+            )
         }
         .frame(height: Self.barHeight)
     }
@@ -238,18 +252,19 @@ private struct PaneTab: View {
     let onClose: () -> Void
     @State private var isHovered = false
 
-    /// The tab shape's height: bottom-anchored, leaving the resize strip and
-    /// a little air above it.
-    private static let shapeHeight: CGFloat = 21
+    /// The tab content's horizontal inset; the shape's top inset matches it.
+    private static let contentPadding: CGFloat = 8
+    /// The tab shape's height: bottom-anchored, with a top inset equal to the
+    /// horizontal padding (32 - 8).
+    private static let shapeHeight: CGFloat = 24
 
     var body: some View {
         HStack(spacing: 4) {
             fadingName
             closeButton
-                .opacity(isHovered || isSelected ? 1 : 0)
         }
-        .padding(.horizontal, 8)
-        .frame(width: width, height: 28)
+        .padding(.horizontal, Self.contentPadding)
+        .frame(width: width, height: 32)
         .background(alignment: .bottom) {
             UnevenRoundedRectangle(topLeadingRadius: 6, topTrailingRadius: 6, style: .continuous)
                 .fill(background)
@@ -269,8 +284,10 @@ private struct PaneTab: View {
         return isHovered ? Color.primary.opacity(0.06) : .clear
     }
 
-    /// The name at natural size, masked with a trailing fade so shrinking
-    /// tabs fade the text before the ✕ instead of truncating with an ellipsis.
+    /// The name at natural size, masked with a fixed-width trailing fade so
+    /// shrinking tabs fade the text before the ✕ instead of truncating with
+    /// an ellipsis. Only the text region collapses as the tab narrows — the
+    /// paddings and ✕ keep their size at every width.
     private var fadingName: some View {
         ZStack(alignment: .leading) {
             Text(name)
@@ -281,15 +298,11 @@ private struct PaneTab: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .clipped()
         .mask(
-            LinearGradient(
-                stops: [
-                    .init(color: .black, location: 0),
-                    .init(color: .black, location: 0.72),
-                    .init(color: .clear, location: 1)
-                ],
-                startPoint: .leading,
-                endPoint: .trailing
-            )
+            HStack(spacing: 0) {
+                Rectangle().fill(.black)
+                LinearGradient(colors: [.black, .clear], startPoint: .leading, endPoint: .trailing)
+                    .frame(width: 10)
+            }
         )
     }
 
