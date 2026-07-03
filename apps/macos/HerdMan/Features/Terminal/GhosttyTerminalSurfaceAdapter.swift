@@ -16,6 +16,8 @@ import os
 private final class HerdManGhosttySurfaceView: Ghostty.SurfaceView {
     /// Set by the adapter; fired from the context menu's "Restart Terminal".
     var onRestartRequest: (() -> Void)?
+    /// Set by the adapter; fired for pane-group shortcuts while focused.
+    var onPaneCommand: ((PaneGroupCommand) -> Void)?
 
     override func setFrameSize(_ newSize: NSSize) {
         super.setFrameSize(newSize)
@@ -26,6 +28,30 @@ private final class HerdManGhosttySurfaceView: Ghostty.SurfaceView {
         super.viewDidMoveToWindow()
         guard window != nil else { return }
         sizeDidChange(frame.size)
+    }
+
+    /// Pane-group shortcuts, captured only while this surface has keyboard
+    /// focus: ⌘⌥←/→ navigate tabs, ⌘T opens a new terminal tab. Everything
+    /// else falls through to Ghostty's key handling.
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if event.type == .keyDown, focused, let onPaneCommand {
+            let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            if mods == [.command, .option] {
+                if event.specialKey == .leftArrow {
+                    onPaneCommand(.previousTab)
+                    return true
+                }
+                if event.specialKey == .rightArrow {
+                    onPaneCommand(.nextTab)
+                    return true
+                }
+            }
+            if mods == .command, event.charactersIgnoringModifiers?.lowercased() == "t" {
+                onPaneCommand(.newTab)
+                return true
+            }
+        }
+        return super.performKeyEquivalent(with: event)
     }
 
     override func menu(for event: NSEvent) -> NSMenu? {
@@ -57,6 +83,11 @@ final class GhosttyTerminalSurface: TerminalSurface {
     var onRestartRequest: (() -> Void)? {
         get { surfaceView?.onRestartRequest }
         set { surfaceView?.onRestartRequest = newValue }
+    }
+
+    var onPaneCommand: ((PaneGroupCommand) -> Void)? {
+        get { surfaceView?.onPaneCommand }
+        set { surfaceView?.onPaneCommand = newValue }
     }
 
     init(descriptor: TerminalLaunchDescriptor) {

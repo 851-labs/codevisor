@@ -49,8 +49,28 @@ final class PaneGroupModel: Identifiable {
         case .terminal:
             pane = TerminalPane(context: makeContext(descriptor))
         }
+        pane.onGroupCommand = { [weak self] command in self?.handleCommand(command) }
         live[descriptor.id] = pane
         return pane
+    }
+
+    /// Keyboard shortcuts forwarded from a focused pane: ⌘⌥←/→ navigate
+    /// tabs (wrapping), ⌘T adds a terminal. Focus follows the new selection
+    /// so the keyboard stays in the pane group.
+    func handleCommand(_ command: PaneGroupCommand) {
+        switch command {
+        case .newTab:
+            addTerminalPane()
+            DispatchQueue.main.async { [weak self] in self?.focusSelectedPane() }
+        case .nextTab, .previousTab:
+            let panes = state.panes
+            guard panes.count > 1,
+                  let index = panes.firstIndex(where: { $0.id == state.selectedPaneId }) else { return }
+            let step = command == .nextTab ? 1 : -1
+            let target = panes[(index + step + panes.count) % panes.count]
+            select(id: target.id)
+            DispatchQueue.main.async { [weak self] in self?.focusSelectedPane() }
+        }
     }
 
     var selectedPane: (any Pane)? {

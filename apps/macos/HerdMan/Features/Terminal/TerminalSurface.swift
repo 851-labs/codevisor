@@ -136,6 +136,9 @@ protocol TerminalSurface: AnyObject {
     /// (e.g. from the surface's context menu). The owner (TerminalPane)
     /// performs the actual kill + recreate.
     var onRestartRequest: (() -> Void)? { get set }
+    /// Invoked for pane-group keyboard shortcuts (⌘⌥←/→, ⌘T) captured while
+    /// this surface has keyboard focus.
+    var onPaneCommand: ((PaneGroupCommand) -> Void)? { get set }
 }
 
 /// Creates terminal surfaces.

@@ -26,6 +26,14 @@ struct PaneContext {
     let project: Project
 }
 
+/// Group-level commands a focused pane can emit from keyboard shortcuts
+/// (⌘⌥←/→ to navigate tabs, ⌘T for a new terminal).
+enum PaneGroupCommand {
+    case previousTab
+    case nextTab
+    case newTab
+}
+
 /// A live pane instance. Hooks are the pane's whole world: the group tells it
 /// when it becomes visible/hidden, when the user wants it focused, and when
 /// it is being deleted (permanent) vs detached (app-side teardown only).
@@ -33,6 +41,10 @@ struct PaneContext {
 protocol Pane: AnyObject {
     var id: UUID { get }
     var kind: PaneKind { get }
+
+    /// Set by the pane group: lets a focused pane forward tab-navigation
+    /// shortcuts up to the group.
+    var onGroupCommand: ((PaneGroupCommand) -> Void)? { get set }
 
     /// The pane's content view. Called when the pane is selected; the pane
     /// should cache expensive backing state (the terminal caches its NSView)

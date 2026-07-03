@@ -183,8 +183,8 @@ struct PaneGroupBar: View {
                         // New tabs grow in from zero width (and closing tabs
                         // shrink away), naturally resizing/sliding the rest.
                         .transition(.modifier(
-                            active: TabSlotWidthModifier(width: 0),
-                            identity: TabSlotWidthModifier(width: tabWidth)
+                            active: TabSlotWidthModifier(width: 0, clips: true),
+                            identity: TabSlotWidthModifier(width: tabWidth, clips: false)
                         ))
             }
         }
@@ -316,13 +316,18 @@ private struct StripScrollEdges: Equatable {
 
 /// Animates a tab's slot width during insertion/removal transitions: new tabs
 /// grow in from zero and closing tabs collapse, sliding their neighbors.
+/// Clipping applies only in the transition's active state — the identity
+/// state must not clip, or dragged tabs get sheared at their slot bounds.
 private struct TabSlotWidthModifier: ViewModifier {
     let width: CGFloat
+    var clips = false
 
     func body(content: Content) -> some View {
         content
             .frame(width: width, alignment: .leading)
-            .clipped()
+            // A hugely-inset-out rectangle disables clipping without changing
+            // the view structure between transition states.
+            .clipShape(Rectangle().inset(by: clips ? 0 : -10_000))
     }
 }
 
