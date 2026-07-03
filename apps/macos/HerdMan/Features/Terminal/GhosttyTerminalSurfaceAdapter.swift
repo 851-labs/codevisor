@@ -14,6 +14,9 @@ import os
 /// into `sizeDidChange` here.
 @MainActor
 private final class HerdManGhosttySurfaceView: Ghostty.SurfaceView {
+    /// Set by the adapter; fired from the context menu's "Restart Terminal".
+    var onRestartRequest: (() -> Void)?
+
     override func setFrameSize(_ newSize: NSSize) {
         super.setFrameSize(newSize)
         sizeDidChange(newSize)
@@ -24,15 +27,37 @@ private final class HerdManGhosttySurfaceView: Ghostty.SurfaceView {
         guard window != nil else { return }
         sizeDidChange(frame.size)
     }
+
+    override func menu(for event: NSEvent) -> NSMenu? {
+        let menu = super.menu(for: event) ?? NSMenu()
+        menu.addItem(.separator())
+        let item = menu.addItem(
+            withTitle: "Restart Terminal",
+            action: #selector(requestRestart(_:)),
+            keyEquivalent: ""
+        )
+        item.target = self
+        item.setImageIfDesired(systemSymbolName: "arrow.trianglehead.counterclockwise")
+        return menu
+    }
+
+    @objc private func requestRestart(_ sender: Any?) {
+        onRestartRequest?()
+    }
 }
 
 /// A terminal surface backed by the vendored upstream Ghostty surface view.
 @MainActor
 final class GhosttyTerminalSurface: TerminalSurface {
-    private var surfaceView: Ghostty.SurfaceView?
+    private var surfaceView: HerdManGhosttySurfaceView?
     private var cancellables = Set<AnyCancellable>()
 
     var nsView: NSView { surfaceView ?? NSView() }
+
+    var onRestartRequest: (() -> Void)? {
+        get { surfaceView?.onRestartRequest }
+        set { surfaceView?.onRestartRequest = newValue }
+    }
 
     init(descriptor: TerminalLaunchDescriptor) {
         var config = Ghostty.SurfaceConfiguration()

@@ -12,6 +12,8 @@ struct TerminalPanel: View {
 
     var body: some View {
         TerminalSurfaceView(session: session)
+            // Re-attach when the surface is replaced (Restart Terminal).
+            .id(session.surfaceGeneration)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(theme.terminalBackground)
     }

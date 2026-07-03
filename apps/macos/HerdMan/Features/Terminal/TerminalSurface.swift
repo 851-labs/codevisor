@@ -122,6 +122,10 @@ protocol TerminalSurface: AnyObject {
     func setFocused(_ focused: Bool)
     /// Tears down the shell/PTY and releases resources.
     func terminate()
+    /// Invoked when the user asks to kill this terminal and start a fresh one
+    /// (e.g. from the surface's context menu). The owner (TerminalSession)
+    /// performs the actual kill + recreate.
+    var onRestartRequest: (() -> Void)? { get set }
 }
 
 /// Creates terminal surfaces.

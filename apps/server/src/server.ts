@@ -1204,6 +1204,15 @@ const routeTerminals = async (
     return true
   }
 
+  // Kills the session's live shell so the next createTerminal starts fresh
+  // (used by the clients' "Restart Terminal" action).
+  const terminalSessionId = matchRoute(url.pathname, "/v1/terminals/session/:sessionId")
+  if (terminalSessionId !== undefined && request.method === "DELETE") {
+    const closed = await run(services.terminal.closeTerminalForSession(terminalSessionId))
+    writeJson(response, closed ? 200 : 404, { closed })
+    return true
+  }
+
   return false
 }
 

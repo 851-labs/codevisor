@@ -59,6 +59,9 @@ export interface TerminalManagerService {
     since?: number
   ) => Effect.Effect<ReadonlyArray<TerminalServerFrame>, TerminalError>
   readonly closeTerminal: (terminalId: string) => Effect.Effect<void, TerminalError>
+  /// Kills the live terminal for a session (if any), so the next createTerminal
+  /// for that session spawns a fresh shell. Returns whether one was closed.
+  readonly closeTerminalForSession: (sessionId: string) => Effect.Effect<boolean, TerminalError>
 }
 
 export class TerminalManager extends Context.Service<TerminalManager, TerminalManagerService>()(
@@ -236,6 +239,23 @@ export const makeTerminalManager = (config: TerminalManagerConfig = {}): Termina
         terminal.process.kill()
         terminals.delete(terminalId)
         clearSessionMapping(terminal)
+      }),
+    closeTerminalForSession: (sessionId) =>
+      terminalAttempt("closeTerminalForSession", () => {
+        const terminalId = terminalsBySession.get(sessionId)
+        if (terminalId === undefined) {
+          return false
+        }
+        const terminal = terminals.get(terminalId)
+        if (terminal === undefined || terminal.closed) {
+          terminalsBySession.delete(sessionId)
+          return false
+        }
+        terminal.closed = true
+        terminal.process.kill()
+        terminals.delete(terminalId)
+        clearSessionMapping(terminal)
+        return true
       })
   }
 }
