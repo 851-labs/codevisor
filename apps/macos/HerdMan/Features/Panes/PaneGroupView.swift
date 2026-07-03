@@ -30,8 +30,11 @@ struct PaneGroupBar: View {
     @State private var frozenTabWidth: CGFloat?
 
     private static let barHeight: CGFloat = 32
-    private static let minTabWidth: CGFloat = 52
+    /// Scrolling is a last resort: tabs compress hard before overflowing.
+    private static let minTabWidth: CGFloat = 36
     private static let maxTabWidth: CGFloat = 168
+    /// Below this width, non-selected tabs hide their ✕ to give text room.
+    private static let closeButtonMinWidth: CGFloat = 88
     private static let tabSpacing: CGFloat = 1
     /// Stable coordinate space for tab dragging: translations measured here
     /// don't jump when the dragged tab's own slot moves during a reorder.
@@ -134,6 +137,10 @@ struct PaneGroupBar: View {
                             isSelected: pane.id == group.state.selectedPaneId,
                             isDragging: draggingPaneId == pane.id,
                             width: tabWidth,
+                            // Narrow tabs drop the ✕ on non-selected tabs so
+                            // the name keeps as much room as possible.
+                            showsClose: pane.id == group.state.selectedPaneId
+                                || tabWidth >= Self.closeButtonMinWidth,
                             selectedFill: connectedTabColor,
                             onSelect: {
                                 group.select(id: pane.id)
@@ -308,10 +315,12 @@ private struct PaneTab: View {
     let isSelected: Bool
     let isDragging: Bool
     let width: CGFloat
+    let showsClose: Bool
     let selectedFill: Color
     let onSelect: () -> Void
     let onClose: () -> Void
     @State private var isHovered = false
+    @State private var isCloseHovered = false
 
     /// The tab content's horizontal inset.
     private static let contentPadding: CGFloat = 8
@@ -327,7 +336,9 @@ private struct PaneTab: View {
     var body: some View {
         HStack(spacing: 4) {
             fadingName
-            closeButton
+            if showsClose {
+                closeButton
+            }
         }
         .padding(.horizontal, Self.contentPadding)
         .frame(width: width, height: 32)
@@ -382,11 +393,16 @@ private struct PaneTab: View {
         Button(action: onClose) {
             Image(systemName: "xmark")
                 .font(.system(size: 7, weight: .bold))
-                .foregroundStyle(.secondary)
-                .frame(width: 12, height: 12)
-                .contentShape(Rectangle())
+                .foregroundStyle(isCloseHovered ? .primary : .secondary)
+                .frame(width: 14, height: 14)
+                .background(
+                    Circle()
+                        .fill(Color.primary.opacity(isCloseHovered ? 0.14 : 0))
+                )
+                .contentShape(Circle())
         }
         .buttonStyle(.plain)
+        .onHover { isCloseHovered = $0 }
         .help("Close terminal")
     }
 }
