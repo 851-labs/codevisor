@@ -134,7 +134,9 @@ struct PaneGroupBar: View {
                     withAnimation(.snappy(duration: 0.2)) { frozenTabWidth = nil }
                 }
 
-                addPaneButton
+                if group.state.isVisible {
+                    addPaneButton
+                }
 
                 Spacer(minLength: 0)
             }
@@ -190,6 +192,8 @@ struct PaneGroupBar: View {
         }
         .coordinateSpace(name: Self.stripSpace)
         .frame(height: Self.barHeight)
+        // Kill horizontal rubber-banding on the strip entirely.
+        .background(StripElasticityDisabler())
     }
 
     /// Drag-to-reorder: the tab is glued to the pointer horizontally (offset =
@@ -268,7 +272,7 @@ struct PaneGroupBar: View {
         } label: {
             Image(systemName: "rectangle.bottomthird.inset.filled")
                 .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(group.state.isVisible ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
+                .foregroundStyle(group.state.isVisible ? AnyShapeStyle(Color.white) : AnyShapeStyle(.secondary))
                 .frame(width: 24, height: 20)
                 .contentShape(Rectangle())
         }
@@ -319,6 +323,24 @@ struct PaneGroupBar: View {
 private struct StripScrollEdges: Equatable {
     var hidesLeading = false
     var hidesTrailing = false
+}
+
+/// Disables horizontal elasticity (overscroll rubber-banding) on the
+/// enclosing NSScrollView — SwiftUI exposes no never-bounce API on macOS.
+private struct StripElasticityDisabler: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        DispatchQueue.main.async {
+            var ancestor: NSView? = view
+            while let current = ancestor, !(current is NSScrollView) {
+                ancestor = current.superview
+            }
+            (ancestor as? NSScrollView)?.horizontalScrollElasticity = .none
+        }
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {}
 }
 
 /// Animates a tab's slot width during insertion/removal transitions: new tabs

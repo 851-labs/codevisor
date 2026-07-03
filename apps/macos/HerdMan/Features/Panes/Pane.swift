@@ -27,11 +27,14 @@ struct PaneContext {
 }
 
 /// Group-level commands a focused pane can emit from keyboard shortcuts
-/// (⌘⌥←/→ to navigate tabs, ⌘T for a new terminal).
+/// (⌘⌥←/→ to navigate tabs, ⌘T for a new terminal, ⌘1-9 to jump to a tab,
+/// ⌘J to toggle the panel).
 enum PaneGroupCommand {
     case previousTab
     case nextTab
     case newTab
+    case selectTab(Int)
+    case togglePanel
 }
 
 /// A live pane instance. Hooks are the pane's whole world: the group tells it

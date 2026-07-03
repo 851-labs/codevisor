@@ -37,6 +37,9 @@ struct SessionScreen: View {
         })
         .onAppear {
             focus.paneGroup = paneGroup
+            // ⌘J from inside a focused terminal routes here (the menu command
+            // doesn't fire reliably while an AppKit view is first responder).
+            paneGroup.requestToggle = { togglePanes() }
             if attachmentImages == nil {
                 attachmentImages = AttachmentImageStore { [weak controller] fileId in
                     guard let controller else { throw SessionControllerError.serverUnavailable }

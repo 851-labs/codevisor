@@ -16,6 +16,9 @@ final class PaneGroupModel: Identifiable {
     @ObservationIgnored private var live: [UUID: any Pane] = [:]
     @ObservationIgnored private let repository: any PaneGroupRepository
     @ObservationIgnored private let makeContext: (PaneDescriptorState) -> PaneContext
+    /// Set by the session screen: performs the panel toggle with proper focus
+    /// handoff (the screen owns the composer/terminal focus controller).
+    @ObservationIgnored var requestToggle: (() -> Void)?
     /// Debounces height persistence during drags (state itself updates live).
     @ObservationIgnored private var pendingHeightSave: Task<Void, Never>?
 
@@ -66,10 +69,16 @@ final class PaneGroupModel: Identifiable {
             let panes = state.panes
             guard panes.count > 1,
                   let index = panes.firstIndex(where: { $0.id == state.selectedPaneId }) else { return }
-            let step = command == .nextTab ? 1 : -1
+            let step: Int = if case .nextTab = command { 1 } else { -1 }
             let target = panes[(index + step + panes.count) % panes.count]
             select(id: target.id)
             DispatchQueue.main.async { [weak self] in self?.focusSelectedPane() }
+        case .selectTab(let index):
+            guard state.panes.indices.contains(index) else { return }
+            select(id: state.panes[index].id)
+            DispatchQueue.main.async { [weak self] in self?.focusSelectedPane() }
+        case .togglePanel:
+            requestToggle?()
         }
     }
 

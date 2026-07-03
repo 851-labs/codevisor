@@ -52,9 +52,22 @@ private final class HerdManGhosttySurfaceView: Ghostty.SurfaceView {
                     return true
                 }
             }
-            if mods == .command, event.charactersIgnoringModifiers?.lowercased() == "t" {
-                onPaneCommand(.newTab)
-                return true
+            if mods == .command, let chars = event.charactersIgnoringModifiers?.lowercased() {
+                if chars == "t" {
+                    onPaneCommand(.newTab)
+                    return true
+                }
+                // ⌘J toggles the panel. Handled here rather than relying on
+                // the menu command: the SwiftUI focused-scene value is not
+                // reliably published while an AppKit view is first responder.
+                if chars == "j" {
+                    onPaneCommand(.togglePanel)
+                    return true
+                }
+                if chars.count == 1, let digit = Int(chars), (1...9).contains(digit) {
+                    onPaneCommand(.selectTab(digit - 1))
+                    return true
+                }
             }
         }
         return super.performKeyEquivalent(with: event)
