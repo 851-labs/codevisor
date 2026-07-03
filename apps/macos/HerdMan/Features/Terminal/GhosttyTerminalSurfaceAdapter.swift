@@ -32,9 +32,11 @@ private final class HerdManGhosttySurfaceView: Ghostty.SurfaceView {
 
     /// Pane-group shortcuts, captured only while this surface has keyboard
     /// focus: ⌘⌥←/→ navigate tabs, ⌘T opens a new terminal tab. Everything
-    /// else falls through to Ghostty's key handling.
+    /// else falls through to Ghostty's key handling. The guard is the actual
+    /// first-responder relationship — not the published `focused` flag, which
+    /// can go stale and would eat composer/menu key equivalents.
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
-        if event.type == .keyDown, focused, let onPaneCommand {
+        if event.type == .keyDown, window?.firstResponder === self, let onPaneCommand {
             // Arrow keys carry implicit .function/.numericPad flags — strip
             // them or the exact-modifier comparisons below never match.
             let mods = event.modifierFlags

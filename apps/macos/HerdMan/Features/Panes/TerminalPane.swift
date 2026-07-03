@@ -67,8 +67,16 @@ final class TerminalPane: Pane, Identifiable {
 
     func focus() {
         let surface = ensureSurface()
-        surface.nsView.window?.makeFirstResponder(surface.nsView)
-        surface.setFocused(true)
+        if let view = surface.nsView as? Ghostty.SurfaceView {
+            // Retries until the view is attached to a window (new panes mount
+            // a runloop later); becomeFirstResponder updates the focus state.
+            // Never set the focus flag manually here: if first-responder
+            // assignment fails, a stale focused=true makes the surface eat
+            // ⌘-key equivalents meant for the composer/menus.
+            Ghostty.moveFocus(to: view)
+        } else {
+            surface.nsView.window?.makeFirstResponder(surface.nsView)
+        }
     }
 
     func visibilityChanged(_ visible: Bool) {
