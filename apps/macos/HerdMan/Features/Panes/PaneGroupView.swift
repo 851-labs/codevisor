@@ -220,6 +220,13 @@ struct PaneGroupBar: View {
                     dragAdjustment += slotWidth
                     offset += slotWidth
                 }
+                // Clamp to the strip: the tab can't be dragged past the
+                // first/last slot (it would escape the scroll clip).
+                if let index = group.state.panes.firstIndex(where: { $0.id == paneId }) {
+                    let minOffset = -CGFloat(index) * slotWidth
+                    let maxOffset = CGFloat(group.state.panes.count - 1 - index) * slotWidth
+                    offset = min(max(offset, minOffset), maxOffset)
+                }
                 dragOffset = offset
             }
             .onEnded { _ in

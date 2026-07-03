@@ -110,7 +110,13 @@ final class GhosttyTerminalSurface: TerminalSurface {
         view.$pointerStyle
             .combineLatest(view.$mouseOverSurface)
             .sink { style, over in
-                if over { style.cursor.set() }
+                if over {
+                    style.cursor.set()
+                } else {
+                    // Reset promptly on exit — otherwise the I-beam lingers
+                    // until something else happens to set a cursor.
+                    NSCursor.arrow.set()
+                }
             }
             .store(in: &cancellables)
     }
