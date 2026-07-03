@@ -29,6 +29,9 @@ struct PaneGroupBar: View {
     private static let minTabWidth: CGFloat = 52
     private static let maxTabWidth: CGFloat = 168
     private static let tabSpacing: CGFloat = 1
+    /// Stable coordinate space for tab dragging: translations measured here
+    /// don't jump when the dragged tab's own slot moves during a reorder.
+    private static let stripSpace = "paneTabStrip"
 
     var body: some View {
         HStack(spacing: 8) {
@@ -106,10 +109,14 @@ struct PaneGroupBar: View {
                         .transaction { transaction in
                             if draggingPaneId == pane.id { transaction.animation = nil }
                         }
-                        .gesture(reorderGesture(for: pane.id, slotWidth: slotWidth))
+                        // High priority so the ScrollView's pan can't steal
+                        // the drag mid-reorder; taps still pass through via
+                        // the 3pt minimum distance.
+                        .highPriorityGesture(reorderGesture(for: pane.id, slotWidth: slotWidth))
                     }
                     addPaneButton
                 }
+                .coordinateSpace(name: Self.stripSpace)
                 .frame(height: Self.barHeight)
                 .animation(.snappy(duration: 0.2), value: group.state.panes.map(\.id))
                 // Adding/removing tabs animates every tab to its new width
@@ -130,10 +137,13 @@ struct PaneGroupBar: View {
         .frame(height: Self.barHeight)
     }
 
-    /// Drag-to-reorder: the tab follows the pointer horizontally; crossing
-    /// half a neighbor's slot swaps positions (neighbors animate around it).
+    /// Drag-to-reorder: the tab is glued to the pointer horizontally (offset =
+    /// pointer translation minus the slots it has already swapped across);
+    /// crossing half a neighbor's slot swaps positions and only the neighbors
+    /// animate. Translation is measured in the strip's stable coordinate
+    /// space so reorders never make it jump.
     private func reorderGesture(for paneId: UUID, slotWidth: CGFloat) -> some Gesture {
-        DragGesture(minimumDistance: 3)
+        DragGesture(minimumDistance: 3, coordinateSpace: .named(Self.stripSpace))
             .onChanged { value in
                 if draggingPaneId != paneId {
                     draggingPaneId = paneId
@@ -252,11 +262,11 @@ private struct PaneTab: View {
     let onClose: () -> Void
     @State private var isHovered = false
 
-    /// The tab content's horizontal inset; the shape's top inset matches it.
+    /// The tab content's horizontal inset.
     private static let contentPadding: CGFloat = 8
-    /// The tab shape's height: bottom-anchored, with a top inset equal to the
-    /// horizontal padding (32 - 8).
-    private static let shapeHeight: CGFloat = 24
+    /// The tab shape's height: bottom-anchored, with a 10pt top inset so the
+    /// selected overlay sits comfortably clear of the bar's top edge.
+    private static let shapeHeight: CGFloat = 22
 
     var body: some View {
         HStack(spacing: 4) {
