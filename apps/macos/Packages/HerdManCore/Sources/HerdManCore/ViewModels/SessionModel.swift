@@ -150,13 +150,34 @@ public final class SessionModel {
     public func loadHistory() async {
         do {
             let snapshot = try await transport.snapshot()
-            conversation = snapshot.conversation
             queuedPrompts = snapshot.promptQueue
-            serverEventCursor = snapshot.eventCursor
+
+            // Replay the persisted event history through the live pipeline —
+            // the text-only conversation snapshot loses tool calls and diffs.
+            // Fall back to the snapshot for sessions with no stored events.
+            let history = try await transport.history()
+            if history.events.isEmpty {
+                conversation = snapshot.conversation
+                serverEventCursor = snapshot.eventCursor
+            } else {
+                conversation = []
+                for event in history.events {
+                    apply(event)
+                }
+                isSending = lastTurnIsGenerating
+                serverEventCursor = history.cursor ?? snapshot.eventCursor
+            }
             await startConsumer()
         } catch {
             errorMessage = serverErrorMessage(error)
         }
+    }
+
+    private var lastTurnIsGenerating: Bool {
+        if case let .assistant(message) = conversation.last {
+            return message.turn.isGenerating
+        }
+        return false
     }
 
     // MARK: - Streaming

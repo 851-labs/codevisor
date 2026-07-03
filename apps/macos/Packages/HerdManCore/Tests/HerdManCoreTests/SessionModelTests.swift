@@ -328,6 +328,86 @@ struct SessionModelTests {
         #expect(model.isSending == false)
     }
 
+    @Test("loadHistory replays persisted events, rebuilding tool calls")
+    func loadHistoryReplaysEvents() async {
+        let sessionId = UUID()
+        let client = FakeSessionServerClient(sessionId: sessionId)
+        client.detailCursor = 99
+        client.historyEvents = [
+            ServerEventEnvelope(
+                id: 1,
+                serverId: "local",
+                kind: "session.output",
+                subjectId: sessionId.uuidString,
+                createdAt: "2026-06-30T00:00:00.000Z",
+                payload: .object(["role": .string("user"), "text": .string("edit the file")])
+            ),
+            ServerEventEnvelope(
+                id: 2,
+                serverId: "local",
+                kind: "session.output",
+                subjectId: sessionId.uuidString,
+                createdAt: "2026-06-30T00:00:01.000Z",
+                payload: .object([
+                    "sessionUpdate": .string("tool_call"),
+                    "toolCallId": .string("edit-1"),
+                    "title": .string("Edited a.txt"),
+                    "kind": .string("edit"),
+                    "status": .string("completed"),
+                    "diffStats": .array([.object([
+                        "path": .string("a.txt"), "added": .number(3), "removed": .number(1)
+                    ])])
+                ])
+            ),
+            ServerEventEnvelope(
+                id: 3,
+                serverId: "local",
+                kind: "session.output",
+                subjectId: sessionId.uuidString,
+                createdAt: "2026-06-30T00:00:02.000Z",
+                payload: .object([
+                    "sessionUpdate": .string("agent_message_chunk"),
+                    "messageId": .string("m1"),
+                    "content": .object(["type": .string("text"), "text": .string("Done.")])
+                ])
+            ),
+            ServerEventEnvelope(
+                id: 4,
+                serverId: "local",
+                kind: "session.updated",
+                subjectId: sessionId.uuidString,
+                createdAt: "2026-06-30T00:00:03.000Z",
+                payload: .object(["stopReason": .string("end_turn")])
+            )
+        ]
+        let model = SessionModel(
+            serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
+            sessionId: sessionId.uuidString,
+            now: { Date(timeIntervalSince1970: 100) }
+        )
+
+        await model.loadHistory()
+
+        #expect(model.conversation.count == 2)
+        guard case let .user(user) = model.conversation.first else {
+            Issue.record("expected user")
+            return
+        }
+        #expect(user.text == "edit the file")
+        guard case let .assistant(assistant) = model.conversation.last else {
+            Issue.record("expected assistant")
+            return
+        }
+        #expect(assistant.turn.toolCalls.count == 1)
+        #expect(assistant.turn.toolCalls.first?.diffStats?.first?.added == 3)
+        #expect(assistant.turn.finalText == .text(id: "acp:m1", markdown: "Done."))
+        #expect(assistant.turn.isGenerating == false)
+        #expect(model.isSending == false)
+        // Live streaming resumes after the last replayed envelope, not the
+        // snapshot cursor.
+        #expect(client.eventSinceValues == [4])
+    }
+
     private func toolCallEnvelope(id: Int, sessionId: UUID, toolCallId: String, status: String) -> ServerEventEnvelope {
         ServerEventEnvelope(
             id: id,
@@ -398,6 +478,7 @@ private final class FakeSessionServerClient: HerdManServerClienting, @unchecked 
 
     var detailConversation: [ServerConversationItem] = []
     var detailCursor = 0
+    var historyEvents: [ServerEventEnvelope] = []
 
     init(sessionId: UUID) {
         self.sessionId = sessionId
@@ -496,6 +577,10 @@ private final class FakeSessionServerClient: HerdManServerClienting, @unchecked 
 
     func setSessionConfig(id: UUID, configId: String, value: String) async throws {
         lock.withLock { _configUpdates.append((configId, value)) }
+    }
+
+    func sessionEvents(id: UUID) async throws -> [ServerEventEnvelope] {
+        historyEvents
     }
 
     func eventStream(since: Int) -> AsyncThrowingStream<ServerEventEnvelope, any Error> {

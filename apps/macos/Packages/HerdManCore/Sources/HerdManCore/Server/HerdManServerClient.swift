@@ -41,6 +41,7 @@ public protocol HerdManServerClienting: Sendable {
     func listSessions() async throws -> [ServerSession]
     func sessionDetail(id: UUID) async throws -> ServerSessionDetail
     func promptQueue(id: UUID) async throws -> [ServerPromptQueueItem]
+    func sessionEvents(id: UUID) async throws -> [ServerEventEnvelope]
     func upsertSession(_ session: ChatSession) async throws -> ServerSession
     func updateSession(_ session: ChatSession) async throws -> ServerSession
     func touchSession(id: UUID, updatedAt: Date) async throws
@@ -58,6 +59,10 @@ public protocol HerdManServerClienting: Sendable {
 
 public extension HerdManServerClienting {
     func promptQueue(id: UUID) async throws -> [ServerPromptQueueItem] { [] }
+
+    /// Default for fakes/older servers: no persisted history, callers fall
+    /// back to the text-only conversation snapshot.
+    func sessionEvents(id: UUID) async throws -> [ServerEventEnvelope] { [] }
 
     /// Default no-op so fakes and older transports keep compiling; the HTTP
     /// client overrides this with `POST /v1/shutdown`.
@@ -479,6 +484,10 @@ public final class HerdManServerClient: HerdManServerClienting, @unchecked Senda
 
     public func sessionDetail(id: UUID) async throws -> ServerSessionDetail {
         try await get("/v1/sessions/\(id.uuidString)")
+    }
+
+    public func sessionEvents(id: UUID) async throws -> [ServerEventEnvelope] {
+        try await get("/v1/sessions/\(id.uuidString)/events")
     }
 
     public func promptQueue(id: UUID) async throws -> [ServerPromptQueueItem] {

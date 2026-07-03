@@ -137,14 +137,20 @@ struct SidebarView: View {
                 .padding(8)
                 .transition(.move(edge: .top).combined(with: .opacity))
             }
+            // New chat + the Projects header stay pinned; only the project
+            // list itself scrolls.
+            VStack(alignment: .leading, spacing: 1) {
+                actionRow("New chat", systemImage: "square.and.pencil", id: "new") {
+                    selection = .newChat(nil)
+                }
+
+                projectsHeader
+            }
+            .padding(.horizontal, 8)
+            .padding(.top, 8)
+
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 1) {
-                    actionRow("New chat", systemImage: "square.and.pencil", id: "new") {
-                        selection = .newChat(nil)
-                    }
-
-                    projectsHeader
-
                     if organization == .byProject {
                         ForEach(visibleProjects) { project in
                             projectFolder(project)
@@ -181,7 +187,8 @@ struct SidebarView: View {
                     }
 
                 }
-                .padding(8)
+                .padding(.horizontal, 8)
+                .padding(.bottom, 8)
                 .animation(.snappy(duration: 0.22), value: visibleProjects.map(\.id))
                 .animation(.snappy(duration: 0.22), value: chronologicalSessions.map(\.id))
                 .animation(.snappy(duration: 0.22), value: expanded)

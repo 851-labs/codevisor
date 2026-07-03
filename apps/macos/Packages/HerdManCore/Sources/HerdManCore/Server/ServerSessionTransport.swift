@@ -71,6 +71,18 @@ public struct ServerSessionTransport: Sendable {
         }
     }
 
+    /// The session's full persisted event history, mapped to the same stream
+    /// events the live pipeline applies — replaying them rebuilds the rich
+    /// transcript (tool calls, diffs, turn boundaries). Returns the id of the
+    /// last envelope so live streaming can resume exactly after it.
+    public func history() async throws -> (events: [ServerSessionStreamEvent], cursor: Int?) {
+        let envelopes = try await client.sessionEvents(id: sessionId)
+        let events = envelopes
+            .filter { $0.subjectId.caseInsensitiveCompare(sessionId.uuidString) == .orderedSame }
+            .flatMap { Self.sessionStreamEvents(from: $0) }
+        return (events, envelopes.last?.id)
+    }
+
     public func streamEvents(since: Int = Self.liveOnlyEventCursor) -> AsyncStream<ServerSessionStreamEvent> {
         AsyncStream { continuation in
             let task = Task {

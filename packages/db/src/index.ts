@@ -368,6 +368,9 @@ export interface HerdManDatabaseService {
     payload: unknown
   ) => Effect.Effect<EventEnvelope, DatabaseError>
   readonly listEvents: (since: number) => Effect.Effect<ReadonlyArray<EventEnvelope>, DatabaseError>
+  readonly listSubjectEvents: (
+    subjectId: string
+  ) => Effect.Effect<ReadonlyArray<EventEnvelope>, DatabaseError>
   readonly createPromptQueueItem: (
     sessionId: string,
     text: string
@@ -811,6 +814,13 @@ const createService = (
         sqlite
           .prepare("select * from events where id > ? order by id asc")
           .all(since)
+          .map((row) => eventFromRow(row as EventRow))
+      ),
+    listSubjectEvents: (subjectId) =>
+      attempt("listSubjectEvents", () =>
+        sqlite
+          .prepare("select * from events where subject_id = ? order by id asc")
+          .all(subjectId)
           .map((row) => eventFromRow(row as EventRow))
       ),
     createPromptQueueItem: (sessionId, text) =>

@@ -12,10 +12,6 @@ struct ToolGroupView: View {
     var autoExpanded: Bool = false
     @State private var isExpanded = false
 
-    private var hasRunningCalls: Bool {
-        isTurnActive && calls.contains { !$0.isSettled }
-    }
-
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
@@ -27,7 +23,6 @@ struct ToolGroupView: View {
                     .frame(width: 16)
                 Text(ToolCallSummary.describe(calls))
                     .foregroundStyle(.secondary)
-                    .shimmering(hasRunningCalls)
                 Image(systemName: "chevron.right")
                     .font(.caption2)
                     .foregroundStyle(.tertiary)

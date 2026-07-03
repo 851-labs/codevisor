@@ -808,6 +808,15 @@ const routeSessionActions = async (
     return true
   }
 
+  // Full persisted event history for one session — the client replays these
+  // through its live pipeline to rebuild rich transcripts (tool calls, diffs)
+  // that the text-only conversation snapshot cannot carry.
+  const eventsSessionId = matchRoute(url.pathname, "/v1/sessions/:id/events")
+  if (eventsSessionId !== undefined && request.method === "GET") {
+    writeJson(response, 200, await run(services.db.listSubjectEvents(eventsSessionId)))
+    return true
+  }
+
   const queueItemRoute = matchRouteParams(url.pathname, "/v1/sessions/:id/queue/:queueId")
   if (queueItemRoute !== undefined && request.method === "PATCH") {
     const { id, queueId } = queueItemRoute as { readonly id: string; readonly queueId: string }
