@@ -404,7 +404,11 @@ struct SessionModelTests {
         #expect(assistant.turn.isGenerating == false)
         #expect(model.isSending == false)
         // Live streaming resumes after the last replayed envelope, not the
-        // snapshot cursor.
+        // snapshot cursor. The consumer task connects asynchronously.
+        for _ in 0..<200 {
+            await Task.yield()
+            if !client.eventSinceValues.isEmpty { break }
+        }
         #expect(client.eventSinceValues == [4])
     }
 
