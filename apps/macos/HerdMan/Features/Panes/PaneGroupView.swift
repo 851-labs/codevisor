@@ -2,12 +2,12 @@
 //  top edge doubles as the drag-to-resize handle) and the selected pane's
 //  content. Tabs behave like Chrome's: equal widths that shrink together as
 //  tabs are added (down to a minimum, then the strip scrolls), names fade out
-//  instead of truncating, drag to reorder, and the selected tab visually
-//  connects to the pane below by cutting through the bar's bottom border.
+//  instead of truncating, drag the tab itself to reorder, and the selected
+//  tab visually connects to the pane below by cutting through the bar's
+//  bottom border.
 
 import SwiftUI
 import AppKit
-import UniformTypeIdentifiers
 import HerdManCore
 
 /// The tab bar: pane tabs + "new terminal" button on the left, the bottom
@@ -19,11 +19,16 @@ struct PaneGroupBar: View {
     var onToggle: () -> Void
 
     @State private var dragStartHeight: CGFloat?
+    // Tab reordering: the tab itself follows the pointer horizontally while
+    // its neighbors flow around it.
     @State private var draggingPaneId: UUID?
+    @State private var dragOffset: CGFloat = 0
+    @State private var dragAdjustment: CGFloat = 0
 
     private static let barHeight: CGFloat = 28
     private static let minTabWidth: CGFloat = 72
     private static let maxTabWidth: CGFloat = 168
+    private static let tabSpacing: CGFloat = 1
 
     var body: some View {
         HStack(spacing: 8) {
@@ -34,12 +39,13 @@ struct PaneGroupBar: View {
         .frame(height: Self.barHeight)
         .frame(maxWidth: .infinity)
         // The bottom border draws directly behind the tabs so the selected
-        // tab (whose fill matches it) covers it — Chrome-style "the tab opens
-        // into the pane". Window background sits behind both.
+        // tab (whose fill is the exact same solid color) covers it —
+        // Chrome-style "the tab opens into the pane". Window background sits
+        // behind both.
         .background(alignment: .bottom) {
             if group.state.isVisible {
                 Rectangle()
-                    .fill(theme.separator)
+                    .fill(connectedTabColor)
                     .frame(height: 1)
             }
         }
@@ -50,6 +56,22 @@ struct PaneGroupBar: View {
         .overlay(alignment: .top) { resizeHandle }
     }
 
+    /// The solid color shared by the bar's bottom border and the selected
+    /// tab: the (usually translucent) separator flattened over the window
+    /// background, so the tab and border match perfectly with no transparency.
+    private var connectedTabColor: Color {
+        guard
+            let top = NSColor(theme.separator).usingColorSpace(.sRGB),
+            let bottom = NSColor(theme.windowBackground).usingColorSpace(.sRGB)
+        else { return theme.separator }
+        let alpha = top.alphaComponent
+        return Color(
+            red: Double(top.redComponent * alpha + bottom.redComponent * (1 - alpha)),
+            green: Double(top.greenComponent * alpha + bottom.greenComponent * (1 - alpha)),
+            blue: Double(top.blueComponent * alpha + bottom.blueComponent * (1 - alpha))
+        )
+    }
+
     // MARK: - Tabs
 
     private var tabsArea: some View {
@@ -58,40 +80,78 @@ struct PaneGroupBar: View {
             let available = max(geometry.size.width - reserved, Self.minTabWidth)
             let count = max(group.state.panes.count, 1)
             let tabWidth = min(Self.maxTabWidth, max(Self.minTabWidth, available / CGFloat(count)))
+            let slotWidth = tabWidth + Self.tabSpacing
 
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 1) {
+                HStack(spacing: Self.tabSpacing) {
                     ForEach(group.state.panes) { pane in
                         PaneTab(
                             name: pane.name,
                             isSelected: pane.id == group.state.selectedPaneId,
-                            width: tabWidth,
                             isDragging: draggingPaneId == pane.id,
+                            width: tabWidth,
+                            selectedFill: connectedTabColor,
                             onSelect: {
                                 group.select(id: pane.id)
                                 group.focusSelectedPane()
                             },
                             onClose: { group.closePane(id: pane.id) }
                         )
-                        .onDrag {
-                            draggingPaneId = pane.id
-                            return NSItemProvider(object: pane.id.uuidString as NSString)
+                        .offset(x: draggingPaneId == pane.id ? dragOffset : 0)
+                        .zIndex(draggingPaneId == pane.id ? 1 : 0)
+                        // The dragged tab tracks the pointer directly: its own
+                        // slot shifts must not animate (the offset compensates
+                        // instantly), while neighbors animate via the HStack.
+                        .transaction { transaction in
+                            if draggingPaneId == pane.id { transaction.animation = nil }
                         }
-                        .onDrop(
-                            of: [.plainText],
-                            delegate: PaneTabDropDelegate(
-                                targetId: pane.id,
-                                draggingId: $draggingPaneId,
-                                group: group
-                            )
-                        )
+                        .gesture(reorderGesture(for: pane.id, slotWidth: slotWidth))
                     }
                     addPaneButton
                 }
                 .frame(height: Self.barHeight)
+                .animation(.snappy(duration: 0.2), value: group.state.panes.map(\.id))
             }
         }
         .frame(height: Self.barHeight)
+    }
+
+    /// Drag-to-reorder: the tab follows the pointer horizontally; crossing
+    /// half a neighbor's slot swaps positions (neighbors animate around it).
+    private func reorderGesture(for paneId: UUID, slotWidth: CGFloat) -> some Gesture {
+        DragGesture(minimumDistance: 3)
+            .onChanged { value in
+                if draggingPaneId != paneId {
+                    draggingPaneId = paneId
+                    dragAdjustment = 0
+                }
+                var offset = value.translation.width + dragAdjustment
+                while offset > slotWidth / 2, let next = neighborId(of: paneId, direction: 1) {
+                    group.movePane(id: paneId, onto: next)
+                    dragAdjustment -= slotWidth
+                    offset -= slotWidth
+                }
+                while offset < -slotWidth / 2, let previous = neighborId(of: paneId, direction: -1) {
+                    group.movePane(id: paneId, onto: previous)
+                    dragAdjustment += slotWidth
+                    offset += slotWidth
+                }
+                dragOffset = offset
+            }
+            .onEnded { _ in
+                withAnimation(.snappy(duration: 0.2)) {
+                    dragOffset = 0
+                }
+                draggingPaneId = nil
+                dragAdjustment = 0
+            }
+    }
+
+    private func neighborId(of paneId: UUID, direction: Int) -> UUID? {
+        guard let index = group.state.panes.firstIndex(where: { $0.id == paneId }) else { return nil }
+        let neighbor = index + direction
+        guard group.state.panes.indices.contains(neighbor) else { return nil }
+        return group.state.panes[neighbor].id
     }
 
     private var addPaneButton: some View {
@@ -164,17 +224,23 @@ struct PaneGroupBar: View {
 }
 
 /// One tab: pane name (fading out as space shrinks, never truncating) plus a
-/// close button on hover/selection. The selected tab fills the full bar
-/// height with the bottom-border color so it reads as connected to the pane.
+/// close button on hover/selection. The tab shape hugs the bar's bottom (with
+/// clearance below the resize strip); the selected tab's solid fill matches
+/// the bottom border so it reads as connected to the pane.
 private struct PaneTab: View {
     @Environment(\.theme) private var theme
     let name: String
     let isSelected: Bool
-    let width: CGFloat
     let isDragging: Bool
+    let width: CGFloat
+    let selectedFill: Color
     let onSelect: () -> Void
     let onClose: () -> Void
     @State private var isHovered = false
+
+    /// The tab shape's height: bottom-anchored, leaving the resize strip and
+    /// a little air above it.
+    private static let shapeHeight: CGFloat = 21
 
     var body: some View {
         HStack(spacing: 4) {
@@ -184,11 +250,12 @@ private struct PaneTab: View {
         }
         .padding(.horizontal, 8)
         .frame(width: width, height: 28)
-        .background(
+        .background(alignment: .bottom) {
             UnevenRoundedRectangle(topLeadingRadius: 6, topTrailingRadius: 6, style: .continuous)
                 .fill(background)
-        )
-        .opacity(isDragging ? 0.5 : 1)
+                .frame(height: Self.shapeHeight)
+        }
+        .shadow(color: .black.opacity(isDragging ? 0.25 : 0), radius: 3, y: 1)
         .contentShape(Rectangle())
         .onTapGesture(perform: onSelect)
         .onHover { isHovered = $0 }
@@ -196,8 +263,8 @@ private struct PaneTab: View {
 
     private var background: Color {
         if isSelected {
-            // Must match the bar's bottom border so the tab covers/joins it.
-            return theme.separator
+            // Solid; identical to the bar's bottom border so the tab joins it.
+            return selectedFill
         }
         return isHovered ? Color.primary.opacity(0.06) : .clear
     }
@@ -236,34 +303,6 @@ private struct PaneTab: View {
         }
         .buttonStyle(.plain)
         .help("Close terminal")
-    }
-}
-
-/// Reorders tabs live while a drag hovers over them (Chrome-style swap-flow),
-/// animated per the HIG's guidance on direct-manipulation feedback.
-private struct PaneTabDropDelegate: DropDelegate {
-    let targetId: UUID
-    @Binding var draggingId: UUID?
-    let group: PaneGroupModel
-
-    func validateDrop(info: DropInfo) -> Bool {
-        draggingId != nil
-    }
-
-    func dropEntered(info: DropInfo) {
-        guard let draggingId, draggingId != targetId else { return }
-        withAnimation(.snappy(duration: 0.25)) {
-            group.movePane(id: draggingId, onto: targetId)
-        }
-    }
-
-    func dropUpdated(info: DropInfo) -> DropProposal? {
-        DropProposal(operation: .move)
-    }
-
-    func performDrop(info: DropInfo) -> Bool {
-        draggingId = nil
-        return true
     }
 }
 
