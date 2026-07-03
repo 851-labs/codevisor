@@ -24,3 +24,19 @@ public extension ToolCall {
         }
     }
 }
+
+public extension ToolCall {
+    /// The row title, papering over adapters that report a bare tool name
+    /// ("Edit") while an edit is running: without a filename or any diff data
+    /// there is nothing informative to show, so use a generic progress title.
+    /// Adapters that title properly (spaces ⇒ a real phrase) pass through,
+    /// and the finished update's title always wins.
+    var displayTitle: String {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard kind == .edit, !isSettled, diffTotals == nil else {
+            return trimmed.isEmpty ? "Working…" : trimmed
+        }
+        let isBareName = trimmed.isEmpty || !trimmed.contains(" ")
+        return isBareName ? "Editing file…" : trimmed
+    }
+}

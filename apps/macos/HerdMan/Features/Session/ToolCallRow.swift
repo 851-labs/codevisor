@@ -23,16 +23,16 @@ struct ToolCallRow: View {
         }
     }
 
-    /// Counters render for any edit call from the moment it starts (`+0 −0`)
-    /// so the roll-up is visible, and for any call reporting diff stats.
+    /// Counters render only once there is real diff data — a `+0 −0` badge on
+    /// an adapter that never streams stats is noise.
     private var counterTotals: LineDiff.Totals? {
-        call.diffTotals ?? (call.kind == .edit ? LineDiff.Totals(added: 0, removed: 0) : nil)
+        call.diffTotals
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
-                Text(call.title)
+                Text(call.displayTitle)
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .foregroundStyle(.secondary)

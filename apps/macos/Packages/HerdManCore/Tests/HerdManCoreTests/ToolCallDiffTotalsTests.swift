@@ -48,4 +48,23 @@ struct ToolCallDiffTotalsTests {
         #expect(ToolCall(toolCallId: "t", title: "Read", kind: .read).diffTotals == nil)
         #expect(ToolCall(toolCallId: "t", title: "Run", content: [.content(.text("out"))]).diffTotals == nil)
     }
+
+    @Test("Bare edit titles become a progress placeholder until data arrives")
+    func displayTitle() {
+        // Bare tool name, running, no data → placeholder.
+        #expect(ToolCall(toolCallId: "t", title: "Edit", kind: .edit, status: .inProgress).displayTitle == "Editing file…")
+        #expect(ToolCall(toolCallId: "t", title: "", kind: .edit, status: .inProgress).displayTitle == "Editing file…")
+        // A real phrase passes through even without data.
+        #expect(ToolCall(toolCallId: "t", title: "Editing README.md", kind: .edit, status: .inProgress).displayTitle == "Editing README.md")
+        // Once diff stats exist, the adapter title stands.
+        #expect(ToolCall(
+            toolCallId: "t", title: "Edit", kind: .edit, status: .inProgress,
+            diffStats: [ToolCallDiffStat(path: "a", added: 1, removed: 0)]
+        ).displayTitle == "Edit")
+        // Settled calls always show their final title.
+        #expect(ToolCall(toolCallId: "t", title: "Edit", kind: .edit, status: .completed).displayTitle == "Edit")
+        // Non-edit calls are untouched (empty falls back generically).
+        #expect(ToolCall(toolCallId: "t", title: "Ran ls", kind: .execute, status: .inProgress).displayTitle == "Ran ls")
+        #expect(ToolCall(toolCallId: "t", title: "", kind: .execute, status: .inProgress).displayTitle == "Working…")
+    }
 }

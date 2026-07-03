@@ -150,7 +150,9 @@ struct SidebarView: View {
             .padding(.top, 8)
 
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 1) {
+                // A plain VStack: lazy row materialization re-measures the
+                // content mid-bounce, which reads as random overscroll snaps.
+                VStack(alignment: .leading, spacing: 1) {
                     if organization == .byProject {
                         ForEach(visibleProjects) { project in
                             projectFolder(project)
@@ -194,6 +196,7 @@ struct SidebarView: View {
                 .animation(.snappy(duration: 0.22), value: expanded)
             }
             .scrollContentBackground(.hidden)
+            .scrollBounceBehavior(.basedOnSize)
 
             Divider()
             machinePicker
