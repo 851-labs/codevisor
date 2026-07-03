@@ -64,6 +64,12 @@ private final class HerdManGhosttySurfaceView: Ghostty.SurfaceView {
                     onPaneCommand(.togglePanel)
                     return true
                 }
+                // ⌘W closes the selected tab while a pane is focused; with
+                // focus elsewhere the window's normal ⌘W applies.
+                if chars == "w" {
+                    onPaneCommand(.closeTab)
+                    return true
+                }
                 if chars.count == 1, let digit = Int(chars), (1...9).contains(digit) {
                     onPaneCommand(.selectTab(digit - 1))
                     return true

@@ -35,6 +35,7 @@ enum PaneGroupCommand {
     case newTab
     case selectTab(Int)
     case togglePanel
+    case closeTab
 }
 
 /// A live pane instance. Hooks are the pane's whole world: the group tells it

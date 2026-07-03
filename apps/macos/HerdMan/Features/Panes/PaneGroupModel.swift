@@ -5,6 +5,7 @@
 
 import Foundation
 import Observation
+import SwiftUI
 import HerdManCore
 
 @MainActor
@@ -19,6 +20,9 @@ final class PaneGroupModel: Identifiable {
     /// Set by the session screen: performs the panel toggle with proper focus
     /// handoff (the screen owns the composer/terminal focus controller).
     @ObservationIgnored var requestToggle: (() -> Void)?
+    /// Set by the session screen: moves keyboard focus to the composer (used
+    /// when closing the last tab collapses the group).
+    @ObservationIgnored var requestComposerFocus: (() -> Void)?
     /// Debounces height persistence during drags (state itself updates live).
     @ObservationIgnored private var pendingHeightSave: Task<Void, Never>?
 
@@ -79,6 +83,16 @@ final class PaneGroupModel: Identifiable {
             DispatchQueue.main.async { [weak self] in self?.focusSelectedPane() }
         case .togglePanel:
             requestToggle?()
+        case .closeTab:
+            guard let selected = state.selectedPaneId else { return }
+            let wasLastTab = state.panes.count == 1
+            closePane(id: selected)
+            if wasLastTab {
+                // The group collapsed with the tab; hand focus back.
+                requestComposerFocus?()
+            } else {
+                DispatchQueue.main.async { [weak self] in self?.focusSelectedPane() }
+            }
         }
     }
 
@@ -113,7 +127,18 @@ final class PaneGroupModel: Identifiable {
         // shell from a previous app run that willDelete must clean up.
         let closing = pane(for: descriptor)
         live[id] = nil
-        state.closePane(id: id)
+        if state.panes.count == 1 {
+            // Closing the last tab also collapses the group. Suppress the
+            // removal/collapse animations: the tab's exit transition would
+            // otherwise replay in the already-collapsed bar (flicker).
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) {
+                state.closePane(id: id)
+            }
+        } else {
+            state.closePane(id: id)
+        }
         persist()
         Task { await closing.willDelete() }
         if state.isVisible, let selected = selectedPane {
