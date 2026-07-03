@@ -24,6 +24,10 @@ struct PaneGroupBar: View {
     @State private var draggingPaneId: UUID?
     @State private var dragOffset: CGFloat = 0
     @State private var dragAdjustment: CGFloat = 0
+    /// Chrome-style close behavior: closing a tab freezes tab widths (the
+    /// remaining tabs just slide over, keeping the next ✕ under the pointer)
+    /// until the pointer leaves the strip, then widths relax to fit.
+    @State private var frozenTabWidth: CGFloat?
 
     private static let barHeight: CGFloat = 32
     private static let minTabWidth: CGFloat = 52
@@ -82,7 +86,8 @@ struct PaneGroupBar: View {
             let reserved: CGFloat = 20 + 4 // add button + its spacing
             let available = max(geometry.size.width - reserved, Self.minTabWidth)
             let count = max(group.state.panes.count, 1)
-            let tabWidth = min(Self.maxTabWidth, max(Self.minTabWidth, available / CGFloat(count)))
+            let fittedWidth = min(Self.maxTabWidth, max(Self.minTabWidth, available / CGFloat(count)))
+            let tabWidth = frozenTabWidth ?? fittedWidth
             let slotWidth = tabWidth + Self.tabSpacing
             let isOverflowing = CGFloat(count) * slotWidth + reserved > geometry.size.width
 
@@ -99,7 +104,12 @@ struct PaneGroupBar: View {
                                 group.select(id: pane.id)
                                 group.focusSelectedPane()
                             },
-                            onClose: { group.closePane(id: pane.id) }
+                            onClose: {
+                                // Freeze widths so remaining tabs slide over
+                                // without resizing (see frozenTabWidth).
+                                frozenTabWidth = tabWidth
+                                group.closePane(id: pane.id)
+                            }
                         )
                         .offset(x: draggingPaneId == pane.id ? dragOffset : 0)
                         .zIndex(draggingPaneId == pane.id ? 1 : 0)
@@ -133,6 +143,11 @@ struct PaneGroupBar: View {
                         .frame(width: isOverflowing ? 14 : 0)
                 }
             )
+            // Pointer left the strip: relax frozen widths back to fitting.
+            .onHover { hovering in
+                guard !hovering, frozenTabWidth != nil else { return }
+                withAnimation(.snappy(duration: 0.2)) { frozenTabWidth = nil }
+            }
         }
         .frame(height: Self.barHeight)
     }
@@ -185,6 +200,7 @@ struct PaneGroupBar: View {
 
     private var addPaneButton: some View {
         Button {
+            frozenTabWidth = nil
             group.addTerminalPane()
             // Defer until SwiftUI has mounted the new pane's view.
             DispatchQueue.main.async { group.focusSelectedPane() }
@@ -269,12 +285,14 @@ private struct PaneTab: View {
 
     /// The tab content's horizontal inset.
     private static let contentPadding: CGFloat = 8
-    /// The selected tab shape: bottom-anchored, with a top inset equal to the
-    /// content's horizontal padding (32 - 8).
-    private static let selectedShapeHeight: CGFloat = 24
     /// The hover pill: an all-corners rounded rect, vertically centered and
-    /// clearly distinct from the selected tab shape (Chrome-style).
+    /// clearly distinct from the selected tab shape (Chrome-style). Centered
+    /// in the 32pt bar, its top inset is 5pt.
     private static let hoverShapeHeight: CGFloat = 22
+    /// The selected tab shape: bottom-anchored, its top edge aligned with the
+    /// hover pill's top edge (32 - (32 - 22) / 2) — generous air above the
+    /// text row while still opening into the pane below.
+    private static let selectedShapeHeight: CGFloat = 27
 
     var body: some View {
         HStack(spacing: 4) {
