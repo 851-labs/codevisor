@@ -138,6 +138,8 @@ interface ToolInputAccumulator {
   json: string
   lastEmit: number
   lastStats: string
+  /// The file path streamed so far, once extractable — drives live titles.
+  titledPath: string | undefined
   /// For Write: the pre-edit file content, read once.
   oldContent: string | null | undefined
 }
@@ -517,13 +519,19 @@ const handleMessage = (
         if (isRecord(block) && block.type === "tool_result") {
           const toolUseId = String(block.tool_use_id)
           session.openToolCalls.delete(toolUseId)
+          const accumulator = session.accumulators.get(toolUseId)
+          const doneTitle =
+            accumulator !== undefined && accumulator.titledPath !== undefined
+              ? finishedToolTitle(accumulator.toolName, accumulator.titledPath)
+              : undefined
           void session.emit({
             kind: "session.output",
             payload: {
               rawOutput: block.content,
               sessionUpdate: "tool_call_update",
               status: block.is_error === true ? "failed" : "completed",
-              toolCallId: toolUseId
+              toolCallId: toolUseId,
+              ...(doneTitle === undefined ? {} : { title: doneTitle })
             },
             subjectId: session.key
           })
@@ -565,6 +573,7 @@ const handleStreamEvent = (
           lastEmit: 0,
           lastStats: "",
           oldContent: undefined,
+          titledPath: undefined,
           toolName
         })
         session.openToolCalls.add(toolUseId)
@@ -726,13 +735,22 @@ const maybeEmitStreamStats = (
   if (fingerprint === accumulator.lastStats) return
   accumulator.lastEmit = now
   accumulator.lastStats = fingerprint
+  const path = stats[0]?.path
+  const title =
+    path !== undefined && accumulator.titledPath !== path
+      ? activeToolTitle(accumulator.toolName, path)
+      : undefined
+  if (path !== undefined) {
+    accumulator.titledPath = path
+  }
   void session.emit({
     kind: "session.output",
     payload: {
       diffStats: stats,
       sessionUpdate: "tool_call_update",
       status: "in_progress",
-      toolCallId: toolUseId
+      toolCallId: toolUseId,
+      ...(title === undefined ? {} : { title })
     },
     subjectId: session.key
   })
@@ -934,6 +952,36 @@ const toolKind = (toolName: string): string => {
       return "think"
     default:
       return "other"
+  }
+}
+
+const fileNameOf = (path: string): string => path.split("/").at(-1) ?? path
+
+/// Present-tense title while a file tool is running.
+const activeToolTitle = (toolName: string, path: string): string | undefined => {
+  const file = fileNameOf(path)
+  switch (toolName) {
+    case "Edit":
+    case "MultiEdit":
+      return `Editing ${file}`
+    case "Write":
+      return `Writing ${file}`
+    default:
+      return undefined
+  }
+}
+
+/// Past-tense title once the tool has finished.
+const finishedToolTitle = (toolName: string, path: string): string | undefined => {
+  const file = fileNameOf(path)
+  switch (toolName) {
+    case "Edit":
+    case "MultiEdit":
+      return `Edited ${file}`
+    case "Write":
+      return `Wrote ${file}`
+    default:
+      return undefined
   }
 }
 

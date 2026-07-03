@@ -20,6 +20,9 @@ final class SessionController {
     var selectedHarnessId: String?
     private(set) var model: SessionModel?
     private(set) var status: Status = .idle
+    /// The first prompt, held while the session record/agent are being created
+    /// so the UI can show it optimistically the instant the user sends.
+    private(set) var pendingUserText: String?
 
     /// The project whose folder is used as the agent cwd. Settable so the
     /// new-chat page can change projects before the first send.
@@ -267,14 +270,19 @@ final class SessionController {
             composerText = text
             return
         }
+        pendingUserText = text
         status = .connecting("Starting \(harness.name)…")
         do {
             let model = try await connect(harness)
             self.model = model
             status = .idle
+            // model.send appends the real user message synchronously before
+            // its first suspension, so clearing here doesn't flash.
+            pendingUserText = nil
             await model.send(text)
         } catch {
             status = .failed(serverErrorMessage(error))
+            pendingUserText = nil
             composerText = text
         }
     }

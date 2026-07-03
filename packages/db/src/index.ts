@@ -545,6 +545,52 @@ const createService = (
       const now = isoTimestamp()
       const projectId = request.id ?? randomUUID()
       const createdAt = request.createdAt ?? now
+
+      // Idempotency: re-creating an existing project id returns it.
+      const byId = sqlite.prepare("select id from projects where id = ?").get(projectId) as
+        | { id: string }
+        | undefined
+      if (byId !== undefined) {
+        return getProject(projectId)
+      }
+
+      // A folder maps to exactly one project per server. If this folder is
+      // already claimed under a different project id (stale data, another
+      // client), merge that project into the requested id instead of failing
+      // on the unique(server_id, folder_path) constraint — its sessions and
+      // worktrees come along.
+      const claimed = sqlite
+        .prepare("select project_id from project_locations where server_id = ? and folder_path = ?")
+        .get(config.serverId, request.folderPath) as { project_id: string } | undefined
+      if (claimed !== undefined) {
+        if (request.id === undefined || request.id === claimed.project_id) {
+          return getProject(claimed.project_id)
+        }
+        const merge = sqlite.transaction(() => {
+          sqlite
+            .prepare(
+              `insert into projects (
+                id, name, is_archived, symbol_name, origin, created_at
+              ) values (?, ?, ?, ?, ?, ?)`
+            )
+            .run(
+              projectId,
+              request.name ?? basename(request.folderPath),
+              (request.isArchived ?? false) ? 1 : 0,
+              request.symbolName ?? "folder.fill",
+              request.origin ?? "herdman",
+              createdAt
+            )
+          for (const table of ["project_locations", "sessions", "worktrees"]) {
+            sqlite
+              .prepare(`update ${table} set project_id = ? where project_id = ?`)
+              .run(projectId, claimed.project_id)
+          }
+          sqlite.prepare("delete from projects where id = ?").run(claimed.project_id)
+        })
+        merge()
+        return getProject(projectId)
+      }
       const location: ProjectLocation = {
         id: randomUUID(),
         projectId,

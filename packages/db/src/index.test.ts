@@ -572,10 +572,35 @@ describe("@herdman/db", () => {
     expect(info.currentVersion).toBe("0.1.0")
   })
 
-  it("surfaces sqlite errors as tagged database errors", async () => {
+  it("treats a folder as one project per server: idempotent creates and id merges", async () => {
     const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
-    await run(db.createProject({ folderPath: "/tmp/duplicate" }))
-    const failed = await Effect.runPromiseExit(db.createProject({ folderPath: "/tmp/duplicate" }))
+    const original = await run(db.createProject({ folderPath: "/tmp/duplicate" }))
+
+    // Same folder, no explicit id → the existing project comes back.
+    const again = await run(db.createProject({ folderPath: "/tmp/duplicate" }))
+    expect(again.id).toBe(original.id)
+
+    // Same id → idempotent.
+    const byId = await run(db.createProject({ folderPath: "/tmp/other", id: original.id }))
+    expect(byId.id).toBe(original.id)
+
+    // Same folder under a NEW explicit id → the old project merges into it,
+    // sessions and all — no unique-constraint failure.
+    const session = await run(
+      db.createSession({ harnessId: "codex", projectId: original.id, title: "Kept" })
+    )
+    const merged = await run(db.createProject({ folderPath: "/tmp/duplicate", id: "client-id-2" }))
+    expect(merged.id).toBe("client-id-2")
+    expect(merged.locations[0]?.folderPath).toBe("/tmp/duplicate")
+    const projects = await run(db.listProjects)
+    expect(projects.map((project) => project.id)).not.toContain(original.id)
+    const detail = await run(db.getSessionDetail(session.id))
+    expect(detail.session.projectId).toBe("client-id-2")
+
+    // Genuine sqlite failures still surface as tagged errors.
+    const failed = await Effect.runPromiseExit(
+      db.createSession({ harnessId: "codex", projectId: "missing-project", title: "x" })
+    )
     expect(String(failed)).toContain("DatabaseError")
     await Effect.runPromise(db.close)
   })

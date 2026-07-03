@@ -493,7 +493,7 @@ const handleNotification = (session: CodexSession, method: string, params: unkno
             kind: "edit",
             sessionUpdate: "tool_call",
             status: "in_progress",
-            title: fileChangeTitle(payload.changes),
+            title: fileChangeTitle(payload.changes, false),
             toolCallId: itemId,
             ...(stats.length === 0 ? {} : { diffStats: stats })
           },
@@ -607,7 +607,7 @@ const emitItemLifecycle = (
             kind: "edit",
             sessionUpdate: "tool_call",
             status: "in_progress",
-            title: fileChangeTitle(item.changes),
+            title: fileChangeTitle(item.changes, false),
             toolCallId: itemId,
             ...(stats.length === 0 ? {} : { diffStats: stats }),
             ...(content.length === 0 ? {} : { content })
@@ -618,6 +618,7 @@ const emitItemLifecycle = (
           event({
             sessionUpdate: "tool_call_update",
             status: patchStatus(item),
+            title: fileChangeTitle(item.changes, true),
             toolCallId: itemId,
             ...(stats.length === 0 ? {} : { diffStats: stats }),
             ...(content.length === 0 ? {} : { content })
@@ -755,17 +756,18 @@ const textsFromUnified = (diff: string): { oldText: string | null; newText: stri
   }
 }
 
-const fileChangeTitle = (changes: unknown): string => {
+const fileChangeTitle = (changes: unknown, done: boolean): string => {
+  const verb = done ? "Edited" : "Editing"
   if (Array.isArray(changes)) {
     const paths = changes.flatMap((change) =>
       isRecord(change) && typeof change.path === "string" ? [change.path] : []
     )
     const first = paths[0]?.split("/").at(-1)
     if (first !== undefined) {
-      return paths.length > 1 ? `Edited ${first} +${paths.length - 1} more` : `Edited ${first}`
+      return paths.length > 1 ? `${verb} ${first} +${paths.length - 1} more` : `${verb} ${first}`
     }
   }
-  return "Edited files"
+  return done ? "Edited files" : "Editing files"
 }
 
 const commandStatus = (item: Record<string, unknown>): string => {

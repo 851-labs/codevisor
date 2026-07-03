@@ -319,7 +319,7 @@ describe("CodexProvider", () => {
       toolCallId: "item-early",
       kind: "edit",
       status: "in_progress",
-      title: "Edited release.yml",
+      title: "Editing release.yml",
       diffStats: [{ added: 2, path: "release.yml", removed: 1 }]
     })
 

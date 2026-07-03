@@ -40,7 +40,8 @@ struct SessionScreen: View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 20) {
-                    if controller.conversation.isEmpty, controller.isConnecting {
+                    if controller.conversation.isEmpty,
+                       controller.isConnecting || controller.pendingUserText != nil {
                         optimisticStartingTurn
                     }
                     ForEach(controller.conversation) { item in
@@ -181,7 +182,11 @@ struct SessionScreen: View {
 
     @ViewBuilder
     private var optimisticStartingTurn: some View {
-        let text = controller.composerText.trimmingCharacters(in: .whitespacesAndNewlines)
+        // The pending prompt is held by the controller from the instant the
+        // user sends (the composer is cleared immediately); fall back to the
+        // composer for the pre-send connecting state.
+        let text = (controller.pendingUserText
+            ?? controller.composerText.trimmingCharacters(in: .whitespacesAndNewlines))
         if !text.isEmpty {
             UserMessageView(message: UserMessage(text: text))
             ShimmeringText.startingAgent
