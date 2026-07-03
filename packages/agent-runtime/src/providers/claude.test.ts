@@ -259,7 +259,7 @@ describe("ClaudeProvider", () => {
     expect(payloads[1]).toMatchObject({
       sessionUpdate: "tool_call",
       toolCallId: "tool-1",
-      status: "pending",
+      status: "in_progress",
       kind: "edit"
     })
     const statUpdates = payloads.filter(

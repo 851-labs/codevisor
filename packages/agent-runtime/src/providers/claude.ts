@@ -569,12 +569,14 @@ const handleStreamEvent = (
         })
         session.openToolCalls.add(toolUseId)
         void ensureTurnStarted(session, session.pendingPrompt === undefined ? "agent" : "user")
+        // The model is already generating this call's input — that's work in
+        // progress, and for fast tools it's most of the visible lifetime.
         void session.emit({
           kind: "session.output",
           payload: {
             kind: toolKind(toolName),
             sessionUpdate: "tool_call",
-            status: "pending",
+            status: "in_progress",
             title: toolName,
             toolCallId: toolUseId,
             ...(isSubagent ? { parentToolCallId: message.parent_tool_use_id } : {})
