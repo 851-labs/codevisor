@@ -7,6 +7,25 @@ import Combine
 import GhosttyKit
 import os
 
+/// Upstream sizes the libghostty surface only via `sizeDidChange`, called from
+/// its SwiftUI wrapper (not vendored). HerdMan drives the view with Auto Layout
+/// (TerminalSurfaceView pins it into a container), so forward frame changes —
+/// and the initial attach, when the window's backing scale becomes available —
+/// into `sizeDidChange` here.
+@MainActor
+private final class HerdManGhosttySurfaceView: Ghostty.SurfaceView {
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        sizeDidChange(newSize)
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        guard window != nil else { return }
+        sizeDidChange(frame.size)
+    }
+}
+
 /// A terminal surface backed by the vendored upstream Ghostty surface view.
 @MainActor
 final class GhosttyTerminalSurface: TerminalSurface {
@@ -23,7 +42,7 @@ final class GhosttyTerminalSurface: TerminalSurface {
         config.command = descriptor.command
         config.waitAfterCommand = true
 
-        let view = Ghostty.SurfaceView(HerdManGhosttyApp.shared.app, baseConfig: config)
+        let view = HerdManGhosttySurfaceView(HerdManGhosttyApp.shared.app, baseConfig: config)
         if view.error != nil {
             Ghostty.logger.error("terminal surface creation failed for \(descriptor.workingDirectory.path, privacy: .public)")
         }
