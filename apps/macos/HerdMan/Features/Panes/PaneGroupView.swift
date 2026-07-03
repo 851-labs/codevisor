@@ -148,6 +148,11 @@ struct PaneGroupBar: View {
                 if draggingPaneId != paneId {
                     draggingPaneId = paneId
                     dragAdjustment = 0
+                    // Dragging always operates on the selected tab: picking up
+                    // an unselected tab selects it first (Chrome behavior).
+                    if group.state.selectedPaneId != paneId {
+                        group.select(id: paneId)
+                    }
                 }
                 var offset = value.translation.width + dragAdjustment
                 while offset > slotWidth / 2, let next = neighborId(of: paneId, direction: 1) {
@@ -264,9 +269,9 @@ private struct PaneTab: View {
 
     /// The tab content's horizontal inset.
     private static let contentPadding: CGFloat = 8
-    /// The selected tab shape: bottom-anchored, tall enough to read as the
-    /// pane's "mouth" opening through the bar's bottom border.
-    private static let selectedShapeHeight: CGFloat = 26
+    /// The selected tab shape: bottom-anchored, with a top inset equal to the
+    /// content's horizontal padding (32 - 8).
+    private static let selectedShapeHeight: CGFloat = 24
     /// The hover pill: an all-corners rounded rect, vertically centered and
     /// clearly distinct from the selected tab shape (Chrome-style).
     private static let hoverShapeHeight: CGFloat = 22
@@ -311,7 +316,10 @@ private struct PaneTab: View {
                 .foregroundStyle(isSelected ? .primary : .secondary)
                 .fixedSize()
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        // minWidth 0 lets the tab compress below the text's natural width —
+        // the text then clips behind the ✕ (with the fade) instead of
+        // overflowing the tab.
+        .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
         .clipped()
         .mask(
             HStack(spacing: 0) {
