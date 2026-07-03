@@ -89,11 +89,46 @@ struct PaneGroupBar: View {
             let fittedWidth = min(Self.maxTabWidth, max(Self.minTabWidth, available / CGFloat(count)))
             let tabWidth = frozenTabWidth ?? fittedWidth
             let slotWidth = tabWidth + Self.tabSpacing
-            let isOverflowing = CGFloat(count) * slotWidth + reserved > geometry.size.width
+            let contentWidth = CGFloat(count) * slotWidth
+            let isOverflowing = contentWidth > available
 
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: Self.tabSpacing) {
-                    ForEach(group.state.panes) { pane in
+            // The strip hugs its tabs so the add button sits right after the
+            // last tab (Chrome-style), pinned at the edge once tabs overflow
+            // into scrolling.
+            HStack(spacing: 4) {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    tabRow(tabWidth: tabWidth, slotWidth: slotWidth)
+                }
+                .frame(width: min(contentWidth, available), alignment: .leading)
+                // Soften the strip's edges when it overflows into scrolling.
+                .mask(
+                    HStack(spacing: 0) {
+                        LinearGradient(colors: [.clear, .black], startPoint: .leading, endPoint: .trailing)
+                            .frame(width: isOverflowing ? 14 : 0)
+                        Rectangle().fill(.black)
+                        LinearGradient(colors: [.black, .clear], startPoint: .leading, endPoint: .trailing)
+                            .frame(width: isOverflowing ? 14 : 0)
+                    }
+                )
+                // Pointer left the strip: relax frozen widths back to fitting.
+                .onHover { hovering in
+                    guard !hovering, frozenTabWidth != nil else { return }
+                    withAnimation(.snappy(duration: 0.2)) { frozenTabWidth = nil }
+                }
+
+                addPaneButton
+
+                Spacer(minLength: 0)
+            }
+            .animation(.snappy(duration: 0.2), value: group.state.panes.map(\.id))
+            .animation(.snappy(duration: 0.2), value: group.state.panes.count)
+        }
+        .frame(height: Self.barHeight)
+    }
+
+    private func tabRow(tabWidth: CGFloat, slotWidth: CGFloat) -> some View {
+        HStack(spacing: Self.tabSpacing) {
+            ForEach(group.state.panes) { pane in
                         PaneTab(
                             name: pane.name,
                             isSelected: pane.id == group.state.selectedPaneId,
@@ -123,32 +158,15 @@ struct PaneGroupBar: View {
                         // the drag mid-reorder; taps still pass through via
                         // the 3pt minimum distance.
                         .highPriorityGesture(reorderGesture(for: pane.id, slotWidth: slotWidth))
-                    }
-                    addPaneButton
-                }
-                .coordinateSpace(name: Self.stripSpace)
-                .frame(height: Self.barHeight)
-                .animation(.snappy(duration: 0.2), value: group.state.panes.map(\.id))
-                // Adding/removing tabs animates every tab to its new width
-                // instead of snapping.
-                .animation(.snappy(duration: 0.2), value: group.state.panes.count)
-            }
-            // Soften the strip's edges when it overflows into scrolling.
-            .mask(
-                HStack(spacing: 0) {
-                    LinearGradient(colors: [.clear, .black], startPoint: .leading, endPoint: .trailing)
-                        .frame(width: isOverflowing ? 14 : 0)
-                    Rectangle().fill(.black)
-                    LinearGradient(colors: [.black, .clear], startPoint: .leading, endPoint: .trailing)
-                        .frame(width: isOverflowing ? 14 : 0)
-                }
-            )
-            // Pointer left the strip: relax frozen widths back to fitting.
-            .onHover { hovering in
-                guard !hovering, frozenTabWidth != nil else { return }
-                withAnimation(.snappy(duration: 0.2)) { frozenTabWidth = nil }
+                        // New tabs grow in from zero width (and closing tabs
+                        // shrink away), naturally resizing/sliding the rest.
+                        .transition(.modifier(
+                            active: TabSlotWidthModifier(width: 0),
+                            identity: TabSlotWidthModifier(width: tabWidth)
+                        ))
             }
         }
+        .coordinateSpace(name: Self.stripSpace)
         .frame(height: Self.barHeight)
     }
 
@@ -265,6 +283,18 @@ struct PaneGroupBar: View {
                 }
                 dragStartHeight = nil
             }
+    }
+}
+
+/// Animates a tab's slot width during insertion/removal transitions: new tabs
+/// grow in from zero and closing tabs collapse, sliding their neighbors.
+private struct TabSlotWidthModifier: ViewModifier {
+    let width: CGFloat
+
+    func body(content: Content) -> some View {
+        content
+            .frame(width: width, alignment: .leading)
+            .clipped()
     }
 }
 
