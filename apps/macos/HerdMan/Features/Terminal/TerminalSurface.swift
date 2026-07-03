@@ -142,6 +142,6 @@ enum TerminalRuntime {
     /// terminal later never re-enters an in-progress `once` (which traps with
     /// `_dispatch_once_wait` / EXC_BREAKPOINT).
     static func prewarm() {
-        _ = GhosttyRuntime.shared.app
+        _ = HerdManGhosttyApp.shared
     }
 }

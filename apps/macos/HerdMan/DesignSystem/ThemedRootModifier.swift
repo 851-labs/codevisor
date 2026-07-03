@@ -35,7 +35,7 @@ struct ThemedRoot: ViewModifier {
             // Seed the terminal theme before the Ghostty runtime prewarns
             // (initial: true) and re-theme live surfaces on switches.
             .onChange(of: theme.palette?.terminal, initial: true) { _, terminal in
-                GhosttyRuntime.applyTheme(terminal)
+                HerdManGhosttyApp.applyTheme(terminal)
             }
     }
 
