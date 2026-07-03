@@ -35,7 +35,11 @@ private final class HerdManGhosttySurfaceView: Ghostty.SurfaceView {
     /// else falls through to Ghostty's key handling.
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         if event.type == .keyDown, focused, let onPaneCommand {
-            let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            // Arrow keys carry implicit .function/.numericPad flags — strip
+            // them or the exact-modifier comparisons below never match.
+            let mods = event.modifierFlags
+                .intersection(.deviceIndependentFlagsMask)
+                .subtracting([.function, .numericPad])
             if mods == [.command, .option] {
                 if event.specialKey == .leftArrow {
                     onPaneCommand(.previousTab)
