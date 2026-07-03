@@ -82,6 +82,7 @@ struct NewChatView: View {
             Spacer()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .attachmentDropTarget(controller)
         .navigationTitle("New chat")
         .task(id: preferredProjectId) { setUpController() }
         .focusedSceneValue(\.newChatComposerFocus, NewChatComposerFocus(

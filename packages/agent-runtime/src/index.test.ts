@@ -3,13 +3,18 @@ import { describe, expect, it } from "vitest"
 import {
   AgentRuntime,
   acpProtocolVersion,
+  acpPrompt,
   makeAgentRuntime,
+  normalizePromptInput,
   runtimeEventFromNotification,
   toEventEnvelope,
+  withAttachmentNotes,
   type AcpAgentConnection,
   type AcpConnector,
   type AcpHarnessLaunchRequest,
   type AgentRuntimeError,
+  type PromptAttachmentInput,
+  type PromptInput,
   type RuntimeEmit,
   type RuntimeEvent
 } from "./index.js"
@@ -55,9 +60,10 @@ class FakeConnection implements AcpAgentConnection {
 
   prompt(
     sessionId: string,
-    text: string
+    input: string | PromptInput
   ): Effect.Effect<{ readonly stopReason: string }, AgentRuntimeError> {
     return Effect.promise(async () => {
+      const { text } = normalizePromptInput(input)
       this.prompts.push([sessionId, text])
       await this.emit(conversationEvent(sessionId, "user", text))
       await this.emit(conversationEvent(sessionId, "assistant", `Echo: ${text}`))
@@ -504,5 +510,60 @@ describe("@herdman/agent-runtime", () => {
       }
     } as never)
     expect(plain.payload).not.toHaveProperty("diffStats")
+  })
+})
+
+describe("prompt attachments", () => {
+  const image: PromptAttachmentInput = {
+    data: Buffer.from("img"),
+    kind: "image",
+    mimeType: "image/png",
+    name: "shot.png",
+    path: "/tmp/att/shot.png"
+  }
+  const file: PromptAttachmentInput = {
+    data: Buffer.from("notes"),
+    kind: "file",
+    mimeType: "text/plain",
+    name: "notes.txt",
+    path: "/tmp/att/notes.txt"
+  }
+
+  it("normalizes prompt input from strings and structured input", () => {
+    expect(normalizePromptInput("hello")).toEqual({ text: "hello" })
+    const input = { attachments: [image], text: "hi" }
+    expect(normalizePromptInput(input)).toBe(input)
+  })
+
+  it("appends path notes for attachments, skipping empty text", () => {
+    expect(withAttachmentNotes("hello", [])).toBe("hello")
+    expect(withAttachmentNotes("hello", [file])).toBe(
+      "hello\n\n[Attached file: /tmp/att/notes.txt (notes.txt, text/plain)]"
+    )
+    expect(withAttachmentNotes("", [file])).toBe(
+      "[Attached file: /tmp/att/notes.txt (notes.txt, text/plain)]"
+    )
+  })
+
+  it("builds ACP prompt blocks: inline images when supported, path notes otherwise", () => {
+    expect(acpPrompt({ attachments: [image, file], text: "look" }, { image: true })).toEqual([
+      {
+        text: "look\n\n[Attached file: /tmp/att/notes.txt (notes.txt, text/plain)]",
+        type: "text"
+      },
+      { data: Buffer.from("img").toString("base64"), mimeType: "image/png", type: "image" }
+    ])
+    // No image capability: images fall back to path notes too.
+    expect(acpPrompt({ attachments: [image], text: "look" }, {})).toEqual([
+      {
+        text: "look\n\n[Attached file: /tmp/att/shot.png (shot.png, image/png)]",
+        type: "text"
+      }
+    ])
+    // Image-only prompts drop the empty text block.
+    expect(acpPrompt({ attachments: [image], text: "" }, { image: true })).toEqual([
+      { data: Buffer.from("img").toString("base64"), mimeType: "image/png", type: "image" }
+    ])
+    expect(acpPrompt({ text: "plain" }, { image: true })).toEqual([{ text: "plain", type: "text" }])
   })
 })

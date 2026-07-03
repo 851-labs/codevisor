@@ -110,6 +110,153 @@ struct SessionModelTests {
         #expect(assistant.turn.finalText == .text(id: "acp:assistant-1", markdown: "Server-backed history."))
     }
 
+    @Test("Attachments allow empty text and ride the prompt to the server")
+    func attachmentsRidePrompt() async {
+        let sessionId = UUID()
+        let client = FakeSessionServerClient(sessionId: sessionId)
+        let model = SessionModel(
+            serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
+            sessionId: sessionId.uuidString
+        )
+        let attachment = Attachment(
+            fileId: "file-1", name: "shot.png", mimeType: "image/png", sizeBytes: 3, kind: .image
+        )
+
+        await model.send("", attachments: [attachment])
+
+        #expect(client.promptedTexts == [""])
+        #expect(client.promptedAttachments == [[attachment.serverRef]])
+        guard case let .user(user) = model.conversation.first else {
+            Issue.record("expected user")
+            return
+        }
+        #expect(user.attachments == [attachment])
+    }
+
+    @Test("Replayed user events stamp attachments onto the optimistic echo and append remote ones")
+    func userEventsCarryAttachments() async {
+        let sessionId = UUID()
+        let client = FakeSessionServerClient(sessionId: sessionId)
+        client.echoOnPrompt = false
+        let model = SessionModel(
+            serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
+            sessionId: sessionId.uuidString
+        )
+        let refPayload: JSONValue = .array([
+            .object([
+                "fileId": .string("file-9"),
+                "name": .string("shot.png"),
+                "mimeType": .string("image/png"),
+                "sizeBytes": .number(3),
+                "kind": .string("image")
+            ])
+        ])
+        let expected = Attachment(
+            fileId: "file-9", name: "shot.png", mimeType: "image/png", sizeBytes: 3, kind: .image
+        )
+
+        // The optimistic message has no attachments; the server echo does —
+        // the echo's refs are stamped onto it instead of appending a dupe.
+        await model.send("look at this")
+        client.emit(ServerEventEnvelope(
+            id: 1,
+            serverId: "local",
+            kind: "session.output",
+            subjectId: sessionId.uuidString,
+            createdAt: "2026-06-30T00:00:00.000Z",
+            payload: .object([
+                "role": .string("user"),
+                "text": .string("look at this"),
+                "attachments": refPayload
+            ])
+        ))
+        await settleUntil { userMessages(model).first?.attachments.isEmpty == false }
+        #expect(userMessages(model).count == 1)
+        #expect(userMessages(model).first?.attachments == [expected])
+
+        // A remote user message with attachments but no text still appends.
+        client.emit(ServerEventEnvelope(
+            id: 2,
+            serverId: "local",
+            kind: "session.output",
+            subjectId: sessionId.uuidString,
+            createdAt: "2026-06-30T00:00:01.000Z",
+            payload: .object([
+                "role": .string("user"),
+                "text": .string(""),
+                "attachments": refPayload
+            ])
+        ))
+        await settleUntil { userMessages(model).count == 2 }
+        #expect(userMessages(model).last?.text == "")
+        #expect(userMessages(model).last?.attachments == [expected])
+    }
+
+    @Test("History snapshot conversation items carry attachments")
+    func snapshotCarriesAttachments() async {
+        let sessionId = UUID()
+        let client = FakeSessionServerClient(sessionId: sessionId)
+        client.detailConversation = [
+            ServerConversationItem(
+                id: UUID().uuidString,
+                role: .user,
+                messageId: nil,
+                text: "with file",
+                createdAt: "2026-06-30T00:00:00.000Z",
+                isGenerating: false,
+                attachments: [
+                    ServerAttachmentRef(
+                        fileId: "file-3", name: "doc.pdf", mimeType: "application/pdf",
+                        sizeBytes: 9, kind: .file
+                    )
+                ]
+            )
+        ]
+        let model = SessionModel(
+            serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
+            sessionId: sessionId.uuidString
+        )
+
+        await model.loadHistory()
+
+        #expect(userMessages(model).first?.attachments == [
+            Attachment(fileId: "file-3", name: "doc.pdf", mimeType: "application/pdf", sizeBytes: 9, kind: .file)
+        ])
+    }
+
+    @Test("Attachment refs decode when present and stay nil for older servers")
+    func attachmentDecodeBackwardCompat() throws {
+        let legacy = try JSONDecoder().decode(
+            ServerConversationItem.self,
+            from: Data(#"{"id":"a","role":"user","text":"hi","createdAt":"t","isGenerating":false}"#.utf8)
+        )
+        #expect(legacy.attachments == nil)
+
+        let modern = try JSONDecoder().decode(
+            ServerPromptQueueItem.self,
+            from: Data(
+                #"{"id":"q","sessionId":"s","text":"hi","createdAt":"t","updatedAt":"t","attachments":[{"fileId":"f","name":"n.png","mimeType":"image/png","sizeBytes":1,"kind":"image"}]}"#
+                    .utf8
+            )
+        )
+        #expect(modern.attachments?.first?.fileId == "f")
+        #expect(modern.attachments?.first?.attachment.kind == .image)
+    }
+
+    private func settleUntil(_ predicate: () -> Bool) async {
+        for _ in 0..<200 {
+            if predicate() { return }
+            await Task.yield()
+        }
+    }
+
+    private func userMessages(_ model: SessionModel) -> [UserMessage] {
+        model.conversation.compactMap { item in
+            if case let .user(message) = item { return message }
+            return nil
+        }
+    }
+
     @Test("Server-backed event stream keeps final answer visible after interleaved tool events")
     func serverBackedMessageIdsMergeInterleavedOutput() async {
         let sessionId = UUID()
@@ -476,6 +623,7 @@ private final class FakeSessionServerClient: HerdManServerClienting, @unchecked 
     private let lock = NSLock()
 
     private var _promptedTexts: [String] = []
+    private var _promptedAttachments: [[ServerAttachmentRef]] = []
     private var _cancelCount = 0
     private var _configUpdates: [(String, String)] = []
     private var _eventSinceValues: [Int] = []
@@ -483,6 +631,9 @@ private final class FakeSessionServerClient: HerdManServerClienting, @unchecked 
     var detailConversation: [ServerConversationItem] = []
     var detailCursor = 0
     var historyEvents: [ServerEventEnvelope] = []
+    /// When false, prompts are accepted without the scripted assistant echo,
+    /// leaving the turn generating so tests can emit their own events.
+    var echoOnPrompt = true
 
     init(sessionId: UUID) {
         self.sessionId = sessionId
@@ -491,6 +642,10 @@ private final class FakeSessionServerClient: HerdManServerClienting, @unchecked 
 
     var promptedTexts: [String] {
         lock.withLock { _promptedTexts }
+    }
+
+    var promptedAttachments: [[ServerAttachmentRef]] {
+        lock.withLock { _promptedAttachments }
     }
 
     var cancelCount: Int {
@@ -548,8 +703,16 @@ private final class FakeSessionServerClient: HerdManServerClienting, @unchecked 
     func updateSession(_ session: ChatSession) async throws -> ServerSession { fatalError("unused") }
     func deleteSession(id: UUID) async throws {}
 
+    func promptSession(id: UUID, text: String, attachments: [ServerAttachmentRef]) async throws -> ServerPromptAccepted {
+        lock.withLock { _promptedAttachments.append(attachments) }
+        return try await promptSession(id: id, text: text)
+    }
+
     func promptSession(id: UUID, text: String) async throws -> ServerPromptAccepted {
         lock.withLock { _promptedTexts.append(text) }
+        guard echoOnPrompt else {
+            return ServerPromptAccepted(accepted: true, sessionId: id.uuidString)
+        }
         continuation.yield(ServerEventEnvelope(
             id: 1,
             serverId: "local",

@@ -40,7 +40,8 @@ public final class AppEnvironment {
         localServer: LocalHerdManServer? = nil,
         appUpdate: AppUpdateModel? = nil,
         customThemesDirectory: URL? = nil,
-        harnessService: (any HarnessServicing)? = nil
+        harnessService: (any HarnessServicing)? = nil,
+        machineClientFactory: MachineController.ClientFactory? = nil
     ) {
         self.harnessServiceOverride = harnessService
         self.theme = ThemeManager(
@@ -65,7 +66,8 @@ public final class AppEnvironment {
         self.machines = MachineController(
             store: machineStore,
             projectList: projectList,
-            localServer: localServer
+            localServer: localServer,
+            clientFactory: machineClientFactory
         )
         projectList.showsImportedSessions = settings.importExternalSessions
     }
@@ -200,7 +202,11 @@ public final class AppEnvironment {
             configCache: ConfigOptionCache(store: InMemoryStore()),
             settings: settings,
             machineStore: InMemoryStore(),
-            harnessService: PreviewHarnessService()
+            harnessService: PreviewHarnessService(),
+            // Hermetic: the default factory builds a real HTTP client against
+            // the Debug dev port, so previews/tests would sync their sample
+            // projects into a live dev server's database.
+            machineClientFactory: { _ in PreviewServerClient() }
         )
     }
 

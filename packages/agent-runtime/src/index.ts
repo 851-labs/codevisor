@@ -12,6 +12,7 @@ import {
   type AgentSessionHandle,
   type AgentSessionMetadata,
   type HarnessDefinition,
+  type PromptInput,
   type PromptResult,
   type ProviderEnvironment,
   type ProviderId,
@@ -20,14 +21,21 @@ import {
 } from "./types.js"
 
 export * from "./types.js"
+export * from "./attachments.js"
 export * from "./diff-stats.js"
 export {
   acpProtocolVersion,
+  acpPrompt,
   makeAcpProvider,
   runtimeEventFromNotification,
   stdioAcpConnector
 } from "./providers/acp.js"
-export type { AcpAgentConnection, AcpConnector, AcpHarnessLaunchRequest } from "./providers/acp.js"
+export type {
+  AcpAgentConnection,
+  AcpConnector,
+  AcpHarnessLaunchRequest,
+  AcpPromptCapabilities
+} from "./providers/acp.js"
 export { makeClaudeProvider } from "./providers/claude.js"
 export type { ClaudeProviderConfig, ClaudeQueryFn } from "./providers/claude.js"
 export { makeCodexProvider } from "./providers/codex/provider.js"
@@ -64,7 +72,7 @@ export interface AgentRuntimeService {
   ) => Effect.Effect<string, AgentRuntimeError>
   readonly prompt: (
     sessionId: string,
-    text: string
+    input: string | PromptInput
   ) => Effect.Effect<PromptResult, AgentRuntimeError>
   readonly cancel: (sessionId: string) => Effect.Effect<void, AgentRuntimeError>
   readonly setMode: (sessionId: string, modeId: string) => Effect.Effect<void, AgentRuntimeError>
@@ -303,10 +311,10 @@ export const makeAgentRuntime = (config: AgentRuntimeConfig = {}): AgentRuntimeS
         const loaded = yield* provider.loadSession(definition, agentSessionId, cwd, dispatch)
         return manageSession(harnessId, loaded.sessionId, cwd, loaded.handle, sink)
       }),
-    prompt: (sessionId, text) =>
+    prompt: (sessionId, input) =>
       Effect.gen(function* () {
         const session = yield* sessionFor(sessionId)
-        return yield* session.handle.prompt(text)
+        return yield* session.handle.prompt(input)
       }),
     cancel: (sessionId) =>
       Effect.gen(function* () {

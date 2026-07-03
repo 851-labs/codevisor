@@ -13,6 +13,7 @@ struct SessionScreen: View {
     @State private var composerHeight: CGFloat = 96
     @State private var focus = TerminalFocusController()
     @State private var isQueueExpanded = true
+    @State private var attachmentImages: AttachmentImageStore?
     private let bottomID = "session-bottom"
 
     var body: some View {
@@ -33,7 +34,17 @@ struct SessionScreen: View {
         .focusedSceneValue(\.terminalToggle, TerminalToggleAction(sessionId: terminal.id) {
             toggleTerminal()
         })
-        .onAppear { focus.terminal = terminal }
+        .onAppear {
+            focus.terminal = terminal
+            if attachmentImages == nil {
+                attachmentImages = AttachmentImageStore { [weak controller] fileId in
+                    guard let controller else { throw SessionControllerError.serverUnavailable }
+                    return try await controller.fileData(id: fileId)
+                }
+            }
+        }
+        .environment(\.attachmentImages, attachmentImages)
+        .attachmentDropTarget(controller)
     }
 
     private var chatArea: some View {
@@ -187,8 +198,8 @@ struct SessionScreen: View {
         // composer for the pre-send connecting state.
         let text = (controller.pendingUserText
             ?? controller.composerText.trimmingCharacters(in: .whitespacesAndNewlines))
-        if !text.isEmpty {
-            UserMessageView(message: UserMessage(text: text))
+        if !text.isEmpty || !controller.pendingUserAttachments.isEmpty {
+            UserMessageView(message: UserMessage(text: text, attachments: controller.pendingUserAttachments))
             ShimmeringText.startingAgent
         }
     }

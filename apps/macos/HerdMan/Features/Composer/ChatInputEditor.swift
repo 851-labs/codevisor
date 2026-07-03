@@ -8,6 +8,13 @@ enum ComposerKeyCommand {
     case dismissSelection
 }
 
+/// Attachment-worthy pasteboard content intercepted by the composer's paste.
+enum PastedAttachment {
+    case fileURL(URL)
+    /// PNG-normalized image bytes.
+    case image(data: Data, suggestedName: String?)
+}
+
 /// A multiline text editor where **Return submits** and **Shift+Return inserts a
 /// newline**. Grows with its content between `minHeight` and `maxHeight`.
 struct ChatInputEditor: NSViewRepresentable {
@@ -17,6 +24,9 @@ struct ChatInputEditor: NSViewRepresentable {
     var maxHeight: CGFloat = 240
     var onSubmit: () -> Void
     var onKeyCommand: ((ComposerKeyCommand) -> Bool)? = nil
+    /// Returns true when the paste was consumed as attachments (file URLs or
+    /// image data); false falls through to the normal text paste.
+    var onPasteAttachments: (([PastedAttachment]) -> Bool)? = nil
     /// Called once with the underlying text view so callers can move focus to it
     /// (used by the terminal's ⌘J focus handoff).
     var onTextViewReady: ((NSView) -> Void)? = nil
@@ -26,6 +36,7 @@ struct ChatInputEditor: NSViewRepresentable {
         textView.delegate = context.coordinator
         textView.onSubmit = { onSubmit() }
         textView.onKeyCommand = onKeyCommand
+        textView.onPasteAttachments = onPasteAttachments
         onTextViewReady?(textView)
         textView.string = text
         textView.font = .preferredFont(forTextStyle: .body)
@@ -53,6 +64,7 @@ struct ChatInputEditor: NSViewRepresentable {
         context.coordinator.parent = self
         textView.onSubmit = { onSubmit() }
         textView.onKeyCommand = onKeyCommand
+        textView.onPasteAttachments = onPasteAttachments
         if textView.string != text {
             textView.string = text
         }
@@ -110,6 +122,37 @@ struct ChatInputEditor: NSViewRepresentable {
 final class SubmittingTextView: NSTextView {
     var onSubmit: (() -> Void)?
     var onKeyCommand: ((ComposerKeyCommand) -> Bool)?
+    var onPasteAttachments: (([PastedAttachment]) -> Bool)?
+
+    /// Intercepts pastes carrying files or raw image data (e.g. copied
+    /// screenshots) and routes them to the composer as attachments; plain text
+    /// falls through to the normal paste.
+    override func paste(_ sender: Any?) {
+        let attachments = Self.pasteboardAttachments(NSPasteboard.general)
+        if !attachments.isEmpty, onPasteAttachments?(attachments) == true {
+            return
+        }
+        super.paste(sender)
+    }
+
+    private static func pasteboardAttachments(_ pasteboard: NSPasteboard) -> [PastedAttachment] {
+        // File URLs win: a Finder copy also carries the filename as a string,
+        // which must not paste as text.
+        if let urls = pasteboard.readObjects(
+            forClasses: [NSURL.self],
+            options: [.urlReadingFileURLsOnly: true]
+        ) as? [URL], !urls.isEmpty {
+            return urls.map { .fileURL($0) }
+        }
+        // Raw image data (copied screenshots, images copied from a browser).
+        for type in [NSPasteboard.PasteboardType.png, .tiff] {
+            guard let data = pasteboard.data(forType: type) else { continue }
+            let png = type == .png ? data : pngData(from: data)
+            guard let png else { continue }
+            return [.image(data: png, suggestedName: nil)]
+        }
+        return []
+    }
 
     override func keyDown(with event: NSEvent) {
         // 53 = Escape. Consume it here as well as in the delegate so it can

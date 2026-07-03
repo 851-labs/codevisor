@@ -39,6 +39,7 @@ struct RootView: View {
     @State private var store: SessionStore?
     @State private var preferredProjectId: UUID?
     @State private var preparedMachineId: String?
+    @State private var lightbox = LightboxController()
 
     var body: some View {
         Group {
@@ -51,6 +52,19 @@ struct RootView: View {
                 }
             }
         }
+        .environment(\.lightbox, lightbox)
+        // Window-level so the viewer covers the sidebar too, matching a true
+        // full-window lightbox rather than a session-column sheet. The window
+        // toolbar (session title, sidebar toggle) draws above SwiftUI
+        // overlays, so it is hidden while the viewer is up.
+        .toolbar(lightbox.item == nil ? .automatic : .hidden, for: .windowToolbar)
+        .overlay {
+            if let item = lightbox.item {
+                AttachmentLightbox(item: item, controller: lightbox)
+                    .transition(.opacity)
+            }
+        }
+        .animation(.snappy(duration: 0.15), value: lightbox.item)
         .task {
             if store == nil {
                 store = SessionStore(environment: environment)

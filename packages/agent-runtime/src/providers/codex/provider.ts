@@ -1,20 +1,44 @@
 import type { DiffStat, SessionConfigOption, SessionModeState } from "@herdman/api"
 import { randomUUID } from "node:crypto"
 import { Effect } from "effect"
+import { withAttachmentNotes } from "../../attachments.js"
 import { diffStatsFromUnified, lineCount } from "../../diff-stats.js"
 import {
   adapterPromise,
+  normalizePromptInput,
   type AgentProvider,
   type AgentRuntimeError,
   type AgentSessionHandle,
   type CreatedAgentSession,
   type HarnessDefinition,
   type LoadedAgentSession,
+  type PromptInput,
   type ProviderEnvironment,
   type RuntimeEmit,
   type RuntimeEvent
 } from "../../types.js"
 import { spawnCodexClient, type CodexClient, type CodexConnector } from "./client.js"
+
+type CodexInputItem =
+  | { readonly text: string; readonly type: "text" }
+  | { readonly path: string; readonly type: "localImage" }
+
+/// Builds the turn/start input items: images go by materialized temp-file
+/// path (the app-server's `localImage`), other files by path note in the text.
+const codexInput = (input: PromptInput): Array<CodexInputItem> => {
+  const attachments = input.attachments ?? []
+  const images = attachments.filter((attachment) => attachment.kind === "image")
+  const files = attachments.filter((attachment) => attachment.kind !== "image")
+  const text = withAttachmentNotes(input.text, files)
+  const items: Array<CodexInputItem> = []
+  if (text !== "" || images.length === 0) {
+    items.push({ text, type: "text" })
+  }
+  for (const image of images) {
+    items.push({ path: image.path, type: "localImage" })
+  }
+  return items
+}
 
 export interface CodexProviderConfig {
   /// Injectable for tests: scripted app-server sessions instead of a spawned
@@ -273,14 +297,14 @@ export const makeCodexProvider = (
     close: adapterPromise("close", async () => {
       session.client.close()
     }),
-    prompt: (text) =>
+    prompt: (input) =>
       adapterPromise("prompt", async () => {
         const pending = new Promise<{ stopReason: string }>((resolve) => {
           session.pendingPrompt = { resolve }
         })
         const mode = CODEX_MODES.find((candidate) => candidate.id === session.currentModeId)
         await session.client.request("turn/start", {
-          input: [{ text, type: "text" }],
+          input: codexInput(normalizePromptInput(input)),
           threadId: session.threadId,
           ...(session.currentModel.length === 0 ? {} : { model: session.currentModel }),
           ...(session.currentEffort === undefined ? {} : { effort: session.currentEffort }),

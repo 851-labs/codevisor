@@ -1,6 +1,12 @@
-import type { AgentRuntimeService, RuntimeEvent, RuntimeEventSink } from "@herdman/agent-runtime"
+import type {
+  AgentRuntimeService,
+  PromptAttachmentInput,
+  RuntimeEvent,
+  RuntimeEventSink
+} from "@herdman/agent-runtime"
 import { randomUUID } from "node:crypto"
 import type {
+  AttachmentRef,
   CreateSessionRequest,
   EventEnvelope,
   Harness,
@@ -34,7 +40,7 @@ import {
 import type { HerdManDatabaseService } from "@herdman/db"
 import type { TerminalManagerService } from "@herdman/terminal"
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http"
-import { mkdirSync, statSync } from "node:fs"
+import { existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { GitError, addWorktree, isGitWorkTree } from "./git.js"
@@ -143,6 +149,83 @@ export const makeEventFanout: Effect.Effect<EventFanout> = Effect.map(
   (pubsub) => new EventFanout(pubsub)
 )
 
+const MAX_FILE_UPLOAD_BYTES = 25 * 1024 * 1024
+const MAX_PROMPT_ATTACHMENTS = 10
+/// Attachment temp files older than this are swept at server start; agents
+/// may read a materialized path late in a turn, so nothing is deleted while
+/// a session could still reference it.
+const ATTACHMENT_TEMP_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000
+
+const attachmentsTempRoot = (): string => join(tmpdir(), "herdman-attachments")
+
+const IMAGE_MAGIC_BYTES: ReadonlyArray<readonly [ReadonlyArray<number>, number]> = [
+  [[0x89, 0x50, 0x4e, 0x47], 0], // png
+  [[0xff, 0xd8, 0xff], 0], // jpeg
+  [[0x47, 0x49, 0x46, 0x38], 0], // gif
+  [[0x57, 0x45, 0x42, 0x50], 8] // webp (RIFF....WEBP)
+]
+
+/// The stored kind drives UI treatment (thumbnail + lightbox vs file chip)
+/// and provider mapping, so it is sniffed server-side rather than trusted
+/// from the client's Content-Type alone.
+const sniffAttachmentKind = (data: Buffer, mimeType: string): "image" | "file" => {
+  const isImage =
+    IMAGE_MAGIC_BYTES.some(
+      ([magic, offset]) =>
+        data.byteLength >= offset + magic.length &&
+        magic.every((byte, index) => data[offset + index] === byte)
+    ) || mimeType.startsWith("image/")
+  return isImage ? "image" : "file"
+}
+
+const sanitizeFileName = (name: string): string => {
+  const cleaned = name.replace(/[/\\:\0]/g, "_").replace(/^\.+/, "")
+  return cleaned.length === 0 ? "attachment" : cleaned
+}
+
+/// Materializes attachment bytes as temp files so path-based provider inputs
+/// (Codex localImage, path notes for arbitrary files) can reference them.
+/// Files are immutable, so an existing materialization is reused.
+const resolvePromptAttachments = async (
+  db: HerdManDatabaseService,
+  refs: ReadonlyArray<AttachmentRef>
+): Promise<Array<PromptAttachmentInput>> => {
+  const resolved: Array<PromptAttachmentInput> = []
+  for (const ref of refs) {
+    const file = await run(db.getFile(ref.fileId))
+    if (file === undefined) {
+      throw new HttpFailure(422, `Attachment file missing: ${ref.fileId}`)
+    }
+    const directory = join(attachmentsTempRoot(), ref.fileId)
+    mkdirSync(directory, { recursive: true })
+    const path = join(directory, sanitizeFileName(ref.name))
+    if (!existsSync(path)) {
+      writeFileSync(path, file.data)
+    }
+    resolved.push({ data: file.data, kind: ref.kind, mimeType: ref.mimeType, name: ref.name, path })
+  }
+  return resolved
+}
+
+/// Best-effort start-up sweep of stale materialized attachments; OS tmp
+/// reaping is the backstop.
+export const sweepAttachmentTempFiles = (now = Date.now()): void => {
+  try {
+    for (const entry of readdirSync(attachmentsTempRoot())) {
+      const path = join(attachmentsTempRoot(), entry)
+      try {
+        if (now - statSync(path).mtimeMs > ATTACHMENT_TEMP_MAX_AGE_MS) {
+          rmSync(path, { force: true, recursive: true })
+        }
+      } catch {
+        // Another process may have removed the entry mid-sweep.
+      }
+    }
+  } catch {
+    // The temp root does not exist until the first attachment is resolved.
+  }
+}
+
 export const defaultServerConfig = (
   overrides: Partial<HerdManServerConfig> = {}
 ): HerdManServerConfig => ({
@@ -192,6 +275,7 @@ export const startHerdManServer = (
 ): Effect.Effect<RunningHerdManServer, ServerError> =>
   Effect.gen(function* () {
     const fanout = yield* makeEventFanout
+    yield* Effect.sync(() => sweepAttachmentTempFiles())
     return yield* Effect.tryPromise({
       try: () =>
         new Promise<RunningHerdManServer>((resolve, reject) => {
@@ -325,6 +409,9 @@ const handleRequest = async (
       return
     }
     if (await routeSessions(services, fanout, routeState, request, response, url, config)) {
+      return
+    }
+    if (await routeFiles(services, request, response, url)) {
       return
     }
     if (await routeTerminals(services, request, response, url)) {
@@ -853,10 +940,22 @@ const routeSessionActions = async (
       writeJson(response, 202, { accepted: true, sessionId: promptSessionId })
       return true
     }
+    const attachments = payload.attachments ?? []
+    if (attachments.length > MAX_PROMPT_ATTACHMENTS) {
+      throw new HttpFailure(422, `A prompt may carry at most ${MAX_PROMPT_ATTACHMENTS} attachments`)
+    }
+    // Fail unknown file ids at send time rather than mid-drain.
+    for (const attachment of attachments) {
+      if ((await run(services.db.getFileMetadata(attachment.fileId))) === undefined) {
+        throw new HttpFailure(422, `Unknown attachment file: ${attachment.fileId}`)
+      }
+    }
     if (actionKey !== undefined) {
       routeState.pendingPromptActions.add(actionKey)
     }
-    const queueItem = await run(services.db.createPromptQueueItem(promptSessionId, payload.text))
+    const queueItem = await run(
+      services.db.createPromptQueueItem(promptSessionId, payload.text, attachments)
+    )
     const result: PromptAcceptedResponse = {
       accepted: true,
       sessionId: promptSessionId,
@@ -1000,7 +1099,14 @@ const drainPromptQueue = async (
         return
       }
       await publishPromptQueue(services.db, fanout, sessionId)
-      await runPromptInBackground(services, fanout, serverId, sessionId, item.text)
+      await runPromptInBackground(
+        services,
+        fanout,
+        serverId,
+        sessionId,
+        item.text,
+        item.attachments
+      )
     }
   } finally {
     routeState.activePromptSessions.delete(sessionId)
@@ -1012,10 +1118,12 @@ const runPromptInBackground = async (
   fanout: EventFanout,
   serverId: string,
   sessionId: string,
-  text: string
+  text: string,
+  attachments?: ReadonlyArray<AttachmentRef>
 ): Promise<void> => {
   try {
     const agentSessionId = await ensureAgentSessionFor(services, fanout, serverId, sessionId)
+    const refs = attachments ?? []
     await materializeRuntimeEvent(
       services.db,
       fanout,
@@ -1023,19 +1131,62 @@ const runPromptInBackground = async (
       {
         kind: "session.output",
         subjectId: agentSessionId,
-        payload: { role: "user", text }
+        payload: { role: "user", text, ...(refs.length === 0 ? {} : { attachments: refs }) }
       },
       sessionId
     )
     // Session output, turn lifecycle, and the final stopReason all flow
     // through the standing sink registered at session create/load time.
-    await run(services.agents.prompt(agentSessionId, text))
+    const input =
+      refs.length === 0
+        ? text
+        : { attachments: await resolvePromptAttachments(services.db, refs), text }
+    await run(services.agents.prompt(agentSessionId, input))
   } catch (cause) {
     await appendAndPublish(services.db, fanout, "session.error", sessionId, {
       message: failureMessage(cause),
       serverId
     })
   }
+}
+
+const routeFiles = async (
+  services: HerdManServerServices,
+  request: IncomingMessage,
+  response: ServerResponse,
+  url: URL
+): Promise<boolean> => {
+  if (request.method === "POST" && url.pathname === "/v1/files") {
+    const data = await readRawBody(request, MAX_FILE_UPLOAD_BYTES)
+    const name = sanitizeFileName(url.searchParams.get("name") ?? "attachment")
+    const mimeType =
+      request.headers["content-type"]?.split(";")[0]?.trim() ?? "application/octet-stream"
+    const metadata = await run(
+      services.db.createFile(name, mimeType, sniffAttachmentKind(data, mimeType), data)
+    )
+    writeJson(response, 201, metadata)
+    return true
+  }
+
+  const fileId = matchRoute(url.pathname, "/v1/files/:id")
+  if (fileId !== undefined && request.method === "GET") {
+    const file = await run(services.db.getFile(fileId))
+    if (file === undefined) {
+      throw new HttpFailure(404, `File not found: ${fileId}`)
+    }
+    response.writeHead(200, {
+      // Files are immutable (content is stored once at upload), so clients
+      // may cache aggressively.
+      "Cache-Control": "private, max-age=31536000, immutable",
+      "Content-Disposition": `inline; filename*=UTF-8''${encodeURIComponent(file.metadata.name)}`,
+      "Content-Length": file.data.byteLength,
+      "Content-Type": file.metadata.mimeType
+    })
+    response.end(file.data)
+    return true
+  }
+
+  return false
 }
 
 const routeTerminals = async (
@@ -1303,7 +1454,8 @@ const materializeRuntimeEvent = async (
         conversation.role,
         conversation.messageId,
         conversation.text,
-        false
+        false,
+        conversation.attachments
       )
     )
   }
@@ -1334,6 +1486,25 @@ const readSchema = async <S extends Schema.ConstraintDecoder<unknown>>(
   } catch (cause) {
     throw new HttpFailure(400, failureMessage(cause))
   }
+}
+
+const readRawBody = async (request: IncomingMessage, maxBytes: number): Promise<Buffer> => {
+  const chunks: Array<Buffer> = []
+  let total = 0
+  for await (const chunk of request) {
+    /* v8 ignore next -- Node HTTP request body chunks are Buffers in this server. */
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
+    total += buffer.byteLength
+    if (total > maxBytes) {
+      // Abort while reading rather than buffering the whole oversized body.
+      throw new HttpFailure(
+        413,
+        `File exceeds the ${Math.floor(maxBytes / (1024 * 1024))} MB limit`
+      )
+    }
+    chunks.push(buffer)
+  }
+  return Buffer.concat(chunks)
 }
 
 const readJson = async (request: IncomingMessage): Promise<unknown> => {
@@ -1481,6 +1652,7 @@ const isConversationPayload = (
   readonly role: "user" | "assistant" | "system"
   readonly text: string
   readonly messageId?: string
+  readonly attachments?: ReadonlyArray<AttachmentRef>
 } =>
   typeof payload === "object" &&
   payload !== null &&
@@ -1488,7 +1660,8 @@ const isConversationPayload = (
   "text" in payload &&
   conversationRoles.has(String(payload.role)) &&
   typeof payload.text === "string" &&
-  (!("messageId" in payload) || typeof payload.messageId === "string")
+  (!("messageId" in payload) || typeof payload.messageId === "string") &&
+  (!("attachments" in payload) || Array.isArray(payload.attachments))
 
 const conversationPayload = (
   payload: unknown
@@ -1497,6 +1670,7 @@ const conversationPayload = (
       readonly role: "user" | "assistant" | "system"
       readonly text: string
       readonly messageId?: string
+      readonly attachments?: ReadonlyArray<AttachmentRef>
     }
   | undefined => {
   if (isConversationPayload(payload)) {

@@ -112,9 +112,10 @@ public extension SessionModel {
     }
 }
 
-/// A no-op server client for previews: the event stream never yields, and no
-/// preview flow sends prompts, so `fatalError` paths stay unreached.
-private struct PreviewServerClient: HerdManServerClienting {
+/// A no-op server client for previews and preview-backed tests: the event
+/// stream never yields and every write throws or drops, so nothing can reach
+/// a real server.
+struct PreviewServerClient: HerdManServerClienting {
     func health() async throws -> ServerHealth {
         ServerHealth(ok: true, version: "0.0.0", database: "ready")
     }

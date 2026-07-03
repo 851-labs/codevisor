@@ -47,6 +47,9 @@ public protocol HerdManServerClienting: Sendable {
     func touchSession(id: UUID, updatedAt: Date) async throws
     func deleteSession(id: UUID) async throws
     func promptSession(id: UUID, text: String) async throws -> ServerPromptAccepted
+    func promptSession(id: UUID, text: String, attachments: [ServerAttachmentRef]) async throws -> ServerPromptAccepted
+    func uploadFile(name: String, mimeType: String, data: Data) async throws -> ServerFileMetadata
+    func fileData(id: String) async throws -> Data
     func updateQueuedPrompt(sessionId: UUID, queueItemId: String, text: String) async throws -> ServerPromptQueueItem
     func deleteQueuedPrompt(sessionId: UUID, queueItemId: String) async throws
     func cancelSession(id: UUID) async throws
@@ -59,6 +62,22 @@ public protocol HerdManServerClienting: Sendable {
 
 public extension HerdManServerClienting {
     func promptQueue(id: UUID) async throws -> [ServerPromptQueueItem] { [] }
+
+    /// Default for fakes/older transports: attachments are dropped and the
+    /// text-only prompt path is used.
+    func promptSession(id: UUID, text: String, attachments: [ServerAttachmentRef]) async throws -> ServerPromptAccepted {
+        try await promptSession(id: id, text: text)
+    }
+
+    /// Defaults so fakes and older transports keep compiling; the HTTP client
+    /// overrides these with the real file endpoints.
+    func uploadFile(name: String, mimeType: String, data: Data) async throws -> ServerFileMetadata {
+        throw HerdManServerClientError.invalidResponse
+    }
+
+    func fileData(id: String) async throws -> Data {
+        throw HerdManServerClientError.invalidResponse
+    }
 
     /// Default for fakes/older servers: no persisted history, callers fall
     /// back to the text-only conversation snapshot.
@@ -236,6 +255,55 @@ public struct ServerPromptQueueItem: Codable, Identifiable, Equatable, Sendable 
     public var text: String
     public var createdAt: String
     public var updatedAt: String
+    public var attachments: [ServerAttachmentRef]?
+
+    init(id: String, sessionId: String, text: String, createdAt: String, updatedAt: String, attachments: [ServerAttachmentRef]? = nil) {
+        self.id = id
+        self.sessionId = sessionId
+        self.text = text
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+        self.attachments = attachments
+    }
+}
+
+public enum ServerAttachmentKind: String, Codable, Equatable, Sendable {
+    case image
+    case file
+}
+
+/// A reference to an uploaded file (`POST /v1/files`); bytes are fetched via
+/// `GET /v1/files/:id`.
+public struct ServerAttachmentRef: Codable, Identifiable, Equatable, Sendable {
+    public var fileId: String
+    public var name: String
+    public var mimeType: String
+    public var sizeBytes: Int
+    public var kind: ServerAttachmentKind
+
+    public var id: String { fileId }
+
+    public init(fileId: String, name: String, mimeType: String, sizeBytes: Int, kind: ServerAttachmentKind) {
+        self.fileId = fileId
+        self.name = name
+        self.mimeType = mimeType
+        self.sizeBytes = sizeBytes
+        self.kind = kind
+    }
+}
+
+public struct ServerFileMetadata: Decodable, Equatable, Sendable {
+    public var id: String
+    public var name: String
+    public var mimeType: String
+    public var sizeBytes: Int
+    public var sha256: String
+    public var kind: ServerAttachmentKind
+    public var createdAt: String
+
+    public var attachmentRef: ServerAttachmentRef {
+        ServerAttachmentRef(fileId: id, name: name, mimeType: mimeType, sizeBytes: sizeBytes, kind: kind)
+    }
 }
 
 public struct ServerProjectLocation: Decodable, Equatable, Sendable {
@@ -350,6 +418,7 @@ public struct ServerConversationItem: Decodable, Equatable, Sendable {
     public var text: String
     public var createdAt: String
     public var isGenerating: Bool
+    public var attachments: [ServerAttachmentRef]? = nil
 }
 
 public struct ServerSessionDetail: Decodable, Equatable, Sendable {
@@ -525,11 +594,33 @@ public final class HerdManServerClient: HerdManServerClienting, @unchecked Senda
     }
 
     public func promptSession(id: UUID, text: String) async throws -> ServerPromptAccepted {
+        try await promptSession(id: id, text: text, attachments: [])
+    }
+
+    public func promptSession(id: UUID, text: String, attachments: [ServerAttachmentRef]) async throws -> ServerPromptAccepted {
         try await send(
             "/v1/sessions/\(id.uuidString)/prompt",
             method: "POST",
-            body: PromptBody(text: text)
+            body: PromptBody(text: text, attachments: attachments.isEmpty ? nil : attachments)
         )
+    }
+
+    public func uploadFile(name: String, mimeType: String, data: Data) async throws -> ServerFileMetadata {
+        // Conservative encoding: percent-encode everything non-alphanumeric so
+        // names with `&`, `+`, or `=` survive the query round-trip.
+        let encodedName = name.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? "attachment"
+        let response = try await performRaw(
+            "/v1/files?name=\(encodedName)",
+            method: "POST",
+            body: data,
+            contentType: mimeType
+        )
+        return try decoder.decode(ServerFileMetadata.self, from: response)
+    }
+
+    public func fileData(id: String) async throws -> Data {
+        let encoded = id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? id
+        return try await performRaw("/v1/files/\(encoded)", method: "GET", body: nil, contentType: nil)
     }
 
     public func updateQueuedPrompt(sessionId: UUID, queueItemId: String, text: String) async throws -> ServerPromptQueueItem {
@@ -700,6 +791,35 @@ public final class HerdManServerClient: HerdManServerClienting, @unchecked Senda
         return data
     }
 
+    /// Sibling of `perform` for raw (non-JSON) bodies and responses — file
+    /// uploads and downloads.
+    private func performRaw(
+        _ path: String,
+        method: String,
+        body: Data?,
+        contentType: String?
+    ) async throws -> Data {
+        var request = URLRequest(url: try url(for: path))
+        request.httpMethod = method
+        applyAuthorization(to: &request)
+        if let body {
+            request.httpBody = body
+        }
+        if let contentType {
+            request.setValue(contentType, forHTTPHeaderField: "Content-Type")
+        }
+
+        let (data, response) = try await urlSession.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw HerdManServerClientError.invalidResponse
+        }
+        guard (200..<300).contains(httpResponse.statusCode) else {
+            let message = String(data: data, encoding: .utf8) ?? ""
+            throw HerdManServerClientError.httpStatus(httpResponse.statusCode, message)
+        }
+        return data
+    }
+
     private func applyAuthorization(to request: inout URLRequest) {
         guard let bearerToken = config.bearerToken else { return }
         request.setValue("Bearer \(bearerToken)", forHTTPHeaderField: "Authorization")
@@ -762,6 +882,7 @@ private struct EmptyBody: Encodable {}
 private struct PromptBody: Encodable {
     var text: String
     var clientActionId = UUID().uuidString
+    var attachments: [ServerAttachmentRef]?
 }
 
 private struct UpdateQueuedPromptBody: Encodable {

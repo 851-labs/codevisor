@@ -2,6 +2,33 @@ import Foundation
 import Observation
 import HerdManCore
 import ACPKit
+import UniformTypeIdentifiers
+
+/// A file staged in the composer: bytes held locally for instant thumbnails,
+/// uploaded eagerly so send only has to collect the server refs.
+struct ComposerAttachment: Identifiable, Equatable {
+    enum State: Equatable {
+        case uploading
+        case uploaded(ServerAttachmentRef)
+        case failed(String)
+    }
+
+    let id: UUID
+    var name: String
+    var mimeType: String
+    var kind: Attachment.Kind
+    var localData: Data
+    var state: State
+
+    var isImage: Bool { kind == .image }
+
+    var isPDF: Bool {
+        mimeType == "application/pdf" || name.lowercased().hasSuffix(".pdf")
+    }
+
+    /// Images and PDFs render as visual previews; everything else is a chip.
+    var hasVisualPreview: Bool { isImage || isPDF }
+}
 
 /// The facade for a session screen. Holds the composer text and harness
 /// selection, connects the session through the HerdMan server on first send,
@@ -16,6 +43,10 @@ final class SessionController {
     }
 
     var composerText: String = ""
+    private(set) var composerAttachments: [ComposerAttachment] = []
+    /// Attachments shown with the optimistic first message while connecting.
+    private(set) var pendingUserAttachments: [Attachment] = []
+    private var uploadTasks: [UUID: Task<Void, Never>] = [:]
     private(set) var harnesses: [ServerHarness] = []
     var selectedHarnessId: String?
     private(set) var model: SessionModel?
@@ -172,10 +203,133 @@ final class SessionController {
     }
 
     var canSend: Bool {
-        !composerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        (!composerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || !composerAttachments.isEmpty)
             && !isConnecting
             && (isConnected || selectedHarness != nil)
     }
+
+    // MARK: - Attachments
+
+    /// Largest upload the server accepts; checked client-side for a friendly
+    /// inline failure instead of a 413 round-trip.
+    static let maxAttachmentBytes = 25 * 1024 * 1024
+    static let maxAttachments = 10
+
+    func attachFileURLs(_ urls: [URL]) {
+        for url in urls {
+            guard let data = try? Data(contentsOf: url) else { continue }
+            let type = UTType(filenameExtension: url.pathExtension)
+            let mimeType = type?.preferredMIMEType ?? "application/octet-stream"
+            let kind: Attachment.Kind = (type?.conforms(to: .image) ?? false) || mimeType.hasPrefix("image/")
+                ? .image
+                : .file
+            stageAttachment(name: url.lastPathComponent, mimeType: mimeType, kind: kind, data: data)
+        }
+    }
+
+    func attachImageData(_ data: Data, suggestedName: String? = nil) {
+        let name = suggestedName ?? "Pasted image \(Self.pastedImageFormatter.string(from: Date())).png"
+        stageAttachment(name: name, mimeType: "image/png", kind: .image, data: data)
+    }
+
+    func removeAttachment(id: UUID) {
+        uploadTasks[id]?.cancel()
+        uploadTasks[id] = nil
+        composerAttachments.removeAll { $0.id == id }
+    }
+
+    func retryAttachment(id: UUID) {
+        guard let index = composerAttachments.firstIndex(where: { $0.id == id }),
+              case .failed = composerAttachments[index].state else { return }
+        composerAttachments[index].state = .uploading
+        startUpload(composerAttachments[index])
+    }
+
+    /// Fetches stored attachment bytes through this session's server client —
+    /// history thumbnails and the lightbox load through here so auth carries
+    /// over for remote servers.
+    func fileData(id: String) async throws -> Data {
+        guard let serverClient else { throw SessionControllerError.serverUnavailable }
+        return try await serverClient.fileData(id: id)
+    }
+
+    private func stageAttachment(name: String, mimeType: String, kind: Attachment.Kind, data: Data) {
+        guard composerAttachments.count < Self.maxAttachments else {
+            status = .failed("A message can carry at most \(Self.maxAttachments) attachments.")
+            return
+        }
+        var attachment = ComposerAttachment(
+            id: UUID(),
+            name: name,
+            mimeType: mimeType,
+            kind: kind,
+            localData: data,
+            state: .uploading
+        )
+        if data.count > Self.maxAttachmentBytes {
+            attachment.state = .failed("Larger than 25 MB")
+            composerAttachments.append(attachment)
+            return
+        }
+        composerAttachments.append(attachment)
+        startUpload(attachment)
+    }
+
+    private func startUpload(_ attachment: ComposerAttachment) {
+        guard let serverClient else {
+            setAttachmentState(attachment.id, .failed("Server unavailable"))
+            return
+        }
+        uploadTasks[attachment.id] = Task { [weak self] in
+            do {
+                let metadata = try await serverClient.uploadFile(
+                    name: attachment.name,
+                    mimeType: attachment.mimeType,
+                    data: attachment.localData
+                )
+                guard !Task.isCancelled else { return }
+                self?.setAttachmentState(attachment.id, .uploaded(metadata.attachmentRef))
+            } catch {
+                guard !Task.isCancelled else { return }
+                self?.setAttachmentState(attachment.id, .failed(serverErrorMessage(error)))
+            }
+            self?.uploadTasks[attachment.id] = nil
+        }
+    }
+
+    private func setAttachmentState(_ id: UUID, _ state: ComposerAttachment.State) {
+        guard let index = composerAttachments.firstIndex(where: { $0.id == id }) else { return }
+        composerAttachments[index].state = state
+    }
+
+    /// Waits for in-flight uploads, then returns the attachments to send —
+    /// nil (with a surfaced status) if any upload failed.
+    private func collectAttachmentsForSend() async -> [Attachment]? {
+        for task in uploadTasks.values {
+            await task.value
+        }
+        var attachments: [Attachment] = []
+        for staged in composerAttachments {
+            switch staged.state {
+            case let .uploaded(ref):
+                attachments.append(ref.attachment)
+            case .failed:
+                status = .failed("An attachment failed to upload. Retry or remove it, then send again.")
+                return nil
+            case .uploading:
+                // Unreachable: awaiting the tasks above settles every state.
+                return nil
+            }
+        }
+        return attachments
+    }
+
+    private static let pastedImageFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd 'at' HH.mm.ss"
+        return formatter
+    }()
 
     // MARK: - Actions
 
@@ -241,7 +395,11 @@ final class SessionController {
     /// Sends the composer text, connecting the harness first if needed.
     func send() async {
         let text = composerText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty, !isConnecting else { return }
+        guard !text.isEmpty || !composerAttachments.isEmpty, !isConnecting else { return }
+
+        // Settle eager uploads first; a failed attachment blocks the send with
+        // an inline status instead of silently dropping the file.
+        guard let attachments = await collectAttachmentsForSend() else { return }
 
         // Materialize the worktree before the session record or agent exist,
         // so both are born with the worktree cwd.
@@ -259,18 +417,22 @@ final class SessionController {
         // the sent text lingering in the composer next to the optimistic user
         // message reads as a duplicate. Failure paths restore it.
         composerText = ""
+        let staged = composerAttachments
+        composerAttachments = []
 
         if let model {
-            await model.send(text)
+            await model.send(text, attachments: attachments)
             return
         }
 
         guard let harness = selectedHarness else {
             status = .failed("No agent is installed. Install Claude Code or Codex and try again.")
             composerText = text
+            composerAttachments = staged
             return
         }
         pendingUserText = text
+        pendingUserAttachments = attachments
         status = .connecting("Starting \(harness.name)…")
         do {
             let model = try await connect(harness)
@@ -279,11 +441,14 @@ final class SessionController {
             // model.send appends the real user message synchronously before
             // its first suspension, so clearing here doesn't flash.
             pendingUserText = nil
-            await model.send(text)
+            pendingUserAttachments = []
+            await model.send(text, attachments: attachments)
         } catch {
             status = .failed(serverErrorMessage(error))
             pendingUserText = nil
+            pendingUserAttachments = []
             composerText = text
+            composerAttachments = staged
         }
     }
 

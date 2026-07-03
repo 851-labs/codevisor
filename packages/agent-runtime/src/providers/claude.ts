@@ -11,9 +11,11 @@ import { randomUUID } from "node:crypto"
 import { readFileSync } from "node:fs"
 import { isAbsolute, resolve } from "node:path"
 import { Effect } from "effect"
+import { INLINE_IMAGE_MEDIA_TYPES, withAttachmentNotes } from "../attachments.js"
 import { diffStatsFromTexts, lineCount } from "../diff-stats.js"
 import {
   adapterPromise,
+  normalizePromptInput,
   runtimeError,
   type AgentProvider,
   type AgentRuntimeError,
@@ -21,6 +23,8 @@ import {
   type CreatedAgentSession,
   type HarnessDefinition,
   type LoadedAgentSession,
+  type PromptAttachmentInput,
+  type PromptInput,
   type ProviderEnvironment,
   type RuntimeEmit,
   type RuntimeEvent
@@ -44,6 +48,41 @@ interface ClaudeModel {
   readonly value: string
   readonly name: string
   readonly supportedEffortLevels: ReadonlyArray<string>
+}
+
+type ClaudeContentBlock = Exclude<SDKUserMessage["message"]["content"], string>[number]
+
+const isInlineForClaude = (attachment: PromptAttachmentInput): boolean =>
+  (attachment.kind === "image" && INLINE_IMAGE_MEDIA_TYPES.has(attachment.mimeType)) ||
+  attachment.mimeType === "application/pdf"
+
+/// Builds the user-message content blocks: inline what the Anthropic API
+/// accepts (images, PDFs), reference everything else by temp-file path.
+const claudeContent = (input: PromptInput): Array<ClaudeContentBlock> => {
+  const attachments = input.attachments ?? []
+  const inline = attachments.filter(isInlineForClaude)
+  const noted = attachments.filter((attachment) => !isInlineForClaude(attachment))
+  const text = withAttachmentNotes(input.text, noted)
+  const blocks: Array<ClaudeContentBlock> = []
+  if (text !== "" || inline.length === 0) {
+    blocks.push({ text, type: "text" })
+  }
+  for (const attachment of inline) {
+    const data = attachment.data.toString("base64")
+    blocks.push(
+      attachment.mimeType === "application/pdf"
+        ? { source: { data, media_type: "application/pdf", type: "base64" }, type: "document" }
+        : {
+            source: {
+              data,
+              media_type: attachment.mimeType as "image/png",
+              type: "base64"
+            },
+            type: "image"
+          }
+    )
+  }
+  return blocks
 }
 
 const PERMISSION_MODES: SessionModeState = {
@@ -386,13 +425,13 @@ export const makeClaudeProvider = (
       session.input.end()
       session.abort.abort()
     }),
-    prompt: (text) =>
+    prompt: (input) =>
       adapterPromise("prompt", async () => {
         const pending = deferred<{ stopReason: string }>()
         session.pendingPrompt = pending
         await ensureTurnStarted(session, "user")
         session.input.push({
-          message: { content: [{ text, type: "text" }], role: "user" },
+          message: { content: claudeContent(normalizePromptInput(input)), role: "user" },
           parent_tool_use_id: null,
           session_id: session.sdkSessionId,
           type: "user"

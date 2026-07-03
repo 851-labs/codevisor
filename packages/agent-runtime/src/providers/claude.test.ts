@@ -491,6 +491,117 @@ describe("ClaudeProvider", () => {
     expect(fake.options?.resume).toBe("previous-session")
   })
 
+  it("maps attachments: inline images and PDFs, path notes for everything else", async () => {
+    const fake = new FakeQuery()
+    const provider = makeProvider(fake)
+    const createPromise = run(provider.createSession(definition, "/tmp", async () => undefined))
+    await settle()
+    fake.push(initMessage())
+    const created = await createPromise
+
+    const promptPromise = run(
+      created.handle.prompt({
+        text: "look at these",
+        attachments: [
+          {
+            data: Buffer.from("png-bytes"),
+            kind: "image",
+            mimeType: "image/png",
+            name: "shot.png",
+            path: "/tmp/att/shot.png"
+          },
+          {
+            data: Buffer.from("pdf-bytes"),
+            kind: "file",
+            mimeType: "application/pdf",
+            name: "doc.pdf",
+            path: "/tmp/att/doc.pdf"
+          },
+          {
+            data: Buffer.from("plain"),
+            kind: "file",
+            mimeType: "text/plain",
+            name: "notes.txt",
+            path: "/tmp/att/notes.txt"
+          },
+          {
+            data: Buffer.from("heic-bytes"),
+            kind: "image",
+            mimeType: "image/heic",
+            name: "raw.heic",
+            path: "/tmp/att/raw.heic"
+          }
+        ]
+      })
+    )
+    await settle()
+    expect(fake.userMessages[0]?.message.content).toEqual([
+      {
+        text: [
+          "look at these",
+          "[Attached file: /tmp/att/notes.txt (notes.txt, text/plain)]",
+          "[Attached file: /tmp/att/raw.heic (raw.heic, image/heic)]"
+        ].join("\n\n"),
+        type: "text"
+      },
+      {
+        source: {
+          data: Buffer.from("png-bytes").toString("base64"),
+          media_type: "image/png",
+          type: "base64"
+        },
+        type: "image"
+      },
+      {
+        source: {
+          data: Buffer.from("pdf-bytes").toString("base64"),
+          media_type: "application/pdf",
+          type: "base64"
+        },
+        type: "document"
+      }
+    ])
+    fake.push(resultMessage())
+    await promptPromise
+  })
+
+  it("omits the text block for an image-only prompt", async () => {
+    const fake = new FakeQuery()
+    const provider = makeProvider(fake)
+    const createPromise = run(provider.createSession(definition, "/tmp", async () => undefined))
+    await settle()
+    fake.push(initMessage())
+    const created = await createPromise
+
+    const promptPromise = run(
+      created.handle.prompt({
+        text: "",
+        attachments: [
+          {
+            data: Buffer.from("img"),
+            kind: "image",
+            mimeType: "image/jpeg",
+            name: "a.jpg",
+            path: "/tmp/att/a.jpg"
+          }
+        ]
+      })
+    )
+    await settle()
+    expect(fake.userMessages[0]?.message.content).toEqual([
+      {
+        source: {
+          data: Buffer.from("img").toString("base64"),
+          media_type: "image/jpeg",
+          type: "base64"
+        },
+        type: "image"
+      }
+    ])
+    fake.push(resultMessage())
+    await promptPromise
+  })
+
   it("reports readiness from binary presence", () => {
     const provider = makeProvider(new FakeQuery())
     expect(provider.readiness(definition)).toEqual({ state: "ready" })

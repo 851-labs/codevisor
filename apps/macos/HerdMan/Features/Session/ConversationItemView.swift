@@ -15,7 +15,8 @@ struct ConversationItemView: View {
     }
 }
 
-/// A right-aligned user prompt bubble.
+/// A right-aligned user prompt bubble, with any attachments rendered as
+/// thumbnails above it.
 struct UserMessageView: View {
     @Environment(\.theme) private var theme
     let message: UserMessage
@@ -23,12 +24,22 @@ struct UserMessageView: View {
     var body: some View {
         HStack {
             Spacer(minLength: 40)
-            Text(message.text)
-                .textSelection(.enabled)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(RoundedRectangle(cornerRadius: 14).fill(theme.bubbleBackground))
-                .frame(alignment: .trailing)
+            VStack(alignment: .trailing, spacing: 8) {
+                if !message.attachments.isEmpty {
+                    HStack(spacing: 8) {
+                        ForEach(message.attachments) { attachment in
+                            AttachmentThumbnailView(attachment: attachment)
+                        }
+                    }
+                }
+                if !message.text.isEmpty {
+                    Text(message.text)
+                        .textSelection(.enabled)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(RoundedRectangle(cornerRadius: 14).fill(theme.bubbleBackground))
+                }
+            }
         }
     }
 }

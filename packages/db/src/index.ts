@@ -1,8 +1,11 @@
 import type {
+  AttachmentKind,
+  AttachmentRef,
   CreateProjectRequest,
   CreateSessionRequest,
   EventEnvelope,
   EventKind,
+  FileMetadata,
   Harness,
   Project,
   ProjectLocation,
@@ -83,6 +86,7 @@ interface ConversationRow {
   readonly text: string
   readonly created_at: string
   readonly is_generating: number
+  readonly attachments: string | null
 }
 
 interface EventRow {
@@ -108,6 +112,17 @@ interface PromptQueueRow {
   readonly text: string
   readonly created_at: string
   readonly updated_at: string
+  readonly attachments: string | null
+}
+
+interface FileRow {
+  readonly id: string
+  readonly name: string
+  readonly mime_type: string
+  readonly size_bytes: number
+  readonly sha256: string
+  readonly kind: AttachmentKind
+  readonly created_at: string
 }
 
 interface UpdateRow {
@@ -322,6 +337,25 @@ const migrations: ReadonlyArray<Migration> = [
         .run(config.serverId)
       sqlite.exec("drop table workspaces")
     }
+  },
+  {
+    id: 6,
+    name: "file attachments",
+    sql: `
+      create table if not exists files (
+        id text primary key,
+        name text not null,
+        mime_type text not null,
+        size_bytes integer not null,
+        sha256 text not null,
+        kind text not null,
+        created_at text not null,
+        data blob not null
+      );
+
+      alter table conversation_items add column attachments text;
+      alter table prompt_queue_items add column attachments text;
+    `
   }
 ]
 
@@ -360,7 +394,8 @@ export interface HerdManDatabaseService {
     role: "user" | "assistant" | "system",
     messageId: string | undefined,
     text: string,
-    isGenerating: boolean
+    isGenerating: boolean,
+    attachments?: ReadonlyArray<AttachmentRef>
   ) => Effect.Effect<void, DatabaseError>
   readonly appendEvent: (
     kind: EventKind,
@@ -373,8 +408,19 @@ export interface HerdManDatabaseService {
   ) => Effect.Effect<ReadonlyArray<EventEnvelope>, DatabaseError>
   readonly createPromptQueueItem: (
     sessionId: string,
-    text: string
+    text: string,
+    attachments?: ReadonlyArray<AttachmentRef>
   ) => Effect.Effect<PromptQueueItem, DatabaseError>
+  readonly createFile: (
+    name: string,
+    mimeType: string,
+    kind: AttachmentKind,
+    data: Buffer
+  ) => Effect.Effect<FileMetadata, DatabaseError>
+  readonly getFileMetadata: (id: string) => Effect.Effect<FileMetadata | undefined, DatabaseError>
+  readonly getFile: (
+    id: string
+  ) => Effect.Effect<{ metadata: FileMetadata; data: Buffer } | undefined, DatabaseError>
   readonly listPromptQueue: (
     sessionId: string
   ) => Effect.Effect<ReadonlyArray<PromptQueueItem>, DatabaseError>
@@ -796,16 +842,25 @@ const createService = (
       attempt("deleteSession", () => {
         sqlite.prepare("delete from sessions where id = ?").run(id)
       }),
-    appendConversationItem: (sessionId, role, messageId, text, isGenerating) =>
+    appendConversationItem: (sessionId, role, messageId, text, isGenerating, attachments) =>
       attempt("appendConversationItem", () => {
         const now = isoTimestamp()
         sqlite
           .prepare(
             `insert into conversation_items (
-              id, session_id, role, message_id, text, created_at, is_generating
-            ) values (?, ?, ?, ?, ?, ?, ?)`
+              id, session_id, role, message_id, text, created_at, is_generating, attachments
+            ) values (?, ?, ?, ?, ?, ?, ?, ?)`
           )
-          .run(randomUUID(), sessionId, role, messageId ?? null, text, now, isGenerating ? 1 : 0)
+          .run(
+            randomUUID(),
+            sessionId,
+            role,
+            messageId ?? null,
+            text,
+            now,
+            isGenerating ? 1 : 0,
+            serializeAttachments(attachments)
+          )
         sqlite.prepare("update sessions set updated_at = ? where id = ?").run(now, sessionId)
       }),
     appendEvent,
@@ -823,7 +878,7 @@ const createService = (
           .all(subjectId)
           .map((row) => eventFromRow(row as EventRow))
       ),
-    createPromptQueueItem: (sessionId, text) =>
+    createPromptQueueItem: (sessionId, text, attachments) =>
       attempt("createPromptQueueItem", () => {
         getSession(sessionId)
         const now = isoTimestamp()
@@ -832,16 +887,64 @@ const createService = (
           sessionId,
           text,
           createdAt: now,
-          updatedAt: now
+          updatedAt: now,
+          ...(attachments === undefined || attachments.length === 0 ? {} : { attachments })
         }
         sqlite
           .prepare(
             `insert into prompt_queue_items (
-              id, session_id, text, created_at, updated_at
-            ) values (?, ?, ?, ?, ?)`
+              id, session_id, text, created_at, updated_at, attachments
+            ) values (?, ?, ?, ?, ?, ?)`
           )
-          .run(item.id, sessionId, text, now, now)
+          .run(item.id, sessionId, text, now, now, serializeAttachments(attachments))
         return item
+      }),
+    createFile: (name, mimeType, kind, data) =>
+      attempt("createFile", () => {
+        const metadata: FileMetadata = {
+          id: randomUUID(),
+          name,
+          mimeType,
+          sizeBytes: data.byteLength,
+          sha256: createHash("sha256").update(data).digest("hex"),
+          kind,
+          createdAt: isoTimestamp()
+        }
+        sqlite
+          .prepare(
+            `insert into files (
+              id, name, mime_type, size_bytes, sha256, kind, created_at, data
+            ) values (?, ?, ?, ?, ?, ?, ?, ?)`
+          )
+          .run(
+            metadata.id,
+            metadata.name,
+            metadata.mimeType,
+            metadata.sizeBytes,
+            metadata.sha256,
+            metadata.kind,
+            metadata.createdAt,
+            data
+          )
+        return metadata
+      }),
+    getFileMetadata: (id) =>
+      attempt("getFileMetadata", () => {
+        const row = sqlite
+          .prepare(
+            "select id, name, mime_type, size_bytes, sha256, kind, created_at from files where id = ?"
+          )
+          .get(id) as FileRow | undefined
+        return row === undefined ? undefined : fileMetadataFromRow(row)
+      }),
+    getFile: (id) =>
+      attempt("getFile", () => {
+        const row = sqlite.prepare("select * from files where id = ?").get(id) as
+          | (FileRow & { readonly data: Buffer })
+          | undefined
+        return row === undefined
+          ? undefined
+          : { metadata: fileMetadataFromRow(row), data: row.data }
       }),
     listPromptQueue: (sessionId) =>
       attempt("listPromptQueue", () => {
@@ -1043,21 +1146,52 @@ const sessionFromRow = (row: SessionRow, folderPath: string | undefined): Sessio
   }
 }
 
-const conversationFromRow = (row: ConversationRow): SessionDetail["conversation"][number] => ({
-  id: row.id,
-  role: row.role,
-  ...(row.message_id === null ? {} : { messageId: row.message_id }),
-  text: row.text,
-  createdAt: row.created_at,
-  isGenerating: row.is_generating === 1
-})
+const serializeAttachments = (
+  attachments: ReadonlyArray<AttachmentRef> | undefined
+): string | null =>
+  attachments === undefined || attachments.length === 0 ? null : JSON.stringify(attachments)
 
-const promptQueueFromRow = (row: PromptQueueRow): PromptQueueItem => ({
+const parseAttachments = (raw: string | null): ReadonlyArray<AttachmentRef> | undefined => {
+  if (raw === null) {
+    return undefined
+  }
+  const parsed = JSON.parse(raw) as ReadonlyArray<AttachmentRef>
+  return parsed.length === 0 ? undefined : parsed
+}
+
+const conversationFromRow = (row: ConversationRow): SessionDetail["conversation"][number] => {
+  const attachments = parseAttachments(row.attachments)
+  return {
+    id: row.id,
+    role: row.role,
+    ...(row.message_id === null ? {} : { messageId: row.message_id }),
+    text: row.text,
+    createdAt: row.created_at,
+    isGenerating: row.is_generating === 1,
+    ...(attachments === undefined ? {} : { attachments })
+  }
+}
+
+const promptQueueFromRow = (row: PromptQueueRow): PromptQueueItem => {
+  const attachments = parseAttachments(row.attachments)
+  return {
+    id: row.id,
+    sessionId: row.session_id,
+    text: row.text,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    ...(attachments === undefined ? {} : { attachments })
+  }
+}
+
+const fileMetadataFromRow = (row: FileRow): FileMetadata => ({
   id: row.id,
-  sessionId: row.session_id,
-  text: row.text,
-  createdAt: row.created_at,
-  updatedAt: row.updated_at
+  name: row.name,
+  mimeType: row.mime_type,
+  sizeBytes: row.size_bytes,
+  sha256: row.sha256,
+  kind: row.kind,
+  createdAt: row.created_at
 })
 
 const listPromptQueueSync = (

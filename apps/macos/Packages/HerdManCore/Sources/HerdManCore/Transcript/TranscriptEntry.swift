@@ -91,14 +91,41 @@ public extension AssistantTurn {
     }
 }
 
+/// A file attached to a user message, referencing bytes stored server-side
+/// (`GET /v1/files/:id`).
+public struct Attachment: Identifiable, Sendable, Equatable {
+    public enum Kind: String, Sendable, Equatable {
+        case image
+        case file
+    }
+
+    public let fileId: String
+    public var name: String
+    public var mimeType: String
+    public var sizeBytes: Int
+    public var kind: Kind
+
+    public var id: String { fileId }
+
+    public init(fileId: String, name: String, mimeType: String, sizeBytes: Int, kind: Kind) {
+        self.fileId = fileId
+        self.name = name
+        self.mimeType = mimeType
+        self.sizeBytes = sizeBytes
+        self.kind = kind
+    }
+}
+
 /// A user-authored prompt in the conversation.
 public struct UserMessage: Identifiable, Sendable, Equatable {
     public let id: UUID
     public var text: String
+    public var attachments: [Attachment]
 
-    public init(id: UUID = UUID(), text: String) {
+    public init(id: UUID = UUID(), text: String, attachments: [Attachment] = []) {
         self.id = id
         self.text = text
+        self.attachments = attachments
     }
 }
 

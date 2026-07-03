@@ -1,5 +1,6 @@
 import * as acp from "@agentclientprotocol/sdk"
 import type {
+  ContentBlock as AcpContentBlock,
   NewSessionResponse,
   SessionConfigOption as AcpSessionConfigOption,
   SessionConfigSelectGroup as AcpSessionConfigSelectGroup,
@@ -18,10 +19,12 @@ import { spawn } from "node:child_process"
 import type { ChildProcessWithoutNullStreams } from "node:child_process"
 import { Readable, Writable } from "node:stream"
 import { Effect } from "effect"
+import { withAttachmentNotes } from "../attachments.js"
 import { diffStatsFromTexts } from "../diff-stats.js"
 import type { DiffStat } from "@herdman/api"
 import {
   adapterPromise,
+  normalizePromptInput,
   runtimeEffect,
   type AgentProvider,
   type AgentRuntimeError,
@@ -30,6 +33,7 @@ import {
   type CreatedAgentSession,
   type HarnessDefinition,
   type LoadedAgentSession,
+  type PromptInput,
   type ProviderEnvironment,
   type RuntimeEmit,
   type RuntimeEvent
@@ -54,7 +58,7 @@ export interface AcpAgentConnection {
   readonly loadSession: (sessionId: string, cwd: string) => Effect.Effect<string, AgentRuntimeError>
   readonly prompt: (
     sessionId: string,
-    text: string
+    input: string | PromptInput
   ) => Effect.Effect<{ readonly stopReason: string }, AgentRuntimeError>
   readonly cancel: (sessionId: string) => Effect.Effect<void, AgentRuntimeError>
   readonly setMode: (sessionId: string, modeId: string) => Effect.Effect<void, AgentRuntimeError>
@@ -179,13 +183,13 @@ export const makeAcpProvider = (
     sessionId: string,
     emit: RuntimeEmit
   ): AgentSessionHandle => ({
-    prompt: (text) =>
+    prompt: (input) =>
       Effect.gen(function* () {
         const turnId = randomUUID()
         yield* adapterPromise("promptTurnStart", () =>
           emit(turnLifecycleEvent(sessionId, turnId, "started"))
         )
-        const result = yield* connection.prompt(sessionId, text)
+        const result = yield* connection.prompt(sessionId, input)
         yield* adapterPromise("promptTurnEnd", () =>
           emit(turnLifecycleEvent(sessionId, turnId, "ended", result.stopReason))
         )
@@ -283,7 +287,7 @@ export const stdioAcpConnector: AcpConnector = {
       )
       closeConnection = (error) => connection.close(error)
       child.once("exit", () => connection.close(new Error(stderr())))
-      await Promise.race([
+      const initialized = await Promise.race([
         connection.agent.request(acp.methods.agent.initialize, {
           clientCapabilities: {
             plan: {},
@@ -298,16 +302,51 @@ export const stdioAcpConnector: AcpConnector = {
         }),
         spawnFailure
       ])
-      return sdkConnection(connection, stderr, () => {
-        child.kill()
-      })
+      return sdkConnection(
+        connection,
+        stderr,
+        () => {
+          child.kill()
+        },
+        initialized?.agentCapabilities?.promptCapabilities ?? {}
+      )
     })
+}
+
+export interface AcpPromptCapabilities {
+  readonly image?: boolean
+}
+
+/// Builds the session/prompt content blocks: images inline as base64 when the
+/// harness declared image support, otherwise (and for all non-image files) a
+/// temp-file path note in the text block. Exported for unit tests — the live
+/// wiring runs inside the stdio SDK connection.
+export const acpPrompt = (
+  input: PromptInput,
+  capabilities: AcpPromptCapabilities
+): Array<AcpContentBlock> => {
+  const attachments = input.attachments ?? []
+  const inline =
+    capabilities.image === true
+      ? attachments.filter((attachment) => attachment.kind === "image")
+      : []
+  const noted = attachments.filter((attachment) => !inline.includes(attachment))
+  const text = withAttachmentNotes(input.text, noted)
+  const blocks: Array<AcpContentBlock> = []
+  if (text !== "" || inline.length === 0) {
+    blocks.push({ text, type: "text" })
+  }
+  for (const image of inline) {
+    blocks.push({ data: image.data.toString("base64"), mimeType: image.mimeType, type: "image" })
+  }
+  return blocks
 }
 
 const sdkConnection = (
   connection: acp.ClientConnection,
   stderr: () => string,
-  terminate: () => void = () => undefined
+  terminate: () => void = () => undefined,
+  promptCapabilities: AcpPromptCapabilities = {}
 ): AcpAgentConnection => {
   connection.closed.catch(() => undefined)
 
@@ -329,10 +368,10 @@ const sdkConnection = (
         })
         return sessionId
       }),
-    prompt: (sessionId, text) =>
+    prompt: (sessionId, input) =>
       adapterPromise("prompt", async () => {
         const response = await connection.agent.request(acp.methods.agent.session.prompt, {
-          prompt: [{ text, type: "text" }],
+          prompt: acpPrompt(normalizePromptInput(input), promptCapabilities),
           sessionId
         })
         return { stopReason: response.stopReason }

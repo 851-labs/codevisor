@@ -29,29 +29,39 @@ struct ComposerCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            ZStack(alignment: .topLeading) {
-                ChatInputEditor(
-                    text: $controller.composerText,
-                    calculatedHeight: $editorHeight,
-                    onSubmit: submitOrAcceptSlash,
-                    onKeyCommand: handleKeyCommand,
-                    onTextViewReady: onTextViewReady
-                )
-                .frame(height: editorHeight)
-
-                if controller.composerText.isEmpty {
-                    Text(placeholder)
-                        .foregroundStyle(.tertiary)
-                        .padding(.top, 6)
-                        .allowsHitTesting(false)
+            // The attachment strip sits tight against the input, closer than
+            // the card's usual element spacing.
+            VStack(alignment: .leading, spacing: 4) {
+                if !controller.composerAttachments.isEmpty {
+                    ComposerAttachmentRow(controller: controller)
                 }
-            }
-            .overlay(alignment: .bottomLeading) {
-                slashCommandPopup
-                    .offset(y: -editorHeight - 10)
+
+                ZStack(alignment: .topLeading) {
+                    ChatInputEditor(
+                        text: $controller.composerText,
+                        calculatedHeight: $editorHeight,
+                        onSubmit: submitOrAcceptSlash,
+                        onKeyCommand: handleKeyCommand,
+                        onPasteAttachments: handlePastedAttachments,
+                        onTextViewReady: onTextViewReady
+                    )
+                    .frame(height: editorHeight)
+
+                    if controller.composerText.isEmpty {
+                        Text(placeholder)
+                            .foregroundStyle(.tertiary)
+                            .padding(.top, 6)
+                            .allowsHitTesting(false)
+                    }
+                }
+                .overlay(alignment: .bottomLeading) {
+                    slashCommandPopup
+                        .offset(y: -editorHeight - 10)
+                }
             }
 
             HStack(spacing: 10) {
+                attachButton
                 if showsHarnessPicker {
                     HarnessPickerMenu(controller: controller)
                 }
@@ -214,6 +224,43 @@ struct ComposerCard: View {
         .contentShape(Rectangle())
     }
 
+    private var attachButton: some View {
+        Button {
+            presentOpenPanel()
+        } label: {
+            Image(systemName: "paperclip")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(.secondary)
+                .frame(width: 22, height: 22)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help("Attach files")
+        .accessibilityLabel("Attach files")
+    }
+
+    private func presentOpenPanel() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = true
+        guard panel.runModal() == .OK else { return }
+        controller.attachFileURLs(panel.urls)
+    }
+
+    private func handlePastedAttachments(_ pasted: [PastedAttachment]) -> Bool {
+        guard !pasted.isEmpty else { return false }
+        for item in pasted {
+            switch item {
+            case let .fileURL(url):
+                controller.attachFileURLs([url])
+            case let .image(data, suggestedName):
+                controller.attachImageData(data, suggestedName: suggestedName)
+            }
+        }
+        return true
+    }
+
     @ViewBuilder
     private var stopButton: some View {
         if controller.isSending {
@@ -322,6 +369,143 @@ struct ComposerCard: View {
             slashSelection = 0
             return true
         }
+    }
+}
+
+/// The staged-attachment strip above the composer input: image thumbnails and
+/// file chips, each with a hover-revealed remove button and an
+/// upload/failed badge.
+struct ComposerAttachmentRow: View {
+    @Bindable var controller: SessionController
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 10) {
+                ForEach(controller.composerAttachments) { attachment in
+                    ComposerAttachmentThumb(
+                        attachment: attachment,
+                        onRemove: { controller.removeAttachment(id: attachment.id) },
+                        onRetry: { controller.retryAttachment(id: attachment.id) }
+                    )
+                }
+            }
+        }
+    }
+}
+
+private struct ComposerAttachmentThumb: View {
+    @Environment(\.theme) private var theme
+    @Environment(\.lightbox) private var lightbox
+    let attachment: ComposerAttachment
+    let onRemove: () -> Void
+    let onRetry: () -> Void
+
+    @State private var isHovered = false
+
+    var body: some View {
+        ZStack(alignment: .topTrailing) {
+            Group {
+                if attachment.hasVisualPreview, let image = NSImage(data: attachment.localData) {
+                    // A tap gesture rather than a Button: buttons add their own
+                    // hover/press highlight over the artwork.
+                    Image(nsImage: image)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .frame(width: 56, height: 56)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8)
+                                .strokeBorder(.separator, lineWidth: 1)
+                        )
+                        .overlay(alignment: .bottomLeading) {
+                            if attachment.isPDF {
+                                PDFBadge()
+                            }
+                        }
+                        .contentShape(RoundedRectangle(cornerRadius: 8))
+                        .onTapGesture {
+                            lightbox?.present(
+                                .local(data: attachment.localData, name: attachment.name),
+                                imageStore: nil
+                            )
+                        }
+                        .help(attachment.name)
+                } else {
+                    AttachmentFileChip(name: attachment.name)
+                }
+            }
+            .overlay {
+                stateBadge
+            }
+
+            // Always mounted and toggled instantly (no animation): any
+            // animated change here rebuilds AppKit hover tracking mid-hover,
+            // which oscillates the hover state and flickers.
+            removeButton
+                .padding(4)
+                .opacity(isHovered ? 1 : 0)
+                .allowsHitTesting(isHovered)
+        }
+        .onHover { hovering in
+            guard hovering != isHovered else { return }
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) { isHovered = hovering }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Attachment \(attachment.name)")
+    }
+
+    @ViewBuilder
+    private var stateBadge: some View {
+        switch attachment.state {
+        case .uploading:
+            RoundedRectangle(cornerRadius: 8)
+                .fill(.black.opacity(0.25))
+                .overlay(ProgressView().controlSize(.small))
+                .allowsHitTesting(false)
+        case let .failed(reason):
+            Button {
+                onRetry()
+            } label: {
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(.black.opacity(0.35))
+                    .overlay(
+                        VStack(spacing: 2) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundStyle(theme.statusWarn)
+                            Text("Retry")
+                                .font(.caption2)
+                                .foregroundStyle(.white)
+                        }
+                    )
+                    .contentShape(RoundedRectangle(cornerRadius: 8))
+            }
+            .buttonStyle(.plain)
+            .help("Upload failed: \(reason). Click to retry.")
+        case .uploaded:
+            EmptyView()
+        }
+    }
+
+    private var removeButton: some View {
+        Button {
+            onRemove()
+        } label: {
+            Image(systemName: "xmark")
+                .font(.system(size: 8, weight: .bold))
+                // Fixed dark-on-light styling (not theme-derived): the button
+                // sits on arbitrary image content, so it needs contrast
+                // against white screenshots and dark thumbnails alike.
+                .foregroundStyle(.white)
+                .frame(width: 16, height: 16)
+                .background(Circle().fill(.black.opacity(0.78)))
+                .overlay(Circle().strokeBorder(.white.opacity(0.85), lineWidth: 1))
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .help("Remove attachment")
+        .accessibilityLabel("Remove \(attachment.name)")
     }
 }
 

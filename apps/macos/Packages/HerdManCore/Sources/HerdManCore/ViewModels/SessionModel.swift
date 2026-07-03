@@ -77,19 +77,19 @@ public final class SessionModel {
     }
 
     /// Sends a prompt and streams the response into the conversation.
-    public func send(_ text: String) async {
+    public func send(_ text: String, attachments: [Attachment] = []) async {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
+        guard !trimmed.isEmpty || !attachments.isEmpty else { return }
 
         composerText = ""
         errorMessage = nil
 
         if isSending {
-            await enqueueWhileSending(trimmed)
+            await enqueueWhileSending(trimmed, attachments: attachments)
             return
         }
 
-        conversation.append(.user(UserMessage(text: trimmed)))
+        conversation.append(.user(UserMessage(text: trimmed, attachments: attachments)))
         conversation.append(.assistant(AssistantMessage(
             turn: AssistantTurn(isGenerating: true, isThinking: true, startedAt: now())
         )))
@@ -100,7 +100,7 @@ public final class SessionModel {
         await startConsumer()
 
         do {
-            _ = try await transport.prompt(trimmed)
+            _ = try await transport.prompt(trimmed, attachments: attachments)
             await drain()
         } catch {
             await drain()
@@ -242,6 +242,9 @@ public final class SessionModel {
         switch event {
         case let .update(update):
             apply(update)
+        case let .userMessage(text, attachments):
+            appliedUpdateCount += 1
+            appendRemoteUserIfNeeded(text: text, attachments: attachments)
         case let .finished(stopReason):
             finish(stopReason: stopReason, outcome: stopReason == .cancelled ? .cancelled : .completed)
             isSending = false
@@ -274,25 +277,31 @@ public final class SessionModel {
         conversation[conversation.count - 1] = .assistant(message)
     }
 
-    private func enqueueWhileSending(_ text: String) async {
+    private func enqueueWhileSending(_ text: String, attachments: [Attachment] = []) async {
         do {
-            _ = try await transport.prompt(text)
+            _ = try await transport.prompt(text, attachments: attachments)
         } catch {
             errorMessage = serverErrorMessage(error)
         }
     }
 
-    private func appendRemoteUserIfNeeded(text: String) {
+    private func appendRemoteUserIfNeeded(text: String, attachments: [Attachment] = []) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
+        guard !trimmed.isEmpty || !attachments.isEmpty else { return }
         if conversation.count >= 2,
-           case let .user(user) = conversation[conversation.count - 2],
+           case var .user(user) = conversation[conversation.count - 2],
            case let .assistant(assistant) = conversation.last,
            user.text == trimmed,
            assistant.turn.isGenerating {
+            // Same-client echo of the optimistic message: stamp attachments
+            // the optimistic append may not have carried.
+            if user.attachments.isEmpty, !attachments.isEmpty {
+                user.attachments = attachments
+                conversation[conversation.count - 2] = .user(user)
+            }
             return
         }
-        conversation.append(.user(UserMessage(text: text)))
+        conversation.append(.user(UserMessage(text: text, attachments: attachments)))
         conversation.append(.assistant(AssistantMessage(
             turn: AssistantTurn(isGenerating: true, isThinking: true, startedAt: now())
         )))

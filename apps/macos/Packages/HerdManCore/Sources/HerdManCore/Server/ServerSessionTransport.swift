@@ -9,9 +9,36 @@ public struct ServerSessionSnapshot: Equatable, Sendable {
 
 public enum ServerSessionStreamEvent: Equatable, Sendable {
     case update(SessionUpdate)
+    /// A persisted user message. Carried outside `SessionUpdate` because the
+    /// ACP update type cannot carry attachments.
+    case userMessage(text: String, attachments: [Attachment])
     case queueUpdated([ServerPromptQueueItem])
     case finished(StopReason)
     case failed(String)
+}
+
+public extension ServerAttachmentRef {
+    var attachment: Attachment {
+        Attachment(
+            fileId: fileId,
+            name: name,
+            mimeType: mimeType,
+            sizeBytes: sizeBytes,
+            kind: kind == .image ? .image : .file
+        )
+    }
+}
+
+public extension Attachment {
+    var serverRef: ServerAttachmentRef {
+        ServerAttachmentRef(
+            fileId: fileId,
+            name: name,
+            mimeType: mimeType,
+            sizeBytes: sizeBytes,
+            kind: kind == .image ? .image : .file
+        )
+    }
 }
 
 public struct ServerSessionTransport: Sendable {
@@ -25,8 +52,16 @@ public struct ServerSessionTransport: Sendable {
         self.sessionId = sessionId
     }
 
-    public func prompt(_ text: String) async throws -> ServerPromptAccepted {
-        try await client.promptSession(id: sessionId, text: text)
+    public func prompt(_ text: String, attachments: [Attachment] = []) async throws -> ServerPromptAccepted {
+        try await client.promptSession(id: sessionId, text: text, attachments: attachments.map(\.serverRef))
+    }
+
+    public func uploadFile(name: String, mimeType: String, data: Data) async throws -> ServerFileMetadata {
+        try await client.uploadFile(name: name, mimeType: mimeType, data: data)
+    }
+
+    public func fileData(id: String) async throws -> Data {
+        try await client.fileData(id: id)
     }
 
     public func updateQueuedPrompt(id: String, text: String) async throws -> ServerPromptQueueItem {
@@ -119,7 +154,11 @@ public struct ServerSessionTransport: Sendable {
             switch item.role {
             case .user:
                 flushAssistant()
-                conversation.append(.user(UserMessage(id: uuid(from: item.id), text: item.text)))
+                conversation.append(.user(UserMessage(
+                    id: uuid(from: item.id),
+                    text: item.text,
+                    attachments: (item.attachments ?? []).map(\.attachment)
+                )))
             case .assistant:
                 var assistant = pendingAssistant ?? AssistantMessage(
                     id: uuid(from: item.id),
@@ -152,7 +191,7 @@ public struct ServerSessionTransport: Sendable {
         case "session.queue.updated":
             return [.queueUpdated(promptQueue(from: event.payload))]
         case "session.output":
-            return textUpdates(from: event.payload).map(ServerSessionStreamEvent.update)
+            return outputEvents(from: event.payload)
         case "session.updated":
             if let stopReason = stopReason(from: event.payload) {
                 return [.finished(stopReason)]
@@ -185,18 +224,29 @@ public struct ServerSessionTransport: Sendable {
         }
     }
 
-    private static func textUpdates(from payload: JSONValue) -> [SessionUpdate] {
+    private static func outputEvents(from payload: JSONValue) -> [ServerSessionStreamEvent] {
         guard let role = payload["role"]?.stringValue,
-              let text = payload["text"]?.stringValue,
-              !text.isEmpty else {
+              let text = payload["text"]?.stringValue else {
             return []
         }
         switch role {
-        case "assistant":
-            return [.agentMessageChunk(.text(text), messageId: payload["messageId"]?.stringValue)]
+        case "assistant" where !text.isEmpty:
+            return [.update(.agentMessageChunk(.text(text), messageId: payload["messageId"]?.stringValue))]
         case "user":
-            return [.userMessageChunk(.text(text), messageId: payload["messageId"]?.stringValue)]
+            let attachments = attachments(from: payload)
+            guard !text.isEmpty || !attachments.isEmpty else { return [] }
+            return [.userMessage(text: text, attachments: attachments)]
         default:
+            return []
+        }
+    }
+
+    private static func attachments(from payload: JSONValue) -> [Attachment] {
+        guard let raw = payload["attachments"]?.arrayValue else { return [] }
+        do {
+            let data = try JSONEncoder().encode(JSONValue.array(raw))
+            return try JSONDecoder().decode([ServerAttachmentRef].self, from: data).map(\.attachment)
+        } catch {
             return []
         }
     }

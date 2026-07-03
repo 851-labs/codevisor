@@ -167,13 +167,39 @@ export type SessionSummary = typeof SessionSummary.Type
 export const ConversationRole = Schema.Literals(["user", "assistant", "system"])
 export type ConversationRole = typeof ConversationRole.Type
 
+export const AttachmentKind = Schema.Literals(["image", "file"])
+export type AttachmentKind = typeof AttachmentKind.Type
+
+/// A reference to an uploaded file (`POST /v1/files`) carried on a prompt and
+/// persisted with the user message; bytes are fetched via `GET /v1/files/:id`.
+export const AttachmentRef = Schema.Struct({
+  fileId: Schema.String,
+  name: Schema.String,
+  mimeType: Schema.String,
+  sizeBytes: Schema.Number,
+  kind: AttachmentKind
+})
+export type AttachmentRef = typeof AttachmentRef.Type
+
+export const FileMetadata = Schema.Struct({
+  id: Schema.String,
+  name: Schema.String,
+  mimeType: Schema.String,
+  sizeBytes: Schema.Number,
+  sha256: Schema.String,
+  kind: AttachmentKind,
+  createdAt: Schema.String
+})
+export type FileMetadata = typeof FileMetadata.Type
+
 export const ConversationItem = Schema.Struct({
   id: Schema.String,
   role: ConversationRole,
   messageId: Schema.optional(Schema.String),
   text: Schema.String,
   createdAt: Schema.String,
-  isGenerating: Schema.Boolean
+  isGenerating: Schema.Boolean,
+  attachments: Schema.optional(Schema.Array(AttachmentRef))
 })
 export type ConversationItem = typeof ConversationItem.Type
 
@@ -182,7 +208,8 @@ export const PromptQueueItem = Schema.Struct({
   sessionId: Schema.String,
   text: Schema.String,
   createdAt: Schema.String,
-  updatedAt: Schema.String
+  updatedAt: Schema.String,
+  attachments: Schema.optional(Schema.Array(AttachmentRef))
 })
 export type PromptQueueItem = typeof PromptQueueItem.Type
 
@@ -220,7 +247,8 @@ export type UpdateSessionRequest = typeof UpdateSessionRequest.Type
 
 export const PromptRequest = Schema.Struct({
   text: Schema.String,
-  clientActionId: Schema.optional(Schema.String)
+  clientActionId: Schema.optional(Schema.String),
+  attachments: Schema.optional(Schema.Array(AttachmentRef))
 })
 export type PromptRequest = typeof PromptRequest.Type
 
@@ -397,6 +425,8 @@ export const endpoints = [
   "POST /v1/sessions/:id/cancel",
   "POST /v1/sessions/:id/mode",
   "POST /v1/sessions/:id/config",
+  "POST /v1/files",
+  "GET /v1/files/:id",
   "GET /v1/events",
   "GET /v1/events/socket",
   "POST /v1/terminals",

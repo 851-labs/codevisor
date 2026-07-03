@@ -26,6 +26,25 @@ export interface PromptResult {
   readonly stopReason: string
 }
 
+/// One attachment resolved by the server before the prompt reaches a
+/// provider: inline bytes for providers that embed content, plus a
+/// materialized temp-file path for providers that reference files on disk.
+export interface PromptAttachmentInput {
+  readonly name: string
+  readonly mimeType: string
+  readonly kind: "image" | "file"
+  readonly data: Buffer
+  readonly path: string
+}
+
+export interface PromptInput {
+  readonly text: string
+  readonly attachments?: ReadonlyArray<PromptAttachmentInput>
+}
+
+export const normalizePromptInput = (input: string | PromptInput): PromptInput =>
+  typeof input === "string" ? { text: input } : input
+
 export interface AgentSessionMetadata {
   readonly sessionId: string
   readonly modes?: SessionModeState
@@ -71,7 +90,7 @@ export interface ProviderEnvironment {
 /// runtime lives in a child process owned by the handle; all session output
 /// flows through the `RuntimeEmit` the handle was created with.
 export interface AgentSessionHandle {
-  readonly prompt: (text: string) => Effect.Effect<PromptResult, AgentRuntimeError>
+  readonly prompt: (input: string | PromptInput) => Effect.Effect<PromptResult, AgentRuntimeError>
   readonly cancel: Effect.Effect<void, AgentRuntimeError>
   readonly setMode: (modeId: string) => Effect.Effect<void, AgentRuntimeError>
   readonly setConfigOption: (
