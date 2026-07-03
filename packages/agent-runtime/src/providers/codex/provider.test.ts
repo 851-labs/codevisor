@@ -305,6 +305,52 @@ describe("CodexProvider", () => {
     })
   })
 
+  it("opens the tool call from the first streamed patch update (arrives before item/started)", async () => {
+    const { client, events } = await setup()
+    client.emit("item/fileChange/patchUpdated", {
+      changes: [{ diff: UNIFIED_DIFF, kind: { type: "update" }, path: "release.yml" }],
+      itemId: "item-early",
+      threadId: "thread-new",
+      turnId: "turn-1"
+    })
+    const opened = events.at(-1)?.payload as Record<string, unknown>
+    expect(opened).toMatchObject({
+      sessionUpdate: "tool_call",
+      toolCallId: "item-early",
+      kind: "edit",
+      status: "in_progress",
+      title: "Edited release.yml",
+      diffStats: [{ added: 2, path: "release.yml", removed: 1 }]
+    })
+
+    client.emit("item/fileChange/patchUpdated", {
+      changes: [{ diff: UNIFIED_DIFF + "\n+more", kind: { type: "update" }, path: "release.yml" }],
+      itemId: "item-early",
+      threadId: "thread-new",
+      turnId: "turn-1"
+    })
+    const streamed = events.at(-1)?.payload as Record<string, unknown>
+    expect(streamed).toMatchObject({
+      sessionUpdate: "tool_call_update",
+      toolCallId: "item-early",
+      status: "in_progress",
+      diffStats: [{ added: 3, path: "release.yml", removed: 1 }]
+    })
+
+    // item/started for the same id merges rather than duplicating.
+    client.emit("item/started", {
+      item: {
+        changes: [{ diff: UNIFIED_DIFF, kind: { type: "update" }, path: "release.yml" }],
+        id: "item-early",
+        status: "inProgress",
+        type: "fileChange"
+      },
+      threadId: "thread-new",
+      turnId: "turn-1"
+    })
+    expect((events.at(-1)?.payload as Record<string, unknown>).sessionUpdate).toBe("tool_call")
+  })
+
   it("drives the thinking state from reasoning item lifecycles", async () => {
     const { client, events } = await setup()
     client.emit("item/started", {

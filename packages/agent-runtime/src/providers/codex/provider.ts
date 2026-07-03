@@ -478,11 +478,29 @@ const handleNotification = (session: CodexSession, method: string, params: unkno
       break
     }
     case "item/fileChange/patchUpdated": {
-      // Codex streams the patch as it is generated — this is the realtime
-      // counter signal.
+      // Codex streams the patch as the model generates it (gated behind the
+      // apply_patch_streaming_events feature we enable at spawn) — this is
+      // the realtime counter signal. These arrive BEFORE item/started for
+      // the same item, so the first one opens the tool call.
       const itemId = typeof payload.itemId === "string" ? payload.itemId : undefined
       if (itemId === undefined) break
       const stats = fileChangeStats(payload.changes)
+      if (!session.itemKinds.has(itemId)) {
+        session.itemKinds.set(itemId, "edit")
+        void session.emit({
+          kind: "session.output",
+          payload: {
+            kind: "edit",
+            sessionUpdate: "tool_call",
+            status: "in_progress",
+            title: fileChangeTitle(payload.changes),
+            toolCallId: itemId,
+            ...(stats.length === 0 ? {} : { diffStats: stats })
+          },
+          subjectId: session.key
+        })
+        break
+      }
       if (stats.length === 0) break
       void session.emit({
         kind: "session.output",
@@ -580,6 +598,9 @@ const emitItemLifecycle = (
       const stats = fileChangeStats(item.changes)
       const content = fileChangeDiffBlocks(item.changes)
       if (started) {
+        // The streamed patchUpdated events may have opened this call already;
+        // tool_call upserts merge in the client, so re-sending is safe and
+        // carries the final title/diff content.
         session.itemKinds.set(itemId, "edit")
         void session.emit(
           event({

@@ -29,11 +29,19 @@ interface Pending {
 
 /* v8 ignore start -- the stdio transport is exercised against a live codex binary; tests inject a fake client. */
 export const spawnCodexClient: CodexConnector = async (request) => {
-  const child = spawn(request.command, ["app-server"], {
-    cwd: request.cwd,
-    env: request.env,
-    stdio: ["pipe", "pipe", "pipe"]
-  })
+  // apply_patch_streaming_events unlocks item/fileChange/patchUpdated — the
+  // realtime patch stream while the model generates an edit. Off by default
+  // upstream (under development); unknown keys only produce a warning on
+  // older builds.
+  const child = spawn(
+    request.command,
+    ["app-server", "-c", "features.apply_patch_streaming_events=true"],
+    {
+      cwd: request.cwd,
+      env: request.env,
+      stdio: ["pipe", "pipe", "pipe"]
+    }
+  )
   await new Promise<void>((resolve, reject) => {
     child.once("spawn", () => resolve())
     child.once("error", reject)
