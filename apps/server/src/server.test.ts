@@ -1718,6 +1718,28 @@ describe("@herdman/server", () => {
     expect(existsSync(root)).toBe(false)
   })
 
+  it("kills a session's terminal over the delete route", async () => {
+    const { server, spawner } = await start()
+
+    // No live terminal for the session yet.
+    const missing = await jsonRequest(server, "/v1/terminals/session/no-such-session", {
+      method: "DELETE"
+    })
+    expect(missing.status).toBe(404)
+    expect(missing.body).toEqual({ closed: false })
+
+    await jsonRequest(server, "/v1/terminals", {
+      body: JSON.stringify({ sessionId: "session-kill", cwd: "/tmp/herdman", cols: 80, rows: 24 }),
+      method: "POST"
+    })
+    const closed = await jsonRequest(server, "/v1/terminals/session/session-kill", {
+      method: "DELETE"
+    })
+    expect(closed.status).toBe(200)
+    expect(closed.body).toEqual({ closed: true })
+    expect(spawner.processes[0]?.killCount).toBe(1)
+  })
+
   it("bridges terminal create and websocket traffic", async () => {
     const { server, spawner } = await start()
     const terminalResponse = await jsonRequest(server, "/v1/terminals", {

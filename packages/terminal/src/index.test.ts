@@ -224,6 +224,46 @@ describe("@herdman/terminal", () => {
     await expect(run(manager.closeTerminal("missing"))).rejects.toBeInstanceOf(TerminalError)
   })
 
+  it("closes the live terminal for a session and reports sessions without one", async () => {
+    const spawner = makeSpawner()
+    const manager = makeTerminalManager({ spawner })
+
+    // No terminal for the session at all.
+    expect(await run(manager.closeTerminalForSession("session-5"))).toBe(false)
+
+    const terminal = await run(
+      manager.createTerminal({
+        sessionId: "session-5",
+        cwd: "/tmp/project",
+        cols: 80,
+        rows: 24
+      })
+    )
+
+    // Live terminal: killed and unregistered, so the next create respawns.
+    expect(await run(manager.closeTerminalForSession("session-5"))).toBe(true)
+    expect(spawner.processes[0]?.killCount).toBe(1)
+    await expect(run(manager.terminalFrames(terminal.terminalId))).rejects.toBeInstanceOf(
+      TerminalError
+    )
+    const replacement = await run(
+      manager.createTerminal({
+        sessionId: "session-5",
+        cwd: "/tmp/project",
+        cols: 80,
+        rows: 24
+      })
+    )
+    expect(replacement.terminalId).not.toBe(terminal.terminalId)
+
+    // A pty that exited on its own leaves a stale mapping: closing reports
+    // false, drops the mapping, and does not double-kill the process.
+    spawner.handlers[1]?.onExit(0)
+    expect(await run(manager.closeTerminalForSession("session-5"))).toBe(false)
+    expect(spawner.processes[1]?.killCount).toBe(0)
+    expect(await run(manager.closeTerminalForSession("session-5"))).toBe(false)
+  })
+
   it("wraps non-Error process failures as terminal errors", async () => {
     const spawner = makeSpawner((_request, handlers) => {
       handlers.onOutput("boot")

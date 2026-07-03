@@ -246,8 +246,11 @@ export const makeTerminalManager = (config: TerminalManagerConfig = {}): Termina
         if (terminalId === undefined) {
           return false
         }
-        const terminal = terminals.get(terminalId)
-        if (terminal === undefined || terminal.closed) {
+        // The session mapping only ever points at a registered terminal
+        // (closeTerminal and close frames clear the mapping when removing).
+        const terminal = getTerminal(terminalId, "closeTerminalForSession")
+        if (terminal.closed) {
+          // The pty already exited on its own; just drop the stale mapping.
           terminalsBySession.delete(sessionId)
           return false
         }
