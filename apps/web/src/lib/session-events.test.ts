@@ -100,11 +100,7 @@ describe("sessionStreamEvents", () => {
         sessionUpdate: "tool_call_update",
         toolCallId: "t1",
         status: "in_progress",
-        diffStats: [
-          { path: "release.yml", added: 13, removed: 7 },
-          { path: "bad" },
-          "junk"
-        ],
+        diffStats: [{ path: "release.yml", added: 13, removed: 7 }, { path: "bad" }, "junk"],
         parentToolCallId: "task-1"
       })
     )

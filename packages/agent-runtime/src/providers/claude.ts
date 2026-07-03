@@ -302,7 +302,9 @@ export const makeClaudeProvider = (
     try {
       const models = await Promise.race([
         q.supportedModels(),
-        new Promise<undefined>((resolvePromise) => setTimeout(() => resolvePromise(undefined), 3000))
+        new Promise<undefined>((resolvePromise) =>
+          setTimeout(() => resolvePromise(undefined), 3000)
+        )
       ])
       if (models !== undefined) {
         // The CLI's "default" pseudo-model is an alias, not a model — the
@@ -330,7 +332,9 @@ export const makeClaudeProvider = (
     return created
   }
 
-  const metadataFor = (session: ClaudeSession): {
+  const metadataFor = (
+    session: ClaudeSession
+  ): {
     modes: SessionModeState
     configOptions: ReadonlyArray<SessionConfigOption>
   } => {
@@ -366,8 +370,8 @@ export const makeClaudeProvider = (
   }
 
   const effortLevelsFor = (session: ClaudeSession): ReadonlyArray<string> =>
-    session.models.find((model) => model.value === session.currentModel)
-      ?.supportedEffortLevels ?? []
+    session.models.find((model) => model.value === session.currentModel)?.supportedEffortLevels ??
+    []
 
   const handleFor = (session: ClaudeSession): AgentSessionHandle => ({
     cancel: adapterPromise("cancel", async () => {
@@ -437,11 +441,7 @@ export const makeClaudeProvider = (
   })
 
   return {
-    createSession: (
-      definition,
-      cwd,
-      emit
-    ): Effect.Effect<CreatedAgentSession, AgentRuntimeError> =>
+    createSession: (definition, cwd, emit): Effect.Effect<CreatedAgentSession, AgentRuntimeError> =>
       adapterPromise("createSession", async () => {
         const session = await startSession(definition, cwd, emit, undefined)
         return {
@@ -703,7 +703,10 @@ const handleResult = (session: ClaudeSession, message: SDKMessage & { type: "res
   })
 }
 
-const ensureTurnStarted = (session: ClaudeSession, initiatedBy: "user" | "agent"): Promise<void> => {
+const ensureTurnStarted = (
+  session: ClaudeSession,
+  initiatedBy: "user" | "agent"
+): Promise<void> => {
   if (session.turnActive) return Promise.resolve()
   session.turnActive = true
   session.turnId = randomUUID()

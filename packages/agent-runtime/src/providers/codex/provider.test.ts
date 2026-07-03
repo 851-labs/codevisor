@@ -138,9 +138,15 @@ const setup = async (options: { failResume?: boolean; resume?: string } = {}) =>
   return { client, created, events, loaded, provider, spawns }
 }
 
-const UNIFIED_DIFF = ["--- a/release.yml", "+++ b/release.yml", "@@ -1,3 +1,4 @@", " keep", "-old", "+new", "+extra"].join(
-  "\n"
-)
+const UNIFIED_DIFF = [
+  "--- a/release.yml",
+  "+++ b/release.yml",
+  "@@ -1,3 +1,4 @@",
+  " keep",
+  "-old",
+  "+new",
+  "+extra"
+].join("\n")
 
 describe("CodexProvider", () => {
   it("handshakes, starts a thread, and reports config options", async () => {
@@ -190,7 +196,10 @@ describe("CodexProvider", () => {
     await run(created!.handle.setConfigOption("model", "gpt-5.5"))
     const promptPromise = run(created!.handle.prompt("go"))
     await Promise.resolve()
-    client.emit("turn/completed", { threadId: "thread-new", turn: { id: "t", status: "completed" } })
+    client.emit("turn/completed", {
+      threadId: "thread-new",
+      turn: { id: "t", status: "completed" }
+    })
     await promptPromise
     const turnStart = client.requests.find((request) => request.method === "turn/start")
     expect(turnStart?.params).toMatchObject({
@@ -206,9 +215,17 @@ describe("CodexProvider", () => {
     const promptPromise = run(created!.handle.prompt("change the runner"))
     await Promise.resolve()
 
-    client.emit("turn/started", { threadId: "thread-new", turn: { id: "turn-1", status: "inProgress" } })
+    client.emit("turn/started", {
+      threadId: "thread-new",
+      turn: { id: "turn-1", status: "inProgress" }
+    })
     client.emit("item/started", {
-      item: { command: "rg runner", id: "item-cmd", status: "inProgress", type: "commandExecution" },
+      item: {
+        command: "rg runner",
+        id: "item-cmd",
+        status: "inProgress",
+        type: "commandExecution"
+      },
       threadId: "thread-new",
       turnId: "turn-1"
     })
@@ -260,7 +277,11 @@ describe("CodexProvider", () => {
     expect(result.stopReason).toBe("end_turn")
 
     const payloads = events.map((event) => event.payload as Record<string, unknown>)
-    expect(payloads[0]).toMatchObject({ initiatedBy: "user", turnId: "turn-1", turnState: "started" })
+    expect(payloads[0]).toMatchObject({
+      initiatedBy: "user",
+      turnId: "turn-1",
+      turnState: "started"
+    })
     expect(payloads).toContainEqual(
       expect.objectContaining({
         sessionUpdate: "tool_call",
@@ -402,7 +423,10 @@ describe("CodexProvider", () => {
     const { client, created, events } = await setup()
     const promptPromise = run(created!.handle.prompt("long work"))
     await Promise.resolve()
-    client.emit("turn/started", { threadId: "thread-new", turn: { id: "turn-9", status: "inProgress" } })
+    client.emit("turn/started", {
+      threadId: "thread-new",
+      turn: { id: "turn-9", status: "inProgress" }
+    })
     await Promise.resolve()
 
     await run(created!.handle.cancel)
@@ -449,7 +473,10 @@ describe("CodexProvider", () => {
     await run(created!.handle.setConfigOption("effort", "high"))
     const promptPromise = run(created!.handle.prompt("go"))
     await Promise.resolve()
-    client.emit("turn/completed", { threadId: "thread-new", turn: { id: "t", status: "completed" } })
+    client.emit("turn/completed", {
+      threadId: "thread-new",
+      turn: { id: "t", status: "completed" }
+    })
     await promptPromise
     const turnStart = client.requests.find((request) => request.method === "turn/start")
     expect(turnStart?.params).toMatchObject({ effort: "high", model: "gpt-5.2-codex" })

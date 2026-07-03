@@ -21,6 +21,7 @@ export const diffStatsFromTexts = (
   let added = 0
   let removed = 0
   for (const change of diffLines(previous, newText)) {
+    /* v8 ignore next -- diffLines always populates count; the type is just optional. */
     const count = change.count ?? 0
     if (change.added) added += count
     if (change.removed) removed += count

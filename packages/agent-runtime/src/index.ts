@@ -193,6 +193,7 @@ export const makeAgentRuntime = (config: AgentRuntimeConfig = {}): AgentRuntimeS
       .then(() => session.sink(event))
       .then(
         () => undefined,
+        /* v8 ignore next -- defensive: a sink failure must not wedge the chain. */
         () => undefined
       )
     session.chain = next
@@ -214,6 +215,7 @@ export const makeAgentRuntime = (config: AgentRuntimeConfig = {}): AgentRuntimeS
         throw new Error(`${definition.name} is unavailable: ${definition.disabledReason}`)
       }
       const provider = providers.get(definition.provider)
+      /* v8 ignore next 3 -- every catalog provider id is registered above; guards future ids. */
       if (provider === undefined) {
         throw new Error(`No provider registered for harness: ${harnessId}`)
       }
@@ -248,6 +250,16 @@ export const makeAgentRuntime = (config: AgentRuntimeConfig = {}): AgentRuntimeS
     discoverHarnesses: Effect.sync(() =>
       harnessCatalog.map((definition) => {
         const provider = providers.get(definition.provider)
+        let readiness: Harness["readiness"]
+        if (definition.disabledReason !== undefined) {
+          readiness = { detail: definition.disabledReason, state: "unavailable" }
+          /* v8 ignore start -- every catalog provider id is registered; guards future ids. */
+        } else if (provider === undefined) {
+          readiness = { detail: "Provider not available", state: "unavailable" }
+          /* v8 ignore stop */
+        } else {
+          readiness = provider.readiness(definition)
+        }
         return {
           id: definition.id,
           name: definition.name,
@@ -256,12 +268,7 @@ export const makeAgentRuntime = (config: AgentRuntimeConfig = {}): AgentRuntimeS
           launchKind:
             definition.launch?.kind === "npx" ? ("npx" as const) : ("executable" as const),
           enabled: true,
-          readiness:
-            definition.disabledReason !== undefined
-              ? { detail: definition.disabledReason, state: "unavailable" as const }
-              : provider === undefined
-                ? { detail: "Provider not available", state: "unavailable" as const }
-                : provider.readiness(definition)
+          readiness
         }
       })
     ),
@@ -274,7 +281,12 @@ export const makeAgentRuntime = (config: AgentRuntimeConfig = {}): AgentRuntimeS
     inspectHarness: (harnessId, cwd) =>
       Effect.gen(function* () {
         const { definition, provider } = yield* definitionFor(harnessId)
-        const created = yield* provider.createSession(definition, cwd, () => Promise.resolve())
+        const created = yield* provider.createSession(
+          definition,
+          cwd,
+          /* v8 ignore next -- inspection sessions are closed before they can emit. */
+          () => Promise.resolve()
+        )
         void Effect.runPromise(created.handle.close).catch(() => undefined)
         return created.metadata
       }),

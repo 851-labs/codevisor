@@ -334,9 +334,7 @@ describe("@herdman/agent-runtime", () => {
     }
     await connection.emit(conversationEvent(sessionId, "assistant", "background task finished"))
 
-    expect(events).toEqual([
-      conversationEvent(sessionId, "assistant", "background task finished")
-    ])
+    expect(events).toEqual([conversationEvent(sessionId, "assistant", "background task finished")])
   })
 
   it("keeps per-session event order through the serial sink chain", async () => {
@@ -412,6 +410,48 @@ describe("@herdman/agent-runtime", () => {
       run(runtime.createAgentSession("missing", "/tmp/project", () => undefined))
     ).rejects.toThrow("Unknown harness")
     expect(connector.requests).toEqual([])
+  })
+
+  it("registers custom providers and drops events for unknown sessions", async () => {
+    const events: Array<RuntimeEvent> = []
+    let capturedEmit: RuntimeEmit | undefined
+    const custom = {
+      createSession: (_definition: unknown, _cwd: unknown, emit: RuntimeEmit) =>
+        Effect.sync(() => {
+          capturedEmit = emit
+          return {
+            handle: {
+              cancel: Effect.void,
+              close: Effect.void,
+              prompt: () => Effect.succeed({ stopReason: "end_turn" }),
+              setConfigOption: () => Effect.void,
+              setMode: () => Effect.void
+            },
+            metadata: { configOptions: [], sessionId: "custom-1" }
+          }
+        }),
+      id: "claude" as const,
+      loadSession: () => Effect.die("unused"),
+      readiness: () => ({ state: "ready" }) as const
+    }
+    const runtime = makeAgentRuntime({
+      env: { PATH: "/bin" },
+      executableExists: () => true,
+      locateExecutable: (name) => `/bin/${name}`,
+      providers: { claude: custom as never }
+    })
+    const sessionId = await run(
+      runtime.createAgentSession("claude-code", "/tmp/project", (event) => {
+        events.push(event)
+      })
+    )
+    expect(sessionId).toBe("custom-1")
+    // Events for sessions the runtime doesn't know are dropped, not crashed on.
+    await capturedEmit?.({ kind: "session.output", payload: {}, subjectId: "unknown-session" })
+    await capturedEmit?.({ kind: "session.output", payload: { ok: true }, subjectId: "custom-1" })
+    expect(events).toEqual([
+      { kind: "session.output", payload: { ok: true }, subjectId: "custom-1" }
+    ])
   })
 
   it("materializes runtime events as envelopes", () => {

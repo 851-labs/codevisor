@@ -345,6 +345,11 @@ describe("@herdman/db", () => {
     ])
     expect(await run(db.listEvents(1))).toEqual([])
     expect((await run(db.getSessionDetail(firstSession.id))).eventCursor).toBe(1)
+    await run(db.appendEvent("session.output", "other-subject", { text: "elsewhere" }))
+    expect(await run(db.listSubjectEvents(firstSession.id))).toMatchObject([
+      { id: 1, kind: "session.output", payload: { text: "chunk", index: 1 } }
+    ])
+    expect(await run(db.listSubjectEvents("unknown-subject"))).toEqual([])
 
     expect(await run(db.getSessionActionResult(firstSession.id, "prompt-1"))).toBeUndefined()
     await run(
@@ -589,13 +594,32 @@ describe("@herdman/db", () => {
     const session = await run(
       db.createSession({ harnessId: "codex", projectId: original.id, title: "Kept" })
     )
-    const merged = await run(db.createProject({ folderPath: "/tmp/duplicate", id: "client-id-2" }))
+    const merged = await run(
+      db.createProject({
+        folderPath: "/tmp/duplicate",
+        id: "client-id-2",
+        isArchived: true,
+        name: "merged",
+        origin: "imported",
+        symbolName: "shippingbox"
+      })
+    )
     expect(merged.id).toBe("client-id-2")
+    expect(merged.isArchived).toBe(true)
+    expect(merged.name).toBe("merged")
+
+    // Merge again with a bare request — defaults apply on the merge path too.
+    const remerged = await run(
+      db.createProject({ folderPath: "/tmp/duplicate", id: "client-id-3" })
+    )
+    expect(remerged.id).toBe("client-id-3")
+    expect(remerged.isArchived).toBe(false)
+    expect(remerged.name).toBe("duplicate")
     expect(merged.locations[0]?.folderPath).toBe("/tmp/duplicate")
     const projects = await run(db.listProjects)
     expect(projects.map((project) => project.id)).not.toContain(original.id)
     const detail = await run(db.getSessionDetail(session.id))
-    expect(detail.session.projectId).toBe("client-id-2")
+    expect(detail.session.projectId).toBe("client-id-3")
 
     // Genuine sqlite failures still surface as tagged errors.
     const failed = await Effect.runPromiseExit(

@@ -166,7 +166,8 @@ export const makeCodexProvider = (
         if (value === undefined) return []
         const efforts = Array.isArray(model.supportedReasoningEfforts)
           ? model.supportedReasoningEfforts.flatMap((option) =>
-              typeof option === "object" && option !== null &&
+              typeof option === "object" &&
+              option !== null &&
               typeof (option as Record<string, unknown>).reasoningEffort === "string"
                 ? [(option as Record<string, unknown>).reasoningEffort as string]
                 : []
@@ -295,7 +296,10 @@ export const makeCodexProvider = (
         if (configId === "model") {
           session.currentModel = value
           const model = session.models.find((candidate) => candidate.value === value)
-          if (model !== undefined && (session.currentEffort === undefined || !model.efforts.includes(session.currentEffort))) {
+          if (
+            model !== undefined &&
+            (session.currentEffort === undefined || !model.efforts.includes(session.currentEffort))
+          ) {
             session.currentEffort = model.defaultEffort
           }
         } else if (configId === "effort") {
@@ -324,11 +328,7 @@ export const makeCodexProvider = (
   })
 
   return {
-    createSession: (
-      definition,
-      cwd,
-      emit
-    ): Effect.Effect<CreatedAgentSession, AgentRuntimeError> =>
+    createSession: (definition, cwd, emit): Effect.Effect<CreatedAgentSession, AgentRuntimeError> =>
       adapterPromise("createSession", async () => {
         const session = await startSession(definition, cwd, emit, undefined)
         return {
@@ -731,7 +731,9 @@ const fileChangeDiffBlocks = (
 /// Reconstructs old/new text from a unified diff body so the client's DiffView
 /// can render it. Hunk headers reset nothing here — the reconstruction is a
 /// display approximation covering the changed regions and their context.
-const textsFromUnified = (diff: string): { oldText: string | null; newText: string } | undefined => {
+const textsFromUnified = (
+  diff: string
+): { oldText: string | null; newText: string } | undefined => {
   const oldLines: Array<string> = []
   const newLines: Array<string> = []
   let sawContent = false

@@ -88,7 +88,11 @@ const resolveLaunch = (
   if (launch === undefined) {
     return undefined
   }
-  if (!definition.detectBinaries.some((binary) => environment.executableExists(binary, environment.env))) {
+  if (
+    !definition.detectBinaries.some((binary) =>
+      environment.executableExists(binary, environment.env)
+    )
+  ) {
     return undefined
   }
   switch (launch.kind) {
@@ -130,7 +134,8 @@ const unavailableReadiness = (
     return { detail: "Requires npx", state: "unavailable" }
   }
   /* v8 ignore next 2 */
-  const command = definition.launch?.kind === "executable" ? definition.launch.command : definition.id
+  const command =
+    definition.launch?.kind === "executable" ? definition.launch.command : definition.id
   return { detail: `${command} not found on PATH`, state: "unavailable" }
 }
 
@@ -418,9 +423,7 @@ export const runtimeEventFromNotification = (
 
 /// ACP adapters deliver diffs only at completion; attach the added/removed
 /// line counts so clients can render the +N/−N header without re-diffing.
-const withDiffStats = (update: {
-  readonly content?: unknown
-}): Record<string, unknown> => {
+const withDiffStats = (update: { readonly content?: unknown }): Record<string, unknown> => {
   const content = update.content
   if (!Array.isArray(content)) {
     return update as Record<string, unknown>

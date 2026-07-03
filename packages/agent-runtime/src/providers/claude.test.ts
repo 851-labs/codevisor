@@ -1,4 +1,8 @@
-import type { Options as ClaudeOptions, SDKMessage, SDKUserMessage } from "@anthropic-ai/claude-agent-sdk"
+import type {
+  Options as ClaudeOptions,
+  SDKMessage,
+  SDKUserMessage
+} from "@anthropic-ai/claude-agent-sdk"
 import { Effect } from "effect"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import type { HarnessDefinition, ProviderEnvironment, RuntimeEvent } from "../types.js"
@@ -61,7 +65,9 @@ class FakeQuery {
     this.models.push(model)
   }
 
-  async supportedModels(): Promise<Array<{ value: string; displayName: string; description: string }>> {
+  async supportedModels(): Promise<
+    Array<{ value: string; displayName: string; description: string }>
+  > {
     return [
       { description: "", displayName: "Fable 5", value: "claude-fable-5" },
       { description: "", displayName: "Opus 4.8", value: "claude-opus-4-8" }
@@ -206,7 +212,8 @@ describe("ClaudeProvider", () => {
     fake.push(
       streamEvent({
         delta: {
-          partial_json: '{"file_path":"/tmp/a.txt","old_string":"one\\ntwo\\n","new_string":"one\\n',
+          partial_json:
+            '{"file_path":"/tmp/a.txt","old_string":"one\\ntwo\\n","new_string":"one\\n',
           type: "input_json_delta"
         },
         index: 1,
@@ -217,7 +224,7 @@ describe("ClaudeProvider", () => {
     vi.setSystemTime(1_000_300)
     fake.push(
       streamEvent({
-        delta: { partial_json: 'three\\nfour\\n', type: "input_json_delta" },
+        delta: { partial_json: "three\\nfour\\n", type: "input_json_delta" },
         index: 1,
         type: "content_block_delta"
       })
@@ -230,7 +237,11 @@ describe("ClaudeProvider", () => {
         content: [
           {
             id: "tool-1",
-            input: { file_path: "/tmp/a.txt", new_string: "one\nthree\nfour\n", old_string: "one\ntwo\n" },
+            input: {
+              file_path: "/tmp/a.txt",
+              new_string: "one\nthree\nfour\n",
+              old_string: "one\ntwo\n"
+            },
             name: "Edit",
             type: "tool_use"
           }
@@ -393,7 +404,11 @@ describe("ClaudeProvider", () => {
     )
     fake.push(
       streamEvent(
-        { delta: { text: "subagent prose", type: "text_delta" }, index: 1, type: "content_block_delta" },
+        {
+          delta: { text: "subagent prose", type: "text_delta" },
+          index: 1,
+          type: "content_block_delta"
+        },
         "parent-task-1"
       )
     )
@@ -508,7 +523,8 @@ describe("partial JSON string extraction", () => {
   })
 
   it("extracts every occurrence for MultiEdit", () => {
-    const json = '{"edits":[{"old_string":"a\\nb","new_string":"c"},{"old_string":"d","new_string":"e\\nf"}]}'
+    const json =
+      '{"edits":[{"old_string":"a\\nb","new_string":"c"},{"old_string":"d","new_string":"e\\nf"}]}'
     expect(extractAllStringFields(json, "old_string")).toEqual(["a\nb", "d"])
     expect(extractAllStringFields(json, "new_string")).toEqual(["c", "e\nf"])
   })

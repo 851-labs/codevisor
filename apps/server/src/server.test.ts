@@ -1,8 +1,4 @@
-import type {
-  AgentRuntimeService,
-  RuntimeEvent,
-  RuntimeEventSink
-} from "@herdman/agent-runtime"
+import type { AgentRuntimeService, RuntimeEvent, RuntimeEventSink } from "@herdman/agent-runtime"
 import type { Harness } from "@herdman/api"
 import { makeDatabase, type HerdManDatabaseService } from "@herdman/db"
 import Database from "better-sqlite3"
@@ -986,6 +982,12 @@ describe("@herdman/server", () => {
         })
       ])
     )
+    // The per-session history endpoint returns only this session's envelopes.
+    const historyResponse = await jsonRequest(server, `/v1/sessions/${session.id}/events`)
+    expect(historyResponse.status).toBe(200)
+    const history = historyResponse.body as Array<{ subjectId: string; kind: string }>
+    expect(history.length).toBeGreaterThan(0)
+    expect(history.every((event) => event.subjectId === session.id)).toBe(true)
     expect(
       (
         await jsonRequest(server, `/v1/sessions/${session.id}/prompt`, {
@@ -1203,6 +1205,12 @@ describe("@herdman/server", () => {
 
     // The standing sink was registered at session create; the agent now pushes
     // a whole background turn without any client prompt in flight.
+    // Scalar payloads are wrapped rather than crashing materialization.
+    await agents.emit(session.agentSessionId, {
+      kind: "session.output",
+      subjectId: session.agentSessionId,
+      payload: "scalar-status-line"
+    })
     await agents.emit(session.agentSessionId, {
       kind: "session.updated",
       subjectId: session.agentSessionId,

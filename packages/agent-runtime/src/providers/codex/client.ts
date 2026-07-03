@@ -119,7 +119,10 @@ const wireCodexClient = (child: ChildProcessWithoutNullStreams): CodexClient => 
         .then((result) => send({ id, result }))
         .catch((error: unknown) =>
           send({
-            error: { code: -32000, message: error instanceof Error ? error.message : String(error) },
+            error: {
+              code: -32000,
+              message: error instanceof Error ? error.message : String(error)
+            },
             id
           })
         )
