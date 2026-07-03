@@ -9,7 +9,7 @@ import HerdManCore
 @Observable
 final class SessionStore {
     private var controllers: [UUID: SessionController] = [:]
-    private var terminals: [UUID: TerminalSession] = [:]
+    private var paneGroups: [UUID: PaneGroupModel] = [:]
     private let environment: AppEnvironment
 
     init(environment: AppEnvironment) {
@@ -52,16 +52,28 @@ final class SessionStore {
         )
     }
 
-    /// Returns the cached terminal for a session, creating it (scoped to the
-    /// project folder) on first use. Mirrors `controller(for:project:)` so
-    /// the terminal survives panel close + navigation away and back.
-    func terminal(for session: ChatSession, project: Project) -> TerminalSession {
-        if let existing = terminals[session.id] { return existing }
+    /// Returns the cached pane group for a session, creating it on first use.
+    /// Mirrors `controller(for:project:)` so panes (and their terminals)
+    /// survive panel close + navigation away and back.
+    func paneGroup(for session: ChatSession, project: Project) -> PaneGroupModel {
+        if let existing = paneGroups[session.id] { return existing }
         let machine = environment.machines.machine(for: session.serverId) ?? HerdManMachine.local
-        let descriptor = TerminalLaunchDescriptor.make(session: session, project: project, machine: machine)
-        let terminal = TerminalSession(id: session.id, descriptor: descriptor)
-        terminals[session.id] = terminal
-        return terminal
+        let group = PaneGroupModel(
+            sessionId: session.id,
+            repository: environment.paneGroups,
+            makeContext: { descriptor in
+                PaneContext(
+                    paneId: descriptor.id,
+                    sessionId: session.id,
+                    terminalKey: descriptor.terminalKey,
+                    machine: machine,
+                    session: session,
+                    project: project
+                )
+            }
+        )
+        paneGroups[session.id] = group
+        return group
     }
 
     /// Whether the session with this id is actively generating a response.
@@ -76,7 +88,7 @@ final class SessionStore {
 
     func discard(_ sessionId: UUID) {
         controllers[sessionId] = nil
-        terminals[sessionId]?.terminate()
-        terminals[sessionId] = nil
+        paneGroups[sessionId]?.detachAll()
+        paneGroups[sessionId] = nil
     }
 }

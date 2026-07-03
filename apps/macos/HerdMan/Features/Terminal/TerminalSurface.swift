@@ -6,22 +6,30 @@ import HerdManCore
 /// Ghostty, but the command always runs the HerdMan proxy, which connects to the
 /// server that owns the session.
 struct TerminalLaunchDescriptor: Equatable {
-    let sessionId: UUID
+    /// The key the server's PTY manager stores this terminal under. One PTY
+    /// per key; a session's first pane uses the bare session UUID (legacy)
+    /// and later panes use "<sessionUuid>:<paneUuid>".
+    let terminalKey: String
     let machine: HerdManMachine
     let workingDirectory: URL
     let command: String
 
-    static func make(session: ChatSession, project: Project, machine: HerdManMachine) -> TerminalLaunchDescriptor {
+    static func make(
+        session: ChatSession,
+        project: Project,
+        machine: HerdManMachine,
+        terminalKey: String
+    ) -> TerminalLaunchDescriptor {
         // Worktree sessions open their terminal in the worktree, not the
-        // project folder. The server resolves session.cwd either way.
+        // project folder. The proxy passes the folder along via --cwd.
         let sessionFolder = session.cwd.map(URL.init(fileURLWithPath:)) ?? project.folderURL
         return TerminalLaunchDescriptor(
-            sessionId: session.id,
+            terminalKey: terminalKey,
             machine: machine,
             workingDirectory: localWorkingDirectory(for: sessionFolder),
             command: TerminalProxyCommand.command(
                 server: machine.baseURL,
-                sessionId: session.id,
+                terminalKey: terminalKey,
                 cwd: sessionFolder.path,
                 token: machine.token
             )
@@ -42,10 +50,12 @@ struct TerminalLaunchDescriptor: Equatable {
 }
 
 enum TerminalProxyCommand {
-    nonisolated static func command(server: URL, sessionId: UUID, cwd: String, token: String? = nil) -> String {
+    nonisolated static func command(server: URL, terminalKey: String, cwd: String, token: String? = nil) -> String {
+        // The proxy's --session-id is an opaque key end-to-end (proxy, wire
+        // schema, and the server's PTY map all treat it as a plain string).
         let args = [
             "--server", server.absoluteString,
-            "--session-id", sessionId.uuidString,
+            "--session-id", terminalKey,
             "--cwd", cwd
         ] + (token.map { ["--token", $0] } ?? [])
         let executable = proxyExecutable()
@@ -123,7 +133,7 @@ protocol TerminalSurface: AnyObject {
     /// Tears down the shell/PTY and releases resources.
     func terminate()
     /// Invoked when the user asks to kill this terminal and start a fresh one
-    /// (e.g. from the surface's context menu). The owner (TerminalSession)
+    /// (e.g. from the surface's context menu). The owner (TerminalPane)
     /// performs the actual kill + recreate.
     var onRestartRequest: (() -> Void)? { get set }
 }

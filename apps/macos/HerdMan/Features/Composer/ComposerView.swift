@@ -72,6 +72,7 @@ struct ComposerCard: View {
                     modeMenu
                 }
                 Spacer(minLength: 0)
+                UsageRingButton(usage: controller.usage)
                 stopButton
                 sendButton
             }

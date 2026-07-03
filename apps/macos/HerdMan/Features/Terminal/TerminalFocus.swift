@@ -3,12 +3,13 @@ import AppKit
 import HerdManCore
 
 /// Moves AppKit first-responder focus between the composer's text view and the
-/// terminal surface for a session. Holds weak references so it never keeps views
-/// alive. Owned by the session screen and (composer-only) the new-chat page.
+/// session's pane group (its selected pane). Holds weak references so it never
+/// keeps views alive. Owned by the session screen and (composer-only) the
+/// new-chat page.
 @MainActor
 final class TerminalFocusController {
     weak var composerTextView: NSView?
-    weak var terminal: TerminalSession?
+    weak var paneGroup: PaneGroupModel?
 
     func apply(_ target: SessionFocusTarget) {
         switch target {
@@ -23,10 +24,7 @@ final class TerminalFocusController {
     }
 
     func focusTerminal() {
-        guard let surface = terminal?.ensureSurface() else { return }
-        let view = surface.nsView
-        view.window?.makeFirstResponder(view)
-        surface.setFocused(true)
+        paneGroup?.focusSelectedPane()
     }
 }
 

@@ -1,12 +1,12 @@
 import SwiftUI
 import AppKit
 
-/// Embeds a session's terminal surface. Hosts the surface's `NSView` inside a
+/// Embeds a terminal pane's surface. Hosts the surface's `NSView` inside a
 /// container pinned to the edges; because the surface is cached on the
-/// `TerminalSession`, the same view (and its live shell) is re-parented each
-/// time the panel reopens, preserving terminal state.
+/// `TerminalPane`, the same view (and its live shell) is re-parented each
+/// time the pane reappears, preserving terminal state.
 struct TerminalSurfaceView: NSViewRepresentable {
-    let session: TerminalSession
+    let pane: TerminalPane
 
     func makeNSView(context: Context) -> NSView {
         let container = NSView()
@@ -20,7 +20,7 @@ struct TerminalSurfaceView: NSViewRepresentable {
 
     @MainActor
     private func attach(to container: NSView) {
-        let surfaceView = session.ensureSurface().nsView
+        let surfaceView = pane.ensureSurface().nsView
         guard surfaceView.superview !== container else { return }
         surfaceView.removeFromSuperview()
         container.subviews.forEach { $0.removeFromSuperview() }

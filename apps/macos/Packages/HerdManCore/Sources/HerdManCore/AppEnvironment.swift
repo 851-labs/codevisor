@@ -16,6 +16,10 @@ public final class AppEnvironment {
     public let machines: MachineController
     public let localServer: LocalHerdManServer?
     public let appUpdate: AppUpdateModel
+    /// Persists each session's pane-group state (terminal tabs, selection,
+    /// panel visibility/height) so panes reattach to their shells after
+    /// app restarts.
+    public let paneGroups: any PaneGroupRepository
     /// Overrides server-backed harness discovery (previews/tests only).
     private let harnessServiceOverride: (any HarnessServicing)?
 
@@ -37,6 +41,7 @@ public final class AppEnvironment {
         configCache: ConfigOptionCache,
         settings: AppSettingsModel,
         machineStore: any PersistenceStore = InMemoryStore(),
+        paneGroups: any PaneGroupRepository = DefaultPaneGroupRepository(store: InMemoryStore()),
         localServer: LocalHerdManServer? = nil,
         appUpdate: AppUpdateModel? = nil,
         customThemesDirectory: URL? = nil,
@@ -44,6 +49,7 @@ public final class AppEnvironment {
         machineClientFactory: MachineController.ClientFactory? = nil
     ) {
         self.harnessServiceOverride = harnessService
+        self.paneGroups = paneGroups
         self.theme = ThemeManager(
             settings: settings,
             catalog: ThemeCatalog(
@@ -176,6 +182,7 @@ public final class AppEnvironment {
             configCache: ConfigOptionCache(store: store),
             settings: AppSettingsModel(store: store),
             machineStore: store,
+            paneGroups: DefaultPaneGroupRepository(store: store),
             localServer: localServer,
             appUpdate: AppUpdateModel(
                 currentVersion: AppUpdateModel.bundleVersion(),

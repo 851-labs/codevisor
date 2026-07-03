@@ -8,7 +8,7 @@ import HerdManCore
 struct SessionScreen: View {
     @Environment(\.theme) private var theme
     @Bindable var controller: SessionController
-    var terminal: TerminalSession
+    var paneGroup: PaneGroupModel
     @State private var isAtBottom = true
     @State private var composerHeight: CGFloat = 96
     @State private var focus = TerminalFocusController()
@@ -20,22 +20,23 @@ struct SessionScreen: View {
         VStack(spacing: 0) {
             chatArea
 
-            // The status bar sits directly under the chat; when the panel is
-            // open it becomes the panel's top bar / resize handle.
-            SessionStatusBar(controller: controller, terminal: terminal, onToggle: { toggleTerminal() })
+            // The pane-group tab bar sits directly under the chat and stays
+            // visible even when the panel content is collapsed; when open it
+            // doubles as the panel's resize handle.
+            PaneGroupBar(group: paneGroup, onToggle: { togglePanes() })
 
-            if terminal.panel.isVisible {
-                TerminalPanel(session: terminal)
-                    .frame(height: terminal.panel.height)
+            if paneGroup.state.isVisible {
+                PaneGroupContent(group: paneGroup)
+                    .frame(height: paneGroup.state.height)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
-        .animation(.snappy(duration: 0.25), value: terminal.panel.isVisible)
-        .focusedSceneValue(\.terminalToggle, TerminalToggleAction(sessionId: terminal.id) {
-            toggleTerminal()
+        .animation(.snappy(duration: 0.25), value: paneGroup.state.isVisible)
+        .focusedSceneValue(\.terminalToggle, TerminalToggleAction(sessionId: paneGroup.sessionId) {
+            togglePanes()
         })
         .onAppear {
-            focus.terminal = terminal
+            focus.paneGroup = paneGroup
             if attachmentImages == nil {
                 attachmentImages = AttachmentImageStore { [weak controller] fileId in
                     guard let controller else { throw SessionControllerError.serverUnavailable }
@@ -84,8 +85,8 @@ struct SessionScreen: View {
                     scrollToBottom(proxy, animated: false)
                 }
             }
-            .onChange(of: terminal.panel.isVisible) { _, _ in
-                // Toggling the terminal resizes the chat area; when the user was
+            .onChange(of: paneGroup.state.isVisible) { _, _ in
+                // Toggling the panel resizes the chat area; when the user was
                 // reading the latest messages, keep them pinned to the bottom
                 // instead of letting the panel push the newest content out of view.
                 guard isAtBottom else { return }
@@ -95,8 +96,8 @@ struct SessionScreen: View {
                     scrollToBottom(proxy, animated: false)
                 }
             }
-            .onChange(of: terminal.panel.height) { _, _ in
-                guard terminal.panel.isVisible, isAtBottom else { return }
+            .onChange(of: paneGroup.state.height) { _, _ in
+                guard paneGroup.state.isVisible, isAtBottom else { return }
                 scrollToBottom(proxy, animated: false)
             }
             .overlay(alignment: .bottom) {
@@ -111,10 +112,10 @@ struct SessionScreen: View {
         }
     }
 
-    /// Toggles the terminal panel and moves keyboard focus to match (terminal on
-    /// open, composer on close).
-    private func toggleTerminal() {
-        let target = terminal.togglePanel()
+    /// Toggles the pane group's content and moves keyboard focus to match
+    /// (selected pane on open, composer on close).
+    private func togglePanes() {
+        let target = paneGroup.toggle()
         // Defer focus until SwiftUI has mounted/removed the panel.
         DispatchQueue.main.async { focus.apply(target) }
     }
@@ -356,21 +357,34 @@ private struct PromptQueueView: View {
 #Preview("Conversation") {
     SessionScreen(
         controller: .preview(model: .preview()),
-        terminal: TerminalSession(id: UUID(), descriptor: previewTerminalDescriptor())
+        paneGroup: previewPaneGroup()
     )
     .frame(width: 900, height: 680)
 }
 
 #Preview("With terminal") {
-    let terminal = TerminalSession(id: UUID(), descriptor: previewTerminalDescriptor())
-    terminal.panel.isVisible = true
-    return SessionScreen(controller: .preview(model: .preview()), terminal: terminal)
+    let group = previewPaneGroup()
+    group.toggle()
+    return SessionScreen(controller: .preview(model: .preview()), paneGroup: group)
         .frame(width: 900, height: 680)
 }
 
-private func previewTerminalDescriptor() -> TerminalLaunchDescriptor {
+private func previewPaneGroup() -> PaneGroupModel {
     let project = Project.fromFolder(URL(fileURLWithPath: "/tmp/shepherd"))
     let session = ChatSession(projectId: project.id, title: "Preview")
-    return TerminalLaunchDescriptor.make(session: session, project: project, machine: .local)
+    return PaneGroupModel(
+        sessionId: session.id,
+        repository: DefaultPaneGroupRepository(store: InMemoryStore()),
+        makeContext: { descriptor in
+            PaneContext(
+                paneId: descriptor.id,
+                sessionId: session.id,
+                terminalKey: descriptor.terminalKey,
+                machine: .local,
+                session: session,
+                project: project
+            )
+        }
+    )
 }
 #endif

@@ -13,7 +13,7 @@ struct SessionContainerView: View {
     var body: some View {
         Group {
             if let controller {
-                SessionScreen(controller: controller, terminal: store.terminal(for: session, project: project))
+                SessionScreen(controller: controller, paneGroup: store.paneGroup(for: session, project: project))
             } else {
                 ProgressView()
                     .controlSize(.small)

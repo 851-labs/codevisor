@@ -1,0 +1,160 @@
+import Foundation
+import Testing
+@testable import HerdManCore
+
+@Suite("PaneGroupState")
+struct PaneGroupStateTests {
+    private let sessionId = UUID()
+
+    @Test("Defaults are hidden at the default height with no panes")
+    func defaults() {
+        let state = PaneGroupState()
+        #expect(!state.isVisible)
+        #expect(state.height == PaneGroupState.defaultHeight)
+        #expect(state.panes.isEmpty)
+        #expect(state.selectedPaneId == nil)
+    }
+
+    @Test("Toggle opens and focuses the terminal, then closes and focuses the composer")
+    func toggle() {
+        var state = PaneGroupState.initial(sessionId: sessionId)
+        #expect(state.toggle() == .terminal)
+        #expect(state.isVisible)
+        #expect(state.toggle() == .composer)
+        #expect(!state.isVisible)
+    }
+
+    @Test("Height is clamped to the allowed range")
+    func clamping() {
+        var state = PaneGroupState()
+        state.setHeight(10_000)
+        #expect(state.height == PaneGroupState.maxHeight)
+        state.setHeight(0)
+        #expect(state.height == PaneGroupState.minHeight)
+        state.setHeight(300)
+        #expect(state.height == 300)
+    }
+
+    @Test("Initializer clamps the provided height")
+    func initClamps() {
+        #expect(PaneGroupState(height: -5).height == PaneGroupState.minHeight)
+        #expect(PaneGroupState(height: 5_000).height == PaneGroupState.maxHeight)
+    }
+
+    @Test("Initial state has one selected terminal pane keyed on the bare session UUID")
+    func initialState() {
+        let state = PaneGroupState.initial(sessionId: sessionId)
+        #expect(state.panes.count == 1)
+        #expect(state.panes[0].name == "Terminal 1")
+        #expect(state.panes[0].kind == .terminal)
+        // Migration: pane 1 must reattach to shells created before panes existed.
+        #expect(state.panes[0].terminalKey == sessionId.uuidString)
+        #expect(state.selectedPaneId == state.panes[0].id)
+        #expect(!state.isVisible)
+    }
+
+    @Test("Adding a pane names it Terminal N, selects it, opens the group, and uses a synthetic key")
+    func addPane() {
+        var state = PaneGroupState.initial(sessionId: sessionId)
+        let added = state.addTerminalPane(sessionId: sessionId)
+        #expect(added.name == "Terminal 2")
+        #expect(state.panes.count == 2)
+        #expect(state.selectedPaneId == added.id)
+        #expect(state.isVisible)
+        #expect(added.terminalKey == "\(sessionId.uuidString):\(added.id.uuidString)")
+    }
+
+    @Test("Naming is max numeric suffix + 1, including after close and re-add")
+    func naming() {
+        #expect(PaneGroupState.nextTerminalName(existing: []) == "Terminal 1")
+        #expect(PaneGroupState.nextTerminalName(existing: ["Terminal 1"]) == "Terminal 2")
+        #expect(PaneGroupState.nextTerminalName(existing: ["Terminal 1", "Terminal 3"]) == "Terminal 4")
+        #expect(PaneGroupState.nextTerminalName(existing: ["Renamed", "Terminal 2"]) == "Terminal 3")
+
+        var state = PaneGroupState.initial(sessionId: sessionId)
+        let second = state.addTerminalPane(sessionId: sessionId)
+        state.closePane(id: second.id)
+        // After closing "Terminal 2" of [1, 2], the next add is "Terminal 2" again.
+        #expect(state.addTerminalPane(sessionId: sessionId).name == "Terminal 2")
+    }
+
+    @Test("Closing the selected pane selects its right neighbor, else the new last pane")
+    func closeSelectsNeighbor() {
+        var state = PaneGroupState.initial(sessionId: sessionId)
+        let second = state.addTerminalPane(sessionId: sessionId)
+        let third = state.addTerminalPane(sessionId: sessionId)
+        state.selectPane(id: second.id)
+        state.closePane(id: second.id)
+        #expect(state.selectedPaneId == third.id)
+        // Closing the last pane in the list falls back to the left neighbor.
+        state.closePane(id: third.id)
+        #expect(state.selectedPaneId == state.panes[0].id)
+    }
+
+    @Test("Closing a non-selected pane keeps the selection")
+    func closeKeepsSelection() {
+        var state = PaneGroupState.initial(sessionId: sessionId)
+        let first = state.panes[0]
+        let second = state.addTerminalPane(sessionId: sessionId)
+        state.closePane(id: first.id)
+        #expect(state.selectedPaneId == second.id)
+    }
+
+    @Test("Closing the last remaining pane hides the group and clears selection")
+    func closeLastHides() {
+        var state = PaneGroupState.initial(sessionId: sessionId)
+        state.selectPane(id: state.panes[0].id)
+        #expect(state.isVisible)
+        state.closePane(id: state.panes[0].id)
+        #expect(state.panes.isEmpty)
+        #expect(state.selectedPaneId == nil)
+        #expect(!state.isVisible)
+    }
+
+    @Test("Selecting a pane while collapsed opens the group")
+    func selectOpens() {
+        var state = PaneGroupState.initial(sessionId: sessionId)
+        #expect(!state.isVisible)
+        state.selectPane(id: state.panes[0].id)
+        #expect(state.isVisible)
+        // Unknown ids are ignored.
+        state.selectPane(id: UUID())
+        #expect(state.selectedPaneId == state.panes[0].id)
+    }
+
+    @Test("Codable round-trip preserves panes, selection, visibility, and height")
+    func codableRoundTrip() throws {
+        var state = PaneGroupState.initial(sessionId: sessionId)
+        state.addTerminalPane(sessionId: sessionId)
+        state.setHeight(420)
+        let decoded = try JSONDecoder().decode(
+            PaneGroupState.self,
+            from: JSONEncoder().encode(state)
+        )
+        #expect(decoded == state)
+    }
+
+    @Test("Decoding drops a selection that no longer matches a pane")
+    func decodeRepairsSelection() throws {
+        var state = PaneGroupState.initial(sessionId: sessionId)
+        state.selectedPaneId = nil
+        let decoded = try JSONDecoder().decode(
+            PaneGroupState.self,
+            from: JSONEncoder().encode(state)
+        )
+        #expect(decoded.selectedPaneId == state.panes[0].id)
+    }
+
+    @Test("Repository round-trips state per session")
+    func repository() {
+        let repo = DefaultPaneGroupRepository(store: InMemoryStore())
+        let otherSession = UUID()
+        #expect(repo.load(sessionId: sessionId) == nil)
+        var state = PaneGroupState.initial(sessionId: sessionId)
+        state.addTerminalPane(sessionId: sessionId)
+        repo.save(state, sessionId: sessionId)
+        repo.save(.initial(sessionId: otherSession), sessionId: otherSession)
+        #expect(repo.load(sessionId: sessionId) == state)
+        #expect(repo.load(sessionId: otherSession)?.panes.count == 1)
+    }
+}
