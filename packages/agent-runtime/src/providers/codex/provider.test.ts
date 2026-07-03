@@ -351,6 +351,34 @@ describe("CodexProvider", () => {
     expect((events.at(-1)?.payload as Record<string, unknown>).sessionUpdate).toBe("tool_call")
   })
 
+  it("counts add/delete changes from raw content, updates from unified diffs", async () => {
+    const { client, events } = await setup()
+    client.emit("item/fileChange/patchUpdated", {
+      changes: [{ diff: "one\ntwo\nthree\n", kind: { type: "add" }, path: "new.txt" }],
+      itemId: "item-add",
+      threadId: "thread-new",
+      turnId: "turn-1"
+    })
+    expect((events.at(-1)?.payload as Record<string, unknown>).diffStats).toEqual([
+      { added: 3, path: "new.txt", removed: 0 }
+    ])
+    client.emit("item/completed", {
+      item: {
+        changes: [{ diff: "one\ntwo\nthree\n", kind: { type: "delete" }, path: "old.txt" }],
+        id: "item-del",
+        status: "completed",
+        type: "fileChange"
+      },
+      threadId: "thread-new",
+      turnId: "turn-1"
+    })
+    const deleted = events.at(-1)?.payload as Record<string, unknown>
+    expect(deleted.diffStats).toEqual([{ added: 0, path: "old.txt", removed: 3 }])
+    expect(deleted.content).toEqual([
+      { newText: "", oldText: "one\ntwo\nthree\n", path: "old.txt", type: "diff" }
+    ])
+  })
+
   it("drives the thinking state from reasoning item lifecycles", async () => {
     const { client, events } = await setup()
     client.emit("item/started", {

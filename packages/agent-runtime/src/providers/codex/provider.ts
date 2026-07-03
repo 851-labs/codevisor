@@ -1,7 +1,7 @@
 import type { DiffStat, SessionConfigOption, SessionModeState } from "@herdman/api"
 import { randomUUID } from "node:crypto"
 import { Effect } from "effect"
-import { diffStatsFromUnified } from "../../diff-stats.js"
+import { diffStatsFromUnified, lineCount } from "../../diff-stats.js"
 import {
   adapterPromise,
   type AgentProvider,
@@ -678,6 +678,8 @@ const emitItemLifecycle = (
 
 // MARK: helpers
 
+/// For adds/deletes codex sends the raw file content in `diff`, not a unified
+/// diff — every line counts. Updates carry a real unified diff body.
 const fileChangeStats = (changes: unknown): Array<DiffStat> => {
   if (!Array.isArray(changes)) return []
   return changes.flatMap((change) => {
@@ -685,8 +687,21 @@ const fileChangeStats = (changes: unknown): Array<DiffStat> => {
     const path = typeof change.path === "string" ? change.path : undefined
     const diff = typeof change.diff === "string" ? change.diff : undefined
     if (path === undefined || diff === undefined) return []
-    return [diffStatsFromUnified(path, diff)]
+    switch (changeKind(change)) {
+      case "add":
+        return [{ added: lineCount(diff), path, removed: 0 }]
+      case "delete":
+        return [{ added: 0, path, removed: lineCount(diff) }]
+      default:
+        return [diffStatsFromUnified(path, diff)]
+    }
   })
+}
+
+const changeKind = (change: Record<string, unknown>): string => {
+  const kind = change.kind
+  if (isRecord(kind) && typeof kind.type === "string") return kind.type
+  return typeof kind === "string" ? kind : "update"
 }
 
 const fileChangeDiffBlocks = (
@@ -698,9 +713,17 @@ const fileChangeDiffBlocks = (
     const path = typeof change.path === "string" ? change.path : undefined
     const diff = typeof change.diff === "string" ? change.diff : undefined
     if (path === undefined || diff === undefined) return []
-    const texts = textsFromUnified(diff)
-    if (texts === undefined) return []
-    return [{ newText: texts.newText, oldText: texts.oldText, path, type: "diff" as const }]
+    switch (changeKind(change)) {
+      case "add":
+        return [{ newText: diff, oldText: null, path, type: "diff" as const }]
+      case "delete":
+        return [{ newText: "", oldText: diff, path, type: "diff" as const }]
+      default: {
+        const texts = textsFromUnified(diff)
+        if (texts === undefined) return []
+        return [{ newText: texts.newText, oldText: texts.oldText, path, type: "diff" as const }]
+      }
+    }
   })
 }
 
