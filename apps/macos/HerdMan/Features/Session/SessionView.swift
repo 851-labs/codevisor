@@ -3,10 +3,14 @@ import AppKit
 import HerdManCore
 
 /// A scroll snapshot used to tell user-initiated upward scrolling apart from
-/// the transcript growing underneath a pinned viewport.
+/// the transcript growing underneath a pinned viewport, and to save/restore
+/// the per-session scroll position.
 private struct ScrollSnapshot: Equatable {
     var offsetY: CGFloat
+    /// Distance from the visible bottom to the end of the content.
     var distance: CGFloat
+    /// The largest reachable content offset.
+    var maxOffsetY: CGFloat
 }
 
 /// The active session screen: a streaming transcript with the composer floating
@@ -21,6 +25,18 @@ struct SessionScreen: View {
     @State private var focus = TerminalFocusController()
     @State private var isQueueExpanded = true
     @State private var attachmentImages: AttachmentImageStore?
+    @State private var scrollPosition = ScrollPosition()
+    /// Saved position waiting to be restored precisely (anchored to a
+    /// conversation item). Nil once restored (or when the session should
+    /// open pinned to the bottom).
+    @State private var pendingScrollRestore: SessionScrollState?
+    /// Geometry passes spent converging on the restore target; bounded so a
+    /// deleted/unreachable anchor can never wedge the restore loop.
+    @State private var restoreAttempts = 0
+    /// The mounted transcript rows' frames in scroll-view space, used to
+    /// anchor save/restore to real items instead of raw offsets (lazy row
+    /// height estimates make raw offsets drift between mounts).
+    @State private var itemFrames = TranscriptItemFrames()
     private let bottomID = "session-bottom"
 
     /// Auto-follow stays engaged only while the very end of the content is in
@@ -34,6 +50,27 @@ struct SessionScreen: View {
     /// distance (see the geometry handler), so scrolling up mid-stream
     /// disengages immediately.
     private static let repinDistance: CGFloat = 40
+
+    init(controller: SessionController, paneGroup: PaneGroupModel) {
+        self.controller = controller
+        self.paneGroup = paneGroup
+        // Seed the scroll position so SwiftUI lays the transcript out at the
+        // last-read spot during the initial layout — no jump, no animation.
+        // Seeding the anchor *item* (not a raw offset) is what makes this
+        // accurate: the lazy stack only estimates unmounted row heights, so
+        // raw offsets land elsewhere between mounts; an item identity is
+        // resolved against the real row. Left at the bottom (or never
+        // opened) keeps the pin-to-bottom behavior.
+        if let saved = controller.scrollState, !saved.isAtBottom {
+            if let anchorID = saved.anchorItemID {
+                _scrollPosition = State(initialValue: ScrollPosition(id: anchorID, anchor: .top))
+            } else {
+                _scrollPosition = State(initialValue: ScrollPosition(y: saved.offsetY))
+            }
+            _pendingScrollRestore = State(initialValue: saved)
+            _isAtBottom = State(initialValue: false)
+        }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -67,6 +104,19 @@ struct SessionScreen: View {
                     return try await controller.fileData(id: fileId)
                 }
             }
+            // Safety valve: if the restore hasn't converged shortly after
+            // mount (content never grew tall enough, anchor never appeared),
+            // settle for the closest reachable spot instead of leaving the
+            // restore pending forever (`scrollTo` clamps).
+            if pendingScrollRestore != nil {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                    guard let saved = pendingScrollRestore else { return }
+                    var transaction = Transaction()
+                    transaction.disablesAnimations = true
+                    withTransaction(transaction) { scrollPosition.scrollTo(y: saved.offsetY) }
+                    pendingScrollRestore = nil
+                }
+            }
         }
         .environment(\.attachmentImages, attachmentImages)
         .attachmentDropTarget(controller)
@@ -84,6 +134,12 @@ struct SessionScreen: View {
                     }
                     ForEach(Array(controller.conversation.enumerated()), id: \.element.id) { index, item in
                         ConversationItemView(item: item)
+                            .onGeometryChange(for: CGRect.self) {
+                                $0.frame(in: .scrollView)
+                            } action: { frame in
+                                itemFrames.frames[item.id] = frame
+                            }
+                            .onDisappear { itemFrames.frames[item.id] = nil }
                         // Pre-chat setup ran between the first message and the
                         // first response; keep the finished sections there.
                         if index == 0, case .user = item {
@@ -97,17 +153,27 @@ struct SessionScreen: View {
                         .frame(height: composerHeight + 24)
                         .id(bottomID)
                 }
+                // Lets the id-seeded `ScrollPosition` resolve conversation
+                // items as scroll targets (the scroll-restore anchor).
+                .scrollTargetLayout()
                 .padding(.horizontal, 24)
                 .padding(.top, 28)
                 .frame(maxWidth: 880, alignment: .leading)
                 .frame(maxWidth: .infinity)
             }
-            // Open sessions at the end of the history, with no scroll animation.
+            // Open sessions at the end of the history, with no scroll
+            // animation. When a saved scroll position exists, the seeded
+            // `scrollPosition` (anchored to the last-read item) takes over
+            // and the session reopens where the user left it instead.
             .defaultScrollAnchor(.bottom, for: .initialOffset)
+            .scrollPosition($scrollPosition, anchor: .top)
             .onScrollGeometryChange(for: ScrollSnapshot.self) { geometry in
                 ScrollSnapshot(
                     offsetY: geometry.contentOffset.y,
-                    distance: geometry.contentSize.height - geometry.visibleRect.maxY
+                    distance: geometry.contentSize.height - geometry.visibleRect.maxY,
+                    // The largest reachable content offset.
+                    maxOffsetY: geometry.contentSize.height + geometry.contentInsets.bottom
+                        - geometry.containerSize.height
                 )
             } action: { old, new in
                 if new.distance <= Self.atBottomThreshold {
@@ -122,15 +188,22 @@ struct SessionScreen: View {
                     // Scrolling back down toward the end — re-engage auto-follow.
                     isAtBottom = true
                 }
+                handleScrollChange(new)
             }
             .onChange(of: streamFingerprint) { _, _ in
                 // Follow the stream only while the user is pinned to the bottom;
-                // never yank them down while they're reading earlier history.
-                guard isAtBottom else { return }
+                // never yank them down while they're reading earlier history or
+                // while a saved position is still being restored (the transcript
+                // mounting/loading fires this too).
+                guard pendingScrollRestore == nil, isAtBottom else { return }
                 scrollToBottom(proxy, animated: false)
             }
             .onChange(of: composerHeight) { _, _ in
-                if isAtBottom {
+                // `isAtBottom` flips true transiently while the transcript is
+                // still mounting, so also hold off while a saved position is
+                // being restored — this pin used to yank restored sessions
+                // back to the bottom.
+                if pendingScrollRestore == nil, isAtBottom {
                     scrollToBottom(proxy, animated: false)
                 }
             }
@@ -138,7 +211,7 @@ struct SessionScreen: View {
                 // Toggling the panel resizes the chat area; when the user was
                 // reading the latest messages, keep them pinned to the bottom
                 // instead of letting the panel push the newest content out of view.
-                guard isAtBottom else { return }
+                guard pendingScrollRestore == nil, isAtBottom else { return }
                 scrollToBottom(proxy, animated: true)
                 // Re-pin once the panel's show/hide animation has settled.
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
@@ -146,7 +219,7 @@ struct SessionScreen: View {
                 }
             }
             .onChange(of: paneGroup.state.height) { _, _ in
-                guard paneGroup.state.isVisible, isAtBottom else { return }
+                guard pendingScrollRestore == nil, paneGroup.state.isVisible, isAtBottom else { return }
                 scrollToBottom(proxy, animated: false)
             }
             .overlay(alignment: .bottom) {
@@ -182,6 +255,80 @@ struct SessionScreen: View {
         }
         .buttonStyle(.plain)
         .help("Scroll to bottom")
+    }
+
+    /// Finishes the seeded scroll restore, then keeps the saved state current
+    /// as the user scrolls. The screen is rebuilt on every session switch
+    /// (`.id(session.id)` in `ContentView`), so this is what makes a session
+    /// reopen where it was last left instead of at the bottom.
+    private func handleScrollChange(_ metrics: ScrollSnapshot) {
+        if let saved = pendingScrollRestore {
+            restoreTick(saved, metrics)
+        } else {
+            captureScrollState(metrics)
+        }
+    }
+
+    /// Records the current position: raw offset plus the topmost visible
+    /// item and its distance above the visible top. The item anchor is what
+    /// restores precisely — raw offsets drift because the lazy transcript
+    /// only estimates the heights of rows it hasn't mounted yet.
+    private func captureScrollState(_ metrics: ScrollSnapshot) {
+        var anchorID: UUID?
+        var anchorMinY = CGFloat.greatestFiniteMagnitude
+        for (id, frame) in itemFrames.frames where frame.maxY > 0 && frame.minY < anchorMinY {
+            anchorID = id
+            anchorMinY = frame.minY
+        }
+        controller.scrollState = SessionScrollState(
+            offsetY: metrics.offsetY,
+            anchorItemID: anchorID,
+            anchorDelta: anchorID == nil ? 0 : -anchorMinY,
+            isAtBottom: isAtBottom
+        )
+    }
+
+    /// One convergence step of the restore. The id-seeded `ScrollPosition`
+    /// makes SwiftUI lay the transcript out with the anchor item at the top
+    /// edge; this only waits for the anchor row to exist and then nudges by
+    /// the saved intra-item delta (instantly, never animated). Attempts only
+    /// count issued scroll commands — mount churn produces many geometry
+    /// ticks and must not exhaust the budget. Falls back to the raw offset
+    /// when the anchor no longer exists; the `onAppear` valve bounds the
+    /// whole thing in time.
+    private func restoreTick(_ saved: SessionScrollState, _ metrics: ScrollSnapshot) {
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+
+        if let anchorID = saved.anchorItemID,
+           controller.conversation.contains(where: { $0.id == anchorID }) {
+            guard let frame = itemFrames.frames[anchorID] else {
+                // The seeded position mounts the anchor during initial
+                // layout; nothing to do but wait (the valve backstops a row
+                // that never materializes).
+                return
+            }
+            // How far the anchor sits below where the user left it.
+            let error = frame.minY + saved.anchorDelta
+            if abs(error) > 1 {
+                restoreAttempts += 1
+                guard restoreAttempts <= 20 else {
+                    pendingScrollRestore = nil
+                    return
+                }
+                withTransaction(transaction) { scrollPosition.scrollTo(y: metrics.offsetY + error) }
+                return
+            }
+            pendingScrollRestore = nil
+        } else {
+            // Anchor gone (or none captured): the raw offset is the best
+            // approximation we have. Wait until it's reachable, jump, done.
+            guard metrics.maxOffsetY >= saved.offsetY else { return }
+            if abs(metrics.offsetY - saved.offsetY) > 1 {
+                withTransaction(transaction) { scrollPosition.scrollTo(y: saved.offsetY) }
+            }
+            pendingScrollRestore = nil
+        }
     }
 
     private func scrollToBottom(_ proxy: ScrollViewProxy, animated: Bool) {
@@ -303,6 +450,14 @@ struct SessionScreen: View {
         }
         return hasher.finalize()
     }
+}
+
+/// The mounted transcript rows' frames in scroll-view space. A plain class
+/// held in `@State`: the frames update on every scroll frame, so they must
+/// not be observable state (that would re-render the transcript per tick).
+@MainActor
+private final class TranscriptItemFrames {
+    var frames: [UUID: CGRect] = [:]
 }
 
 private struct PromptQueueView: View {

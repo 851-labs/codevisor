@@ -30,6 +30,25 @@ struct ComposerAttachment: Identifiable, Equatable {
     var hasVisualPreview: Bool { isImage || isPDF }
 }
 
+/// Where the transcript was scrolled when the user last looked at a session,
+/// kept on the cached controller so navigating away and back reopens the
+/// transcript at the same place instead of pinned to the bottom.
+struct SessionScrollState {
+    /// The scroll view's content offset (`contentOffset.y`) at capture time.
+    /// Only a first approximation for restoring: the lazy transcript's
+    /// estimated row heights make raw offsets drift between mounts.
+    var offsetY: CGFloat
+    /// The topmost visible conversation item at capture time — the precise
+    /// restore anchor, immune to lazy height re-estimation.
+    var anchorItemID: UUID?
+    /// How far the anchor item's top sat above the visible top, in points
+    /// (negative when its top was below the visible top).
+    var anchorDelta: CGFloat = 0
+    /// True when the user was reading the latest messages; reopening then
+    /// keeps the pin-to-bottom behavior (and follows new streamed output).
+    var isAtBottom: Bool
+}
+
 /// The facade for a session screen. Holds the composer text and harness
 /// selection, connects the session through the HerdMan server on first send,
 /// then forwards to the live `SessionModel`.
@@ -54,6 +73,10 @@ final class SessionController {
     /// The first prompt, held while the session record/agent are being created
     /// so the UI can show it optimistically the instant the user sends.
     private(set) var pendingUserText: String?
+    /// The transcript scroll position, updated on every scroll tick and read
+    /// back when the session screen remounts. Observation-ignored so the
+    /// high-frequency writes don't invalidate views observing the controller.
+    @ObservationIgnored var scrollState: SessionScrollState?
 
     /// The project whose folder is used as the agent cwd. Settable so the
     /// new-chat page can change projects before the first send.
