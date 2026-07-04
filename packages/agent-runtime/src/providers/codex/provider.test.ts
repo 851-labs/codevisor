@@ -54,6 +54,9 @@ class FakeCodexClient implements CodexClient {
               hidden: false,
               id: "gpt-5.2-codex",
               model: "gpt-5.2-codex",
+              serviceTiers: [
+                { description: "Faster processing", id: "priority", name: "Priority" }
+              ],
               supportedReasoningEfforts: [
                 { description: "", reasoningEffort: "low" },
                 { description: "", reasoningEffort: "medium" },
@@ -208,6 +211,48 @@ describe("CodexProvider", () => {
       model: "gpt-5.5",
       sandboxPolicy: { type: "dangerFullAccess" }
     })
+  })
+
+  it("exposes speed for priority-tier models and applies it as a turn override", async () => {
+    const { client, created, events } = await setup()
+    const speedOption = created?.metadata.configOptions.find((option) => option.id === "speed")
+    expect(speedOption).toMatchObject({
+      category: "speed",
+      currentValue: "standard",
+      name: "Speed"
+    })
+
+    const runTurn = async (text: string, turnId: string): Promise<void> => {
+      const promptPromise = run(created!.handle.prompt(text))
+      await Promise.resolve()
+      client.emit("turn/completed", {
+        threadId: "thread-new",
+        turn: { id: turnId, status: "completed" }
+      })
+      await promptPromise
+    }
+    const lastTurnStart = (): Record<string, unknown> =>
+      client.requests.filter((request) => request.method === "turn/start").at(-1)?.params as Record<
+        string,
+        unknown
+      >
+
+    await run(created!.handle.setConfigOption("speed", "fast"))
+    expect(events.at(-1)?.payload).toMatchObject({ configId: "speed", value: "fast" })
+    await runTurn("go fast", "t1")
+    expect(lastTurnStart()).toMatchObject({ serviceTier: "priority" })
+
+    // Standard routes via the explicit "default" sentinel, not an omission.
+    await run(created!.handle.setConfigOption("speed", "standard"))
+    await runTurn("go normal", "t2")
+    expect(lastTurnStart()).toMatchObject({ serviceTier: "default" })
+
+    // A model without a fast tier drops the option and the tier override.
+    await run(created!.handle.setConfigOption("model", "gpt-5.5"))
+    const afterModel = events.at(-1)?.payload as { configOptions?: Array<{ id: string }> }
+    expect(afterModel.configOptions).not.toContainEqual(expect.objectContaining({ id: "speed" }))
+    await runTurn("go", "t3")
+    expect("serviceTier" in lastTurnStart()).toBe(false)
   })
 
   it("maps attachments: images as localImage paths, files as path notes", async () => {

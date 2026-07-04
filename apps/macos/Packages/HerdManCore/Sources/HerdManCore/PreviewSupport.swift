@@ -53,7 +53,7 @@ public enum SampleData {
         ]
     }
 
-    /// Sample model and reasoning config options for composer previews.
+    /// Sample model, reasoning, and speed config options for composer previews.
     public static var configOptions: [SessionConfigOption] {
         [
             SessionConfigOption(
@@ -70,6 +70,15 @@ public enum SampleData {
                     SessionConfigSelectOption(value: "low", name: "Low"),
                     SessionConfigSelectOption(value: "medium", name: "Medium"),
                     SessionConfigSelectOption(value: "high", name: "High")
+                ]
+            ),
+            SessionConfigOption(
+                id: "speed", name: "Speed", category: "speed", currentValue: "fast",
+                options: [
+                    SessionConfigSelectOption(value: "standard", name: "Standard"),
+                    SessionConfigSelectOption(
+                        value: "fast", name: "Fast", description: "Prioritized, faster responses"
+                    )
                 ]
             )
         ]

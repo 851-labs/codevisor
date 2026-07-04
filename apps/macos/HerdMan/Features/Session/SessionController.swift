@@ -179,16 +179,43 @@ final class SessionController {
         }
     }
 
-    /// The config options shown as composer pickers, in a sensible order.
+    /// Categories folded into the combined model dropdown rather than shown
+    /// as individual picker chips.
+    private static let modelMenuCategories: Set<String> = [
+        SessionConfigOption.Category.model,
+        SessionConfigOption.Category.thoughtLevel,
+        SessionConfigOption.Category.speed
+    ]
+
+    /// The model choice shown in the combined model dropdown.
+    var modelOption: SessionConfigOption? {
+        configOptions.first { $0.category == SessionConfigOption.Category.model && !$0.options.isEmpty }
+    }
+
+    /// The thinking/reasoning level shown in the combined model dropdown.
+    var thoughtLevelOption: SessionConfigOption? {
+        configOptions.first { $0.category == SessionConfigOption.Category.thoughtLevel && !$0.options.isEmpty }
+    }
+
+    /// The speed (standard/fast) shown in the combined model dropdown; only
+    /// present when the agent/model pair supports a fast tier.
+    var speedOption: SessionConfigOption? {
+        configOptions.first { $0.category == SessionConfigOption.Category.speed && !$0.options.isEmpty }
+    }
+
+    var hasModelMenu: Bool {
+        modelOption != nil || thoughtLevelOption != nil || speedOption != nil
+    }
+
+    /// The config options still shown as individual picker chips (approval
+    /// mode, model config, unknown categories), in a sensible order.
     var pickerOptions: [SessionConfigOption] {
         let order = [
-            SessionConfigOption.Category.model,
-            SessionConfigOption.Category.thoughtLevel,
             SessionConfigOption.Category.modelConfig,
             SessionConfigOption.Category.mode
         ]
         return configOptions
-            .filter { !$0.options.isEmpty }
+            .filter { !$0.options.isEmpty && !Self.modelMenuCategories.contains($0.category ?? "") }
             .sorted { left, right in
                 let leftIndex = order.firstIndex(of: left.category ?? "") ?? 99
                 let rightIndex = order.firstIndex(of: right.category ?? "") ?? 99
@@ -273,6 +300,7 @@ final class SessionController {
         let rememberedCategories: Set<String> = [
             SessionConfigOption.Category.model,
             SessionConfigOption.Category.thoughtLevel,
+            SessionConfigOption.Category.speed,
             SessionConfigOption.Category.modelConfig
         ]
         let values = configOptions

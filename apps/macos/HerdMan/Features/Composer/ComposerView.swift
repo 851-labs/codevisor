@@ -4,8 +4,9 @@ import HerdManCore
 import ACPKit
 
 /// The chat composer card: a multiline input (Return sends, Shift+Return adds a
-/// newline) with an inline toolbar holding the harness picker (before
-/// connecting) or the model/reasoning pickers (once connected) and a send button.
+/// newline) with an inline toolbar holding the combined model dropdown
+/// (model/thinking level/speed), the harness picker (before connecting), any
+/// remaining config pickers, and a send button.
 struct ComposerCard: View {
     @Bindable var controller: SessionController
     var placeholder: String = "Do anything"
@@ -65,6 +66,7 @@ struct ComposerCard: View {
 
             HStack(spacing: 10) {
                 attachButton
+                ModelConfigMenu(controller: controller)
                 if showsHarnessPicker {
                     HarnessPickerMenu(controller: controller)
                 }
@@ -172,14 +174,14 @@ struct ComposerCard: View {
     private func configMenu(_ option: SessionConfigOption) -> some View {
         Menu {
             ForEach(option.options) { value in
-                Button {
-                    Task { await controller.setConfigOption(option.id, value.value) }
-                } label: {
-                    if value.value == option.currentValue {
-                        Label(value.name, systemImage: "checkmark")
-                    } else {
-                        Text(value.name)
+                Toggle(isOn: Binding(
+                    get: { value.value == option.currentValue },
+                    set: { isOn in
+                        guard isOn else { return }
+                        Task { await controller.setConfigOption(option.id, value.value) }
                     }
+                )) {
+                    Text(value.name)
                 }
             }
         } label: {
@@ -197,14 +199,14 @@ struct ComposerCard: View {
         if let modes = controller.modeState, modes.availableModes.count > 1 {
             Menu {
                 ForEach(modes.availableModes) { mode in
-                    Button {
-                        Task { await controller.setMode(mode.id) }
-                    } label: {
-                        if mode.id == modes.currentModeId {
-                            Label(mode.name, systemImage: "checkmark")
-                        } else {
-                            Text(mode.name)
+                    Toggle(isOn: Binding(
+                        get: { mode.id == modes.currentModeId },
+                        set: { isOn in
+                            guard isOn else { return }
+                            Task { await controller.setMode(mode.id) }
                         }
+                    )) {
+                        Text(mode.name)
                     }
                 }
             } label: {
@@ -536,6 +538,85 @@ struct PickerChip<Icon: View>: View {
             Image(systemName: "chevron.down").font(.caption2)
         }
         .foregroundStyle(.secondary)
+        .contentShape(Rectangle())
+    }
+}
+
+/// The combined model dropdown: one chip that opens nested menus for the
+/// model, thinking level, and speed. Collapsed it reads
+/// "[⚡ when fast] Model ThinkingLevel" — the model in the normal text color,
+/// the thinking level subdued.
+struct ModelConfigMenu: View {
+    @Bindable var controller: SessionController
+
+    var body: some View {
+        if controller.hasModelMenu {
+            Menu {
+                if let option = controller.modelOption {
+                    submenu("Model", option)
+                }
+                if let option = controller.thoughtLevelOption {
+                    submenu("Reasoning", option)
+                }
+                if let option = controller.speedOption {
+                    submenu("Speed", option)
+                }
+            } label: {
+                chipLabel
+            }
+            .menuStyle(.button)
+            .buttonStyle(.plain)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .help("Model, thinking level, and speed")
+            .accessibilityLabel("Model settings")
+        }
+    }
+
+    // Toggles rather than checkmark labels: macOS menus drop SF Symbol images,
+    // so only a Toggle reliably renders the native selected checkmark.
+    private func submenu(_ title: String, _ option: SessionConfigOption) -> some View {
+        Menu(title) {
+            ForEach(option.options) { value in
+                Toggle(isOn: Binding(
+                    get: { value.value == option.currentValue },
+                    set: { isOn in
+                        guard isOn else { return }
+                        Task { await controller.setConfigOption(option.id, value.value) }
+                    }
+                )) {
+                    Text(value.name)
+                }
+                .help(value.description ?? "")
+            }
+        }
+    }
+
+    private var isFastSpeed: Bool {
+        controller.speedOption?.currentValue == "fast"
+    }
+
+    private var chipLabel: some View {
+        HStack(spacing: 5) {
+            if isFastSpeed {
+                Image(systemName: "bolt.fill")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .accessibilityLabel("Fast speed")
+            }
+            if let model = controller.modelOption {
+                Text(model.currentName)
+                    .foregroundStyle(.primary)
+            }
+            if let thought = controller.thoughtLevelOption {
+                Text(thought.currentName)
+                    .foregroundStyle(.secondary)
+            }
+            Image(systemName: "chevron.down")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+        // Cover the whole chip (including gaps) so a click anywhere opens it.
         .contentShape(Rectangle())
     }
 }

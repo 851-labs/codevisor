@@ -51,7 +51,16 @@ interface CodexModel {
   readonly name: string
   readonly efforts: ReadonlyArray<string>
   readonly defaultEffort: string
+  /// Whether the model's service tiers include the fast ("priority") tier.
+  readonly supportsFast: boolean
+  /// Whether the model's catalog default service tier is the fast tier.
+  readonly defaultsToFast: boolean
 }
+
+/// The wire value Codex uses for its fast service tier (the UI calls it
+/// "priority"); "default" is the explicit standard-routing sentinel.
+const CODEX_FAST_TIER = "priority"
+const CODEX_STANDARD_TIER = "default"
 
 /// Approval/sandbox presets, mirroring the modes the codex-acp adapter (and
 /// the Codex IDE extensions) expose. Applied as sticky turn/start overrides.
@@ -107,6 +116,8 @@ interface CodexSession {
   interruptRequested: boolean
   currentModel: string
   currentEffort: string | undefined
+  /// Undefined until the user picks a speed — the model's default tier applies.
+  currentSpeed: "standard" | "fast" | undefined
   currentModeId: string
   models: ReadonlyArray<CodexModel>
   /// item id → tool-call kind, so completions map back without re-parsing.
@@ -170,6 +181,7 @@ export const makeCodexProvider = (
       currentEffort: undefined,
       currentModeId: DEFAULT_CODEX_MODE,
       currentModel: response.model ?? "",
+      currentSpeed: undefined,
       cwd,
       emit,
       interruptRequested: false,
@@ -197,14 +209,21 @@ export const makeCodexProvider = (
                 : []
             )
           : []
+        const tiers = Array.isArray(model.serviceTiers)
+          ? model.serviceTiers.flatMap((tier) =>
+              isRecord(tier) && typeof tier.id === "string" ? [tier.id] : []
+            )
+          : []
         return [
           {
             defaultEffort:
               typeof model.defaultReasoningEffort === "string"
                 ? model.defaultReasoningEffort
                 : "medium",
+            defaultsToFast: model.defaultServiceTier === CODEX_FAST_TIER,
             efforts,
             name: typeof model.displayName === "string" ? model.displayName : value,
+            supportsFast: tiers.includes(CODEX_FAST_TIER),
             value
           }
         ]
@@ -268,7 +287,27 @@ export const makeCodexProvider = (
         }))
       })
     }
+    if (current?.supportsFast === true) {
+      options.push({
+        category: "speed",
+        currentValue: effectiveSpeed(session) ?? "standard",
+        id: "speed",
+        name: "Speed",
+        options: [
+          { name: "Standard", value: "standard" },
+          { description: "Prioritized, faster responses", name: "Fast", value: "fast" }
+        ]
+      })
+    }
     return options
+  }
+
+  /// The speed the next turn runs at: the user's pick, else the current
+  /// model's catalog default. Undefined when the model has no fast tier.
+  const effectiveSpeed = (session: CodexSession): "standard" | "fast" | undefined => {
+    const current = session.models.find((model) => model.value === session.currentModel)
+    if (current?.supportsFast !== true) return undefined
+    return session.currentSpeed ?? (current.defaultsToFast ? "fast" : "standard")
   }
 
   const modesFor = (session: CodexSession): SessionModeState => ({
@@ -303,11 +342,15 @@ export const makeCodexProvider = (
           session.pendingPrompt = { resolve }
         })
         const mode = CODEX_MODES.find((candidate) => candidate.id === session.currentModeId)
+        const speed = effectiveSpeed(session)
         await session.client.request("turn/start", {
           input: codexInput(normalizePromptInput(input)),
           threadId: session.threadId,
           ...(session.currentModel.length === 0 ? {} : { model: session.currentModel }),
           ...(session.currentEffort === undefined ? {} : { effort: session.currentEffort }),
+          ...(speed === undefined
+            ? {}
+            : { serviceTier: speed === "fast" ? CODEX_FAST_TIER : CODEX_STANDARD_TIER }),
           ...(mode === undefined
             ? {}
             : { approvalPolicy: mode.approvalPolicy, sandboxPolicy: mode.sandboxPolicy })
@@ -326,8 +369,13 @@ export const makeCodexProvider = (
           ) {
             session.currentEffort = model.defaultEffort
           }
+          // Speed picks don't carry across models — fall back to the new
+          // model's default tier.
+          session.currentSpeed = undefined
         } else if (configId === "effort") {
           session.currentEffort = value
+        } else if (configId === "speed") {
+          session.currentSpeed = value === "fast" ? "fast" : "standard"
         } else {
           throw new Error(`Unknown config option: ${configId}`)
         }

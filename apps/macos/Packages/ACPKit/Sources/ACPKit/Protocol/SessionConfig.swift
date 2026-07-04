@@ -99,6 +99,7 @@ public extension SessionConfigOption {
         public static let model = "model"
         public static let modelConfig = "model_config"
         public static let thoughtLevel = "thought_level"
+        public static let speed = "speed"
     }
 }
 

@@ -48,6 +48,7 @@ interface ClaudeModel {
   readonly value: string
   readonly name: string
   readonly supportedEffortLevels: ReadonlyArray<string>
+  readonly supportsFastMode: boolean
 }
 
 type ClaudeContentBlock = Exclude<SDKUserMessage["message"]["content"], string>[number]
@@ -85,10 +86,12 @@ const claudeContent = (input: PromptInput): Array<ClaudeContentBlock> => {
   return blocks
 }
 
+// "Always Ask" (not the CLI's internal "default") mirrors the naming the
+// claude-agent-acp adapter ships; a bare "Default" tells the user nothing.
 const PERMISSION_MODES: SessionModeState = {
   currentModeId: "default",
   availableModes: [
-    { id: "default", name: "Default" },
+    { id: "default", name: "Always Ask" },
     { id: "acceptEdits", name: "Accept Edits" },
     { id: "plan", name: "Plan" },
     { id: "bypassPermissions", name: "Bypass Permissions" }
@@ -201,6 +204,7 @@ interface ClaudeSession {
   currentMessageId: string | undefined
   currentModel: string
   currentEffort: string
+  currentSpeed: "standard" | "fast"
   models: ReadonlyArray<ClaudeModel>
   readonly accumulators: Map<string, ToolInputAccumulator>
   readonly openToolCalls: Set<string>
@@ -298,6 +302,7 @@ export const makeClaudeProvider = (
       currentEffort: "default",
       currentMessageId: undefined,
       currentModel: "",
+      currentSpeed: "standard",
       cwd,
       emit,
       initiatedBy: "user",
@@ -319,6 +324,9 @@ export const makeClaudeProvider = (
         for await (const message of q) {
           if (message.type === "system" && message.subtype === "init") {
             created.currentModel = message.model
+            if (message.fast_mode_state !== undefined) {
+              created.currentSpeed = message.fast_mode_state === "on" ? "fast" : "standard"
+            }
             continue
           }
           handleMessage(created, message, readFile)
@@ -356,6 +364,7 @@ export const makeClaudeProvider = (
               ? (model.supportedEffortLevels ?? [])
               : []
             ).filter((level) => SETTABLE_EFFORT_LEVELS.has(level)),
+            supportsFastMode: model.supportsFastMode === true,
             value: model.value
           }))
         if (
@@ -391,17 +400,29 @@ export const makeClaudeProvider = (
     if (effortLevels.length > 0) {
       options.push({
         category: "thought_level",
+        // No synthetic "Default" entry: until the user picks a level the CLI
+        // runs at its own default ("high" on effort-capable models), so
+        // surface that as the selection.
         currentValue: effortLevels.includes(session.currentEffort)
           ? session.currentEffort
-          : "default",
+          : defaultEffortFor(effortLevels),
         id: "effort",
         name: "Effort",
+        options: effortLevels.map((level) => ({
+          name: level === "xhigh" ? "X-High" : (level[0]?.toUpperCase() ?? "") + level.slice(1),
+          value: level
+        }))
+      })
+    }
+    if (supportsFastMode(session)) {
+      options.push({
+        category: "speed",
+        currentValue: session.currentSpeed,
+        id: "speed",
+        name: "Speed",
         options: [
-          { name: "Default", value: "default" },
-          ...effortLevels.map((level) => ({
-            name: level === "xhigh" ? "X-High" : (level[0]?.toUpperCase() ?? "") + level.slice(1),
-            value: level
-          }))
+          { name: "Standard", value: "standard" },
+          { description: "Prioritized, faster responses", name: "Fast", value: "fast" }
         ]
       })
     }
@@ -411,6 +432,13 @@ export const makeClaudeProvider = (
   const effortLevelsFor = (session: ClaudeSession): ReadonlyArray<string> =>
     session.models.find((model) => model.value === session.currentModel)?.supportedEffortLevels ??
     []
+
+  const supportsFastMode = (session: ClaudeSession): boolean =>
+    session.models.find((model) => model.value === session.currentModel)?.supportsFastMode === true
+
+  /// The CLI's default effort for effort-capable models is "high".
+  const defaultEffortFor = (levels: ReadonlyArray<string>): string =>
+    levels.includes("high") ? "high" : (levels[0] ?? "high")
 
   const handleFor = (session: ClaudeSession): AgentSessionHandle => ({
     cancel: adapterPromise("cancel", async () => {
@@ -448,6 +476,12 @@ export const makeClaudeProvider = (
           if (!effortLevelsFor(session).includes(session.currentEffort)) {
             session.currentEffort = "default"
           }
+          // Same for speed: switch fast mode off rather than carry it to a
+          // model that doesn't support it.
+          if (session.currentSpeed === "fast" && !supportsFastMode(session)) {
+            await session.q.applyFlagSettings({ fastMode: false })
+            session.currentSpeed = "standard"
+          }
         } else if (configId === "effort") {
           // Cast: the CLI accepts "max" but the SDK Settings type doesn't
           // list it yet.
@@ -455,6 +489,9 @@ export const makeClaudeProvider = (
             effortLevel: value === "default" ? null : value
           } as Parameters<Query["applyFlagSettings"]>[0])
           session.currentEffort = value
+        } else if (configId === "speed") {
+          await session.q.applyFlagSettings({ fastMode: value === "fast" })
+          session.currentSpeed = value === "fast" ? "fast" : "standard"
         } else {
           throw new Error(`Unknown config option: ${configId}`)
         }

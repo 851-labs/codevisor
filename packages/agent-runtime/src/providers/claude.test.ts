@@ -33,6 +33,7 @@ class FakeQuery {
   readonly interrupts: Array<number> = []
   readonly permissionModes: Array<string> = []
   readonly models: Array<string | undefined> = []
+  readonly flagSettings: Array<Record<string, unknown>> = []
   promptInput: AsyncIterable<SDKUserMessage> | undefined
   options: ClaudeOptions | undefined
   readonly userMessages: Array<SDKUserMessage> = []
@@ -65,11 +66,29 @@ class FakeQuery {
     this.models.push(model)
   }
 
+  async applyFlagSettings(settings: Record<string, unknown>): Promise<void> {
+    this.flagSettings.push(settings)
+  }
+
   async supportedModels(): Promise<
-    Array<{ value: string; displayName: string; description: string }>
+    Array<{
+      value: string
+      displayName: string
+      description: string
+      supportsEffort?: boolean
+      supportedEffortLevels?: Array<string>
+      supportsFastMode?: boolean
+    }>
   > {
     return [
-      { description: "", displayName: "Fable 5", value: "claude-fable-5" },
+      {
+        description: "",
+        displayName: "Fable 5",
+        supportedEffortLevels: ["low", "medium", "high", "xhigh"],
+        supportsEffort: true,
+        supportsFastMode: true,
+        value: "claude-fable-5"
+      },
       { description: "", displayName: "Opus 4.8", value: "claude-opus-4-8" }
     ]
   }
@@ -167,11 +186,81 @@ describe("ClaudeProvider", () => {
     expect(created.metadata.sessionId).toBeTruthy()
     expect(fake.options?.extraArgs?.["session-id"]).toBe(created.metadata.sessionId)
     expect(created.metadata.modes?.currentModeId).toBe("default")
+    expect(created.metadata.modes?.availableModes.find((mode) => mode.id === "default")?.name).toBe(
+      "Always Ask"
+    )
     expect(created.metadata.configOptions[0]?.id).toBe("model")
     expect(created.metadata.configOptions[0]?.currentValue).toBe("claude-fable-5")
+    // No synthetic "Default" entry: the CLI's own default ("high") is shown.
+    const effort = created.metadata.configOptions.find((option) => option.id === "effort")
+    expect(effort?.currentValue).toBe("high")
+    expect(effort?.options.map((option) => ("value" in option ? option.value : ""))).toEqual([
+      "low",
+      "medium",
+      "high",
+      "xhigh"
+    ])
     expect(fake.options?.pathToClaudeCodeExecutable).toBe("/bin/claude")
     expect(fake.options?.includePartialMessages).toBe(true)
     expect(fake.options?.resume).toBeUndefined()
+  })
+
+  it("exposes speed for fast-mode models and applies it via flag settings", async () => {
+    const fake = new FakeQuery()
+    const provider = makeProvider(fake)
+    const events: Array<RuntimeEvent> = []
+    const emit = async (event: RuntimeEvent): Promise<void> => {
+      events.push(event)
+    }
+
+    const createPromise = run(provider.createSession(definition, "/tmp", emit))
+    await settle()
+    fake.push(initMessage())
+    const created = await createPromise
+
+    const speed = created.metadata.configOptions.find((option) => option.id === "speed")
+    expect(speed).toMatchObject({ category: "speed", currentValue: "standard", name: "Speed" })
+    expect(speed?.options.map((option) => ("value" in option ? option.value : undefined))).toEqual([
+      "standard",
+      "fast"
+    ])
+
+    await run(created.handle.setConfigOption("speed", "fast"))
+    expect(fake.flagSettings).toEqual([{ fastMode: true }])
+    const updated = events.at(-1)?.payload as Record<string, unknown>
+    expect(updated.configId).toBe("speed")
+    expect(updated.configOptions).toContainEqual(
+      expect.objectContaining({ currentValue: "fast", id: "speed" })
+    )
+
+    // Switching to a model without fast mode drops the option and turns
+    // fast mode off.
+    await run(created.handle.setConfigOption("model", "claude-opus-4-8"))
+    expect(fake.flagSettings).toEqual([{ fastMode: true }, { fastMode: false }])
+    const afterModel = events.at(-1)?.payload as Record<string, unknown>
+    expect(afterModel.configOptions).not.toContainEqual(expect.objectContaining({ id: "speed" }))
+  })
+
+  it("seeds the speed from the init message's fast mode state", async () => {
+    const fake = new FakeQuery()
+    const provider = makeProvider(fake)
+    const events: Array<RuntimeEvent> = []
+    const emit = async (event: RuntimeEvent): Promise<void> => {
+      events.push(event)
+    }
+    const createPromise = run(provider.createSession(definition, "/tmp", emit))
+    await settle()
+    fake.push({ ...(initMessage() as object), fast_mode_state: "on" } as never)
+    const created = await createPromise
+
+    // The init lands after createSession's metadata snapshot in some orders;
+    // read the live options through a config change instead.
+    await run(created.handle.setConfigOption("effort", "medium"))
+    const updated = events.at(-1)?.payload as Record<string, unknown>
+    const speed = (
+      updated.configOptions as Array<{ id: string; currentValue: string }> | undefined
+    )?.find((option) => option.id === "speed")
+    expect(speed?.currentValue).toBe("fast")
   })
 
   it("rejects claude binaries older than the version floor", async () => {
