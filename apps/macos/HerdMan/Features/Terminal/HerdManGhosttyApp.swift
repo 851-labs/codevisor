@@ -204,8 +204,8 @@ final class HerdManGhosttyApp {
     }
 
     /// Writes a tiny config file with our font + color overrides, and returns
-    /// its path. With no theme, only the background is overridden; with a theme,
-    /// the terminal takes the theme's full palette.
+    /// its path. With no theme, the terminal follows the system light/dark
+    /// appearance; with a theme, it takes the theme's full palette.
     private static func writeOverrideConfig(theme: TerminalPalette?) -> String? {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("herdman-ghostty.conf")
         var contents = "font-family = Menlo\n"
@@ -227,8 +227,13 @@ final class HerdManGhosttyApp {
                     contents += "palette = \(index)=\(color.hexString())\n"
                 }
             }
-        } else if let background = resolvedBackgroundHex() {
+        } else {
+            let isDark = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            let background = isDark ? "1E1E1E" : "FFFFFF"
+            let foreground = isDark ? "FFFFFF" : "000000"
             contents += "background = \(background)\n"
+            contents += "foreground = \(foreground)\n"
+            contents += "cursor-color = \(foreground)\n"
         }
         do {
             try contents.write(to: url, atomically: true, encoding: .utf8)
@@ -236,16 +241,6 @@ final class HerdManGhosttyApp {
         } catch {
             return nil
         }
-    }
-
-    /// The app's dark window background as a `RRGGBB` hex string.
-    private static func resolvedBackgroundHex() -> String? {
-        let resolved = NSColor.windowBackgroundColor.usingColorSpace(.sRGB)
-        guard let rgb = resolved else { return "1E1E1E" }
-        let r = Int((rgb.redComponent * 255).rounded())
-        let g = Int((rgb.greenComponent * 255).rounded())
-        let b = Int((rgb.blueComponent * 255).rounded())
-        return String(format: "%02X%02X%02X", r, g, b)
     }
 
     // MARK: - Userdata resolution (upstream Ghostty.App L461-477)
