@@ -169,7 +169,7 @@ struct NewChatView: View {
                 Label {
                     Text("Project directory")
                 } icon: {
-                    Image(systemName: "folder.fill")
+                    MenuSymbolIcon(systemName: "folder.fill")
                 }
             }
             Toggle(isOn: Binding(
@@ -186,7 +186,7 @@ struct NewChatView: View {
                 Label {
                     Text("New worktree")
                 } icon: {
-                    Image(systemName: "arrow.triangle.branch")
+                    MenuSymbolIcon(systemName: "arrow.triangle.branch")
                 }
             }
             .disabled(!worktreeAvailable)
