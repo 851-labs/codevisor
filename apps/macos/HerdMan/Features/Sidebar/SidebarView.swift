@@ -59,13 +59,22 @@ struct SidebarView: View {
     @State private var showingRemoteMachine = false
     @State private var showingRemoteProject = false
     @State private var pendingImport: PendingSessionImport?
-    @State private var expanded: Set<UUID> = []
+    // Seeded from UserDefaults (same key as `expandedProjectsRaw`) so
+    // per-project disclosure survives relaunch; written back via onChange
+    // using the newline-separated UUID format `sidebar.manualProjectOrder`
+    // already established.
+    @State private var expanded: Set<UUID> = Set(
+        (UserDefaults.standard.string(forKey: "sidebar.expandedProjects") ?? "")
+            .split(separator: "\n")
+            .compactMap { UUID(uuidString: String($0)) }
+    )
     @State private var hovered: String?
     @State private var iconEditing: Project?
     @State private var draggingProjectID: UUID?
     @AppStorage("sidebar.organization") private var organizationRaw = SidebarOrganization.byProject.rawValue
     @AppStorage("sidebar.order") private var orderRaw = SidebarOrder.updated.rawValue
     @AppStorage("sidebar.manualProjectOrder") private var manualProjectOrderRaw = ""
+    @AppStorage("sidebar.expandedProjects") private var expandedProjectsRaw = ""
     @AppStorage("update.skippedVersion") private var skippedUpdateVersion = ""
     @AppStorage("update.skippedServerVersion") private var skippedServerUpdate = ""
 
@@ -245,6 +254,9 @@ struct SidebarView: View {
                 selection = .newChat(project.id)
                 offerSessionImport(for: project)
             }
+        }
+        .onChange(of: expanded) { _, newValue in
+            expandedProjectsRaw = newValue.map(\.uuidString).sorted().joined(separator: "\n")
         }
         .focusedSceneValue(\.sidebarActions, SidebarActions(
             newChat: { selection = .newChat(nil) },

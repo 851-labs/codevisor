@@ -35,7 +35,11 @@ struct RootView: View {
     @Environment(AppEnvironment.self) private var environment
     @Environment(\.theme) private var theme
     @State private var selection: SidebarSelection?
-    @State private var columnVisibility: NavigationSplitViewVisibility = .all
+    // Seeded from UserDefaults so a collapsed sidebar survives relaunch;
+    // written back in `mainSplit`'s onChange. `NavigationSplitViewVisibility`
+    // isn't RawRepresentable, so it can't live in @AppStorage directly.
+    @State private var columnVisibility: NavigationSplitViewVisibility =
+        UserDefaults.standard.bool(forKey: "sidebar.collapsed") ? .detailOnly : .all
     @State private var store: SessionStore?
     @State private var preferredProjectId: UUID?
     @State private var preparedMachineId: String?
@@ -112,6 +116,9 @@ struct RootView: View {
                 }
             }
             .themedToolbarBackground(theme, surface: theme.windowBackground)
+        }
+        .onChange(of: columnVisibility) { _, newValue in
+            UserDefaults.standard.set(newValue == .detailOnly, forKey: "sidebar.collapsed")
         }
     }
 
