@@ -144,7 +144,7 @@ node_bin="${HERDMAN_NODE:-}"
 if [[ -z "$node_bin" && -x "$root/bin/node" ]]; then
   node_bin="$root/bin/node"
 fi
-exec "${node_bin:-node}" "$root/main.js" "$@"
+exec -a herdman-server "${node_bin:-node}" "$root/main.js" "$@"
 EOF
 
 cat > "$runtime_dir/bin/herdman-terminal-proxy" <<'EOF'
@@ -155,7 +155,7 @@ node_bin="${HERDMAN_NODE:-}"
 if [[ -z "$node_bin" && -x "$root/bin/node" ]]; then
   node_bin="$root/bin/node"
 fi
-exec "${node_bin:-node}" "$root/terminal-proxy.js" "$@"
+exec -a herdman-terminal-proxy "${node_bin:-node}" "$root/terminal-proxy.js" "$@"
 EOF
 
 chmod +x "$runtime_dir/bin/herdman-server" "$runtime_dir/bin/herdman-terminal-proxy"

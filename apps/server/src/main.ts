@@ -17,6 +17,10 @@ import {
   type HerdManServerUpdater
 } from "./server.js"
 
+const SERVER_PROCESS_TITLE = "herdman-server"
+
+process.title = SERVER_PROCESS_TITLE
+
 const parseArgs = (args: ReadonlyArray<string>): Record<string, string> => {
   const parsed: Record<string, string> = {}
   for (let index = 0; index < args.length; index += 1) {
@@ -161,8 +165,16 @@ const makeSelfUpdater = (options: {
     // port, then execs the new runtime with the same serve arguments.
     console.log(`Restarting into HerdMan server ${info.latestVersion}`)
     const handoff = spawn(
-      "/bin/sh",
-      ["-c", 'sleep 1; exec "$@"', "sh", nodeBinary, entrypoint, "serve", ...options.serveArgs],
+      "/bin/bash",
+      [
+        "-c",
+        `sleep 1; exec -a ${SERVER_PROCESS_TITLE} "$@"`,
+        "bash",
+        nodeBinary,
+        entrypoint,
+        "serve",
+        ...options.serveArgs
+      ],
       { detached: true, stdio: "ignore" }
     )
     handoff.unref()
