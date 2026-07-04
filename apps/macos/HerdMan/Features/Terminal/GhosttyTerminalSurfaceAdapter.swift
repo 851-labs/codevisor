@@ -30,6 +30,23 @@ private final class HerdManGhosttySurfaceView: Ghostty.SurfaceView {
         sizeDidChange(frame.size)
     }
 
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        true
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        focusForInput()
+        super.mouseDown(with: event)
+    }
+
+    func focusForInput() {
+        if window == nil {
+            Ghostty.moveFocus(to: self)
+            return
+        }
+        window?.makeFirstResponder(self)
+    }
+
     /// Pane-group shortcuts, captured only while this surface has keyboard
     /// focus: ⌘⌥←/→ navigate tabs, ⌘T opens a new terminal tab. Everything
     /// else falls through to Ghostty's key handling. The guard is the actual
@@ -127,6 +144,11 @@ final class GhosttyTerminalSurface: TerminalSurface {
         if view.error != nil {
             Ghostty.logger.error("terminal surface creation failed for \(descriptor.workingDirectory.path, privacy: .public)")
         }
+        // Upstream initializes SurfaceView.focused to true before the C surface
+        // exists. HerdMan mounts the view later, so reset the surface to the real
+        // unfocused state now; the next AppKit first-responder transition will
+        // publish the matching true focus event to libghostty.
+        view.focusDidChange(false)
         HerdManGhosttyApp.shared.register(view)
         surfaceView = view
 
@@ -147,7 +169,12 @@ final class GhosttyTerminalSurface: TerminalSurface {
     }
 
     func setFocused(_ focused: Bool) {
-        surfaceView?.focusDidChange(focused)
+        guard let surfaceView else { return }
+        if focused {
+            surfaceView.focusForInput()
+        } else {
+            surfaceView.focusDidChange(false)
+        }
     }
 
     func terminate() {

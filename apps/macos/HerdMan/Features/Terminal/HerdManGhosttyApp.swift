@@ -107,6 +107,8 @@ final class HerdManGhosttyApp {
             name: NSApplication.didResignActiveNotification,
             object: nil)
 
+        ghostty_app_keyboard_changed(app)
+
         Self.runtimeInitialized = true
     }
 
