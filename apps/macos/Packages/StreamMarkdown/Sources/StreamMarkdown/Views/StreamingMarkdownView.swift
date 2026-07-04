@@ -18,9 +18,27 @@ public struct StreamingMarkdownView: View {
     }
 
     public var body: some View {
+        MarkdownSegmentsView(blocks: blocks)
+    }
+}
+
+/// Renders markdown blocks as segments: consecutive text-like blocks merge
+/// into a single selectable `Text` (so selection can span multiple lines and
+/// blocks — SwiftUI text selection cannot cross `Text` boundaries), while
+/// code blocks, tables, quotes, and rules keep their own views.
+struct MarkdownSegmentsView: View {
+    let blocks: [MarkdownBlock]
+    @Environment(\.markdownTheme) private var theme
+
+    var body: some View {
         VStack(alignment: .leading, spacing: theme.blockSpacing) {
-            ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
-                MarkdownBlockView(block: block)
+            ForEach(Array(MarkdownSegment.segments(from: blocks).enumerated()), id: \.offset) { _, segment in
+                switch segment {
+                case let .textRun(runBlocks):
+                    MarkdownTextRunView(blocks: runBlocks)
+                case let .block(block):
+                    MarkdownBlockView(block: block)
+                }
             }
         }
     }
@@ -33,45 +51,21 @@ struct MarkdownBlockView: View {
 
     var body: some View {
         switch block {
-        case let .heading(level, text):
-            Text(InlineMarkdown.attributedString(from: text))
-                .font(headingFont(for: level))
-                .fontWeight(.semibold)
-                .fixedSize(horizontal: false, vertical: true)
-
-        case let .paragraph(text):
-            Text(InlineMarkdown.attributedString(from: text))
-                .font(theme.bodyFont)
-                .textSelection(.enabled)
-                .fixedSize(horizontal: false, vertical: true)
+        case .heading, .paragraph, .bulletList, .orderedList:
+            // Normally coalesced into a MarkdownTextRunView by
+            // MarkdownSegmentsView; render standalone blocks the same way so
+            // they stay selectable.
+            MarkdownTextRunView(blocks: [block])
 
         case let .codeBlock(language, code, isComplete):
             CodeBlockView(language: language, code: code, isComplete: isComplete)
-
-        case let .bulletList(items):
-            VStack(alignment: .leading, spacing: 4) {
-                ForEach(Array(items.enumerated()), id: \.offset) { _, item in
-                    MarkdownListRow(marker: "•", content: item)
-                }
-            }
-
-        case let .orderedList(items):
-            VStack(alignment: .leading, spacing: 4) {
-                ForEach(items, id: \.number) { item in
-                    MarkdownListRow(marker: "\(item.number).", content: item.text)
-                }
-            }
 
         case let .blockQuote(blocks):
             HStack(spacing: 8) {
                 Rectangle()
                     .fill(theme.quoteBarColor)
                     .frame(width: 3)
-                VStack(alignment: .leading, spacing: theme.blockSpacing) {
-                    ForEach(Array(blocks.enumerated()), id: \.offset) { _, inner in
-                        MarkdownBlockView(block: inner)
-                    }
-                }
+                MarkdownSegmentsView(blocks: blocks)
             }
             .fixedSize(horizontal: false, vertical: true)
 
@@ -80,35 +74,6 @@ struct MarkdownBlockView: View {
 
         case .thematicBreak:
             Divider()
-        }
-    }
-
-    private func headingFont(for level: Int) -> Font {
-        switch level {
-        case 1: return .title
-        case 2: return .title2
-        case 3: return .title3
-        case 4: return .headline
-        default: return .subheadline
-        }
-    }
-}
-
-/// A list row with a leading marker.
-struct MarkdownListRow: View {
-    let marker: String
-    let content: String
-    @Environment(\.markdownTheme) private var theme
-
-    var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 6) {
-            Text(marker)
-                .font(theme.bodyFont)
-                .foregroundStyle(.secondary)
-            Text(InlineMarkdown.attributedString(from: content))
-                .font(theme.bodyFont)
-                .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: 0)
         }
     }
 }
