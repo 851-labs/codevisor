@@ -10,6 +10,10 @@ struct NewChatView: View {
     let store: SessionStore
     @Binding var selection: SidebarSelection?
     var preferredProjectId: UUID?
+    /// Set when the page was opened for a specific project (sidebar "+" /
+    /// "New chat here"); nil for the generic new-chat entry. An explicit
+    /// project moves a retained draft; an implicit one follows the draft.
+    var explicitProjectId: UUID?
 
     @State private var controller: SessionController?
     @State private var selectedProjectId: UUID?
@@ -217,7 +221,23 @@ struct NewChatView: View {
     private func setUpController() {
         selectedProjectId = preferredProjectId ?? projects.first?.id
         guard let project = selectedProject else { return }
-        let controller = store.makeDraft(project: project)
+        let controller = store.draft(project: project)
+        if controller.project.id != project.id {
+            let draftProjectExists = projects.contains { $0.id == controller.project.id }
+            if explicitProjectId == project.id || !draftProjectExists {
+                // Opened explicitly for this project (or the draft's project is
+                // gone): move the draft here, keeping its text/attachments.
+                Task { await controller.selectProject(project) }
+            } else {
+                // Generic entry: follow the draft's own project so the title
+                // and pickers match the composer state the user left.
+                selectedProjectId = controller.project.id
+            }
+        }
+        // Restore the draft's worktree choice (remembered defaults or an
+        // earlier visit), clamped to projects that can support it.
+        if !worktreeAvailable { controller.wantsNewWorktree = false }
+        runInWorktree = controller.wantsNewWorktree
         controller.onFirstSend = { [weak controller] in
             guard let controller, let project = selectedProject else { return }
             let title = Self.title(from: controller.composerText)

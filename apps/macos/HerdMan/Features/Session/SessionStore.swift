@@ -10,6 +10,10 @@ import HerdManCore
 final class SessionStore {
     private var controllers: [UUID: SessionController] = [:]
     private var paneGroups: [UUID: PaneGroupModel] = [:]
+    /// The unsent new-chat draft. A single slot — the new-chat page is one
+    /// place — so composer text/attachments survive navigating away and back
+    /// no matter which sidebar entry reopens it.
+    private var draft: SessionController?
     private let environment: AppEnvironment
 
     init(environment: AppEnvironment) {
@@ -42,14 +46,25 @@ final class SessionStore {
         return controller
     }
 
-    /// Creates a fresh, unregistered controller for the new-chat page.
-    func makeDraft(project: Project) -> SessionController {
-        SessionController(
+    /// Returns the retained draft controller for the new-chat page, creating
+    /// one seeded from the last-used composer defaults (harness, model,
+    /// worktree) if none exists. The draft is retained until its first send
+    /// promotes it to a real session, so unsent composer state survives
+    /// navigation.
+    func draft(project: Project) -> SessionController {
+        if let draft, draft.serverSession == nil {
+            return draft
+        }
+        let controller = SessionController(
             project: project,
             configCache: environment.configCache,
+            composerDefaults: environment.composerDefaults,
             settings: environment.settings,
             serverClient: environment.serverClient
         )
+        controller.applyComposerDefaults()
+        draft = controller
+        return controller
     }
 
     /// Returns the cached pane group for a session, creating it on first use.
@@ -81,9 +96,11 @@ final class SessionStore {
         controllers[sessionId]?.isSending ?? false
     }
 
-    /// Registers a draft controller under a newly created session id.
+    /// Registers a draft controller under a newly created session id and
+    /// releases the draft slot so the next new chat starts fresh.
     func register(_ controller: SessionController, for sessionId: UUID) {
         controllers[sessionId] = controller
+        if draft === controller { draft = nil }
     }
 
     func discard(_ sessionId: UUID) {

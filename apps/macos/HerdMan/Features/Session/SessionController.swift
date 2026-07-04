@@ -80,6 +80,7 @@ final class SessionController {
     private(set) var connectedAgentSessionId: String?
 
     private let configCache: ConfigOptionCache
+    private let composerDefaults: ComposerDefaultsStore?
     private let settings: AppSettingsModel?
     private let serverClient: (any HerdManServerClienting)?
     private var hasSentFirst = false
@@ -93,11 +94,13 @@ final class SessionController {
     init(
         project: Project,
         configCache: ConfigOptionCache,
+        composerDefaults: ComposerDefaultsStore? = nil,
         settings: AppSettingsModel? = nil,
         serverClient: (any HerdManServerClienting)? = nil
     ) {
         self.project = project
         self.configCache = configCache
+        self.composerDefaults = composerDefaults
         self.settings = settings
         self.serverClient = serverClient
         seedFromCachedServerCapabilities()
@@ -184,6 +187,68 @@ final class SessionController {
                 }
             }
         }
+    }
+
+    // MARK: - Remembered composer defaults
+
+    /// True until the first send creates the real session — the window where
+    /// remembered defaults apply and harness switches re-seed them.
+    private var isDraft: Bool { serverSession == nil && !hasSentFirst }
+
+    /// Seeds a new-chat draft with the choices the last session was created
+    /// with: the harness and that harness's config selections (model,
+    /// reasoning, …). Called once by `SessionStore` when a draft is made.
+    func applyComposerDefaults() {
+        guard let composerDefaults, isDraft else { return }
+        if let harnessId = composerDefaults.lastHarnessId, !harnessId.isEmpty,
+           harnesses.isEmpty || harnesses.contains(where: { $0.id == harnessId }) {
+            selectedHarnessId = harnessId
+        }
+        wantsNewWorktree = composerDefaults.runInWorktree
+        seedRememberedConfig()
+    }
+
+    /// Stages the remembered config selections for the selected harness as
+    /// pending edits so the pickers show them and the agent applies them on
+    /// connect. Values are validated against the known option lists when
+    /// available; unknown lists trust the stored values and let the live
+    /// agent correct them.
+    private func seedRememberedConfig() {
+        guard let composerDefaults, let harnessId = selectedHarnessId else { return }
+        let remembered = composerDefaults.configSelections(forHarness: harnessId)
+        guard !remembered.isEmpty else { return }
+        var options = configOptionsByHarness[harnessId] ?? configCache.options(forHarness: harnessId)
+        guard !options.isEmpty else {
+            pendingConfig.merge(remembered) { _, stored in stored }
+            return
+        }
+        for (configId, value) in remembered {
+            guard let index = options.firstIndex(where: { $0.id == configId }),
+                  options[index].options.contains(where: { $0.value == value }) else { continue }
+            pendingConfig[configId] = value
+            options[index].currentValue = value
+        }
+        configOptionsByHarness[harnessId] = options
+    }
+
+    /// Records the choices this draft is being created with so the next new
+    /// chat starts from the same setup. Mode is deliberately excluded —
+    /// approval modes shouldn't silently stick across sessions.
+    private func rememberComposerDefaults() {
+        guard let composerDefaults else { return }
+        let rememberedCategories: Set<String> = [
+            SessionConfigOption.Category.model,
+            SessionConfigOption.Category.thoughtLevel,
+            SessionConfigOption.Category.modelConfig
+        ]
+        let values = configOptions
+            .filter { rememberedCategories.contains($0.category ?? "") }
+            .map { ($0.id, $0.currentValue) }
+        composerDefaults.rememberSessionCreation(
+            harnessId: selectedHarnessId,
+            configValues: Dictionary(values) { _, last in last },
+            runInWorktree: wantsNewWorktree
+        )
     }
 
     var selectedHarness: ServerHarness? {
@@ -369,6 +434,12 @@ final class SessionController {
     func selectHarness(_ id: String) async {
         guard id != selectedHarnessId else { return }
         selectedHarnessId = id
+        if isDraft {
+            // Start the new harness from its own remembered selections rather
+            // than pending edits made under the previous harness.
+            pendingConfig.removeAll()
+            seedRememberedConfig()
+        }
         if var serverSession {
             serverSession.harnessId = id
             self.serverSession = serverSession
@@ -409,6 +480,9 @@ final class SessionController {
 
         if !hasSentFirst {
             hasSentFirst = true
+            // Only a new-chat draft (which has an onFirstSend) sets the
+            // defaults; a resumed session's first message shouldn't.
+            if onFirstSend != nil { rememberComposerDefaults() }
             onFirstSend?()
             onFirstSend = nil
         }

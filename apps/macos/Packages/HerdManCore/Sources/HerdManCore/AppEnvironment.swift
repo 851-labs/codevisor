@@ -11,6 +11,7 @@ import HerdManTheming
 public final class AppEnvironment {
     public let projectList: ProjectListModel
     public let configCache: ConfigOptionCache
+    public let composerDefaults: ComposerDefaultsStore
     public let settings: AppSettingsModel
     public let theme: ThemeManager
     public let machines: MachineController
@@ -39,6 +40,7 @@ public final class AppEnvironment {
         projectRepository: any ProjectRepository,
         sessionRepository: any SessionRepository,
         configCache: ConfigOptionCache,
+        composerDefaults: ComposerDefaultsStore? = nil,
         settings: AppSettingsModel,
         machineStore: any PersistenceStore = InMemoryStore(),
         paneGroups: any PaneGroupRepository = DefaultPaneGroupRepository(store: InMemoryStore()),
@@ -67,6 +69,7 @@ public final class AppEnvironment {
             sessionRepository: sessionRepository
         )
         self.configCache = configCache
+        self.composerDefaults = composerDefaults ?? ComposerDefaultsStore(store: InMemoryStore())
         self.settings = settings
         self.localServer = localServer
         self.machines = MachineController(
@@ -127,6 +130,7 @@ public final class AppEnvironment {
     public func deleteAllData() {
         projectList.removeAll()
         configCache.clear()
+        composerDefaults.clear()
         settings.reset()
         projectList.showsImportedSessions = settings.importExternalSessions
     }
@@ -180,6 +184,7 @@ public final class AppEnvironment {
             projectRepository: DefaultProjectRepository(store: store),
             sessionRepository: DefaultSessionRepository(store: store),
             configCache: ConfigOptionCache(store: store),
+            composerDefaults: ComposerDefaultsStore(store: store),
             settings: AppSettingsModel(store: store),
             machineStore: store,
             paneGroups: DefaultPaneGroupRepository(store: store),

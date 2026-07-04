@@ -128,14 +128,19 @@ struct RootView: View {
                 newChat(store, preferred: preferredProjectId)
             }
         case let .newChat(projectId):
-            newChat(store, preferred: projectId ?? preferredProjectId)
+            newChat(store, preferred: projectId ?? preferredProjectId, explicit: projectId)
         case .none:
             newChat(store, preferred: preferredProjectId)
         }
     }
 
-    private func newChat(_ store: SessionStore, preferred: UUID?) -> some View {
-        NewChatView(store: store, selection: $selection, preferredProjectId: preferred)
+    private func newChat(_ store: SessionStore, preferred: UUID?, explicit: UUID? = nil) -> some View {
+        NewChatView(
+            store: store,
+            selection: $selection,
+            preferredProjectId: preferred,
+            explicitProjectId: explicit
+        )
     }
 }
 
