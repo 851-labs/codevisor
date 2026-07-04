@@ -1,6 +1,14 @@
 import type { ConversationItem } from "@herdman/api"
 import { ArrowDownIcon, TriangleAlertIcon } from "lucide-react"
-import { memo, type ReactNode, useCallback, useEffect, useRef, useState } from "react"
+import {
+  memo,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState
+} from "react"
 
 import { cn } from "../../lib/cn"
 import type { TurnMeta } from "../../lib/queries"
@@ -36,10 +44,20 @@ export function ErrorBanner({ message }: { message: string }) {
   )
 }
 
-// The streaming transcript: scrolls the conversation, tracks whether the user
-// is pinned to the bottom (≤18px from the end), auto-scrolls on stream growth
-// while pinned, floats the composer overlay over the bottom with a gradient
-// mask, and offers a scroll-to-bottom button when unpinned
+// Auto-follow stays engaged only while the very end of the content is in view
+// (within this many pixels of the viewport bottom) — so scrolling up even
+// slightly disengages it instantly. Kept just above zero so the rubber-band
+// rebound after an over-scroll doesn't briefly flash the scroll-to-bottom button.
+const AT_BOTTOM_THRESHOLD = 2
+// When scrolling back DOWN, re-engage auto-follow once within this distance of
+// the end. Unpinning is decided by scroll DIRECTION (see handleScroll), so
+// scrolling up mid-stream disengages instead of snapping back.
+const REPIN_DISTANCE = 40
+
+// The streaming transcript: opens pinned to the end of the history (no scroll
+// animation), tracks whether the user is pinned to the bottom, auto-scrolls on
+// stream growth only while pinned, floats the composer overlay over the bottom
+// with a gradient mask, and offers a scroll-to-bottom button when unpinned
 // (SessionView.swift chatArea).
 export function Transcript({
   conversation,
@@ -59,6 +77,7 @@ export function Transcript({
   const scrollRef = useRef<HTMLDivElement>(null)
   const [isAtBottom, setIsAtBottom] = useState(true)
   const isAtBottomRef = useRef(true)
+  const lastTopRef = useRef(0)
 
   const scrollToBottom = useCallback((smooth: boolean) => {
     const container = scrollRef.current
@@ -74,12 +93,34 @@ export function Transcript({
   const handleScroll = () => {
     const container = scrollRef.current
     if (container == null) return
-    const distance = container.scrollHeight - container.scrollTop - container.clientHeight
-    isAtBottomRef.current = distance <= 18
-    setIsAtBottom(distance <= 18)
+    const top = container.scrollTop
+    const distance = container.scrollHeight - top - container.clientHeight
+    const prevTop = lastTopRef.current
+    lastTopRef.current = top
+    // At the end (incl. the rubber-band rebound after an over-scroll) — stay
+    // pinned, keep the button hidden. Otherwise a decrease in offset means the
+    // user dragged up (auto-follow/content growth only ever move it down) —
+    // disengage; re-engage only while scrolling back down toward the end.
+    let pinned = isAtBottomRef.current
+    if (distance <= AT_BOTTOM_THRESHOLD) pinned = true
+    else if (top < prevTop - 1) pinned = false
+    else if (top > prevTop && distance <= REPIN_DISTANCE) pinned = true
+    isAtBottomRef.current = pinned
+    setIsAtBottom(pinned)
   }
 
-  // Follow the stream while pinned.
+  // Open at the end of the history — jump there before first paint, no
+  // scroll animation. History that loads later is pinned by the
+  // streamFingerprint effect below (isAtBottom starts true).
+  useLayoutEffect(() => {
+    const container = scrollRef.current
+    if (container == null) return
+    container.scrollTop = container.scrollHeight
+    lastTopRef.current = container.scrollTop
+  }, [])
+
+  // Follow the stream while pinned; never yank the user down while they're
+  // reading earlier history.
   useEffect(() => {
     if (isAtBottomRef.current) scrollToBottom(false)
   }, [streamFingerprint, scrollToBottom])

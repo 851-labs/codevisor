@@ -2,6 +2,13 @@ import SwiftUI
 import AppKit
 import HerdManCore
 
+/// A scroll snapshot used to tell user-initiated upward scrolling apart from
+/// the transcript growing underneath a pinned viewport.
+private struct ScrollSnapshot: Equatable {
+    var offsetY: CGFloat
+    var distance: CGFloat
+}
+
 /// The active session screen: a streaming transcript with the composer floating
 /// over the bottom of the history (no divider), and enough bottom inset that the
 /// last message can scroll clear of the composer.
@@ -15,6 +22,18 @@ struct SessionScreen: View {
     @State private var isQueueExpanded = true
     @State private var attachmentImages: AttachmentImageStore?
     private let bottomID = "session-bottom"
+
+    /// Auto-follow stays engaged only while the very end of the content is in
+    /// view (within this many points of the viewport bottom) — so scrolling up
+    /// even slightly disengages it instantly. Kept just above zero so the
+    /// rubber-band rebound after an over-scroll (which eases back into the
+    /// bottom edge) doesn't briefly flash the scroll-to-bottom button.
+    private static let atBottomThreshold: CGFloat = 2
+    /// When scrolling back DOWN, re-engage auto-follow once within this distance
+    /// of the end. Whether we *unpin* is decided by scroll direction rather than
+    /// distance (see the geometry handler), so scrolling up mid-stream
+    /// disengages immediately.
+    private static let repinDistance: CGFloat = 40
 
     var body: some View {
         VStack(spacing: 0) {
@@ -76,14 +95,32 @@ struct SessionScreen: View {
                 .frame(maxWidth: 880, alignment: .leading)
                 .frame(maxWidth: .infinity)
             }
-            .onScrollGeometryChange(for: CGFloat.self) { geometry in
-                // Distance from the visible bottom to the end of the content.
-                geometry.contentSize.height - geometry.visibleRect.maxY
-            } action: { _, distance in
-                isAtBottom = distance <= 18
+            // Open sessions at the end of the history, with no scroll animation.
+            .defaultScrollAnchor(.bottom, for: .initialOffset)
+            .onScrollGeometryChange(for: ScrollSnapshot.self) { geometry in
+                ScrollSnapshot(
+                    offsetY: geometry.contentOffset.y,
+                    distance: geometry.contentSize.height - geometry.visibleRect.maxY
+                )
+            } action: { old, new in
+                if new.distance <= Self.atBottomThreshold {
+                    // End is in view (incl. the rubber-band rebound after an
+                    // over-scroll) — stay pinned, keep the button hidden.
+                    isAtBottom = true
+                } else if new.offsetY < old.offsetY - 1 {
+                    // Scrolled up and away from the end — disengage so we stop
+                    // yanking the user back down.
+                    isAtBottom = false
+                } else if new.offsetY > old.offsetY, new.distance <= Self.repinDistance {
+                    // Scrolling back down toward the end — re-engage auto-follow.
+                    isAtBottom = true
+                }
             }
             .onChange(of: streamFingerprint) { _, _ in
-                scrollToBottom(proxy, animated: true)
+                // Follow the stream only while the user is pinned to the bottom;
+                // never yank them down while they're reading earlier history.
+                guard isAtBottom else { return }
+                scrollToBottom(proxy, animated: false)
             }
             .onChange(of: composerHeight) { _, _ in
                 if isAtBottom {
