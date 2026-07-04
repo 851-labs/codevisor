@@ -31,3 +31,6 @@ export const isGitWorkTree = async (dir: string): Promise<boolean> => {
 
 export const addWorktree = (repoDir: string, path: string, branch: string): Promise<string> =>
   git("worktree", ["worktree", "add", path, "-b", branch], repoDir)
+
+export const removeWorktree = (repoDir: string, path: string): Promise<string> =>
+  git("worktree", ["worktree", "remove", path, "--force"], repoDir)

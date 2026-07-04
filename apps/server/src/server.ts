@@ -43,7 +43,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
-import { GitError, addWorktree, isGitWorkTree } from "./git.js"
+import { GitError, addWorktree, isGitWorkTree, removeWorktree } from "./git.js"
 import type { Socket } from "node:net"
 import type { AddressInfo } from "node:net"
 import { Context, Effect, Layer, PubSub, Schema } from "effect"
@@ -771,6 +771,9 @@ const routeSessions = async (
   if (sessionId !== undefined && request.method === "PATCH") {
     const payload = await readSchema(request, UpdateSessionRequestSchema)
     const session = await run(services.db.updateSession(sessionId, payload))
+    if (session.isArchived) {
+      await removeArchivedSessionWorktree(services, config.id, session)
+    }
     await appendAndPublish(
       services.db,
       fanout,
@@ -867,6 +870,41 @@ const resolveSessionCwdOrFail = async (
     throw new HttpFailure(400, `Worktree folder does not exist: ${worktree.path}`)
   }
   return worktree.path
+}
+
+/// Deletes an archived session's git worktree from disk once no other active
+/// session on this server still relies on that worktree: it detaches the git
+/// registration, removes the working directory, and drops the tracking row.
+/// The just-archived session is already flagged archived here, so it never
+/// counts itself as an active user.
+const removeArchivedSessionWorktree = async (
+  services: HerdManServerServices,
+  serverId: string,
+  session: SessionSummary
+): Promise<void> => {
+  const worktreeName = session.worktreeName
+  if (worktreeName === undefined) {
+    return
+  }
+  const stillInUse = (await run(services.db.listSessions)).some(
+    (candidate) =>
+      !candidate.isArchived &&
+      candidate.projectId === session.projectId &&
+      candidate.worktreeName === worktreeName
+  )
+  if (stillInUse) {
+    return
+  }
+  const worktree = (await run(services.db.listWorktrees(session.projectId))).find(
+    (candidate) => candidate.serverId === serverId && candidate.name === worktreeName
+  )
+  if (worktree === undefined) {
+    return
+  }
+  const project = await getProjectOrFail(services.db, session.projectId)
+  const location = localLocationOrFail(serverId, project)
+  await removeWorktree(location.folderPath, worktree.path)
+  await run(services.db.deleteWorktree(worktree.id))
 }
 
 const findSession = async (

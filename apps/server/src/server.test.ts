@@ -1434,6 +1434,87 @@ describe("@herdman/server", () => {
         randomSpy.mockRestore()
       }
 
+      // Archiving a session deletes its worktree from disk once no active
+      // session still relies on it. Set up a dedicated worktree shared by two
+      // sessions plus an unrelated session in another project.
+      await jsonRequest(server, "/v1/sessions", {
+        body: JSON.stringify({ projectId: "plain-project", harnessId: "codex" }),
+        method: "POST"
+      })
+      const solo = (
+        await jsonRequest(server, "/v1/projects/git-project/worktrees", {
+          body: JSON.stringify({ name: "solo work" }),
+          method: "POST"
+        })
+      ).body as { readonly name: string; readonly path: string }
+      expect(existsSync(solo.path)).toBe(true)
+      const worktreeNames = async () =>
+        (
+          (await jsonRequest(server, "/v1/projects/git-project/worktrees")).body as ReadonlyArray<{
+            readonly name: string
+          }>
+        ).map((entry) => entry.name)
+      const soloSession = (
+        await jsonRequest(server, "/v1/sessions", {
+          body: JSON.stringify({
+            projectId: "git-project",
+            harnessId: "codex",
+            worktreeName: solo.name
+          }),
+          method: "POST"
+        })
+      ).body as { readonly id: string }
+      const sharer = (
+        await jsonRequest(server, "/v1/sessions", {
+          body: JSON.stringify({
+            projectId: "git-project",
+            harnessId: "codex",
+            worktreeName: solo.name
+          }),
+          method: "POST"
+        })
+      ).body as { readonly id: string }
+
+      // The worktree survives while another active session still uses it.
+      await jsonRequest(server, `/v1/sessions/${soloSession.id}`, {
+        body: JSON.stringify({ isArchived: true }),
+        method: "PATCH"
+      })
+      expect(existsSync(solo.path)).toBe(true)
+      expect(await worktreeNames()).toContain(solo.name)
+
+      // Archiving the final active session removes it from git and disk.
+      await jsonRequest(server, `/v1/sessions/${sharer.id}`, {
+        body: JSON.stringify({ isArchived: true }),
+        method: "PATCH"
+      })
+      expect(existsSync(solo.path)).toBe(false)
+      expect(await worktreeNames()).not.toContain(solo.name)
+
+      // Re-archiving once the worktree record is gone is a harmless no-op.
+      expect(
+        (
+          await jsonRequest(server, `/v1/sessions/${sharer.id}`, {
+            body: JSON.stringify({ isArchived: true }),
+            method: "PATCH"
+          })
+        ).status
+      ).toBe(200)
+
+      // Archiving a session that never had a worktree leaves worktrees intact.
+      const plainSession = (
+        await jsonRequest(server, "/v1/sessions", {
+          body: JSON.stringify({ projectId: "git-project", harnessId: "codex" }),
+          method: "POST"
+        })
+      ).body as { readonly id: string }
+      const before = (await worktreeNames()).length
+      await jsonRequest(server, `/v1/sessions/${plainSession.id}`, {
+        body: JSON.stringify({ isArchived: true }),
+        method: "PATCH"
+      })
+      expect((await worktreeNames()).length).toBe(before)
+
       // A recorded worktree whose folder vanished is rejected too.
       rmSync(worktree.path, { force: true, recursive: true })
       await git(["worktree", "prune"], repoFolder)
