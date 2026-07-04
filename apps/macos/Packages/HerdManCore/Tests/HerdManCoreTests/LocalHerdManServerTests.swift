@@ -57,6 +57,52 @@ struct LocalHerdManServerTests {
         #expect(launches.first?.environment["HERDMAN_TEST"] == "1")
     }
 
+    @Test("Launch command names the server process")
+    func launchCommandNamesServerProcess() {
+        let request = LocalHerdManServerLaunchRequest(
+            nodeExecutable: URL(fileURLWithPath: "/opt/homebrew/bin/node"),
+            entrypoint: URL(fileURLWithPath: "/tmp/herdman-server/main.js"),
+            databasePath: "/tmp/herdman.sqlite",
+            logURL: URL(fileURLWithPath: "/tmp/herdman-server.log"),
+            host: "0.0.0.0",
+            port: 49362,
+            name: "Test Mac",
+            environment: [:]
+        )
+
+        let configuration = LocalHerdManServer.processConfiguration(for: request)
+
+        #expect(configuration.executableURL.path == "/bin/bash")
+        #expect(Array(configuration.arguments.prefix(3)) == [
+            "-c",
+            "exec -a herdman-server \"$0\" \"$@\"",
+            "/opt/homebrew/bin/node"
+        ])
+        #expect(Array(configuration.arguments.dropFirst(3).prefix(2)) == [
+            "/tmp/herdman-server/main.js",
+            "serve"
+        ])
+    }
+
+    @Test("Launch command preserves PATH lookup when Node falls back to env")
+    func launchCommandUsesPathLookupForEnvFallback() {
+        let request = LocalHerdManServerLaunchRequest(
+            nodeExecutable: URL(fileURLWithPath: "/usr/bin/env"),
+            entrypoint: URL(fileURLWithPath: "/tmp/herdman-server/main.js"),
+            databasePath: "/tmp/herdman.sqlite",
+            logURL: URL(fileURLWithPath: "/tmp/herdman-server.log"),
+            host: "0.0.0.0",
+            port: 49362,
+            name: "Test Mac",
+            environment: ["PATH": "/opt/homebrew/bin:/usr/bin"]
+        )
+
+        let configuration = LocalHerdManServer.processConfiguration(for: request)
+
+        #expect(configuration.executableURL.path == "/bin/bash")
+        #expect(configuration.arguments.dropFirst(2).first == "node")
+    }
+
     @Test("Reports unavailable when no server entrypoint can be found")
     func missingEntrypoint() async {
         let client = FakeLocalServerClient(healthResults: [.failure(TestError())])

@@ -18,6 +18,11 @@ public struct LocalHerdManServerLaunchRequest: Equatable, Sendable {
     public var environment: [String: String]
 }
 
+struct LocalHerdManServerProcessConfiguration: Equatable {
+    var executableURL: URL
+    var arguments: [String]
+}
+
 @MainActor
 public final class LocalHerdManServer {
     public typealias Launcher = @MainActor (LocalHerdManServerLaunchRequest) throws -> Process
@@ -244,26 +249,41 @@ public final class LocalHerdManServer {
         try logHandle.seekToEnd()
 
         let process = Process()
-        process.executableURL = request.nodeExecutable
-        let nodeArguments = request.nodeExecutable.lastPathComponent == "env" ? ["node"] : []
-        process.arguments = nodeArguments + [
-            request.entrypoint.path,
-            "serve",
-            "--host", request.host,
-            "--port", String(request.port),
-            "--db", request.databasePath,
-            // Network binds require a token from remote clients (loopback is
-            // exempt), and --kind keeps the server identifying as this
-            // machine's local server despite the 0.0.0.0 bind.
-            "--auth", "token",
-            "--kind", "local",
-            "--name", request.name
-        ]
+        let configuration = processConfiguration(for: request)
+        process.executableURL = configuration.executableURL
+        process.arguments = configuration.arguments
         process.environment = request.environment
         process.standardOutput = logHandle
         process.standardError = logHandle
         try process.run()
         return process
+    }
+
+    static func processConfiguration(
+        for request: LocalHerdManServerLaunchRequest
+    ) -> LocalHerdManServerProcessConfiguration {
+        let nodeInvocation = request.nodeExecutable.lastPathComponent == "env"
+            ? "node"
+            : request.nodeExecutable.path
+        return LocalHerdManServerProcessConfiguration(
+            executableURL: URL(fileURLWithPath: "/bin/bash"),
+            arguments: [
+                "-c",
+                "exec -a herdman-server \"$0\" \"$@\"",
+                nodeInvocation,
+                request.entrypoint.path,
+                "serve",
+                "--host", request.host,
+                "--port", String(request.port),
+                "--db", request.databasePath,
+                // Network binds require a token from remote clients (loopback is
+                // exempt), and --kind keeps the server identifying as this
+                // machine's local server despite the 0.0.0.0 bind.
+                "--auth", "token",
+                "--kind", "local",
+                "--name", request.name
+            ]
+        )
     }
 
     public static func defaultEntrypoint() -> URL? {
