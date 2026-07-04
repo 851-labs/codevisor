@@ -16,6 +16,27 @@ struct ProjectListModelTests {
         return (model, projectStore, sessionStore)
     }
 
+    @Test("setWorktree patches a draft's worktree name and cwd locally")
+    func setWorktreePatchesDraft() {
+        let (model, _, sessionStore) = makeModel()
+        let project = model.addProject(folderURL: URL(fileURLWithPath: "/tmp/repo"))
+        let session = model.newSession(in: project, title: "Draft", harnessId: "codex", syncToServer: false)
+        #expect(model.sessions.first?.worktreeName == nil)
+
+        model.setWorktree(name: "fearless-raven", cwd: "/tmp/worktrees/fearless-raven", for: session.id)
+
+        let updated = model.sessions.first { $0.id == session.id }
+        #expect(updated?.worktreeName == "fearless-raven")
+        #expect(updated?.cwd == "/tmp/worktrees/fearless-raven")
+        // Persisted, so the record survives a reload.
+        let reloaded = DefaultSessionRepository(store: sessionStore).load()
+        #expect(reloaded.first { $0.id == session.id }?.worktreeName == "fearless-raven")
+
+        // Unknown ids are ignored.
+        model.setWorktree(name: "other", cwd: "/tmp/x", for: UUID())
+        #expect(model.sessions.first { $0.id == session.id }?.worktreeName == "fearless-raven")
+    }
+
     @Test("Server refresh merges remote projects and sessions into the local cache")
     func serverRefresh() async throws {
         let project = Project.fromFolder(

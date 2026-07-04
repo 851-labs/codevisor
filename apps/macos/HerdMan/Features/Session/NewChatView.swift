@@ -258,6 +258,12 @@ struct NewChatView: View {
             controller.onAgentSessionCreated = { [weak projectList = environment.projectList] agentSessionId in
                 projectList?.setAgentSessionId(agentSessionId, for: session.id)
             }
+            // The session record is registered before the worktree exists (the
+            // page opens while setup streams progress); patch in the worktree
+            // name/cwd once the server has materialized it.
+            controller.onWorktreeCreated = { [weak projectList = environment.projectList] worktree in
+                projectList?.setWorktree(name: worktree.name, cwd: worktree.path, for: session.id)
+            }
             store.register(controller, for: session.id)
             selection = .session(session.id)
         }

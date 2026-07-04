@@ -18,7 +18,9 @@ import type {
   ServerKind,
   SessionSummary,
   TerminalClientFrame,
-  UpdateInfo
+  UpdateInfo,
+  Worktree,
+  WorktreeSetupUpdate
 } from "@herdman/api"
 import {
   CreateProjectRequest as CreateProjectRequestSchema,
@@ -491,11 +493,22 @@ const routeProjects = async (
         ? randomWorktreeName(existing)
         : uniquifyWorktreeName(requested, existing)
     const branch = `herdman/${name}`
-    const worktree = await run(services.db.createWorktree(project.id, name, branch))
+    const worktree = await run(services.db.createWorktree(project.id, name, branch, payload.id))
+    const startedAt = Date.now()
+    const publishSetup = makeWorktreeSetupPublisher(services.db, fanout, worktree)
+    await publishSetup({ state: "started" })
     try {
       mkdirSync(dirname(worktree.path), { recursive: true })
-      await addWorktree(location.folderPath, worktree.path, branch)
+      await addWorktree(location.folderPath, worktree.path, branch, (stream, line) => {
+        void publishSetup({ state: "log", stream, line })
+      })
+      await publishSetup({ state: "completed", durationMs: Date.now() - startedAt })
     } catch (cause) {
+      await publishSetup({
+        state: "failed",
+        message: failureMessage(cause),
+        durationMs: Date.now() - startedAt
+      })
       // The directory never materialized; drop the record so the name can be retried.
       /* v8 ignore next 2 -- best-effort cleanup; a second fault still surfaces the git error. */
       await run(services.db.deleteWorktree(worktree.id)).catch(() => undefined)
@@ -645,6 +658,36 @@ const uniquifyWorktreeName = (base: string, existing: ReadonlySet<string>): stri
     if (!existing.has(candidate)) {
       return candidate
     }
+  }
+}
+
+type WorktreeSetupDetail = Omit<WorktreeSetupUpdate, "worktreeId" | "projectId" | "name" | "branch">
+
+/// Publishes `worktree.setup` progress events (subjectId = worktree id),
+/// serialized on a promise chain so streamed log lines and lifecycle updates
+/// land in the event log in emission order. Returned promises resolve once
+/// that update is durable; failures surface to awaited call sites without
+/// stalling later updates.
+const makeWorktreeSetupPublisher = (
+  db: HerdManDatabaseService,
+  fanout: EventFanout,
+  worktree: Worktree
+): ((detail: WorktreeSetupDetail) => Promise<void>) => {
+  let chain: Promise<void> = Promise.resolve()
+  return (detail) => {
+    const update: WorktreeSetupUpdate = {
+      worktreeId: worktree.id,
+      projectId: worktree.projectId,
+      name: worktree.name,
+      branch: worktree.branch,
+      ...detail
+    }
+    const next = chain.then(async () => {
+      await appendAndPublish(db, fanout, "worktree.setup", worktree.id, update)
+    })
+    /* v8 ignore next -- keeps the chain alive if the event log write fails; awaited callers still see the failure via `next`. */
+    chain = next.catch(() => undefined)
+    return next
   }
 }
 

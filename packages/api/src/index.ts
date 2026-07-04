@@ -135,9 +135,32 @@ export const Worktree = Schema.Struct({
 export type Worktree = typeof Worktree.Type
 
 export const CreateWorktreeRequest = Schema.Struct({
+  /// Client-supplied worktree id so callers can follow `worktree.setup` events
+  /// (subjectId = worktree id) while the create request is still in flight.
+  id: Schema.optional(Schema.String),
   name: Schema.optional(Schema.String)
 })
 export type CreateWorktreeRequest = typeof CreateWorktreeRequest.Type
+
+export const WorktreeSetupState = Schema.Literals(["started", "log", "completed", "failed"])
+export type WorktreeSetupState = typeof WorktreeSetupState.Type
+
+/** Progress payload carried on `worktree.setup` envelopes while the server
+ *  materializes a worktree (`git worktree add` plus any checkout hooks).
+ *  `log` updates stream one output line each; `completed`/`failed` carry the
+ *  total `durationMs`, and `failed` carries the error `message`. */
+export const WorktreeSetupUpdate = Schema.Struct({
+  state: WorktreeSetupState,
+  worktreeId: Schema.String,
+  projectId: Schema.String,
+  name: Schema.String,
+  branch: Schema.String,
+  stream: Schema.optional(Schema.Literals(["stdout", "stderr"])),
+  line: Schema.optional(Schema.String),
+  message: Schema.optional(Schema.String),
+  durationMs: Schema.optional(Schema.Number)
+})
+export type WorktreeSetupUpdate = typeof WorktreeSetupUpdate.Type
 
 export const SessionUsage = Schema.Struct({
   used: Schema.optional(Schema.Number),
@@ -320,6 +343,7 @@ export const EventKind = Schema.Literals([
   "project.updated",
   "project.deleted",
   "worktree.created",
+  "worktree.setup",
   "session.created",
   "session.updated",
   "session.archived",

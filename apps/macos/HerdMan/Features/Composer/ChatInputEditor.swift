@@ -30,6 +30,9 @@ struct ChatInputEditor: NSViewRepresentable {
     /// Called once with the underlying text view so callers can move focus to it
     /// (used by the terminal's ⌘J focus handoff).
     var onTextViewReady: ((NSView) -> Void)? = nil
+    /// Honors SwiftUI `.disabled(...)`: the text view stops accepting edits
+    /// (and Return stops submitting) while a send is being accepted.
+    @Environment(\.isEnabled) private var isEnabled
 
     func makeNSView(context: Context) -> NSScrollView {
         let textView = SubmittingTextView()
@@ -65,6 +68,7 @@ struct ChatInputEditor: NSViewRepresentable {
         textView.onSubmit = { onSubmit() }
         textView.onKeyCommand = onKeyCommand
         textView.onPasteAttachments = onPasteAttachments
+        textView.isEditable = isEnabled
         if textView.string != text {
             textView.string = text
         }
@@ -162,6 +166,7 @@ final class SubmittingTextView: NSTextView {
         }
         // 36 = Return, 76 = numeric keypad Enter.
         if event.keyCode == 36 || event.keyCode == 76 {
+            guard isEditable else { return }
             if event.modifierFlags.contains(.shift) {
                 super.keyDown(with: event) // newline
             } else {

@@ -165,6 +165,18 @@ public final class ProjectListModel {
         Task { try? await serverClient.touchSession(id: sessionId, updatedAt: now) }
     }
 
+    /// Records the worktree a draft session ended up running in. The session
+    /// record is created before the worktree exists (the session page opens
+    /// while setup streams progress), so the name/cwd land here afterwards.
+    /// Local only: the draft hasn't been synced yet, and the first connect
+    /// upserts the session carrying this worktree name.
+    public func setWorktree(name: String, cwd: String, for sessionId: UUID) {
+        guard let index = sessions.firstIndex(where: { $0.id == sessionId }) else { return }
+        sessions[index].worktreeName = name
+        sessions[index].cwd = cwd
+        persistSessions()
+    }
+
     /// Records the agent-side session id once a brand-new session is created.
     public func setAgentSessionId(_ agentSessionId: String, for sessionId: UUID) {
         guard let index = sessions.firstIndex(where: { $0.id == sessionId }) else { return }

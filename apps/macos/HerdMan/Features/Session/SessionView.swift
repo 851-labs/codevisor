@@ -76,12 +76,19 @@ struct SessionScreen: View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 20) {
-                    if controller.conversation.isEmpty,
-                       controller.isConnecting || controller.pendingUserText != nil {
-                        optimisticStartingTurn
+                    if controller.conversation.isEmpty {
+                        if controller.isConnecting || controller.pendingUserText != nil {
+                            optimisticStartingTurn
+                        }
+                        setupSection
                     }
-                    ForEach(controller.conversation) { item in
+                    ForEach(Array(controller.conversation.enumerated()), id: \.element.id) { index, item in
                         ConversationItemView(item: item)
+                        // Pre-chat setup ran between the first message and the
+                        // first response; keep the finished sections there.
+                        if index == 0, case .user = item {
+                            setupSection
+                        }
                     }
                     if let error = controller.errorMessage {
                         errorBanner(error)
@@ -234,6 +241,16 @@ struct SessionScreen: View {
         )
     }
 
+    /// The "Setting up worktree…" / "Starting <harness>…" sections for a
+    /// brand-new session: live timers and streamed logs while pre-chat setup
+    /// runs, collapsing to "Set up worktree in 60s" once done.
+    @ViewBuilder
+    private var setupSection: some View {
+        if !controller.setupPhases.isEmpty {
+            SessionSetupView(phases: controller.setupPhases)
+        }
+    }
+
     @ViewBuilder
     private var optimisticStartingTurn: some View {
         // The pending prompt is held by the controller from the instant the
@@ -243,7 +260,11 @@ struct SessionScreen: View {
             ?? controller.composerText.trimmingCharacters(in: .whitespacesAndNewlines))
         if !text.isEmpty || !controller.pendingUserAttachments.isEmpty {
             UserMessageView(message: UserMessage(text: text, attachments: controller.pendingUserAttachments))
-            ShimmeringText.startingAgent
+            // The setup sections narrate pre-chat progress with their own
+            // timers; the generic shimmer only covers flows without them.
+            if controller.setupPhases.isEmpty {
+                ShimmeringText.startingAgent
+            }
         }
     }
 

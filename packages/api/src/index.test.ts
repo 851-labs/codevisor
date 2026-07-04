@@ -9,6 +9,7 @@ import {
   SessionDetail,
   TerminalClientFrame,
   Worktree,
+  WorktreeSetupUpdate,
   decode,
   encode,
   endpoints,
@@ -111,6 +112,38 @@ describe("@herdman/api", () => {
 
     expect(decode(CreateWorktreeRequest)({})).toEqual({})
     expect(decode(CreateWorktreeRequest)({ name: "fix-auth" })).toEqual({ name: "fix-auth" })
+    expect(decode(CreateWorktreeRequest)({ id: "worktree-1", name: "fix-auth" })).toEqual({
+      id: "worktree-1",
+      name: "fix-auth"
+    })
+  })
+
+  it("decodes worktree setup updates", () => {
+    expect(
+      decode(WorktreeSetupUpdate)({
+        state: "log",
+        worktreeId: "worktree-1",
+        projectId: "project-1",
+        name: "fix-auth",
+        branch: "herdman/fix-auth",
+        stream: "stderr",
+        line: "Preparing worktree (new branch 'herdman/fix-auth')"
+      }).line
+    ).toContain("Preparing worktree")
+
+    expect(
+      decode(WorktreeSetupUpdate)({
+        state: "failed",
+        worktreeId: "worktree-1",
+        projectId: "project-1",
+        name: "fix-auth",
+        branch: "herdman/fix-auth",
+        message: "fatal: a branch named 'herdman/fix-auth' already exists",
+        durationMs: 42
+      }).durationMs
+    ).toBe(42)
+
+    expect(() => decode(WorktreeSetupUpdate)({ state: "unknown", worktreeId: "w" })).toThrow()
   })
 
   it("rejects invalid terminal frames", () => {

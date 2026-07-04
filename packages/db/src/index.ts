@@ -372,7 +372,8 @@ export interface HerdManDatabaseService {
   readonly createWorktree: (
     projectId: string,
     name: string,
-    branch: string
+    branch: string,
+    id?: string
   ) => Effect.Effect<Worktree, DatabaseError>
   readonly listWorktrees: (
     projectId: string
@@ -750,11 +751,11 @@ const createService = (
           throw new Error(`Project not found: ${id}`)
         }
       }),
-    createWorktree: (projectId, name, branch) =>
+    createWorktree: (projectId, name, branch, id) =>
       attempt("createWorktree", () => {
         getProject(projectId)
         const worktree: Worktree = {
-          id: randomUUID(),
+          id: id ?? randomUUID(),
           projectId,
           serverId: config.serverId,
           name,

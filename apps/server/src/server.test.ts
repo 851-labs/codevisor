@@ -1282,7 +1282,7 @@ describe("@herdman/server", () => {
     tempDirs.push(worktreesRoot)
     process.env["HERDMAN_WORKTREES_ROOT"] = worktreesRoot
     try {
-      const { agents, server } = await start()
+      const { agents, server, services } = await start()
       // makeServices' temp dir (the newest entry) holds the server database.
       const serverDatabasePath = join(tempDirs[tempDirs.length - 1] as string, "herdman.sqlite")
       const repoRoot = mkdtempSync(join(tmpdir(), "herdman-repo-"))
@@ -1325,13 +1325,16 @@ describe("@herdman/server", () => {
         ).status
       ).toBe(422)
 
+      // A client-supplied id keys the worktree row and its setup events so
+      // callers can follow progress while the create request is in flight.
       const worktreeResponse = await jsonRequest(server, "/v1/projects/git-project/worktrees", {
-        body: JSON.stringify({ name: "Fix Auth!" }),
+        body: JSON.stringify({ id: "wt-fix-auth", name: "Fix Auth!" }),
         method: "POST"
       })
       expect(worktreeResponse.status).toBe(201)
       const worktree = worktreeResponse.body as { readonly name: string; readonly path: string }
       expect(worktree).toMatchObject({
+        id: "wt-fix-auth",
         projectId: "git-project",
         serverId: "server-a",
         name: "fix-auth",
@@ -1339,6 +1342,37 @@ describe("@herdman/server", () => {
         path: join(worktreesRoot, "git-project", "fix-auth")
       })
       expect(existsSync(join(worktree.path, ".git"))).toBe(true)
+
+      // Setup progress was streamed as ordered worktree.setup events: started,
+      // git output lines (git narrates "Preparing worktree ..." on stderr),
+      // then completed with the elapsed duration.
+      const setupPayloads = (await run(services.db.listEvents(0)))
+        .filter((event) => event.kind === "worktree.setup" && event.subjectId === "wt-fix-auth")
+        .map(
+          (event) =>
+            event.payload as {
+              readonly state: string
+              readonly stream?: string
+              readonly line?: string
+              readonly durationMs?: number
+            }
+        )
+      expect(setupPayloads[0]).toMatchObject({
+        state: "started",
+        worktreeId: "wt-fix-auth",
+        projectId: "git-project",
+        name: "fix-auth",
+        branch: "herdman/fix-auth"
+      })
+      const logPayloads = setupPayloads.filter((payload) => payload.state === "log")
+      expect(logPayloads.length).toBeGreaterThan(0)
+      expect(logPayloads.every((payload) => (payload.line ?? "").length > 0)).toBe(true)
+      expect(
+        logPayloads.every((payload) => payload.stream === "stdout" || payload.stream === "stderr")
+      ).toBe(true)
+      const lastSetup = setupPayloads[setupPayloads.length - 1]
+      expect(lastSetup?.state).toBe("completed")
+      expect(lastSetup?.durationMs).toBeGreaterThanOrEqual(0)
 
       // Same requested name gets uniquified.
       const secondWorktree = await jsonRequest(server, "/v1/projects/git-project/worktrees", {
@@ -1366,11 +1400,20 @@ describe("@herdman/server", () => {
       // releases the reserved name for a retry.
       await git(["branch", "herdman/doomed"], repoFolder)
       const failed = await jsonRequest(server, "/v1/projects/git-project/worktrees", {
-        body: JSON.stringify({ name: "doomed" }),
+        body: JSON.stringify({ id: "wt-doomed", name: "doomed" }),
         method: "POST"
       })
       expect(failed.status).toBe(422)
       expect((failed.body as { readonly error: string }).error).toContain("doomed")
+      // The failure is also published as a terminal worktree.setup event so
+      // clients following the stream see what went wrong.
+      const failedSetup = (await run(services.db.listEvents(0)))
+        .filter((event) => event.kind === "worktree.setup" && event.subjectId === "wt-doomed")
+        .map((event) => event.payload as { readonly state: string; readonly message?: string })
+      expect(failedSetup[0]?.state).toBe("started")
+      const failure = failedSetup[failedSetup.length - 1]
+      expect(failure?.state).toBe("failed")
+      expect(failure?.message).toContain("doomed")
       expect(
         ((await jsonRequest(server, "/v1/projects/git-project/worktrees")).body as Array<unknown>)
           .length

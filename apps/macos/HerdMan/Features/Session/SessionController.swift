@@ -74,6 +74,17 @@ final class SessionController {
     private(set) var worktreeName: String?
     /// The created worktree's path; overrides the project folder as the agent cwd.
     private(set) var sessionCwdOverride: String?
+    /// Pre-chat setup steps (worktree creation, agent start) shown on the
+    /// session page as "Worked for…"-style expandable sections with a live
+    /// timer, streamed logs, and any failure message.
+    private(set) var setupPhases: [SessionSetupPhase] = []
+    /// True from the moment a send is accepted until the first-send navigation
+    /// has happened — the window where the new-chat composer shows a spinner
+    /// and disables input.
+    private(set) var isSubmitting = false
+    /// Called once the first-send worktree has been created, so the owner can
+    /// patch the already-registered session record with the worktree name/cwd.
+    var onWorktreeCreated: ((ServerWorktree) -> Void)?
     /// Called with the agent session id once a brand-new session is created.
     var onAgentSessionCreated: ((String) -> Void)?
     /// The agent session id currently connected (resumed or newly created).
@@ -463,21 +474,29 @@ final class SessionController {
         await connectIfNeeded()
     }
 
-    /// Sends the composer text, connecting the harness first if needed.
+    /// Sends the composer text, connecting the harness first if needed. A
+    /// first send navigates to the session page immediately; the pre-chat
+    /// steps that follow (worktree creation, agent start) stream their
+    /// progress there as `setupPhases`.
     func send() async {
         let text = composerText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty || !composerAttachments.isEmpty, !isConnecting else { return }
+        guard !text.isEmpty || !composerAttachments.isEmpty, !isConnecting, !isSubmitting else { return }
+        isSubmitting = true
 
         // Settle eager uploads first; a failed attachment blocks the send with
         // an inline status instead of silently dropping the file.
-        guard let attachments = await collectAttachmentsForSend() else { return }
-
-        // Materialize the worktree before the session record or agent exist,
-        // so both are born with the worktree cwd.
-        if wantsNewWorktree, sessionCwdOverride == nil {
-            guard await createWorktree() else { return }
+        guard let attachments = await collectAttachmentsForSend() else {
+            isSubmitting = false
+            return
         }
 
+        let needsWorktree = wantsNewWorktree && sessionCwdOverride == nil
+        // A brand-new chat renders its pre-chat steps as setup sections; a
+        // resumed session's transcript shouldn't grow one retroactively.
+        let showsSetupPhases = serverSession?.agentSessionId == nil && resumeAgentSessionId == nil
+
+        // Navigate first: the session page opens the instant the user sends
+        // and shows the optimistic message plus live setup progress.
         if !hasSentFirst {
             hasSentFirst = true
             // Only a new-chat draft (which has an onFirstSend) sets the
@@ -486,6 +505,7 @@ final class SessionController {
             onFirstSend?()
             onFirstSend = nil
         }
+        isSubmitting = false
 
         // Clear before any await: the session page reuses this controller, and
         // the sent text lingering in the composer next to the optimistic user
@@ -494,23 +514,49 @@ final class SessionController {
         let staged = composerAttachments
         composerAttachments = []
 
+        // Show the first message optimistically while pre-chat setup runs.
+        if model == nil || needsWorktree {
+            pendingUserText = text
+            pendingUserAttachments = attachments
+        }
+
+        func restoreComposer() {
+            composerText = text
+            composerAttachments = staged
+            pendingUserText = nil
+            pendingUserAttachments = []
+        }
+
+        // Materialize the worktree before the agent exists, so it is born with
+        // the worktree cwd. Progress (including checkout-hook output) streams
+        // into the "Setting up worktree…" section.
+        if needsWorktree {
+            guard await createWorktree(showsSetupPhase: showsSetupPhases) else {
+                restoreComposer()
+                return
+            }
+        }
+
         if let model {
+            pendingUserText = nil
+            pendingUserAttachments = []
             await model.send(text, attachments: attachments)
             return
         }
 
         guard let harness = selectedHarness else {
             status = .failed("No agent is installed. Install Claude Code or Codex and try again.")
-            composerText = text
-            composerAttachments = staged
+            restoreComposer()
             return
         }
-        pendingUserText = text
-        pendingUserAttachments = attachments
         status = .connecting("Starting \(harness.name)…")
+        if showsSetupPhases { beginSetupPhase(.startingAgent(named: harness.name)) }
         do {
             let model = try await connect(harness)
             self.model = model
+            // Agent start is quick, so the row is ephemeral: it narrates while
+            // running and simply disappears on success (failures stay).
+            setupPhases.removeAll { $0.id == SessionSetupPhase.agentPhaseId }
             status = .idle
             // model.send appends the real user message synchronously before
             // its first suspension, so clearing here doesn't flash.
@@ -518,40 +564,98 @@ final class SessionController {
             pendingUserAttachments = []
             await model.send(text, attachments: attachments)
         } catch {
-            status = .failed(serverErrorMessage(error))
-            pendingUserText = nil
-            pendingUserAttachments = []
-            composerText = text
-            composerAttachments = staged
+            let message = serverErrorMessage(error)
+            mutateSetupPhase(id: SessionSetupPhase.agentPhaseId) { $0.fail(message: message) }
+            status = .failed(message)
+            restoreComposer()
         }
     }
 
     /// Asks the server to create a git worktree for this draft. The server
     /// owns the fixed location (~/herdman/{projectId}/{name}) and picks a
     /// random memorable name ("ferocious-walrus"); the app never computes
-    /// either. Returns false on failure, leaving a status the composer surfaces.
-    private func createWorktree() async -> Bool {
+    /// either. The worktree id is generated client-side so the server's
+    /// `worktree.setup` events (git output, checkout hooks, failures) can be
+    /// followed live into the setup section while the request is in flight.
+    /// Returns false on failure, leaving the error in the setup section (or
+    /// the status for flows without one).
+    private func createWorktree(showsSetupPhase: Bool) async -> Bool {
         guard let serverClient else {
             status = .failed("Worktrees need the HerdMan server. Start it and try again.")
             return false
         }
-        status = .connecting("Creating worktree…")
+        let worktreeId = UUID().uuidString.lowercased()
+        if showsSetupPhase { beginSetupPhase(.worktree()) }
+        status = .connecting("Setting up worktree…")
+        // Best-effort live tail: the WebSocket usually opens well before git
+        // (and any long checkout hooks) produce output. Terminal state comes
+        // from the HTTP response, not from these events.
+        let follow = Task { [weak self] in
+            do {
+                for try await envelope in serverClient.eventStream(
+                    since: ServerSessionTransport.liveOnlyEventCursor
+                ) {
+                    guard case let .log(stream, line) = WorktreeSetupEvent.from(
+                        envelope, worktreeId: worktreeId
+                    ) else { continue }
+                    self?.mutateSetupPhase(id: SessionSetupPhase.worktreePhaseId) {
+                        $0.appendLog(stream: stream, line: line)
+                    }
+                }
+            } catch {
+                // The stream is cosmetic; a drop just stops the live tail.
+            }
+        }
+        defer { follow.cancel() }
         do {
             let worktree = try await serverClient.createWorktree(
                 projectId: project.id,
+                id: worktreeId,
                 name: nil
             )
             sessionCwdOverride = worktree.path
             worktreeName = worktree.name
+            // The session record was registered before the worktree existed;
+            // carry the name/cwd onto it so the first connect (and terminals)
+            // run in the worktree.
+            if var session = serverSession {
+                session.worktreeName = worktree.name
+                session.cwd = worktree.path
+                serverSession = session
+            }
+            onWorktreeCreated?(worktree)
+            mutateSetupPhase(id: SessionSetupPhase.worktreePhaseId) { $0.succeed() }
             status = .idle
             return true
         } catch let HerdManServerClientError.httpStatus(_, message) {
-            status = .failed(worktreeFailureMessage(from: message))
+            failWorktreeSetup(with: worktreeFailureMessage(from: message), showsSetupPhase: showsSetupPhase)
             return false
         } catch {
-            status = .failed(serverErrorMessage(error))
+            failWorktreeSetup(with: serverErrorMessage(error), showsSetupPhase: showsSetupPhase)
             return false
         }
+    }
+
+    /// Surfaces a worktree failure: in the setup section when the session page
+    /// shows one (the error and captured logs stay expandable there), or as a
+    /// plain failed status otherwise.
+    private func failWorktreeSetup(with message: String, showsSetupPhase: Bool) {
+        if showsSetupPhase {
+            mutateSetupPhase(id: SessionSetupPhase.worktreePhaseId) { $0.fail(message: message) }
+            status = .idle
+        } else {
+            status = .failed(message)
+        }
+    }
+
+    private func beginSetupPhase(_ phase: SessionSetupPhase) {
+        setupPhases.removeAll { $0.id == phase.id }
+        setupPhases.append(phase)
+    }
+
+    private func mutateSetupPhase(id: String, _ transform: (inout SessionSetupPhase) -> Void) {
+        guard let index = setupPhases.firstIndex(where: { $0.id == id }) else { return }
+        transform(&setupPhases[index])
     }
 
     private func worktreeFailureMessage(from body: String) -> String {

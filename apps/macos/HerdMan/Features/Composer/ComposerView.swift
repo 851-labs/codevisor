@@ -46,6 +46,9 @@ struct ComposerCard: View {
                         onTextViewReady: onTextViewReady
                     )
                     .frame(height: editorHeight)
+                    // Frozen while a send is being accepted (the moment before
+                    // the session page opens); the send button spins instead.
+                    .disabled(controller.isSubmitting)
 
                     if controller.composerText.isEmpty {
                         Text(placeholder)
@@ -288,22 +291,32 @@ struct ComposerCard: View {
 
     @ViewBuilder
     private var sendButton: some View {
-        let isEnabled = controller.canSend || !visibleSlashMatches.isEmpty
-        Button { submitOrAcceptSlash() } label: {
-            Image(systemName: "arrow.up")
-                .font(.system(size: 12, weight: .bold))
+        if controller.isSubmitting {
+            // The send was accepted and the session page is about to open;
+            // spin in place and keep further input out.
+            ProgressView()
+                .controlSize(.small)
                 .frame(width: 28, height: 28)
-                .foregroundStyle(isEnabled ? theme.windowBackground : Color.secondary.opacity(0.75))
-                .background(
-                    Circle()
-                        .fill(isEnabled ? Color.primary.opacity(isSendButtonHovered ? 0.92 : 0.82) : Color.secondary.opacity(0.16))
-                )
-                .contentShape(Circle())
+                .background(Circle().fill(Color.secondary.opacity(0.16)))
+                .help("Sending…")
+        } else {
+            let isEnabled = controller.canSend || !visibleSlashMatches.isEmpty
+            Button { submitOrAcceptSlash() } label: {
+                Image(systemName: "arrow.up")
+                    .font(.system(size: 12, weight: .bold))
+                    .frame(width: 28, height: 28)
+                    .foregroundStyle(isEnabled ? theme.windowBackground : Color.secondary.opacity(0.75))
+                    .background(
+                        Circle()
+                            .fill(isEnabled ? Color.primary.opacity(isSendButtonHovered ? 0.92 : 0.82) : Color.secondary.opacity(0.16))
+                    )
+                    .contentShape(Circle())
+            }
+            .buttonStyle(.plain)
+            .disabled(!isEnabled)
+            .onHover { isSendButtonHovered = $0 }
+            .help("Send (↩)")
         }
-        .buttonStyle(.plain)
-        .disabled(!isEnabled)
-        .onHover { isSendButtonHovered = $0 }
-        .help("Send (↩)")
     }
 
     private var slashQuery: String? {

@@ -38,6 +38,10 @@ public protocol HerdManServerClienting: Sendable {
     func deleteProject(id: UUID) async throws
     func listWorktrees(projectId: UUID) async throws -> [ServerWorktree]
     func createWorktree(projectId: UUID, name: String?) async throws -> ServerWorktree
+    /// Creates a worktree with a client-supplied id so the caller can follow
+    /// the server's `worktree.setup` progress events (subjectId = worktree id)
+    /// while the request is still in flight.
+    func createWorktree(projectId: UUID, id: String?, name: String?) async throws -> ServerWorktree
     func listSessions() async throws -> [ServerSession]
     func sessionDetail(id: UUID) async throws -> ServerSessionDetail
     func promptQueue(id: UUID) async throws -> [ServerPromptQueueItem]
@@ -114,6 +118,12 @@ public extension HerdManServerClienting {
 
     func createWorktree(projectId: UUID, name: String?) async throws -> ServerWorktree {
         throw HerdManServerClientError.invalidResponse
+    }
+
+    /// Default for fakes/older transports: the id is dropped and the plain
+    /// create path is used (no setup-progress correlation).
+    func createWorktree(projectId: UUID, id: String?, name: String?) async throws -> ServerWorktree {
+        try await createWorktree(projectId: projectId, name: name)
     }
 }
 
@@ -540,10 +550,14 @@ public final class HerdManServerClient: HerdManServerClienting, @unchecked Senda
     }
 
     public func createWorktree(projectId: UUID, name: String?) async throws -> ServerWorktree {
+        try await createWorktree(projectId: projectId, id: nil, name: name)
+    }
+
+    public func createWorktree(projectId: UUID, id: String?, name: String?) async throws -> ServerWorktree {
         try await send(
             "/v1/projects/\(projectId.uuidString)/worktrees",
             method: "POST",
-            body: CreateWorktreeBody(name: name)
+            body: CreateWorktreeBody(id: id, name: name)
         )
     }
 
@@ -967,6 +981,7 @@ private struct CreateSessionBody: Encodable {
 }
 
 private struct CreateWorktreeBody: Encodable {
+    var id: String?
     var name: String?
 }
 
