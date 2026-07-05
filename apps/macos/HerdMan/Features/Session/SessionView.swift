@@ -146,6 +146,9 @@ struct SessionScreen: View {
                             setupSection
                         }
                     }
+                    if controller.isWaitingOnBackgroundTasks {
+                        backgroundTaskIndicator
+                    }
                     if let error = controller.errorMessage {
                         errorBanner(error)
                     }
@@ -429,6 +432,25 @@ struct SessionScreen: View {
         }
     }
 
+    /// Shown between turns while the agent owns background work (backgrounded
+    /// shells, subagents) — the agent restarts on its own when it settles, so
+    /// the chat is waiting, not stuck. Hidden the moment a turn is in flight.
+    @ViewBuilder
+    private var backgroundTaskIndicator: some View {
+        if let task = controller.backgroundTasks.first {
+            let extra = controller.backgroundTasks.count - 1
+            HStack(spacing: 8) {
+                Image(systemName: "clock.arrow.circlepath")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                ShimmeringText.waitingOnBackgroundTask(
+                    extra > 0 ? "\(task.description) and \(extra) more" : task.description
+                )
+                Spacer(minLength: 0)
+            }
+        }
+    }
+
     private func errorBanner(_ message: String) -> some View {
         Label(message, systemImage: "exclamationmark.triangle.fill")
             .font(.callout)
@@ -441,9 +463,11 @@ struct SessionScreen: View {
     private var streamFingerprint: Int {
         var hasher = Hasher()
         hasher.combine(controller.conversation.count)
+        hasher.combine(controller.isWaitingOnBackgroundTasks)
         if case let .assistant(message) = controller.conversation.last {
             hasher.combine(message.turn.entries.count)
             hasher.combine(message.turn.isThinking)
+            hasher.combine(message.turn.subagentActivityFingerprint)
             if case let .text(_, markdown) = message.turn.finalText {
                 hasher.combine(markdown.count)
             }

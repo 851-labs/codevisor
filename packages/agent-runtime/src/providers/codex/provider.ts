@@ -122,6 +122,10 @@ interface CodexSession {
   models: ReadonlyArray<CodexModel>
   /// item id → tool-call kind, so completions map back without re-parsing.
   readonly itemKinds: Map<string, string>
+  /// Collab (sub)agent thread id → the spawnAgent tool call id that created
+  /// it. Items arriving on those threads are tagged with that parent so
+  /// clients can nest them; the main thread's id is `threadId`.
+  readonly collabThreads: Map<string, string>
 }
 
 export const makeCodexProvider = (
@@ -178,6 +182,7 @@ export const makeCodexProvider = (
     const session: CodexSession = {
       activeTurnId: undefined,
       client,
+      collabThreads: new Map(),
       currentEffort: undefined,
       currentModeId: DEFAULT_CODEX_MODE,
       currentModel: response.model ?? "",
@@ -451,6 +456,25 @@ const approvalResponse = (method: string): Promise<unknown> => {
 
 const handleNotification = (session: CodexSession, method: string, params: unknown): void => {
   const payload = isRecord(params) ? params : {}
+  // Every notification is thread-scoped. Collab subagents run as separate
+  // threads on the same connection: their items nest under the spawnAgent
+  // tool call, their turn lifecycle must NOT drive the session's turn state,
+  // and traffic from a thread we can't attribute is dropped rather than mixed
+  // into the main transcript.
+  const threadId = typeof payload.threadId === "string" ? payload.threadId : undefined
+  const isForeign = threadId !== undefined && threadId !== session.threadId
+  const parentToolCallId = isForeign ? session.collabThreads.get(threadId) : undefined
+  if (isForeign) {
+    const routable =
+      method === "item/started" ||
+      method === "item/completed" ||
+      method === "item/agentMessage/delta" ||
+      method === "item/reasoning/textDelta" ||
+      method === "item/reasoning/summaryTextDelta" ||
+      method === "item/fileChange/patchUpdated"
+    if (!routable || parentToolCallId === undefined) return
+  }
+  const parentField = parentToolCallId === undefined ? {} : { parentToolCallId }
   switch (method) {
     case "turn/started": {
       const turn = isRecord(payload.turn) ? payload.turn : {}
@@ -510,7 +534,8 @@ const handleNotification = (session: CodexSession, method: string, params: unkno
         payload: {
           content: { text: String(payload.delta ?? ""), type: "text" },
           sessionUpdate: "agent_message_chunk",
-          ...(typeof payload.itemId === "string" ? { messageId: payload.itemId } : {})
+          ...(typeof payload.itemId === "string" ? { messageId: payload.itemId } : {}),
+          ...parentField
         },
         subjectId: session.key
       })
@@ -522,7 +547,8 @@ const handleNotification = (session: CodexSession, method: string, params: unkno
         kind: "session.output",
         payload: {
           content: { text: String(payload.delta ?? ""), type: "text" },
-          sessionUpdate: "agent_thought_chunk"
+          sessionUpdate: "agent_thought_chunk",
+          ...parentField
         },
         subjectId: session.key
       })
@@ -540,13 +566,22 @@ const handleNotification = (session: CodexSession, method: string, params: unkno
           kind: "session.output",
           payload: {
             content: { text: "", type: "text" },
-            sessionUpdate: "agent_thought_chunk"
+            sessionUpdate: "agent_thought_chunk",
+            ...parentField
           },
           subjectId: session.key
         })
         break
       }
-      emitItemLifecycle(session, item, method === "item/started")
+      if (item.type === "collabAgentToolCall") {
+        handleCollabItem(session, item, method === "item/started")
+        break
+      }
+      if (item.type === "subAgentActivity") {
+        handleSubAgentActivity(session, item)
+        break
+      }
+      emitItemLifecycle(session, item, method === "item/started", parentToolCallId)
       break
     }
     case "item/fileChange/patchUpdated": {
@@ -567,7 +602,8 @@ const handleNotification = (session: CodexSession, method: string, params: unkno
             status: "in_progress",
             title: fileChangeTitle(payload.changes, false),
             toolCallId: itemId,
-            ...(stats.length === 0 ? {} : { diffStats: stats })
+            ...(stats.length === 0 ? {} : { diffStats: stats }),
+            ...parentField
           },
           subjectId: session.key
         })
@@ -624,17 +660,111 @@ const handleNotification = (session: CodexSession, method: string, params: unkno
   }
 }
 
-const emitItemLifecycle = (
+/// Collab tool calls are how a codex agent drives its subagents: `spawnAgent`
+/// becomes the visible "Agent" tool call that child-thread items nest under;
+/// `closeAgent` settles it. `wait`/`sendInput`/`resumeAgent` are plumbing and
+/// stay invisible.
+const handleCollabItem = (
   session: CodexSession,
   item: Record<string, unknown>,
   started: boolean
 ): void => {
   const itemId = typeof item.id === "string" ? item.id : undefined
   if (itemId === undefined) return
+  const tool = typeof item.tool === "string" ? item.tool : ""
+  const receivers = Array.isArray(item.receiverThreadIds)
+    ? item.receiverThreadIds.filter((value): value is string => typeof value === "string")
+    : []
+  if (tool === "spawnAgent") {
+    // Register on both lifecycle edges: the child's items must be attributable
+    // from the very first notification.
+    for (const receiver of receivers) {
+      session.collabThreads.set(receiver, itemId)
+    }
+    if (started) {
+      void session.emit({
+        kind: "session.output",
+        payload: {
+          kind: "agent",
+          sessionUpdate: "tool_call",
+          status: "in_progress",
+          title: collabAgentTitle(item),
+          toolCallId: itemId,
+          ...(typeof item.prompt === "string" ? { rawInput: { prompt: item.prompt } } : {})
+        },
+        subjectId: session.key
+      })
+    } else if (item.status === "failed") {
+      void session.emit({
+        kind: "session.output",
+        payload: { sessionUpdate: "tool_call_update", status: "failed", toolCallId: itemId },
+        subjectId: session.key
+      })
+    }
+    // A successful spawn completion means the child is now RUNNING — the
+    // Agent call stays open until closeAgent (or turn end settles it).
+    return
+  }
+  if (tool === "closeAgent" && !started && item.status !== "failed") {
+    for (const receiver of receivers) {
+      const spawnId = session.collabThreads.get(receiver)
+      if (spawnId === undefined) continue
+      void session.emit({
+        kind: "session.output",
+        payload: { sessionUpdate: "tool_call_update", status: "completed", toolCallId: spawnId },
+        subjectId: session.key
+      })
+    }
+  }
+  // wait / sendInput / resumeAgent: no visible rows.
+}
+
+const collabAgentTitle = (item: Record<string, unknown>): string => {
+  if (typeof item.prompt === "string" && item.prompt.trim().length > 0) {
+    return `Agent: ${promptSnippet(item.prompt)}`
+  }
+  return typeof item.model === "string" && item.model.length > 0 ? `Agent (${item.model})` : "Agent"
+}
+
+/// Codex spawn prompts are full instruction blobs, so the title takes a short
+/// snippet, cut at a word boundary — a hard slice ends mid-phrase and reads
+/// like part of the label ("… Read-only").
+const promptSnippet = (prompt: string): string => {
+  const line = firstLine(prompt.trim())
+  if (line.length <= 48) return line
+  const cut = line.slice(0, 48)
+  const boundary = cut.lastIndexOf(" ")
+  return `${(boundary > 20 ? cut.slice(0, boundary) : cut).trimEnd()}…`
+}
+
+/// An interrupted subagent will never produce further output; settle its
+/// spawn call as cancelled so nested rows don't spin forever.
+const handleSubAgentActivity = (session: CodexSession, item: Record<string, unknown>): void => {
+  if (item.kind !== "interrupted") return
+  const agentThreadId = typeof item.agentThreadId === "string" ? item.agentThreadId : undefined
+  if (agentThreadId === undefined) return
+  const spawnId = session.collabThreads.get(agentThreadId)
+  if (spawnId === undefined) return
+  void session.emit({
+    kind: "session.output",
+    payload: { sessionUpdate: "tool_call_update", status: "cancelled", toolCallId: spawnId },
+    subjectId: session.key
+  })
+}
+
+const emitItemLifecycle = (
+  session: CodexSession,
+  item: Record<string, unknown>,
+  started: boolean,
+  parentToolCallId?: string
+): void => {
+  const itemId = typeof item.id === "string" ? item.id : undefined
+  if (itemId === undefined) return
   const type = typeof item.type === "string" ? item.type : ""
+  const parentField = parentToolCallId === undefined ? {} : { parentToolCallId }
   const event = (payload: Record<string, unknown>): RuntimeEvent => ({
     kind: "session.output",
-    payload,
+    payload: { ...payload, ...parentField },
     subjectId: session.key
   })
 

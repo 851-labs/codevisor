@@ -1273,6 +1273,61 @@ describe("@herdman/server", () => {
     expect(detail.conversation.map((item) => item.text)).toContain("Background task finished.")
   })
 
+  it("keeps subagent-attributed chunks out of the conversation snapshot", async () => {
+    const { agents, server, services } = await start()
+    const workspaceRoot = mkdtempSync(join(tmpdir(), "herdman-server-subagent-"))
+    tempDirs.push(workspaceRoot)
+    const workspaceFolder = join(workspaceRoot, "herdman")
+    mkdirSync(workspaceFolder)
+    const workspace = (
+      await jsonRequest(server, "/v1/projects", {
+        body: JSON.stringify({ folderPath: workspaceFolder }),
+        method: "POST"
+      })
+    ).body as { readonly id: string }
+    const session = (
+      await jsonRequest(server, "/v1/sessions", {
+        body: JSON.stringify({ projectId: workspace.id, harnessId: "codex", title: "Subagent" }),
+        method: "POST"
+      })
+    ).body as { readonly id: string; readonly agentSessionId: string }
+
+    await agents.emit(session.agentSessionId, {
+      kind: "session.output",
+      subjectId: session.agentSessionId,
+      payload: {
+        content: { text: "main agent text", type: "text" },
+        messageId: "assistant-main",
+        sessionUpdate: "agent_message_chunk"
+      }
+    })
+    await agents.emit(session.agentSessionId, {
+      kind: "session.output",
+      subjectId: session.agentSessionId,
+      payload: {
+        content: { text: "subagent text", type: "text" },
+        messageId: "msg-sub-1",
+        parentToolCallId: "task-1",
+        sessionUpdate: "agent_message_chunk"
+      }
+    })
+
+    // The raw event is persisted for rich replay (nested transcripts)...
+    const events = await run(services.db.listEvents(0))
+    expect(events.filter((event) => event.subjectId === session.id)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "session.output",
+          payload: expect.objectContaining({ parentToolCallId: "task-1" })
+        })
+      ])
+    )
+    // ...but the text conversation snapshot only carries the main thread.
+    const detail = await run(services.db.getSessionDetail(session.id))
+    expect(detail.conversation.map((item) => item.text)).toContain("main agent text")
+    expect(detail.conversation.map((item) => item.text)).not.toContain("subagent text")
+  })
+
   it("creates worktrees and runs worktree sessions in them", async () => {
     const execFileAsync = promisify(execFile)
     const git = (args: ReadonlyArray<string>, cwd: string) =>

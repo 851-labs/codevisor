@@ -186,6 +186,17 @@ interface ToolInputAccumulator {
   oldContent: string | null | undefined
 }
 
+/// One in-flight background task (backgrounded shell, subagent, ...) tracked
+/// from the SDK's `task_*` system messages. Emitted to clients as a full
+/// snapshot on every change so the UI can show what the agent is waiting on.
+interface BackgroundTaskEntry {
+  readonly id: string
+  description: string
+  status: string
+  readonly taskType: string
+  readonly toolUseId?: string
+}
+
 interface ClaudeSession {
   /// The id the runtime and server know this session by (== SDK session id
   /// for new sessions; the requested id for resumed ones).
@@ -208,6 +219,13 @@ interface ClaudeSession {
   models: ReadonlyArray<ClaudeModel>
   readonly accumulators: Map<string, ToolInputAccumulator>
   readonly openToolCalls: Set<string>
+  /// Current message id per streaming subagent, keyed by the subagent's
+  /// parent tool_use id — keeps subagent text spans stable across replay
+  /// without touching the main agent's `currentMessageId`.
+  readonly subagentMessageIds: Map<string, string>
+  /// Cross-turn: background tasks legitimately outlive the turn that spawned
+  /// them, so this is never cleared at turn end.
+  readonly backgroundTasks: Map<string, BackgroundTaskEntry>
 }
 
 export const makeClaudeProvider = (
@@ -299,6 +317,7 @@ export const makeClaudeProvider = (
     const created: ClaudeSession = {
       abort,
       accumulators: new Map(),
+      backgroundTasks: new Map(),
       currentEffort: "default",
       currentMessageId: undefined,
       currentModel: "",
@@ -314,10 +333,15 @@ export const makeClaudeProvider = (
       pendingPrompt: undefined,
       q,
       sdkSessionId: sessionKey,
+      subagentMessageIds: new Map(),
       turnActive: false,
       turnId: randomUUID()
     }
     session = created
+    // A fresh session has no background work by definition; this snapshot
+    // clears any stale "running" state a client may replay from a previous
+    // server process's event log.
+    emitBackgroundTasks(created)
 
     const pump = async (): Promise<void> => {
       try {
@@ -559,28 +583,56 @@ const handleMessage = (
       handleStreamEvent(session, message, readFile)
       break
     case "assistant": {
-      if (message.parent_tool_use_id === null) {
+      const parentId = message.parent_tool_use_id ?? undefined
+      if (parentId === undefined) {
         void ensureTurnStarted(session, session.pendingPrompt === undefined ? "agent" : "user")
       }
       const content = message.message.content
       if (!Array.isArray(content)) break
+      const inner = message.message as unknown as Record<string, unknown>
+      const messageId = typeof inner.id === "string" ? inner.id : undefined
+      // The CLI does not forward subagent stream events, so a subagent's prose
+      // exists only here, in its consolidated assistant messages. Emit it
+      // tagged with the parent tool call — unless this message DID stream
+      // (older CLIs), in which case the chunks are already out and re-emitting
+      // would double the text.
+      const alreadyStreamed =
+        parentId !== undefined &&
+        messageId !== undefined &&
+        session.subagentMessageIds.get(parentId) === messageId
       for (const block of content) {
-        if (isRecord(block) && block.type === "tool_use") {
+        if (!isRecord(block)) continue
+        if (block.type === "text" && parentId !== undefined && !alreadyStreamed) {
+          const text = String(block.text ?? "")
+          if (text.length === 0) continue
+          void session.emit({
+            kind: "session.output",
+            payload: {
+              content: { text, type: "text" },
+              parentToolCallId: parentId,
+              sessionUpdate: "agent_message_chunk",
+              ...(messageId === undefined ? {} : { messageId })
+            },
+            subjectId: session.key
+          })
+        } else if (block.type === "tool_use") {
           const toolUseId = String(block.id)
           const toolName = String(block.name)
           const stats = authoritativeStatsFromInput(session, toolName, block.input, readFile)
           void session.emit({
             kind: "session.output",
             payload: {
+              // The streamed tool_call may never have existed for subagent
+              // tools (no subagent stream events), so this update must carry
+              // enough to create the call outright — including its kind.
+              kind: toolKind(toolName),
               rawInput: block.input,
               sessionUpdate: "tool_call_update",
               status: "in_progress",
               title: toolTitle(toolName, block.input),
               toolCallId: toolUseId,
               ...(stats === undefined ? {} : { diffStats: stats }),
-              ...(message.parent_tool_use_id === null
-                ? {}
-                : { parentToolCallId: message.parent_tool_use_id })
+              ...(parentId === undefined ? {} : { parentToolCallId: parentId })
             },
             subjectId: session.key
           })
@@ -618,9 +670,87 @@ const handleMessage = (
     case "result":
       handleResult(session, message)
       break
+    case "system":
+      handleSystemMessage(session, message)
+      break
     default:
       break
   }
+}
+
+/// Tracks the SDK's background-task lifecycle (`task_*` system messages) so
+/// clients can tell "idle" apart from "turn ended, waiting on background
+/// work". Every change emits a full replace-on-update snapshot.
+const handleSystemMessage = (
+  session: ClaudeSession,
+  message: Extract<SDKMessage, { type: "system" }>
+): void => {
+  switch (message.subtype) {
+    case "task_started": {
+      // Ambient/housekeeping tasks should not make the chat look busy.
+      if (message.skip_transcript === true) break
+      session.backgroundTasks.set(message.task_id, {
+        description: message.description,
+        id: message.task_id,
+        status: "running",
+        taskType: message.subagent_type !== undefined ? "subagent" : (message.task_type ?? "task"),
+        ...(message.tool_use_id === undefined ? {} : { toolUseId: message.tool_use_id })
+      })
+      emitBackgroundTasks(session)
+      // Retitle the spawning tool call with the task's description — the most
+      // reliable source, immune to the Task→Agent tool rename.
+      if (message.subagent_type !== undefined && message.tool_use_id !== undefined) {
+        void session.emit({
+          kind: "session.output",
+          payload: {
+            kind: "agent",
+            sessionUpdate: "tool_call_update",
+            title: `Agent: ${message.description}`,
+            toolCallId: message.tool_use_id
+          },
+          subjectId: session.key
+        })
+      }
+      break
+    }
+    case "task_progress": {
+      const entry = session.backgroundTasks.get(message.task_id)
+      if (entry === undefined || message.summary === undefined) break
+      if (entry.description === message.summary) break
+      entry.description = message.summary
+      emitBackgroundTasks(session)
+      break
+    }
+    case "task_updated": {
+      const entry = session.backgroundTasks.get(message.task_id)
+      if (entry === undefined) break
+      const status = message.patch.status
+      if (status === "completed" || status === "failed" || status === "killed") {
+        session.backgroundTasks.delete(message.task_id)
+      } else {
+        if (status !== undefined) entry.status = status
+        if (message.patch.description !== undefined) entry.description = message.patch.description
+      }
+      emitBackgroundTasks(session)
+      break
+    }
+    case "task_notification": {
+      if (session.backgroundTasks.delete(message.task_id)) {
+        emitBackgroundTasks(session)
+      }
+      break
+    }
+    default:
+      break
+  }
+}
+
+const emitBackgroundTasks = (session: ClaudeSession): void => {
+  void session.emit({
+    kind: "session.updated",
+    payload: { backgroundTasks: [...session.backgroundTasks.values()] },
+    subjectId: session.key
+  })
 }
 
 const handleStreamEvent = (
@@ -629,13 +759,16 @@ const handleStreamEvent = (
   readFile: (path: string) => string | undefined
 ): void => {
   const event = message.event as unknown as Record<string, unknown>
-  const isSubagent = message.parent_tool_use_id !== null
+  const parentId = message.parent_tool_use_id ?? undefined
   switch (event.type) {
     case "message_start": {
-      if (!isSubagent) {
-        const inner = event.message
-        session.currentMessageId = isRecord(inner) ? String(inner.id ?? "") : undefined
+      const inner = event.message
+      const innerId = isRecord(inner) ? String(inner.id ?? "") : undefined
+      if (parentId === undefined) {
+        session.currentMessageId = innerId
         void ensureTurnStarted(session, session.pendingPrompt === undefined ? "agent" : "user")
+      } else if (innerId !== undefined && innerId !== "") {
+        session.subagentMessageIds.set(parentId, innerId)
       }
       break
     }
@@ -664,7 +797,7 @@ const handleStreamEvent = (
             status: "in_progress",
             title: toolName,
             toolCallId: toolUseId,
-            ...(isSubagent ? { parentToolCallId: message.parent_tool_use_id } : {})
+            ...(parentId === undefined ? {} : { parentToolCallId: parentId })
           },
           subjectId: session.key
         })
@@ -674,24 +807,30 @@ const handleStreamEvent = (
     case "content_block_delta": {
       const delta = event.delta
       if (!isRecord(delta)) break
-      if (delta.type === "text_delta" && !isSubagent) {
+      if (delta.type === "text_delta") {
+        // Subagent prose flows tagged with its parent tool call so clients can
+        // nest it under the Task row instead of mixing it into the main thread.
+        const messageId =
+          parentId === undefined
+            ? session.currentMessageId
+            : session.subagentMessageIds.get(parentId)
         void session.emit({
           kind: "session.output",
           payload: {
             content: { text: String(delta.text ?? ""), type: "text" },
             sessionUpdate: "agent_message_chunk",
-            ...(session.currentMessageId === undefined
-              ? {}
-              : { messageId: session.currentMessageId })
+            ...(messageId === undefined ? {} : { messageId }),
+            ...(parentId === undefined ? {} : { parentToolCallId: parentId })
           },
           subjectId: session.key
         })
-      } else if (delta.type === "thinking_delta" && !isSubagent) {
+      } else if (delta.type === "thinking_delta") {
         void session.emit({
           kind: "session.output",
           payload: {
             content: { text: String(delta.thinking ?? ""), type: "text" },
-            sessionUpdate: "agent_thought_chunk"
+            sessionUpdate: "agent_thought_chunk",
+            ...(parentId === undefined ? {} : { parentToolCallId: parentId })
           },
           subjectId: session.key
         })
@@ -744,6 +883,7 @@ const handleResult = (session: ClaudeSession, message: SDKMessage & { type: "res
     })
   }
   session.accumulators.clear()
+  session.subagentMessageIds.clear()
 
   const stopReason = session.interruptRequested
     ? "cancelled"
@@ -1027,8 +1167,11 @@ const toolKind = (toolName: string): string => {
     case "WebSearch":
       return "fetch"
     case "TodoWrite":
-    case "Task":
       return "think"
+    // The subagent-spawn tool: "Task" historically, "Agent" in newer CLIs.
+    case "Task":
+    case "Agent":
+      return "agent"
     default:
       return "other"
   }
@@ -1086,7 +1229,7 @@ const toolTitle = (toolName: string, input: unknown): string => {
     if (typeof input.pattern === "string") {
       return `Searched for ${input.pattern}`
     }
-    if (toolName === "Task" && typeof input.description === "string") {
+    if ((toolName === "Task" || toolName === "Agent") && typeof input.description === "string") {
       return `Agent: ${input.description}`
     }
   }

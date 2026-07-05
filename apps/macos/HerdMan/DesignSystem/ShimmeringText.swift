@@ -66,6 +66,12 @@ extension ShimmeringText {
     static var compactingContext: ShimmeringText {
         ShimmeringText(text: "Compacting context...")
     }
+
+    /// The turn is over but the agent still owns background work and will
+    /// start a new turn on its own when it settles.
+    static func waitingOnBackgroundTask(_ description: String) -> ShimmeringText {
+        ShimmeringText(text: "Waiting on \(description)...")
+    }
 }
 
 struct AgentStatusText: View {

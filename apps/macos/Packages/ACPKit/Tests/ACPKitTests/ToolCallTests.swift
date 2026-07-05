@@ -82,6 +82,34 @@ struct ToolCallTests {
         #expect(path == "/a.txt")
     }
 
+    @Test("parentToolCallId decodes, round-trips and merges")
+    func parentToolCallId() throws {
+        let json = #"{"toolCallId":"sub-1","title":"Read","parentToolCallId":"task-1"}"#
+        let call = try ACPJSON.decoder.decode(ToolCall.self, from: Data(json.utf8))
+        #expect(call.parentToolCallId == "task-1")
+
+        let data = try ACPJSON.encoder.encode(call)
+        let decoded = try ACPJSON.decoder.decode(ToolCall.self, from: data)
+        #expect(decoded.parentToolCallId == "task-1")
+
+        // An update carrying the parent id attaches it; one without preserves it.
+        let attached = ToolCall(toolCallId: "sub-2", title: "Grep")
+            .applying(ToolCallUpdate(toolCallId: "sub-2", parentToolCallId: "task-1"))
+        #expect(attached.parentToolCallId == "task-1")
+        #expect(attached.applying(ToolCallUpdate(toolCallId: "sub-2", status: .completed)).parentToolCallId == "task-1")
+        #expect(ToolCallUpdate(toolCallId: "sub-3", parentToolCallId: "task-9").asToolCall().parentToolCallId == "task-9")
+    }
+
+    @Test("agent kind decodes; unknown kinds stay lenient")
+    func agentKind() throws {
+        let json = #"{"toolCallId":"task-1","title":"Agent: explore","kind":"agent"}"#
+        let call = try ACPJSON.decoder.decode(ToolCall.self, from: Data(json.utf8))
+        #expect(call.kind == .agent)
+
+        let unknown = #"{"toolCallId":"x","title":"t","kind":"hologram"}"#
+        #expect(try ACPJSON.decoder.decode(ToolCall.self, from: Data(unknown.utf8)).kind == .other)
+    }
+
     @Test("diffStats decode on calls and updates, and merge like other fields")
     func diffStats() throws {
         let json = #"{"toolCallId":"x","title":"Edit","diffStats":[{"path":"/a","added":13,"removed":7}]}"#

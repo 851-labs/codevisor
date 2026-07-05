@@ -329,6 +329,13 @@ final class SessionController {
         isConnecting || isSending
     }
 
+    /// Background tasks the agent is running (backgrounded shells, subagents).
+    var backgroundTasks: [BackgroundTaskInfo] { model?.backgroundTasks ?? [] }
+
+    /// True when the turn ended but the agent still owns background work — the
+    /// chat isn't stuck; the agent will come back on its own.
+    var isWaitingOnBackgroundTasks: Bool { model?.isWaitingOnBackgroundTasks ?? false }
+
     var canSend: Bool {
         (!composerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             || !composerAttachments.isEmpty)

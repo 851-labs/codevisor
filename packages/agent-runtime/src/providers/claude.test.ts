@@ -142,6 +142,15 @@ const streamEvent = (event: unknown, parentToolUseId: string | null = null): SDK
     uuid: "00000000-0000-0000-0000-000000000000"
   }) as never
 
+const systemMessage = (subtype: string, fields: Record<string, unknown>): SDKMessage =>
+  ({
+    session_id: "sdk-session-1",
+    subtype,
+    type: "system",
+    uuid: "00000000-0000-0000-0000-000000000001",
+    ...fields
+  }) as never
+
 const settle = async (): Promise<void> => {
   for (let index = 0; index < 20; index += 1) {
     await Promise.resolve()
@@ -354,7 +363,10 @@ describe("ClaudeProvider", () => {
     const result = await promptPromise
     expect(result.stopReason).toBe("end_turn")
 
-    const payloads = events.map((event) => event.payload as Record<string, unknown>)
+    // The session-start background-task snapshot precedes turn output.
+    const payloads = events
+      .map((event) => event.payload as Record<string, unknown>)
+      .filter((payload) => payload.backgroundTasks === undefined)
     expect(payloads[0]).toMatchObject({ initiatedBy: "user", turnState: "started" })
     expect(payloads[1]).toMatchObject({
       sessionUpdate: "tool_call",
@@ -414,7 +426,10 @@ describe("ClaudeProvider", () => {
     fake.push(resultMessage())
     await settle()
 
-    const payloads = events.map((event) => event.payload as Record<string, unknown>)
+    // The session-start background-task snapshot precedes turn output.
+    const payloads = events
+      .map((event) => event.payload as Record<string, unknown>)
+      .filter((payload) => payload.backgroundTasks === undefined)
     expect(payloads[0]).toMatchObject({ initiatedBy: "agent", turnState: "started" })
     expect(payloads[1]).toMatchObject({
       sessionUpdate: "agent_message_chunk",
@@ -467,7 +482,7 @@ describe("ClaudeProvider", () => {
     expect(events.every((event) => event.kind !== "session.error")).toBe(true)
   })
 
-  it("tags subagent tool calls with parentToolCallId and suppresses their prose", async () => {
+  it("tags subagent tool calls, prose and thinking with parentToolCallId", async () => {
     const fake = new FakeQuery()
     const provider = makeProvider(fake)
     const events: Array<RuntimeEvent> = []
@@ -481,6 +496,7 @@ describe("ClaudeProvider", () => {
 
     const promptPromise = run(created.handle.prompt("spawn an agent"))
     await settle()
+    fake.push(streamEvent({ message: { id: "msg-sub-1" }, type: "message_start" }, "parent-task-1"))
     fake.push(
       streamEvent(
         {
@@ -501,6 +517,16 @@ describe("ClaudeProvider", () => {
         "parent-task-1"
       )
     )
+    fake.push(
+      streamEvent(
+        {
+          delta: { thinking: "subagent thought", type: "thinking_delta" },
+          index: 2,
+          type: "content_block_delta"
+        },
+        "parent-task-1"
+      )
+    )
     fake.push(resultMessage())
     await promptPromise
 
@@ -512,13 +538,337 @@ describe("ClaudeProvider", () => {
         parentToolCallId: "parent-task-1"
       })
     )
+    expect(payloads).toContainEqual(
+      expect.objectContaining({
+        content: { text: "subagent prose", type: "text" },
+        messageId: "msg-sub-1",
+        parentToolCallId: "parent-task-1",
+        sessionUpdate: "agent_message_chunk"
+      })
+    )
+    expect(payloads).toContainEqual(
+      expect.objectContaining({
+        content: { text: "subagent thought", type: "text" },
+        parentToolCallId: "parent-task-1",
+        sessionUpdate: "agent_thought_chunk"
+      })
+    )
+    // Subagent chunks never carry the main agent's message id, and main-agent
+    // chunks never carry a parent attribution.
     expect(
       payloads.some(
         (payload) =>
           payload.sessionUpdate === "agent_message_chunk" &&
-          JSON.stringify(payload.content).includes("subagent prose")
+          payload.parentToolCallId === undefined &&
+          JSON.stringify(payload.content).includes("subagent")
       )
     ).toBe(false)
+  })
+
+  it("maps the Task and Agent tools to kind agent", async () => {
+    const fake = new FakeQuery()
+    const provider = makeProvider(fake)
+    const events: Array<RuntimeEvent> = []
+    const emit = async (event: RuntimeEvent): Promise<void> => {
+      events.push(event)
+    }
+    const createPromise = run(provider.createSession(definition, "/tmp", emit))
+    await settle()
+    fake.push(initMessage())
+    const created = await createPromise
+
+    const promptPromise = run(created.handle.prompt("spawn an agent"))
+    await settle()
+    fake.push(
+      streamEvent({
+        content_block: { id: "task-1", name: "Task", type: "tool_use" },
+        index: 0,
+        type: "content_block_start"
+      })
+    )
+    fake.push(
+      streamEvent({
+        content_block: { id: "task-2", name: "Agent", type: "tool_use" },
+        index: 1,
+        type: "content_block_start"
+      })
+    )
+    fake.push(resultMessage())
+    await promptPromise
+
+    const payloads = events.map((event) => event.payload as Record<string, unknown>)
+    expect(payloads).toContainEqual(
+      expect.objectContaining({ kind: "agent", sessionUpdate: "tool_call", toolCallId: "task-1" })
+    )
+    expect(payloads).toContainEqual(
+      expect.objectContaining({ kind: "agent", sessionUpdate: "tool_call", toolCallId: "task-2" })
+    )
+  })
+
+  it("emits subagent prose and tools from consolidated assistant messages", async () => {
+    // Ground truth from current claude CLIs: subagent stream events are NOT
+    // forwarded; a subagent's thread exists only in consolidated assistant
+    // messages carrying parent_tool_use_id.
+    const fake = new FakeQuery()
+    const provider = makeProvider(fake)
+    const events: Array<RuntimeEvent> = []
+    const emit = async (event: RuntimeEvent): Promise<void> => {
+      events.push(event)
+    }
+    const createPromise = run(provider.createSession(definition, "/tmp", emit))
+    await settle()
+    fake.push(initMessage())
+    const created = await createPromise
+
+    const promptPromise = run(created.handle.prompt("spawn an agent"))
+    await settle()
+    fake.push({
+      message: {
+        content: [
+          { text: "Looking at the files now.", type: "text" },
+          {
+            id: "sub-bash-1",
+            input: { command: "ls -la", description: "List files" },
+            name: "Bash",
+            type: "tool_use"
+          }
+        ],
+        id: "msg-sub-agent-1",
+        role: "assistant"
+      },
+      parent_tool_use_id: "parent-agent-1",
+      session_id: "sdk-session-1",
+      type: "assistant"
+    } as never)
+    fake.push(resultMessage())
+    await promptPromise
+
+    const payloads = events.map((event) => event.payload as Record<string, unknown>)
+    expect(payloads).toContainEqual(
+      expect.objectContaining({
+        content: { text: "Looking at the files now.", type: "text" },
+        messageId: "msg-sub-agent-1",
+        parentToolCallId: "parent-agent-1",
+        sessionUpdate: "agent_message_chunk"
+      })
+    )
+    expect(payloads).toContainEqual(
+      expect.objectContaining({
+        kind: "execute",
+        parentToolCallId: "parent-agent-1",
+        sessionUpdate: "tool_call_update",
+        title: "Ran ls -la",
+        toolCallId: "sub-bash-1"
+      })
+    )
+  })
+
+  it("skips consolidated subagent text when its message already streamed", async () => {
+    const fake = new FakeQuery()
+    const provider = makeProvider(fake)
+    const events: Array<RuntimeEvent> = []
+    const emit = async (event: RuntimeEvent): Promise<void> => {
+      events.push(event)
+    }
+    const createPromise = run(provider.createSession(definition, "/tmp", emit))
+    await settle()
+    fake.push(initMessage())
+    const created = await createPromise
+
+    const promptPromise = run(created.handle.prompt("spawn an agent"))
+    await settle()
+    // Older CLIs stream subagent deltas: message_start registers the id...
+    fake.push(streamEvent({ message: { id: "msg-sub-1" }, type: "message_start" }, "parent-1"))
+    fake.push(
+      streamEvent(
+        {
+          delta: { text: "streamed text", type: "text_delta" },
+          index: 0,
+          type: "content_block_delta"
+        },
+        "parent-1"
+      )
+    )
+    // ...so the consolidated re-send of the same message must not double it.
+    fake.push({
+      message: {
+        content: [{ text: "streamed text", type: "text" }],
+        id: "msg-sub-1",
+        role: "assistant"
+      },
+      parent_tool_use_id: "parent-1",
+      session_id: "sdk-session-1",
+      type: "assistant"
+    } as never)
+    fake.push(resultMessage())
+    await promptPromise
+
+    const chunks = events
+      .map((event) => event.payload as Record<string, unknown>)
+      .filter(
+        (payload) =>
+          payload.sessionUpdate === "agent_message_chunk" && payload.parentToolCallId === "parent-1"
+      )
+    expect(chunks).toHaveLength(1)
+  })
+
+  it("retitles the spawning tool call from task_started", async () => {
+    const fake = new FakeQuery()
+    const provider = makeProvider(fake)
+    const events: Array<RuntimeEvent> = []
+    const emit = async (event: RuntimeEvent): Promise<void> => {
+      events.push(event)
+    }
+    const createPromise = run(provider.createSession(definition, "/tmp", emit))
+    await settle()
+    fake.push(initMessage())
+    await createPromise
+
+    fake.push(
+      systemMessage("task_started", {
+        description: "Explore the repo",
+        subagent_type: "Explore",
+        task_id: "sub-1",
+        tool_use_id: "toolu-agent-1"
+      })
+    )
+    // Shell tasks must NOT be retitled as agents.
+    fake.push(
+      systemMessage("task_started", {
+        description: "Run npm test",
+        task_id: "bg-1",
+        task_type: "shell",
+        tool_use_id: "toolu-bash-1"
+      })
+    )
+    await settle()
+
+    const payloads = events.map((event) => event.payload as Record<string, unknown>)
+    expect(payloads).toContainEqual(
+      expect.objectContaining({
+        kind: "agent",
+        sessionUpdate: "tool_call_update",
+        title: "Agent: Explore the repo",
+        toolCallId: "toolu-agent-1"
+      })
+    )
+    expect(
+      payloads.some(
+        (payload) =>
+          payload.sessionUpdate === "tool_call_update" && payload.toolCallId === "toolu-bash-1"
+      )
+    ).toBe(false)
+  })
+
+  it("tracks background tasks across the turn boundary and clears on notification", async () => {
+    const fake = new FakeQuery()
+    const provider = makeProvider(fake)
+    const events: Array<RuntimeEvent> = []
+    const emit = async (event: RuntimeEvent): Promise<void> => {
+      events.push(event)
+    }
+    const createPromise = run(provider.createSession(definition, "/tmp", emit))
+    await settle()
+    fake.push(initMessage())
+    const created = await createPromise
+
+    // A fresh session emits an empty snapshot so replayed clients start clean.
+    const snapshots = () =>
+      events
+        .filter((event) => event.kind === "session.updated")
+        .map((event) => event.payload as Record<string, unknown>)
+        .filter((payload) => Array.isArray(payload.backgroundTasks))
+        .map((payload) => payload.backgroundTasks as Array<Record<string, unknown>>)
+    expect(snapshots()).toContainEqual([])
+
+    const promptPromise = run(created.handle.prompt("run tests in the background"))
+    await settle()
+    fake.push(
+      systemMessage("task_started", {
+        description: "Run npm test",
+        task_id: "bg-1",
+        task_type: "shell",
+        tool_use_id: "tool-bash-1"
+      })
+    )
+    fake.push(resultMessage())
+    await promptPromise
+    await settle()
+
+    // The task survives turn end — that is what the waiting indicator keys on.
+    const afterTurn = snapshots().at(-1)
+    expect(afterTurn).toEqual([
+      {
+        description: "Run npm test",
+        id: "bg-1",
+        status: "running",
+        taskType: "shell",
+        toolUseId: "tool-bash-1"
+      }
+    ])
+
+    fake.push(
+      systemMessage("task_notification", {
+        output_file: "/tmp/out.txt",
+        status: "completed",
+        summary: "tests passed",
+        task_id: "bg-1"
+      })
+    )
+    await settle()
+    expect(snapshots().at(-1)).toEqual([])
+  })
+
+  it("derives subagent taskType, applies patches and hides skip_transcript tasks", async () => {
+    const fake = new FakeQuery()
+    const provider = makeProvider(fake)
+    const events: Array<RuntimeEvent> = []
+    const emit = async (event: RuntimeEvent): Promise<void> => {
+      events.push(event)
+    }
+    const createPromise = run(provider.createSession(definition, "/tmp", emit))
+    await settle()
+    fake.push(initMessage())
+    await createPromise
+
+    fake.push(
+      systemMessage("task_started", {
+        description: "Explore the codebase",
+        subagent_type: "Explore",
+        task_id: "sub-1"
+      })
+    )
+    fake.push(
+      systemMessage("task_started", {
+        description: "Ambient housekeeping",
+        skip_transcript: true,
+        task_id: "ambient-1"
+      })
+    )
+    fake.push(systemMessage("task_updated", { patch: { status: "paused" }, task_id: "sub-1" }))
+    await settle()
+
+    const snapshots = () =>
+      events
+        .filter((event) => event.kind === "session.updated")
+        .map((event) => event.payload as Record<string, unknown>)
+        .filter((payload) => Array.isArray(payload.backgroundTasks))
+        .map((payload) => payload.backgroundTasks as Array<Record<string, unknown>>)
+    expect(snapshots().at(-1)).toEqual([
+      {
+        description: "Explore the codebase",
+        id: "sub-1",
+        status: "paused",
+        taskType: "subagent"
+      }
+    ])
+    expect(snapshots().every((snapshot) => snapshot.every((task) => task.id !== "ambient-1"))).toBe(
+      true
+    )
+
+    fake.push(systemMessage("task_updated", { patch: { status: "killed" }, task_id: "sub-1" }))
+    await settle()
+    expect(snapshots().at(-1)).toEqual([])
   })
 
   it("emits authoritative diff stats and content from the PostToolUse hook", async () => {

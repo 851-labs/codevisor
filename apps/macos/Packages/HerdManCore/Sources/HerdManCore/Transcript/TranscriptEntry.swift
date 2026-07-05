@@ -21,6 +21,22 @@ public enum TranscriptEntry: Identifiable, Sendable, Equatable {
     }
 }
 
+/// The streamed thread of one subagent (text spans and tool calls), nested
+/// under the parent tool call that spawned it. Same shape as a turn's entries,
+/// which is what lets the UI render it with the same transcript components.
+public struct SubagentTranscript: Sendable, Equatable {
+    public var entries: [TranscriptEntry]
+    public var isThinking: Bool
+    /// Monotonic counter used to give each new text span a stable id.
+    var nextTextId: Int
+
+    public init(entries: [TranscriptEntry] = [], isThinking: Bool = false, nextTextId: Int = 0) {
+        self.entries = entries
+        self.isThinking = isThinking
+        self.nextTextId = nextTextId
+    }
+}
+
 /// The streaming state of one assistant response.
 public struct AssistantTurn: Sendable, Equatable {
     public var entries: [TranscriptEntry]
@@ -30,6 +46,10 @@ public struct AssistantTurn: Sendable, Equatable {
     public var plan: Plan?
     public var startedAt: Date?
     public var endedAt: Date?
+    /// Nested subagent threads, keyed by the parent (Task/agent) tool call id.
+    /// Deliberately flat: a subagent's own agent calls key their buckets here
+    /// too, so the UI recurses by lookup instead of by structure.
+    public var subagents: [String: SubagentTranscript]
     /// Monotonic counter used to give each new text span a stable id.
     var nextTextId: Int
 
@@ -41,6 +61,7 @@ public struct AssistantTurn: Sendable, Equatable {
         plan: Plan? = nil,
         startedAt: Date? = nil,
         endedAt: Date? = nil,
+        subagents: [String: SubagentTranscript] = [:],
         nextTextId: Int = 0
     ) {
         self.entries = entries
@@ -50,6 +71,7 @@ public struct AssistantTurn: Sendable, Equatable {
         self.plan = plan
         self.startedAt = startedAt
         self.endedAt = endedAt
+        self.subagents = subagents
         self.nextTextId = nextTextId
     }
 }
@@ -78,6 +100,32 @@ public extension AssistantTurn {
     /// The tool calls within this turn, in order.
     var toolCalls: [ToolCall] {
         entries.compactMap { if case let .tool(call) = $0 { return call } else { return nil } }
+    }
+
+    /// Every tool call in the turn, including those inside subagent threads —
+    /// the membership check for routing late updates into a finished turn.
+    var allToolCalls: [ToolCall] {
+        toolCalls + subagents.keys.sorted().flatMap { key in
+            (subagents[key]?.entries ?? []).compactMap {
+                if case let .tool(call) = $0 { return call } else { return nil }
+            }
+        }
+    }
+
+    /// Cheap change signal for streaming subagent activity, folded into the
+    /// scroll-follow fingerprint so nested output keeps the view pinned.
+    var subagentActivityFingerprint: Int {
+        var hasher = Hasher()
+        for key in subagents.keys.sorted() {
+            guard let bucket = subagents[key] else { continue }
+            hasher.combine(key)
+            hasher.combine(bucket.entries.count)
+            hasher.combine(bucket.isThinking)
+            if case let .text(_, markdown) = bucket.entries.last {
+                hasher.combine(markdown.count)
+            }
+        }
+        return hasher.finalize()
     }
 
     /// Wall-clock duration of the turn, once finished.

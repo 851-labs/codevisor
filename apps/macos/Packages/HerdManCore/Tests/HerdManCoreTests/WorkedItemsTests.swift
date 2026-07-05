@@ -35,6 +35,51 @@ struct WorkedItemsTests {
         #expect(Set(items.map(\.id)).count == items.count)
     }
 
+    @Test("An agent call breaks out of tool grouping as its own subagent item")
+    func subagentBreaksGrouping() {
+        let result = turn([
+            tool("a", .read),
+            tool("task-1", .agent),
+            tool("b", .execute)
+        ]).workedItems
+
+        #expect(result.count == 3)
+        if case let .toolGroup(_, calls) = result[0] { #expect(calls.map(\.toolCallId) == ["a"]) } else { Issue.record("expected group") }
+        if case let .subagent(id, call) = result[1] {
+            #expect(id == "task-1")
+            #expect(call.kind == .agent)
+        } else { Issue.record("expected subagent item") }
+        if case let .toolGroup(_, calls) = result[2] { #expect(calls.map(\.toolCallId) == ["b"]) } else { Issue.record("expected group") }
+        #expect(Set(result.map(\.id)).count == result.count)
+    }
+
+    @Test("A call with a bucket becomes a subagent item even without the agent kind")
+    func bucketImpliesSubagent() {
+        var withBucket = turn([tool("task-x", .other)])
+        withBucket.subagents["task-x"] = SubagentTranscript(entries: [.text(id: "t0", markdown: "hi")])
+        guard case .subagent = withBucket.workedItems.first else {
+            Issue.record("expected subagent item")
+            return
+        }
+    }
+
+    @Test("subagentItems groups a bucket's entries with the same rules")
+    func nestedGrouping() {
+        var base = turn([tool("task-1", .agent)])
+        base.subagents["task-1"] = SubagentTranscript(entries: [
+            .text(id: "t0", markdown: "child prose"),
+            .tool(ToolCall(toolCallId: "sub-a", title: "Read", kind: .read)),
+            .tool(ToolCall(toolCallId: "sub-b", title: "Grep", kind: .search)),
+            .tool(ToolCall(toolCallId: "task-2", title: "Agent: nested", kind: .agent))
+        ])
+        let items = base.subagentItems("task-1")
+        #expect(items.count == 3)
+        #expect(items[0] == .text(id: "t0", markdown: "child prose"))
+        if case let .toolGroup(_, calls) = items[1] { #expect(calls.count == 2) } else { Issue.record("expected group") }
+        if case let .subagent(id, _) = items[2] { #expect(id == "task-2") } else { Issue.record("expected nested subagent") }
+        #expect(base.subagentItems("unknown").isEmpty)
+    }
+
     @Test("Summaries describe tool groups in first-seen order")
     func summaries() {
         #expect(ToolCallSummary.describe([call(.read), call(.read), call(.read)]) == "Read 3 files")

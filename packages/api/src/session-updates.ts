@@ -52,3 +52,41 @@ export const ToolCallPayload = Schema.Struct({
   _meta: Schema.optional(Schema.Unknown)
 })
 export type ToolCallPayload = typeof ToolCallPayload.Type
+
+/** Message/thought chunk payload carried on `session.output` envelopes.
+ *  `parentToolCallId` attributes a chunk to a subagent's parent tool call so
+ *  clients can nest subagent transcripts; chunks without it belong to the main
+ *  agent. `messageId` keys text spans so history replay dedupes streamed text. */
+export const AgentChunkPayload = Schema.Struct({
+  sessionUpdate: Schema.Literals([
+    "agent_message_chunk",
+    "agent_thought_chunk",
+    "user_message_chunk"
+  ]),
+  content: Schema.Unknown,
+  messageId: Schema.optional(Schema.String),
+  parentToolCallId: Schema.optional(Schema.String)
+})
+export type AgentChunkPayload = typeof AgentChunkPayload.Type
+
+/** One in-flight background task (backgrounded shell, subagent, etc.) owned by
+ *  the agent process. `toolUseId` links the task back to the tool call that
+ *  spawned it, when known. */
+export const BackgroundTask = Schema.Struct({
+  id: Schema.String,
+  description: Schema.String,
+  status: Schema.String,
+  taskType: Schema.String,
+  toolUseId: Schema.optional(Schema.String)
+})
+export type BackgroundTask = typeof BackgroundTask.Type
+
+/** Background-task payload carried on `session.updated` envelopes. Each
+ *  emission is a full snapshot that replaces the previous one; an empty array
+ *  means no background work is pending. Tasks legitimately span turns — a
+ *  non-empty snapshot after `turnState: "ended"` means the agent is waiting on
+ *  background work and will start an agent-initiated turn when it settles. */
+export const BackgroundTasksPayload = Schema.Struct({
+  backgroundTasks: Schema.Array(BackgroundTask)
+})
+export type BackgroundTasksPayload = typeof BackgroundTasksPayload.Type

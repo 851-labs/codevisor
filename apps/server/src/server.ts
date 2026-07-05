@@ -1769,6 +1769,11 @@ const conversationPayload = (
   if (!isRecord(payload) || typeof payload.sessionUpdate !== "string") {
     return undefined
   }
+  // Subagent-attributed chunks stay out of the text conversation snapshot;
+  // clients rebuild nested subagent transcripts from the raw event log.
+  if (typeof payload.parentToolCallId === "string") {
+    return undefined
+  }
   const text = textFromRawContent(payload.content)
   if (text === undefined) {
     return undefined

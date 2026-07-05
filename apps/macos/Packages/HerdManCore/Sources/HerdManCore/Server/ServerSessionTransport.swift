@@ -15,6 +15,27 @@ public enum ServerSessionStreamEvent: Equatable, Sendable {
     case queueUpdated([ServerPromptQueueItem])
     case finished(StopReason)
     case failed(String)
+    /// Full replace-on-update snapshot of the agent's in-flight background
+    /// tasks (backgrounded shells, subagents). Empty means none pending.
+    case backgroundTasks([BackgroundTaskInfo])
+}
+
+/// One in-flight background task owned by the agent process, from the
+/// `session.updated` `backgroundTasks` snapshot payload.
+public struct BackgroundTaskInfo: Sendable, Equatable, Codable, Identifiable {
+    public var id: String
+    public var description: String
+    public var status: String
+    public var taskType: String
+    public var toolUseId: String?
+
+    public init(id: String, description: String, status: String, taskType: String, toolUseId: String? = nil) {
+        self.id = id
+        self.description = description
+        self.status = status
+        self.taskType = taskType
+        self.toolUseId = toolUseId
+    }
 }
 
 public extension ServerAttachmentRef {
@@ -196,6 +217,9 @@ public struct ServerSessionTransport: Sendable {
             if let stopReason = stopReason(from: event.payload) {
                 return [.finished(stopReason)]
             }
+            if let tasks = backgroundTasks(from: event.payload) {
+                return [.backgroundTasks(tasks)]
+            }
             return metadataUpdates(from: event.payload).map(ServerSessionStreamEvent.update)
         case "session.error":
             return [.failed(errorMessage(from: event.payload))]
@@ -264,6 +288,16 @@ public struct ServerSessionTransport: Sendable {
     private static func stopReason(from payload: JSONValue) -> StopReason? {
         guard let raw = payload["stopReason"]?.stringValue else { return nil }
         return StopReason(rawValue: raw)
+    }
+
+    private static func backgroundTasks(from payload: JSONValue) -> [BackgroundTaskInfo]? {
+        guard let raw = payload["backgroundTasks"]?.arrayValue else { return nil }
+        do {
+            let data = try JSONEncoder().encode(JSONValue.array(raw))
+            return try JSONDecoder().decode([BackgroundTaskInfo].self, from: data)
+        } catch {
+            return []
+        }
     }
 
     private static func errorMessage(from payload: JSONValue) -> String {

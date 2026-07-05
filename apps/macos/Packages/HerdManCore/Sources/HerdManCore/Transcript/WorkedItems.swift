@@ -6,11 +6,16 @@ import ACPKit
 public enum WorkedItem: Identifiable, Sendable, Equatable {
     case text(id: String, markdown: String)
     case toolGroup(id: String, calls: [ToolCall])
+    /// A subagent spawn rendered as its own collapsible section with a nested
+    /// transcript (`AssistantTurn.subagentItems(_:)`), never folded into a
+    /// tool-group summary.
+    case subagent(id: String, call: ToolCall)
 
     public var id: String {
         switch self {
         case let .text(id, _): return "wtext:\(id)"
         case let .toolGroup(id, _): return "wgroup:\(id)"
+        case let .subagent(id, _): return "wagent:\(id)"
         }
     }
 }
@@ -30,6 +35,13 @@ public extension AssistantTurn {
         groupedItems(entries)
     }
 
+    /// A subagent's nested thread grouped with the same rules as the top
+    /// level. Because `subagents` is flat, an agent call inside this thread
+    /// becomes a `.subagent` item of its own — nesting recurses by lookup.
+    func subagentItems(_ parentToolCallId: String) -> [WorkedItem] {
+        groupedItems(subagents[parentToolCallId]?.entries ?? [])
+    }
+
     private func groupedItems(_ source: [TranscriptEntry]) -> [WorkedItem] {
         var items: [WorkedItem] = []
         var group: [ToolCall] = []
@@ -45,6 +57,9 @@ public extension AssistantTurn {
             case let .text(id, markdown):
                 flush()
                 items.append(.text(id: id, markdown: markdown))
+            case let .tool(call) where call.kind == .agent || subagents[call.toolCallId] != nil:
+                flush()
+                items.append(.subagent(id: call.toolCallId, call: call))
             case let .tool(call):
                 group.append(call)
             }
@@ -75,7 +90,7 @@ public extension AssistantTurn {
 /// e.g. "Read 6 files" or "Searched code, ran 2 commands".
 public enum ToolCallSummary {
     enum Category: Equatable {
-        case edit, read, search, execute, fetch, delete, move, other
+        case edit, read, search, execute, fetch, delete, move, agent, other
     }
 
     static func category(_ kind: ToolKind?) -> Category {
@@ -87,6 +102,7 @@ public enum ToolCallSummary {
         case .fetch: return .fetch
         case .delete: return .delete
         case .move: return .move
+        case .agent: return .agent
         default: return .other
         }
     }
@@ -116,6 +132,7 @@ public enum ToolCallSummary {
         case .fetch: return "arrow.down.circle"
         case .delete: return "trash"
         case .move: return "arrow.right.doc.on.clipboard"
+        case .agent: return "sparkles"
         case .other: return "wrench.and.screwdriver"
         }
     }
@@ -132,6 +149,7 @@ public enum ToolCallSummary {
         case .fetch: return single ? "fetched a resource" : "fetched \(count) resources"
         case .delete: return single ? "deleted a file" : "deleted \(count) files"
         case .move: return single ? "moved a file" : "moved \(count) files"
+        case .agent: return single ? "ran an agent" : "ran \(count) agents"
         case .other: return single ? "ran a tool" : "ran \(count) tools"
         }
     }

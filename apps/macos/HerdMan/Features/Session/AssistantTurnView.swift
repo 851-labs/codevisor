@@ -79,20 +79,7 @@ struct AssistantTurnView: View {
             if isExpanded && !displayItems.isEmpty {
                 VStack(alignment: .leading, spacing: 12) {
                     Divider()
-                    ForEach(displayItems) { item in
-                        switch item {
-                        case let .text(_, markdown):
-                            StreamingMarkdownView(markdown)
-                                .foregroundStyle(.secondary)
-                        case let .toolGroup(_, calls):
-                            ToolGroupView(
-                                calls: calls,
-                                isTurnActive: turn.isGenerating,
-                                autoExpanded: turn.isGenerating
-                                    && (calls.last.map { turn.isTrailingToolGroup(lastToolCallId: $0.toolCallId) } ?? false)
-                            )
-                        }
-                    }
+                    TranscriptItemsView(items: displayItems, turn: turn, isTurnActive: turn.isGenerating)
                 }
                 .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
             }

@@ -17,6 +17,16 @@ public final class SessionModel {
     public private(set) var errorMessage: String?
     /// Latest context-window + cost usage reported by the agent (`usage_update`).
     public private(set) var usage: SessionUsage?
+    /// Background tasks the agent is running (backgrounded shells, subagents),
+    /// replaced wholesale on every server snapshot. Non-empty after a turn ends
+    /// means the agent will come back on its own once the work settles.
+    public private(set) var backgroundTasks: [BackgroundTaskInfo] = []
+
+    /// True when the turn is over but the agent still owns background work —
+    /// the "this chat is not stuck" signal.
+    public var isWaitingOnBackgroundTasks: Bool {
+        !isSending && !backgroundTasks.isEmpty
+    }
 
     private let transport: ServerSessionTransport
     private let sessionId: String
@@ -219,14 +229,17 @@ public final class SessionModel {
         case let .usageUpdate(usage):
             self.usage = usage
         default:
-            // A trailing update for a tool call the finished turn already
-            // holds (e.g. a late settle) merges there without reopening it.
-            if case let .toolCallUpdate(toolUpdate) = update,
-               case .assistant(var message) = conversation.last,
-               !message.turn.isGenerating,
-               message.turn.toolCalls.contains(where: { $0.toolCallId == toolUpdate.toolCallId }) {
+            // Updates that belong to an earlier bubble merge there without
+            // reopening it. Background subagents outlive their turn (the Agent
+            // tool returns "launched" immediately), so their parented output
+            // and late child settles arrive while the owning Agent section
+            // sits one or more bubbles back — routing by ownership keeps that
+            // section growing instead of spawning a spurious new bubble.
+            if let index = owningItemIndex(for: update),
+               case .assistant(var message) = conversation[index],
+               !(index == conversation.count - 1 && message.turn.isGenerating) {
                 TranscriptReducer.apply(update, to: &message.turn)
-                conversation[conversation.count - 1] = .assistant(message)
+                conversation[index] = .assistant(message)
                 return
             }
             ensureAssistantTurn()
@@ -236,6 +249,42 @@ public final class SessionModel {
             TranscriptReducer.apply(update, to: &message.turn)
             conversation[conversation.count - 1] = .assistant(message)
         }
+    }
+
+    /// The conversation index of the bubble that owns this update: the one
+    /// holding the parent tool call for parented updates, or the tool call
+    /// itself for updates addressed by id. Nil when nothing owns it (fresh
+    /// output for the current or a new turn).
+    private func owningItemIndex(for update: SessionUpdate) -> Int? {
+        var parentId: String?
+        var toolCallId: String?
+        switch update {
+        case let .agentMessageChunk(_, _, parent):
+            parentId = parent
+        case let .agentThoughtChunk(_, _, parent):
+            parentId = parent
+        case let .toolCall(call):
+            parentId = call.parentToolCallId
+        case let .toolCallUpdate(toolUpdate):
+            parentId = toolUpdate.parentToolCallId
+            toolCallId = toolUpdate.toolCallId
+        default:
+            return nil
+        }
+        guard parentId != nil || toolCallId != nil else { return nil }
+        for index in conversation.indices.reversed() {
+            guard case let .assistant(message) = conversation[index] else { continue }
+            if let parentId,
+               message.turn.subagents[parentId] != nil
+                   || message.turn.toolCalls.contains(where: { $0.toolCallId == parentId }) {
+                return index
+            }
+            if let toolCallId,
+               message.turn.allToolCalls.contains(where: { $0.toolCallId == toolCallId }) {
+                return index
+            }
+        }
+        return nil
     }
 
     private func apply(_ event: ServerSessionStreamEvent) {
@@ -254,6 +303,8 @@ public final class SessionModel {
             isSending = false
         case let .queueUpdated(queue):
             queuedPrompts = queue
+        case let .backgroundTasks(tasks):
+            backgroundTasks = tasks
         }
     }
 
