@@ -147,16 +147,21 @@ struct PaneGroupBar: View {
     }
 
     private func tabRow(tabWidth: CGFloat, slotWidth: CGFloat) -> some View {
-        HStack(spacing: Self.tabSpacing) {
+        // While the group is collapsed no tab reads as selected: every tab
+        // shows only its hover affordance, and clicking one opens the panel
+        // to that tab (select() expands the group). ⌘J/the toggle button
+        // reopen to state.selectedPaneId, which is still tracked underneath.
+        let showsSelection = group.state.isVisible
+        return HStack(spacing: Self.tabSpacing) {
             ForEach(group.state.panes) { pane in
                         PaneTab(
                             name: pane.name,
-                            isSelected: pane.id == group.state.selectedPaneId,
+                            isSelected: showsSelection && pane.id == group.state.selectedPaneId,
                             isDragging: draggingPaneId == pane.id,
                             width: tabWidth,
                             // Narrow tabs drop the ✕ on non-selected tabs so
                             // the name keeps as much room as possible.
-                            showsClose: pane.id == group.state.selectedPaneId
+                            showsClose: (showsSelection && pane.id == group.state.selectedPaneId)
                                 || tabWidth >= Self.closeButtonMinWidth,
                             selectedFill: connectedTabColor,
                             onSelect: {
