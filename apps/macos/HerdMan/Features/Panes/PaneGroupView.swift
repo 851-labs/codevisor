@@ -53,13 +53,14 @@ struct PaneGroupBar: View {
         // The bottom border draws directly behind the tabs so the selected
         // tab (whose fill is the exact same solid color) covers it —
         // Chrome-style "the tab opens into the pane". Window background sits
-        // behind both.
+        // behind both. Always in the layout (fading via opacity) so it moves
+        // with the bar during the open/close animation instead of popping in
+        // at the bar's final position.
         .background(alignment: .bottom) {
-            if group.state.isVisible {
-                Rectangle()
-                    .fill(connectedTabColor)
-                    .frame(height: 1)
-            }
+            Rectangle()
+                .fill(connectedTabColor)
+                .frame(height: 1)
+                .opacity(group.state.isVisible ? 1 : 0)
         }
         .background(theme.windowBackground)
         .overlay(alignment: .top) { Divider() }
@@ -134,9 +135,12 @@ struct PaneGroupBar: View {
                     withAnimation(.snappy(duration: 0.2)) { frozenTabWidth = nil }
                 }
 
-                if group.state.isVisible {
-                    addPaneButton
-                }
+                // Always in the layout (fading via opacity) so it rides the
+                // bar's open/close animation instead of appearing detached at
+                // the final position.
+                addPaneButton
+                    .opacity(group.state.isVisible ? 1 : 0)
+                    .allowsHitTesting(group.state.isVisible)
 
                 Spacer(minLength: 0)
             }
@@ -159,10 +163,12 @@ struct PaneGroupBar: View {
                             isSelected: showsSelection && pane.id == group.state.selectedPaneId,
                             isDragging: draggingPaneId == pane.id,
                             width: tabWidth,
-                            // Narrow tabs drop the ✕ on non-selected tabs so
+                            // No ✕ while the panel is collapsed; when open,
+                            // narrow tabs drop the ✕ on non-selected tabs so
                             // the name keeps as much room as possible.
-                            showsClose: (showsSelection && pane.id == group.state.selectedPaneId)
-                                || tabWidth >= Self.closeButtonMinWidth,
+                            showsClose: showsSelection
+                                && (pane.id == group.state.selectedPaneId
+                                    || tabWidth >= Self.closeButtonMinWidth),
                             selectedFill: connectedTabColor,
                             onSelect: {
                                 group.select(id: pane.id)
