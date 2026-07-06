@@ -575,13 +575,41 @@ final class SessionController {
 
     func attachFileURLs(_ urls: [URL]) {
         for url in urls {
-            guard let data = try? Data(contentsOf: url) else { continue }
-            let type = UTType(filenameExtension: url.pathExtension)
-            let mimeType = type?.preferredMIMEType ?? "application/octet-stream"
-            let kind: Attachment.Kind = (type?.conforms(to: .image) ?? false) || mimeType.hasPrefix("image/")
-                ? .image
-                : .file
-            stageAttachment(name: url.lastPathComponent, mimeType: mimeType, kind: kind, data: data)
+            attachFileURL(url)
+        }
+    }
+
+    /// Stages one dropped/picked file. The bytes are read off the main
+    /// thread — a multi-gigabyte drop or a file on a slow network volume
+    /// must not freeze the run loop — and the size is checked *before*
+    /// reading so an oversized file fails fast without ever loading.
+    private func attachFileURL(_ url: URL) {
+        let type = UTType(filenameExtension: url.pathExtension)
+        let mimeType = type?.preferredMIMEType ?? "application/octet-stream"
+        let kind: Attachment.Kind = (type?.conforms(to: .image) ?? false) || mimeType.hasPrefix("image/")
+            ? .image
+            : .file
+        let maxBytes = Self.maxAttachmentBytes
+        Task { [weak self] in
+            // (data, oversized): (nil, false) = unreadable → skip, matching
+            // the old behavior for unreadable URLs.
+            let result: (data: Data?, oversized: Bool) = await Task.detached(priority: .userInitiated) {
+                if let size = (try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize,
+                   size > maxBytes {
+                    return (nil, true)
+                }
+                guard let data = try? Data(contentsOf: url) else { return (nil, false) }
+                return data.count > maxBytes ? (nil, true) : (data, false)
+            }.value
+            guard let self else { return }
+            if result.oversized {
+                self.stageAttachment(
+                    name: url.lastPathComponent, mimeType: mimeType, kind: kind,
+                    data: Data(), oversized: true
+                )
+            } else if let data = result.data {
+                self.stageAttachment(name: url.lastPathComponent, mimeType: mimeType, kind: kind, data: data)
+            }
         }
     }
 
@@ -611,7 +639,9 @@ final class SessionController {
         return try await serverClient.fileData(id: id)
     }
 
-    private func stageAttachment(name: String, mimeType: String, kind: Attachment.Kind, data: Data) {
+    private func stageAttachment(
+        name: String, mimeType: String, kind: Attachment.Kind, data: Data, oversized: Bool = false
+    ) {
         guard composerAttachments.count < Self.maxAttachments else {
             status = .failed("A message can carry at most \(Self.maxAttachments) attachments.")
             return
@@ -624,7 +654,7 @@ final class SessionController {
             localData: data,
             state: .uploading
         )
-        if data.count > Self.maxAttachmentBytes {
+        if oversized || data.count > Self.maxAttachmentBytes {
             attachment.state = .failed("Larger than 25 MB")
             composerAttachments.append(attachment)
             return

@@ -187,6 +187,24 @@ final class HerdManGhosttyApp {
             .appendingPathComponent(HerdManAppVariant.applicationSupportDirectoryName, isDirectory: true)
             .appendingPathComponent("ghostty-resources", isDirectory: true)
         let ghosttyDir = base.appendingPathComponent("ghostty", isDirectory: true)
+
+        // Extraction runs synchronously before ghostty_init (which captures
+        // GHOSTTY_RESOURCES_DIR), so it can't move off the launch path — but
+        // it CAN be skipped: a version stamp keyed on the app build and the
+        // tarball's size/mtime makes the tar spawn a once-per-update cost
+        // instead of a synchronous main-thread process on every launch.
+        let stampURL = base.appendingPathComponent(".extracted-stamp")
+        let attributes = try? fm.attributesOfItem(atPath: tarball.path)
+        let tarballSize = (attributes?[.size] as? NSNumber)?.int64Value ?? 0
+        let tarballMtime = (attributes?[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0
+        let bundleVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? ""
+        let stamp = "\(bundleVersion)|\(tarballSize)|\(tarballMtime)"
+        if fm.fileExists(atPath: ghosttyDir.path),
+           let existing = try? String(contentsOf: stampURL, encoding: .utf8),
+           existing == stamp {
+            return ghosttyDir.path
+        }
+
         do {
             try fm.createDirectory(at: base, withIntermediateDirectories: true)
             let tar = Process()
@@ -197,6 +215,7 @@ final class HerdManGhosttyApp {
             guard tar.terminationStatus == 0, fm.fileExists(atPath: ghosttyDir.path) else {
                 fatalError("Failed to extract Ghostty resources from \(tarball.path).")
             }
+            try? stamp.write(to: stampURL, atomically: true, encoding: .utf8)
             return ghosttyDir.path
         } catch {
             fatalError("Failed to prepare Ghostty resources: \(error).")
@@ -258,6 +277,24 @@ final class HerdManGhosttyApp {
         return Unmanaged<Ghostty.SurfaceView>.fromOpaque(surface_ud).takeUnretainedValue()
     }
 
+    /// Runs UI work on the main actor from a libghostty callback: immediately
+    /// when the callback arrived on the main thread (the common case — the
+    /// app loop ticks on main), or dispatched when it arrived on another
+    /// thread (the renderer fires cell-size/progress actions during a live
+    /// resize; upstream Ghostty.App hops these via DispatchQueue.main).
+    ///
+    /// This replaces blanket `MainActor.assumeIsolated`, which TRAPS on any
+    /// off-main callback. Callers must extract all C-pointer payloads
+    /// (strings, buffers, config) BEFORE calling — the pointers do not
+    /// outlive the callback.
+    nonisolated private static func onMain(_ work: @escaping @MainActor () -> Void) {
+        if Thread.isMainThread {
+            MainActor.assumeIsolated(work)
+        } else {
+            DispatchQueue.main.async(execute: work)
+        }
+    }
+
     // MARK: - Runtime callbacks (bodies from upstream Ghostty.App L325-442)
 
     nonisolated static func wakeup(_ userdata: UnsafeMutableRawPointer?) {
@@ -267,8 +304,8 @@ final class HerdManGhosttyApp {
     }
 
     nonisolated static func closeSurface(_ userdata: UnsafeMutableRawPointer?, processAlive: Bool) {
-        MainActor.assumeIsolated {
-            let surface = surfaceUserdata(from: userdata)
+        let surface = surfaceUserdata(from: userdata)
+        onMain {
             NotificationCenter.default.post(name: Ghostty.Notification.ghosttyCloseSurface, object: surface, userInfo: [
                 "process_alive": processAlive,
             ])
@@ -280,8 +317,25 @@ final class HerdManGhosttyApp {
         location: ghostty_clipboard_e,
         state: UnsafeMutableRawPointer?
     ) -> Bool {
-        MainActor.assumeIsolated {
-            let surfaceView = surfaceUserdata(from: userdata)
+        let surfaceView = surfaceUserdata(from: userdata)
+
+        // The synchronous Bool (did we handle it?) needs the pasteboard,
+        // which is main-thread territory. Reads originate from input
+        // processing on main in practice; an off-main caller gets the
+        // completion dispatched and an optimistic `true` (worst case a
+        // paste binding consumes on an empty clipboard) instead of the
+        // hard trap `assumeIsolated` used to be.
+        guard Thread.isMainThread else {
+            onMain {
+                guard let surface = surfaceView.surface else { return }
+                guard let pasteboard = NSPasteboard.ghostty(location) else { return }
+                guard let str = pasteboard.getOpinionatedStringContents() else { return }
+                completeClipboardRequest(surface, data: str, state: state)
+            }
+            return true
+        }
+
+        return MainActor.assumeIsolated {
             guard let surface = surfaceView.surface else { return false }
 
             // Get our pasteboard
@@ -305,11 +359,13 @@ final class HerdManGhosttyApp {
         state: UnsafeMutableRawPointer?,
         request: ghostty_clipboard_request_e
     ) {
-        MainActor.assumeIsolated {
-            let surfaceView = surfaceUserdata(from: userdata)
+        let surfaceView = surfaceUserdata(from: userdata)
+        // Copy the C string before hopping — the pointer dies with the callback.
+        guard let string, let valueStr = String(cString: string, encoding: .utf8) else { return }
+        guard let request = Ghostty.ClipboardRequest.from(request: request) else { return }
+
+        onMain {
             guard let surface = surfaceView.surface else { return }
-            guard let string, let valueStr = String(cString: string, encoding: .utf8) else { return }
-            guard let request = Ghostty.ClipboardRequest.from(request: request) else { return }
 
             let alert = NSAlert()
             switch request {
@@ -350,16 +406,18 @@ final class HerdManGhosttyApp {
         len: Int,
         confirm: Bool
     ) {
-        MainActor.assumeIsolated {
-            _ = surfaceUserdata(from: userdata)
-            guard let pasteboard = NSPasteboard.ghostty(location) else { return }
-            guard let content, len > 0 else { return }
+        _ = surfaceUserdata(from: userdata)
+        guard let content, len > 0 else { return }
 
-            // Convert the C array to Swift array
-            let contentArray = (0..<len).compactMap { i in
-                Ghostty.ClipboardContent.from(content: content[i])
-            }
-            guard !contentArray.isEmpty else { return }
+        // Convert the C array to a Swift array BEFORE hopping to main —
+        // the content pointers die with the callback.
+        let contentArray = (0..<len).compactMap { i in
+            Ghostty.ClipboardContent.from(content: content[i])
+        }
+        guard !contentArray.isEmpty else { return }
+
+        onMain {
+            guard let pasteboard = NSPasteboard.ghostty(location) else { return }
 
             if !confirm {
                 // Declare all types
@@ -393,189 +451,229 @@ final class HerdManGhosttyApp {
 
     // MARK: - Action dispatch (subset of upstream Ghostty.App.action L481-685)
 
+    /// Runs a libghostty action. NOT main-isolated: while most actions arrive
+    /// on the main thread (the app loop ticks there), the renderer thread
+    /// fires cell-size and progress-report actions during a live resize —
+    /// upstream Ghostty deliberately leaves this handler unisolated and hops
+    /// those to main. Each case therefore extracts its C payload
+    /// synchronously (the pointers die with the callback) and applies UI
+    /// state via `onMain`; the Bool (action supported?) is decided
+    /// synchronously from the tag and payload validity.
     nonisolated static func action(_ app: ghostty_app_t, target: ghostty_target_s, action: ghostty_action_s) -> Bool {
-        MainActor.assumeIsolated {
-            switch target.tag {
-            case GHOSTTY_TARGET_APP, GHOSTTY_TARGET_SURFACE:
-                break
-            default:
-                Ghostty.logger.warning("unknown action target=\(target.tag.rawValue, privacy: .public)")
-                return false
+        switch target.tag {
+        case GHOSTTY_TARGET_APP, GHOSTTY_TARGET_SURFACE:
+            break
+        default:
+            Ghostty.logger.warning("unknown action target=\(target.tag.rawValue, privacy: .public)")
+            return false
+        }
+
+        switch action.tag {
+        case GHOSTTY_ACTION_SET_TITLE:
+            guard let surfaceView = surfaceView(for: target) else { return false }
+            guard let title = String(cString: action.action.set_title.title!, encoding: .utf8) else { return false }
+            onMain { surfaceView.setTitle(title) }
+
+        case GHOSTTY_ACTION_PWD:
+            guard let surfaceView = surfaceView(for: target) else { return false }
+            guard let pwd = String(cString: action.action.pwd.pwd!, encoding: .utf8) else { return false }
+            onMain { surfaceView.pwd = pwd }
+
+        case GHOSTTY_ACTION_MOUSE_SHAPE:
+            guard let surfaceView = surfaceView(for: target) else { return false }
+            let shape = action.action.mouse_shape
+            onMain { surfaceView.setCursorShape(shape) }
+
+        case GHOSTTY_ACTION_MOUSE_VISIBILITY:
+            guard let surfaceView = surfaceView(for: target) else { return false }
+            let visible: Bool
+            switch action.action.mouse_visibility {
+            case GHOSTTY_MOUSE_VISIBLE: visible = true
+            case GHOSTTY_MOUSE_HIDDEN: visible = false
+            default: return false
+            }
+            onMain { surfaceView.setCursorVisibility(visible) }
+
+        case GHOSTTY_ACTION_MOUSE_OVER_LINK:
+            guard let surfaceView = surfaceView(for: target) else { return false }
+            let v = action.action.mouse_over_link
+            let url: String?
+            if v.len > 0 {
+                url = String(data: Data(bytes: v.url!, count: v.len), encoding: .utf8)
+            } else {
+                url = nil
+            }
+            onMain { surfaceView.hoverUrl = url }
+
+        case GHOSTTY_ACTION_INITIAL_SIZE:
+            guard let surfaceView = surfaceView(for: target) else { return false }
+            let v = action.action.initial_size
+            let size = NSSize(width: Double(v.width), height: Double(v.height))
+            onMain { surfaceView.initialSize = size }
+
+        case GHOSTTY_ACTION_CELL_SIZE:
+            guard let surfaceView = surfaceView(for: target) else { return false }
+            let v = action.action.cell_size
+            let backingSize = NSSize(width: Double(v.width), height: Double(v.height))
+            onMain { [weak surfaceView] in
+                guard let surfaceView else { return }
+                surfaceView.cellSize = surfaceView.convertFromBacking(backingSize)
             }
 
-            switch action.tag {
-            case GHOSTTY_ACTION_SET_TITLE:
-                guard let surfaceView = surfaceView(for: target) else { return false }
-                guard let title = String(cString: action.action.set_title.title!, encoding: .utf8) else { return false }
-                surfaceView.setTitle(title)
-
-            case GHOSTTY_ACTION_PWD:
-                guard let surfaceView = surfaceView(for: target) else { return false }
-                guard let pwd = String(cString: action.action.pwd.pwd!, encoding: .utf8) else { return false }
-                surfaceView.pwd = pwd
-
-            case GHOSTTY_ACTION_MOUSE_SHAPE:
-                guard let surfaceView = surfaceView(for: target) else { return false }
-                surfaceView.setCursorShape(action.action.mouse_shape)
-
-            case GHOSTTY_ACTION_MOUSE_VISIBILITY:
-                guard let surfaceView = surfaceView(for: target) else { return false }
-                switch action.action.mouse_visibility {
-                case GHOSTTY_MOUSE_VISIBLE: surfaceView.setCursorVisibility(true)
-                case GHOSTTY_MOUSE_HIDDEN: surfaceView.setCursorVisibility(false)
-                default: return false
-                }
-
-            case GHOSTTY_ACTION_MOUSE_OVER_LINK:
-                guard let surfaceView = surfaceView(for: target) else { return false }
-                let v = action.action.mouse_over_link
-                guard v.len > 0 else {
-                    surfaceView.hoverUrl = nil
-                    break
-                }
-                let buffer = Data(bytes: v.url!, count: v.len)
-                surfaceView.hoverUrl = String(data: buffer, encoding: .utf8)
-
-            case GHOSTTY_ACTION_INITIAL_SIZE:
-                guard let surfaceView = surfaceView(for: target) else { return false }
-                let v = action.action.initial_size
-                surfaceView.initialSize = NSSize(width: Double(v.width), height: Double(v.height))
-
-            case GHOSTTY_ACTION_CELL_SIZE:
-                guard let surfaceView = surfaceView(for: target) else { return false }
-                let v = action.action.cell_size
-                let backingSize = NSSize(width: Double(v.width), height: Double(v.height))
-                DispatchQueue.main.async { [weak surfaceView] in
-                    guard let surfaceView else { return }
-                    surfaceView.cellSize = surfaceView.convertFromBacking(backingSize)
-                }
-
-            case GHOSTTY_ACTION_RENDERER_HEALTH:
-                guard let surfaceView = surfaceView(for: target) else { return false }
+        case GHOSTTY_ACTION_RENDERER_HEALTH:
+            guard let surfaceView = surfaceView(for: target) else { return false }
+            let health = action.action.renderer_health
+            onMain {
                 NotificationCenter.default.post(
                     name: Ghostty.Notification.didUpdateRendererHealth,
                     object: surfaceView,
-                    userInfo: ["health": action.action.renderer_health]
+                    userInfo: ["health": health]
                 )
+            }
 
-            case GHOSTTY_ACTION_KEY_SEQUENCE:
-                guard let surfaceView = surfaceView(for: target) else { return false }
-                let v = action.action.key_sequence
-                if v.active {
+        case GHOSTTY_ACTION_KEY_SEQUENCE:
+            guard let surfaceView = surfaceView(for: target) else { return false }
+            let v = action.action.key_sequence
+            if v.active {
+                let shortcut = Ghostty.keyboardShortcut(for: v.trigger)
+                onMain {
                     NotificationCenter.default.post(
                         name: Ghostty.Notification.didContinueKeySequence,
                         object: surfaceView,
-                        userInfo: [Ghostty.Notification.KeySequenceKey: Ghostty.keyboardShortcut(for: v.trigger) as Any]
+                        userInfo: [Ghostty.Notification.KeySequenceKey: shortcut as Any]
                     )
-                } else {
+                }
+            } else {
+                onMain {
                     NotificationCenter.default.post(
                         name: Ghostty.Notification.didEndKeySequence,
                         object: surfaceView
                     )
                 }
+            }
 
-            case GHOSTTY_ACTION_KEY_TABLE:
-                guard let surfaceView = surfaceView(for: target) else { return false }
-                guard let keyTable = Ghostty.Action.KeyTable(c: action.action.key_table) else { return false }
+        case GHOSTTY_ACTION_KEY_TABLE:
+            guard let surfaceView = surfaceView(for: target) else { return false }
+            guard let keyTable = Ghostty.Action.KeyTable(c: action.action.key_table) else { return false }
+            onMain {
                 NotificationCenter.default.post(
                     name: Ghostty.Notification.didChangeKeyTable,
                     object: surfaceView,
                     userInfo: [Ghostty.Notification.KeyTableKey: keyTable]
                 )
+            }
 
-            case GHOSTTY_ACTION_CONFIG_CHANGE:
-                // Clone the config so we own the memory (upstream L2194-2240).
-                let config = Ghostty.Config(clone: action.action.config_change.config)
-                switch target.tag {
-                case GHOSTTY_TARGET_APP:
+        case GHOSTTY_ACTION_CONFIG_CHANGE:
+            // Clone the config so we own the memory (upstream L2194-2240) —
+            // synchronously: the source pointer dies with the callback.
+            let config = Ghostty.Config(clone: action.action.config_change.config)
+            switch target.tag {
+            case GHOSTTY_TARGET_APP:
+                let host = hostApp(from: ghostty_app_userdata(app))
+                onMain {
                     NotificationCenter.default.post(
                         name: .ghosttyConfigDidChange,
                         object: nil,
                         userInfo: [SwiftUI.Notification.Name.GhosttyConfigChangeKey: config]
                     )
-                    hostApp(from: ghostty_app_userdata(app)).config = config
-                case GHOSTTY_TARGET_SURFACE:
-                    guard let surface = target.target.surface,
-                          let surfaceView = surfaceView(from: surface) else { return false }
+                    host.config = config
+                }
+            case GHOSTTY_TARGET_SURFACE:
+                guard let surface = target.target.surface,
+                      let surfaceView = surfaceView(from: surface) else { return false }
+                onMain {
                     NotificationCenter.default.post(
                         name: .ghosttyConfigDidChange,
                         object: surfaceView,
                         userInfo: [SwiftUI.Notification.Name.GhosttyConfigChangeKey: config]
                     )
-                default:
-                    return false
                 }
+            default:
+                return false
+            }
 
-            case GHOSTTY_ACTION_RELOAD_CONFIG:
-                // Rebuild our themed config (HerdMan has no on-disk user config flow).
-                hostApp(from: ghostty_app_userdata(app)).reloadConfig()
+        case GHOSTTY_ACTION_RELOAD_CONFIG:
+            // Rebuild our themed config (HerdMan has no on-disk user config flow).
+            let host = hostApp(from: ghostty_app_userdata(app))
+            onMain { host.reloadConfig() }
 
-            case GHOSTTY_ACTION_COLOR_CHANGE:
-                guard let surfaceView = surfaceView(for: target) else { return false }
+        case GHOSTTY_ACTION_COLOR_CHANGE:
+            guard let surfaceView = surfaceView(for: target) else { return false }
+            let change = Ghostty.Action.ColorChange(c: action.action.color_change)
+            onMain {
                 NotificationCenter.default.post(
                     name: .ghosttyColorDidChange,
                     object: surfaceView,
-                    userInfo: [SwiftUI.Notification.Name.GhosttyColorChangeKey: Ghostty.Action.ColorChange(c: action.action.color_change)]
+                    userInfo: [SwiftUI.Notification.Name.GhosttyColorChangeKey: change]
                 )
+            }
 
-            case GHOSTTY_ACTION_RING_BELL:
-                guard let surfaceView = surfaceView(for: target) else { return false }
+        case GHOSTTY_ACTION_RING_BELL:
+            guard let surfaceView = surfaceView(for: target) else { return false }
+            onMain {
                 NotificationCenter.default.post(name: .ghosttyBellDidRing, object: surfaceView)
+            }
 
-            case GHOSTTY_ACTION_SELECTION_CHANGED:
-                guard let surfaceView = surfaceView(for: target) else { return false }
+        case GHOSTTY_ACTION_SELECTION_CHANGED:
+            guard let surfaceView = surfaceView(for: target) else { return false }
+            onMain {
                 NotificationCenter.default.post(name: .ghosttySelectionDidChange, object: surfaceView)
+            }
 
-            case GHOSTTY_ACTION_READONLY:
-                guard let surfaceView = surfaceView(for: target) else { return false }
+        case GHOSTTY_ACTION_READONLY:
+            guard let surfaceView = surfaceView(for: target) else { return false }
+            let readonly = action.action.readonly == GHOSTTY_READONLY_ON
+            onMain {
                 NotificationCenter.default.post(
                     name: .ghosttyDidChangeReadonly,
                     object: surfaceView,
-                    userInfo: [SwiftUI.Notification.Name.ReadonlyKey: action.action.readonly == GHOSTTY_READONLY_ON]
+                    userInfo: [SwiftUI.Notification.Name.ReadonlyKey: readonly]
                 )
+            }
 
-            case GHOSTTY_ACTION_PROGRESS_REPORT:
-                guard let surfaceView = surfaceView(for: target) else { return false }
-                let host = hostApp(from: ghostty_app_userdata(app))
+        case GHOSTTY_ACTION_PROGRESS_REPORT:
+            guard let surfaceView = surfaceView(for: target) else { return false }
+            let host = hostApp(from: ghostty_app_userdata(app))
+            let progressReport = Ghostty.Action.ProgressReport(c: action.action.progress_report)
+            onMain {
                 guard host.config.progressStyle else {
-                    DispatchQueue.main.async { surfaceView.progressReport = nil }
-                    break
+                    surfaceView.progressReport = nil
+                    return
                 }
-                let progressReport = Ghostty.Action.ProgressReport(c: action.action.progress_report)
-                DispatchQueue.main.async {
-                    if progressReport.state == .remove {
-                        surfaceView.progressReport = nil
-                    } else {
-                        surfaceView.progressReport = progressReport
-                    }
+                if progressReport.state == .remove {
+                    surfaceView.progressReport = nil
+                } else {
+                    surfaceView.progressReport = progressReport
                 }
+            }
 
-            case GHOSTTY_ACTION_SECURE_INPUT:
-                // Surface-scoped secure input only (upstream L1575-1607); the
-                // app-target variant needs AppDelegate plumbing we don't have.
-                guard let mode = Ghostty.SetSecureInput.from(action.action.secure_input) else { return false }
-                guard let surfaceView = surfaceView(for: target) else { return false }
-                let host = hostApp(from: ghostty_app_userdata(app))
-                guard host.config.autoSecureInput else { break }
+        case GHOSTTY_ACTION_SECURE_INPUT:
+            // Surface-scoped secure input only (upstream L1575-1607); the
+            // app-target variant needs AppDelegate plumbing we don't have.
+            guard let mode = Ghostty.SetSecureInput.from(action.action.secure_input) else { return false }
+            guard let surfaceView = surfaceView(for: target) else { return false }
+            let host = hostApp(from: ghostty_app_userdata(app))
+            onMain {
+                guard host.config.autoSecureInput else { return }
                 switch mode {
                 case .on: surfaceView.passwordInput = true
                 case .off: surfaceView.passwordInput = false
                 case .toggle: surfaceView.passwordInput = !surfaceView.passwordInput
                 }
-
-            case GHOSTTY_ACTION_SIZE_LIMIT:
-                // Accepted but nothing to do: HerdMan's panel controls sizing.
-                break
-
-            default:
-                // Window/tab/split/app-management actions HerdMan does not
-                // support (NEW_WINDOW, NEW_TAB, NEW_SPLIT, GOTO_*, TOGGLE_*,
-                // INSPECTOR, QUIT, OPEN_*, UNDO/REDO, search UI, ...).
-                return false
             }
 
-            return true
+        case GHOSTTY_ACTION_SIZE_LIMIT:
+            // Accepted but nothing to do: HerdMan's panel controls sizing.
+            break
+
+        default:
+            // Window/tab/split/app-management actions HerdMan does not
+            // support (NEW_WINDOW, NEW_TAB, NEW_SPLIT, GOTO_*, TOGGLE_*,
+            // INSPECTOR, QUIT, OPEN_*, UNDO/REDO, search UI, ...).
+            return false
         }
+
+        return true
     }
 
     /// Resolves the surface view for a surface-targeted action.

@@ -314,8 +314,16 @@ public final class SessionModel {
                 serverEventCursor = snapshot.eventCursor
             } else {
                 conversation = []
-                for event in history.events {
+                // Hours-long sessions replay tens of thousands of events;
+                // yielding periodically keeps the run loop responsive (input,
+                // rendering) instead of beachballing the app while a session
+                // opens. The live consumer starts only after the loop, so no
+                // stream events can interleave with the replay.
+                for (index, event) in history.events.enumerated() {
                     apply(event)
+                    if index % 256 == 255 {
+                        await Task.yield()
+                    }
                 }
                 isSending = lastTurnIsGenerating
                 serverEventCursor = history.cursor ?? snapshot.eventCursor

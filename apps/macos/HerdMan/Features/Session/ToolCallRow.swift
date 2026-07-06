@@ -12,6 +12,11 @@ struct ToolCallRow: View {
     var isTurnActive: Bool = false
     @Environment(\.theme) private var theme
     @State private var isExpanded = false
+    /// Memoizes the content-diff fallback of `diffTotals` (a full Myers diff
+    /// of the edited file): rows re-render on every stream flush while their
+    /// turn is active, and diffing entire file contents in `body` was a
+    /// per-render main-thread cost.
+    @State private var totalsCache = DiffTotalsCache()
 
     private var hasContent: Bool { !(call.content?.isEmpty ?? true) }
 
@@ -26,18 +31,19 @@ struct ToolCallRow: View {
     /// Counters render only once there is real diff data — a `+0 −0` badge on
     /// an adapter that never streams stats is noise.
     private var counterTotals: LineDiff.Totals? {
-        call.diffTotals
+        totalsCache.totals(for: call)
     }
 
     var body: some View {
+        let totals = counterTotals
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
-                Text(call.displayTitle)
+                Text(call.displayTitle(diffTotals: totals))
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .foregroundStyle(.secondary)
                     .shimmering(isTurnActive && !call.isSettled)
-                if let totals = counterTotals {
+                if let totals {
                     DiffCounter(totals: totals)
                 }
                 if hasContent {
@@ -72,6 +78,37 @@ struct ToolCallRow: View {
             }
         }
         .clipped()
+    }
+}
+
+/// Memoizes `ToolCall.diffTotals` for the last-seen content. Streamed
+/// `diffStats` are a cheap sum and pass straight through; the content-diff
+/// fallback (a Myers diff over the whole file's old/new text) recomputes
+/// only when the change key — status plus each diff block's text lengths —
+/// moves, which tracks streamed edits (they grow the text) and settlement.
+@MainActor
+private final class DiffTotalsCache {
+    private var key: Int?
+    private var value: LineDiff.Totals?
+
+    func totals(for call: ToolCall) -> LineDiff.Totals? {
+        if let diffStats = call.diffStats, !diffStats.isEmpty {
+            return call.diffTotals
+        }
+        var hasher = Hasher()
+        hasher.combine(call.status)
+        for block in call.content ?? [] {
+            if case let .diff(_, oldText, newText) = block {
+                hasher.combine(oldText?.utf8.count ?? -1)
+                hasher.combine(newText.utf8.count)
+            }
+        }
+        let newKey = hasher.finalize()
+        if newKey == key { return value }
+        let computed = call.diffTotals
+        key = newKey
+        value = computed
+        return computed
     }
 }
 

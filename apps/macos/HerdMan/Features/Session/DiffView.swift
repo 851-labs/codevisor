@@ -68,9 +68,7 @@ struct DiffView: View {
                 RoundedRectangle(cornerRadius: 8).strokeBorder(theme.border, lineWidth: 1)
             }
         }
-        .onAppear { refreshRowsIfNeeded() }
-        .onChange(of: contentKey) { refreshRowsIfNeeded() }
-        .task(id: highlightKey) { await highlightRows() }
+        .task(id: highlightKey) { await refreshRowsAndHighlight() }
     }
 
     /// Gutters sized to the widest line number instead of a fixed column —
@@ -123,15 +121,35 @@ struct DiffView: View {
         return Text(row.text)
     }
 
-    private func refreshRowsIfNeeded() {
+    /// Recomputes the diff rows (when the content changed) and re-highlights.
+    /// The Myers diff runs off the main actor: streamed edits rewrite
+    /// `newText` repeatedly, and diffing whole file contents on main per
+    /// rewrite was a visible stall on large edits. `task(id:)` cancellation
+    /// makes the sleep a trailing-edge debounce; the first computation (a
+    /// finished diff scrolled back into view) skips it and renders promptly.
+    private func refreshRowsAndHighlight() async {
         let key = contentKey
-        guard key != cachedKey || cachedRows.isEmpty else { return }
-        cachedKey = key
-        // Strip shared indentation before diffing so mid-file edit snippets
-        // aren't pushed to the right by the source's nesting depth.
-        (dedentedOld, dedentedNew) = LineDiff.dedent(old: oldText, new: newText)
-        cachedRows = LineDiff.rows(old: dedentedOld, new: dedentedNew)
-        highlightedRows = [:]
+        if key != cachedKey || cachedRows.isEmpty {
+            if !cachedRows.isEmpty {
+                try? await Task.sleep(for: .milliseconds(120))
+                guard !Task.isCancelled else { return }
+            }
+            let old = oldText
+            let new = newText
+            // Strip shared indentation before diffing so mid-file edit
+            // snippets aren't pushed right by the source's nesting depth.
+            let computed = await Task.detached(priority: .userInitiated) {
+                let (dedentedOld, dedentedNew) = LineDiff.dedent(old: old, new: new)
+                let rows = LineDiff.rows(old: dedentedOld, new: dedentedNew)
+                return (dedentedOld, dedentedNew, rows)
+            }.value
+            guard !Task.isCancelled else { return }
+            cachedKey = key
+            (dedentedOld, dedentedNew) = (computed.0, computed.1)
+            cachedRows = computed.2
+            highlightedRows = [:]
+        }
+        await highlightRows()
     }
 
     private var highlightKey: String {
@@ -146,11 +164,6 @@ struct DiffView: View {
             highlightedRows = [:]
             return
         }
-        // Streamed edits rewrite newText rapidly; task(id:) cancellation
-        // makes this a trailing-edge debounce keeping Shiki off the hot path.
-        try? await Task.sleep(for: .milliseconds(120))
-        guard !Task.isCancelled else { return }
-        refreshRowsIfNeeded()
         let rows = cachedRows
 
         let newTokens = await CodeHighlighter.shared.highlight(

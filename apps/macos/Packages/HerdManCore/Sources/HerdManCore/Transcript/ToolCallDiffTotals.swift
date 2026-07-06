@@ -32,6 +32,13 @@ public extension ToolCall {
     /// Adapters that title properly (spaces ⇒ a real phrase) pass through,
     /// and the finished update's title always wins.
     var displayTitle: String {
+        displayTitle(diffTotals: diffTotals)
+    }
+
+    /// `displayTitle` taking precomputed totals, so callers that already
+    /// memoized `diffTotals` (a full Myers diff in the content fallback path)
+    /// don't run the diff a second time per render.
+    func displayTitle(diffTotals: LineDiff.Totals?) -> String {
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard kind == .edit, !isSettled, diffTotals == nil else {
             return trimmed.isEmpty ? "Working…" : trimmed
