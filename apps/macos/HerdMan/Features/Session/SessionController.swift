@@ -124,6 +124,7 @@ final class SessionController {
     private var pendingModeId: String?
     private var modeStateByHarness: [String: SessionModeState] = [:]
     private var configOptionsByHarness: [String: [SessionConfigOption]] = [:]
+    private var supportsGoalsByHarness: [String: Bool] = [:]
 
     init(
         project: Project,
@@ -165,6 +166,175 @@ final class SessionController {
     }
     var errorMessage: String? { model?.errorMessage }
     var usage: SessionUsage? { model?.usage }
+
+    // MARK: - Goals
+
+    /// The session's persistent goal, when the harness supports goal mode.
+    var goal: SessionGoal? { model?.goal }
+
+    /// Whether the selected harness supports goals at all — gates every goal
+    /// affordance; harnesses without support show nothing.
+    var supportsGoals: Bool {
+        guard let harnessId = connectedHarnessId ?? selectedHarnessId else { return false }
+        return supportsGoalsByHarness[harnessId] ?? false
+    }
+
+    /// The goal affordance shows whenever the harness supports goals; a goal
+    /// set before the first send is held and applied once the agent connects.
+    var canEditGoal: Bool { supportsGoals }
+
+    /// Goal-input mode: when armed, submitting the composer sets the text as
+    /// the session goal instead of sending a prompt.
+    var isGoalComposerArmed = false
+
+    /// The pencil-edit flow: the composer strips down to a dedicated
+    /// "Edit goal" editor and the banner hides. Plain ⌖-armed goal setting
+    /// keeps the normal composer look.
+    var isGoalEditing = false
+
+    /// A goal captured before the session connected, applied on connect.
+    private var pendingGoal: String?
+
+    func toggleGoalComposer() {
+        if isGoalComposerArmed {
+            exitGoalComposer()
+        } else {
+            isGoalComposerArmed = true
+        }
+    }
+
+    /// Leaves goal mode, dropping the goal draft text (the banner returns).
+    func exitGoalComposer() {
+        isGoalComposerArmed = false
+        isGoalEditing = false
+        composerText = ""
+    }
+
+    /// Loads the current goal into the composer in edit mode — submitting
+    /// replaces the objective.
+    func editGoal() {
+        guard let objective = (goal ?? draftGoal)?.objective else { return }
+        composerText = objective
+        isGoalComposerArmed = true
+        isGoalEditing = true
+    }
+
+    /// Submits the composer text as the goal (the armed-toggle send path).
+    /// On a new chat this mirrors `send()`: navigate to the session page,
+    /// create the worktree/session, connect the agent — with the goal applied
+    /// on connect instead of a prompt.
+    func submitGoalFromComposer() async {
+        let objective = composerText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !objective.isEmpty, !isConnecting, !isSubmitting else { return }
+        isGoalComposerArmed = false
+        isGoalEditing = false
+
+        if let model {
+            composerText = ""
+            await model.setGoal(objective: objective)
+            return
+        }
+
+        pendingGoal = objective
+        isSubmitting = true
+        let needsWorktree = wantsNewWorktree && sessionCwdOverride == nil
+        let showsSetupPhases = serverSession?.agentSessionId == nil && resumeAgentSessionId == nil
+
+        // Navigate first, exactly like a first prompt send.
+        if !hasSentFirst {
+            hasSentFirst = true
+            if onFirstSend != nil { rememberComposerDefaults() }
+            onFirstSend?()
+            onFirstSend = nil
+        }
+        isSubmitting = false
+        composerText = ""
+
+        func restoreComposer() {
+            composerText = objective
+            pendingGoal = nil
+        }
+
+        if needsWorktree {
+            guard await createWorktree(showsSetupPhase: showsSetupPhases) else {
+                restoreComposer()
+                return
+            }
+        }
+
+        guard let harness = selectedHarness else {
+            status = .failed("No agent is installed. Install Claude Code or Codex and try again.")
+            restoreComposer()
+            return
+        }
+        status = .connecting("Starting \(harness.name)…")
+        if showsSetupPhases { beginSetupPhase(.startingAgent(named: harness.name)) }
+        do {
+            // connect applies the pending goal once the agent session exists.
+            let model = try await connect(harness)
+            self.model = model
+            setupPhases.removeAll { $0.id == SessionSetupPhase.agentPhaseId }
+            status = .idle
+        } catch {
+            let message = serverErrorMessage(error)
+            mutateSetupPhase(id: SessionSetupPhase.agentPhaseId) { $0.fail(message: message) }
+            status = .failed(message)
+            restoreComposer()
+        }
+    }
+
+    func setGoal(objective: String? = nil, status: GoalStatus? = nil) async {
+        if let model {
+            await model.setGoal(objective: objective, status: status)
+        } else if let objective {
+            pendingGoal = objective
+        }
+    }
+
+    /// The pre-connect goal shown in the banner before the session exists.
+    /// Kept visible until the live goal replaces it, so the banner doesn't
+    /// flicker out during the connect handshake.
+    var draftGoal: SessionGoal? {
+        guard model?.goal == nil, let pendingGoal else { return nil }
+        return SessionGoal(objective: pendingGoal, status: .active)
+    }
+
+    /// Applies a goal captured before connect. Called once the model exists.
+    /// The draft clears only after the live goal is set (no banner gap).
+    private func applyPendingGoal(to model: SessionModel) async {
+        guard let pendingGoal else { return }
+        await model.setGoal(objective: pendingGoal)
+        self.pendingGoal = nil
+    }
+
+    func pauseGoal() async { await model?.pauseGoal() }
+    func resumeGoal() async { await model?.resumeGoal() }
+
+    func clearGoal() async {
+        if model == nil {
+            pendingGoal = nil
+        } else {
+            await model?.clearGoal()
+        }
+    }
+
+    // MARK: - Todos
+
+    /// The session's latest todo checklist, pinned above the composer.
+    var todos: Plan? { model?.sessionPlan }
+
+    // MARK: - Questions
+
+    /// The blocking agent question the composer renders as a picker.
+    var pendingQuestion: QuestionRequest? { model?.pendingQuestion }
+
+    func answerQuestion(answers: [String: QuestionAnswerEntry]) async {
+        await model?.answerQuestion(answers: answers)
+    }
+
+    func cancelQuestion() async {
+        await model?.cancelQuestion()
+    }
 
     /// Selectable config options: live when connected, otherwise the cached
     /// (stale) options for the selected harness with any pending edits applied.
@@ -803,6 +973,8 @@ final class SessionController {
         }
         pendingConfig.removeAll()
 
+        await applyPendingGoal(to: model)
+
         configCache.store(model.configOptions, forHarness: harness.id)
         configOptionsByHarness[harness.id] = model.configOptions
         return model
@@ -851,6 +1023,7 @@ final class SessionController {
             if let modes = capability.modes {
                 modeStateByHarness[capability.harness.id] = modes
             }
+            supportsGoalsByHarness[capability.harness.id] = capability.supportsGoals ?? false
         }
         if isNewChat {
             if selectedHarnessId == nil || !harnesses.contains(where: { $0.id == selectedHarnessId }) {

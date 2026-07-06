@@ -5,10 +5,13 @@ import type {
   SessionConfigOption as AcpSessionConfigOption,
   SessionConfigSelectGroup as AcpSessionConfigSelectGroup,
   SessionConfigSelectOption as AcpSessionConfigSelectOption,
+  SessionMode as AcpSessionMode,
   SessionModeState as AcpSessionModeState
 } from "@agentclientprotocol/sdk"
 import type {
+  CanonicalModeId,
   Harness,
+  QuestionSpec,
   SessionConfigOption,
   SessionConfigSelectGroup,
   SessionConfigSelectOption,
@@ -35,6 +38,7 @@ import {
   type LoadedAgentSession,
   type PromptInput,
   type ProviderEnvironment,
+  type QuestionAnswer,
   type RuntimeEmit,
   type RuntimeEvent
 } from "../types.js"
@@ -69,6 +73,14 @@ export interface AcpAgentConnection {
     configId: string,
     value: string
   ) => Effect.Effect<unknown, AgentRuntimeError>
+  /// Resolves a pending `session/request_permission` that was surfaced as a
+  /// blocking question. Absent on connections without permission plumbing
+  /// (fakes, older transports) — the runtime then reports unsupported.
+  readonly answerQuestion?: (
+    sessionId: string,
+    questionId: string,
+    answer: QuestionAnswer
+  ) => Effect.Effect<void, AgentRuntimeError>
   readonly close: Effect.Effect<void, AgentRuntimeError>
 }
 
@@ -214,6 +226,12 @@ export const makeAcpProvider = (
           })
         )
       }),
+    ...(connection.answerQuestion === undefined
+      ? {}
+      : {
+          answerQuestion: (questionId: string, answer: QuestionAnswer) =>
+            connection.answerQuestion!(sessionId, questionId, answer)
+        }),
     close: connection.close
   })
 
@@ -277,16 +295,106 @@ export const stdioAcpConnector: AcpConnector = {
       })
       spawnFailure.catch(() => undefined)
       const stderr = captureStderr(child)
-      const connection = createClientApp((notification) => {
-        void emit(runtimeEventFromNotification(notification)).catch(() => undefined)
-      }).connect(
+      const pendingQuestions = new Map<string, PendingAcpQuestion>()
+      const safeEmit = (event: RuntimeEvent): void => {
+        void emit(event).catch(() => undefined)
+      }
+      const connection = createClientApp(
+        (notification) => {
+          safeEmit(runtimeEventFromNotification(notification))
+        },
+        (params) => {
+          const question = acpPermissionQuestion(params)
+          if (question === undefined) {
+            return Promise.resolve({ outcome: { outcome: "cancelled" as const } })
+          }
+          const questionId = randomUUID()
+          if (question.planDocument !== undefined) {
+            safeEmit({
+              kind: "session.output",
+              payload: { markdown: question.planDocument, sessionUpdate: "plan_document" },
+              subjectId: question.sessionId
+            })
+          }
+          safeEmit({
+            kind: "session.output",
+            payload: {
+              questionId,
+              questions: [question.spec],
+              sessionUpdate: "question"
+            },
+            subjectId: question.sessionId
+          })
+          return new Promise<AcpPermissionOutcome>((resolve) => {
+            pendingQuestions.set(questionId, {
+              optionIds: question.optionIds,
+              questions: [question.spec],
+              resolve,
+              sessionId: question.sessionId
+            })
+          })
+        }
+      ).connect(
         acp.ndJsonStream(
           Writable.toWeb(child.stdin) as WritableStream<Uint8Array>,
           Readable.toWeb(child.stdout) as ReadableStream<Uint8Array>
         )
       )
-      closeConnection = (error) => connection.close(error)
-      child.once("exit", () => connection.close(new Error(stderr())))
+      const emitQuestionResolved = (
+        questionId: string,
+        pending: PendingAcpQuestion,
+        outcome: "answered" | "cancelled",
+        answers: QuestionAnswer["answers"]
+      ): void => {
+        safeEmit({
+          kind: "session.output",
+          payload: {
+            outcome,
+            questionId,
+            questions: pending.questions,
+            sessionUpdate: "question_resolved",
+            ...(answers === undefined ? {} : { answers })
+          },
+          subjectId: pending.sessionId
+        })
+      }
+      const answerQuestion = async (
+        sessionId: string,
+        questionId: string,
+        answer: QuestionAnswer
+      ): Promise<void> => {
+        const pending = pendingQuestions.get(questionId)
+        if (pending === undefined || pending.sessionId !== sessionId) {
+          throw new Error(`No pending question: ${questionId}`)
+        }
+        pendingQuestions.delete(questionId)
+        const outcome = acpPermissionOutcome(pending.optionIds, answer)
+        pending.resolve(outcome)
+        emitQuestionResolved(
+          questionId,
+          pending,
+          outcome.outcome.outcome === "selected" ? "answered" : "cancelled",
+          answer.outcome === "answered" ? answer.answers : undefined
+        )
+      }
+      /// ACP spec: a cancelled turn (and a closing connection) must resolve
+      /// pending permission requests as cancelled.
+      const cancelQuestions = (sessionId: string | undefined): void => {
+        for (const [questionId, pending] of [...pendingQuestions]) {
+          if (sessionId !== undefined && pending.sessionId !== sessionId) continue
+          pendingQuestions.delete(questionId)
+          pending.resolve({ outcome: { outcome: "cancelled" } })
+          emitQuestionResolved(questionId, pending, "cancelled", undefined)
+        }
+      }
+      closeConnection = (error) => {
+        cancelQuestions(undefined)
+        connection.close(error)
+      }
+      child.once("exit", () => {
+        cancelQuestions(undefined)
+        connection.close(new Error(stderr()))
+      })
       const initialized = await Promise.race([
         connection.agent.request(acp.methods.agent.initialize, {
           clientCapabilities: {
@@ -306,9 +414,11 @@ export const stdioAcpConnector: AcpConnector = {
         connection,
         stderr,
         () => {
+          cancelQuestions(undefined)
           child.kill()
         },
-        initialized?.agentCapabilities?.promptCapabilities ?? {}
+        initialized?.agentCapabilities?.promptCapabilities ?? {},
+        { answerQuestion, cancelQuestions }
       )
     })
 }
@@ -342,15 +452,33 @@ export const acpPrompt = (
   return blocks
 }
 
+interface AcpQuestionControls {
+  readonly answerQuestion: (
+    sessionId: string,
+    questionId: string,
+    answer: QuestionAnswer
+  ) => Promise<void>
+  readonly cancelQuestions: (sessionId: string | undefined) => void
+}
+
 const sdkConnection = (
   connection: acp.ClientConnection,
   stderr: () => string,
   terminate: () => void = () => undefined,
-  promptCapabilities: AcpPromptCapabilities = {}
+  promptCapabilities: AcpPromptCapabilities = {},
+  questions?: AcpQuestionControls
 ): AcpAgentConnection => {
   connection.closed.catch(() => undefined)
 
   return {
+    ...(questions === undefined
+      ? {}
+      : {
+          answerQuestion: (sessionId: string, questionId: string, answer: QuestionAnswer) =>
+            adapterPromise("answerQuestion", () =>
+              questions.answerQuestion(sessionId, questionId, answer)
+            )
+        }),
     createSession: (cwd) =>
       adapterPromise("createSession", async () => {
         const response = await connection.agent.request(acp.methods.agent.session.new, {
@@ -378,6 +506,9 @@ const sdkConnection = (
       }),
     cancel: (sessionId) =>
       adapterPromise("cancel", async () => {
+        // Per spec, cancelling a turn resolves its pending permission
+        // requests as cancelled before the agent is notified.
+        questions?.cancelQuestions(sessionId)
         await connection.agent.notify(acp.methods.agent.session.cancel, { sessionId })
       }),
     setMode: (sessionId, modeId) =>
@@ -400,27 +531,115 @@ const sdkConnection = (
   }
 }
 
+type AcpPermissionOutcome =
+  | { outcome: { outcome: "cancelled" } }
+  | { outcome: { optionId: string; outcome: "selected" } }
+
 const createClientApp = (
-  onSessionUpdate: (notification: acp.SessionNotification) => void
+  onSessionUpdate: (notification: acp.SessionNotification) => void,
+  onPermissionRequest: (params: unknown) => Promise<AcpPermissionOutcome>
 ): acp.ClientApp =>
   acp
     .client({ name: "HerdMan" })
     .onNotification(acp.methods.client.session.update, ({ params }) => {
       onSessionUpdate(params)
     })
-    // Auto-approve, matching the Claude/Codex providers' posture (and the old
-    // in-app client's behavior). Declining here breaks agents that gate every
-    // step on permission — cursor-agent retries denied steps until it gives
-    // up with "exceeded max retries".
-    .onRequest(acp.methods.client.session.requestPermission, ({ params }) => {
-      const options = params.options ?? []
-      const allow =
-        options.find((option) => option.kind === "allow_always") ??
-        options.find((option) => option.kind === "allow_once")
-      return allow === undefined
-        ? { outcome: { outcome: "cancelled" as const } }
-        : { outcome: { optionId: allow.optionId, outcome: "selected" as const } }
+    // Permission requests are the agent explicitly deferring to the human
+    // (ACP's contract — this is what makes plan mode gate anything), so they
+    // surface as blocking questions rather than being auto-approved.
+    .onRequest(acp.methods.client.session.requestPermission, ({ params }) =>
+      onPermissionRequest(params)
+    )
+
+/// One `session/request_permission` held open while the human answers.
+interface PendingAcpQuestion {
+  readonly sessionId: string
+  readonly questions: ReadonlyArray<QuestionSpec>
+  /// option label (name) → ACP optionId, for mapping the answer back.
+  readonly optionIds: ReadonlyMap<string, string>
+  readonly resolve: (outcome: AcpPermissionOutcome) => void
+}
+
+/// Pure mapping from a permission request onto the question wire shape.
+/// Exported for unit tests — the live wiring runs inside the stdio connector.
+/// Returns undefined when the request carries no options (auto-cancel).
+export const acpPermissionQuestion = (
+  params: unknown
+):
+  | {
+      readonly sessionId: string
+      readonly spec: QuestionSpec
+      readonly optionIds: ReadonlyMap<string, string>
+      readonly planDocument: string | undefined
+    }
+  | undefined => {
+  if (typeof params !== "object" || params === null) return undefined
+  const request = params as Record<string, unknown>
+  const sessionId = typeof request.sessionId === "string" ? request.sessionId : undefined
+  const rawOptions = Array.isArray(request.options) ? request.options : []
+  const options = rawOptions.flatMap((option) => {
+    if (typeof option !== "object" || option === null) return []
+    const entry = option as Record<string, unknown>
+    return typeof entry.optionId === "string" && typeof entry.name === "string"
+      ? [{ name: entry.name, optionId: entry.optionId }]
+      : []
+  })
+  if (sessionId === undefined || options.length === 0) return undefined
+  const toolCall =
+    typeof request.toolCall === "object" && request.toolCall !== null
+      ? (request.toolCall as Record<string, unknown>)
+      : {}
+  const title = typeof toolCall.title === "string" ? toolCall.title : undefined
+  // Plan-mode exits (claude-agent-acp's "Ready to code?") carry the proposed
+  // plan markdown as switch_mode tool-call content — surface it as the
+  // Proposed Plan card alongside the question.
+  const planDocument =
+    toolCall.kind === "switch_mode" ? textFromToolCallContent(toolCall.content) : undefined
+  return {
+    optionIds: new Map(options.map((option) => [option.name, option.optionId])),
+    planDocument,
+    sessionId,
+    spec: {
+      allowsOther: false,
+      id: "permission",
+      options: options.map((option) => ({ label: option.name })),
+      question: title !== undefined && title.length > 0 ? title : "Allow the agent to proceed?"
+    }
+  }
+}
+
+const textFromToolCallContent = (content: unknown): string | undefined => {
+  if (!Array.isArray(content)) return undefined
+  const text = content
+    .flatMap((block) => {
+      if (typeof block !== "object" || block === null) return []
+      const entry = block as { type?: unknown; content?: { type?: unknown; text?: unknown } }
+      return entry.type === "content" &&
+        entry.content?.type === "text" &&
+        typeof entry.content.text === "string"
+        ? [entry.content.text]
+        : []
     })
+    .join("\n")
+    .trim()
+  return text.length > 0 ? text : undefined
+}
+
+/// Maps the human's answer back onto the ACP permission outcome: the selected
+/// option label resolves to its optionId; anything else cancels.
+export const acpPermissionOutcome = (
+  optionIds: ReadonlyMap<string, string>,
+  answer: QuestionAnswer
+): AcpPermissionOutcome => {
+  if (answer.outcome === "answered") {
+    const label = Object.values(answer.answers ?? {}).flatMap((entry) => [...entry.answers])[0]
+    const optionId = label === undefined ? undefined : optionIds.get(label)
+    if (optionId !== undefined) {
+      return { outcome: { optionId, outcome: "selected" } }
+    }
+  }
+  return { outcome: { outcome: "cancelled" } }
+}
 
 export const runtimeEventFromNotification = (
   notification: acp.SessionNotification
@@ -509,15 +728,38 @@ const sessionMetadata = (response: NewSessionResponse): AgentSessionMetadata => 
   configOptions: normalizeConfigOptions(response.configOptions ?? [])
 })
 
-const normalizeModeState = (state: AcpSessionModeState): SessionModeState => ({
+/// Best-effort mapping from agent-defined ACP mode ids/names onto HerdMan's
+/// canonical vocabulary. Order matters: the first matching pattern wins.
+/// Unmapped modes stay native-only and render in the picker's overflow section.
+const CANONICAL_MODE_PATTERNS: ReadonlyArray<{
+  readonly canonicalId: CanonicalModeId
+  readonly pattern: RegExp
+}> = [
+  { canonicalId: "plan", pattern: /^plan/i },
+  { canonicalId: "readOnly", pattern: /read[-_ ]?only/i },
+  { canonicalId: "autoEdit", pattern: /accept[-_ ]?edits|auto[-_ ]?edit/i },
+  { canonicalId: "fullAccess", pattern: /bypass|full[-_ ]?access|yolo/i },
+  { canonicalId: "ask", pattern: /^(default|ask|normal)$/i }
+]
+
+const canonicalModeIdFor = (mode: AcpSessionMode): CanonicalModeId | undefined =>
+  CANONICAL_MODE_PATTERNS.find(
+    (entry) => entry.pattern.test(mode.id) || entry.pattern.test(mode.name)
+  )?.canonicalId
+
+export const normalizeModeState = (state: AcpSessionModeState): SessionModeState => ({
   currentModeId: state.currentModeId,
-  availableModes: state.availableModes.map((mode) => ({
-    id: mode.id,
-    name: mode.name,
-    ...(mode.description === undefined || mode.description === null
-      ? {}
-      : { description: mode.description })
-  }))
+  availableModes: state.availableModes.map((mode) => {
+    const canonicalId = canonicalModeIdFor(mode)
+    return {
+      id: mode.id,
+      name: mode.name,
+      ...(mode.description === undefined || mode.description === null
+        ? {}
+        : { description: mode.description }),
+      ...(canonicalId === undefined ? {} : { canonicalId })
+    }
+  })
 })
 
 const normalizeConfigOptions = (

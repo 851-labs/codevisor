@@ -642,6 +642,320 @@ struct SessionModelTests {
         #expect(model.configOptions.first?.currentValue == "large")
     }
 
+    @Test("Goal lifecycle: set, pause, resume, and clear round-trip optimistically")
+    func goalLifecycle() async {
+        let sessionId = UUID()
+        let client = FakeSessionServerClient(sessionId: sessionId)
+        let model = SessionModel(
+            serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
+            sessionId: sessionId.uuidString
+        )
+
+        await model.setGoal(objective: "ship goal mode", tokenBudget: .set(50_000))
+        #expect(model.goal?.objective == "ship goal mode")
+        #expect(model.goal?.status == .active)
+        #expect(model.goal?.tokenBudget == 50_000)
+
+        await model.pauseGoal()
+        #expect(model.goal?.status == .paused)
+        #expect(client.goalUpdates.last?.1 == .paused)
+        // Pause must not touch the budget (keep semantics).
+        #expect(client.goalUpdates.last?.2 == .keep)
+
+        await model.resumeGoal()
+        #expect(model.goal?.status == .active)
+
+        await model.setGoal(tokenBudget: .clear)
+        #expect(model.goal?.tokenBudget == nil)
+
+        await model.clearGoal()
+        #expect(model.goal == nil)
+        #expect(client.goalClearCount == 1)
+    }
+
+    @Test("A goal-only session still streams agent-initiated turns")
+    func goalOnlySessionStreams() async {
+        let sessionId = UUID()
+        let client = FakeSessionServerClient(sessionId: sessionId)
+        let model = SessionModel(
+            serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
+            sessionId: sessionId.uuidString,
+            now: { Date(timeIntervalSince1970: 100) }
+        )
+        // No send(), no loadHistory() — setting the goal must be enough to
+        // subscribe to the event stream (goal auto-continuation turns are
+        // agent-initiated).
+        await model.setGoal(objective: "count to ten")
+        client.emit(ServerEventEnvelope(
+            id: 1,
+            serverId: "local",
+            kind: "session.output",
+            subjectId: sessionId.uuidString,
+            createdAt: "2026-07-05T00:00:00.000Z",
+            payload: .object([
+                "sessionUpdate": .string("agent_message_chunk"),
+                "messageId": .string("m1"),
+                "content": .object(["type": .string("text"), "text": .string("Working on it.")])
+            ])
+        ))
+        for _ in 0..<40 {
+            await Task.yield()
+            if !model.conversation.isEmpty { break }
+        }
+        guard case let .assistant(assistant) = model.conversation.last else {
+            Issue.record("expected the streamed turn to render")
+            return
+        }
+        #expect(assistant.turn.entries.isEmpty == false)
+    }
+
+    @Test("Goal errors surface without clobbering local goal state")
+    func goalErrorSurfaces() async {
+        let sessionId = UUID()
+        let client = FakeSessionServerClient(sessionId: sessionId)
+        let model = SessionModel(
+            serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
+            sessionId: sessionId.uuidString
+        )
+        await model.setGoal(objective: "goal fails")
+        #expect(model.goal == nil)
+        #expect(model.errorMessage != nil)
+    }
+
+    @Test("Server goal events update and clear the session goal")
+    func serverGoalEvents() async {
+        let sessionId = UUID()
+        let client = FakeSessionServerClient(sessionId: sessionId)
+        let model = SessionModel(
+            serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
+            sessionId: sessionId.uuidString
+        )
+        await model.loadHistory()
+
+        client.emit(ServerEventEnvelope(
+            id: 1,
+            serverId: "local",
+            kind: "session.updated",
+            subjectId: sessionId.uuidString,
+            createdAt: "2026-07-05T00:00:00.000Z",
+            payload: .object([
+                "goal": .object([
+                    "objective": .string("long haul"),
+                    "status": .string("active"),
+                    "tokenBudget": .null,
+                    "tokensUsed": .number(1200),
+                    "timeUsedSeconds": .number(42),
+                    "createdAt": .string("2026-07-05T00:00:00.000Z"),
+                    "updatedAt": .string("2026-07-05T00:01:00.000Z")
+                ])
+            ])
+        ))
+        for _ in 0..<20 {
+            await Task.yield()
+            if model.goal != nil { break }
+        }
+        #expect(model.goal?.objective == "long haul")
+        #expect(model.goal?.tokenBudget == nil)
+        #expect(model.goal?.tokensUsed == 1200)
+
+        // Later accounting snapshot replaces, never accumulates.
+        client.emit(ServerEventEnvelope(
+            id: 2,
+            serverId: "local",
+            kind: "session.updated",
+            subjectId: sessionId.uuidString,
+            createdAt: "2026-07-05T00:02:00.000Z",
+            payload: .object([
+                "goal": .object([
+                    "objective": .string("long haul"),
+                    "status": .string("budgetLimited"),
+                    "tokenBudget": .number(10_000),
+                    "tokensUsed": .number(10_000),
+                    "timeUsedSeconds": .number(90),
+                    "createdAt": .string("2026-07-05T00:00:00.000Z"),
+                    "updatedAt": .string("2026-07-05T00:02:00.000Z")
+                ])
+            ])
+        ))
+        for _ in 0..<20 {
+            await Task.yield()
+            if model.goal?.status == .budgetLimited { break }
+        }
+        #expect(model.goal?.status == .budgetLimited)
+        #expect(model.goal?.tokensUsed == 10_000)
+
+        client.emit(ServerEventEnvelope(
+            id: 3,
+            serverId: "local",
+            kind: "session.updated",
+            subjectId: sessionId.uuidString,
+            createdAt: "2026-07-05T00:03:00.000Z",
+            payload: .object(["goalCleared": .bool(true)])
+        ))
+        for _ in 0..<20 {
+            await Task.yield()
+            if model.goal == nil { break }
+        }
+        #expect(model.goal == nil)
+    }
+
+    @Test("Agent questions set pending state; answers post and resolution renders a card")
+    func questionLifecycle() async {
+        let sessionId = UUID()
+        let client = FakeSessionServerClient(sessionId: sessionId)
+        let model = SessionModel(
+            serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
+            sessionId: sessionId.uuidString
+        )
+        await model.loadHistory()
+
+        client.emit(ServerEventEnvelope(
+            id: 1,
+            serverId: "local",
+            kind: "session.output",
+            subjectId: sessionId.uuidString,
+            createdAt: "2026-07-05T00:00:00.000Z",
+            payload: .object([
+                "sessionUpdate": .string("question"),
+                "questionId": .string("q-1"),
+                "questions": .array([.object([
+                    "id": .string("approach"),
+                    "header": .string("Approach"),
+                    "question": .string("Which approach?"),
+                    "allowsOther": .bool(true),
+                    "options": .array([
+                        .object(["label": .string("MVP first"), "description": .string("Fast.")]),
+                        .object(["label": .string("Full design")])
+                    ])
+                ])])
+            ])
+        ))
+        for _ in 0..<20 {
+            await Task.yield()
+            if model.pendingQuestion != nil { break }
+        }
+        #expect(model.pendingQuestion?.questionId == "q-1")
+        #expect(model.pendingQuestion?.questions.first?.options.count == 2)
+
+        // Answer posts to the server and clears optimistically.
+        await model.answerQuestion(answers: ["approach": QuestionAnswerEntry(answers: ["MVP first"])])
+        #expect(model.pendingQuestion == nil)
+        #expect(client.questionAnswers.count == 1)
+        #expect(client.questionAnswers.first?.0 == "q-1")
+        #expect(client.questionAnswers.first?.1 == "answered")
+
+        // The provider's resolution event renders the answered card.
+        client.emit(ServerEventEnvelope(
+            id: 2,
+            serverId: "local",
+            kind: "session.output",
+            subjectId: sessionId.uuidString,
+            createdAt: "2026-07-05T00:00:01.000Z",
+            payload: .object([
+                "sessionUpdate": .string("question_resolved"),
+                "questionId": .string("q-1"),
+                "outcome": .string("answered"),
+                "questions": .array([.object([
+                    "id": .string("approach"),
+                    "question": .string("Which approach?"),
+                    "allowsOther": .bool(true),
+                    "options": .array([])
+                ])]),
+                "answers": .object([
+                    "approach": .object(["answers": .array([.string("MVP first")])])
+                ])
+            ])
+        ))
+        for _ in 0..<20 {
+            await Task.yield()
+            if case let .assistant(message) = model.conversation.last,
+               !message.turn.answeredQuestions.isEmpty { break }
+        }
+        guard case let .assistant(assistant) = model.conversation.last else {
+            Issue.record("expected assistant")
+            return
+        }
+        #expect(assistant.turn.answeredQuestions.first?.questionId == "q-1")
+        #expect(assistant.turn.answeredQuestions.first?.answers?["approach"]?.answers == ["MVP first"])
+    }
+
+    @Test("Cancelling a question posts the dismissal; turn end clears stale questions")
+    func questionCancelAndTurnEnd() async {
+        let sessionId = UUID()
+        let client = FakeSessionServerClient(sessionId: sessionId)
+        let model = SessionModel(
+            serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
+            sessionId: sessionId.uuidString
+        )
+        await model.loadHistory()
+        let questionEnvelope: (Int, String) -> ServerEventEnvelope = { id, questionId in
+            ServerEventEnvelope(
+                id: id,
+                serverId: "local",
+                kind: "session.output",
+                subjectId: sessionId.uuidString,
+                createdAt: "2026-07-05T00:00:00.000Z",
+                payload: .object([
+                    "sessionUpdate": .string("question"),
+                    "questionId": .string(questionId),
+                    "questions": .array([.object([
+                        "id": .string("q"),
+                        "question": .string("Pick?"),
+                        "allowsOther": .bool(true),
+                        "options": .array([.object(["label": .string("A")])])
+                    ])])
+                ])
+            )
+        }
+        client.emit(questionEnvelope(1, "q-cancel"))
+        for _ in 0..<20 {
+            await Task.yield()
+            if model.pendingQuestion != nil { break }
+        }
+        await model.cancelQuestion()
+        #expect(model.pendingQuestion == nil)
+        #expect(client.questionAnswers.first?.1 == "cancelled")
+
+        // A stale question is dropped when the turn finishes, even if the
+        // resolution event was lost.
+        client.emit(questionEnvelope(2, "q-stale"))
+        for _ in 0..<20 {
+            await Task.yield()
+            if model.pendingQuestion != nil { break }
+        }
+        client.emit(ServerEventEnvelope(
+            id: 3,
+            serverId: "local",
+            kind: "session.updated",
+            subjectId: sessionId.uuidString,
+            createdAt: "2026-07-05T00:00:02.000Z",
+            payload: .object(["stopReason": .string("end_turn")])
+        ))
+        for _ in 0..<20 {
+            await Task.yield()
+            if model.pendingQuestion == nil { break }
+        }
+        #expect(model.pendingQuestion == nil)
+    }
+
+    @Test("SetGoalBody encodes the token-budget double-option")
+    func setGoalBodyEncoding() throws {
+        func json(_ body: SetGoalBody) throws -> String {
+            String(decoding: try JSONEncoder().encode(body), as: UTF8.self)
+        }
+        // .keep omits the key entirely.
+        let keep = try json(SetGoalBody(objective: "o", status: nil, tokenBudget: .keep, clientActionId: "a"))
+        #expect(!keep.contains("tokenBudget"))
+        // .clear encodes a literal null.
+        let clear = try json(SetGoalBody(objective: nil, status: nil, tokenBudget: .clear, clientActionId: "a"))
+        #expect(clear.contains(#""tokenBudget":null"#))
+        #expect(!clear.contains("objective"))
+        // .set encodes the number; status uses its raw wire string.
+        let set = try json(SetGoalBody(objective: nil, status: .paused, tokenBudget: .set(50_000), clientActionId: "a"))
+        #expect(set.contains(#""tokenBudget":50000"#))
+        #expect(set.contains(#""status":"paused""#))
+    }
+
     @Test("Turn end settles in-flight tool calls by outcome")
     func settlesToolCallsOnFinish() async {
         let sessionId = UUID()
@@ -742,6 +1056,119 @@ struct SessionModelTests {
         #expect(assistant.turn.toolCalls.first?.status == .failed)
         #expect(assistant.turn.isGenerating == false)
         #expect(model.isSending == false)
+    }
+
+    @Test("Plan updates drive the session-level todo panel and survive replay")
+    func sessionPlanUpdates() async {
+        let sessionId = UUID()
+        let client = FakeSessionServerClient(sessionId: sessionId)
+        client.historyEvents = [
+            ServerEventEnvelope(
+                id: 1,
+                serverId: "local",
+                kind: "session.output",
+                subjectId: sessionId.uuidString,
+                createdAt: "2026-07-05T00:00:00.000Z",
+                payload: .object([
+                    "sessionUpdate": .string("plan"),
+                    "entries": .array([
+                        .object([
+                            "content": .string("Explore"),
+                            "priority": .string("medium"),
+                            "status": .string("completed")
+                        ]),
+                        .object([
+                            "content": .string("Implement"),
+                            "priority": .string("medium"),
+                            "status": .string("in_progress")
+                        ])
+                    ])
+                ])
+            )
+        ]
+        let model = SessionModel(
+            serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
+            sessionId: sessionId.uuidString
+        )
+        await model.loadHistory()
+        #expect(model.sessionPlan?.entries.count == 2)
+        #expect(model.sessionPlan?.entries.last?.status == .inProgress)
+
+        // A later snapshot replaces the session plan wholesale.
+        client.emit(ServerEventEnvelope(
+            id: 2,
+            serverId: "local",
+            kind: "session.output",
+            subjectId: sessionId.uuidString,
+            createdAt: "2026-07-05T00:01:00.000Z",
+            payload: .object([
+                "sessionUpdate": .string("plan"),
+                "entries": .array([.object([
+                    "content": .string("Ship it"),
+                    "priority": .string("medium"),
+                    "status": .string("pending")
+                ])])
+            ])
+        ))
+        for _ in 0..<20 {
+            await Task.yield()
+            if model.sessionPlan?.entries.count == 1 { break }
+        }
+        #expect(model.sessionPlan?.entries.first?.content == "Ship it")
+    }
+
+    @Test("Plan documents survive history replay")
+    func planDocumentReplays() async {
+        let sessionId = UUID()
+        let client = FakeSessionServerClient(sessionId: sessionId)
+        client.historyEvents = [
+            ServerEventEnvelope(
+                id: 1,
+                serverId: "local",
+                kind: "session.output",
+                subjectId: sessionId.uuidString,
+                createdAt: "2026-07-05T00:00:00.000Z",
+                payload: .object([
+                    "sessionUpdate": .string("plan_document"),
+                    "markdown": .string("# The Plan\n\n1. Do it")
+                ])
+            ),
+            ServerEventEnvelope(
+                id: 2,
+                serverId: "local",
+                kind: "session.output",
+                subjectId: sessionId.uuidString,
+                createdAt: "2026-07-05T00:00:01.000Z",
+                payload: .object([
+                    "sessionUpdate": .string("plan"),
+                    "entries": .array([.object([
+                        "content": .string("Do it"),
+                        "priority": .string("medium"),
+                        "status": .string("in_progress")
+                    ])])
+                ])
+            ),
+            ServerEventEnvelope(
+                id: 3,
+                serverId: "local",
+                kind: "session.updated",
+                subjectId: sessionId.uuidString,
+                createdAt: "2026-07-05T00:00:02.000Z",
+                payload: .object(["stopReason": .string("end_turn")])
+            )
+        ]
+        let model = SessionModel(
+            serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
+            sessionId: sessionId.uuidString,
+            now: { Date(timeIntervalSince1970: 100) }
+        )
+        await model.loadHistory()
+        guard case let .assistant(assistant) = model.conversation.last else {
+            Issue.record("expected assistant")
+            return
+        }
+        #expect(assistant.turn.planDocument == "# The Plan\n\n1. Do it")
+        #expect(assistant.turn.plan?.entries.first?.status == .inProgress)
     }
 
     @Test("loadHistory replays persisted events, rebuilding tool calls")
@@ -896,6 +1323,10 @@ private final class FakeSessionServerClient: HerdManServerClienting, @unchecked 
     private var _cancelCount = 0
     private var _configUpdates: [(String, String)] = []
     private var _eventSinceValues: [Int] = []
+    private var _goalUpdates: [(String?, GoalStatus?, TokenBudgetUpdate)] = []
+    private var _goalClearCount = 0
+    private var _lastBudget: Int?
+    private var _questionAnswers: [(String, String, [String: QuestionAnswerEntry]?)] = []
 
     var detailConversation: [ServerConversationItem] = []
     var detailCursor = 0
@@ -927,6 +1358,22 @@ private final class FakeSessionServerClient: HerdManServerClienting, @unchecked 
 
     var eventSinceValues: [Int] {
         lock.withLock { _eventSinceValues }
+    }
+
+    var goalUpdates: [(String?, GoalStatus?, TokenBudgetUpdate)] {
+        lock.withLock { _goalUpdates }
+    }
+
+    var goalClearCount: Int {
+        lock.withLock { _goalClearCount }
+    }
+
+    var questionAnswers: [(String, String, [String: QuestionAnswerEntry]?)] {
+        lock.withLock { _questionAnswers }
+    }
+
+    private var lastBudget: Int? {
+        lock.withLock { _lastBudget }
     }
 
     func emit(_ event: ServerEventEnvelope) {
@@ -1013,6 +1460,52 @@ private final class FakeSessionServerClient: HerdManServerClienting, @unchecked 
 
     func setSessionConfig(id: UUID, configId: String, value: String) async throws {
         lock.withLock { _configUpdates.append((configId, value)) }
+    }
+
+    @discardableResult
+    func setSessionGoal(
+        id: UUID,
+        objective: String?,
+        status: GoalStatus?,
+        tokenBudget: TokenBudgetUpdate
+    ) async throws -> SessionGoal {
+        if objective == "goal fails" {
+            throw HerdManServerClientError.invalidResponse
+        }
+        let goal = SessionGoal(
+            objective: objective ?? goalUpdates.last?.0 ?? "existing objective",
+            status: status ?? .active,
+            tokenBudget: {
+                switch tokenBudget {
+                case .keep: return goalUpdates.isEmpty ? nil : lastBudget
+                case .clear: return nil
+                case let .set(budget): return budget
+                }
+            }(),
+            createdAt: "2026-07-05T00:00:00.000Z",
+            updatedAt: "2026-07-05T00:00:00.000Z"
+        )
+        lock.withLock {
+            _goalUpdates.append((objective, status, tokenBudget))
+            _lastBudget = goal.tokenBudget
+        }
+        return goal
+    }
+
+    func clearSessionGoal(id: UUID) async throws {
+        lock.withLock { _goalClearCount += 1 }
+    }
+
+    func answerSessionQuestion(
+        id: UUID,
+        questionId: String,
+        outcome: String,
+        answers: [String: QuestionAnswerEntry]?
+    ) async throws {
+        if questionId == "question-fails" {
+            throw HerdManServerClientError.invalidResponse
+        }
+        lock.withLock { _questionAnswers.append((questionId, outcome, answers)) }
     }
 
     func sessionEvents(id: UUID) async throws -> [ServerEventEnvelope] {

@@ -44,6 +44,12 @@ public struct AssistantTurn: Sendable, Equatable {
     public var isThinking: Bool
     public var stopReason: StopReason?
     public var plan: Plan?
+    /// A proposed plan document (markdown) from plan mode — distinct from the
+    /// step checklist in `plan`. Replaced wholesale per update.
+    public var planDocument: String?
+    /// Questions the user answered during this turn, rendered as compact
+    /// cards (codex CLI keeps an answered-question history cell too).
+    public var answeredQuestions: [QuestionResolution]
     public var startedAt: Date?
     public var endedAt: Date?
     /// Nested subagent threads, keyed by the parent (Task/agent) tool call id.
@@ -59,6 +65,8 @@ public struct AssistantTurn: Sendable, Equatable {
         isThinking: Bool = false,
         stopReason: StopReason? = nil,
         plan: Plan? = nil,
+        planDocument: String? = nil,
+        answeredQuestions: [QuestionResolution] = [],
         startedAt: Date? = nil,
         endedAt: Date? = nil,
         subagents: [String: SubagentTranscript] = [:],
@@ -69,6 +77,8 @@ public struct AssistantTurn: Sendable, Equatable {
         self.isThinking = isThinking
         self.stopReason = stopReason
         self.plan = plan
+        self.planDocument = planDocument
+        self.answeredQuestions = answeredQuestions
         self.startedAt = startedAt
         self.endedAt = endedAt
         self.subagents = subagents

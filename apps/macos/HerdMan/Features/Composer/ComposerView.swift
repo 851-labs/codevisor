@@ -33,6 +33,15 @@ struct ComposerCard: View {
             // The attachment strip sits tight against the input, closer than
             // the card's usual element spacing.
             VStack(alignment: .leading, spacing: 4) {
+                if controller.isGoalEditing {
+                    HStack(spacing: 6) {
+                        Image(systemName: "target")
+                            .font(.caption)
+                        Text("Edit goal")
+                            .font(.caption.weight(.semibold))
+                    }
+                    .foregroundStyle(.secondary)
+                }
                 if !controller.composerAttachments.isEmpty {
                     ComposerAttachmentRow(controller: controller)
                 }
@@ -52,7 +61,7 @@ struct ComposerCard: View {
                     .disabled(controller.isSubmitting)
 
                     if controller.composerText.isEmpty {
-                        Text(placeholder)
+                        Text(controller.isGoalComposerArmed ? "Describe the goal" : placeholder)
                             .foregroundStyle(.tertiary)
                             .padding(.top, 6)
                             .allowsHitTesting(false)
@@ -65,21 +74,46 @@ struct ComposerCard: View {
             }
 
             HStack(spacing: 10) {
-                attachButton
-                ModelConfigMenu(controller: controller)
-                if showsHarnessPicker {
-                    HarnessPickerMenu(controller: controller)
+                if controller.isGoalEditing {
+                    // Editing a goal strips the chrome down to back + send;
+                    // plain ⌖-armed goal setting keeps the normal toolbar.
+                    Text("esc to cancel")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                    Spacer(minLength: 0)
+                    HStack(spacing: 4) {
+                        goalEditBackButton
+                        sendButton
+                    }
+                } else {
+                    attachButton
+                    ModelConfigMenu(controller: controller)
+                    if showsHarnessPicker {
+                        HarnessPickerMenu(controller: controller)
+                    }
+                    ForEach(controller.pickerOptions) { option in
+                        configMenu(option)
+                    }
+                    if !controller.hasModeConfigPicker {
+                        modeMenu
+                    }
+                    if controller.canEditGoal {
+                        goalModeButton
+                    }
+                    Spacer(minLength: 0)
+                    // Action buttons cluster tighter than the picker chips.
+                    // While the agent runs, stop takes the send slot; a draft
+                    // in the composer brings send back with stop beside it.
+                    HStack(spacing: 4) {
+                        UsageRingButton(usage: controller.usage)
+                        if controller.isSending, !hasComposerDraft {
+                            stopButton
+                        } else {
+                            stopButton
+                            sendButton
+                        }
+                    }
                 }
-                ForEach(controller.pickerOptions) { option in
-                    configMenu(option)
-                }
-                if !controller.hasModeConfigPicker {
-                    modeMenu
-                }
-                Spacer(minLength: 0)
-                UsageRingButton(usage: controller.usage)
-                stopButton
-                sendButton
             }
             .font(.callout)
         }
@@ -198,25 +232,79 @@ struct ComposerCard: View {
     private var modeMenu: some View {
         if let modes = controller.modeState, modes.availableModes.count > 1 {
             Menu {
-                ForEach(modes.availableModes) { mode in
-                    Toggle(isOn: Binding(
-                        get: { mode.id == modes.currentModeId },
-                        set: { isOn in
-                            guard isOn else { return }
-                            Task { await controller.setMode(mode.id) }
+                // Canonical modes first, in the fixed HerdMan order, with
+                // consistent labels across harnesses.
+                ForEach(modes.canonicalModes) { mode in
+                    modeButton(mode, isCurrent: mode.id == modes.currentModeId)
+                }
+                // Agent-defined modes that don't map onto the canonical
+                // vocabulary keep their native names below a divider.
+                if !modes.nativeOnlyModes.isEmpty {
+                    Divider()
+                    Section("Agent modes") {
+                        ForEach(modes.nativeOnlyModes) { mode in
+                            modeButton(mode, isCurrent: mode.id == modes.currentModeId)
                         }
-                    )) {
-                        Text(mode.name)
                     }
                 }
             } label: {
-                chipLabel(modes.availableModes.first { $0.id == modes.currentModeId }?.name ?? "Mode")
+                chipLabel(modes.currentMode?.displayName ?? "Mode")
             }
             .menuStyle(.button)
             .buttonStyle(.plain)
             .menuIndicator(.hidden)
             .fixedSize()
+            .help(modes.currentMode?.description ?? "Mode")
         }
+    }
+
+    private func modeButton(_ mode: SessionMode, isCurrent: Bool) -> some View {
+        Button {
+            Task { await controller.setMode(mode.id) }
+        } label: {
+            if isCurrent {
+                Label(mode.displayName, systemImage: "checkmark")
+            } else {
+                Text(mode.displayName)
+            }
+        }
+        .help(mode.description ?? mode.displayName)
+    }
+
+    /// Leaves edit-goal mode without changing the goal (the banner returns).
+    private var goalEditBackButton: some View {
+        Button {
+            withAnimation(.snappy(duration: 0.15)) { controller.exitGoalComposer() }
+        } label: {
+            Image(systemName: "arrow.left")
+                .font(.system(size: 12, weight: .semibold))
+                .frame(width: 28, height: 28)
+                .foregroundStyle(Color.primary)
+                .background(Circle().fill(Color.secondary.opacity(0.16)))
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .help("Back — keep the current goal (esc)")
+    }
+
+    /// Goal-mode toggle: when armed, submitting the composer sets the text
+    /// as the session goal instead of sending a prompt.
+    private var goalModeButton: some View {
+        let isArmed = controller.isGoalComposerArmed
+        return Button {
+            withAnimation(.snappy(duration: 0.15)) { controller.toggleGoalComposer() }
+        } label: {
+            Image(systemName: "target")
+                .font(.system(size: 12, weight: .semibold))
+                .frame(width: 24, height: 24)
+                .foregroundStyle(isArmed ? AnyShapeStyle(theme.windowBackground) : AnyShapeStyle(.secondary))
+                .background(Circle().fill(isArmed ? AnyShapeStyle(theme.accent) : AnyShapeStyle(.clear)))
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .help(isArmed ? "Goal mode armed — sending sets the goal" : "Set a goal: the agent keeps working toward it")
+        .accessibilityLabel("Goal mode")
+        .accessibilityAddTraits(isArmed ? .isSelected : [])
     }
 
     private func chipLabel(_ text: String) -> some View {
@@ -252,6 +340,12 @@ struct ComposerCard: View {
         panel.allowsMultipleSelection = true
         guard panel.runModal() == .OK else { return }
         controller.attachFileURLs(panel.urls)
+    }
+
+    /// Whether the composer holds something sendable (text or attachments).
+    private var hasComposerDraft: Bool {
+        !controller.composerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || !controller.composerAttachments.isEmpty
     }
 
     private func handlePastedAttachments(_ pasted: [PastedAttachment]) -> Bool {
@@ -302,7 +396,9 @@ struct ComposerCard: View {
                 .background(Circle().fill(Color.secondary.opacity(0.16)))
                 .help("Sending…")
         } else {
-            let isEnabled = controller.canSend || !visibleSlashMatches.isEmpty
+            let isEnabled = controller.isGoalComposerArmed
+                ? !controller.composerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                : (controller.canSend || !visibleSlashMatches.isEmpty)
             Button { submitOrAcceptSlash() } label: {
                 Image(systemName: "arrow.up")
                     .font(.system(size: 12, weight: .bold))
@@ -351,6 +447,8 @@ struct ComposerCard: View {
     private func submitOrAcceptSlash() {
         if let command = selectedSlashCommand {
             acceptSlashCommand(command)
+        } else if controller.isGoalComposerArmed {
+            Task { await controller.submitGoalFromComposer() }
         } else {
             Task { await controller.send() }
         }
@@ -368,6 +466,11 @@ struct ComposerCard: View {
     }
 
     private func handleKeyCommand(_ command: ComposerKeyCommand) -> Bool {
+        // Escape leaves goal mode (and restores the goal banner).
+        if controller.isGoalComposerArmed, command == .dismissSelection {
+            controller.exitGoalComposer()
+            return true
+        }
         let matches = visibleSlashMatches
         guard !matches.isEmpty else { return false }
         switch command {

@@ -90,3 +90,71 @@ export const BackgroundTasksPayload = Schema.Struct({
   backgroundTasks: Schema.Array(BackgroundTask)
 })
 export type BackgroundTasksPayload = typeof BackgroundTasksPayload.Type
+/** Plan-document payload carried on `session.output` envelopes. A free-form
+ *  markdown plan the agent proposes before implementing (Claude plan mode's
+ *  ExitPlanMode, codex plan-mode plan items) — distinct from the ACP `plan`
+ *  step checklist. Replace-per-turn semantics, like `plan`. */
+export const PlanDocumentPayload = Schema.Struct({
+  sessionUpdate: Schema.Literals(["plan_document"]),
+  markdown: Schema.String
+})
+export type PlanDocumentPayload = typeof PlanDocumentPayload.Type
+
+export const QuestionOption = Schema.Struct({
+  label: Schema.String,
+  description: Schema.optional(Schema.String)
+})
+export type QuestionOption = typeof QuestionOption.Type
+
+/** One question inside a question request. `allowsOther` adds the free-text
+ *  affordance; `isSecret` masks that free-text input. */
+export const QuestionSpec = Schema.Struct({
+  id: Schema.String,
+  header: Schema.optional(Schema.String),
+  question: Schema.String,
+  options: Schema.Array(QuestionOption),
+  multiSelect: Schema.optional(Schema.Boolean),
+  allowsOther: Schema.Boolean,
+  isSecret: Schema.optional(Schema.Boolean)
+})
+export type QuestionSpec = typeof QuestionSpec.Type
+
+/** Agent-asked question payload carried on `session.output` envelopes. The
+ *  agent's turn BLOCKS until the client answers via
+ *  `POST /v1/sessions/:id/questions/:questionId/answer` (or the provider
+ *  auto-resolves after `autoResolutionMs`). Resolution arrives as a paired
+ *  `question_resolved` event with the same `questionId` — events are
+ *  append-only, so clients collapse the pair on replay. */
+export const QuestionPayload = Schema.Struct({
+  sessionUpdate: Schema.Literals(["question"]),
+  questionId: Schema.String,
+  /** Context line shown above the questions (e.g. an MCP server's
+   *  elicitation message). */
+  message: Schema.optional(Schema.String),
+  questions: Schema.Array(QuestionSpec),
+  autoResolutionMs: Schema.optional(Schema.Number)
+})
+export type QuestionPayload = typeof QuestionPayload.Type
+
+export const QuestionOutcome = Schema.Literals(["answered", "cancelled", "autoResolved"])
+export type QuestionOutcome = typeof QuestionOutcome.Type
+
+/** Per-question answer: selected option labels (or the free-text entry),
+ *  plus an optional note the user typed alongside a selection. */
+export const QuestionAnswerEntry = Schema.Struct({
+  answers: Schema.Array(Schema.String),
+  note: Schema.optional(Schema.String)
+})
+export type QuestionAnswerEntry = typeof QuestionAnswerEntry.Type
+
+/** Terminal event for a question request. Carries the questions and answers
+ *  so the transcript can render an answered-question card without joining
+ *  the original `question` event. */
+export const QuestionResolvedPayload = Schema.Struct({
+  sessionUpdate: Schema.Literals(["question_resolved"]),
+  questionId: Schema.String,
+  outcome: QuestionOutcome,
+  questions: Schema.Array(QuestionSpec),
+  answers: Schema.optional(Schema.Record(Schema.String, QuestionAnswerEntry))
+})
+export type QuestionResolvedPayload = typeof QuestionResolvedPayload.Type

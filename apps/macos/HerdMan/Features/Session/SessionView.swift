@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import HerdManCore
+import ACPKit
 
 /// A scroll snapshot used to tell user-initiated upward scrolling apart from
 /// the transcript growing underneath a pinned viewport, and to save/restore
@@ -24,6 +25,7 @@ struct SessionScreen: View {
     @State private var composerHeight: CGFloat = 96
     @State private var focus = TerminalFocusController()
     @State private var isQueueExpanded = true
+    @State private var isTodosExpanded = true
     @State private var attachmentImages: AttachmentImageStore?
     @State private var scrollPosition = ScrollPosition()
     /// Saved position waiting to be restored precisely (anchored to a
@@ -133,6 +135,12 @@ struct SessionScreen: View {
                         setupSection
                     }
                     ForEach(Array(controller.conversation.enumerated()), id: \.element.id) { index, item in
+                        // Goal-started sessions open with an agent-initiated
+                        // turn (no user message) — the pre-chat setup sections
+                        // render above it instead of disappearing.
+                        if index == 0, case .assistant = item {
+                            setupSection
+                        }
                         ConversationItemView(item: item)
                             .onGeometryChange(for: CGRect.self) {
                                 $0.frame(in: .scrollView)
@@ -358,15 +366,32 @@ struct SessionScreen: View {
 
     private var composerOverlay: some View {
         VStack(spacing: 8) {
+            if let todos = controller.todos, !todos.entries.isEmpty {
+                TodoPanelView(plan: todos, isExpanded: $isTodosExpanded)
+                    .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
+            }
+            // Hidden while editing: the composer IS the goal UI in that mode.
+            if controller.supportsGoals, !controller.isGoalEditing,
+               let goal = controller.goal ?? controller.draftGoal {
+                GoalBannerView(controller: controller, goal: goal)
+                    .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
+            }
             if !controller.queuedPrompts.isEmpty {
                 PromptQueueView(controller: controller, isExpanded: $isQueueExpanded)
                     .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
             }
-            ComposerCard(
-                controller: controller,
-                placeholder: "Ask for follow-up changes",
-                onTextViewReady: { focus.composerTextView = $0 }
-            )
+            // A blocking agent question replaces the composer with the picker
+            // until it's answered or dismissed (codex CLI behavior).
+            if let pendingQuestion = controller.pendingQuestion {
+                QuestionPickerCard(controller: controller, request: pendingQuestion)
+                    .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .bottom)))
+            } else {
+                ComposerCard(
+                    controller: controller,
+                    placeholder: "Ask for follow-up changes",
+                    onTextViewReady: { focus.composerTextView = $0 }
+                )
+            }
             statusLabel
         }
         .padding(.horizontal, 24)

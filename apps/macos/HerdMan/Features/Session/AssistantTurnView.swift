@@ -25,9 +25,17 @@ struct AssistantTurnView: View {
                 workedSection
             }
 
-            if let plan = turn.plan, !plan.entries.isEmpty {
-                PlanView(plan: plan)
+            // Chronology: the agent asks (and the user answers) before it
+            // produces the plan — the answered questions read first.
+            ForEach(turn.answeredQuestions, id: \.questionId) { resolution in
+                AnsweredQuestionView(resolution: resolution)
             }
+
+            if let planDocument = turn.planDocument, !planDocument.isEmpty {
+                PlanDocumentView(markdown: planDocument)
+            }
+            // The step checklist lives in the pinned TodoPanelView above the
+            // composer (session-level, all harnesses) rather than per turn.
 
             if turn.isThinking {
                 ShimmeringText.thinking

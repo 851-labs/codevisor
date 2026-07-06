@@ -1,4 +1,4 @@
-import type { EventEnvelope, Harness } from "@herdman/api"
+import type { EventEnvelope, Harness, SessionGoal } from "@herdman/api"
 import { isoTimestamp } from "@herdman/api"
 import { accessSync, constants } from "node:fs"
 import { Context, Effect, Layer } from "effect"
@@ -6,9 +6,9 @@ import { makeAcpProvider, type AcpConnector } from "./providers/acp.js"
 import { makeClaudeProvider } from "./providers/claude.js"
 import { makeCodexProvider } from "./providers/codex/provider.js"
 import {
+  AgentRuntimeError,
   runtimeEffect,
   type AgentProvider,
-  type AgentRuntimeError,
   type AgentSessionHandle,
   type AgentSessionMetadata,
   type HarnessDefinition,
@@ -16,17 +16,22 @@ import {
   type PromptResult,
   type ProviderEnvironment,
   type ProviderId,
+  type QuestionAnswer,
   type RuntimeEvent,
-  type RuntimeEventSink
+  type RuntimeEventSink,
+  type SetGoalUpdate
 } from "./types.js"
 
 export * from "./types.js"
 export * from "./attachments.js"
 export * from "./diff-stats.js"
 export {
+  acpPermissionOutcome,
+  acpPermissionQuestion,
   acpProtocolVersion,
   acpPrompt,
   makeAcpProvider,
+  normalizeModeState,
   runtimeEventFromNotification,
   stdioAcpConnector
 } from "./providers/acp.js"
@@ -80,6 +85,20 @@ export interface AgentRuntimeService {
     sessionId: string,
     configId: string,
     value: string
+  ) => Effect.Effect<void, AgentRuntimeError>
+  /// Fails with AgentRuntimeError when the session's harness has no goal
+  /// support (see AgentSessionMetadata.supportsGoals).
+  readonly setGoal: (
+    sessionId: string,
+    update: SetGoalUpdate
+  ) => Effect.Effect<SessionGoal, AgentRuntimeError>
+  readonly clearGoal: (sessionId: string) => Effect.Effect<void, AgentRuntimeError>
+  /// Fails when the harness cannot ask questions or the question is no longer
+  /// pending (already resolved, cancelled with the turn, or stale replay).
+  readonly answerQuestion: (
+    sessionId: string,
+    questionId: string,
+    answer: QuestionAnswer
   ) => Effect.Effect<void, AgentRuntimeError>
 }
 
@@ -330,6 +349,48 @@ export const makeAgentRuntime = (config: AgentRuntimeConfig = {}): AgentRuntimeS
       Effect.gen(function* () {
         const session = yield* sessionFor(sessionId)
         return yield* session.handle.setConfigOption(configId, value)
+      }),
+    setGoal: (sessionId, update) =>
+      Effect.gen(function* () {
+        const session = yield* sessionFor(sessionId)
+        const setGoal = session.handle.setGoal
+        if (setGoal === undefined) {
+          return yield* Effect.fail(
+            new AgentRuntimeError({
+              operation: "setGoal",
+              message: "Goals are not supported by this harness"
+            })
+          )
+        }
+        return yield* setGoal(update)
+      }),
+    clearGoal: (sessionId) =>
+      Effect.gen(function* () {
+        const session = yield* sessionFor(sessionId)
+        const clearGoal = session.handle.clearGoal
+        if (clearGoal === undefined) {
+          return yield* Effect.fail(
+            new AgentRuntimeError({
+              operation: "clearGoal",
+              message: "Goals are not supported by this harness"
+            })
+          )
+        }
+        return yield* clearGoal
+      }),
+    answerQuestion: (sessionId, questionId, answer) =>
+      Effect.gen(function* () {
+        const session = yield* sessionFor(sessionId)
+        const answerQuestion = session.handle.answerQuestion
+        if (answerQuestion === undefined) {
+          return yield* Effect.fail(
+            new AgentRuntimeError({
+              operation: "answerQuestion",
+              message: "Questions are not supported by this harness"
+            })
+          )
+        }
+        return yield* answerQuestion(questionId, answer)
       })
   }
 }

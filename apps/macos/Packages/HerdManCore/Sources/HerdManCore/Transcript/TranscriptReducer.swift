@@ -58,7 +58,19 @@ public enum TranscriptReducer {
         case let .plan(plan):
             turn.plan = plan
 
-        case .availableCommandsUpdate, .currentModeUpdate, .configOptionUpdate, .usageUpdate:
+        case let .planDocument(markdown):
+            turn.isThinking = false
+            turn.planDocument = markdown
+
+        case let .questionResolved(resolution):
+            // Idempotent by questionId: replay delivers the pair again.
+            if !turn.answeredQuestions.contains(where: { $0.questionId == resolution.questionId }) {
+                turn.answeredQuestions.append(resolution)
+            }
+
+        case .question, .availableCommandsUpdate, .currentModeUpdate, .configOptionUpdate,
+             .usageUpdate, .goalUpdate, .goalCleared:
+            // Session-level state; handled by SessionModel, not the transcript.
             break
         }
     }

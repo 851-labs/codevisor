@@ -94,11 +94,16 @@ public struct SessionMode: Sendable, Codable, Equatable, Identifiable {
     public var id: String
     public var name: String
     public var description: String?
+    /// HerdMan's harness-independent mode id (`readOnly`, `ask`, `autoEdit`,
+    /// `fullAccess`, `plan`) when the native mode maps onto one; nil for
+    /// agent-defined modes that stay native-only.
+    public var canonicalId: String?
 
-    public init(id: String, name: String, description: String? = nil) {
+    public init(id: String, name: String, description: String? = nil, canonicalId: String? = nil) {
         self.id = id
         self.name = name
         self.description = description
+        self.canonicalId = canonicalId
     }
 }
 

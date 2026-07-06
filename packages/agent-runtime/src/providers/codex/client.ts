@@ -30,12 +30,20 @@ interface Pending {
 /* v8 ignore start -- the stdio transport is exercised against a live codex binary; tests inject a fake client. */
 export const spawnCodexClient: CodexConnector = async (request) => {
   // apply_patch_streaming_events unlocks item/fileChange/patchUpdated — the
-  // realtime patch stream while the model generates an edit. Off by default
-  // upstream (under development); unknown keys only produce a warning on
-  // older builds.
+  // realtime patch stream while the model generates an edit.
+  // default_mode_request_user_input lets the model ask the user questions
+  // (item/tool/requestUserInput) in the default collaboration mode.
+  // Both are off by default upstream (under development); unknown keys only
+  // produce a warning on older builds.
   const child = spawn(
     request.command,
-    ["app-server", "-c", "features.apply_patch_streaming_events=true"],
+    [
+      "app-server",
+      "-c",
+      "features.apply_patch_streaming_events=true",
+      "-c",
+      "features.default_mode_request_user_input=true"
+    ],
     {
       cwd: request.cwd,
       env: request.env,

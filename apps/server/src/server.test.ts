@@ -1,8 +1,10 @@
 import type {
   AgentRuntimeService,
   PromptInput,
+  QuestionAnswer,
   RuntimeEvent,
-  RuntimeEventSink
+  RuntimeEventSink,
+  SetGoalUpdate
 } from "@herdman/agent-runtime"
 import type { Harness } from "@herdman/api"
 import { makeDatabase, type HerdManDatabaseService } from "@herdman/db"
@@ -63,6 +65,9 @@ const makeAgents = (): AgentRuntimeService & {
   readonly cancellations: Array<string>
   readonly modes: Array<readonly [string, string]>
   readonly configs: Array<readonly [string, string, string]>
+  readonly goals: Array<readonly [string, SetGoalUpdate]>
+  readonly goalClears: Array<string>
+  readonly questionAnswers: Array<readonly [string, string, QuestionAnswer]>
   readonly inspections: Array<readonly [string, string]>
   readonly creations: Array<readonly [string, string]>
   readonly sinks: Map<string, RuntimeEventSink>
@@ -73,6 +78,9 @@ const makeAgents = (): AgentRuntimeService & {
   const cancellations: Array<string> = []
   const modes: Array<readonly [string, string]> = []
   const configs: Array<readonly [string, string, string]> = []
+  const goals: Array<readonly [string, SetGoalUpdate]> = []
+  const goalClears: Array<string> = []
+  const questionAnswers: Array<readonly [string, string, QuestionAnswer]> = []
   const inspections: Array<readonly [string, string]> = []
   const creations: Array<readonly [string, string]> = []
   const sinks = new Map<string, RuntimeEventSink>()
@@ -85,6 +93,9 @@ const makeAgents = (): AgentRuntimeService & {
     cancellations,
     modes,
     configs,
+    goals,
+    goalClears,
+    questionAnswers,
     inspections,
     creations,
     sinks,
@@ -116,6 +127,7 @@ const makeAgents = (): AgentRuntimeService & {
         }
         return {
           sessionId: `inspect-${harnessId}`,
+          supportsGoals: true,
           modes: {
             currentModeId: "default",
             availableModes: [{ id: "default", name: "Default" }]
@@ -270,6 +282,54 @@ const makeAgents = (): AgentRuntimeService & {
           kind: "session.updated",
           subjectId: sessionId,
           payload: { configId, configOptions: [], value }
+        })
+      }),
+    setGoal: (sessionId, update) =>
+      Effect.promise(async () => {
+        if (update.objective === "goal fails") {
+          throw new Error("Goals are not supported by this harness")
+        }
+        goals.push([sessionId, update])
+        const goal = {
+          createdAt: "2026-07-05T00:00:00.000Z",
+          objective: update.objective ?? "existing objective",
+          status: update.status ?? ("active" as const),
+          timeUsedSeconds: 0,
+          tokenBudget: update.tokenBudget ?? null,
+          tokensUsed: 0,
+          updatedAt: "2026-07-05T00:00:00.000Z"
+        }
+        await emit(sessionId, {
+          kind: "session.updated",
+          subjectId: sessionId,
+          payload: { goal }
+        })
+        return goal
+      }),
+    clearGoal: (sessionId) =>
+      Effect.promise(async () => {
+        goalClears.push(sessionId)
+        await emit(sessionId, {
+          kind: "session.updated",
+          subjectId: sessionId,
+          payload: { goalCleared: true }
+        })
+      }),
+    answerQuestion: (sessionId, questionId, answer) =>
+      Effect.promise(async () => {
+        if (questionId === "stale-question") {
+          throw new Error("No pending question: stale-question")
+        }
+        questionAnswers.push([sessionId, questionId, answer])
+        await emit(sessionId, {
+          kind: "session.output",
+          subjectId: sessionId,
+          payload: {
+            outcome: answer.outcome,
+            questionId,
+            questions: [],
+            sessionUpdate: "question_resolved"
+          }
         })
       })
   }
@@ -785,7 +845,8 @@ describe("@herdman/server", () => {
           configOptions: [
             { category: "model", currentValue: "gpt-5", id: "model" },
             { category: "thought_level", currentValue: "medium", id: "reasoning" }
-          ]
+          ],
+          supportsGoals: true
         }
       ]
     })
@@ -1112,6 +1173,123 @@ describe("@herdman/server", () => {
       ).body
     ).toEqual({ configId: "model" })
     expect(agents.configs).toEqual([[session.agentSessionId, "model", "gpt-5"]])
+
+    // Goal set: the double-option tokenBudget key only forwards when present.
+    const goalResponse = await jsonRequest(server, `/v1/sessions/${session.id}/goal`, {
+      body: JSON.stringify({ clientActionId: "goal-1", objective: "ship it", tokenBudget: 50000 }),
+      method: "POST"
+    })
+    expect(goalResponse.status).toBe(202)
+    expect(goalResponse.body).toMatchObject({
+      objective: "ship it",
+      status: "active",
+      tokenBudget: 50000
+    })
+    expect(agents.goals).toEqual([
+      [session.agentSessionId, { objective: "ship it", tokenBudget: 50000 }]
+    ])
+    // Idempotent replay: the same clientActionId returns the stored result
+    // without re-invoking the runtime.
+    const goalReplay = await jsonRequest(server, `/v1/sessions/${session.id}/goal`, {
+      body: JSON.stringify({ clientActionId: "goal-1", objective: "ship it", tokenBudget: 50000 }),
+      method: "POST"
+    })
+    expect(goalReplay.status).toBe(202)
+    expect(agents.goals).toHaveLength(1)
+    // Pause keeps the budget key off the wire entirely.
+    await jsonRequest(server, `/v1/sessions/${session.id}/goal`, {
+      body: JSON.stringify({ status: "paused" }),
+      method: "POST"
+    })
+    expect(agents.goals.at(-1)).toEqual([session.agentSessionId, { status: "paused" }])
+    // Explicit null clears the budget.
+    await jsonRequest(server, `/v1/sessions/${session.id}/goal`, {
+      body: JSON.stringify({ tokenBudget: null }),
+      method: "POST"
+    })
+    expect(agents.goals.at(-1)).toEqual([session.agentSessionId, { tokenBudget: null }])
+    // Bad payloads are rejected before reaching the runtime.
+    expect(
+      (
+        await jsonRequest(server, `/v1/sessions/${session.id}/goal`, {
+          body: JSON.stringify({ status: "someday" }),
+          method: "POST"
+        })
+      ).status
+    ).toBe(400)
+    // Runtime failures (e.g. goals unsupported by the harness) surface as errors.
+    expect(
+      (
+        await jsonRequest(server, `/v1/sessions/${session.id}/goal`, {
+          body: JSON.stringify({ objective: "goal fails" }),
+          method: "POST"
+        })
+      ).status
+    ).toBeGreaterThanOrEqual(400)
+    // Clear.
+    expect(
+      (await jsonRequest(server, `/v1/sessions/${session.id}/goal`, { method: "DELETE" })).status
+    ).toBe(204)
+    expect(agents.goalClears).toEqual([session.agentSessionId])
+
+    // Question answers route to the runtime, with idempotent replay.
+    const answerBody = {
+      answers: { approach: { answers: ["MVP first"], note: "keep it lean" } },
+      clientActionId: "answer-1",
+      outcome: "answered"
+    }
+    const answerResponse = await jsonRequest(
+      server,
+      `/v1/sessions/${session.id}/questions/q-1/answer`,
+      {
+        body: JSON.stringify(answerBody),
+        method: "POST"
+      }
+    )
+    expect(answerResponse.status).toBe(202)
+    expect(answerResponse.body).toEqual({ outcome: "answered", questionId: "q-1" })
+    await jsonRequest(server, `/v1/sessions/${session.id}/questions/q-1/answer`, {
+      body: JSON.stringify(answerBody),
+      method: "POST"
+    })
+    expect(agents.questionAnswers).toEqual([
+      [
+        session.agentSessionId,
+        "q-1",
+        {
+          answers: { approach: { answers: ["MVP first"], note: "keep it lean" } },
+          outcome: "answered"
+        }
+      ]
+    ])
+    // Cancel outcome forwards without answers.
+    await jsonRequest(server, `/v1/sessions/${session.id}/questions/q-2/answer`, {
+      body: JSON.stringify({ outcome: "cancelled" }),
+      method: "POST"
+    })
+    expect(agents.questionAnswers.at(-1)).toEqual([
+      session.agentSessionId,
+      "q-2",
+      { outcome: "cancelled" }
+    ])
+    // Bad payloads 400 before reaching the runtime; stale questions surface errors.
+    expect(
+      (
+        await jsonRequest(server, `/v1/sessions/${session.id}/questions/q-3/answer`, {
+          body: JSON.stringify({ outcome: "maybe" }),
+          method: "POST"
+        })
+      ).status
+    ).toBe(400)
+    expect(
+      (
+        await jsonRequest(server, `/v1/sessions/${session.id}/questions/stale-question/answer`, {
+          body: JSON.stringify({ outcome: "answered" }),
+          method: "POST"
+        })
+      ).status
+    ).toBeGreaterThanOrEqual(400)
+
     expect(
       (
         await jsonRequest(server, `/v1/sessions/${session.id}`, {

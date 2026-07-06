@@ -1,4 +1,12 @@
-import type { EventKind, Harness, SessionConfigOption, SessionModeState } from "@herdman/api"
+import type {
+  EventKind,
+  GoalStatus,
+  Harness,
+  QuestionAnswerEntry,
+  SessionConfigOption,
+  SessionGoal,
+  SessionModeState
+} from "@herdman/api"
 import { Effect, Schema } from "effect"
 
 export class AgentRuntimeError extends Schema.TaggedErrorClass<AgentRuntimeError>()(
@@ -49,6 +57,23 @@ export interface AgentSessionMetadata {
   readonly sessionId: string
   readonly modes?: SessionModeState
   readonly configOptions: ReadonlyArray<SessionConfigOption>
+  /// Whether the harness supports persistent session goals (codex goal mode).
+  readonly supportsGoals?: boolean
+}
+
+/// Partial goal update mirroring codex `thread/goal/set`: omitted fields keep
+/// their current value; `tokenBudget: null` clears the budget.
+export interface SetGoalUpdate {
+  readonly objective?: string
+  readonly status?: GoalStatus
+  readonly tokenBudget?: number | null
+}
+
+/// The human's reply to a blocking agent question. `answers` is keyed by the
+/// per-question id from the emitted QuestionPayload; absent for `cancelled`.
+export interface QuestionAnswer {
+  readonly outcome: "answered" | "cancelled"
+  readonly answers?: Readonly<Record<string, QuestionAnswerEntry>>
 }
 
 export type ProviderId = "acp" | "claude" | "codex"
@@ -96,6 +121,17 @@ export interface AgentSessionHandle {
   readonly setConfigOption: (
     configId: string,
     value: string
+  ) => Effect.Effect<void, AgentRuntimeError>
+  /// Present only on harnesses that support goals (see
+  /// AgentSessionMetadata.supportsGoals). Returns the updated goal snapshot.
+  readonly setGoal?: (update: SetGoalUpdate) => Effect.Effect<SessionGoal, AgentRuntimeError>
+  readonly clearGoal?: Effect.Effect<void, AgentRuntimeError>
+  /// Resolves a blocking agent question previously emitted as a `question`
+  /// event. Present only on harnesses that can ask questions; fails when the
+  /// question id has no pending entry (already resolved, cancelled, or stale).
+  readonly answerQuestion?: (
+    questionId: string,
+    answer: QuestionAnswer
   ) => Effect.Effect<void, AgentRuntimeError>
   readonly close: Effect.Effect<void, AgentRuntimeError>
 }

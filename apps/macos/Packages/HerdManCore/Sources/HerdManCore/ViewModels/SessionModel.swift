@@ -28,6 +28,18 @@ public final class SessionModel {
         !isSending && !backgroundTasks.isEmpty
     }
 
+    /// The session's persistent goal, when the harness supports goal mode.
+    /// Snapshots are idempotent full state — each update replaces the last.
+    public private(set) var goal: SessionGoal?
+    /// A blocking agent question awaiting the user's answer — the composer
+    /// renders as a picker while this is set. Cleared by the paired
+    /// `question_resolved` event (replay collapses the pair) and at turn end.
+    public private(set) var pendingQuestion: QuestionRequest?
+    /// The session's latest todo checklist across turns (codex update_plan,
+    /// Claude TodoWrite, ACP plan updates). Full-snapshot replace; drives the
+    /// pinned panel above the composer.
+    public private(set) var sessionPlan: Plan?
+
     private let transport: ServerSessionTransport
     private let sessionId: String
     private let now: @Sendable () -> Date
@@ -153,6 +165,73 @@ public final class SessionModel {
         }
     }
 
+    /// Creates or updates the session goal. The server's snapshot event
+    /// reconciles the optimistic local state.
+    ///
+    /// Starts the event consumer first: a goal-only session (no prompt sent
+    /// yet) still streams agent-initiated turns as the goal auto-continues.
+    public func setGoal(
+        objective: String? = nil,
+        status: GoalStatus? = nil,
+        tokenBudget: TokenBudgetUpdate = .keep
+    ) async {
+        await startConsumer()
+        do {
+            goal = try await transport.setGoal(
+                objective: objective,
+                status: status,
+                tokenBudget: tokenBudget
+            )
+        } catch {
+            errorMessage = serverErrorMessage(error)
+        }
+    }
+
+    /// Pauses an active goal (stops agent-side auto-continuation).
+    public func pauseGoal() async {
+        await setGoal(status: .paused)
+    }
+
+    /// Resumes a paused/limited goal.
+    public func resumeGoal() async {
+        await setGoal(status: .active)
+    }
+
+    /// Clears the session goal entirely.
+    public func clearGoal() async {
+        await startConsumer()
+        do {
+            try await transport.clearGoal()
+            goal = nil
+        } catch {
+            errorMessage = serverErrorMessage(error)
+        }
+    }
+
+    /// Submits the user's answers to the pending question. The provider's
+    /// `question_resolved` event confirms; local state clears optimistically.
+    public func answerQuestion(answers: [String: QuestionAnswerEntry]) async {
+        guard let question = pendingQuestion else { return }
+        do {
+            try await transport.answerQuestion(id: question.questionId, outcome: "answered", answers: answers)
+            pendingQuestion = nil
+        } catch {
+            errorMessage = serverErrorMessage(error)
+        }
+    }
+
+    /// Dismisses the pending question without answering (Esc / Cancel) —
+    /// the model is told the user declined to engage.
+    public func cancelQuestion() async {
+        guard let question = pendingQuestion else { return }
+        do {
+            try await transport.answerQuestion(id: question.questionId, outcome: "cancelled", answers: nil)
+            pendingQuestion = nil
+        } catch {
+            errorMessage = serverErrorMessage(error)
+        }
+    }
+
     // MARK: - History
 
     /// Loads the server's conversation snapshot and begins live streaming from
@@ -214,6 +293,11 @@ public final class SessionModel {
 
     private func apply(_ update: SessionUpdate) {
         appliedUpdateCount += 1
+        // Plans update session-level state (the pinned todo panel) AND flow
+        // into the turn below for history/replay.
+        if case let .plan(plan) = update {
+            sessionPlan = plan
+        }
         switch update {
         case let .userMessageChunk(block, _):
             appendRemoteUserIfNeeded(text: block.textValue ?? "")
@@ -228,6 +312,24 @@ public final class SessionModel {
             configOptions = options
         case let .usageUpdate(usage):
             self.usage = usage
+        case let .goalUpdate(goal):
+            self.goal = goal
+        case .goalCleared:
+            goal = nil
+        case let .question(request):
+            pendingQuestion = request
+        case let .questionResolved(resolution):
+            if pendingQuestion?.questionId == resolution.questionId {
+                pendingQuestion = nil
+            }
+            // Answered questions keep a card in the transcript flow, like
+            // codex CLI's history cell; dismissed ones just disappear.
+            if resolution.outcome == .answered {
+                ensureAssistantTurn()
+                guard case .assistant(var message) = conversation.last else { return }
+                TranscriptReducer.apply(update, to: &message.turn)
+                conversation[conversation.count - 1] = .assistant(message)
+            }
         default:
             // Updates that belong to an earlier bubble merge there without
             // reopening it. Background subagents outlive their turn (the Agent
@@ -319,6 +421,9 @@ public final class SessionModel {
     /// any tool calls that never received a terminal status, so in-progress
     /// indicators can't outlive the turn.
     private func finish(stopReason: StopReason?, outcome: TranscriptReducer.TurnOutcome) {
+        // A question can't outlive its turn; providers emit the resolution,
+        // but a dropped event must not leave the picker stuck.
+        pendingQuestion = nil
         guard case .assistant(var message) = conversation.last else { return }
         message.turn.isGenerating = false
         message.turn.isThinking = false

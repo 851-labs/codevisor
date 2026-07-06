@@ -59,6 +59,20 @@ public protocol HerdManServerClienting: Sendable {
     func cancelSession(id: UUID) async throws
     func setSessionMode(id: UUID, modeId: String) async throws
     func setSessionConfig(id: UUID, configId: String, value: String) async throws
+    @discardableResult
+    func setSessionGoal(
+        id: UUID,
+        objective: String?,
+        status: GoalStatus?,
+        tokenBudget: TokenBudgetUpdate
+    ) async throws -> SessionGoal
+    func clearSessionGoal(id: UUID) async throws
+    func answerSessionQuestion(
+        id: UUID,
+        questionId: String,
+        outcome: String,
+        answers: [String: QuestionAnswerEntry]?
+    ) async throws
     func requestShutdown() async throws
     func applyServerUpdate() async throws -> ServerUpdateApplied
     func eventStream(since: Int) -> AsyncThrowingStream<ServerEventEnvelope, any Error>
@@ -86,6 +100,27 @@ public extension HerdManServerClienting {
     /// Default for fakes/older servers: no persisted history, callers fall
     /// back to the text-only conversation snapshot.
     func sessionEvents(id: UUID) async throws -> [ServerEventEnvelope] { [] }
+
+    /// Defaults so fakes and older transports keep compiling; the HTTP client
+    /// overrides these with the real goal endpoints.
+    @discardableResult
+    func setSessionGoal(
+        id: UUID,
+        objective: String?,
+        status: GoalStatus?,
+        tokenBudget: TokenBudgetUpdate
+    ) async throws -> SessionGoal {
+        throw HerdManServerClientError.invalidResponse
+    }
+
+    func clearSessionGoal(id: UUID) async throws {}
+
+    func answerSessionQuestion(
+        id: UUID,
+        questionId: String,
+        outcome: String,
+        answers: [String: QuestionAnswerEntry]?
+    ) async throws {}
 
     /// Default no-op so fakes and older transports keep compiling; the HTTP
     /// client overrides this with `POST /v1/shutdown`.
@@ -247,6 +282,17 @@ public struct ServerHarnessCapability: Codable, Equatable, Sendable {
     public var harness: ServerHarness
     public var modes: SessionModeState?
     public var configOptions: [SessionConfigOption]
+    /// Whether the harness supports persistent session goals (codex goal mode).
+    public var supportsGoals: Bool?
+}
+
+/// The three wire states of a goal's token budget on update, mirroring the
+/// codex double-option: omit the key to keep the current budget, send an
+/// explicit `null` to clear it, or send a positive number to set it.
+public enum TokenBudgetUpdate: Sendable, Equatable {
+    case keep
+    case clear
+    case set(Int)
 }
 
 public struct ServerCapabilities: Codable, Equatable, Sendable {
@@ -673,6 +719,37 @@ public final class HerdManServerClient: HerdManServerClienting, @unchecked Senda
         )
     }
 
+    @discardableResult
+    public func setSessionGoal(
+        id: UUID,
+        objective: String?,
+        status: GoalStatus?,
+        tokenBudget: TokenBudgetUpdate
+    ) async throws -> SessionGoal {
+        try await send(
+            "/v1/sessions/\(id.uuidString)/goal",
+            method: "POST",
+            body: SetGoalBody(objective: objective, status: status, tokenBudget: tokenBudget)
+        )
+    }
+
+    public func clearSessionGoal(id: UUID) async throws {
+        try await sendNoResponse("/v1/sessions/\(id.uuidString)/goal", method: "DELETE")
+    }
+
+    public func answerSessionQuestion(
+        id: UUID,
+        questionId: String,
+        outcome: String,
+        answers: [String: QuestionAnswerEntry]?
+    ) async throws {
+        try await sendNoResponse(
+            "/v1/sessions/\(id.uuidString)/questions/\(questionId)/answer",
+            method: "POST",
+            body: AnswerQuestionBody(outcome: outcome, answers: answers)
+        )
+    }
+
     public func requestShutdown() async throws {
         try await sendNoResponse("/v1/shutdown", method: "POST")
     }
@@ -915,6 +992,42 @@ private struct SetModeBody: Encodable {
 private struct SetConfigBody: Encodable {
     var configId: String
     var value: String
+    var clientActionId = UUID().uuidString
+}
+
+/// Custom encoding because synthesized Codable cannot express the token-budget
+/// double-option: `.keep` omits the key, `.clear` encodes a literal `null`,
+/// `.set` encodes the number. Internal (not private) so tests can pin the
+/// wire shape.
+struct SetGoalBody: Encodable {
+    var objective: String?
+    var status: GoalStatus?
+    var tokenBudget: TokenBudgetUpdate
+    var clientActionId = UUID().uuidString
+
+    private enum Keys: String, CodingKey {
+        case objective, status, tokenBudget, clientActionId
+    }
+
+    func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: Keys.self)
+        try container.encodeIfPresent(objective, forKey: .objective)
+        try container.encodeIfPresent(status, forKey: .status)
+        switch tokenBudget {
+        case .keep:
+            break
+        case .clear:
+            try container.encodeNil(forKey: .tokenBudget)
+        case let .set(budget):
+            try container.encode(budget, forKey: .tokenBudget)
+        }
+        try container.encode(clientActionId, forKey: .clientActionId)
+    }
+}
+
+private struct AnswerQuestionBody: Encodable {
+    var outcome: String
+    var answers: [String: QuestionAnswerEntry]?
     var clientActionId = UUID().uuidString
 }
 

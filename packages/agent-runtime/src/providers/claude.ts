@@ -5,7 +5,14 @@ import {
   type SDKMessage,
   type SDKUserMessage
 } from "@anthropic-ai/claude-agent-sdk"
-import type { DiffStat, SessionConfigOption, SessionModeState } from "@herdman/api"
+import type {
+  DiffStat,
+  QuestionSpec,
+  SessionConfigOption,
+  SessionGoal,
+  SessionModeState
+} from "@herdman/api"
+import { isoTimestamp } from "@herdman/api"
 import { execFile } from "node:child_process"
 import { randomUUID } from "node:crypto"
 import { readFileSync } from "node:fs"
@@ -26,6 +33,7 @@ import {
   type PromptAttachmentInput,
   type PromptInput,
   type ProviderEnvironment,
+  type QuestionAnswer,
   type RuntimeEmit,
   type RuntimeEvent
 } from "../types.js"
@@ -43,6 +51,42 @@ const STREAM_STATS_INTERVAL_MS = 250
 /// against a live CLI) even though the SDK's `Settings` type lags its own
 /// `EffortLevel` union.
 const SETTABLE_EFFORT_LEVELS = new Set(["low", "medium", "high", "xhigh", "max"])
+
+/// Tools rendered as plans instead of tool calls: TodoWrite carries the step
+/// checklist (`input.todos`), ExitPlanMode the plan-mode plan document
+/// (`input.plan`). Their generic tool-call lifecycle is suppressed entirely —
+/// the client renders the plan updates instead (same posture as the
+/// codex-acp/claude-acp adapters).
+const PLAN_TOOLS = new Set(["TodoWrite", "ExitPlanMode"])
+
+/// Tools whose generic tool-call lifecycle never reaches the wire: plan tools
+/// surface as plan updates, AskUserQuestion as a blocking `question` event
+/// handled through canUseTool.
+const HIDDEN_TOOLS = new Set([...PLAN_TOOLS, "AskUserQuestion"])
+
+const PLAN_ENTRY_STATUSES = new Set(["pending", "in_progress", "completed"])
+
+/// Maps TodoWrite's todos into wire plan entries. Lenient: malformed todos
+/// are skipped, unknown statuses degrade to pending. Priority is fixed at
+/// "medium" — Claude todos carry no priority (mirrors claude-agent-acp).
+const planEntriesFromTodos = (
+  todos: ReadonlyArray<unknown>
+): Array<{ content: string; priority: string; status: string }> =>
+  todos.flatMap((todo) => {
+    if (!isRecord(todo) || typeof todo.content !== "string" || todo.content.length === 0) {
+      return []
+    }
+    return [
+      {
+        content: todo.content,
+        priority: "medium",
+        status:
+          typeof todo.status === "string" && PLAN_ENTRY_STATUSES.has(todo.status)
+            ? todo.status
+            : "pending"
+      }
+    ]
+  })
 
 interface ClaudeModel {
   readonly value: string
@@ -89,12 +133,32 @@ const claudeContent = (input: PromptInput): Array<ClaudeContentBlock> => {
 // "Always Ask" (not the CLI's internal "default") mirrors the naming the
 // claude-agent-acp adapter ships; a bare "Default" tells the user nothing.
 const PERMISSION_MODES: SessionModeState = {
-  currentModeId: "default",
+  currentModeId: "bypassPermissions",
   availableModes: [
-    { id: "default", name: "Always Ask" },
-    { id: "acceptEdits", name: "Accept Edits" },
-    { id: "plan", name: "Plan" },
-    { id: "bypassPermissions", name: "Bypass Permissions" }
+    {
+      id: "default",
+      name: "Always Ask",
+      description: "Asks before editing files or running commands.",
+      canonicalId: "ask"
+    },
+    {
+      id: "acceptEdits",
+      name: "Accept Edits",
+      description: "Edits files without asking; still asks before running commands.",
+      canonicalId: "autoEdit"
+    },
+    {
+      id: "plan",
+      name: "Plan",
+      description: "Reads and plans only; presents a plan before making changes.",
+      canonicalId: "plan"
+    },
+    {
+      id: "bypassPermissions",
+      name: "Bypass Permissions",
+      description: "Edits files and runs commands without asking.",
+      canonicalId: "fullAccess"
+    }
   ]
 }
 
@@ -197,6 +261,20 @@ interface BackgroundTaskEntry {
   readonly toolUseId?: string
 }
 
+type ClaudeToolDecision =
+  | { behavior: "allow"; updatedInput: Record<string, unknown> }
+  | { behavior: "deny"; message: string }
+
+/// One blocking canUseTool ask (AskUserQuestion or a permission approval)
+/// awaiting the human's answer. `resolve` settles the SDK's canUseTool
+/// promise; `respond` builds the source-specific decision from the wire
+/// answer (including dismissals).
+interface PendingClaudeQuestion {
+  readonly questions: ReadonlyArray<QuestionSpec>
+  readonly resolve: (result: ClaudeToolDecision) => void
+  readonly respond: (answer: QuestionAnswer) => ClaudeToolDecision
+}
+
 interface ClaudeSession {
   /// The id the runtime and server know this session by (== SDK session id
   /// for new sessions; the requested id for resumed ones).
@@ -226,6 +304,12 @@ interface ClaudeSession {
   /// Cross-turn: background tasks legitimately outlive the turn that spawned
   /// them, so this is never cleared at turn end.
   readonly backgroundTasks: Map<string, BackgroundTaskEntry>
+  /// question id → held AskUserQuestion canUseTool promise.
+  readonly pendingQuestions: Map<string, PendingClaudeQuestion>
+  /// Client-side goal snapshot. Claude Code's goal mode is driven through the
+  /// CLI's `/goal` slash command (the SDK has no goal API yet), so HerdMan
+  /// tracks the last state it set — the CLI gives no structured feedback.
+  currentGoal: SessionGoal | undefined
 }
 
 export const makeClaudeProvider = (
@@ -290,12 +374,19 @@ export const makeClaudeProvider = (
       cwd,
       includePartialMessages: true,
       pathToClaudeCodeExecutable: claudePath,
-      // Matches the previous app behavior of auto-approving agent requests;
-      // this callback is the seam for a real permission UI.
-      canUseTool: async (_toolName, toolInput) => ({
-        behavior: "allow",
-        updatedInput: toolInput
-      }),
+      // The CLI invokes this only when the active permission mode requires a
+      // human decision (never in the bypassPermissions default). Questions
+      // and approvals both surface through the blocking question pipeline.
+      canUseTool: async (toolName, toolInput) => {
+        if (session === undefined) {
+          return { behavior: "allow", updatedInput: toolInput }
+        }
+        if (toolName === "AskUserQuestion") {
+          return holdClaudeQuestion(session, toolInput)
+        }
+        return holdClaudeApproval(session, toolName, toolInput)
+      },
+      permissionMode: "bypassPermissions",
       hooks: {
         PostToolUse: [
           {
@@ -331,6 +422,8 @@ export const makeClaudeProvider = (
       models: [],
       openToolCalls: new Set(),
       pendingPrompt: undefined,
+      currentGoal: undefined,
+      pendingQuestions: new Map(),
       q,
       sdkSessionId: sessionKey,
       subagentMessageIds: new Map(),
@@ -409,6 +502,7 @@ export const makeClaudeProvider = (
   ): {
     modes: SessionModeState
     configOptions: ReadonlyArray<SessionConfigOption>
+    supportsGoals: boolean
   } => {
     const options: Array<SessionConfigOption> = []
     if (session.models.length > 0) {
@@ -450,7 +544,7 @@ export const makeClaudeProvider = (
         ]
       })
     }
-    return { configOptions: options, modes: PERMISSION_MODES }
+    return { configOptions: options, modes: PERMISSION_MODES, supportsGoals: true }
   }
 
   const effortLevelsFor = (session: ClaudeSession): ReadonlyArray<string> =>
@@ -467,6 +561,8 @@ export const makeClaudeProvider = (
   const handleFor = (session: ClaudeSession): AgentSessionHandle => ({
     cancel: adapterPromise("cancel", async () => {
       session.interruptRequested = true
+      // A held question would block the SDK from processing the interrupt.
+      cancelClaudePendingQuestions(session)
       try {
         await session.q.interrupt()
       } catch {
@@ -474,6 +570,7 @@ export const makeClaudeProvider = (
       }
     }),
     close: adapterPromise("close", async () => {
+      cancelClaudePendingQuestions(session)
       session.input.end()
       session.abort.abort()
     }),
@@ -537,7 +634,62 @@ export const makeClaudeProvider = (
           payload: { modeId },
           subjectId: session.key
         })
+      }),
+    answerQuestion: (questionId, answer) =>
+      adapterPromise("answerQuestion", () => answerClaudeQuestion(session, questionId, answer)),
+    // Claude Code's goal mode has no SDK API yet — it's driven by the CLI's
+    // `/goal` slash command, which the SDK forwards like any prompt. The
+    // snapshots HerdMan emits are therefore client-side bookkeeping (no token
+    // accounting); the CLI's own reply narrates the goal state in the chat.
+    setGoal: (update) =>
+      adapterPromise("setGoal", async () => {
+        if (update.objective !== undefined) {
+          pushGoalCommand(session, `/goal ${update.objective}`)
+          const goal: SessionGoal = {
+            createdAt: session.currentGoal?.createdAt ?? isoTimestamp(),
+            objective: update.objective,
+            status: "active",
+            timeUsedSeconds: 0,
+            tokenBudget: null,
+            tokensUsed: 0,
+            updatedAt: isoTimestamp()
+          }
+          session.currentGoal = goal
+          await session.emit({
+            kind: "session.updated",
+            payload: { goal },
+            subjectId: session.key
+          })
+          return goal
+        }
+        const current = session.currentGoal
+        if (current === undefined) {
+          throw new Error("No active goal to update")
+        }
+        const subcommand =
+          update.status === "paused" ? "pause" : update.status === "active" ? "resume" : undefined
+        if (subcommand === undefined) {
+          throw new Error("Claude goal updates support objective, pause, and resume only")
+        }
+        pushGoalCommand(session, `/goal ${subcommand}`)
+        const goal: SessionGoal = { ...current, status: update.status!, updatedAt: isoTimestamp() }
+        session.currentGoal = goal
+        await session.emit({
+          kind: "session.updated",
+          payload: { goal },
+          subjectId: session.key
+        })
+        return goal
+      }),
+    clearGoal: adapterPromise("clearGoal", async () => {
+      pushGoalCommand(session, "/goal clear")
+      session.currentGoal = undefined
+      await session.emit({
+        kind: "session.updated",
+        payload: { goalCleared: true },
+        subjectId: session.key
       })
+    })
   })
 
   return {
@@ -618,6 +770,12 @@ const handleMessage = (
         } else if (block.type === "tool_use") {
           const toolUseId = String(block.id)
           const toolName = String(block.name)
+          if (PLAN_TOOLS.has(toolName)) {
+            emitPlanUpdate(session, toolName, block.input)
+            continue
+          }
+          // AskUserQuestion surfaces as a blocking question via canUseTool.
+          if (HIDDEN_TOOLS.has(toolName)) continue
           const stats = authoritativeStatsFromInput(session, toolName, block.input, readFile)
           void session.emit({
             kind: "session.output",
@@ -648,6 +806,9 @@ const handleMessage = (
           const toolUseId = String(block.tool_use_id)
           session.openToolCalls.delete(toolUseId)
           const accumulator = session.accumulators.get(toolUseId)
+          // Plan tools have no tool-call lifecycle on the wire — their result
+          // is the plan/plan_document update already emitted.
+          if (accumulator !== undefined && HIDDEN_TOOLS.has(accumulator.toolName)) continue
           const doneTitle =
             accumulator !== undefined && accumulator.titledPath !== undefined
               ? finishedToolTitle(accumulator.toolName, accumulator.titledPath)
@@ -753,6 +914,237 @@ const emitBackgroundTasks = (session: ClaudeSession): void => {
   })
 }
 
+// MARK: questions
+
+/// Emits the AskUserQuestion as a blocking `question` event and holds the
+/// SDK's canUseTool promise open until the human answers. Malformed input
+/// falls back to auto-allow so an SDK shape drift can't wedge the turn.
+const holdClaudeQuestion = (
+  session: ClaudeSession,
+  toolInput: Record<string, unknown>
+): Promise<ClaudeToolDecision> => {
+  const questions = claudeQuestionSpecs(toolInput.questions)
+  if (questions.length === 0) {
+    return Promise.resolve({ behavior: "allow", updatedInput: toolInput })
+  }
+  const questionId = randomUUID()
+  void session.emit({
+    kind: "session.output",
+    payload: { questionId, questions, sessionUpdate: "question" },
+    subjectId: session.key
+  })
+  return new Promise((resolve) => {
+    session.pendingQuestions.set(questionId, {
+      questions,
+      resolve,
+      respond: (answer) => {
+        if (answer.outcome === "cancelled") {
+          return { behavior: "deny", message: "User dismissed the question without answering." }
+        }
+        const entries = answer.answers ?? {}
+        const answers: Record<string, string> = {}
+        for (const spec of questions) {
+          const entry = entries[spec.id]
+          if (entry === undefined) continue
+          const note = entry.note?.trim() ?? ""
+          const labels = entry.answers.join(", ")
+          const value =
+            labels.length > 0 ? (note.length > 0 ? `${labels} — ${note}` : labels) : note
+          if (value.length > 0) {
+            answers[spec.question] = value
+          }
+        }
+        return { behavior: "allow", updatedInput: { ...toolInput, answers } }
+      }
+    })
+  })
+}
+
+/// Lenient mapping from AskUserQuestion input to the wire QuestionSpec.
+/// Ids are positional (`question_<n>`) — the answers map keys back by index.
+const claudeQuestionSpecs = (value: unknown): Array<QuestionSpec> => {
+  if (!Array.isArray(value)) return []
+  return value.flatMap((entry, index) => {
+    if (!isRecord(entry) || typeof entry.question !== "string") return []
+    const options = Array.isArray(entry.options)
+      ? entry.options.flatMap((option) =>
+          isRecord(option) && typeof option.label === "string"
+            ? [
+                {
+                  label: option.label,
+                  ...(typeof option.description === "string"
+                    ? { description: option.description }
+                    : {})
+                }
+              ]
+            : []
+        )
+      : []
+    return [
+      {
+        allowsOther: true,
+        id: `question_${index}`,
+        options,
+        question: entry.question,
+        ...(typeof entry.header === "string" ? { header: entry.header } : {}),
+        ...(entry.multiSelect === true ? { multiSelect: true } : {})
+      }
+    ]
+  })
+}
+
+/// Folds the human's answer back into the tool input the way the SDK's
+/// AskUserQuestion expects: `answers` keyed by the QUESTION TEXT, valued with
+/// the chosen label(s). A note supplements a selection (appended after an
+/// em-dash) and stands alone as the answer when nothing was selected (the
+/// "Other" path). Cancel denies the tool so the model knows the user
+/// dismissed the question.
+const answerClaudeQuestion = async (
+  session: ClaudeSession,
+  questionId: string,
+  answer: QuestionAnswer
+): Promise<void> => {
+  const pending = session.pendingQuestions.get(questionId)
+  if (pending === undefined) {
+    throw new Error(`No pending question: ${questionId}`)
+  }
+  session.pendingQuestions.delete(questionId)
+  pending.resolve(pending.respond(answer))
+  await emitClaudeQuestionResolved(
+    session,
+    questionId,
+    answer.outcome === "answered" ? "answered" : "cancelled",
+    pending.questions,
+    answer.outcome === "answered" ? answer.answers : undefined
+  )
+}
+
+const emitClaudeQuestionResolved = (
+  session: ClaudeSession,
+  questionId: string,
+  outcome: "answered" | "cancelled",
+  questions: ReadonlyArray<QuestionSpec>,
+  answers: QuestionAnswer["answers"]
+): Promise<void> =>
+  session.emit({
+    kind: "session.output",
+    payload: {
+      outcome,
+      questionId,
+      questions,
+      sessionUpdate: "question_resolved",
+      ...(answers === undefined ? {} : { answers })
+    },
+    subjectId: session.key
+  })
+
+/// Surfaces a tool-permission check as a blocking Allow/Deny question. Only
+/// reached when the CLI's permission mode requires asking (Ask/Plan modes);
+/// the bypassPermissions default never invokes canUseTool.
+const holdClaudeApproval = (
+  session: ClaudeSession,
+  toolName: string,
+  toolInput: Record<string, unknown>
+): Promise<ClaudeToolDecision> => {
+  const spec: QuestionSpec = {
+    allowsOther: false,
+    header: "Permission",
+    id: "approval",
+    options: [{ label: "Allow" }, { label: "Deny" }],
+    question: `Allow ${toolName}?`
+  }
+  const questionId = randomUUID()
+  void session.emit({
+    kind: "session.output",
+    payload: {
+      message: toolTitle(toolName, toolInput),
+      questionId,
+      questions: [spec],
+      sessionUpdate: "question"
+    },
+    subjectId: session.key
+  })
+  return new Promise((resolve) => {
+    session.pendingQuestions.set(questionId, {
+      questions: [spec],
+      resolve,
+      respond: (answer) =>
+        answer.outcome === "answered" && answer.answers?.[spec.id]?.answers[0] === "Allow"
+          ? { behavior: "allow", updatedInput: toolInput }
+          : { behavior: "deny", message: "User denied permission." }
+    })
+  })
+}
+
+/// The SDK stream carries no goal-state messages, so completion is inferred:
+/// in non-interactive mode the `/goal` command runs the whole goal loop
+/// inside one turn, so that turn's result settles the goal — success marks
+/// it complete, an interrupt pauses it (resumable), a failure blocks it.
+const settleGoalOnTurnEnd = (
+  session: ClaudeSession,
+  message: SDKMessage & { type: "result" }
+): void => {
+  const goal = session.currentGoal
+  if (goal === undefined || goal.status !== "active") return
+  const status = session.interruptRequested
+    ? "paused"
+    : message.subtype === "success"
+      ? "complete"
+      : "blocked"
+  const settled: SessionGoal = { ...goal, status, updatedAt: isoTimestamp() }
+  session.currentGoal = settled
+  void session.emit({
+    kind: "session.updated",
+    payload: { goal: settled },
+    subjectId: session.key
+  })
+}
+
+/// Sends a `/goal` slash command as a user message — the SDK forwards it to
+/// the CLI, which executes it exactly like typing it interactively (goal mode
+/// has no SDK API yet). The CLI's reply narrates the outcome in the chat.
+const pushGoalCommand = (session: ClaudeSession, command: string): void => {
+  session.input.push({
+    message: { content: [{ text: command, type: "text" }], role: "user" },
+    parent_tool_use_id: null,
+    session_id: session.sdkSessionId,
+    type: "user"
+  })
+}
+
+/// Interrupts, turn results, and session close invalidate held questions:
+/// deny them (the model sees a dismissal) and emit the resolution so clients
+/// drop the picker.
+const cancelClaudePendingQuestions = (session: ClaudeSession): void => {
+  for (const [questionId, pending] of [...session.pendingQuestions]) {
+    session.pendingQuestions.delete(questionId)
+    pending.resolve(pending.respond({ outcome: "cancelled" }))
+    void emitClaudeQuestionResolved(session, questionId, "cancelled", pending.questions, undefined)
+  }
+}
+
+/// Emits the plan-shaped update for a plan tool's authoritative input:
+/// TodoWrite → a full-snapshot step checklist (`plan`), ExitPlanMode → the
+/// plan-mode plan document (`plan_document`). Malformed input emits nothing.
+const emitPlanUpdate = (session: ClaudeSession, toolName: string, input: unknown): void => {
+  if (toolName === "TodoWrite") {
+    if (!isRecord(input) || !Array.isArray(input.todos)) return
+    void session.emit({
+      kind: "session.output",
+      payload: { entries: planEntriesFromTodos(input.todos), sessionUpdate: "plan" },
+      subjectId: session.key
+    })
+    return
+  }
+  // ExitPlanMode: the plan markdown is the tool input's `plan` field.
+  if (!isRecord(input) || typeof input.plan !== "string" || input.plan.length === 0) return
+  void session.emit({
+    kind: "session.output",
+    payload: { markdown: input.plan, sessionUpdate: "plan_document" },
+    subjectId: session.key
+  })
+}
+
 const handleStreamEvent = (
   session: ClaudeSession,
   message: Extract<SDKMessage, { type: "stream_event" }>,
@@ -785,8 +1177,11 @@ const handleStreamEvent = (
           titledPath: undefined,
           toolName
         })
-        session.openToolCalls.add(toolUseId)
         void ensureTurnStarted(session, session.pendingPrompt === undefined ? "agent" : "user")
+        // Plan tools never open a tool call: they surface as plan updates
+        // once the authoritative input arrives on the assistant message.
+        if (HIDDEN_TOOLS.has(toolName)) break
+        session.openToolCalls.add(toolUseId)
         // The model is already generating this call's input — that's work in
         // progress, and for fast tools it's most of the visible lifetime.
         void session.emit({
@@ -869,6 +1264,10 @@ const findAccumulatorId = (session: ClaudeSession, _event: Record<string, unknow
 }
 
 const handleResult = (session: ClaudeSession, message: SDKMessage & { type: "result" }): void => {
+  // A turn that ends with questions still open (interrupt, failure)
+  // invalidates them — clients must not keep showing the picker.
+  cancelClaudePendingQuestions(session)
+  settleGoalOnTurnEnd(session, message)
   // Anything still open never got a tool_result (interrupt/failure).
   for (const toolUseId of [...session.openToolCalls]) {
     session.openToolCalls.delete(toolUseId)

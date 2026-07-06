@@ -29,7 +29,9 @@ import {
   CancelRequest,
   PromptRequest,
   SetConfigRequest,
+  SetGoalRequest,
   SetModeRequest,
+  SetQuestionAnswerRequest,
   TerminalClientFrame as TerminalClientFrameSchema,
   TerminalCreateRequest,
   UpdateQueuedPromptRequest,
@@ -749,7 +751,10 @@ const discoverCapabilities = async (
           return {
             harness,
             ...(metadata.modes === undefined ? {} : { modes: metadata.modes }),
-            configOptions: metadata.configOptions
+            configOptions: metadata.configOptions,
+            ...(metadata.supportsGoals === undefined
+              ? {}
+              : { supportsGoals: metadata.supportsGoals })
           }
         } catch {
           return {
@@ -1114,6 +1119,63 @@ const routeSessionActions = async (
         )
         await run(services.agents.setConfigOption(agentSessionId, payload.configId, payload.value))
         return { configId: payload.configId }
+      }
+    )
+    return true
+  }
+
+  const goalSessionId = matchRoute(url.pathname, "/v1/sessions/:id/goal")
+  if (goalSessionId !== undefined && request.method === "POST") {
+    const payload = await readSchema(request, SetGoalRequest)
+    await writeIdempotentAction(services, response, goalSessionId, "goal", payload, async () => {
+      const agentSessionId = await ensureAgentSessionFor(services, fanout, config.id, goalSessionId)
+      // Double-option passthrough: only forward the tokenBudget key when the
+      // client sent one (absent = keep, null = clear, number = set).
+      return await run(
+        services.agents.setGoal(agentSessionId, {
+          ...(payload.objective === undefined ? {} : { objective: payload.objective }),
+          ...(payload.status === undefined ? {} : { status: payload.status }),
+          ...("tokenBudget" in payload ? { tokenBudget: payload.tokenBudget ?? null } : {})
+        })
+      )
+    })
+    return true
+  }
+  if (goalSessionId !== undefined && request.method === "DELETE") {
+    const agentSessionId = await ensureAgentSessionFor(services, fanout, config.id, goalSessionId)
+    await run(services.agents.clearGoal(agentSessionId))
+    writeJson(response, 204, undefined)
+    return true
+  }
+
+  const answerRoute = matchRouteParams(
+    url.pathname,
+    "/v1/sessions/:id/questions/:questionId/answer"
+  )
+  if (answerRoute !== undefined && request.method === "POST") {
+    const answerSessionId = answerRoute.id as string
+    const questionId = answerRoute.questionId as string
+    const payload = await readSchema(request, SetQuestionAnswerRequest)
+    await writeIdempotentAction(
+      services,
+      response,
+      answerSessionId,
+      "question-answer",
+      payload,
+      async () => {
+        const agentSessionId = await ensureAgentSessionFor(
+          services,
+          fanout,
+          config.id,
+          answerSessionId
+        )
+        await run(
+          services.agents.answerQuestion(agentSessionId, questionId, {
+            outcome: payload.outcome,
+            ...(payload.answers === undefined ? {} : { answers: payload.answers })
+          })
+        )
+        return { outcome: payload.outcome, questionId }
       }
     )
     return true

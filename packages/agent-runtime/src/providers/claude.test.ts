@@ -194,10 +194,21 @@ describe("ClaudeProvider", () => {
     // The session id is assigned client-side and handed to the CLI.
     expect(created.metadata.sessionId).toBeTruthy()
     expect(fake.options?.extraArgs?.["session-id"]).toBe(created.metadata.sessionId)
-    expect(created.metadata.modes?.currentModeId).toBe("default")
+    // Full access is the default posture; the CLI is started in bypass so it
+    // matches the advertised mode.
+    expect(created.metadata.modes?.currentModeId).toBe("bypassPermissions")
+    expect(fake.options?.permissionMode).toBe("bypassPermissions")
     expect(created.metadata.modes?.availableModes.find((mode) => mode.id === "default")?.name).toBe(
       "Always Ask"
     )
+    // Permission modes carry the canonical HerdMan vocabulary + descriptions.
+    expect(created.metadata.modes?.availableModes.map((mode) => mode.canonicalId)).toEqual([
+      "ask",
+      "autoEdit",
+      "plan",
+      "fullAccess"
+    ])
+    expect(created.metadata.modes?.availableModes.every((mode) => mode.description)).toBe(true)
     expect(created.metadata.configOptions[0]?.id).toBe("model")
     expect(created.metadata.configOptions[0]?.currentValue).toBe("claude-fable-5")
     // No synthetic "Default" entry: the CLI's own default ("high") is shown.
@@ -439,6 +450,373 @@ describe("ClaudeProvider", () => {
       initiatedBy: "agent",
       stopReason: "end_turn",
       turnState: "ended"
+    })
+  })
+
+  it("renders plan tools as plan updates, never as tool calls", async () => {
+    const fake = new FakeQuery()
+    const provider = makeProvider(fake)
+    const events: Array<RuntimeEvent> = []
+    const emit = async (event: RuntimeEvent): Promise<void> => {
+      events.push(event)
+    }
+    const createPromise = run(provider.createSession(definition, "/tmp", emit))
+    await settle()
+    fake.push(initMessage())
+    const created = await createPromise
+    const promptPromise = run(created.handle.prompt("plan the feature"))
+    await settle()
+
+    // TodoWrite streams like any tool, but must not open a tool call.
+    fake.push(streamEvent({ message: { id: "msg-plan" }, type: "message_start" }))
+    fake.push(
+      streamEvent({
+        content_block: { id: "todo-1", name: "TodoWrite", type: "tool_use" },
+        index: 1,
+        type: "content_block_start"
+      })
+    )
+    await settle()
+    fake.push({
+      message: {
+        content: [
+          {
+            id: "todo-1",
+            input: {
+              todos: [
+                { activeForm: "Exploring", content: "Explore the code", status: "completed" },
+                { activeForm: "Designing", content: "Design the fix", status: "in_progress" },
+                { activeForm: "Testing", content: "Add tests", status: "someday" },
+                { content: 42, status: "pending" },
+                "not-a-todo"
+              ]
+            },
+            name: "TodoWrite",
+            type: "tool_use"
+          }
+        ],
+        role: "assistant"
+      },
+      parent_tool_use_id: null,
+      session_id: "sdk-session-1",
+      type: "assistant"
+    } as never)
+    fake.push({
+      message: {
+        content: [{ content: "ok", is_error: false, tool_use_id: "todo-1", type: "tool_result" }],
+        role: "user"
+      },
+      parent_tool_use_id: null,
+      session_id: "sdk-session-1",
+      type: "user"
+    } as never)
+
+    // ExitPlanMode carries the plan-mode plan document in input.plan.
+    fake.push(
+      streamEvent({
+        content_block: { id: "exit-1", name: "ExitPlanMode", type: "tool_use" },
+        index: 2,
+        type: "content_block_start"
+      })
+    )
+    await settle()
+    fake.push({
+      message: {
+        content: [
+          {
+            id: "exit-1",
+            input: { plan: "# The Plan\n\n1. Do the thing\n2. Verify it" },
+            name: "ExitPlanMode",
+            type: "tool_use"
+          },
+          // Malformed plan input emits nothing (and still no tool call).
+          { id: "exit-2", input: {}, name: "ExitPlanMode", type: "tool_use" }
+        ],
+        role: "assistant"
+      },
+      parent_tool_use_id: null,
+      session_id: "sdk-session-1",
+      type: "assistant"
+    } as never)
+    fake.push(resultMessage())
+    await promptPromise
+
+    const payloads = events.map((event) => event.payload as Record<string, unknown>)
+    // No tool-call lifecycle at all for plan tools — including the turn-end
+    // settle sweep (they were never registered as open).
+    expect(
+      payloads.filter(
+        (payload) =>
+          payload.sessionUpdate === "tool_call" || payload.sessionUpdate === "tool_call_update"
+      )
+    ).toEqual([])
+    const plan = payloads.find((payload) => payload.sessionUpdate === "plan")
+    expect(plan?.entries).toEqual([
+      { content: "Explore the code", priority: "medium", status: "completed" },
+      { content: "Design the fix", priority: "medium", status: "in_progress" },
+      { content: "Add tests", priority: "medium", status: "pending" }
+    ])
+    const documents = payloads.filter((payload) => payload.sessionUpdate === "plan_document")
+    expect(documents).toEqual([
+      { markdown: "# The Plan\n\n1. Do the thing\n2. Verify it", sessionUpdate: "plan_document" }
+    ])
+  })
+
+  it("surfaces tool approvals as Allow/Deny questions in ask modes", async () => {
+    const fake = new FakeQuery()
+    const provider = makeProvider(fake)
+    const events: Array<RuntimeEvent> = []
+    const emit = async (event: RuntimeEvent): Promise<void> => {
+      events.push(event)
+    }
+    const createPromise = run(provider.createSession(definition, "/tmp", emit))
+    await settle()
+    fake.push(initMessage())
+    const created = await createPromise
+
+    const toolInput = { command: "rm -rf build" }
+    const decision = fake.options!.canUseTool!("Bash", toolInput as never, {} as never)
+    await settle()
+    const asked = events.at(-1)?.payload as Record<string, unknown>
+    expect(asked).toMatchObject({ sessionUpdate: "question" })
+    expect(asked.questions).toEqual([
+      {
+        allowsOther: false,
+        header: "Permission",
+        id: "approval",
+        options: [{ label: "Allow" }, { label: "Deny" }],
+        question: "Allow Bash?"
+      }
+    ])
+    await run(
+      created.handle.answerQuestion!(asked.questionId as string, {
+        answers: { approval: { answers: ["Allow"] } },
+        outcome: "answered"
+      })
+    )
+    await expect(decision).resolves.toEqual({ behavior: "allow", updatedInput: toolInput })
+
+    // Deny (and dismissal) reject the tool.
+    const denied = fake.options!.canUseTool!("Edit", { file_path: "/tmp/a" } as never, {} as never)
+    await settle()
+    const deniedAsk = events.at(-1)?.payload as Record<string, unknown>
+    await run(
+      created.handle.answerQuestion!(deniedAsk.questionId as string, {
+        answers: { approval: { answers: ["Deny"] } },
+        outcome: "answered"
+      })
+    )
+    await expect(denied).resolves.toEqual({
+      behavior: "deny",
+      message: "User denied permission."
+    })
+  })
+
+  it("drives goal mode through /goal slash commands with synthetic snapshots", async () => {
+    const fake = new FakeQuery()
+    const provider = makeProvider(fake)
+    const events: Array<RuntimeEvent> = []
+    const emit = async (event: RuntimeEvent): Promise<void> => {
+      events.push(event)
+    }
+    const createPromise = run(provider.createSession(definition, "/tmp", emit))
+    await settle()
+    fake.push(initMessage())
+    const created = await createPromise
+    expect(created.metadata.supportsGoals).toBe(true)
+
+    const goal = await run(created.handle.setGoal!({ objective: "ship the feature" }))
+    await settle()
+    expect(goal.objective).toBe("ship the feature")
+    expect(goal.status).toBe("active")
+    const commandTexts = fake.userMessages.map((message) => {
+      const content = (message as { message: { content: unknown } }).message.content
+      return Array.isArray(content) ? (content[0] as { text?: string }).text : content
+    })
+    expect(commandTexts).toEqual(["/goal ship the feature"])
+    expect(events.at(-1)?.payload).toMatchObject({ goal: { objective: "ship the feature" } })
+
+    // Pause/resume map to subcommands and update the synthetic snapshot.
+    const paused = await run(created.handle.setGoal!({ status: "paused" }))
+    await settle()
+    expect(paused.status).toBe("paused")
+    await run(created.handle.setGoal!({ status: "active" }))
+    await settle()
+
+    await run(created.handle.clearGoal!)
+    await settle()
+    const finalTexts = fake.userMessages.map((message) => {
+      const content = (message as { message: { content: unknown } }).message.content
+      return Array.isArray(content) ? (content[0] as { text?: string }).text : content
+    })
+    expect(finalTexts).toEqual([
+      "/goal ship the feature",
+      "/goal pause",
+      "/goal resume",
+      "/goal clear"
+    ])
+    expect(events.at(-1)?.payload).toEqual({ goalCleared: true })
+
+    // Status updates without an active goal are rejected.
+    await expect(run(created.handle.setGoal!({ status: "paused" }))).rejects.toThrow(
+      "No active goal"
+    )
+  })
+
+  it("settles the goal when its turn ends: success completes, interrupt pauses", async () => {
+    const fake = new FakeQuery()
+    const provider = makeProvider(fake)
+    const events: Array<RuntimeEvent> = []
+    const emit = async (event: RuntimeEvent): Promise<void> => {
+      events.push(event)
+    }
+    const createPromise = run(provider.createSession(definition, "/tmp", emit))
+    await settle()
+    fake.push(initMessage())
+    const created = await createPromise
+
+    // The /goal turn's successful result marks the goal complete — the SDK
+    // stream has no goal-state messages to relay.
+    await run(created.handle.setGoal!({ objective: "count to ten" }))
+    fake.push(resultMessage())
+    await settle()
+    const completed = events.findLast((event) => {
+      const payload = event.payload as Record<string, unknown>
+      return payload.goal !== undefined
+    })?.payload as Record<string, unknown>
+    expect(completed.goal).toMatchObject({ objective: "count to ten", status: "complete" })
+
+    // A new goal interrupted mid-run pauses instead (resumable).
+    await run(created.handle.setGoal!({ objective: "count to twenty" }))
+    await run(created.handle.cancel)
+    fake.push(resultMessage())
+    await settle()
+    const paused = events.findLast((event) => {
+      const payload = event.payload as Record<string, unknown>
+      return payload.goal !== undefined
+    })?.payload as Record<string, unknown>
+    expect(paused.goal).toMatchObject({ objective: "count to twenty", status: "paused" })
+  })
+
+  it("blocks AskUserQuestion on the human's answer and folds it into updatedInput", async () => {
+    const fake = new FakeQuery()
+    const provider = makeProvider(fake)
+    const events: Array<RuntimeEvent> = []
+    const emit = async (event: RuntimeEvent): Promise<void> => {
+      events.push(event)
+    }
+    const createPromise = run(provider.createSession(definition, "/tmp", emit))
+    await settle()
+    fake.push(initMessage())
+    const created = await createPromise
+
+    const toolInput = {
+      questions: [
+        {
+          header: "Auth",
+          multiSelect: false,
+          options: [
+            { description: "Fast to ship.", label: "JWT (Recommended)" },
+            { description: "Simpler infra.", label: "Sessions" }
+          ],
+          question: "Which auth method?"
+        },
+        {
+          multiSelect: true,
+          options: [{ label: "Web" }, { label: "iOS" }],
+          question: "Which platforms?"
+        }
+      ]
+    }
+    const decision = fake.options!.canUseTool!("AskUserQuestion", toolInput as never, {} as never)
+    await settle()
+    const asked = events.at(-1)?.payload as Record<string, unknown>
+    expect(asked.sessionUpdate).toBe("question")
+    const questionId = asked.questionId as string
+    expect(asked.questions).toMatchObject([
+      { allowsOther: true, header: "Auth", id: "question_0" },
+      { allowsOther: true, id: "question_1", multiSelect: true }
+    ])
+
+    await run(
+      created.handle.answerQuestion!(questionId, {
+        answers: {
+          question_0: { answers: [], note: "Use magic links" },
+          question_1: { answers: ["Web", "iOS"], note: "mobile can come later" }
+        },
+        outcome: "answered"
+      })
+    )
+    // A bare note is the answer (the "Other" path); a note alongside labels
+    // supplements them; keys are the question text (the SDK tool reads them
+    // back that way).
+    await expect(decision).resolves.toEqual({
+      behavior: "allow",
+      updatedInput: {
+        ...toolInput,
+        answers: {
+          "Which auth method?": "Use magic links",
+          "Which platforms?": "Web, iOS — mobile can come later"
+        }
+      }
+    })
+    expect(events.at(-1)?.payload).toMatchObject({
+      outcome: "answered",
+      questionId,
+      sessionUpdate: "question_resolved"
+    })
+    // No tool_call lifecycle leaked for the question tool.
+    expect(
+      events.filter((event) => {
+        const payload = event.payload as Record<string, unknown>
+        return payload.sessionUpdate === "tool_call" || payload.sessionUpdate === "tool_call_update"
+      })
+    ).toEqual([])
+  })
+
+  it("cancelling a question denies the tool; interrupts deny all held questions", async () => {
+    const fake = new FakeQuery()
+    const provider = makeProvider(fake)
+    const events: Array<RuntimeEvent> = []
+    const emit = async (event: RuntimeEvent): Promise<void> => {
+      events.push(event)
+    }
+    const createPromise = run(provider.createSession(definition, "/tmp", emit))
+    await settle()
+    fake.push(initMessage())
+    const created = await createPromise
+
+    const ask = (question: string) =>
+      fake.options!.canUseTool!(
+        "AskUserQuestion",
+        { questions: [{ options: [{ label: "A" }], question }] } as never,
+        {} as never
+      )
+
+    const first = ask("First?")
+    await settle()
+    const firstId = (events.at(-1)?.payload as Record<string, unknown>).questionId as string
+    await run(created.handle.answerQuestion!(firstId, { outcome: "cancelled" }))
+    await expect(first).resolves.toEqual({
+      behavior: "deny",
+      message: "User dismissed the question without answering."
+    })
+
+    // Unknown ids fail; malformed inputs pass straight through as allow.
+    await expect(
+      run(created.handle.answerQuestion!("nope", { outcome: "answered" }))
+    ).rejects.toThrow("No pending question")
+    await expect(
+      fake.options!.canUseTool!("AskUserQuestion", { questions: "?" } as never, {} as never)
+    ).resolves.toMatchObject({ behavior: "allow" })
+
+    const second = ask("Second?")
+    await settle()
+    await run(created.handle.cancel)
+    await expect(second).resolves.toMatchObject({ behavior: "deny" })
+    expect(events.at(-1)?.payload).toMatchObject({
+      outcome: "cancelled",
+      sessionUpdate: "question_resolved"
     })
   })
 

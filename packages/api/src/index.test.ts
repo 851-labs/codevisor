@@ -7,6 +7,8 @@ import {
   Project,
   ServerCapabilities,
   SessionDetail,
+  SessionGoal,
+  SetGoalRequest,
   TerminalClientFrame,
   Worktree,
   WorktreeSetupUpdate,
@@ -216,7 +218,10 @@ describe("@herdman/api", () => {
           },
           modes: {
             currentModeId: "default",
-            availableModes: [{ id: "default", name: "Default" }]
+            availableModes: [
+              { id: "default", name: "Default", canonicalId: "ask" },
+              { id: "custom", name: "Custom" }
+            ]
           },
           configOptions: [
             {
@@ -240,6 +245,32 @@ describe("@herdman/api", () => {
       "model",
       "grouped"
     ])
+    const modes = capabilities.harnesses[0]?.modes?.availableModes
+    expect(modes?.[0]?.canonicalId).toBe("ask")
+    expect(modes?.[1]?.canonicalId).toBeUndefined()
+  })
+
+  it("decodes goal payloads, preserving the tokenBudget double-option", () => {
+    const goal = decode(SessionGoal)({
+      objective: "ship goal mode",
+      status: "active",
+      tokenBudget: null,
+      tokensUsed: 1200,
+      timeUsedSeconds: 42,
+      createdAt: "2026-07-05T00:00:00.000Z",
+      updatedAt: "2026-07-05T00:01:00.000Z"
+    })
+    expect(goal.tokenBudget).toBeNull()
+
+    // The three set-request budget states survive decoding distinctly:
+    // absent key = keep, null = clear, number = set.
+    const keep = decode(SetGoalRequest)({ status: "paused" })
+    expect("tokenBudget" in keep).toBe(false)
+    const clear = decode(SetGoalRequest)({ tokenBudget: null })
+    expect(clear.tokenBudget).toBeNull()
+    const set = decode(SetGoalRequest)({ objective: "focus", tokenBudget: 50000 })
+    expect(set.tokenBudget).toBe(50000)
+    expect(() => decode(SetGoalRequest)({ status: "later" })).toThrow()
   })
 
   it("exports the server endpoint inventory as OpenAPI metadata", () => {

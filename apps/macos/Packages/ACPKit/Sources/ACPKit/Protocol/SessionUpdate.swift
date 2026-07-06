@@ -29,6 +29,152 @@ public struct SessionUsage: Sendable, Codable, Equatable {
     }
 }
 
+/// Lifecycle of a persistent session goal, mirroring codex thread-goal
+/// statuses. `active` goals auto-continue turns agent-side.
+public enum GoalStatus: String, Sendable, Codable, Equatable, CaseIterable {
+    case active
+    case paused
+    case blocked
+    case usageLimited
+    case budgetLimited
+    case complete
+}
+
+/// A persistent per-session objective (codex "goal mode"). Snapshots are
+/// idempotent full state: consumers replace, never accumulate.
+public struct SessionGoal: Sendable, Codable, Equatable {
+    public var objective: String
+    public var status: GoalStatus
+    /// Token budget for the goal; nil when unbounded.
+    public var tokenBudget: Int?
+    public var tokensUsed: Int
+    public var timeUsedSeconds: Int
+    public var createdAt: String
+    public var updatedAt: String
+
+    public init(
+        objective: String,
+        status: GoalStatus,
+        tokenBudget: Int? = nil,
+        tokensUsed: Int = 0,
+        timeUsedSeconds: Int = 0,
+        createdAt: String = "",
+        updatedAt: String = ""
+    ) {
+        self.objective = objective
+        self.status = status
+        self.tokenBudget = tokenBudget
+        self.tokensUsed = tokensUsed
+        self.timeUsedSeconds = timeUsedSeconds
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+    }
+}
+
+/// One option of an agent-asked question.
+public struct QuestionOption: Sendable, Codable, Equatable, Identifiable {
+    public var label: String
+    public var description: String?
+
+    public var id: String { label }
+
+    public init(label: String, description: String? = nil) {
+        self.label = label
+        self.description = description
+    }
+}
+
+/// One question inside a blocking question request.
+public struct QuestionSpec: Sendable, Codable, Equatable, Identifiable {
+    public var id: String
+    public var header: String?
+    public var question: String
+    public var options: [QuestionOption]
+    public var multiSelect: Bool?
+    public var allowsOther: Bool
+    public var isSecret: Bool?
+
+    public init(
+        id: String,
+        header: String? = nil,
+        question: String,
+        options: [QuestionOption] = [],
+        multiSelect: Bool? = nil,
+        allowsOther: Bool = true,
+        isSecret: Bool? = nil
+    ) {
+        self.id = id
+        self.header = header
+        self.question = question
+        self.options = options
+        self.multiSelect = multiSelect
+        self.allowsOther = allowsOther
+        self.isSecret = isSecret
+    }
+}
+
+/// A blocking agent question: the turn holds until the client answers via
+/// the answer endpoint (or the provider auto-resolves it).
+public struct QuestionRequest: Sendable, Codable, Equatable {
+    public var questionId: String
+    /// Context line shown above the questions (e.g. an MCP server's
+    /// elicitation message).
+    public var message: String?
+    public var questions: [QuestionSpec]
+    public var autoResolutionMs: Int?
+
+    public init(
+        questionId: String,
+        message: String? = nil,
+        questions: [QuestionSpec],
+        autoResolutionMs: Int? = nil
+    ) {
+        self.questionId = questionId
+        self.message = message
+        self.questions = questions
+        self.autoResolutionMs = autoResolutionMs
+    }
+}
+
+public enum QuestionOutcome: String, Sendable, Codable, Equatable {
+    case answered
+    case cancelled
+    case autoResolved
+}
+
+/// The user's reply to one question: chosen option labels (or the free-text
+/// entry) plus an optional note typed alongside a selection.
+public struct QuestionAnswerEntry: Sendable, Codable, Equatable {
+    public var answers: [String]
+    public var note: String?
+
+    public init(answers: [String], note: String? = nil) {
+        self.answers = answers
+        self.note = note
+    }
+}
+
+/// Terminal event for a question request; pairs with the `question` event by
+/// `questionId` and carries everything needed to render the answered card.
+public struct QuestionResolution: Sendable, Codable, Equatable {
+    public var questionId: String
+    public var outcome: QuestionOutcome
+    public var questions: [QuestionSpec]
+    public var answers: [String: QuestionAnswerEntry]?
+
+    public init(
+        questionId: String,
+        outcome: QuestionOutcome,
+        questions: [QuestionSpec],
+        answers: [String: QuestionAnswerEntry]? = nil
+    ) {
+        self.questionId = questionId
+        self.outcome = outcome
+        self.questions = questions
+        self.answers = answers
+    }
+}
+
 /// A streaming update emitted by the agent during a prompt turn.
 ///
 /// Discriminated by the `sessionUpdate` field. For `tool_call` and
@@ -44,11 +190,22 @@ public enum SessionUpdate: Sendable, Codable, Equatable {
     case currentModeUpdate(currentModeId: String)
     case configOptionUpdate([SessionConfigOption])
     case usageUpdate(SessionUsage)
+    case goalUpdate(SessionGoal)
+    case goalCleared
+    /// A free-form markdown plan the agent proposes before implementing
+    /// (Claude plan mode's ExitPlanMode, codex plan-mode plan items) —
+    /// distinct from the `plan` step checklist. Replaces per turn.
+    case planDocument(markdown: String)
+    /// A blocking agent question awaiting the user's answer.
+    case question(QuestionRequest)
+    /// Terminal pair for a `question` event, matched by questionId.
+    case questionResolved(QuestionResolution)
 
     private enum Keys: String, CodingKey {
         case sessionUpdate, messageId, parentToolCallId, content, entries, availableCommands
         case currentModeId, configOptions
-        case used, size, cost
+        case used, size, cost, goal, markdown
+        case questionId, message, questions, autoResolutionMs, outcome, answers
     }
 
     public init(from decoder: any Decoder) throws {
@@ -95,6 +252,26 @@ public enum SessionUpdate: Sendable, Codable, Equatable {
                 used: try container.decodeIfPresent(UInt64.self, forKey: .used),
                 size: try container.decodeIfPresent(UInt64.self, forKey: .size),
                 cost: try container.decodeIfPresent(SessionCost.self, forKey: .cost)
+            ))
+        case "goal_update":
+            self = .goalUpdate(try container.decode(SessionGoal.self, forKey: .goal))
+        case "goal_cleared":
+            self = .goalCleared
+        case "plan_document":
+            self = .planDocument(markdown: try container.decode(String.self, forKey: .markdown))
+        case "question":
+            self = .question(QuestionRequest(
+                questionId: try container.decode(String.self, forKey: .questionId),
+                message: try container.decodeIfPresent(String.self, forKey: .message),
+                questions: try container.decode([QuestionSpec].self, forKey: .questions),
+                autoResolutionMs: try container.decodeIfPresent(Int.self, forKey: .autoResolutionMs)
+            ))
+        case "question_resolved":
+            self = .questionResolved(QuestionResolution(
+                questionId: try container.decode(String.self, forKey: .questionId),
+                outcome: try container.decode(QuestionOutcome.self, forKey: .outcome),
+                questions: try container.decode([QuestionSpec].self, forKey: .questions),
+                answers: try container.decodeIfPresent([String: QuestionAnswerEntry].self, forKey: .answers)
             ))
         default:
             throw DecodingError.dataCorruptedError(
@@ -145,6 +322,26 @@ public enum SessionUpdate: Sendable, Codable, Equatable {
             try container.encodeIfPresent(usage.used, forKey: .used)
             try container.encodeIfPresent(usage.size, forKey: .size)
             try container.encodeIfPresent(usage.cost, forKey: .cost)
+        case let .goalUpdate(goal):
+            try container.encode("goal_update", forKey: .sessionUpdate)
+            try container.encode(goal, forKey: .goal)
+        case .goalCleared:
+            try container.encode("goal_cleared", forKey: .sessionUpdate)
+        case let .planDocument(markdown):
+            try container.encode("plan_document", forKey: .sessionUpdate)
+            try container.encode(markdown, forKey: .markdown)
+        case let .question(request):
+            try container.encode("question", forKey: .sessionUpdate)
+            try container.encode(request.questionId, forKey: .questionId)
+            try container.encodeIfPresent(request.message, forKey: .message)
+            try container.encode(request.questions, forKey: .questions)
+            try container.encodeIfPresent(request.autoResolutionMs, forKey: .autoResolutionMs)
+        case let .questionResolved(resolution):
+            try container.encode("question_resolved", forKey: .sessionUpdate)
+            try container.encode(resolution.questionId, forKey: .questionId)
+            try container.encode(resolution.outcome, forKey: .outcome)
+            try container.encode(resolution.questions, forKey: .questions)
+            try container.encodeIfPresent(resolution.answers, forKey: .answers)
         }
     }
 }

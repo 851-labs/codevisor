@@ -1,4 +1,5 @@
 import { Schema } from "effect"
+import { QuestionAnswerEntry } from "./session-updates.js"
 
 export * from "./session-updates.js"
 
@@ -32,10 +33,23 @@ export const UpdateHarnessRequest = Schema.Struct({
 })
 export type UpdateHarnessRequest = typeof UpdateHarnessRequest.Type
 
+/// HerdMan's harness-independent mode vocabulary. Providers map their native
+/// permission/approval modes onto these ids so the client can render one
+/// consistent picker; modes without a mapping stay native-only.
+export const CanonicalModeId = Schema.Literals([
+  "readOnly",
+  "ask",
+  "autoEdit",
+  "fullAccess",
+  "plan"
+])
+export type CanonicalModeId = typeof CanonicalModeId.Type
+
 export const SessionMode = Schema.Struct({
   id: Schema.String,
   name: Schema.String,
-  description: Schema.optional(Schema.String)
+  description: Schema.optional(Schema.String),
+  canonicalId: Schema.optional(CanonicalModeId)
 })
 export type SessionMode = typeof SessionMode.Type
 
@@ -72,10 +86,36 @@ export const SessionConfigOption = Schema.Struct({
 })
 export type SessionConfigOption = typeof SessionConfigOption.Type
 
+/// Lifecycle of a session goal, mirroring codex's thread-goal statuses.
+/// `active` goals auto-continue turns agent-side until done or limited.
+export const GoalStatus = Schema.Literals([
+  "active",
+  "paused",
+  "blocked",
+  "usageLimited",
+  "budgetLimited",
+  "complete"
+])
+export type GoalStatus = typeof GoalStatus.Type
+
+/// A persistent per-session objective (codex "goal mode"). Snapshots are
+/// idempotent full state: consumers replace, never accumulate.
+export const SessionGoal = Schema.Struct({
+  objective: Schema.String,
+  status: GoalStatus,
+  tokenBudget: Schema.NullOr(Schema.Number),
+  tokensUsed: Schema.Number,
+  timeUsedSeconds: Schema.Number,
+  createdAt: Schema.String,
+  updatedAt: Schema.String
+})
+export type SessionGoal = typeof SessionGoal.Type
+
 export const HarnessCapability = Schema.Struct({
   harness: Harness,
   modes: Schema.optional(SessionModeState),
-  configOptions: Schema.Array(SessionConfigOption)
+  configOptions: Schema.Array(SessionConfigOption),
+  supportsGoals: Schema.optional(Schema.Boolean)
 })
 export type HarnessCapability = typeof HarnessCapability.Type
 
@@ -305,6 +345,26 @@ export const SetConfigRequest = Schema.Struct({
 })
 export type SetConfigRequest = typeof SetConfigRequest.Type
 
+/// Partial goal update mirroring codex `thread/goal/set` semantics: omitted
+/// fields keep their current value. `tokenBudget` is a double-option — omit
+/// to keep, `null` to clear the budget, a positive number to set it.
+export const SetGoalRequest = Schema.Struct({
+  objective: Schema.optional(Schema.String),
+  status: Schema.optional(GoalStatus),
+  tokenBudget: Schema.optional(Schema.NullOr(Schema.Number)),
+  clientActionId: Schema.optional(Schema.String)
+})
+export type SetGoalRequest = typeof SetGoalRequest.Type
+
+/// Answers (or dismisses) a blocking agent question. `answers` is keyed by
+/// the per-question id from the QuestionPayload; omitted for `cancelled`.
+export const SetQuestionAnswerRequest = Schema.Struct({
+  outcome: Schema.Literals(["answered", "cancelled"]),
+  answers: Schema.optional(Schema.Record(Schema.String, QuestionAnswerEntry)),
+  clientActionId: Schema.optional(Schema.String)
+})
+export type SetQuestionAnswerRequest = typeof SetQuestionAnswerRequest.Type
+
 export const HealthResponse = Schema.Struct({
   ok: Schema.Boolean,
   version: Schema.String,
@@ -449,6 +509,9 @@ export const endpoints = [
   "POST /v1/sessions/:id/cancel",
   "POST /v1/sessions/:id/mode",
   "POST /v1/sessions/:id/config",
+  "POST /v1/sessions/:id/goal",
+  "DELETE /v1/sessions/:id/goal",
+  "POST /v1/sessions/:id/questions/:questionId/answer",
   "POST /v1/files",
   "GET /v1/files/:id",
   "GET /v1/events",

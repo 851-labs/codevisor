@@ -2,9 +2,12 @@ import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
 import {
   AgentRuntime,
+  acpPermissionOutcome,
+  acpPermissionQuestion,
   acpProtocolVersion,
   acpPrompt,
   makeAgentRuntime,
+  normalizeModeState,
   normalizePromptInput,
   runtimeEventFromNotification,
   toEventEnvelope,
@@ -401,6 +404,93 @@ describe("@herdman/agent-runtime", () => {
     })
   })
 
+  it("fails goal calls on harnesses without goal support", async () => {
+    const connector = makeConnector()
+    const runtime = makeAgentRuntime({
+      connector,
+      env: { PATH: "/bin" },
+      executableExists: (name) => ["gemini", "npx"].includes(name),
+      locateExecutable: (name) => `/bin/${name}`
+    })
+    const sessionId = await run(
+      runtime.createAgentSession("gemini", "/tmp/project", () => undefined)
+    )
+    // The ACP handle exposes no goal surface, so the runtime rejects cleanly.
+    await expect(run(runtime.setGoal(sessionId, { objective: "x" }))).rejects.toThrow(
+      "Goals are not supported by this harness"
+    )
+    await expect(run(runtime.clearGoal(sessionId))).rejects.toThrow(
+      "Goals are not supported by this harness"
+    )
+    await expect(
+      run(runtime.answerQuestion(sessionId, "q-1", { outcome: "cancelled" }))
+    ).rejects.toThrow("Questions are not supported by this harness")
+  })
+
+  it("delegates goal calls to handles that support them", async () => {
+    const goalCalls: Array<unknown> = []
+    let clearCount = 0
+    const goal = {
+      createdAt: "2026-07-05T00:00:00.000Z",
+      objective: "finish the migration",
+      status: "active" as const,
+      timeUsedSeconds: 0,
+      tokenBudget: null,
+      tokensUsed: 0,
+      updatedAt: "2026-07-05T00:00:00.000Z"
+    }
+    const answered: Array<readonly [string, unknown]> = []
+    const custom = {
+      createSession: () =>
+        Effect.sync(() => ({
+          handle: {
+            answerQuestion: (questionId: string, answer: unknown) =>
+              Effect.sync(() => {
+                answered.push([questionId, answer])
+              }),
+            cancel: Effect.void,
+            clearGoal: Effect.sync(() => {
+              clearCount += 1
+            }),
+            close: Effect.void,
+            prompt: () => Effect.succeed({ stopReason: "end_turn" }),
+            setConfigOption: () => Effect.void,
+            setGoal: (update: unknown) =>
+              Effect.sync(() => {
+                goalCalls.push(update)
+                return goal
+              }),
+            setMode: () => Effect.void
+          },
+          metadata: { configOptions: [], sessionId: "goal-1", supportsGoals: true }
+        })),
+      id: "codex" as const,
+      loadSession: () => Effect.die("unused"),
+      readiness: () => ({ state: "ready" }) as const
+    }
+    const runtime = makeAgentRuntime({
+      env: { PATH: "/bin" },
+      executableExists: () => true,
+      locateExecutable: (name) => `/bin/${name}`,
+      providers: { codex: custom as never }
+    })
+    const sessionId = await run(
+      runtime.createAgentSession("codex", "/tmp/project", () => undefined)
+    )
+    const result = await run(runtime.setGoal(sessionId, { status: "paused" }))
+    expect(result).toEqual(goal)
+    expect(goalCalls).toEqual([{ status: "paused" }])
+    await run(runtime.clearGoal(sessionId))
+    expect(clearCount).toBe(1)
+    await run(
+      runtime.answerQuestion(sessionId, "q-7", {
+        answers: { q: { answers: ["A"] } },
+        outcome: "answered"
+      })
+    )
+    expect(answered).toEqual([["q-7", { answers: { q: { answers: ["A"] } }, outcome: "answered" }]])
+  })
+
   it("reports unavailable or unknown harnesses before connecting", async () => {
     const connector = makeConnector()
     const runtime = makeAgentRuntime({
@@ -510,6 +600,86 @@ describe("@herdman/agent-runtime", () => {
       }
     } as never)
     expect(plain.payload).not.toHaveProperty("diffStats")
+  })
+
+  it("maps ACP permission requests onto questions and answers back onto option ids", () => {
+    const params = {
+      options: [
+        { kind: "allow_once", name: "Yes, and manually approve edits", optionId: "default" },
+        { kind: "reject_once", name: "No, keep planning", optionId: "plan" }
+      ],
+      sessionId: "session-1",
+      toolCall: {
+        content: [{ content: { text: "# The Plan\n\n1. Do it", type: "text" }, type: "content" }],
+        kind: "switch_mode",
+        title: "Ready to code?",
+        toolCallId: "exit-plan-1"
+      }
+    }
+    const question = acpPermissionQuestion(params)
+    expect(question?.sessionId).toBe("session-1")
+    expect(question?.planDocument).toBe("# The Plan\n\n1. Do it")
+    expect(question?.spec).toEqual({
+      allowsOther: false,
+      id: "permission",
+      options: [{ label: "Yes, and manually approve edits" }, { label: "No, keep planning" }],
+      question: "Ready to code?"
+    })
+
+    const optionIds = question!.optionIds
+    expect(
+      acpPermissionOutcome(optionIds, {
+        answers: { permission: { answers: ["No, keep planning"] } },
+        outcome: "answered"
+      })
+    ).toEqual({ outcome: { optionId: "plan", outcome: "selected" } })
+    expect(acpPermissionOutcome(optionIds, { outcome: "cancelled" })).toEqual({
+      outcome: { outcome: "cancelled" }
+    })
+    // Unknown labels degrade to cancelled rather than guessing.
+    expect(
+      acpPermissionOutcome(optionIds, {
+        answers: { permission: { answers: ["Nonsense"] } },
+        outcome: "answered"
+      })
+    ).toEqual({ outcome: { outcome: "cancelled" } })
+
+    // Requests without options (or malformed ones) auto-cancel.
+    expect(acpPermissionQuestion({ options: [], sessionId: "s" })).toBeUndefined()
+    expect(acpPermissionQuestion("nope")).toBeUndefined()
+    // Non-plan tool calls carry no plan document and fall back to a generic
+    // question when untitled.
+    const generic = acpPermissionQuestion({
+      options: [{ kind: "allow_once", name: "Allow", optionId: "ok" }],
+      sessionId: "s",
+      toolCall: { kind: "execute", toolCallId: "t1" }
+    })
+    expect(generic?.planDocument).toBeUndefined()
+    expect(generic?.spec.question).toBe("Allow the agent to proceed?")
+  })
+
+  it("maps agent-defined ACP modes onto the canonical vocabulary heuristically", () => {
+    const state = normalizeModeState({
+      currentModeId: "default",
+      availableModes: [
+        { id: "default", name: "Default" },
+        { id: "plan", name: "Plan mode", description: "think first" },
+        { id: "readOnly", name: "Read Only" },
+        { id: "acceptEdits", name: "Accept Edits" },
+        { id: "yolo", name: "YOLO" },
+        { id: "goal", name: "Goal mode" }
+      ]
+    })
+    expect(state.availableModes.map((mode) => mode.canonicalId)).toEqual([
+      "ask",
+      "plan",
+      "readOnly",
+      "autoEdit",
+      "fullAccess",
+      undefined
+    ])
+    // Descriptions still pass through untouched.
+    expect(state.availableModes[1]?.description).toBe("think first")
   })
 })
 

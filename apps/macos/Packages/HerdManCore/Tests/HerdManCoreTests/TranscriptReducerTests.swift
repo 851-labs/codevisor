@@ -128,6 +128,38 @@ struct TranscriptReducerTests {
         #expect(turn.entries.isEmpty)
     }
 
+    @Test("Plan documents replace per turn and quiet the thinking state")
+    func planDocument() {
+        var turn = AssistantTurn(isThinking: true)
+        TranscriptReducer.apply(.planDocument(markdown: "# Draft"), to: &turn)
+        #expect(turn.planDocument == "# Draft")
+        #expect(turn.isThinking == false)
+        // A later document replaces the first; the step plan is independent.
+        TranscriptReducer.apply(.planDocument(markdown: "# Final Plan"), to: &turn)
+        TranscriptReducer.apply(.plan(Plan(entries: [PlanEntry(content: "step", priority: .medium, status: .inProgress)])), to: &turn)
+        #expect(turn.planDocument == "# Final Plan")
+        #expect(turn.plan?.entries.count == 1)
+        #expect(turn.entries.isEmpty)
+    }
+
+    @Test("Resolved questions append once per id")
+    func answeredQuestions() {
+        var turn = AssistantTurn()
+        let resolution = QuestionResolution(
+            questionId: "q-1",
+            outcome: .answered,
+            questions: [QuestionSpec(id: "a", question: "Pick one")],
+            answers: ["a": QuestionAnswerEntry(answers: ["Option A"])]
+        )
+        TranscriptReducer.apply(.questionResolved(resolution), to: &turn)
+        // Replay delivers the pair again; the card must not duplicate.
+        TranscriptReducer.apply(.questionResolved(resolution), to: &turn)
+        TranscriptReducer.apply(.question(QuestionRequest(questionId: "q-2", questions: [])), to: &turn)
+        #expect(turn.answeredQuestions.count == 1)
+        #expect(turn.answeredQuestions.first?.questionId == "q-1")
+        #expect(turn.entries.isEmpty)
+    }
+
     @Test("Final answer is the trailing text; earlier entries collapse")
     func finalVersusWorked() {
         let turn = reduce([

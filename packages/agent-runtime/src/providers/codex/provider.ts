@@ -1,4 +1,13 @@
-import type { DiffStat, SessionConfigOption, SessionModeState } from "@herdman/api"
+import type {
+  CanonicalModeId,
+  DiffStat,
+  GoalStatus,
+  QuestionAnswerEntry,
+  QuestionSpec,
+  SessionConfigOption,
+  SessionGoal,
+  SessionModeState
+} from "@herdman/api"
 import { randomUUID } from "node:crypto"
 import { Effect } from "effect"
 import { withAttachmentNotes } from "../../attachments.js"
@@ -14,8 +23,10 @@ import {
   type LoadedAgentSession,
   type PromptInput,
   type ProviderEnvironment,
+  type QuestionAnswer,
   type RuntimeEmit,
-  type RuntimeEvent
+  type RuntimeEvent,
+  type SetGoalUpdate
 } from "../../types.js"
 import { spawnCodexClient, type CodexClient, type CodexConnector } from "./client.js"
 
@@ -68,13 +79,27 @@ interface CodexMode {
   readonly id: string
   readonly name: string
   readonly description: string
+  readonly canonicalId: CanonicalModeId
   readonly approvalPolicy: string
   readonly sandboxPolicy: Record<string, unknown>
+  /// When set, turn/start also sends the EXPERIMENTAL collaborationMode
+  /// preset (unlocked by `capabilities.experimentalApi` at initialize).
+  readonly collaboration?: "plan"
 }
 
 const CODEX_MODES: ReadonlyArray<CodexMode> = [
   {
     approvalPolicy: "on-request",
+    canonicalId: "plan",
+    collaboration: "plan",
+    description: "Plans first: proposes an implementation plan before coding.",
+    id: "plan",
+    name: "Plan",
+    sandboxPolicy: { networkAccess: false, type: "readOnly" }
+  },
+  {
+    approvalPolicy: "on-request",
+    canonicalId: "readOnly",
     description: "Requires approval to edit files and run commands.",
     id: "read-only",
     name: "Read-only",
@@ -82,6 +107,7 @@ const CODEX_MODES: ReadonlyArray<CodexMode> = [
   },
   {
     approvalPolicy: "on-request",
+    canonicalId: "ask",
     description: "Read and edit files, and run commands.",
     id: "agent",
     name: "Agent",
@@ -95,6 +121,7 @@ const CODEX_MODES: ReadonlyArray<CodexMode> = [
   },
   {
     approvalPolicy: "never",
+    canonicalId: "fullAccess",
     description:
       "Codex can edit files outside this workspace and run commands with network access.",
     id: "agent-full-access",
@@ -103,7 +130,37 @@ const CODEX_MODES: ReadonlyArray<CodexMode> = [
   }
 ]
 
-const DEFAULT_CODEX_MODE = "agent"
+const DEFAULT_CODEX_MODE = "agent-full-access"
+
+/// Accounting-only goal snapshots (tokensUsed/timeUsedSeconds ticks) are
+/// rate-limited: every emission is a permanent events-table row replayed on
+/// session open, and codex flushes accounting several times per turn.
+/// Status/objective/budget changes and out-of-band snapshots bypass this.
+export const GOAL_ACCOUNTING_INTERVAL_MS = 2000
+
+const GOAL_STATUSES: ReadonlySet<string> = new Set([
+  "active",
+  "paused",
+  "blocked",
+  "usageLimited",
+  "budgetLimited",
+  "complete"
+])
+
+/// One blocking server→client ask awaiting the human's answer — either the
+/// model's `item/tool/requestUserInput` or an MCP server's
+/// `mcpServer/elicitation/request`. `resolve`/`reject` settle the held
+/// JSON-RPC handler promise; `respond` builds the source-specific reply from
+/// the wire answers; `cancelResponse` is the source-specific dismissal reply
+/// (undefined = reject the JSON-RPC request instead).
+interface PendingCodexQuestion {
+  readonly questions: ReadonlyArray<QuestionSpec>
+  readonly resolve: (response: unknown) => void
+  readonly reject: (error: Error) => void
+  readonly timer: NodeJS.Timeout | undefined
+  readonly respond: (answers: NonNullable<QuestionAnswer["answers"]>) => unknown
+  readonly cancelResponse?: unknown
+}
 
 interface CodexSession {
   readonly key: string
@@ -126,6 +183,17 @@ interface CodexSession {
   /// it. Items arriving on those threads are tagged with that parent so
   /// clients can nest them; the main thread's id is `threadId`.
   readonly collabThreads: Map<string, string>
+  /// item id → human-readable title, so approval prompts can say WHAT is
+  /// being approved (approval params carry only the item id).
+  readonly itemTitles: Map<string, string>
+  /// Goal-snapshot throttle state: the last snapshot broadcast to the wire,
+  /// when it went out, and the freshest one held back by the rate limit
+  /// (flushed at turn end so final totals always persist).
+  lastEmittedGoal: SessionGoal | undefined
+  lastGoalEmitAtMs: number
+  pendingGoalSnapshot: SessionGoal | undefined
+  /// question id (= codex item id) → held requestUserInput handler.
+  readonly pendingQuestions: Map<string, PendingCodexQuestion>
 }
 
 export const makeCodexProvider = (
@@ -147,6 +215,9 @@ export const makeCodexProvider = (
     const command = locateCodex(definition)
     const client = await connector({ command, cwd, env: environment.env })
     await client.request("initialize", {
+      // experimentalApi unlocks turn/start.collaborationMode (Plan mode) and
+      // item/tool/requestUserInput.
+      capabilities: { experimentalApi: true },
       clientInfo: { name: "HerdMan", title: "HerdMan", version: "0.1.0" }
     })
     // The server rejects all other requests until this lands.
@@ -191,9 +262,14 @@ export const makeCodexProvider = (
       emit,
       interruptRequested: false,
       itemKinds: new Map(),
+      itemTitles: new Map(),
       key: resumeThreadId ?? threadId,
+      lastEmittedGoal: undefined,
+      lastGoalEmitAtMs: 0,
       models: [],
+      pendingGoalSnapshot: undefined,
       pendingPrompt: undefined,
+      pendingQuestions: new Map(),
       threadId
     }
     try {
@@ -243,10 +319,11 @@ export const makeCodexProvider = (
     client.onNotification((method, params) => {
       handleNotification(session, method, params)
     })
-    client.onRequest(async (method, _params) => approvalResponse(method))
+    client.onRequest((method, params) => serverRequestResponse(session, method, params))
     client.onClose((error) => {
       session.pendingPrompt?.resolve({ stopReason: "cancelled" })
       session.pendingPrompt = undefined
+      cancelPendingQuestions(session)
       void session.emit({
         kind: "session.error",
         payload: { message: error.message },
@@ -317,6 +394,7 @@ export const makeCodexProvider = (
 
   const modesFor = (session: CodexSession): SessionModeState => ({
     availableModes: CODEX_MODES.map((mode) => ({
+      canonicalId: mode.canonicalId,
       description: mode.description,
       id: mode.id,
       name: mode.name
@@ -329,6 +407,8 @@ export const makeCodexProvider = (
       const turnId = session.activeTurnId
       if (turnId === undefined) return
       session.interruptRequested = true
+      // A held question would block the interrupt from ever completing.
+      cancelPendingQuestions(session)
       try {
         await session.client.request("turn/interrupt", {
           threadId: session.threadId,
@@ -358,7 +438,23 @@ export const makeCodexProvider = (
             : { serviceTier: speed === "fast" ? CODEX_FAST_TIER : CODEX_STANDARD_TIER }),
           ...(mode === undefined
             ? {}
-            : { approvalPolicy: mode.approvalPolicy, sandboxPolicy: mode.sandboxPolicy })
+            : { approvalPolicy: mode.approvalPolicy, sandboxPolicy: mode.sandboxPolicy }),
+          // EXPERIMENTAL plan collaboration mode: the model proposes a plan
+          // (streamed as plan items → plan_document) before implementing.
+          // Settings.model is required by the wire shape; settings keys stay
+          // snake_case (no camelCase rename upstream).
+          ...(mode?.collaboration === undefined || session.currentModel.length === 0
+            ? {}
+            : {
+                collaborationMode: {
+                  mode: mode.collaboration,
+                  settings: {
+                    developer_instructions: null,
+                    model: session.currentModel,
+                    reasoning_effort: session.currentEffort ?? null
+                  }
+                }
+              })
         })
         return pending
       }),
@@ -401,7 +497,30 @@ export const makeCodexProvider = (
           payload: { modeId },
           subjectId: session.key
         })
-      })
+      }),
+    setGoal: (update: SetGoalUpdate) =>
+      adapterPromise("setGoal", async () => {
+        // Double-option passthrough: an omitted key keeps the current value,
+        // an explicit null clears the token budget.
+        const response = await session.client.request<{ goal?: unknown }>("thread/goal/set", {
+          threadId: session.threadId,
+          ...(update.objective === undefined ? {} : { objective: update.objective }),
+          ...(update.status === undefined ? {} : { status: update.status }),
+          ...("tokenBudget" in update ? { tokenBudget: update.tokenBudget ?? null } : {})
+        })
+        const goal = sessionGoalFrom(response.goal)
+        if (goal === undefined) {
+          throw new Error("codex app-server returned no goal for thread/goal/set")
+        }
+        await emitGoalSnapshot(session, goal)
+        return goal
+      }),
+    clearGoal: adapterPromise("clearGoal", async () => {
+      await session.client.request("thread/goal/clear", { threadId: session.threadId })
+      await emitGoalCleared(session)
+    }),
+    answerQuestion: (questionId, answer) =>
+      adapterPromise("answerQuestion", () => answerCodexQuestion(session, questionId, answer))
   })
 
   return {
@@ -413,7 +532,8 @@ export const makeCodexProvider = (
           metadata: {
             configOptions: configOptionsFor(session),
             modes: modesFor(session),
-            sessionId: session.key
+            sessionId: session.key,
+            supportsGoals: true
           }
         }
       }),
@@ -439,17 +559,509 @@ export const makeCodexProvider = (
   }
 }
 
-/// Approvals are auto-accepted, matching the Claude provider's auto-allow
-/// posture; this handler is the seam for a real permission UI.
-const approvalResponse = (method: string): Promise<unknown> => {
+/// Routes codex's server→client requests: questions and MCP elicitations
+/// block on the human's answer; approvals stay auto-accepted (still the seam
+/// for a permission UI).
+const serverRequestResponse = (
+  session: CodexSession,
+  method: string,
+  params: unknown
+): Promise<unknown> => {
   switch (method) {
+    case "item/tool/requestUserInput":
+      return holdQuestionRequest(session, isRecord(params) ? params : {})
+    case "mcpServer/elicitation/request":
+      return holdElicitationRequest(session, isRecord(params) ? params : {})
     case "item/commandExecution/requestApproval":
     case "item/fileChange/requestApproval":
     case "item/permissions/requestApproval":
-      return Promise.resolve({ decision: "accept" })
+      // Approvals only arrive in modes with approvalPolicy on-request (Ask /
+      // Read-only / Plan) — the full-access default never asks.
+      return holdApprovalRequest(session, method, isRecord(params) ? params : {})
     default:
       return Promise.reject(new Error(`Unsupported approval request: ${method}`))
   }
+}
+
+/// Surfaces a codex approval request as a blocking question: Allow/Deny (plus
+/// "Allow for session" on commands) mapping onto the wire decisions. Cancel
+/// and turn interrupts answer `cancel`.
+const holdApprovalRequest = (
+  session: CodexSession,
+  method: string,
+  params: Record<string, unknown>
+): Promise<unknown> => {
+  const itemId = typeof params.itemId === "string" ? params.itemId : undefined
+  const detail = itemId === undefined ? undefined : session.itemTitles.get(itemId)
+  const isCommand = method === "item/commandExecution/requestApproval"
+  const spec: QuestionSpec = {
+    allowsOther: false,
+    id: "approval",
+    options: [
+      { label: "Allow" },
+      ...(isCommand ? [{ label: "Allow for session" }] : []),
+      { label: "Deny" }
+    ],
+    question:
+      method === "item/fileChange/requestApproval"
+        ? "Allow these file edits?"
+        : isCommand
+          ? "Allow this command to run?"
+          : "Grant the requested permissions?",
+    ...(isCommand ? { header: "Command" } : {}),
+    ...(method === "item/fileChange/requestApproval" ? { header: "Edits" } : {}),
+    ...(method === "item/permissions/requestApproval" ? { header: "Permissions" } : {})
+  }
+  const questionId = randomUUID()
+  void session.emit({
+    kind: "session.output",
+    payload: {
+      questionId,
+      questions: [spec],
+      sessionUpdate: "question",
+      ...(detail === undefined ? {} : { message: detail })
+    },
+    subjectId: session.key
+  })
+  return new Promise<unknown>((resolve, reject) => {
+    session.pendingQuestions.set(questionId, {
+      cancelResponse: { decision: "cancel" },
+      questions: [spec],
+      reject,
+      resolve,
+      respond: (answers) => {
+        const label = answers[spec.id]?.answers[0]
+        const decision =
+          label === "Allow"
+            ? "accept"
+            : label === "Allow for session"
+              ? "acceptForSession"
+              : "decline"
+        return { decision }
+      },
+      timer: undefined
+    })
+  })
+}
+
+// MARK: questions
+
+/// Emits the question to the client and holds codex's JSON-RPC request open
+/// until the human answers (or the auto-resolution window elapses — codex
+/// marks such asks non-blocking, so we mirror its TUI and submit empty
+/// answers to let the turn continue).
+const holdQuestionRequest = (
+  session: CodexSession,
+  params: Record<string, unknown>
+): Promise<unknown> => {
+  const questionId = typeof params.itemId === "string" ? params.itemId : randomUUID()
+  const questions = questionSpecsFrom(params.questions)
+  if (questions.length === 0) {
+    return Promise.reject(new Error("requestUserInput carried no questions"))
+  }
+  const autoResolutionMs =
+    typeof params.autoResolutionMs === "number" ? params.autoResolutionMs : undefined
+  void session.emit({
+    kind: "session.output",
+    payload: {
+      questionId,
+      questions,
+      sessionUpdate: "question",
+      ...(autoResolutionMs === undefined ? {} : { autoResolutionMs })
+    },
+    subjectId: session.key
+  })
+  return new Promise<unknown>((resolve, reject) => {
+    const timer =
+      autoResolutionMs === undefined
+        ? undefined
+        : setTimeout(() => {
+            const pending = session.pendingQuestions.get(questionId)
+            if (pending === undefined) return
+            session.pendingQuestions.delete(questionId)
+            pending.resolve({ answers: {} })
+            void emitQuestionResolved(session, questionId, "autoResolved", questions, undefined)
+          }, autoResolutionMs)
+    timer?.unref?.()
+    session.pendingQuestions.set(questionId, {
+      questions,
+      reject,
+      resolve,
+      respond: (answers) => ({
+        answers: Object.fromEntries(
+          Object.entries(answers).map(([id, entry]) => [
+            id,
+            {
+              answers: [
+                ...entry.answers,
+                ...(entry.note === undefined || entry.note.length === 0
+                  ? []
+                  : [`user_note: ${entry.note}`])
+              ]
+            }
+          ])
+        )
+      }),
+      timer
+    })
+  })
+}
+
+/// Emits an MCP server's elicitation as a question and holds the request
+/// open. Form fields map onto question specs (enums → options, booleans →
+/// Yes/No, string/number → free text); the reply is the structured
+/// `{action, content}` MCP expects, with values coerced back to field types.
+/// URL-mode elicitations are declined — there is no browser hand-off UX yet.
+const holdElicitationRequest = (
+  session: CodexSession,
+  params: Record<string, unknown>
+): Promise<unknown> => {
+  const schema = isRecord(params.requestedSchema) ? params.requestedSchema : undefined
+  const fields = schema !== undefined ? elicitationFields(schema) : []
+  if (params.mode === "url" || fields.length === 0) {
+    return Promise.resolve({ action: "decline", content: null })
+  }
+  const questionId = randomUUID()
+  const serverName = typeof params.serverName === "string" ? params.serverName : "MCP server"
+  const message = typeof params.message === "string" ? params.message : undefined
+  const questions = fields.map((field) => field.spec)
+  void session.emit({
+    kind: "session.output",
+    payload: {
+      message: message ?? `${serverName} needs input to continue.`,
+      questionId,
+      questions,
+      sessionUpdate: "question"
+    },
+    subjectId: session.key
+  })
+  return new Promise<unknown>((resolve, reject) => {
+    session.pendingQuestions.set(questionId, {
+      cancelResponse: { action: "cancel", content: null },
+      questions,
+      reject,
+      resolve,
+      respond: (answers) => {
+        const content: Record<string, unknown> = {}
+        for (const field of fields) {
+          const entry = answers[field.spec.id]
+          if (entry === undefined) continue
+          const value = field.coerce(entry)
+          if (value !== undefined) {
+            content[field.spec.id] = value
+          }
+        }
+        return { action: "accept", content }
+      },
+      timer: undefined
+    })
+  })
+}
+
+interface ElicitationField {
+  readonly spec: QuestionSpec
+  /// Coerces the wire answer entry back to the field's schema type; undefined
+  /// drops the field from the accepted content.
+  readonly coerce: (entry: QuestionAnswerEntry) => unknown
+}
+
+/// Lenient flat-object mapping of the MCP elicitation form schema
+/// (2025-11-25 `ElicitRequestFormParams`) onto question specs.
+const elicitationFields = (schema: Record<string, unknown>): Array<ElicitationField> => {
+  if (!isRecord(schema.properties)) return []
+  return Object.entries(schema.properties).flatMap(([key, raw]): Array<ElicitationField> => {
+    if (!isRecord(raw)) return []
+    const title = typeof raw.title === "string" ? raw.title : undefined
+    const description = typeof raw.description === "string" ? raw.description : undefined
+    const question = description ?? title ?? key
+    const base = { id: key, question }
+
+    // Single-select enums: `oneOf: [{const, title}]` or `enum` (+ enumNames).
+    const constOptions = Array.isArray(raw.oneOf) ? enumOptions(raw.oneOf) : undefined
+    const plainEnum = Array.isArray(raw.enum)
+      ? plainEnumOptions(raw.enum, raw.enumNames)
+      : undefined
+    if (constOptions !== undefined || plainEnum !== undefined) {
+      const options = constOptions ?? plainEnum ?? []
+      return [
+        {
+          coerce: (entry) => options.find((option) => option.label === entry.answers[0])?.value,
+          spec: { ...base, allowsOther: false, options: options.map(optionSpec) }
+        }
+      ]
+    }
+    // Multi-select enums: `type: "array"` with enum-shaped `items`.
+    if (raw.type === "array" && isRecord(raw.items)) {
+      const items = raw.items
+      const options =
+        (Array.isArray(items.anyOf) ? enumOptions(items.anyOf) : undefined) ??
+        (Array.isArray(items.oneOf) ? enumOptions(items.oneOf) : undefined) ??
+        (Array.isArray(items.enum) ? plainEnumOptions(items.enum, items.enumNames) : undefined) ??
+        []
+      if (options.length === 0) return []
+      return [
+        {
+          coerce: (entry) =>
+            entry.answers.flatMap((label) => {
+              const value = options.find((option) => option.label === label)?.value
+              return value === undefined ? [] : [value]
+            }),
+          spec: { ...base, allowsOther: false, multiSelect: true, options: options.map(optionSpec) }
+        }
+      ]
+    }
+    if (raw.type === "boolean") {
+      return [
+        {
+          coerce: (entry) =>
+            entry.answers[0] === "Yes" ? true : entry.answers[0] === "No" ? false : undefined,
+          spec: {
+            ...base,
+            allowsOther: false,
+            options: [{ label: "Yes" }, { label: "No" }]
+          }
+        }
+      ]
+    }
+    if (raw.type === "number" || raw.type === "integer") {
+      return [
+        {
+          coerce: (entry) => {
+            const text = entry.note ?? entry.answers[0] ?? ""
+            const parsed = Number(text)
+            return Number.isFinite(parsed) ? parsed : undefined
+          },
+          spec: { ...base, allowsOther: true, options: [] }
+        }
+      ]
+    }
+    // Strings (and anything unrecognized) become free-text questions.
+    return [
+      {
+        coerce: (entry) => {
+          const text = (entry.note ?? entry.answers[0] ?? "").trim()
+          return text.length > 0 ? text : undefined
+        },
+        spec: { ...base, allowsOther: true, options: [] }
+      }
+    ]
+  })
+}
+
+interface LabeledValue {
+  readonly label: string
+  readonly description?: string
+  readonly value: string
+}
+
+const enumOptions = (entries: ReadonlyArray<unknown>): Array<LabeledValue> | undefined => {
+  const options = entries.flatMap((entry) =>
+    isRecord(entry) && typeof entry.const === "string"
+      ? [
+          {
+            label: typeof entry.title === "string" ? entry.title : entry.const,
+            value: entry.const
+          }
+        ]
+      : []
+  )
+  return options.length > 0 ? options : undefined
+}
+
+const plainEnumOptions = (
+  values: ReadonlyArray<unknown>,
+  names: unknown
+): Array<LabeledValue> | undefined => {
+  const labels = Array.isArray(names) ? names : []
+  const options = values.flatMap((value, index) =>
+    typeof value === "string"
+      ? [{ label: typeof labels[index] === "string" ? (labels[index] as string) : value, value }]
+      : []
+  )
+  return options.length > 0 ? options : undefined
+}
+
+const optionSpec = (option: LabeledValue): { label: string; description?: string } => ({
+  label: option.label,
+  ...(option.description === undefined ? {} : { description: option.description })
+})
+
+/// Lenient mapping from codex question objects to the wire QuestionSpec.
+const questionSpecsFrom = (value: unknown): Array<QuestionSpec> => {
+  if (!Array.isArray(value)) return []
+  return value.flatMap((entry) => {
+    if (!isRecord(entry) || typeof entry.question !== "string") return []
+    const options = Array.isArray(entry.options)
+      ? entry.options.flatMap((option) =>
+          isRecord(option) && typeof option.label === "string"
+            ? [
+                {
+                  label: option.label,
+                  ...(typeof option.description === "string"
+                    ? { description: option.description }
+                    : {})
+                }
+              ]
+            : []
+        )
+      : []
+    return [
+      {
+        allowsOther: entry.isOther !== false,
+        id: typeof entry.id === "string" ? entry.id : randomUUID(),
+        options,
+        question: entry.question,
+        ...(typeof entry.header === "string" ? { header: entry.header } : {}),
+        ...(entry.isSecret === true ? { isSecret: true } : {})
+      }
+    ]
+  })
+}
+
+const emitQuestionResolved = (
+  session: CodexSession,
+  questionId: string,
+  outcome: "answered" | "cancelled" | "autoResolved",
+  questions: ReadonlyArray<QuestionSpec>,
+  answers: QuestionAnswer["answers"]
+): Promise<void> =>
+  session.emit({
+    kind: "session.output",
+    payload: {
+      outcome,
+      questionId,
+      questions,
+      sessionUpdate: "question_resolved",
+      ...(answers === undefined ? {} : { answers })
+    },
+    subjectId: session.key
+  })
+
+/// Resolves the human's answer back into the held request via the pending
+/// entry's source-specific builder. Cancel either sends the source's
+/// dismissal reply (MCP elicitations expect `{action: "cancel"}`) or rejects
+/// the JSON-RPC request (requestUserInput — codex tells the model the ask
+/// was cancelled).
+const answerCodexQuestion = async (
+  session: CodexSession,
+  questionId: string,
+  answer: QuestionAnswer
+): Promise<void> => {
+  const pending = session.pendingQuestions.get(questionId)
+  if (pending === undefined) {
+    throw new Error(`No pending question: ${questionId}`)
+  }
+  session.pendingQuestions.delete(questionId)
+  if (pending.timer !== undefined) clearTimeout(pending.timer)
+  if (answer.outcome === "cancelled") {
+    dismissPendingQuestion(pending, "User dismissed the question without answering")
+    await emitQuestionResolved(session, questionId, "cancelled", pending.questions, undefined)
+    return
+  }
+  const answers = answer.answers ?? {}
+  pending.resolve(pending.respond(answers))
+  await emitQuestionResolved(session, questionId, "answered", pending.questions, answers)
+}
+
+const dismissPendingQuestion = (pending: PendingCodexQuestion, reason: string): void => {
+  if (pending.cancelResponse !== undefined) {
+    pending.resolve(pending.cancelResponse)
+  } else {
+    pending.reject(new Error(reason))
+  }
+}
+
+/// Turn interrupts, turn completion, and process close all invalidate any
+/// still-pending questions: dismiss them at the source and emit the
+/// resolution so clients drop the picker instead of hanging on it.
+const cancelPendingQuestions = (session: CodexSession): void => {
+  for (const [questionId, pending] of [...session.pendingQuestions]) {
+    session.pendingQuestions.delete(questionId)
+    if (pending.timer !== undefined) clearTimeout(pending.timer)
+    dismissPendingQuestion(pending, "Question cancelled with the turn")
+    void emitQuestionResolved(session, questionId, "cancelled", pending.questions, undefined)
+  }
+}
+
+// MARK: goal mapping
+
+/// Maps a codex `ThreadGoal` (unix-seconds timestamps) onto the wire
+/// `SessionGoal`. Lenient like the other decoders: a malformed or
+/// unknown-status goal yields undefined and the snapshot is skipped.
+const sessionGoalFrom = (value: unknown): SessionGoal | undefined => {
+  if (!isRecord(value)) return undefined
+  const objective = typeof value.objective === "string" ? value.objective : undefined
+  const status =
+    typeof value.status === "string" && GOAL_STATUSES.has(value.status)
+      ? (value.status as GoalStatus)
+      : undefined
+  if (objective === undefined || status === undefined) return undefined
+  return {
+    createdAt: isoFromUnixSeconds(value.createdAt),
+    objective,
+    status,
+    timeUsedSeconds: typeof value.timeUsedSeconds === "number" ? value.timeUsedSeconds : 0,
+    tokenBudget: typeof value.tokenBudget === "number" ? value.tokenBudget : null,
+    tokensUsed: typeof value.tokensUsed === "number" ? value.tokensUsed : 0,
+    updatedAt: isoFromUnixSeconds(value.updatedAt)
+  }
+}
+
+const isoFromUnixSeconds = (value: unknown): string =>
+  new Date((typeof value === "number" ? value : 0) * 1000).toISOString()
+
+/// Whether a snapshot differs from the last emitted one beyond token/time
+/// accounting — those changes always reach the wire immediately.
+const goalMateriallyChanged = (session: CodexSession, goal: SessionGoal): boolean =>
+  session.lastEmittedGoal === undefined ||
+  session.lastEmittedGoal.objective !== goal.objective ||
+  session.lastEmittedGoal.status !== goal.status ||
+  session.lastEmittedGoal.tokenBudget !== goal.tokenBudget
+
+const emitGoalSnapshot = (session: CodexSession, goal: SessionGoal): Promise<void> => {
+  session.lastEmittedGoal = goal
+  session.lastGoalEmitAtMs = Date.now()
+  session.pendingGoalSnapshot = undefined
+  return session.emit({
+    kind: "session.updated",
+    payload: { goal },
+    subjectId: session.key
+  })
+}
+
+const emitGoalCleared = (session: CodexSession): Promise<void> => {
+  session.lastEmittedGoal = undefined
+  session.pendingGoalSnapshot = undefined
+  return session.emit({
+    kind: "session.updated",
+    payload: { goalCleared: true },
+    subjectId: session.key
+  })
+}
+
+/// `thread/goal/updated` handler: material changes and out-of-band snapshots
+/// (turnId null — client set / resume) emit immediately; accounting-only
+/// ticks are rate-limited with the freshest snapshot held for the next
+/// window or the turn-end flush.
+const handleGoalUpdated = (session: CodexSession, payload: Record<string, unknown>): void => {
+  const goal = sessionGoalFrom(payload.goal)
+  if (goal === undefined) return
+  const outOfBand = payload.turnId === null || payload.turnId === undefined
+  if (outOfBand || goalMateriallyChanged(session, goal)) {
+    void emitGoalSnapshot(session, goal)
+    return
+  }
+  if (Date.now() - session.lastGoalEmitAtMs >= GOAL_ACCOUNTING_INTERVAL_MS) {
+    void emitGoalSnapshot(session, goal)
+    return
+  }
+  session.pendingGoalSnapshot = goal
+}
+
+const flushPendingGoalSnapshot = (session: CodexSession): Promise<void> => {
+  const pending = session.pendingGoalSnapshot
+  if (pending === undefined) return Promise.resolve()
+  return emitGoalSnapshot(session, pending)
 }
 
 // MARK: notification mapping
@@ -514,17 +1126,24 @@ const handleNotification = (session: CodexSession, method: string, params: unkno
       session.interruptRequested = false
       const turnId = session.activeTurnId ?? randomUUID()
       session.activeTurnId = undefined
-      void session
-        .emit({
-          kind: "session.updated",
-          payload: {
-            initiatedBy: pending === undefined ? "agent" : "user",
-            stopReason,
-            turnId,
-            turnState: "ended"
-          },
-          subjectId: session.key
-        })
+      // A turn that ends with questions still open (interrupt, failure)
+      // invalidates them — clients must not keep showing the picker.
+      cancelPendingQuestions(session)
+      // Rate-limited goal accounting flushes before the turn closes so the
+      // final totals are persisted ahead of the ended event.
+      void flushPendingGoalSnapshot(session)
+        .then(() =>
+          session.emit({
+            kind: "session.updated",
+            payload: {
+              initiatedBy: pending === undefined ? "agent" : "user",
+              stopReason,
+              turnId,
+              turnState: "ended"
+            },
+            subjectId: session.key
+          })
+        )
         .then(() => pending?.resolve({ stopReason }))
       break
     }
@@ -620,6 +1239,14 @@ const handleNotification = (session: CodexSession, method: string, params: unkno
         },
         subjectId: session.key
       })
+      break
+    }
+    case "thread/goal/updated": {
+      handleGoalUpdated(session, payload)
+      break
+    }
+    case "thread/goal/cleared": {
+      void emitGoalCleared(session)
       break
     }
     case "turn/plan/updated": {
@@ -773,6 +1400,7 @@ const emitItemLifecycle = (
       const command = typeof item.command === "string" ? item.command : ""
       if (started) {
         session.itemKinds.set(itemId, "execute")
+        if (command.length > 0) session.itemTitles.set(itemId, command)
         void session.emit(
           event({
             kind: "execute",
@@ -804,6 +1432,7 @@ const emitItemLifecycle = (
         // tool_call upserts merge in the client, so re-sending is safe and
         // carries the final title/diff content.
         session.itemKinds.set(itemId, "edit")
+        session.itemTitles.set(itemId, fileChangeTitle(item.changes, false))
         void session.emit(
           event({
             kind: "edit",
@@ -824,6 +1453,21 @@ const emitItemLifecycle = (
             toolCallId: itemId,
             ...(stats.length === 0 ? {} : { diffStats: stats }),
             ...(content.length === 0 ? {} : { content })
+          })
+        )
+      }
+      break
+    }
+    case "plan": {
+      // EXPERIMENTAL codex plan-mode proposed-plan document. HerdMan doesn't
+      // expose the collaboration-mode toggle yet, but if a plan item arrives
+      // it renders as a plan document rather than an opaque tool call. The
+      // completed item is authoritative; deltas are ignored.
+      if (!started && typeof item.text === "string" && item.text.length > 0) {
+        void session.emit(
+          event({
+            markdown: item.text,
+            sessionUpdate: "plan_document"
           })
         )
       }

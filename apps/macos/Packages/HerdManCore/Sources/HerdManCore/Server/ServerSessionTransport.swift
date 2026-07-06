@@ -105,6 +105,37 @@ public struct ServerSessionTransport: Sendable {
         try await client.setSessionConfig(id: sessionId, configId: configId, value: value)
     }
 
+    @discardableResult
+    public func setGoal(
+        objective: String? = nil,
+        status: GoalStatus? = nil,
+        tokenBudget: TokenBudgetUpdate = .keep
+    ) async throws -> SessionGoal {
+        try await client.setSessionGoal(
+            id: sessionId,
+            objective: objective,
+            status: status,
+            tokenBudget: tokenBudget
+        )
+    }
+
+    public func clearGoal() async throws {
+        try await client.clearSessionGoal(id: sessionId)
+    }
+
+    public func answerQuestion(
+        id questionId: String,
+        outcome: String,
+        answers: [String: QuestionAnswerEntry]?
+    ) async throws {
+        try await client.answerSessionQuestion(
+            id: sessionId,
+            questionId: questionId,
+            outcome: outcome,
+            answers: answers
+        )
+    }
+
     public func snapshot() async throws -> ServerSessionSnapshot {
         let detail = try await client.sessionDetail(id: sessionId)
         return ServerSessionSnapshot(
@@ -282,7 +313,25 @@ public struct ServerSessionTransport: Sendable {
         if let modeId = payload["modeId"]?.stringValue {
             return [.currentModeUpdate(currentModeId: modeId)]
         }
+        if let goal = decodeGoal(payload["goal"]) {
+            return [.goalUpdate(goal)]
+        }
+        if payload["goalCleared"]?.boolValue == true {
+            return [.goalCleared]
+        }
         return []
+    }
+
+    private static func decodeGoal(_ value: JSONValue?) -> SessionGoal? {
+        guard let value else { return nil }
+        do {
+            let data = try JSONEncoder().encode(value)
+            return try JSONDecoder().decode(SessionGoal.self, from: data)
+        } catch {
+            // Lenient like the other decoders: an unknown status or malformed
+            // snapshot degrades to skipping the update.
+            return nil
+        }
     }
 
     private static func stopReason(from payload: JSONValue) -> StopReason? {
