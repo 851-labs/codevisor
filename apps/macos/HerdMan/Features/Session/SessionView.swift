@@ -100,9 +100,7 @@ struct SessionScreen: View {
         .onChange(of: controller.backgroundTasks, initial: true) { _, tasks in
             paneGroup.syncAgentTerminals(
                 tasks.compactMap { task in
-                    task.terminalKey.map {
-                        (terminalKey: $0, name: task.description, readOnly: task.readOnly == true)
-                    }
+                    task.terminalKey.map { (terminalKey: $0, name: task.description) }
                 }
             )
         }

@@ -158,16 +158,9 @@ struct PaneGroupBar: View {
         let showsSelection = group.state.isVisible
         return HStack(spacing: Self.tabSpacing) {
             ForEach(group.state.panes) { pane in
-                        // A read-only mirror of a RUNNING process shows an eye
-                        // where the ✕ sits (no input; codex owns the process).
-                        // Hovering swaps in the ✕, which performs a
-                        // best-effort process-tree kill server-side.
-                        let isReadOnlyRunning = pane.readOnly
-                            && group.runningAgentTerminalKeys.contains(pane.terminalKey)
                         PaneTab(
                             name: pane.name,
                             isAgentOwned: pane.attachOnly,
-                            isReadOnly: isReadOnlyRunning,
                             isSelected: showsSelection && pane.id == group.state.selectedPaneId,
                             isDragging: draggingPaneId == pane.id,
                             width: tabWidth,
@@ -386,13 +379,9 @@ private struct TabSlotWidthModifier: ViewModifier {
 private struct PaneTab: View {
     @Environment(\.theme) private var theme
     let name: String
-    /// Agent-owned background terminals get a sparkle so ownership is obvious
-    /// next to the user's own shells (which get a terminal glyph).
+    /// Agent-owned background terminals get a server-rack glyph so ownership
+    /// is obvious next to the user's own shells (which get a terminal glyph).
     let isAgentOwned: Bool
-    /// View-only mirror of a running process: the ✕ slot shows an eye at rest
-    /// (no input reaches the process); hovering swaps in the ✕, whose close
-    /// performs a best-effort kill of the underlying process.
-    let isReadOnly: Bool
     let isSelected: Bool
     let isDragging: Bool
     let width: CGFloat
@@ -416,20 +405,12 @@ private struct PaneTab: View {
 
     var body: some View {
         HStack(spacing: 4) {
-            Image(systemName: isAgentOwned ? "sparkle" : "terminal")
+            Image(systemName: isAgentOwned ? "server.rack" : "terminal")
                 .font(.system(size: 8, weight: .semibold))
                 .foregroundStyle(isSelected ? .primary : .secondary)
                 .help(isAgentOwned ? "Agent background process" : "Terminal")
             fadingName
-            if isReadOnly, showsClose {
-                if isHovered {
-                    closeButton
-                } else {
-                    readOnlyBadge
-                }
-            } else if isReadOnly {
-                readOnlyBadge
-            } else if showsClose {
+            if showsClose {
                 closeButton
             }
         }
@@ -480,16 +461,6 @@ private struct PaneTab: View {
                     .frame(width: 10)
             }
         )
-    }
-
-    /// Sits where the ✕ would be on a running read-only mirror: view-only,
-    /// input never reaches the process. Hover swaps in the ✕.
-    private var readOnlyBadge: some View {
-        Image(systemName: "eye")
-            .font(.system(size: 7, weight: .bold))
-            .foregroundStyle(.secondary)
-            .frame(width: 14, height: 14)
-            .help("Read-only — the agent owns this process")
     }
 
     private var closeButton: some View {

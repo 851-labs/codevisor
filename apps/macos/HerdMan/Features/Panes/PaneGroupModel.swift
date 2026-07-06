@@ -13,12 +13,6 @@ import HerdManCore
 final class PaneGroupModel: Identifiable {
     let sessionId: UUID
     private(set) var state: PaneGroupState
-    /// Terminal keys of agent background tasks that are currently RUNNING
-    /// (per the latest snapshot). Read-only tabs hide their ✕ (there is no
-    /// kill to offer) while their key is in here; once the process exits the
-    /// ✕ returns so the tab can be dismissed. Not persisted — a restart with
-    /// no live snapshot correctly treats every tab as settled.
-    private(set) var runningAgentTerminalKeys: Set<String> = []
 
     @ObservationIgnored private var live: [UUID: any Pane] = [:]
     @ObservationIgnored private let repository: any PaneGroupRepository
@@ -126,24 +120,19 @@ final class PaneGroupModel: Identifiable {
     }
 
     /// Syncs the agent's background-task snapshot into tabs: ensures a pane
-    /// exists per task terminal (never stealing selection or opening the
-    /// group — the tab appearing in the always-visible bar is the affordance)
-    /// and tracks which keys are still running. Tabs are NOT removed when
-    /// their task ends; the exit stays readable until the user closes them.
-    func syncAgentTerminals(_ tasks: [(terminalKey: String, name: String, readOnly: Bool)]) {
+    /// exists per task terminal, never stealing selection or opening the
+    /// group — the tab appearing in the always-visible bar is the affordance.
+    /// Tabs are NOT removed when their task ends; the exit stays readable
+    /// until the user closes them.
+    func syncAgentTerminals(_ tasks: [(terminalKey: String, name: String)]) {
         var added = false
         for task in tasks where !state.panes.contains(where: { $0.terminalKey == task.terminalKey }) {
-            state.ensureAgentTerminalPane(
-                name: task.name,
-                terminalKey: task.terminalKey,
-                readOnly: task.readOnly
-            )
+            state.ensureAgentTerminalPane(name: task.name, terminalKey: task.terminalKey)
             added = true
         }
         if added {
             persist()
         }
-        runningAgentTerminalKeys = Set(tasks.map(\.terminalKey))
     }
 
     /// Closes a tab: fires the pane's willDelete hook (kills its backing
