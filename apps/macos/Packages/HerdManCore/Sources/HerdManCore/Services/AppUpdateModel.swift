@@ -126,17 +126,38 @@ public final class AppUpdateModel {
     /// running app. Check failures (offline, rate limits) are silent: the
     /// banner simply doesn't appear.
     public func checkForUpdates() async {
+        await checkForUpdates(showsCheckingPhase: true)
+    }
+
+    /// Refreshes update availability without temporarily hiding an existing
+    /// update banner. Intended for scheduled background checks.
+    public func checkForUpdatesInBackground() async {
+        await checkForUpdates(showsCheckingPhase: false)
+    }
+
+    private func checkForUpdates(showsCheckingPhase: Bool) async {
         if case .updating = phase { return }
-        phase = .checking
+        if case .checking = phase { return }
+        if showsCheckingPhase {
+            phase = .checking
+        }
         do {
             guard let release = try await checker.latestRelease(),
                   Self.isVersion(release.version, newerThan: currentVersion) else {
                 phase = .upToDate
                 return
             }
+            if !showsCheckingPhase,
+               case let .failed(existingRelease, message) = phase,
+               existingRelease.version == release.version {
+                phase = .failed(release: release, message: message)
+                return
+            }
             phase = .available(release)
         } catch {
-            phase = .idle
+            if showsCheckingPhase {
+                phase = .idle
+            }
         }
     }
 

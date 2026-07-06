@@ -16,6 +16,21 @@ private struct UpdateTestError: LocalizedError {
     var errorDescription: String? { "download failed" }
 }
 
+private final class MutableUpdateChecker: AppUpdateChecking, @unchecked Sendable {
+    var release: AppUpdateRelease?
+    var error: Error?
+
+    init(release: AppUpdateRelease? = nil, error: Error? = nil) {
+        self.release = release
+        self.error = error
+    }
+
+    func latestRelease() async throws -> AppUpdateRelease? {
+        if let error { throw error }
+        return release
+    }
+}
+
 /// Serves canned HTTP responses to the manifest checker's URLSession.
 private final class StubURLProtocol: URLProtocol {
     nonisolated(unsafe) static var handler: ((URLRequest) -> (status: Int, body: Data))?
@@ -83,6 +98,50 @@ struct AppUpdateModelTests {
 
         #expect(model.phase == .idle)
         #expect(model.availableRelease == nil)
+    }
+
+    @Test("Background checks can surface a newer release")
+    func backgroundCheckFindsNewerRelease() async {
+        let release = AppUpdateRelease(version: "0.2.0")
+        let model = AppUpdateModel(
+            currentVersion: "0.1.0",
+            checker: FakeUpdateChecker(release: release)
+        )
+
+        await model.checkForUpdatesInBackground()
+
+        #expect(model.phase == .available(release))
+        #expect(model.availableRelease == release)
+    }
+
+    @Test("Background check failures keep the current update banner")
+    func backgroundCheckFailureKeepsAvailableRelease() async {
+        let release = AppUpdateRelease(version: "0.2.0")
+        let checker = MutableUpdateChecker(release: release)
+        let model = AppUpdateModel(currentVersion: "0.1.0", checker: checker)
+
+        await model.checkForUpdates()
+        checker.release = nil
+        checker.error = UpdateTestError()
+        await model.checkForUpdatesInBackground()
+
+        #expect(model.phase == .available(release))
+        #expect(model.availableRelease == release)
+    }
+
+    @Test("Background checks keep retry state for the same failed release")
+    func backgroundCheckKeepsFailedReleaseRetryState() async {
+        let release = AppUpdateRelease(version: "0.2.0")
+        let checker = MutableUpdateChecker(release: release)
+        let model = AppUpdateModel(currentVersion: "0.1.0", checker: checker)
+        model.installHandler = { _ in throw UpdateTestError() }
+
+        await model.checkForUpdates()
+        await model.installUpdate()
+        await model.checkForUpdatesInBackground()
+
+        #expect(model.phase == .failed(release: release, message: "download failed"))
+        #expect(model.failureMessage == "download failed")
     }
 
     @Test("Install failure keeps the release available for retry")

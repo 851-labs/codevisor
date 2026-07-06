@@ -32,6 +32,8 @@ struct HerdManApp: App {
 /// The top-level split view: collapsible sidebar plus the active session or the
 /// new-chat page.
 struct RootView: View {
+    private static let appUpdateCheckInterval: Duration = .seconds(300)
+
     @Environment(AppEnvironment.self) private var environment
     @Environment(\.theme) private var theme
     @State private var selection: SidebarSelection?
@@ -87,7 +89,7 @@ struct RootView: View {
                 environment.appUpdate.installHandler = { [environment] release in
                     try await AppUpdateInstaller(environment: environment).install(release)
                 }
-                await environment.appUpdate.checkForUpdates()
+                await runAppUpdateChecks()
             }
         }
         .task(id: environment.machines.selectedMachineId) {
@@ -109,6 +111,15 @@ struct RootView: View {
                 // so opening the terminal later can't re-enter its dispatch_once.
                 TerminalRuntime.prewarm()
             }
+        }
+    }
+
+    private func runAppUpdateChecks() async {
+        await environment.appUpdate.checkForUpdates()
+        while !Task.isCancelled {
+            try? await Task.sleep(for: Self.appUpdateCheckInterval)
+            guard !Task.isCancelled else { return }
+            await environment.appUpdate.checkForUpdatesInBackground()
         }
     }
 
