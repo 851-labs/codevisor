@@ -11,9 +11,15 @@ public protocol PaneGroupRepository: Sendable {
 
 /// File/in-memory backed pane-group repository. All sessions' states live
 /// under a single "paneGroups" key as a `[sessionUUID: state]` map.
-public struct DefaultPaneGroupRepository: PaneGroupRepository {
+///
+/// The decoded map is cached in memory: saves fire on every tab
+/// select/toggle/height drag, and re-reading + re-decoding every session's
+/// state from disk per save was measurable main-thread work.
+public final class DefaultPaneGroupRepository: PaneGroupRepository, @unchecked Sendable {
     private let store: any PersistenceStore
     private let key = "paneGroups"
+    private let lock = NSLock()
+    private var cache: [String: PaneGroupState]?
 
     public init(store: any PersistenceStore) {
         self.store = store
@@ -26,12 +32,20 @@ public struct DefaultPaneGroupRepository: PaneGroupRepository {
     public func save(_ state: PaneGroupState, sessionId: UUID) {
         var all = loadAll()
         all[sessionId.uuidString] = state
+        lock.withLock { cache = all }
         guard let data = try? JSONEncoder().encode(all) else { return }
         try? store.saveData(data, forKey: key)
     }
 
     private func loadAll() -> [String: PaneGroupState] {
-        guard let data = store.loadData(forKey: key) else { return [:] }
-        return (try? JSONDecoder().decode([String: PaneGroupState].self, from: data)) ?? [:]
+        if let cached = lock.withLock({ cache }) { return cached }
+        let loaded: [String: PaneGroupState]
+        if let data = store.loadData(forKey: key) {
+            loaded = (try? JSONDecoder().decode([String: PaneGroupState].self, from: data)) ?? [:]
+        } else {
+            loaded = [:]
+        }
+        lock.withLock { if cache == nil { cache = loaded } }
+        return loaded
     }
 }

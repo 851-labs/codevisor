@@ -505,11 +505,15 @@ private struct ComposerAttachmentThumb: View {
     let onRetry: () -> Void
 
     @State private var isHovered = false
+    /// Decoded once per attachment: `NSImage(data:)` in `body` re-decoded the
+    /// image on every re-render (every keystroke while the composer holds
+    /// attachments).
+    @State private var thumbnail: NSImage?
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
             Group {
-                if attachment.hasVisualPreview, let image = NSImage(data: attachment.localData) {
+                if attachment.hasVisualPreview, let image = thumbnail {
                     // A tap gesture rather than a Button: buttons add their own
                     // hover/press highlight over the artwork.
                     Image(nsImage: image)
@@ -555,6 +559,15 @@ private struct ComposerAttachmentThumb: View {
             var transaction = Transaction()
             transaction.disablesAnimations = true
             withTransaction(transaction) { isHovered = hovering }
+        }
+        .task(id: attachment.id) {
+            guard attachment.hasVisualPreview, thumbnail == nil else { return }
+            let data = attachment.localData
+            // Decode off the main thread — a pasted screenshot can be many
+            // megabytes and the thumb is 56 pt.
+            thumbnail = await Task.detached(priority: .userInitiated) {
+                NSImage(data: data)
+            }.value
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Attachment \(attachment.name)")

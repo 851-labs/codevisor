@@ -140,6 +140,16 @@ public final class SessionModel {
         }
     }
 
+    /// Stops the live event consumer and drops any buffered events. Called
+    /// when the owning controller is evicted from the session cache; a later
+    /// reopen builds a fresh model that replays history and resumes the
+    /// stream from its cursor.
+    public func shutdown() {
+        consumerTask?.cancel()
+        consumerTask = nil
+        pendingEvents.removeAll()
+    }
+
     /// Config options of a given category (e.g. model, thought_level, mode).
     public func configOptions(category: String) -> [SessionConfigOption] {
         configOptions.filter { $0.category == category }

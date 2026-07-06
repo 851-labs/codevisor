@@ -1,10 +1,15 @@
 import SwiftUI
 import HerdManCore
+import CoreServices
 
 /// The top bar's `+x −y` counter for a session's working directory: everything
 /// the current git branch changes relative to the repository's default branch
 /// (merge-base), including uncommitted edits. Renders nothing when the
 /// directory isn't a git checkout.
+///
+/// Refreshes are event-driven (FSEvents on the working tree) with a slow
+/// heartbeat fallback — the old 3-second polling loop spawned 4–7 git
+/// processes per tick, forever, per open session window.
 struct BranchDiffBadge: View {
     let directory: URL
 
@@ -19,13 +24,95 @@ struct BranchDiffBadge: View {
             }
         }
         .task(id: directory) {
+            // Initial compute plus a slow heartbeat: commits made in a git
+            // worktree land in the external gitdir and emit no FSEvents under
+            // the watched tree, so ref-only changes need a periodic sweep.
             guard !AppPreview.isRunning else { return }
             totals = nil
             while !Task.isCancelled {
                 totals = await GitBranchDiff.totals(in: directory)
-                try? await Task.sleep(for: .seconds(3))
+                try? await Task.sleep(for: .seconds(30))
             }
         }
+        .task(id: directory) {
+            // Event-driven refresh: recompute when the working tree actually
+            // changes. The stream's latency window coalesces edit bursts.
+            guard !AppPreview.isRunning else { return }
+            let changes = AsyncStream<Void> { continuation in
+                let watcher = DirectoryChangeWatcher(directory: directory) {
+                    continuation.yield()
+                }
+                continuation.onTermination = { _ in watcher?.stop() }
+            }
+            for await _ in changes {
+                totals = await GitBranchDiff.totals(in: directory)
+            }
+        }
+    }
+}
+
+/// A debounced FSEvents watcher over a directory tree. Changes inside `.git`
+/// are ignored so the badge's own git invocations (which can refresh the
+/// index) never re-trigger the refresh they came from.
+private final class DirectoryChangeWatcher: @unchecked Sendable {
+    private var stream: FSEventStreamRef?
+    private let queue = DispatchQueue(label: "com.herdman.branch-diff-watch", qos: .utility)
+
+    init?(directory: URL, onChange: @escaping @Sendable () -> Void) {
+        let callback: FSEventStreamCallback = { _, info, count, paths, _, _ in
+            guard let info, count > 0 else { return }
+            let watcher = Unmanaged<CallbackBox>.fromOpaque(info).takeUnretainedValue()
+            let pathList = unsafeBitCast(paths, to: NSArray.self) as? [String] ?? []
+            let relevant = pathList.contains { path in
+                !path.contains("/.git/") && !path.hasSuffix("/.git")
+            }
+            if relevant { watcher.onChange() }
+        }
+
+        let box = CallbackBox(onChange: onChange)
+        self.box = box
+        var context = FSEventStreamContext(
+            version: 0,
+            info: Unmanaged.passUnretained(box).toOpaque(),
+            retain: nil,
+            release: nil,
+            copyDescription: nil
+        )
+        guard let stream = FSEventStreamCreate(
+            kCFAllocatorDefault,
+            callback,
+            &context,
+            [directory.path] as CFArray,
+            FSEventStreamEventId(kFSEventStreamEventIdSinceNow),
+            0.5, // latency: coalesce bursts of file events into one callback
+            FSEventStreamCreateFlags(kFSEventStreamCreateFlagUseCFTypes | kFSEventStreamCreateFlagIgnoreSelf)
+        ) else { return nil }
+        self.stream = stream
+        FSEventStreamSetDispatchQueue(stream, queue)
+        FSEventStreamStart(stream)
+    }
+
+    /// Keeps the change closure reachable from the C callback without
+    /// retain-cycle gymnastics on the watcher itself.
+    private final class CallbackBox {
+        let onChange: @Sendable () -> Void
+        init(onChange: @escaping @Sendable () -> Void) { self.onChange = onChange }
+    }
+
+    private var box: CallbackBox?
+
+    func stop() {
+        queue.sync {
+            guard let stream else { return }
+            FSEventStreamStop(stream)
+            FSEventStreamInvalidate(stream)
+            FSEventStreamRelease(stream)
+            self.stream = nil
+        }
+    }
+
+    deinit {
+        stop()
     }
 }
 

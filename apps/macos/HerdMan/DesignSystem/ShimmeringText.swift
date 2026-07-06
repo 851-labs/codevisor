@@ -2,30 +2,39 @@ import SwiftUI
 
 /// A horizontal shimmer sweep masked to the content's shape, used for
 /// ephemeral "in progress" states (agent status, running tool calls).
+///
+/// The sweep is a single `repeatForever` animation composited by the render
+/// server — NOT a `TimelineView(.animation)`, which re-evaluates the body at
+/// display refresh rate (up to 120 Hz) per shimmering view. During a busy
+/// turn several rows shimmer at once; per-frame SwiftUI work stacked onto the
+/// streaming updates was measurable main-thread cost for a purely cosmetic
+/// effect.
 struct ShimmerModifier: ViewModifier {
     var active: Bool
+    @State private var sweep = false
 
     func body(content: Content) -> some View {
         if active {
-            TimelineView(.animation) { context in
-                let cycle = 1.4
-                let phase = CGFloat(context.date.timeIntervalSinceReferenceDate
-                    .truncatingRemainder(dividingBy: cycle) / cycle)
-                content
-                    .overlay {
-                        GeometryReader { proxy in
-                            let width = proxy.size.width
-                            LinearGradient(
-                                colors: [.clear, Color.primary.opacity(0.9), .clear],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            )
-                            .frame(width: max(width * 0.4, 30))
-                            .offset(x: -width * 0.4 + phase * (width * 1.4))
-                        }
-                        .mask(content)
+            content
+                .overlay {
+                    GeometryReader { proxy in
+                        let width = proxy.size.width
+                        let band = max(width * 0.4, 30)
+                        LinearGradient(
+                            colors: [.clear, Color.primary.opacity(0.9), .clear],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                        .frame(width: band)
+                        .offset(x: sweep ? width : -band)
+                        .animation(
+                            .linear(duration: 1.4).repeatForever(autoreverses: false),
+                            value: sweep
+                        )
                     }
-            }
+                    .mask(content)
+                }
+                .onAppear { sweep = true }
         } else {
             content
         }

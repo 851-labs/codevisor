@@ -54,6 +54,9 @@ struct RepositoryTests {
         let repository = DefaultSessionRepository(store: store)
         let session = ChatSession(projectId: UUID(), title: "Persisted")
         repository.save([session])
+        // Writes land on a background queue (they must not block the main
+        // thread in the app); drain before reading through a fresh store.
+        store.flushPendingWrites()
 
         // A fresh store reading the same directory sees the data.
         let reopened = DefaultSessionRepository(store: FileSystemStore(directory: directory))

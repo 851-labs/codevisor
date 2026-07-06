@@ -14,6 +14,9 @@ public final class ProjectListModel {
     private let projectRepository: any ProjectRepository
     private let sessionRepository: any SessionRepository
     private var serverClient: (any HerdManServerClienting)?
+    /// Shared: `ISO8601DateFormatter()` construction is milliseconds-expensive
+    /// and the import loops used to build one per imported session.
+    private static let importTimestampFormatter = ISO8601DateFormatter()
 
     public init(
         projectRepository: any ProjectRepository,
@@ -194,7 +197,7 @@ public final class ProjectListModel {
             }
             if alreadyKnown { continue }
             let project = findOrCreateProject(folderURL: URL(fileURLWithPath: item.info.cwd))
-            let timestamp = ISO8601DateFormatter().date(from: item.info.updatedAt ?? "")
+            let timestamp = Self.importTimestampFormatter.date(from: item.info.updatedAt ?? "")
             sessions.append(ChatSession(
                 projectId: project.id,
                 serverId: selectedServerId,
@@ -220,7 +223,7 @@ public final class ProjectListModel {
                 $0.harnessId == item.harnessId && $0.agentSessionId == item.info.sessionId
             }
             if alreadyKnown { continue }
-            let timestamp = ISO8601DateFormatter().date(from: item.info.updatedAt ?? "")
+            let timestamp = Self.importTimestampFormatter.date(from: item.info.updatedAt ?? "")
             sessions.append(ChatSession(
                 projectId: project.id,
                 serverId: selectedServerId,

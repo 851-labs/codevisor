@@ -68,7 +68,6 @@ struct SidebarView: View {
             .split(separator: "\n")
             .compactMap { UUID(uuidString: String($0)) }
     )
-    @State private var hovered: String?
     @State private var iconEditing: Project?
     @State private var renamingSession: ChatSession?
     @State private var renameTitle = ""
@@ -365,8 +364,7 @@ struct SidebarView: View {
             .padding(.vertical, 7)
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
-            .background(rowBackground(id: "machine-picker", isSelected: false))
-            .onHover { hovered = $0 ? "machine-picker" : (hovered == "machine-picker" ? nil : hovered) }
+            .sidebarRowHover()
         }
         .menuStyle(.button)
         .buttonStyle(.plain)
@@ -383,8 +381,7 @@ struct SidebarView: View {
         .padding(.vertical, 6)
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
-        .background(rowBackground(id: id, isSelected: false))
-        .onHover { hovered = $0 ? id : (hovered == id ? nil : hovered) }
+        .sidebarRowHover()
         .onTapGesture(perform: action)
     }
 
@@ -445,47 +442,45 @@ struct SidebarView: View {
 
     @ViewBuilder
     private func projectFolder(_ project: Project) -> some View {
-        let id = "folder-\(project.id)"
-        let isHovered = hovered == id
-        HStack(spacing: 6) {
+        HoverableRow { isHovered in
             HStack(spacing: 6) {
-                // On hover the project icon becomes a disclosure chevron.
-                ZStack {
-                    Image(systemName: FilledSymbol.preferred(project.symbolName))
-                        .foregroundStyle(.secondary)
-                        .opacity(isHovered ? 0 : 1)
-                    Image(systemName: "chevron.right")
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                        .rotationEffect(.degrees(expanded.contains(project.id) ? 90 : 0))
-                        .opacity(isHovered ? 1 : 0)
+                HStack(spacing: 6) {
+                    // On hover the project icon becomes a disclosure chevron.
+                    ZStack {
+                        Image(systemName: FilledSymbol.preferred(project.symbolName))
+                            .foregroundStyle(.secondary)
+                            .opacity(isHovered ? 0 : 1)
+                        Image(systemName: "chevron.right")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .rotationEffect(.degrees(expanded.contains(project.id) ? 90 : 0))
+                            .opacity(isHovered ? 1 : 0)
+                    }
+                    .frame(width: 18)
+                    Text(project.name).fontWeight(.medium).lineLimit(1)
+                    Spacer(minLength: 6)
                 }
-                .frame(width: 18)
-                Text(project.name).fontWeight(.medium).lineLimit(1)
-                Spacer(minLength: 6)
-            }
 
-            if isHovered {
-                Button {
-                    expanded.insert(project.id)
-                    selection = .newChat(project.id)
-                } label: {
-                    Image(systemName: "square.and.pencil").font(.callout.weight(.semibold))
+                if isHovered {
+                    Button {
+                        expanded.insert(project.id)
+                        selection = .newChat(project.id)
+                    } label: {
+                        Image(systemName: "square.and.pencil").font(.callout.weight(.semibold))
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
+                    .help("New chat in \(project.name)")
                 }
-                .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
-                .help("New chat in \(project.name)")
             }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+            // Whole-row hit target; inner buttons (new chat on hover) still win
+            // clicks on themselves over this row-level gesture.
+            .onTapGesture { toggle(project.id) }
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 5)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .contentShape(Rectangle())
-        // Whole-row hit target; inner buttons (new chat on hover) still win
-        // clicks on themselves over this row-level gesture.
-        .onTapGesture { toggle(project.id) }
-        .background(rowBackground(id: id, isSelected: false))
-        .onHover { hovered = $0 ? id : (hovered == id ? nil : hovered) }
         .help(project.folderURL.path)
         .contextMenu {
             Button("New chat here") { selection = .newChat(project.id) }
@@ -535,61 +530,59 @@ struct SidebarView: View {
         .padding(.vertical, 5)
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
-        .background(rowBackground(id: id, isSelected: false))
-        .onHover { hovered = $0 ? id : (hovered == id ? nil : hovered) }
+        .sidebarRowHover()
         .onTapGesture(perform: toggle)
     }
 
     private func sessionRow(_ session: ChatSession) -> some View {
-        let id = "session-\(session.id)"
         let isSelected = selection == .session(session.id)
-        return HStack(spacing: 6) {
+        return HoverableRow(isSelected: isSelected) { isHovered in
             HStack(spacing: 6) {
-                // Same icon slot as project rows so titles align; the row's
-                // dimmer foreground tints the icon along with the text.
-                HarnessIcon(harnessId: session.harnessId, fallbackSymbolName: "bubble.left.fill")
-                    .frame(width: 18)
-                Text(session.title).lineLimit(1)
-                Spacer(minLength: 6)
-            }
-
-            // Fixed-size trailing slot so swapping the timestamp for the spinner,
-            // unread badge, or archive button on hover doesn't change the row height.
-            Group {
-                if store?.isRunning(session.id) == true {
-                    ProgressView().controlSize(.mini)
-                } else if hovered == id {
-                    Button {
-                        list.archiveSession(session)
-                        if selection == .session(session.id) { selection = .newChat(nil) }
-                    } label: {
-                        Image(systemName: "archivebox")
-                            .font(.caption2)
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.secondary)
-                    .help("Archive chat")
-                } else if let unread = unreadCount(for: session) {
-                    UnreadBadge(count: unread)
-                } else {
-                    Text(RelativeTime.short(from: timestamp(for: session)))
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
+                HStack(spacing: 6) {
+                    // Same icon slot as project rows so titles align; the row's
+                    // dimmer foreground tints the icon along with the text.
+                    HarnessIcon(harnessId: session.harnessId, fallbackSymbolName: "bubble.left.fill")
+                        .frame(width: 18)
+                    Text(session.title).lineLimit(1)
+                    Spacer(minLength: 6)
                 }
+
+                // Fixed-size trailing slot so swapping the timestamp for the spinner,
+                // unread badge, or archive button on hover doesn't change the row height.
+                Group {
+                    if store?.isRunning(session.id) == true {
+                        ProgressView().controlSize(.mini)
+                    } else if isHovered {
+                        Button {
+                            list.archiveSession(session)
+                            if selection == .session(session.id) { selection = .newChat(nil) }
+                        } label: {
+                            Image(systemName: "archivebox")
+                                .font(.caption2)
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(.secondary)
+                        .help("Archive chat")
+                    } else if let unread = unreadCount(for: session) {
+                        UnreadBadge(count: unread)
+                    } else {
+                        Text(RelativeTime.short(from: timestamp(for: session)))
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                    }
+                }
+                .frame(width: 24, height: 14, alignment: .trailing)
             }
-            .frame(width: 24, height: 14, alignment: .trailing)
+            .padding(.horizontal, 8)
+            .padding(.leading, 8)
+            .padding(.vertical, 5)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+            // Whole-row hit target; the hover archive button still wins clicks
+            // on itself over this row-level gesture.
+            .onTapGesture { selection = .session(session.id) }
+            .foregroundStyle(isSelected ? Color.primary : .secondary)
         }
-        .padding(.horizontal, 8)
-        .padding(.leading, 8)
-        .padding(.vertical, 5)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .contentShape(Rectangle())
-        // Whole-row hit target; the hover archive button still wins clicks
-        // on itself over this row-level gesture.
-        .onTapGesture { selection = .session(session.id) }
-        .foregroundStyle(isSelected ? Color.primary : .secondary)
-        .background(rowBackground(id: id, isSelected: isSelected))
-        .onHover { hovered = $0 ? id : (hovered == id ? nil : hovered) }
         .contextMenu {
             Button {
                 renameTitle = session.title
@@ -613,54 +606,53 @@ struct SidebarView: View {
     }
 
     private func chronologicalSessionRow(_ session: ChatSession, project: Project) -> some View {
-        let id = "chronological-session-\(session.id)"
         let isSelected = selection == .session(session.id)
-        return HStack(spacing: 7) {
-            HarnessIcon(harnessId: session.harnessId, fallbackSymbolName: "bubble.left.fill")
-                .frame(width: 18)
-                .foregroundStyle(.secondary)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(session.title)
-                    .font(.subheadline)
-                    .lineLimit(1)
-                Text(project.name)
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-                    .lineLimit(1)
-            }
-            Spacer(minLength: 6)
-            Group {
-                if store?.isRunning(session.id) == true {
-                    ProgressView().controlSize(.mini)
-                } else if hovered == id {
-                    Button {
-                        list.archiveSession(session)
-                        if selection == .session(session.id) { selection = .newChat(nil) }
-                    } label: {
-                        Image(systemName: "archivebox")
-                            .font(.caption2)
-                    }
-                    .buttonStyle(.plain)
+        return HoverableRow(isSelected: isSelected) { isHovered in
+            HStack(spacing: 7) {
+                HarnessIcon(harnessId: session.harnessId, fallbackSymbolName: "bubble.left.fill")
+                    .frame(width: 18)
                     .foregroundStyle(.secondary)
-                    .help("Archive chat")
-                } else if let unread = unreadCount(for: session) {
-                    UnreadBadge(count: unread)
-                } else {
-                    Text(RelativeTime.short(from: timestamp(for: session)))
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(session.title)
+                        .font(.subheadline)
+                        .lineLimit(1)
+                    Text(project.name)
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
+                        .lineLimit(1)
                 }
+                Spacer(minLength: 6)
+                Group {
+                    if store?.isRunning(session.id) == true {
+                        ProgressView().controlSize(.mini)
+                    } else if isHovered {
+                        Button {
+                            list.archiveSession(session)
+                            if selection == .session(session.id) { selection = .newChat(nil) }
+                        } label: {
+                            Image(systemName: "archivebox")
+                                .font(.caption2)
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(.secondary)
+                        .help("Archive chat")
+                    } else if let unread = unreadCount(for: session) {
+                        UnreadBadge(count: unread)
+                    } else {
+                        Text(RelativeTime.short(from: timestamp(for: session)))
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                    }
+                }
+                .frame(width: 24, height: 14, alignment: .trailing)
             }
-            .frame(width: 24, height: 14, alignment: .trailing)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+            .foregroundStyle(isSelected ? Color.primary : .secondary)
+            .onTapGesture { selection = .session(session.id) }
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 5)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .contentShape(Rectangle())
-        .foregroundStyle(isSelected ? Color.primary : .secondary)
-        .background(rowBackground(id: id, isSelected: isSelected))
-        .onHover { hovered = $0 ? id : (hovered == id ? nil : hovered) }
-        .onTapGesture { selection = .session(session.id) }
         .contextMenu {
             Button {
                 renameTitle = session.title
@@ -681,13 +673,6 @@ struct SidebarView: View {
                     .labelStyle(.titleAndIcon)
             }
         }
-    }
-
-    @ViewBuilder
-    private func rowBackground(id: String, isSelected: Bool) -> some View {
-        RoundedRectangle(cornerRadius: 6)
-            .fill(isSelected ? theme.rowSelectedBackground
-                  : (hovered == id ? theme.rowHoverBackground : .clear))
     }
 
     private func toggle(_ id: UUID) {
@@ -771,6 +756,52 @@ struct SidebarView: View {
 
     private func saveProjectOrder(_ ids: [UUID]) {
         manualProjectOrderRaw = ids.map(\.uuidString).joined(separator: "\n")
+    }
+}
+
+/// Row chrome (hover highlight + selected background) with ROW-LOCAL hover
+/// state, exposed to the content so rows can reveal hover-only controls.
+/// Hover must not live on the sidebar itself: a single shared "which id is
+/// hovered" string re-evaluated the entire sidebar body — re-sorting every
+/// project and session — on every pointer enter/leave.
+private struct HoverableRow<Content: View>: View {
+    var isSelected = false
+    @ViewBuilder var content: (_ isHovered: Bool) -> Content
+    @Environment(\.theme) private var theme
+    @State private var isHovered = false
+
+    var body: some View {
+        content(isHovered)
+            .background(
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(isSelected ? theme.rowSelectedBackground
+                        : (isHovered ? theme.rowHoverBackground : .clear))
+            )
+            .onHover { isHovered = $0 }
+    }
+}
+
+/// The background-only variant for rows without hover-revealed content.
+private struct SidebarRowHoverModifier: ViewModifier {
+    var isSelected = false
+    @Environment(\.theme) private var theme
+    @State private var isHovered = false
+
+    func body(content: Content) -> some View {
+        content
+            .background(
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(isSelected ? theme.rowSelectedBackground
+                        : (isHovered ? theme.rowHoverBackground : .clear))
+            )
+            .onHover { isHovered = $0 }
+    }
+}
+
+extension View {
+    /// Sidebar row hover/selection background with row-local hover state.
+    fileprivate func sidebarRowHover(isSelected: Bool = false) -> some View {
+        modifier(SidebarRowHoverModifier(isSelected: isSelected))
     }
 }
 

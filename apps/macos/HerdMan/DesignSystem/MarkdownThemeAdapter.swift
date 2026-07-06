@@ -8,6 +8,13 @@ import SwiftUI
 /// colors plus the Shiki highlighter closure. System themes keep the stock
 /// markdown look but still get highlighting via GitHub Light/Dark, so code
 /// blocks always have the IDE feel.
+/// Loaded highlight-theme JSON per theme id. `ThemedRoot.body` resolves the
+/// highlight theme on every evaluation; without this cache each one was a
+/// synchronous full-file read of the theme JSON on the main thread. Bounded
+/// by the number of themes ever activated in the process.
+@MainActor
+private var highlightThemeCache: [String: (key: String, json: String)] = [:]
+
 extension ThemeManager {
     /// The theme document driving code-block highlighting for a scheme: the
     /// selected theme itself (its full JSON, tokenColors included), or the
@@ -18,11 +25,14 @@ extension ThemeManager {
             ThemeCatalog.isSystemTheme(id: id)
             ? (scheme == .dark ? "shiki:github-dark" : "shiki:github-light")
             : id
+        if let cached = highlightThemeCache[effectiveId] { return cached }
         guard
             let data = try? catalog.loadThemeData(id: effectiveId),
             let json = String(data: data, encoding: .utf8)
         else { return nil }
-        return (effectiveId, json)
+        let resolved = (effectiveId, json)
+        highlightThemeCache[effectiveId] = resolved
+        return resolved
     }
 }
 

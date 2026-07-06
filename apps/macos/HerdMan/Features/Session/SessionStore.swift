@@ -1,6 +1,7 @@
 import Foundation
 import Observation
 import HerdManCore
+import ACPKit
 
 /// Caches one `SessionController` per session id so an in-flight conversation
 /// survives navigation (e.g. the new-chat → session handoff) and re-selecting a
@@ -20,6 +21,13 @@ final class SessionStore {
     /// The session currently shown in the detail column; its finished turns
     /// never count as unread.
     private var openSessionId: UUID?
+    /// Session ids in access order, most recent last — drives controller
+    /// eviction so browsing many sessions doesn't accumulate every transcript
+    /// ever opened (conversations retain full tool outputs and diffs).
+    private var accessOrder: [UUID] = []
+    /// How many idle (not open, not working, no background tasks/goal)
+    /// controllers stay cached before the least-recently-used are evicted.
+    private static let maxIdleControllers = 12
     private let environment: AppEnvironment
 
     init(environment: AppEnvironment) {
@@ -29,6 +37,7 @@ final class SessionStore {
     /// Returns the cached controller for a session, creating + configuring it
     /// (resume id, harness, persistence callback) if needed.
     func controller(for session: ChatSession, project: Project) -> SessionController {
+        noteAccess(session.id)
         if let existing = controllers[session.id] {
             existing.project = project
             existing.serverSession = session
@@ -180,9 +189,42 @@ final class SessionStore {
     }
 
     func discard(_ sessionId: UUID) {
+        controllers[sessionId]?.model?.shutdown()
         controllers[sessionId] = nil
         paneGroups[sessionId]?.detachAll()
         paneGroups[sessionId] = nil
         unreadCounts[sessionId] = nil
+        accessOrder.removeAll { $0 == sessionId }
+    }
+
+    // MARK: - Eviction
+
+    /// Bumps a session to most-recently-used and evicts idle controllers
+    /// beyond the cache limit. Pane groups are deliberately NOT evicted:
+    /// their panes hold live server PTYs that must survive navigation.
+    private func noteAccess(_ sessionId: UUID) {
+        accessOrder.removeAll { $0 == sessionId }
+        accessOrder.append(sessionId)
+        evictIdleControllers()
+    }
+
+    /// Frees the least-recently-used cached controllers, keeping every
+    /// controller that could still produce activity: the open session,
+    /// anything running/connecting/in setup, sessions the agent will return
+    /// to on its own (background tasks, active goals). Evicted sessions
+    /// reload from server history on next open.
+    private func evictIdleControllers() {
+        let idle = accessOrder.filter { id in
+            guard let controller = controllers[id] else { return false }
+            return id != openSessionId
+                && !isRunning(id)
+                && !controller.isWaitingOnBackgroundTasks
+                && controller.goal?.status != .active
+        }
+        guard idle.count > Self.maxIdleControllers else { return }
+        for id in idle.dropLast(Self.maxIdleControllers) {
+            controllers[id]?.model?.shutdown()
+            controllers[id] = nil
+        }
     }
 }
