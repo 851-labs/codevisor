@@ -15,6 +15,7 @@ struct CodeBlockView: View {
 
     @Environment(\.markdownTheme) private var theme
     @State private var didCopy = false
+    @State private var copyResetTask: Task<Void, Never>?
     @State private var highlighted: AttributedString?
 
     var body: some View {
@@ -31,9 +32,16 @@ struct CodeBlockView: View {
                 Button {
                     copy()
                 } label: {
-                    Label(didCopy ? "Copied" : "Copy", systemImage: didCopy ? "checkmark" : "doc.on.doc")
-                        .font(.caption2)
-                        .labelStyle(.titleAndIcon)
+                    Label {
+                        Text(didCopy ? "Copied" : "Copy")
+                    } icon: {
+                        // Fixed box: the two glyphs have different intrinsic
+                        // heights, which would otherwise resize the header.
+                        Image(systemName: didCopy ? "checkmark" : "doc.on.doc")
+                            .frame(width: 13, height: 13)
+                    }
+                    .font(.caption2)
+                    .labelStyle(.titleAndIcon)
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(.secondary)
@@ -80,6 +88,14 @@ struct CodeBlockView: View {
         NSPasteboard.general.setString(code, forType: .string)
         #endif
         didCopy = true
+        // Flash the confirmation, then settle back to "Copy" (matching the
+        // transcript's MessageCopyButton). Re-copying restarts the timer.
+        copyResetTask?.cancel()
+        copyResetTask = Task {
+            try? await Task.sleep(for: .seconds(1.5))
+            guard !Task.isCancelled else { return }
+            didCopy = false
+        }
     }
 }
 
