@@ -426,12 +426,10 @@ struct SessionScreen: View {
         }
         .padding(.horizontal, 24)
         .frame(maxWidth: 880)
-        .frame(maxWidth: .infinity)
         .padding(.bottom, 16)
         .padding(.top, 24)
-        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { composerHeight = $0 }
-        .animation(.snappy(duration: 0.2), value: controller.queuedPrompts.map(\.id))
-        .animation(.snappy(duration: 0.2), value: isQueueExpanded)
+        // The fade sits behind the composer column only (not the full row
+        // width), so transcript text in the side gutters stays legible.
         .background(
             LinearGradient(
                 colors: [
@@ -442,8 +440,15 @@ struct SessionScreen: View {
                 startPoint: .top,
                 endPoint: .bottom
             )
+            // Start the fade a touch above the overlay's own bounds without
+            // affecting layout (inset or scroll-button anchoring).
+            .padding(.top, -12)
             .allowsHitTesting(false)
         )
+        .frame(maxWidth: .infinity)
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { composerHeight = $0 }
+        .animation(.snappy(duration: 0.2), value: controller.queuedPrompts.map(\.id))
+        .animation(.snappy(duration: 0.2), value: isQueueExpanded)
     }
 
     /// The "Setting up worktree…" / "Starting <harness>…" sections for a
