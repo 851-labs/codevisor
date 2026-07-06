@@ -15,7 +15,7 @@ import type {
   TerminalSpawnRequest,
   TerminalSpawner
 } from "@herdman/terminal"
-import { makeTerminalManager } from "@herdman/terminal"
+import { makeTerminalManager, TerminalError } from "@herdman/terminal"
 import { Effect } from "effect"
 import { execFile } from "node:child_process"
 import { createServer } from "node:http"
@@ -63,6 +63,7 @@ const makeAgents = (): AgentRuntimeService & {
   readonly loads: Array<readonly [string, string, string]>
   readonly prompts: Array<readonly [string, string | PromptInput]>
   readonly cancellations: Array<string>
+  readonly closes: Array<string>
   readonly modes: Array<readonly [string, string]>
   readonly configs: Array<readonly [string, string, string]>
   readonly goals: Array<readonly [string, SetGoalUpdate]>
@@ -76,6 +77,7 @@ const makeAgents = (): AgentRuntimeService & {
   const loads: Array<readonly [string, string, string]> = []
   const prompts: Array<readonly [string, string | PromptInput]> = []
   const cancellations: Array<string> = []
+  const closes: Array<string> = []
   const modes: Array<readonly [string, string]> = []
   const configs: Array<readonly [string, string, string]> = []
   const goals: Array<readonly [string, SetGoalUpdate]> = []
@@ -91,6 +93,7 @@ const makeAgents = (): AgentRuntimeService & {
     loads,
     prompts,
     cancellations,
+    closes,
     modes,
     configs,
     goals,
@@ -265,6 +268,11 @@ const makeAgents = (): AgentRuntimeService & {
     cancel: (sessionId) =>
       Effect.sync(() => {
         cancellations.push(sessionId)
+      }),
+    closeAgentSession: (sessionId) =>
+      Effect.sync(() => {
+        closes.push(sessionId)
+        sinks.delete(sessionId)
       }),
     setMode: (sessionId, modeId) =>
       Effect.promise(async () => {
@@ -1298,6 +1306,26 @@ describe("@herdman/server", () => {
         })
       ).body
     ).toMatchObject({ isArchived: false, title: "Retitled" })
+    // Retitling never touches the runtime.
+    expect(agents.closes).toEqual([])
+
+    // Archiving retires the runtime: the agent session closes and its
+    // background-task terminals (and only those) are killed and removed.
+    const backgroundProcess = { killCount: 0 }
+    const backgroundTerminal = services.terminal.registerExternalTerminal(
+      { sessionId: `${session.agentSessionId}:bg:tool-1` },
+      {
+        kill: () => {
+          backgroundProcess.killCount += 1
+        },
+        resize: () => undefined,
+        write: () => undefined
+      }
+    )
+    const unrelatedTerminal = services.terminal.registerExternalTerminal(
+      { sessionId: "other-session:bg:tool-9" },
+      { kill: () => undefined, resize: () => undefined, write: () => undefined }
+    )
     expect(
       (
         await jsonRequest(server, `/v1/sessions/${session.id}`, {
@@ -1306,6 +1334,30 @@ describe("@herdman/server", () => {
         })
       ).body
     ).toMatchObject({ isArchived: true })
+    expect(agents.closes).toEqual([session.agentSessionId])
+    expect(backgroundProcess.killCount).toBe(1)
+    await expect(
+      run(services.terminal.terminalFrames(backgroundTerminal.terminalId))
+    ).rejects.toBeInstanceOf(TerminalError)
+    expect(await run(services.terminal.terminalFrames(unrelatedTerminal.terminalId))).toEqual([])
+
+    // A session with no runtime identity archives without touching the runtime.
+    const runtimelessSession = (
+      await jsonRequest(server, "/v1/sessions", {
+        body: JSON.stringify({
+          agentSessionId: "",
+          harnessId: "codex",
+          projectId: workspace.id,
+          title: "Imported"
+        }),
+        method: "POST"
+      })
+    ).body as { readonly id: string }
+    await jsonRequest(server, `/v1/sessions/${runtimelessSession.id}`, {
+      body: JSON.stringify({ isArchived: true }),
+      method: "PATCH"
+    })
+    expect(agents.closes).toEqual([session.agentSessionId])
     expect(
       (await jsonRequest(server, `/v1/sessions/${session.id}`, { method: "DELETE" })).status
     ).toBe(204)

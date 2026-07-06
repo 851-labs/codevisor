@@ -227,6 +227,30 @@ describe("@herdman/agent-runtime", () => {
     expect(connector.connections[4]?.loaded).toEqual([["agent-existing", "/tmp/other"]])
   })
 
+  it("closes a loaded agent session and forgets it", async () => {
+    const connector = makeConnector()
+    const runtime = makeAgentRuntime({
+      connector,
+      env: { PATH: "/bin" },
+      executableExists: (name) => ["gemini", "npx"].includes(name),
+      locateExecutable: (name) => `/bin/${name}`
+    })
+    const sessionId = await run(
+      runtime.createAgentSession("gemini", "/tmp/project", () => undefined)
+    )
+
+    // Closing a session that is not loaded is a no-op (archives of sessions
+    // never opened this server-lifetime have nothing to tear down).
+    await run(runtime.closeAgentSession("missing"))
+    expect(connector.connections[0]?.closeCount).toBe(0)
+
+    await run(runtime.closeAgentSession(sessionId))
+    expect(connector.connections[0]?.closeCount).toBe(1)
+    await expect(run(runtime.prompt(sessionId, "hello"))).rejects.toMatchObject({
+      operation: "sessionFor"
+    })
+  })
+
   it("falls back to executable names when PATH lookup is delegated", async () => {
     const connector = makeConnector()
     const runtime = makeAgentRuntime({

@@ -1451,7 +1451,7 @@ const emitItemLifecycle = (
       if (started) {
         session.itemKinds.set(itemId, "execute")
         if (command.length > 0) session.itemTitles.set(itemId, command)
-        openCommandTerminal(session, itemId, command)
+        openCommandTerminal(session, itemId, command, item.source)
         void session.emit(
           event({
             kind: "execute",
@@ -1582,7 +1582,12 @@ const emitItemLifecycle = (
 /// kill is best-effort via the codex process tree (the protocol has no
 /// terminate for agent-run commands). Commands that outlive the promotion
 /// delay surface in the `backgroundTasks` snapshot as attachable terminal tabs.
-const openCommandTerminal = (session: CodexSession, itemId: string, command: string): void => {
+const openCommandTerminal = (
+  session: CodexSession,
+  itemId: string,
+  command: string,
+  source: unknown
+): void => {
   const integration = session.backgroundTerminals
   if (integration === undefined || session.commandTerminals.has(itemId)) return
   const terminalKey = backgroundTerminalKey(session.key, itemId)
@@ -1605,6 +1610,14 @@ const openCommandTerminal = (session: CodexSession, itemId: string, command: str
     terminalKey
   }
   session.commandTerminals.set(itemId, terminal)
+  // unifiedExecStartup is codex explicitly opening a persistent shell — its
+  // background-process mechanism — so the tab shows up immediately. Plain
+  // agent commands prove themselves by outliving the promotion delay.
+  if (source === "unifiedExecStartup") {
+    terminal.promoted = true
+    emitCodexBackgroundTasks(session)
+    return
+  }
   terminal.promotionTimer = setTimeout(() => {
     terminal.promotionTimer = undefined
     terminal.promoted = true

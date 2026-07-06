@@ -384,6 +384,39 @@ describe("@herdman/terminal", () => {
     ).toBe(replacement.terminalId)
   })
 
+  it("closes every terminal under a session-key prefix", async () => {
+    const spawner = makeSpawner()
+    const manager = makeTerminalManager({ spawner })
+
+    const runningProcess = new FakeProcess()
+    const running = manager.registerExternalTerminal(
+      { sessionId: "agent-1:bg:tool-1" },
+      runningProcess
+    )
+    const exited = manager.registerExternalTerminal(
+      { sessionId: "agent-1:bg:tool-2" },
+      new FakeProcess()
+    )
+    exited.exit(0)
+    const unrelated = manager.registerExternalTerminal(
+      { sessionId: "agent-2:bg:tool-1" },
+      new FakeProcess()
+    )
+
+    expect(await run(manager.closeTerminalsForSessionPrefix("agent-1:bg:"))).toBe(2)
+    // Live processes are killed; exited ones just lose their scrollback.
+    expect(runningProcess.killCount).toBe(1)
+    await expect(run(manager.terminalFrames(running.terminalId))).rejects.toBeInstanceOf(
+      TerminalError
+    )
+    await expect(run(manager.terminalFrames(exited.terminalId))).rejects.toBeInstanceOf(
+      TerminalError
+    )
+    // Other sessions' terminals are untouched, and a second sweep finds nothing.
+    expect(await run(manager.terminalFrames(unrelated.terminalId))).toEqual([])
+    expect(await run(manager.closeTerminalsForSessionPrefix("agent-1:bg:"))).toBe(0)
+  })
+
   it("caps the replay buffer of external terminals", async () => {
     const manager = makeTerminalManager({ spawner: makeSpawner() })
     const handle = manager.registerExternalTerminal({ sessionId: "bg-key-4" }, new FakeProcess())

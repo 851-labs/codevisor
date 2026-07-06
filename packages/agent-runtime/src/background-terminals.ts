@@ -38,11 +38,15 @@ export interface BackgroundTerminalIntegration {
   readonly wrapCommand?: (key: string, command: string) => string
   /// How long a command must stay alive before it is promoted to a
   /// background-task terminal tab (ACP/codex providers — commands there have
-  /// no explicit "background" flag, so liveness is the signal).
+  /// no explicit "background" flag, so liveness is the signal). Kept short:
+  /// quick commands (git status, rg) finish well under it, while anything a
+  /// user would want to watch shows up near-realtime. Providers with an
+  /// explicit background signal (Claude's run_in_background, codex
+  /// unifiedExecStartup) bypass the delay entirely.
   readonly promotionDelayMs?: number
 }
 
-export const DEFAULT_PROMOTION_DELAY_MS = 10_000
+export const DEFAULT_PROMOTION_DELAY_MS = 2_500
 
 /// Terminal keys are namespaced under the runtime session key so they never
 /// collide with the session's own interactive terminals (bare session UUID /

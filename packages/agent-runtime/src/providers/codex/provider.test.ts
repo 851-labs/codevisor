@@ -546,6 +546,44 @@ describe("CodexProvider", () => {
     vi.advanceTimersByTime(1000)
     expect(snapshots().at(-1)).toEqual([])
 
+    // unifiedExecStartup is codex explicitly opening a persistent shell — it
+    // surfaces as a task immediately, no promotion delay.
+    client.emit("item/started", {
+      item: {
+        command: "npm run watch",
+        id: "item-watch",
+        source: "unifiedExecStartup",
+        status: "inProgress",
+        type: "commandExecution"
+      },
+      threadId: "thread-new",
+      turnId: "turn-1"
+    })
+    expect(snapshots().at(-1)).toEqual([
+      {
+        description: "npm run watch",
+        id: "item-watch",
+        readOnly: true,
+        status: "running",
+        taskType: "shell",
+        terminalKey: "thread-new:bg:item-watch",
+        toolUseId: "item-watch"
+      }
+    ])
+    client.emit("item/completed", {
+      item: {
+        command: "npm run watch",
+        exitCode: 0,
+        id: "item-watch",
+        source: "unifiedExecStartup",
+        status: "completed",
+        type: "commandExecution"
+      },
+      threadId: "thread-new",
+      turnId: "turn-1"
+    })
+    expect(snapshots().at(-1)).toEqual([])
+
     // Session close ends any mirrors that are still running.
     client.emit("item/started", {
       item: { command: "sleep 99", id: "item-zzz", status: "inProgress", type: "commandExecution" },
@@ -553,8 +591,8 @@ describe("CodexProvider", () => {
       turnId: "turn-1"
     })
     await run(created.handle.close)
-    expect(registered[2]?.exits).toEqual([undefined])
-    expect(registered[2]?.removed).toBe(true)
+    expect(registered[3]?.exits).toEqual([undefined])
+    expect(registered[3]?.removed).toBe(true)
   })
 
   it("maps a full turn: lifecycle, streamed patch stats, command items", async () => {

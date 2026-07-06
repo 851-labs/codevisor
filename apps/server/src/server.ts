@@ -811,6 +811,7 @@ const routeSessions = async (
     const payload = await readSchema(request, UpdateSessionRequestSchema)
     const session = await run(services.db.updateSession(sessionId, payload))
     if (session.isArchived) {
+      await archiveSessionRuntime(services, session)
       await removeArchivedSessionWorktree(services, config.id, session)
     }
     await appendAndPublish(
@@ -909,6 +910,28 @@ const resolveSessionCwdOrFail = async (
     throw new HttpFailure(400, `Worktree folder does not exist: ${worktree.path}`)
   }
   return worktree.path
+}
+
+/// Archiving retires the session's runtime: the agent process shuts down and
+/// every background-task terminal it registered is killed and removed — a
+/// dev server must not keep running under an archived chat. Best-effort: the
+/// archive itself must succeed even if the runtime is already gone.
+const archiveSessionRuntime = async (
+  services: HerdManServerServices,
+  session: SessionSummary
+): Promise<void> => {
+  /* v8 ignore next -- SessionSummary types agentSessionId as optional, but created sessions always carry one. */
+  const agentSessionId = session.agentSessionId ?? ""
+  if (agentSessionId.length === 0) {
+    return
+  }
+  try {
+    await run(services.agents.closeAgentSession(agentSessionId))
+    await run(services.terminal.closeTerminalsForSessionPrefix(`${agentSessionId}:bg:`))
+    /* v8 ignore next 3 -- best-effort: archiving must succeed even when the runtime is already gone. */
+  } catch {
+    // Best-effort.
+  }
 }
 
 /// Deletes an archived session's git worktree from disk once no other active

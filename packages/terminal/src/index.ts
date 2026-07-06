@@ -88,6 +88,11 @@ export interface TerminalManagerService {
   /// Kills the live terminal for a session (if any), so the next createTerminal
   /// for that session spawns a fresh shell. Returns whether one was closed.
   readonly closeTerminalForSession: (sessionId: string) => Effect.Effect<boolean, TerminalError>
+  /// Kills and removes every terminal whose session key starts with `prefix`
+  /// (scrollback included). Used when a chat session is archived: its
+  /// background-task terminals (`<agentSessionId>:bg:...`) must not keep
+  /// processes running. Returns how many terminals were removed.
+  readonly closeTerminalsForSessionPrefix: (prefix: string) => Effect.Effect<number, TerminalError>
   /// Registers a terminal whose process the CALLER owns (an agent's background
   /// shell, a mirrored remote process). The manager never spawns or respawns
   /// it: clients attach with `attachOnly` createTerminal requests, and the
@@ -321,6 +326,24 @@ export const makeTerminalManager = (config: TerminalManagerConfig = {}): Termina
         terminals.delete(terminalId)
         clearSessionMapping(terminal)
         return true
+      }),
+    closeTerminalsForSessionPrefix: (prefix) =>
+      terminalAttempt("closeTerminalsForSessionPrefix", () => {
+        let closed = 0
+        for (const [sessionId, terminalId] of [...terminalsBySession]) {
+          if (!sessionId.startsWith(prefix)) continue
+          const terminal = terminals.get(terminalId)
+          /* v8 ignore next -- defensive: every code path that removes a terminal also clears its session mapping. */
+          if (terminal === undefined) continue
+          if (!terminal.closed) {
+            terminal.closed = true
+            terminal.process.kill()
+          }
+          terminals.delete(terminalId)
+          terminalsBySession.delete(sessionId)
+          closed += 1
+        }
+        return closed
       }),
     registerExternalTerminal: (config, process) => {
       const terminalId = randomUUID()

@@ -86,6 +86,10 @@ export interface AgentRuntimeService {
     input: string | PromptInput
   ) => Effect.Effect<PromptResult, AgentRuntimeError>
   readonly cancel: (sessionId: string) => Effect.Effect<void, AgentRuntimeError>
+  /// Closes a loaded agent session and its process (background shells
+  /// included). No-op when the session is not loaded — archiving a session
+  /// that was never opened this server-lifetime has nothing to tear down.
+  readonly closeAgentSession: (sessionId: string) => Effect.Effect<void, AgentRuntimeError>
   readonly setMode: (sessionId: string, modeId: string) => Effect.Effect<void, AgentRuntimeError>
   readonly setConfigOption: (
     sessionId: string,
@@ -349,6 +353,15 @@ export const makeAgentRuntime = (config: AgentRuntimeConfig = {}): AgentRuntimeS
       Effect.gen(function* () {
         const session = yield* sessionFor(sessionId)
         return yield* session.handle.cancel
+      }),
+    closeAgentSession: (sessionId) =>
+      Effect.gen(function* () {
+        const session = sessions.get(sessionId)
+        if (session === undefined) {
+          return
+        }
+        sessions.delete(sessionId)
+        yield* session.handle.close
       }),
     setMode: (sessionId, modeId) =>
       Effect.gen(function* () {
