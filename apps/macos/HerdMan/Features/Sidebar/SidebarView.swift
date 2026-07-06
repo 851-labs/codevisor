@@ -602,6 +602,13 @@ struct SidebarView: View {
                 Label("Archive", systemImage: "archivebox")
                     .labelStyle(.titleAndIcon)
             }
+            Button {
+                store?.markUnread(session.id)
+                if selection == .session(session.id) { selection = .newChat(nil) }
+            } label: {
+                Label("Mark as unread", systemImage: "message.badge")
+                    .labelStyle(.titleAndIcon)
+            }
         }
     }
 
@@ -664,6 +671,13 @@ struct SidebarView: View {
             }
             Button { list.archiveSession(session) } label: {
                 Label("Archive", systemImage: "archivebox")
+                    .labelStyle(.titleAndIcon)
+            }
+            Button {
+                store?.markUnread(session.id)
+                if selection == .session(session.id) { selection = .newChat(nil) }
+            } label: {
+                Label("Mark as unread", systemImage: "message.badge")
                     .labelStyle(.titleAndIcon)
             }
         }

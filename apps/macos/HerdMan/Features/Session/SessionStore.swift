@@ -123,6 +123,12 @@ final class SessionStore {
         unreadCounts[sessionId] ?? 0
     }
 
+    /// Manually flags a session as unread (sidebar context menu). Keeps any
+    /// existing turn-finish count rather than resetting it to 1.
+    func markUnread(_ sessionId: UUID) {
+        unreadCounts[sessionId] = max(1, unreadCounts[sessionId] ?? 0)
+    }
+
     /// Marks a session as the one on screen and clears its unread badge.
     func markOpened(_ sessionId: UUID) {
         openSessionId = sessionId
