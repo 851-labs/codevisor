@@ -35,6 +35,7 @@ import {
   type SetGoalUpdate
 } from "../../types.js"
 import { spawnCodexClient, type CodexClient, type CodexConnector } from "./client.js"
+import { killCodexCommandProcesses, type CodexCommandKiller } from "./process-kill.js"
 
 type CodexInputItem =
   | { readonly text: string; readonly type: "text" }
@@ -64,8 +65,11 @@ export interface CodexProviderConfig {
   /// When set, command executions mirror their streamed output
   /// (`item/commandExecution/outputDelta`) into server-owned terminals;
   /// commands that outlive the promotion delay surface as terminal tabs.
-  /// Codex owns the processes, so the mirrors are read-only.
+  /// Codex owns the processes, so the mirrors are read-only for input; kill
+  /// is best-effort via the codex process tree (see process-kill.ts).
   readonly backgroundTerminals?: BackgroundTerminalIntegration
+  /// Injectable for tests: the best-effort process-tree kill.
+  readonly killCommandProcesses?: CodexCommandKiller
 }
 
 interface CodexModel {
@@ -213,6 +217,7 @@ interface CodexSession {
   /// item id. Codex owns the processes; we own the mirrors.
   readonly commandTerminals: Map<string, CodexCommandTerminal>
   readonly backgroundTerminals: BackgroundTerminalIntegration | undefined
+  readonly killCommandProcesses: CodexCommandKiller
   /// Goal-snapshot throttle state: the last snapshot broadcast to the wire,
   /// when it went out, and the freshest one held back by the rate limit
   /// (flushed at turn end so final totals always persist).
@@ -283,6 +288,7 @@ export const makeCodexProvider = (
       client,
       collabThreads: new Map(),
       commandTerminals: new Map(),
+      killCommandProcesses: config.killCommandProcesses ?? killCodexCommandProcesses,
       currentEffort: undefined,
       currentModeId: DEFAULT_CODEX_MODE,
       currentModel: response.model ?? "",
@@ -1572,14 +1578,24 @@ const emitItemLifecycle = (
 // MARK: command terminal mirrors
 
 /// Starts a read-only terminal mirror for a command execution. Codex owns the
-/// process — we only see its output deltas — so the mirror exposes no write/
-/// resize/kill controls. Commands that outlive the promotion delay surface in
-/// the `backgroundTasks` snapshot as attachable terminal tabs.
+/// process — we only see its output deltas — so the mirror accepts no input;
+/// kill is best-effort via the codex process tree (the protocol has no
+/// terminate for agent-run commands). Commands that outlive the promotion
+/// delay surface in the `backgroundTasks` snapshot as attachable terminal tabs.
 const openCommandTerminal = (session: CodexSession, itemId: string, command: string): void => {
   const integration = session.backgroundTerminals
   if (integration === undefined || session.commandTerminals.has(itemId)) return
   const terminalKey = backgroundTerminalKey(session.key, itemId)
-  const stream = integration.registry.register(terminalKey, {})
+  const codexPid = session.client.pid
+  const stream = integration.registry.register(terminalKey, {
+    ...(codexPid === undefined || command.length === 0
+      ? {}
+      : {
+          kill: () => {
+            void session.killCommandProcesses(codexPid, command).catch(() => undefined)
+          }
+        })
+  })
   const terminal: CodexCommandTerminal = {
     description: command.length > 0 ? firstLine(command) : "command",
     itemId,

@@ -158,9 +158,10 @@ struct PaneGroupBar: View {
         let showsSelection = group.state.isVisible
         return HStack(spacing: Self.tabSpacing) {
             ForEach(group.state.panes) { pane in
-                        // A read-only mirror of a RUNNING process offers no ✕:
-                        // there is no kill to perform (codex owns the process).
-                        // Once it exits, the ✕ returns so the tab can close.
+                        // A read-only mirror of a RUNNING process shows an eye
+                        // where the ✕ sits (no input; codex owns the process).
+                        // Hovering swaps in the ✕, which performs a
+                        // best-effort process-tree kill server-side.
                         let isReadOnlyRunning = pane.readOnly
                             && group.runningAgentTerminalKeys.contains(pane.terminalKey)
                         PaneTab(
@@ -173,8 +174,7 @@ struct PaneGroupBar: View {
                             // No ✕ while the panel is collapsed; when open,
                             // narrow tabs drop the ✕ on non-selected tabs so
                             // the name keeps as much room as possible.
-                            showsClose: !isReadOnlyRunning
-                                && showsSelection
+                            showsClose: showsSelection
                                 && (pane.id == group.state.selectedPaneId
                                     || tabWidth >= Self.closeButtonMinWidth),
                             selectedFill: connectedTabColor,
@@ -389,8 +389,9 @@ private struct PaneTab: View {
     /// Agent-owned background terminals get a sparkle so ownership is obvious
     /// next to the user's own shells (which get a terminal glyph).
     let isAgentOwned: Bool
-    /// View-only mirror of a running process: the ✕ slot shows an eye instead
-    /// (input and kill are unavailable while it runs).
+    /// View-only mirror of a running process: the ✕ slot shows an eye at rest
+    /// (no input reaches the process); hovering swaps in the ✕, whose close
+    /// performs a best-effort kill of the underlying process.
     let isReadOnly: Bool
     let isSelected: Bool
     let isDragging: Bool
@@ -420,10 +421,16 @@ private struct PaneTab: View {
                 .foregroundStyle(isSelected ? .primary : .secondary)
                 .help(isAgentOwned ? "Agent background process" : "Terminal")
             fadingName
-            if showsClose {
-                closeButton
+            if isReadOnly, showsClose {
+                if isHovered {
+                    closeButton
+                } else {
+                    readOnlyBadge
+                }
             } else if isReadOnly {
                 readOnlyBadge
+            } else if showsClose {
+                closeButton
             }
         }
         .padding(.horizontal, Self.contentPadding)
@@ -476,7 +483,7 @@ private struct PaneTab: View {
     }
 
     /// Sits where the ✕ would be on a running read-only mirror: view-only,
-    /// nothing to kill until the process exits.
+    /// input never reaches the process. Hover swaps in the ✕.
     private var readOnlyBadge: some View {
         Image(systemName: "eye")
             .font(.system(size: 7, weight: .bold))

@@ -21,6 +21,7 @@ const environment: ProviderEnvironment = {
 }
 
 class FakeCodexClient implements CodexClient {
+  readonly pid = 4242
   readonly requests: Array<{ method: string; params: unknown }> = []
   readonly notifications: Array<{ method: string; params: unknown }> = []
   private notificationHandler: ((method: string, params: unknown) => void) | undefined
@@ -417,18 +418,26 @@ describe("CodexProvider", () => {
   it("mirrors command output into background terminals and promotes long-lived commands", async () => {
     vi.useFakeTimers()
     const client = new FakeCodexClient()
+    const kills: Array<{ rootPid: number; command: string }> = []
     const registered: Array<{
       key: string
       outputs: Array<string>
       exits: Array<number | undefined>
       removed: boolean
+      kill: (() => void) | undefined
     }> = []
     const provider = makeCodexProvider(environment, {
       backgroundTerminals: {
         promotionDelayMs: 50,
         registry: {
-          register: (key) => {
-            const entry = { exits: [], key, outputs: [], removed: false } as (typeof registered)[0]
+          register: (key, controls) => {
+            const entry = {
+              exits: [],
+              key,
+              kill: controls.kill,
+              outputs: [],
+              removed: false
+            } as (typeof registered)[0]
             registered.push(entry)
             return {
               exit: (exitCode) => entry.exits.push(exitCode),
@@ -440,7 +449,10 @@ describe("CodexProvider", () => {
           }
         }
       },
-      connector: async () => client
+      connector: async () => client,
+      killCommandProcesses: async (rootPid, command) => {
+        kills.push({ command, rootPid })
+      }
     })
     const events: Array<RuntimeEvent> = []
     const created = await run(
@@ -482,6 +494,10 @@ describe("CodexProvider", () => {
     })
     expect(registered[0]?.key).toBe("thread-new:bg:item-dev")
     expect(registered[0]?.outputs).toEqual(["ready on :3000\n"])
+
+    // The mirror's kill control walks the codex process tree (best effort).
+    registered[0]?.kill?.()
+    expect(kills).toEqual([{ command: "npm run dev", rootPid: 4242 }])
 
     // Still running after the promotion delay → surfaces as a task with a
     // terminal key.
