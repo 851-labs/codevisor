@@ -197,7 +197,7 @@ struct NewChatView: View {
             }
         }
         .menuStyle(.button)
-        .buttonStyle(.plain)
+        .buttonStyle(HoverIconButtonStyle(shape: .chip))
         .menuIndicator(.hidden)
         .fixedSize()
         .help(

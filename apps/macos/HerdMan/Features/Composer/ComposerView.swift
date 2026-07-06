@@ -24,6 +24,7 @@ struct ComposerCard: View {
     @State private var slashMenuContentHeight: CGFloat = 0
     @State private var isStopButtonHovered = false
     @State private var isSendButtonHovered = false
+    @State private var isGoalBackButtonHovered = false
 
     /// Tallest the slash-command menu can grow before it scrolls (~6 rows).
     private static let slashMenuMaxHeight: CGFloat = 220
@@ -94,11 +95,16 @@ struct ComposerCard: View {
                     ForEach(controller.pickerOptions) { option in
                         configMenu(option)
                     }
-                    if controller.hasPlanMode {
-                        planModeButton
-                    }
-                    if controller.canEditGoal {
-                        goalModeButton
+                    // Tighter than the row's 10pt: the chips' hover fill bleeds
+                    // 5pt into their gaps, so 5pt here keeps the visual rhythm
+                    // even between these two bare circles.
+                    HStack(spacing: 5) {
+                        if controller.hasPlanMode {
+                            planModeButton
+                        }
+                        if controller.canEditGoal {
+                            goalModeButton
+                        }
                     }
                     Spacer(minLength: 0)
                     // Action buttons cluster tighter than the picker chips.
@@ -222,7 +228,7 @@ struct ComposerCard: View {
             chipLabel(option.currentName)
         }
         .menuStyle(.button)
-        .buttonStyle(.plain)
+        .buttonStyle(HoverIconButtonStyle(shape: .chip))
         .menuIndicator(.hidden)
         .fixedSize()
         .help(option.name)
@@ -239,7 +245,7 @@ struct ComposerCard: View {
         } label: {
             Image(systemName: "checklist")
                 .font(.system(size: 12, weight: .semibold))
-                .frame(width: 24, height: 24)
+                .frame(width: 26, height: 26)
                 .foregroundStyle(isOn ? AnyShapeStyle(theme.windowBackground) : AnyShapeStyle(.secondary))
                 .background(Circle().fill(isOn ? AnyShapeStyle(theme.accent) : AnyShapeStyle(.clear)))
                 .contentShape(Circle())
@@ -258,12 +264,14 @@ struct ComposerCard: View {
         } label: {
             Image(systemName: "arrow.left")
                 .font(.system(size: 12, weight: .semibold))
-                .frame(width: 28, height: 28)
+                .frame(width: 26, height: 26)
                 .foregroundStyle(Color.primary)
-                .background(Circle().fill(Color.secondary.opacity(0.16)))
+                // Same quiet brighten-on-hover as the other filled buttons.
+                .background(Circle().fill(Color.secondary.opacity(isGoalBackButtonHovered ? 0.22 : 0.16)))
                 .contentShape(Circle())
         }
         .buttonStyle(.plain)
+        .onHover { isGoalBackButtonHovered = $0 }
         .help("Back — keep the current goal (esc)")
         .tooltip("Back — keep the current goal (esc)")
     }
@@ -277,7 +285,7 @@ struct ComposerCard: View {
         } label: {
             Image(systemName: "target")
                 .font(.system(size: 12, weight: .semibold))
-                .frame(width: 24, height: 24)
+                .frame(width: 26, height: 26)
                 .foregroundStyle(isArmed ? AnyShapeStyle(theme.windowBackground) : AnyShapeStyle(.secondary))
                 .background(Circle().fill(isArmed ? AnyShapeStyle(theme.accent) : AnyShapeStyle(.clear)))
                 .contentShape(Circle())
@@ -290,14 +298,9 @@ struct ComposerCard: View {
     }
 
     private func chipLabel(_ text: String) -> some View {
-        HStack(spacing: 4) {
-            Text(text)
-            Image(systemName: "chevron.down").font(.caption2)
-        }
-        .foregroundStyle(.secondary)
-        // Cover the whole chip (including the gap before the chevron) so a
-        // click anywhere on it opens the menu.
-        .contentShape(Rectangle())
+        Text(text)
+            .foregroundStyle(.secondary)
+            .contentShape(Rectangle())
     }
 
     private var attachButton: some View {
@@ -307,7 +310,7 @@ struct ComposerCard: View {
             Image(systemName: "paperclip")
                 .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(.secondary)
-                .frame(width: 22, height: 22)
+                .frame(width: 26, height: 26)
                 .contentShape(Rectangle())
         }
         .buttonStyle(HoverIconButtonStyle())
@@ -350,7 +353,7 @@ struct ComposerCard: View {
             Button { Task { await controller.stop() } } label: {
                 Image(systemName: "stop.fill")
                     .font(.system(size: 10, weight: .bold))
-                    .frame(width: 28, height: 28)
+                    .frame(width: 26, height: 26)
                     .background(
                         Circle()
                             .fill(isStopButtonHovered ? Color.primary.opacity(0.06) : .clear)
@@ -376,7 +379,7 @@ struct ComposerCard: View {
             // spin in place and keep further input out.
             ProgressView()
                 .controlSize(.small)
-                .frame(width: 28, height: 28)
+                .frame(width: 26, height: 26)
                 .background(Circle().fill(Color.secondary.opacity(0.16)))
                 .help("Sending…")
         } else {
@@ -386,7 +389,7 @@ struct ComposerCard: View {
             Button { submitOrAcceptSlash() } label: {
                 Image(systemName: "arrow.up")
                     .font(.system(size: 12, weight: .bold))
-                    .frame(width: 28, height: 28)
+                    .frame(width: 26, height: 26)
                     .foregroundStyle(isEnabled ? theme.windowBackground : Color.secondary.opacity(0.75))
                     .background(
                         Circle()
@@ -636,7 +639,6 @@ struct PickerChip<Icon: View>: View {
         HStack(spacing: 5) {
             icon
             Text(text)
-            Image(systemName: "chevron.down").font(.caption2)
         }
         .foregroundStyle(.secondary)
         .contentShape(Rectangle())
@@ -666,7 +668,7 @@ struct ModelConfigMenu: View {
                 chipLabel
             }
             .menuStyle(.button)
-            .buttonStyle(.plain)
+            .buttonStyle(HoverIconButtonStyle(shape: .chip))
             .menuIndicator(.hidden)
             .fixedSize()
             .help("Model, thinking level, and speed")
@@ -713,9 +715,6 @@ struct ModelConfigMenu: View {
                 Text(thought.currentName)
                     .foregroundStyle(.secondary)
             }
-            Image(systemName: "chevron.down")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
         }
         // Cover the whole chip (including gaps) so a click anywhere opens it.
         .contentShape(Rectangle())
@@ -760,7 +759,7 @@ struct HarnessPickerMenu: View {
                     }
                 }
                 .menuStyle(.button)
-                .buttonStyle(.plain)
+                .buttonStyle(HoverIconButtonStyle(shape: .chip))
                 .menuIndicator(.hidden)
                 .fixedSize()
             }

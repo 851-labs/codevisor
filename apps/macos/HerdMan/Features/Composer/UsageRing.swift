@@ -42,7 +42,7 @@ struct UsageRingButton: View {
     var body: some View {
         if let usage, usage.used != nil || usage.cost != nil {
             ring
-                .frame(width: 28, height: 28)
+                .frame(width: 26, height: 26)
                 .contentShape(Circle())
                 .onHover { hovering in
                     hoverTask?.cancel()
