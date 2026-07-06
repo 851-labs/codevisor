@@ -16,6 +16,8 @@ public struct MarkdownTheme: Sendable {
     /// than the body text so chips sit flush in a line of prose.
     public var inlineCodeFont: Font
     public var blockSpacing: CGFloat
+    /// Extra vertical breathing room between list items (points).
+    public var listItemSpacing: CGFloat
     public var codeBackground: Color
     /// Background tint for `` `inline code` `` chips.
     public var inlineCodeBackground: Color
@@ -32,6 +34,7 @@ public struct MarkdownTheme: Sendable {
         codeFont: Font = .system(.callout, design: .monospaced),
         inlineCodeFont: Font = .system(.callout, design: .monospaced),
         blockSpacing: CGFloat = 10,
+        listItemSpacing: CGFloat = 4,
         codeBackground: Color = Color.secondary.opacity(0.12),
         inlineCodeBackground: Color = Color.secondary.opacity(0.18),
         quoteBarColor: Color = Color.secondary.opacity(0.4),
@@ -43,6 +46,7 @@ public struct MarkdownTheme: Sendable {
         self.codeFont = codeFont
         self.inlineCodeFont = inlineCodeFont
         self.blockSpacing = blockSpacing
+        self.listItemSpacing = listItemSpacing
         self.codeBackground = codeBackground
         self.inlineCodeBackground = inlineCodeBackground
         self.quoteBarColor = quoteBarColor

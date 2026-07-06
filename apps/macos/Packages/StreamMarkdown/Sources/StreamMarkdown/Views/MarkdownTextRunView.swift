@@ -71,7 +71,12 @@ struct MarkdownTextRunView: View {
         var result = AttributedString()
         for (index, item) in items.enumerated() {
             if index > 0 {
-                result += AttributedString("\n")
+                // Same trick as the block separator: an empty line whose tiny
+                // font height adds `listItemSpacing` of air between items,
+                // since per-range line spacing isn't available in SwiftUI.
+                var separator = AttributedString("\n\n")
+                separator.font = .system(size: max(1, theme.listItemSpacing * 0.8))
+                result += separator
             }
             var marker = AttributedString("\(item.marker) ")
             marker.foregroundColor = .secondary
