@@ -1586,6 +1586,19 @@ const emitAuthoritativeDiff = (
   }
 
   const diffBlock = diffContentBlock(session, hookInput.tool_name, input, response, path, readFile)
+  // A file creation's tool_response carries an empty structuredPatch (there
+  // was nothing to patch — the whole file is new), which would report an
+  // authoritative +0 −0 that beats the client's content-derived totals. When
+  // the diff content shows a real change, recompute the stats from the texts.
+  if (
+    stats !== undefined &&
+    stats.added === 0 &&
+    stats.removed === 0 &&
+    diffBlock !== undefined &&
+    (diffBlock.oldText ?? "") !== diffBlock.newText
+  ) {
+    stats = diffStatsFromTexts(path, diffBlock.oldText, diffBlock.newText)
+  }
   if (stats === undefined && diffBlock === undefined) return
   void session.emit({
     kind: "session.output",
