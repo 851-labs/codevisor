@@ -200,12 +200,14 @@ public final class AppEnvironment {
     /// An in-memory environment seeded with sample data for previews and tests.
     public static func preview(
         seedProjects: [Project] = AppEnvironment.sampleProjects,
+        seedSessions: [ChatSession] = AppEnvironment.sampleSessions,
         hasOnboarded: Bool = true
     ) -> AppEnvironment {
         let store = InMemoryStore()
         let projectRepository = DefaultProjectRepository(store: store)
         let sessionRepository = DefaultSessionRepository(store: InMemoryStore())
         projectRepository.save(seedProjects)
+        sessionRepository.save(seedSessions)
         let settings = AppSettingsModel(store: InMemoryStore())
         if hasOnboarded { settings.completeOnboarding(importExternalSessions: false) }
         return AppEnvironment(
@@ -225,7 +227,39 @@ public final class AppEnvironment {
     public static let sampleProjects: [Project] = [
         Project.fromFolder(URL(fileURLWithPath: "/Users/me/src/HerdMan"), createdAt: Date(timeIntervalSince1970: 2_000)),
         Project.fromFolder(URL(fileURLWithPath: "/Users/me/src/website"), createdAt: Date(timeIntervalSince1970: 1_000)),
+        // No sessions reference this one, so previews exercise the
+        // "No sessions yet" empty state.
+        Project.fromFolder(URL(fileURLWithPath: "/Users/me/src/scratch"), createdAt: Date(timeIntervalSince1970: 750)),
         archivedSampleProject
+    ]
+
+    /// Mock sessions for the sample projects, so sidebar previews show
+    /// populated project folders instead of "No sessions yet".
+    public static let sampleSessions: [ChatSession] = [
+        ChatSession(
+            projectId: sampleProjects[0].id,
+            harnessId: "claude-code",
+            agentSessionId: "preview-1",
+            title: "Fix onboarding crash",
+            createdAt: Date(timeIntervalSinceNow: -9_000),
+            updatedAt: Date(timeIntervalSinceNow: -1_800)
+        ),
+        ChatSession(
+            projectId: sampleProjects[0].id,
+            harnessId: "codex",
+            agentSessionId: "preview-2",
+            title: "Add dark mode support",
+            createdAt: Date(timeIntervalSinceNow: -172_800),
+            updatedAt: Date(timeIntervalSinceNow: -86_400)
+        ),
+        ChatSession(
+            projectId: sampleProjects[1].id,
+            harnessId: "claude-code",
+            agentSessionId: "preview-3",
+            title: "Refresh landing page copy",
+            createdAt: Date(timeIntervalSinceNow: -432_000),
+            updatedAt: Date(timeIntervalSinceNow: -345_600)
+        )
     ]
 
     private static var archivedSampleProject: Project {
