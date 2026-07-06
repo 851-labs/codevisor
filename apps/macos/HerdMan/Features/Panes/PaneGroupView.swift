@@ -158,16 +158,23 @@ struct PaneGroupBar: View {
         let showsSelection = group.state.isVisible
         return HStack(spacing: Self.tabSpacing) {
             ForEach(group.state.panes) { pane in
+                        // A read-only mirror of a RUNNING process offers no ✕:
+                        // there is no kill to perform (codex owns the process).
+                        // Once it exits, the ✕ returns so the tab can close.
+                        let isReadOnlyRunning = pane.readOnly
+                            && group.runningAgentTerminalKeys.contains(pane.terminalKey)
                         PaneTab(
                             name: pane.name,
                             isAgentOwned: pane.attachOnly,
+                            isReadOnly: isReadOnlyRunning,
                             isSelected: showsSelection && pane.id == group.state.selectedPaneId,
                             isDragging: draggingPaneId == pane.id,
                             width: tabWidth,
                             // No ✕ while the panel is collapsed; when open,
                             // narrow tabs drop the ✕ on non-selected tabs so
                             // the name keeps as much room as possible.
-                            showsClose: showsSelection
+                            showsClose: !isReadOnlyRunning
+                                && showsSelection
                                 && (pane.id == group.state.selectedPaneId
                                     || tabWidth >= Self.closeButtonMinWidth),
                             selectedFill: connectedTabColor,
@@ -379,9 +386,12 @@ private struct TabSlotWidthModifier: ViewModifier {
 private struct PaneTab: View {
     @Environment(\.theme) private var theme
     let name: String
-    /// Agent-owned background terminals get a glyph so ownership is obvious
-    /// next to the user's own shells.
+    /// Agent-owned background terminals get a sparkle so ownership is obvious
+    /// next to the user's own shells (which get a terminal glyph).
     let isAgentOwned: Bool
+    /// View-only mirror of a running process: the ✕ slot shows an eye instead
+    /// (input and kill are unavailable while it runs).
+    let isReadOnly: Bool
     let isSelected: Bool
     let isDragging: Bool
     let width: CGFloat
@@ -405,15 +415,15 @@ private struct PaneTab: View {
 
     var body: some View {
         HStack(spacing: 4) {
-            if isAgentOwned {
-                Image(systemName: "sparkle")
-                    .font(.system(size: 8, weight: .semibold))
-                    .foregroundStyle(isSelected ? .primary : .secondary)
-                    .help("Agent background process")
-            }
+            Image(systemName: isAgentOwned ? "sparkle" : "terminal")
+                .font(.system(size: 8, weight: .semibold))
+                .foregroundStyle(isSelected ? .primary : .secondary)
+                .help(isAgentOwned ? "Agent background process" : "Terminal")
             fadingName
             if showsClose {
                 closeButton
+            } else if isReadOnly {
+                readOnlyBadge
             }
         }
         .padding(.horizontal, Self.contentPadding)
@@ -463,6 +473,16 @@ private struct PaneTab: View {
                     .frame(width: 10)
             }
         )
+    }
+
+    /// Sits where the ✕ would be on a running read-only mirror: view-only,
+    /// nothing to kill until the process exits.
+    private var readOnlyBadge: some View {
+        Image(systemName: "eye")
+            .font(.system(size: 7, weight: .bold))
+            .foregroundStyle(.secondary)
+            .frame(width: 14, height: 14)
+            .help("Read-only — the agent owns this process")
     }
 
     private var closeButton: some View {

@@ -147,8 +147,9 @@ struct PaneGroupStateTests {
         let selectedBefore = state.selectedPaneId
         let key = "\(sessionId.uuidString):bg:tool-1"
 
-        let pane = state.ensureAgentTerminalPane(name: "npm run dev", terminalKey: key)
+        let pane = state.ensureAgentTerminalPane(name: "npm run dev", terminalKey: key, readOnly: true)
         #expect(pane.attachOnly)
+        #expect(pane.readOnly)
         #expect(pane.name == "npm run dev")
         #expect(state.panes.count == 2)
         #expect(state.selectedPaneId == selectedBefore)
@@ -160,10 +161,12 @@ struct PaneGroupStateTests {
         #expect(state.panes.count == 2)
 
         // With nothing selected (empty group), the agent pane becomes the
-        // selection so the bar has a coherent state.
+        // selection so the bar has a coherent state. Interactive terminals
+        // default to writable.
         var empty = PaneGroupState()
         let first = empty.ensureAgentTerminalPane(name: "dev", terminalKey: key)
         #expect(empty.selectedPaneId == first.id)
+        #expect(first.readOnly == false)
         #expect(empty.isVisible == false)
     }
 
@@ -174,6 +177,7 @@ struct PaneGroupStateTests {
         """.utf8)
         let decoded = try JSONDecoder().decode(PaneDescriptorState.self, from: legacy)
         #expect(decoded.attachOnly == false)
+        #expect(decoded.readOnly == false)
     }
 
     @Test("Codable round-trip preserves panes, selection, visibility, and height")

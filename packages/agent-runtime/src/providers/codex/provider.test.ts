@@ -490,6 +490,7 @@ describe("CodexProvider", () => {
       {
         description: "npm run dev",
         id: "item-dev",
+        readOnly: true,
         status: "running",
         taskType: "shell",
         terminalKey: "thread-new:bg:item-dev",

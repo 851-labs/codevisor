@@ -98,11 +98,13 @@ struct SessionScreen: View {
         // something the chat is waiting on. Tabs persist after the task ends
         // (the exit is visible in the scrollback) until the user closes them.
         .onChange(of: controller.backgroundTasks, initial: true) { _, tasks in
-            for task in tasks {
-                if let terminalKey = task.terminalKey {
-                    paneGroup.ensureAgentTerminalPane(terminalKey: terminalKey, name: task.description)
+            paneGroup.syncAgentTerminals(
+                tasks.compactMap { task in
+                    task.terminalKey.map {
+                        (terminalKey: $0, name: task.description, readOnly: task.readOnly == true)
+                    }
                 }
-            }
+            )
         }
         .onAppear {
             focus.paneGroup = paneGroup

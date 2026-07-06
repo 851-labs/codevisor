@@ -33,6 +33,9 @@ public struct BackgroundTaskInfo: Sendable, Equatable, Codable, Identifiable {
     /// `attachOnly: true`) and render the task as a live terminal tab instead
     /// of the "Waiting on…" indicator.
     public var terminalKey: String?
+    /// The terminal is a read-only mirror: input and kill are unavailable
+    /// while the task runs (codex owns its command executions).
+    public var readOnly: Bool?
 
     public init(
         id: String,
@@ -40,7 +43,8 @@ public struct BackgroundTaskInfo: Sendable, Equatable, Codable, Identifiable {
         status: String,
         taskType: String,
         toolUseId: String? = nil,
-        terminalKey: String? = nil
+        terminalKey: String? = nil,
+        readOnly: Bool? = nil
     ) {
         self.id = id
         self.description = description
@@ -48,6 +52,7 @@ public struct BackgroundTaskInfo: Sendable, Equatable, Codable, Identifiable {
         self.taskType = taskType
         self.toolUseId = toolUseId
         self.terminalKey = terminalKey
+        self.readOnly = readOnly
     }
 }
 

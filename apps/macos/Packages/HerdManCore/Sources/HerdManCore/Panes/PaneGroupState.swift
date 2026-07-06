@@ -29,13 +29,25 @@ public struct PaneDescriptorState: Identifiable, Codable, Sendable, Equatable {
     /// terminal the server already registered (never spawns a shell), and the
     /// proxy's teardown must not kill the agent's process.
     public let attachOnly: Bool
+    /// The terminal is a read-only mirror (the provider cannot forward input
+    /// or kill the process) — the tab shows a view-only affordance while the
+    /// task runs.
+    public let readOnly: Bool
 
-    public init(id: UUID, kind: PaneKind, name: String, terminalKey: String, attachOnly: Bool = false) {
+    public init(
+        id: UUID,
+        kind: PaneKind,
+        name: String,
+        terminalKey: String,
+        attachOnly: Bool = false,
+        readOnly: Bool = false
+    ) {
         self.id = id
         self.kind = kind
         self.name = name
         self.terminalKey = terminalKey
         self.attachOnly = attachOnly
+        self.readOnly = readOnly
     }
 
     public init(from decoder: Decoder) throws {
@@ -46,7 +58,8 @@ public struct PaneDescriptorState: Identifiable, Codable, Sendable, Equatable {
             name: try container.decode(String.self, forKey: .name),
             terminalKey: try container.decode(String.self, forKey: .terminalKey),
             // Panes persisted before agent terminals existed are user shells.
-            attachOnly: try container.decodeIfPresent(Bool.self, forKey: .attachOnly) ?? false
+            attachOnly: try container.decodeIfPresent(Bool.self, forKey: .attachOnly) ?? false,
+            readOnly: try container.decodeIfPresent(Bool.self, forKey: .readOnly) ?? false
         )
     }
 }
@@ -148,7 +161,11 @@ public struct PaneGroupState: Codable, Sendable, Equatable {
     /// bar IS the notification. Returns the existing pane when one is already
     /// attached to that terminal.
     @discardableResult
-    public mutating func ensureAgentTerminalPane(name: String, terminalKey: String) -> PaneDescriptorState {
+    public mutating func ensureAgentTerminalPane(
+        name: String,
+        terminalKey: String,
+        readOnly: Bool = false
+    ) -> PaneDescriptorState {
         if let existing = panes.first(where: { $0.terminalKey == terminalKey }) {
             return existing
         }
@@ -157,7 +174,8 @@ public struct PaneGroupState: Codable, Sendable, Equatable {
             kind: .terminal,
             name: name,
             terminalKey: terminalKey,
-            attachOnly: true
+            attachOnly: true,
+            readOnly: readOnly
         )
         panes.append(pane)
         if selectedPaneId == nil {

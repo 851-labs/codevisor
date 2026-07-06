@@ -81,7 +81,11 @@ export const BackgroundTask = Schema.Struct({
   status: Schema.String,
   taskType: Schema.String,
   toolUseId: Schema.optional(Schema.String),
-  terminalKey: Schema.optional(Schema.String)
+  terminalKey: Schema.optional(Schema.String),
+  /** The terminal is a read-only mirror: the provider cannot forward input
+   *  or kill the process (codex owns its command executions). Clients hide
+   *  the kill affordance while the task runs. */
+  readOnly: Schema.optional(Schema.Boolean)
 })
 export type BackgroundTask = typeof BackgroundTask.Type
 

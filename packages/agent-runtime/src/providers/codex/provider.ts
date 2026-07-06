@@ -1624,6 +1624,8 @@ const emitCodexBackgroundTasks = (session: CodexSession): void => {
     .map((terminal) => ({
       description: terminal.description,
       id: terminal.itemId,
+      // Codex owns the process; the mirror can neither write nor kill.
+      readOnly: true,
       status: "running",
       taskType: "shell",
       terminalKey: terminal.terminalKey,
