@@ -23,6 +23,25 @@ struct InlineMarkdownTests {
         #expect(hasCode)
     }
 
+    @Test("Themed inline code gets a background chip with padding spaces")
+    func codeChip() {
+        let attributed = InlineMarkdown.attributedString(from: "call `foo()` now", theme: .default)
+        let hasChip = attributed.runs.contains { run in
+            run.inlinePresentationIntent?.contains(.code) == true
+                && run[InlineCodeChipKey.self] == true
+        }
+        #expect(hasChip)
+        // Narrow no-break spaces pad each side of the code span.
+        #expect(String(attributed.characters).contains("\u{202F}foo()\u{202F}"))
+    }
+
+    @Test("Themed text without code is unchanged")
+    func noCodeUnchanged() {
+        let attributed = InlineMarkdown.attributedString(from: "just **words**", theme: .default)
+        #expect(String(attributed.characters) == "just words")
+        #expect(attributed.runs.allSatisfy { $0[InlineCodeChipKey.self] != true })
+    }
+
     @Test("Plain text passes through unchanged")
     func plain() {
         let attributed = InlineMarkdown.attributedString(from: "just words")

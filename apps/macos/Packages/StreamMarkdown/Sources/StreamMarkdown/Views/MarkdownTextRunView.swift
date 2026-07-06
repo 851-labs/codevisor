@@ -14,10 +14,11 @@ struct MarkdownTextRunView: View {
     @Environment(\.markdownTheme) private var theme
 
     var body: some View {
-        Text(Self.attributedString(for: blocks, theme: theme))
+        Text.withInlineCodeChips(Self.attributedString(for: blocks, theme: theme))
             .font(theme.bodyFont)
             .textSelection(.enabled)
             .fixedSize(horizontal: false, vertical: true)
+            .textRenderer(InlineCodeChipRenderer(background: theme.inlineCodeBackground))
     }
 
     /// Merges the blocks into one attributed string. Blocks are separated by a
@@ -45,18 +46,20 @@ struct MarkdownTextRunView: View {
         case let .heading(level, text):
             var attributed = InlineMarkdown.attributedString(from: text)
             attributed.font = headingFont(for: level).weight(.semibold)
-            return attributed
+            // Code chip styling comes after the heading font so `code` spans
+            // keep their monospaced chip look inside headings.
+            return InlineMarkdown.styleInlineCode(in: attributed, theme: theme)
 
         case let .paragraph(text):
             // No explicit font: inherits the body font from the Text view, so
             // strong/emphasis presentation intents resolve correctly.
-            return InlineMarkdown.attributedString(from: text)
+            return InlineMarkdown.attributedString(from: text, theme: theme)
 
         case let .bulletList(items):
-            return list(items: items.map { (marker: "•", text: $0) })
+            return list(items: items.map { (marker: "•", text: $0) }, theme: theme)
 
         case let .orderedList(items):
-            return list(items: items.map { (marker: "\($0.number).", text: $0.text) })
+            return list(items: items.map { (marker: "\($0.number).", text: $0.text) }, theme: theme)
 
         case .codeBlock, .blockQuote, .table, .thematicBreak:
             // Not text-run blocks; rendered by MarkdownBlockView instead.
@@ -64,7 +67,7 @@ struct MarkdownTextRunView: View {
         }
     }
 
-    private static func list(items: [(marker: String, text: String)]) -> AttributedString {
+    private static func list(items: [(marker: String, text: String)], theme: MarkdownTheme) -> AttributedString {
         var result = AttributedString()
         for (index, item) in items.enumerated() {
             if index > 0 {
@@ -73,7 +76,7 @@ struct MarkdownTextRunView: View {
             var marker = AttributedString("\(item.marker) ")
             marker.foregroundColor = .secondary
             result += marker
-            result += InlineMarkdown.attributedString(from: item.text)
+            result += InlineMarkdown.attributedString(from: item.text, theme: theme)
         }
         return result
     }

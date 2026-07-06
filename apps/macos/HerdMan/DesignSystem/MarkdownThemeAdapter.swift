@@ -31,6 +31,9 @@ func makeMarkdownTheme(theme: Theme, highlight: (key: String, json: String)?) ->
     var markdown = MarkdownTheme.default
     if let palette = theme.palette {
         markdown.codeBackground = Color(rgba: palette.cardBackground)
+        // cardHoverBackground (12% fg mix) — cardBackground's 6% mix vanishes
+        // against the window background in most custom themes.
+        markdown.inlineCodeBackground = Color(rgba: palette.cardHoverBackground)
         markdown.quoteBarColor = theme.border
         markdown.tableBorderColor = theme.separator
     }

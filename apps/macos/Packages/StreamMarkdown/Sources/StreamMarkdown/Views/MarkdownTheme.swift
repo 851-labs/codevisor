@@ -12,8 +12,13 @@ public typealias CodeHighlighting = @Sendable (_ code: String, _ language: Strin
 public struct MarkdownTheme: Sendable {
     public var bodyFont: Font
     public var codeFont: Font
+    /// Font for `` `inline code` `` chips: monospaced and a touch smaller
+    /// than the body text so chips sit flush in a line of prose.
+    public var inlineCodeFont: Font
     public var blockSpacing: CGFloat
     public var codeBackground: Color
+    /// Background tint for `` `inline code` `` chips.
+    public var inlineCodeBackground: Color
     public var quoteBarColor: Color
     public var tableBorderColor: Color
     public var codeHighlighter: CodeHighlighting?
@@ -25,8 +30,10 @@ public struct MarkdownTheme: Sendable {
     public init(
         bodyFont: Font = .body,
         codeFont: Font = .system(.callout, design: .monospaced),
+        inlineCodeFont: Font = .system(.callout, design: .monospaced),
         blockSpacing: CGFloat = 10,
         codeBackground: Color = Color.secondary.opacity(0.12),
+        inlineCodeBackground: Color = Color.secondary.opacity(0.18),
         quoteBarColor: Color = Color.secondary.opacity(0.4),
         tableBorderColor: Color = Color.secondary.opacity(0.25),
         codeHighlighter: CodeHighlighting? = nil,
@@ -34,8 +41,10 @@ public struct MarkdownTheme: Sendable {
     ) {
         self.bodyFont = bodyFont
         self.codeFont = codeFont
+        self.inlineCodeFont = inlineCodeFont
         self.blockSpacing = blockSpacing
         self.codeBackground = codeBackground
+        self.inlineCodeBackground = inlineCodeBackground
         self.quoteBarColor = quoteBarColor
         self.tableBorderColor = tableBorderColor
         self.codeHighlighter = codeHighlighter

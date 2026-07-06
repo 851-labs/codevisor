@@ -36,8 +36,9 @@ struct MarkdownTableView: View {
     }
 
     private func cell(_ text: String, alignment: ColumnAlignment, isHeader: Bool) -> some View {
-        Text(InlineMarkdown.attributedString(from: text))
+        Text.withInlineCodeChips(InlineMarkdown.attributedString(from: text, theme: theme))
             .font(isHeader ? theme.bodyFont.weight(.semibold) : theme.bodyFont)
+            .textRenderer(InlineCodeChipRenderer(background: theme.inlineCodeBackground))
             .frame(maxWidth: .infinity, alignment: frameAlignment(alignment))
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
