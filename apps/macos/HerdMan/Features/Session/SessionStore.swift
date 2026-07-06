@@ -148,6 +148,18 @@ final class SessionStore {
         if draft === controller { draft = nil }
     }
 
+    /// Reverts a failed first-send promotion: forgets the session registration
+    /// (the record is being deleted) and returns the controller to the draft
+    /// slot, so the reopened new-chat page picks it back up with its restored
+    /// composer text and failure status.
+    func demote(_ controller: SessionController, sessionId: UUID) {
+        if controllers[sessionId] === controller { controllers[sessionId] = nil }
+        paneGroups[sessionId]?.detachAll()
+        paneGroups[sessionId] = nil
+        unreadCounts[sessionId] = nil
+        draft = controller
+    }
+
     func discard(_ sessionId: UUID) {
         controllers[sessionId] = nil
         paneGroups[sessionId]?.detachAll()

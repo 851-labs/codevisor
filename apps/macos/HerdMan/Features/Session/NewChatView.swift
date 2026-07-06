@@ -264,6 +264,19 @@ struct NewChatView: View {
             controller.onWorktreeCreated = { [weak projectList = environment.projectList] worktree in
                 projectList?.setWorktree(name: worktree.name, cwd: worktree.path, for: session.id)
             }
+            // If worktree setup or the agent start fails, undo the promotion:
+            // delete the just-created session record (local + server), demote
+            // the controller back to the draft slot, and reopen the new-chat
+            // page — its status label shows the failure.
+            controller.onSetupFailed = { [weak controller, weak projectList = environment.projectList] in
+                guard let controller else { return }
+                projectList?.deleteSession(session)
+                controller.serverSession = nil
+                controller.onAgentSessionCreated = nil
+                controller.onWorktreeCreated = nil
+                store.demote(controller, sessionId: session.id)
+                selection = .newChat(project.id)
+            }
             store.register(controller, for: session.id)
             selection = .session(session.id)
         }

@@ -10,6 +10,7 @@ struct AssistantTurnView: View {
     let turn: AssistantTurn
     @State private var isExpanded: Bool
     @State private var hasAutoCollapsed = false
+    @State private var isHovered = false
 
     init(turn: AssistantTurn, initiallyExpanded: Bool? = nil) {
         self.turn = turn
@@ -17,18 +18,14 @@ struct AssistantTurnView: View {
         _isExpanded = State(initialValue: initiallyExpanded ?? turn.isGenerating)
     }
 
-    private var showsWorkedSection: Bool { turn.isGenerating || turn.hasWorkedContent }
+    private var showsWorkedSection: Bool {
+        turn.isGenerating || turn.hasWorkedContent || !turn.answeredQuestions.isEmpty
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             if showsWorkedSection {
                 workedSection
-            }
-
-            // Chronology: the agent asks (and the user answers) before it
-            // produces the plan — the answered questions read first.
-            ForEach(turn.answeredQuestions, id: \.questionId) { resolution in
-                AnsweredQuestionView(resolution: resolution)
             }
 
             if let planDocument = turn.planDocument, !planDocument.isEmpty {
@@ -47,9 +44,16 @@ struct AssistantTurnView: View {
             if !turn.isGenerating, let final = turn.finalText, case let .text(_, markdown) = final {
                 StreamingMarkdownView(markdown)
                     .textSelection(.enabled)
+                // Copies just the final answer text, not the worked/tool
+                // content. Hidden until hover so the transcript stays clean.
+                MessageCopyButton(text: markdown, help: "Copy response", isRevealed: isHovered)
+                    .opacity(isHovered ? 1 : 0)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        // Whole-row hover target, full width and height: AppKit tracking
+        // (not .onHover) so the transparent regions count too.
+        .hoverTracking($isHovered)
         .onChange(of: turn.isGenerating) { _, generating in
             if generating {
                 isExpanded = true
@@ -84,10 +88,15 @@ struct AssistantTurnView: View {
                 .buttonStyle(.plain)
             }
 
-            if isExpanded && !displayItems.isEmpty {
+            if isExpanded, !displayItems.isEmpty || !turn.answeredQuestions.isEmpty {
                 VStack(alignment: .leading, spacing: 12) {
                     Divider()
                     TranscriptItemsView(items: displayItems, turn: turn, isTurnActive: turn.isGenerating)
+                    // Question answers live here with the tool call that
+                    // asked them, not as standalone cards above the plan.
+                    ForEach(turn.answeredQuestions, id: \.questionId) { resolution in
+                        AnsweredQuestionView(resolution: resolution)
+                    }
                 }
                 .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
             }

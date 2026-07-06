@@ -129,10 +129,10 @@ public enum ToolCallSummary {
         case .execute: return "terminal"
         case .edit: return "pencil"
         case .read: return "doc.text"
-        case .fetch: return "arrow.down.circle"
+        case .fetch: return "globe"
         case .delete: return "trash"
         case .move: return "arrow.right.doc.on.clipboard"
-        case .agent: return "sparkles"
+        case .agent: return "wand.and.sparkles"
         case .other: return "wrench.and.screwdriver"
         }
     }

@@ -70,12 +70,6 @@ struct SubagentSectionView: View {
     private var items: [WorkedItem] { turn.subagentItems(call.toolCallId) }
     private var transcript: SubagentTranscript? { turn.subagents[call.toolCallId] }
 
-    private var childCalls: [ToolCall] {
-        (transcript?.entries ?? []).compactMap {
-            if case let .tool(child) = $0 { return child } else { return nil }
-        }
-    }
-
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             header
@@ -104,7 +98,7 @@ struct SubagentSectionView: View {
 
     private var header: some View {
         HStack(spacing: 8) {
-            Image(systemName: "sparkles")
+            Image(systemName: "wand.and.sparkles")
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .frame(width: 16)
@@ -113,12 +107,6 @@ struct SubagentSectionView: View {
                 .truncationMode(.tail)
                 .foregroundStyle(.secondary)
                 .shimmering(isRunning)
-            if !childCalls.isEmpty {
-                Text(ToolCallSummary.describe(childCalls))
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
-                    .lineLimit(1)
-            }
             statusGlyph
             Image(systemName: "chevron.right")
                 .font(.caption2)

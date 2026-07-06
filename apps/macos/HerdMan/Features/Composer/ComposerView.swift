@@ -94,8 +94,8 @@ struct ComposerCard: View {
                     ForEach(controller.pickerOptions) { option in
                         configMenu(option)
                     }
-                    if !controller.hasModeConfigPicker {
-                        modeMenu
+                    if controller.hasPlanMode {
+                        planModeButton
                     }
                     if controller.canEditGoal {
                         goalModeButton
@@ -228,47 +228,27 @@ struct ComposerCard: View {
         .help(option.name)
     }
 
-    @ViewBuilder
-    private var modeMenu: some View {
-        if let modes = controller.modeState, modes.availableModes.count > 1 {
-            Menu {
-                // Canonical modes first, in the fixed HerdMan order, with
-                // consistent labels across harnesses.
-                ForEach(modes.canonicalModes) { mode in
-                    modeButton(mode, isCurrent: mode.id == modes.currentModeId)
-                }
-                // Agent-defined modes that don't map onto the canonical
-                // vocabulary keep their native names below a divider.
-                if !modes.nativeOnlyModes.isEmpty {
-                    Divider()
-                    Section("Agent modes") {
-                        ForEach(modes.nativeOnlyModes) { mode in
-                            modeButton(mode, isCurrent: mode.id == modes.currentModeId)
-                        }
-                    }
-                }
-            } label: {
-                chipLabel(modes.currentMode?.displayName ?? "Mode")
-            }
-            .menuStyle(.button)
-            .buttonStyle(.plain)
-            .menuIndicator(.hidden)
-            .fixedSize()
-            .help(modes.currentMode?.description ?? "Mode")
-        }
-    }
-
-    private func modeButton(_ mode: SessionMode, isCurrent: Bool) -> some View {
-        Button {
-            Task { await controller.setMode(mode.id) }
+    /// Plan-mode toggle: on, the agent plans before making changes; off, it
+    /// runs in the harness's full-access/build mode. Shown only when the
+    /// harness maps a plan mode; the old multi-mode picker is gone (the other
+    /// modes were never used).
+    private var planModeButton: some View {
+        let isOn = controller.isPlanModeOn
+        return Button {
+            Task { await controller.togglePlanMode() }
         } label: {
-            if isCurrent {
-                Label(mode.displayName, systemImage: "checkmark")
-            } else {
-                Text(mode.displayName)
-            }
+            Image(systemName: "checklist")
+                .font(.system(size: 12, weight: .semibold))
+                .frame(width: 24, height: 24)
+                .foregroundStyle(isOn ? AnyShapeStyle(theme.windowBackground) : AnyShapeStyle(.secondary))
+                .background(Circle().fill(isOn ? AnyShapeStyle(theme.accent) : AnyShapeStyle(.clear)))
+                .contentShape(Circle())
         }
-        .help(mode.description ?? mode.displayName)
+        .buttonStyle(HoverIconButtonStyle())
+        .help("Toggle plan mode")
+        .tooltip("Toggle plan mode")
+        .accessibilityLabel("Plan mode")
+        .accessibilityAddTraits(isOn ? .isSelected : [])
     }
 
     /// Leaves edit-goal mode without changing the goal (the banner returns).
@@ -285,6 +265,7 @@ struct ComposerCard: View {
         }
         .buttonStyle(.plain)
         .help("Back — keep the current goal (esc)")
+        .tooltip("Back — keep the current goal (esc)")
     }
 
     /// Goal-mode toggle: when armed, submitting the composer sets the text
@@ -301,8 +282,9 @@ struct ComposerCard: View {
                 .background(Circle().fill(isArmed ? AnyShapeStyle(theme.accent) : AnyShapeStyle(.clear)))
                 .contentShape(Circle())
         }
-        .buttonStyle(.plain)
-        .help(isArmed ? "Goal mode armed — sending sets the goal" : "Set a goal: the agent keeps working toward it")
+        .buttonStyle(HoverIconButtonStyle())
+        .help("Toggle goal mode")
+        .tooltip("Toggle goal mode")
         .accessibilityLabel("Goal mode")
         .accessibilityAddTraits(isArmed ? .isSelected : [])
     }
@@ -328,8 +310,9 @@ struct ComposerCard: View {
                 .frame(width: 22, height: 22)
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(HoverIconButtonStyle())
         .help("Attach files")
+        .tooltip("Attach files")
         .accessibilityLabel("Attach files")
     }
 
@@ -382,6 +365,7 @@ struct ComposerCard: View {
             .foregroundStyle(isStopButtonHovered ? .primary : .secondary)
             .onHover { isStopButtonHovered = $0 }
             .help("Stop")
+            .tooltip("Stop")
         }
     }
 
@@ -414,6 +398,7 @@ struct ComposerCard: View {
             .disabled(!isEnabled)
             .onHover { isSendButtonHovered = $0 }
             .help("Send (↩)")
+            .tooltip("Send (↩)")
         }
     }
 
@@ -724,13 +709,14 @@ struct ModelConfigMenu: View {
     }
 }
 
-/// The harness picker chip. Only shown before the first message (drafts); on a
-/// session page the harness can't change, so it renders nothing.
+/// The harness picker chip. Only shown while the harness can still be chosen
+/// (an unsent draft); on a session page — including the moment a first send is
+/// still connecting — it renders nothing.
 struct HarnessPickerMenu: View {
     @Bindable var controller: SessionController
 
     var body: some View {
-        if controller.conversation.isEmpty {
+        if controller.canChooseHarness {
             if controller.harnesses.isEmpty {
                 PickerChip(text: "No agent installed") { EmptyView() }
             } else {

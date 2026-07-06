@@ -84,6 +84,11 @@ final class SessionController {
     /// Called once, on the first send — used by the new-chat page to create and
     /// register the real session and navigate to it.
     var onFirstSend: (() -> Void)?
+    /// Called when first-send setup (worktree creation or agent start) fails
+    /// after `onFirstSend` already promoted the draft — the new-chat page uses
+    /// it to delete the just-created session record and reopen itself with the
+    /// error showing.
+    var onSetupFailed: (() -> Void)?
 
     /// The agent session to resume (existing session); nil for a brand-new chat.
     var resumeAgentSessionId: String?
@@ -92,7 +97,17 @@ final class SessionController {
     /// When true, the draft runs in a new git worktree created on the first
     /// send. Until the worktree exists there is no cwd to connect with, so the
     /// eager pre-connect is skipped.
-    var wantsNewWorktree = false
+    var wantsNewWorktree = false {
+        didSet {
+            // A worktree kept alive from a reverted first send only makes
+            // sense while worktree mode stays on; turning it off must drop the
+            // override or the next send would still run in the worktree.
+            if !wantsNewWorktree {
+                sessionCwdOverride = nil
+                worktreeName = nil
+            }
+        }
+    }
     /// The worktree created for this draft on first send (server-assigned slug).
     private(set) var worktreeName: String?
     /// The created worktree's path; overrides the project folder as the agent cwd.
@@ -161,6 +176,19 @@ final class SessionController {
     var queuedPrompts: [ServerPromptQueueItem] { model?.queuedPrompts ?? [] }
     var availableCommands: [AvailableCommand] { model?.availableCommands ?? [] }
     var isConnected: Bool { model != nil }
+    /// Whether the harness can still be chosen: only a draft that hasn't sent
+    /// anything yet. An empty conversation alone isn't enough — during the
+    /// new-chat → session handoff the promoted controller is still connecting
+    /// and its conversation is momentarily empty, which made the session
+    /// composer's inline picker flash in briefly. The pending/connecting/
+    /// session checks keep it hidden through that window.
+    var canChooseHarness: Bool {
+        conversation.isEmpty
+            && pendingUserText == nil
+            && !isConnecting
+            && serverSession?.agentSessionId == nil
+            && resumeAgentSessionId == nil
+    }
     var modeState: SessionModeState? {
         if let model { return model.modeState }
         guard let selectedHarnessId, var state = modeStateByHarness[selectedHarnessId] else { return nil }
@@ -242,6 +270,9 @@ final class SessionController {
         isSubmitting = true
         let needsWorktree = wantsNewWorktree && sessionCwdOverride == nil
         let showsSetupPhases = serverSession?.agentSessionId == nil && resumeAgentSessionId == nil
+        // Whether this send is the one that promotes the new-chat draft to a
+        // real session — a setup failure then reverts back to the draft.
+        let promotedDraft = !hasSentFirst && onFirstSend != nil
 
         // Navigate first, exactly like a first prompt send.
         if !hasSentFirst {
@@ -259,15 +290,25 @@ final class SessionController {
         }
 
         if needsWorktree {
-            guard await createWorktree(showsSetupPhase: showsSetupPhases) else {
+            if let failure = await createWorktree(showsSetupPhase: showsSetupPhases) {
                 restoreComposer()
+                if promotedDraft {
+                    revertFirstSend(message: failure)
+                } else {
+                    failWorktreeSetup(with: failure, showsSetupPhase: showsSetupPhases)
+                }
                 return
             }
         }
 
         guard let harness = selectedHarness else {
-            status = .failed("No agent is installed. Install Claude Code or Codex and try again.")
+            let message = "No agent is installed. Install Claude Code or Codex and try again."
             restoreComposer()
+            if promotedDraft {
+                revertFirstSend(message: message)
+            } else {
+                status = .failed(message)
+            }
             return
         }
         status = .connecting("Starting \(harness.name)…")
@@ -280,9 +321,13 @@ final class SessionController {
             status = .idle
         } catch {
             let message = serverErrorMessage(error)
-            mutateSetupPhase(id: SessionSetupPhase.agentPhaseId) { $0.fail(message: message) }
-            status = .failed(message)
             restoreComposer()
+            if promotedDraft {
+                revertFirstSend(message: message)
+            } else {
+                mutateSetupPhase(id: SessionSetupPhase.agentPhaseId) { $0.fail(message: message) }
+                status = .failed(message)
+            }
         }
     }
 
@@ -380,27 +425,25 @@ final class SessionController {
         modelOption != nil || thoughtLevelOption != nil || speedOption != nil
     }
 
-    /// The config options still shown as individual picker chips (approval
-    /// mode, model config, unknown categories), in a sensible order.
+    /// The config options still shown as individual picker chips (model
+    /// config, unknown categories), in a sensible order. Mode options are
+    /// excluded entirely: the composer's plan toggle is the only mode control
+    /// (everything else runs in the harness's full-access/build default).
     var pickerOptions: [SessionConfigOption] {
-        let order = [
-            SessionConfigOption.Category.modelConfig,
-            SessionConfigOption.Category.mode
-        ]
+        let order = [SessionConfigOption.Category.modelConfig]
         return configOptions
-            .filter { !$0.options.isEmpty && !Self.modelMenuCategories.contains($0.category ?? "") }
+            .filter { option in
+                !option.options.isEmpty
+                    && !Self.modelMenuCategories.contains(option.category ?? "")
+                    && option.category != SessionConfigOption.Category.mode
+                    && option.id != "mode"
+            }
             .sorted { left, right in
                 let leftIndex = order.firstIndex(of: left.category ?? "") ?? 99
                 let rightIndex = order.firstIndex(of: right.category ?? "") ?? 99
                 if leftIndex == rightIndex { return left.name < right.name }
                 return leftIndex < rightIndex
             }
-    }
-
-    var hasModeConfigPicker: Bool {
-        pickerOptions.contains { option in
-            option.category == SessionConfigOption.Category.mode || option.id == "mode"
-        }
     }
 
     func setConfigOption(_ configId: String, _ value: String) async {
@@ -700,6 +743,10 @@ final class SessionController {
     func selectProject(_ project: Project) async {
         guard project.id != self.project.id else { return }
         self.project = project
+        // A worktree kept from a reverted first send belongs to the old
+        // project; the new project gets its own on the next send.
+        sessionCwdOverride = nil
+        worktreeName = nil
         seedFromCachedServerCapabilities()
         await reconnect()
     }
@@ -732,6 +779,9 @@ final class SessionController {
         // A brand-new chat renders its pre-chat steps as setup sections; a
         // resumed session's transcript shouldn't grow one retroactively.
         let showsSetupPhases = serverSession?.agentSessionId == nil && resumeAgentSessionId == nil
+        // Whether this send is the one that promotes the new-chat draft to a
+        // real session — a setup failure then reverts back to the draft.
+        let promotedDraft = !hasSentFirst && onFirstSend != nil
 
         // Navigate first: the session page opens the instant the user sends
         // and shows the optimistic message plus live setup progress.
@@ -769,8 +819,13 @@ final class SessionController {
         // the worktree cwd. Progress (including checkout-hook output) streams
         // into the "Setting up worktree…" section.
         if needsWorktree {
-            guard await createWorktree(showsSetupPhase: showsSetupPhases) else {
+            if let failure = await createWorktree(showsSetupPhase: showsSetupPhases) {
                 restoreComposer()
+                if promotedDraft {
+                    revertFirstSend(message: failure)
+                } else {
+                    failWorktreeSetup(with: failure, showsSetupPhase: showsSetupPhases)
+                }
                 return
             }
         }
@@ -783,8 +838,13 @@ final class SessionController {
         }
 
         guard let harness = selectedHarness else {
-            status = .failed("No agent is installed. Install Claude Code or Codex and try again.")
+            let message = "No agent is installed. Install Claude Code or Codex and try again."
             restoreComposer()
+            if promotedDraft {
+                revertFirstSend(message: message)
+            } else {
+                status = .failed(message)
+            }
             return
         }
         status = .connecting("Starting \(harness.name)…")
@@ -803,10 +863,28 @@ final class SessionController {
             await model.send(text, attachments: attachments)
         } catch {
             let message = serverErrorMessage(error)
-            mutateSetupPhase(id: SessionSetupPhase.agentPhaseId) { $0.fail(message: message) }
-            status = .failed(message)
             restoreComposer()
+            if promotedDraft {
+                revertFirstSend(message: message)
+            } else {
+                mutateSetupPhase(id: SessionSetupPhase.agentPhaseId) { $0.fail(message: message) }
+                status = .failed(message)
+            }
         }
+    }
+
+    /// Rolls a failed first send back to the draft state. The setup sections
+    /// belong to the session page being torn down; the error travels back to
+    /// the new-chat page as a `.failed` status, and `onSetupFailed` (wired by
+    /// the new-chat page) deletes the just-created session record and
+    /// navigates back. A worktree that was already created is kept on the
+    /// controller so a retry reuses it instead of materializing another one.
+    private func revertFirstSend(message: String) {
+        setupPhases.removeAll()
+        hasSentFirst = false
+        status = .failed(message)
+        onSetupFailed?()
+        onSetupFailed = nil
     }
 
     /// Asks the server to create a git worktree for this draft. The server
@@ -815,12 +893,11 @@ final class SessionController {
     /// either. The worktree id is generated client-side so the server's
     /// `worktree.setup` events (git output, checkout hooks, failures) can be
     /// followed live into the setup section while the request is in flight.
-    /// Returns false on failure, leaving the error in the setup section (or
-    /// the status for flows without one).
-    private func createWorktree(showsSetupPhase: Bool) async -> Bool {
+    /// Returns the failure message on error (nil on success); the caller
+    /// routes it into the setup section, the status, or a first-send revert.
+    private func createWorktree(showsSetupPhase: Bool) async -> String? {
         guard let serverClient else {
-            status = .failed("Worktrees need the HerdMan server. Start it and try again.")
-            return false
+            return "Worktrees need the HerdMan server. Start it and try again."
         }
         let worktreeId = UUID().uuidString.lowercased()
         if showsSetupPhase { beginSetupPhase(.worktree()) }
@@ -864,13 +941,11 @@ final class SessionController {
             onWorktreeCreated?(worktree)
             mutateSetupPhase(id: SessionSetupPhase.worktreePhaseId) { $0.succeed() }
             status = .idle
-            return true
+            return nil
         } catch let HerdManServerClientError.httpStatus(_, message) {
-            failWorktreeSetup(with: worktreeFailureMessage(from: message), showsSetupPhase: showsSetupPhase)
-            return false
+            return worktreeFailureMessage(from: message)
         } catch {
-            failWorktreeSetup(with: serverErrorMessage(error), showsSetupPhase: showsSetupPhase)
-            return false
+            return serverErrorMessage(error)
         }
     }
 
@@ -922,6 +997,76 @@ final class SessionController {
             await model.setMode(modeId)
         } else {
             pendingModeId = modeId
+        }
+    }
+
+    // MARK: - Plan mode
+
+    /// How plan mode is controlled for the selected harness. ACP has no plan
+    /// capability flag (modes only arrive with `session/new`), so support is
+    /// detected by inspecting what the harness exposes: a session mode mapped
+    /// onto the canonical plan vocabulary, or — for harnesses like OpenCode
+    /// that ship modes as a config select instead of ACP session modes — a
+    /// mode-category config option with a plan-ish value.
+    private enum PlanControl {
+        case sessionMode(planId: String, buildId: String)
+        case configOption(optionId: String, planValue: String, buildValue: String)
+    }
+
+    private var planControl: PlanControl? {
+        if let modeState,
+           let plan = modeState.availableModes.first(where: { $0.canonicalMode == .plan }),
+           let build = modeState.availableModes.first(where: { $0.canonicalMode == .fullAccess })
+               ?? modeState.availableModes.first(where: { $0.canonicalMode != .plan }) {
+            return .sessionMode(planId: plan.id, buildId: build.id)
+        }
+        if let option = modeConfigOption,
+           let plan = option.options.first(where: { Self.matches("^plan", $0.value, $0.name) }),
+           let build = option.options.first(where: { Self.matches("bypass|full[-_ ]?access|yolo", $0.value, $0.name) })
+               ?? option.options.first(where: { $0.value != plan.value }) {
+            return .configOption(optionId: option.id, planValue: plan.value, buildValue: build.value)
+        }
+        return nil
+    }
+
+    /// The mode-category config select, for harnesses without ACP session
+    /// modes (e.g. OpenCode's build/plan). Hidden from the picker chips and
+    /// driven by the plan toggle instead.
+    private var modeConfigOption: SessionConfigOption? {
+        configOptions.first { $0.category == SessionConfigOption.Category.mode || $0.id == "mode" }
+    }
+
+    /// Mirrors the server's canonical-mode patterns (agent-runtime acp.ts) so
+    /// the app and server recognize the same plan/full-access spellings.
+    private static func matches(_ pattern: String, _ candidates: String...) -> Bool {
+        candidates.contains {
+            $0.range(of: pattern, options: [.regularExpression, .caseInsensitive]) != nil
+        }
+    }
+
+    /// Whether the composer shows the plan toggle at all — needs a plan mode
+    /// and a build/full-access mode to come back to.
+    var hasPlanMode: Bool { planControl != nil }
+
+    var isPlanModeOn: Bool {
+        switch planControl {
+        case let .sessionMode(planId, _):
+            return modeState?.currentModeId == planId
+        case let .configOption(optionId, planValue, _):
+            return configOptions.first { $0.id == optionId }?.currentValue == planValue
+        case nil:
+            return false
+        }
+    }
+
+    func togglePlanMode() async {
+        switch planControl {
+        case let .sessionMode(planId, buildId):
+            await setMode(isPlanModeOn ? buildId : planId)
+        case let .configOption(optionId, planValue, buildValue):
+            await setConfigOption(optionId, isPlanModeOn ? buildValue : planValue)
+        case nil:
+            break
         }
     }
 

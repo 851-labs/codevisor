@@ -20,6 +20,7 @@ struct ConversationItemView: View {
 struct UserMessageView: View {
     @Environment(\.theme) private var theme
     let message: UserMessage
+    @State private var isHovered = false
 
     var body: some View {
         HStack {
@@ -38,9 +39,16 @@ struct UserMessageView: View {
                         .padding(.horizontal, 12)
                         .padding(.vertical, 8)
                         .background(RoundedRectangle(cornerRadius: 14).fill(theme.bubbleBackground))
+                    // Kept in the layout (hidden until hover) so the row
+                    // height doesn't jump when the pointer enters.
+                    MessageCopyButton(text: message.text, help: "Copy message", isRevealed: isHovered)
+                        .opacity(isHovered ? 1 : 0)
                 }
             }
         }
+        // Whole-row hover target, full width and height: AppKit tracking
+        // (not .onHover) so the transparent regions count too.
+        .hoverTracking($isHovered)
     }
 }
 
