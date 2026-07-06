@@ -656,13 +656,13 @@ struct ModelConfigMenu: View {
         if controller.hasModelMenu {
             Menu {
                 if let option = controller.modelOption {
-                    submenu("Model", option)
+                    section("Model", option)
                 }
                 if let option = controller.thoughtLevelOption {
-                    submenu("Reasoning", option)
+                    section("Reasoning", option)
                 }
                 if let option = controller.speedOption {
-                    submenu("Speed", option)
+                    section("Speed", option)
                 }
             } label: {
                 chipLabel
@@ -678,8 +678,10 @@ struct ModelConfigMenu: View {
 
     // Toggles rather than checkmark labels: macOS menus drop SF Symbol images,
     // so only a Toggle reliably renders the native selected checkmark.
-    private func submenu(_ title: String, _ option: SessionConfigOption) -> some View {
-        Menu(title) {
+    // Flat titled sections rather than nested submenus: everything is one
+    // click away and the current value of each group is scannable at once.
+    private func section(_ title: String, _ option: SessionConfigOption) -> some View {
+        Section(title) {
             ForEach(option.options) { value in
                 Toggle(isOn: Binding(
                     get: { value.value == option.currentValue },
