@@ -49,10 +49,28 @@ struct SessionContainerView: View {
         }
         // Removing the default title item (above) also drops the toolbar's
         // backing on macOS 26, leaving the top bar fully transparent over
-        // scrolled chat content. Restore the standard toolbar background for
-        // system themes; custom themes keep it hidden because ThemedRoot's
+        // scrolled chat content. Restoring it with
+        // `.toolbarBackgroundVisibility(.visible)` only takes effect when the
+        // binary is linked against the macOS 27 SDK — release builds come from
+        // the macOS 26 SDK (macos-26 CI runners), where the top bar stayed
+        // transparent except for the hover glass. Paint the band manually
+        // instead (same overlay pattern as `themedToolbarBackground`) with the
+        // system bar material so it renders identically under both SDKs.
+        // Custom themes keep it hidden because ThemedRoot's
         // `themedToolbarBackground` paints its own opaque band instead.
-        .toolbarBackgroundVisibility(theme.isSystem ? .visible : .hidden, for: .windowToolbar)
+        .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
+        .overlay {
+            if theme.isSystem {
+                GeometryReader { proxy in
+                    Rectangle()
+                        .fill(.bar)
+                        .frame(height: proxy.safeAreaInsets.top)
+                        .offset(y: -proxy.safeAreaInsets.top)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                }
+            }
+        }
         .task(id: session.id) {
             store.markOpened(session.id)
             let controller = store.controller(for: session, project: project)
