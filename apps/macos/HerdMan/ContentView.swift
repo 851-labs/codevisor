@@ -128,6 +128,20 @@ struct RootView: View {
             SidebarView(selection: $selection, store: store)
                 .navigationSplitViewColumnWidth(min: 230, ideal: 270, max: 360)
                 .themedToolbarBackground(theme, surface: theme.sidebarBackground)
+                #if DEBUG
+                // Dev builds show an ant in the sidebar toolbar — the classic
+                // debug marker — so they're recognizable at a glance.
+                .toolbar {
+                    ToolbarItem {
+                        Button {} label: {
+                            Image(systemName: "ant")
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.blue)
+                        .help("Development build")
+                    }
+                }
+                #endif
         } detail: {
             Group {
                 if let store {
