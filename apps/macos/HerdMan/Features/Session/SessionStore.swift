@@ -76,13 +76,20 @@ final class SessionStore {
         let group = PaneGroupModel(
             sessionId: session.id,
             repository: environment.paneGroups,
-            makeContext: { descriptor in
-                PaneContext(
+            makeContext: { [weak projectList = environment.projectList] descriptor in
+                // Panes are built lazily, so this cached closure can outlive
+                // the snapshot passed in above: a fresh worktree session
+                // starts with cwd == nil and only learns its worktree path
+                // once setup finishes (ProjectListModel.setWorktree). Resolve
+                // the live session at pane-creation time so terminals open in
+                // the worktree, not the project folder.
+                let liveSession = projectList?.sessions.first { $0.id == session.id } ?? session
+                return PaneContext(
                     paneId: descriptor.id,
                     sessionId: session.id,
                     terminalKey: descriptor.terminalKey,
                     machine: machine,
-                    session: session,
+                    session: liveSession,
                     project: project
                 )
             }
