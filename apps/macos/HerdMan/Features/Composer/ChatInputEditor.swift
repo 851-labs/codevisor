@@ -58,6 +58,15 @@ struct ChatInputEditor: NSViewRepresentable {
         scroll.hasHorizontalScroller = false
         scroll.documentView = textView
         context.coordinator.textView = textView
+        // Height depends on the wrap width, which SwiftUI only settles after
+        // layout — re-measure whenever the text view's width changes.
+        textView.postsFrameChangedNotifications = true
+        NotificationCenter.default.addObserver(
+            context.coordinator,
+            selector: #selector(Coordinator.textViewFrameDidChange(_:)),
+            name: NSView.frameDidChangeNotification,
+            object: textView
+        )
         DispatchQueue.main.async { recalculateHeight(textView) }
         return scroll
     }
@@ -72,7 +81,11 @@ struct ChatInputEditor: NSViewRepresentable {
         if textView.string != text {
             textView.string = text
         }
-        recalculateHeight(textView)
+        // Change-driven: this runs on EVERY SwiftUI invalidation of the
+        // composer (including transcript streaming re-renders), and
+        // `recalculateHeight` is a full TextKit layout pass of the draft.
+        // Only re-measure when the text or wrap width actually changed.
+        context.coordinator.recalculateHeightIfNeeded()
     }
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
@@ -90,12 +103,46 @@ struct ChatInputEditor: NSViewRepresentable {
     final class Coordinator: NSObject, NSTextViewDelegate {
         var parent: ChatInputEditor
         weak var textView: SubmittingTextView?
+        /// The text/width the height was last measured for. Guards the
+        /// full-layout `recalculateHeight` so it runs once per real change
+        /// instead of once per SwiftUI invalidation (and prevents the
+        /// keystroke → binding write → update round-trip from laying the
+        /// same text out twice).
+        private var measuredText: String?
+        private var measuredWidth: CGFloat = -1
 
         init(_ parent: ChatInputEditor) { self.parent = parent }
+
+        deinit {
+            NotificationCenter.default.removeObserver(self)
+        }
+
+        func recalculateHeightIfNeeded() {
+            guard let textView else { return }
+            let width = textView.bounds.width
+            guard measuredText != textView.string || abs(measuredWidth - width) > 0.5 else { return }
+            recordMeasurement(textView)
+            parent.recalculateHeight(textView)
+        }
+
+        @objc func textViewFrameDidChange(_ notification: Notification) {
+            guard let textView else { return }
+            // Height changes are our own doing (the view grows with its
+            // content); only a width change re-wraps the text.
+            guard abs(measuredWidth - textView.bounds.width) > 0.5 else { return }
+            recordMeasurement(textView)
+            parent.recalculateHeight(textView)
+        }
+
+        private func recordMeasurement(_ textView: NSTextView) {
+            measuredText = textView.string
+            measuredWidth = textView.bounds.width
+        }
 
         func textDidChange(_ notification: Notification) {
             guard let textView = notification.object as? NSTextView else { return }
             parent.text = textView.string
+            recordMeasurement(textView)
             parent.recalculateHeight(textView)
         }
 

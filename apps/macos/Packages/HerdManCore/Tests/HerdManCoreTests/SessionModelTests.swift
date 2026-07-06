@@ -6,6 +6,13 @@ import ACPKit
 @MainActor
 @Suite("SessionModel")
 struct SessionModelTests {
+    init() {
+        // Production coalesces stream events into per-frame batches; these
+        // tests settle with `Task.yield()` loops that never advance the wall
+        // clock, so flush on the next main-actor turn instead.
+        SessionModel.eventFlushInterval = .zero
+    }
+
     @Test("Blank prompts are ignored")
     func blankIgnored() async {
         let sessionId = UUID()

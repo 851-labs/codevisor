@@ -66,7 +66,15 @@ struct AssistantTurnView: View {
             // know the real final text. Stays collapsed afterward.
             if !hasAutoCollapsed {
                 hasAutoCollapsed = true
-                withAnimation(.snappy(duration: 0.28)) { isExpanded = false }
+                // Animating the removal of an enormous worked section (an
+                // hours-long turn is most of the transcript's height) is a
+                // main-thread layout hazard; past a size threshold collapse
+                // instantly instead.
+                if turn.entries.count > 80 {
+                    isExpanded = false
+                } else {
+                    withAnimation(.snappy(duration: 0.28)) { isExpanded = false }
+                }
             }
         }
     }

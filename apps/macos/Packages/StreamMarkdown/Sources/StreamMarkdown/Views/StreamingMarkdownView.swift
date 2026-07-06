@@ -5,20 +5,37 @@ import SwiftUI
 /// partially-arrived code fences.
 public struct StreamingMarkdownView: View {
     private let text: String
-    private let parser = MarkdownParser()
-
-    @Environment(\.markdownTheme) private var theme
+    /// Per-view-identity memo of the last parse. `body` runs far more often
+    /// than the text changes (theme changes, sibling observable churn, the
+    /// per-frame re-renders of a streaming transcript), and parsing an
+    /// entire long message on the main thread each time was a dominant
+    /// source of streaming jank.
+    @State private var cache = SegmentCache()
 
     public init(_ text: String) {
         self.text = text
     }
 
-    private var blocks: [MarkdownBlock] {
-        parser.parse(text)
-    }
-
     public var body: some View {
-        MarkdownSegmentsView(blocks: blocks)
+        MarkdownSegmentListView(segments: cache.segments(for: text))
+    }
+}
+
+/// Memoizes block parsing + segment grouping for the last-seen text. A plain
+/// class held in `@State`: it must persist across body evaluations without
+/// being observable (cache writes must not re-render the view).
+@MainActor
+private final class SegmentCache {
+    private let parser = MarkdownParser()
+    private var lastText: String?
+    private var lastSegments: [MarkdownSegment] = []
+
+    func segments(for text: String) -> [MarkdownSegment] {
+        if text == lastText { return lastSegments }
+        let segments = MarkdownSegment.segments(from: parser.parse(text))
+        lastText = text
+        lastSegments = segments
+        return segments
     }
 }
 
@@ -28,11 +45,20 @@ public struct StreamingMarkdownView: View {
 /// code blocks, tables, quotes, and rules keep their own views.
 struct MarkdownSegmentsView: View {
     let blocks: [MarkdownBlock]
+
+    var body: some View {
+        MarkdownSegmentListView(segments: MarkdownSegment.segments(from: blocks))
+    }
+}
+
+/// Renders pre-computed markdown segments in document order.
+struct MarkdownSegmentListView: View {
+    let segments: [MarkdownSegment]
     @Environment(\.markdownTheme) private var theme
 
     var body: some View {
         VStack(alignment: .leading, spacing: theme.blockSpacing) {
-            ForEach(Array(MarkdownSegment.segments(from: blocks).enumerated()), id: \.offset) { _, segment in
+            ForEach(Array(segments.enumerated()), id: \.offset) { _, segment in
                 switch segment {
                 case let .textRun(runBlocks):
                     MarkdownTextRunView(blocks: runBlocks)

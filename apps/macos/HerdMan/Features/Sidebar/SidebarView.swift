@@ -714,11 +714,13 @@ struct SidebarView: View {
     }
 
     private func compareSessions(_ left: ChatSession, _ right: ChatSession) -> Bool {
-        // In last-updated order, active sessions (the ones showing spinners)
-        // always float to the top.
+        // In last-updated order, actively working sessions always float to
+        // the top. Deliberately NOT `isRunning`: that includes the transient
+        // connect pulse fired on every first open, which briefly floated the
+        // just-clicked row and made the sidebar reorder-then-revert.
         if order == .updated {
-            let leftRunning = store?.isRunning(left.id) == true
-            let rightRunning = store?.isRunning(right.id) == true
+            let leftRunning = store?.isActivelyWorking(left.id) == true
+            let rightRunning = store?.isActivelyWorking(right.id) == true
             if leftRunning != rightRunning {
                 return leftRunning
             }

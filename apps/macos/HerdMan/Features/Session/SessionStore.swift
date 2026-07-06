@@ -116,6 +116,19 @@ final class SessionStore {
             || controller.setupPhases.contains(where: \.isRunning)
     }
 
+    /// Whether the session is doing real work: generating a response or
+    /// running pre-chat setup. Unlike `isRunning`, this excludes the
+    /// transient connect pulse (`isConnecting` flips on for the few hundred
+    /// milliseconds after a session is first opened). The sidebar's
+    /// "active sessions float to the top" sort keys off this — keying off
+    /// the connect pulse made the list reorder and immediately snap back on
+    /// every first open.
+    func isActivelyWorking(_ sessionId: UUID) -> Bool {
+        guard let controller = controllers[sessionId] else { return false }
+        return controller.isSending
+            || controller.setupPhases.contains(where: \.isRunning)
+    }
+
     // MARK: - Unread badges
 
     /// Finished-and-not-yet-opened turns for a session — the sidebar badge count.

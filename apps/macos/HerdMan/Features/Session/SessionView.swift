@@ -199,6 +199,22 @@ struct SessionScreen: View {
                         - geometry.containerSize.height
                 )
             } action: { old, new in
+                // A large content collapse (the "Worked for" section of an
+                // hours-long turn folding when it finishes) can strand the
+                // viewport past the end of the much shorter content — the
+                // lazy stack then mounts no rows and the transcript renders
+                // blank until the next remount. A shrinking max offset is the
+                // discriminator (rubber-band overscroll never shrinks the
+                // content), so snap back inside bounds, without animation.
+                if pendingScrollRestore == nil,
+                   new.maxOffsetY < old.maxOffsetY - 1,
+                   new.offsetY > new.maxOffsetY + 1 {
+                    var transaction = Transaction()
+                    transaction.disablesAnimations = true
+                    withTransaction(transaction) {
+                        scrollPosition.scrollTo(y: max(0, new.maxOffsetY))
+                    }
+                }
                 if new.distance <= Self.atBottomThreshold {
                     // End is in view (incl. the rubber-band rebound after an
                     // over-scroll) — stay pinned, keep the button hidden.
@@ -503,6 +519,10 @@ struct SessionScreen: View {
         hasher.combine(controller.isWaitingOnBackgroundTasks)
         if case let .assistant(message) = controller.conversation.last {
             hasher.combine(message.turn.entries.count)
+            // The finalize flip matters: the worked section auto-collapses on
+            // it, and a pinned viewport must follow the shrink to the new
+            // bottom instead of being left mid-air.
+            hasher.combine(message.turn.isGenerating)
             hasher.combine(message.turn.isThinking)
             hasher.combine(message.turn.subagentActivityFingerprint)
             if case let .text(_, markdown) = message.turn.finalText {

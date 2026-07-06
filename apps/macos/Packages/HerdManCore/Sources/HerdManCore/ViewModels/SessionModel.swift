@@ -67,6 +67,17 @@ public final class SessionModel {
     /// prompt in flight — so one consumer runs for the model's lifetime.
     private var consumerTask: Task<Void, Never>?
 
+    /// Stream events waiting for the next per-frame flush. Deliberately not
+    /// observable: buffering must not invalidate views — only applying does.
+    @ObservationIgnored private var pendingEvents: [ServerSessionStreamEvent] = []
+    @ObservationIgnored private var isFlushScheduled = false
+
+    /// Interval between buffered-event flushes — roughly one frame, so a
+    /// streaming turn invalidates the UI at most once per frame. Tests set
+    /// this to `.zero` (flush on the next main-actor turn) so their
+    /// `Task.yield()`-based settling works without wall-clock waits.
+    static var eventFlushInterval: Duration = .milliseconds(16)
+
     public init(
         serverTransport: ServerSessionTransport,
         sessionId: String,
@@ -82,14 +93,50 @@ public final class SessionModel {
     }
 
     /// Starts the single long-lived event consumer (idempotent).
+    ///
+    /// Events are buffered and applied in per-frame batches rather than one
+    /// at a time: streaming delivers dozens of token-sized chunks per second,
+    /// and each individually-applied chunk lands in its own run-loop turn —
+    /// its own full SwiftUI invalidation of every `conversation` observer.
+    /// Batching bounds UI work to roughly once per frame no matter how fast
+    /// the server streams, which is what keeps typing in the composer crisp
+    /// while a turn is running.
     private func startConsumer() async {
         guard consumerTask == nil else { return }
         let events = serverEventCursor.map { transport.streamEvents(since: $0) } ?? transport.streamEvents()
         consumerTask = Task { @MainActor [weak self] in
             for await event in events {
                 guard let self else { break }
-                self.apply(event)
+                self.pendingEvents.append(event)
+                self.scheduleFlush()
             }
+            self?.flushPendingEvents()
+        }
+    }
+
+    /// Schedules a single buffered flush ~one frame out; no-op while one is
+    /// already scheduled, so bursts of chunks coalesce into one UI update.
+    private func scheduleFlush() {
+        guard !isFlushScheduled else { return }
+        isFlushScheduled = true
+        let interval = Self.eventFlushInterval
+        Task { @MainActor [weak self] in
+            if interval > .zero {
+                try? await Task.sleep(for: interval)
+            }
+            self?.flushPendingEvents()
+        }
+    }
+
+    /// Applies every buffered stream event in one synchronous pass — a single
+    /// run-loop turn, so SwiftUI renders the whole batch once.
+    private func flushPendingEvents() {
+        isFlushScheduled = false
+        guard !pendingEvents.isEmpty else { return }
+        let events = pendingEvents
+        pendingEvents.removeAll(keepingCapacity: true)
+        for event in events {
+            apply(event)
         }
     }
 
@@ -288,7 +335,7 @@ public final class SessionModel {
 
     // MARK: - Streaming
 
-    private var appliedUpdateCount = 0
+    @ObservationIgnored private var appliedUpdateCount = 0
 
     /// Yields until the update consumer stops applying buffered updates, so the
     /// final transcript is complete before the turn is marked finished.
@@ -297,6 +344,9 @@ public final class SessionModel {
         var lastCount = appliedUpdateCount
         var iterations = 0
         while stableRounds < 2 && iterations < 500 {
+            // Anything already buffered for the next frame flush counts as
+            // pending work — apply it now so the stability check sees it.
+            flushPendingEvents()
             await Task.yield()
             iterations += 1
             if appliedUpdateCount == lastCount {
@@ -364,7 +414,11 @@ public final class SessionModel {
             ensureAssistantTurn()
             guard case .assistant(var message) = conversation.last else { return }
             message.turn.isGenerating = true
-            isSending = true
+            // Guarded: `@Observable` fires on every set regardless of value,
+            // and this path runs for every streamed chunk — an unguarded
+            // write re-renders every `isSending` observer (the composer) per
+            // chunk for no state change.
+            if !isSending { isSending = true }
             TranscriptReducer.apply(update, to: &message.turn)
             conversation[conversation.count - 1] = .assistant(message)
         }
@@ -487,7 +541,7 @@ public final class SessionModel {
         conversation.append(.assistant(AssistantMessage(
             turn: AssistantTurn(isGenerating: true, isThinking: true, startedAt: now())
         )))
-        isSending = true
+        if !isSending { isSending = true }
     }
 
     private func ensureAssistantTurn() {
@@ -500,6 +554,6 @@ public final class SessionModel {
         conversation.append(.assistant(AssistantMessage(
             turn: AssistantTurn(isGenerating: true, isThinking: true, startedAt: now())
         )))
-        isSending = true
+        if !isSending { isSending = true }
     }
 }
