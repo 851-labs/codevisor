@@ -490,10 +490,7 @@ const routeProjects = async (
     }
     const existing = new Set((await run(services.db.listWorktrees(project.id))).map((w) => w.name))
     const requested = slugifyWorktreeName(payload.name)
-    const name =
-      requested === undefined
-        ? randomWorktreeName(existing)
-        : uniquifyWorktreeName(requested, existing)
+    const name = suffixedWorktreeName(requested ?? randomWorktreeBase(), existing)
     const branch = `herdman/${name}`
     const worktree = await run(services.db.createWorktree(project.id, name, branch, payload.id))
     const startedAt = Date.now()
@@ -636,27 +633,21 @@ const worktreeAnimals = [
   "yak"
 ] as const
 
-/// A memorable default worktree name ("ferocious-walrus"); retries a few
-/// random draws before falling back to numeric uniquification.
-const randomWorktreeName = (existing: ReadonlySet<string>): string => {
-  for (let attempt = 0; attempt < 10; attempt += 1) {
-    const adjective = worktreeAdjectives[Math.floor(Math.random() * worktreeAdjectives.length)]
-    const animal = worktreeAnimals[Math.floor(Math.random() * worktreeAnimals.length)]
-    const candidate = `${adjective}-${animal}`
-    if (!existing.has(candidate)) {
-      return candidate
-    }
-  }
-  /* v8 ignore next 2 -- ten colliding draws needs a nearly full namespace. */
-  return uniquifyWorktreeName("worktree", existing)
+/// A memorable default base name ("ferocious-walrus"); uniqueness comes from
+/// the random digits appended by suffixedWorktreeName.
+const randomWorktreeBase = (): string => {
+  const adjective = worktreeAdjectives[Math.floor(Math.random() * worktreeAdjectives.length)]
+  const animal = worktreeAnimals[Math.floor(Math.random() * worktreeAnimals.length)]
+  return `${adjective}-${animal}`
 }
 
-const uniquifyWorktreeName = (base: string, existing: ReadonlySet<string>): string => {
-  if (!existing.has(base)) {
-    return base
-  }
-  for (let suffix = 2; ; suffix += 1) {
-    const candidate = `${base}-${suffix}`
+/// Every worktree name ends in four random digits ("fix-auth-8392") so two
+/// requests for the same name can never conflict; on the rare collision with
+/// an existing worktree the digits are simply re-rolled.
+const suffixedWorktreeName = (base: string, existing: ReadonlySet<string>): string => {
+  for (;;) {
+    const digits = String(Math.floor(Math.random() * 10000)).padStart(4, "0")
+    const candidate = `${base}-${digits}`
     if (!existing.has(candidate)) {
       return candidate
     }

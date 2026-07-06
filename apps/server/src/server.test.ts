@@ -1565,15 +1565,20 @@ describe("@herdman/server", () => {
         method: "POST"
       })
       expect(worktreeResponse.status).toBe(201)
-      const worktree = worktreeResponse.body as { readonly name: string; readonly path: string }
+      const worktree = worktreeResponse.body as {
+        readonly name: string
+        readonly branch: string
+        readonly path: string
+      }
       expect(worktree).toMatchObject({
         id: "wt-fix-auth",
         projectId: "git-project",
-        serverId: "server-a",
-        name: "fix-auth",
-        branch: "herdman/fix-auth",
-        path: join(worktreesRoot, "git-project", "fix-auth")
+        serverId: "server-a"
       })
+      // Every name carries a random four-digit suffix so names never conflict.
+      expect(worktree.name).toMatch(/^fix-auth-\d{4}$/)
+      expect(worktree.branch).toBe(`herdman/${worktree.name}`)
+      expect(worktree.path).toBe(join(worktreesRoot, "git-project", worktree.name))
       expect(existsSync(join(worktree.path, ".git"))).toBe(true)
 
       // Setup progress was streamed as ordered worktree.setup events: started,
@@ -1594,8 +1599,8 @@ describe("@herdman/server", () => {
         state: "started",
         worktreeId: "wt-fix-auth",
         projectId: "git-project",
-        name: "fix-auth",
-        branch: "herdman/fix-auth"
+        name: worktree.name,
+        branch: worktree.branch
       })
       const logPayloads = setupPayloads.filter((payload) => payload.state === "log")
       expect(logPayloads.length).toBeGreaterThan(0)
@@ -1607,22 +1612,23 @@ describe("@herdman/server", () => {
       expect(lastSetup?.state).toBe("completed")
       expect(lastSetup?.durationMs).toBeGreaterThanOrEqual(0)
 
-      // Same requested name gets uniquified.
-      const secondWorktree = await jsonRequest(server, "/v1/projects/git-project/worktrees", {
-        body: JSON.stringify({ name: "fix auth" }),
-        method: "POST"
-      })
-      expect(secondWorktree.body).toMatchObject({
-        name: "fix-auth-2",
-        branch: "herdman/fix-auth-2"
-      })
-      // Missing name gets a random memorable slug like "ferocious-walrus".
+      // The same requested name draws different digits, so it never conflicts.
+      const secondWorktree = (
+        await jsonRequest(server, "/v1/projects/git-project/worktrees", {
+          body: JSON.stringify({ name: "fix auth" }),
+          method: "POST"
+        })
+      ).body as { readonly name: string; readonly branch: string }
+      expect(secondWorktree.name).toMatch(/^fix-auth-\d{4}$/)
+      expect(secondWorktree.name).not.toBe(worktree.name)
+      expect(secondWorktree.branch).toBe(`herdman/${secondWorktree.name}`)
+      // Missing name gets a random memorable slug like "ferocious-walrus-8392".
       const randomNamed = (
         await jsonRequest(server, "/v1/projects/git-project/worktrees", {
           method: "POST"
         })
       ).body as { readonly name: string; readonly branch: string }
-      expect(randomNamed.name).toMatch(/^[a-z]+-[a-z]+$/)
+      expect(randomNamed.name).toMatch(/^[a-z]+-[a-z]+-\d{4}$/)
       expect(randomNamed.branch).toBe(`herdman/${randomNamed.name}`)
       expect(
         ((await jsonRequest(server, "/v1/projects/git-project/worktrees")).body as Array<unknown>)
@@ -1630,12 +1636,15 @@ describe("@herdman/server", () => {
       ).toBe(3)
 
       // A failing git operation (branch already exists) surfaces as 422 and
-      // releases the reserved name for a retry.
-      await git(["branch", "herdman/doomed"], repoFolder)
+      // releases the reserved name for a retry. Pin the digit draw so the
+      // pre-created branch matches the generated name.
+      await git(["branch", "herdman/doomed-8392"], repoFolder)
+      const doomedSpy = vi.spyOn(Math, "random").mockReturnValue(0.8392)
       const failed = await jsonRequest(server, "/v1/projects/git-project/worktrees", {
         body: JSON.stringify({ id: "wt-doomed", name: "doomed" }),
         method: "POST"
       })
+      doomedSpy.mockRestore()
       expect(failed.status).toBe(422)
       expect((failed.body as { readonly error: string }).error).toContain("doomed")
       // The failure is also published as a terminal worktree.setup event so
@@ -1657,7 +1666,7 @@ describe("@herdman/server", () => {
         body: JSON.stringify({
           projectId: "git-project",
           harnessId: "codex",
-          worktreeName: "fix-auth",
+          worktreeName: worktree.name,
           title: "Worktree chat"
         }),
         method: "POST"
@@ -1669,7 +1678,7 @@ describe("@herdman/server", () => {
         readonly cwd: string
         readonly worktreeName: string
       }
-      expect(session.worktreeName).toBe("fix-auth")
+      expect(session.worktreeName).toBe(worktree.name)
       expect(session.cwd).toBe(worktree.path)
       expect(agents.creations).toContainEqual(["codex", worktree.path])
 
@@ -1681,31 +1690,26 @@ describe("@herdman/server", () => {
       await waitFor(() => agents.prompts.some((prompt) => prompt[1] === "hello worktree"))
       expect(agents.loads).toContainEqual(["codex", session.agentSessionId, worktree.path])
 
-      // Requesting a taken name twice more walks the numeric suffixes.
-      await jsonRequest(server, "/v1/projects/git-project/worktrees", {
-        body: JSON.stringify({ name: "fix auth" }),
-        method: "POST"
-      })
-      expect(
-        (
-          await jsonRequest(server, "/v1/projects/git-project/worktrees", {
-            body: JSON.stringify({ name: "fix auth" }),
-            method: "POST"
-          })
-        ).body
-      ).toMatchObject({ name: "fix-auth-4" })
-
-      // Random draws that collide with existing names are retried.
+      // A digit draw that collides with an existing worktree is re-rolled.
+      // Pin the whole first draw to zeros ("amber-badger-0000"), then have the
+      // second request draw the same base and digits once before recovering.
       const randomSpy = vi.spyOn(Math, "random").mockReturnValue(0)
       try {
         const pinned = await jsonRequest(server, "/v1/projects/git-project/worktrees", {
           method: "POST"
         })
         const pinnedName = (pinned.body as { readonly name: string }).name
+        randomSpy
+          .mockReturnValueOnce(0) // adjective
+          .mockReturnValueOnce(0) // animal
+          .mockReturnValueOnce(0) // digits -> collides with pinnedName
+          .mockReturnValue(0.8392) // re-rolled digits
         const collided = await jsonRequest(server, "/v1/projects/git-project/worktrees", {
           method: "POST"
         })
-        expect((collided.body as { readonly name: string }).name).not.toBe(pinnedName)
+        expect((collided.body as { readonly name: string }).name).toBe(
+          pinnedName.replace(/\d{4}$/, "8392")
+        )
       } finally {
         randomSpy.mockRestore()
       }
@@ -1798,7 +1802,7 @@ describe("@herdman/server", () => {
         body: JSON.stringify({
           projectId: "git-project",
           harnessId: "codex",
-          worktreeName: "fix-auth",
+          worktreeName: worktree.name,
           title: "Missing worktree"
         }),
         method: "POST"
