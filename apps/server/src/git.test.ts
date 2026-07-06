@@ -8,6 +8,7 @@ import {
   addWorktree,
   isGitWorkTree,
   sanitizeGitOutputLine,
+  worktreeStartPoint,
   type GitOutputStream
 } from "./git.js"
 
@@ -54,6 +55,44 @@ describe("git helper", () => {
     expect(
       lines.some(([stream, line]) => stream === "stderr" && line.includes("Preparing worktree"))
     ).toBe(true)
+  })
+
+  it("resolves no start point for a repo without an origin/main ref", async () => {
+    const { repo } = makeRepo()
+    expect(await worktreeStartPoint(repo)).toBeUndefined()
+  })
+
+  it("cuts worktrees from origin/main when the remote-tracking ref exists", async () => {
+    // An "origin" repo with one commit on main, cloned locally; the clone's
+    // main then drifts ahead with a local-only commit. New worktrees should
+    // start from origin/main, not the drifted local main.
+    const root = mkdtempSync(join(tmpdir(), "herdman-git-remote-"))
+    const origin = join(root, "origin")
+    mkdirSync(origin)
+    execFileSync("git", ["init", "-b", "main"], { cwd: origin })
+    const commit = (cwd: string, message: string) => {
+      execFileSync(
+        "git",
+        ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "--allow-empty", "-m", message],
+        { cwd }
+      )
+    }
+    commit(origin, "remote-tip")
+    const clone = join(root, "clone")
+    execFileSync("git", ["clone", origin, clone], { cwd: root })
+    commit(clone, "local-drift")
+    const remoteTip = execFileSync("git", ["rev-parse", "origin/main"], { cwd: clone })
+      .toString()
+      .trim()
+
+    const startPoint = await worktreeStartPoint(clone)
+    expect(startPoint).toBe("origin/main")
+    const worktree = join(root, "worktree")
+    await addWorktree(clone, worktree, "herdman/from-remote", undefined, startPoint)
+    const worktreeHead = execFileSync("git", ["rev-parse", "HEAD"], { cwd: worktree })
+      .toString()
+      .trim()
+    expect(worktreeHead).toBe(remoteTip)
   })
 
   it("rejects with the collected stderr when git fails", async () => {

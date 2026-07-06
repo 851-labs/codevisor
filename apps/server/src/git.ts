@@ -75,17 +75,40 @@ const lineSplitter = (
   }
 }
 
+/// Returns the ref new worktrees should be cut from: the remote-tracking
+/// `origin/main` when it exists (so worktrees start from the last-fetched
+/// remote state even when the local checkout is behind or has drifted),
+/// otherwise undefined so `git worktree add` falls back to HEAD.
+export const worktreeStartPoint = async (repoDir: string): Promise<string | undefined> => {
+  try {
+    await git(
+      "rev-parse",
+      ["rev-parse", "--verify", "--quiet", "refs/remotes/origin/main"],
+      repoDir
+    )
+    return "origin/main"
+  } catch {
+    return undefined
+  }
+}
+
 /// Runs `git worktree add`, streaming stdout/stderr lines (including output
 /// from post-checkout hooks) to `onOutput` as they arrive. Rejects with a
-/// GitError carrying the collected stderr when git exits non-zero.
+/// GitError carrying the collected stderr when git exits non-zero. When
+/// `startPoint` is given the new branch is cut from that ref instead of HEAD.
 export const addWorktree = (
   repoDir: string,
   path: string,
   branch: string,
-  onOutput?: GitOutputListener
+  onOutput?: GitOutputListener,
+  startPoint?: string
 ): Promise<void> =>
   new Promise((resolve, reject) => {
-    const child = spawn("git", ["worktree", "add", path, "-b", branch], { cwd: repoDir })
+    const args = ["worktree", "add", path, "-b", branch]
+    if (startPoint !== undefined) {
+      args.push(startPoint)
+    }
+    const child = spawn("git", args, { cwd: repoDir })
     const stderrLines: Array<string> = []
     const listen = (stream: GitOutputStream) => {
       // Progress-style output repaints the same line many times; emit each

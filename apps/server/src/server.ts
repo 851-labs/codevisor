@@ -47,7 +47,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
-import { GitError, addWorktree, isGitWorkTree, removeWorktree } from "./git.js"
+import { GitError, addWorktree, isGitWorkTree, removeWorktree, worktreeStartPoint } from "./git.js"
 import type { Socket } from "node:net"
 import type { AddressInfo } from "node:net"
 import { Context, Effect, Layer, PubSub, Schema } from "effect"
@@ -498,9 +498,18 @@ const routeProjects = async (
     await publishSetup({ state: "started" })
     try {
       mkdirSync(dirname(worktree.path), { recursive: true })
-      await addWorktree(location.folderPath, worktree.path, branch, (stream, line) => {
-        void publishSetup({ state: "log", stream, line })
-      })
+      // Prefer the last-fetched remote main over the local checkout's HEAD so
+      // new worktrees are not pinned to a stale or drifted local main.
+      const startPoint = await worktreeStartPoint(location.folderPath)
+      await addWorktree(
+        location.folderPath,
+        worktree.path,
+        branch,
+        (stream, line) => {
+          void publishSetup({ state: "log", stream, line })
+        },
+        startPoint
+      )
       await publishSetup({ state: "completed", durationMs: Date.now() - startedAt })
     } catch (cause) {
       await publishSetup({
