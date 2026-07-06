@@ -128,6 +128,16 @@ final class SubmittingTextView: NSTextView {
     var onKeyCommand: ((ComposerKeyCommand) -> Bool)?
     var onPasteAttachments: (([PastedAttachment]) -> Bool)?
 
+    /// Accept only plain-text drags. NSTextView's default drag registration
+    /// includes file URLs/filenames/promises and inserts a dropped file's
+    /// *path* as text; narrowing `acceptableDragTypes` (the hook that
+    /// `updateDragTypeRegistration()` consults — NSTextView does NOT route
+    /// its registration through `registerForDraggedTypes`, so overriding that
+    /// is a no-op) leaves the text view unregistered for file drags, so
+    /// AppKit routes them past the composer to the session page's attachment
+    /// dropzone (`AttachmentDropModifier`) and the file attaches instead.
+    override var acceptableDragTypes: [NSPasteboard.PasteboardType] { [.string] }
+
     /// Intercepts pastes carrying files or raw image data (e.g. copied
     /// screenshots) and routes them to the composer as attachments; plain text
     /// falls through to the normal paste.
