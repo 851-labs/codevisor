@@ -1242,6 +1242,19 @@ extension SessionController {
         controller.harnesses = harnesses
         controller.selectedHarnessId = harnesses.first?.id
         controller.model = model
+        // Surface the plan and goal affordances in previews: goals for every
+        // sample harness, and a plan/build mode pair for the draft (no-model)
+        // composer, mirroring what capabilities discovery would report.
+        for harness in harnesses {
+            controller.supportsGoalsByHarness[harness.id] = true
+            controller.modeStateByHarness[harness.id] = SessionModeState(
+                currentModeId: "default",
+                availableModes: [
+                    SessionMode(id: "default", name: "Default", canonicalId: "fullAccess"),
+                    SessionMode(id: "plan", name: "Plan", canonicalId: "plan")
+                ]
+            )
+        }
         return controller
     }
 

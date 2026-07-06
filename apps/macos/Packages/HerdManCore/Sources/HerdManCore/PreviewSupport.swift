@@ -103,9 +103,14 @@ public extension SessionModel {
     static func preview(
         conversation: [ConversationItem] = SampleData.conversation,
         isSending: Bool = false,
+        // Canonical ids so the composer's plan toggle finds a plan/build
+        // pair and shows up in previews.
         modeState: SessionModeState? = SessionModeState(
             currentModeId: "default",
-            availableModes: [SessionMode(id: "default", name: "Default"), SessionMode(id: "plan", name: "Plan")]
+            availableModes: [
+                SessionMode(id: "default", name: "Default", canonicalId: "fullAccess"),
+                SessionMode(id: "plan", name: "Plan", canonicalId: "plan")
+            ]
         ),
         configOptions: [SessionConfigOption] = SampleData.configOptions,
         usage: SessionUsage? = SessionUsage(used: 18_432, size: 200_000, cost: SessionCost(amount: 0.0142, currency: "USD"))
