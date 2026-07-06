@@ -28,6 +28,41 @@ public actor CodeHighlighter {
 
     public init() {}
 
+    /// Grammar name for a file path's extension, or nil when the bundled set
+    /// has no grammar for it (caller keeps plain text). Mirrors the alias map
+    /// in highlighter-entry.mjs plus extension-only spellings (rs, h, hpp…)
+    /// that markdown fences never use.
+    public static func language(forPath path: String) -> String? {
+        let ext = (path as NSString).pathExtension.lowercased()
+        guard !ext.isEmpty else { return nil }
+        return extensionLanguages[ext]
+    }
+
+    private static let extensionLanguages: [String: String] = [
+        "sh": "bash", "bash": "bash", "zsh": "bash",
+        "c": "c", "h": "c",
+        "cpp": "cpp", "cc": "cpp", "cxx": "cpp", "hpp": "cpp", "hh": "cpp",
+        "css": "css",
+        "diff": "diff", "patch": "diff",
+        "go": "go",
+        "html": "html", "htm": "html",
+        "java": "java",
+        "js": "javascript", "mjs": "javascript", "cjs": "javascript",
+        "json": "json", "jsonc": "json",
+        "jsx": "jsx",
+        "kt": "kotlin", "kts": "kotlin",
+        "md": "markdown", "markdown": "markdown",
+        "py": "python",
+        "rb": "ruby",
+        "rs": "rust",
+        "sql": "sql",
+        "swift": "swift",
+        "toml": "toml",
+        "tsx": "tsx",
+        "ts": "typescript", "mts": "typescript", "cts": "typescript",
+        "yml": "yaml", "yaml": "yaml",
+    ]
+
     /// Tokenizes `code` under the given theme, or returns nil when the
     /// language is unknown/unsupported or the highlighter can't run (the
     /// caller keeps plain text). `themeKey` must be a stable identity for the

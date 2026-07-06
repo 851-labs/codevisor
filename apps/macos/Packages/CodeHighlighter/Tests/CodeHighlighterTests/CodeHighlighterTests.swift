@@ -62,4 +62,18 @@ struct CodeHighlighterTests {
                 code: "const x = 1", language: "ts", themeKey: "t", themeJSON: themeJSON))
         #expect(first == second)
     }
+
+    @Test("File paths map to bundled grammar names")
+    func languageForPath() {
+        #expect(CodeHighlighter.language(forPath: "Features/Session/DiffView.swift") == "swift")
+        #expect(CodeHighlighter.language(forPath: "src/main.rs") == "rust")
+        #expect(CodeHighlighter.language(forPath: "types.d.ts") == "typescript")
+        #expect(CodeHighlighter.language(forPath: "App.tsx") == "tsx")
+        #expect(CodeHighlighter.language(forPath: "include/foo.hpp") == "cpp")
+        #expect(CodeHighlighter.language(forPath: "CONFIG.YML") == "yaml")
+        #expect(CodeHighlighter.language(forPath: "scripts/build.mjs") == "javascript")
+        // No extension or no bundled grammar → nil, caller keeps plain text.
+        #expect(CodeHighlighter.language(forPath: "Makefile") == nil)
+        #expect(CodeHighlighter.language(forPath: "photo.jpeg") == nil)
+    }
 }

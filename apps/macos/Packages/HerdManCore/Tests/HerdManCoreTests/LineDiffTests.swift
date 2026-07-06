@@ -58,4 +58,38 @@ struct LineDiffTests {
         #expect(LineDiff.rows(old: "a", new: "a\n").allSatisfy { $0.kind == .context })
         #expect(LineDiff.totals(old: "", new: "") == LineDiff.Totals(added: 0, removed: 0))
     }
+
+    @Test("Dedent strips the indent shared across old and new jointly")
+    func dedentJoint() {
+        let (old, new) = LineDiff.dedent(
+            old: "        if a {\n            b()\n        }\n",
+            new: "        if a, c {\n            b()\n        }\n"
+        )
+        #expect(old == "if a {\n    b()\n}\n")
+        #expect(new == "if a, c {\n    b()\n}\n")
+    }
+
+    @Test("Dedent uses the shallowest line of either side as the floor")
+    func dedentShallowestFloor() {
+        // Old is deeper than new everywhere; only new's shallowest indent
+        // may be stripped, or the sides would fall out of column alignment.
+        let (old, new) = LineDiff.dedent(old: "        deep\n", new: "    shallow\n        deep\n")
+        #expect(old == "    deep\n")
+        #expect(new == "shallow\n    deep\n")
+    }
+
+    @Test("Dedent handles tabs, ignores blank lines, and empties whitespace-only lines")
+    func dedentTabsAndBlanks() {
+        let (old, new) = LineDiff.dedent(old: nil, new: "\t\tone\n\n   \n\t\ttwo\n")
+        #expect(old == nil)
+        #expect(new == "one\n\n\ntwo\n")
+    }
+
+    @Test("Dedent leaves unindented and mixed-indent text untouched")
+    func dedentNoCommonIndent() {
+        let mixed = "    spaces\n\ttab\n"
+        let (old, new) = LineDiff.dedent(old: "top\n    nested\n", new: mixed)
+        #expect(old == "top\n    nested\n")
+        #expect(new == mixed)
+    }
 }

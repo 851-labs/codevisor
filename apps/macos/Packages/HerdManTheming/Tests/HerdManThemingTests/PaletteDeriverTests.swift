@@ -34,7 +34,18 @@ struct PaletteDeriverTests {
         #expect(palette.statusOK == RGBA(hex: "#34d399"))
         #expect(palette.statusError == RGBA(hex: "#fb7185"))
         #expect(palette.statusWarn == RGBA(hex: "#f59e0b"))
-        #expect(palette.diffAddedBg.a == 0.12)
+        // Diff bases come from the theme (ANSI green/red here, no git
+        // decorations) and row backgrounds are opaque editor-bg mixes.
+        #expect(palette.diffAddedFg == RGBA(hex: "#a6e3a1"))
+        #expect(palette.diffRemovedFg == RGBA(hex: "#f38ba8"))
+        let editorBg = try #require(RGBA(hex: "#1e1e2e"))
+        let ansiGreen = try #require(RGBA(hex: "#a6e3a1"))
+        #expect(palette.diffAddedBg == editorBg.mixed(with: ansiGreen, weight: 0.8))
+        #expect(palette.diffAddedBg.a == 1)
+        // The row tint must stay a subtle wash of the surface, not a bright
+        // fill the code drowns in: still much closer to bg than to the base.
+        let editorBgL = editorBg.relativeLuminance
+        #expect(abs(palette.diffAddedBg.relativeLuminance - editorBgL) < 0.1)
         // Contrast floors: primary >= 3:1, secondary >= 4.5:1 vs sidebar bg.
         let bgL = palette.sidebarBackground.relativeLuminance
         #expect(
@@ -54,6 +65,26 @@ struct PaletteDeriverTests {
         #expect(palette.statusOK == RGBA(hex: "#047857"))
         #expect(palette.statusError == RGBA(hex: "#be123c"))
         #expect(palette.statusWarn == RGBA(hex: "#b45309"))
+        // No git/ANSI colors in the theme → pierre's light fallbacks.
+        #expect(palette.diffAddedFg == RGBA(hex: "#0dbe4e"))
+        #expect(palette.diffRemovedFg == RGBA(hex: "#ff2e3f"))
+    }
+
+    @Test("Git decoration colors outrank ANSI for diff bases")
+    func diffBasePriority() throws {
+        let theme = VSCodeTheme(
+            type: "dark",
+            colors: [
+                "gitDecoration.addedResourceForeground": "#00ff88",
+                "gitDecoration.deletedResourceForeground": "#ff0044",
+                "terminal.ansiGreen": "#a6e3a1",
+                "terminal.ansiRed": "#f38ba8",
+            ],
+            fg: "#cdd6f4", bg: "#1e1e2e"
+        )
+        let palette = try #require(PaletteDeriver.derive(from: theme))
+        #expect(palette.diffAddedFg == RGBA(hex: "#00ff88"))
+        #expect(palette.diffRemovedFg == RGBA(hex: "#ff0044"))
     }
 
     @Test("Degenerate themes yield nil")

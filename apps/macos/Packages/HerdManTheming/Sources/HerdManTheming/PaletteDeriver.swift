@@ -57,6 +57,9 @@ public struct DerivedPalette: Equatable, Sendable {
     public let diffRemovedFg: RGBA
     public let diffAddedBg: RGBA
     public let diffRemovedBg: RGBA
+    /// Diff gutter line numbers on the editor surface (pierre's fg-number:
+    /// 65% editor fg toward editor bg).
+    public let diffLineNumberFg: RGBA
 
     public let terminal: TerminalPalette
 }
@@ -115,12 +118,34 @@ public enum PaletteDeriver {
             resolved["list.focusOutline"].flatMap { RGBA(css: $0) }?.compositedOver(sidebarBg)
             ?? fg
 
-        // Status/diff tints are luminance-picked constants (same values as the
+        // Status tints are luminance-picked constants (same values as the
         // web mapping) rather than theme greens/reds, so they stay legible on
         // any surface.
         let statusOK = constant(isDark ? "#34d399" : "#047857")
         let statusWarn = constant(isDark ? "#f59e0b" : "#b45309")
         let statusError = constant(isDark ? "#fb7185" : "#be123c")
+
+        // Diff colors follow pierre's diffs package instead: bases from the
+        // theme's git decorations (else its ANSI green/red, else pierre's
+        // hardcoded fallbacks), and row backgrounds as an OPAQUE mix of the
+        // editor surface toward the base — 12% light / 20% dark — so
+        // highlighted code sits on exactly the surface the theme's token
+        // colors were designed for.
+        let additionBase =
+            themeColor(
+                resolved,
+                keys: ["gitDecoration.addedResourceForeground", "terminal.ansiGreen"],
+                over: editorBg
+            ) ?? constant(isDark ? "#5ecc71" : "#0dbe4e")
+        let deletionBase =
+            themeColor(
+                resolved,
+                keys: ["gitDecoration.deletedResourceForeground", "terminal.ansiRed"],
+                over: editorBg
+            ) ?? constant(isDark ? "#ff6762" : "#ff2e3f")
+        // mixed(weight:) keeps `weight` of the receiver: rows stay 80% (dark)
+        // / 88% (light) editor bg with just a tint of the base color.
+        let diffRowMix = isDark ? 0.8 : 0.88
 
         return DerivedPalette(
             isDark: isDark,
@@ -146,12 +171,26 @@ public enum PaletteDeriver {
             statusOK: statusOK,
             statusWarn: statusWarn,
             statusError: statusError,
-            diffAddedFg: statusOK,
-            diffRemovedFg: statusError,
-            diffAddedBg: statusOK.withAlpha(0.12),
-            diffRemovedBg: statusError.withAlpha(0.12),
+            diffAddedFg: additionBase,
+            diffRemovedFg: deletionBase,
+            diffAddedBg: editorBg.mixed(with: additionBase, weight: diffRowMix),
+            diffRemovedBg: editorBg.mixed(with: deletionBase, weight: diffRowMix),
+            diffLineNumberFg: editorFg.mixed(with: editorBg, weight: 0.65),
             terminal: terminalPalette(resolved: resolved, editorBg: editorBg, editorFg: editorFg)
         )
+    }
+
+    // First parseable color among `keys`, composited over the surface it will
+    // render on; nil when the theme defines none of them.
+    private static func themeColor(
+        _ colors: [String: String], keys: [String], over bg: RGBA
+    ) -> RGBA? {
+        for key in keys {
+            if let hex = colors[key], let color = RGBA(css: hex) {
+                return color.compositedOver(bg)
+            }
+        }
+        return nil
     }
 
     // Returns the theme's descriptionForeground composited over the surface

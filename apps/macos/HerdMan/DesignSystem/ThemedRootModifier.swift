@@ -15,14 +15,14 @@ struct ThemedRoot: ViewModifier {
     func body(content: Content) -> some View {
         let scheme = resolvedScheme
         let theme = Theme(palette: environment.theme.palette(for: scheme))
+        let highlight = environment.theme.highlightTheme(for: scheme)
         content
             .environment(\.theme, theme)
-            .markdownTheme(
-                makeMarkdownTheme(
-                    theme: theme,
-                    highlight: environment.theme.highlightTheme(for: scheme)
-                )
+            .environment(
+                \.codeHighlightTheme,
+                highlight.map { CodeHighlightTheme(key: $0.key, json: $0.json) }
             )
+            .markdownTheme(makeMarkdownTheme(theme: theme, highlight: highlight))
             // Setting the root foreground style makes the hierarchical styles
             // (.primary/.secondary/.tertiary/.quaternary) derive from the
             // theme foreground everywhere, so text hierarchy is on-theme

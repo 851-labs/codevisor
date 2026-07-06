@@ -128,6 +128,19 @@ struct Theme: Equatable {
     var diffRemovedBg: Color {
         palette.map { Color(rgba: $0.diffRemovedBg) } ?? Color.red.opacity(0.12)
     }
+
+    /// The surface code renders on (editor.background): the theme's token
+    /// colors are designed against exactly this color, so diff/code bodies
+    /// paint it behind highlighted text. System themes keep the card fill.
+    var codeBackground: AnyShapeStyle {
+        palette.map { AnyShapeStyle(Color(rgba: $0.windowBackground)) }
+            ?? AnyShapeStyle(.quaternary.opacity(0.4))
+    }
+
+    /// Diff gutter line numbers (pierre's fg-number token).
+    var diffLineNumberFg: Color {
+        palette.map { Color(rgba: $0.diffLineNumberFg) } ?? Color(nsColor: .tertiaryLabelColor)
+    }
 }
 
 private struct ThemeKey: EnvironmentKey {

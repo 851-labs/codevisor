@@ -57,13 +57,22 @@ private func attributedCode(_ lines: [[CodeHighlighter.Token]]) -> AttributedStr
     var result = AttributedString()
     for (index, line) in lines.enumerated() {
         if index > 0 { result += AttributedString("\n") }
-        for token in line {
-            var piece = AttributedString(token.content)
-            if let color = token.color, let rgba = RGBA(css: color) {
-                piece.foregroundColor = Color(rgba: rgba)
-            }
-            result += piece
+        result += attributedLine(line)
+    }
+    return result
+}
+
+/// One highlighted token line as an attributed string; uncolored tokens
+/// inherit the surrounding text color. Shared with the diff viewer, which
+/// styles rows line-by-line.
+func attributedLine(_ line: [CodeHighlighter.Token]) -> AttributedString {
+    var result = AttributedString()
+    for token in line {
+        var piece = AttributedString(token.content)
+        if let color = token.color, let rgba = RGBA(css: color) {
+            piece.foregroundColor = Color(rgba: rgba)
         }
+        result += piece
     }
     return result
 }

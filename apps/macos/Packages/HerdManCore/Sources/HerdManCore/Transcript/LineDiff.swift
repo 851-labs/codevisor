@@ -68,6 +68,49 @@ public enum LineDiff {
         return rows
     }
 
+    /// Strips the whitespace prefix shared by every non-blank line of both
+    /// texts, computed jointly so old/new stay column-aligned. Edit-tool
+    /// diffs are mid-file snippets that carry the source's full nesting —
+    /// dead space in a small card — so the diff left-aligns to the
+    /// shallowest line instead.
+    public static func dedent(old: String?, new: String) -> (old: String?, new: String) {
+        let prefix = commonIndent(of: lines(of: old ?? "") + lines(of: new))
+        guard !prefix.isEmpty else { return (old, new) }
+        return (old.map { strip(prefix, fromEachLineOf: $0) }, strip(prefix, fromEachLineOf: new))
+    }
+
+    /// The longest run of leading spaces/tabs shared by all non-blank lines.
+    private static func commonIndent(of lines: [String]) -> Substring {
+        var common: Substring?
+        for line in lines {
+            guard !line.isEmpty, !line.allSatisfy(\.isWhitespace) else { continue }
+            let indent = line.prefix(while: { $0 == " " || $0 == "\t" })
+            common = common.map { sharedPrefix($0, indent) } ?? indent
+            if common?.isEmpty == true { break }
+        }
+        return common ?? Substring()
+    }
+
+    private static func sharedPrefix(_ a: Substring, _ b: Substring) -> Substring {
+        var aIndex = a.startIndex
+        var bIndex = b.startIndex
+        while aIndex < a.endIndex, bIndex < b.endIndex, a[aIndex] == b[bIndex] {
+            aIndex = a.index(after: aIndex)
+            bIndex = b.index(after: bIndex)
+        }
+        return a[a.startIndex..<aIndex]
+    }
+
+    private static func strip(_ prefix: Substring, fromEachLineOf text: String) -> String {
+        text.components(separatedBy: "\n").map { line in
+            if line.starts(with: prefix) { return String(line.dropFirst(prefix.count)) }
+            // Only whitespace-only lines can miss the shared prefix (it is
+            // common to every non-blank line); they carry nothing worth
+            // keeping indented.
+            return line.allSatisfy(\.isWhitespace) ? "" : line
+        }.joined(separator: "\n")
+    }
+
     public static func totals(old: String?, new: String) -> Totals {
         let difference = lines(of: new).difference(from: lines(of: old ?? ""))
         return Totals(added: difference.insertions.count, removed: difference.removals.count)
