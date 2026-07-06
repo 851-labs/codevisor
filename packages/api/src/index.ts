@@ -432,7 +432,12 @@ export const TerminalCreateRequest = Schema.Struct({
   cwd: Schema.String,
   cols: Schema.Number,
   rows: Schema.Number,
-  shell: Schema.optional(Schema.String)
+  shell: Schema.optional(Schema.String),
+  /** Attach to an existing (possibly exited) terminal under `sessionId`
+   *  without ever spawning a shell — used for agent-owned background-task
+   *  terminals, where the process lifecycle belongs to the agent runtime.
+   *  Fails when nothing is registered yet; clients retry. */
+  attachOnly: Schema.optional(Schema.Boolean)
 })
 export type TerminalCreateRequest = typeof TerminalCreateRequest.Type
 

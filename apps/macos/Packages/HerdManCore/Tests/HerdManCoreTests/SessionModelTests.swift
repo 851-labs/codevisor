@@ -280,9 +280,42 @@ struct SessionModelTests {
         ])
         #expect(model.isWaitingOnBackgroundTasks)
 
-        // The empty replace-on-update snapshot clears the indicator.
+        // A task with an attachable terminal renders as a terminal tab, not
+        // the waiting indicator: it is running, not being waited on.
         client.emit(ServerEventEnvelope(
             id: 4,
+            serverId: "local",
+            kind: "session.updated",
+            subjectId: sessionId.uuidString,
+            createdAt: "2026-06-30T00:00:02.500Z",
+            payload: .object([
+                "backgroundTasks": .array([
+                    .object([
+                        "id": .string("bg-2"),
+                        "description": .string("npm run dev"),
+                        "status": .string("running"),
+                        "taskType": .string("shell"),
+                        "terminalKey": .string("\(sessionId.uuidString):bg:tool-1")
+                    ])
+                ])
+            ])
+        ))
+        await settleUntil { model.backgroundTasks.first?.id == "bg-2" }
+        #expect(model.backgroundTasks == [
+            BackgroundTaskInfo(
+                id: "bg-2",
+                description: "npm run dev",
+                status: "running",
+                taskType: "shell",
+                terminalKey: "\(sessionId.uuidString):bg:tool-1"
+            )
+        ])
+        #expect(model.waitingBackgroundTasks.isEmpty)
+        #expect(model.isWaitingOnBackgroundTasks == false)
+
+        // The empty replace-on-update snapshot clears the indicator.
+        client.emit(ServerEventEnvelope(
+            id: 5,
             serverId: "local",
             kind: "session.updated",
             subjectId: sessionId.uuidString,

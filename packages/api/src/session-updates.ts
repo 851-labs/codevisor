@@ -71,13 +71,17 @@ export type AgentChunkPayload = typeof AgentChunkPayload.Type
 
 /** One in-flight background task (backgrounded shell, subagent, etc.) owned by
  *  the agent process. `toolUseId` links the task back to the tool call that
- *  spawned it, when known. */
+ *  spawned it, when known. `terminalKey` is set when the task's process output
+ *  streams through a server-owned terminal — clients attach to it with the
+ *  regular terminal API (`POST /v1/terminals` with `sessionId: terminalKey`,
+ *  `attachOnly: true`) and render it as a live terminal tab. */
 export const BackgroundTask = Schema.Struct({
   id: Schema.String,
   description: Schema.String,
   status: Schema.String,
   taskType: Schema.String,
-  toolUseId: Schema.optional(Schema.String)
+  toolUseId: Schema.optional(Schema.String),
+  terminalKey: Schema.optional(Schema.String)
 })
 export type BackgroundTask = typeof BackgroundTask.Type
 

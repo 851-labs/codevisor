@@ -23,8 +23,10 @@ import type { ChildProcessWithoutNullStreams } from "node:child_process"
 import { Readable, Writable } from "node:stream"
 import { Effect } from "effect"
 import { withAttachmentNotes } from "../attachments.js"
+import type { BackgroundTerminalIntegration } from "../background-terminals.js"
 import { diffStatsFromTexts } from "../diff-stats.js"
 import type { DiffStat } from "@herdman/api"
+import { makeAcpTerminalHost, type AcpTerminalHost } from "./acp-terminals.js"
 import {
   adapterPromise,
   normalizePromptInput,
@@ -157,13 +159,17 @@ const unavailableReadiness = (
 
 export interface AcpProviderConfig {
   readonly connector?: AcpConnector
+  /// When set, the client advertises the ACP `terminal` capability and backs
+  /// `terminal/*` with server-owned processes (surfaced as terminal tabs once
+  /// they outlive the promotion delay).
+  readonly backgroundTerminals?: BackgroundTerminalIntegration
 }
 
 export const makeAcpProvider = (
   environment: ProviderEnvironment,
   config: AcpProviderConfig = {}
 ): AgentProvider => {
-  const connector = config.connector ?? stdioAcpConnector
+  const connector = config.connector ?? makeStdioAcpConnector(config.backgroundTerminals)
 
   const connect = (
     definition: HarnessDefinition,
@@ -278,7 +284,9 @@ const turnLifecycleEvent = (
 })
 
 /* v8 ignore start -- stdio ACP adapter is exercised by integration/packaging smoke tests. */
-export const stdioAcpConnector: AcpConnector = {
+export const makeStdioAcpConnector = (
+  backgroundTerminals?: BackgroundTerminalIntegration
+): AcpConnector => ({
   connect: (request, emit) =>
     adapterPromise("connect", async () => {
       const child = spawn(request.command, [...request.args], {
@@ -299,6 +307,14 @@ export const stdioAcpConnector: AcpConnector = {
       const safeEmit = (event: RuntimeEvent): void => {
         void emit(event).catch(() => undefined)
       }
+      const terminals =
+        backgroundTerminals === undefined
+          ? undefined
+          : makeAcpTerminalHost({
+              emit,
+              env: request.env,
+              integration: backgroundTerminals
+            })
       const connection = createClientApp(
         (notification) => {
           safeEmit(runtimeEventFromNotification(notification))
@@ -333,7 +349,8 @@ export const stdioAcpConnector: AcpConnector = {
               sessionId: question.sessionId
             })
           })
-        }
+        },
+        terminals
       ).connect(
         acp.ndJsonStream(
           Writable.toWeb(child.stdin) as WritableStream<Uint8Array>,
@@ -389,17 +406,19 @@ export const stdioAcpConnector: AcpConnector = {
       }
       closeConnection = (error) => {
         cancelQuestions(undefined)
+        terminals?.closeAll()
         connection.close(error)
       }
       child.once("exit", () => {
         cancelQuestions(undefined)
+        terminals?.closeAll()
         connection.close(new Error(stderr()))
       })
       const initialized = await Promise.race([
         connection.agent.request(acp.methods.agent.initialize, {
           clientCapabilities: {
             plan: {},
-            terminal: false
+            terminal: terminals !== undefined
           },
           clientInfo: {
             name: "HerdMan",
@@ -415,13 +434,16 @@ export const stdioAcpConnector: AcpConnector = {
         stderr,
         () => {
           cancelQuestions(undefined)
+          terminals?.closeAll()
           child.kill()
         },
         initialized?.agentCapabilities?.promptCapabilities ?? {},
         { answerQuestion, cancelQuestions }
       )
     })
-}
+})
+
+export const stdioAcpConnector: AcpConnector = makeStdioAcpConnector()
 
 export interface AcpPromptCapabilities {
   readonly image?: boolean
@@ -537,9 +559,10 @@ type AcpPermissionOutcome =
 
 const createClientApp = (
   onSessionUpdate: (notification: acp.SessionNotification) => void,
-  onPermissionRequest: (params: unknown) => Promise<AcpPermissionOutcome>
-): acp.ClientApp =>
-  acp
+  onPermissionRequest: (params: unknown) => Promise<AcpPermissionOutcome>,
+  terminals?: AcpTerminalHost
+): acp.ClientApp => {
+  const app = acp
     .client({ name: "HerdMan" })
     .onNotification(acp.methods.client.session.update, ({ params }) => {
       onSessionUpdate(params)
@@ -550,6 +573,38 @@ const createClientApp = (
     .onRequest(acp.methods.client.session.requestPermission, ({ params }) =>
       onPermissionRequest(params)
     )
+  if (terminals === undefined) {
+    return app
+  }
+  // Client-side terminals: the agent runs shell commands in processes we own
+  // (see acp-terminals.ts). Only registered when the terminal capability is
+  // advertised, so agents without the capability never reach these.
+  return app
+    .onRequest(acp.methods.client.terminal.create, ({ params }) =>
+      terminals.create({
+        sessionId: params.sessionId,
+        command: params.command,
+        ...(params.args === undefined ? {} : { args: params.args }),
+        ...(params.env === undefined || params.env === null ? {} : { env: params.env }),
+        ...(params.cwd === undefined ? {} : { cwd: params.cwd }),
+        ...(params.outputByteLimit === undefined ? {} : { outputByteLimit: params.outputByteLimit })
+      })
+    )
+    .onRequest(acp.methods.client.terminal.output, ({ params }) =>
+      terminals.output({ sessionId: params.sessionId, terminalId: params.terminalId })
+    )
+    .onRequest(acp.methods.client.terminal.waitForExit, ({ params }) =>
+      terminals.waitForExit({ sessionId: params.sessionId, terminalId: params.terminalId })
+    )
+    .onRequest(acp.methods.client.terminal.kill, ({ params }) => {
+      terminals.kill({ sessionId: params.sessionId, terminalId: params.terminalId })
+      return {}
+    })
+    .onRequest(acp.methods.client.terminal.release, ({ params }) => {
+      terminals.release({ sessionId: params.sessionId, terminalId: params.terminalId })
+      return {}
+    })
+}
 
 /// One `session/request_permission` held open while the human answers.
 interface PendingAcpQuestion {

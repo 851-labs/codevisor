@@ -25,12 +25,29 @@ public struct PaneDescriptorState: Identifiable, Codable, Sendable, Equatable {
     /// uses the bare chat-session UUID so it reattaches to shells created
     /// before panes existed; later panes use "<sessionUuid>:<paneUuid>".
     public let terminalKey: String
+    /// Agent-owned background terminals: the pane only ever attaches to a
+    /// terminal the server already registered (never spawns a shell), and the
+    /// proxy's teardown must not kill the agent's process.
+    public let attachOnly: Bool
 
-    public init(id: UUID, kind: PaneKind, name: String, terminalKey: String) {
+    public init(id: UUID, kind: PaneKind, name: String, terminalKey: String, attachOnly: Bool = false) {
         self.id = id
         self.kind = kind
         self.name = name
         self.terminalKey = terminalKey
+        self.attachOnly = attachOnly
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            id: try container.decode(UUID.self, forKey: .id),
+            kind: try container.decode(PaneKind.self, forKey: .kind),
+            name: try container.decode(String.self, forKey: .name),
+            terminalKey: try container.decode(String.self, forKey: .terminalKey),
+            // Panes persisted before agent terminals existed are user shells.
+            attachOnly: try container.decodeIfPresent(Bool.self, forKey: .attachOnly) ?? false
+        )
     }
 }
 
@@ -122,6 +139,30 @@ public struct PaneGroupState: Codable, Sendable, Equatable {
         panes.append(pane)
         selectedPaneId = pane.id
         isVisible = true
+        return pane
+    }
+
+    /// Ensures a tab exists for an agent-owned background terminal (keyed by
+    /// the task's `terminalKey`). Unlike `addTerminalPane` this never steals
+    /// selection or opens the group — the tab appearing in the always-visible
+    /// bar IS the notification. Returns the existing pane when one is already
+    /// attached to that terminal.
+    @discardableResult
+    public mutating func ensureAgentTerminalPane(name: String, terminalKey: String) -> PaneDescriptorState {
+        if let existing = panes.first(where: { $0.terminalKey == terminalKey }) {
+            return existing
+        }
+        let pane = PaneDescriptorState(
+            id: UUID(),
+            kind: .terminal,
+            name: name,
+            terminalKey: terminalKey,
+            attachOnly: true
+        )
+        panes.append(pane)
+        if selectedPaneId == nil {
+            selectedPaneId = pane.id
+        }
         return pane
     }
 

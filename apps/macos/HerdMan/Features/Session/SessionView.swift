@@ -93,6 +93,17 @@ struct SessionScreen: View {
         .focusedSceneValue(\.terminalToggle, TerminalToggleAction(sessionId: paneGroup.sessionId) {
             togglePanes()
         })
+        // Background tasks that stream through a server-owned terminal get a
+        // tab in the bottom group — a dev server is something running, not
+        // something the chat is waiting on. Tabs persist after the task ends
+        // (the exit is visible in the scrollback) until the user closes them.
+        .onChange(of: controller.backgroundTasks, initial: true) { _, tasks in
+            for task in tasks {
+                if let terminalKey = task.terminalKey {
+                    paneGroup.ensureAgentTerminalPane(terminalKey: terminalKey, name: task.description)
+                }
+            }
+        }
         .onAppear {
             focus.paneGroup = paneGroup
             // ⌘J from inside a focused terminal routes here (the menu command
@@ -462,8 +473,8 @@ struct SessionScreen: View {
     /// the chat is waiting, not stuck. Hidden the moment a turn is in flight.
     @ViewBuilder
     private var backgroundTaskIndicator: some View {
-        if let task = controller.backgroundTasks.first {
-            let extra = controller.backgroundTasks.count - 1
+        if let task = controller.waitingBackgroundTasks.first {
+            let extra = controller.waitingBackgroundTasks.count - 1
             HStack(spacing: 8) {
                 Image(systemName: "clock.arrow.circlepath")
                     .font(.callout)
@@ -647,6 +658,7 @@ private func previewPaneGroup() -> PaneGroupModel {
                 paneId: descriptor.id,
                 sessionId: session.id,
                 terminalKey: descriptor.terminalKey,
+                attachOnly: descriptor.attachOnly,
                 machine: .local,
                 session: session,
                 project: project

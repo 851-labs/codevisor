@@ -141,6 +141,41 @@ struct PaneGroupStateTests {
         #expect(state.panes.map(\.id) == [first.id, second.id, third.id])
     }
 
+    @Test("Agent terminal panes are keyed, deduped, and never steal selection or open the group")
+    func agentTerminalPanes() {
+        var state = PaneGroupState.initial(sessionId: sessionId)
+        let selectedBefore = state.selectedPaneId
+        let key = "\(sessionId.uuidString):bg:tool-1"
+
+        let pane = state.ensureAgentTerminalPane(name: "npm run dev", terminalKey: key)
+        #expect(pane.attachOnly)
+        #expect(pane.name == "npm run dev")
+        #expect(state.panes.count == 2)
+        #expect(state.selectedPaneId == selectedBefore)
+        #expect(state.isVisible == false)
+
+        // Re-ensuring the same terminal key returns the existing pane.
+        let again = state.ensureAgentTerminalPane(name: "renamed", terminalKey: key)
+        #expect(again.id == pane.id)
+        #expect(state.panes.count == 2)
+
+        // With nothing selected (empty group), the agent pane becomes the
+        // selection so the bar has a coherent state.
+        var empty = PaneGroupState()
+        let first = empty.ensureAgentTerminalPane(name: "dev", terminalKey: key)
+        #expect(empty.selectedPaneId == first.id)
+        #expect(empty.isVisible == false)
+    }
+
+    @Test("Descriptors persisted before attachOnly existed decode as user shells")
+    func decodeLegacyDescriptor() throws {
+        let legacy = Data("""
+        {"id":"\(UUID().uuidString)","kind":"terminal","name":"Terminal 1","terminalKey":"abc"}
+        """.utf8)
+        let decoded = try JSONDecoder().decode(PaneDescriptorState.self, from: legacy)
+        #expect(decoded.attachOnly == false)
+    }
+
     @Test("Codable round-trip preserves panes, selection, visibility, and height")
     func codableRoundTrip() throws {
         var state = PaneGroupState.initial(sessionId: sessionId)

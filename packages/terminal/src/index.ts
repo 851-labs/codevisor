@@ -41,6 +41,32 @@ export interface TerminalManagerConfig {
   readonly spawner?: TerminalSpawner
 }
 
+/// Caller-facing side of an externally-managed terminal: the caller owns the
+/// process and pumps its output/exit through this handle; input, resize, and
+/// kill flow back through the `TerminalProcess` supplied at registration.
+export interface ExternalTerminalHandle {
+  readonly terminalId: string
+  readonly response: TerminalCreateResponse
+  readonly output: (data: string) => void
+  readonly exit: (exitCode?: number) => void
+  /// Removes the terminal entirely (frames included) — for terminals that
+  /// were never surfaced to a client, so nothing lingers after a short-lived
+  /// process ends. Safe to call after `exit`.
+  readonly remove: () => void
+}
+
+export interface ExternalTerminalConfig {
+  readonly sessionId: string
+  /// Pipe-fed processes emit bare "\n" line endings; a real terminal renderer
+  /// needs "\r\n". Enabled for mirrors/wrappers that read pipes, not PTYs.
+  readonly normalizeNewlines?: boolean
+}
+
+/// External terminals can outlive any single client and stream indefinitely
+/// (dev servers); cap the replay buffer so memory stays bounded. Clients that
+/// reconnect past the trim point lose the oldest scrollback only.
+const EXTERNAL_TERMINAL_MAX_FRAMES = 20_000
+
 export interface TerminalManagerService {
   readonly createTerminal: (
     request: TerminalCreateRequest
@@ -62,6 +88,14 @@ export interface TerminalManagerService {
   /// Kills the live terminal for a session (if any), so the next createTerminal
   /// for that session spawns a fresh shell. Returns whether one was closed.
   readonly closeTerminalForSession: (sessionId: string) => Effect.Effect<boolean, TerminalError>
+  /// Registers a terminal whose process the CALLER owns (an agent's background
+  /// shell, a mirrored remote process). The manager never spawns or respawns
+  /// it: clients attach with `attachOnly` createTerminal requests, and the
+  /// terminal remains attachable after exit so its scrollback stays readable.
+  readonly registerExternalTerminal: (
+    config: ExternalTerminalConfig,
+    process: TerminalProcess
+  ) => ExternalTerminalHandle
 }
 
 export class TerminalManager extends Context.Service<TerminalManager, TerminalManagerService>()(
@@ -80,6 +114,9 @@ interface RunningTerminal {
   readonly clientSeqs: Map<string, number>
   nextOutputSeq: number
   closed: boolean
+  /// Externally-managed terminals are never (re)spawned by the manager and
+  /// stay attachable after exit (scrollback survives until removed).
+  readonly external: boolean
 }
 
 type TerminalFramePayload =
@@ -102,6 +139,9 @@ export const makeTerminalManager = (config: TerminalManagerConfig = {}): Termina
     const sequenced = sequenceFrame(terminal.nextOutputSeq, frame)
     terminal.nextOutputSeq += 1
     terminal.frames.push(sequenced)
+    if (terminal.external && terminal.frames.length > EXTERNAL_TERMINAL_MAX_FRAMES) {
+      terminal.frames.splice(0, terminal.frames.length - EXTERNAL_TERMINAL_MAX_FRAMES)
+    }
     for (const sink of terminal.sinks) {
       sink(sequenced)
     }
@@ -137,9 +177,20 @@ export const makeTerminalManager = (config: TerminalManagerConfig = {}): Termina
         const existingTerminalId = terminalsBySession.get(request.sessionId)
         if (existingTerminalId !== undefined) {
           const existing = terminals.get(existingTerminalId)!
-          if (!existing.closed) {
+          // External terminals stay attachable after exit: the process is
+          // agent-owned and will not be respawned, but the scrollback (and
+          // the exit frame) must still replay to a connecting client.
+          if (!existing.closed || existing.external) {
             return terminalResponse(existing)
           }
+        }
+        if (request.attachOnly === true) {
+          return yield* Effect.fail(
+            new TerminalError({
+              operation: "createTerminal",
+              message: `No terminal registered for session: ${request.sessionId}`
+            })
+          )
         }
 
         const terminalId = randomUUID()
@@ -177,7 +228,8 @@ export const makeTerminalManager = (config: TerminalManagerConfig = {}): Termina
           frames: [],
           clientSeqs: new Map(),
           nextOutputSeq: 1,
-          closed: exitedBeforeRegistration
+          closed: exitedBeforeRegistration,
+          external: false
         }
         runningTerminal = terminal
         for (const frame of pendingFrames) {
@@ -204,6 +256,11 @@ export const makeTerminalManager = (config: TerminalManagerConfig = {}): Termina
       terminalAttempt("handleClientFrame", () => {
         const terminal = getTerminal(terminalId, "handleClientFrame")
         if (terminal.closed) {
+          // Clients legitimately attach to exited external terminals to read
+          // scrollback; their input/resize frames are meaningless, not errors.
+          if (terminal.external) {
+            return
+          }
           throw new Error(`Terminal already closed: ${terminalId}`)
         }
         if (isDuplicateClientFrame(terminal, frame.clientId, frame.clientSeq)) {
@@ -251,6 +308,11 @@ export const makeTerminalManager = (config: TerminalManagerConfig = {}): Termina
         const terminal = getTerminal(terminalId, "closeTerminalForSession")
         if (terminal.closed) {
           // The pty already exited on its own; just drop the stale mapping.
+          // Exited external terminals are kept attachable for scrollback, so
+          // an explicit session close is when they finally get removed.
+          if (terminal.external) {
+            terminals.delete(terminalId)
+          }
           terminalsBySession.delete(sessionId)
           return false
         }
@@ -259,7 +321,53 @@ export const makeTerminalManager = (config: TerminalManagerConfig = {}): Termina
         terminals.delete(terminalId)
         clearSessionMapping(terminal)
         return true
-      })
+      }),
+    registerExternalTerminal: (config, process) => {
+      const terminalId = randomUUID()
+      const terminal: RunningTerminal = {
+        terminalId,
+        sessionId: config.sessionId,
+        process,
+        sinks: new Set(),
+        frames: [],
+        clientSeqs: new Map(),
+        nextOutputSeq: 1,
+        closed: false,
+        external: true
+      }
+      // A re-registration under the same key replaces the previous terminal
+      // (e.g. an agent restarting its dev server): drop the stale one so the
+      // mapping never points at output from a dead process.
+      const previousId = terminalsBySession.get(config.sessionId)
+      if (previousId !== undefined) {
+        terminals.delete(previousId)
+      }
+      terminals.set(terminalId, terminal)
+      terminalsBySession.set(config.sessionId, terminalId)
+      const normalize = config.normalizeNewlines === true
+      return {
+        terminalId,
+        response: terminalResponse(terminal),
+        output: (data) => {
+          pushFrame(terminal, {
+            type: "output",
+            data: normalize ? data.replace(/(?<!\r)\n/g, "\r\n") : data
+          })
+        },
+        exit: (exitCode) => {
+          if (terminal.closed) return
+          terminal.closed = true
+          pushFrame(
+            terminal,
+            exitCode === undefined ? { type: "exit" } : { type: "exit", exitCode }
+          )
+        },
+        remove: () => {
+          terminals.delete(terminalId)
+          clearSessionMapping(terminal)
+        }
+      }
+    }
   }
 }
 

@@ -11,6 +11,12 @@ import type {
 import { randomUUID } from "node:crypto"
 import { Effect } from "effect"
 import { withAttachmentNotes } from "../../attachments.js"
+import {
+  backgroundTerminalKey,
+  DEFAULT_PROMOTION_DELAY_MS,
+  type BackgroundTerminalIntegration,
+  type ExternalTerminalStream
+} from "../../background-terminals.js"
 import { diffStatsFromUnified, lineCount } from "../../diff-stats.js"
 import {
   adapterPromise,
@@ -55,6 +61,11 @@ export interface CodexProviderConfig {
   /// Injectable for tests: scripted app-server sessions instead of a spawned
   /// codex binary.
   readonly connector?: CodexConnector
+  /// When set, command executions mirror their streamed output
+  /// (`item/commandExecution/outputDelta`) into server-owned terminals;
+  /// commands that outlive the promotion delay surface as terminal tabs.
+  /// Codex owns the processes, so the mirrors are read-only.
+  readonly backgroundTerminals?: BackgroundTerminalIntegration
 }
 
 interface CodexModel {
@@ -162,6 +173,18 @@ interface PendingCodexQuestion {
   readonly cancelResponse?: unknown
 }
 
+/// One in-flight command execution's terminal mirror. `promoted` flips when
+/// the command outlives the promotion delay — that is when it appears in the
+/// `backgroundTasks` snapshot (and therefore as a tab).
+interface CodexCommandTerminal {
+  readonly itemId: string
+  readonly terminalKey: string
+  readonly description: string
+  readonly stream: ExternalTerminalStream
+  promoted: boolean
+  promotionTimer: NodeJS.Timeout | undefined
+}
+
 interface CodexSession {
   readonly key: string
   readonly threadId: string
@@ -186,6 +209,10 @@ interface CodexSession {
   /// item id → human-readable title, so approval prompts can say WHAT is
   /// being approved (approval params carry only the item id).
   readonly itemTitles: Map<string, string>
+  /// Read-only terminal mirrors for in-flight command executions, keyed by
+  /// item id. Codex owns the processes; we own the mirrors.
+  readonly commandTerminals: Map<string, CodexCommandTerminal>
+  readonly backgroundTerminals: BackgroundTerminalIntegration | undefined
   /// Goal-snapshot throttle state: the last snapshot broadcast to the wire,
   /// when it went out, and the freshest one held back by the rate limit
   /// (flushed at turn end so final totals always persist).
@@ -252,8 +279,10 @@ export const makeCodexProvider = (
     }
     const session: CodexSession = {
       activeTurnId: undefined,
+      backgroundTerminals: config.backgroundTerminals,
       client,
       collabThreads: new Map(),
+      commandTerminals: new Map(),
       currentEffort: undefined,
       currentModeId: DEFAULT_CODEX_MODE,
       currentModel: response.model ?? "",
@@ -324,12 +353,18 @@ export const makeCodexProvider = (
       session.pendingPrompt?.resolve({ stopReason: "cancelled" })
       session.pendingPrompt = undefined
       cancelPendingQuestions(session)
+      closeCommandTerminals(session)
       void session.emit({
         kind: "session.error",
         payload: { message: error.message },
         subjectId: session.key
       })
     })
+    // A fresh session has no running commands; this snapshot clears stale
+    // "running" tasks a client may replay from a previous server process.
+    if (config.backgroundTerminals !== undefined) {
+      emitCodexBackgroundTasks(session)
+    }
     return session
   }
 
@@ -419,6 +454,7 @@ export const makeCodexProvider = (
       }
     }),
     close: adapterPromise("close", async () => {
+      closeCommandTerminals(session)
       session.client.close()
     }),
     prompt: (input) =>
@@ -1083,7 +1119,8 @@ const handleNotification = (session: CodexSession, method: string, params: unkno
       method === "item/agentMessage/delta" ||
       method === "item/reasoning/textDelta" ||
       method === "item/reasoning/summaryTextDelta" ||
-      method === "item/fileChange/patchUpdated"
+      method === "item/fileChange/patchUpdated" ||
+      method === "item/commandExecution/outputDelta"
     if (!routable || parentToolCallId === undefined) return
   }
   const parentField = parentToolCallId === undefined ? {} : { parentToolCallId }
@@ -1201,6 +1238,13 @@ const handleNotification = (session: CodexSession, method: string, params: unkno
         break
       }
       emitItemLifecycle(session, item, method === "item/started", parentToolCallId)
+      break
+    }
+    case "item/commandExecution/outputDelta": {
+      const itemId = typeof payload.itemId === "string" ? payload.itemId : undefined
+      const delta = typeof payload.delta === "string" ? payload.delta : undefined
+      if (itemId === undefined || delta === undefined) break
+      session.commandTerminals.get(itemId)?.stream.output(delta)
       break
     }
     case "item/fileChange/patchUpdated": {
@@ -1401,6 +1445,7 @@ const emitItemLifecycle = (
       if (started) {
         session.itemKinds.set(itemId, "execute")
         if (command.length > 0) session.itemTitles.set(itemId, command)
+        openCommandTerminal(session, itemId, command)
         void session.emit(
           event({
             kind: "execute",
@@ -1411,6 +1456,7 @@ const emitItemLifecycle = (
           })
         )
       } else {
+        settleCommandTerminal(session, itemId, item)
         void session.emit(
           event({
             sessionUpdate: "tool_call_update",
@@ -1521,6 +1567,89 @@ const emitItemLifecycle = (
     default:
       break
   }
+}
+
+// MARK: command terminal mirrors
+
+/// Starts a read-only terminal mirror for a command execution. Codex owns the
+/// process — we only see its output deltas — so the mirror exposes no write/
+/// resize/kill controls. Commands that outlive the promotion delay surface in
+/// the `backgroundTasks` snapshot as attachable terminal tabs.
+const openCommandTerminal = (session: CodexSession, itemId: string, command: string): void => {
+  const integration = session.backgroundTerminals
+  if (integration === undefined || session.commandTerminals.has(itemId)) return
+  const terminalKey = backgroundTerminalKey(session.key, itemId)
+  const stream = integration.registry.register(terminalKey, {})
+  const terminal: CodexCommandTerminal = {
+    description: command.length > 0 ? firstLine(command) : "command",
+    itemId,
+    promoted: false,
+    promotionTimer: undefined,
+    stream,
+    terminalKey
+  }
+  session.commandTerminals.set(itemId, terminal)
+  terminal.promotionTimer = setTimeout(() => {
+    terminal.promotionTimer = undefined
+    terminal.promoted = true
+    emitCodexBackgroundTasks(session)
+  }, integration.promotionDelayMs ?? DEFAULT_PROMOTION_DELAY_MS)
+}
+
+const settleCommandTerminal = (
+  session: CodexSession,
+  itemId: string,
+  item: Record<string, unknown>
+): void => {
+  const terminal = session.commandTerminals.get(itemId)
+  if (terminal === undefined) return
+  session.commandTerminals.delete(itemId)
+  if (terminal.promotionTimer !== undefined) {
+    clearTimeout(terminal.promotionTimer)
+    terminal.promotionTimer = undefined
+  }
+  terminal.stream.exit(typeof item.exitCode === "number" ? item.exitCode : undefined)
+  if (terminal.promoted) {
+    // The tab stays attachable for scrollback; the task itself is done.
+    emitCodexBackgroundTasks(session)
+  } else {
+    // Short-lived command: nothing was ever surfaced, leave nothing behind.
+    terminal.stream.remove()
+  }
+}
+
+const emitCodexBackgroundTasks = (session: CodexSession): void => {
+  const backgroundTasks = [...session.commandTerminals.values()]
+    .filter((terminal) => terminal.promoted)
+    .map((terminal) => ({
+      description: terminal.description,
+      id: terminal.itemId,
+      status: "running",
+      taskType: "shell",
+      terminalKey: terminal.terminalKey,
+      toolUseId: terminal.itemId
+    }))
+  void session.emit({
+    kind: "session.updated",
+    payload: { backgroundTasks },
+    subjectId: session.key
+  })
+}
+
+/// Connection teardown: the codex process (and every command it ran) is gone;
+/// exit the mirrors so attached tabs see the stream end.
+const closeCommandTerminals = (session: CodexSession): void => {
+  for (const terminal of [...session.commandTerminals.values()]) {
+    if (terminal.promotionTimer !== undefined) {
+      clearTimeout(terminal.promotionTimer)
+      terminal.promotionTimer = undefined
+    }
+    terminal.stream.exit(undefined)
+    if (!terminal.promoted) {
+      terminal.stream.remove()
+    }
+  }
+  session.commandTerminals.clear()
 }
 
 // MARK: helpers

@@ -1,15 +1,17 @@
 #!/usr/bin/env node
-import { makeAgentRuntime } from "@herdman/agent-runtime"
+import { makeAgentRuntime, type BackgroundTerminalIntegration } from "@herdman/agent-runtime"
 import type { UpdateInfo } from "@herdman/api"
 import { makeDatabase, type HerdManDatabaseService } from "@herdman/db"
-import { makeTerminalManager } from "@herdman/terminal"
+import { makeTerminalManager, type TerminalManagerService } from "@herdman/terminal"
 import { Effect } from "effect"
 import { spawn } from "node:child_process"
 import { createWriteStream, existsSync, mkdirSync, readFileSync } from "node:fs"
+import { tmpdir } from "node:os"
 import { Readable } from "node:stream"
 import { pipeline } from "node:stream/promises"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
+import { startBackgroundTerminalHost, wrapBackgroundCommand } from "./background-terminal-host.js"
 import {
   defaultDatabasePath,
   defaultServerConfig,
@@ -184,6 +186,50 @@ const makeSelfUpdater = (options: {
   return { check, apply }
 }
 
+/// Backs agent background processes with server-owned terminals: providers
+/// register mirrors in-process through the registry, and out-of-process
+/// wrappers (background Bash) attach over the unix-socket host. Best-effort —
+/// a host failure degrades to the plain no-terminal behavior.
+const backgroundTerminalIntegration = async (
+  terminal: TerminalManagerService
+): Promise<BackgroundTerminalIntegration | undefined> => {
+  const registry: BackgroundTerminalIntegration["registry"] = {
+    register: (key, controls) => {
+      const handle = terminal.registerExternalTerminal(
+        { sessionId: key, normalizeNewlines: true },
+        {
+          write: controls.write ?? (() => undefined),
+          resize: controls.resize ?? (() => undefined),
+          kill: controls.kill ?? (() => undefined)
+        }
+      )
+      return { output: handle.output, exit: handle.exit, remove: handle.remove }
+    }
+  }
+  try {
+    const host = await startBackgroundTerminalHost({
+      registry,
+      // tmpdir keeps the path under the unix-socket length limit (the data
+      // dir under Application Support routinely is not).
+      socketPath: join(tmpdir(), `herdman-bg-${process.pid}.sock`)
+    })
+    const runtimeDir = dirname(fileURLToPath(import.meta.url))
+    return {
+      registry,
+      wrapCommand: wrapBackgroundCommand({
+        nodePath: process.execPath,
+        socketPath: host.socketPath,
+        wrapperPath: join(runtimeDir, "bg-wrap.js")
+      })
+    }
+  } catch (cause) {
+    console.error(
+      `Background terminal host unavailable: ${cause instanceof Error ? cause.message : String(cause)}`
+    )
+    return { registry }
+  }
+}
+
 const main = Effect.gen(function* () {
   const command = process.argv[2] ?? "serve"
   if (command !== "serve") {
@@ -240,11 +286,13 @@ const main = Effect.gen(function* () {
             ...(corsOrigins.length === 0 ? [] : ["--cors-origins", corsOrigins.join(",")])
           ]
         })
+  const terminal = makeTerminalManager()
+  const backgroundTerminals = yield* Effect.promise(() => backgroundTerminalIntegration(terminal))
   const server = yield* startHerdManServer(
     {
-      agents: makeAgentRuntime(),
+      agents: makeAgentRuntime(backgroundTerminals === undefined ? {} : { backgroundTerminals }),
       db,
-      terminal: makeTerminalManager()
+      terminal
     },
     defaultServerConfig({
       host,

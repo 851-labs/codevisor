@@ -30,7 +30,8 @@ final class TerminalPane: Pane, Identifiable {
             session: context.session,
             project: context.project,
             machine: context.machine,
-            terminalKey: context.terminalKey
+            terminalKey: context.terminalKey,
+            attachOnly: context.attachOnly
         )
     }
 
@@ -47,10 +48,16 @@ final class TerminalPane: Pane, Identifiable {
     /// Kills the terminal — both the local surface and this pane's PTY on the
     /// herdman server (which otherwise deliberately survives surface teardown
     /// so shells persist across app restarts) — then recreates a fresh surface.
+    /// Agent-owned terminals only reattach: the process is the agent's, so
+    /// "restart" rebuilds the viewer, never the process.
     func restart() {
         _surface?.terminate()
         _surface = nil
 
+        if descriptor.attachOnly {
+            surfaceGeneration += 1
+            return
+        }
         Task {
             // Kill the server-side shell BEFORE the new surface's proxy spawns,
             // or the proxy would just reattach to the old shell.

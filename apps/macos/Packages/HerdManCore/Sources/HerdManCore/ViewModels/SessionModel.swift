@@ -22,10 +22,18 @@ public final class SessionModel {
     /// means the agent will come back on its own once the work settles.
     public private(set) var backgroundTasks: [BackgroundTaskInfo] = []
 
+    /// Background tasks with no attachable terminal (subagents, poll-and-resume
+    /// tasks). Tasks WITH a `terminalKey` render as terminal tabs instead of
+    /// the waiting indicator — a dev server is running, not being waited on.
+    public var waitingBackgroundTasks: [BackgroundTaskInfo] {
+        backgroundTasks.filter { $0.terminalKey == nil }
+    }
+
     /// True when the turn is over but the agent still owns background work —
-    /// the "this chat is not stuck" signal.
+    /// the "this chat is not stuck" signal. Terminal-backed tasks are excluded:
+    /// their tab is the affordance.
     public var isWaitingOnBackgroundTasks: Bool {
-        !isSending && !backgroundTasks.isEmpty
+        !isSending && !waitingBackgroundTasks.isEmpty
     }
 
     /// The session's persistent goal, when the harness supports goal mode.

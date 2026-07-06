@@ -119,6 +119,16 @@ final class PaneGroupModel: Identifiable {
         return added
     }
 
+    /// Ensures a tab exists for an agent-owned background terminal (a task
+    /// carrying a `terminalKey`). Never steals selection or opens the group:
+    /// the tab appearing in the always-visible bar is the affordance. Safe to
+    /// call repeatedly with every snapshot — existing keys are no-ops.
+    func ensureAgentTerminalPane(terminalKey: String, name: String) {
+        if state.panes.contains(where: { $0.terminalKey == terminalKey }) { return }
+        state.ensureAgentTerminalPane(name: name, terminalKey: terminalKey)
+        persist()
+    }
+
     /// Closes a tab: fires the pane's willDelete hook (kills its backing
     /// resources) and moves selection per the state rules.
     func closePane(id: UUID) {

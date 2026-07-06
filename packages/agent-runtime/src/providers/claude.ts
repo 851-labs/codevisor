@@ -19,6 +19,10 @@ import { readFileSync } from "node:fs"
 import { isAbsolute, resolve } from "node:path"
 import { Effect } from "effect"
 import { INLINE_IMAGE_MEDIA_TYPES, withAttachmentNotes } from "../attachments.js"
+import {
+  backgroundTerminalKey,
+  type BackgroundTerminalIntegration
+} from "../background-terminals.js"
 import { diffStatsFromTexts, lineCount } from "../diff-stats.js"
 import {
   adapterPromise,
@@ -172,6 +176,10 @@ export interface ClaudeProviderConfig {
   readonly queryFn?: ClaudeQueryFn
   readonly readFile?: (path: string) => string | undefined
   readonly checkVersion?: (claudePath: string) => Promise<string>
+  /// When set (and `wrapCommand` is present), background Bash commands are
+  /// rewritten to tee their output through a server-owned terminal so clients
+  /// can attach to the live process; foreground commands are untouched.
+  readonly backgroundTerminals?: BackgroundTerminalIntegration
 }
 
 /// Push-based AsyncIterable used as the SDK's streaming prompt input; keeping
@@ -259,6 +267,9 @@ interface BackgroundTaskEntry {
   status: string
   readonly taskType: string
   readonly toolUseId?: string
+  /// Set when the task's process streams through a server-owned terminal
+  /// (background Bash rewritten by the PreToolUse hook).
+  readonly terminalKey?: string
 }
 
 type ClaudeToolDecision =
@@ -304,6 +315,10 @@ interface ClaudeSession {
   /// Cross-turn: background tasks legitimately outlive the turn that spawned
   /// them, so this is never cleared at turn end.
   readonly backgroundTasks: Map<string, BackgroundTaskEntry>
+  /// tool_use id → server terminal key, recorded when the PreToolUse hook
+  /// rewrites a background Bash command; consumed by `task_started` to stamp
+  /// the task with its attachable terminal.
+  readonly backgroundShellKeys: Map<string, string>
   /// question id → held AskUserQuestion canUseTool promise.
   readonly pendingQuestions: Map<string, PendingClaudeQuestion>
   /// Client-side goal snapshot. Claude Code's goal mode is driven through the
@@ -327,6 +342,7 @@ export const makeClaudeProvider = (
       }
     })
   const checkVersion = config.checkVersion ?? runClaudeVersion
+  const wrapCommand = config.backgroundTerminals?.wrapCommand
   const versionCache = new Map<string, string>()
 
   const locateClaude = (definition: HarnessDefinition): string => {
@@ -399,7 +415,36 @@ export const makeClaudeProvider = (
               }
             ]
           }
-        ]
+        ],
+        // Hooks run in every permission mode (unlike canUseTool, which the
+        // bypassPermissions default never invokes) — the only reliable seam
+        // for rewriting background Bash through the server's terminal host.
+        ...(wrapCommand === undefined
+          ? {}
+          : {
+              PreToolUse: [
+                {
+                  matcher: "Bash",
+                  hooks: [
+                    async (hookInput, toolUseID) => {
+                      if (
+                        hookInput.hook_event_name !== "PreToolUse" ||
+                        session === undefined ||
+                        toolUseID === undefined
+                      ) {
+                        return {}
+                      }
+                      return wrapBackgroundBash(
+                        session,
+                        hookInput.tool_input,
+                        toolUseID,
+                        wrapCommand
+                      )
+                    }
+                  ]
+                }
+              ]
+            })
       },
       ...(resume === undefined ? { extraArgs: { "session-id": sessionKey } } : { resume })
     }
@@ -408,6 +453,7 @@ export const makeClaudeProvider = (
     const created: ClaudeSession = {
       abort,
       accumulators: new Map(),
+      backgroundShellKeys: new Map(),
       backgroundTasks: new Map(),
       currentEffort: "default",
       currentMessageId: undefined,
@@ -850,12 +896,17 @@ const handleSystemMessage = (
     case "task_started": {
       // Ambient/housekeeping tasks should not make the chat look busy.
       if (message.skip_transcript === true) break
+      const terminalKey =
+        message.tool_use_id === undefined
+          ? undefined
+          : session.backgroundShellKeys.get(message.tool_use_id)
       session.backgroundTasks.set(message.task_id, {
         description: message.description,
         id: message.task_id,
         status: "running",
         taskType: message.subagent_type !== undefined ? "subagent" : (message.task_type ?? "task"),
-        ...(message.tool_use_id === undefined ? {} : { toolUseId: message.tool_use_id })
+        ...(message.tool_use_id === undefined ? {} : { toolUseId: message.tool_use_id }),
+        ...(terminalKey === undefined ? {} : { terminalKey })
       })
       emitBackgroundTasks(session)
       // Retitle the spawning tool call with the task's description — the most
@@ -887,7 +938,7 @@ const handleSystemMessage = (
       if (entry === undefined) break
       const status = message.patch.status
       if (status === "completed" || status === "failed" || status === "killed") {
-        session.backgroundTasks.delete(message.task_id)
+        removeBackgroundTask(session, message.task_id)
       } else {
         if (status !== undefined) entry.status = status
         if (message.patch.description !== undefined) entry.description = message.patch.description
@@ -896,7 +947,7 @@ const handleSystemMessage = (
       break
     }
     case "task_notification": {
-      if (session.backgroundTasks.delete(message.task_id)) {
+      if (removeBackgroundTask(session, message.task_id)) {
         emitBackgroundTasks(session)
       }
       break
@@ -912,6 +963,45 @@ const emitBackgroundTasks = (session: ClaudeSession): void => {
     payload: { backgroundTasks: [...session.backgroundTasks.values()] },
     subjectId: session.key
   })
+}
+
+const removeBackgroundTask = (session: ClaudeSession, taskId: string): boolean => {
+  const entry = session.backgroundTasks.get(taskId)
+  if (entry === undefined) return false
+  session.backgroundTasks.delete(taskId)
+  if (entry.toolUseId !== undefined) {
+    session.backgroundShellKeys.delete(entry.toolUseId)
+  }
+  return true
+}
+
+/// PreToolUse rewrite for `Bash(run_in_background: true)`: the command runs
+/// under the server's background-terminal wrapper, which tees output to an
+/// attachable terminal while stdout/stderr still flow to the SDK unchanged
+/// (BashOutput/KillShell keep working). Foreground commands pass through.
+const wrapBackgroundBash = (
+  session: ClaudeSession,
+  toolInput: unknown,
+  toolUseID: string,
+  wrapCommand: (key: string, command: string) => string
+): {
+  hookSpecificOutput?: {
+    hookEventName: "PreToolUse"
+    updatedInput: Record<string, unknown>
+  }
+} => {
+  if (!isRecord(toolInput)) return {}
+  if (toolInput.run_in_background !== true || typeof toolInput.command !== "string") {
+    return {}
+  }
+  const key = backgroundTerminalKey(session.key, toolUseID)
+  session.backgroundShellKeys.set(toolUseID, key)
+  return {
+    hookSpecificOutput: {
+      hookEventName: "PreToolUse",
+      updatedInput: { ...toolInput, command: wrapCommand(key, toolInput.command) }
+    }
+  }
 }
 
 // MARK: questions

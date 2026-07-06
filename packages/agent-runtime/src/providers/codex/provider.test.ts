@@ -414,6 +414,132 @@ describe("CodexProvider", () => {
     })
   })
 
+  it("mirrors command output into background terminals and promotes long-lived commands", async () => {
+    vi.useFakeTimers()
+    const client = new FakeCodexClient()
+    const registered: Array<{
+      key: string
+      outputs: Array<string>
+      exits: Array<number | undefined>
+      removed: boolean
+    }> = []
+    const provider = makeCodexProvider(environment, {
+      backgroundTerminals: {
+        promotionDelayMs: 50,
+        registry: {
+          register: (key) => {
+            const entry = { exits: [], key, outputs: [], removed: false } as (typeof registered)[0]
+            registered.push(entry)
+            return {
+              exit: (exitCode) => entry.exits.push(exitCode),
+              output: (data) => entry.outputs.push(data),
+              remove: () => {
+                entry.removed = true
+              }
+            }
+          }
+        }
+      },
+      connector: async () => client
+    })
+    const events: Array<RuntimeEvent> = []
+    const created = await run(
+      provider.createSession(definition, "/tmp/project", async (event) => {
+        events.push(event)
+      })
+    )
+    const snapshots = () =>
+      events
+        .filter((event) => event.kind === "session.updated")
+        .map((event) => event.payload as Record<string, unknown>)
+        .filter((payload) => Array.isArray(payload.backgroundTasks))
+        .map((payload) => payload.backgroundTasks as Array<Record<string, unknown>>)
+    // Session creation clears any stale replayed snapshot.
+    expect(snapshots()).toEqual([[]])
+
+    client.emit("item/started", {
+      item: {
+        command: "npm run dev",
+        id: "item-dev",
+        status: "inProgress",
+        type: "commandExecution"
+      },
+      threadId: "thread-new",
+      turnId: "turn-1"
+    })
+    client.emit("item/commandExecution/outputDelta", {
+      delta: "ready on :3000\n",
+      itemId: "item-dev",
+      threadId: "thread-new",
+      turnId: "turn-1"
+    })
+    // Deltas for unknown items are dropped.
+    client.emit("item/commandExecution/outputDelta", {
+      delta: "noise",
+      itemId: "item-unknown",
+      threadId: "thread-new",
+      turnId: "turn-1"
+    })
+    expect(registered[0]?.key).toBe("thread-new:bg:item-dev")
+    expect(registered[0]?.outputs).toEqual(["ready on :3000\n"])
+
+    // Still running after the promotion delay → surfaces as a task with a
+    // terminal key.
+    vi.advanceTimersByTime(50)
+    expect(snapshots().at(-1)).toEqual([
+      {
+        description: "npm run dev",
+        id: "item-dev",
+        status: "running",
+        taskType: "shell",
+        terminalKey: "thread-new:bg:item-dev",
+        toolUseId: "item-dev"
+      }
+    ])
+
+    // Completion ends the mirror, clears the task, and keeps the scrollback.
+    client.emit("item/completed", {
+      item: {
+        command: "npm run dev",
+        exitCode: 0,
+        id: "item-dev",
+        status: "completed",
+        type: "commandExecution"
+      },
+      threadId: "thread-new",
+      turnId: "turn-1"
+    })
+    expect(registered[0]?.exits).toEqual([0])
+    expect(registered[0]?.removed).toBe(false)
+    expect(snapshots().at(-1)).toEqual([])
+
+    // A short-lived command never surfaces and leaves nothing behind.
+    client.emit("item/started", {
+      item: { command: "ls", id: "item-ls", status: "inProgress", type: "commandExecution" },
+      threadId: "thread-new",
+      turnId: "turn-1"
+    })
+    client.emit("item/completed", {
+      item: { command: "ls", id: "item-ls", status: "completed", type: "commandExecution" },
+      threadId: "thread-new",
+      turnId: "turn-1"
+    })
+    expect(registered[1]?.exits).toEqual([undefined])
+    expect(registered[1]?.removed).toBe(true)
+    vi.advanceTimersByTime(1000)
+    expect(snapshots().at(-1)).toEqual([])
+
+    // Session close ends any mirrors that are still running.
+    client.emit("item/started", {
+      item: { command: "sleep 99", id: "item-zzz", status: "inProgress", type: "commandExecution" },
+      threadId: "thread-new",
+      turnId: "turn-1"
+    })
+    await run(created.handle.close)
+    expect(registered[2]?.exits).toEqual([undefined])
+    expect(registered[2]?.removed).toBe(true)
+  })
+
   it("maps a full turn: lifecycle, streamed patch stats, command items", async () => {
     const { client, created, events } = await setup()
     const promptPromise = run(created!.handle.prompt("change the runner"))

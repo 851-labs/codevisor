@@ -13,6 +13,10 @@ interface ProxyOptions {
   /// Bearer token for servers that require auth (remote machines; same-machine
   /// connections are exempt server-side).
   readonly token?: string
+  /// Attach to an agent-owned terminal instead of spawning a shell: creation
+  /// retries until the terminal is registered, and pane teardown must NOT
+  /// close the terminal (the process lifecycle belongs to the agent).
+  readonly attachOnly: boolean
 }
 
 type TerminalClientFramePayload =
@@ -48,7 +52,8 @@ const parseArgs = (args: ReadonlyArray<string>): ProxyOptions => {
     server,
     sessionId,
     cwd,
-    clientId: optionalArg(parsed.get("client-id")) ?? randomUUID()
+    clientId: optionalArg(parsed.get("client-id")) ?? randomUUID(),
+    attachOnly: parsed.get("attach-only") === "true"
   }
   if (shell !== undefined) {
     options = { ...options, shell }
@@ -72,21 +77,14 @@ const terminalSize = (): { readonly cols: number; readonly rows: number } => ({
 
 const createTerminal = async (options: ProxyOptions): Promise<TerminalCreateResponse> => {
   const size = terminalSize()
-  const body =
-    options.shell === undefined
-      ? {
-          sessionId: options.sessionId,
-          cwd: options.cwd,
-          cols: size.cols,
-          rows: size.rows
-        }
-      : {
-          sessionId: options.sessionId,
-          cwd: options.cwd,
-          cols: size.cols,
-          rows: size.rows,
-          shell: options.shell
-        }
+  const body = {
+    sessionId: options.sessionId,
+    cwd: options.cwd,
+    cols: size.cols,
+    rows: size.rows,
+    ...(options.shell === undefined ? {} : { shell: options.shell }),
+    ...(options.attachOnly ? { attachOnly: true } : {})
+  }
   const response = await fetch(urlFor(options.server, "/v1/terminals"), {
     body: JSON.stringify(body),
     headers: {
@@ -136,7 +134,11 @@ const main = async (): Promise<void> => {
   })
 
   process.on("SIGTERM", () => {
-    enqueue({ type: "close" })
+    // Attach-only proxies are viewers: tearing down the pane must not kill
+    // the agent-owned process behind the terminal.
+    if (!options.attachOnly) {
+      enqueue({ type: "close" })
+    }
     exited = true
     socket?.close()
   })

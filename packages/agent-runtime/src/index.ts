@@ -2,6 +2,7 @@ import type { EventEnvelope, Harness, SessionGoal } from "@herdman/api"
 import { isoTimestamp } from "@herdman/api"
 import { accessSync, constants } from "node:fs"
 import { Context, Effect, Layer } from "effect"
+import type { BackgroundTerminalIntegration } from "./background-terminals.js"
 import { makeAcpProvider, type AcpConnector } from "./providers/acp.js"
 import { makeClaudeProvider } from "./providers/claude.js"
 import { makeCodexProvider } from "./providers/codex/provider.js"
@@ -24,6 +25,7 @@ import {
 
 export * from "./types.js"
 export * from "./attachments.js"
+export * from "./background-terminals.js"
 export * from "./diff-stats.js"
 export {
   acpPermissionOutcome,
@@ -53,6 +55,10 @@ export interface AgentRuntimeConfig {
   readonly executableExists?: (name: string, env: NodeJS.ProcessEnv) => boolean
   readonly locateExecutable?: (name: string, env: NodeJS.ProcessEnv) => string | undefined
   readonly connector?: AcpConnector
+  /// Server-owned terminals for agent background processes; providers surface
+  /// long-running agent commands through it as attachable terminal tabs.
+  /// Absent (tests, embedded runtimes), providers keep the plain behavior.
+  readonly backgroundTerminals?: BackgroundTerminalIntegration
   /// Extra providers (claude/codex) keyed by id; the ACP provider is always
   /// registered. Exposed for tests and incremental provider rollout.
   readonly providers?: Partial<Record<ProviderId, AgentProvider>>
@@ -193,15 +199,19 @@ export const makeAgentRuntime = (config: AgentRuntimeConfig = {}): AgentRuntimeS
     ((name, environment) => locateExecutable(name, environment) !== undefined)
   const environment: ProviderEnvironment = { env, executableExists, locateExecutable }
   const providers = new Map<ProviderId, AgentProvider>()
+  const backgroundTerminals =
+    config.backgroundTerminals === undefined
+      ? {}
+      : { backgroundTerminals: config.backgroundTerminals }
   providers.set(
     "acp",
-    makeAcpProvider(
-      environment,
-      config.connector === undefined ? {} : { connector: config.connector }
-    )
+    makeAcpProvider(environment, {
+      ...backgroundTerminals,
+      ...(config.connector === undefined ? {} : { connector: config.connector })
+    })
   )
-  providers.set("claude", makeClaudeProvider(environment))
-  providers.set("codex", makeCodexProvider(environment))
+  providers.set("claude", makeClaudeProvider(environment, backgroundTerminals))
+  providers.set("codex", makeCodexProvider(environment, backgroundTerminals))
   for (const provider of Object.values(config.providers ?? {})) {
     providers.set(provider.id, provider)
   }

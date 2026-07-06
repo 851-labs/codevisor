@@ -505,6 +505,10 @@ final class SessionController {
     /// Background tasks the agent is running (backgrounded shells, subagents).
     var backgroundTasks: [BackgroundTaskInfo] { model?.backgroundTasks ?? [] }
 
+    /// Background tasks with no attachable terminal — the ones the waiting
+    /// indicator describes. Terminal-backed tasks surface as terminal tabs.
+    var waitingBackgroundTasks: [BackgroundTaskInfo] { model?.waitingBackgroundTasks ?? [] }
+
     /// True when the turn ended but the agent still owns background work — the
     /// chat isn't stuck; the agent will come back on its own.
     var isWaitingOnBackgroundTasks: Bool { model?.isWaitingOnBackgroundTasks ?? false }

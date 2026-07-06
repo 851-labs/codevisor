@@ -160,6 +160,7 @@ struct PaneGroupBar: View {
             ForEach(group.state.panes) { pane in
                         PaneTab(
                             name: pane.name,
+                            isAgentOwned: pane.attachOnly,
                             isSelected: showsSelection && pane.id == group.state.selectedPaneId,
                             isDragging: draggingPaneId == pane.id,
                             width: tabWidth,
@@ -378,6 +379,9 @@ private struct TabSlotWidthModifier: ViewModifier {
 private struct PaneTab: View {
     @Environment(\.theme) private var theme
     let name: String
+    /// Agent-owned background terminals get a glyph so ownership is obvious
+    /// next to the user's own shells.
+    let isAgentOwned: Bool
     let isSelected: Bool
     let isDragging: Bool
     let width: CGFloat
@@ -401,6 +405,12 @@ private struct PaneTab: View {
 
     var body: some View {
         HStack(spacing: 4) {
+            if isAgentOwned {
+                Image(systemName: "sparkle")
+                    .font(.system(size: 8, weight: .semibold))
+                    .foregroundStyle(isSelected ? .primary : .secondary)
+                    .help("Agent background process")
+            }
             fadingName
             if showsClose {
                 closeButton

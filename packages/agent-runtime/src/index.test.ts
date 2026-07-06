@@ -138,7 +138,11 @@ describe("@herdman/agent-runtime", () => {
   it("discovers ready, missing-runner, and unavailable harnesses", async () => {
     const runtime = makeAgentRuntime({
       env: { PATH: "/bin" },
-      executableExists: (name) => ["gemini", "opencode", "codex"].includes(name)
+      executableExists: (name) => ["gemini", "opencode", "codex"].includes(name),
+      // Exercises the background-terminal threading into every provider.
+      backgroundTerminals: {
+        registry: { register: () => ({ exit: () => {}, output: () => {}, remove: () => {} }) }
+      }
     })
 
     const harnesses = await run(runtime.discoverHarnesses)
