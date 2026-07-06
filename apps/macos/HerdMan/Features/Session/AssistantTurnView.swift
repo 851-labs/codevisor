@@ -42,8 +42,11 @@ struct AssistantTurnView: View {
             // section (strict arrival order); the final answer is split out
             // below only once the turn finishes.
             if !turn.isGenerating, let final = turn.finalText, case let .text(_, markdown) = final {
+                // No .textSelection here: the Texts inside StreamingMarkdownView
+                // already enable it per-run. Applying it again on the whole
+                // segment stack forces the entire VStack through the selection
+                // layout path on first click, causing a visible layout shift.
                 StreamingMarkdownView(markdown)
-                    .textSelection(.enabled)
                 // Copies just the final answer text, not the worked/tool
                 // content. Hidden until hover so the transcript stays clean.
                 MessageCopyButton(text: markdown, help: "Copy response", isRevealed: isHovered)
