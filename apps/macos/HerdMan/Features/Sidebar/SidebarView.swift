@@ -472,7 +472,10 @@ struct SidebarView: View {
         .contextMenu {
             Button("New chat here") { selection = .newChat(project.id) }
             Button("Change icon") { iconEditing = project }
-            Button("Archive") { list.archive(project) }
+            Button { list.archive(project) } label: {
+                Label("Archive", systemImage: "archivebox")
+                    .labelStyle(.titleAndIcon)
+            }
         }
 
         if expanded.contains(project.id) {
@@ -570,7 +573,10 @@ struct SidebarView: View {
         .background(rowBackground(id: id, isSelected: isSelected))
         .onHover { hovered = $0 ? id : (hovered == id ? nil : hovered) }
         .contextMenu {
-            Button("Archive") { list.archiveSession(session) }
+            Button { list.archiveSession(session) } label: {
+                Label("Archive", systemImage: "archivebox")
+                    .labelStyle(.titleAndIcon)
+            }
         }
     }
 
@@ -624,7 +630,10 @@ struct SidebarView: View {
         .onHover { hovered = $0 ? id : (hovered == id ? nil : hovered) }
         .onTapGesture { selection = .session(session.id) }
         .contextMenu {
-            Button("Archive") { list.archiveSession(session) }
+            Button { list.archiveSession(session) } label: {
+                Label("Archive", systemImage: "archivebox")
+                    .labelStyle(.titleAndIcon)
+            }
         }
     }
 
