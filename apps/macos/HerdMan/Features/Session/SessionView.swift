@@ -264,7 +264,10 @@ struct SessionScreen: View {
             .overlay(alignment: .bottom) {
                 if !isAtBottom {
                     scrollToBottomButton(proxy)
-                        .padding(.bottom, composerHeight + 4)
+                        // composerHeight includes the overlay's 24pt top
+                        // padding; going past it overlaps the button slightly
+                        // onto the composer card's edge.
+                        .padding(.bottom, composerHeight - 10)
                         .transition(.opacity.combined(with: .scale(scale: 0.85)))
                 }
             }
@@ -288,11 +291,10 @@ struct SessionScreen: View {
             Image(systemName: "arrow.down")
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(.secondary)
-                .frame(width: 28, height: 28)
-                .background(Circle().fill(.regularMaterial))
-                .overlay(Circle().strokeBorder(.separator, lineWidth: 0.5))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.glass)
+        .buttonBorderShape(.circle)
+        .controlSize(.large)
         .help("Scroll to bottom")
     }
 
