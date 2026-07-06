@@ -21,6 +21,10 @@ public final class SessionModel {
     /// replaced wholesale on every server snapshot. Non-empty after a turn ends
     /// means the agent will come back on its own once the work settles.
     public private(set) var backgroundTasks: [BackgroundTaskInfo] = []
+    /// Whether any snapshot has arrived yet. Terminal-tab pruning waits for
+    /// this: before the first snapshot, an empty `backgroundTasks` just means
+    /// history hasn't replayed, not that every task ended.
+    public private(set) var hasBackgroundTaskSnapshot = false
 
     /// Background tasks with no attachable terminal (subagents, poll-and-resume
     /// tasks). Tasks WITH a `terminalKey` render as terminal tabs instead of
@@ -420,6 +424,7 @@ public final class SessionModel {
             queuedPrompts = queue
         case let .backgroundTasks(tasks):
             backgroundTasks = tasks
+            hasBackgroundTaskSnapshot = true
         }
     }
 

@@ -95,13 +95,14 @@ struct SessionScreen: View {
         })
         // Background tasks that stream through a server-owned terminal get a
         // tab in the bottom group — a dev server is something running, not
-        // something the chat is waiting on. Tabs persist after the task ends
-        // (the exit is visible in the scrollback) until the user closes them.
+        // something the chat is waiting on. The tab lives exactly as long as
+        // the task: agent kills and completions remove it.
         .onChange(of: controller.backgroundTasks, initial: true) { _, tasks in
             paneGroup.syncAgentTerminals(
                 tasks.compactMap { task in
                     task.terminalKey.map { (terminalKey: $0, name: task.description) }
-                }
+                },
+                pruneEnded: controller.hasBackgroundTaskSnapshot
             )
         }
         .onAppear {

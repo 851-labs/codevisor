@@ -252,10 +252,12 @@ struct SessionModelTests {
             sessionId: sessionId.uuidString
         )
 
-        // Echoed prompt finishes the turn, so the session is idle.
+        // Echoed prompt finishes the turn, so the session is idle. No
+        // snapshot yet — tab pruning must not treat that as "no tasks".
         await model.send("run tests in the background")
         #expect(model.isSending == false)
         #expect(model.isWaitingOnBackgroundTasks == false)
+        #expect(model.hasBackgroundTaskSnapshot == false)
 
         client.emit(ServerEventEnvelope(
             id: 3,
@@ -279,6 +281,7 @@ struct SessionModelTests {
             BackgroundTaskInfo(id: "bg-1", description: "Run npm test", status: "running", taskType: "shell")
         ])
         #expect(model.isWaitingOnBackgroundTasks)
+        #expect(model.hasBackgroundTaskSnapshot)
 
         // A task with an attachable terminal renders as a terminal tab, not
         // the waiting indicator: it is running, not being waited on.

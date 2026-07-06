@@ -505,6 +505,9 @@ final class SessionController {
     /// Background tasks the agent is running (backgrounded shells, subagents).
     var backgroundTasks: [BackgroundTaskInfo] { model?.backgroundTasks ?? [] }
 
+    /// Whether any background-task snapshot has arrived (see SessionModel).
+    var hasBackgroundTaskSnapshot: Bool { model?.hasBackgroundTaskSnapshot ?? false }
+
     /// Background tasks with no attachable terminal — the ones the waiting
     /// indicator describes. Terminal-backed tasks surface as terminal tabs.
     var waitingBackgroundTasks: [BackgroundTaskInfo] { model?.waitingBackgroundTasks ?? [] }

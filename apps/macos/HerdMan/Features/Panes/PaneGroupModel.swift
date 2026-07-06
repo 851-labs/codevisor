@@ -122,9 +122,11 @@ final class PaneGroupModel: Identifiable {
     /// Syncs the agent's background-task snapshot into tabs: ensures a pane
     /// exists per task terminal, never stealing selection or opening the
     /// group — the tab appearing in the always-visible bar is the affordance.
-    /// Tabs are NOT removed when their task ends; the exit stays readable
-    /// until the user closes them.
-    func syncAgentTerminals(_ tasks: [(terminalKey: String, name: String)]) {
+    /// A tab lives exactly as long as its task: when a task leaves the
+    /// snapshot (the agent killed it, or it finished), its tab goes with it.
+    /// `pruneEnded` is false until the first snapshot arrives — an empty task
+    /// list before replay means "unknown", not "everything ended".
+    func syncAgentTerminals(_ tasks: [(terminalKey: String, name: String)], pruneEnded: Bool) {
         var added = false
         for task in tasks where !state.panes.contains(where: { $0.terminalKey == task.terminalKey }) {
             state.ensureAgentTerminalPane(name: task.name, terminalKey: task.terminalKey)
@@ -132,6 +134,13 @@ final class PaneGroupModel: Identifiable {
         }
         if added {
             persist()
+        }
+        guard pruneEnded else { return }
+        let liveKeys = Set(tasks.map(\.terminalKey))
+        for pane in state.panes where pane.attachOnly && !liveKeys.contains(pane.terminalKey) {
+            // closePane also deletes the server-side terminal (a no-op when
+            // the kill already removed it).
+            closePane(id: pane.id)
         }
     }
 
