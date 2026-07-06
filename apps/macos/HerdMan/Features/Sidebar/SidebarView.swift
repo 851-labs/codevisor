@@ -70,6 +70,8 @@ struct SidebarView: View {
     )
     @State private var hovered: String?
     @State private var iconEditing: Project?
+    @State private var renamingSession: ChatSession?
+    @State private var renameTitle = ""
     @State private var draggingProjectID: UUID?
     @AppStorage("sidebar.organization") private var organizationRaw = SidebarOrganization.byProject.rawValue
     @AppStorage("sidebar.order") private var orderRaw = SidebarOrder.updated.rawValue
@@ -234,6 +236,22 @@ struct SidebarView: View {
             Button("Not Now", role: .cancel) {}
         } message: { pending in
             Text(importPromptMessage(for: pending))
+        }
+        .alert(
+            "Rename Chat",
+            isPresented: Binding(
+                get: { renamingSession != nil },
+                set: { if !$0 { renamingSession = nil } }
+            ),
+            presenting: renamingSession
+        ) { session in
+            TextField("Title", text: $renameTitle)
+            Button("Rename") {
+                let trimmed = renameTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmed.isEmpty else { return }
+                list.renameSession(session, to: trimmed)
+            }
+            Button("Cancel", role: .cancel) {}
         }
         .sheet(item: $iconEditing) { project in
             IconPickerView(currentSymbol: project.symbolName) { symbol in
@@ -573,6 +591,13 @@ struct SidebarView: View {
         .background(rowBackground(id: id, isSelected: isSelected))
         .onHover { hovered = $0 ? id : (hovered == id ? nil : hovered) }
         .contextMenu {
+            Button {
+                renameTitle = session.title
+                renamingSession = session
+            } label: {
+                Label("Rename", systemImage: "pencil")
+                    .labelStyle(.titleAndIcon)
+            }
             Button { list.archiveSession(session) } label: {
                 Label("Archive", systemImage: "archivebox")
                     .labelStyle(.titleAndIcon)
@@ -630,6 +655,13 @@ struct SidebarView: View {
         .onHover { hovered = $0 ? id : (hovered == id ? nil : hovered) }
         .onTapGesture { selection = .session(session.id) }
         .contextMenu {
+            Button {
+                renameTitle = session.title
+                renamingSession = session
+            } label: {
+                Label("Rename", systemImage: "pencil")
+                    .labelStyle(.titleAndIcon)
+            }
             Button { list.archiveSession(session) } label: {
                 Label("Archive", systemImage: "archivebox")
                     .labelStyle(.titleAndIcon)
