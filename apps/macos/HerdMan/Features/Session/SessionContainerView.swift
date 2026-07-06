@@ -9,6 +9,7 @@ struct SessionContainerView: View {
     let store: SessionStore
 
     @Environment(AppEnvironment.self) private var environment
+    @Environment(\.theme) private var theme
     @State private var controller: SessionController?
 
     var body: some View {
@@ -46,6 +47,12 @@ struct SessionContainerView: View {
             // It's a title, not a control: no glass capsule behind it.
             .sharedBackgroundVisibility(.hidden)
         }
+        // Removing the default title item (above) also drops the toolbar's
+        // backing on macOS 26, leaving the top bar fully transparent over
+        // scrolled chat content. Restore the standard toolbar background for
+        // system themes; custom themes keep it hidden because ThemedRoot's
+        // `themedToolbarBackground` paints its own opaque band instead.
+        .toolbarBackgroundVisibility(theme.isSystem ? .visible : .hidden, for: .windowToolbar)
         .task(id: session.id) {
             store.markOpened(session.id)
             let controller = store.controller(for: session, project: project)
