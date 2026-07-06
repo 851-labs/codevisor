@@ -14,6 +14,12 @@ final class SessionStore {
     /// place — so composer text/attachments survive navigating away and back
     /// no matter which sidebar entry reopens it.
     private var draft: SessionController?
+    /// Turns that finished while their session wasn't open, keyed by session
+    /// id — the sidebar's iOS-style unread badges. Cleared on open.
+    private var unreadCounts: [UUID: Int] = [:]
+    /// The session currently shown in the detail column; its finished turns
+    /// never count as unread.
+    private var openSessionId: UUID?
     private let environment: AppEnvironment
 
     init(environment: AppEnvironment) {
@@ -42,6 +48,7 @@ final class SessionStore {
         controller.onAgentSessionCreated = { [weak projectList = environment.projectList] agentSessionId in
             projectList?.setAgentSessionId(agentSessionId, for: session.id)
         }
+        controller.onTurnEnded = { [weak self] in self?.noteTurnEnded(for: session.id) }
         controllers[session.id] = controller
         return controller
     }
@@ -98,14 +105,44 @@ final class SessionStore {
         return group
     }
 
-    /// Whether the session with this id is actively generating a response.
+    /// Whether the session with this id is showing activity: generating a
+    /// response, connecting its agent, or running pre-chat setup (worktree
+    /// creation, agent start) — everything the sidebar spinner covers.
     func isRunning(_ sessionId: UUID) -> Bool {
-        controllers[sessionId]?.isSending ?? false
+        guard let controller = controllers[sessionId] else { return false }
+        return controller.isSending
+            || controller.isConnecting
+            || controller.setupPhases.contains(where: \.isRunning)
+    }
+
+    // MARK: - Unread badges
+
+    /// Finished-and-not-yet-opened turns for a session — the sidebar badge count.
+    func unreadCount(_ sessionId: UUID) -> Int {
+        unreadCounts[sessionId] ?? 0
+    }
+
+    /// Marks a session as the one on screen and clears its unread badge.
+    func markOpened(_ sessionId: UUID) {
+        openSessionId = sessionId
+        unreadCounts[sessionId] = nil
+    }
+
+    /// Called when navigation leaves the session detail (new chat, nothing
+    /// selected), so finished turns start counting as unread again.
+    func clearOpenSession() {
+        openSessionId = nil
+    }
+
+    private func noteTurnEnded(for sessionId: UUID) {
+        guard sessionId != openSessionId else { return }
+        unreadCounts[sessionId, default: 0] += 1
     }
 
     /// Registers a draft controller under a newly created session id and
     /// releases the draft slot so the next new chat starts fresh.
     func register(_ controller: SessionController, for sessionId: UUID) {
+        controller.onTurnEnded = { [weak self] in self?.noteTurnEnded(for: sessionId) }
         controllers[sessionId] = controller
         if draft === controller { draft = nil }
     }
@@ -114,5 +151,6 @@ final class SessionStore {
         controllers[sessionId] = nil
         paneGroups[sessionId]?.detachAll()
         paneGroups[sessionId] = nil
+        unreadCounts[sessionId] = nil
     }
 }

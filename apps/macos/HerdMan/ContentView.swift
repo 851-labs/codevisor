@@ -69,6 +69,16 @@ struct RootView: View {
             }
         }
         .animation(.snappy(duration: 0.15), value: lightbox.item)
+        // Track which session is on screen so finished turns only badge the
+        // sidebar rows of chats the user hasn't opened.
+        .onChange(of: selection) { _, newValue in
+            guard let store else { return }
+            if case let .session(sessionId) = newValue {
+                store.markOpened(sessionId)
+            } else {
+                store.clearOpenSession()
+            }
+        }
         .task {
             if store == nil {
                 store = SessionStore(environment: environment)

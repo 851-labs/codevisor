@@ -110,6 +110,9 @@ final class SessionController {
     var onWorktreeCreated: ((ServerWorktree) -> Void)?
     /// Called with the agent session id once a brand-new session is created.
     var onAgentSessionCreated: ((String) -> Void)?
+    /// Called each time a live turn ends — forwarded from the connected
+    /// `SessionModel` so the session store can badge unopened chats.
+    var onTurnEnded: (() -> Void)?
     /// The agent session id currently connected (resumed or newly created).
     private(set) var connectedAgentSessionId: String?
 
@@ -959,6 +962,7 @@ final class SessionController {
             modeState: modeStateByHarness[harness.id],
             configOptions: configOptionsByHarness[harness.id] ?? configCache.options(forHarness: harness.id)
         )
+        model.onTurnEnded = { [weak self] in self?.onTurnEnded?() }
         if resumeAgentSessionId != nil {
             await model.loadHistory()
         }

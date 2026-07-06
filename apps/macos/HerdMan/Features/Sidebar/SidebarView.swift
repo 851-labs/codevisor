@@ -532,8 +532,8 @@ struct SidebarView: View {
                 Spacer(minLength: 6)
             }
 
-            // Fixed-size trailing slot so swapping the timestamp for the spinner
-            // or archive button on hover doesn't change the row height.
+            // Fixed-size trailing slot so swapping the timestamp for the spinner,
+            // unread badge, or archive button on hover doesn't change the row height.
             Group {
                 if store?.isRunning(session.id) == true {
                     ProgressView().controlSize(.mini)
@@ -548,6 +548,8 @@ struct SidebarView: View {
                     .buttonStyle(.plain)
                     .foregroundStyle(.secondary)
                     .help("Archive chat")
+                } else if let unread = unreadCount(for: session) {
+                    UnreadBadge(count: unread)
                 } else {
                     Text(RelativeTime.short(from: timestamp(for: session)))
                         .font(.caption2)
@@ -603,6 +605,8 @@ struct SidebarView: View {
                     .buttonStyle(.plain)
                     .foregroundStyle(.secondary)
                     .help("Archive chat")
+                } else if let unread = unreadCount(for: session) {
+                    UnreadBadge(count: unread)
                 } else {
                     Text(RelativeTime.short(from: timestamp(for: session)))
                         .font(.caption2)
@@ -655,12 +659,28 @@ struct SidebarView: View {
     }
 
     private func compareSessions(_ left: ChatSession, _ right: ChatSession) -> Bool {
+        // In last-updated order, active sessions (the ones showing spinners)
+        // always float to the top.
+        if order == .updated {
+            let leftRunning = store?.isRunning(left.id) == true
+            let rightRunning = store?.isRunning(right.id) == true
+            if leftRunning != rightRunning {
+                return leftRunning
+            }
+        }
         let leftTimestamp = timestamp(for: left)
         let rightTimestamp = timestamp(for: right)
         if leftTimestamp != rightTimestamp {
             return leftTimestamp > rightTimestamp
         }
         return left.title.localizedCaseInsensitiveCompare(right.title) == .orderedAscending
+    }
+
+    /// The unread-turn count for a session's badge; nil when there is nothing
+    /// to badge so the row falls through to the relative timestamp.
+    private func unreadCount(for session: ChatSession) -> Int? {
+        guard let count = store?.unreadCount(session.id), count > 0 else { return nil }
+        return count
     }
 
     private func timestamp(for session: ChatSession) -> Date {
@@ -741,6 +761,22 @@ private struct RemoteProjectSheet: View {
         }
         .padding(20)
         .frame(width: 420)
+    }
+}
+
+/// An iOS-style notification badge: a red circle with the number of chats
+/// that finished while the session was unopened.
+private struct UnreadBadge: View {
+    let count: Int
+
+    var body: some View {
+        Text(count > 9 ? "9+" : "\(count)")
+            .font(.system(size: 9, weight: .semibold).monospacedDigit())
+            .foregroundStyle(.white)
+            .padding(.horizontal, 3)
+            .frame(minWidth: 14)
+            .frame(height: 14)
+            .background(Capsule().fill(.red))
     }
 }
 

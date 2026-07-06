@@ -40,6 +40,11 @@ public final class SessionModel {
     /// pinned panel above the composer.
     public private(set) var sessionPlan: Plan?
 
+    /// Called each time a live turn ends (completed, cancelled, or failed) —
+    /// the "chat finished" signal for surfaces outside this screen, like the
+    /// sidebar's unread badge. Never fired by history replay.
+    public var onTurnEnded: (() -> Void)?
+
     private let transport: ServerSessionTransport
     private let sessionId: String
     private let now: @Sendable () -> Date
@@ -128,7 +133,7 @@ public final class SessionModel {
             await drain()
             errorMessage = serverErrorMessage(error)
             finish(stopReason: nil, outcome: .failed)
-            isSending = false
+            endTurn()
         }
     }
 
@@ -398,11 +403,11 @@ public final class SessionModel {
             appendRemoteUserIfNeeded(text: text, attachments: attachments)
         case let .finished(stopReason):
             finish(stopReason: stopReason, outcome: stopReason == .cancelled ? .cancelled : .completed)
-            isSending = false
+            endTurn()
         case let .failed(message):
             errorMessage = message
             finish(stopReason: nil, outcome: .failed)
-            isSending = false
+            endTurn()
         case let .queueUpdated(queue):
             queuedPrompts = queue
         case let .backgroundTasks(tasks):
@@ -431,6 +436,14 @@ public final class SessionModel {
         message.turn.endedAt = now()
         TranscriptReducer.settleToolCalls(&message.turn, outcome: outcome)
         conversation[conversation.count - 1] = .assistant(message)
+    }
+
+    /// Clears the sending flag and fires `onTurnEnded` — only when a turn was
+    /// actually in flight, so redundant terminal events don't double-notify.
+    private func endTurn() {
+        let wasSending = isSending
+        isSending = false
+        if wasSending { onTurnEnded?() }
     }
 
     private func enqueueWhileSending(_ text: String, attachments: [Attachment] = []) async {
