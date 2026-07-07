@@ -83,8 +83,12 @@ public final class AppEnvironment {
 
     /// Refetches sessions from all harnesses and merges them in.
     public func importSessions() async {
+        // Snapshot which machine the discovery runs against BEFORE awaiting:
+        // if the user switches machines mid-fetch, the results must still be
+        // filed under the machine they came from, not the new selection.
+        let serverId = machines.selectedMachineId
         let imported = await sessionImporter.fetchAll()
-        projectList.importSessions(imported)
+        projectList.importSessions(imported, serverId: serverId)
         projectList.showsImportedSessions = settings.importExternalSessions
     }
 

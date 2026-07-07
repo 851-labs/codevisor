@@ -316,6 +316,85 @@ struct ProjectListModelTests {
         #expect(sessions.contains { $0.agentSessionId == "ext-2" && $0.title == "Session" })
         #expect(DefaultSessionRepository(store: sessionStore).load().count == 2)
     }
+
+    @Test("A machine switch during an in-flight refresh does not re-tag the old machine's projects")
+    func refreshDroppedAfterMachineSwitch() async throws {
+        let remoteProject = Project.fromFolder(
+            URL(fileURLWithPath: "/srv/remote-only"),
+            createdAt: Date(timeIntervalSince1970: 5)
+        )
+        let (model, projectStore, _) = makeModel()
+        let latch = Latch()
+        let remoteServer = FakeServerClient(projects: [serverProject(from: remoteProject)])
+        await remoteServer.setListDelay { await latch.wait() }
+
+        // Start a refresh against the remote machine, then switch back to
+        // local while its list call is still in flight (a slow network hop).
+        model.selectServer(serverId: "remote-mac-mini", serverClient: remoteServer)
+        try await Task.sleep(nanoseconds: 20_000_000)
+        model.selectServer(serverId: "local", serverClient: FakeServerClient())
+        await latch.open()
+        try await Task.sleep(nanoseconds: 50_000_000)
+
+        // The stale remote response must never be filed under "local" — that
+        // would put another machine's projects in the local sidebar forever.
+        #expect(!model.projects.contains { $0.id == remoteProject.id && $0.serverId == "local" })
+        #expect(model.activeProjects.isEmpty)
+        let persisted = DefaultProjectRepository(store: projectStore).load()
+        #expect(!persisted.contains { $0.id == remoteProject.id && $0.serverId == "local" })
+    }
+
+    @Test("Imports are filed under the machine they were discovered on, not the current selection")
+    func importTagsDiscoveryServer() {
+        // Discovery ran against the remote machine, but the user has since
+        // switched to local: the results still belong to the remote machine.
+        let (model, _, _) = makeModel()
+        model.showsImportedSessions = true
+        model.importSessions([
+            ImportedSession(harnessId: "codex", info: SessionInfo(sessionId: "r-1", cwd: "/srv/proj", title: "Remote"))
+        ], serverId: "remote-mac-mini")
+
+        #expect(model.projects.allSatisfy { $0.serverId == "remote-mac-mini" })
+        #expect(model.sessions.allSatisfy { $0.serverId == "remote-mac-mini" })
+        // Nothing leaks into the (selected) local sidebar.
+        #expect(model.activeProjects.isEmpty)
+    }
+
+    @Test("Sessions imported into a project inherit the project's machine")
+    func importIntoProjectInheritsProjectServer() {
+        let (model, _, _) = makeModel()
+        model.showsImportedSessions = true
+        // The project was added while the remote machine was selected.
+        model.selectServer(serverId: "remote-mac-mini", serverClient: nil, refresh: false)
+        let project = model.addProject(folderURL: URL(fileURLWithPath: "/srv/proj"))
+        model.selectServer(serverId: "local", serverClient: nil, refresh: false)
+
+        // Confirming a pending import after switching back to local must not
+        // re-tag the sessions to the local machine.
+        model.importSessions([
+            ImportedSession(harnessId: "codex", info: SessionInfo(sessionId: "r-2", cwd: "/srv/proj", title: "Remote"))
+        ], into: project)
+
+        #expect(model.sessions.allSatisfy { $0.serverId == "remote-mac-mini" })
+        #expect(model.activeProjects.isEmpty)
+    }
+}
+
+/// A reusable gate: `wait()` suspends callers until `open()` is called.
+private actor Latch {
+    private var isOpen = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    func wait() async {
+        if isOpen { return }
+        await withCheckedContinuation { waiters.append($0) }
+    }
+
+    func open() {
+        isOpen = true
+        waiters.forEach { $0.resume() }
+        waiters.removeAll()
+    }
 }
 
 @MainActor
@@ -341,10 +420,17 @@ private actor FakeServerClient: HerdManServerClienting {
     private var upsertedSessionIDs: [String] = []
     private var deletedProjectIDs: [String] = []
     private var deletedSessionIDs: [String] = []
+    /// When set, `listProjects` suspends on this first — lets tests hold a
+    /// "network" call in flight while the app state changes underneath it.
+    private var listDelay: (@Sendable () async -> Void)?
 
     init(projects: [ServerProject] = [], sessions: [ServerSession] = []) {
         self.projects = projects
         self.sessions = sessions
+    }
+
+    func setListDelay(_ delay: @escaping @Sendable () async -> Void) {
+        listDelay = delay
     }
 
     func health() async throws -> ServerHealth {
@@ -363,7 +449,10 @@ private actor FakeServerClient: HerdManServerClienting {
 
     func setHarnessEnabled(id: String, enabled: Bool) async throws -> ServerHarness { fatalError("unused") }
 
-    func listProjects() async throws -> [ServerProject] { projects }
+    func listProjects() async throws -> [ServerProject] {
+        if let listDelay { await listDelay() }
+        return projects
+    }
 
     func upsertProject(_ project: Project) async throws -> ServerProject {
         let serverProject = serverProject(from: project)

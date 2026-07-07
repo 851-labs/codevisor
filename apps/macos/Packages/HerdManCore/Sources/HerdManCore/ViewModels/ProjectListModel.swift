@@ -95,10 +95,10 @@ public final class ProjectListModel {
 
     public func removeProject(_ project: Project) {
         let removedSessionIDs = sessions
-            .filter { $0.serverId == selectedServerId && $0.projectId == project.id }
+            .filter { $0.serverId == project.serverId && $0.projectId == project.id }
             .map(\.id)
         projects.removeAll { $0.id == project.id }
-        sessions.removeAll { $0.serverId == selectedServerId && $0.projectId == project.id }
+        sessions.removeAll { $0.serverId == project.serverId && $0.projectId == project.id }
         persistProjects()
         persistSessions()
         deleteProjectFromServer(project.id, removedSessionIDs: removedSessionIDs)
@@ -141,7 +141,9 @@ public final class ProjectListModel {
     ) -> ChatSession {
         let session = ChatSession(
             projectId: project.id,
-            serverId: selectedServerId,
+            // Inherit the project's server: a machine switch between opening
+            // the composer and sending must not file the session elsewhere.
+            serverId: project.serverId,
             harnessId: harnessId ?? "",
             title: title,
             origin: .herdman,
@@ -190,17 +192,26 @@ public final class ProjectListModel {
 
     /// Imports sessions discovered from harnesses, creating projects by cwd and
     /// skipping any already known (by harness + agent session id).
-    public func importSessions(_ imported: [ImportedSession]) {
+    ///
+    /// `serverId` is the machine the sessions were discovered on, snapshotted
+    /// by the caller BEFORE the async discovery ran. Discovery is a network
+    /// round-trip; tagging results with the live `selectedServerId` here would
+    /// file another machine's sessions (and their projects) under whichever
+    /// machine the user has switched to meanwhile.
+    public func importSessions(_ imported: [ImportedSession], serverId: String) {
         for item in imported {
             let alreadyKnown = sessions.contains {
                 $0.harnessId == item.harnessId && $0.agentSessionId == item.info.sessionId
             }
             if alreadyKnown { continue }
-            let project = findOrCreateProject(folderURL: URL(fileURLWithPath: item.info.cwd))
+            let project = findOrCreateProject(
+                folderURL: URL(fileURLWithPath: item.info.cwd),
+                serverId: serverId
+            )
             let timestamp = Self.importTimestampFormatter.date(from: item.info.updatedAt ?? "")
             sessions.append(ChatSession(
                 projectId: project.id,
-                serverId: selectedServerId,
+                serverId: serverId,
                 harnessId: item.harnessId,
                 agentSessionId: item.info.sessionId,
                 title: item.info.title ?? "Session",
@@ -216,6 +227,8 @@ public final class ProjectListModel {
 
     /// Imports sessions into a specific project (they were discovered for its
     /// folder), skipping any already known (by harness + agent session id).
+    /// Sessions inherit the project's server, not the currently selected one:
+    /// the user may confirm a pending import after switching machines.
     public func importSessions(_ imported: [ImportedSession], into project: Project) {
         var didImport = false
         for item in imported {
@@ -226,7 +239,7 @@ public final class ProjectListModel {
             let timestamp = Self.importTimestampFormatter.date(from: item.info.updatedAt ?? "")
             sessions.append(ChatSession(
                 projectId: project.id,
-                serverId: selectedServerId,
+                serverId: project.serverId,
                 harnessId: item.harnessId,
                 agentSessionId: item.info.sessionId,
                 title: item.info.title ?? "Session",
@@ -298,11 +311,11 @@ public final class ProjectListModel {
 
     /// Finds a project by folder, or creates one (without changing archive
     /// state). Used by the importer so it doesn't un-archive existing folders.
-    private func findOrCreateProject(folderURL: URL) -> Project {
-        if let existing = projects.first(where: { $0.serverId == selectedServerId && $0.folderURL == folderURL }) {
+    private func findOrCreateProject(folderURL: URL, serverId: String) -> Project {
+        if let existing = projects.first(where: { $0.serverId == serverId && $0.folderURL == folderURL }) {
             return existing
         }
-        let project = Project.fromFolder(folderURL, serverId: selectedServerId, origin: .imported)
+        let project = Project.fromFolder(folderURL, serverId: serverId, origin: .imported)
         projects.append(project)
         return project
     }
@@ -329,13 +342,24 @@ public final class ProjectListModel {
 
     public func refreshFromServer() async {
         guard let serverClient else { return }
+        // Snapshot the target server: the fetches below are network
+        // round-trips, and the user can switch machines while one is in
+        // flight. Every fetched record must be stamped with the server it
+        // actually came from — reading the live `selectedServerId` after the
+        // awaits would tag one machine's projects with another machine's id.
+        let serverId = selectedServerId
         do {
             let remoteProjects = try await serverClient.listProjects()
-                .compactMap { try? $0.project(serverId: selectedServerId) }
+                .compactMap { try? $0.project(serverId: serverId) }
             let remoteSessions = try await serverClient.listSessions()
-                .compactMap { try? $0.chatSession(serverId: selectedServerId) }
-            projects = mergeProjects(local: projects, remote: remoteProjects)
-            sessions = mergeSessions(local: sessions, remote: remoteSessions)
+                .compactMap { try? $0.chatSession(serverId: serverId) }
+            // The user switched machines while the fetch was in flight: drop
+            // the stale response. The newly selected machine triggers its own
+            // refresh, and this one would merge (and persist) another
+            // machine's projects into the wrong sidebar.
+            guard serverId == selectedServerId else { return }
+            projects = mergeProjects(local: projects, remote: remoteProjects, serverId: serverId)
+            sessions = mergeSessions(local: sessions, remote: remoteSessions, serverId: serverId)
             persistProjects()
             persistSessions()
             // Reconcile upward too: anything created while this server was
@@ -344,34 +368,43 @@ public final class ProjectListModel {
             // catches up.
             await pushMissingToServer(
                 knownProjectIds: Set(remoteProjects.map(\.id)),
-                knownSessionIds: Set(remoteSessions.map(\.id))
+                knownSessionIds: Set(remoteSessions.map(\.id)),
+                serverId: serverId,
+                client: serverClient
             )
         } catch {
             // The local file cache remains authoritative until the server is reachable.
         }
     }
 
-    private func pushMissingToServer(knownProjectIds: Set<UUID>, knownSessionIds: Set<UUID>) async {
-        guard let serverClient else { return }
+    /// Pushes records the given server doesn't know yet. Takes the server id
+    /// and client as snapshots so a machine switch mid-push can't send one
+    /// machine's records to another machine's server.
+    private func pushMissingToServer(
+        knownProjectIds: Set<UUID>,
+        knownSessionIds: Set<UUID>,
+        serverId: String,
+        client: any HerdManServerClienting
+    ) async {
         let missingProjects = projects.filter {
-            $0.serverId == selectedServerId && !knownProjectIds.contains($0.id)
+            $0.serverId == serverId && !knownProjectIds.contains($0.id)
         }
         // Drafts (no agent session yet) stay local until their first send.
         let missingSessions = sessions.filter {
-            $0.serverId == selectedServerId && !$0.harnessId.isEmpty
+            $0.serverId == serverId && !$0.harnessId.isEmpty
                 && $0.agentSessionId != nil && !knownSessionIds.contains($0.id)
         }
         for project in missingProjects {
-            _ = try? await serverClient.upsertProject(project)
+            _ = try? await client.upsertProject(project)
         }
         for session in missingSessions {
-            _ = try? await serverClient.upsertSession(session)
+            _ = try? await client.upsertSession(session)
         }
     }
 
-    private func mergeProjects(local: [Project], remote: [Project]) -> [Project] {
-        let otherServers = local.filter { $0.serverId != selectedServerId }
-        let selectedLocal = local.filter { $0.serverId == selectedServerId }
+    private func mergeProjects(local: [Project], remote: [Project], serverId: String) -> [Project] {
+        let otherServers = local.filter { $0.serverId != serverId }
+        let selectedLocal = local.filter { $0.serverId == serverId }
         var merged = Dictionary(uniqueKeysWithValues: selectedLocal.map { ($0.id, $0) })
         for project in remote {
             merged[project.id] = project
@@ -379,9 +412,9 @@ public final class ProjectListModel {
         return (otherServers + merged.values).sorted { $0.createdAt > $1.createdAt }
     }
 
-    private func mergeSessions(local: [ChatSession], remote: [ChatSession]) -> [ChatSession] {
-        let otherServers = local.filter { $0.serverId != selectedServerId }
-        let selectedLocal = local.filter { $0.serverId == selectedServerId }
+    private func mergeSessions(local: [ChatSession], remote: [ChatSession], serverId: String) -> [ChatSession] {
+        let otherServers = local.filter { $0.serverId != serverId }
+        let selectedLocal = local.filter { $0.serverId == serverId }
         var merged = Dictionary(uniqueKeysWithValues: selectedLocal.map { ($0.id, $0) })
         for session in remote {
             merged[session.id] = session
@@ -389,14 +422,19 @@ public final class ProjectListModel {
         return (otherServers + merged.values).sorted { ($0.updatedAt ?? $0.createdAt) > ($1.updatedAt ?? $1.createdAt) }
     }
 
+    /// Mirrors a record to the server it belongs to. The client at hand is the
+    /// currently selected machine's, so records from another machine are NOT
+    /// pushed here — they reconcile via `pushMissingToServer` when that
+    /// machine is selected again.
     private func syncProject(_ project: Project) {
-        guard let serverClient else { return }
+        guard let serverClient, project.serverId == selectedServerId else { return }
         Task { _ = try? await serverClient.upsertProject(project) }
     }
 
     private func syncSession(_ session: ChatSession) {
-        guard let serverClient, !session.harnessId.isEmpty else { return }
-        let project = projects.first { $0.serverId == selectedServerId && $0.id == session.projectId }
+        guard let serverClient, !session.harnessId.isEmpty,
+              session.serverId == selectedServerId else { return }
+        let project = projects.first { $0.serverId == session.serverId && $0.id == session.projectId }
         Task {
             if let project {
                 _ = try? await serverClient.upsertProject(project)

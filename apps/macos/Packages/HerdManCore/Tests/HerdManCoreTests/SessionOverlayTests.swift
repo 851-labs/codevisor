@@ -42,8 +42,8 @@ struct SessionOverlayTests {
             ImportedSession(harnessId: "codex", info: SessionInfo(sessionId: "b", cwd: "/Users/x/proj", title: "Fix")),
             ImportedSession(harnessId: "claude-code", info: SessionInfo(sessionId: "c", cwd: "/Users/x/other", title: "Docs"))
         ]
-        model.importSessions(imported)
-        model.importSessions(imported) // second time should not duplicate
+        model.importSessions(imported, serverId: "local")
+        model.importSessions(imported, serverId: "local") // second time should not duplicate
 
         #expect(model.projects.count == 2)
         #expect(model.sessions.count == 3)
@@ -57,7 +57,7 @@ struct SessionOverlayTests {
         let model = makeModel()
         model.importSessions([
             ImportedSession(harnessId: "codex", info: SessionInfo(sessionId: "a", cwd: "/Users/x/proj", title: "Build"))
-        ])
+        ], serverId: "local")
         let proj = model.projects.first!
 
         model.showsImportedSessions = false
