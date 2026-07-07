@@ -119,19 +119,26 @@ struct NewChatView: View {
     private var projectMenu: some View {
         Menu {
             ForEach(projects) { project in
-                Button {
-                    selectedProjectId = project.id
-                    // Worktree choice doesn't carry across projects that can't support it.
-                    if !(project.isGitRepository) {
-                        runInWorktree = false
-                        controller?.wantsNewWorktree = false
+                // Toggle for the native selected checkmark; MenuSymbolIcon
+                // because AppKit menus drop plain SF Symbol images.
+                Toggle(isOn: Binding(
+                    get: { project.id == selectedProject?.id },
+                    set: { isOn in
+                        guard isOn else { return }
+                        selectedProjectId = project.id
+                        // Worktree choice doesn't carry across projects that can't support it.
+                        if !(project.isGitRepository) {
+                            runInWorktree = false
+                            controller?.wantsNewWorktree = false
+                        }
+                        if let controller { Task { await controller.selectProject(project) } }
                     }
-                    if let controller { Task { await controller.selectProject(project) } }
-                } label: {
-                    if project.id == selectedProject?.id {
-                        Label(project.name, systemImage: "checkmark")
-                    } else {
+                )) {
+                    Label {
                         Text(project.name)
+                    } icon: {
+                        // Same filled variant the sidebar rows use.
+                        MenuSymbolIcon(systemName: FilledSymbol.preferred(project.symbolName))
                     }
                 }
             }
