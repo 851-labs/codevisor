@@ -241,13 +241,23 @@ export const makeCodexProvider = (
 ): AgentProvider => {
   const connector = config.connector ?? spawnCodexClient
 
+  // PATH first (a user-managed CLI is never shadowed), then fallbackPaths —
+  // the Codex desktop app bundles the same binary, so app-only users still
+  // get a working harness.
+  const codexCandidates = (definition: HarnessDefinition): ReadonlyArray<string> => [
+    ...definition.detectBinaries,
+    ...(definition.fallbackPaths ?? [])
+  ]
+
   const locateCodex = (definition: HarnessDefinition): string => {
-    const binary = definition.detectBinaries[0] ?? "codex"
-    const located = environment.locateExecutable(binary, environment.env)
-    if (located === undefined) {
-      throw new Error(`${binary} not found on PATH`)
+    for (const candidate of codexCandidates(definition)) {
+      const located = environment.locateExecutable(candidate, environment.env)
+      if (located !== undefined) {
+        return located
+      }
     }
-    return located
+    const binary = definition.detectBinaries[0] ?? "codex"
+    throw new Error(`${binary} not found on PATH or in the Codex app`)
   }
 
   const connect = async (definition: HarnessDefinition, cwd: string): Promise<CodexClient> => {
@@ -602,8 +612,8 @@ export const makeCodexProvider = (
     // suggestions and "import existing chats" for pre-HerdMan codex users.
     listAgentSessions: () => listCodexAgentSessions(),
     readiness: (definition) => {
-      const installed = definition.detectBinaries.some((binary) =>
-        environment.executableExists(binary, environment.env)
+      const installed = codexCandidates(definition).some((candidate) =>
+        environment.executableExists(candidate, environment.env)
       )
       return installed
         ? { state: "ready" }

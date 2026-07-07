@@ -1165,6 +1165,41 @@ describe("CodexProvider", () => {
     })
   })
 
+  it("falls back to the Codex.app bundled binary when the CLI is not on PATH", async () => {
+    const bundled = "/Applications/Codex.app/Contents/Resources/codex"
+    const appOnly: ProviderEnvironment = {
+      env: { PATH: "/bin" },
+      executableExists: (name) => name === bundled,
+      locateExecutable: (name) => (name === bundled ? bundled : undefined)
+    }
+    const withFallback: HarnessDefinition = { ...definition, fallbackPaths: [bundled] }
+
+    // Readiness sees the bundled binary even though PATH has nothing.
+    const provider = makeCodexProvider(appOnly)
+    expect(provider.readiness(withFallback)).toEqual({ state: "ready" })
+    expect(provider.readiness(definition)).toEqual({
+      detail: "CLI not found on PATH",
+      state: "unavailable"
+    })
+
+    // Sessions spawn the bundled binary.
+    const client = new FakeCodexClient()
+    const spawns: Array<CodexSpawnRequest> = []
+    const spawning = makeCodexProvider(appOnly, {
+      connector: async (request) => {
+        spawns.push(request)
+        return client
+      }
+    })
+    await run(spawning.createSession(withFallback, "/tmp/project", async () => {}))
+    expect(spawns[0]).toMatchObject({ command: bundled, cwd: "/tmp/project" })
+
+    // Neither PATH nor a bundle: session creation fails with a clear error.
+    await expect(
+      run(spawning.createSession(definition, "/tmp/project", async () => {}))
+    ).rejects.toThrow("codex not found on PATH or in the Codex app")
+  })
+
   it("holds requestUserInput open until answered, mapping notes onto the reply", async () => {
     const { client, created, events } = await setup()
     const request = client.serverRequest("item/tool/requestUserInput", {

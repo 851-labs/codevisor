@@ -1,4 +1,7 @@
 import { Effect } from "effect"
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import { describe, expect, it } from "vitest"
 import {
   AgentRuntime,
@@ -6,6 +9,7 @@ import {
   acpPermissionQuestion,
   acpProtocolVersion,
   acpPrompt,
+  locateExecutableOnPath,
   makeAgentRuntime,
   normalizeModeState,
   normalizePromptInput,
@@ -376,20 +380,50 @@ describe("@herdman/agent-runtime", () => {
   it("constructs the Effect service layer and handles missing PATH", async () => {
     await expect(run(makeAgentRuntime().discoverHarnesses)).resolves.toEqual(expect.any(Array))
 
+    // locateExecutable is pinned to "nothing found": the default locator also
+    // probes absolute fallbackPaths (e.g. /Applications/Codex.app), which
+    // would make this machine-dependent.
     const layeredHarnesses = await run(
       Effect.gen(function* () {
         const runtime = yield* AgentRuntime
         return yield* runtime.discoverHarnesses
-      }).pipe(Effect.provide(AgentRuntime.layer({ env: {} })))
+      }).pipe(Effect.provide(AgentRuntime.layer({ env: {}, locateExecutable: () => undefined })))
     )
     expect(layeredHarnesses.every((harness) => harness.readiness.state === "unavailable")).toBe(
       true
     )
 
-    const runtime = makeAgentRuntime({ env: {} })
+    const runtime = makeAgentRuntime({ env: {}, locateExecutable: () => undefined })
     expect((await run(runtime.discoverHarnesses))[0]?.readiness.detail).toBe(
       "CLI not found on PATH"
     )
+  })
+
+  it("locates absolute and ~-prefixed fallback candidates directly", () => {
+    const home = mkdtempSync(join(tmpdir(), "herdman-locate-"))
+    const bundled = join(home, "Applications", "Codex.app", "Contents", "Resources")
+    mkdirSync(bundled, { recursive: true })
+    const binary = join(bundled, "codex")
+    writeFileSync(binary, "#!/bin/sh\n", { mode: 0o755 })
+    try {
+      // Absolute candidates skip PATH entirely.
+      expect(locateExecutableOnPath(binary, {})).toBe(binary)
+      expect(locateExecutableOnPath(join(home, "missing"), {})).toBeUndefined()
+      // `~/` expands via env.HOME; without a HOME there is nothing to probe.
+      expect(
+        locateExecutableOnPath("~/Applications/Codex.app/Contents/Resources/codex", {
+          HOME: home
+        })
+      ).toBe(binary)
+      expect(
+        locateExecutableOnPath("~/Applications/Codex.app/Contents/Resources/codex", {})
+      ).toBeUndefined()
+      // Plain names still walk PATH — and tolerate an absent PATH.
+      expect(locateExecutableOnPath("codex", { PATH: bundled })).toBe(binary)
+      expect(locateExecutableOnPath("codex", {})).toBeUndefined()
+    } finally {
+      rmSync(home, { force: true, recursive: true })
+    }
   })
 
   it("streams turn lifecycle and session output through the persistent sink", async () => {

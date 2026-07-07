@@ -95,6 +95,10 @@ export interface HarnessDefinition {
   readonly name: string
   readonly symbolName: string
   readonly detectBinaries: ReadonlyArray<string>
+  /// Absolute paths probed when no detect binary is on PATH — CLIs bundled
+  /// inside desktop apps (a leading `~/` expands via env.HOME). Lets users
+  /// who installed the app but never the CLI still run the harness.
+  readonly fallbackPaths?: ReadonlyArray<string>
   readonly provider: ProviderId
   /// Launch spec for the ACP provider's adapter process; native providers
   /// (claude/codex) drive the detected binary directly and omit it.
