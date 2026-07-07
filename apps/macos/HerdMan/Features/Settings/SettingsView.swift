@@ -223,6 +223,7 @@ struct HarnessesSettingsView: View {
 
     @State private var serverHarnesses: [ServerHarness] = []
     @State private var isScanning = true
+    @State private var scanError: String?
     @State private var showsNotInstalled = false
 
     private var serverInstalled: [ServerHarness] { serverHarnesses.filter(\.isReady) }
@@ -236,6 +237,10 @@ struct HarnessesSettingsView: View {
                         ProgressView().controlSize(.small)
                         Text("Scanning for harnesses…").foregroundStyle(.secondary)
                     }
+                } else if scanError != nil {
+                    // Unreachable is not "nothing installed" — say so.
+                    Text("Couldn't reach this machine's server. Check Settings → General, then refresh.")
+                        .foregroundStyle(.secondary)
                 } else if serverInstalled.isEmpty {
                     Text("No harnesses installed. Install Claude Code, Codex, or another ACP agent, then rescan.")
                         .foregroundStyle(.secondary)
@@ -296,23 +301,21 @@ struct HarnessesSettingsView: View {
     }
 
     private func serverNotInstalledRow(_ harness: ServerHarness) -> some View {
-        HStack(spacing: 10) {
-            HarnessIcon(harnessId: harness.id, fallbackSymbolName: harness.symbolName, size: 15)
-                .foregroundStyle(.tertiary)
-                .frame(width: 20)
-            Text(harness.name)
-                .foregroundStyle(.secondary)
-            Spacer()
-            Text(harness.readiness.detail ?? "Not installed")
-                .font(.callout)
-                .foregroundStyle(.tertiary)
-        }
+        HarnessInstallHintRow(harness: harness)
     }
 
+    /// Refresh = rescan: the server re-resolves its PATH first, so a CLI
+    /// installed after server start is picked up without restarting anything.
     private func scan() async {
         isScanning = true
-        serverHarnesses = (try? await environment.serverClient.listHarnesses()) ?? []
-        isScanning = false
+        defer { isScanning = false }
+        do {
+            serverHarnesses = try await environment.harnessService.rescanHarnesses()
+            scanError = nil
+        } catch {
+            serverHarnesses = []
+            scanError = String(describing: error)
+        }
     }
 
     private func setServerHarness(_ id: String, enabled: Bool) async {

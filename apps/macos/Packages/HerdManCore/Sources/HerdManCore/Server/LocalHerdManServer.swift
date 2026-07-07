@@ -41,6 +41,10 @@ public final class LocalHerdManServer {
     /// The server is intentionally not terminated with the app; it owns durable
     /// sessions and should keep running so clients can reconnect to live work.
     private var process: Process?
+    /// In-flight `ensureRunning()`; concurrent callers (onboarding and the
+    /// root view both prepare the machine on first launch) join it instead of
+    /// racing past `currentHealth()` and double-launching the server.
+    private var ensureTask: Task<LocalHerdManServerState, Never>?
 
     public private(set) var state: LocalHerdManServerState = .idle
 
@@ -68,6 +72,16 @@ public final class LocalHerdManServer {
 
     @discardableResult
     public func ensureRunning() async -> LocalHerdManServerState {
+        if let ensureTask {
+            return await ensureTask.value
+        }
+        let task = Task { await performEnsureRunning() }
+        ensureTask = task
+        defer { ensureTask = nil }
+        return await task.value
+    }
+
+    private func performEnsureRunning() async -> LocalHerdManServerState {
         if let health = await currentHealth() {
             // A durable server left behind by an older app install keeps
             // serving across upgrades (`brew upgrade` replaces the bundle but

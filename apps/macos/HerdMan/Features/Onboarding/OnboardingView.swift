@@ -16,18 +16,34 @@ struct OnboardingView: View {
         case welcome, harnesses, project
     }
 
+    /// Where harness detection stands. Distinguishes "the server isn't up
+    /// yet / can't be reached" from "reachable, but nothing installed" — the
+    /// two used to collapse into a false "No harnesses found".
+    enum HarnessDetection: Equatable {
+        case connecting
+        case unreachable(String)
+        case loaded
+    }
+
     init(onComplete: @escaping (Project?) -> Void, debugInitialStep: Step = .welcome) {
         self.onComplete = onComplete
         _step = State(initialValue: debugInitialStep)
     }
 
     @State private var step: Step
+    /// The full catalog — installed harnesses get toggles, the rest get
+    /// install hints.
     @State private var harnesses: [ServerHarness] = []
-    @State private var isDetecting = true
+    @State private var detection: HarnessDetection = .connecting
+    @State private var isRescanning = false
     @State private var projectFolder: URL?
     @State private var showingFolderPicker = false
     @State private var isFinishing = false
     @State private var recommendations: [ProjectRecommendation] = []
+    @State private var showsNotInstalled = false
+
+    private var installedHarnesses: [ServerHarness] { harnesses.filter(\.isReady) }
+    private var notInstalledHarnesses: [ServerHarness] { harnesses.filter { !$0.isReady } }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -59,13 +75,7 @@ struct OnboardingView: View {
         .frame(minWidth: 640, minHeight: 460)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .animation(.smooth(duration: 0.3), value: step)
-        .task {
-            harnesses = await environment.harnessService.readyHarnesses()
-            isDetecting = false
-            // Suggest project folders from the user's most recent harness
-            // sessions so the project step can offer a one-click choice.
-            recommendations = await environment.recommendedProjects()
-        }
+        .task { await detectHarnesses() }
         .fileImporter(
             isPresented: $showingFolderPicker,
             allowedContentTypes: [.folder],
@@ -110,37 +120,106 @@ struct OnboardingView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            if isDetecting {
+            switch detection {
+            case .connecting:
                 HStack(spacing: 8) {
                     ProgressView().controlSize(.small)
-                    Text("Looking for installed harnesses…").foregroundStyle(.secondary)
+                    Text("Starting HerdMan…").foregroundStyle(.secondary)
                 }
                 .padding(.vertical, 8)
-            } else if harnesses.isEmpty {
-                Label {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("No harnesses found").fontWeight(.medium)
-                        Text("Install Claude Code, Codex, or another ACP agent, then reopen Settings to detect it.")
-                            .font(.callout).foregroundStyle(.secondary)
+            case let .unreachable(message):
+                VStack(alignment: .leading, spacing: 12) {
+                    Label {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Can't reach the HerdMan server").fontWeight(.medium)
+                            Text(message)
+                                .font(.callout).foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    } icon: {
+                        Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(theme.statusWarn)
                     }
-                } icon: {
-                    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(theme.statusWarn)
+                    Button {
+                        Task { await detectHarnesses() }
+                    } label: {
+                        Label("Try Again", systemImage: "arrow.clockwise")
+                    }
                 }
                 .padding(.vertical, 4)
-            } else {
-                VStack(spacing: 0) {
-                    ForEach(Array(harnesses.enumerated()), id: \.element.id) { index, harness in
-                        harnessToggle(harness)
-                        if index < harnesses.count - 1 { Divider() }
+            case .loaded:
+                if installedHarnesses.isEmpty {
+                    noHarnessesContent
+                } else {
+                    VStack(spacing: 0) {
+                        ForEach(Array(installedHarnesses.enumerated()), id: \.element.id) { index, harness in
+                            harnessToggle(harness)
+                            if index < installedHarnesses.count - 1 { Divider() }
+                        }
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 4)
+                    .background(RoundedRectangle(cornerRadius: 12).fill(theme.cardBackground))
+
+                    if !notInstalledHarnesses.isEmpty {
+                        DisclosureGroup(isExpanded: $showsNotInstalled) {
+                            notInstalledList
+                                .padding(.top, 8)
+                        } label: {
+                            Text("Not installed (\(notInstalledHarnesses.count))")
+                                .foregroundStyle(.secondary)
+                        }
                     }
                 }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 4)
-                .background(RoundedRectangle(cornerRadius: 12).fill(theme.cardBackground))
             }
 
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// The "nothing installed" empty state: every known harness with an
+    /// install hint, plus a rescan that picks up a fresh install in place —
+    /// the server re-resolves its PATH, so no relaunch is needed.
+    private var noHarnessesContent: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("No harnesses found").fontWeight(.medium)
+                    Text("Install one below, then detect again — no restart needed.")
+                        .font(.callout).foregroundStyle(.secondary)
+                }
+            } icon: {
+                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(theme.statusWarn)
+            }
+
+            notInstalledList
+
+            Button {
+                Task { await rescanHarnesses() }
+            } label: {
+                if isRescanning {
+                    HStack(spacing: 6) {
+                        ProgressView().controlSize(.small)
+                        Text("Detecting…")
+                    }
+                } else {
+                    Label("Detect again", systemImage: "arrow.clockwise")
+                }
+            }
+            .disabled(isRescanning)
+        }
+    }
+
+    private var notInstalledList: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(notInstalledHarnesses.enumerated()), id: \.element.id) { index, harness in
+                HarnessInstallHintRow(harness: harness)
+                    .padding(.vertical, 8)
+                if index < notInstalledHarnesses.count - 1 { Divider() }
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 4)
+        .background(RoundedRectangle(cornerRadius: 12).fill(theme.cardBackground))
     }
 
     private func harnessToggle(_ harness: ServerHarness) -> some View {
@@ -155,27 +234,62 @@ struct OnboardingView: View {
         .padding(.vertical, 10)
     }
 
+    // MARK: - Detection
+
+    /// Waits for the local server, then loads the harness catalog with a
+    /// short retry tail. Onboarding shows on first launch — exactly when the
+    /// server is cold-starting — so querying immediately used to hit a closed
+    /// port and misreport "No harnesses found".
+    private func detectHarnesses() async {
+        detection = .connecting
+        if !AppPreview.isRunning {
+            // Joins the root view's in-flight server start (ensureRunning
+            // dedups concurrent callers) instead of racing ahead of it.
+            await environment.prepareSelectedMachine()
+        }
+        // Safety net past the health wait: a handful of quick retries, not
+        // one instantly-failing shot.
+        for attempt in 0..<8 {
+            if let loaded = try? await environment.harnessService.rescanHarnesses() {
+                harnesses = loaded
+                detection = .loaded
+                // Suggest project folders from the user's most recent harness
+                // sessions so the project step can offer a one-click choice.
+                recommendations = await environment.recommendedProjects()
+                return
+            }
+            if attempt < 7 {
+                try? await Task.sleep(for: .milliseconds(500))
+            }
+        }
+        detection = .unreachable(serverFailureMessage)
+    }
+
+    /// Re-detects on demand after the user installs a CLI; the server
+    /// re-resolves its PATH first.
+    private func rescanHarnesses() async {
+        isRescanning = true
+        defer { isRescanning = false }
+        if let loaded = try? await environment.harnessService.rescanHarnesses() {
+            harnesses = loaded
+        }
+    }
+
+    private var serverFailureMessage: String {
+        if case let .unavailable(message) = environment.localServer?.state {
+            return message
+        }
+        return "The HerdMan server didn't respond. Try again, or check Settings → General for server status."
+    }
+
     private var projectStep: some View {
         VStack(alignment: .leading, spacing: 16) {
             VStack(alignment: .leading, spacing: 6) {
                 Text("Open a project")
                     .font(.system(size: 28, weight: .bold))
-                Text("Pick a folder to work in. HerdMan opens a new chat scoped to this project and brings in your existing agent chats.")
+                Text("Pick a folder to work in. HerdMan opens a new chat scoped to this project.")
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
-            }
-
-            if !recommendations.isEmpty {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Based on your recent agent chats")
-                        .font(.callout.weight(.medium))
-                        .foregroundStyle(.secondary)
-                    VStack(spacing: 6) {
-                        ForEach(recommendations) { recommendation in
-                            recommendationRow(recommendation)
-                        }
-                    }
-                }
             }
 
             Button {
@@ -188,7 +302,7 @@ struct OnboardingView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(isCustomFolderSelected
                              ? (projectFolder?.lastPathComponent ?? "")
-                             : (recommendations.isEmpty ? "Choose a folder…" : "Choose another folder…"))
+                             : "Choose a folder…")
                             .fontWeight(.medium)
                             .foregroundStyle(.primary)
                         if isCustomFolderSelected, let projectFolder {
@@ -208,6 +322,19 @@ struct OnboardingView: View {
                 .background(RoundedRectangle(cornerRadius: 12).fill(theme.cardBackground))
             }
             .buttonStyle(.plain)
+
+            if !recommendations.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Suggested workspaces")
+                        .font(.callout.weight(.medium))
+                        .foregroundStyle(.secondary)
+                    VStack(spacing: 6) {
+                        ForEach(recommendations) { recommendation in
+                            recommendationRow(recommendation)
+                        }
+                    }
+                }
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -330,7 +457,7 @@ struct OnboardingView: View {
         if isFinishing { return true }
         switch step {
         case .welcome: return false
-        case .harnesses: return isDetecting
+        case .harnesses: return detection == .connecting
         case .project: return projectFolder == nil
         }
     }
@@ -357,7 +484,8 @@ struct OnboardingView: View {
         guard let folder = projectFolder else { return }
         isFinishing = true
         Task {
-            // Adds the project and imports its existing agent chats by default.
+            // Adds the project; existing agent chats are not imported here
+            // (importing stays an explicit action, not an onboarding default).
             let project = await environment.finishOnboarding(projectFolder: folder)
             onComplete(project)
         }

@@ -42,23 +42,21 @@ struct AppEnvironmentTests {
         #expect(all.contains { !$0.isReady })
     }
 
-    @Test("Onboarding with a project folder imports that folder's existing sessions")
+    @Test("Onboarding with a project folder adds the project without importing old chats")
     func onboardingImportsProjectSessions() async {
         let environment = AppEnvironment.preview(seedProjects: [], hasOnboarded: false)
 
-        // PreviewHarnessService reports the "ext-1" session in
-        // /Users/me/src/website for each of its two ready harnesses.
+        // PreviewHarnessService reports importable sessions for this folder,
+        // but onboarding must NOT pull them in — the first project opens
+        // fresh; importing old chats stays an explicit user action.
         let project = await environment.finishOnboarding(
             projectFolder: URL(fileURLWithPath: "/Users/me/src/website")
         )
 
         #expect(environment.settings.hasCompletedOnboarding)
-        #expect(environment.settings.importExternalSessions)
-        #expect(environment.projectList.showsImportedSessions)
-        let imported = environment.projectList.sessions(in: project)
-        #expect(imported.count == 2)
-        #expect(imported.allSatisfy { $0.agentSessionId == "ext-1" && $0.origin == .imported })
-        #expect(Set(imported.map(\.harnessId)) == ["claude-code", "codex"])
+        #expect(!environment.settings.importExternalSessions)
+        #expect(!environment.projectList.showsImportedSessions)
+        #expect(environment.projectList.sessions(in: project).isEmpty)
     }
 
     @Test("Importable sessions are scoped to the folder and exclude known ones")

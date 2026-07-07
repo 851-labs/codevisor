@@ -16,6 +16,7 @@ import { isoTimestamp } from "@herdman/api"
 import { execFile } from "node:child_process"
 import { randomUUID } from "node:crypto"
 import { readFileSync } from "node:fs"
+import { listClaudeAgentSessions } from "../agent-sessions.js"
 import { isAbsolute, resolve } from "node:path"
 import { Effect } from "effect"
 import { INLINE_IMAGE_MEDIA_TYPES, withAttachmentNotes } from "../attachments.js"
@@ -748,6 +749,9 @@ export const makeClaudeProvider = (
         }
       }),
     id: "claude",
+    // Native sessions from ~/.claude/projects — workspace suggestions and
+    // "import existing chats" for users who ran the CLI before HerdMan.
+    listAgentSessions: () => listClaudeAgentSessions(),
     loadSession: (
       definition,
       agentSessionId,

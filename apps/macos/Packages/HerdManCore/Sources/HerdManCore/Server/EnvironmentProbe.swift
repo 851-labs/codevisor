@@ -26,20 +26,46 @@ public struct EnvironmentProbe: Sendable {
     private let loginShell: URL
     private let baseEnvironment: [String: String]
 
-    /// Default directories used when the login shell cannot be queried.
-    public static let fallbackPathDirectories = [
-        "/opt/homebrew/bin",
-        "/usr/local/bin",
-        "/usr/bin",
-        "/bin",
-        "/usr/sbin",
-        "/sbin"
-    ]
+    /// Well-known executable directories merged into every resolved `PATH` so
+    /// detection survives a failed shell probe or an unusual shell setup.
+    /// `~/.local/bin` leads: it's the Claude Code native installer's default.
+    public static func fallbackPathDirectories(home: String = NSHomeDirectory()) -> [String] {
+        [
+            "\(home)/.local/bin",
+            "/opt/homebrew/bin",
+            "/usr/local/bin",
+            "/usr/bin",
+            "/bin",
+            "/usr/sbin",
+            "/sbin",
+            "\(home)/.volta/bin",
+            "\(home)/.asdf/shims",
+            "\(home)/.bun/bin",
+            "\(home)/.cargo/bin"
+        ]
+    }
+
+    /// The user's actual login shell from the password database — GUI apps
+    /// can't rely on `SHELL` being set. Falls back to `SHELL`, then zsh.
+    public static func userLoginShell(
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> URL {
+        if let passwd = getpwuid(getuid()), let shell = passwd.pointee.pw_shell {
+            let path = String(cString: shell)
+            if !path.isEmpty {
+                return URL(fileURLWithPath: path)
+            }
+        }
+        if let shell = environment["SHELL"], !shell.isEmpty {
+            return URL(fileURLWithPath: shell)
+        }
+        return URL(fileURLWithPath: "/bin/zsh")
+    }
 
     public init(
         runner: any CommandRunner = ProcessCommandRunner(),
         fileProbe: any FileProbing = DefaultFileProbe(),
-        loginShell: URL = URL(fileURLWithPath: "/bin/zsh"),
+        loginShell: URL = EnvironmentProbe.userLoginShell(),
         baseEnvironment: [String: String] = ProcessInfo.processInfo.environment
     ) {
         self.runner = runner
@@ -48,20 +74,49 @@ public struct EnvironmentProbe: Sendable {
         self.baseEnvironment = baseEnvironment
     }
 
-    /// Returns the user's `PATH`, querying the login shell and falling back to a
-    /// sensible default set of directories.
+    /// Returns the user's `PATH`: the login shell's PATH first (its ordering
+    /// wins), then the base environment's PATH, then the fallback directories,
+    /// deduplicated. Probing `/usr/bin/env` and parsing the `PATH=` line is
+    /// fish-safe — fish echoes `$PATH` space-separated, but the exported
+    /// variable is always colon-separated.
     public func resolvedPath() async -> String {
+        var probed: [String] = []
         if let result = try? await runner.run(
             executableURL: loginShell,
-            arguments: ["-ilc", "echo $PATH"],
+            arguments: ["-ilc", "/usr/bin/env"],
             environment: baseEnvironment
-        ), result.exitCode == 0 {
-            let trimmed = result.standardOutput.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !trimmed.isEmpty {
-                return mergeWithFallback(trimmed)
+        ), result.exitCode == 0, let path = Self.pathFromEnvOutput(result.standardOutput) {
+            probed = Self.splitPath(path)
+        }
+        let home = baseEnvironment["HOME"] ?? NSHomeDirectory()
+        return Self.mergedPath([
+            probed,
+            Self.splitPath(baseEnvironment["PATH"]),
+            Self.fallbackPathDirectories(home: home)
+        ])
+    }
+
+    /// Extracts the value of the last `PATH=` line from `env(1)` output.
+    static func pathFromEnvOutput(_ output: String) -> String? {
+        var path: String?
+        for line in output.split(separator: "\n") where line.hasPrefix("PATH=") {
+            path = String(line.dropFirst("PATH=".count))
+        }
+        return path
+    }
+
+    private static func splitPath(_ path: String?) -> [String] {
+        (path ?? "").split(separator: ":").map(String.init).filter { !$0.isEmpty }
+    }
+
+    private static func mergedPath(_ groups: [[String]]) -> String {
+        var directories: [String] = []
+        for group in groups {
+            for directory in group where !directories.contains(directory) {
+                directories.append(directory)
             }
         }
-        return Self.fallbackPathDirectories.joined(separator: ":")
+        return directories.joined(separator: ":")
     }
 
     /// Returns the environment to pass to launched agents, with `PATH` resolved.
@@ -98,11 +153,4 @@ public struct EnvironmentProbe: Sendable {
         return results
     }
 
-    private func mergeWithFallback(_ path: String) -> String {
-        var directories = path.split(separator: ":").map(String.init)
-        for fallback in Self.fallbackPathDirectories where !directories.contains(fallback) {
-            directories.append(fallback)
-        }
-        return directories.joined(separator: ":")
-    }
 }

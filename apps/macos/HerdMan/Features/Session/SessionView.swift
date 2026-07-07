@@ -21,7 +21,26 @@ struct SessionScreen: View {
     @Environment(\.theme) private var theme
     @Bindable var controller: SessionController
     var paneGroup: PaneGroupModel
+    /// Pure geometry: whether the end of the content is currently in view.
+    /// Drives the scroll-to-bottom button — NOT auto-follow (see
+    /// `autoFollow`, which only user intent may change).
     @State private var isAtBottom = true
+    /// Whether the transcript follows the stream ("pinned"). Changed only by
+    /// user intent: sending a message or scrolling to the bottom pins;
+    /// scrolling up any amount unpins. Programmatic follow scrolls never
+    /// touch it — deciding this from raw geometry was the old bug, where the
+    /// per-flush follow scroll cancelled the user's upward deltas within the
+    /// same frame and the transcript felt stuck at the bottom.
+    @State private var autoFollow = true
+    /// The live scroll phase. While the user's gesture is in flight
+    /// (interacting/decelerating), follow scrolls are suspended entirely so
+    /// they can never race the gesture; the catch-up happens when the phase
+    /// returns to idle.
+    @State private var scrollPhase: ScrollPhase = .idle
+    /// One geometry tick to skip unpin detection after a programmatic
+    /// *upward* correction (the shrink clamp) — the only non-user movement
+    /// that decreases the offset.
+    @State private var suppressNextUnpin = false
     @State private var composerHeight: CGFloat = 96
     @State private var focus = TerminalFocusController()
     @State private var isQueueExpanded = true
@@ -41,16 +60,15 @@ struct SessionScreen: View {
     @State private var itemFrames = TranscriptItemFrames()
     private let bottomID = "session-bottom"
 
-    /// Auto-follow stays engaged only while the very end of the content is in
-    /// view (within this many points of the viewport bottom) — so scrolling up
-    /// even slightly disengages it instantly. Kept just above zero so the
+    /// "End of content is in view" tolerance. Kept just above zero so the
     /// rubber-band rebound after an over-scroll (which eases back into the
-    /// bottom edge) doesn't briefly flash the scroll-to-bottom button.
+    /// bottom edge) doesn't read as scrolling up or flash the
+    /// scroll-to-bottom button.
     private static let atBottomThreshold: CGFloat = 2
-    /// When scrolling back DOWN, re-engage auto-follow once within this distance
-    /// of the end. Whether we *unpin* is decided by scroll direction rather than
-    /// distance (see the geometry handler), so scrolling up mid-stream
-    /// disengages immediately.
+    /// When the user scrolls back DOWN, re-engage auto-follow once within
+    /// this distance of the end. Unpinning is decided by scroll direction
+    /// (any upward user scroll), so scrolling up mid-stream disengages
+    /// immediately.
     private static let repinDistance: CGFloat = 40
 
     init(controller: SessionController, paneGroup: PaneGroupModel) {
@@ -71,6 +89,7 @@ struct SessionScreen: View {
             }
             _pendingScrollRestore = State(initialValue: saved)
             _isAtBottom = State(initialValue: false)
+            _autoFollow = State(initialValue: false)
         }
     }
 
@@ -214,35 +233,68 @@ struct SessionScreen: View {
                     withTransaction(transaction) {
                         scrollPosition.scrollTo(y: max(0, new.maxOffsetY))
                     }
+                    // The clamp is the one programmatic scroll that moves UP;
+                    // don't let its tick read as the user unpinning.
+                    suppressNextUnpin = true
                 }
-                if new.distance <= Self.atBottomThreshold {
-                    // End is in view (incl. the rubber-band rebound after an
-                    // over-scroll) — stay pinned, keep the button hidden.
-                    isAtBottom = true
-                } else if new.offsetY < old.offsetY - 1 {
-                    // Scrolled up and away from the end — disengage so we stop
-                    // yanking the user back down.
-                    isAtBottom = false
-                } else if new.offsetY > old.offsetY, new.distance <= Self.repinDistance {
-                    // Scrolling back down toward the end — re-engage auto-follow.
-                    isAtBottom = true
+
+                // Pure geometry — drives the scroll-to-bottom button only.
+                isAtBottom = new.distance <= Self.atBottomThreshold
+
+                // Auto-follow changes on user intent alone. Follow scrolls
+                // only ever move DOWN to the bottom, so an offset decrease is
+                // the user (or the clamp, suppressed above) — and while a
+                // gesture is in flight, follow scrolls are suspended (see
+                // the streamFingerprint guard), so the user's upward deltas
+                // can't be cancelled out within a tick anymore.
+                if pendingScrollRestore == nil {
+                    if suppressNextUnpin {
+                        suppressNextUnpin = false
+                    } else if new.offsetY < old.offsetY - 1,
+                              new.distance > Self.atBottomThreshold {
+                        // Scrolled up and away from the end — stop following.
+                        autoFollow = false
+                    } else if !autoFollow,
+                              new.offsetY > old.offsetY,
+                              new.distance <= Self.repinDistance {
+                        // The user scrolled back down to the end — follow
+                        // again. While unpinned, every downward move is the
+                        // user's: all programmatic follows are gated on the
+                        // pin being engaged (or engage it explicitly).
+                        autoFollow = true
+                    }
                 }
                 handleScrollChange(new)
             }
+            .onScrollPhaseChange { _, newPhase in
+                scrollPhase = newPhase
+                // Catch up after a gesture ends: content that streamed in
+                // while follows were suspended is scrolled into view, but
+                // only if the gesture didn't unpin.
+                if newPhase == .idle, autoFollow, pendingScrollRestore == nil {
+                    scrollToBottom(proxy, animated: false)
+                }
+            }
+            .onChange(of: controller.userSendSignal) { _, _ in
+                // Sending re-pins unconditionally — even from a restored
+                // position or while unpinned reading history.
+                pendingScrollRestore = nil
+                autoFollow = true
+                scrollToBottom(proxy, animated: true)
+            }
             .onChange(of: streamFingerprint) { _, _ in
-                // Follow the stream only while the user is pinned to the bottom;
-                // never yank them down while they're reading earlier history or
-                // while a saved position is still being restored (the transcript
-                // mounting/loading fires this too).
-                guard pendingScrollRestore == nil, isAtBottom else { return }
+                // Follow the stream only while pinned, never while a saved
+                // position is being restored (transcript mounting fires this
+                // too), and never while the user's scroll gesture is in
+                // flight — racing the gesture was how "scroll up during a
+                // long turn" got stuck at the bottom.
+                guard pendingScrollRestore == nil, autoFollow, !isUserScrollPhase else { return }
                 scrollToBottom(proxy, animated: false)
             }
             .onChange(of: composerHeight) { _, _ in
-                // `isAtBottom` flips true transiently while the transcript is
-                // still mounting, so also hold off while a saved position is
-                // being restored — this pin used to yank restored sessions
-                // back to the bottom.
-                if pendingScrollRestore == nil, isAtBottom {
+                // `autoFollow` is seeded false for restored sessions, so this
+                // pin can't yank a restored position back to the bottom.
+                if pendingScrollRestore == nil, autoFollow, !isUserScrollPhase {
                     scrollToBottom(proxy, animated: false)
                 }
             }
@@ -250,7 +302,7 @@ struct SessionScreen: View {
                 // Toggling the panel resizes the chat area; when the user was
                 // reading the latest messages, keep them pinned to the bottom
                 // instead of letting the panel push the newest content out of view.
-                guard pendingScrollRestore == nil, isAtBottom else { return }
+                guard pendingScrollRestore == nil, autoFollow else { return }
                 scrollToBottom(proxy, animated: true)
                 // Re-pin once the panel's show/hide animation has settled.
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
@@ -258,7 +310,7 @@ struct SessionScreen: View {
                 }
             }
             .onChange(of: paneGroup.state.height) { _, _ in
-                guard pendingScrollRestore == nil, paneGroup.state.isVisible, isAtBottom else { return }
+                guard pendingScrollRestore == nil, paneGroup.state.isVisible, autoFollow else { return }
                 scrollToBottom(proxy, animated: false)
             }
             .overlay(alignment: .bottom) {
@@ -284,8 +336,21 @@ struct SessionScreen: View {
         DispatchQueue.main.async { focus.apply(target) }
     }
 
+    /// Whether the user's scroll gesture (trackpad/wheel interaction or its
+    /// momentum) is currently in flight. Programmatic scrolls report
+    /// `.animating` or no phase change, so this is a reliable "the user is
+    /// scrolling" signal.
+    private var isUserScrollPhase: Bool {
+        switch scrollPhase {
+        case .tracking, .interacting, .decelerating: true
+        case .idle, .animating: false
+        @unknown default: false
+        }
+    }
+
     private func scrollToBottomButton(_ proxy: ScrollViewProxy) -> some View {
         Button {
+            autoFollow = true
             scrollToBottom(proxy, animated: true)
         } label: {
             Image(systemName: "arrow.down")
@@ -325,7 +390,9 @@ struct SessionScreen: View {
             offsetY: metrics.offsetY,
             anchorItemID: anchorID,
             anchorDelta: anchorID == nil ? 0 : -anchorMinY,
-            isAtBottom: isAtBottom
+            // The pin, not raw geometry: reopening a session resumes
+            // following only if the user hadn't scrolled away.
+            isAtBottom: autoFollow
         )
     }
 

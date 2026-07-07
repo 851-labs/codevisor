@@ -10,6 +10,7 @@ import type {
 } from "@herdman/api"
 import { randomUUID } from "node:crypto"
 import { Effect } from "effect"
+import { listCodexAgentSessions } from "../../agent-sessions.js"
 import { withAttachmentNotes } from "../../attachments.js"
 import {
   backgroundTerminalKey,
@@ -590,6 +591,9 @@ export const makeCodexProvider = (
         const session = await startSession(definition, cwd, emit, agentSessionId)
         return { handle: handleFor(session), sessionId: session.key }
       }),
+    // Native sessions from ~/.codex/sessions rollouts — workspace
+    // suggestions and "import existing chats" for pre-HerdMan codex users.
+    listAgentSessions: () => listCodexAgentSessions(),
     readiness: (definition) => {
       const installed = definition.detectBinaries.some((binary) =>
         environment.executableExists(binary, environment.env)

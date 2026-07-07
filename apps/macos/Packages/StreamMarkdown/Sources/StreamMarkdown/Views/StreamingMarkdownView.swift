@@ -24,15 +24,20 @@ public struct StreamingMarkdownView: View {
 /// Memoizes block parsing + segment grouping for the last-seen text. A plain
 /// class held in `@State`: it must persist across body evaluations without
 /// being observable (cache writes must not re-render the view).
+///
+/// Misses fall through to the process-level `MarkdownSegmentCache`: LazyVStack
+/// destroys this per-view cache whenever a row scrolls out of the viewport
+/// buffer, and without the shared layer every row re-entering during a scroll
+/// re-parsed its entire message on the main thread — the dominant source of
+/// scroll lag on long transcripts.
 @MainActor
 private final class SegmentCache {
-    private let parser = MarkdownParser()
     private var lastText: String?
     private var lastSegments: [MarkdownSegment] = []
 
     func segments(for text: String) -> [MarkdownSegment] {
         if text == lastText { return lastSegments }
-        let segments = MarkdownSegment.segments(from: parser.parse(text))
+        let segments = MarkdownSegmentCache.shared.segments(for: text)
         lastText = text
         lastSegments = segments
         return segments

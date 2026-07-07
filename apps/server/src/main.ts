@@ -1,5 +1,9 @@
 #!/usr/bin/env node
-import { makeAgentRuntime, type BackgroundTerminalIntegration } from "@herdman/agent-runtime"
+import {
+  makeAgentRuntime,
+  resolveShellEnv,
+  type BackgroundTerminalIntegration
+} from "@herdman/agent-runtime"
 import type { UpdateInfo } from "@herdman/api"
 import { makeDatabase, type HerdManDatabaseService } from "@herdman/db"
 import { makeTerminalManager, type TerminalManagerService } from "@herdman/terminal"
@@ -288,9 +292,17 @@ const main = Effect.gen(function* () {
         })
   const terminal = makeTerminalManager()
   const backgroundTerminals = yield* Effect.promise(() => backgroundTerminalIntegration(terminal))
+  const agents = makeAgentRuntime({
+    ...(backgroundTerminals === undefined ? {} : { backgroundTerminals }),
+    resolveEnv: () => resolveShellEnv()
+  })
+  // Self-heal PATH at boot, fire-and-forget: CLI-/brew-launched servers
+  // inherit whatever PATH the parent had, and a slow login-shell probe must
+  // not delay the health endpoint the launching app is waiting on.
+  void Effect.runPromise(agents.refreshEnvironment).catch(() => undefined)
   const server = yield* startHerdManServer(
     {
-      agents: makeAgentRuntime(backgroundTerminals === undefined ? {} : { backgroundTerminals }),
+      agents,
       db,
       terminal
     },

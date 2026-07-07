@@ -103,6 +103,9 @@ export interface HarnessDefinition {
   /// sessions cannot be created — used to pull a known-broken integration
   /// without deleting its catalog entry (existing sessions keep their name).
   readonly disabledReason?: string
+  /// Copyable shell command that installs the harness CLI; surfaced next to
+  /// "not installed" rows so users can install without leaving the app.
+  readonly installHint?: string
 }
 
 export interface ProviderEnvironment {
@@ -160,6 +163,13 @@ export interface AgentProvider {
     cwd: string,
     emit: RuntimeEmit
   ) => Effect.Effect<LoadedAgentSession, AgentRuntimeError>
+  /// Sessions from the harness's own on-disk store (run before/outside
+  /// HerdMan) — powers onboarding's workspace suggestions and "import
+  /// existing chats". Absent when the harness has no native store to scan
+  /// (generic ACP adapters).
+  readonly listAgentSessions?: (
+    definition: HarnessDefinition
+  ) => Promise<ReadonlyArray<import("./agent-sessions.js").AgentSessionSummary>>
 }
 
 export const runtimeEffect = <A>(

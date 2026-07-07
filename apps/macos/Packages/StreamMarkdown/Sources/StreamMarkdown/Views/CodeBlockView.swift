@@ -52,7 +52,11 @@ struct CodeBlockView: View {
             Divider()
 
             ScrollView(.horizontal, showsIndicators: false) {
-                Text(highlighted ?? AttributedString(code))
+                // The shared-cache probe makes a recycled block (scrolled out
+                // and back in a LazyVStack, which resets `highlighted`) render
+                // colored on its first frame — no plain flash, no relayout
+                // when the async highlighter would otherwise swap in.
+                Text(highlighted ?? CodeHighlightResultCache.shared.value(for: resultCacheKey) ?? AttributedString(code))
                     .font(theme.codeFont)
                     .textSelection(.enabled)
                     .padding(10)
@@ -63,6 +67,8 @@ struct CodeBlockView: View {
         .clipShape(RoundedRectangle(cornerRadius: 8))
         .task(id: highlightTaskKey) {
             guard let highlighter = theme.codeHighlighter else { return }
+            // Already rendered synchronously from the shared cache.
+            if CodeHighlightResultCache.shared.value(for: resultCacheKey) != nil { return }
             // Mid-stream, wait out further chunks before re-tokenizing; the
             // task(id:) cancellation makes this a trailing-edge debounce.
             if !isComplete {
@@ -70,9 +76,18 @@ struct CodeBlockView: View {
                 if Task.isCancelled { return }
             }
             if let result = await highlighter(code, language), !Task.isCancelled {
+                // Only settled blocks enter the shared cache: mid-stream
+                // texts change every flush and would churn the LRU.
+                if isComplete {
+                    CodeHighlightResultCache.shared.store(result, for: resultCacheKey)
+                }
                 highlighted = result
             }
         }
+    }
+
+    private var resultCacheKey: CodeHighlightResultCache.Key {
+        CodeHighlightResultCache.Key(themeKey: theme.codeThemeKey, language: language, code: code)
     }
 
     // Re-highlight when the content grows, the block completes, or the theme

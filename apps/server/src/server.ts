@@ -717,6 +717,23 @@ const routeHarnesses = async (
     return true
   }
 
+  // Re-resolves the runtime's PATH (login-shell probe) before re-detecting,
+  // so a CLI installed after server start is found without a restart.
+  if (request.method === "POST" && url.pathname === "/v1/harnesses/rescan") {
+    await run(services.agents.refreshEnvironment)
+    writeJson(response, 200, await discoverHarnesses(services))
+    return true
+  }
+
+  // Sessions from the harness's own on-disk store (run before/outside
+  // HerdMan) — onboarding workspace suggestions and chat import read these,
+  // NOT HerdMan's sessions table (empty on a fresh install by definition).
+  const agentSessionsHarnessId = matchRoute(url.pathname, "/v1/harnesses/:id/agent-sessions")
+  if (agentSessionsHarnessId !== undefined && request.method === "GET") {
+    writeJson(response, 200, await run(services.agents.listAgentSessions(agentSessionsHarnessId)))
+    return true
+  }
+
   const harnessId = matchRoute(url.pathname, "/v1/harnesses/:id")
   if (harnessId !== undefined && request.method === "PATCH") {
     const payload = await readSchema(request, UpdateHarnessRequestSchema)

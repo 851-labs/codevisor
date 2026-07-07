@@ -55,7 +55,8 @@ const harnesses: ReadonlyArray<Harness> = [
     source: "registry",
     launchKind: "npx",
     enabled: true,
-    readiness: { state: "ready" }
+    readiness: { state: "ready" },
+    installHint: "npm install -g @openai/codex"
   }
 ]
 
@@ -71,6 +72,7 @@ const makeAgents = (): AgentRuntimeService & {
   readonly questionAnswers: Array<readonly [string, string, QuestionAnswer]>
   readonly inspections: Array<readonly [string, string]>
   readonly creations: Array<readonly [string, string]>
+  readonly environmentRefreshes: Array<number>
   readonly sinks: Map<string, RuntimeEventSink>
   readonly emit: (sessionId: string, event: RuntimeEvent) => Promise<void>
 } => {
@@ -85,6 +87,7 @@ const makeAgents = (): AgentRuntimeService & {
   const questionAnswers: Array<readonly [string, string, QuestionAnswer]> = []
   const inspections: Array<readonly [string, string]> = []
   const creations: Array<readonly [string, string]> = []
+  const environmentRefreshes: Array<number> = []
   const sinks = new Map<string, RuntimeEventSink>()
   const emit = async (sessionId: string, event: RuntimeEvent): Promise<void> => {
     await sinks.get(sessionId)?.(event)
@@ -101,9 +104,19 @@ const makeAgents = (): AgentRuntimeService & {
     questionAnswers,
     inspections,
     creations,
+    environmentRefreshes,
     sinks,
     emit,
     discoverHarnesses: Effect.succeed(harnesses),
+    refreshEnvironment: Effect.sync(() => {
+      environmentRefreshes.push(environmentRefreshes.length + 1)
+    }),
+    listAgentSessions: (harnessId) =>
+      Effect.succeed(
+        harnessId === "codex"
+          ? [{ sessionId: "native-1", cwd: "/repo/native", title: "Old codex chat" }]
+          : []
+      ),
     createAgentSession: (harnessId, cwd, sink) =>
       Effect.promise(
         () =>
@@ -839,8 +852,20 @@ describe("@herdman/server", () => {
     ).toMatchObject({ name: "Renamed" })
 
     expect((await jsonRequest(server, "/v1/harnesses")).body).toMatchObject([
-      { id: "codex", enabled: true }
+      { id: "codex", enabled: true, installHint: "npm install -g @openai/codex" }
     ])
+
+    // Rescan re-resolves the runtime environment, then returns the fresh list.
+    const rescanResponse = await jsonRequest(server, "/v1/harnesses/rescan", { method: "POST" })
+    expect(rescanResponse.status).toBe(200)
+    expect(rescanResponse.body).toMatchObject([{ id: "codex", enabled: true }])
+    expect(agents.environmentRefreshes).toHaveLength(1)
+
+    // Native agent sessions come from the harness's own store via the runtime.
+    expect((await jsonRequest(server, "/v1/harnesses/codex/agent-sessions")).body).toEqual([
+      { sessionId: "native-1", cwd: "/repo/native", title: "Old codex chat" }
+    ])
+    expect((await jsonRequest(server, "/v1/harnesses/gemini/agent-sessions")).body).toEqual([])
     const capabilitiesResponse = await jsonRequest(
       server,
       `/v1/capabilities?cwd=${encodeURIComponent(workspaceFolder)}`

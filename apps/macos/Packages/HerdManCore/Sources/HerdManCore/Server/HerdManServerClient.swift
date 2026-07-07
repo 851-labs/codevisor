@@ -31,6 +31,13 @@ public protocol HerdManServerClienting: Sendable {
     func issuePairingToken() async throws -> ServerPairingToken
     func capabilities(cwd: String) async throws -> ServerCapabilities
     func listHarnesses() async throws -> [ServerHarness]
+    /// Asks the server to re-resolve its PATH (login-shell probe) before
+    /// re-detecting, so CLIs installed after server start are found.
+    func rescanHarnesses() async throws -> [ServerHarness]
+    /// Sessions from the harness's own on-disk store (run before/outside
+    /// HerdMan) — the source for onboarding's workspace suggestions and
+    /// "import existing chats".
+    func listAgentSessions(harnessId: String) async throws -> [SessionInfo]
     func setHarnessEnabled(id: String, enabled: Bool) async throws -> ServerHarness
     func listProjects() async throws -> [ServerProject]
     func upsertProject(_ project: Project) async throws -> ServerProject
@@ -80,6 +87,16 @@ public protocol HerdManServerClienting: Sendable {
 
 public extension HerdManServerClienting {
     func promptQueue(id: UUID) async throws -> [ServerPromptQueueItem] { [] }
+
+    /// Default for fakes/older transports: a plain list (no PATH refresh).
+    /// The HTTP client overrides this with the real rescan endpoint.
+    func rescanHarnesses() async throws -> [ServerHarness] {
+        try await listHarnesses()
+    }
+
+    /// Default for fakes/older transports: no native store to scan. The HTTP
+    /// client overrides this with the real endpoint.
+    func listAgentSessions(harnessId: String) async throws -> [SessionInfo] { [] }
 
     /// Default for fakes/older transports: attachments are dropped and the
     /// text-only prompt path is used.
@@ -258,6 +275,9 @@ public struct ServerHarness: Codable, Equatable, Sendable {
     public var launchKind: String
     public var enabled: Bool
     public var readiness: ServerHarnessReadiness
+    /// Copyable shell command that installs the harness CLI; present only for
+    /// harnesses with a well-known installer.
+    public var installHint: String?
 
     public init(
         id: String,
@@ -266,7 +286,8 @@ public struct ServerHarness: Codable, Equatable, Sendable {
         source: String,
         launchKind: String,
         enabled: Bool,
-        readiness: ServerHarnessReadiness
+        readiness: ServerHarnessReadiness,
+        installHint: String? = nil
     ) {
         self.id = id
         self.name = name
@@ -275,6 +296,7 @@ public struct ServerHarness: Codable, Equatable, Sendable {
         self.launchKind = launchKind
         self.enabled = enabled
         self.readiness = readiness
+        self.installHint = installHint
     }
 }
 
@@ -557,6 +579,25 @@ public final class HerdManServerClient: HerdManServerClienting, @unchecked Senda
 
     public func listHarnesses() async throws -> [ServerHarness] {
         try await get("/v1/harnesses")
+    }
+
+    public func rescanHarnesses() async throws -> [ServerHarness] {
+        do {
+            return try await send(
+                "/v1/harnesses/rescan",
+                method: "POST",
+                body: Optional<EmptyBody>.none
+            )
+        } catch HerdManServerClientError.httpStatus(404, _) {
+            // Older servers predate the rescan endpoint; a plain list is the
+            // best they can do (their PATH stays frozen until they update).
+            return try await listHarnesses()
+        }
+    }
+
+    public func listAgentSessions(harnessId: String) async throws -> [SessionInfo] {
+        let encoded = harnessId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? harnessId
+        return try await get("/v1/harnesses/\(encoded)/agent-sessions")
     }
 
     public func setHarnessEnabled(id: String, enabled: Bool) async throws -> ServerHarness {

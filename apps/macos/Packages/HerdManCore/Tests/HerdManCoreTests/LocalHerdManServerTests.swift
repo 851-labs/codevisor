@@ -103,6 +103,34 @@ struct LocalHerdManServerTests {
         #expect(configuration.arguments.dropFirst(2).first == "node")
     }
 
+    @Test("Concurrent ensureRunning calls share one launch")
+    func concurrentEnsureRunningLaunchesOnce() async {
+        let client = FakeLocalServerClient(healthResults: [.failure(TestError()), .success(.ready)])
+        var launches = 0
+        let server = LocalHerdManServer(
+            client: client,
+            entrypoint: URL(fileURLWithPath: "/tmp/main.js"),
+            serverEnvironmentProvider: {
+                // Suspend mid-launch so the second caller arrives while the
+                // first is still in flight — the historical double-launch
+                // window (onboarding and the root view racing on first run).
+                try? await Task.sleep(for: .milliseconds(50))
+                return [:]
+            },
+            launcher: { _ in
+                launches += 1
+                return Process()
+            }
+        )
+
+        async let first = server.ensureRunning()
+        async let second = server.ensureRunning()
+        let states = await [first, second]
+
+        #expect(states == [.started, .started])
+        #expect(launches == 1)
+    }
+
     @Test("Reports unavailable when no server entrypoint can be found")
     func missingEntrypoint() async {
         let client = FakeLocalServerClient(healthResults: [.failure(TestError())])

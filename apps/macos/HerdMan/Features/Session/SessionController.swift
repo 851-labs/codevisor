@@ -77,6 +77,9 @@ final class SessionController {
     /// back when the session screen remounts. Observation-ignored so the
     /// high-frequency writes don't invalidate views observing the controller.
     @ObservationIgnored var scrollState: SessionScrollState?
+    /// Bumped on every user send; the session screen observes it to re-pin
+    /// the transcript to the bottom (sending means "show me the newest").
+    private(set) var userSendSignal = 0
 
     /// The project whose folder is used as the agent cwd. Settable so the
     /// new-chat page can change projects before the first send.
@@ -796,6 +799,10 @@ final class SessionController {
     func send() async {
         let text = composerText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty || !composerAttachments.isEmpty, !isConnecting, !isSubmitting else { return }
+        // Sending expresses "take me to the newest content": the transcript
+        // re-pins to the bottom on every send, even if the user had scrolled
+        // up to read history.
+        userSendSignal &+= 1
         isSubmitting = true
 
         // Settle eager uploads first; a failed attachment blocks the send with

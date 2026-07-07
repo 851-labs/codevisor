@@ -24,7 +24,10 @@ export const Harness = Schema.Struct({
   source: Schema.String,
   launchKind: Schema.Literals(["executable", "npx", "uvx", "unknown"]),
   enabled: Schema.Boolean,
-  readiness: HarnessReadiness
+  readiness: HarnessReadiness,
+  /// Copyable shell command that installs the harness CLI; present only for
+  /// harnesses with a well-known installer.
+  installHint: Schema.optional(Schema.String)
 })
 export type Harness = typeof Harness.Type
 
@@ -32,6 +35,17 @@ export const UpdateHarnessRequest = Schema.Struct({
   enabled: Schema.Boolean
 })
 export type UpdateHarnessRequest = typeof UpdateHarnessRequest.Type
+
+/// A session from a harness's own on-disk store (run before/outside
+/// HerdMan) — the source for onboarding's workspace suggestions and
+/// "import existing chats".
+export const AgentSessionSummary = Schema.Struct({
+  sessionId: Schema.String,
+  cwd: Schema.String,
+  title: Schema.optional(Schema.String),
+  updatedAt: Schema.optional(Schema.String)
+})
+export type AgentSessionSummary = typeof AgentSessionSummary.Type
 
 /// HerdMan's harness-independent mode vocabulary. Providers map their native
 /// permission/approval modes onto these ids so the client can render one

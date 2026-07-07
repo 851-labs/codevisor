@@ -2,6 +2,59 @@ import CodeHighlighter
 import HerdManCore
 import SwiftUI
 
+/// Computed rows + highlights for recently rendered diffs. The transcript's
+/// LazyVStack resets DiffView's `@State` whenever a row scrolls out of the
+/// viewport buffer; without this process-level cache, every expanded diff
+/// re-ran the Myers diff and re-highlighted each time it scrolled back in.
+/// Keyed by full content (not hashes) so a collision can never render the
+/// wrong diff.
+@MainActor
+final class DiffRenderCache {
+    struct Key: Hashable {
+        let path: String
+        let oldText: String?
+        let newText: String
+        let themeKey: String
+    }
+
+    struct Entry {
+        let rows: [LineDiff.Row]
+        let dedentedOld: String?
+        let dedentedNew: String
+        let highlighted: [Int: AttributedString]
+    }
+
+    static let shared = DiffRenderCache()
+
+    private var entries: [Key: Entry] = [:]
+    private var order: [Key] = []
+    private let limit: Int
+
+    /// Keys hold the full old/new texts, so the cap stays small.
+    init(limit: Int = 24) {
+        self.limit = max(1, limit)
+    }
+
+    func entry(for key: Key) -> Entry? {
+        guard let entry = entries[key] else { return nil }
+        if order.last != key, let index = order.firstIndex(of: key) {
+            order.remove(at: index)
+            order.append(key)
+        }
+        return entry
+    }
+
+    func store(_ entry: Entry, for key: Key) {
+        if entries[key] == nil {
+            order.append(key)
+            if order.count > limit {
+                entries.removeValue(forKey: order.removeFirst())
+            }
+        }
+        entries[key] = entry
+    }
+}
+
 /// A compact line-numbered diff for a tool-call file edit, computed by
 /// `LineDiff` (real Myers line diff, git hunk ordering) with old/new gutters.
 /// Shared indentation is stripped (edit snippets carry the source's full
@@ -41,11 +94,17 @@ struct DiffView: View {
         // inside it instead of laying the whole file change out on the page.
         // The body paints the theme's editor background — the surface the
         // token colors were designed for (pierre's --diffs-bg).
+        // Freshly recycled rows (empty @State) render straight from the
+        // shared cache on their first frame; `.task` then re-seeds the local
+        // state without recomputing.
+        let cached = cachedRows.isEmpty ? DiffRenderCache.shared.entry(for: renderKey) : nil
+        let rows = cached?.rows ?? cachedRows
+        let highlights = cached?.highlighted ?? highlightedRows
         ScrollView([.vertical, .horizontal], showsIndicators: true) {
-            let gutterWidth = gutterWidth
+            let gutterWidth = gutterWidth(for: rows)
             VStack(alignment: .leading, spacing: 0) {
-                ForEach(cachedRows) { row in
-                    rowView(row, gutterWidth: gutterWidth)
+                ForEach(rows) { row in
+                    rowView(row, gutterWidth: gutterWidth, highlights: highlights)
                 }
             }
             .padding(.vertical, 4)
@@ -73,14 +132,18 @@ struct DiffView: View {
 
     /// Gutters sized to the widest line number instead of a fixed column —
     /// a 6-line diff shouldn't reserve space for five-digit files.
-    private var gutterWidth: CGFloat {
-        let maxLine = cachedRows.reduce(1) { partial, row in
+    private func gutterWidth(for rows: [LineDiff.Row]) -> CGFloat {
+        let maxLine = rows.reduce(1) { partial, row in
             max(partial, row.oldLine ?? 0, row.newLine ?? 0)
         }
         return CGFloat(max(2, String(maxLine).count)) * 7
     }
 
-    private func rowView(_ row: LineDiff.Row, gutterWidth: CGFloat) -> some View {
+    private func rowView(
+        _ row: LineDiff.Row,
+        gutterWidth: CGFloat,
+        highlights: [Int: AttributedString]
+    ) -> some View {
         HStack(spacing: 6) {
             Text(row.oldLine.map(String.init) ?? "")
                 .frame(width: gutterWidth, alignment: .trailing)
@@ -93,7 +156,7 @@ struct DiffView: View {
                 .foregroundStyle(tint(for: row.kind))
             // Removed lines keep full syntax colors (pierre does not dim or
             // strike them); the row tint alone marks the deletion.
-            rowText(row)
+            rowText(row, highlights: highlights)
                 .textSelection(.enabled)
             Spacer(minLength: 0)
         }
@@ -115,9 +178,9 @@ struct DiffView: View {
 
     /// Row text: Shiki-highlighted when the path's language and the theme
     /// allow it, plain otherwise. Blank lines render a space to keep height.
-    private func rowText(_ row: LineDiff.Row) -> Text {
+    private func rowText(_ row: LineDiff.Row, highlights: [Int: AttributedString]) -> Text {
         if row.text.isEmpty { return Text(" ") }
-        if let highlighted = highlightedRows[row.id] { return Text(highlighted) }
+        if let highlighted = highlights[row.id] { return Text(highlighted) }
         return Text(row.text)
     }
 
@@ -130,6 +193,16 @@ struct DiffView: View {
     private func refreshRowsAndHighlight() async {
         let key = contentKey
         if key != cachedKey || cachedRows.isEmpty {
+            // A diff scrolled back into view: re-seed local state from the
+            // shared cache instead of recomputing rows and highlights.
+            if let entry = DiffRenderCache.shared.entry(for: renderKey) {
+                cachedKey = key
+                dedentedOld = entry.dedentedOld
+                dedentedNew = entry.dedentedNew
+                cachedRows = entry.rows
+                highlightedRows = entry.highlighted
+                return
+            }
             if !cachedRows.isEmpty {
                 try? await Task.sleep(for: .milliseconds(120))
                 guard !Task.isCancelled else { return }
@@ -150,6 +223,25 @@ struct DiffView: View {
             highlightedRows = [:]
         }
         await highlightRows()
+        guard !Task.isCancelled else { return }
+        DiffRenderCache.shared.store(
+            DiffRenderCache.Entry(
+                rows: cachedRows,
+                dedentedOld: dedentedOld,
+                dedentedNew: dedentedNew,
+                highlighted: highlightedRows
+            ),
+            for: renderKey
+        )
+    }
+
+    private var renderKey: DiffRenderCache.Key {
+        DiffRenderCache.Key(
+            path: path,
+            oldText: oldText,
+            newText: newText,
+            themeKey: highlightTheme?.key ?? ""
+        )
     }
 
     private var highlightKey: String {

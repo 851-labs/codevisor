@@ -210,7 +210,15 @@ public final class MachineController {
 
     public func prepareSelectedMachine() async {
         if selectedMachine.isLocal {
-            _ = await localServer?.ensureRunning()
+            let serverState = await localServer?.ensureRunning()
+            if serverState == .alreadyRunning {
+                // The durable server's PATH is frozen at its launch; a CLI
+                // installed since then (followed by an app relaunch) stays
+                // invisible to it. Fire one rescan so it re-resolves PATH —
+                // off the critical path so machine prep isn't delayed.
+                let client = selectedClient
+                Task { _ = try? await client.rescanHarnesses() }
+            }
         }
         await refreshStatus(for: selectedMachine.id)
         await projectList.refreshFromServer()

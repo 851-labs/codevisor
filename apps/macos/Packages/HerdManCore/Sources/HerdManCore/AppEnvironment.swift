@@ -155,16 +155,14 @@ public final class AppEnvironment {
     }
 
     /// Completes onboarding for the chosen project folder: adds the project
-    /// and imports any existing harness sessions found in that folder, so the
-    /// user's first project starts with their recent chats already in place.
+    /// and opens it fresh. Existing agent chats are deliberately NOT pulled
+    /// in here — a first project pre-filled with old CLI sessions the user
+    /// never asked for reads as clutter; importing stays an explicit action.
     @discardableResult
     public func finishOnboarding(projectFolder: URL) async -> Project {
-        settings.completeOnboarding(importExternalSessions: true)
-        projectList.showsImportedSessions = true
-        let project = projectList.addProject(folderURL: projectFolder)
-        let importable = await findImportableSessions(for: projectFolder)
-        projectList.importSessions(importable, into: project)
-        return project
+        settings.completeOnboarding(importExternalSessions: false)
+        projectList.showsImportedSessions = settings.importExternalSessions
+        return projectList.addProject(folderURL: projectFolder)
     }
 
     /// The production environment: file-backed persistence and real agent
@@ -298,7 +296,8 @@ public struct PreviewHarnessService: HarnessServicing {
             ServerHarness(
                 id: "opencode", name: "OpenCode", symbolName: "curlybraces", source: "registry",
                 launchKind: "executable", enabled: true,
-                readiness: ServerHarnessReadiness(state: "unavailable", detail: "Not installed")
+                readiness: ServerHarnessReadiness(state: "unavailable", detail: "Not installed"),
+                installHint: "npm install -g opencode-ai"
             )
         ]
     }

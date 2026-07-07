@@ -166,6 +166,92 @@ describe("@herdman/agent-runtime", () => {
       state: "unavailable",
       detail: expect.stringContaining("Temporarily disabled")
     })
+    // Install hints ride along only for harnesses that define them.
+    expect(harnesses.find((harness) => harness.id === "claude-code")?.installHint).toContain(
+      "claude.ai/install.sh"
+    )
+    expect(harnesses.find((harness) => harness.id === "gemini")?.installHint).toBeUndefined()
+  })
+
+  it("refreshes the environment so readiness picks up newly installed CLIs", async () => {
+    let resolveCalls = 0
+    const runtime = makeAgentRuntime({
+      env: { PATH: "/before" },
+      // Readiness is keyed off the live env's PATH: claude "installs" only
+      // after refreshEnvironment swaps the env.
+      executableExists: (name, env) => name === "claude" && env.PATH === "/after",
+      resolveEnv: () => {
+        resolveCalls += 1
+        return Promise.resolve({ PATH: "/after" })
+      }
+    })
+
+    const before = await run(runtime.discoverHarnesses)
+    expect(before.find((harness) => harness.id === "claude-code")?.readiness.state).toBe(
+      "unavailable"
+    )
+
+    // Concurrent refreshes share a single in-flight resolution.
+    await Promise.all([run(runtime.refreshEnvironment), run(runtime.refreshEnvironment)])
+    expect(resolveCalls).toBe(1)
+
+    const after = await run(runtime.discoverHarnesses)
+    expect(after.find((harness) => harness.id === "claude-code")?.readiness).toEqual({
+      state: "ready"
+    })
+
+    // A later refresh starts a fresh resolution (the shared promise clears).
+    await run(runtime.refreshEnvironment)
+    expect(resolveCalls).toBe(2)
+  })
+
+  it("treats refreshEnvironment as a no-op without a resolveEnv", async () => {
+    const runtime = makeAgentRuntime({ env: { PATH: "/fixed" } })
+    await expect(run(runtime.refreshEnvironment)).resolves.toBeUndefined()
+  })
+
+  it("lists native agent sessions through the provider hook", async () => {
+    const fixture = [{ sessionId: "abc", cwd: "/repo", title: "Hi" }]
+    const runtime = makeAgentRuntime({
+      env: { PATH: "/bin" },
+      executableExists: () => true,
+      providers: {
+        claude: {
+          id: "claude",
+          readiness: () => ({ state: "ready" }),
+          createSession: () => Effect.die("unused"),
+          loadSession: () => Effect.die("unused"),
+          listAgentSessions: () => Promise.resolve(fixture)
+        }
+      }
+    })
+
+    await expect(run(runtime.listAgentSessions("claude-code"))).resolves.toEqual(fixture)
+    // ACP harnesses have no native store — empty, not an error.
+    await expect(run(runtime.listAgentSessions("gemini"))).resolves.toEqual([])
+    await expect(run(runtime.listAgentSessions("nope"))).rejects.toThrow("Unknown harness: nope")
+  })
+
+  it("propagates resolveEnv failures as runtime errors and recovers", async () => {
+    let attempts = 0
+    const runtime = makeAgentRuntime({
+      env: { PATH: "/before" },
+      executableExists: (name, env) => name === "claude" && env.PATH === "/after",
+      resolveEnv: () => {
+        attempts += 1
+        return attempts === 1
+          ? Promise.reject(new Error("shell exploded"))
+          : Promise.resolve({ PATH: "/after" })
+      }
+    })
+
+    await expect(run(runtime.refreshEnvironment)).rejects.toMatchObject({
+      operation: "refreshEnvironment"
+    })
+    // The failed in-flight promise clears; the next refresh succeeds.
+    await run(runtime.refreshEnvironment)
+    const harnesses = await run(runtime.discoverHarnesses)
+    expect(harnesses.find((harness) => harness.id === "claude-code")?.readiness.state).toBe("ready")
   })
 
   it("refuses sessions for disabled harnesses", async () => {

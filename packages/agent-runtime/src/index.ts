@@ -1,5 +1,6 @@
 import type { EventEnvelope, Harness, SessionGoal } from "@herdman/api"
 import { isoTimestamp } from "@herdman/api"
+import type { AgentSessionSummary } from "./agent-sessions.js"
 import { accessSync, constants } from "node:fs"
 import { Context, Effect, Layer } from "effect"
 import type { BackgroundTerminalIntegration } from "./background-terminals.js"
@@ -8,6 +9,7 @@ import { makeClaudeProvider } from "./providers/claude.js"
 import { makeCodexProvider } from "./providers/codex/provider.js"
 import {
   AgentRuntimeError,
+  adapterPromise,
   runtimeEffect,
   type AgentProvider,
   type AgentSessionHandle,
@@ -27,6 +29,8 @@ export * from "./types.js"
 export * from "./attachments.js"
 export * from "./background-terminals.js"
 export * from "./diff-stats.js"
+export * from "./shell-env.js"
+export * from "./agent-sessions.js"
 export {
   acpPermissionOutcome,
   acpPermissionQuestion,
@@ -62,10 +66,26 @@ export interface AgentRuntimeConfig {
   /// Extra providers (claude/codex) keyed by id; the ACP provider is always
   /// registered. Exposed for tests and incremental provider rollout.
   readonly providers?: Partial<Record<ProviderId, AgentProvider>>
+  /// Re-resolves the runtime's environment (see `refreshEnvironment`).
+  /// Typically `() => resolveShellEnv()` so PATH-based harness detection can
+  /// pick up CLIs installed after the server started. Absent, refresh is a
+  /// no-op and the environment stays fixed at `env ?? process.env`.
+  readonly resolveEnv?: () => Promise<NodeJS.ProcessEnv>
 }
 
 export interface AgentRuntimeService {
   readonly discoverHarnesses: Effect.Effect<ReadonlyArray<Harness>, AgentRuntimeError>
+  /// Re-resolves the environment via the configured `resolveEnv` (no-op
+  /// without one). Subsequent readiness checks and session launches see the
+  /// refreshed PATH — this is how "Detect again" finds a CLI installed after
+  /// server start. Concurrent refreshes share one in-flight resolution.
+  readonly refreshEnvironment: Effect.Effect<void, AgentRuntimeError>
+  /// Sessions from the harness's own on-disk store (run before/outside
+  /// HerdMan). Empty for harnesses without a native store or a provider
+  /// listing hook. Fails only for unknown harness ids.
+  readonly listAgentSessions: (
+    harnessId: string
+  ) => Effect.Effect<ReadonlyArray<AgentSessionSummary>, AgentRuntimeError>
   readonly createAgentSession: (
     harnessId: string,
     cwd: string,
@@ -125,6 +145,7 @@ export const harnessCatalog: ReadonlyArray<HarnessDefinition> = [
   {
     detectBinaries: ["claude"],
     id: "claude-code",
+    installHint: "curl -fsSL https://claude.ai/install.sh | bash",
     name: "Claude Code",
     provider: "claude",
     symbolName: "sparkle"
@@ -134,6 +155,7 @@ export const harnessCatalog: ReadonlyArray<HarnessDefinition> = [
   {
     detectBinaries: ["codex"],
     id: "codex",
+    installHint: "npm install -g @openai/codex",
     name: "Codex",
     provider: "codex",
     symbolName: "chevron.left.forwardslash.chevron.right"
@@ -196,12 +218,21 @@ interface ManagedSession {
 }
 
 export const makeAgentRuntime = (config: AgentRuntimeConfig = {}): AgentRuntimeService => {
-  const env = config.env ?? process.env
+  let currentEnv = config.env ?? process.env
   const locateExecutable = config.locateExecutable ?? locateExecutableOnPath
   const executableExists =
     config.executableExists ??
     ((name, environment) => locateExecutable(name, environment) !== undefined)
-  const environment: ProviderEnvironment = { env, executableExists, locateExecutable }
+  // A getter so every provider sees environment refreshes without re-wiring:
+  // providers read `environment.env` lazily at readiness/launch time.
+  const environment: ProviderEnvironment = {
+    get env() {
+      return currentEnv
+    },
+    executableExists,
+    locateExecutable
+  }
+  let envRefresh: Promise<void> | undefined
   const providers = new Map<ProviderId, AgentProvider>()
   const backgroundTerminals =
     config.backgroundTerminals === undefined
@@ -309,10 +340,43 @@ export const makeAgentRuntime = (config: AgentRuntimeConfig = {}): AgentRuntimeS
           launchKind:
             definition.launch?.kind === "npx" ? ("npx" as const) : ("executable" as const),
           enabled: true,
-          readiness
+          readiness,
+          ...(definition.installHint === undefined ? {} : { installHint: definition.installHint })
         }
       })
     ),
+    listAgentSessions: (harnessId) =>
+      adapterPromise("listAgentSessions", async () => {
+        const definition = harnessCatalog.find((candidate) => candidate.id === harnessId)
+        if (definition === undefined) {
+          throw new Error(`Unknown harness: ${harnessId}`)
+        }
+        // Deliberately no disabledReason check: a pulled integration's past
+        // sessions still inform workspace suggestions.
+        const provider = providers.get(definition.provider)
+        /* v8 ignore next 3 -- every catalog provider id is registered above; guards future ids. */
+        if (provider === undefined) {
+          return []
+        }
+        const list = provider.listAgentSessions
+        return list === undefined ? [] : await list(definition)
+      }),
+    refreshEnvironment: adapterPromise("refreshEnvironment", () => {
+      const resolveEnv = config.resolveEnv
+      if (resolveEnv === undefined) {
+        return Promise.resolve()
+      }
+      // Concurrent refreshes (Settings + onboarding both rescanning) share
+      // one shell probe instead of stacking login-shell invocations.
+      envRefresh ??= resolveEnv()
+        .then((resolved) => {
+          currentEnv = resolved
+        })
+        .finally(() => {
+          envRefresh = undefined
+        })
+      return envRefresh
+    }),
     createAgentSession: (harnessId, cwd, sink) =>
       Effect.gen(function* () {
         const { definition, provider } = yield* definitionFor(harnessId)
