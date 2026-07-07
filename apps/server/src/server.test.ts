@@ -122,11 +122,12 @@ const makeAgents = (): AgentRuntimeService & {
         () =>
           new Promise<string>((resolve) => {
             creations.push([harnessId, cwd])
+            const delayMs = cwd.includes("pending-create") ? 100 : 5
             setTimeout(() => {
               const sessionId = `agent-${harnessId}-${cwd.split("/").at(-1) ?? "root"}`
               sinks.set(sessionId, sink)
               resolve(sessionId)
-            }, 5)
+            }, delayMs)
           })
       ),
     inspectHarness: (harnessId, cwd) =>
@@ -1452,6 +1453,42 @@ describe("@herdman/server", () => {
     await waitFor(() => agents.prompts.some((prompt) => prompt[1] === "legacy hello"))
     expect(agents.prompts).toContainEqual([legacySession.id, "legacy hello"])
     expect(agents.loads).toContainEqual(["codex", legacySession.id, legacyWorkspaceFolder])
+  })
+
+  it("deduplicates concurrent client session creation while creation is pending", async () => {
+    const { agents, services } = await makeServices("server-a")
+    const server = await startWithApp(services)
+    runningServers.push(server)
+    const projectRoot = mkdtempSync(join(tmpdir(), "herdman-server-pending-create-"))
+    tempDirs.push(projectRoot)
+    const workspaceFolder = join(projectRoot, "workspace")
+    mkdirSync(workspaceFolder)
+    const project = (
+      await jsonRequest(server, "/v1/projects", {
+        body: JSON.stringify({ folderPath: workspaceFolder, id: "pending-create-project" }),
+        method: "POST"
+      })
+    ).body as { readonly id: string }
+
+    const sessionBody = JSON.stringify({
+      id: "client-session-pending-create",
+      projectId: project.id,
+      harnessId: "codex",
+      title: "Pending create"
+    })
+    const [first, second] = await Promise.all([
+      jsonRequest(server, "/v1/sessions", {
+        body: sessionBody,
+        method: "POST"
+      }),
+      jsonRequest(server, "/v1/sessions", {
+        body: sessionBody,
+        method: "POST"
+      })
+    ])
+    expect([first.status, second.status].sort()).toEqual([200, 201])
+    expect(first.body).toEqual(second.body)
+    expect(agents.creations).toEqual([["codex", workspaceFolder]])
   })
 
   it("persists and fans out agent-initiated events with no prompt in flight", async () => {
