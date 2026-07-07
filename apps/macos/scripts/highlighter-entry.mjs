@@ -36,7 +36,11 @@ const highlighter = createHighlighterCoreSync({
     bash, c, cpp, css, diff, go, html, java, javascript, json, jsx, kotlin,
     markdown, python, ruby, rust, sql, swift, toml, tsx, typescript, yaml,
   ],
-  engine: createJavaScriptRegexEngine({ forgiving: true }),
+  // target ES2018: "auto" emits `v`-flag regexes on engines that claim
+  // support, but JavaScriptCore builds differ in `v`-flag behavior (the CI
+  // runner's JSC silently dropped the Swift comment rule via `forgiving`).
+  // Conservative syntax compiles identically on every JSC we run on.
+  engine: createJavaScriptRegexEngine({ forgiving: true, target: "ES2018" }),
 })
 
 const loadedLanguages = new Set(highlighter.getLoadedLanguages())
