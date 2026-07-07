@@ -563,8 +563,8 @@ struct SidebarView: View {
                         .buttonStyle(.plain)
                         .foregroundStyle(.secondary)
                         .help("Archive chat")
-                    } else if let unread = unreadCount(for: session) {
-                        UnreadBadge(count: unread)
+                    } else if unreadCount(for: session) != nil {
+                        UnreadBadge()
                     } else {
                         Text(RelativeTime.short(from: timestamp(for: session)))
                             .font(.caption2)
@@ -636,8 +636,8 @@ struct SidebarView: View {
                         .buttonStyle(.plain)
                         .foregroundStyle(.secondary)
                         .help("Archive chat")
-                    } else if let unread = unreadCount(for: session) {
-                        UnreadBadge(count: unread)
+                    } else if unreadCount(for: session) != nil {
+                        UnreadBadge()
                     } else {
                         Text(RelativeTime.short(from: timestamp(for: session)))
                             .font(.caption2)
@@ -852,21 +852,12 @@ private struct RemoteProjectSheet: View {
     }
 }
 
-/// An iOS-style notification badge: a red circle with the number of chats
-/// that finished while the session was unopened.
+/// A count-less notification badge for chats that changed while unopened.
 private struct UnreadBadge: View {
-    let count: Int
-
     var body: some View {
-        // Monospaced font + a single min-square frame keep the glyphs dead
-        // center in the pill regardless of which digit is shown.
-        Text(count > 9 ? "9+" : "\(count)")
-            .font(.system(size: 9, weight: .semibold, design: .monospaced))
-            .foregroundStyle(.white)
-            .padding(.horizontal, 4)
-            .frame(minWidth: 14, minHeight: 14, alignment: .center)
-            .background(Capsule().fill(.red))
-            .fixedSize()
+        Circle()
+            .fill(.blue)
+            .frame(width: 8, height: 8)
     }
 }
 
