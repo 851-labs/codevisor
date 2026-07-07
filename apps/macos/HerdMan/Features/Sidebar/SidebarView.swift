@@ -444,26 +444,38 @@ struct SidebarView: View {
     private func projectFolder(_ project: Project) -> some View {
         HoverableRow { isHovered in
             HStack(spacing: 6) {
-                HStack(spacing: 6) {
-                    // On hover the project icon becomes a disclosure chevron.
-                    ZStack {
-                        Image(systemName: FilledSymbol.preferred(project.symbolName))
-                            .foregroundStyle(.secondary)
-                            .opacity(isHovered ? 0 : 1)
-                        Image(systemName: "chevron.right")
-                            .font(.caption2.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                            .rotationEffect(.degrees(expanded.contains(project.id) ? 90 : 0))
-                            .opacity(isHovered ? 1 : 0)
+                // The disclosure toggle is a real Button (not an onTapGesture):
+                // buttons resolve their hit target at mouse-down, so a click on
+                // the hover new-chat button can never also flip the collapse
+                // state — a row-level tap gesture used to fire for those clicks.
+                Button {
+                    toggle(project.id)
+                } label: {
+                    HStack(spacing: 6) {
+                        // On hover the project icon becomes a disclosure chevron.
+                        ZStack {
+                            Image(systemName: FilledSymbol.preferred(project.symbolName))
+                                .foregroundStyle(.secondary)
+                                .opacity(isHovered ? 0 : 1)
+                            Image(systemName: "chevron.right")
+                                .font(.caption2.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                                .rotationEffect(.degrees(expanded.contains(project.id) ? 90 : 0))
+                                .opacity(isHovered ? 1 : 0)
+                        }
+                        .frame(width: 18)
+                        Text(project.name).fontWeight(.medium).lineLimit(1)
+                        Spacer(minLength: 6)
                     }
-                    .frame(width: 18)
-                    Text(project.name).fontWeight(.medium).lineLimit(1)
-                    Spacer(minLength: 6)
+                    .padding(.vertical, 5)
+                    .contentShape(Rectangle())
                 }
+                .buttonStyle(.plain)
 
                 if isHovered {
+                    // Only open the new chat — never touch the disclosure
+                    // state; the label button owns collapse/expand.
                     Button {
-                        expanded.insert(project.id)
                         selection = .newChat(project.id)
                     } label: {
                         Image(systemName: "square.and.pencil").font(.callout.weight(.semibold))
@@ -474,12 +486,7 @@ struct SidebarView: View {
                 }
             }
             .padding(.horizontal, 8)
-            .padding(.vertical, 5)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
-            // Whole-row hit target; inner buttons (new chat on hover) still win
-            // clicks on themselves over this row-level gesture.
-            .onTapGesture { toggle(project.id) }
         }
         .help(project.folderURL.path)
         .contextMenu {
