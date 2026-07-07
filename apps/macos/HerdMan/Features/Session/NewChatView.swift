@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 import HerdManCore
 
 /// The new-chat page: a centered "What should we build in <project>?" title with
@@ -19,6 +20,8 @@ struct NewChatView: View {
     @State private var selectedProjectId: UUID?
     @State private var runInWorktree = false
     @State private var focus = TerminalFocusController()
+    @State private var showingProjectImporter = false
+    @State private var showingRemoteProject = false
 
     private var projects: [Project] { environment.projectList.activeProjects }
     private var selectedProject: Project? {
@@ -88,6 +91,18 @@ struct NewChatView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .attachmentDropTarget(controller)
         .navigationTitle("New chat")
+        // Same add-project flow as the sidebar's +: local machines pick a
+        // folder, remote machines prompt for a path.
+        .fileImporter(isPresented: $showingProjectImporter, allowedContentTypes: [.folder]) { result in
+            if case let .success(url) = result {
+                addProject(folderURL: url)
+            }
+        }
+        .sheet(isPresented: $showingRemoteProject) {
+            RemoteProjectSheet { path in
+                addProject(folderURL: URL(fileURLWithPath: path))
+            }
+        }
         .task(id: preferredProjectId) { setUpController() }
         .focusedSceneValue(\.newChatComposerFocus, NewChatComposerFocus(
             focus: { focus.focusComposer() }
@@ -142,6 +157,20 @@ struct NewChatView: View {
                     }
                 }
             }
+            Divider()
+            Button {
+                if environment.machines.selectedMachine.isLocal {
+                    showingProjectImporter = true
+                } else {
+                    showingRemoteProject = true
+                }
+            } label: {
+                Label {
+                    Text("New project…")
+                } icon: {
+                    MenuSymbolIcon(systemName: "folder.badge.plus")
+                }
+            }
         } label: {
             Text(selectedProject?.name ?? "project")
                 .foregroundStyle(.primary)
@@ -155,6 +184,14 @@ struct NewChatView: View {
         .menuStyle(.button)
         .buttonStyle(.plain)
         .fixedSize()
+    }
+
+    /// Adds (or revives) the project for a picked folder and reopens the
+    /// new-chat page targeting it, mirroring the sidebar's add-project flow.
+    private func addProject(folderURL: URL) {
+        let project = environment.projectList.addProject(folderURL: folderURL)
+        selectedProjectId = project.id
+        selection = .newChat(project.id)
     }
 
     /// "Project directory" vs "New worktree" for where the chat runs. Worktree

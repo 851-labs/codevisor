@@ -832,7 +832,8 @@ private struct ProjectDropDelegate: DropDelegate {
     }
 }
 
-private struct RemoteProjectSheet: View {
+// Internal: also used by NewChatView's "New project…" menu item.
+struct RemoteProjectSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var path = ""
     let onAdd: (String) -> Void
