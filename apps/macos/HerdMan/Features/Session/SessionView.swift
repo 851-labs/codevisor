@@ -54,9 +54,10 @@ struct SessionScreen: View {
     /// Geometry passes spent converging on the restore target; bounded so a
     /// deleted/unreachable anchor can never wedge the restore loop.
     @State private var restoreAttempts = 0
-    /// The mounted transcript rows' frames in scroll-view space, used to
-    /// anchor save/restore to real items instead of raw offsets (lazy row
-    /// height estimates make raw offsets drift between mounts).
+    /// The transcript rows' frames in scroll-view space, used to anchor
+    /// save/restore to real items instead of raw offsets (item anchors
+    /// survive content changing while the session was closed — new
+    /// messages, turns finishing and collapsing).
     @State private var itemFrames = TranscriptItemFrames()
     private let bottomID = "session-bottom"
 
@@ -77,10 +78,10 @@ struct SessionScreen: View {
         // Seed the scroll position so SwiftUI lays the transcript out at the
         // last-read spot during the initial layout — no jump, no animation.
         // Seeding the anchor *item* (not a raw offset) is what makes this
-        // accurate: the lazy stack only estimates unmounted row heights, so
-        // raw offsets land elsewhere between mounts; an item identity is
-        // resolved against the real row. Left at the bottom (or never
-        // opened) keeps the pin-to-bottom behavior.
+        // accurate: content above the saved spot can change between mounts
+        // (turns finish and collapse, new messages arrive), moving raw
+        // offsets; an item identity is resolved against the real row. Left
+        // at the bottom (or never opened) keeps the pin-to-bottom behavior.
         if let saved = controller.scrollState, !saved.isAtBottom {
             if let anchorID = saved.anchorItemID {
                 _scrollPosition = State(initialValue: ScrollPosition(id: anchorID, anchor: .top))
@@ -158,7 +159,18 @@ struct SessionScreen: View {
     private var chatArea: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 20) {
+                // A plain (non-lazy) stack is deliberate. LazyVStack only
+                // *estimates* the heights of unmounted rows, and chat rows
+                // range from 20pt tool lines to 320pt diff cards, so the
+                // content size was corrected on every mount while scrolling —
+                // the scrollbar thumb resized and jumped continuously. Eager
+                // layout gives the scroll view an exact content size: one
+                // continuous, truthful scrollbar. Mounting everything is
+                // affordable because finished turns render collapsed and the
+                // expensive per-row work (markdown parsing, shiki, Myers
+                // diffs) lives in process-level caches (RenderCaches.swift,
+                // DiffRenderCache).
+                VStack(alignment: .leading, spacing: 20) {
                     if controller.conversation.isEmpty {
                         if controller.isConnecting || controller.pendingUserText != nil {
                             optimisticStartingTurn
@@ -220,11 +232,10 @@ struct SessionScreen: View {
             } action: { old, new in
                 // A large content collapse (the "Worked for" section of an
                 // hours-long turn folding when it finishes) can strand the
-                // viewport past the end of the much shorter content — the
-                // lazy stack then mounts no rows and the transcript renders
-                // blank until the next remount. A shrinking max offset is the
-                // discriminator (rubber-band overscroll never shrinks the
-                // content), so snap back inside bounds, without animation.
+                // viewport past the end of the much shorter content, leaving
+                // the transcript showing blank space. A shrinking max offset
+                // is the discriminator (rubber-band overscroll never shrinks
+                // the content), so snap back inside bounds, without animation.
                 if pendingScrollRestore == nil,
                    new.maxOffsetY < old.maxOffsetY - 1,
                    new.offsetY > new.maxOffsetY + 1 {
@@ -377,8 +388,8 @@ struct SessionScreen: View {
 
     /// Records the current position: raw offset plus the topmost visible
     /// item and its distance above the visible top. The item anchor is what
-    /// restores precisely — raw offsets drift because the lazy transcript
-    /// only estimates the heights of rows it hasn't mounted yet.
+    /// restores precisely — raw offsets drift when the content above changes
+    /// between mounts (turns finish and collapse, new messages arrive).
     private func captureScrollState(_ metrics: ScrollSnapshot) {
         var anchorID: UUID?
         var anchorMinY = CGFloat.greatestFiniteMagnitude
@@ -607,9 +618,9 @@ struct SessionScreen: View {
     }
 }
 
-/// The mounted transcript rows' frames in scroll-view space. A plain class
-/// held in `@State`: the frames update on every scroll frame, so they must
-/// not be observable state (that would re-render the transcript per tick).
+/// The transcript rows' frames in scroll-view space. A plain class held in
+/// `@State`: the frames update on every scroll frame, so they must not be
+/// observable state (that would re-render the transcript per tick).
 @MainActor
 private final class TranscriptItemFrames {
     var frames: [UUID: CGRect] = [:]

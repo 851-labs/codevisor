@@ -37,7 +37,33 @@ private final class SegmentCache {
 
     func segments(for text: String) -> [MarkdownSegment] {
         if text == lastText { return lastSegments }
-        let segments = MarkdownSegmentCache.shared.segments(for: text)
+
+        // A growing text (the previous text is a strict prefix) is a
+        // streaming flush. Parse directly instead of via the shared LRU:
+        // each intermediate text can never be requested again, and storing
+        // ~60 of them per second evicted the settled messages the cache
+        // exists for.
+        let isStreamingGrowth = lastText.map { !$0.isEmpty && text.hasPrefix($0) } ?? false
+        var segments = isStreamingGrowth
+            ? MarkdownSegmentCache.shared.parse(text)
+            : MarkdownSegmentCache.shared.segments(for: text)
+
+        // Re-use the previous parse's instances for segments whose content is
+        // unchanged. A fresh parse allocates new String storage for every
+        // block, and SwiftUI's change detection compares stored properties
+        // structurally (String storage pointers, not contents) — so without
+        // this, EVERY segment of a streaming message read as "changed" on
+        // every ~16ms flush and the entire message re-rendered (AttributedString
+        // rebuild + CoreText layout + display list) 60× per second. With
+        // pointer-stable prefixes, only the segment actually receiving text
+        // re-renders.
+        let shared = min(segments.count, lastSegments.count)
+        var index = 0
+        while index < shared, segments[index] == lastSegments[index] {
+            segments[index] = lastSegments[index]
+            index += 1
+        }
+
         lastText = text
         lastSegments = segments
         return segments

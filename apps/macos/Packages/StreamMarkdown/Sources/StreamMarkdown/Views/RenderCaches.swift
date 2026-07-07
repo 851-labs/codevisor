@@ -33,9 +33,17 @@ public final class MarkdownSegmentCache {
             markUsed(text)
             return cached
         }
-        let segments = MarkdownSegment.segments(from: parser.parse(text))
+        let segments = parse(text)
         store(segments, for: text)
         return segments
+    }
+
+    /// Parses without touching the LRU. Streaming rewrites a message's text
+    /// every ~16ms flush; routing those intermediates through the cache
+    /// evicted the settled texts scrolling actually re-encounters, for
+    /// entries that could never be hit again.
+    public func parse(_ text: String) -> [MarkdownSegment] {
+        MarkdownSegment.segments(from: parser.parse(text))
     }
 
     /// Test hook: whether a text is currently cached (observes LRU eviction).

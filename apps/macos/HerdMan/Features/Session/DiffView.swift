@@ -2,12 +2,11 @@ import CodeHighlighter
 import HerdManCore
 import SwiftUI
 
-/// Computed rows + highlights for recently rendered diffs. The transcript's
-/// LazyVStack resets DiffView's `@State` whenever a row scrolls out of the
-/// viewport buffer; without this process-level cache, every expanded diff
-/// re-ran the Myers diff and re-highlighted each time it scrolled back in.
-/// Keyed by full content (not hashes) so a collision can never render the
-/// wrong diff.
+/// Computed rows + highlights for recently rendered diffs. DiffView's
+/// `@State` dies whenever its row is unmounted (session switches rebuild the
+/// whole screen); without this process-level cache, every expanded diff
+/// re-ran the Myers diff and re-highlighted on each revisit. Keyed by full
+/// content (not hashes) so a collision can never render the wrong diff.
 @MainActor
 final class DiffRenderCache {
     struct Key: Hashable {
