@@ -121,13 +121,18 @@ struct NewChatView: View {
                     .foregroundStyle(.secondary)
             }
         } else {
-            HStack(spacing: 0) {
-                Text("What should we build in ")
+            // A flow layout so the sentence reflows like normal wrapping text
+            // when the window narrows — each word and the inline project chip
+            // are separate tokens that wrap onto new lines, rather than the two
+            // Text runs collapsing into stacked columns around the picker.
+            FlowLayout(spacing: 7, lineSpacing: 6, alignment: .center) {
+                ForEach(Array("What should we build in".split(separator: " ").enumerated()), id: \.offset) { item in
+                    Text(item.element)
+                }
                 projectMenu
                 Text("?")
             }
             .font(.system(size: 26, weight: .semibold))
-            .multilineTextAlignment(.center)
         }
     }
 
@@ -335,6 +340,70 @@ struct NewChatView: View {
         let trimmed = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         let firstLine = trimmed.split(separator: "\n").first.map(String.init) ?? "New session"
         return firstLine.count > 48 ? String(firstLine.prefix(48)) + "…" : (firstLine.isEmpty ? "New session" : firstLine)
+    }
+}
+
+/// A simple line-wrapping layout: places subviews left-to-right, breaking onto a
+/// new line when the next subview won't fit the proposed width. Each row is
+/// centered (or leading/trailing) and its subviews vertically centered within
+/// the row's height. Used by the new-chat title so a mix of word Texts and an
+/// inline picker chip flow like a normal wrapping paragraph.
+struct FlowLayout: Layout {
+    var spacing: CGFloat = 6
+    var lineSpacing: CGFloat = 6
+    var alignment: HorizontalAlignment = .center
+
+    private struct Row {
+        var items: [(index: Int, size: CGSize)] = []
+        var width: CGFloat = 0
+        var height: CGFloat = 0
+    }
+
+    private func computeRows(maxWidth: CGFloat, subviews: Subviews) -> [Row] {
+        var rows: [Row] = []
+        var current = Row()
+        for index in subviews.indices {
+            let size = subviews[index].sizeThatFits(.unspecified)
+            let projected = current.items.isEmpty ? size.width : current.width + spacing + size.width
+            if !current.items.isEmpty, projected > maxWidth {
+                rows.append(current)
+                current = Row()
+            }
+            current.width = current.items.isEmpty ? size.width : current.width + spacing + size.width
+            current.height = max(current.height, size.height)
+            current.items.append((index, size))
+        }
+        if !current.items.isEmpty { rows.append(current) }
+        return rows
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout Void) -> CGSize {
+        let maxWidth = proposal.width ?? .infinity
+        let rows = computeRows(maxWidth: maxWidth, subviews: subviews)
+        let width = proposal.width ?? (rows.map(\.width).max() ?? 0)
+        let height = rows.map(\.height).reduce(0, +) + lineSpacing * CGFloat(max(0, rows.count - 1))
+        return CGSize(width: width, height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout Void) {
+        let rows = computeRows(maxWidth: bounds.width, subviews: subviews)
+        var y = bounds.minY
+        for row in rows {
+            var x: CGFloat
+            switch alignment {
+            case .trailing: x = bounds.maxX - row.width
+            case .leading: x = bounds.minX
+            default: x = bounds.minX + (bounds.width - row.width) / 2
+            }
+            for item in row.items {
+                subviews[item.index].place(
+                    at: CGPoint(x: x, y: y + (row.height - item.size.height) / 2),
+                    proposal: ProposedViewSize(item.size)
+                )
+                x += item.size.width + spacing
+            }
+            y += row.height + lineSpacing
+        }
     }
 }
 
