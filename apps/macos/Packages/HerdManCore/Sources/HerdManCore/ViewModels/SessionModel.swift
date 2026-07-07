@@ -450,7 +450,7 @@ public final class SessionModel {
         var parentId: String?
         var toolCallId: String?
         switch update {
-        case let .agentMessageChunk(_, _, parent):
+        case let .agentMessageChunk(_, _, parent, _):
             parentId = parent
         case let .agentThoughtChunk(_, _, parent):
             parentId = parent

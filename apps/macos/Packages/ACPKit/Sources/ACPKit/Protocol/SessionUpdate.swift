@@ -175,12 +175,26 @@ public struct QuestionResolution: Sendable, Codable, Equatable {
     }
 }
 
+/// Finality of an agent message span, when the provider can tell.
+///
+/// `final` is the turn's terminal answer — clients may style it as the final
+/// response from its first streamed chunk. `commentary` is mid-turn narration
+/// that never becomes the answer. Absent means unknown: render optimistically
+/// (the last text span is the candidate answer). A zero-length chunk carrying
+/// a phase retro-tags an already-streamed span by `messageId`.
+public enum MessagePhase: String, Sendable, Codable, Equatable {
+    case commentary
+    case final
+}
+
 /// A streaming update emitted by the agent during a prompt turn.
 ///
 /// Discriminated by the `sessionUpdate` field. For `tool_call` and
 /// `tool_call_update` the payload fields are inline alongside the discriminator.
 public enum SessionUpdate: Sendable, Codable, Equatable {
-    case agentMessageChunk(ContentBlock, messageId: String?, parentToolCallId: String?)
+    case agentMessageChunk(
+        ContentBlock, messageId: String?, parentToolCallId: String?, phase: MessagePhase?
+    )
     case agentThoughtChunk(ContentBlock, messageId: String?, parentToolCallId: String?)
     case userMessageChunk(ContentBlock, messageId: String?)
     case toolCall(ToolCall)
@@ -202,7 +216,7 @@ public enum SessionUpdate: Sendable, Codable, Equatable {
     case questionResolved(QuestionResolution)
 
     private enum Keys: String, CodingKey {
-        case sessionUpdate, messageId, parentToolCallId, content, entries, availableCommands
+        case sessionUpdate, messageId, parentToolCallId, phase, content, entries, availableCommands
         case currentModeId, configOptions
         case used, size, cost, goal, markdown
         case questionId, message, questions, autoResolutionMs, outcome, answers
@@ -216,7 +230,10 @@ public enum SessionUpdate: Sendable, Codable, Equatable {
             self = .agentMessageChunk(
                 try container.decode(ContentBlock.self, forKey: .content),
                 messageId: try container.decodeIfPresent(String.self, forKey: .messageId),
-                parentToolCallId: try container.decodeIfPresent(String.self, forKey: .parentToolCallId)
+                parentToolCallId: try container.decodeIfPresent(String.self, forKey: .parentToolCallId),
+                // Lenient: an unknown phase value decodes as nil, not an error.
+                phase: ((try? container.decodeIfPresent(String.self, forKey: .phase)) ?? nil)
+                    .flatMap(MessagePhase.init(rawValue:))
             )
         case "agent_thought_chunk":
             self = .agentThoughtChunk(
@@ -285,10 +302,11 @@ public enum SessionUpdate: Sendable, Codable, Equatable {
     public func encode(to encoder: any Encoder) throws {
         var container = encoder.container(keyedBy: Keys.self)
         switch self {
-        case let .agentMessageChunk(content, messageId, parentToolCallId):
+        case let .agentMessageChunk(content, messageId, parentToolCallId, phase):
             try container.encode("agent_message_chunk", forKey: .sessionUpdate)
             try container.encodeIfPresent(messageId, forKey: .messageId)
             try container.encodeIfPresent(parentToolCallId, forKey: .parentToolCallId)
+            try container.encodeIfPresent(phase, forKey: .phase)
             try container.encode(content, forKey: .content)
         case let .agentThoughtChunk(content, messageId, parentToolCallId):
             try container.encode("agent_thought_chunk", forKey: .sessionUpdate)
@@ -348,11 +366,19 @@ public enum SessionUpdate: Sendable, Codable, Equatable {
 
 public extension SessionUpdate {
     static func agentMessageChunk(_ content: ContentBlock) -> SessionUpdate {
-        .agentMessageChunk(content, messageId: nil, parentToolCallId: nil)
+        .agentMessageChunk(content, messageId: nil, parentToolCallId: nil, phase: nil)
     }
 
     static func agentMessageChunk(_ content: ContentBlock, messageId: String?) -> SessionUpdate {
-        .agentMessageChunk(content, messageId: messageId, parentToolCallId: nil)
+        .agentMessageChunk(content, messageId: messageId, parentToolCallId: nil, phase: nil)
+    }
+
+    static func agentMessageChunk(
+        _ content: ContentBlock, messageId: String?, parentToolCallId: String?
+    ) -> SessionUpdate {
+        .agentMessageChunk(
+            content, messageId: messageId, parentToolCallId: parentToolCallId, phase: nil
+        )
     }
 
     static func agentThoughtChunk(_ content: ContentBlock) -> SessionUpdate {

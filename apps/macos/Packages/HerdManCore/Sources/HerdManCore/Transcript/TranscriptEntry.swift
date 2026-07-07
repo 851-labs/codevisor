@@ -56,6 +56,12 @@ public struct AssistantTurn: Sendable, Equatable {
     /// Deliberately flat: a subagent's own agent calls key their buckets here
     /// too, so the UI recurses by lookup instead of by structure.
     public var subagents: [String: SubagentTranscript]
+    /// Provider-asserted finality per text entry id. `commentary` spans never
+    /// become the final answer; `final` spans are it with certainty; absent
+    /// means unknown (the last text span is the optimistic candidate). Fed by
+    /// chunk `phase` — codex tags whole messages, Claude retro-tags preamble
+    /// once a tool call proves it wasn't the answer.
+    public var textPhases: [String: MessagePhase]
     /// Monotonic counter used to give each new text span a stable id.
     var nextTextId: Int
 
@@ -70,6 +76,7 @@ public struct AssistantTurn: Sendable, Equatable {
         startedAt: Date? = nil,
         endedAt: Date? = nil,
         subagents: [String: SubagentTranscript] = [:],
+        textPhases: [String: MessagePhase] = [:],
         nextTextId: Int = 0
     ) {
         self.entries = entries
@@ -82,6 +89,7 @@ public struct AssistantTurn: Sendable, Equatable {
         self.startedAt = startedAt
         self.endedAt = endedAt
         self.subagents = subagents
+        self.textPhases = textPhases
         self.nextTextId = nextTextId
     }
 }
@@ -91,9 +99,22 @@ public extension AssistantTurn {
     ///
     /// ACP agents may interleave tool calls after chunks for the final message.
     /// Treating "physically last entry" as final hides valid answers in that shape.
+    /// Spans phase-tagged `commentary` (codex harmony channels, Claude preamble
+    /// demotion) are never the answer — while streaming, this is what lets the
+    /// live candidate render final-styled from its first chunk and demote the
+    /// moment a provider proves it was narration.
     var finalText: TranscriptEntry? {
         guard let index = finalTextIndex else { return nil }
         return entries[index]
+    }
+
+    /// True when the current final-answer candidate is provider-asserted
+    /// (phase `final`, e.g. codex harmony channels) rather than optimistic.
+    /// Certainty the answer is underway: the UI can settle the worked section
+    /// as soon as this text starts streaming instead of waiting for turn end.
+    var finalTextIsAsserted: Bool {
+        guard case let .text(id, _) = finalText else { return false }
+        return textPhases[id] == .final
     }
 
     /// Everything except the final answer — intermediate text and all tool
@@ -145,7 +166,10 @@ public extension AssistantTurn {
     }
 
     private var finalTextIndex: Int? {
-        entries.indices.reversed().first { entries[$0].isText }
+        entries.indices.reversed().first { index in
+            guard case let .text(id, _) = entries[index] else { return false }
+            return textPhases[id] != .commentary
+        }
     }
 }
 

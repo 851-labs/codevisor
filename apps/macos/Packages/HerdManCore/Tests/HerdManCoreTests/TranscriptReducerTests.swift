@@ -75,6 +75,74 @@ struct TranscriptReducerTests {
         ])
     }
 
+    @Test("Commentary-tagged spans never become the final answer")
+    func commentaryPhaseExcludedFromFinal() {
+        let turn = reduce([
+            .agentMessageChunk(.text("Checking the tests."), messageId: "m1", parentToolCallId: nil, phase: .commentary),
+            .toolCall(ToolCall(toolCallId: "a", title: "Run tests", kind: .execute, status: .completed)),
+            .agentMessageChunk(.text("They pass."), messageId: "m2", parentToolCallId: nil, phase: .final)
+        ])
+        #expect(turn.finalText == .text(id: "acp:m2", markdown: "They pass."))
+        #expect(turn.workedEntries.map(\.id) == ["text:acp:m1", "tool:a"])
+    }
+
+    @Test("A zero-length phase chunk retro-tags an already streamed span")
+    func retroactiveCommentaryDemotion() {
+        var turn = AssistantTurn(isGenerating: true)
+        // Claude preamble streams untagged: it is the optimistic candidate.
+        TranscriptReducer.apply(.agentMessageChunk(.text("Let me check."), messageId: "m1"), to: &turn)
+        #expect(turn.finalText == .text(id: "acp:m1", markdown: "Let me check."))
+        // A tool call starting in the same message demotes it via a
+        // zero-length correction chunk — the candidate slot empties…
+        TranscriptReducer.apply(
+            .agentMessageChunk(.text(""), messageId: "m1", parentToolCallId: nil, phase: .commentary),
+            to: &turn
+        )
+        TranscriptReducer.apply(
+            .toolCall(ToolCall(toolCallId: "a", title: "Run tests", kind: .execute, status: .inProgress)),
+            to: &turn
+        )
+        #expect(turn.finalText == nil)
+        #expect(turn.workedEntries.map(\.id) == ["text:acp:m1", "tool:a"])
+        // …until the real answer streams in a fresh message.
+        TranscriptReducer.apply(.agentMessageChunk(.text("Tests pass."), messageId: "m2"), to: &turn)
+        #expect(turn.finalText == .text(id: "acp:m2", markdown: "Tests pass."))
+    }
+
+    @Test("A final-tagged span stays the answer across trailing tool calls")
+    func finalPhaseSurvivesTrailingTools() {
+        let turn = reduce([
+            .agentMessageChunk(.text("Done."), messageId: "m1", parentToolCallId: nil, phase: .final),
+            .toolCall(ToolCall(toolCallId: "a", title: "Cleanup", kind: .execute, status: .completed))
+        ])
+        #expect(turn.finalText == .text(id: "acp:m1", markdown: "Done."))
+    }
+
+    @Test("Only a final-tagged candidate counts as asserted")
+    func finalTextAssertion() {
+        var turn = AssistantTurn(isGenerating: true)
+        // Optimistic candidate (no phase): not asserted — could still demote.
+        TranscriptReducer.apply(.agentMessageChunk(.text("maybe"), messageId: "m1"), to: &turn)
+        #expect(turn.finalTextIsAsserted == false)
+        // Provider-asserted final answer: certainty from the first chunk.
+        TranscriptReducer.apply(
+            .agentMessageChunk(.text("Done."), messageId: "m2", parentToolCallId: nil, phase: .final),
+            to: &turn
+        )
+        #expect(turn.finalTextIsAsserted)
+        #expect(turn.finalText == .text(id: "acp:m2", markdown: "Done."))
+    }
+
+    @Test("Subagent chunk phases do not affect the main turn's final answer")
+    func subagentPhaseIgnored() {
+        let turn = reduce([
+            .agentMessageChunk(.text("main answer")),
+            .agentMessageChunk(.text("child note"), messageId: "msg-sub", parentToolCallId: "task-1")
+        ])
+        #expect(turn.finalText == .text(id: "t0", markdown: "main answer"))
+        #expect(turn.textPhases.isEmpty)
+    }
+
     @Test("Tool call updates merge into the existing entry in place")
     func toolUpdateMerges() {
         let turn = reduce([

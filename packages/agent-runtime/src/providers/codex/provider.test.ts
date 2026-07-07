@@ -711,6 +711,109 @@ describe("CodexProvider", () => {
     })
   })
 
+  it("carries agentMessage phase from item/started onto chunks and retro-tags completion-only phases", async () => {
+    const { client, created, events } = await setup()
+    const promptPromise = run(created!.handle.prompt("finality"))
+    await Promise.resolve()
+
+    client.emit("turn/started", {
+      threadId: "thread-new",
+      turn: { id: "turn-1", status: "inProgress" }
+    })
+    // Commentary preamble tagged at item/started: chunks carry the phase.
+    client.emit("item/started", {
+      item: { content: [], id: "item-pre", phase: "commentary", type: "agentMessage" },
+      threadId: "thread-new",
+      turnId: "turn-1"
+    })
+    client.emit("item/agentMessage/delta", {
+      delta: "Checking the workflow first.",
+      itemId: "item-pre",
+      threadId: "thread-new",
+      turnId: "turn-1"
+    })
+    client.emit("item/completed", {
+      item: { content: [], id: "item-pre", phase: "commentary", type: "agentMessage" },
+      threadId: "thread-new",
+      turnId: "turn-1"
+    })
+    // Final answer tagged at item/started: chunks stream as final from the start.
+    client.emit("item/started", {
+      item: { content: [], id: "item-final", phase: "final_answer", type: "agentMessage" },
+      threadId: "thread-new",
+      turnId: "turn-1"
+    })
+    client.emit("item/agentMessage/delta", {
+      delta: "All done.",
+      itemId: "item-final",
+      threadId: "thread-new",
+      turnId: "turn-1"
+    })
+    client.emit("item/completed", {
+      item: { content: [], id: "item-final", phase: "final_answer", type: "agentMessage" },
+      threadId: "thread-new",
+      turnId: "turn-1"
+    })
+    // Untagged at start, tagged only on completion: a zero-length chunk
+    // retro-tags the already-streamed span.
+    client.emit("item/started", {
+      item: { content: [], id: "item-late", type: "agentMessage" },
+      threadId: "thread-new",
+      turnId: "turn-1"
+    })
+    client.emit("item/agentMessage/delta", {
+      delta: "Actually, one more thing…",
+      itemId: "item-late",
+      threadId: "thread-new",
+      turnId: "turn-1"
+    })
+    client.emit("item/completed", {
+      item: { content: [], id: "item-late", phase: "commentary", type: "agentMessage" },
+      threadId: "thread-new",
+      turnId: "turn-1"
+    })
+    client.emit("turn/completed", {
+      threadId: "thread-new",
+      turn: { id: "turn-1", status: "completed" }
+    })
+    await promptPromise
+
+    const payloads = events.map((event) => event.payload as Record<string, unknown>)
+    expect(payloads).toContainEqual(
+      expect.objectContaining({
+        content: { text: "Checking the workflow first.", type: "text" },
+        messageId: "item-pre",
+        phase: "commentary",
+        sessionUpdate: "agent_message_chunk"
+      })
+    )
+    expect(payloads).toContainEqual(
+      expect.objectContaining({
+        content: { text: "All done.", type: "text" },
+        messageId: "item-final",
+        phase: "final",
+        sessionUpdate: "agent_message_chunk"
+      })
+    )
+    // The untagged stream carried no phase…
+    const lateChunks = payloads.filter(
+      (payload) =>
+        payload.sessionUpdate === "agent_message_chunk" && payload.messageId === "item-late"
+    )
+    expect(lateChunks[0]).not.toHaveProperty("phase")
+    // …and completion retro-tagged it with a zero-length correction chunk.
+    expect(lateChunks.at(-1)).toMatchObject({
+      content: { text: "", type: "text" },
+      phase: "commentary"
+    })
+    // Matching phases at start and completion emit no redundant correction.
+    const finalChunks = payloads.filter(
+      (payload) =>
+        payload.sessionUpdate === "agent_message_chunk" && payload.messageId === "item-final"
+    )
+    expect(finalChunks).toHaveLength(1)
+  })
+
   it("nests collab subagent threads under the spawn call and isolates their turn lifecycle", async () => {
     const { client, created, events } = await setup()
     const promptPromise = run(created!.handle.prompt("spin up subagents"))

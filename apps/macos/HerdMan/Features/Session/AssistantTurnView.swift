@@ -14,8 +14,12 @@ struct AssistantTurnView: View {
 
     init(turn: AssistantTurn, initiallyExpanded: Bool? = nil) {
         self.turn = turn
-        // Expanded while the turn is still running; collapsed once it finishes.
-        _isExpanded = State(initialValue: initiallyExpanded ?? turn.isGenerating)
+        // Expanded while the turn is still running; collapsed once it finishes
+        // — or as soon as a provider-asserted final answer is streaming (a
+        // remount mid-answer starts settled rather than re-expanding).
+        let settled = !turn.isGenerating || turn.finalTextIsAsserted
+        _isExpanded = State(initialValue: initiallyExpanded ?? !settled)
+        _hasAutoCollapsed = State(initialValue: turn.isGenerating && turn.finalTextIsAsserted)
     }
 
     private var showsWorkedSection: Bool {
@@ -38,19 +42,24 @@ struct AssistantTurnView: View {
                 ShimmeringText.thinking
             }
 
-            // While generating, text streams in place inside the worked
-            // section (strict arrival order); the final answer is split out
-            // below only once the turn finishes.
-            if !turn.isGenerating, let final = turn.finalText, case let .text(_, markdown) = final {
+            // The final answer streams here, final-styled from its first
+            // chunk: the candidate is the last text span not phase-tagged
+            // commentary. It demotes into the worked section only if the
+            // provider retro-tags it (Claude preamble before a tool call) or a
+            // newer text span starts — codex tags messages up front, so its
+            // candidate never demotes.
+            if let final = turn.finalText, case let .text(_, markdown) = final {
                 // No .textSelection here: the Texts inside StreamingMarkdownView
                 // already enable it per-run. Applying it again on the whole
                 // segment stack forces the entire VStack through the selection
                 // layout path on first click, causing a visible layout shift.
                 StreamingMarkdownView(markdown)
-                // Copies just the final answer text, not the worked/tool
-                // content. Hidden until hover so the transcript stays clean.
-                MessageCopyButton(text: markdown, help: "Copy response", isRevealed: isHovered)
-                    .opacity(isHovered ? 1 : 0)
+                if !turn.isGenerating {
+                    // Copies just the final answer text, not the worked/tool
+                    // content. Hidden until hover so the transcript stays clean.
+                    MessageCopyButton(text: markdown, help: "Copy response", isRevealed: isHovered)
+                        .opacity(isHovered ? 1 : 0)
+                }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -59,35 +68,48 @@ struct AssistantTurnView: View {
         .hoverTracking($isHovered)
         .onChange(of: turn.isGenerating) { _, generating in
             if generating {
-                isExpanded = true
+                if !hasAutoCollapsed { isExpanded = true }
                 return
             }
-            // Collapse only once the assistant message is fully finished, when we
+            // Collapse once the assistant message is fully finished, when we
             // know the real final text. Stays collapsed afterward.
-            if !hasAutoCollapsed {
-                hasAutoCollapsed = true
-                // Animating the removal of an enormous worked section (an
-                // hours-long turn is most of the transcript's height) is a
-                // main-thread layout hazard; past a size threshold collapse
-                // instantly instead.
-                if turn.entries.count > 80 {
-                    isExpanded = false
-                } else {
-                    withAnimation(.snappy(duration: 0.28)) { isExpanded = false }
-                }
-            }
+            autoCollapse()
+        }
+        // Provider-asserted finality (codex phase "final") means no more work
+        // follows — settle the worked section the moment the answer STARTS
+        // streaming instead of waiting for the turn to end.
+        .onChange(of: turn.finalTextIsAsserted) { _, asserted in
+            if asserted, turn.isGenerating { autoCollapse() }
         }
     }
 
-    /// Streaming order while generating (text stays in place between tool
-    /// groups); the final text splits out only once the turn finishes.
+    private func autoCollapse() {
+        guard !hasAutoCollapsed else { return }
+        hasAutoCollapsed = true
+        // Animating the removal of an enormous worked section (an
+        // hours-long turn is most of the transcript's height) is a
+        // main-thread layout hazard; past a size threshold collapse
+        // instantly instead.
+        if turn.entries.count > 80 {
+            isExpanded = false
+        } else {
+            withAnimation(.snappy(duration: 0.28)) { isExpanded = false }
+        }
+    }
+
+    /// Worked entries in strict arrival order (text stays in place between
+    /// tool groups); the final-answer candidate renders below instead, both
+    /// while streaming and once finished.
     private var displayItems: [WorkedItem] {
-        turn.isGenerating ? turn.streamingItems : turn.workedItems
+        turn.workedItems
     }
 
     private var workedSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            if turn.isGenerating {
+            // Early-collapsed sections (asserted final answer streaming) are
+            // already settled: give them the chevron so the user can peek at
+            // the work while the answer is still writing.
+            if turn.isGenerating, !hasAutoCollapsed {
                 workedHeader(showsChevron: false)
             } else {
                 Button {

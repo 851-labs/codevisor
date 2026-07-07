@@ -11,7 +11,7 @@ import ACPKit
 public enum TranscriptReducer {
     public static func apply(_ update: SessionUpdate, to turn: inout AssistantTurn) {
         switch update {
-        case let .agentMessageChunk(block, messageId, parentToolCallId):
+        case let .agentMessageChunk(block, messageId, parentToolCallId, phase):
             if let parent = parentToolCallId {
                 var bucket = turn.subagents[parent] ?? SubagentTranscript()
                 bucket.isThinking = false
@@ -19,7 +19,15 @@ public enum TranscriptReducer {
                 turn.subagents[parent] = bucket
             } else {
                 turn.isThinking = false
-                appendText(text(from: block), messageId: messageId, entries: &turn.entries, nextTextId: &turn.nextTextId)
+                let entryId = appendText(text(from: block), messageId: messageId, entries: &turn.entries, nextTextId: &turn.nextTextId)
+                // Finality rides per chunk (codex tags whole messages) or as a
+                // zero-length retro-tag (Claude demoting streamed preamble once
+                // a tool call starts). Keyed by entry id so `finalText` can
+                // skip commentary spans; subagent threads never split a final
+                // answer out, so phases are main-thread only.
+                if let phase, let entryId {
+                    turn.textPhases[entryId] = phase
+                }
             }
 
         case let .agentThoughtChunk(_, _, parentToolCallId):
@@ -82,16 +90,20 @@ public enum TranscriptReducer {
     }
 
     /// Appends streamed text. ACP `messageId` is the semantic boundary between
-    /// assistant messages, so it wins over adjacency when present.
+    /// assistant messages, so it wins over adjacency when present. Returns the
+    /// id of the text entry the chunk addressed — for zero-length chunks with a
+    /// messageId that's the (possibly not yet created) span the chunk's phase
+    /// retro-tags; without one there is nothing to address.
+    @discardableResult
     private static func appendText(
         _ newText: String,
         messageId: String?,
         entries: inout [TranscriptEntry],
         nextTextId: inout Int
-    ) {
-        guard !newText.isEmpty else { return }
+    ) -> String? {
         if let messageId {
             let id = "acp:\(messageId)"
+            guard !newText.isEmpty else { return id }
             if let index = textIndex(id, in: entries) {
                 if case let .text(_, existing) = entries[index] {
                     entries[index] = .text(id: id, markdown: existing + newText)
@@ -99,15 +111,18 @@ public enum TranscriptReducer {
             } else {
                 entries.append(.text(id: id, markdown: newText))
             }
-            return
+            return id
         }
 
+        guard !newText.isEmpty else { return nil }
         if case let .text(id, existing) = entries.last {
             entries[entries.count - 1] = .text(id: id, markdown: existing + newText)
+            return id
         } else {
             let id = "t\(nextTextId)"
             nextTextId += 1
             entries.append(.text(id: id, markdown: newText))
+            return id
         }
     }
 

@@ -1090,6 +1090,79 @@ describe("ClaudeProvider", () => {
     expect(chunks).toHaveLength(1)
   })
 
+  it("retro-tags streamed preamble text as commentary when a tool call starts in the same message", async () => {
+    const fake = new FakeQuery()
+    const provider = makeProvider(fake)
+    const events: Array<RuntimeEvent> = []
+    const emit = async (event: RuntimeEvent): Promise<void> => {
+      events.push(event)
+    }
+    const createPromise = run(provider.createSession(definition, "/tmp", emit))
+    await settle()
+    fake.push(initMessage())
+    const created = await createPromise
+
+    const promptPromise = run(created.handle.prompt("check the tests"))
+    await settle()
+    // Preamble text streams, then a tool_use begins in the same message —
+    // the Anthropic stream's earliest proof the text was not the final answer.
+    fake.push(streamEvent({ message: { id: "msg-pre" }, type: "message_start" }))
+    fake.push(
+      streamEvent({
+        delta: { text: "Let me check the tests.", type: "text_delta" },
+        index: 0,
+        type: "content_block_delta"
+      })
+    )
+    fake.push(
+      streamEvent({
+        content_block: { id: "toolu-1", name: "Bash", type: "tool_use" },
+        index: 1,
+        type: "content_block_start"
+      })
+    )
+    // A second tool_use with no text in between must not re-tag.
+    fake.push(
+      streamEvent({
+        content_block: { id: "toolu-2", name: "Bash", type: "tool_use" },
+        index: 2,
+        type: "content_block_start"
+      })
+    )
+    // The final answer arrives as a fresh message: no tool follows, no tag.
+    fake.push(streamEvent({ message: { id: "msg-final" }, type: "message_start" }))
+    fake.push(
+      streamEvent({
+        delta: { text: "Tests pass.", type: "text_delta" },
+        index: 0,
+        type: "content_block_delta"
+      })
+    )
+    fake.push(resultMessage())
+    await promptPromise
+
+    const chunks = events
+      .map((event) => event.payload as Record<string, unknown>)
+      .filter((payload) => payload.sessionUpdate === "agent_message_chunk")
+    // Streamed text carries no phase (unknown until proven otherwise)…
+    expect(chunks[0]).toMatchObject({
+      content: { text: "Let me check the tests.", type: "text" },
+      messageId: "msg-pre"
+    })
+    expect(chunks[0]).not.toHaveProperty("phase")
+    // …then exactly one zero-length correction demotes the preamble span.
+    const corrections = chunks.filter((payload) => payload.phase === "commentary")
+    expect(corrections).toHaveLength(1)
+    expect(corrections[0]).toMatchObject({
+      content: { text: "", type: "text" },
+      messageId: "msg-pre"
+    })
+    // The fresh final-answer message streams untagged.
+    const finalChunk = chunks.find((payload) => payload.messageId === "msg-final")
+    expect(finalChunk).toMatchObject({ content: { text: "Tests pass.", type: "text" } })
+    expect(finalChunk).not.toHaveProperty("phase")
+  })
+
   it("retitles the spawning tool call from task_started", async () => {
     const fake = new FakeQuery()
     const provider = makeProvider(fake)

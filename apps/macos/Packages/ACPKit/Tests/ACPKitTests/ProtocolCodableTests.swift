@@ -27,6 +27,32 @@ struct ProtocolCodableTests {
         #expect(block.textValue == "yo")
     }
 
+    @Test("Message chunk phase decodes leniently")
+    func messageChunkPhase() throws {
+        let tagged = Data(
+            #"{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"hi"},"messageId":"m1","phase":"final"}"#
+                .utf8
+        )
+        let update = try ACPJSON.decoder.decode(SessionUpdate.self, from: tagged)
+        guard case let .agentMessageChunk(_, _, _, phase) = update else {
+            Issue.record("Expected agentMessageChunk")
+            return
+        }
+        #expect(phase == .final)
+
+        // Unknown phase values decode as nil rather than failing the update.
+        let unknown = Data(
+            #"{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"hi"},"phase":"interlude"}"#
+                .utf8
+        )
+        let lenient = try ACPJSON.decoder.decode(SessionUpdate.self, from: unknown)
+        guard case let .agentMessageChunk(_, _, _, lenientPhase) = lenient else {
+            Issue.record("Expected agentMessageChunk")
+            return
+        }
+        #expect(lenientPhase == nil)
+    }
+
     @Test("Unknown content block type throws")
     func unknownContentBlock() {
         #expect(throws: (any Error).self) {
@@ -39,6 +65,8 @@ struct ProtocolCodableTests {
         try roundTrip(SessionUpdate.agentMessageChunk(.text("a")))
         try roundTrip(SessionUpdate.agentMessageChunk(.text("a"), messageId: "msg-1"))
         try roundTrip(SessionUpdate.agentMessageChunk(.text("a"), messageId: "msg-1", parentToolCallId: "task-1"))
+        try roundTrip(SessionUpdate.agentMessageChunk(.text("a"), messageId: "msg-1", parentToolCallId: nil, phase: .final))
+        try roundTrip(SessionUpdate.agentMessageChunk(.text(""), messageId: "msg-1", parentToolCallId: nil, phase: .commentary))
         try roundTrip(SessionUpdate.agentThoughtChunk(.text("thinking")))
         try roundTrip(SessionUpdate.agentThoughtChunk(.text("thinking"), messageId: "thought-1"))
         try roundTrip(SessionUpdate.agentThoughtChunk(.text("thinking"), messageId: nil, parentToolCallId: "task-1"))

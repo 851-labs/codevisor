@@ -303,6 +303,11 @@ interface ClaudeSession {
   pendingPrompt: Deferred<{ stopReason: string }> | undefined
   interruptRequested: boolean
   currentMessageId: string | undefined
+  /// True once top-level text has streamed for `currentMessageId`. A tool_use
+  /// block starting afterwards in the same message proves that text was
+  /// preamble, not the final answer — the Anthropic stream has no upfront
+  /// finality marker, so this is the earliest demotion signal available.
+  currentMessageTextStreamed: boolean
   currentModel: string
   currentEffort: string
   currentSpeed: "standard" | "fast"
@@ -458,6 +463,7 @@ export const makeClaudeProvider = (
       backgroundTasks: new Map(),
       currentEffort: "default",
       currentMessageId: undefined,
+      currentMessageTextStreamed: false,
       currentModel: "",
       currentSpeed: "standard",
       cwd,
@@ -1252,6 +1258,7 @@ const handleStreamEvent = (
       const innerId = isRecord(inner) ? String(inner.id ?? "") : undefined
       if (parentId === undefined) {
         session.currentMessageId = innerId
+        session.currentMessageTextStreamed = false
         void ensureTurnStarted(session, session.pendingPrompt === undefined ? "agent" : "user")
       } else if (innerId !== undefined && innerId !== "") {
         session.subagentMessageIds.set(parentId, innerId)
@@ -1261,6 +1268,29 @@ const handleStreamEvent = (
     case "content_block_start": {
       const block = event.content_block
       if (isRecord(block) && block.type === "tool_use") {
+        // A tool_use block starting after streamed text in the same top-level
+        // message proves that text was preamble ("Let me check…"), not the
+        // final answer. Retro-tag the span commentary via a zero-length chunk
+        // so clients demote it out of the final-answer slot immediately
+        // instead of waiting for the next text block after the tool settles.
+        if (
+          parentId === undefined &&
+          session.currentMessageTextStreamed &&
+          session.currentMessageId !== undefined &&
+          session.currentMessageId !== ""
+        ) {
+          session.currentMessageTextStreamed = false
+          void session.emit({
+            kind: "session.output",
+            payload: {
+              content: { text: "", type: "text" },
+              messageId: session.currentMessageId,
+              phase: "commentary",
+              sessionUpdate: "agent_message_chunk"
+            },
+            subjectId: session.key
+          })
+        }
         const toolUseId = String(block.id)
         const toolName = String(block.name)
         session.accumulators.set(toolUseId, {
@@ -1303,6 +1333,9 @@ const handleStreamEvent = (
           parentId === undefined
             ? session.currentMessageId
             : session.subagentMessageIds.get(parentId)
+        if (parentId === undefined && String(delta.text ?? "").length > 0) {
+          session.currentMessageTextStreamed = true
+        }
         void session.emit({
           kind: "session.output",
           payload: {

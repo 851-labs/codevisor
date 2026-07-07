@@ -207,6 +207,12 @@ interface CodexSession {
   models: ReadonlyArray<CodexModel>
   /// item id → tool-call kind, so completions map back without re-parsing.
   readonly itemKinds: Map<string, string>
+  /// agentMessage item id → wire phase ("commentary" | "final"), captured from
+  /// `item/started` so every streamed delta carries the message's finality.
+  /// Codex tags items with `phase: "commentary" | "final_answer"` when the
+  /// model emits harmony channels; untagged items stay unknown and clients
+  /// fall back to optimistic (last-text-wins) rendering.
+  readonly messagePhases: Map<string, "commentary" | "final">
   /// Collab (sub)agent thread id → the spawnAgent tool call id that created
   /// it. Items arriving on those threads are tagged with that parent so
   /// clients can nest them; the main thread's id is `threadId`.
@@ -302,6 +308,7 @@ export const makeCodexProvider = (
       key: resumeThreadId ?? threadId,
       lastEmittedGoal: undefined,
       lastGoalEmitAtMs: 0,
+      messagePhases: new Map(),
       models: [],
       pendingGoalSnapshot: undefined,
       pendingPrompt: undefined,
@@ -1195,12 +1202,17 @@ const handleNotification = (session: CodexSession, method: string, params: unkno
       break
     }
     case "item/agentMessage/delta": {
+      // Finality captured from the item's `item/started` (see wirePhase): lets
+      // clients style the final answer correctly from the very first chunk.
+      const phase =
+        typeof payload.itemId === "string" ? session.messagePhases.get(payload.itemId) : undefined
       void session.emit({
         kind: "session.output",
         payload: {
           content: { text: String(payload.delta ?? ""), type: "text" },
           sessionUpdate: "agent_message_chunk",
           ...(typeof payload.itemId === "string" ? { messageId: payload.itemId } : {}),
+          ...(phase === undefined ? {} : { phase }),
           ...parentField
         },
         subjectId: session.key
@@ -1433,6 +1445,13 @@ const handleSubAgentActivity = (session: CodexSession, item: Record<string, unkn
   })
 }
 
+/// Maps codex's `MessagePhase` ("commentary" | "final_answer") to the wire's
+/// phase vocabulary. Absent/unknown stays undefined — per codex convention
+/// untagged messages keep legacy semantics, which on our wire means "let the
+/// client render optimistically" rather than asserting finality.
+const wirePhase = (raw: unknown): "commentary" | "final" | undefined =>
+  raw === "commentary" ? "commentary" : raw === "final_answer" ? "final" : undefined
+
 const emitItemLifecycle = (
   session: CodexSession,
   item: Record<string, unknown>,
@@ -1571,9 +1590,30 @@ const emitItemLifecycle = (
       }
       break
     }
-    case "agentMessage":
-      // Text already streamed via item/agentMessage/delta.
+    case "agentMessage": {
+      // Text already streamed via item/agentMessage/delta; the lifecycle only
+      // carries the message's phase (harmony commentary vs final answer).
+      const phase = wirePhase(item.phase)
+      if (started) {
+        if (phase !== undefined) session.messagePhases.set(itemId, phase)
+        break
+      }
+      // Completion can reveal a phase the started item lacked (backends that
+      // tag only the finished item). A zero-length chunk retro-tags the span
+      // clients already streamed; skip when the deltas were tagged all along.
+      if (phase !== undefined && session.messagePhases.get(itemId) !== phase) {
+        void session.emit(
+          event({
+            content: { text: "", type: "text" },
+            messageId: itemId,
+            phase,
+            sessionUpdate: "agent_message_chunk"
+          })
+        )
+      }
+      session.messagePhases.delete(itemId)
       break
+    }
     default:
       break
   }

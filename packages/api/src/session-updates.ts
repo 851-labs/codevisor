@@ -53,6 +53,16 @@ export const ToolCallPayload = Schema.Struct({
 })
 export type ToolCallPayload = typeof ToolCallPayload.Type
 
+/** Finality of an agent message span, when the provider can tell. `final` is
+ *  the turn's terminal answer (streams with final styling from the first
+ *  chunk); `commentary` is mid-turn narration that never becomes the answer.
+ *  Absent means unknown — clients render optimistically (last text span wins).
+ *  A zero-length chunk carrying `phase` retro-tags an already-streamed span by
+ *  `messageId` (e.g. Claude text demoted to commentary once a tool call
+ *  starts in the same assistant message). */
+export const MessagePhase = Schema.Literals(["commentary", "final"])
+export type MessagePhase = typeof MessagePhase.Type
+
 /** Message/thought chunk payload carried on `session.output` envelopes.
  *  `parentToolCallId` attributes a chunk to a subagent's parent tool call so
  *  clients can nest subagent transcripts; chunks without it belong to the main
@@ -65,7 +75,8 @@ export const AgentChunkPayload = Schema.Struct({
   ]),
   content: Schema.Unknown,
   messageId: Schema.optional(Schema.String),
-  parentToolCallId: Schema.optional(Schema.String)
+  parentToolCallId: Schema.optional(Schema.String),
+  phase: Schema.optional(MessagePhase)
 })
 export type AgentChunkPayload = typeof AgentChunkPayload.Type
 

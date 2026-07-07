@@ -1639,7 +1639,9 @@ const materializeRuntimeEvent = async (
   subjectId: string
 ): Promise<void> => {
   const conversation = conversationPayload(event.payload)
-  if (event.kind === "session.output" && conversation !== undefined) {
+  // Zero-length chunks are phase corrections (retro-tagging an already
+  // streamed span as commentary/final) — wire metadata, not conversation text.
+  if (event.kind === "session.output" && conversation !== undefined && conversation.text !== "") {
     await run(
       db.appendConversationItem(
         subjectId,
