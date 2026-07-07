@@ -15,6 +15,7 @@ struct AttachmentLightbox: View {
     @State private var loadFailed = false
     /// 1.0 == fit-to-window; the label shows it as 100%.
     @State private var zoom: CGFloat = 1.0
+    @FocusState private var isFocused: Bool
 
     private static let zoomStep: CGFloat = 0.25
     private static let zoomRange: ClosedRange<CGFloat> = 0.1...5.0
@@ -33,6 +34,9 @@ struct AttachmentLightbox: View {
                     HStack(spacing: 10) {
                         controlCircle(systemName: "square.and.arrow.down", help: "Download") { download() }
                         controlCircle(systemName: "xmark", help: "Close (⎋)") { controller.dismiss() }
+                            // Escape as the standard cancel action; key
+                            // equivalents win over the focused text view.
+                            .keyboardShortcut(.cancelAction)
                     }
                 }
                 .padding(16)
@@ -47,9 +51,13 @@ struct AttachmentLightbox: View {
         }
         .task(id: item) { await load() }
         .onExitCommand { controller.dismiss() }
-        // Focusable so Escape (onExitCommand) reaches the overlay.
+        // Focusable so Escape (onExitCommand) reaches the overlay — and
+        // actually focused on appear, otherwise first responder stays on the
+        // composer text view and Escape never gets here.
         .focusable()
         .focusEffectDisabled()
+        .focused($isFocused)
+        .onAppear { isFocused = true }
         .accessibilityLabel("Image viewer, \(item.name)")
     }
 
