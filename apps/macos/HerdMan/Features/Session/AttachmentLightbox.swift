@@ -23,7 +23,6 @@ struct AttachmentLightbox: View {
     var body: some View {
         ZStack {
             Color.black.opacity(0.88)
-                .ignoresSafeArea()
                 .onTapGesture { controller.dismiss() }
 
             content
@@ -39,7 +38,7 @@ struct AttachmentLightbox: View {
                             .keyboardShortcut(.cancelAction)
                     }
                 }
-                .padding(16)
+                .padding(20)
                 Spacer()
             }
 
@@ -49,6 +48,10 @@ struct AttachmentLightbox: View {
                     .padding(.bottom, 20)
             }
         }
+        // The whole lightbox is full-bleed: without this, the control stack
+        // respects the (hidden) titlebar's top safe-area inset and the close
+        // buttons hang noticeably lower than the zoom pill's bottom margin.
+        .ignoresSafeArea()
         .task(id: item) { await load() }
         .onExitCommand { controller.dismiss() }
         // Focusable so Escape (onExitCommand) reaches the overlay — and
