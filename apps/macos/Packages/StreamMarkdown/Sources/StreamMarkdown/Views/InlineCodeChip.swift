@@ -9,7 +9,14 @@ enum InlineCodeChipKey: AttributedStringKey {
 }
 
 /// The `TextAttribute` the chip renderer looks for on layout runs.
-struct InlineCodeChipAttribute: TextAttribute {}
+///
+/// The `marker` payload is intentional. A zero-sized (empty) `TextAttribute`
+/// is not reliably matched on `Text.Layout` runs in optimized release builds,
+/// so the chip fill was silently skipped in production while the glyphs still
+/// drew — inline code lost its background only in the shipped (Release) app.
+struct InlineCodeChipAttribute: TextAttribute {
+    var marker = true
+}
 
 extension Text {
     /// Builds a `Text` from an attributed string, tagging inline-code runs
@@ -41,6 +48,11 @@ struct InlineCodeChipRenderer: TextRenderer {
     var background: Color
     var cornerRadius: CGFloat = 4
     var verticalPadding: CGFloat = 1.5
+    /// When false, only the chip backgrounds are painted; the glyphs are left
+    /// to a separate, selectable text layer. This keeps the renderer off the
+    /// same view as `.textSelection(.enabled)`, which suppresses custom text
+    /// renderers in release builds (the chip fill silently stops running).
+    var drawsGlyphs = true
 
     func draw(layout: Text.Layout, in context: inout GraphicsContext) {
         for line in layout {
@@ -67,7 +79,9 @@ struct InlineCodeChipRenderer: TextRenderer {
                 chip = chip.union(bounds)
             }
             flush()
-            context.draw(line)
+            if drawsGlyphs {
+                context.draw(line)
+            }
         }
     }
 }

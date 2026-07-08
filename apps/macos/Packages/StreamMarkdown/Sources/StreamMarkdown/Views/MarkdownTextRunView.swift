@@ -19,12 +19,34 @@ struct MarkdownTextRunView: View {
     @State private var memo = TextRunMemo()
 
     var body: some View {
-        memo.text(for: blocks, theme: theme)
+        // The chip backgrounds are painted by `InlineCodeChipRenderer`, but a
+        // custom `TextRenderer` applied to the *same* view as
+        // `.textSelection(.enabled)` is suppressed in release builds: the chip
+        // fill stops running while the glyphs still draw, so inline code loses
+        // its background only in the shipped app. Paint the chips on a
+        // non-selectable background copy of the identical `Text` instead, and
+        // keep the foreground copy selectable with no renderer. The same text,
+        // font, line spacing, and `fixedSize` make the two layouts line up
+        // exactly. This mirrors `MarkdownTableView`, whose renderer already
+        // runs without a selection modifier fighting it.
+        let text = memo.text(for: blocks, theme: theme)
+        text
             .font(theme.bodyFont)
             .lineSpacing(theme.lineSpacing)
             .textSelection(.enabled)
             .fixedSize(horizontal: false, vertical: true)
-            .textRenderer(InlineCodeChipRenderer(background: theme.inlineCodeBackground))
+            .background(alignment: .topLeading) {
+                text
+                    .font(theme.bodyFont)
+                    .lineSpacing(theme.lineSpacing)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textRenderer(
+                        InlineCodeChipRenderer(
+                            background: theme.inlineCodeBackground,
+                            drawsGlyphs: false
+                        )
+                    )
+            }
     }
 
     /// Merges the blocks into one attributed string. Blocks are separated by a
