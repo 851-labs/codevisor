@@ -86,6 +86,9 @@ struct WorkedItemsTests {
         #expect(ToolCallSummary.describe([call(.read)]) == "Read a file")
         #expect(ToolCallSummary.describe([call(.search), call(.execute), call(.execute)]) == "Searched code and ran 2 commands")
         #expect(ToolCallSummary.describe([call(.edit)]) == "Edited a file")
+        #expect(ToolCallSummary.describe([call(.webSearch)]) == "Searched the web")
+        #expect(ToolCallSummary.describe([call(.webSearch), call(.webSearch)]) == "Ran 2 web searches")
+        #expect(ToolCallSummary.describe([call(.webSearch), call(.fetch)]) == "Searched the web and fetched a resource")
         #expect(ToolCallSummary.describe([]) == "")
     }
 
@@ -101,6 +104,7 @@ struct WorkedItemsTests {
         #expect(ToolCallSummary.symbol([call(.execute)]) == "terminal")
         #expect(ToolCallSummary.symbol([call(.edit)]) == "pencil")
         #expect(ToolCallSummary.symbol([call(.read)]) == "doc.text")
+        #expect(ToolCallSummary.symbol([call(.webSearch)]) == "magnifyingglass")
     }
 
     private func call(_ kind: ToolKind) -> ToolCall {

@@ -1583,19 +1583,36 @@ const emitItemLifecycle = (
       break
     }
     case "webSearch": {
+      // The started item often lacks the query — codex fills it in as the
+      // model generates the call — so the completed item re-titles the call
+      // with the authoritative query.
+      const query = typeof item.query === "string" && item.query.length > 0 ? item.query : undefined
+      const title =
+        query !== undefined
+          ? `Searched for ${query}`
+          : started
+            ? "Searching the web"
+            : "Searched the web"
       if (started) {
         void session.emit(
           event({
-            kind: "fetch",
+            // Not ACP vocabulary — HerdMan's own extension so clients can
+            // phrase web searches as searches instead of fetches.
+            kind: "web_search",
             sessionUpdate: "tool_call",
             status: "in_progress",
-            title: typeof item.query === "string" ? `Searched ${item.query}` : "Web search",
+            title,
             toolCallId: itemId
           })
         )
       } else {
         void session.emit(
-          event({ sessionUpdate: "tool_call_update", status: "completed", toolCallId: itemId })
+          event({
+            sessionUpdate: "tool_call_update",
+            status: "completed",
+            title,
+            toolCallId: itemId
+          })
         )
       }
       break

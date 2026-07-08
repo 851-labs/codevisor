@@ -110,6 +110,25 @@ struct ToolCallTests {
         #expect(try ACPJSON.decoder.decode(ToolCall.self, from: Data(unknown.utf8)).kind == .other)
     }
 
+    @Test("web_search kind and resource_link source content decode from the wire shape")
+    func webSearchSources() throws {
+        // Verbatim shape the claude provider emits for a WebSearch completion.
+        let json = """
+        {"toolCallId":"ws-1","title":"Searched for swift release","kind":"web_search","status":"completed","content":[
+            {"type":"content","content":{"type":"resource_link","name":"Swift 6.2 Released | Swift.org","title":"Swift 6.2 Released | Swift.org","uri":"https://www.swift.org/blog/swift-6.2-released/"}}
+        ]}
+        """
+        let call = try ACPJSON.decoder.decode(ToolCall.self, from: Data(json.utf8))
+        #expect(call.kind == .webSearch)
+        #expect(call.content?.count == 1)
+        guard case .content(.resourceLink(let link)) = call.content?.first else {
+            Issue.record("expected a resource_link source")
+            return
+        }
+        #expect(link.title == "Swift 6.2 Released | Swift.org")
+        #expect(link.uri == "https://www.swift.org/blog/swift-6.2-released/")
+    }
+
     @Test("diffStats decode on calls and updates, and merge like other fields")
     func diffStats() throws {
         let json = #"{"toolCallId":"x","title":"Edit","diffStats":[{"path":"/a","added":13,"removed":7}]}"#

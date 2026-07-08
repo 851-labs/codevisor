@@ -6,7 +6,12 @@ import type {
 import { Effect } from "effect"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import type { HarnessDefinition, ProviderEnvironment, RuntimeEvent } from "../types.js"
-import { extractAllStringFields, extractStringField, makeClaudeProvider } from "./claude.js"
+import {
+  extractAllStringFields,
+  extractStringField,
+  makeClaudeProvider,
+  webSearchSources
+} from "./claude.js"
 
 const run = <A>(effect: Effect.Effect<A, unknown>): Promise<A> => Effect.runPromise(effect)
 
@@ -983,6 +988,142 @@ describe("ClaudeProvider", () => {
     )
   })
 
+  it("titles web searches with their query and maps them to kind web_search", async () => {
+    const fake = new FakeQuery()
+    const provider = makeProvider(fake)
+    const events: Array<RuntimeEvent> = []
+    const emit = async (event: RuntimeEvent): Promise<void> => {
+      events.push(event)
+    }
+    const createPromise = run(provider.createSession(definition, "/tmp", emit))
+    await settle()
+    fake.push(initMessage())
+    const created = await createPromise
+
+    const promptPromise = run(created.handle.prompt("look it up"))
+    await settle()
+    fake.push(
+      streamEvent({
+        content_block: { id: "ws-1", name: "WebSearch", type: "tool_use" },
+        index: 0,
+        type: "content_block_start"
+      })
+    )
+    fake.push({
+      message: {
+        content: [
+          {
+            id: "ws-1",
+            input: { query: "swift concurrency actors" },
+            name: "WebSearch",
+            type: "tool_use"
+          },
+          {
+            id: "wf-1",
+            input: { url: "https://example.com/docs" },
+            name: "WebFetch",
+            type: "tool_use"
+          }
+        ],
+        role: "assistant"
+      },
+      parent_tool_use_id: null,
+      session_id: "sdk-session-1",
+      type: "assistant"
+    } as never)
+    fake.push(resultMessage())
+    await promptPromise
+
+    const payloads = events.map((event) => event.payload as Record<string, unknown>)
+    expect(payloads).toContainEqual(
+      expect.objectContaining({
+        kind: "web_search",
+        sessionUpdate: "tool_call",
+        toolCallId: "ws-1"
+      })
+    )
+    expect(payloads).toContainEqual(
+      expect.objectContaining({
+        kind: "web_search",
+        sessionUpdate: "tool_call_update",
+        title: "Searched for swift concurrency actors",
+        toolCallId: "ws-1"
+      })
+    )
+    expect(payloads).toContainEqual(
+      expect.objectContaining({
+        kind: "fetch",
+        sessionUpdate: "tool_call_update",
+        title: "Fetched https://example.com/docs",
+        toolCallId: "wf-1"
+      })
+    )
+  })
+
+  it("surfaces WebSearch result sources as resource_link content", async () => {
+    const fake = new FakeQuery()
+    const provider = makeProvider(fake)
+    const events: Array<RuntimeEvent> = []
+    const emit = async (event: RuntimeEvent): Promise<void> => {
+      events.push(event)
+    }
+    const createPromise = run(provider.createSession(definition, "/tmp", emit))
+    await settle()
+    fake.push(initMessage())
+    const created = await createPromise
+
+    const promptPromise = run(created.handle.prompt("look it up"))
+    await settle()
+    // The WebSearch tool_result is a plain string with an embedded Links array
+    // (verbatim shape from the Claude CLI).
+    const resultText =
+      'Web search results for query: "swift release"\n\n' +
+      'Links: [{"title":"Swift 6.2 Released | Swift.org","url":"https://www.swift.org/blog/swift-6.2-released/"},' +
+      '{"title":"Releases · swiftlang/swift","url":"https://github.com/swiftlang/swift/releases"}]\n\n' +
+      "Swift 6.2 was released on September 15, 2025."
+    fake.push({
+      message: {
+        content: [
+          { content: resultText, is_error: false, tool_use_id: "ws-1", type: "tool_result" }
+        ],
+        role: "user"
+      },
+      parent_tool_use_id: null,
+      session_id: "sdk-session-1",
+      type: "user"
+    } as never)
+    fake.push(resultMessage())
+    await promptPromise
+
+    const payloads = events.map((event) => event.payload as Record<string, unknown>)
+    const update = payloads.find(
+      (payload) =>
+        payload.sessionUpdate === "tool_call_update" &&
+        payload.toolCallId === "ws-1" &&
+        Array.isArray(payload.content)
+    )
+    expect(update?.content).toEqual([
+      {
+        content: {
+          name: "Swift 6.2 Released | Swift.org",
+          title: "Swift 6.2 Released | Swift.org",
+          type: "resource_link",
+          uri: "https://www.swift.org/blog/swift-6.2-released/"
+        },
+        type: "content"
+      },
+      {
+        content: {
+          name: "Releases · swiftlang/swift",
+          title: "Releases · swiftlang/swift",
+          type: "resource_link",
+          uri: "https://github.com/swiftlang/swift/releases"
+        },
+        type: "content"
+      }
+    ])
+  })
+
   it("emits subagent prose and tools from consolidated assistant messages", async () => {
     // Ground truth from current claude CLIs: subagent stream events are NOT
     // forwarded; a subagent's thread exists only in consolidated assistant
@@ -1703,5 +1844,42 @@ describe("partial JSON string extraction", () => {
       '{"edits":[{"old_string":"a\\nb","new_string":"c"},{"old_string":"d","new_string":"e\\nf"}]}'
     expect(extractAllStringFields(json, "old_string")).toEqual(["a\nb", "d"])
     expect(extractAllStringFields(json, "new_string")).toEqual(["c", "e\nf"])
+  })
+})
+
+describe("webSearchSources", () => {
+  it("parses the Links array from a WebSearch result string", () => {
+    const result =
+      'Web search results for query: "swift release"\n\n' +
+      'Links: [{"title":"A","url":"https://a.example"},{"title":"B","url":"https://b.example"}]\n\n' +
+      "Some commentary."
+    expect(webSearchSources(result)).toEqual([
+      { title: "A", url: "https://a.example" },
+      { title: "B", url: "https://b.example" }
+    ])
+  })
+
+  it("reads the text out of a block array result", () => {
+    const blocks = [
+      {
+        text: 'Web search results for query: "x"\n\nLinks: [{"title":"A","url":"https://a"}]',
+        type: "text"
+      }
+    ]
+    expect(webSearchSources(blocks)).toEqual([{ title: "A", url: "https://a" }])
+  })
+
+  it("isolates the array even when a title contains brackets", () => {
+    const result =
+      'Web search results for query: "x"\n\n' +
+      'Links: [{"title":"Array [T] docs","url":"https://a"}]\n\nend'
+    expect(webSearchSources(result)).toEqual([{ title: "Array [T] docs", url: "https://a" }])
+  })
+
+  it("returns [] for non-search results and malformed links", () => {
+    expect(webSearchSources("total 0\n-rw-r--r-- file.txt")).toEqual([])
+    expect(webSearchSources('Links: [{"title":"A","url":"https://a"}]')).toEqual([])
+    expect(webSearchSources('Web search results for query: "x"\n\nLinks: [not json')).toEqual([])
+    expect(webSearchSources(undefined)).toEqual([])
   })
 })

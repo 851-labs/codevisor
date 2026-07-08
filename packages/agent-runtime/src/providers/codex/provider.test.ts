@@ -711,6 +711,53 @@ describe("CodexProvider", () => {
     })
   })
 
+  it("titles web searches with their query, re-titling on completion", async () => {
+    const { client, created, events } = await setup()
+    const promptPromise = run(created!.handle.prompt("look it up"))
+    await Promise.resolve()
+
+    client.emit("turn/started", {
+      threadId: "thread-new",
+      turn: { id: "turn-1", status: "inProgress" }
+    })
+    // The started item has no query yet — codex fills it in as the model
+    // generates the call, so only completion carries the real query.
+    client.emit("item/started", {
+      item: { id: "item-ws", type: "webSearch" },
+      threadId: "thread-new",
+      turnId: "turn-1"
+    })
+    client.emit("item/completed", {
+      item: { id: "item-ws", query: "rust incremental build cache", type: "webSearch" },
+      threadId: "thread-new",
+      turnId: "turn-1"
+    })
+    client.emit("turn/completed", {
+      threadId: "thread-new",
+      turn: { id: "turn-1", status: "completed" }
+    })
+    await promptPromise
+
+    const payloads = events.map((event) => event.payload as Record<string, unknown>)
+    expect(payloads).toContainEqual(
+      expect.objectContaining({
+        kind: "web_search",
+        sessionUpdate: "tool_call",
+        status: "in_progress",
+        title: "Searching the web",
+        toolCallId: "item-ws"
+      })
+    )
+    expect(payloads).toContainEqual(
+      expect.objectContaining({
+        sessionUpdate: "tool_call_update",
+        status: "completed",
+        title: "Searched for rust incremental build cache",
+        toolCallId: "item-ws"
+      })
+    )
+  })
+
   it("carries agentMessage phase from item/started onto chunks and retro-tags completion-only phases", async () => {
     const { client, created, events } = await setup()
     const promptPromise = run(created!.handle.prompt("finality"))

@@ -174,11 +174,18 @@ struct ToolCallContentCard: View {
     private func contentView(_ content: ToolCallContent) -> some View {
         switch content {
         case let .content(block):
-            if let text = block.textValue {
+            switch block {
+            case let .text(text, _):
                 Text(text)
                     .font(.caption.monospaced())
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
+            // Web-search sources arrive as resource_link blocks; render each as
+            // a tappable title over its host.
+            case let .resourceLink(link):
+                ToolSourceLinkView(link: link)
+            default:
+                EmptyView()
             }
         case let .diff(path, oldText, newText):
             DiffView(path: path, oldText: oldText, newText: newText)
@@ -195,6 +202,7 @@ struct ToolCallContentCard: View {
         case .read: return "File"
         case .edit: return "Diff"
         case .search: return "Search"
+        case .webSearch: return "Sources"
         case .fetch: return "Fetch"
         default: return "Output"
         }
@@ -221,6 +229,50 @@ struct ToolCallContentCard: View {
     }
 }
 
+/// One web-search source: a tappable title over its host domain, opened in the
+/// default browser. Falls back to the raw URI as the label when there's no
+/// title and to plain text when the URI won't parse.
+struct ToolSourceLinkView: View {
+    let link: ResourceLink
+    @Environment(\.theme) private var theme
+
+    private var label: String {
+        let title = link.title ?? link.name
+        return title.isEmpty ? link.uri : title
+    }
+
+    var body: some View {
+        if let url = URL(string: link.uri) {
+            Link(destination: url) {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Image(systemName: "globe")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(label)
+                            .font(.caption)
+                            .foregroundStyle(theme.accent)
+                            .lineLimit(1)
+                        Text(url.host ?? link.uri)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(link.uri)
+        } else {
+            Text(label)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
+    }
+}
+
 #Preview {
     VStack(alignment: .leading, spacing: 10) {
         ToolCallRow(call: ToolCall(toolCallId: "1", title: "Ran rg -n \"barnsong|village|farm|MCP\"", kind: .execute, status: .completed,
@@ -234,6 +286,11 @@ struct ToolCallContentCard: View {
                                    content: [.content(.text("# Barnsong"))]))
         ToolCallRow(call: ToolCall(toolCallId: "4", title: "Edited main.swift", kind: .edit, status: .cancelled,
                                    content: [.diff(path: "main.swift", oldText: "let a = 1\n", newText: "let a = 2\n")]))
+        ToolCallRow(call: ToolCall(toolCallId: "5", title: "Searched for Swift 6.2 release date", kind: .webSearch, status: .completed,
+                                   content: [
+                                       .content(.resourceLink(ResourceLink(name: "Swift 6.2 Released | Swift.org", uri: "https://www.swift.org/blog/swift-6.2-released/", title: "Swift 6.2 Released | Swift.org"))),
+                                       .content(.resourceLink(ResourceLink(name: "Releases · swiftlang/swift", uri: "https://github.com/swiftlang/swift/releases", title: "Releases · swiftlang/swift")))
+                                   ]))
     }
     .padding()
     .frame(width: 520)

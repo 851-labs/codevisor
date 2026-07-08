@@ -90,7 +90,7 @@ public extension AssistantTurn {
 /// e.g. "Read 6 files" or "Searched code, ran 2 commands".
 public enum ToolCallSummary {
     enum Category: Equatable {
-        case edit, read, search, execute, fetch, delete, move, agent, other
+        case edit, read, search, webSearch, execute, fetch, delete, move, agent, other
     }
 
     static func category(_ kind: ToolKind?) -> Category {
@@ -98,6 +98,7 @@ public enum ToolCallSummary {
         case .edit: return .edit
         case .read: return .read
         case .search: return .search
+        case .webSearch: return .webSearch
         case .execute: return .execute
         case .fetch: return .fetch
         case .delete: return .delete
@@ -125,7 +126,7 @@ public enum ToolCallSummary {
         for call in calls { counts[category(call.kind), default: 0] += 1 }
         let dominant = counts.max { lhs, rhs in lhs.value < rhs.value }?.key ?? .other
         switch dominant {
-        case .search: return "magnifyingglass"
+        case .search, .webSearch: return "magnifyingglass"
         case .execute: return "terminal"
         case .edit: return "pencil"
         case .read: return "doc.text"
@@ -144,6 +145,7 @@ public enum ToolCallSummary {
         switch category {
         case .read: return single ? "read a file" : "read \(count) files"
         case .search: return "searched code"
+        case .webSearch: return single ? "searched the web" : "ran \(count) web searches"
         case .execute: return single ? "ran a command" : "ran \(count) commands"
         case .edit: return single ? "edited a file" : "edited \(count) files"
         case .fetch: return single ? "fetched a resource" : "fetched \(count) resources"

@@ -21,6 +21,10 @@ public enum ToolKind: String, Sendable, Codable, Equatable, CaseIterable {
     case think
     case fetch
     case switchMode = "switch_mode"
+    /// A web search. Not part of the ACP kind vocabulary — HerdMan's own
+    /// extension so clients can phrase these as searches ("Searched the
+    /// web") instead of generic fetches.
+    case webSearch = "web_search"
     /// A subagent spawn (e.g. Claude's Task tool). Not part of the ACP kind
     /// vocabulary — HerdMan's own extension so clients can render a nested
     /// transcript section for the call.
