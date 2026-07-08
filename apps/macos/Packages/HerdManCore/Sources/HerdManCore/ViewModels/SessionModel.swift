@@ -7,7 +7,35 @@ import ACPKit
 @MainActor
 @Observable
 public final class SessionModel {
-    public private(set) var conversation: [ConversationItem] = []
+    /// Conversation items no longer receiving stream updates. Transcript
+    /// containers should iterate THIS (plus a dedicated child view for
+    /// `activeItem`), never `conversation`: the settled list changes only at
+    /// bubble boundaries, so token flushes stop invalidating every row.
+    public private(set) var settledConversation: [ConversationItem] = []
+    /// The latest assistant bubble — the one token flushes mutate. Split out
+    /// of the settled list so per-flush Observation invalidation is scoped to
+    /// the single view that renders it; with one stored `conversation` array,
+    /// every flush re-ran the whole transcript's body + AttributeGraph diff,
+    /// which is O(transcript) and made streaming feel worse with every
+    /// message (profiled: ~65% of the main thread inside NSHostingView
+    /// layout/render on a long chat). Stays set after its turn finishes —
+    /// settling happens lazily when the NEXT bubble starts — so finalize
+    /// keeps the row's view identity (collapse animation, hover state).
+    public private(set) var activeItem: ConversationItem?
+    /// Stored, boundary-guarded mirror of `activeItem != nil`: containers
+    /// that only need existence (empty-state, setup-section placement) read
+    /// this instead of `activeItem`, so they don't re-render per flush.
+    public private(set) var hasActiveItem = false
+
+    /// The full conversation in display order. Convenience for callers that
+    /// want a snapshot (persistence, tests, non-body logic). Body code should
+    /// prefer `settledConversation`/`activeItem` — reading this tracks both.
+    public var conversation: [ConversationItem] {
+        if let activeItem {
+            return settledConversation + [activeItem]
+        }
+        return settledConversation
+    }
     public private(set) var isSending = false
     public private(set) var queuedPrompts: [ServerPromptQueueItem] = []
     public var composerText: String = ""
@@ -71,8 +99,16 @@ public final class SessionModel {
     /// observable: buffering must not invalidate views — only applying does.
     @ObservationIgnored private var pendingEvents: [ServerSessionStreamEvent] = []
     @ObservationIgnored private var isFlushScheduled = false
+    /// Bytes of assistant text this transcript has accumulated (seeded from
+    /// history, grown per live chunk) — the input to the adaptive flush
+    /// interval. Cumulative, never reset mid-session: per-flush render cost
+    /// scales with the whole mounted transcript (every flush re-runs the
+    /// display-cycle layout over the eager VStack), so a tiny new message in
+    /// a long-lived chat still needs the throttled cadence. Approximate on
+    /// purpose — a pacing signal, not transcript state.
+    @ObservationIgnored private var transcriptStreamBytes = 0
 
-    /// Interval between buffered-event flushes — roughly one frame, so a
+    /// Base interval between buffered-event flushes — roughly one frame, so a
     /// streaming turn invalidates the UI at most once per frame. Tests set
     /// this to `.zero` (flush on the next main-actor turn) so their
     /// `Task.yield()`-based settling works without wall-clock waits.
@@ -108,18 +144,32 @@ public final class SessionModel {
             for await event in events {
                 guard let self else { break }
                 self.pendingEvents.append(event)
+                self.noteStreamedSize(of: event)
                 self.scheduleFlush()
             }
             self?.flushPendingEvents()
         }
     }
 
-    /// Schedules a single buffered flush ~one frame out; no-op while one is
-    /// already scheduled, so bursts of chunks coalesce into one UI update.
+    /// Tracks how much assistant text the transcript has accumulated,
+    /// feeding the adaptive flush interval.
+    private func noteStreamedSize(of event: ServerSessionStreamEvent) {
+        if case let .update(.agentMessageChunk(block, _, _, _)) = event {
+            transcriptStreamBytes += block.textValue?.utf8.count ?? 0
+        }
+    }
+
+    /// Schedules a single buffered flush; no-op while one is already
+    /// scheduled, so bursts of chunks coalesce into one UI update. The
+    /// interval starts at ~one frame and stretches as the turn's accumulated
+    /// text grows: past the settled-prefix optimizations, per-flush render
+    /// work still scales with the growing block (a huge open code fence can
+    /// be most of the message), and nobody can perceive 60Hz text updates
+    /// anyway — pacing down multiplies every remaining per-flush cost away.
     private func scheduleFlush() {
         guard !isFlushScheduled else { return }
         isFlushScheduled = true
-        let interval = Self.eventFlushInterval
+        let interval = Self.flushInterval(base: Self.eventFlushInterval, streamedBytes: transcriptStreamBytes)
         Task { @MainActor [weak self] in
             if interval > .zero {
                 try? await Task.sleep(for: interval)
@@ -128,16 +178,72 @@ public final class SessionModel {
         }
     }
 
+    /// ~60Hz under 48KB of transcript text, ~30Hz to 144KB, ~20Hz beyond.
+    /// A zero base (the test hook) stays zero.
+    static func flushInterval(base: Duration, streamedBytes: Int) -> Duration {
+        guard base > .zero else { return base }
+        switch streamedBytes {
+        case ..<49_152: return base
+        case ..<147_456: return base * 2
+        default: return base * 3
+        }
+    }
+
+    /// Total assistant/user text bytes in a rebuilt transcript — the seed for
+    /// `transcriptStreamBytes` after history replay.
+    static func transcriptByteEstimate(of conversation: [ConversationItem]) -> Int {
+        conversation.reduce(0) { total, item in
+            switch item {
+            case let .user(message):
+                return total + message.text.utf8.count
+            case let .assistant(message):
+                return total + message.turn.entries.reduce(0) { sum, entry in
+                    if case let .text(_, markdown) = entry { return sum + markdown.utf8.count }
+                    return sum
+                }
+            }
+        }
+    }
+
     /// Applies every buffered stream event in one synchronous pass — a single
     /// run-loop turn, so SwiftUI renders the whole batch once.
     private func flushPendingEvents() {
         isFlushScheduled = false
         guard !pendingEvents.isEmpty else { return }
-        let events = pendingEvents
+        let events = Self.coalesced(pendingEvents)
         pendingEvents.removeAll(keepingCapacity: true)
         for event in events {
             apply(event)
         }
+    }
+
+    /// Merges runs of adjacent text chunks addressed to the same span (same
+    /// messageId, parent, and phase) into one chunk before applying. The
+    /// reducer's `existing + newText` copies the whole accumulated string per
+    /// applied chunk — one merged chunk costs one O(accumulated) append per
+    /// flush instead of one per token, which matters once several subagents
+    /// stream at once. Zero-length chunks are retro-tag markers and never
+    /// merge; annotated chunks are left alone.
+    static func coalesced(_ events: [ServerSessionStreamEvent]) -> [ServerSessionStreamEvent] {
+        guard events.count > 1 else { return events }
+        var result: [ServerSessionStreamEvent] = []
+        result.reserveCapacity(events.count)
+        for event in events {
+            if case let .update(.agentMessageChunk(block, messageId, parent, phase)) = event,
+               case let .text(text, annotations) = block, annotations == nil, !text.isEmpty,
+               case let .update(.agentMessageChunk(previousBlock, previousId, previousParent, previousPhase)) =
+                   result.last,
+               case let .text(previousText, previousAnnotations) = previousBlock,
+               previousAnnotations == nil, !previousText.isEmpty,
+               messageId == previousId, parent == previousParent, phase == previousPhase {
+                result[result.count - 1] = .update(.agentMessageChunk(
+                    .text(previousText + text), messageId: messageId, parentToolCallId: parent, phase: phase
+                ))
+            } else {
+                result.append(event)
+            }
+        }
+        return result
     }
 
     /// Stops the live event consumer and drops any buffered events. Called
@@ -185,10 +291,9 @@ public final class SessionModel {
             return
         }
 
-        conversation.append(.user(UserMessage(text: trimmed, attachments: attachments)))
-        conversation.append(.assistant(AssistantMessage(
-            turn: AssistantTurn(isGenerating: true, isThinking: true, startedAt: now())
-        )))
+        settleActiveItem()
+        settledConversation.append(.user(UserMessage(text: trimmed, attachments: attachments)))
+        startActiveBubble()
         isSending = true
 
         // Events are consumed by the long-lived consumer (started here if it
@@ -320,10 +425,10 @@ public final class SessionModel {
             // Fall back to the snapshot for sessions with no stored events.
             let history = try await transport.history()
             if history.events.isEmpty {
-                conversation = snapshot.conversation
+                setConversation(snapshot.conversation)
                 serverEventCursor = snapshot.eventCursor
             } else {
-                conversation = []
+                setConversation([])
                 // Hours-long sessions replay tens of thousands of events;
                 // yielding periodically keeps the run loop responsive (input,
                 // rendering) instead of beachballing the app while a session
@@ -338,6 +443,9 @@ public final class SessionModel {
                 isSending = lastTurnIsGenerating
                 serverEventCursor = history.cursor ?? snapshot.eventCursor
             }
+            // Seed the flush pacing: a reopened long chat must start at the
+            // cadence its mounted size warrants, not re-earn it per chunk.
+            transcriptStreamBytes = Self.transcriptByteEstimate(of: conversation)
             await startConsumer()
         } catch {
             errorMessage = serverErrorMessage(error)
@@ -345,7 +453,11 @@ public final class SessionModel {
     }
 
     private var lastTurnIsGenerating: Bool {
-        if case let .assistant(message) = conversation.last {
+        // The merged conversation's last item is the active bubble if present,
+        // else the last settled one — read directly to avoid allocating the
+        // whole merged array just for `.last`.
+        let last = activeItem ?? settledConversation.last
+        if case let .assistant(message) = last {
             return message.turn.isGenerating
         }
         return false
@@ -411,9 +523,9 @@ public final class SessionModel {
             // codex CLI's history cell; dismissed ones just disappear.
             if resolution.outcome == .answered {
                 ensureAssistantTurn()
-                guard case .assistant(var message) = conversation.last else { return }
+                guard case .assistant(var message) = activeItem else { return }
                 TranscriptReducer.apply(update, to: &message.turn)
-                conversation[conversation.count - 1] = .assistant(message)
+                activeItem = .assistant(message)
             }
         default:
             // Updates that belong to an earlier bubble merge there without
@@ -423,14 +535,14 @@ public final class SessionModel {
             // sits one or more bubbles back — routing by ownership keeps that
             // section growing instead of spawning a spurious new bubble.
             if let index = owningItemIndex(for: update),
-               case .assistant(var message) = conversation[index],
-               !(index == conversation.count - 1 && message.turn.isGenerating) {
+               case .assistant(var message) = item(at: index),
+               !(index == itemCount - 1 && message.turn.isGenerating) {
                 TranscriptReducer.apply(update, to: &message.turn)
-                conversation[index] = .assistant(message)
+                setItem(.assistant(message), at: index)
                 return
             }
             ensureAssistantTurn()
-            guard case .assistant(var message) = conversation.last else { return }
+            guard case .assistant(var message) = activeItem else { return }
             message.turn.isGenerating = true
             // Guarded: `@Observable` fires on every set regardless of value,
             // and this path runs for every streamed chunk — an unguarded
@@ -438,7 +550,7 @@ public final class SessionModel {
             // chunk for no state change.
             if !isSending { isSending = true }
             TranscriptReducer.apply(update, to: &message.turn)
-            conversation[conversation.count - 1] = .assistant(message)
+            activeItem = .assistant(message)
         }
     }
 
@@ -463,8 +575,12 @@ public final class SessionModel {
             return nil
         }
         guard parentId != nil || toolCallId != nil else { return nil }
-        for index in conversation.indices.reversed() {
-            guard case let .assistant(message) = conversation[index] else { continue }
+        // Snapshot once: `conversation` is a computed merge of
+        // settledConversation + activeItem, so reading it inside the loop
+        // would rebuild the whole array every iteration (O(n²) per chunk).
+        let items = conversation
+        for index in items.indices.reversed() {
+            guard case let .assistant(message) = items[index] else { continue }
             if let parentId,
                message.turn.subagents[parentId] != nil
                    || message.turn.toolCalls.contains(where: { $0.toolCallId == parentId }) {
@@ -502,7 +618,7 @@ public final class SessionModel {
 
     /// Seeds conversation state for previews. Not for production use.
     public func applyPreviewState(conversation: [ConversationItem], isSending: Bool, usage: SessionUsage? = nil) {
-        self.conversation = conversation
+        setConversation(conversation)
         self.isSending = isSending
         self.usage = usage
     }
@@ -514,13 +630,16 @@ public final class SessionModel {
         // A question can't outlive its turn; providers emit the resolution,
         // but a dropped event must not leave the picker stuck.
         pendingQuestion = nil
-        guard case .assistant(var message) = conversation.last else { return }
+        guard case .assistant(var message) = activeItem else { return }
         message.turn.isGenerating = false
         message.turn.isThinking = false
         message.turn.stopReason = stopReason
         message.turn.endedAt = now()
         TranscriptReducer.settleToolCalls(&message.turn, outcome: outcome)
-        conversation[conversation.count - 1] = .assistant(message)
+        // Stays the active item: settling happens when the next bubble
+        // starts, so the row keeps its view identity through the finalize
+        // collapse.
+        activeItem = .assistant(message)
     }
 
     /// Clears the sending flag and fires `onTurnEnded` — only when a turn was
@@ -542,36 +661,88 @@ public final class SessionModel {
     private func appendRemoteUserIfNeeded(text: String, attachments: [Attachment] = []) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty || !attachments.isEmpty else { return }
-        if conversation.count >= 2,
-           case var .user(user) = conversation[conversation.count - 2],
-           case let .assistant(assistant) = conversation.last,
+        if case var .user(user) = settledConversation.last,
+           case let .assistant(assistant) = activeItem,
            user.text == trimmed,
            assistant.turn.isGenerating {
             // Same-client echo of the optimistic message: stamp attachments
             // the optimistic append may not have carried.
             if user.attachments.isEmpty, !attachments.isEmpty {
                 user.attachments = attachments
-                conversation[conversation.count - 2] = .user(user)
+                settledConversation[settledConversation.count - 1] = .user(user)
             }
             return
         }
-        conversation.append(.user(UserMessage(text: text, attachments: attachments)))
-        conversation.append(.assistant(AssistantMessage(
-            turn: AssistantTurn(isGenerating: true, isThinking: true, startedAt: now())
-        )))
+        settleActiveItem()
+        settledConversation.append(.user(UserMessage(text: text, attachments: attachments)))
+        startActiveBubble()
         if !isSending { isSending = true }
     }
 
     private func ensureAssistantTurn() {
-        if case let .assistant(message) = conversation.last {
+        if case let .assistant(message) = activeItem {
             // A finished turn is never reopened: output arriving after the
             // stopReason means the agent started a new turn on its own (e.g. a
             // background task completing), which gets its own bubble.
             if message.turn.isGenerating { return }
         }
-        conversation.append(.assistant(AssistantMessage(
-            turn: AssistantTurn(isGenerating: true, isThinking: true, startedAt: now())
-        )))
+        settleActiveItem()
+        startActiveBubble()
         if !isSending { isSending = true }
+    }
+
+    // MARK: - Settled/active storage
+
+    /// Moves the active bubble into the settled list. Called only at bubble
+    /// boundaries, so `settledConversation` (and the boundary-guarded
+    /// `hasActiveItem`) never change on a token flush.
+    private func settleActiveItem() {
+        guard let item = activeItem else { return }
+        settledConversation.append(item)
+        activeItem = nil
+        hasActiveItem = false
+    }
+
+    /// Starts a fresh generating assistant bubble as the active item.
+    private func startActiveBubble() {
+        activeItem = .assistant(AssistantMessage(
+            turn: AssistantTurn(isGenerating: true, isThinking: true, startedAt: now())
+        ))
+        if !hasActiveItem { hasActiveItem = true }
+    }
+
+    /// Replaces conversation state wholesale (history load, previews). The
+    /// trailing assistant bubble stays active so live streaming resumes into
+    /// the same storage slot the transcript's active row renders.
+    private func setConversation(_ items: [ConversationItem]) {
+        if case .assistant = items.last {
+            settledConversation = Array(items.dropLast())
+            activeItem = items.last
+            if !hasActiveItem { hasActiveItem = true }
+        } else {
+            settledConversation = items
+            activeItem = nil
+            if hasActiveItem { hasActiveItem = false }
+        }
+    }
+
+    /// Read/replace by display index (settled items first, then the active
+    /// bubble) — the addressing `owningItemIndex` hands back.
+    private func item(at index: Int) -> ConversationItem? {
+        if index < settledConversation.count { return settledConversation[index] }
+        if index == settledConversation.count { return activeItem }
+        return nil
+    }
+
+    private func setItem(_ item: ConversationItem, at index: Int) {
+        if index < settledConversation.count {
+            settledConversation[index] = item
+        } else if index == settledConversation.count, activeItem != nil {
+            activeItem = item
+        }
+    }
+
+    private var itemCount: Int {
+        settledConversation.count + (activeItem == nil ? 0 : 1)
     }
 }

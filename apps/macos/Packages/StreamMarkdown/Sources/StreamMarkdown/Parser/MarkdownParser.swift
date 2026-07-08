@@ -1,5 +1,18 @@
 import Foundation
 
+/// A top-level block together with the half-open range of line indices (into
+/// the document's newline-separated lines) it consumed. The range is what lets
+/// `StreamingSegmenter` prove a block can no longer change while streaming.
+public struct ParsedBlock: Sendable, Equatable {
+    public let block: MarkdownBlock
+    public let lineRange: Range<Int>
+
+    public init(block: MarkdownBlock, lineRange: Range<Int>) {
+        self.block = block
+        self.lineRange = lineRange
+    }
+}
+
 /// Parses markdown into an array of top-level `MarkdownBlock`s.
 ///
 /// The parser is line-oriented and streaming-tolerant: an unterminated fenced
@@ -9,45 +22,52 @@ public struct MarkdownParser: Sendable {
     public init() {}
 
     public func parse(_ markdown: String) -> [MarkdownBlock] {
-        let lines = markdown.components(separatedBy: "\n")
-        var blocks: [MarkdownBlock] = []
+        parseBlocks(lines: markdown.components(separatedBy: "\n")).map(\.block)
+    }
+
+    public func parseBlocks(_ markdown: String) -> [ParsedBlock] {
+        parseBlocks(lines: markdown.components(separatedBy: "\n"))
+    }
+
+    /// Core parse over pre-split lines, recording each block's line extent.
+    /// Callers that already hold the line array (the streaming segmenter needs
+    /// it to find settled blank lines) avoid a second full split.
+    func parseBlocks(lines: [String]) -> [ParsedBlock] {
+        var blocks: [ParsedBlock] = []
         var index = 0
+
+        func append(_ block: MarkdownBlock, from start: Int, to next: Int) {
+            blocks.append(ParsedBlock(block: block, lineRange: start..<next))
+            index = next
+        }
 
         while index < lines.count {
             let line = lines[index]
 
             if let fence = fenceInfo(line) {
                 let (block, next) = parseCodeBlock(lines, start: index, fence: fence)
-                blocks.append(block)
-                index = next
+                append(block, from: index, to: next)
             } else if isBlank(line) {
                 index += 1
             } else if let heading = parseHeading(line) {
-                blocks.append(heading)
-                index += 1
+                append(heading, from: index, to: index + 1)
             } else if isThematicBreak(line) {
-                blocks.append(.thematicBreak)
-                index += 1
+                append(.thematicBreak, from: index, to: index + 1)
             } else if isBlockQuote(line) {
                 let (block, next) = parseBlockQuote(lines, start: index)
-                blocks.append(block)
-                index = next
+                append(block, from: index, to: next)
             } else if isTableStart(lines, index) {
                 let (block, next) = parseTable(lines, start: index)
-                blocks.append(block)
-                index = next
+                append(block, from: index, to: next)
             } else if bulletContent(line) != nil {
                 let (block, next) = parseBulletList(lines, start: index)
-                blocks.append(block)
-                index = next
+                append(block, from: index, to: next)
             } else if orderedContent(line) != nil {
                 let (block, next) = parseOrderedList(lines, start: index)
-                blocks.append(block)
-                index = next
+                append(block, from: index, to: next)
             } else {
                 let (block, next) = parseParagraph(lines, start: index)
-                blocks.append(block)
-                index = next
+                append(block, from: index, to: next)
             }
         }
         return blocks

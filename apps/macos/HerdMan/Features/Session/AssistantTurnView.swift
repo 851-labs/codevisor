@@ -8,18 +8,32 @@ import StreamMarkdown
 /// and a shimmering "Thinking..." indicator shows while the agent is working.
 struct AssistantTurnView: View {
     let turn: AssistantTurn
-    @State private var isExpanded: Bool
+    /// Stable id of the owning assistant message — the disclosure key, stable
+    /// across the active→settled transition and across culling remounts.
+    let turnID: UUID
+    private let initiallyExpanded: Bool?
+    @Environment(\.transcriptDisclosure) private var disclosureStore
+    /// Transient one-shot guard for the finish/assert auto-collapse. Stays
+    /// `@State`: it only matters while the turn is generating/settling, which
+    /// is the never-culled active row. A settled remount resets it harmlessly.
     @State private var hasAutoCollapsed = false
     @State private var isHovered = false
 
-    init(turn: AssistantTurn, initiallyExpanded: Bool? = nil) {
+    init(turn: AssistantTurn, turnID: UUID = UUID(), initiallyExpanded: Bool? = nil) {
         self.turn = turn
-        // Expanded while the turn is still running; collapsed once it finishes
-        // — or as soon as a provider-asserted final answer is streaming (a
-        // remount mid-answer starts settled rather than re-expanding).
-        let settled = !turn.isGenerating || turn.finalTextIsAsserted
-        _isExpanded = State(initialValue: initiallyExpanded ?? !settled)
+        self.turnID = turnID
+        self.initiallyExpanded = initiallyExpanded
         _hasAutoCollapsed = State(initialValue: turn.isGenerating && turn.finalTextIsAsserted)
+    }
+
+    // Disclosure hoisted to the session store (survives occlusion culling).
+    // The default reproduces the old init seeding: expanded while running,
+    // collapsed once finished / when a provider-asserted final is streaming.
+    private var store: TranscriptDisclosureStore { disclosureStore ?? .previews }
+    private var disclosureKey: TranscriptDisclosureStore.Key { .turn(turnID) }
+    private var isExpanded: Bool {
+        let settled = !turn.isGenerating || turn.finalTextIsAsserted
+        return store.isExpanded(disclosureKey, default: initiallyExpanded ?? !settled)
     }
 
     private var showsWorkedSection: Bool {
@@ -53,7 +67,13 @@ struct AssistantTurnView: View {
                 // already enable it per-run. Applying it again on the whole
                 // segment stack forces the entire VStack through the selection
                 // layout path on first click, causing a visible layout shift.
-                StreamingMarkdownView(markdown)
+                //
+                // isComplete keys the streaming render mode: while generating,
+                // the segmenter re-parses only the growing tail and skips
+                // text-run merging, so a flush costs O(growing block) instead
+                // of O(whole answer). The finalize flip merges runs back into
+                // one selectable Text.
+                StreamingMarkdownView(markdown, isComplete: !turn.isGenerating)
                 if !turn.isGenerating {
                     // Copies just the final answer text, not the worked/tool
                     // content. Hidden until hover so the transcript stays clean.
@@ -68,7 +88,7 @@ struct AssistantTurnView: View {
         .hoverTracking($isHovered)
         .onChange(of: turn.isGenerating) { _, generating in
             if generating {
-                if !hasAutoCollapsed { isExpanded = true }
+                if !hasAutoCollapsed { store.setExpanded(disclosureKey, true) }
                 return
             }
             // Collapse once the assistant message is fully finished, when we
@@ -91,9 +111,9 @@ struct AssistantTurnView: View {
         // main-thread layout hazard; past a size threshold collapse
         // instantly instead.
         if turn.entries.count > 80 {
-            isExpanded = false
+            store.setExpanded(disclosureKey, false)
         } else {
-            withAnimation(.snappy(duration: 0.28)) { isExpanded = false }
+            withAnimation(.snappy(duration: 0.28)) { store.setExpanded(disclosureKey, false) }
         }
     }
 
@@ -113,7 +133,10 @@ struct AssistantTurnView: View {
                 workedHeader(showsChevron: false)
             } else {
                 Button {
-                    withAnimation(.snappy(duration: 0.28)) { isExpanded.toggle() }
+                    let settled = !turn.isGenerating || turn.finalTextIsAsserted
+                    withAnimation(.snappy(duration: 0.28)) {
+                        store.toggle(disclosureKey, default: initiallyExpanded ?? !settled)
+                    }
                 } label: {
                     workedHeader(showsChevron: true)
                         .contentShape(Rectangle())

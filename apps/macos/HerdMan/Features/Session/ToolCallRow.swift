@@ -11,7 +11,7 @@ struct ToolCallRow: View {
     let call: ToolCall
     var isTurnActive: Bool = false
     @Environment(\.theme) private var theme
-    @State private var isExpanded = false
+    @Environment(\.transcriptDisclosure) private var disclosureStore
     /// Memoizes the content-diff fallback of `diffTotals` (a full Myers diff
     /// of the edited file): rows re-render on every stream flush while their
     /// turn is active, and diffing entire file contents in `body` was a
@@ -33,6 +33,12 @@ struct ToolCallRow: View {
     private var counterTotals: LineDiff.Totals? {
         totalsCache.totals(for: call)
     }
+
+    // Disclosure state hoisted to the session store (survives occlusion
+    // culling); tool cards always seed collapsed.
+    private var store: TranscriptDisclosureStore { disclosureStore ?? .previews }
+    private var disclosureKey: TranscriptDisclosureStore.Key { .toolCall(call.toolCallId) }
+    private var isExpanded: Bool { store.isExpanded(disclosureKey, default: false) }
 
     var body: some View {
         let totals = counterTotals
@@ -56,7 +62,9 @@ struct ToolCallRow: View {
             }
             .contentShape(Rectangle())
             .onTapGesture {
-                if hasContent { withAnimation(.snappy(duration: 0.25)) { isExpanded.toggle() } }
+                if hasContent {
+                    withAnimation(.snappy(duration: 0.25)) { store.toggle(disclosureKey, default: false) }
+                }
             }
 
             if isExpanded, hasContent {

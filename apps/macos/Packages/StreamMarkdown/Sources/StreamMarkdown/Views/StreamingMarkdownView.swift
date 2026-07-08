@@ -3,70 +3,32 @@ import SwiftUI
 /// Renders markdown text, re-parsing on change so streamed responses display
 /// incrementally. Blocks render in document order, including tool output and
 /// partially-arrived code fences.
+///
+/// Pass `isComplete: false` while the text is still streaming: the segmenter
+/// then re-parses only the unsettled tail per flush and renders each block as
+/// its own segment, so per-flush work scales with the growing block instead
+/// of the whole document. When the flag flips back to true the segments merge
+/// into selectable runs again (one full re-render at finalize). The default
+/// (`true`) is right for any text that arrives whole.
 public struct StreamingMarkdownView: View {
     private let text: String
-    /// Per-view-identity memo of the last parse. `body` runs far more often
-    /// than the text changes (theme changes, sibling observable churn, the
-    /// per-frame re-renders of a streaming transcript), and parsing an
-    /// entire long message on the main thread each time was a dominant
-    /// source of streaming jank.
-    @State private var cache = SegmentCache()
+    private let isComplete: Bool
+    /// Per-view-identity incremental state (see `StreamingSegmenter`). A
+    /// plain non-observable class held in `@State`: `body` runs far more
+    /// often than the text changes (theme changes, sibling observable churn,
+    /// the per-frame re-renders of a streaming transcript), and it must
+    /// persist across body evaluations without cache writes re-rendering the
+    /// view. Fresh identities fall through to the process-level
+    /// `MarkdownSegmentCache`.
+    @State private var segmenter = StreamingSegmenter()
 
-    public init(_ text: String) {
+    public init(_ text: String, isComplete: Bool = true) {
         self.text = text
+        self.isComplete = isComplete
     }
 
     public var body: some View {
-        MarkdownSegmentListView(segments: cache.segments(for: text))
-    }
-}
-
-/// Memoizes block parsing + segment grouping for the last-seen text. A plain
-/// class held in `@State`: it must persist across body evaluations without
-/// being observable (cache writes must not re-render the view).
-///
-/// Misses fall through to the process-level `MarkdownSegmentCache`: LazyVStack
-/// destroys this per-view cache whenever a row scrolls out of the viewport
-/// buffer, and without the shared layer every row re-entering during a scroll
-/// re-parsed its entire message on the main thread — the dominant source of
-/// scroll lag on long transcripts.
-@MainActor
-private final class SegmentCache {
-    private var lastText: String?
-    private var lastSegments: [MarkdownSegment] = []
-
-    func segments(for text: String) -> [MarkdownSegment] {
-        if text == lastText { return lastSegments }
-
-        // A growing text (the previous text is a strict prefix) is a
-        // streaming flush. Parse directly instead of via the shared LRU:
-        // each intermediate text can never be requested again, and storing
-        // ~60 of them per second evicted the settled messages the cache
-        // exists for.
-        let isStreamingGrowth = lastText.map { !$0.isEmpty && text.hasPrefix($0) } ?? false
-        var segments = isStreamingGrowth
-            ? MarkdownSegmentCache.shared.parse(text)
-            : MarkdownSegmentCache.shared.segments(for: text)
-
-        // Re-use the previous parse's instances for segments whose content is
-        // unchanged. A fresh parse allocates new String storage for every
-        // block, and SwiftUI's change detection compares stored properties
-        // structurally (String storage pointers, not contents) — so without
-        // this, EVERY segment of a streaming message read as "changed" on
-        // every ~16ms flush and the entire message re-rendered (AttributedString
-        // rebuild + CoreText layout + display list) 60× per second. With
-        // pointer-stable prefixes, only the segment actually receiving text
-        // re-renders.
-        let shared = min(segments.count, lastSegments.count)
-        var index = 0
-        while index < shared, segments[index] == lastSegments[index] {
-            segments[index] = lastSegments[index]
-            index += 1
-        }
-
-        lastText = text
-        lastSegments = segments
-        return segments
+        MarkdownSegmentListView(segments: segmenter.segments(for: text, isComplete: isComplete))
     }
 }
 

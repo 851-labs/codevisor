@@ -12,9 +12,14 @@ import SwiftUI
 struct MarkdownTextRunView: View {
     let blocks: [MarkdownBlock]
     @Environment(\.markdownTheme) private var theme
+    /// Memoizes the built `Text`: `body` runs far more often than `blocks`
+    /// changes (sibling streaming churn, hover state, the finalize collapse),
+    /// and rebuilding the merged AttributedString plus the chip-run walk is
+    /// O(run length) — for a finalized message, the whole document.
+    @State private var memo = TextRunMemo()
 
     var body: some View {
-        Text.withInlineCodeChips(Self.attributedString(for: blocks, theme: theme))
+        memo.text(for: blocks, theme: theme)
             .font(theme.bodyFont)
             .textSelection(.enabled)
             .fixedSize(horizontal: false, vertical: true)
@@ -94,5 +99,30 @@ struct MarkdownTextRunView: View {
         case 4: return .headline
         default: return .subheadline
         }
+    }
+}
+
+/// Last-value memo for a text run's built `Text`. A plain class held in
+/// `@State` — non-observable, so cache writes never re-render the view.
+/// The unchanged-blocks comparison is O(1) in the streaming steady state:
+/// the segmenter pointer-stabilizes unchanged segments, so `==` on the same
+/// String storage short-circuits. Returning the identical `Text` value also
+/// lets SwiftUI's change detection skip the row entirely.
+@MainActor
+private final class TextRunMemo {
+    private var blocks: [MarkdownBlock]?
+    private var themeFingerprint: Int?
+    private var cached: Text?
+
+    func text(for blocks: [MarkdownBlock], theme: MarkdownTheme) -> Text {
+        let fingerprint = theme.renderFingerprint
+        if let cached, blocks == self.blocks, fingerprint == themeFingerprint {
+            return cached
+        }
+        let text = Text.withInlineCodeChips(MarkdownTextRunView.attributedString(for: blocks, theme: theme))
+        self.blocks = blocks
+        themeFingerprint = fingerprint
+        cached = text
+        return text
     }
 }

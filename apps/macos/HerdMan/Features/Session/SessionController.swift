@@ -35,14 +35,16 @@ struct ComposerAttachment: Identifiable, Equatable {
 /// transcript at the same place instead of pinned to the bottom.
 struct SessionScrollState {
     /// The scroll view's content offset (`contentOffset.y`) at capture time.
-    /// Only a first approximation for restoring: the lazy transcript's
-    /// estimated row heights make raw offsets drift between mounts.
+    /// Only a first approximation for restoring: content above the anchor can
+    /// change height between mounts (turns collapsing, new messages), drifting
+    /// raw offsets — the item anchor below is what restores precisely.
     var offsetY: CGFloat
-    /// The topmost visible conversation item at capture time — the precise
-    /// restore anchor, immune to lazy height re-estimation.
+    /// The topmost visible conversation item at capture time — resolved from
+    /// the culler's height model, immune to content-above height changes.
     var anchorItemID: UUID?
-    /// How far the anchor item's top sat above the visible top, in points
-    /// (negative when its top was below the visible top).
+    /// The anchor row's top relative to the viewport top at capture
+    /// (`rowTop - contentOffset`): 0 when flush with the top, negative when the
+    /// row started above the fold. Restore targets `rowTop - anchorDelta`.
     var anchorDelta: CGFloat = 0
     /// True when the user was reading the latest messages; reopening then
     /// keeps the pin-to-bottom behavior (and follows new streamed output).
@@ -77,6 +79,14 @@ final class SessionController {
     /// back when the session screen remounts. Observation-ignored so the
     /// high-frequency writes don't invalidate views observing the controller.
     @ObservationIgnored var scrollState: SessionScrollState?
+    /// Occlusion culler for the transcript — session-scoped so it survives the
+    /// screen remounting (a reopened long chat culls from the first frame).
+    /// Observation-ignored: its only observed state is per-row mount flags.
+    @ObservationIgnored let culler = TranscriptCuller()
+    /// User-toggled expand/collapse state for transcript rows, hoisted out of
+    /// per-row `@State` so it survives a row's content being culled and later
+    /// remounted.
+    @ObservationIgnored let disclosure = TranscriptDisclosureStore()
     /// Bumped on every user send; the session screen observes it to re-pin
     /// the transcript to the bottom (sending means "show me the newest").
     private(set) var userSendSignal = 0
@@ -176,6 +186,14 @@ final class SessionController {
     // MARK: - Derived state
 
     var conversation: [ConversationItem] { model?.conversation ?? [] }
+    /// Split accessors for the transcript: bodies that iterate rows read the
+    /// settled list; ONLY the dedicated active-row child view reads
+    /// `activeItem`, so token flushes invalidate one bubble instead of the
+    /// whole transcript. `hasActiveItem` is boundary-guarded for containers
+    /// that need existence without per-flush invalidation.
+    var settledConversation: [ConversationItem] { model?.settledConversation ?? [] }
+    var activeItem: ConversationItem? { model?.activeItem }
+    var hasActiveItem: Bool { model?.hasActiveItem ?? false }
     var queuedPrompts: [ServerPromptQueueItem] { model?.queuedPrompts ?? [] }
     var availableCommands: [AvailableCommand] { model?.availableCommands ?? [] }
     var isConnected: Bool { model != nil }

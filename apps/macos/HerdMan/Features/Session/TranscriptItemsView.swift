@@ -22,7 +22,10 @@ struct TranscriptItemsView: View {
         ForEach(items) { item in
             switch item {
             case let .text(_, markdown):
-                StreamingMarkdownView(markdown)
+                // Streaming render mode while the turn is live: commentary
+                // spans stream the same way the final answer does, so they get
+                // the same O(growing block) per-flush cost bound.
+                StreamingMarkdownView(markdown, isComplete: !isTurnActive)
                     .foregroundStyle(.secondary)
             case let .toolGroup(_, calls):
                 ToolGroupView(
@@ -53,17 +56,19 @@ struct SubagentSectionView: View {
     let isTurnActive: Bool
     let depth: Int
     @Environment(\.theme) private var theme
-    @State private var isExpanded: Bool
+    @Environment(\.transcriptDisclosure) private var disclosureStore
+    /// Transient one-shot guard for the settle collapse. Stays `@State`: it
+    /// only matters while the subagent is running/settling, which happens in
+    /// the never-culled active row. A settled remount resets it harmlessly
+    /// (the settle onChange can't re-fire without a state change).
     @State private var hasAutoCollapsed = false
 
-    init(call: ToolCall, turn: AssistantTurn, isTurnActive: Bool, depth: Int) {
-        self.call = call
-        self.turn = turn
-        self.isTurnActive = isTurnActive
-        self.depth = depth
-        // Open while the subagent is running so its work streams visibly;
-        // collapsed when revisiting a finished session.
-        _isExpanded = State(initialValue: isTurnActive && !call.isSettled)
+    // Disclosure hoisted to the session store (survives occlusion culling).
+    // Default open while running, collapsed when revisiting a finished thread.
+    private var store: TranscriptDisclosureStore { disclosureStore ?? .previews }
+    private var disclosureKey: TranscriptDisclosureStore.Key { .subagent(call.toolCallId) }
+    private var isExpanded: Bool {
+        store.isExpanded(disclosureKey, default: isTurnActive && !call.isSettled)
     }
 
     private var isRunning: Bool { isTurnActive && !call.isSettled }
@@ -91,7 +96,7 @@ struct SubagentSectionView: View {
         .onChange(of: call.isSettled) { _, settled in
             if settled, !hasAutoCollapsed {
                 hasAutoCollapsed = true
-                withAnimation(.snappy(duration: 0.25)) { isExpanded = false }
+                withAnimation(.snappy(duration: 0.25)) { store.setExpanded(disclosureKey, false) }
             }
         }
     }
@@ -115,7 +120,11 @@ struct SubagentSectionView: View {
             Spacer(minLength: 0)
         }
         .contentShape(Rectangle())
-        .onTapGesture { withAnimation(.snappy(duration: 0.25)) { isExpanded.toggle() } }
+        .onTapGesture {
+            withAnimation(.snappy(duration: 0.25)) {
+                store.toggle(disclosureKey, default: isTurnActive && !call.isSettled)
+            }
+        }
     }
 
     @ViewBuilder

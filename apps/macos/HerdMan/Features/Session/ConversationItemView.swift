@@ -10,7 +10,7 @@ struct ConversationItemView: View {
         case let .user(message):
             UserMessageView(message: message)
         case let .assistant(message):
-            AssistantTurnView(turn: message.turn)
+            AssistantTurnView(turn: message.turn, turnID: message.id)
         }
     }
 }

@@ -846,6 +846,37 @@ const createService = (
     appendConversationItem: (sessionId, role, messageId, text, isGenerating, attachments) =>
       attempt("appendConversationItem", () => {
         const now = isoTimestamp()
+        // Streamed messages arrive as token-sized chunks sharing a messageId.
+        // Extend the newest item in place when the chunk continues it —
+        // materializing one row per token grew a single answer into
+        // thousands of rows, bloating the store and making session opens
+        // replay-heavy. Coalescing needs a provable same-span signal, so
+        // rows without a messageId (and attachment-bearing rows) still
+        // insert normally.
+        if (messageId !== undefined && (attachments === undefined || attachments.length === 0)) {
+          const last = sqlite
+            .prepare(
+              `select id, role, message_id, attachments from conversation_items
+               where session_id = ? order by created_at desc, rowid desc limit 1`
+            )
+            .get(sessionId) as
+            | { id: string; role: string; message_id: string | null; attachments: string | null }
+            | undefined
+          if (
+            last !== undefined &&
+            last.role === role &&
+            last.message_id === messageId &&
+            last.attachments === null
+          ) {
+            sqlite
+              .prepare(
+                "update conversation_items set text = text || ?, is_generating = ? where id = ?"
+              )
+              .run(text, isGenerating ? 1 : 0, last.id)
+            sqlite.prepare("update sessions set updated_at = ? where id = ?").run(now, sessionId)
+            return
+          }
+        }
         sqlite
           .prepare(
             `insert into conversation_items (

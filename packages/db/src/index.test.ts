@@ -419,6 +419,75 @@ describe("@herdman/db", () => {
     await Effect.runPromise(db.close)
   })
 
+  it("coalesces streamed chunks of the same message into one conversation row", async () => {
+    const filename = tempDatabase()
+    const db = await run(makeDatabase({ filename, serverId: "local" }))
+    expect(await run(db.migrate)).toEqual([])
+    const project = await run(db.createProject({ folderPath: "/tmp/coalesce" }))
+    const session = await run(db.createSession({ projectId: project.id, harnessId: "codex" }))
+
+    // Token-sized chunks sharing a messageId extend the same row — one row
+    // per message, not one per token (a 3000-word answer used to persist as
+    // thousands of rows).
+    await run(db.appendConversationItem(session.id, "user", "user-1", "tell me", false))
+    await run(db.appendConversationItem(session.id, "assistant", "msg-1", "Hel", true))
+    await run(db.appendConversationItem(session.id, "assistant", "msg-1", "lo ", true))
+    await run(db.appendConversationItem(session.id, "assistant", "msg-1", "world", false))
+    // A new messageId starts a new row; a chunk without one never coalesces.
+    await run(db.appendConversationItem(session.id, "assistant", "msg-2", "Next", false))
+    await run(db.appendConversationItem(session.id, "assistant", undefined, "loose", false))
+    await run(db.appendConversationItem(session.id, "assistant", undefined, "loose2", false))
+    // Role changes break a run even with a matching id shape.
+    await run(db.appendConversationItem(session.id, "user", "msg-2", "reply", false))
+
+    const detail = await run(db.getSessionDetail(session.id))
+    expect(
+      detail.conversation.map((item) => [item.role, item.messageId, item.text, item.isGenerating])
+    ).toEqual([
+      ["user", "user-1", "tell me", false],
+      ["assistant", "msg-1", "Hello world", false],
+      ["assistant", "msg-2", "Next", false],
+      ["assistant", undefined, "loose", false],
+      ["assistant", undefined, "loose2", false],
+      ["user", "msg-2", "reply", false]
+    ])
+  })
+
+  it("coalescing handles attachments: empty array coalesces, non-empty stays its own row", async () => {
+    const filename = tempDatabase()
+    const db = await run(makeDatabase({ filename, serverId: "local" }))
+    expect(await run(db.migrate)).toEqual([])
+    const project = await run(db.createProject({ folderPath: "/tmp/coalesce-attach" }))
+    const session = await run(db.createSession({ projectId: project.id, harnessId: "codex" }))
+    const meta = await run(db.createFile("a.png", "image/png", "image", Buffer.from([1, 2, 3])))
+    const ref = {
+      fileId: meta.id,
+      name: meta.name,
+      mimeType: meta.mimeType,
+      sizeBytes: meta.sizeBytes,
+      kind: meta.kind
+    }
+
+    // An explicit EMPTY attachments array still coalesces (length 0, row stays
+    // attachment-free) — same as passing none.
+    await run(db.appendConversationItem(session.id, "assistant", "m1", "He", true, []))
+    await run(db.appendConversationItem(session.id, "assistant", "m1", "llo", false, []))
+    // A chunk CARRYING attachments never coalesces onto/around: it inserts its
+    // own row, and a following chunk can't extend it (its attachments != null).
+    await run(db.appendConversationItem(session.id, "assistant", "m2", "pic", false, [ref]))
+    await run(db.appendConversationItem(session.id, "assistant", "m2", "more", false, []))
+
+    const detail = await run(db.getSessionDetail(session.id))
+    expect(detail.conversation.map((item) => [item.role, item.messageId, item.text])).toEqual([
+      ["assistant", "m1", "Hello"],
+      ["assistant", "m2", "pic"],
+      ["assistant", "m2", "more"]
+    ])
+    expect(detail.conversation[0]?.attachments).toBeUndefined()
+    expect(detail.conversation[1]?.attachments).toEqual([ref])
+    expect(detail.conversation[2]?.attachments).toBeUndefined()
+  })
+
   it("stores file blobs and threads attachments through queue and conversation rows", async () => {
     const filename = tempDatabase()
     const db = await run(makeDatabase({ filename, serverId: "local" }))

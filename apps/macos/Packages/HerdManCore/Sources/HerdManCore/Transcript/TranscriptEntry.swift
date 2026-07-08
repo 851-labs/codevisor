@@ -153,7 +153,9 @@ public extension AssistantTurn {
             hasher.combine(bucket.entries.count)
             hasher.combine(bucket.isThinking)
             if case let .text(_, markdown) = bucket.entries.last {
-                hasher.combine(markdown.count)
+                // utf8.count is O(1); `count` walks every grapheme cluster —
+                // and this recomputes every flush while a subagent streams.
+                hasher.combine(markdown.utf8.count)
             }
         }
         return hasher.finalize()

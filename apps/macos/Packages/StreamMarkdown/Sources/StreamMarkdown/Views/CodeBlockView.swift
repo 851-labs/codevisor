@@ -17,6 +17,10 @@ struct CodeBlockView: View {
     @State private var didCopy = false
     @State private var copyResetTask: Task<Void, Never>?
     @State private var highlighted: AttributedString?
+    /// Memoizes the plain-text fallback: `AttributedString(code)` in `body`
+    /// re-allocated attributed storage for the entire block on every body
+    /// evaluation — for a streaming block, every ~16ms flush.
+    @State private var plainMemo = PlainCodeMemo()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -56,7 +60,7 @@ struct CodeBlockView: View {
                 // and back in a LazyVStack, which resets `highlighted`) render
                 // colored on its first frame — no plain flash, no relayout
                 // when the async highlighter would otherwise swap in.
-                Text(highlighted ?? CodeHighlightResultCache.shared.value(for: resultCacheKey) ?? AttributedString(code))
+                Text(highlighted ?? settledCacheProbe ?? plainMemo.attributed(for: code))
                     .font(theme.codeFont)
                     .textSelection(.enabled)
                     .padding(10)
@@ -68,7 +72,7 @@ struct CodeBlockView: View {
         .task(id: highlightTaskKey) {
             guard let highlighter = theme.codeHighlighter else { return }
             // Already rendered synchronously from the shared cache.
-            if CodeHighlightResultCache.shared.value(for: resultCacheKey) != nil { return }
+            if settledCacheProbe != nil { return }
             // Mid-stream, wait out further chunks before re-tokenizing; the
             // task(id:) cancellation makes this a trailing-edge debounce.
             if !isComplete {
@@ -90,11 +94,18 @@ struct CodeBlockView: View {
         CodeHighlightResultCache.Key(themeKey: theme.codeThemeKey, language: language, code: code)
     }
 
+    /// The shared-cache lookup, gated on `isComplete`: only settled blocks are
+    /// ever stored, so a mid-stream probe is a guaranteed miss that still
+    /// hashes the whole growing code string — on every body evaluation.
+    private var settledCacheProbe: AttributedString? {
+        isComplete ? CodeHighlightResultCache.shared.value(for: resultCacheKey) : nil
+    }
+
     // Re-highlight when the content grows, the block completes, or the theme
     // changes (via codeThemeKey — the highlighter closure itself can't be
-    // compared).
+    // compared). utf8.count: grapheme counting is O(n) per body evaluation.
     private var highlightTaskKey: String {
-        "\(theme.codeThemeKey)|\(isComplete)|\(language ?? "")|\(code.count)"
+        "\(theme.codeThemeKey)|\(isComplete)|\(language ?? "")|\(code.utf8.count)"
     }
 
     private func copy() {
@@ -111,6 +122,24 @@ struct CodeBlockView: View {
             guard !Task.isCancelled else { return }
             didCopy = false
         }
+    }
+}
+
+/// Last-value memo for the un-highlighted fallback text. Plain class in
+/// `@State`: non-observable, and the `code` comparison is O(1) between
+/// flushes (same String storage) — it does real work only when the block
+/// actually grows.
+@MainActor
+private final class PlainCodeMemo {
+    private var code: String?
+    private var cached: AttributedString?
+
+    func attributed(for code: String) -> AttributedString {
+        if let cached, code == self.code { return cached }
+        let attributed = AttributedString(code)
+        self.code = code
+        cached = attributed
+        return attributed
     }
 }
 

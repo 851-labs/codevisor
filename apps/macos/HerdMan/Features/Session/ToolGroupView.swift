@@ -10,7 +10,16 @@ struct ToolGroupView: View {
     /// Kept open while the model is still working through this group (no text
     /// has followed it yet); collapses when the model moves on to prose.
     var autoExpanded: Bool = false
-    @State private var isExpanded = false
+    @Environment(\.transcriptDisclosure) private var disclosureStore
+
+    // Disclosure hoisted to the session store (survives occlusion culling),
+    // keyed by the group's first call id (groups only append, so it's stable).
+    // The seed default IS `autoExpanded`, so before any user tap the group
+    // follows the work; the auto transition below writes through, and settled
+    // groups thereafter change only by user tap.
+    private var store: TranscriptDisclosureStore { disclosureStore ?? .previews }
+    private var disclosureKey: TranscriptDisclosureStore.Key { .toolGroup(calls.first?.toolCallId ?? "") }
+    private var isExpanded: Bool { store.isExpanded(disclosureKey, default: autoExpanded) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -30,7 +39,9 @@ struct ToolGroupView: View {
                 Spacer(minLength: 0)
             }
             .contentShape(Rectangle())
-            .onTapGesture { withAnimation(.snappy(duration: 0.25)) { isExpanded.toggle() } }
+            .onTapGesture {
+                withAnimation(.snappy(duration: 0.25)) { store.toggle(disclosureKey, default: autoExpanded) }
+            }
 
             if isExpanded {
                 VStack(alignment: .leading, spacing: 8) {
@@ -46,11 +57,10 @@ struct ToolGroupView: View {
         // The group follows the work: open while the model is working through
         // it so the live rows (shimmer, counters) are visible, closed once
         // the next text part arrives. Manual toggles still work in between.
-        .onAppear {
-            if autoExpanded { isExpanded = true }
-        }
+        // (No onAppear seed — the store default IS autoExpanded, so a remount
+        // renders correctly without re-running a side effect.)
         .onChange(of: autoExpanded) { _, expanded in
-            withAnimation(.snappy(duration: 0.25)) { isExpanded = expanded }
+            withAnimation(.snappy(duration: 0.25)) { store.setExpanded(disclosureKey, expanded) }
         }
     }
 }

@@ -56,6 +56,25 @@ public struct MarkdownTheme: Sendable {
     }
 
     public static let `default` = MarkdownTheme()
+
+    /// Hash of every render-affecting field except the highlighter closure
+    /// (closures can't be compared; `codeThemeKey` stands in for it, by the
+    /// same contract code blocks rely on). Render memos key on this to
+    /// detect theme switches without making the whole theme Equatable.
+    var renderFingerprint: Int {
+        var hasher = Hasher()
+        hasher.combine(bodyFont)
+        hasher.combine(codeFont)
+        hasher.combine(inlineCodeFont)
+        hasher.combine(blockSpacing)
+        hasher.combine(listItemSpacing)
+        hasher.combine(codeBackground)
+        hasher.combine(inlineCodeBackground)
+        hasher.combine(quoteBarColor)
+        hasher.combine(tableBorderColor)
+        hasher.combine(codeThemeKey)
+        return hasher.finalize()
+    }
 }
 
 private struct MarkdownThemeKey: EnvironmentKey {
