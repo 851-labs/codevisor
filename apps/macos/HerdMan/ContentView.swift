@@ -19,6 +19,11 @@ struct HerdManApp: App {
             FileCommands()
             MachineCommands(machines: environment.machines)
             TerminalCommands()
+            ScratchpadCommands()
+            // Provides the Format menu (⌘B/⌘I etc.) for the scratchpad's
+            // rich TextEditor; only acts on focused rich-text views, so the
+            // plain-text composer is unaffected.
+            TextFormattingCommands()
         }
 
         Settings {

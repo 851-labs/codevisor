@@ -21,6 +21,8 @@ public final class AppEnvironment {
     /// panel visibility/height) so panes reattach to their shells after
     /// app restarts.
     public let paneGroups: any PaneGroupRepository
+    /// Persists each session's scratchpad (inspector notes + open state).
+    public let scratchpads: any ScratchpadRepository
     /// Overrides server-backed harness discovery (previews/tests only).
     private let harnessServiceOverride: (any HarnessServicing)?
 
@@ -44,6 +46,7 @@ public final class AppEnvironment {
         settings: AppSettingsModel,
         machineStore: any PersistenceStore = InMemoryStore(),
         paneGroups: any PaneGroupRepository = DefaultPaneGroupRepository(store: InMemoryStore()),
+        scratchpads: any ScratchpadRepository = DefaultScratchpadRepository(store: InMemoryStore()),
         localServer: LocalHerdManServer? = nil,
         appUpdate: AppUpdateModel? = nil,
         customThemesDirectory: URL? = nil,
@@ -52,6 +55,7 @@ public final class AppEnvironment {
     ) {
         self.harnessServiceOverride = harnessService
         self.paneGroups = paneGroups
+        self.scratchpads = scratchpads
         self.theme = ThemeManager(
             settings: settings,
             catalog: ThemeCatalog(
@@ -190,6 +194,7 @@ public final class AppEnvironment {
             settings: AppSettingsModel(store: store),
             machineStore: store,
             paneGroups: DefaultPaneGroupRepository(store: store),
+            scratchpads: DefaultScratchpadRepository(store: store),
             localServer: localServer,
             appUpdate: AppUpdateModel(
                 currentVersion: AppUpdateModel.bundleVersion(),

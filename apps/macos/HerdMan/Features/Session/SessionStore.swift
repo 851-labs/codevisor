@@ -11,6 +11,7 @@ import ACPKit
 final class SessionStore {
     private var controllers: [UUID: SessionController] = [:]
     private var paneGroups: [UUID: PaneGroupModel] = [:]
+    private var scratchpads: [UUID: ScratchpadModel] = [:]
     /// The unsent new-chat draft. A single slot — the new-chat page is one
     /// place — so composer text/attachments survive navigating away and back
     /// no matter which sidebar entry reopens it.
@@ -115,6 +116,16 @@ final class SessionStore {
         return group
     }
 
+    /// Returns the cached scratchpad for a session, creating it (seeded from
+    /// the repository) on first use, so notes and the inspector's open state
+    /// survive navigation away and back.
+    func scratchpad(for session: ChatSession) -> ScratchpadModel {
+        if let existing = scratchpads[session.id] { return existing }
+        let model = ScratchpadModel(sessionId: session.id, repository: environment.scratchpads)
+        scratchpads[session.id] = model
+        return model
+    }
+
     /// Whether the session with this id is showing activity: generating a
     /// response, connecting its agent, or running pre-chat setup (worktree
     /// creation, agent start) — everything the sidebar spinner covers.
@@ -184,6 +195,8 @@ final class SessionStore {
         if controllers[sessionId] === controller { controllers[sessionId] = nil }
         paneGroups[sessionId]?.detachAll()
         paneGroups[sessionId] = nil
+        scratchpads[sessionId]?.flush()
+        scratchpads[sessionId] = nil
         unreadCounts[sessionId] = nil
         draft = controller
     }
@@ -193,6 +206,8 @@ final class SessionStore {
         controllers[sessionId] = nil
         paneGroups[sessionId]?.detachAll()
         paneGroups[sessionId] = nil
+        scratchpads[sessionId]?.flush()
+        scratchpads[sessionId] = nil
         unreadCounts[sessionId] = nil
         accessOrder.removeAll { $0 == sessionId }
     }
