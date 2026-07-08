@@ -1697,7 +1697,7 @@ describe("ClaudeProvider", () => {
     expect(fake.options?.resume).toBe("previous-session")
   })
 
-  it("maps attachments: inline images and PDFs, path notes for everything else", async () => {
+  it("maps attachments: inline images and PDFs, with path notes for every attachment", async () => {
     const fake = new FakeQuery()
     const provider = makeProvider(fake)
     const createPromise = run(provider.createSession(definition, "/tmp", async () => undefined))
@@ -1745,6 +1745,8 @@ describe("ClaudeProvider", () => {
       {
         text: [
           "look at these",
+          "[Attached file: /tmp/att/shot.png (shot.png, image/png)]",
+          "[Attached file: /tmp/att/doc.pdf (doc.pdf, application/pdf)]",
           "[Attached file: /tmp/att/notes.txt (notes.txt, text/plain)]",
           "[Attached file: /tmp/att/raw.heic (raw.heic, image/heic)]"
         ].join("\n\n"),
@@ -1771,7 +1773,7 @@ describe("ClaudeProvider", () => {
     await promptPromise
   })
 
-  it("omits the text block for an image-only prompt", async () => {
+  it("notes the temp-file path even for an image-only prompt", async () => {
     const fake = new FakeQuery()
     const provider = makeProvider(fake)
     const createPromise = run(provider.createSession(definition, "/tmp", async () => undefined))
@@ -1795,6 +1797,10 @@ describe("ClaudeProvider", () => {
     )
     await settle()
     expect(fake.userMessages[0]?.message.content).toEqual([
+      {
+        text: "[Attached file: /tmp/att/a.jpg (a.jpg, image/jpeg)]",
+        type: "text"
+      },
       {
         source: {
           data: Buffer.from("img").toString("base64"),

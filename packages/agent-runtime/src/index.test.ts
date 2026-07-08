@@ -863,23 +863,45 @@ describe("prompt attachments", () => {
     )
   })
 
-  it("builds ACP prompt blocks: inline images when supported, path notes otherwise", () => {
+  it("builds ACP prompt blocks: resource_link for every file, inline images when supported", () => {
     expect(acpPrompt({ attachments: [image, file], text: "look" }, { image: true })).toEqual([
+      { text: "look", type: "text" },
       {
-        text: "look\n\n[Attached file: /tmp/att/notes.txt (notes.txt, text/plain)]",
-        type: "text"
+        mimeType: "image/png",
+        name: "shot.png",
+        size: 3,
+        type: "resource_link",
+        uri: "file:///tmp/att/shot.png"
       },
-      { data: Buffer.from("img").toString("base64"), mimeType: "image/png", type: "image" }
-    ])
-    // No image capability: images fall back to path notes too.
-    expect(acpPrompt({ attachments: [image], text: "look" }, {})).toEqual([
+      { data: Buffer.from("img").toString("base64"), mimeType: "image/png", type: "image" },
       {
-        text: "look\n\n[Attached file: /tmp/att/shot.png (shot.png, image/png)]",
-        type: "text"
+        mimeType: "text/plain",
+        name: "notes.txt",
+        size: 5,
+        type: "resource_link",
+        uri: "file:///tmp/att/notes.txt"
+      }
+    ])
+    // No image capability: the image still arrives as a readable resource_link.
+    expect(acpPrompt({ attachments: [image], text: "look" }, {})).toEqual([
+      { text: "look", type: "text" },
+      {
+        mimeType: "image/png",
+        name: "shot.png",
+        size: 3,
+        type: "resource_link",
+        uri: "file:///tmp/att/shot.png"
       }
     ])
     // Image-only prompts drop the empty text block.
     expect(acpPrompt({ attachments: [image], text: "" }, { image: true })).toEqual([
+      {
+        mimeType: "image/png",
+        name: "shot.png",
+        size: 3,
+        type: "resource_link",
+        uri: "file:///tmp/att/shot.png"
+      },
       { data: Buffer.from("img").toString("base64"), mimeType: "image/png", type: "image" }
     ])
     expect(acpPrompt({ text: "plain" }, { image: true })).toEqual([{ text: "plain", type: "text" }])

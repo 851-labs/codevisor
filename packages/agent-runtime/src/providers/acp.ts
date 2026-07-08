@@ -21,8 +21,8 @@ import { randomUUID } from "node:crypto"
 import { spawn } from "node:child_process"
 import type { ChildProcessWithoutNullStreams } from "node:child_process"
 import { Readable, Writable } from "node:stream"
+import { pathToFileURL } from "node:url"
 import { Effect } from "effect"
-import { withAttachmentNotes } from "../attachments.js"
 import type { BackgroundTerminalIntegration } from "../background-terminals.js"
 import { diffStatsFromTexts } from "../diff-stats.js"
 import type { DiffStat } from "@herdman/api"
@@ -449,27 +449,36 @@ export interface AcpPromptCapabilities {
   readonly image?: boolean
 }
 
-/// Builds the session/prompt content blocks: images inline as base64 when the
-/// harness declared image support, otherwise (and for all non-image files) a
-/// temp-file path note in the text block. Exported for unit tests — the live
-/// wiring runs inside the stdio SDK connection.
+/// Builds the session/prompt content blocks. Every attachment is surfaced as a
+/// `resource_link` — the ACP baseline that all agents must support — pointing
+/// at its materialized temp file, so any harness (opencode included) can read
+/// it from disk. Images are ALSO embedded inline as base64 when the harness
+/// declared image support, so multimodal agents see the pixels directly.
+/// Exported for unit tests — the live wiring runs inside the stdio SDK connection.
 export const acpPrompt = (
   input: PromptInput,
   capabilities: AcpPromptCapabilities
 ): Array<AcpContentBlock> => {
   const attachments = input.attachments ?? []
-  const inline =
-    capabilities.image === true
-      ? attachments.filter((attachment) => attachment.kind === "image")
-      : []
-  const noted = attachments.filter((attachment) => !inline.includes(attachment))
-  const text = withAttachmentNotes(input.text, noted)
   const blocks: Array<AcpContentBlock> = []
-  if (text !== "" || inline.length === 0) {
-    blocks.push({ text, type: "text" })
+  if (input.text !== "" || attachments.length === 0) {
+    blocks.push({ text: input.text, type: "text" })
   }
-  for (const image of inline) {
-    blocks.push({ data: image.data.toString("base64"), mimeType: image.mimeType, type: "image" })
+  for (const attachment of attachments) {
+    blocks.push({
+      mimeType: attachment.mimeType,
+      name: attachment.name,
+      size: attachment.data.length,
+      type: "resource_link",
+      uri: pathToFileURL(attachment.path).href
+    })
+    if (attachment.kind === "image" && capabilities.image === true) {
+      blocks.push({
+        data: attachment.data.toString("base64"),
+        mimeType: attachment.mimeType,
+        type: "image"
+      })
+    }
   }
   return blocks
 }
