@@ -27,9 +27,10 @@ scoped to the session's working directory.
      Carbon, AppKit, Foundation, CoreFoundation, Security, ApplicationServices,
      AudioToolbox, UniformTypeIdentifiers, GameController, Combine.
 
-`HerdManGhosttyApp` writes a temp `font-family = Menlo` config so the renderer
-has a font even though Ghostty's bundled JetBrains Mono isn't shipped (otherwise
-`ghostty_surface_new` fails).
+`HerdManGhosttyApp` writes a temp config with `font-family = Menlo` and the app's
+terminal font size so the renderer has a font even though Ghostty's bundled
+JetBrains Mono isn't shipped (otherwise `ghostty_surface_new` fails), and so the
+embedded terminal scale matches the rest of the app chrome.
 
 **Resources:** the `xterm-ghostty` terminfo + shell-integration are bundled as
 `HerdMan/Resources/ghostty-resources.tar.gz` (layout: `ghostty/shell-integration`

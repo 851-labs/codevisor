@@ -20,6 +20,12 @@ import os
 final class HerdManGhosttyApp {
     static let shared = HerdManGhosttyApp()
 
+    private static let ghosttyDefaultFontSize: Float = 13
+    private static let terminalFontScale: Float = 0.9
+    private static var terminalFontSize: Float {
+        ghosttyDefaultFontSize * terminalFontScale
+    }
+
     /// The single ghostty app instance shared by all surfaces. Implicitly
     /// unwrapped because `self` must be passed as the runtime-config userdata
     /// before `ghostty_app_new` can run (same reason upstream's App.app is
@@ -227,7 +233,11 @@ final class HerdManGhosttyApp {
     /// appearance; with a theme, it takes the theme's full palette.
     private static func writeOverrideConfig(theme: TerminalPalette?) -> String? {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("herdman-ghostty.conf")
-        var contents = "font-family = Menlo\n"
+        var contents = """
+        font-family = Menlo
+        font-size = \(terminalFontSize)
+
+        """
         if let theme {
             contents += "background = \(theme.background.hexString())\n"
             contents += "foreground = \(theme.foreground.hexString())\n"
