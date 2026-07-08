@@ -64,6 +64,9 @@ struct RootView: View {
             }
         }
         .environment(\.lightbox, lightbox)
+        // Locks the composer's submit action while an update installs (the
+        // app or selected server is about to restart).
+        .environment(\.isAppUpdateInProgress, environment.isUpdateInProgress)
         // Window-level so the viewer covers the sidebar too, matching a true
         // full-window lightbox rather than a session-column sheet. The window
         // toolbar (session title, sidebar toggle) draws above SwiftUI
@@ -93,6 +96,19 @@ struct RootView: View {
             if !AppPreview.isRunning {
                 environment.appUpdate.installHandler = { [environment] release in
                     try await AppUpdateInstaller(environment: environment).install(release)
+                }
+                // A remote client updated this machine's server: the bundled
+                // server can't swap the .app bundle it lives inside, so it
+                // hands the update back here. Run the full app update (swap
+                // bundle + relaunch), which brings a fresh bundled server. On
+                // failure installUpdate returns; restart the old server so the
+                // machine isn't left without one.
+                environment.localServer?.onUpdateRequested = { [environment] in
+                    Task { @MainActor in
+                        await environment.appUpdate.checkForUpdates()
+                        await environment.appUpdate.installUpdate()
+                        await environment.localServer?.ensureRunning()
+                    }
                 }
                 await runAppUpdateChecks()
             }

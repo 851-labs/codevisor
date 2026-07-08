@@ -221,6 +221,35 @@ struct MachineControllerTests {
         #expect(fake.appliedUpdates == 2)
     }
 
+    @Test("A busy server declines the update with a clear message")
+    func remoteServerUpdateRefusedWhileBusy() async throws {
+        let fake = SyncFakeServerClient(projects: [], sessions: [])
+        fake.configureUpdate(current: "0.1.0", latest: "0.2.0")
+        fake.configureBusy(true)
+        let projectList = ProjectListModel(
+            projectRepository: DefaultProjectRepository(store: InMemoryStore()),
+            sessionRepository: DefaultSessionRepository(store: InMemoryStore())
+        )
+        let controller = MachineController(
+            store: InMemoryStore(),
+            projectList: projectList,
+            clientFactory: { _ in fake },
+            updatePollInterval: .milliseconds(2),
+            updatePollAttempts: 50
+        )
+
+        await controller.updateSelectedServer()
+
+        // The server declined (chats running), so the phase reports a failure
+        // and the update was not applied/restarted.
+        if case let .failed(message) = controller.serverUpdatePhase {
+            #expect(message.contains("chats running"))
+        } else {
+            Issue.record("Expected a failed phase, got \(controller.serverUpdatePhase)")
+        }
+        controller.stopEventSync()
+    }
+
     private func waitForSync(_ predicate: () -> Bool) async throws {
         for _ in 0..<200 {
             if predicate() { return }
@@ -434,6 +463,7 @@ private final class SyncFakeServerClient: HerdManServerClienting, @unchecked Sen
     private var latestVersion = "0.1.0"
     private var downtimeRemaining = 0
     private var _appliedUpdates = 0
+    private var _busy = false
 
     struct ServerDownError: Error {}
 
@@ -445,6 +475,11 @@ private final class SyncFakeServerClient: HerdManServerClienting, @unchecked Sen
             currentVersion = current
             latestVersion = latest
         }
+    }
+
+    /// Makes `applyServerUpdate()` decline as busy (chats still running).
+    func configureBusy(_ value: Bool) {
+        lock.withLock { _busy = value }
     }
 
     func health() async throws -> ServerHealth {
@@ -475,6 +510,9 @@ private final class SyncFakeServerClient: HerdManServerClienting, @unchecked Sen
     func applyServerUpdate() async throws -> ServerUpdateApplied {
         lock.withLock {
             _appliedUpdates += 1
+            if _busy {
+                return ServerUpdateApplied(accepted: false, targetVersion: currentVersion, reason: "busy")
+            }
             guard currentVersion != latestVersion else {
                 return ServerUpdateApplied(accepted: false, targetVersion: currentVersion)
             }

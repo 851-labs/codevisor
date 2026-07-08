@@ -149,7 +149,22 @@ final class SessionStore {
     /// every first open.
     func isActivelyWorking(_ sessionId: UUID) -> Bool {
         guard let controller = controllers[sessionId] else { return false }
-        return controller.isSending
+        return Self.isActivelyWorking(controller)
+    }
+
+    /// Whether any cached session on a given server is doing real work
+    /// (generating a response or running pre-chat setup). Gates app/server
+    /// updates so a restart never interrupts a live turn; uses the same
+    /// "actively working" signal as the sort so the transient connect pulse
+    /// on first open doesn't briefly block the update button.
+    func hasActiveSessions(onServer serverId: String) -> Bool {
+        controllers.values.contains { controller in
+            controller.serverSession?.serverId == serverId && Self.isActivelyWorking(controller)
+        }
+    }
+
+    private static func isActivelyWorking(_ controller: SessionController) -> Bool {
+        controller.isSending
             || controller.setupPhases.contains(where: \.isRunning)
     }
 

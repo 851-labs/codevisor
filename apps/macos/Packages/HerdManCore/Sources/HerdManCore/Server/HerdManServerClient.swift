@@ -245,10 +245,15 @@ public struct ServerUpdateInfo: Decodable, Equatable, Sendable {
 public struct ServerUpdateApplied: Decodable, Equatable, Sendable {
     public var accepted: Bool
     public var targetVersion: String?
+    /// When `accepted` is false, why the server declined — e.g. "busy" while
+    /// chats are still running. Absent on older servers and on plain
+    /// already-up-to-date responses.
+    public var reason: String?
 
-    public init(accepted: Bool, targetVersion: String?) {
+    public init(accepted: Bool, targetVersion: String?, reason: String? = nil) {
         self.accepted = accepted
         self.targetVersion = targetVersion
+        self.reason = reason
     }
 }
 

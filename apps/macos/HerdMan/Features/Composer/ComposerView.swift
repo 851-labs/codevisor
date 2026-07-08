@@ -3,6 +3,13 @@ import AppKit
 import HerdManCore
 import ACPKit
 
+extension EnvironmentValues {
+    /// True while an app self-update or a selected-server update is installing.
+    /// Injected at the root; the composer reads it to lock its submit action so
+    /// no new turn starts while the app/server is about to restart.
+    @Entry var isAppUpdateInProgress: Bool = false
+}
+
 /// The chat composer card: a multiline input (Return sends, Shift+Return adds a
 /// newline) with an inline toolbar holding the combined model dropdown
 /// (model/thinking level/speed), the harness picker (before connecting), any
@@ -18,6 +25,9 @@ struct ComposerCard: View {
     var onTextViewReady: ((NSView) -> Void)? = nil
 
     @Environment(\.theme) private var theme
+    /// Locks the submit action while an app/server update is installing so no
+    /// new turn starts during the restart. Defaults to false (e.g. previews).
+    @Environment(\.isAppUpdateInProgress) private var isAppUpdateInProgress
     @State private var editorHeight: CGFloat = 24
     @State private var slashSelection = 0
     @State private var isSlashMenuDismissed = false
@@ -58,8 +68,10 @@ struct ComposerCard: View {
                     )
                     .frame(height: editorHeight)
                     // Frozen while a send is being accepted (the moment before
-                    // the session page opens); the send button spins instead.
-                    .disabled(controller.isSubmitting)
+                    // the session page opens; the send button spins instead)
+                    // and while an update is installing (the app/server is
+                    // about to restart).
+                    .disabled(controller.isSubmitting || isAppUpdateInProgress)
 
                     if controller.composerText.isEmpty {
                         Text(controller.isGoalComposerArmed ? "Describe the goal" : placeholder)
@@ -383,9 +395,9 @@ struct ComposerCard: View {
                 .background(Circle().fill(Color.secondary.opacity(0.16)))
                 .help("Sending…")
         } else {
-            let isEnabled = controller.isGoalComposerArmed
+            let isEnabled = !isAppUpdateInProgress && (controller.isGoalComposerArmed
                 ? !controller.composerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                : (controller.canSend || !visibleSlashMatches.isEmpty)
+                : (controller.canSend || !visibleSlashMatches.isEmpty))
             Button { submitOrAcceptSlash() } label: {
                 Image(systemName: "arrow.up")
                     .font(.system(size: 12, weight: .bold))
@@ -400,8 +412,8 @@ struct ComposerCard: View {
             .buttonStyle(.plain)
             .disabled(!isEnabled)
             .onHover { isSendButtonHovered = $0 }
-            .help("Send (↩)")
-            .tooltip("Send (↩)")
+            .help(isAppUpdateInProgress ? "Updating… you can send once the update finishes." : "Send (↩)")
+            .tooltip(isAppUpdateInProgress ? "Updating… you can send once the update finishes." : "Send (↩)")
         }
     }
 

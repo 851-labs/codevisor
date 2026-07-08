@@ -318,6 +318,15 @@ public final class MachineController {
         do {
             let applied = try await client.applyServerUpdate()
             guard applied.accepted else {
+                if applied.reason == "busy" {
+                    // The server still has chats mid-turn; updating now would
+                    // kill them. The banner disables its button for this app's
+                    // own chats, but another client could have started one.
+                    serverUpdatePhase = .failed(
+                        "This server still has chats running. Wait for them to finish, then update."
+                    )
+                    return
+                }
                 // Nothing to do (already up to date); refresh the banner state.
                 await refreshStatus(for: machineId)
                 serverUpdatePhase = .idle

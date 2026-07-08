@@ -757,6 +757,66 @@ describe("@herdman/server", () => {
     expect((await jsonRequest(localhostSecured, "/v1/info")).status).toBe(200)
   })
 
+  it("refuses to apply an update while a chat is mid-turn", async () => {
+    const { agents, services } = await makeServices("server-busy")
+    const server = await run(
+      startHerdManServer(
+        services,
+        defaultServerConfig({
+          id: "server-busy",
+          port: 0,
+          updater: {
+            apply: async () => undefined,
+            check: async () => ({
+              channel: "stable",
+              checkedAt: "2026-06-30T00:00:00.000Z",
+              currentVersion: "0.1.0",
+              latestVersion: "0.2.0",
+              migrationState: "idle" as const,
+              updateAvailable: true
+            })
+          }
+        })
+      )
+    )
+    runningServers.push(server)
+
+    const workspaceRoot = mkdtempSync(join(tmpdir(), "herdman-server-busy-"))
+    tempDirs.push(workspaceRoot)
+    const workspaceFolder = join(workspaceRoot, "herdman")
+    mkdirSync(workspaceFolder)
+    const workspace = (
+      await jsonRequest(server, "/v1/projects", {
+        body: JSON.stringify({ folderPath: workspaceFolder }),
+        method: "POST"
+      })
+    ).body as { readonly id: string }
+    const session = (
+      await jsonRequest(server, "/v1/sessions", {
+        body: JSON.stringify({ projectId: workspace.id, harnessId: "codex", title: "Busy" }),
+        method: "POST"
+      })
+    ).body as { readonly id: string }
+
+    // "slow prompt" keeps the session in activePromptSessions for ~250ms; the
+    // update must be refused for that whole window.
+    await jsonRequest(server, `/v1/sessions/${session.id}/prompt`, {
+      body: JSON.stringify({ text: "slow prompt" }),
+      method: "POST"
+    })
+    await waitFor(() => agents.prompts.length === 1)
+
+    const busy = await jsonRequest(server, "/v1/update/apply", { method: "POST" })
+    expect(busy.status).toBe(200)
+    expect(busy.body).toMatchObject({ accepted: false, reason: "busy" })
+
+    // Once the turn finishes the update goes through again.
+    await waitFor(async () => {
+      const applied = await jsonRequest(server, "/v1/update/apply", { method: "POST" })
+      return applied.status === 202
+    })
+  })
+
   it("applies the CORS allowlist to browser origins", async () => {
     const { services } = await makeServices("server-cors")
     const server = await run(

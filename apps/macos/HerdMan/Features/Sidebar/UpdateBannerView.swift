@@ -7,7 +7,12 @@ import HerdManCore
 struct UpdateBannerView: View {
     var model: AppUpdateModel
     let release: AppUpdateRelease
+    /// Blocks the install while chats are still running: replacing the app
+    /// (and restarting the bundled server) mid-turn would kill live work.
+    var hasRunningChats: Bool = false
     @Environment(\.theme) private var theme
+
+    private static let runningChatsHint = "Update once all of your chats are completed."
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -24,10 +29,17 @@ struct UpdateBannerView: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.small)
+                    .disabled(hasRunningChats)
+                    .help(hasRunningChats ? Self.runningChatsHint : "")
                 }
             }
 
-            if let message = model.failureMessage {
+            if hasRunningChats, !model.isUpdating {
+                Text(Self.runningChatsHint)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else if let message = model.failureMessage {
                 Text(message)
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -56,7 +68,12 @@ struct ServerUpdateBannerView: View {
     var machines: MachineController
     let machine: HerdManMachine
     let update: ServerUpdateInfo
+    /// Blocks the remote update while chats are still running on that machine:
+    /// the server restarts to apply it, which would kill live turns.
+    var hasRunningChats: Bool = false
     @Environment(\.theme) private var theme
+
+    private static let runningChatsHint = "Update once all of the chats on this machine are completed."
 
     private var isUpdating: Bool { machines.serverUpdatePhase == .updating }
 
@@ -80,10 +97,17 @@ struct ServerUpdateBannerView: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.small)
+                    .disabled(hasRunningChats)
+                    .help(hasRunningChats ? Self.runningChatsHint : "")
                 }
             }
 
-            if let failureMessage {
+            if hasRunningChats, !isUpdating {
+                Text(Self.runningChatsHint)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else if let failureMessage {
                 Text(failureMessage)
                     .font(.caption)
                     .foregroundStyle(.secondary)

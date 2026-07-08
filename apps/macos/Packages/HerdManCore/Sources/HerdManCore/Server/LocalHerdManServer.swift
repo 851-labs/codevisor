@@ -48,6 +48,17 @@ public final class LocalHerdManServer {
 
     public private(set) var state: LocalHerdManServerState = .idle
 
+    /// Invoked when the bundled server exits asking the app to take over the
+    /// update: a remote client triggered a server update, but a server that
+    /// lives inside the .app bundle can't replace that bundle, so it hands the
+    /// update back here. The app runs its full update (swap bundle + relaunch).
+    public var onUpdateRequested: (@MainActor () -> Void)?
+
+    /// Exit status the bundled server uses to ask the app to perform the
+    /// update instead of self-swapping a standalone runtime. Must match
+    /// `APP_UPDATE_HANDOFF_EXIT_CODE` in apps/server/src/main.ts.
+    public static let updateHandoffExitStatus: Int32 = 85
+
     public init(
         client: any HerdManServerClienting,
         config: HerdManServerConfig = .localDefault,
@@ -113,7 +124,12 @@ public final class LocalHerdManServer {
         }
 
         do {
-            let serverEnvironment = await serverEnvironmentProvider()
+            var serverEnvironment = await serverEnvironmentProvider()
+            // Marks this server as launched by (and living inside) the app
+            // bundle, so its self-updater hands app-bundle updates back to us
+            // instead of swapping a standalone runtime the next app launch
+            // would discard.
+            serverEnvironment["HERDMAN_APP_HOSTED"] = "1"
             let request = LocalHerdManServerLaunchRequest(
                 nodeExecutable: nodeExecutable,
                 entrypoint: entrypoint,
@@ -124,8 +140,10 @@ public final class LocalHerdManServer {
                 name: Self.serverDisplayName(),
                 environment: serverEnvironment
             )
-            process = try launcher(request)
-            return await waitUntilHealthy(process: process)
+            let launched = try launcher(request)
+            process = launched
+            observeTermination(of: launched)
+            return await waitUntilHealthy(process: launched)
         } catch {
             state = .unavailable(String(describing: error))
             return state
@@ -146,6 +164,24 @@ public final class LocalHerdManServer {
         }
         process = nil
         state = .idle
+    }
+
+    /// Watches the launched server for the update-handoff exit status, hopping
+    /// to the main actor to invoke `onUpdateRequested`. Any other exit (a
+    /// normal shutdown SIGTERM, a crash) is ignored — only the agreed status
+    /// means "the app should update itself."
+    private func observeTermination(of process: Process) {
+        process.terminationHandler = { [weak self] finished in
+            let status = finished.terminationStatus
+            Task { @MainActor in
+                self?.handleTermination(status: status)
+            }
+        }
+    }
+
+    private func handleTermination(status: Int32) {
+        guard status == Self.updateHandoffExitStatus else { return }
+        onUpdateRequested?()
     }
 
     /// The version stamped into the bundled runtime next to its entrypoint.

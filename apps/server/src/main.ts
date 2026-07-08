@@ -25,6 +25,13 @@ import {
 
 const SERVER_PROCESS_TITLE = "herdman-server"
 
+/// Exit status used to hand an update back to a host macOS app: a server that
+/// lives inside the .app bundle can't replace that bundle, so instead of
+/// swapping a standalone runtime (which the app's next launch would discard) it
+/// exits with this status and the app performs the full app update + relaunch.
+/// Must match `LocalHerdManServer.updateHandoffExitStatus`.
+const APP_UPDATE_HANDOFF_EXIT_CODE = 85
+
 process.title = SERVER_PROCESS_TITLE
 
 const parseArgs = (args: ReadonlyArray<string>): Record<string, string> => {
@@ -130,6 +137,17 @@ const makeSelfUpdater = (options: {
   const apply = async (): Promise<void> => {
     const info = await check()
     if (!info.updateAvailable) {
+      return
+    }
+    // A macOS app hosts this server as a child inside its .app bundle: a
+    // standalone runtime swap here lives under Application Support and would be
+    // discarded on the app's next launch (which re-runs the bundled runtime).
+    // Hand the update back to the app — it replaces the whole bundle and
+    // relaunches, bringing a fresh bundled server — by exiting with the agreed
+    // status the app is watching for.
+    if (process.env.HERDMAN_APP_HOSTED === "1") {
+      console.log("Handing update off to the host macOS app")
+      setTimeout(() => process.exit(APP_UPDATE_HANDOFF_EXIT_CODE), 300)
       return
     }
     const target = releaseTarget()

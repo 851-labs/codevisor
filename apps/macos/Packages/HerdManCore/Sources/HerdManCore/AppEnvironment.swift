@@ -30,6 +30,12 @@ public final class AppEnvironment {
         machines.selectedClient
     }
 
+    /// True while an app self-update or a selected-server update is installing.
+    /// Drives the composer lock so no new turn starts during the restart.
+    public var isUpdateInProgress: Bool {
+        appUpdate.isUpdating || machines.serverUpdatePhase == .updating
+    }
+
     public var harnessService: any HarnessServicing {
         harnessService(for: machines.selectedMachineId)
     }

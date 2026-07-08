@@ -375,6 +375,13 @@ const handleRequest = async (
       if (config.updater === undefined) {
         throw new HttpFailure(409, "This server does not support remote updates")
       }
+      // Refuse to restart while chats are mid-turn — applying the update would
+      // kill the in-flight work. Clients disable their update button too, but
+      // another client on this server could still ask.
+      if (routeState.activePromptSessions.size > 0) {
+        writeJson(response, 200, { accepted: false, reason: "busy" })
+        return
+      }
       const info = await config.updater.check()
       if (!info.updateAvailable) {
         writeJson(response, 200, { accepted: false, targetVersion: info.currentVersion })

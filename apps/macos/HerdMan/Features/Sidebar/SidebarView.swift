@@ -128,21 +128,27 @@ struct SidebarView: View {
                release.version != skippedUpdateVersion {
                 UpdateBannerView(
                     model: environment.appUpdate,
-                    release: release
+                    release: release,
+                    hasRunningChats: store?.hasActiveSessions(onServer: HerdManMachine.local.id) ?? false
                 )
                 .padding(8)
                 .transition(.move(edge: .top).combined(with: .opacity))
             }
             // The selected remote machine's server has a newer release. (For
             // the local machine the app banner above covers app + server.)
-            if let serverUpdate = environment.machines.selectedServerUpdate,
+            // Gated behind the local app being current: the user updates their
+            // own machine before pushing updates to a remote one, so the two
+            // banners are never shown at the same time.
+            if environment.appUpdate.availableRelease == nil,
+               let serverUpdate = environment.machines.selectedServerUpdate,
                serverUpdate.updateAvailable,
                !environment.machines.selectedMachine.isLocal,
                skippedServerUpdate != serverUpdateSkipKey(serverUpdate) {
                 ServerUpdateBannerView(
                     machines: environment.machines,
                     machine: environment.machines.selectedMachine,
-                    update: serverUpdate
+                    update: serverUpdate,
+                    hasRunningChats: store?.hasActiveSessions(onServer: environment.machines.selectedMachineId) ?? false
                 )
                 .padding(8)
                 .transition(.move(edge: .top).combined(with: .opacity))
