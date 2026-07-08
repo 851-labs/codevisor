@@ -72,14 +72,14 @@ export function NewChatScreen({ preferredProjectId }: { preferredProjectId?: str
             <p className="text-muted-foreground">Use the + next to projects in the sidebar.</p>
           </div>
         ) : (
-          <h1 className="flex flex-wrap items-center justify-center text-[26px] font-semibold">
-            <span>What should we build in&nbsp;</span>
+          <h1 className="text-center text-[26px] leading-relaxed font-semibold text-balance">
+            What should we build in{" "}
             <ProjectMenu
               projects={projects}
               selected={selectedProject}
               onSelect={(project) => setSelectedProjectId(project.id)}
             />
-            <span>?</span>
+            ?
           </h1>
         )}
         {projects.length > 0 && (
