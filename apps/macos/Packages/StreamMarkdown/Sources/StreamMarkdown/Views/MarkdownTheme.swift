@@ -18,6 +18,8 @@ public struct MarkdownTheme: Sendable {
     public var blockSpacing: CGFloat
     /// Extra vertical breathing room between list items (points).
     public var listItemSpacing: CGFloat
+    /// Extra space between wrapped lines within a block (points).
+    public var lineSpacing: CGFloat
     public var codeBackground: Color
     /// Background tint for `` `inline code` `` chips.
     public var inlineCodeBackground: Color
@@ -35,6 +37,7 @@ public struct MarkdownTheme: Sendable {
         inlineCodeFont: Font = .system(.callout, design: .monospaced),
         blockSpacing: CGFloat = 10,
         listItemSpacing: CGFloat = 4,
+        lineSpacing: CGFloat = 3,
         codeBackground: Color = Color.secondary.opacity(0.12),
         inlineCodeBackground: Color = Color.secondary.opacity(0.18),
         quoteBarColor: Color = Color.secondary.opacity(0.4),
@@ -47,6 +50,7 @@ public struct MarkdownTheme: Sendable {
         self.inlineCodeFont = inlineCodeFont
         self.blockSpacing = blockSpacing
         self.listItemSpacing = listItemSpacing
+        self.lineSpacing = lineSpacing
         self.codeBackground = codeBackground
         self.inlineCodeBackground = inlineCodeBackground
         self.quoteBarColor = quoteBarColor

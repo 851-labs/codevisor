@@ -21,6 +21,7 @@ struct MarkdownTextRunView: View {
     var body: some View {
         memo.text(for: blocks, theme: theme)
             .font(theme.bodyFont)
+            .lineSpacing(theme.lineSpacing)
             .textSelection(.enabled)
             .fixedSize(horizontal: false, vertical: true)
             .textRenderer(InlineCodeChipRenderer(background: theme.inlineCodeBackground))
@@ -37,8 +38,10 @@ struct MarkdownTextRunView: View {
             if index > 0, !result.characters.isEmpty {
                 var separator = AttributedString("\n\n")
                 // The empty line between blocks takes its height from this
-                // font, approximating the theme's block spacing.
-                separator.font = .system(size: max(2, theme.blockSpacing * 0.8))
+                // font, approximating the theme's block spacing. Line spacing
+                // is applied above and below the blank line too, so subtract
+                // it to keep the block rhythm as lineSpacing grows.
+                separator.font = .system(size: max(2, (theme.blockSpacing - 2 * theme.lineSpacing) * 0.8))
                 result += separator
             }
             result += piece
@@ -79,8 +82,10 @@ struct MarkdownTextRunView: View {
                 // Same trick as the block separator: an empty line whose tiny
                 // font height adds `listItemSpacing` of air between items,
                 // since per-range line spacing isn't available in SwiftUI.
+                // Line spacing already contributes around the blank line, so
+                // it counts toward the item gap.
                 var separator = AttributedString("\n\n")
-                separator.font = .system(size: max(1, theme.listItemSpacing * 0.8))
+                separator.font = .system(size: max(1, (theme.listItemSpacing - 2 * theme.lineSpacing) * 0.8))
                 result += separator
             }
             var marker = AttributedString("\(item.marker) ")
