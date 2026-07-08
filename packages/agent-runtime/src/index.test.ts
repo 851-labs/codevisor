@@ -5,10 +5,14 @@ import { join } from "node:path"
 import { describe, expect, it } from "vitest"
 import {
   AgentRuntime,
+  acpModelConfigId,
+  acpModelConfigOption,
   acpPermissionOutcome,
   acpPermissionQuestion,
   acpProtocolVersion,
   acpPrompt,
+  applyAcpModelSelection,
+  extractAcpModelState,
   locateExecutableOnPath,
   makeAgentRuntime,
   normalizeModeState,
@@ -828,6 +832,157 @@ describe("@herdman/agent-runtime", () => {
     ])
     // Descriptions still pass through untouched.
     expect(state.availableModes[1]?.description).toBe("think first")
+  })
+})
+
+describe("acp model-selection extension", () => {
+  type ModelSetter = Parameters<typeof applyAcpModelSelection>[0]
+  const fakeConnection = (
+    request: (method: string, params: unknown) => Promise<unknown>
+  ): ModelSetter => ({ agent: { request } }) as unknown as ModelSetter
+
+  it("reads the models extension off a session/new response into a model picker", () => {
+    const state = extractAcpModelState({
+      sessionId: "s-1",
+      models: {
+        currentModelId: "grok-4.5",
+        availableModels: [
+          { modelId: "grok-4.5", name: "Grok 4.5", description: "frontier" },
+          { modelId: "grok-composer-2.5-fast", name: "Composer 2.5" }
+        ]
+      }
+    })
+    expect(state).toEqual({
+      currentModelId: "grok-4.5",
+      availableModels: [
+        { modelId: "grok-4.5", name: "Grok 4.5", description: "frontier" },
+        { modelId: "grok-composer-2.5-fast", name: "Composer 2.5" }
+      ]
+    })
+    expect(
+      acpModelConfigOption({
+        currentModelId: "grok-4.5",
+        availableModels: [
+          { modelId: "grok-4.5", name: "Grok 4.5", description: "frontier" },
+          { modelId: "grok-composer-2.5-fast", name: "Composer 2.5" }
+        ]
+      })
+    ).toEqual({
+      category: "model",
+      currentValue: "grok-4.5",
+      id: acpModelConfigId,
+      name: "Model",
+      options: [
+        { value: "grok-4.5", name: "Grok 4.5", description: "frontier" },
+        { value: "grok-composer-2.5-fast", name: "Composer 2.5" }
+      ]
+    })
+  })
+
+  it("ignores responses without a well-formed models extension", () => {
+    expect(extractAcpModelState(undefined)).toBeUndefined()
+    expect(extractAcpModelState({})).toBeUndefined()
+    expect(extractAcpModelState({ models: null })).toBeUndefined()
+    expect(
+      extractAcpModelState({ models: { currentModelId: 1, availableModels: [] } })
+    ).toBeUndefined()
+    expect(
+      extractAcpModelState({ models: { currentModelId: "m", availableModels: "nope" } })
+    ).toBeUndefined()
+    // Entries without a string modelId are dropped; if none remain, treat the
+    // extension as absent rather than surfacing an empty picker.
+    expect(
+      extractAcpModelState({
+        models: { currentModelId: "m", availableModels: [{ name: "no id" }, 7] }
+      })
+    ).toBeUndefined()
+  })
+
+  it("falls back to the model id when an entry omits a display name", () => {
+    expect(
+      extractAcpModelState({
+        models: { currentModelId: "m1", availableModels: [{ modelId: "m1" }] }
+      })
+    ).toEqual({ currentModelId: "m1", availableModels: [{ modelId: "m1", name: "m1" }] })
+  })
+
+  it("applies a model change via session/set_model and rebuilds the picker", async () => {
+    const calls: Array<{ readonly method: string; readonly params: unknown }> = []
+    const connection = fakeConnection(async (method, params) => {
+      calls.push({ method, params })
+      return { _meta: { model: { Ok: "grok-composer-2.5-fast" } } }
+    })
+    const states = new Map([
+      [
+        "s-1",
+        {
+          currentModelId: "grok-4.5",
+          availableModels: [
+            { modelId: "grok-4.5", name: "Grok 4.5" },
+            { modelId: "grok-composer-2.5-fast", name: "Composer 2.5" }
+          ]
+        }
+      ]
+    ])
+    const options = await applyAcpModelSelection(
+      connection,
+      states,
+      "s-1",
+      "grok-composer-2.5-fast"
+    )
+    expect(calls).toEqual([
+      {
+        method: "session/set_model",
+        params: { modelId: "grok-composer-2.5-fast", sessionId: "s-1" }
+      }
+    ])
+    expect(options).toEqual([
+      {
+        category: "model",
+        currentValue: "grok-composer-2.5-fast",
+        id: acpModelConfigId,
+        name: "Model",
+        options: [
+          { value: "grok-4.5", name: "Grok 4.5" },
+          { value: "grok-composer-2.5-fast", name: "Composer 2.5" }
+        ]
+      }
+    ])
+    expect(states.get("s-1")?.currentModelId).toBe("grok-composer-2.5-fast")
+  })
+
+  it("falls back to a single-entry picker for a resumed session with no cached models", async () => {
+    const connection = fakeConnection(async () => ({ _meta: { model: { Ok: "m2" } } }))
+    const options = await applyAcpModelSelection(connection, new Map(), "s-2", "m2")
+    expect(options).toEqual([
+      {
+        category: "model",
+        currentValue: "m2",
+        id: acpModelConfigId,
+        name: "Model",
+        options: [{ value: "m2", name: "m2" }]
+      }
+    ])
+  })
+
+  it("uses the requested model id when the setter omits an Ok value", async () => {
+    const connection = fakeConnection(async () => ({}))
+    const options = await applyAcpModelSelection(connection, new Map(), "s-3", "m3")
+    expect(options[0]?.currentValue).toBe("m3")
+  })
+
+  it("throws when session/set_model reports a string error", async () => {
+    const connection = fakeConnection(async () => ({ _meta: { model: { Err: "unknown model" } } }))
+    await expect(applyAcpModelSelection(connection, new Map(), "s-4", "bogus")).rejects.toThrow(
+      "session/set_model failed: unknown model"
+    )
+  })
+
+  it("stringifies non-string set_model errors", async () => {
+    const connection = fakeConnection(async () => ({ _meta: { model: { Err: { code: 42 } } } }))
+    await expect(applyAcpModelSelection(connection, new Map(), "s-5", "bogus")).rejects.toThrow(
+      'session/set_model failed: {"code":42}'
+    )
   })
 })
 

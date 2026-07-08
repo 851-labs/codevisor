@@ -32,10 +32,14 @@ export * from "./diff-stats.js"
 export * from "./shell-env.js"
 export * from "./agent-sessions.js"
 export {
+  acpModelConfigId,
+  acpModelConfigOption,
   acpPermissionOutcome,
   acpPermissionQuestion,
   acpProtocolVersion,
   acpPrompt,
+  applyAcpModelSelection,
+  extractAcpModelState,
   makeAcpProvider,
   normalizeModeState,
   runtimeEventFromNotification,

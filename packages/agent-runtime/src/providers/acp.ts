@@ -501,6 +501,10 @@ const sdkConnection = (
 ): AcpAgentConnection => {
   connection.closed.catch(() => undefined)
 
+  // Per-session model list from the ACP model-selection extension, cached so a
+  // later `session/set_model` can rebuild the picker with the new current value.
+  const modelStates = new Map<string, AcpModelState>()
+
   return {
     ...(questions === undefined
       ? {}
@@ -516,15 +520,23 @@ const sdkConnection = (
           cwd,
           mcpServers: []
         })
-        return sessionMetadata(response)
+        const modelState = extractAcpModelState(response)
+        if (modelState !== undefined) {
+          modelStates.set(response.sessionId, modelState)
+        }
+        return sessionMetadata(response, modelState)
       }),
     loadSession: (sessionId, cwd) =>
       adapterPromise("loadSession", async () => {
-        await connection.agent.request(acp.methods.agent.session.load, {
+        const response = await connection.agent.request(acp.methods.agent.session.load, {
           cwd,
           mcpServers: [],
           sessionId
         })
+        const modelState = extractAcpModelState(response)
+        if (modelState !== undefined) {
+          modelStates.set(sessionId, modelState)
+        }
         return sessionId
       }),
     prompt: (sessionId, input) =>
@@ -548,6 +560,12 @@ const sdkConnection = (
       }),
     setConfigOption: (sessionId, configId, value) =>
       adapterPromise("setConfigOption", async () => {
+        // The model picker is the ACP model-selection extension, applied via
+        // `session/set_model`. Grok doesn't implement `session/set_config_option`
+        // at all, so routing a model change through it would 404.
+        if (configId === acpModelConfigId) {
+          return applyAcpModelSelection(connection, modelStates, sessionId, value)
+        }
         const response = await connection.agent.request(acp.methods.agent.session.setConfigOption, {
           configId,
           sessionId,
@@ -784,13 +802,143 @@ const captureStderr = (child: ChildProcessWithoutNullStreams): (() => string) =>
 }
 /* v8 ignore stop */
 
-const sessionMetadata = (response: NewSessionResponse): AgentSessionMetadata => ({
-  sessionId: response.sessionId,
-  ...(response.modes === undefined || response.modes === null
-    ? {}
-    : { modes: normalizeModeState(response.modes) }),
-  configOptions: normalizeConfigOptions(response.configOptions ?? [])
+/// The synthesized config-option id for the ACP model-selection extension.
+/// Agents that report `session/new.models` (e.g. grok) expose their model list
+/// via this optional extension rather than a `configOptions` entry, and apply a
+/// change through `session/set_model` — NOT `session/set_config_option` (which
+/// grok doesn't implement at all). `setConfigOption` routes this id accordingly.
+export const acpModelConfigId = "model"
+
+interface AcpModelInfo {
+  readonly modelId: string
+  readonly name: string
+  readonly description?: string
+}
+
+interface AcpModelState {
+  readonly currentModelId: string
+  readonly availableModels: ReadonlyArray<AcpModelInfo>
+}
+
+/// Reads the optional ACP model-selection extension off a `session/new` (or
+/// `session/load`) response. The field is not part of the SDK's typed schema,
+/// so it arrives untyped — the SDK forwards the raw JSON-RPC result unparsed —
+/// hence the defensive shape checks. Returns undefined when absent or malformed
+/// so agents without the extension are left untouched (no empty picker).
+export const extractAcpModelState = (response: unknown): AcpModelState | undefined => {
+  if (typeof response !== "object" || response === null) {
+    return undefined
+  }
+  const models = (response as { readonly models?: unknown }).models
+  if (typeof models !== "object" || models === null) {
+    return undefined
+  }
+  const currentModelId = (models as { readonly currentModelId?: unknown }).currentModelId
+  const rawAvailable = (models as { readonly availableModels?: unknown }).availableModels
+  if (typeof currentModelId !== "string" || !Array.isArray(rawAvailable)) {
+    return undefined
+  }
+  const availableModels = rawAvailable.flatMap((entry) => {
+    if (typeof entry !== "object" || entry === null) {
+      return []
+    }
+    const model = entry as {
+      readonly modelId?: unknown
+      readonly name?: unknown
+      readonly description?: unknown
+    }
+    if (typeof model.modelId !== "string") {
+      return []
+    }
+    return [
+      {
+        modelId: model.modelId,
+        name: typeof model.name === "string" ? model.name : model.modelId,
+        ...(typeof model.description === "string" ? { description: model.description } : {})
+      }
+    ]
+  })
+  if (availableModels.length === 0) {
+    return undefined
+  }
+  return { availableModels, currentModelId }
+}
+
+/// Synthesizes the HerdMan `category: "model"` picker option from the ACP model
+/// extension so clients render a model chip — mirroring the shape claude/codex
+/// build for their native model pickers.
+export const acpModelConfigOption = (state: AcpModelState): SessionConfigOption => ({
+  category: "model",
+  currentValue: state.currentModelId,
+  id: acpModelConfigId,
+  name: "Model",
+  options: state.availableModels.map((model) => ({
+    value: model.modelId,
+    name: model.name,
+    ...(model.description === undefined ? {} : { description: model.description })
+  }))
 })
+
+/// `session/set_model` answers with a Rust-style `Result` under `_meta.model`
+/// (`{ Ok: modelId }` on success, `{ Err }` on failure).
+interface AcpSetModelResult {
+  readonly _meta?: {
+    readonly model?: { readonly Ok?: unknown; readonly Err?: unknown }
+  }
+}
+
+/// Applies a model choice via the ACP model-selection setter and returns the
+/// refreshed config options to broadcast. An `Err` result throws so the client
+/// surfaces the failure instead of silently keeping the wrong model. Resumed
+/// sessions may have no cached model list (load didn't report one) — fall back
+/// to a single-entry option for the confirmed model so the chip still tracks it.
+export const applyAcpModelSelection = async (
+  connection: acp.ClientConnection,
+  modelStates: Map<string, AcpModelState>,
+  sessionId: string,
+  modelId: string
+): Promise<ReadonlyArray<SessionConfigOption>> => {
+  const result = (await connection.agent.request("session/set_model", {
+    modelId,
+    sessionId
+  })) as AcpSetModelResult
+  const outcome = result?._meta?.model
+  if (outcome?.Err !== undefined) {
+    const detail = typeof outcome.Err === "string" ? outcome.Err : JSON.stringify(outcome.Err)
+    throw new Error(`session/set_model failed: ${detail}`)
+  }
+  const currentModelId = typeof outcome?.Ok === "string" ? outcome.Ok : modelId
+  const existing = modelStates.get(sessionId)
+  const state: AcpModelState = {
+    availableModels:
+      existing === undefined
+        ? [{ modelId: currentModelId, name: currentModelId }]
+        : existing.availableModels,
+    currentModelId
+  }
+  modelStates.set(sessionId, state)
+  return [acpModelConfigOption(state)]
+}
+
+const sessionMetadata = (
+  response: NewSessionResponse,
+  modelState: AcpModelState | undefined
+): AgentSessionMetadata => {
+  const configOptions = normalizeConfigOptions(response.configOptions ?? [])
+  // Append the synthesized model picker unless the adapter already reported a
+  // native `category: "model"` option — don't double up.
+  const withModel =
+    modelState !== undefined && !configOptions.some((option) => option.category === "model")
+      ? [...configOptions, acpModelConfigOption(modelState)]
+      : configOptions
+  return {
+    sessionId: response.sessionId,
+    ...(response.modes === undefined || response.modes === null
+      ? {}
+      : { modes: normalizeModeState(response.modes) }),
+    configOptions: withModel
+  }
+}
 
 /// Best-effort mapping from agent-defined ACP mode ids/names onto HerdMan's
 /// canonical vocabulary. Order matters: the first matching pattern wins.
