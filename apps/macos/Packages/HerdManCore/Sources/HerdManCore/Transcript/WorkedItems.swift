@@ -28,6 +28,28 @@ public extension AssistantTurn {
         groupedItems(workedEntries)
     }
 
+    /// Worked items produced before the plan was proposed (exploration and
+    /// planning). When the turn has no plan this is the whole worked section, so
+    /// non-plan turns render exactly as before.
+    var workedItemsBeforePlan: [WorkedItem] {
+        guard let boundary = planBoundary else { return workedItems }
+        return groupedItems(workedSlice(0..<min(boundary, entries.count)))
+    }
+
+    /// Worked items produced after the plan was proposed — the implementation
+    /// that follows approval — so they render below the plan card in their own
+    /// section. Empty until work follows the plan.
+    var workedItemsAfterPlan: [WorkedItem] {
+        guard let boundary = planBoundary else { return [] }
+        return groupedItems(workedSlice(min(boundary, entries.count)..<entries.count))
+    }
+
+    /// Entries in `range`, minus the final-answer span (it renders separately).
+    private func workedSlice(_ range: Range<Int>) -> [TranscriptEntry] {
+        let finalIndex = finalTextIndex
+        return range.compactMap { index in index == finalIndex ? nil : entries[index] }
+    }
+
     /// Every entry grouped in strict arrival order, including trailing text.
     /// Used while the turn is generating so the transcript streams in place —
     /// text and tool groups must never reorder around each other mid-turn.
@@ -90,7 +112,7 @@ public extension AssistantTurn {
 /// e.g. "Read 6 files" or "Searched code, ran 2 commands".
 public enum ToolCallSummary {
     enum Category: Equatable {
-        case edit, read, search, webSearch, execute, fetch, delete, move, agent, other
+        case edit, read, search, webSearch, execute, fetch, delete, move, agent, question, other
     }
 
     static func category(_ kind: ToolKind?) -> Category {
@@ -104,6 +126,7 @@ public enum ToolCallSummary {
         case .delete: return .delete
         case .move: return .move
         case .agent: return .agent
+        case .question: return .question
         default: return .other
         }
     }
@@ -134,6 +157,7 @@ public enum ToolCallSummary {
         case .delete: return "trash"
         case .move: return "arrow.right.doc.on.clipboard"
         case .agent: return "wand.and.sparkles"
+        case .question: return "questionmark.bubble"
         case .other: return "wrench.and.screwdriver"
         }
     }
@@ -152,6 +176,7 @@ public enum ToolCallSummary {
         case .delete: return single ? "deleted a file" : "deleted \(count) files"
         case .move: return single ? "moved a file" : "moved \(count) files"
         case .agent: return single ? "ran an agent" : "ran \(count) agents"
+        case .question: return single ? "asked a question" : "asked \(count) questions"
         case .other: return single ? "ran a tool" : "ran \(count) tools"
         }
     }

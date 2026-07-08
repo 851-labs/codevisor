@@ -394,15 +394,102 @@ final class SessionController {
 
     // MARK: - Questions
 
+    /// The question the composer renders as a picker: a real blocking agent
+    /// question, or codex's client-side plan approval (below) when neither the
+    /// server nor a tool drives it.
+    var activeQuestion: QuestionRequest? { pendingQuestion ?? planApprovalRequest }
+
     /// The blocking agent question the composer renders as a picker.
     var pendingQuestion: QuestionRequest? { model?.pendingQuestion }
 
     func answerQuestion(answers: [String: QuestionAnswerEntry]) async {
+        // Codex's plan approval is a client-side prompt with no server question
+        // to answer — resolve it by messaging the model, not via the server.
+        if pendingPlanApproval {
+            await resolvePlanApproval(answers)
+            return
+        }
+        // Accepting Claude's ExitPlanMode approval ("Implement plan") also leaves
+        // plan mode, so the agent implements in build mode and the composer
+        // toggle reflects the move from planning to building. Switch first, then
+        // release the held tool.
+        if answers[QuestionRequest.exitPlanModeId]?.answers.first == QuestionRequest.implementPlanLabel,
+           isPlanModeOn {
+            await togglePlanMode()
+        }
         await model?.answerQuestion(answers: answers)
     }
 
     func cancelQuestion() async {
+        // Dismissing codex's plan prompt just keeps planning: no message, back
+        // to the composer.
+        if pendingPlanApproval {
+            pendingPlanApproval = false
+            return
+        }
         await model?.cancelQuestion()
+    }
+
+    // MARK: - Codex plan approval
+
+    /// Codex has no ExitPlanMode tool: when a plan-mode turn ends having
+    /// proposed a plan, we surface the same "implement this plan?" picker as a
+    /// client-side prompt. Answering it messages the model (there is no held
+    /// tool to resolve) — mirroring codex CLI's approve = leave-plan-mode +
+    /// "Implement the plan." user turn.
+    private(set) var pendingPlanApproval = false
+
+    /// Only harnesses that propose plans without a blocking approval tool use
+    /// this post-turn prompt (Claude's ExitPlanMode already drives its own).
+    private var usesPostTurnPlanApproval: Bool {
+        (connectedHarnessId ?? selectedHarnessId) == "codex"
+    }
+
+    /// The synthetic picker for the client-side plan approval, mirroring the
+    /// server-built one Claude sends.
+    private var planApprovalRequest: QuestionRequest? {
+        guard pendingPlanApproval else { return nil }
+        return QuestionRequest(
+            questionId: "codex-plan-approval",
+            questions: [QuestionSpec(
+                id: QuestionRequest.exitPlanModeId,
+                header: "Plan",
+                question: "Ready to implement this plan?",
+                options: [
+                    QuestionOption(label: QuestionRequest.implementPlanLabel, description: "Start building"),
+                    QuestionOption(label: QuestionRequest.keepPlanningLabel, description: "Keep refining in plan mode")
+                ],
+                allowsOther: false
+            )]
+        )
+    }
+
+    /// Fired at turn end: raise the plan prompt when a codex plan-mode turn
+    /// proposed a plan.
+    private func noteTurnEndedForPlanApproval() {
+        guard usesPostTurnPlanApproval, isPlanModeOn, !pendingPlanApproval else { return }
+        guard case let .assistant(message) = conversation.last,
+              let plan = message.turn.planDocument, !plan.isEmpty else { return }
+        pendingPlanApproval = true
+    }
+
+    private func resolvePlanApproval(_ answers: [String: QuestionAnswerEntry]) async {
+        pendingPlanApproval = false
+        let entry = answers[QuestionRequest.exitPlanModeId]
+        let note = (entry?.note ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if entry?.answers.first == QuestionRequest.implementPlanLabel {
+            // Approve: leave plan mode and tell the model to build. Codex has no
+            // exit-plan tool, so this rides as a normal user message.
+            if isPlanModeOn { await togglePlanMode() }
+            userSendSignal &+= 1
+            await model?.send(note.isEmpty ? "Implement the plan." : "Implement the plan.\n\n\(note)")
+        } else if !note.isEmpty {
+            // Keep planning, but a note is refinement feedback — send it so the
+            // model iterates (still in plan mode).
+            userSendSignal &+= 1
+            await model?.send(note)
+        }
+        // Keep planning with no note: nothing to send; the composer returns.
     }
 
     /// Selectable config options: live when connected, otherwise the cached
@@ -1169,7 +1256,10 @@ final class SessionController {
             modeState: modeStateByHarness[harness.id],
             configOptions: configOptionsByHarness[harness.id] ?? configCache.options(forHarness: harness.id)
         )
-        model.onTurnEnded = { [weak self] in self?.onTurnEnded?() }
+        model.onTurnEnded = { [weak self] in
+            self?.noteTurnEndedForPlanApproval()
+            self?.onTurnEnded?()
+        }
         if resumeAgentSessionId != nil {
             await model.loadHistory()
         }

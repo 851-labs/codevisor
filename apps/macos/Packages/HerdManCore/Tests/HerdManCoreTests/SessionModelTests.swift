@@ -887,7 +887,7 @@ struct SessionModelTests {
         #expect(client.questionAnswers.first?.0 == "q-1")
         #expect(client.questionAnswers.first?.1 == "answered")
 
-        // The provider's resolution event renders the answered card.
+        // The provider's resolution event renders an inline question tool call.
         client.emit(ServerEventEnvelope(
             id: 2,
             serverId: "local",
@@ -912,14 +912,16 @@ struct SessionModelTests {
         for _ in 0..<20 {
             await Task.yield()
             if case let .assistant(message) = model.conversation.last,
-               !message.turn.answeredQuestions.isEmpty { break }
+               message.turn.toolCalls.contains(where: { $0.kind == .question }) { break }
         }
         guard case let .assistant(assistant) = model.conversation.last else {
             Issue.record("expected assistant")
             return
         }
-        #expect(assistant.turn.answeredQuestions.first?.questionId == "q-1")
-        #expect(assistant.turn.answeredQuestions.first?.answers?["approach"]?.answers == ["MVP first"])
+        let questionCall = assistant.turn.toolCalls.first { $0.kind == .question }
+        #expect(questionCall?.toolCallId == "question:q-1")
+        #expect(questionCall?.title == "Which approach?")
+        #expect(questionCall?.content == [.content(.text("MVP first"))])
     }
 
     @Test("Cancelling a question posts the dismissal; turn end clears stale questions")

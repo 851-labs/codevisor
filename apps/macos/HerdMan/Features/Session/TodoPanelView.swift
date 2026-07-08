@@ -26,7 +26,7 @@ struct TodoPanelView: View {
                 HStack(spacing: 6) {
                     Image(systemName: "checklist")
                         .font(.caption)
-                        .foregroundStyle(theme.accent)
+                        .foregroundStyle(.secondary)
                     Text("Todos")
                         .font(.caption.weight(.semibold))
                     Text("\(completedCount)/\(plan.entries.count)")
@@ -83,7 +83,7 @@ struct TodoPanelView: View {
     private func color(for status: PlanEntryStatus) -> Color {
         switch status {
         case .pending: return Color.secondary.opacity(0.6)
-        case .inProgress: return theme.accent
+        case .inProgress: return Color.primary
         case .completed: return theme.statusOK
         }
     }
@@ -91,7 +91,7 @@ struct TodoPanelView: View {
     private func textStyle(for status: PlanEntryStatus) -> AnyShapeStyle {
         switch status {
         case .pending: return AnyShapeStyle(.secondary)
-        case .inProgress: return AnyShapeStyle(theme.accent)
+        case .inProgress: return AnyShapeStyle(Color.primary)
         case .completed: return AnyShapeStyle(.secondary)
         }
     }

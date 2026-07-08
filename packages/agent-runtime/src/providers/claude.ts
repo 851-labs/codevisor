@@ -408,6 +408,12 @@ export const makeClaudeProvider = (
         if (toolName === "AskUserQuestion") {
           return holdClaudeQuestion(session, toolInput)
         }
+        // ExitPlanMode's approval is the "implement this plan?" decision — give
+        // it a dedicated plan-approval question the client can render nicely,
+        // not a bare "Allow ExitPlanMode?" permission row.
+        if (toolName === "ExitPlanMode") {
+          return holdClaudePlanApproval(session, toolInput)
+        }
         return holdClaudeApproval(session, toolName, toolInput)
       },
       permissionMode: "bypassPermissions",
@@ -1179,6 +1185,55 @@ const holdClaudeApproval = (
         answer.outcome === "answered" && answer.answers?.[spec.id]?.answers[0] === "Allow"
           ? { behavior: "allow", updatedInput: toolInput }
           : { behavior: "deny", message: "User denied permission." }
+    })
+  })
+}
+
+/// The stable question id + option labels that tag Claude's ExitPlanMode
+/// approval, so clients recognize a plan approval and answer it. Kept in sync
+/// with the Swift client (ACPKit `QuestionRequest`).
+const EXIT_PLAN_MODE_QUESTION_ID = "exit_plan_mode"
+const IMPLEMENT_PLAN_LABEL = "Implement plan"
+const KEEP_PLANNING_LABEL = "Keep planning"
+
+/// ExitPlanMode's approval as a dedicated plan-approval question: the client
+/// renders an "implement this plan?" affordance (the plan markdown itself rides
+/// a separate `plan_document` update — see emitPlanUpdate). Approving lets the
+/// tool through so the model starts implementing; declining keeps it in plan
+/// mode, and the deny message nudges it to keep refining rather than stop.
+const holdClaudePlanApproval = (
+  session: ClaudeSession,
+  toolInput: Record<string, unknown>
+): Promise<ClaudeToolDecision> => {
+  const spec: QuestionSpec = {
+    allowsOther: false,
+    header: "Plan",
+    id: EXIT_PLAN_MODE_QUESTION_ID,
+    options: [
+      { description: "Start building", label: IMPLEMENT_PLAN_LABEL },
+      { description: "Keep refining in plan mode", label: KEEP_PLANNING_LABEL }
+    ],
+    question: "Ready to implement this plan?"
+  }
+  const questionId = randomUUID()
+  void session.emit({
+    kind: "session.output",
+    payload: { questionId, questions: [spec], sessionUpdate: "question" },
+    subjectId: session.key
+  })
+  return new Promise((resolve) => {
+    session.pendingQuestions.set(questionId, {
+      questions: [spec],
+      resolve,
+      respond: (answer) =>
+        answer.outcome === "answered" &&
+        answer.answers?.[spec.id]?.answers[0] === IMPLEMENT_PLAN_LABEL
+          ? { behavior: "allow", updatedInput: toolInput }
+          : {
+              behavior: "deny",
+              message:
+                "The user wants to keep refining the plan. Stay in plan mode and continue planning."
+            }
     })
   })
 }

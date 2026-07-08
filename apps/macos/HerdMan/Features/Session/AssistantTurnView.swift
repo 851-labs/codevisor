@@ -30,20 +30,34 @@ struct AssistantTurnView: View {
     // The default reproduces the old init seeding: expanded while running,
     // collapsed once finished / when a provider-asserted final is streaming.
     private var store: TranscriptDisclosureStore { disclosureStore ?? .previews }
-    private var disclosureKey: TranscriptDisclosureStore.Key { .turn(turnID) }
-    private var isExpanded: Bool {
-        let settled = !turn.isGenerating || turn.finalTextIsAsserted
-        return store.isExpanded(disclosureKey, default: initiallyExpanded ?? !settled)
+
+    /// Both worked sections: planning (above the plan card) and the
+    /// implementation that follows approval (below it).
+    private var sectionKeys: [TranscriptDisclosureStore.Key] {
+        [.turn(turnID), .turnImplementation(turnID)]
     }
 
-    private var showsWorkedSection: Bool {
-        turn.isGenerating || turn.hasWorkedContent || !turn.answeredQuestions.isEmpty
+    private func isExpanded(_ key: TranscriptDisclosureStore.Key) -> Bool {
+        let settled = !turn.isGenerating || turn.finalTextIsAsserted
+        return store.isExpanded(key, default: initiallyExpanded ?? !settled)
+    }
+
+    /// The planning section shows while the turn is still working toward a plan
+    /// (and for any non-plan turn); once a plan exists it shows only if there
+    /// was pre-plan work to display.
+    private func showsPlanningSection(_ items: [WorkedItem]) -> Bool {
+        if turn.planBoundary != nil { return !items.isEmpty }
+        return turn.isGenerating || !items.isEmpty
     }
 
     var body: some View {
+        let beforePlan = turn.workedItemsBeforePlan
+        let afterPlan = turn.workedItemsAfterPlan
         VStack(alignment: .leading, spacing: 14) {
-            if showsWorkedSection {
-                workedSection
+            // Planning/exploration collapses into the first "Worked for…"
+            // section, above the proposed plan.
+            if showsPlanningSection(beforePlan) {
+                workedSection(items: beforePlan, key: .turn(turnID), timerLabel: turn.planBoundary == nil)
             }
 
             if let planDocument = turn.planDocument, !planDocument.isEmpty {
@@ -51,6 +65,13 @@ struct AssistantTurnView: View {
             }
             // The step checklist lives in the pinned TodoPanelView above the
             // composer (session-level, all harnesses) rather than per turn.
+
+            // Once the plan is approved, the implementation gets its own
+            // "Worked for…" section BELOW the plan, so approved work reads in
+            // order (plan → build) instead of piling up above the plan card.
+            if !afterPlan.isEmpty {
+                workedSection(items: afterPlan, key: .turnImplementation(turnID), timerLabel: true)
+            }
 
             if turn.isThinking {
                 ShimmeringText.thinking
@@ -88,7 +109,9 @@ struct AssistantTurnView: View {
         .hoverTracking($isHovered)
         .onChange(of: turn.isGenerating) { _, generating in
             if generating {
-                if !hasAutoCollapsed { store.setExpanded(disclosureKey, true) }
+                if !hasAutoCollapsed {
+                    for key in sectionKeys { store.setExpanded(key, true) }
+                }
                 return
             }
             // Collapse once the assistant message is fully finished, when we
@@ -110,49 +133,48 @@ struct AssistantTurnView: View {
         // hours-long turn is most of the transcript's height) is a
         // main-thread layout hazard; past a size threshold collapse
         // instantly instead.
+        let collapse = { for key in sectionKeys { store.setExpanded(key, false) } }
         if turn.entries.count > 80 {
-            store.setExpanded(disclosureKey, false)
+            collapse()
         } else {
-            withAnimation(.snappy(duration: 0.28)) { store.setExpanded(disclosureKey, false) }
+            withAnimation(.snappy(duration: 0.28)) { collapse() }
         }
     }
 
-    /// Worked entries in strict arrival order (text stays in place between
-    /// tool groups); the final-answer candidate renders below instead, both
-    /// while streaming and once finished.
-    private var displayItems: [WorkedItem] {
-        turn.workedItems
-    }
-
-    private var workedSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
+    /// One "Worked for…" disclosure over `items`, keyed independently so the
+    /// planning and implementation sections collapse on their own.
+    private func workedSection(
+        items: [WorkedItem],
+        key: TranscriptDisclosureStore.Key,
+        timerLabel: Bool
+    ) -> some View {
+        let expanded = isExpanded(key)
+        return VStack(alignment: .leading, spacing: 12) {
             // Early-collapsed sections (asserted final answer streaming) are
             // already settled: give them the chevron so the user can peek at
             // the work while the answer is still writing.
             if turn.isGenerating, !hasAutoCollapsed {
-                workedHeader(showsChevron: false)
+                workedHeader(label: sectionLabel(timer: timerLabel), showsChevron: false, expanded: expanded)
             } else {
                 Button {
                     let settled = !turn.isGenerating || turn.finalTextIsAsserted
                     withAnimation(.snappy(duration: 0.28)) {
-                        store.toggle(disclosureKey, default: initiallyExpanded ?? !settled)
+                        store.toggle(key, default: initiallyExpanded ?? !settled)
                     }
                 } label: {
-                    workedHeader(showsChevron: true)
+                    workedHeader(label: sectionLabel(timer: timerLabel), showsChevron: true, expanded: expanded)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
             }
 
-            if isExpanded, !displayItems.isEmpty || !turn.answeredQuestions.isEmpty {
+            if expanded, !items.isEmpty {
                 VStack(alignment: .leading, spacing: 12) {
                     Divider()
-                    TranscriptItemsView(items: displayItems, turn: turn, isTurnActive: turn.isGenerating)
-                    // Question answers live here with the tool call that
-                    // asked them, not as standalone cards above the plan.
-                    ForEach(turn.answeredQuestions, id: \.questionId) { resolution in
-                        AnsweredQuestionView(resolution: resolution)
-                    }
+                    // Answered questions ride here too: the reducer synthesizes
+                    // a tool call for each, so they group and render inline with
+                    // the other tool calls that surround them.
+                    TranscriptItemsView(items: items, turn: turn, isTurnActive: turn.isGenerating)
                 }
                 .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
             }
@@ -160,14 +182,14 @@ struct AssistantTurnView: View {
         .clipped()
     }
 
-    private func workedHeader(showsChevron: Bool) -> some View {
+    private func workedHeader(label: some View, showsChevron: Bool, expanded: Bool) -> some View {
         HStack(spacing: 6) {
             label
             if showsChevron {
                 Image(systemName: "chevron.right")
                     .font(.caption2.weight(.semibold))
                     .foregroundStyle(.tertiary)
-                    .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                    .rotationEffect(.degrees(expanded ? 90 : 0))
             }
             Spacer(minLength: 0)
         }
@@ -175,16 +197,22 @@ struct AssistantTurnView: View {
         .foregroundStyle(.secondary)
     }
 
-    /// The worked-for label: a live-incrementing "Working for Xs" while the turn
-    /// is running, or a final "Worked for Xs" once done.
+    /// The section label: the live "Working for Xs" / final "Worked for Xs"
+    /// timer for the active work, or a static "Planned" for the planning
+    /// section once a plan exists (the implementation section carries the
+    /// timer from there on).
     @ViewBuilder
-    private var label: some View {
-        if turn.isGenerating {
-            TimelineView(.periodic(from: turn.startedAt ?? Date(), by: 1)) { context in
-                Text("Working for \(format(elapsedSeconds(to: context.date)))")
+    private func sectionLabel(timer: Bool) -> some View {
+        if timer {
+            if turn.isGenerating {
+                TimelineView(.periodic(from: turn.startedAt ?? Date(), by: 1)) { context in
+                    Text("Working for \(format(elapsedSeconds(to: context.date)))")
+                }
+            } else {
+                Text(workedTitle)
             }
         } else {
-            Text(workedTitle)
+            Text("Planned")
         }
     }
 

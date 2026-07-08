@@ -136,6 +136,16 @@ public struct QuestionRequest: Sendable, Codable, Equatable {
     }
 }
 
+public extension QuestionRequest {
+    /// The stable question id + accept label the agent-runtime tags onto
+    /// Claude's ExitPlanMode approval (see `claude.ts`). Kept in sync there so
+    /// the client recognizes an accepted plan and can leave plan mode as it
+    /// answers.
+    static let exitPlanModeId = "exit_plan_mode"
+    static let implementPlanLabel = "Implement plan"
+    static let keepPlanningLabel = "Keep planning"
+}
+
 public enum QuestionOutcome: String, Sendable, Codable, Equatable {
     case answered
     case cancelled

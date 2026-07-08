@@ -35,6 +35,37 @@ struct WorkedItemsTests {
         #expect(Set(items.map(\.id)).count == items.count)
     }
 
+    @Test("A plan boundary splits worked items into before/after the plan")
+    func planSplit() {
+        var t = AssistantTurn(entries: [tool("explore-1", .read), tool("explore-2", .search)])
+        // The plan is proposed after the two exploration calls.
+        t.planBoundary = t.entries.count
+        t.planDocument = "# Plan"
+        // Implementation follows approval, then the final answer.
+        t.entries.append(tool("impl-1", .edit))
+        t.entries.append(tool("impl-2", .execute))
+        t.entries.append(.text(id: "final", markdown: "done"))
+
+        let before = t.workedItemsBeforePlan
+        #expect(before.count == 1)
+        if case let .toolGroup(_, calls) = before.first {
+            #expect(calls.map(\.toolCallId) == ["explore-1", "explore-2"])
+        } else { Issue.record("expected a planning tool group") }
+
+        let after = t.workedItemsAfterPlan
+        #expect(after.count == 1) // the final-answer text is excluded from the slice
+        if case let .toolGroup(_, calls) = after.first {
+            #expect(calls.map(\.toolCallId) == ["impl-1", "impl-2"])
+        } else { Issue.record("expected an implementation tool group") }
+    }
+
+    @Test("Without a plan, all worked items stay in the before section")
+    func noPlanSplit() {
+        let t = turn([tool("a", .read), tool("b", .execute)])
+        #expect(t.workedItemsBeforePlan.count == t.workedItems.count)
+        #expect(t.workedItemsAfterPlan.isEmpty)
+    }
+
     @Test("An agent call breaks out of tool grouping as its own subagent item")
     func subagentBreaksGrouping() {
         let result = turn([

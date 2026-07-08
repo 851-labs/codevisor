@@ -204,6 +204,7 @@ struct ToolCallContentCard: View {
         case .search: return "Search"
         case .webSearch: return "Sources"
         case .fetch: return "Fetch"
+        case .question: return "Answer"
         default: return "Output"
         }
     }

@@ -47,9 +47,11 @@ public struct AssistantTurn: Sendable, Equatable {
     /// A proposed plan document (markdown) from plan mode — distinct from the
     /// step checklist in `plan`. Replaced wholesale per update.
     public var planDocument: String?
-    /// Questions the user answered during this turn, rendered as compact
-    /// cards (codex CLI keeps an answered-question history cell too).
-    public var answeredQuestions: [QuestionResolution]
+    /// The `entries` count at the moment the plan document was (last) proposed.
+    /// Splits the worked section into planning (before) and the implementation
+    /// that follows approval (after), so the latter renders below the plan card
+    /// instead of above it. nil when the turn produced no plan.
+    public var planBoundary: Int?
     public var startedAt: Date?
     public var endedAt: Date?
     /// Nested subagent threads, keyed by the parent (Task/agent) tool call id.
@@ -72,7 +74,7 @@ public struct AssistantTurn: Sendable, Equatable {
         stopReason: StopReason? = nil,
         plan: Plan? = nil,
         planDocument: String? = nil,
-        answeredQuestions: [QuestionResolution] = [],
+        planBoundary: Int? = nil,
         startedAt: Date? = nil,
         endedAt: Date? = nil,
         subagents: [String: SubagentTranscript] = [:],
@@ -85,7 +87,7 @@ public struct AssistantTurn: Sendable, Equatable {
         self.stopReason = stopReason
         self.plan = plan
         self.planDocument = planDocument
-        self.answeredQuestions = answeredQuestions
+        self.planBoundary = planBoundary
         self.startedAt = startedAt
         self.endedAt = endedAt
         self.subagents = subagents
@@ -167,7 +169,10 @@ public extension AssistantTurn {
         return max(0, endedAt.timeIntervalSince(startedAt))
     }
 
-    private var finalTextIndex: Int? {
+    /// Index of the final-answer text span, excluded from the worked sections
+    /// (it renders expanded below). Internal so the worked-section splitting in
+    /// `WorkedItems` can drop it from either slice.
+    var finalTextIndex: Int? {
         entries.indices.reversed().first { index in
             guard case let .text(id, _) = entries[index] else { return false }
             return textPhases[id] != .commentary

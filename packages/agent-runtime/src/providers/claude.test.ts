@@ -617,6 +617,61 @@ describe("ClaudeProvider", () => {
     })
   })
 
+  it("surfaces ExitPlanMode as a plan-approval question: implement allows, keep planning denies", async () => {
+    const fake = new FakeQuery()
+    const provider = makeProvider(fake)
+    const events: Array<RuntimeEvent> = []
+    const emit = async (event: RuntimeEvent): Promise<void> => {
+      events.push(event)
+    }
+    const createPromise = run(provider.createSession(definition, "/tmp", emit))
+    await settle()
+    fake.push(initMessage())
+    const created = await createPromise
+
+    const toolInput = { plan: "# The Plan\n\n1. Do it" }
+    const decision = fake.options!.canUseTool!("ExitPlanMode", toolInput as never, {} as never)
+    await settle()
+    const asked = events.at(-1)?.payload as Record<string, unknown>
+    expect(asked).toMatchObject({ sessionUpdate: "question" })
+    // No "message" line — the plan itself rides a separate plan_document.
+    expect(asked.message).toBeUndefined()
+    expect(asked.questions).toEqual([
+      {
+        allowsOther: false,
+        header: "Plan",
+        id: "exit_plan_mode",
+        options: [
+          { description: "Start building", label: "Implement plan" },
+          { description: "Keep refining in plan mode", label: "Keep planning" }
+        ],
+        question: "Ready to implement this plan?"
+      }
+    ])
+    await run(
+      created.handle.answerQuestion!(asked.questionId as string, {
+        answers: { exit_plan_mode: { answers: ["Implement plan"] } },
+        outcome: "answered"
+      })
+    )
+    await expect(decision).resolves.toEqual({ behavior: "allow", updatedInput: toolInput })
+
+    // Keeping planning denies the tool with a message that nudges more planning.
+    const kept = fake.options!.canUseTool!("ExitPlanMode", toolInput as never, {} as never)
+    await settle()
+    const keptAsk = events.at(-1)?.payload as Record<string, unknown>
+    await run(
+      created.handle.answerQuestion!(keptAsk.questionId as string, {
+        answers: { exit_plan_mode: { answers: ["Keep planning"] } },
+        outcome: "answered"
+      })
+    )
+    await expect(kept).resolves.toEqual({
+      behavior: "deny",
+      message: "The user wants to keep refining the plan. Stay in plan mode and continue planning."
+    })
+  })
+
   it("drives goal mode through /goal slash commands with synthetic snapshots", async () => {
     const fake = new FakeQuery()
     const provider = makeProvider(fake)

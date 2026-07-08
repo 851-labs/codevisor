@@ -149,6 +149,14 @@ final class SessionStore {
             || controller.setupPhases.contains(where: \.isRunning)
     }
 
+    /// Whether the session is blocked waiting on the user — an agent question or
+    /// a plan-approval prompt. The model isn't busy, it needs a response, so the
+    /// sidebar surfaces this as the attention badge instead of the spinner.
+    func isWaitingOnUser(_ sessionId: UUID) -> Bool {
+        guard let controller = controllers[sessionId] else { return false }
+        return controller.pendingQuestion != nil || controller.pendingPlanApproval
+    }
+
     // MARK: - Unread badges
 
     /// Finished-and-not-yet-opened turns for a session — the sidebar badge count.

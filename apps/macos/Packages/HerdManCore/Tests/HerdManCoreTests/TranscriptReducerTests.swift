@@ -210,7 +210,7 @@ struct TranscriptReducerTests {
         #expect(turn.entries.isEmpty)
     }
 
-    @Test("Resolved questions append once per id")
+    @Test("Resolved questions become one inline tool-call row per id")
     func answeredQuestions() {
         var turn = AssistantTurn()
         let resolution = QuestionResolution(
@@ -220,12 +220,18 @@ struct TranscriptReducerTests {
             answers: ["a": QuestionAnswerEntry(answers: ["Option A"])]
         )
         TranscriptReducer.apply(.questionResolved(resolution), to: &turn)
-        // Replay delivers the pair again; the card must not duplicate.
+        // Replay delivers the pair again; the row must upsert, not duplicate.
         TranscriptReducer.apply(.questionResolved(resolution), to: &turn)
         TranscriptReducer.apply(.question(QuestionRequest(questionId: "q-2", questions: [])), to: &turn)
-        #expect(turn.answeredQuestions.count == 1)
-        #expect(turn.answeredQuestions.first?.questionId == "q-1")
-        #expect(turn.entries.isEmpty)
+        #expect(turn.entries.count == 1)
+        guard case let .tool(call) = turn.entries.first else {
+            Issue.record("expected a synthesized question tool call")
+            return
+        }
+        #expect(call.toolCallId == "question:q-1")
+        #expect(call.kind == .question)
+        #expect(call.title == "Pick one")
+        #expect(call.content == [.content(.text("Option A"))])
     }
 
     @Test("Final answer is the trailing text; earlier entries collapse")

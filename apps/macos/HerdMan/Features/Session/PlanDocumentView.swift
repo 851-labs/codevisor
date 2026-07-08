@@ -17,13 +17,13 @@ struct PlanDocumentView: View {
                 Text("Proposed Plan")
                     .font(.callout.weight(.semibold))
             }
-            .foregroundStyle(theme.accent)
+            .foregroundStyle(.secondary)
             StreamingMarkdownView(markdown)
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 8).fill(theme.accent.opacity(0.06)))
-        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(theme.accent.opacity(0.2), lineWidth: 1))
+        .background(RoundedRectangle(cornerRadius: 8).fill(theme.cardBackground))
+        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(.separator, lineWidth: 1))
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Proposed plan")
     }

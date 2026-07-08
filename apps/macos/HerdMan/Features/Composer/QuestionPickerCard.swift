@@ -64,7 +64,7 @@ struct QuestionPickerCard: View {
         }
         .padding(12)
         .background(RoundedRectangle(cornerRadius: 16).fill(theme.composerBackground))
-        .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(theme.accent.opacity(0.35), lineWidth: 1))
+        .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Color.primary.opacity(0.14), lineWidth: 1))
         .focusable()
         .focused($isPickerFocused)
         .focusEffectDisabled()
@@ -89,38 +89,21 @@ struct QuestionPickerCard: View {
     // MARK: - Sections
 
     private func header(_ question: QuestionSpec) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 8) {
-                Image(systemName: "questionmark.bubble")
-                    .foregroundStyle(theme.accent)
-                if let header = question.header, !header.isEmpty {
-                    Text(header)
-                        .font(.caption.weight(.semibold))
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(Capsule().fill(theme.accent.opacity(0.12)))
-                        .foregroundStyle(theme.accent)
-                }
-                if request.questions.count > 1 {
-                    Text("Question \(questionIndex + 1)/\(request.questions.count)")
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
-                }
-                Spacer(minLength: 0)
-                Button {
-                    Task { await controller.cancelQuestion() }
-                } label: {
-                    Image(systemName: "xmark")
-                        .font(.caption)
-                        .frame(width: 20, height: 20)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
-                .help("Dismiss without answering (Esc)")
-            }
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
             Text(question.question)
                 .font(.callout.weight(.medium))
+            Spacer(minLength: 0)
+            Button {
+                Task { await controller.cancelQuestion() }
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.caption)
+                    .frame(width: 20, height: 20)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+            .help("Dismiss without answering (Esc)")
         }
     }
 
@@ -163,27 +146,27 @@ struct QuestionPickerCard: View {
                 Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
                     .font(.caption)
                     .foregroundStyle(
-                        isHighlighted ? AnyShapeStyle(.white) :
-                            isSelected ? AnyShapeStyle(theme.accent) : AnyShapeStyle(.tertiary)
+                        isHighlighted ? AnyShapeStyle(theme.windowBackground) :
+                            isSelected ? AnyShapeStyle(Color.primary) : AnyShapeStyle(.tertiary)
                     )
                 Text(label)
                     .fontWeight(.medium)
                 if let description, !description.isEmpty {
                     Text(description)
                         .lineLimit(1)
-                        .foregroundStyle(isHighlighted ? AnyShapeStyle(.white.opacity(0.85)) : AnyShapeStyle(.secondary))
+                        .foregroundStyle(isHighlighted ? AnyShapeStyle(theme.windowBackground.opacity(0.85)) : AnyShapeStyle(.secondary))
                 }
                 Spacer(minLength: 0)
                 if index < 9 {
                     Text("\(index + 1)")
                         .font(.caption2.monospacedDigit())
-                        .foregroundStyle(isHighlighted ? AnyShapeStyle(.white.opacity(0.6)) : AnyShapeStyle(.quaternary))
+                        .foregroundStyle(isHighlighted ? AnyShapeStyle(theme.windowBackground.opacity(0.6)) : AnyShapeStyle(.quaternary))
                 }
             }
-            .foregroundStyle(isHighlighted ? Color.white : Color.primary)
+            .foregroundStyle(isHighlighted ? theme.windowBackground : Color.primary)
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
-            .background(RoundedRectangle(cornerRadius: 6).fill(isHighlighted ? theme.accent : .clear))
+            .background(RoundedRectangle(cornerRadius: 6).fill(isHighlighted ? AnyShapeStyle(Color.primary) : AnyShapeStyle(Color.clear)))
             .contentShape(RoundedRectangle(cornerRadius: 6))
         }
         .buttonStyle(.plain)
@@ -226,7 +209,7 @@ struct QuestionPickerCard: View {
         .overlay(
             RoundedRectangle(cornerRadius: 8)
                 .strokeBorder(
-                    isOtherSelected ? theme.accent.opacity(0.45) : Color(nsColor: .separatorColor),
+                    isOtherSelected ? Color.primary.opacity(0.35) : Color(nsColor: .separatorColor),
                     lineWidth: 1
                 )
         )
@@ -315,6 +298,15 @@ struct QuestionPickerCard: View {
         selections[question.id] = selected
     }
 
+    /// Commits the highlighted row as the single-select choice without toggling
+    /// — Return must never clear a row the user already picked (by click, space,
+    /// or digit) on its way to advancing. Idempotent, so pressing Return on an
+    /// already-selected row keeps it selected.
+    private func selectHighlighted(_ question: QuestionSpec, index: Int) {
+        let token = index >= question.options.count ? Self.otherToken : question.options[index].label
+        selections[question.id] = [token]
+    }
+
     private func moveQuestion(_ delta: Int) {
         let next = questionIndex + delta
         guard request.questions.indices.contains(next) else { return }
@@ -376,7 +368,13 @@ struct QuestionPickerCard: View {
             activate(question, index: highlighted)
             return .handled
         case .return:
-            activate(question, index: highlighted)
+            // Return commits and advances; it must not toggle the highlighted
+            // row (that silently drops a selection made by click/space/digit).
+            // Single-select picks the highlighted row; multi-select keeps its
+            // existing toggles.
+            if question.multiSelect != true {
+                selectHighlighted(question, index: highlighted)
+            }
             advanceOrSubmit()
             return .handled
         case .escape:

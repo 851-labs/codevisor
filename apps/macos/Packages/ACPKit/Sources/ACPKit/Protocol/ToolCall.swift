@@ -29,6 +29,10 @@ public enum ToolKind: String, Sendable, Codable, Equatable, CaseIterable {
     /// vocabulary — HerdMan's own extension so clients can render a nested
     /// transcript section for the call.
     case agent
+    /// A question the agent asked the user (AskUserQuestion). Not part of the
+    /// ACP kind vocabulary — HerdMan synthesizes an answered question into the
+    /// transcript as a tool call so it renders as a normal worked-for row.
+    case question
     case other
 
     /// Decodes leniently so unknown kinds map to `.other`.

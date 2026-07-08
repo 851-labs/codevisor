@@ -599,9 +599,11 @@ struct SessionScreen: View {
                     .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
             }
             // A blocking agent question replaces the composer with the picker
-            // until it's answered or dismissed (codex CLI behavior).
-            if let pendingQuestion = controller.pendingQuestion {
-                QuestionPickerCard(controller: controller, request: pendingQuestion)
+            // until it's answered or dismissed (codex CLI behavior). Both plan
+            // approvals ride the same picker: Claude's ExitPlanMode question
+            // from the runtime, and codex's client-side post-turn prompt.
+            if let question = controller.activeQuestion {
+                QuestionPickerCard(controller: controller, request: question)
                     .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .bottom)))
             } else {
                 ComposerCard(

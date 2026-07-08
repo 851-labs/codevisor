@@ -265,7 +265,9 @@ describe("CodexProvider", () => {
       },
       sandboxPolicy: { networkAccess: false, type: "readOnly" }
     })
-    // Non-plan modes never send collaborationMode.
+    // After leaving Plan mode, the reset collaboration mode ("default") rides
+    // the next turn — codex's collaboration is sticky, so omitting it would
+    // leave the model stuck in Plan mode.
     await run(created!.handle.setMode("agent"))
     const secondPrompt = run(created!.handle.prompt("implement"))
     await Promise.resolve()
@@ -275,7 +277,16 @@ describe("CodexProvider", () => {
     })
     await secondPrompt
     const secondStart = client.requests.filter((request) => request.method === "turn/start").at(-1)
-    expect(secondStart?.params).not.toHaveProperty("collaborationMode")
+    expect(secondStart?.params).toMatchObject({
+      collaborationMode: {
+        mode: "default",
+        settings: {
+          developer_instructions: null,
+          model: "gpt-5.2-codex",
+          reasoning_effort: "medium"
+        }
+      }
+    })
   })
 
   it("applies modes as approval/sandbox turn overrides and syncs effort to the model", async () => {

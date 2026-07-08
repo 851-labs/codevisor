@@ -69,12 +69,16 @@ public enum TranscriptReducer {
         case let .planDocument(markdown):
             turn.isThinking = false
             turn.planDocument = markdown
+            // Mark where the plan landed in the stream so the work that follows
+            // approval renders below the plan card, not folded in above it.
+            turn.planBoundary = turn.entries.count
 
         case let .questionResolved(resolution):
-            // Idempotent by questionId: replay delivers the pair again.
-            if !turn.answeredQuestions.contains(where: { $0.questionId == resolution.questionId }) {
-                turn.answeredQuestions.append(resolution)
-            }
+            // An answered question renders as a normal tool-call row, inline in
+            // the arrival position it resolved. `upsertTool` dedupes by id, so
+            // replay redelivering the pair is idempotent.
+            turn.isThinking = false
+            upsertTool(syntheticQuestionCall(for: resolution), entries: &turn.entries)
 
         case .question, .availableCommandsUpdate, .currentModeUpdate, .configOptionUpdate,
              .usageUpdate, .goalUpdate, .goalCleared:
@@ -151,6 +155,45 @@ public enum TranscriptReducer {
         } else {
             entries.append(.tool(call))
         }
+    }
+
+    /// Synthesizes the tool call that stands in for an answered question, so it
+    /// flows through the same grouping/rendering path as every other tool call.
+    /// The id is derived from the question id so replays upsert in place. The
+    /// row title is the question itself (single) or a count (multiple); the
+    /// expandable content carries the chosen answer(s).
+    private static func syntheticQuestionCall(for resolution: QuestionResolution) -> ToolCall {
+        let questions = resolution.questions
+        let title: String
+        switch questions.count {
+        case 1: title = questions[0].question
+        case 0: title = "Answered a question"
+        default: title = "Answered \(questions.count) questions"
+        }
+        let body: String
+        if questions.count == 1 {
+            body = answerText(for: questions[0], in: resolution)
+        } else {
+            body = questions
+                .map { "\($0.question)\n\(answerText(for: $0, in: resolution))" }
+                .joined(separator: "\n\n")
+        }
+        return ToolCall(
+            toolCallId: "question:\(resolution.questionId)",
+            title: title,
+            kind: .question,
+            status: .completed,
+            content: body.isEmpty ? nil : [.content(.text(body))]
+        )
+    }
+
+    /// The chosen answer text for one sub-question: the selected option
+    /// label(s) plus any free-form note, or "No answer" when nothing was picked.
+    private static func answerText(for question: QuestionSpec, in resolution: QuestionResolution) -> String {
+        guard let entry = resolution.answers?[question.id] else { return "No answer" }
+        var parts = entry.answers
+        if let note = entry.note, !note.isEmpty { parts.append(note) }
+        return parts.isEmpty ? "No answer" : parts.joined(separator: ", ")
     }
 
     /// Routes a tool-call update by id lookup — main entries first, then every

@@ -28,6 +28,10 @@ public final class TranscriptDisclosureStore {
     public enum Key: Hashable, Sendable {
         /// An assistant turn's "Worked for…" section, keyed by the message id.
         case turn(UUID)
+        /// The second "Worked for…" section — the work that follows an approved
+        /// plan — keyed by the message id so it collapses independently of the
+        /// planning section above the plan card.
+        case turnImplementation(UUID)
         /// A collapsed tool-call group, keyed by its first call's id (groups
         /// only append, so the first id is stable).
         case toolGroup(String)

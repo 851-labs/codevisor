@@ -557,7 +557,12 @@ struct SidebarView: View {
                 // Fixed-size trailing slot so swapping the timestamp for the spinner,
                 // unread badge, or archive button on hover doesn't change the row height.
                 Group {
-                    if store?.isRunning(session.id) == true {
+                    if store?.isWaitingOnUser(session.id) == true {
+                        // Blocked on the user (agent question / plan approval):
+                        // the attention badge signals action required, not the
+                        // "working" spinner that reads as the model being busy.
+                        UnreadBadge()
+                    } else if store?.isRunning(session.id) == true {
                         ProgressView().controlSize(.mini)
                     } else if isHovered {
                         Button {
@@ -630,7 +635,12 @@ struct SidebarView: View {
                 }
                 Spacer(minLength: 6)
                 Group {
-                    if store?.isRunning(session.id) == true {
+                    if store?.isWaitingOnUser(session.id) == true {
+                        // Blocked on the user (agent question / plan approval):
+                        // the attention badge signals action required, not the
+                        // "working" spinner that reads as the model being busy.
+                        UnreadBadge()
+                    } else if store?.isRunning(session.id) == true {
                         ProgressView().controlSize(.mini)
                     } else if isHovered {
                         Button {

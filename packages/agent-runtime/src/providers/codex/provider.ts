@@ -204,6 +204,11 @@ interface CodexSession {
   /// Undefined until the user picks a speed — the model's default tier applies.
   currentSpeed: "standard" | "fast" | undefined
   currentModeId: string
+  /// True once a Plan-mode turn has run. Codex's collaboration mode is sticky
+  /// server-side, so after engaging Plan we keep sending an explicit
+  /// collaboration mode every turn ("default" leaves Plan) instead of omitting
+  /// it — otherwise the model stays in Plan mode after the toggle flips off.
+  collaborationEngaged: boolean
   models: ReadonlyArray<CodexModel>
   /// item id → tool-call kind, so completions map back without re-parsing.
   readonly itemKinds: Map<string, string>
@@ -304,6 +309,7 @@ export const makeCodexProvider = (
       backgroundTerminals: config.backgroundTerminals,
       client,
       collabThreads: new Map(),
+      collaborationEngaged: false,
       commandTerminals: new Map(),
       killCommandProcesses: config.killCommandProcesses ?? killCodexCommandProcesses,
       currentEffort: undefined,
@@ -488,6 +494,26 @@ export const makeCodexProvider = (
         })
         const mode = CODEX_MODES.find((candidate) => candidate.id === session.currentModeId)
         const speed = effectiveSpeed(session)
+        // Codex's collaboration mode is sticky server-side: once Plan mode is
+        // engaged, every later turn must send an explicit collaboration mode or
+        // the model stays in Plan. So after any plan turn we keep sending it,
+        // and "default" (any non-plan mode) resets codex back out of Plan —
+        // mirroring codex CLI's leave-plan-mode action.
+        if (mode?.collaboration === "plan") session.collaborationEngaged = true
+        const collaborationMode =
+          session.currentModel.length > 0 &&
+          (mode?.collaboration !== undefined || session.collaborationEngaged)
+            ? {
+                collaborationMode: {
+                  mode: mode?.collaboration ?? "default",
+                  settings: {
+                    developer_instructions: null,
+                    model: session.currentModel,
+                    reasoning_effort: session.currentEffort ?? null
+                  }
+                }
+              }
+            : {}
         await session.client.request("turn/start", {
           input: codexInput(normalizePromptInput(input)),
           threadId: session.threadId,
@@ -499,22 +525,12 @@ export const makeCodexProvider = (
           ...(mode === undefined
             ? {}
             : { approvalPolicy: mode.approvalPolicy, sandboxPolicy: mode.sandboxPolicy }),
-          // EXPERIMENTAL plan collaboration mode: the model proposes a plan
-          // (streamed as plan items → plan_document) before implementing.
-          // Settings.model is required by the wire shape; settings keys stay
-          // snake_case (no camelCase rename upstream).
-          ...(mode?.collaboration === undefined || session.currentModel.length === 0
-            ? {}
-            : {
-                collaborationMode: {
-                  mode: mode.collaboration,
-                  settings: {
-                    developer_instructions: null,
-                    model: session.currentModel,
-                    reasoning_effort: session.currentEffort ?? null
-                  }
-                }
-              })
+          // EXPERIMENTAL collaboration mode: "plan" makes the model propose a
+          // plan (streamed as plan items → plan_document) before implementing;
+          // "default" (sent once Plan mode has been left) switches it back to
+          // coding. Settings.model is required by the wire shape; settings keys
+          // stay snake_case (no camelCase rename upstream).
+          ...collaborationMode
         })
         return pending
       }),
