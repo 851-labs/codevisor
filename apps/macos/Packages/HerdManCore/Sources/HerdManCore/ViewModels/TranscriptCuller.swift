@@ -85,6 +85,11 @@ public final class TranscriptCuller {
         return height - (previous ?? height)
     }
 
+    /// Whether a column width has been recorded yet — the first measurement
+    /// must apply immediately (culling can't start without one), while later
+    /// changes may be coalesced by the caller.
+    public var hasMeasuredWidth: Bool { measuredWidth != nil }
+
     /// Updates the column width the heights were measured at. A real change
     /// invalidates every cached height (wrapping changed), so every row
     /// remounts and remeasures once, then culling re-engages.

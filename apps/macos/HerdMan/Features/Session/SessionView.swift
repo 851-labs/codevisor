@@ -60,6 +60,10 @@ struct SessionScreen: View {
     /// The most recent scroll geometry, so order/width changes can recompute
     /// the culling window without waiting for the next scroll tick.
     @State private var lastSnapshot: ScrollSnapshot?
+    /// Coalesces animated width changes (inspector slide, live resize) into
+    /// one cache invalidation once the width settles — feeding every
+    /// intermediate frame into the culler wipes all row heights per frame.
+    @State private var widthSettleTask: Task<Void, Never>?
 
     /// "End of content is in view" tolerance. Kept just above zero so the
     /// rubber-band rebound after an over-scroll (which eases back into the
@@ -231,10 +235,26 @@ struct SessionScreen: View {
                 .frame(maxWidth: 880, alignment: .leading)
                 // The measured column width backs the culler's height cache;
                 // a real change invalidates every cached height (rewrapping)
-                // so rows remeasure once, then culling re-engages.
+                // so rows remeasure once, then culling re-engages. Animated
+                // resizes (inspector slide, live window resize) stream a
+                // width per frame — those settle first, so the toggle does
+                // zero transcript work mid-flight, exactly like the sidebar
+                // (whose toggle never changes the clamped width at all).
                 .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width in
-                    controller.culler.noteWidth(width)
-                    recomputeCullingIfPossible()
+                    // The first measurement applies immediately: culling
+                    // can't start without a width.
+                    if !controller.culler.hasMeasuredWidth {
+                        controller.culler.noteWidth(width)
+                        recomputeCullingIfPossible()
+                        return
+                    }
+                    widthSettleTask?.cancel()
+                    widthSettleTask = Task { @MainActor in
+                        try? await Task.sleep(for: .milliseconds(150))
+                        guard !Task.isCancelled else { return }
+                        controller.culler.noteWidth(width)
+                        recomputeCullingIfPossible()
+                    }
                 }
                 .frame(maxWidth: .infinity)
                 // While a stream is being followed the viewport scrolls every
