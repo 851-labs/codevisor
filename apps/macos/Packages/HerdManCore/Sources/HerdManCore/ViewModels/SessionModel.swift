@@ -68,6 +68,15 @@ public final class SessionModel {
         !isSending && !waitingBackgroundTasks.isEmpty
     }
 
+    /// Tool-call ids of subagents still running as background tasks, keyed by
+    /// the `.agent` tool call that spawned them (the provider stamps the task's
+    /// `toolUseId` with the spawning call id). A subagent's turn can end while
+    /// it keeps working in the background; the transcript reads this to keep its
+    /// section open and its label shimmering until it leaves the snapshot.
+    public var runningSubagentToolCallIds: Set<String> {
+        Set(backgroundTasks.compactMap { $0.taskType == "subagent" ? $0.toolUseId : nil })
+    }
+
     /// The session's persistent goal, when the harness supports goal mode.
     /// Snapshots are idempotent full state — each update replaces the last.
     public private(set) var goal: SessionGoal?

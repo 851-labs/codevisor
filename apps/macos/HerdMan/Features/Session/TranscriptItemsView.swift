@@ -57,6 +57,7 @@ struct SubagentSectionView: View {
     let depth: Int
     @Environment(\.theme) private var theme
     @Environment(\.transcriptDisclosure) private var disclosureStore
+    @Environment(\.runningSubagentToolCallIds) private var runningSubagentToolCallIds
     /// Transient one-shot guard for the settle collapse. Stays `@State`: it
     /// only matters while the subagent is running/settling, which happens in
     /// the never-culled active row. A settled remount resets it harmlessly
@@ -68,10 +69,16 @@ struct SubagentSectionView: View {
     private var store: TranscriptDisclosureStore { disclosureStore ?? .previews }
     private var disclosureKey: TranscriptDisclosureStore.Key { .subagent(call.toolCallId) }
     private var isExpanded: Bool {
-        store.isExpanded(disclosureKey, default: isTurnActive && !call.isSettled)
+        store.isExpanded(disclosureKey, default: isRunning)
     }
 
-    private var isRunning: Bool { isTurnActive && !call.isSettled }
+    /// Running while the turn is live and the call is open, OR — once the turn
+    /// has ended — while the subagent is still working in the background (its
+    /// call was force-settled at turn end, so the background snapshot is the
+    /// only remaining signal that it's alive).
+    private var isRunning: Bool {
+        (isTurnActive && !call.isSettled) || runningSubagentToolCallIds.contains(call.toolCallId)
+    }
     private var items: [WorkedItem] { turn.subagentItems(call.toolCallId) }
     private var transcript: SubagentTranscript? { turn.subagents[call.toolCallId] }
 
@@ -92,9 +99,10 @@ struct SubagentSectionView: View {
             }
         }
         .clipped()
-        // Collapse once the subagent settles; manual toggles still work after.
-        .onChange(of: call.isSettled) { _, settled in
-            if settled, !hasAutoCollapsed {
+        // Collapse once the subagent stops running — including background work
+        // that outlives the turn; manual toggles still work after.
+        .onChange(of: isRunning) { _, running in
+            if !running, !hasAutoCollapsed {
                 hasAutoCollapsed = true
                 withAnimation(.snappy(duration: 0.25)) { store.setExpanded(disclosureKey, false) }
             }
@@ -122,7 +130,7 @@ struct SubagentSectionView: View {
         .contentShape(Rectangle())
         .onTapGesture {
             withAnimation(.snappy(duration: 0.25)) {
-                store.toggle(disclosureKey, default: isTurnActive && !call.isSettled)
+                store.toggle(disclosureKey, default: isRunning)
             }
         }
     }

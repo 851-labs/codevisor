@@ -6,6 +6,12 @@ extension EnvironmentValues {
     /// previews / detached contexts, where rows fall back to a throwaway store
     /// (no cross-session persistence, which previews don't need).
     @Entry var transcriptDisclosure: TranscriptDisclosureStore?
+
+    /// Tool-call ids of subagents still running in the background after their
+    /// spawning turn ended. Injected at the transcript root so a settled turn's
+    /// worked section stays open and the subagent's label keeps shimmering
+    /// until it leaves the set. Empty in previews / detached contexts.
+    @Entry var runningSubagentToolCallIds: Set<String> = []
 }
 
 /// One settled transcript row, occlusion-culled.

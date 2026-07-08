@@ -667,6 +667,11 @@ final class SessionController {
     /// chat isn't stuck; the agent will come back on its own.
     var isWaitingOnBackgroundTasks: Bool { model?.isWaitingOnBackgroundTasks ?? false }
 
+    /// Tool-call ids of subagents still running in the background (see
+    /// SessionModel). Injected into the transcript so settled turns keep their
+    /// subagent sections open and shimmering until the work finishes.
+    var runningSubagentToolCallIds: Set<String> { model?.runningSubagentToolCallIds ?? [] }
+
     var canSend: Bool {
         (!composerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             || !composerAttachments.isEmpty)

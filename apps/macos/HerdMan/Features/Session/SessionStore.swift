@@ -127,13 +127,17 @@ final class SessionStore {
     }
 
     /// Whether the session with this id is showing activity: generating a
-    /// response, connecting its agent, or running pre-chat setup (worktree
-    /// creation, agent start) — everything the sidebar spinner covers.
+    /// response, connecting its agent, running pre-chat setup (worktree
+    /// creation, agent start), or waiting on background work it will return to
+    /// on its own — everything the sidebar spinner covers.
     func isRunning(_ sessionId: UUID) -> Bool {
         guard let controller = controllers[sessionId] else { return false }
         return controller.isSending
             || controller.isConnecting
             || controller.setupPhases.contains(where: \.isRunning)
+            // The turn ended but the agent still owns a subagent / poll-and-resume
+            // task; keep the spinner (not the unread badge) until it comes back.
+            || controller.isWaitingOnBackgroundTasks
     }
 
     /// Whether the session is doing real work: generating a response or
@@ -184,6 +188,11 @@ final class SessionStore {
 
     private func noteTurnEnded(for sessionId: UUID) {
         guard sessionId != openSessionId else { return }
+        // A turn that ends into a "waiting on background work" state isn't the
+        // end of the agent's work — it will start an agent-initiated turn when
+        // the task settles. Hold the unread badge (the spinner covers this via
+        // `isRunning`) until that follow-up turn ends with nothing left waiting.
+        if controllers[sessionId]?.isWaitingOnBackgroundTasks == true { return }
         unreadCounts[sessionId, default: 0] += 1
     }
 

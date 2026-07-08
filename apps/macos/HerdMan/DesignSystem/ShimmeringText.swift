@@ -11,33 +11,71 @@ import SwiftUI
 /// effect.
 struct ShimmerModifier: ViewModifier {
     var active: Bool
-    @State private var sweep = false
 
     func body(content: Content) -> some View {
-        if active {
-            content
-                .overlay {
-                    GeometryReader { proxy in
-                        let width = proxy.size.width
-                        let band = max(width * 0.4, 30)
-                        LinearGradient(
-                            colors: [.clear, Color.primary.opacity(0.9), .clear],
-                            startPoint: .leading,
-                            endPoint: .trailing
-                        )
-                        .frame(width: band)
-                        .offset(x: sweep ? width : -band)
-                        .animation(
-                            .linear(duration: 1.4).repeatForever(autoreverses: false),
-                            value: sweep
-                        )
-                    }
-                    .mask(content)
-                }
-                .onAppear { sweep = true }
-        } else {
-            content
+        content.overlay {
+            // A fresh subview per activation: its `@State phase` starts at 0 and
+            // its `.onAppear` kicks the sweep, so re-activating shimmer always
+            // restarts cleanly instead of resuming a parked animation.
+            if active {
+                ShimmerSweep(shape: content)
+            }
         }
+    }
+}
+
+/// The moving highlight band, masked to `shape`.
+///
+/// `GeometryReader` reports width 0 on its first pass, so the animated band is
+/// keyed with `.id(width)`: it re-mounts once the real width lands and animates
+/// its offset directly between endpoints computed from THAT width. Deriving the
+/// endpoints from a stale zero width was why the band parked over the trailing
+/// glyphs and never swept the leading text.
+private struct ShimmerSweep<Shape: View>: View {
+    let shape: Shape
+
+    var body: some View {
+        GeometryReader { proxy in
+            let width = proxy.size.width
+            ShimmerBand(width: width)
+                // Re-mount when the measured width settles so the sweep uses the
+                // real width; rounded so sub-point jitter doesn't restart it.
+                .id(Int(width.rounded()))
+        }
+        .mask(shape)
+    }
+}
+
+/// One left-to-right pass of a tight, bright glint, looping forever. Created
+/// with a known `width`, so `-band → width` are correct from the first frame.
+private struct ShimmerBand: View {
+    let width: CGFloat
+    @State private var sweptToEnd = false
+
+    var body: some View {
+        // A bright glint with a soft, center-peaked core: brightest at the
+        // middle and easing out through a gradient to the edges, so it reads as
+        // a defined highlight (not a hard bar, not a broad wash) sweeping across.
+        let band = max(width * 0.33, 90)
+        LinearGradient(
+            stops: [
+                .init(color: .clear, location: 0),
+                .init(color: Color.primary.opacity(0), location: 0.18),
+                .init(color: Color.primary.opacity(0.9), location: 0.42),
+                .init(color: Color.primary, location: 0.5),
+                .init(color: Color.primary.opacity(0.9), location: 0.58),
+                .init(color: Color.primary.opacity(0), location: 0.82),
+                .init(color: .clear, location: 1)
+            ],
+            startPoint: .leading,
+            endPoint: .trailing
+        )
+        .frame(width: band)
+        // false → band just off the leading edge; true → just off the trailing
+        // edge, so it sweeps the full [0, width].
+        .offset(x: sweptToEnd ? width : -band)
+        .animation(.linear(duration: 1.2).repeatForever(autoreverses: false), value: sweptToEnd)
+        .onAppear { sweptToEnd = true }
     }
 }
 

@@ -13,6 +13,7 @@ struct AssistantTurnView: View {
     let turnID: UUID
     private let initiallyExpanded: Bool?
     @Environment(\.transcriptDisclosure) private var disclosureStore
+    @Environment(\.runningSubagentToolCallIds) private var runningSubagentToolCallIds
     /// Transient one-shot guard for the finish/assert auto-collapse. Stays
     /// `@State`: it only matters while the turn is generating/settling, which
     /// is the never-culled active row. A settled remount resets it harmlessly.
@@ -38,8 +39,18 @@ struct AssistantTurnView: View {
     }
 
     private func isExpanded(_ key: TranscriptDisclosureStore.Key) -> Bool {
-        let settled = !turn.isGenerating || turn.finalTextIsAsserted
+        // A subagent still running in the background keeps the section
+        // "unsettled" so it defaults open until the work finishes, even after
+        // the turn ended.
+        let settled = (!turn.isGenerating || turn.finalTextIsAsserted) && !turnHasRunningSubagent
         return store.isExpanded(key, default: initiallyExpanded ?? !settled)
+    }
+
+    /// True while any subagent spawned by this turn is still running in the
+    /// background — the turn can end before its subagents finish.
+    private var turnHasRunningSubagent: Bool {
+        !runningSubagentToolCallIds.isEmpty
+            && turn.subagents.keys.contains { runningSubagentToolCallIds.contains($0) }
     }
 
     /// The planning section shows while the turn is still working toward a plan
@@ -124,10 +135,18 @@ struct AssistantTurnView: View {
         .onChange(of: turn.finalTextIsAsserted) { _, asserted in
             if asserted, turn.isGenerating { autoCollapse() }
         }
+        // A turn can end while its subagents keep running in the background;
+        // the collapse deferred at turn end fires once the last one finishes.
+        .onChange(of: turnHasRunningSubagent) { _, running in
+            if !running, !turn.isGenerating { autoCollapse() }
+        }
     }
 
     private func autoCollapse() {
         guard !hasAutoCollapsed else { return }
+        // Keep the work visible while a subagent is still running in the
+        // background; this re-fires from the onChange above once it settles.
+        guard !turnHasRunningSubagent else { return }
         hasAutoCollapsed = true
         // Animating the removal of an enormous worked section (an
         // hours-long turn is most of the transcript's height) is a

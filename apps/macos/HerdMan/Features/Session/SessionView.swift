@@ -265,6 +265,10 @@ struct SessionScreen: View {
                 // Session-scoped disclosure store so culled rows keep their
                 // expand/collapse state across content unmount/remount.
                 .environment(\.transcriptDisclosure, controller.disclosure)
+                // Subagents still running in the background after their turn
+                // ended: keeps the worked section open and the label shimmering
+                // until the work finishes (see AssistantTurnView/SubagentSectionView).
+                .environment(\.runningSubagentToolCallIds, controller.runningSubagentToolCallIds)
             }
             // Open sessions at the end of the history, with no scroll
             // animation. When a saved scroll position exists, the seeded
