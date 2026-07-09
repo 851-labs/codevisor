@@ -14,6 +14,7 @@ struct AssistantTurnView: View {
     private let initiallyExpanded: Bool?
     @Environment(\.transcriptDisclosure) private var disclosureStore
     @Environment(\.runningSubagentToolCallIds) private var runningSubagentToolCallIds
+    @Environment(\.theme) private var theme
     /// Transient one-shot guard for the finish/assert auto-collapse. Stays
     /// `@State`: it only matters while the turn is generating/settling, which
     /// is the never-culled active row. A settled remount resets it harmlessly.
@@ -84,7 +85,11 @@ struct AssistantTurnView: View {
                 workedSection(items: afterPlan, key: .turnImplementation(turnID), timerLabel: true)
             }
 
-            if turn.isThinking {
+            // A transient failure (e.g. 529 overload) is being retried — show it
+            // instead of the plain "Thinking…" so the chat isn't a silent freeze.
+            if turn.isGenerating, let retry = turn.retryStatus {
+                ShimmeringText(text: "Retrying… (\(retry.attempt)/\(retry.of))")
+            } else if turn.showsActivityIndicator {
                 ShimmeringText.thinking
             }
 
@@ -111,6 +116,29 @@ struct AssistantTurnView: View {
                     // content. Hidden until hover so the transcript stays clean.
                     MessageCopyButton(text: markdown, help: "Copy response", isRevealed: isHovered)
                         .opacity(isHovered ? 1 : 0)
+                }
+            }
+
+            // A non-clean stop (error / limit / refusal / gave-up retry) surfaces
+            // here, attached to this turn — never a silent "stopped for no
+            // reason". Clean completions and silently-recovered turns carry no
+            // stopDetail and render nothing.
+            if !turn.isGenerating, let stopDetail = turn.stopDetail {
+                if turn.finalText == nil {
+                    // No answer was produced (e.g. an exhausted 529 retry): show
+                    // the error in the answer slot, in red.
+                    Text(stopDetail)
+                        .font(.callout)
+                        .foregroundStyle(theme.statusError)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                    // An answer did stream (e.g. a refusal note); mark the reason
+                    // as a compact red line beneath it.
+                    Label(stopDetail, systemImage: "exclamationmark.triangle")
+                        .font(.caption)
+                        .foregroundStyle(theme.statusError)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
         }

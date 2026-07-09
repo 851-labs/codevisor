@@ -58,6 +58,83 @@ struct SessionModelTests {
         }
         #expect(assistant.turn.finalText == .text(id: "t0", markdown: "Echo: hello server"))
         #expect(assistant.turn.stopReason == .endTurn)
+        // A clean completion carries no reason — the transcript stays quiet.
+        #expect(assistant.turn.stopDetail == nil)
+    }
+
+    @Test("A turn that ends abnormally surfaces its stopDetail on the turn")
+    func abnormalStopSurfacesDetail() async {
+        let sessionId = UUID()
+        let client = FakeSessionServerClient(sessionId: sessionId)
+        client.echoOnPrompt = false
+        let model = SessionModel(
+            serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
+            sessionId: sessionId.uuidString
+        )
+
+        await model.send("do work")
+        // The provider gave up recovering a transient failure and ends the turn
+        // with a human reason attached to the turn-end event.
+        client.emit(ServerEventEnvelope(
+            id: 1, serverId: "local", kind: "session.updated",
+            subjectId: sessionId.uuidString, createdAt: "2026-06-30T00:00:00.000Z",
+            payload: .object([
+                "stopReason": .string("end_turn"),
+                "stopDetail": .string("The Claude API was overloaded.")
+            ])
+        ))
+        await settleUntil { model.isSending == false }
+
+        guard case let .assistant(message) = model.conversation.last else {
+            Issue.record("expected assistant")
+            return
+        }
+        #expect(message.turn.stopDetail == "The Claude API was overloaded.")
+        #expect(message.turn.isGenerating == false)
+    }
+
+    @Test("A transient retry surfaces on the active turn and clears on new content")
+    func retryStatusSurfacesThenClears() async {
+        let sessionId = UUID()
+        let client = FakeSessionServerClient(sessionId: sessionId)
+        client.echoOnPrompt = false
+        let model = SessionModel(
+            serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
+            sessionId: sessionId.uuidString
+        )
+
+        await model.send("do work")
+        // The provider reports it's retrying a transient failure (attempt 2 of 3).
+        client.emit(ServerEventEnvelope(
+            id: 1, serverId: "local", kind: "session.updated",
+            subjectId: sessionId.uuidString, createdAt: "2026-06-30T00:00:00.000Z",
+            payload: .object(["retrying": .object(["attempt": .number(2), "of": .number(3)])])
+        ))
+        await settleUntil {
+            if case let .assistant(message) = model.conversation.last {
+                return message.turn.retryStatus == RetryStatus(attempt: 2, of: 3)
+            }
+            return false
+        }
+
+        // The retry succeeds — new content clears the "Retrying…" status.
+        client.emit(ServerEventEnvelope(
+            id: 2, serverId: "local", kind: "session.output",
+            subjectId: sessionId.uuidString, createdAt: "2026-06-30T00:00:01.000Z",
+            payload: .object(["role": .string("assistant"), "text": .string("recovered")])
+        ))
+        await settleUntil {
+            if case let .assistant(message) = model.conversation.last {
+                return message.turn.retryStatus == nil
+            }
+            return false
+        }
+        guard case let .assistant(message) = model.conversation.last else {
+            Issue.record("expected assistant")
+            return
+        }
+        #expect(message.turn.retryStatus == nil)
+        #expect(message.turn.finalText == .text(id: "t0", markdown: "recovered"))
     }
 
     @Test("Server-backed loadHistory seeds materialized conversation and resumes from cursor")

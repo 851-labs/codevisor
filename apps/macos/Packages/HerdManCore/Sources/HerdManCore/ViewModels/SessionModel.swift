@@ -553,6 +553,9 @@ public final class SessionModel {
             ensureAssistantTurn()
             guard case .assistant(var message) = activeItem else { return }
             message.turn.isGenerating = true
+            // Real content flowing means any in-flight retry succeeded — drop
+            // the "Retrying…" status.
+            if message.turn.retryStatus != nil { message.turn.retryStatus = nil }
             // Guarded: `@Observable` fires on every set regardless of value,
             // and this path runs for every streamed chunk — an unguarded
             // write re-renders every `isSending` observer (the composer) per
@@ -610,13 +613,26 @@ public final class SessionModel {
         case let .userMessage(text, attachments):
             appliedUpdateCount += 1
             appendRemoteUserIfNeeded(text: text, attachments: attachments)
-        case let .finished(stopReason):
-            finish(stopReason: stopReason, outcome: stopReason == .cancelled ? .cancelled : .completed)
+        case let .finished(stopReason, stopDetail):
+            finish(
+                stopReason: stopReason,
+                outcome: stopReason == .cancelled ? .cancelled : .completed,
+                stopDetail: stopDetail
+            )
             endTurn()
         case let .failed(message):
             errorMessage = message
-            finish(stopReason: nil, outcome: .failed)
+            finish(stopReason: nil, outcome: .failed, stopDetail: nil)
             endTurn()
+        case let .retrying(retry):
+            // A transient failure is being retried — the turn is still alive.
+            // Surface it on the active turn so the UI shows "Retrying… (n/of)".
+            ensureAssistantTurn()
+            guard case .assistant(var message) = activeItem else { return }
+            message.turn.isGenerating = true
+            message.turn.retryStatus = retry
+            activeItem = .assistant(message)
+            if !isSending { isSending = true }
         case let .queueUpdated(queue):
             queuedPrompts = queue
         case let .backgroundTasks(tasks):
@@ -635,14 +651,22 @@ public final class SessionModel {
     /// The single choke point for ending a turn: marks it finished and settles
     /// any tool calls that never received a terminal status, so in-progress
     /// indicators can't outlive the turn.
-    private func finish(stopReason: StopReason?, outcome: TranscriptReducer.TurnOutcome) {
+    private func finish(
+        stopReason: StopReason?,
+        outcome: TranscriptReducer.TurnOutcome,
+        stopDetail: String? = nil
+    ) {
         // A question can't outlive its turn; providers emit the resolution,
         // but a dropped event must not leave the picker stuck.
         pendingQuestion = nil
         guard case .assistant(var message) = activeItem else { return }
         message.turn.isGenerating = false
         message.turn.isThinking = false
+        message.turn.retryStatus = nil
         message.turn.stopReason = stopReason
+        // Present only when the turn ended abnormally; drives the per-turn reason
+        // line so a non-clean stop is never silent.
+        message.turn.stopDetail = stopDetail
         message.turn.endedAt = now()
         TranscriptReducer.settleToolCalls(&message.turn, outcome: outcome)
         // Stays the active item: settling happens when the next bubble
@@ -714,6 +738,10 @@ public final class SessionModel {
 
     /// Starts a fresh generating assistant bubble as the active item.
     private func startActiveBubble() {
+        // A new turn (user- or agent-initiated) clears any lingering session-
+        // level error banner so it can't outlive the failure it described —
+        // including a stale one replayed from history on reconnect.
+        errorMessage = nil
         activeItem = .assistant(AssistantMessage(
             turn: AssistantTurn(isGenerating: true, isThinking: true, startedAt: now())
         ))

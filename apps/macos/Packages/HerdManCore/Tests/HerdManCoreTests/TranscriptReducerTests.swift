@@ -441,3 +441,79 @@ struct TranscriptReducerTests {
         #expect(failedTurn.toolCalls.first?.status == .failed)
     }
 }
+
+/// Covers `AssistantTurn.showsActivityIndicator` — the "Thinking…" gate. The
+/// old gate was `isThinking` alone, a knife-edge cleared by the first non-thought
+/// chunk and only re-armed by another thought chunk, so any lull between steps
+/// (waiting on the model, or between tool calls) showed nothing and the chat
+/// looked frozen.
+@Suite("AssistantTurn activity indicator")
+struct AssistantTurnActivityTests {
+    @Test("A finished turn never shows the indicator")
+    func settledTurn() {
+        let turn = AssistantTurn(isGenerating: false, isThinking: false)
+        #expect(!turn.showsActivityIndicator)
+        // Even an explicit (stale) thinking flag can't light it once finished.
+        let staleThinking = AssistantTurn(isGenerating: false, isThinking: true)
+        #expect(!staleThinking.showsActivityIndicator)
+    }
+
+    @Test("A just-started turn with no output yet shows the indicator")
+    func freshTurn() {
+        let turn = AssistantTurn(isGenerating: true, isThinking: true)
+        #expect(turn.showsActivityIndicator)
+    }
+
+    @Test("Explicit thought streaming always shows the indicator")
+    func thoughtStreaming() {
+        var turn = AssistantTurn(isGenerating: true, isThinking: false)
+        TranscriptReducer.apply(.agentThoughtChunk(.text("hmm")), to: &turn)
+        #expect(turn.isThinking)
+        #expect(turn.showsActivityIndicator)
+    }
+
+    @Test("A streaming final answer suppresses the indicator (the text is the activity)")
+    func streamingFinalAnswer() {
+        var turn = AssistantTurn(isGenerating: true)
+        TranscriptReducer.apply(.agentMessageChunk(.text("The answer is 42.")), to: &turn)
+        #expect(!turn.isThinking)
+        #expect(turn.finalText != nil)
+        #expect(!turn.showsActivityIndicator)
+    }
+
+    @Test("A running tool call suppresses the indicator (its card shows progress)")
+    func runningTool() {
+        var turn = AssistantTurn(isGenerating: true)
+        TranscriptReducer.apply(
+            .toolCall(ToolCall(toolCallId: "t1", title: "Read", kind: .read, status: .inProgress)),
+            to: &turn
+        )
+        #expect(turn.hasRunningToolCall)
+        #expect(!turn.showsActivityIndicator)
+    }
+
+    @Test("The lull after a tool settles — preamble demoted, nothing running — shows the indicator")
+    func gapAfterToolSettles() {
+        var turn = AssistantTurn(isGenerating: true)
+        // Preamble streams as the optimistic final-answer candidate…
+        TranscriptReducer.apply(.agentMessageChunk(.text("Let me check."), messageId: "m1"), to: &turn)
+        // …a tool call demotes it to commentary via a zero-length retro-tag…
+        TranscriptReducer.apply(
+            .agentMessageChunk(.text(""), messageId: "m1", parentToolCallId: nil, phase: .commentary),
+            to: &turn
+        )
+        TranscriptReducer.apply(
+            .toolCall(ToolCall(toolCallId: "t1", title: "Read", kind: .read, status: .inProgress)),
+            to: &turn
+        )
+        // …then the tool completes. Model is now deciding the next step with
+        // nothing streaming: previously this window showed nothing (looked stuck).
+        TranscriptReducer.apply(
+            .toolCallUpdate(ToolCallUpdate(toolCallId: "t1", status: .completed)),
+            to: &turn
+        )
+        #expect(!turn.hasRunningToolCall)
+        #expect(turn.finalText == nil)
+        #expect(turn.showsActivityIndicator)
+    }
+}

@@ -13,7 +13,13 @@ public enum ServerSessionStreamEvent: Equatable, Sendable {
     /// ACP update type cannot carry attachments.
     case userMessage(text: String, attachments: [Attachment])
     case queueUpdated([ServerPromptQueueItem])
-    case finished(StopReason)
+    /// A turn ended. `stopDetail` is a short human-readable reason present only
+    /// when the ending was abnormal (error / limit / refusal / gave-up
+    /// truncation); the client renders it as a per-turn line.
+    case finished(StopReason, stopDetail: String?)
+    /// A transient failure is being retried; the turn stays alive. Drives the
+    /// visible "Retrying… (attempt/of)" status.
+    case retrying(RetryStatus)
     case failed(String)
     /// Full replace-on-update snapshot of the agent's in-flight background
     /// tasks (backgrounded shells, subagents). Empty means none pending.
@@ -263,8 +269,11 @@ public struct ServerSessionTransport: Sendable {
         case "session.output":
             return outputEvents(from: event.payload)
         case "session.updated":
+            if let retry = retryStatus(from: event.payload) {
+                return [.retrying(retry)]
+            }
             if let stopReason = stopReason(from: event.payload) {
-                return [.finished(stopReason)]
+                return [.finished(stopReason, stopDetail: event.payload["stopDetail"]?.stringValue)]
             }
             if let tasks = backgroundTasks(from: event.payload) {
                 return [.backgroundTasks(tasks)]
@@ -355,6 +364,13 @@ public struct ServerSessionTransport: Sendable {
     private static func stopReason(from payload: JSONValue) -> StopReason? {
         guard let raw = payload["stopReason"]?.stringValue else { return nil }
         return StopReason(rawValue: raw)
+    }
+
+    private static func retryStatus(from payload: JSONValue) -> RetryStatus? {
+        guard let retry = payload["retrying"],
+              let attempt = retry["attempt"]?.intValue,
+              let of = retry["of"]?.intValue else { return nil }
+        return RetryStatus(attempt: attempt, of: of)
     }
 
     private static func backgroundTasks(from payload: JSONValue) -> [BackgroundTaskInfo]? {

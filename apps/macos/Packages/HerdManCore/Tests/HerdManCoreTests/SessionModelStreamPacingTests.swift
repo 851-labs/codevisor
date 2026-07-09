@@ -42,7 +42,7 @@ struct SessionModelStreamPacingTests {
 
     @Test("Non-text events break a merge run and are preserved in order")
     func nonTextEventsPreserved() {
-        let finished = ServerSessionStreamEvent.finished(.endTurn)
+        let finished = ServerSessionStreamEvent.finished(.endTurn, stopDetail: nil)
         let events = [chunk("a"), chunk("b"), finished, chunk("c"), chunk("d")]
         #expect(SessionModel.coalesced(events) == [chunk("ab"), finished, chunk("cd")])
     }

@@ -28,7 +28,10 @@ export const TurnLifecycle = Schema.Struct({
   turnId: Schema.String,
   turnState: Schema.Literals(["started", "ended"]),
   initiatedBy: TurnInitiator,
-  stopReason: Schema.optional(Schema.String)
+  stopReason: Schema.optional(Schema.String),
+  /** Short human-readable reason present only on an abnormal end (error / limit
+   *  / refusal / gave-up truncation); clients render it as a per-turn line. */
+  stopDetail: Schema.optional(Schema.String)
 })
 export type TurnLifecycle = typeof TurnLifecycle.Type
 

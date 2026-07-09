@@ -37,12 +37,31 @@ public struct SubagentTranscript: Sendable, Equatable {
     }
 }
 
+/// Progress of an in-flight transient retry (e.g. a 529 overload being retried),
+/// driving the visible "Retrying… (attempt/of)" status.
+public struct RetryStatus: Sendable, Equatable {
+    public let attempt: Int
+    public let of: Int
+    public init(attempt: Int, of: Int) {
+        self.attempt = attempt
+        self.of = of
+    }
+}
+
 /// The streaming state of one assistant response.
 public struct AssistantTurn: Sendable, Equatable {
     public var entries: [TranscriptEntry]
     public var isGenerating: Bool
     public var isThinking: Bool
     public var stopReason: StopReason?
+    /// A short human-readable reason the turn ended abnormally (error / limit /
+    /// refusal / gave-up truncation), set by the provider. `nil` for a clean
+    /// completion or a silently-recovered turn; when present it renders as a
+    /// per-turn line so a non-clean stop is never silent.
+    public var stopDetail: String?
+    /// Set while a transient failure is being retried; drives the visible
+    /// "Retrying…" status. Cleared once new content streams or the turn ends.
+    public var retryStatus: RetryStatus?
     public var plan: Plan?
     /// A proposed plan document (markdown) from plan mode — distinct from the
     /// step checklist in `plan`. Replaced wholesale per update.
@@ -72,6 +91,8 @@ public struct AssistantTurn: Sendable, Equatable {
         isGenerating: Bool = false,
         isThinking: Bool = false,
         stopReason: StopReason? = nil,
+        stopDetail: String? = nil,
+        retryStatus: RetryStatus? = nil,
         plan: Plan? = nil,
         planDocument: String? = nil,
         planBoundary: Int? = nil,
@@ -85,6 +106,8 @@ public struct AssistantTurn: Sendable, Equatable {
         self.isGenerating = isGenerating
         self.isThinking = isThinking
         self.stopReason = stopReason
+        self.stopDetail = stopDetail
+        self.retryStatus = retryStatus
         self.plan = plan
         self.planDocument = planDocument
         self.planBoundary = planBoundary
@@ -133,6 +156,34 @@ public extension AssistantTurn {
     /// The tool calls within this turn, in order.
     var toolCalls: [ToolCall] {
         entries.compactMap { if case let .tool(call) = $0 { return call } else { return nil } }
+    }
+
+    /// A top-level tool call that has started but not yet settled. Its card
+    /// renders its own running shimmer, so the turn-level activity indicator
+    /// defers to it (an in-progress Agent tool stays unsettled while its
+    /// subagent runs, which is what keeps this true for background work).
+    var hasRunningToolCall: Bool {
+        toolCalls.contains { !$0.isSettled }
+    }
+
+    /// Whether the ephemeral "Thinking…" activity indicator should show for the
+    /// top-level thread. The turn is generating but nothing concrete is
+    /// streaming right now — the gap between steps (waiting on the model to
+    /// respond, or a tool call to start) where the transcript would otherwise
+    /// look frozen.
+    ///
+    /// `isThinking` (an explicit thought-token stream) always qualifies. Absent
+    /// that, the indicator shows unless there is already visible activity: the
+    /// final answer actively streaming (`finalText` present), or a tool call in
+    /// progress — each renders its own affordance, so a second indicator would
+    /// be redundant. This is deliberately broader than `isThinking`, which is a
+    /// knife-edge signal cleared by the first non-thought chunk and only ever
+    /// re-armed by another thought chunk (so harnesses that don't stream
+    /// thinking, or any lull between tool calls, would otherwise show nothing).
+    var showsActivityIndicator: Bool {
+        guard isGenerating else { return false }
+        if isThinking { return true }
+        return finalText == nil && !hasRunningToolCall
     }
 
     /// Every tool call in the turn, including those inside subagent threads —

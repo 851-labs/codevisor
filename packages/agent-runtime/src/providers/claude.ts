@@ -69,6 +69,63 @@ const PLAN_TOOLS = new Set(["TodoWrite", "ExitPlanMode"])
 /// handled through canUseTool.
 const HIDDEN_TOOLS = new Set([...PLAN_TOOLS, "AskUserQuestion"])
 
+/// Model-level stop reasons that mean "I ran out of room, not out of work":
+/// the assistant message was truncated by the per-response output-token cap.
+/// The SDK reports this as an ordinary `success` result, so on its own the
+/// provider would end the turn — the "Claude just stopped mid-task" symptom,
+/// where the user had to nudge it with "continue" by hand. The provider resumes
+/// automatically instead; see `handleResult`.
+const TRUNCATION_STOP_REASONS = new Set(["max_tokens"])
+
+/// SDK assistant-message `error` values that will fail identically on retry —
+/// the request/credentials/model are wrong. These end the turn and surface a
+/// reason. Everything else on `error_during_execution` (overloaded, rate_limit,
+/// server_error, `unknown`, or no error at all) is treated as transient and
+/// retried with backoff — a bounded retry is the safe default so we never
+/// silently swallow a recoverable failure.
+const PERMANENT_ASSISTANT_ERRORS = new Set([
+  "authentication_failed",
+  "oauth_org_not_allowed",
+  "billing_error",
+  "invalid_request",
+  "model_not_found"
+])
+
+/// SDK assistant-message `error` values that are transient (the API was busy,
+/// not the request being wrong) — worth an automatic retry. `unknown` is
+/// included so an unclassified `error_during_execution` still retries rather
+/// than surfacing immediately.
+const TRANSIENT_ASSISTANT_ERRORS = new Set(["overloaded", "rate_limit", "server_error", "unknown"])
+
+/// A transient API failure can also arrive with NO structured error — the CLI
+/// renders it as a plain assistant text message ending on a stop sequence
+/// (observed: `API Error: 529 Overloaded …`). Match the CLI's error-line format
+/// for 429 / 5xx (and a bare "overloaded"); 4xx client errors are NOT matched,
+/// since those are permanent. Used only alongside a `stop_sequence` ending.
+const API_ERROR_TEXT = /^\s*API Error:\s*(429|5\d\d)\b|^\s*overloaded\b/i
+
+/// Silent truncation continuations allowed per turn: an output-token-truncated
+/// response legitimately has more to say, so this is generous. Past it the turn
+/// ends and surfaces the truncation.
+const MAX_TRUNCATION_CONTINUATIONS = 12
+
+/// Visible transient retries allowed per turn (529 overload, rate-limit, server
+/// error), on top of the SDK's own internal retries. Past it the turn ends and
+/// the error is surfaced to the user.
+const MAX_TRANSIENT_RETRIES = 3
+
+/// Escalating backoff before a *transient* retry (~1s, 2s, 4s), so we don't
+/// hammer an overloaded API. Truncation continuations use no delay.
+const RECOVERY_BACKOFF_BASE_MS = 1000
+const RECOVERY_BACKOFF_CAP_MS = 8000
+const recoveryBackoffMs = (retryIndex: number): number =>
+  Math.min(RECOVERY_BACKOFF_BASE_MS * 2 ** retryIndex, RECOVERY_BACKOFF_CAP_MS)
+
+/// The nudge pushed to resume a recoverable turn — the same thing a user would
+/// type. Pushed straight into the SDK input queue, so it never surfaces as a
+/// visible user message (the `user` echo carries no tool_result to forward).
+const CONTINUE_PROMPT = "Please continue."
+
 const PLAN_ENTRY_STATUSES = new Set(["pending", "in_progress", "completed"])
 
 /// Maps TodoWrite's todos into wire plan entries. Lenient: malformed todos
@@ -304,6 +361,21 @@ interface ClaudeSession {
   initiatedBy: "user" | "agent"
   pendingPrompt: Deferred<{ stopReason: string }> | undefined
   interruptRequested: boolean
+  /// Silent output-token-truncation continuations in the current turn (capped by
+  /// MAX_TRUNCATION_CONTINUATIONS). Reset when a new turn starts.
+  truncationCount: number
+  /// Visible transient retries (529 overload / rate-limit / server error) in the
+  /// current turn (capped by MAX_TRANSIENT_RETRIES). Reset when a new turn starts.
+  transientRetries: number
+  /// The most recent SDK assistant-message `error` (overloaded/rate_limit/
+  /// authentication_failed/…) seen since the last `result`. Lets `handleResult`
+  /// tell a transient failure (retry) from a permanent one (surface). Consumed
+  /// and cleared on each `result`.
+  lastAssistantError: string | undefined
+  /// The human-readable API error text (e.g. "API Error: 529 Overloaded …") from
+  /// a transient failure that arrived as plain text rather than a structured
+  /// error. Shown in the answer slot (red) if all retries are exhausted.
+  lastErrorText: string | undefined
   currentMessageId: string | undefined
   /// True once top-level text has streamed for `currentMessageId`. A tool_use
   /// block starting afterwards in the same message proves that text was
@@ -466,6 +538,10 @@ export const makeClaudeProvider = (
 
     const created: ClaudeSession = {
       abort,
+      truncationCount: 0,
+      transientRetries: 0,
+      lastAssistantError: undefined,
+      lastErrorText: undefined,
       accumulators: new Map(),
       backgroundShellKeys: new Map(),
       backgroundTasks: new Map(),
@@ -518,6 +594,15 @@ export const makeClaudeProvider = (
           payload: { message: failure },
           subjectId: created.key
         })
+      } finally {
+        // The SDK stream ended (query closed, aborted, or threw) with a turn
+        // still in flight and no final `result` to close it. Without this the
+        // client would show "working"/"Thinking…" forever and the awaited
+        // prompt would never settle. End the turn defensively so state can't
+        // get wedged.
+        if (created.turnActive) {
+          finishActiveTurn(created, created.interruptRequested ? "cancelled" : "end_turn")
+        }
       }
     }
     pump().catch(() => undefined)
@@ -801,6 +886,24 @@ const handleMessage = (
     case "assistant": {
       const parentId = message.parent_tool_use_id ?? undefined
       if (parentId === undefined) {
+        // Remember the SDK's per-message error (overloaded/rate_limit/… or
+        // max_output_tokens) so a following error `result` can be classified
+        // transient vs permanent, and a truncation can be recovered.
+        const assistantError = (message as { error?: unknown }).error
+        if (typeof assistantError === "string") {
+          session.lastAssistantError = assistantError
+        } else {
+          // Some transient failures (e.g. a 529 overload) carry no structured
+          // error — the CLI renders them as an assistant text message ending on
+          // a stop sequence (e.g. "API Error: 529 Overloaded …"). Detect that
+          // shape so the turn retries instead of surfacing the error as if it
+          // were the answer.
+          const apiError = detectApiErrorMessage(message)
+          if (apiError !== undefined) {
+            session.lastAssistantError = "overloaded"
+            session.lastErrorText = apiError
+          }
+        }
         void ensureTurnStarted(session, session.pendingPrompt === undefined ? "agent" : "user")
       }
       const content = message.message.content
@@ -1452,12 +1555,231 @@ const findAccumulatorId = (session: ClaudeSession, _event: Record<string, unknow
   return lastKey
 }
 
+/// One resolution of an SDK `result`: either keep the same turn alive and
+/// recover (truncation continuation or transient retry), or end it — with an
+/// optional human `stopDetail` the client renders when the ending isn't clean.
+/// Extracts the CLI's error text when a transient failure arrived as a plain
+/// assistant message ending on a stop sequence (e.g. "API Error: 529 Overloaded
+/// …"). Returns the trimmed text, or undefined when it isn't that shape.
+const detectApiErrorMessage = (message: SDKMessage & { type: "assistant" }): string | undefined => {
+  const inner = message.message as { stop_reason?: unknown; content?: unknown }
+  if (inner.stop_reason !== "stop_sequence") return undefined
+  const content = inner.content
+  if (!Array.isArray(content)) return undefined
+  const text = content
+    .filter((block): block is Record<string, unknown> => isRecord(block) && block.type === "text")
+    .map((block) => (typeof block.text === "string" ? block.text : ""))
+    .join("")
+    .trim()
+  return API_ERROR_TEXT.test(text) ? text : undefined
+}
+
+type TurnResolution =
+  | { readonly kind: "continue" }
+  | { readonly kind: "retry"; readonly delayMs: number; readonly attempt: number }
+  | { readonly kind: "end"; readonly stopReason: string; readonly stopDetail?: string | undefined }
+
+/// Classifies an SDK `result`:
+///  - output-token truncation (`max_tokens`/`max_output_tokens`) or the
+///    turn-count limit → silent `continue` (bounded by MAX_TRUNCATION_CONTINUATIONS);
+///  - a transient API failure (`error_during_execution`, a transient assistant
+///    `error`, or a detected "API Error: 5xx" text) → visible `retry` with
+///    backoff (bounded by MAX_TRANSIENT_RETRIES);
+///  - otherwise `end`, surfacing a reason for a refusal, permanent error, hit
+///    limit, or exhausted retries.
+const classifyResult = (
+  session: ClaudeSession,
+  message: SDKMessage & { type: "result" }
+): TurnResolution => {
+  if (session.interruptRequested) return { kind: "end", stopReason: "cancelled" }
+
+  const subtype = message.subtype
+  const stopReasonRaw = typeof message.stop_reason === "string" ? message.stop_reason : ""
+  const lastError = session.lastAssistantError ?? ""
+
+  const truncated =
+    (subtype === "success" && TRUNCATION_STOP_REASONS.has(stopReasonRaw)) ||
+    lastError === "max_output_tokens"
+  const turnLimit = subtype === "error_max_turns"
+  const permanentError = subtype !== "success" && PERMANENT_ASSISTANT_ERRORS.has(lastError)
+  // Transient covers an error_during_execution result, a transient assistant
+  // error, or a 529-style error that arrived as text — regardless of the result
+  // subtype (a 529 can surface as a `success` with the error baked into text).
+  const transient =
+    !permanentError &&
+    (subtype === "error_during_execution" || TRANSIENT_ASSISTANT_ERRORS.has(lastError))
+
+  // Silent continuation: the response was truncated (or hit the turn limit) and
+  // legitimately has more to say. No delay, no visible status.
+  if ((truncated || turnLimit) && session.truncationCount < MAX_TRUNCATION_CONTINUATIONS) {
+    return { kind: "continue" }
+  }
+  // Visible retry: a transient API failure, backed off and shown to the user.
+  if (transient && session.transientRetries < MAX_TRANSIENT_RETRIES) {
+    return {
+      kind: "retry",
+      delayMs: recoveryBackoffMs(session.transientRetries),
+      attempt: session.transientRetries + 1
+    }
+  }
+
+  // Terminal. A genuinely clean success ends quietly, noting only a refusal or a
+  // truncation we gave up on.
+  if (subtype === "success" && !transient) {
+    const stopDetail =
+      stopReasonRaw === "refusal"
+        ? "Claude declined to respond."
+        : truncated
+          ? "Response hit the output-token limit."
+          : undefined
+    return { kind: "end", stopReason: "end_turn", stopDetail }
+  }
+  // An error, or a transient failure whose retries are spent: surface the real
+  // API error text when we have it, else a described reason.
+  return {
+    kind: "end",
+    stopReason: subtype === "error_max_turns" ? "max_turn_requests" : "end_turn",
+    stopDetail:
+      transient && session.lastErrorText !== undefined
+        ? session.lastErrorText
+        : describeStop(subtype, lastError)
+  }
+}
+
+/// A short, human-readable reason for a turn that ended abnormally, rendered
+/// under the turn in the transcript (there is no clean-completion string).
+const describeStop = (subtype: string, lastError: string): string => {
+  switch (lastError) {
+    case "overloaded":
+      return "The Claude API was overloaded."
+    case "rate_limit":
+      return "Rate limited by the Claude API."
+    case "server_error":
+      return "The Claude API returned a server error."
+    case "authentication_failed":
+      return "Claude authentication failed."
+    case "oauth_org_not_allowed":
+      return "This organization isn't allowed to use this model."
+    case "billing_error":
+      return "A billing error stopped the turn."
+    case "invalid_request":
+      return "The request was rejected as invalid."
+    case "model_not_found":
+      return "The selected model is unavailable."
+    default:
+      break
+  }
+  switch (subtype) {
+    case "error_max_turns":
+      return "Reached the maximum number of turns."
+    case "error_max_budget_usd":
+      return "Reached the usage budget."
+    case "error_max_structured_output_retries":
+      return "Couldn't produce valid structured output."
+    default:
+      return "Claude Code ended the turn unexpectedly."
+  }
+}
+
+const pushContinuePrompt = (session: ClaudeSession): void => {
+  session.input.push({
+    message: { content: CONTINUE_PROMPT, role: "user" },
+    parent_tool_use_id: null,
+    session_id: session.sdkSessionId,
+    type: "user"
+  })
+}
+
+/// Resumes the live turn after a recoverable stop by pushing a continue nudge.
+/// A positive delay (transient backoff) is scheduled; the callback bails if the
+/// session was closed while waiting, so a timer can never resume a dead session.
+const scheduleRecovery = (session: ClaudeSession, delayMs: number): void => {
+  if (delayMs <= 0) {
+    pushContinuePrompt(session)
+    return
+  }
+  setTimeout(() => {
+    if (session.abort.signal.aborted || !session.turnActive) return
+    pushContinuePrompt(session)
+  }, delayMs)
+}
+
+/// Emits a visible "retrying" status so the client can show "Retrying… (n/3)"
+/// while a transient failure is being retried. The client clears it when the
+/// next output arrives or the turn ends.
+const emitRetrying = (session: ClaudeSession, attempt: number, of: number): void => {
+  void session.emit({
+    kind: "session.updated",
+    payload: { retrying: { attempt, of }, turnId: session.turnId },
+    subjectId: session.key
+  })
+}
+
+/// Dev-only turn-end trace (gated on HERDMAN_DEBUG). The provider has no logger;
+/// this matches the plain-console style used in apps/server/src/main.ts. This is
+/// how we learn the real dominant stop reason without shipping any UI noise.
+const logTurnEnd = (
+  session: ClaudeSession,
+  message: SDKMessage & { type: "result" },
+  resolution: TurnResolution
+): void => {
+  const terminal = (message as { terminal_reason?: unknown }).terminal_reason
+  const outcome =
+    resolution.kind === "continue"
+      ? "continue"
+      : resolution.kind === "retry"
+        ? `retry#${resolution.attempt}(${resolution.delayMs}ms)`
+        : `end/${resolution.stopReason}${resolution.stopDetail === undefined ? "" : ` — ${resolution.stopDetail}`}`
+  console.error(
+    `[claude] turn-end subtype=${message.subtype} stop_reason=${message.stop_reason ?? "-"} ` +
+      `terminal=${typeof terminal === "string" ? terminal : "-"} lastError=${session.lastAssistantError ?? "-"} ` +
+      `trunc=${session.truncationCount} retries=${session.transientRetries} -> ${outcome}`
+  )
+}
+
 const handleResult = (session: ClaudeSession, message: SDKMessage & { type: "result" }): void => {
-  // A turn that ends with questions still open (interrupt, failure)
+  const resolution = classifyResult(session, message)
+  if (process.env.HERDMAN_DEBUG !== undefined) logTurnEnd(session, message, resolution)
+  // Each `result` is classified on the assistant error seen since the previous
+  // one; consume it so a stale error can't misclassify a later leg.
+  session.lastAssistantError = undefined
+
+  if (resolution.kind === "continue") {
+    // Output truncated — resume the same turn immediately and invisibly; the
+    // model just had more to say.
+    session.truncationCount += 1
+    scheduleRecovery(session, 0)
+    return
+  }
+  if (resolution.kind === "retry") {
+    // Transient API failure — show "Retrying…", back off, then resume. The turn
+    // stays alive; turnId/pendingPrompt are untouched.
+    session.transientRetries += 1
+    emitRetrying(session, resolution.attempt, MAX_TRANSIENT_RETRIES)
+    scheduleRecovery(session, resolution.delayMs)
+    return
+  }
+
+  // Terminal. A turn that ends with questions still open (interrupt, failure)
   // invalidates them — clients must not keep showing the picker.
+  session.lastErrorText = undefined
   cancelClaudePendingQuestions(session)
   settleGoalOnTurnEnd(session, message)
-  // Anything still open never got a tool_result (interrupt/failure).
+  finishActiveTurn(session, resolution.stopReason, resolution.stopDetail)
+}
+
+/// Ends the in-flight turn: settles any tool calls that never got a result,
+/// clears per-turn accumulators, emits `turnState: ended`, and resolves the
+/// awaiting prompt. The single place `turnActive` is cleared. Driven by an SDK
+/// `result` (via `handleResult`) and, defensively, by the pump when the SDK
+/// stream dies mid-turn — so a wedged stream can never leave the client showing
+/// "working" forever.
+const finishActiveTurn = (
+  session: ClaudeSession,
+  stopReason: string,
+  stopDetail?: string | undefined
+): void => {
+  // Anything still open never got a tool_result (interrupt/failure/stream end).
   for (const toolUseId of [...session.openToolCalls]) {
     session.openToolCalls.delete(toolUseId)
     void session.emit({
@@ -1473,26 +1795,14 @@ const handleResult = (session: ClaudeSession, message: SDKMessage & { type: "res
   session.accumulators.clear()
   session.subagentMessageIds.clear()
 
-  const stopReason = session.interruptRequested
-    ? "cancelled"
-    : message.subtype === "error_max_turns"
-      ? "max_turn_requests"
-      : "end_turn"
-  if (message.subtype !== "success" && !session.interruptRequested) {
-    const errors = "errors" in message && Array.isArray(message.errors) ? message.errors : []
-    void session.emit({
-      kind: "session.error",
-      payload: {
-        message: errors.length > 0 ? errors.join("\n") : `Claude Code failed: ${message.subtype}`
-      },
-      subjectId: session.key
-    })
-  }
   const ended: RuntimeEvent = {
     kind: "session.updated",
     payload: {
       initiatedBy: session.initiatedBy,
       stopReason,
+      // Only present when the turn ended abnormally (error / limit / refusal /
+      // truncation we gave up on); the client renders it as a per-turn reason.
+      ...(stopDetail === undefined ? {} : { stopDetail }),
       turnId: session.turnId,
       turnState: "ended"
     },
@@ -1515,6 +1825,12 @@ const ensureTurnStarted = (
   session.turnActive = true
   session.turnId = randomUUID()
   session.initiatedBy = initiatedBy
+  // Fresh turn: reset the recovery counters (auto-recoveries keep `turnActive`
+  // true, so this never fires mid-recovery) and drop any stale error state.
+  session.truncationCount = 0
+  session.transientRetries = 0
+  session.lastAssistantError = undefined
+  session.lastErrorText = undefined
   return session.emit({
     kind: "session.updated",
     payload: { initiatedBy, turnId: session.turnId, turnState: "started" },
