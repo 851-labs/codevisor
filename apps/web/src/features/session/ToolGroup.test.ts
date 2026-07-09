@@ -77,12 +77,11 @@ describe("tool diff rendering", () => {
 
 describe("tool source links", () => {
   it("uses title, then name, then uri as the rendered source label", () => {
-    expect(resourceLinkLabel({ name: "Docs", title: "Example Docs", uri: "https://example.com" }))
-      .toBe("Example Docs")
+    expect(
+      resourceLinkLabel({ name: "Docs", title: "Example Docs", uri: "https://example.com" })
+    ).toBe("Example Docs")
     expect(resourceLinkLabel({ name: "Docs", uri: "https://example.com" })).toBe("Docs")
-    expect(resourceLinkLabel({ name: "", uri: "https://example.com" })).toBe(
-      "https://example.com"
-    )
+    expect(resourceLinkLabel({ name: "", uri: "https://example.com" })).toBe("https://example.com")
   })
 
   it("only treats absolute urls as clickable sources", () => {

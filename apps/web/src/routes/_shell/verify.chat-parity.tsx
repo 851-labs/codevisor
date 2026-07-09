@@ -132,8 +132,7 @@ const sampleToolCalls: ToolCallInfo[] = [
       {
         type: "diff",
         path: "apps/web/src/features/composer/Composer.tsx",
-        oldText:
-          "        const maxHeight = 200\n        submitOrAcceptSlash()\n",
+        oldText: "        const maxHeight = 200\n        submitOrAcceptSlash()\n",
         newText:
           "        const maxHeight = 240\n        acceptSlashWithTab()\n        submitOrAcceptSlash()\n"
       }

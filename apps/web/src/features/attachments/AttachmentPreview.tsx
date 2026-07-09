@@ -306,12 +306,7 @@ export function FileChip({ name, onClick }: { name: string; onClick?: () => void
   }
 
   return (
-    <button
-      type="button"
-      title={name}
-      onClick={onClick}
-      className={className}
-    >
+    <button type="button" title={name} onClick={onClick} className={className}>
       {content}
     </button>
   )

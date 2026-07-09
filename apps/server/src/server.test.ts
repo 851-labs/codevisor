@@ -1836,6 +1836,11 @@ describe("@herdman/server", () => {
       expect(
         mirroredSetupPayloads.map((event) => (event.payload as { state: string }).state)
       ).toEqual(setupPayloads.map((payload) => payload.state))
+      const mirroredSetupHistory = (
+        await jsonRequest(server, "/v1/sessions/session-awaiting-worktree/events")
+      ).body as ReadonlyArray<{ readonly kind: string; readonly subjectId: string }>
+      expect(mirroredSetupHistory).toHaveLength(mirroredSetupPayloads.length)
+      expect(mirroredSetupHistory.every((event) => event.kind === "worktree.setup")).toBe(true)
 
       // The same requested name draws different digits, so it never conflicts.
       const secondWorktree = (
@@ -2002,6 +2007,9 @@ describe("@herdman/server", () => {
       })
       expect(existsSync(solo.path)).toBe(false)
       expect(await worktreeNames()).not.toContain(solo.name)
+      const removedWorktreeHistory = (await jsonRequest(server, `/v1/sessions/${sharer.id}/events`))
+        .body as ReadonlyArray<{ readonly kind: string }>
+      expect(removedWorktreeHistory.some((event) => event.kind === "worktree.setup")).toBe(false)
 
       // Re-archiving once the worktree record is gone is a harmless no-op.
       expect(

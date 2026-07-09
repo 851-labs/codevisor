@@ -746,18 +746,20 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
           style={{ height: terminalVisible ? terminalHeight : 0 }}
           className={cn("shrink-0 overflow-hidden", !terminalVisible && "pointer-events-none")}
         >
-          {paneState.panes.filter((pane) => mountedTerminalPaneIds.includes(pane.id)).map((pane) => (
-            <div
-              key={pane.id}
-              className={cn("h-full w-full", pane.id !== selectedPane?.id && "hidden")}
-            >
-              <TerminalPanel
-                sessionId={pane.terminalKey}
-                cwd={detail?.session.cwd ?? projectFolderPath(project) ?? ""}
-                attachOnly={pane.attachOnly}
-              />
-            </div>
-          ))}
+          {paneState.panes
+            .filter((pane) => mountedTerminalPaneIds.includes(pane.id))
+            .map((pane) => (
+              <div
+                key={pane.id}
+                className={cn("h-full w-full", pane.id !== selectedPane?.id && "hidden")}
+              >
+                <TerminalPanel
+                  sessionId={pane.terminalKey}
+                  cwd={detail?.session.cwd ?? projectFolderPath(project) ?? ""}
+                  attachOnly={pane.attachOnly}
+                />
+              </div>
+            ))}
         </div>
       )}
       {isAttachmentDropTargeted && canAcceptDroppedFiles && <DropToAttachOverlay />}
@@ -796,9 +798,7 @@ function loadTerminalPaneState(sessionId: string): TerminalPaneState {
     const raw = window.localStorage.getItem(terminalPaneStorageKey(sessionId))
     if (raw == null) return fallback
     const parsed = JSON.parse(raw) as Partial<TerminalPaneState>
-    const panes = Array.isArray(parsed.panes)
-      ? parsed.panes.filter(isTerminalPane)
-      : fallback.panes
+    const panes = Array.isArray(parsed.panes) ? parsed.panes.filter(isTerminalPane) : fallback.panes
     const safePanes = panes.length > 0 ? panes : fallback.panes
     return {
       sessionId,
@@ -905,7 +905,9 @@ export function WaitingBackgroundTaskIndicator({
   )
 }
 
-export function waitingBackgroundTaskLabel(tasks: readonly Pick<BackgroundTaskInfo, "description">[]) {
+export function waitingBackgroundTaskLabel(
+  tasks: readonly Pick<BackgroundTaskInfo, "description">[]
+) {
   const task = tasks[0]
   if (task == null) return ""
   const extra = tasks.length - 1

@@ -486,10 +486,7 @@ function SlashCommandMenu({
             </span>
             {command.hint != null && (
               <span
-                className={cn(
-                  "text-muted-foreground/70 truncate",
-                  isSelected && "text-white/70"
-                )}
+                className={cn("text-muted-foreground/70 truncate", isSelected && "text-white/70")}
               >
                 {command.hint}
               </span>

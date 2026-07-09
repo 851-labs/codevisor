@@ -340,16 +340,21 @@
 }
 
 .herdman-prose
-  :where([data-streamdown="code-block-copy-button"]:has([data-herdman-streamdown-copy-state="copy"]))::after {
+  :where(
+    [data-streamdown="code-block-copy-button"]:has([data-herdman-streamdown-copy-state="copy"])
+  )::after {
   content: "Copy";
 }
 
 .herdman-prose
-  :where([data-streamdown="code-block-copy-button"]:has([data-herdman-streamdown-copy-state="copied"]))::after {
+  :where(
+    [data-streamdown="code-block-copy-button"]:has([data-herdman-streamdown-copy-state="copied"])
+  )::after {
   content: "Copied";
 }
 
-.herdman-prose :where([data-streamdown="code-block"] > div:has([data-streamdown="code-block-actions"])) {
+.herdman-prose
+  :where([data-streamdown="code-block"] > div:has([data-streamdown="code-block-actions"])) {
   position: absolute;
   top: 0.35rem;
   right: 0.5rem;

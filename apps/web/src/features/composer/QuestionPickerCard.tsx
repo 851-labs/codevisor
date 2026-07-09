@@ -99,10 +99,14 @@ export function QuestionPickerCard({
 
   const buildAnswers = (
     sourceSelections: Record<string, Set<string>> = selections
-  ): Record<string, QuestionAnswerEntry> => buildQuestionAnswers(request.questions, sourceSelections, notes)
+  ): Record<string, QuestionAnswerEntry> =>
+    buildQuestionAnswers(request.questions, sourceSelections, notes)
 
   const submit = (sourceSelections: Record<string, Set<string>> = selections) => {
-    if (!areQuestionAnswersSubmittable(request.questions, sourceSelections, notes) || isSubmitting) {
+    if (
+      !areQuestionAnswersSubmittable(request.questions, sourceSelections, notes) ||
+      isSubmitting
+    ) {
       return
     }
     onAnswer(buildAnswers(sourceSelections))

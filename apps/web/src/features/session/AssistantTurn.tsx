@@ -1,10 +1,5 @@
 import type { ConversationItem } from "@herdman/api"
-import {
-  ChevronRightIcon,
-  CircleSlashIcon,
-  CircleXIcon,
-  WandSparklesIcon
-} from "lucide-react"
+import { ChevronRightIcon, CircleSlashIcon, CircleXIcon, WandSparklesIcon } from "lucide-react"
 import { useEffect, useMemo, useRef, useState } from "react"
 
 import { ShimmerText } from "../../components/ShimmerText"
@@ -268,11 +263,10 @@ export function AssistantTurn({
   const workedTitle = () => {
     if (isActive) return `Working for ${formatSeconds(elapsed)}`
     const started = meta?.startedAt != null ? new Date(meta.startedAt).getTime() : undefined
-    const ended = meta?.endedAt != null ? new Date(meta.endedAt).getTime() : fallbackFinishedAt.current
+    const ended =
+      meta?.endedAt != null ? new Date(meta.endedAt).getTime() : fallbackFinishedAt.current
     const duration =
-      started != null && ended != null
-        ? Math.round(Math.max(0, ended - started) / 1000)
-        : undefined
+      started != null && ended != null ? Math.round(Math.max(0, ended - started) / 1000) : undefined
     if (duration == null || duration < 1) return "Worked for a moment"
     return `Worked for ${formatSeconds(duration)}`
   }
@@ -290,7 +284,9 @@ export function AssistantTurn({
           onToggle={() =>
             setDisclosureValue(
               planningDisclosureKey,
-              forceExpanded ? true : !(disclosureValues[planningDisclosureKey] ?? defaultSectionExpanded)
+              forceExpanded
+                ? true
+                : !(disclosureValues[planningDisclosureKey] ?? defaultSectionExpanded)
             )
           }
           headerLockedOpen={headerLockedOpen}
@@ -568,9 +564,7 @@ function SubagentSection({
     <div className="flex min-w-0 flex-col gap-2">
       <button
         type="button"
-        onClick={() =>
-          setDisclosureValue(disclosureKey, forceExpanded ? true : !expanded)
-        }
+        onClick={() => setDisclosureValue(disclosureKey, forceExpanded ? true : !expanded)}
         className="text-muted-foreground flex cursor-default items-center gap-2 text-left text-sm outline-none"
       >
         <WandSparklesIcon className="size-3.5 shrink-0" />
