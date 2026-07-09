@@ -19,6 +19,12 @@ final class SessionStore {
     /// Turns that finished while their session wasn't open, keyed by session
     /// id — the sidebar's iOS-style unread badges. Cleared on open.
     private var unreadCounts: [UUID: Int] = [:]
+    /// Invalidates views that observe aggregate activity across the cached
+    /// controllers. A turn can finish without otherwise mutating this store
+    /// (most notably when its session is open), so nested controller
+    /// observation alone can leave cross-session UI such as update banners
+    /// holding onto its previous value.
+    private var activityRevision = 0
     /// The session currently shown in the detail column; its finished turns
     /// never count as unread.
     private var openSessionId: UUID?
@@ -158,7 +164,8 @@ final class SessionStore {
     /// "actively working" signal as the sort so the transient connect pulse
     /// on first open doesn't briefly block the update button.
     func hasActiveSessions(onServer serverId: String) -> Bool {
-        controllers.values.contains { controller in
+        _ = activityRevision
+        return controllers.values.contains { controller in
             controller.serverSession?.serverId == serverId && Self.isActivelyWorking(controller)
         }
     }
@@ -202,6 +209,7 @@ final class SessionStore {
     }
 
     private func noteTurnEnded(for sessionId: UUID) {
+        activityRevision &+= 1
         guard sessionId != openSessionId else { return }
         // A turn that ends into a "waiting on background work" state isn't the
         // end of the agent's work — it will start an agent-initiated turn when

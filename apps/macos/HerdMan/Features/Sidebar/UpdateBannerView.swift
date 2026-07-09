@@ -12,7 +12,7 @@ struct UpdateBannerView: View {
     var hasRunningChats: Bool = false
     @Environment(\.theme) private var theme
 
-    private static let runningChatsHint = "Update once all of your chats are completed."
+    private static let runningChatsHint = "Update once all of your chats are finished."
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -34,12 +34,7 @@ struct UpdateBannerView: View {
                 }
             }
 
-            if hasRunningChats, !model.isUpdating {
-                Text(Self.runningChatsHint)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            } else if let message = model.failureMessage {
+            if let message = model.failureMessage {
                 Text(message)
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -73,7 +68,7 @@ struct ServerUpdateBannerView: View {
     var hasRunningChats: Bool = false
     @Environment(\.theme) private var theme
 
-    private static let runningChatsHint = "Update once all of the chats on this machine are completed."
+    private static let runningChatsHint = "Update once all of the chats on this machine are finished."
 
     private var isUpdating: Bool { machines.serverUpdatePhase == .updating }
 
@@ -102,12 +97,7 @@ struct ServerUpdateBannerView: View {
                 }
             }
 
-            if hasRunningChats, !isUpdating {
-                Text(Self.runningChatsHint)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            } else if let failureMessage {
+            if let failureMessage {
                 Text(failureMessage)
                     .font(.caption)
                     .foregroundStyle(.secondary)
