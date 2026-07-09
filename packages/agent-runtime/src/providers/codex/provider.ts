@@ -8,6 +8,7 @@ import type {
   SessionGoal,
   SessionModeState
 } from "@herdman/api"
+import { execFileSync } from "node:child_process"
 import { randomUUID } from "node:crypto"
 import { Effect } from "effect"
 import { listCodexAgentSessions } from "../../agent-sessions.js"
@@ -64,6 +65,8 @@ export interface CodexProviderConfig {
   /// Injectable for tests: scripted app-server sessions instead of a spawned
   /// codex binary.
   readonly connector?: CodexConnector
+  /// Injectable for tests: reads a resolved Codex binary's version.
+  readonly versionReader?: (command: string, env: NodeJS.ProcessEnv) => string | undefined
   /// When set, command executions mirror their streamed output
   /// (`item/commandExecution/outputDelta`) into server-owned terminals;
   /// commands that outlive the promotion delay surface as terminal tabs.
@@ -246,22 +249,43 @@ export const makeCodexProvider = (
   config: CodexProviderConfig = {}
 ): AgentProvider => {
   const connector = config.connector ?? spawnCodexClient
+  const versionReader = config.versionReader ?? readCodexVersion
 
-  // PATH first (a user-managed CLI is never shadowed), then fallbackPaths —
-  // the Codex desktop app bundles the same binary, so app-only users still
-  // get a working harness.
+  // PATH first, then fallbackPaths. When both the user CLI and Codex.app
+  // bundle are present, compare resolved binary versions and run the newer
+  // app-server so HerdMan sees the newest Codex model catalog.
   const codexCandidates = (definition: HarnessDefinition): ReadonlyArray<string> => [
     ...definition.detectBinaries,
     ...(definition.fallbackPaths ?? [])
   ]
 
   const locateCodex = (definition: HarnessDefinition): string => {
+    const locatedCandidates: Array<{ command: string; version: string | undefined }> = []
+    const seen = new Set<string>()
     for (const candidate of codexCandidates(definition)) {
       const located = environment.locateExecutable(candidate, environment.env)
       if (located !== undefined) {
-        return located
+        if (!seen.has(located)) {
+          seen.add(located)
+          locatedCandidates.push({
+            command: located,
+            version: versionReader(located, environment.env)
+          })
+        }
       }
     }
+    let selected = locatedCandidates[0]
+    for (const candidate of locatedCandidates.slice(1)) {
+      if (
+        selected?.version !== undefined &&
+        candidate.version !== undefined &&
+        isCodexVersionNewer(candidate.version, selected.version)
+      ) {
+        selected = candidate
+      }
+    }
+    if (selected !== undefined) return selected.command
+
     const binary = definition.detectBinaries[0] ?? "codex"
     throw new Error(`${binary} not found on PATH or in the Codex app`)
   }
@@ -647,6 +671,41 @@ export const makeCodexProvider = (
         : { detail: "CLI not found on PATH", state: "unavailable" }
     }
   }
+}
+
+const readCodexVersion = (command: string, env: NodeJS.ProcessEnv): string | undefined => {
+  try {
+    const output = execFileSync(command, ["--version"], {
+      encoding: "utf8",
+      env,
+      timeout: 1000
+    })
+    return codexVersionFromOutput(output)
+  } catch {
+    return undefined
+  }
+}
+
+const codexVersionFromOutput = (output: string): string | undefined => {
+  const match = output.match(/(?:^|\s)[vV]?(\d+(?:\.\d+)+)(?:-[^\s]+)?/)
+  return match?.[1]
+}
+
+const isCodexVersionNewer = (candidate: string, current: string): boolean => {
+  const lhs = numericVersionComponents(candidate)
+  const rhs = numericVersionComponents(current)
+  for (let index = 0; index < Math.max(lhs.length, rhs.length); index += 1) {
+    const left = lhs[index] ?? 0
+    const right = rhs[index] ?? 0
+    if (left !== right) return left > right
+  }
+  return false
+}
+
+const numericVersionComponents = (version: string): ReadonlyArray<number> => {
+  const normalized = (codexVersionFromOutput(version) ?? version).trim().replace(/^[vV]/, "")
+  const base = normalized.split("-")[0] ?? normalized
+  return base.split(".").map((part) => Number.parseInt(part, 10) || 0)
 }
 
 /// Routes codex's server→client requests: questions and MCP elicitations

@@ -1245,6 +1245,64 @@ describe("CodexProvider", () => {
     })
   })
 
+  it("uses the Codex.app bundled binary when it is newer than the PATH CLI", async () => {
+    const cli = "/bin/codex"
+    const bundled = "/Applications/Codex.app/Contents/Resources/codex"
+    const withFallback: HarnessDefinition = { ...definition, fallbackPaths: [bundled] }
+    const installed: ProviderEnvironment = {
+      env: { PATH: "/bin" },
+      executableExists: (name) => name === "codex" || name === bundled,
+      locateExecutable: (name) => (name === "codex" ? cli : name === bundled ? bundled : undefined)
+    }
+    const client = new FakeCodexClient()
+    const spawns: Array<CodexSpawnRequest> = []
+    const provider = makeCodexProvider(installed, {
+      connector: async (request) => {
+        spawns.push(request)
+        return client
+      },
+      versionReader: (command) =>
+        command === cli
+          ? "codex-cli 0.143.0"
+          : command === bundled
+            ? "codex-cli 0.144.0"
+            : undefined
+    })
+
+    await run(provider.createSession(withFallback, "/tmp/project", async () => {}))
+
+    expect(spawns[0]).toMatchObject({ command: bundled, cwd: "/tmp/project" })
+  })
+
+  it("keeps the PATH Codex CLI when the app bundle is not newer", async () => {
+    const cli = "/bin/codex"
+    const bundled = "/Applications/Codex.app/Contents/Resources/codex"
+    const withFallback: HarnessDefinition = { ...definition, fallbackPaths: [bundled] }
+    const installed: ProviderEnvironment = {
+      env: { PATH: "/bin" },
+      executableExists: (name) => name === "codex" || name === bundled,
+      locateExecutable: (name) => (name === "codex" ? cli : name === bundled ? bundled : undefined)
+    }
+    const client = new FakeCodexClient()
+    const spawns: Array<CodexSpawnRequest> = []
+    const provider = makeCodexProvider(installed, {
+      connector: async (request) => {
+        spawns.push(request)
+        return client
+      },
+      versionReader: (command) =>
+        command === cli
+          ? "codex-cli 0.144.0"
+          : command === bundled
+            ? "codex-cli 0.144.0"
+            : undefined
+    })
+
+    await run(provider.createSession(withFallback, "/tmp/project", async () => {}))
+
+    expect(spawns[0]).toMatchObject({ command: cli, cwd: "/tmp/project" })
+  })
+
   it("falls back to the Codex.app bundled binary when the CLI is not on PATH", async () => {
     const bundled = "/Applications/Codex.app/Contents/Resources/codex"
     const appOnly: ProviderEnvironment = {

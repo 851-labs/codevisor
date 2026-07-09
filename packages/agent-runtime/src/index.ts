@@ -158,11 +158,13 @@ export const harnessCatalog: ReadonlyArray<HarnessDefinition> = [
   // no npx adapter, no Node requirement.
   {
     detectBinaries: ["codex"],
-    // The Codex desktop app bundles the full CLI (same binary, app-managed
-    // updates) and shares ~/.codex auth with it — app-only users get a
-    // working harness without installing the CLI. PATH wins when both exist
-    // so a user-pinned CLI is never shadowed.
+    // The ChatGPT/Codex desktop apps bundle the full CLI (same binary,
+    // app-managed updates) and share ~/.codex auth with it — app-only users
+    // get a working harness without installing the CLI. When both exist, the
+    // Codex provider compares binary versions and uses the newer app-server.
     fallbackPaths: [
+      "/Applications/ChatGPT.app/Contents/Resources/codex",
+      "~/Applications/ChatGPT.app/Contents/Resources/codex",
       "/Applications/Codex.app/Contents/Resources/codex",
       "~/Applications/Codex.app/Contents/Resources/codex"
     ],

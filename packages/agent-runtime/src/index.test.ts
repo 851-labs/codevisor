@@ -13,6 +13,7 @@ import {
   acpPrompt,
   applyAcpModelSelection,
   extractAcpModelState,
+  harnessCatalog,
   locateExecutableOnPath,
   makeAgentRuntime,
   normalizeModeState,
@@ -400,6 +401,19 @@ describe("@herdman/agent-runtime", () => {
     const runtime = makeAgentRuntime({ env: {}, locateExecutable: () => undefined })
     expect((await run(runtime.discoverHarnesses))[0]?.readiness.detail).toBe(
       "CLI not found on PATH"
+    )
+  })
+
+  it("checks both ChatGPT.app and Codex.app for the bundled Codex CLI", () => {
+    const codex = harnessCatalog.find((harness) => harness.id === "codex")
+
+    expect(codex?.fallbackPaths).toEqual(
+      expect.arrayContaining([
+        "/Applications/ChatGPT.app/Contents/Resources/codex",
+        "~/Applications/ChatGPT.app/Contents/Resources/codex",
+        "/Applications/Codex.app/Contents/Resources/codex",
+        "~/Applications/Codex.app/Contents/Resources/codex"
+      ])
     )
   })
 
