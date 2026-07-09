@@ -501,7 +501,12 @@ const routeProjects = async (
     const branch = `herdman/${name}`
     const worktree = await run(services.db.createWorktree(project.id, name, branch, payload.id))
     const startedAt = Date.now()
-    const publishSetup = makeWorktreeSetupPublisher(services.db, fanout, worktree)
+    const publishSetup = makeWorktreeSetupPublisher(
+      services.db,
+      fanout,
+      worktree,
+      payload.sessionId
+    )
     await publishSetup({ state: "started" })
     try {
       mkdirSync(dirname(worktree.path), { recursive: true })
@@ -680,7 +685,8 @@ type WorktreeSetupDetail = Omit<WorktreeSetupUpdate, "worktreeId" | "projectId" 
 const makeWorktreeSetupPublisher = (
   db: HerdManDatabaseService,
   fanout: EventFanout,
-  worktree: Worktree
+  worktree: Worktree,
+  mirrorSubjectId?: string
 ): ((detail: WorktreeSetupDetail) => Promise<void>) => {
   let chain: Promise<void> = Promise.resolve()
   return (detail) => {
@@ -693,6 +699,9 @@ const makeWorktreeSetupPublisher = (
     }
     const next = chain.then(async () => {
       await appendAndPublish(db, fanout, "worktree.setup", worktree.id, update)
+      if (mirrorSubjectId !== undefined) {
+        await appendAndPublish(db, fanout, "worktree.setup", mirrorSubjectId, update)
+      }
     })
     /* v8 ignore next -- keeps the chain alive if the event log write fails; awaited callers still see the failure via `next`. */
     chain = next.catch(() => undefined)
@@ -884,14 +893,16 @@ const createServerSession = async (
   // to it before the agent session exists.
   const sessionId = payload.id ?? randomUUID()
   const agentSessionId =
-    payload.agentSessionId ??
-    (await run(
-      services.agents.createAgentSession(
-        payload.harnessId,
-        cwd,
-        sessionEventSink(services, fanout, serverId, sessionId)
-      )
-    ))
+    payload.deferAgentSession === true
+      ? ""
+      : (payload.agentSessionId ??
+        (await run(
+          services.agents.createAgentSession(
+            payload.harnessId,
+            cwd,
+            sessionEventSink(services, fanout, serverId, sessionId)
+          )
+        )))
   return run(
     services.db.createSession({
       ...payload,
@@ -1033,7 +1044,11 @@ const routeSessionActions = async (
   // that the text-only conversation snapshot cannot carry.
   const eventsSessionId = matchRoute(url.pathname, "/v1/sessions/:id/events")
   if (eventsSessionId !== undefined && request.method === "GET") {
-    writeJson(response, 200, await run(services.db.listSubjectEvents(eventsSessionId)))
+    writeJson(
+      response,
+      200,
+      await sessionHistoryEventsWithSetup(services.db, config.id, eventsSessionId)
+    )
     return true
   }
 
@@ -1312,7 +1327,6 @@ const runPromptInBackground = async (
   attachments?: ReadonlyArray<AttachmentRef>
 ): Promise<void> => {
   try {
-    const agentSessionId = await ensureAgentSessionFor(services, fanout, serverId, sessionId)
     const refs = attachments ?? []
     await materializeRuntimeEvent(
       services.db,
@@ -1320,11 +1334,12 @@ const runPromptInBackground = async (
       serverId,
       {
         kind: "session.output",
-        subjectId: agentSessionId,
+        subjectId: sessionId,
         payload: { role: "user", text, ...(refs.length === 0 ? {} : { attachments: refs }) }
       },
       sessionId
     )
+    const agentSessionId = await ensureAgentSessionFor(services, fanout, serverId, sessionId)
     // Session output, turn lifecycle, and the final stopReason all flow
     // through the standing sink registered at session create/load time.
     const input =
@@ -1338,6 +1353,30 @@ const runPromptInBackground = async (
       serverId
     })
   }
+}
+
+const sessionHistoryEventsWithSetup = async (
+  db: HerdManDatabaseService,
+  serverId: string,
+  sessionId: string
+): Promise<ReadonlyArray<EventEnvelope>> => {
+  const sessionEvents = await run(db.listSubjectEvents(sessionId))
+  if (sessionEvents.some((event) => event.kind === "worktree.setup")) {
+    return sessionEvents
+  }
+  const detail = await run(db.getSessionDetail(sessionId))
+  const worktreeName = detail.session.worktreeName
+  if (worktreeName === undefined) {
+    return sessionEvents
+  }
+  const worktree = (await run(db.listWorktrees(detail.session.projectId))).find(
+    (candidate) => candidate.serverId === serverId && candidate.name === worktreeName
+  )
+  if (worktree === undefined) {
+    return sessionEvents
+  }
+  const setupEvents = await run(db.listSubjectEvents(worktree.id))
+  return [...sessionEvents, ...setupEvents].sort((left, right) => left.id - right.id)
 }
 
 const routeFiles = async (
@@ -1610,6 +1649,18 @@ const ensureAgentSessionFor = async (
     project,
     detail.session.worktreeName
   )
+  if (detail.session.agentSessionId === "") {
+    const agentSessionId = await run(
+      services.agents.createAgentSession(
+        detail.session.harnessId,
+        cwd,
+        sessionEventSink(services, fanout, serverId, sessionId)
+      )
+    )
+    const session = await run(services.db.updateSession(sessionId, { agentSessionId }))
+    await appendAndPublish(services.db, fanout, "session.updated", session.id, session)
+    return agentSessionId
+  }
   const agentSessionId = detail.session.agentSessionId ?? sessionId
   return run(
     services.agents.loadAgentSession(

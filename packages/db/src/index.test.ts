@@ -312,6 +312,11 @@ describe("@herdman/db", () => {
       agentSessionId: "agent-2",
       title: "Explicit title"
     })
+    expect(
+      await run(db.updateSession(secondSession.id, { worktreeName: "fix-auth" }))
+    ).toMatchObject({
+      worktreeName: "fix-auth"
+    })
 
     const renamedSession = await run(
       db.updateSession(firstSession.id, { isArchived: true, title: "Renamed session" })

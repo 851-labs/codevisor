@@ -120,6 +120,7 @@ export const PlanDocumentPayload = Schema.Struct({
 export type PlanDocumentPayload = typeof PlanDocumentPayload.Type
 
 export const QuestionOption = Schema.Struct({
+  id: Schema.optional(Schema.String),
   label: Schema.String,
   description: Schema.optional(Schema.String)
 })

@@ -823,12 +823,13 @@ const createService = (
         const current = getSession(id)
         sqlite
           .prepare(
-            "update sessions set title = ?, is_archived = ?, agent_session_id = ?, updated_at = ? where id = ?"
+            "update sessions set title = ?, is_archived = ?, agent_session_id = ?, worktree_name = ?, updated_at = ? where id = ?"
           )
           .run(
             request.title ?? current.title,
             (request.isArchived ?? current.isArchived) ? 1 : 0,
             request.agentSessionId ?? current.agentSessionId ?? null,
+            request.worktreeName ?? current.worktreeName ?? null,
             request.updatedAt ?? current.updatedAt ?? null,
             id
           )

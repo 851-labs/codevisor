@@ -1,0 +1,39 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "HerdMan",
+  "version": "0.1.0",
+  "identifier": "dev.herdman.desktop",
+  "build": {
+    "beforeDevCommand": "bun run --cwd ../web dev",
+    "devUrl": "http://localhost:3001",
+    "beforeBuildCommand": "bun run --cwd ../web build",
+    "frontendDist": "../../web/dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "HerdMan",
+        "width": 980,
+        "height": 640,
+        "minWidth": 640,
+        "minHeight": 460,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost http://127.0.0.1:* ws://127.0.0.1:* http://localhost:* ws://localhost:*"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["app", "dmg"],
+    "icon": ["icons/icon.icns", "icons/icon.png"],
+    "resources": {
+      "resources/server": "server"
+    },
+    "macOS": {
+      "minimumSystemVersion": "13.0"
+    }
+  }
+}

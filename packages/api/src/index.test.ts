@@ -87,12 +87,14 @@ describe("@herdman/api", () => {
         title: "Synced",
         origin: "herdman",
         isArchived: false,
+        deferAgentSession: true,
         worktreeName: "fix-auth",
         createdAt: "2026-06-30T00:00:00.000Z",
         updatedAt: "2026-06-30T00:01:00.000Z"
       })
     ).toMatchObject({
       agentSessionId: "agent-1",
+      deferAgentSession: true,
       id: "session-1",
       title: "Synced",
       worktreeName: "fix-auth"
@@ -114,9 +116,16 @@ describe("@herdman/api", () => {
 
     expect(decode(CreateWorktreeRequest)({})).toEqual({})
     expect(decode(CreateWorktreeRequest)({ name: "fix-auth" })).toEqual({ name: "fix-auth" })
-    expect(decode(CreateWorktreeRequest)({ id: "worktree-1", name: "fix-auth" })).toEqual({
+    expect(
+      decode(CreateWorktreeRequest)({
+        id: "worktree-1",
+        name: "fix-auth",
+        sessionId: "session-1"
+      })
+    ).toEqual({
       id: "worktree-1",
-      name: "fix-auth"
+      name: "fix-auth",
+      sessionId: "session-1"
     })
   })
 

@@ -192,6 +192,9 @@ export const CreateWorktreeRequest = Schema.Struct({
   /// Client-supplied worktree id so callers can follow `worktree.setup` events
   /// (subjectId = worktree id) while the create request is still in flight.
   id: Schema.optional(Schema.String),
+  /// Optional HerdMan session id that should also receive mirrored
+  /// `worktree.setup` progress while the session is waiting for first setup.
+  sessionId: Schema.optional(Schema.String),
   name: Schema.optional(Schema.String)
 })
 export type CreateWorktreeRequest = typeof CreateWorktreeRequest.Type
@@ -303,6 +306,9 @@ export const CreateSessionRequest = Schema.Struct({
   projectId: Schema.String,
   harnessId: Schema.String,
   agentSessionId: Schema.optional(Schema.String),
+  /// Create only the HerdMan session row. The server starts and persists the
+  /// agent session on the first prompt/config/goal action.
+  deferAgentSession: Schema.optional(Schema.Boolean),
   title: Schema.optional(Schema.String),
   origin: Schema.optional(SessionOrigin),
   isArchived: Schema.optional(Schema.Boolean),
@@ -316,6 +322,7 @@ export const UpdateSessionRequest = Schema.Struct({
   agentSessionId: Schema.optional(Schema.String),
   isArchived: Schema.optional(Schema.Boolean),
   title: Schema.optional(Schema.String),
+  worktreeName: Schema.optional(Schema.String),
   /// Explicit activity stamp, sent only when a turn finishes; plain metadata
   /// updates must omit it so recency ordering ignores opens/renames.
   updatedAt: Schema.optional(Schema.String)
@@ -521,6 +528,7 @@ export const endpoints = [
   "GET /v1/sessions/:id",
   "PATCH /v1/sessions/:id",
   "DELETE /v1/sessions/:id",
+  "GET /v1/sessions/:id/events",
   "GET /v1/sessions/:id/queue",
   "PATCH /v1/sessions/:id/queue/:queueId",
   "DELETE /v1/sessions/:id/queue/:queueId",

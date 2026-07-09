@@ -1023,12 +1023,41 @@ describe("@herdman/server", () => {
       ).body
     ).toMatchObject({ agentSessionId: "agent-codex-herdman", id: session.id })
 
+    const deferredResponse = await jsonRequest(server, "/v1/sessions", {
+      body: JSON.stringify({
+        projectId: workspace.id,
+        harnessId: "codex",
+        title: "Deferred chat",
+        deferAgentSession: true
+      }),
+      method: "POST"
+    })
+    const deferred = deferredResponse.body as {
+      readonly id: string
+      readonly agentSessionId?: string
+    }
+    expect(deferred.agentSessionId).toBe("")
+    expect(agents.creations).toEqual([["codex", workspaceFolder]])
+    await jsonRequest(server, `/v1/sessions/${deferred.id}/prompt`, {
+      body: JSON.stringify({ text: "hello deferred" }),
+      method: "POST"
+    })
+    await waitFor(() => agents.prompts.some((prompt) => prompt[1] === "hello deferred"))
+    const deferredDetail = (await jsonRequest(server, `/v1/sessions/${deferred.id}`)).body as {
+      readonly session: { readonly agentSessionId?: string }
+    }
+    expect(deferredDetail.session.agentSessionId).toBe("agent-codex-herdman")
+    expect(agents.prompts).toContainEqual(["agent-codex-herdman", "hello deferred"])
+
     const concurrentSessionBody = JSON.stringify({
       id: "client-session-concurrent",
       projectId: workspace.id,
       harnessId: "codex",
       title: "Concurrent chat"
     })
+    const workspaceCreationsBeforeConcurrent = agents.creations.filter(
+      (creation) => creation[1] === workspaceFolder
+    ).length
     const [firstConcurrent, secondConcurrent] = await Promise.all([
       jsonRequest(server, "/v1/sessions", {
         body: concurrentSessionBody,
@@ -1045,7 +1074,9 @@ describe("@herdman/server", () => {
       id: "client-session-concurrent"
     })
     expect(secondConcurrent.body).toEqual(firstConcurrent.body)
-    expect(agents.creations.filter((creation) => creation[1] === workspaceFolder)).toHaveLength(2)
+    expect(agents.creations.filter((creation) => creation[1] === workspaceFolder)).toHaveLength(
+      workspaceCreationsBeforeConcurrent + 1
+    )
 
     expect(await jsonRequest(server, "/v1/sessions")).toMatchObject({
       body: expect.arrayContaining([expect.objectContaining({ id: session.id })])
@@ -1087,6 +1118,7 @@ describe("@herdman/server", () => {
     })
     expect((await jsonRequest(server, "/v1/sessions/missing")).status).toBe(500)
 
+    const promptCountBeforeHello = agents.prompts.length
     expect(
       (
         await jsonRequest(server, `/v1/sessions/${session.id}/prompt`, {
@@ -1095,8 +1127,9 @@ describe("@herdman/server", () => {
         })
       ).body
     ).toMatchObject({ accepted: true, sessionId: session.id })
-    await waitFor(() => agents.prompts.length === 1)
-    expect(agents.prompts).toEqual([[session.agentSessionId, "hello"]])
+    await waitFor(() => agents.prompts.length === promptCountBeforeHello + 1)
+    expect(agents.prompts).toContainEqual([session.agentSessionId, "hello"])
+    const promptCountBeforeRetry = agents.prompts.length
     expect(
       (
         await jsonRequest(server, `/v1/sessions/${session.id}/prompt`, {
@@ -1113,11 +1146,14 @@ describe("@herdman/server", () => {
         })
       ).body
     ).toMatchObject({ accepted: true, sessionId: session.id })
-    await waitFor(() => agents.prompts.length === 2)
-    expect(agents.prompts).toEqual([
-      [session.agentSessionId, "hello"],
-      [session.agentSessionId, "retry once"]
-    ])
+    await waitFor(() => agents.prompts.length === promptCountBeforeRetry + 1)
+    expect(agents.prompts).toEqual(
+      expect.arrayContaining([
+        [session.agentSessionId, "hello"],
+        [session.agentSessionId, "retry once"]
+      ])
+    )
+    const promptCountBeforeRawChunks = agents.prompts.length
     expect(
       (
         await jsonRequest(server, `/v1/sessions/${session.id}/prompt`, {
@@ -1126,7 +1162,7 @@ describe("@herdman/server", () => {
         })
       ).body
     ).toMatchObject({ accepted: true, sessionId: session.id })
-    await waitFor(() => agents.prompts.length === 3)
+    await waitFor(() => agents.prompts.length === promptCountBeforeRawChunks + 1)
     expect(
       (await run(services.db.getSessionDetail(session.id))).conversation.map((item) => item.text)
     ).toEqual(
@@ -1158,6 +1194,7 @@ describe("@herdman/server", () => {
     const history = historyResponse.body as Array<{ subjectId: string; kind: string }>
     expect(history.length).toBeGreaterThan(0)
     expect(history.every((event) => event.subjectId === session.id)).toBe(true)
+    const promptCountBeforeReturnedEvents = agents.prompts.length
     expect(
       (
         await jsonRequest(server, `/v1/sessions/${session.id}/prompt`, {
@@ -1166,11 +1203,12 @@ describe("@herdman/server", () => {
         })
       ).body
     ).toMatchObject({ accepted: true, sessionId: session.id })
-    await waitFor(() => agents.prompts.length === 4)
+    await waitFor(() => agents.prompts.length === promptCountBeforeReturnedEvents + 1)
     expect(
       (await run(services.db.getSessionDetail(session.id))).conversation.map((item) => item.text)
     ).toEqual(expect.arrayContaining(["returned events", "Raw answer"]))
 
+    const promptCountBeforeSlow = agents.prompts.length
     const slowResponse = (
       await jsonRequest(server, `/v1/sessions/${session.id}/prompt`, {
         body: JSON.stringify({ text: "slow prompt" }),
@@ -1178,7 +1216,7 @@ describe("@herdman/server", () => {
       })
     ).body as { readonly queueItemId: string }
     expect(slowResponse.queueItemId).toBeTypeOf("string")
-    await waitFor(() => agents.prompts.length === 5)
+    await waitFor(() => agents.prompts.length === promptCountBeforeSlow + 1)
     const queuedResponse = (
       await jsonRequest(server, `/v1/sessions/${session.id}/prompt`, {
         body: JSON.stringify({ text: "queued original" }),
@@ -1216,7 +1254,8 @@ describe("@herdman/server", () => {
         )
       ).status
     ).toBe(204)
-    await waitFor(() => agents.prompts.length === 6)
+    const promptCountBeforeQueueDrain = agents.prompts.length
+    await waitFor(() => agents.prompts.length === promptCountBeforeQueueDrain + 1)
     expect(agents.prompts).toContainEqual([session.agentSessionId, "queued edited"])
     expect(agents.prompts).not.toContainEqual([session.agentSessionId, "queued remove"])
 
@@ -1735,11 +1774,16 @@ describe("@herdman/server", () => {
       // A client-supplied id keys the worktree row and its setup events so
       // callers can follow progress while the create request is in flight.
       const worktreeResponse = await jsonRequest(server, "/v1/projects/git-project/worktrees", {
-        body: JSON.stringify({ id: "wt-fix-auth", name: "Fix Auth!" }),
+        body: JSON.stringify({
+          id: "wt-fix-auth",
+          name: "Fix Auth!",
+          sessionId: "session-awaiting-worktree"
+        }),
         method: "POST"
       })
       expect(worktreeResponse.status).toBe(201)
       const worktree = worktreeResponse.body as {
+        readonly id: string
         readonly name: string
         readonly branch: string
         readonly path: string
@@ -1785,6 +1829,13 @@ describe("@herdman/server", () => {
       const lastSetup = setupPayloads[setupPayloads.length - 1]
       expect(lastSetup?.state).toBe("completed")
       expect(lastSetup?.durationMs).toBeGreaterThanOrEqual(0)
+      const mirroredSetupPayloads = (await run(services.db.listEvents(0))).filter(
+        (event) =>
+          event.kind === "worktree.setup" && event.subjectId === "session-awaiting-worktree"
+      )
+      expect(
+        mirroredSetupPayloads.map((event) => (event.payload as { state: string }).state)
+      ).toEqual(setupPayloads.map((payload) => payload.state))
 
       // The same requested name draws different digits, so it never conflicts.
       const secondWorktree = (
@@ -1855,6 +1906,13 @@ describe("@herdman/server", () => {
       expect(session.worktreeName).toBe(worktree.name)
       expect(session.cwd).toBe(worktree.path)
       expect(agents.creations).toContainEqual(["codex", worktree.path])
+      const sessionHistory = (await jsonRequest(server, `/v1/sessions/${session.id}/events`))
+        .body as ReadonlyArray<{ readonly kind: string; readonly subjectId: string }>
+      expect(sessionHistory).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ kind: "worktree.setup", subjectId: worktree.id })
+        ])
+      )
 
       // Reattaching (prompt after restart) resolves the same worktree cwd.
       await jsonRequest(server, `/v1/sessions/${session.id}/prompt`, {

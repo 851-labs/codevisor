@@ -5,6 +5,7 @@ dist/
 coverage/
 .turbo/
 .cache/
+.tmp/
 .build/
 .swiftpm/
 build/
