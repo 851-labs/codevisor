@@ -28,6 +28,7 @@ class FakeCodexClient implements CodexClient {
   private requestHandler: ((method: string, params: unknown) => Promise<unknown>) | undefined
   closed = false
   failResume = false
+  startModel = "gpt-5.2-codex"
   goal:
     | {
         createdAt: number
@@ -47,12 +48,12 @@ class FakeCodexClient implements CodexClient {
       case "initialize":
         return {} as T
       case "thread/start":
-        return { model: "gpt-5.2-codex", thread: { id: "thread-new" } } as T
+        return { model: this.startModel, thread: { id: "thread-new" } } as T
       case "thread/resume":
         if (this.failResume) {
           throw new Error("thread not found")
         }
-        return { model: "gpt-5.2-codex", thread: { id: "thread-resumed" } } as T
+        return { model: this.startModel, thread: { id: "thread-resumed" } } as T
       case "turn/start":
         return { turn: { id: "turn-1", status: "inProgress" } } as T
       case "turn/interrupt":
@@ -153,9 +154,12 @@ class FakeCodexClient implements CodexClient {
   }
 }
 
-const setup = async (options: { failResume?: boolean; resume?: string } = {}) => {
+const setup = async (
+  options: { failResume?: boolean; resume?: string; startModel?: string } = {}
+) => {
   const client = new FakeCodexClient()
   client.failResume = options.failResume ?? false
+  client.startModel = options.startModel ?? "gpt-5.2-codex"
   const spawns: Array<CodexSpawnRequest> = []
   const provider = makeCodexProvider(environment, {
     connector: async (request) => {
@@ -240,6 +244,24 @@ describe("CodexProvider", () => {
       method: "initialize",
       params: { capabilities: { experimentalApi: true } }
     })
+  })
+
+  it("normalizes malformed thread model ids before exposing config options", async () => {
+    const { created } = await setup({ startModel: "gpt-5.2-codex\u001b[1m" })
+    const options = created?.metadata.configOptions ?? []
+    const modelOption = options.find((option) => option.id === "model")
+    expect(modelOption?.currentValue).toBe("gpt-5.2-codex")
+    const effortOption = options.find((option) => option.id === "effort")
+    expect(effortOption?.currentValue).toBe("medium")
+  })
+
+  it("falls back unknown thread models to the first picker model at the highest effort", async () => {
+    const { created } = await setup({ startModel: "not-in-picker" })
+    const options = created?.metadata.configOptions ?? []
+    const modelOption = options.find((option) => option.id === "model")
+    expect(modelOption?.currentValue).toBe("gpt-5.2-codex")
+    const effortOption = options.find((option) => option.id === "effort")
+    expect(effortOption?.currentValue).toBe("xhigh")
   })
 
   it("plan mode sends the experimental collaboration mode on turn/start", async () => {

@@ -35,6 +35,7 @@ import {
   type RuntimeEvent,
   type SetGoalUpdate
 } from "../../types.js"
+import { findKnownModel, highestThinkingLevel, sanitizeModelValue } from "../model-selection.js"
 import { spawnCodexClient, type CodexClient, type CodexConnector } from "./client.js"
 import { killCodexCommandProcesses, type CodexCommandKiller } from "./process-kill.js"
 
@@ -314,7 +315,7 @@ export const makeCodexProvider = (
       killCommandProcesses: config.killCommandProcesses ?? killCodexCommandProcesses,
       currentEffort: undefined,
       currentModeId: DEFAULT_CODEX_MODE,
-      currentModel: response.model ?? "",
+      currentModel: sanitizeModelValue(response.model ?? ""),
       currentSpeed: undefined,
       cwd,
       emit,
@@ -368,8 +369,8 @@ export const makeCodexProvider = (
           }
         ]
       })
-      const current = session.models.find((model) => model.value === session.currentModel)
-      if (current !== undefined) {
+      const current = currentCodexModelFor(session)
+      if (current !== undefined && session.currentEffort === undefined) {
         session.currentEffort = current.defaultEffort
       }
     } catch {
@@ -400,24 +401,16 @@ export const makeCodexProvider = (
 
   const configOptionsFor = (session: CodexSession): ReadonlyArray<SessionConfigOption> => {
     const options: Array<SessionConfigOption> = []
-    if (session.models.length > 0) {
+    const current = currentCodexModelFor(session)
+    if (current !== undefined) {
       options.push({
         category: "model",
-        currentValue: session.currentModel,
+        currentValue: current.value,
         id: "model",
         name: "Model",
         options: session.models.map((model) => ({ name: model.name, value: model.value }))
       })
-    } else if (session.currentModel.length > 0) {
-      options.push({
-        category: "model",
-        currentValue: session.currentModel,
-        id: "model",
-        name: "Model",
-        options: [{ name: session.currentModel, value: session.currentModel }]
-      })
     }
-    const current = session.models.find((model) => model.value === session.currentModel)
     const efforts = current?.efforts ?? []
     if (efforts.length > 0) {
       options.push({
@@ -452,9 +445,27 @@ export const makeCodexProvider = (
   /// The speed the next turn runs at: the user's pick, else the current
   /// model's catalog default. Undefined when the model has no fast tier.
   const effectiveSpeed = (session: CodexSession): "standard" | "fast" | undefined => {
-    const current = session.models.find((model) => model.value === session.currentModel)
+    const current = currentCodexModelFor(session)
     if (current?.supportsFast !== true) return undefined
     return session.currentSpeed ?? (current.defaultsToFast ? "fast" : "standard")
+  }
+
+  const currentCodexModelFor = (session: CodexSession): CodexModel | undefined => {
+    if (session.models.length === 0) {
+      session.currentModel = sanitizeModelValue(session.currentModel)
+      return undefined
+    }
+    const matched = findKnownModel(session.models, session.currentModel)
+    if (matched !== undefined) {
+      session.currentModel = matched.value
+      return matched
+    }
+    const fallback = session.models[0]
+    if (fallback === undefined) return undefined
+    session.currentModel = fallback.value
+    session.currentEffort = highestThinkingLevel(fallback.efforts) ?? fallback.defaultEffort
+    session.currentSpeed = undefined
+    return fallback
   }
 
   const modesFor = (session: CodexSession): SessionModeState => ({
@@ -539,7 +550,7 @@ export const makeCodexProvider = (
         // Applied as sticky turn/start overrides on subsequent turns.
         if (configId === "model") {
           session.currentModel = value
-          const model = session.models.find((candidate) => candidate.value === value)
+          const model = currentCodexModelFor(session)
           if (
             model !== undefined &&
             (session.currentEffort === undefined || !model.efforts.includes(session.currentEffort))

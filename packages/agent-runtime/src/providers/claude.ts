@@ -25,6 +25,7 @@ import {
   type BackgroundTerminalIntegration
 } from "../background-terminals.js"
 import { diffStatsFromTexts, lineCount } from "../diff-stats.js"
+import { findKnownModel, highestThinkingLevel, sanitizeModelValue } from "./model-selection.js"
 import {
   adapterPromise,
   normalizePromptInput,
@@ -577,7 +578,7 @@ export const makeClaudeProvider = (
       try {
         for await (const message of q) {
           if (message.type === "system" && message.subtype === "init") {
-            created.currentModel = message.model
+            applyClaudeModelFromProvider(created, message.model)
             if (message.fast_mode_state !== undefined) {
               created.currentSpeed = message.fast_mode_state === "on" ? "fast" : "standard"
             }
@@ -630,12 +631,7 @@ export const makeClaudeProvider = (
             supportsFastMode: model.supportsFastMode === true,
             value: model.value
           }))
-        if (
-          (created.currentModel.length === 0 || created.currentModel === "default") &&
-          created.models[0] !== undefined
-        ) {
-          created.currentModel = created.models[0].value
-        }
+        currentClaudeModelFor(created)
       }
     } catch {
       created.models = []
@@ -651,10 +647,11 @@ export const makeClaudeProvider = (
     supportsGoals: boolean
   } => {
     const options: Array<SessionConfigOption> = []
+    const currentModel = currentClaudeModelFor(session)
     if (session.models.length > 0) {
       options.push({
         category: "model",
-        currentValue: session.currentModel,
+        currentValue: currentModel?.value ?? session.models[0]?.value ?? session.currentModel,
         id: "model",
         name: "Model",
         options: session.models.map((model) => ({ name: model.name, value: model.value }))
@@ -694,11 +691,44 @@ export const makeClaudeProvider = (
   }
 
   const effortLevelsFor = (session: ClaudeSession): ReadonlyArray<string> =>
-    session.models.find((model) => model.value === session.currentModel)?.supportedEffortLevels ??
-    []
+    currentClaudeModelFor(session)?.supportedEffortLevels ?? []
 
   const supportsFastMode = (session: ClaudeSession): boolean =>
-    session.models.find((model) => model.value === session.currentModel)?.supportsFastMode === true
+    currentClaudeModelFor(session)?.supportsFastMode === true
+
+  const applyClaudeModelFromProvider = (session: ClaudeSession, value: string): void => {
+    const sanitized = sanitizeModelValue(value)
+    if (session.models.length === 0) {
+      session.currentModel = sanitized
+      return
+    }
+    const matched = findKnownModel(session.models, sanitized)
+    if (matched !== undefined) {
+      session.currentModel = matched.value
+      return
+    }
+    currentClaudeModelFor(session)
+  }
+
+  const currentClaudeModelFor = (session: ClaudeSession): ClaudeModel | undefined => {
+    if (session.models.length === 0) {
+      session.currentModel = sanitizeModelValue(session.currentModel)
+      return undefined
+    }
+    const matched = findKnownModel(session.models, session.currentModel)
+    if (matched !== undefined) {
+      session.currentModel = matched.value
+      return matched
+    }
+    const fallback = session.models[0]
+    if (fallback === undefined) return undefined
+    const hadUntrustedModel = session.currentModel.length > 0 && session.currentModel !== "default"
+    session.currentModel = fallback.value
+    if (hadUntrustedModel) {
+      session.currentEffort = highestThinkingLevel(fallback.supportedEffortLevels) ?? "default"
+    }
+    return fallback
+  }
 
   /// The CLI's default effort for effort-capable models is "high".
   const defaultEffortFor = (levels: ReadonlyArray<string>): string =>

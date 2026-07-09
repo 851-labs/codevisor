@@ -116,11 +116,11 @@ class FakeQuery {
   }
 }
 
-const initMessage = (sessionId = "sdk-session-1"): SDKMessage =>
+const initMessage = (sessionId = "sdk-session-1", model = "claude-fable-5"): SDKMessage =>
   ({
     apiKeySource: "none",
     cwd: "/tmp",
-    model: "claude-fable-5",
+    model,
     session_id: sessionId,
     subtype: "init",
     type: "system"
@@ -277,6 +277,50 @@ describe("ClaudeProvider", () => {
     expect(fake.options?.pathToClaudeCodeExecutable).toBe("/bin/claude")
     expect(fake.options?.includePartialMessages).toBe(true)
     expect(fake.options?.resume).toBeUndefined()
+  })
+
+  it("normalizes malformed init model ids before updating config options", async () => {
+    const fake = new FakeQuery()
+    const provider = makeProvider(fake)
+    const events: Array<RuntimeEvent> = []
+    const emit = async (event: RuntimeEvent): Promise<void> => {
+      events.push(event)
+    }
+
+    const created = await run(provider.createSession(definition, "/tmp", emit))
+    fake.push(initMessage("sdk-session-1", "claude-fable-5\u001b[1m"))
+    await settle()
+    await run(created.handle.setConfigOption("speed", "fast"))
+
+    const updated = events.at(-1)?.payload as {
+      configOptions?: Array<{ currentValue: string; id: string }>
+    }
+    const model = updated.configOptions?.find((option) => option.id === "model")
+    expect(model?.currentValue).toBe("claude-fable-5")
+    const effort = updated.configOptions?.find((option) => option.id === "effort")
+    expect(effort?.currentValue).toBe("high")
+  })
+
+  it("keeps the last known picker model when a later init reports an unknown model", async () => {
+    const fake = new FakeQuery()
+    const provider = makeProvider(fake)
+    const events: Array<RuntimeEvent> = []
+    const emit = async (event: RuntimeEvent): Promise<void> => {
+      events.push(event)
+    }
+
+    const created = await run(provider.createSession(definition, "/tmp", emit))
+    fake.push(initMessage("sdk-session-1", "claude-not-in-picker"))
+    await settle()
+    await run(created.handle.setConfigOption("speed", "fast"))
+
+    const updated = events.at(-1)?.payload as {
+      configOptions?: Array<{ currentValue: string; id: string }>
+    }
+    const model = updated.configOptions?.find((option) => option.id === "model")
+    expect(model?.currentValue).toBe("claude-fable-5")
+    const effort = updated.configOptions?.find((option) => option.id === "effort")
+    expect(effort?.currentValue).toBe("high")
   })
 
   it("exposes speed for fast-mode models and applies it via flag settings", async () => {
