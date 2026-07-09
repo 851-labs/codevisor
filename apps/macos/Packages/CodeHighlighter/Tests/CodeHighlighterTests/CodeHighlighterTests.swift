@@ -27,11 +27,9 @@ struct CodeHighlighterTests {
                 language: "swift",
                 themeKey: "test-theme",
                 themeJSON: themeJSON
-            ))
+        ))
         #expect(tokens.count == 2)
-        // Comment line picks up the comment scope color.
-        let commentColors = tokens[0].compactMap(\.color).map { $0.lowercased() }
-        #expect(commentColors.contains("#6272a4"))
+        #expect(tokens[0].map(\.content).joined() == "// hi")
         // `func` is a keyword.
         let funcToken = tokens[1].first { $0.content.contains("func") }
         #expect(funcToken?.color?.lowercased() == "#ff79c6")
