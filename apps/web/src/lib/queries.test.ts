@@ -273,6 +273,40 @@ describe("replaySessionEvents", () => {
     expect(replayed.turnMeta?.[assistant?.id ?? ""]?.isThinking).toBe(false)
   })
 
+  it("clears main thinking state when visible content starts", () => {
+    const thought = {
+      sessionUpdate: "agent_thought_chunk",
+      content: { type: "text", text: "thinking" }
+    }
+    const cases = [
+      {
+        sessionUpdate: "agent_message_chunk",
+        messageId: "answer",
+        content: { type: "text", text: "Answering." }
+      },
+      {
+        sessionUpdate: "tool_call",
+        toolCallId: "read-1",
+        kind: "read",
+        status: "in_progress",
+        title: "Read queries.ts"
+      },
+      {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "read-1",
+        kind: "read",
+        status: "in_progress",
+        title: "Read queries.ts"
+      }
+    ]
+
+    for (const visibleContent of cases) {
+      const replayed = replaySessionEvents(detail(), [event(1, thought), event(2, visibleContent)])
+      const assistant = replayed.conversation.find((item) => item.role === "assistant")
+      expect(replayed.turnMeta?.[assistant?.id ?? ""]?.isThinking).toBe(false)
+    }
+  })
+
   it("clears a stale stream error when a non-text update starts a new turn", () => {
     const replayed = replaySessionEvents(detail(), [
       event(1, { message: "Connection lost" }, "session.error"),

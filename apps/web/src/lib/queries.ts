@@ -556,6 +556,7 @@ function appendTextChunk(
     if (existingTurnId != null) {
       return updateTurnMetaById(detail, existingTurnId, (meta) => ({
         ...meta,
+        isThinking: false,
         retryStatus: undefined,
         textPhases: { ...meta.textPhases, [entryId]: chunk.phase ?? "commentary" }
       }))
@@ -606,6 +607,7 @@ function appendTextChunk(
           : meta.textPhases
       return {
         ...meta,
+        isThinking: false,
         retryStatus: undefined,
         entries: appended.entries,
         nextTextId: appended.nextTextId,
@@ -639,7 +641,7 @@ function upsertToolCall(
           }
         : meta.subagents
     return cascadeSettledSubagents(
-      { ...meta, retryStatus: undefined, toolCalls, entries, subagents },
+      { ...meta, isThinking: false, retryStatus: undefined, toolCalls, entries, subagents },
       call.toolCallId
     )
   }

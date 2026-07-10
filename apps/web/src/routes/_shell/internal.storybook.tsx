@@ -615,8 +615,31 @@ function TerminalTurnStatesFixture() {
   )
 }
 
-function ToolLullFixture() {
+function ToolActivityStatesFixture() {
   const startedAt = useMemo(() => new Date().toISOString(), [])
+  const runningTool: ToolCallInfo = {
+    toolCallId: "assistant-running-tool-read",
+    title: "Read TranscriptReducer.swift",
+    kind: "read",
+    status: "in_progress"
+  }
+  const runningItem: ConversationItem = {
+    id: "assistant-running-tool",
+    role: "assistant",
+    text: "",
+    createdAt: startedAt,
+    isGenerating: true
+  }
+  const runningMeta: TurnMeta = {
+    startedAt,
+    thoughts: "",
+    toolCalls: [runningTool],
+    entries: [{ type: "tool", call: runningTool }],
+    subagents: {},
+    textPhases: {},
+    nextTextId: 0,
+    isThinking: false
+  }
   const settledTool: ToolCallInfo = {
     toolCallId: "assistant-tool-lull-read",
     title: "Read AssistantTurnView.swift",
@@ -640,7 +663,12 @@ function ToolLullFixture() {
     nextTextId: 0,
     isThinking: false
   }
-  return <AssistantTurn item={item} meta={meta} />
+  return (
+    <div className="flex flex-col gap-5">
+      <AssistantTurn item={runningItem} meta={runningMeta} />
+      <AssistantTurn item={item} meta={meta} />
+    </div>
+  )
 }
 
 function NestedSubagentFixture() {
@@ -927,7 +955,7 @@ function TranscriptStates() {
             attachments={userAttachments}
           />
           <MarkdownTurnFixture />
-          <ToolLullFixture />
+          <ToolActivityStatesFixture />
           <TerminalTurnStatesFixture />
           <PlannedTurnFixture />
           <NestedSubagentFixture />
