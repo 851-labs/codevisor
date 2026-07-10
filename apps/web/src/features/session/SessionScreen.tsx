@@ -1,4 +1,5 @@
 import type {
+  BranchDiffTotals,
   QuestionAnswerEntry,
   SessionConfigOption,
   SessionGoal,
@@ -27,6 +28,7 @@ import {
   useCapabilities,
   usePromptSession,
   useSessionDetail,
+  useSessionBranchDiff,
   useClearSessionGoal,
   useSetSessionConfig,
   useSetSessionGoal,
@@ -48,6 +50,7 @@ import { PromptQueue } from "./PromptQueue"
 import { StatusBar, type TerminalPaneTab } from "./StatusBar"
 import { type PendingUserMessage, Transcript } from "./Transcript"
 import { projectFolderPath } from "../../lib/client"
+import { DiffCounter } from "./DiffCounter"
 
 const MIN_TERMINAL_HEIGHT = 120
 const MAX_TERMINAL_HEIGHT = 800
@@ -57,6 +60,25 @@ const EXIT_PLAN_MODE_QUESTION_ID = "exit_plan_mode"
 const IMPLEMENT_PLAN_LABEL = "Implement plan"
 const KEEP_PLANNING_LABEL = "Keep planning"
 const MODEL_MENU_CATEGORIES = new Set(["model", "thought_level", "speed"])
+
+export function SessionHeader({
+  title,
+  diffTotals
+}: {
+  title: string
+  diffTotals?: BranchDiffTotals | null
+}) {
+  const showsDiff =
+    diffTotals != null && (diffTotals.added > 0 || diffTotals.removed > 0)
+  return (
+    <header className="border-border-opaque flex h-9 shrink-0 items-center gap-2 border-b px-3">
+      <h1 className="min-w-0 truncate text-sm font-semibold" aria-label="Session title">
+        {title}
+      </h1>
+      {showsDiff && <DiffCounter totals={diffTotals} />}
+    </header>
+  )
+}
 
 export function answersImplementPlan(answers: Record<string, QuestionAnswerEntry>) {
   return answers[EXIT_PLAN_MODE_QUESTION_ID]?.answers[0] === IMPLEMENT_PLAN_LABEL
@@ -115,6 +137,7 @@ function planControlFor({
 // (SessionView.swift SessionScreen).
 export function SessionScreen({ sessionId }: { sessionId: string }) {
   const detailQuery = useSessionDetail(sessionId)
+  const branchDiffQuery = useSessionBranchDiff(sessionId)
   const projectsQuery = useProjects()
   const promptSession = usePromptSession()
   const cancelSession = useCancelSession()
@@ -676,6 +699,7 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
       onDragLeave={handleAttachmentDragLeave}
       onDrop={handleAttachmentDrop}
     >
+      <SessionHeader title={detail.session.title} diffTotals={branchDiffQuery.data} />
       <Transcript
         key={sessionId}
         conversation={detail.conversation}

@@ -6,7 +6,9 @@ import { describe, expect, it } from "vitest"
 import {
   GitError,
   addWorktree,
+  gitBranchDiffTotals,
   isGitWorkTree,
+  parseGitNumstat,
   sanitizeGitOutputLine,
   worktreeStartPoint,
   type GitOutputStream
@@ -60,6 +62,30 @@ describe("git helper", () => {
   it("resolves no start point for a repo without an origin/main ref", async () => {
     const { repo } = makeRepo()
     expect(await worktreeStartPoint(repo)).toBeUndefined()
+  })
+
+  it("parses text numstat totals while ignoring binary markers", () => {
+    expect(parseGitNumstat("3\t1\tapp.ts\n-\t-\timage.png\n2\t0\tnew.ts")).toEqual({
+      added: 5,
+      removed: 1
+    })
+  })
+
+  it("counts branch edits and untracked text files like the macOS badge", async () => {
+    const { repo } = makeRepo()
+    writeFileSync(join(repo, "tracked.txt"), "one\ntwo\n")
+    execFileSync("git", ["add", "tracked.txt"], { cwd: repo })
+    execFileSync(
+      "git",
+      ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-m", "baseline"],
+      { cwd: repo }
+    )
+    writeFileSync(join(repo, "tracked.txt"), "one\nchanged\nthree\n")
+    writeFileSync(join(repo, "untracked.txt"), "alpha\nbeta")
+    writeFileSync(join(repo, "binary.dat"), Buffer.from([0, 1, 2]))
+
+    expect(await gitBranchDiffTotals(repo)).toEqual({ added: 4, removed: 1 })
+    expect(await gitBranchDiffTotals(join(repo, "missing"))).toBeUndefined()
   })
 
   it("cuts worktrees from origin/main when the remote-tracking ref exists", async () => {

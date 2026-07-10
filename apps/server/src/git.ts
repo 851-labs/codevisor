@@ -1,4 +1,8 @@
 import { execFile, spawn } from "node:child_process"
+import { readFile } from "node:fs/promises"
+import { join } from "node:path"
+
+import type { BranchDiffTotals } from "@herdman/api"
 
 export class GitError extends Error {
   constructor(
@@ -21,6 +25,17 @@ const git = (operation: string, args: ReadonlyArray<string>, cwd: string): Promi
     })
   })
 
+const gitRaw = (operation: string, args: ReadonlyArray<string>, cwd: string): Promise<string> =>
+  new Promise((resolve, reject) => {
+    execFile("git", args, { cwd }, (error, stdout, stderr) => {
+      if (error !== null) {
+        reject(new GitError(operation, stderr.trim().length > 0 ? stderr.trim() : error.message))
+        return
+      }
+      resolve(stdout)
+    })
+  })
+
 export const isGitWorkTree = async (dir: string): Promise<boolean> => {
   try {
     return (await git("rev-parse", ["rev-parse", "--is-inside-work-tree"], dir)) === "true"
@@ -36,8 +51,10 @@ export type GitOutputListener = (stream: GitOutputStream, line: string) => void
 /// (titles/links), and single-character escapes - that TUI-style checkout
 /// hooks emit. Setup logs render as plain text, so these are stripped.
 // eslint-disable-next-line no-control-regex
+// oxlint-disable no-control-regex
 const ansiEscapePattern =
   /\u001B(?:\[[0-9:;<=>?]*[ -/]*[@-~]|\][^\u0007\u001B]*(?:\u0007|\u001B\\)?|[@-Z\\^_])/g
+// oxlint-enable no-control-regex
 
 /// Strips ANSI escapes and stray control characters and trims trailing
 /// whitespace, leaving a human-readable log line (possibly empty).
@@ -87,6 +104,75 @@ export const worktreeStartPoint = async (repoDir: string): Promise<string | unde
       repoDir
     )
     return "origin/main"
+  } catch {
+    return undefined
+  }
+}
+
+const branchDiffBaseRefs = ["origin/HEAD", "origin/main", "origin/master", "main", "master"]
+
+export const parseGitNumstat = (numstat: string): BranchDiffTotals => {
+  const totals = { added: 0, removed: 0 }
+  for (const line of numstat.split("\n")) {
+    const fields = line.split("\t")
+    if (fields.length < 2) continue
+    totals.added += Number.parseInt(fields[0] ?? "", 10) || 0
+    totals.removed += Number.parseInt(fields[1] ?? "", 10) || 0
+  }
+  return totals
+}
+
+async function untrackedLineCount(path: string): Promise<number> {
+  try {
+    const data = await readFile(path)
+    if (data.length === 0 || data.length > 4_000_000) return 0
+    if (data.subarray(0, 8192).includes(0)) return 0
+    let newlines = 0
+    for (const byte of data) {
+      if (byte === 10) newlines += 1
+    }
+    return data.at(-1) === 10 ? newlines : newlines + 1
+  } catch {
+    return 0
+  }
+}
+
+// Mirrors GitBranchDiff.totals on macOS: compare the merge-base with the
+// default branch through the working tree, then count text lines in untracked
+// files as additions. Non-git directories and command failures stay hidden.
+export const gitBranchDiffTotals = async (
+  directory: string
+): Promise<BranchDiffTotals | undefined> => {
+  if (!(await isGitWorkTree(directory))) return undefined
+  try {
+    let base = "HEAD"
+    for (const ref of branchDiffBaseRefs) {
+      try {
+        const candidate = await git("merge-base", ["merge-base", "HEAD", ref], directory)
+        if (candidate !== "") {
+          base = candidate
+          break
+        }
+      } catch {
+        // Try the next conventional default-branch ref.
+      }
+    }
+    const totals = parseGitNumstat(
+      await git("branch-diff", ["diff", "--numstat", base], directory)
+    )
+    const untracked = await gitRaw(
+      "untracked-files",
+      ["ls-files", "--others", "--exclude-standard", "-z"],
+      directory
+    )
+    let untrackedAdditions = 0
+    for (const path of untracked.split("\0")) {
+      if (path !== "") untrackedAdditions += await untrackedLineCount(join(directory, path))
+    }
+    return {
+      added: totals.added + untrackedAdditions,
+      removed: totals.removed
+    }
   } catch {
     return undefined
   }

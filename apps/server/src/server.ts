@@ -48,7 +48,14 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
-import { GitError, addWorktree, isGitWorkTree, removeWorktree, worktreeStartPoint } from "./git.js"
+import {
+  GitError,
+  addWorktree,
+  gitBranchDiffTotals,
+  isGitWorkTree,
+  removeWorktree,
+  worktreeStartPoint
+} from "./git.js"
 import type { Socket } from "node:net"
 import type { AddressInfo } from "node:net"
 import { Context, Effect, Layer, PubSub, Schema } from "effect"
@@ -184,6 +191,7 @@ const sniffAttachmentKind = (data: Buffer, mimeType: string): "image" | "file" =
 }
 
 const sanitizeFileName = (name: string): string => {
+  // oxlint-disable-next-line no-control-regex
   const cleaned = name.replace(/[/\\:\0]/g, "_").replace(/^\.+/, "")
   return cleaned.length === 0 ? "attachment" : cleaned
 }
@@ -841,6 +849,22 @@ const routeSessions = async (
     })
     await appendAndPublish(services.db, fanout, "session.created", session.id, session)
     writeJson(response, 201, session)
+    return true
+  }
+
+  const branchDiffSessionId = matchRoute(url.pathname, "/v1/sessions/:id/branch-diff")
+  if (branchDiffSessionId !== undefined && request.method === "GET") {
+    const session = await findSession(services.db, branchDiffSessionId)
+    if (session === undefined) throw new HttpFailure(404, "Session not found")
+    const project = await getProjectOrFail(services.db, session.projectId)
+    const directory =
+      session.cwd ??
+      project.locations.find((location) => location.serverId === session.serverId)?.folderPath
+    writeJson(
+      response,
+      200,
+      directory == null ? null : ((await gitBranchDiffTotals(directory)) ?? null)
+    )
     return true
   }
 

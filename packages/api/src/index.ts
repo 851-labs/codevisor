@@ -227,6 +227,12 @@ export const SessionUsage = Schema.Struct({
 })
 export type SessionUsage = typeof SessionUsage.Type
 
+export const BranchDiffTotals = Schema.Struct({
+  added: Schema.Number,
+  removed: Schema.Number
+})
+export type BranchDiffTotals = typeof BranchDiffTotals.Type
+
 export const SessionSummary = Schema.Struct({
   id: Schema.String,
   projectId: Schema.String,
@@ -526,6 +532,7 @@ export const endpoints = [
   "GET /v1/sessions",
   "POST /v1/sessions",
   "GET /v1/sessions/:id",
+  "GET /v1/sessions/:id/branch-diff",
   "PATCH /v1/sessions/:id",
   "DELETE /v1/sessions/:id",
   "GET /v1/sessions/:id/events",

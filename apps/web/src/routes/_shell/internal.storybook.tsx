@@ -41,6 +41,7 @@ import { PromptQueue } from "../../features/session/PromptQueue"
 import {
   ComposerStatusLabel,
   GoalBanner,
+  SessionHeader,
   WaitingBackgroundTaskIndicator
 } from "../../features/session/SessionScreen"
 import { SessionSetupView } from "../../features/session/SessionSetupView"
@@ -836,6 +837,15 @@ function ChromeStates() {
 
   return (
     <SurfaceGrid>
+      <StateBlock title="Session header">
+        <div className="overflow-hidden border border-[var(--herdman-separator)]">
+          <SessionHeader
+            title="Implement macOS chat parity"
+            diffTotals={{ added: 128, removed: 34 }}
+          />
+          <div className="h-20 bg-[var(--herdman-card-quiet-bg)]" />
+        </div>
+      </StateBlock>
       <StateBlock title="Bottom pane bar">
         <div className="overflow-hidden rounded-md border border-[var(--herdman-separator)]">
           <StatusBar

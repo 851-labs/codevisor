@@ -28,6 +28,7 @@ import { cn } from "../../lib/cn"
 import type { ContentBlockInfo, ToolCallContentInfo, ToolCallInfo } from "../../lib/session-events"
 import { useThemeSelection } from "../../theme/useThemeSelection"
 import { useThemeSource } from "../../theme/useThemeSource"
+import { DiffCounter } from "./DiffCounter"
 
 export type ToolDisclosureValues = Record<string, boolean>
 
@@ -70,12 +71,7 @@ function iconForSymbol(symbol: string) {
 function DiffBadge({ call }: { call: ToolCallInfo }) {
   const totals = diffTotals(call)
   if (totals == null) return null
-  return (
-    <span className="shrink-0 font-mono text-xs tabular-nums">
-      <span className="text-[var(--herdman-diff-add-fg)]">+{totals.added}</span>{" "}
-      <span className="text-[var(--herdman-diff-del-fg)]">−{totals.removed}</span>
-    </span>
-  )
+  return <DiffCounter totals={totals} />
 }
 
 function diffTotals(call: ToolCallInfo): { added: number; removed: number } | undefined {

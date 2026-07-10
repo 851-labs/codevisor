@@ -5,6 +5,7 @@
 // eventCursor exactly like the Swift client's replay handling.
 import type {
   ConversationItem,
+  BranchDiffTotals,
   CreateSessionRequest,
   CreateProjectRequest,
   CreateWorktreeRequest,
@@ -50,6 +51,7 @@ export const queryKeys = {
   projects: ["projects"] as const,
   sessions: ["sessions"] as const,
   session: (id: string) => ["session", id] as const,
+  sessionBranchDiff: (id: string) => ["session-branch-diff", id] as const,
   harnesses: ["harnesses"] as const,
   capabilities: (cwd: string) => ["capabilities", cwd] as const
 }
@@ -818,8 +820,19 @@ export function wireServerEvents(client: QueryClient, events: EventSocket): () =
         applyToSessionDetail(client, event)
         return
       case "session.output":
+      case "session.error": {
+        const refreshesBranchDiff = sessionStreamEvents(event).some(
+          (update) => update.type === "finished" || update.type === "failed"
+        )
+        applyToSessionDetail(client, event)
+        if (refreshesBranchDiff) {
+          void client.invalidateQueries({
+            queryKey: queryKeys.sessionBranchDiff(event.subjectId)
+          })
+        }
+        return
+      }
       case "session.queue.updated":
-      case "session.error":
         applyToSessionDetail(client, event)
         return
       case "worktree.setup":
@@ -869,6 +882,16 @@ export function useSessionDetail(id: string | undefined) {
       return { ...detail, conversation: foldConversation(detail.conversation) }
     },
     enabled: id != null && id !== ""
+  })
+}
+
+export function useSessionBranchDiff(id: string | undefined) {
+  const { client } = useApi()
+  return useQuery<BranchDiffTotals | null>({
+    queryKey: queryKeys.sessionBranchDiff(id ?? ""),
+    queryFn: () => client.sessionBranchDiff(id ?? ""),
+    enabled: id != null && id !== "",
+    refetchInterval: 30_000
   })
 }
 

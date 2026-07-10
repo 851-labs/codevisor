@@ -1098,6 +1098,11 @@ describe("@herdman/server", () => {
     expect((await jsonRequest(server, `/v1/sessions/${session.id}`)).body).toMatchObject({
       session: { id: session.id }
     })
+    expect(await jsonRequest(server, `/v1/sessions/${session.id}/branch-diff`)).toEqual({
+      body: null,
+      status: 200
+    })
+    expect((await jsonRequest(server, "/v1/sessions/missing/branch-diff")).status).toBe(404)
     expect(
       (
         await jsonRequest(server, "/v1/sessions", {

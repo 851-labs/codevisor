@@ -4,6 +4,8 @@
 // Effect imports stay confined to this module (and session-events.ts).
 import {
   type AttachmentRef,
+  BranchDiffTotals,
+  type BranchDiffTotals as BranchDiffTotalsType,
   type CancelRequest,
   type CreateSessionRequest,
   type CreateProjectRequest,
@@ -69,6 +71,7 @@ const decodeWorktree = decode(Worktree)
 const decodeSession = decode(SessionSummary)
 const decodeSessions = decode(Schema.Array(SessionSummary))
 const decodeSessionDetail = decode(SessionDetail)
+const decodeBranchDiffTotals = decode(Schema.NullOr(BranchDiffTotals))
 const decodeGoal = decode(SessionGoal)
 const decodeEvents = decode(Schema.Array(EventEnvelope))
 const decodeFileMetadata = decode(FileMetadata)
@@ -143,6 +146,13 @@ export class HerdManClient {
 
   sessionDetail(id: string): Promise<SessionDetail> {
     return this.get(`/v1/sessions/${encodeURIComponent(id)}`, decodeSessionDetail)
+  }
+
+  sessionBranchDiff(id: string): Promise<BranchDiffTotalsType | null> {
+    return this.get(
+      `/v1/sessions/${encodeURIComponent(id)}/branch-diff`,
+      decodeBranchDiffTotals
+    )
   }
 
   sessionEvents(id: string): Promise<readonly EventEnvelope[]> {
