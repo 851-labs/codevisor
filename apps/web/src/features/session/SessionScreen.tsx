@@ -51,6 +51,7 @@ import { StatusBar, type TerminalPaneTab } from "./StatusBar"
 import { Transcript } from "./Transcript"
 import { projectFolderPath } from "../../lib/client"
 import { DiffCounter } from "./DiffCounter"
+import { usePlanApprovalDismissal } from "./usePlanApprovalDismissal"
 
 const MIN_TERMINAL_HEIGHT = 120
 const MAX_TERMINAL_HEIGHT = 800
@@ -162,7 +163,8 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
   const [isGoalEditing, setIsGoalEditing] = useState(false)
   const [isTodosExpanded, setIsTodosExpanded] = useState(true)
   const [isQueueExpanded, setIsQueueExpanded] = useState(true)
-  const [dismissedPlanApprovalKey, setDismissedPlanApprovalKey] = useState<string>()
+  const [dismissedPlanApprovalKey, setDismissedPlanApprovalKey] =
+    usePlanApprovalDismissal(sessionId)
   const [composerSendRevision, setComposerSendRevision] = useState(0)
   const [mountedTerminalPaneIds, setMountedTerminalPaneIds] = useState<string[]>([])
   const [isAttachmentDropTargeted, setIsAttachmentDropTargeted] = useState(false)
