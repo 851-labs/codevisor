@@ -226,6 +226,13 @@ export function shouldCollapseSubagentDisclosure(wasRunning: boolean, isRunning:
   return wasRunning && !isRunning
 }
 
+export function assistantTurnSectionIsLockedOpen(
+  isGenerating: boolean,
+  hasAutoCollapsed: boolean
+): boolean {
+  return isGenerating && !hasAutoCollapsed
+}
+
 export function AssistantTurn({
   item,
   meta,
@@ -241,7 +248,6 @@ export function AssistantTurn({
 }) {
   const isGenerating = item.isGenerating
   const hasRunningSubagent = turnHasRunningSubagent(meta, runningSubagentToolCallIds)
-  const isActive = isGenerating || hasRunningSubagent
   const [isHovered, setIsHovered] = useState(false)
   const hasAutoCollapsed = useRef(isGenerating && finalTextIsAsserted(meta))
   const previousDisclosureState = useRef<AssistantTurnDisclosureState>({
@@ -249,9 +255,9 @@ export function AssistantTurn({
     isFinalAsserted: finalTextIsAsserted(meta),
     hasRunningSubagent
   })
-  const fallbackFinishedAt = useRef<number | undefined>(isActive ? undefined : Date.now())
+  const fallbackFinishedAt = useRef<number | undefined>(isGenerating ? undefined : Date.now())
 
-  const elapsed = useElapsedSeconds(meta?.startedAt ?? item.createdAt, isActive)
+  const elapsed = useElapsedSeconds(meta?.startedAt ?? item.createdAt, isGenerating)
   const planningItems = useMemo(() => workedItemsBeforePlan(meta), [meta])
   const implementationItems = useMemo(() => workedItemsAfterPlan(meta), [meta])
   const forceExpanded = useVerifyExpanded()
@@ -260,11 +266,11 @@ export function AssistantTurn({
   const showsPlanningSection =
     meta?.planBoundary != null
       ? planningItems.length > 0
-      : isActive || hasStructuredWorkedContent || hasLegacyWorkedContent
+      : isGenerating || hasStructuredWorkedContent || hasLegacyWorkedContent
   const responseText = finalMarkdown(item, meta)
   const isFinalAsserted = finalTextIsAsserted(meta)
   const showsActivityIndicator = assistantTurnShowsActivityIndicator(item, meta)
-  const headerLockedOpen = isActive && !hasAutoCollapsed.current
+  const headerLockedOpen = assistantTurnSectionIsLockedOpen(isGenerating, hasAutoCollapsed.current)
   const planningDisclosureKey = turnDisclosureKey(item.id)
   const implementationDisclosureKey = turnImplementationDisclosureKey(item.id)
   const settled = (!isGenerating || isFinalAsserted) && !hasRunningSubagent
@@ -284,7 +290,7 @@ export function AssistantTurn({
     )
     previousDisclosureState.current = currentState
 
-    if (!isActive && fallbackFinishedAt.current == null) {
+    if (!isGenerating && fallbackFinishedAt.current == null) {
       fallbackFinishedAt.current = Date.now()
     }
 
@@ -314,7 +320,7 @@ export function AssistantTurn({
   ])
 
   const workedTitle = () => {
-    if (isActive) return `Working for ${formatSeconds(elapsed)}`
+    if (isGenerating) return `Working for ${formatSeconds(elapsed)}`
     const started = meta?.startedAt != null ? new Date(meta.startedAt).getTime() : undefined
     const ended =
       meta?.endedAt != null ? new Date(meta.endedAt).getTime() : fallbackFinishedAt.current
@@ -343,7 +349,7 @@ export function AssistantTurn({
             )
           }
           headerLockedOpen={headerLockedOpen}
-          isTurnActive={isActive}
+          isTurnActive={isGenerating}
           meta={meta}
           items={planningItems}
           legacyFallback={!hasStructuredWorkedContent}
@@ -371,7 +377,7 @@ export function AssistantTurn({
             )
           }
           headerLockedOpen={headerLockedOpen}
-          isTurnActive={isActive}
+          isTurnActive={isGenerating}
           meta={meta}
           items={implementationItems}
           runningSubagentToolCallIds={runningSubagentToolCallIds}

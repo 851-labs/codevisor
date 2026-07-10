@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 
 import {
   assistantTurnShowsActivityIndicator,
+  assistantTurnSectionIsLockedOpen,
   assistantTurnDisclosureTransition,
   shouldCollapseSubagentDisclosure,
   subagentRendersAsSection,
@@ -129,6 +130,14 @@ describe("assistant turn disclosure transitions", () => {
     expect(
       assistantTurnDisclosureTransition({ ...settled, hasRunningSubagent: true }, settled)
     ).toBe("collapse")
+  })
+})
+
+describe("assistant turn disclosure interaction", () => {
+  it("locks only a generating turn, not settled background subagent work", () => {
+    expect(assistantTurnSectionIsLockedOpen(true, false)).toBe(true)
+    expect(assistantTurnSectionIsLockedOpen(false, false)).toBe(false)
+    expect(assistantTurnSectionIsLockedOpen(true, true)).toBe(false)
   })
 })
 
