@@ -495,6 +495,17 @@ describe("sessionStreamEvents", () => {
     ])
   })
 
+  it("ignores unknown stop reasons and continues through native metadata priority", () => {
+    const events = sessionStreamEvents(
+      envelope("session.updated", {
+        stopReason: "future_reason",
+        modeId: "plan"
+      })
+    )
+
+    expect(events).toEqual([{ type: "modeChanged", modeId: "plan" }])
+  })
+
   it("maps retry progress before other session metadata", () => {
     const events = sessionStreamEvents(
       envelope("session.updated", {
@@ -550,6 +561,28 @@ describe("sessionStreamEvents", () => {
       })
     )
     expect(events).toMatchObject([{ type: "configOptionsChanged" }])
+  })
+
+  it("matches native background and config metadata priority", () => {
+    const configOptions = [{ id: "model", name: "Model", currentValue: "opus", options: [] }]
+    expect(
+      sessionStreamEvents(
+        envelope("session.updated", {
+          backgroundTasks: [],
+          configOptions,
+          modeId: "plan"
+        })
+      )
+    ).toEqual([{ type: "backgroundTasksChanged", tasks: [] }])
+    expect(
+      sessionStreamEvents(
+        envelope("session.updated", {
+          configOptions,
+          modeId: "plan",
+          goalCleared: true
+        })
+      )
+    ).toEqual([{ type: "configOptionsChanged", configOptions }])
   })
 
   it("maps queue updates, tolerating malformed queues", () => {

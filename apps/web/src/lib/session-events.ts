@@ -158,6 +158,7 @@ const decodeQueue = decode(Schema.Array(PromptQueueItem))
 const decodeConfigOptions = decode(Schema.Array(SessionConfigOption))
 const decodeGoal = decode(SessionGoal)
 const decodeAttachments = decode(Schema.Array(AttachmentRef))
+const stopReasons = new Set(["end_turn", "max_tokens", "max_turn_requests", "refusal", "cancelled"])
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value != null && !Array.isArray(value)
@@ -165,6 +166,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function stringOrUndefined(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined
+}
+
+function stopReasonOrUndefined(value: unknown): string | undefined {
+  return typeof value === "string" && stopReasons.has(value) ? value : undefined
 }
 
 function numberOrUndefined(value: unknown): number | undefined {
@@ -553,16 +558,6 @@ function textUpdatesFrom(payload: Record<string, unknown>): SessionStreamEvent[]
 }
 
 function metadataUpdatesFrom(payload: Record<string, unknown>): SessionStreamEvent[] {
-  if (payload.goal !== undefined) {
-    const goal = goalFrom(payload.goal)
-    return goal == null ? [] : [{ type: "goalChanged", goal }]
-  }
-  if (payload.goalCleared === true) {
-    return [{ type: "goalCleared" }]
-  }
-  if (Array.isArray(payload.backgroundTasks)) {
-    return [{ type: "backgroundTasksChanged", tasks: backgroundTasksFrom(payload) }]
-  }
   if (payload.configOptions !== undefined) {
     try {
       return [
@@ -575,6 +570,13 @@ function metadataUpdatesFrom(payload: Record<string, unknown>): SessionStreamEve
   }
   if (typeof payload.modeId === "string") {
     return [{ type: "modeChanged", modeId: payload.modeId }]
+  }
+  if (payload.goal !== undefined) {
+    const goal = goalFrom(payload.goal)
+    if (goal != null) return [{ type: "goalChanged", goal }]
+  }
+  if (payload.goalCleared === true) {
+    return [{ type: "goalCleared" }]
   }
   return []
 }
@@ -597,14 +599,18 @@ export function sessionStreamEvents(event: EventEnvelope): SessionStreamEvent[] 
     case "session.updated": {
       const retry = retryStatusFrom(payload)
       if (retry != null) return [{ type: "retrying", retry }]
-      if (typeof payload.stopReason === "string") {
+      const stopReason = stopReasonOrUndefined(payload.stopReason)
+      if (stopReason != null) {
         return [
           {
             type: "finished",
-            stopReason: payload.stopReason,
+            stopReason,
             stopDetail: stringOrUndefined(payload.stopDetail)
           }
         ]
+      }
+      if (Array.isArray(payload.backgroundTasks)) {
+        return [{ type: "backgroundTasksChanged", tasks: backgroundTasksFrom(payload) }]
       }
       return metadataUpdatesFrom(payload)
     }
