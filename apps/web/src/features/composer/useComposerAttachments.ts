@@ -1,5 +1,5 @@
 import type { AttachmentRef, FileMetadata } from "@herdman/api"
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useSyncExternalStore } from "react"
 
 import { useApi } from "../../lib/api"
 
@@ -17,9 +17,103 @@ export interface ComposerAttachmentItem {
   error?: string
 }
 
-interface StoredAttachment extends ComposerAttachmentItem {
+export interface StoredComposerAttachment extends ComposerAttachmentItem {
   file: File
   uploaded?: AttachmentRef
+}
+
+export interface ComposerAttachmentStoreSnapshot {
+  attachments: StoredComposerAttachment[]
+  error?: string
+}
+
+export interface ComposerAttachmentStore {
+  key?: string
+  snapshot: ComposerAttachmentStoreSnapshot
+  uploadTasks: Map<string, Promise<void>>
+  listeners: Set<() => void>
+  mountCount: number
+}
+
+function createComposerAttachmentStore(key?: string): ComposerAttachmentStore {
+  return {
+    key,
+    snapshot: { attachments: [] },
+    uploadTasks: new Map(),
+    listeners: new Set(),
+    mountCount: 0
+  }
+}
+
+function disposeComposerAttachmentStore(store: ComposerAttachmentStore) {
+  for (const attachment of store.snapshot.attachments) {
+    if (attachment.previewUrl != null) URL.revokeObjectURL(attachment.previewUrl)
+  }
+  store.uploadTasks.clear()
+  store.listeners.clear()
+  store.snapshot = { attachments: [] }
+}
+
+export class ComposerAttachmentStoreCache {
+  private readonly stores = new Map<string, ComposerAttachmentStore>()
+
+  constructor(
+    private readonly maxIdleStores: number,
+    private readonly onEvict: (store: ComposerAttachmentStore) => void
+  ) {}
+
+  get(key: string): ComposerAttachmentStore {
+    const existing = this.stores.get(key)
+    if (existing != null) {
+      this.stores.delete(key)
+      this.stores.set(key, existing)
+      return existing
+    }
+    const store = createComposerAttachmentStore(key)
+    this.stores.set(key, store)
+    return store
+  }
+
+  has(key: string): boolean {
+    return this.stores.has(key)
+  }
+
+  retain(store: ComposerAttachmentStore) {
+    store.mountCount += 1
+    this.trim()
+  }
+
+  release(store: ComposerAttachmentStore) {
+    store.mountCount = Math.max(0, store.mountCount - 1)
+    this.trim()
+  }
+
+  trim() {
+    while (this.stores.size > this.maxIdleStores) {
+      const evictable = [...this.stores.entries()].find(
+        ([, store]) => store.mountCount === 0 && store.uploadTasks.size === 0
+      )
+      if (evictable == null) return
+      const [key, store] = evictable
+      this.stores.delete(key)
+      this.onEvict(store)
+    }
+  }
+}
+
+const composerAttachmentStores = new ComposerAttachmentStoreCache(
+  16,
+  disposeComposerAttachmentStore
+)
+
+function updateStore(
+  store: ComposerAttachmentStore,
+  update: (current: ComposerAttachmentStoreSnapshot) => ComposerAttachmentStoreSnapshot
+) {
+  const next = update(store.snapshot)
+  if (next === store.snapshot) return
+  store.snapshot = next
+  for (const listener of store.listeners) listener()
 }
 
 function attachmentRef(metadata: FileMetadata): AttachmentRef {
@@ -44,26 +138,40 @@ function hasLocalPreview(file: File): boolean {
   )
 }
 
-export function useComposerAttachments() {
+export function useComposerAttachments(persistenceKey?: string) {
   const { client } = useApi()
-  const [attachments, setAttachmentState] = useState<StoredAttachment[]>([])
-  const [error, setError] = useState<string>()
-  const attachmentsRef = useRef<StoredAttachment[]>([])
-  const uploadTasks = useRef(new Map<string, Promise<void>>())
+  const localStoreRef = useRef<ComposerAttachmentStore | undefined>(undefined)
+  if (localStoreRef.current == null) localStoreRef.current = createComposerAttachmentStore()
+  const store =
+    persistenceKey == null ? localStoreRef.current : composerAttachmentStores.get(persistenceKey)
+  const subscribe = useCallback(
+    (listener: () => void) => {
+      store.listeners.add(listener)
+      return () => store.listeners.delete(listener)
+    },
+    [store]
+  )
+  const getSnapshot = useCallback(() => store.snapshot, [store])
+  const snapshot = useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
 
   const setAttachments = useCallback(
-    (update: (current: StoredAttachment[]) => StoredAttachment[]) => {
-      setAttachmentState((current) => {
-        const next = update(current)
-        attachmentsRef.current = next
-        return next
-      })
+    (update: (current: StoredComposerAttachment[]) => StoredComposerAttachment[]) => {
+      updateStore(store, (current) => ({ ...current, attachments: update(current.attachments) }))
     },
-    []
+    [store]
+  )
+
+  const setError = useCallback(
+    (error: string | undefined) => {
+      updateStore(store, (current) =>
+        current.error === error ? current : { ...current, error }
+      )
+    },
+    [store]
   )
 
   const startUpload = useCallback(
-    (attachment: StoredAttachment) => {
+    (attachment: StoredComposerAttachment) => {
       const task = client
         .uploadFile(attachment.file)
         .then((metadata) => {
@@ -86,18 +194,19 @@ export function useComposerAttachments() {
           )
         })
         .finally(() => {
-          uploadTasks.current.delete(attachment.id)
+          store.uploadTasks.delete(attachment.id)
+          composerAttachmentStores.trim()
         })
-      uploadTasks.current.set(attachment.id, task)
+      store.uploadTasks.set(attachment.id, task)
     },
-    [client, setAttachments]
+    [client, setAttachments, store]
   )
 
   const stageFiles = useCallback(
     (files: readonly File[]) => {
       if (files.length === 0) return
       setError(undefined)
-      let acceptedCount = attachmentsRef.current.length
+      let acceptedCount = store.snapshot.attachments.length
       for (const file of files) {
         if (acceptedCount >= MAX_COMPOSER_ATTACHMENTS) {
           setError(`A message can carry at most ${MAX_COMPOSER_ATTACHMENTS} attachments.`)
@@ -106,7 +215,7 @@ export function useComposerAttachments() {
         acceptedCount += 1
         const kind = file.type.startsWith("image/") ? "image" : "file"
         const previewUrl = hasLocalPreview(file) ? URL.createObjectURL(file) : undefined
-        const attachment: StoredAttachment = {
+        const attachment: StoredComposerAttachment = {
           id: crypto.randomUUID(),
           file,
           name: file.name,
@@ -121,22 +230,22 @@ export function useComposerAttachments() {
         if (attachment.state === "uploading") startUpload(attachment)
       }
     },
-    [setAttachments, startUpload]
+    [setAttachments, setError, startUpload, store]
   )
 
   const removeAttachment = useCallback(
     (id: string) => {
-      const existing = attachmentsRef.current.find((entry) => entry.id === id)
+      const existing = store.snapshot.attachments.find((entry) => entry.id === id)
       if (existing?.previewUrl != null) URL.revokeObjectURL(existing.previewUrl)
-      uploadTasks.current.delete(id)
+      store.uploadTasks.delete(id)
       setAttachments((current) => current.filter((entry) => entry.id !== id))
     },
-    [setAttachments]
+    [setAttachments, store]
   )
 
   const retryAttachment = useCallback(
     (id: string) => {
-      const existing = attachmentsRef.current.find((entry) => entry.id === id)
+      const existing = store.snapshot.attachments.find((entry) => entry.id === id)
       if (existing == null || existing.file.size > MAX_COMPOSER_ATTACHMENT_BYTES) return
       setAttachments((current) =>
         current.map((entry) =>
@@ -145,44 +254,45 @@ export function useComposerAttachments() {
       )
       startUpload(existing)
     },
-    [setAttachments, startUpload]
+    [setAttachments, startUpload, store]
   )
 
   const clearAttachments = useCallback(() => {
-    for (const attachment of attachmentsRef.current) {
+    for (const attachment of store.snapshot.attachments) {
       if (attachment.previewUrl != null) URL.revokeObjectURL(attachment.previewUrl)
     }
-    uploadTasks.current.clear()
-    setError(undefined)
-    setAttachments(() => [])
-  }, [setAttachments])
+    store.uploadTasks.clear()
+    updateStore(store, () => ({ attachments: [] }))
+  }, [store])
 
   const collectForSend = useCallback(async (): Promise<AttachmentRef[]> => {
-    await Promise.all([...uploadTasks.current.values()])
-    const failed = attachmentsRef.current.find((entry) => entry.state === "failed")
+    await Promise.all(store.uploadTasks.values())
+    const failed = store.snapshot.attachments.find((entry) => entry.state === "failed")
     if (failed != null) {
       throw new Error("An attachment failed to upload. Retry or remove it, then send again.")
     }
-    const pending = attachmentsRef.current.find((entry) => entry.state === "uploading")
+    const pending = store.snapshot.attachments.find((entry) => entry.state === "uploading")
     if (pending != null) {
       throw new Error("An attachment is still uploading.")
     }
-    return attachmentsRef.current.flatMap((entry) =>
+    return store.snapshot.attachments.flatMap((entry) =>
       entry.uploaded == null ? [] : [entry.uploaded]
     )
-  }, [])
+  }, [store])
 
   useEffect(() => {
-    return () => {
-      for (const attachment of attachmentsRef.current) {
-        if (attachment.previewUrl != null) URL.revokeObjectURL(attachment.previewUrl)
-      }
+    if (persistenceKey != null) {
+      composerAttachmentStores.retain(store)
+      return () => composerAttachmentStores.release(store)
     }
-  }, [])
+    return () => {
+      disposeComposerAttachmentStore(store)
+    }
+  }, [persistenceKey, store])
 
   return {
-    attachments,
-    error,
+    attachments: snapshot.attachments,
+    error: snapshot.error,
     stageFiles,
     removeAttachment,
     retryAttachment,

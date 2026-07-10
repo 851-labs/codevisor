@@ -138,7 +138,7 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
   const [mountedTerminalPaneIds, setMountedTerminalPaneIds] = useState<string[]>([])
   const [isAttachmentDropTargeted, setIsAttachmentDropTargeted] = useState(false)
   const [composerRef, composerHeight] = useElementHeight()
-  const composerAttachments = useComposerAttachments()
+  const composerAttachments = useComposerAttachments(`session:${sessionId}`)
   const terminalVisible = paneState.isVisible
   const terminalHeight = paneState.height
   const selectedPane = paneState.panes.find((pane) => pane.id === paneState.selectedPaneId)

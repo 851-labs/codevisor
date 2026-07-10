@@ -138,7 +138,7 @@ export function NewChatScreen({ preferredProjectId }: { preferredProjectId?: str
   const [setupWorktreeId, setSetupWorktreeId] = useState<string>()
   const [setupPhases, setSetupPhases] = useState<SessionSetupPhaseInfo[]>([])
   const [isAttachmentDropTargeted, setIsAttachmentDropTargeted] = useState(false)
-  const composerAttachments = useComposerAttachments()
+  const composerAttachments = useComposerAttachments("new-chat")
 
   const projects = useMemo(
     () => (projectsQuery.data ?? []).filter((project) => !project.isArchived),

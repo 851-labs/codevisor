@@ -10,6 +10,7 @@ import {
   ArrowUpIcon,
   BlocksIcon,
   Code2Icon,
+  FilePlus2Icon,
   FolderIcon,
   GitBranchIcon,
   ListTodoIcon,
@@ -28,7 +29,10 @@ import { Composer } from "../../features/composer/Composer"
 import { ModelConfigMenu } from "../../features/composer/ModelConfigMenu"
 import { QuestionPickerCard } from "../../features/composer/QuestionPickerCard"
 import { UsageRingButton } from "../../features/composer/UsageRingButton"
-import type { ComposerAttachmentItem } from "../../features/composer/useComposerAttachments"
+import {
+  type ComposerAttachmentItem,
+  useComposerAttachments
+} from "../../features/composer/useComposerAttachments"
 import { useComposerDraftText } from "../../features/composer/useComposerDraftText"
 import { AssistantTurn } from "../../features/session/AssistantTurn"
 import { MessageCopyButton } from "../../features/session/MessageCopyButton"
@@ -583,6 +587,9 @@ function ComposerStates() {
           onAttachFiles={() => undefined}
         />
       </StateBlock>
+      <StateBlock title="Retained attachment draft">
+        <PersistentAttachmentFixture />
+      </StateBlock>
       <StateBlock title="Submitting handoff">
         <Composer
           value="Create a branch and inspect the failing test."
@@ -622,6 +629,44 @@ function ComposerStates() {
         </div>
       </StateBlock>
     </SurfaceGrid>
+  )
+}
+
+function PersistentAttachmentFixture() {
+  const [text, setText] = useComposerDraftText("internal-storybook-attachment-text")
+  const attachments = useComposerAttachments("internal-storybook-attachments")
+
+  return (
+    <div className="flex flex-col gap-2">
+      <Composer
+        value={text}
+        onValueChange={setText}
+        attachments={attachments.attachments}
+        canSend={text.trim() !== "" || attachments.attachments.length > 0}
+        chips={toolbarChips({})}
+        onSend={() => undefined}
+        onAttachFiles={attachments.stageFiles}
+        onRemoveAttachment={attachments.removeAttachment}
+        onRetryAttachment={attachments.retryAttachment}
+      />
+      <Button
+        type="button"
+        variant="outline"
+        size="icon"
+        className="self-end"
+        aria-label="Stage fixture attachment"
+        title="Stage fixture attachment"
+        onClick={() =>
+          attachments.stageFiles([
+            new File(["Persistent composer attachment fixture.\n"], "persistent-draft.txt", {
+              type: "text/plain"
+            })
+          ])
+        }
+      >
+        <FilePlus2Icon className="size-3.5" />
+      </Button>
+    </div>
   )
 }
 
