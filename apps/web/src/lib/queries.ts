@@ -961,6 +961,47 @@ export function replaySessionEvents(
   }
 }
 
+export function foldSessionSnapshot(detail: SessionDetail): SessionDetailCache {
+  const turnMeta: Record<string, TurnMeta> = {}
+  let assistantId: string | undefined
+  let assistantMeta: TurnMeta | undefined
+
+  const flushAssistant = () => {
+    if (assistantId != null && assistantMeta != null) turnMeta[assistantId] = assistantMeta
+    assistantId = undefined
+    assistantMeta = undefined
+  }
+
+  for (const item of detail.conversation) {
+    if (item.role !== "assistant") {
+      flushAssistant()
+      continue
+    }
+    if (assistantMeta == null) {
+      assistantId = item.id
+      assistantMeta = initialTurnMeta(item.createdAt)
+    }
+    const appended = appendTextEntry(
+      assistantMeta.entries,
+      assistantMeta.nextTextId,
+      item.text,
+      item.messageId
+    )
+    assistantMeta = {
+      ...assistantMeta,
+      entries: appended.entries,
+      nextTextId: appended.nextTextId
+    }
+  }
+  flushAssistant()
+
+  return {
+    ...detail,
+    conversation: foldConversation(detail.conversation),
+    turnMeta
+  }
+}
+
 // Wires the event socket into the query cache. Returns the unsubscribe.
 export function wireServerEvents(client: QueryClient, events: EventSocket): () => void {
   return events.subscribe((event) => {
@@ -1039,8 +1080,8 @@ export function useSessionDetail(id: string | undefined) {
         return replaySessionEvents(detail, events)
       }
       // Older servers may not expose event history; fall back to the text-only
-      // conversation snapshot and fold it into displayable turns.
-      return { ...detail, conversation: foldConversation(detail.conversation) }
+      // conversation snapshot while preserving assistant message boundaries.
+      return foldSessionSnapshot(detail)
     },
     enabled: id != null && id !== ""
   })

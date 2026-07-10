@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest"
 
 import {
   canAppendOptimisticUserPrompt,
+  foldSessionSnapshot,
   replaySessionEvents,
   withOptimisticUserPrompt
 } from "./queries"
@@ -705,4 +706,50 @@ it("replays session-subject worktree setup before the worktree name is patched",
   )
 
   expect(replayed.setupPhases).toMatchObject([{ id: "worktree", outcome: "succeeded" }])
+})
+
+describe("foldSessionSnapshot", () => {
+  it("preserves assistant message boundaries as worked and final entries", () => {
+    const snapshot: SessionDetail = {
+      ...detail(),
+      conversation: [
+        {
+          id: "user-1",
+          role: "user",
+          text: "Inspect this",
+          createdAt: "2026-01-01T00:00:01.000Z",
+          isGenerating: false
+        },
+        {
+          id: "assistant-1",
+          role: "assistant",
+          messageId: "commentary-1",
+          text: "I will inspect the code.",
+          createdAt: "2026-01-01T00:00:02.000Z",
+          isGenerating: true
+        },
+        {
+          id: "assistant-2",
+          role: "assistant",
+          messageId: "final-1",
+          text: "The implementation is correct.",
+          createdAt: "2026-01-01T00:00:03.000Z",
+          isGenerating: false
+        }
+      ]
+    }
+
+    const folded = foldSessionSnapshot(snapshot)
+
+    expect(folded.conversation).toHaveLength(2)
+    expect(folded.conversation[1]).toMatchObject({
+      id: "assistant-1",
+      text: "I will inspect the code.\n\nThe implementation is correct.",
+      isGenerating: false
+    })
+    expect(folded.turnMeta?.["assistant-1"]?.entries).toEqual([
+      { type: "text", id: "acp:commentary-1", markdown: "I will inspect the code." },
+      { type: "text", id: "acp:final-1", markdown: "The implementation is correct." }
+    ])
+  })
 })

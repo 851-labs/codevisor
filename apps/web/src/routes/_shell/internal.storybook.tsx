@@ -528,10 +528,12 @@ function PlannedTurnFixture() {
 }
 
 function MarkdownTurnFixture() {
+  const commentary = "I checked the renderer and prepared the final response."
+  const [disclosureValues, setDisclosureValues] = useState<Record<string, boolean>>({})
   const item: ConversationItem = {
     id: "assistant-markdown",
     role: "assistant",
-    text: richMarkdown,
+    text: `${commentary}\n\n${richMarkdown}`,
     createdAt: "2026-07-08T12:03:00.000Z",
     isGenerating: false
   }
@@ -540,12 +542,24 @@ function MarkdownTurnFixture() {
     endedAt: "2026-07-08T12:03:08.000Z",
     thoughts: "",
     toolCalls: [],
-    entries: [{ type: "text", id: "rich-markdown", markdown: richMarkdown }],
+    entries: [
+      { type: "text", id: "acp:commentary", markdown: commentary },
+      { type: "text", id: "acp:final", markdown: richMarkdown }
+    ],
     subagents: {},
-    textPhases: { "rich-markdown": "final" },
-    nextTextId: 1
+    textPhases: { "acp:commentary": "commentary", "acp:final": "final" },
+    nextTextId: 0
   }
-  return <AssistantTurn item={item} meta={meta} />
+  return (
+    <AssistantTurn
+      item={item}
+      meta={meta}
+      disclosureValues={disclosureValues}
+      setDisclosureValue={(key, expanded) =>
+        setDisclosureValues((current) => ({ ...current, [key]: expanded }))
+      }
+    />
+  )
 }
 
 function TerminalTurnStatesFixture() {
