@@ -11,10 +11,7 @@ function MarkdownExternalLink({ className, ...props }: ComponentProps<typeof Ext
   return (
     <ExternalLink
       {...props}
-      className={cn(
-        "wrap-anywhere font-medium text-[var(--herdman-accent)] underline",
-        className
-      )}
+      className={cn("wrap-anywhere font-medium text-[var(--herdman-accent)] underline", className)}
     />
   )
 }

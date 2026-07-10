@@ -10,6 +10,7 @@ import {
   SessionGoal,
   SetGoalRequest,
   TerminalClientFrame,
+  TranscriptItemDetails,
   Worktree,
   WorktreeSetupUpdate,
   decode,
@@ -171,6 +172,25 @@ describe("@herdman/api", () => {
       payload: { text: "hello" }
     })
     expect(event.payload).toEqual({ text: "hello" })
+  })
+
+  it("decodes transcript item details with their bounded events", () => {
+    const details = decode(TranscriptItemDetails)({
+      itemId: "item-1",
+      revision: 2,
+      events: [
+        {
+          id: 3,
+          serverId: "local",
+          kind: "session.output",
+          subjectId: "session-1",
+          createdAt: "2026-06-30T00:00:00.000Z",
+          payload: { text: "hello" }
+        }
+      ]
+    })
+
+    expect(details.events[0]?.payload).toEqual({ text: "hello" })
   })
 
   it("decodes session details with an event replay cursor", () => {

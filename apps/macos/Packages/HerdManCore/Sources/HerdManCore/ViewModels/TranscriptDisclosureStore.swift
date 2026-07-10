@@ -4,18 +4,13 @@ import Observation
 /// Session-scoped store for user-toggled disclosure state (expand/collapse) of
 /// transcript rows.
 ///
-/// Why this exists: the transcript occlusion-culls settled rows — a row far
-/// from the viewport unmounts its content and renders as a fixed-height
-/// spacer. Per-row `@State` (the old home of `isExpanded`) is destroyed on
-/// unmount, so a settled tool card the user manually expanded would silently
-/// re-collapse when scrolled away and back. Hoisting the toggle here, keyed by
-/// a STABLE id, makes it survive content unmount/remount.
+/// Lazy transcript rows unmount outside the viewport, so per-row `@State`
+/// would forget a user's choice. Hoisting the toggle here under a stable id
+/// preserves it across unmounts and navigation.
 ///
 /// Only the user-set toggle lives here. The transient auto-collapse/auto-expand
 /// *guards* stay as per-row `@State`: those transitions fire only while a turn
-/// is generating, and the generating turn is the active row, which is never
-/// culled — so by the time a row can be culled its disclosure only ever changes
-/// by user tap, which requires the row to be mounted.
+/// is generating, and the generating turn remains mounted as the active row.
 ///
 /// Observation granularity: a tap invalidates every mounted row that read the
 /// store (`O(visible)`), which is fine — taps are rare and human-paced. Reads

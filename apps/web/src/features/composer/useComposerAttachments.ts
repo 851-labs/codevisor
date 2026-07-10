@@ -163,9 +163,7 @@ export function useComposerAttachments(persistenceKey?: string) {
 
   const setError = useCallback(
     (error: string | undefined) => {
-      updateStore(store, (current) =>
-        current.error === error ? current : { ...current, error }
-      )
+      updateStore(store, (current) => (current.error === error ? current : { ...current, error }))
     },
     [store]
   )

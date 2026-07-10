@@ -55,6 +55,8 @@ public protocol HerdManServerClienting: Sendable {
     /// session-specific picker metadata. Nil means the server predates this
     /// endpoint and callers should keep the capability-cache fallback.
     func connectSession(id: UUID) async throws -> ServerSessionRuntimeMetadata?
+    func transcriptPage(id: UUID, before: String?, limit: Int) async throws -> ServerTranscriptPage
+    func transcriptItemDetails(id: UUID, itemId: String) async throws -> ServerTranscriptItemDetails
     func promptQueue(id: UUID) async throws -> [ServerPromptQueueItem]
     func sessionEvents(id: UUID) async throws -> [ServerEventEnvelope]
     func upsertSession(_ session: ChatSession) async throws -> ServerSession
@@ -87,10 +89,38 @@ public protocol HerdManServerClienting: Sendable {
     func requestShutdown() async throws
     func applyServerUpdate() async throws -> ServerUpdateApplied
     func eventStream(since: Int) -> AsyncThrowingStream<ServerEventEnvelope, any Error>
+    /// Project/session metadata changes after a freshly loaded shell snapshot.
+    func shellEventStream() -> AsyncThrowingStream<ServerEventEnvelope, any Error>
+    /// Session-scoped sequence and replay. Unlike the machine stream, `since`
+    /// is meaningful only within this session.
+    func sessionEventStream(id: UUID, since: Int) -> AsyncThrowingStream<ServerEventEnvelope, any Error>
 }
 
 public extension HerdManServerClienting {
     func connectSession(id: UUID) async throws -> ServerSessionRuntimeMetadata? { nil }
+
+    func shellEventStream() -> AsyncThrowingStream<ServerEventEnvelope, any Error> {
+        // Test doubles and old transports preserve their existing behavior.
+        eventStream(since: 0)
+    }
+
+    func sessionEventStream(id: UUID, since: Int) -> AsyncThrowingStream<ServerEventEnvelope, any Error> {
+        let source = eventStream(since: since)
+        return AsyncThrowingStream { continuation in
+            let task = Task {
+                do {
+                    for try await event in source where
+                        event.subjectId.caseInsensitiveCompare(id.uuidString) == .orderedSame {
+                        continuation.yield(event)
+                    }
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+            continuation.onTermination = { _ in task.cancel() }
+        }
+    }
 
     func promptQueue(id: UUID) async throws -> [ServerPromptQueueItem] { [] }
 
@@ -123,6 +153,14 @@ public extension HerdManServerClienting {
     /// Default for fakes/older servers: no persisted history, callers fall
     /// back to the text-only conversation snapshot.
     func sessionEvents(id: UUID) async throws -> [ServerEventEnvelope] { [] }
+
+    func transcriptPage(id: UUID, before: String?, limit: Int) async throws -> ServerTranscriptPage {
+        throw HerdManServerClientError.httpStatus(404, "")
+    }
+
+    func transcriptItemDetails(id: UUID, itemId: String) async throws -> ServerTranscriptItemDetails {
+        throw HerdManServerClientError.httpStatus(404, "")
+    }
 
     /// Defaults so fakes and older transports keep compiling; the HTTP client
     /// overrides these with the real goal endpoints.
@@ -211,6 +249,15 @@ public struct ServerHealth: Decodable, Equatable, Sendable {
     public var ok: Bool
     public var version: String
     public var database: String
+    public var migration: ServerMigrationProgress?
+}
+
+public struct ServerMigrationProgress: Decodable, Equatable, Sendable {
+    public var id: String
+    public var name: String
+    public var completed: Int
+    public var total: Int
+    public var error: String?
 }
 
 public struct ServerInfo: Decodable, Equatable, Sendable {
@@ -220,6 +267,7 @@ public struct ServerInfo: Decodable, Equatable, Sendable {
     public var version: String
     public var platform: String
     public var bindHost: String
+    public var features: [String]?
 }
 
 public struct ServerUpdateInfo: Decodable, Equatable, Sendable {
@@ -551,8 +599,48 @@ public struct ServerSessionDetail: Decodable, Equatable, Sendable {
     }
 }
 
+public struct ServerTranscriptItem: Decodable, Equatable, Sendable {
+    public enum Role: String, Decodable, Equatable, Sendable {
+        case user
+        case assistant
+    }
+
+    public var id: String
+    public var sessionId: String
+    public var sequence: Int
+    public var role: Role
+    public var text: String
+    public var createdAt: String
+    public var updatedAt: String
+    public var isGenerating: Bool
+    public var hasDetails: Bool
+    public var turnId: String?
+    public var startedAt: String?
+    public var endedAt: String?
+    public var stopReason: String?
+    public var stopDetail: String?
+    public var planDocument: String?
+    public var attachments: [ServerAttachmentRef]?
+    public var revision: Int
+}
+
+public struct ServerTranscriptPage: Decodable, Equatable, Sendable {
+    public var items: [ServerTranscriptItem]
+    public var nextBefore: String?
+    public var hasMore: Bool
+    public var eventCursor: Int
+}
+
+public struct ServerTranscriptItemDetails: Decodable, Equatable, Sendable {
+    public var itemId: String
+    public var revision: Int
+    public var events: [ServerEventEnvelope]
+}
+
 public struct ServerEventEnvelope: Decodable, Equatable, Sendable {
     public var id: Int
+    public var globalEventId: Int? = nil
+    public var subjectRevision: Int? = nil
     public var serverId: String
     public var kind: String
     public var subjectId: String
@@ -688,6 +776,22 @@ public final class HerdManServerClient: HerdManServerClienting, @unchecked Senda
         } catch HerdManServerClientError.httpStatus(404, _) {
             return nil
         }
+    }
+
+    public func transcriptPage(id: UUID, before: String?, limit: Int = 32) async throws -> ServerTranscriptPage {
+        var components = URLComponents()
+        components.path = "/v1/sessions/\(id.uuidString)/transcript"
+        components.queryItems = [URLQueryItem(name: "limit", value: String(limit))]
+        if let before {
+            components.queryItems?.append(URLQueryItem(name: "before", value: before))
+        }
+        guard let path = components.string else { throw HerdManServerClientError.invalidURL("transcript") }
+        return try await get(path)
+    }
+
+    public func transcriptItemDetails(id: UUID, itemId: String) async throws -> ServerTranscriptItemDetails {
+        let encoded = itemId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? itemId
+        return try await get("/v1/sessions/\(id.uuidString)/transcript/\(encoded)/details")
     }
 
     public func sessionEvents(id: UUID) async throws -> [ServerEventEnvelope] {
@@ -834,13 +938,30 @@ public final class HerdManServerClient: HerdManServerClienting, @unchecked Senda
     }
 
     public func eventStream(since: Int = 0) -> AsyncThrowingStream<ServerEventEnvelope, any Error> {
+        makeEventStream(path: "/v1/events/socket", since: since)
+    }
+
+    public func shellEventStream() -> AsyncThrowingStream<ServerEventEnvelope, any Error> {
+        // listProjects/listSessions is the snapshot; only events after the
+        // socket attaches are needed here.
+        makeEventStream(path: "/v1/events/socket", since: Int.max)
+    }
+
+    public func sessionEventStream(id: UUID, since: Int) -> AsyncThrowingStream<ServerEventEnvelope, any Error> {
+        makeEventStream(path: "/v1/sessions/\(id.uuidString)/events/socket", since: since)
+    }
+
+    private func makeEventStream(
+        path: String,
+        since: Int
+    ) -> AsyncThrowingStream<ServerEventEnvelope, any Error> {
         AsyncThrowingStream { continuation in
             let task = Task {
                 var cursor = since
                 var failures = 0
                 while !Task.isCancelled {
                     do {
-                        var request = URLRequest(url: try websocketURL(for: "/v1/events/socket?since=\(cursor)"))
+                        var request = URLRequest(url: try websocketURL(for: "\(path)?since=\(cursor)"))
                         applyAuthorization(to: &request)
                         let socket = urlSession.webSocketTask(with: request)
                         socket.maximumMessageSize = Self.eventWebSocketMaximumMessageSize
@@ -851,7 +972,10 @@ public final class HerdManServerClient: HerdManServerClienting, @unchecked Senda
                             let message = try await socket.receive()
                             guard let data = Self.data(from: message) else { continue }
                             let event = try decoder.decode(ServerEventEnvelope.self, from: data)
-                            cursor = max(cursor, event.id)
+                            // Int.max requests a live-only subscription. Once the
+                            // first event arrives, retain its real cursor so a
+                            // reconnect can replay anything missed afterward.
+                            cursor = cursor == Int.max ? event.id : max(cursor, event.id)
                             failures = 0
                             continuation.yield(event)
                         }

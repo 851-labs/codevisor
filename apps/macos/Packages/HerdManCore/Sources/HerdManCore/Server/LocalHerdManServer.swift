@@ -1,4 +1,5 @@
 import Foundation
+import Observation
 
 public enum LocalHerdManServerState: Equatable, Sendable {
     case idle
@@ -16,6 +17,37 @@ public struct LocalHerdManServerLaunchRequest: Equatable, Sendable {
     public var port: Int
     public var name: String
     public var environment: [String: String]
+    public var dataUpgradeStatusURL: URL? = nil
+}
+
+public struct LocalDataUpgradeProgress: Codable, Equatable, Sendable {
+    public var state: String
+    public var id: String
+    public var name: String
+    public var completed: Int
+    public var total: Int
+    public var error: String?
+
+    public init(
+        state: String,
+        id: String,
+        name: String,
+        completed: Int,
+        total: Int,
+        error: String? = nil
+    ) {
+        self.state = state
+        self.id = id
+        self.name = name
+        self.completed = completed
+        self.total = total
+        self.error = error
+    }
+
+    public var fractionCompleted: Double? {
+        guard total > 0 else { return nil }
+        return min(1, max(0, Double(completed) / Double(total)))
+    }
 }
 
 struct LocalHerdManServerProcessConfiguration: Equatable {
@@ -24,6 +56,7 @@ struct LocalHerdManServerProcessConfiguration: Equatable {
 }
 
 @MainActor
+@Observable
 public final class LocalHerdManServer {
     public typealias Launcher = @MainActor (LocalHerdManServerLaunchRequest) throws -> Process
     public typealias ServerEnvironmentProvider = @MainActor () async -> [String: String]
@@ -35,6 +68,7 @@ public final class LocalHerdManServer {
     private let nodeExecutable: URL
     private let databasePath: String
     private let logURL: URL
+    private let dataUpgradeStatusURL: URL
     private let launcher: Launcher
     private let serverEnvironmentProvider: ServerEnvironmentProvider
     private let staleListenerTerminator: ListenerTerminator
@@ -47,6 +81,9 @@ public final class LocalHerdManServer {
     private var ensureTask: Task<LocalHerdManServerState, Never>?
 
     public private(set) var state: LocalHerdManServerState = .idle
+    /// Sidecar progress remains available while the new server is performing
+    /// its blocking migration and therefore cannot answer HTTP yet.
+    public private(set) var dataUpgradeProgress: LocalDataUpgradeProgress?
 
     /// Invoked when the bundled server exits asking the app to take over the
     /// update: a remote client triggered a server update, but a server that
@@ -66,6 +103,7 @@ public final class LocalHerdManServer {
         nodeExecutable: URL = LocalHerdManServer.defaultNodeExecutable(),
         databasePath: String = LocalHerdManServer.defaultDatabasePath(),
         logURL: URL = LocalHerdManServer.defaultLogURL(),
+        dataUpgradeStatusURL: URL = LocalHerdManServer.defaultDataUpgradeStatusURL(),
         serverEnvironmentProvider: @escaping ServerEnvironmentProvider = LocalHerdManServer.defaultServerEnvironment,
         launcher: @escaping Launcher = LocalHerdManServer.launchProcess,
         staleListenerTerminator: @escaping ListenerTerminator = { await LocalHerdManServer.terminateListeners(onPort: $0) }
@@ -76,6 +114,7 @@ public final class LocalHerdManServer {
         self.nodeExecutable = nodeExecutable
         self.databasePath = databasePath
         self.logURL = logURL
+        self.dataUpgradeStatusURL = dataUpgradeStatusURL
         self.serverEnvironmentProvider = serverEnvironmentProvider
         self.launcher = launcher
         self.staleListenerTerminator = staleListenerTerminator
@@ -138,7 +177,8 @@ public final class LocalHerdManServer {
                 host: Self.bindHost,
                 port: port,
                 name: Self.serverDisplayName(),
-                environment: serverEnvironment
+                environment: serverEnvironment,
+                dataUpgradeStatusURL: dataUpgradeStatusURL
             )
             let launched = try launcher(request)
             process = launched
@@ -271,8 +311,13 @@ public final class LocalHerdManServer {
     }
 
     private func waitUntilHealthy(process: Process?) async -> LocalHerdManServerState {
-        for _ in 0..<40 {
+        // Breaking data upgrades are allowed to take minutes. Progress comes
+        // from the sidecar, so this wait is bounded generously without making
+        // the UI appear frozen.
+        for _ in 0..<2400 {
+            refreshDataUpgradeProgress()
             if await isHealthy() {
+                refreshDataUpgradeProgress()
                 state = .started
                 return state
             }
@@ -284,6 +329,13 @@ public final class LocalHerdManServer {
         }
         state = .unavailable("Timed out waiting for HerdMan server. See \(logURL.path)")
         return state
+    }
+
+    private func refreshDataUpgradeProgress() {
+        guard let data = try? Data(contentsOf: dataUpgradeStatusURL),
+              let progress = try? JSONDecoder().decode(LocalDataUpgradeProgress.self, from: data)
+        else { return }
+        dataUpgradeProgress = progress
     }
 
     public static func launchProcess(_ request: LocalHerdManServerLaunchRequest) throws -> Process {
@@ -332,7 +384,7 @@ public final class LocalHerdManServer {
                 "--auth", "token",
                 "--kind", "local",
                 "--name", request.name
-            ]
+            ] + (request.dataUpgradeStatusURL.map { ["--upgrade-status", $0.path] } ?? [])
         )
     }
 
@@ -432,6 +484,10 @@ public final class LocalHerdManServer {
 
     public static func defaultLogURL() -> URL {
         applicationSupportURL().appendingPathComponent("server.log")
+    }
+
+    public static func defaultDataUpgradeStatusURL() -> URL {
+        applicationSupportURL().appendingPathComponent("data-upgrade.json")
     }
 
     private static func applicationSupportURL() -> URL {

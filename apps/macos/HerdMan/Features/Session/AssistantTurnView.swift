@@ -9,15 +9,16 @@ import StreamMarkdown
 struct AssistantTurnView: View {
     let turn: AssistantTurn
     /// Stable id of the owning assistant message — the disclosure key, stable
-    /// across the active→settled transition and across culling remounts.
+    /// across the active→settled transition and lazy remounts.
     let turnID: UUID
     private let initiallyExpanded: Bool?
     @Environment(\.transcriptDisclosure) private var disclosureStore
     @Environment(\.runningSubagentToolCallIds) private var runningSubagentToolCallIds
+    @Environment(\.transcriptController) private var transcriptController
     @Environment(\.theme) private var theme
     /// Transient one-shot guard for the finish/assert auto-collapse. Stays
     /// `@State`: it only matters while the turn is generating/settling, which
-    /// is the never-culled active row. A settled remount resets it harmlessly.
+    /// is the mounted active row. A settled remount resets it harmlessly.
     @State private var hasAutoCollapsed = false
     @State private var isHovered = false
 
@@ -28,7 +29,7 @@ struct AssistantTurnView: View {
         _hasAutoCollapsed = State(initialValue: turn.isGenerating && turn.finalTextIsAsserted)
     }
 
-    // Disclosure hoisted to the session store (survives occlusion culling).
+    // Disclosure hoisted to the session store so lazy remounts preserve it.
     // The default reproduces the old init seeding: expanded while running,
     // collapsed once finished / when a provider-asserted final is streaming.
     private var store: TranscriptDisclosureStore { disclosureStore ?? .previews }
@@ -58,6 +59,7 @@ struct AssistantTurnView: View {
     /// (and for any non-plan turn); once a plan exists it shows only if there
     /// was pre-plan work to display.
     private func showsPlanningSection(_ items: [WorkedItem]) -> Bool {
+        if turn.hasDeferredWorkedDetails { return true }
         if turn.planBoundary != nil { return !items.isEmpty }
         return turn.isGenerating || !items.isEmpty
     }
@@ -110,7 +112,10 @@ struct AssistantTurnView: View {
                 // text-run merging, so a flush costs O(growing block) instead
                 // of O(whole answer). The finalize flip merges runs back into
                 // one selectable Text.
-                StreamingMarkdownView(markdown, isComplete: !turn.isGenerating)
+                StreamingMarkdownView(
+                    markdown,
+                    isComplete: !turn.isGenerating
+                )
                 if !turn.isGenerating {
                     // Copies just the final answer text, not the worked/tool
                     // content. Hidden until hover so the transcript stays clean.
@@ -215,13 +220,19 @@ struct AssistantTurnView: View {
                 .buttonStyle(.plain)
             }
 
-            if expanded, !items.isEmpty {
+            if expanded, !items.isEmpty || turn.hasDeferredWorkedDetails {
                 VStack(alignment: .leading, spacing: 12) {
                     Divider()
                     // Answered questions ride here too: the reducer synthesizes
                     // a tool call for each, so they group and render inline with
                     // the other tool calls that surround them.
-                    TranscriptItemsView(items: items, turn: turn, isTurnActive: turn.isGenerating)
+                    if turn.hasDeferredWorkedDetails,
+                       let itemId = turn.deferredDetailItemId,
+                       let transcriptController {
+                        DeferredTranscriptDetails(controller: transcriptController, itemId: itemId)
+                    } else {
+                        TranscriptItemsView(items: items, turn: turn, isTurnActive: turn.isGenerating)
+                    }
                 }
                 .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
             }
@@ -275,6 +286,43 @@ struct AssistantTurnView: View {
     private var workedTitle: String {
         guard let duration = turn.duration, duration >= 1 else { return "Worked for a moment" }
         return "Worked for \(format(Int(duration.rounded())))"
+    }
+}
+
+private struct DeferredTranscriptDetails: View {
+    let controller: SessionController
+    let itemId: String
+    @State private var state: LoadState = .loading
+
+    private enum LoadState {
+        case loading
+        case failed
+    }
+
+    var body: some View {
+        Group {
+            switch state {
+            case .loading:
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text("Loading worked details…").foregroundStyle(.secondary)
+                }
+                .task { await load() }
+            case .failed:
+                Button("Retry loading worked details") {
+                    state = .loading
+                }
+                .buttonStyle(.link)
+            }
+        }
+        .font(.callout)
+    }
+
+    private func load() async {
+        let loaded = await controller.loadTranscriptDetails(itemId)
+        if !loaded {
+            state = .failed
+        }
     }
 }
 

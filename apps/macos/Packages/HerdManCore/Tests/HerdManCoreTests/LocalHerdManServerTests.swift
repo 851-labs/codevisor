@@ -57,6 +57,58 @@ struct LocalHerdManServerTests {
         #expect(launches.first?.environment["HERDMAN_TEST"] == "1")
     }
 
+    @Test("Publishes blocking data-upgrade progress while waiting for health")
+    func publishesDataUpgradeProgress() async throws {
+        let directory = try makeTemporaryDirectory()
+        let statusURL = directory.appendingPathComponent("data-upgrade.json")
+        let client = FakeLocalServerClient(healthResults: [
+            .failure(TestError()), // pre-launch probe
+            .failure(TestError()), // first wait iteration while migrating
+            .success(.ready)
+        ])
+        let running = LocalDataUpgradeProgress(
+            state: "running",
+            id: "canonical-chat-v1",
+            name: "Updating chat history",
+            completed: 25,
+            total: 100
+        )
+        let completed = LocalDataUpgradeProgress(
+            state: "completed",
+            id: running.id,
+            name: running.name,
+            completed: 100,
+            total: 100
+        )
+        let server = LocalHerdManServer(
+            client: client,
+            entrypoint: directory.appendingPathComponent("main.js"),
+            dataUpgradeStatusURL: statusURL,
+            serverEnvironmentProvider: { [:] },
+            launcher: { request in
+                #expect(request.dataUpgradeStatusURL == statusURL)
+                try JSONEncoder().encode(running).write(to: statusURL, options: .atomic)
+                Task {
+                    try? await Task.sleep(for: .milliseconds(100))
+                    try? JSONEncoder().encode(completed).write(to: statusURL, options: .atomic)
+                }
+                let process = Process()
+                process.executableURL = URL(fileURLWithPath: "/bin/sleep")
+                process.arguments = ["1"]
+                try process.run()
+                return process
+            }
+        )
+
+        let result = Task { await server.ensureRunning() }
+        for _ in 0..<20 where server.dataUpgradeProgress == nil {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(server.dataUpgradeProgress == running)
+        #expect(await result.value == .started)
+        #expect(server.dataUpgradeProgress == completed)
+    }
+
     @Test("Launch command names the server process")
     func launchCommandNamesServerProcess() {
         let request = LocalHerdManServerLaunchRequest(

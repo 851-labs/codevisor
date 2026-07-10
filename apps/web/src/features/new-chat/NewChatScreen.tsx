@@ -49,10 +49,7 @@ import {
 } from "./useNewChatDraftState"
 
 const MODEL_MENU_CATEGORIES = new Set(["model", "thought_level", "speed"])
-const REMEMBERED_CONFIG_CATEGORIES = new Set([
-  ...MODEL_MENU_CATEGORIES,
-  "model_config"
-])
+const REMEMBERED_CONFIG_CATEGORIES = new Set([...MODEL_MENU_CATEGORIES, "model_config"])
 
 type PlanControl =
   | { kind: "mode"; planId: string; buildId: string }
@@ -274,8 +271,7 @@ export function NewChatScreen({ preferredProjectId }: { preferredProjectId?: str
   ) => {
     updateNewChatDraftState((current) => ({
       ...current,
-      setupPhases:
-        typeof update === "function" ? update(current.setupPhases) : update
+      setupPhases: typeof update === "function" ? update(current.setupPhases) : update
     }))
   }
   const setPendingConfig = (

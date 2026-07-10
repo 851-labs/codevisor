@@ -137,6 +137,61 @@ const buildV4Fixture = (filename: string): void => {
 }
 
 describe("@herdman/db", () => {
+  it("reports a reusable blocking data upgrade and installs the canonical schema", async () => {
+    const filename = tempDatabase()
+    const progress: Array<{
+      state: string
+      completed: number
+      total: number
+    }> = []
+    const db = await run(
+      makeDatabase({
+        filename,
+        serverId: "local",
+        onDataUpgradeProgress: (update) => progress.push(update)
+      })
+    )
+
+    expect(progress[0]?.state).toBe("running")
+    expect(progress.at(-1)).toMatchObject({ state: "completed" })
+    expect(progress.at(-1)?.completed).toBe(progress.at(-1)?.total)
+    const sqlite = new Database(filename)
+    for (const table of ["chat_items", "chat_parts", "session_events", "session_chat_state"]) {
+      expect(
+        sqlite
+          .prepare("select name from sqlite_master where type = 'table' and name = ?")
+          .get(table)
+      ).toMatchObject({ name: table })
+    }
+    sqlite.close()
+    await Effect.runPromise(db.close)
+  })
+
+  it("uses monotonic per-session revisions independent of the global event log", async () => {
+    const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
+    const project = await run(db.createProject({ folderPath: "/tmp/session-revisions" }))
+    const session = await run(db.createSession({ projectId: project.id, harnessId: "codex" }))
+
+    const first = await run(db.appendEvent("session.updated", session.id, { turnState: "started" }))
+    await run(db.appendEvent("project.updated", project.id, { title: "unrelated" }))
+    const second = await run(
+      db.appendEvent("session.output", session.id, {
+        role: "assistant",
+        text: "hello"
+      })
+    )
+
+    expect(first.subjectRevision).toBe(1)
+    expect(first.globalEventId).toBeUndefined()
+    expect(second.subjectRevision).toBe(2)
+    expect(second.id).toBe(2)
+    expect(second.globalEventId).toBeUndefined()
+    expect((await run(db.listSubjectEvents(session.id))).map((event) => event.id)).toEqual([1, 2])
+    expect((await run(db.listEvents(0))).map((event) => event.kind)).toEqual(["project.updated"])
+    expect((await run(db.getTranscriptPage(session.id, undefined, 8))).eventCursor).toBe(2)
+    await Effect.runPromise(db.close)
+  })
+
   it("migrates a v4 database to projects without losing session children", async () => {
     const filename = tempDatabase()
     buildV4Fixture(filename)
@@ -165,6 +220,9 @@ describe("@herdman/db", () => {
     })
     expect(detail.session.worktreeName).toBeUndefined()
     expect(detail.conversation.map((item) => item.text)).toEqual(["hello"])
+    expect((await run(db.getTranscriptPage("sess-1", undefined, 32))).items).toMatchObject([
+      { role: "user", text: "hello" }
+    ])
     expect(detail.promptQueue.map((item) => item.text)).toEqual(["queued"])
     expect(await run(db.getSessionActionResult("sess-1", "action-1"))).toEqual({})
 
@@ -345,12 +403,14 @@ describe("@herdman/db", () => {
       db.appendEvent("session.output", firstSession.id, { text: "chunk", index: 1 })
     )
     expect(event.id).toBe(1)
-    expect(await run(db.listEvents(0))).toMatchObject([
-      { id: 1, kind: "session.output", payload: { text: "chunk", index: 1 } }
-    ])
-    expect(await run(db.listEvents(1))).toEqual([])
+    expect(event).toMatchObject({ subjectRevision: 1 })
+    expect(event.globalEventId).toBeUndefined()
+    expect(await run(db.listEvents(0))).toEqual([])
     expect((await run(db.getSessionDetail(firstSession.id))).eventCursor).toBe(1)
     await run(db.appendEvent("session.output", "other-subject", { text: "elsewhere" }))
+    expect(await run(db.listEvents(0))).toMatchObject([
+      { id: 1, kind: "session.output", payload: { text: "elsewhere" } }
+    ])
     expect(await run(db.listSubjectEvents(firstSession.id))).toMatchObject([
       { id: 1, kind: "session.output", payload: { text: "chunk", index: 1 } }
     ])
@@ -458,6 +518,478 @@ describe("@herdman/db", () => {
     ])
   })
 
+  it("projects bounded transcript pages and item-scoped details as events arrive", async () => {
+    const filename = tempDatabase()
+    const db = await run(makeDatabase({ filename, serverId: "local" }))
+    const project = await run(db.createProject({ folderPath: "/tmp/transcript-pages" }))
+    const session = await run(db.createSession({ projectId: project.id, harnessId: "codex" }))
+
+    await run(db.appendEvent("session.output", session.id, { role: "user", text: "Explain it" }))
+    await run(
+      db.appendEvent("session.updated", session.id, { turnId: "turn-1", turnState: "started" })
+    )
+    await run(
+      db.appendEvent("session.output", session.id, {
+        content: { type: "text", text: "Hello " },
+        messageId: "answer-1",
+        sessionUpdate: "agent_message_chunk"
+      })
+    )
+    await run(
+      db.appendEvent("session.output", session.id, {
+        content: { type: "text", text: "world" },
+        messageId: "answer-1",
+        sessionUpdate: "agent_message_chunk"
+      })
+    )
+    await run(
+      db.appendEvent("session.output", session.id, {
+        sessionUpdate: "tool_call",
+        toolCallId: "tool-1",
+        title: "Read a file"
+      })
+    )
+    await run(
+      db.appendEvent("session.updated", session.id, {
+        turnId: "turn-1",
+        turnState: "ended",
+        stopReason: "end_turn"
+      })
+    )
+
+    const newest = await run(db.getTranscriptPage(session.id, undefined, 1))
+    expect(newest).toMatchObject({ hasMore: true, nextBefore: "1", eventCursor: 6 })
+    expect(newest.items).toHaveLength(1)
+    expect(newest.items[0]).toMatchObject({
+      sequence: 1,
+      role: "assistant",
+      text: "Hello world",
+      isGenerating: false,
+      hasDetails: true,
+      turnId: "turn-1",
+      stopReason: "end_turn"
+    })
+
+    const older = await run(db.getTranscriptPage(session.id, 1, 1))
+    expect(older).toMatchObject({ hasMore: false, eventCursor: 6 })
+    expect(older.nextBefore).toBeUndefined()
+    expect(older.items).toMatchObject([{ sequence: 0, role: "user", text: "Explain it" }])
+
+    const details = await run(db.getTranscriptItemDetails(session.id, newest.items[0]!.id))
+    expect(details?.itemId).toBe(newest.items[0]!.id)
+    expect(details?.events.map((event) => event.id)).toEqual([2, 3, 4, 5, 6])
+    expect(await run(db.getTranscriptItemDetails(session.id, "missing"))).toBeUndefined()
+  })
+
+  it("backfills transcript pages from an older event log", async () => {
+    const filename = tempDatabase()
+    buildV4Fixture(filename)
+    const sqlite = new Database(filename)
+    sqlite
+      .prepare(
+        "insert into events (server_id, kind, subject_id, created_at, payload) values (?, ?, ?, ?, ?)"
+      )
+      .run(
+        "local",
+        "session.output",
+        "sess-1",
+        "2026-06-01T01:04:00.000Z",
+        JSON.stringify({ role: "user", text: "from history" })
+      )
+    sqlite.close()
+
+    const db = await run(makeDatabase({ filename, serverId: "local" }))
+    const page = await run(db.getTranscriptPage("sess-1", undefined, 32))
+    expect(page.items).toMatchObject([{ sequence: 0, role: "user", text: "from history" }])
+
+    const migrated = new Database(filename)
+    expect(
+      migrated
+        .prepare("select state, completed, total from backfill_jobs where id = ?")
+        .get("canonical-session-chat-v1")
+    ).toMatchObject({ state: "completed" })
+    migrated.close()
+  })
+
+  it("projects alternate event shapes, plans, tools, and failed turns", async () => {
+    const filename = tempDatabase()
+    const db = await run(makeDatabase({ filename, serverId: "local" }))
+    const project = await run(db.createProject({ folderPath: "/tmp/event-shapes" }))
+    const session = await run(db.createSession({ projectId: project.id, harnessId: "codex" }))
+
+    await run(db.appendEvent("session.output", session.id, "ignored non-object payload"))
+    await run(
+      db.appendEvent("session.output", session.id, {
+        sessionUpdate: "user_message_chunk",
+        content: { type: "text", text: "chunked question" },
+        messageId: "question-1"
+      })
+    )
+    await run(
+      db.appendEvent("session.output", session.id, {
+        sessionUpdate: "user_message_chunk",
+        text: "without id"
+      })
+    )
+    await run(
+      db.appendEvent("session.output", session.id, {
+        role: "system",
+        text: "system context",
+        attachments: []
+      })
+    )
+    await run(
+      db.appendEvent("session.updated", session.id, {
+        turnId: "turn-routed",
+        turnState: "started"
+      })
+    )
+    const streamingPage = await run(db.getTranscriptPage(session.id, undefined, 32))
+    expect(streamingPage.items.at(-1)).toMatchObject({
+      isGenerating: true,
+      text: ""
+    })
+    expect(streamingPage.items.at(-1)?.planDocument).toBeUndefined()
+    await run(
+      db.appendEvent("session.updated", session.id, {
+        turnId: "turn-routed",
+        turnState: "started"
+      })
+    )
+    await run(
+      db.appendEvent("session.output", session.id, {
+        role: "assistant",
+        text: "direct ",
+        messageId: "answer-1"
+      })
+    )
+    await run(
+      db.appendEvent("session.output", session.id, {
+        sessionUpdate: "agent_message_chunk",
+        content: { type: "text", text: "thinking" },
+        messageId: "commentary-1",
+        phase: "commentary"
+      })
+    )
+    await run(
+      db.appendEvent("session.output", session.id, {
+        sessionUpdate: "agent_message_chunk",
+        content: { type: "text", text: "answer" },
+        messageId: "answer-2",
+        phase: "final"
+      })
+    )
+    await run(
+      db.appendEvent("session.output", session.id, {
+        sessionUpdate: "agent_message_chunk",
+        text: "anonymous answer"
+      })
+    )
+    await run(
+      db.appendEvent("session.output", session.id, {
+        sessionUpdate: "agent_message_chunk",
+        content: { type: "image" }
+      })
+    )
+    await run(
+      db.appendEvent("session.output", session.id, {
+        sessionUpdate: "agent_message_chunk",
+        content: { type: "text", text: "" },
+        messageId: "empty"
+      })
+    )
+    await run(
+      db.appendEvent("session.output", session.id, {
+        sessionUpdate: "plan_document",
+        markdown: "- [ ] ship"
+      })
+    )
+    expect(
+      (await run(db.getTranscriptPage(session.id, undefined, 32))).items.at(-1)?.planDocument
+    ).toBe("- [ ] ship")
+    await run(
+      db.appendEvent("session.output", session.id, {
+        sessionUpdate: "tool_call",
+        toolCallId: "tool-1",
+        text: "tool detail"
+      })
+    )
+    await run(
+      db.appendEvent("session.output", session.id, {
+        sessionUpdate: "tool_call_update",
+        parentToolCallId: "tool-1",
+        toolCallId: "tool-child"
+      })
+    )
+    await run(
+      db.appendEvent("session.error", session.id, {
+        message: "provider failed",
+        stopReason: "error",
+        turnId: "unknown-turn"
+      })
+    )
+    await run(
+      db.appendEvent("session.updated", session.id, {
+        turnId: "turn-empty",
+        turnState: "started"
+      })
+    )
+    await run(
+      db.appendEvent("session.output", session.id, {
+        sessionUpdate: "agent_message_chunk",
+        text: "commentary only",
+        phase: "commentary"
+      })
+    )
+    await run(db.appendEvent("session.updated", session.id, { turnState: "ended" }))
+    await run(db.appendEvent("session.updated", session.id, { turnState: "started" }))
+    await run(
+      db.appendEvent("session.updated", session.id, {
+        stopReason: "manual",
+        stopDetail: "manual detail"
+      })
+    )
+    // A terminal event with no active item is a harmless no-op.
+    await run(db.appendEvent("session.updated", session.id, { turnState: "ended" }))
+    await run(
+      db.appendEvent("session.created", session.id, {
+        id: session.id,
+        projectId: project.id
+      })
+    )
+    await run(
+      db.appendEvent("session.archived", session.id, {
+        id: session.id,
+        projectId: project.id
+      })
+    )
+    await run(
+      db.appendEvent("session.deleted", session.id, {
+        id: session.id,
+        projectId: project.id
+      })
+    )
+    await run(db.appendEvent("session.updated", project.id, null))
+    await run(db.appendEvent("session.updated", project.id, { id: "metadata-without-project" }))
+    await run(db.appendEvent("session.updated", session.id, { id: "metadata-without-project" }))
+    await run(db.appendEvent("session.output", "missing-subject", { text: "orphan" }))
+
+    const page = await run(db.getTranscriptPage(session.id, undefined, 32))
+    expect(page.items.map((item) => item.role)).toEqual([
+      "user",
+      "user",
+      "assistant",
+      "assistant",
+      "assistant"
+    ])
+    expect(page.items[0]?.text).toBe("chunked question")
+    expect(page.items[1]?.text).toBe("without id")
+    expect(page.items[2]).toMatchObject({
+      hasDetails: true,
+      isGenerating: false,
+      planDocument: "- [ ] ship",
+      text: "anonymous answer",
+      stopDetail: "provider failed",
+      stopReason: "error"
+    })
+    expect(page.items[3]?.text).toBe("")
+    expect(page.items[3]?.stopReason).toBeUndefined()
+    expect(page.items[4]).toMatchObject({ text: "", stopReason: "manual" })
+    expect(await run(db.getSessionSummary(session.id))).toMatchObject({ id: session.id })
+    expect((await run(db.listSubjectEvents(session.id))).length).toBeGreaterThan(20)
+    expect((await run(db.listSubjectEvents(project.id))).length).toBeGreaterThan(0)
+    expect((await run(db.listSubjectEvents("missing-subject"))).length).toBe(1)
+    await Effect.runPromise(db.close)
+  })
+
+  it("backfills complete legacy transcript rows and blocks a mismatched projection", async () => {
+    const filename = tempDatabase()
+    const initial = await run(makeDatabase({ filename, serverId: "local" }))
+    const project = await run(initial.createProject({ folderPath: "/tmp/legacy-transcript" }))
+    const session = await run(initial.createSession({ projectId: project.id, harnessId: "codex" }))
+    const conversationFallback = await run(
+      initial.createSession({ projectId: project.id, harnessId: "codex" })
+    )
+    await Effect.runPromise(initial.close)
+
+    const sqlite = new Database(filename)
+    sqlite
+      .prepare(
+        `insert into transcript_items (
+          id, session_id, sequence, role, text, created_at, updated_at,
+          is_generating, has_details, turn_id, started_at, ended_at,
+          stop_reason, stop_detail, plan_document, attachments, revision
+        ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run(
+        "legacy-assistant",
+        session.id,
+        0,
+        "assistant",
+        "legacy answer",
+        "2026-06-01T00:00:00.000Z",
+        "2026-06-01T00:01:00.000Z",
+        0,
+        1,
+        "legacy-turn",
+        "2026-06-01T00:00:00.000Z",
+        "2026-06-01T00:01:00.000Z",
+        "end_turn",
+        "done",
+        "legacy plan",
+        '[{"fileId":"file-1","name":"a.txt","mimeType":"text/plain","sizeBytes":1,"kind":"document"}]',
+        4
+      )
+    sqlite
+      .prepare(
+        `insert into transcript_items (
+          id, session_id, sequence, role, text, created_at, updated_at,
+          is_generating, has_details, turn_id, started_at, ended_at,
+          stop_reason, stop_detail, plan_document, attachments, revision
+        ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run(
+        "legacy-user",
+        session.id,
+        1,
+        "user",
+        "legacy question",
+        "2026-06-01T00:02:00.000Z",
+        "2026-06-01T00:02:00.000Z",
+        1,
+        0,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        1
+      )
+    sqlite
+      .prepare(
+        `insert into conversation_items (
+          id, session_id, role, text, created_at, is_generating, message_id, attachments
+        ) values (?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run(
+        "legacy-conversation",
+        conversationFallback.id,
+        "user",
+        "conversation fallback",
+        "2026-06-01T00:03:00.000Z",
+        1,
+        "legacy-message",
+        '[{"fileId":"file-2","name":"b.txt","mimeType":"text/plain","sizeBytes":2,"kind":"document"}]'
+      )
+    sqlite
+      .prepare("insert into transcript_routes (session_id, route_key, item_id) values (?, ?, ?)")
+      .run(session.id, "turn:legacy-turn", "legacy-assistant")
+    sqlite
+      .prepare(
+        `insert into events (
+          server_id, kind, subject_id, created_at, payload, transcript_item_id
+        ) values (?, ?, ?, ?, ?, ?)`
+      )
+      .run(
+        "local",
+        "session.output",
+        session.id,
+        "2026-06-01T00:00:30.000Z",
+        JSON.stringify({ role: "assistant", text: "legacy answer" }),
+        "legacy-assistant"
+      )
+    sqlite
+      .prepare("update backfill_jobs set state = 'failed', completed = 0 where id = ?")
+      .run("canonical-session-chat-v1")
+    sqlite.close()
+
+    const migrated = await run(makeDatabase({ filename, serverId: "local" }))
+    const page = await run(migrated.getTranscriptPage(session.id, undefined, 8))
+    expect(page.items[0]).toMatchObject({
+      id: "legacy-assistant",
+      text: "legacy answer",
+      planDocument: "legacy plan",
+      attachments: [
+        {
+          fileId: "file-1",
+          name: "a.txt",
+          mimeType: "text/plain",
+          sizeBytes: 1,
+          kind: "document"
+        }
+      ],
+      stopDetail: "done",
+      stopReason: "end_turn",
+      turnId: "legacy-turn"
+    })
+    expect(page.items[1]).toMatchObject({
+      id: "legacy-user",
+      isGenerating: true,
+      text: "legacy question"
+    })
+    expect(
+      (await run(migrated.getSessionDetail(conversationFallback.id))).conversation[0]
+    ).toMatchObject({
+      isGenerating: true,
+      text: "conversation fallback"
+    })
+    const details = await run(migrated.getTranscriptItemDetails(session.id, "legacy-assistant"))
+    expect(details?.events).toHaveLength(1)
+    await Effect.runPromise(migrated.close)
+
+    const corrupted = new Database(filename)
+    corrupted
+      .prepare("update chat_parts set text = 'corrupt' where item_id = ? and kind = 'text'")
+      .run("legacy-assistant")
+    corrupted
+      .prepare("update backfill_jobs set state = 'failed' where id = ?")
+      .run("canonical-session-chat-v1")
+    corrupted.close()
+
+    const progress: Array<{ state: string; error?: string | undefined }> = []
+    await expect(
+      run(
+        makeDatabase({
+          filename,
+          serverId: "local",
+          onDataUpgradeProgress: (update) => progress.push(update)
+        })
+      )
+    ).rejects.toBeInstanceOf(DatabaseError)
+    expect(progress.at(-1)).toMatchObject({ state: "failed" })
+    expect(progress.at(-1)?.error).toContain("verification failed")
+  })
+
+  it("bounds transcript pages by text size as well as item count", async () => {
+    const filename = tempDatabase()
+    const db = await run(makeDatabase({ filename, serverId: "local" }))
+    expect(await run(db.migrate)).toEqual([])
+    const project = await run(db.createProject({ folderPath: "/tmp/transcript-page-budget" }))
+    const session = await run(db.createSession({ projectId: project.id, harnessId: "codex" }))
+
+    for (const marker of ["old", "middle", "new"]) {
+      await run(
+        db.appendEvent("session.output", session.id, {
+          role: "user",
+          text: `${marker}:${"x".repeat(15_000)}`
+        })
+      )
+    }
+
+    const newest = await run(db.getTranscriptPage(session.id, undefined, 8))
+    expect(newest.items).toHaveLength(1)
+    expect(newest.items[0]?.text.startsWith("new:")).toBe(true)
+    expect(newest).toMatchObject({ hasMore: true, nextBefore: "2" })
+
+    const older = await run(db.getTranscriptPage(session.id, 2, 16))
+    expect(older.items).toHaveLength(2)
+    expect(older.items[0]?.text.startsWith("old:")).toBe(true)
+    expect(older.items[1]?.text.startsWith("middle:")).toBe(true)
+    expect(older).toMatchObject({ hasMore: false })
+  })
+
   it("coalescing handles attachments: empty array coalesces, non-empty stays its own row", async () => {
     const filename = tempDatabase()
     const db = await run(makeDatabase({ filename, serverId: "local" }))
@@ -542,11 +1074,9 @@ describe("@herdman/db", () => {
     expect(detail.conversation[0]?.attachments).toEqual([ref])
     expect(detail.conversation[1]?.attachments).toBeUndefined()
 
-    // A literal empty JSON array in the column reads back as "no attachments".
+    // A literal empty JSON array in the canonical item reads back as "no attachments".
     const sqlite = new Database(filename)
-    sqlite
-      .prepare("update conversation_items set attachments = '[]' where session_id = ?")
-      .run(session.id)
+    sqlite.prepare("update chat_items set attachments = '[]' where session_id = ?").run(session.id)
     sqlite.close()
     const emptied = await run(db.getSessionDetail(session.id))
     expect(emptied.conversation[0]?.attachments).toBeUndefined()

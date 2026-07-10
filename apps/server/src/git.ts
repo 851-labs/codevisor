@@ -116,8 +116,8 @@ export const parseGitNumstat = (numstat: string): BranchDiffTotals => {
   for (const line of numstat.split("\n")) {
     const fields = line.split("\t")
     if (fields.length < 2) continue
-    totals.added += Number.parseInt(fields[0] ?? "", 10) || 0
-    totals.removed += Number.parseInt(fields[1] ?? "", 10) || 0
+    totals.added += Number.parseInt(fields[0]!, 10) || 0
+    totals.removed += Number.parseInt(fields[1]!, 10) || 0
   }
   return totals
 }
@@ -157,9 +157,7 @@ export const gitBranchDiffTotals = async (
         // Try the next conventional default-branch ref.
       }
     }
-    const totals = parseGitNumstat(
-      await git("branch-diff", ["diff", "--numstat", base], directory)
-    )
+    const totals = parseGitNumstat(await git("branch-diff", ["diff", "--numstat", base], directory))
     const untracked = await gitRaw(
       "untracked-files",
       ["ls-files", "--others", "--exclude-standard", "-z"],

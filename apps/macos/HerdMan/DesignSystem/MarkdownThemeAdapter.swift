@@ -39,6 +39,7 @@ extension ThemeManager {
 /// Builds the MarkdownTheme for the active app theme.
 func makeMarkdownTheme(theme: Theme, highlight: (key: String, json: String)?) -> MarkdownTheme {
     var markdown = MarkdownTheme.default
+    markdown.codeForeground = theme.textPrimary
     if let palette = theme.palette {
         markdown.codeBackground = Color(rgba: palette.cardBackground)
         // cardHoverBackground (12% fg mix) — cardBackground's 6% mix vanishes

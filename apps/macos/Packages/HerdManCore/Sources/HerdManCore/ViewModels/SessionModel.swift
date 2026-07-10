@@ -7,6 +7,12 @@ import ACPKit
 @MainActor
 @Observable
 public final class SessionModel {
+    /// Recent history should produce a fast first paint even when a chat is
+    /// made of giant markdown answers. Older rows arrive in larger reverse
+    /// pages as the user approaches the top; the server also enforces a text
+    /// budget so neither value can accidentally request megabytes of layout.
+    private static let initialTranscriptPageSize = 8
+    private static let olderTranscriptPageSize = 16
     /// Conversation items no longer receiving stream updates. Transcript
     /// containers should iterate THIS (plus a dedicated child view for
     /// `activeItem`), never `conversation`: the settled list changes only at
@@ -54,6 +60,15 @@ public final class SessionModel {
     /// this: before the first snapshot, an empty `backgroundTasks` just means
     /// history hasn't replayed, not that every task ended.
     public private(set) var hasBackgroundTaskSnapshot = false
+    public private(set) var hasOlderHistory = false
+    public private(set) var isLoadingOlderHistory = false
+    @ObservationIgnored private var olderHistoryCursor: String?
+    @ObservationIgnored private var usesPaginatedHistory = false
+    @ObservationIgnored private var loadingDetailIds: Set<String> = []
+    /// Constant-time routing for late/nested tool updates. Values are stable
+    /// conversation ids, so prepending older pages cannot invalidate them.
+    @ObservationIgnored private var toolOwnerItemIds: [String: UUID] = [:]
+    @ObservationIgnored private var settledIndexById: [UUID: Int] = [:]
 
     /// Background tasks with no attachable terminal (subagents, poll-and-resume
     /// tasks). Tasks WITH a `terminalKey` render as terminal tabs instead of
@@ -115,19 +130,13 @@ public final class SessionModel {
     /// observable: buffering must not invalidate views — only applying does.
     @ObservationIgnored private var pendingEvents: [ServerSessionStreamEvent] = []
     @ObservationIgnored private var isFlushScheduled = false
-    /// Bytes of assistant text this transcript has accumulated (seeded from
-    /// history, grown per live chunk) — the input to the adaptive flush
-    /// interval. Cumulative, never reset mid-session: per-flush render cost
-    /// scales with the whole mounted transcript (every flush re-runs the
-    /// display-cycle layout over the eager VStack), so a tiny new message in
-    /// a long-lived chat still needs the throttled cadence. Approximate on
-    /// purpose — a pacing signal, not transcript state.
+    /// Approximate transcript text size, seeded from history and increased by
+    /// live assistant chunks. It drives adaptive stream pacing without
+    /// inspecting the full transcript during every flush.
     @ObservationIgnored private var transcriptStreamBytes = 0
 
-    /// Base interval between buffered-event flushes — roughly one frame, so a
-    /// streaming turn invalidates the UI at most once per frame. Tests set
-    /// this to `.zero` (flush on the next main-actor turn) so their
-    /// `Task.yield()`-based settling works without wall-clock waits.
+    /// Base interval between buffered-event flushes — roughly one frame. Tests
+    /// set this to zero so their yield-based settling needs no wall-clock wait.
     static var eventFlushInterval: Duration = .milliseconds(16)
 
     public init(
@@ -155,7 +164,14 @@ public final class SessionModel {
     /// while a turn is running.
     private func startConsumer() async {
         guard consumerTask == nil else { return }
-        let events = serverEventCursor.map { transport.streamEvents(since: $0) } ?? transport.streamEvents()
+        let events: AsyncThrowingStream<ServerSessionStreamEvent, any Error>
+        if usesPaginatedHistory {
+            events = serverEventCursor.map { transport.streamEvents(since: $0) } ?? transport.streamEvents()
+        } else {
+            events = transport.legacyStreamEvents(
+                since: serverEventCursor ?? ServerSessionTransport.liveOnlyEventCursor
+            )
+        }
         consumerTask = Task { @MainActor [weak self] in
             do {
                 for try await event in events {
@@ -173,25 +189,21 @@ public final class SessionModel {
         }
     }
 
-    /// Tracks how much assistant text the transcript has accumulated,
-    /// feeding the adaptive flush interval.
     private func noteStreamedSize(of event: ServerSessionStreamEvent) {
         if case let .update(.agentMessageChunk(block, _, _, _)) = event {
             transcriptStreamBytes += block.textValue?.utf8.count ?? 0
         }
     }
 
-    /// Schedules a single buffered flush; no-op while one is already
-    /// scheduled, so bursts of chunks coalesce into one UI update. The
-    /// interval starts at ~one frame and stretches as the turn's accumulated
-    /// text grows: past the settled-prefix optimizations, per-flush render
-    /// work still scales with the growing block (a huge open code fence can
-    /// be most of the message), and nobody can perceive 60Hz text updates
-    /// anyway — pacing down multiplies every remaining per-flush cost away.
+    /// Schedules one buffered flush. The cadence stretches as transcript text
+    /// grows, keeping stream updates smooth without monopolizing the main actor.
     private func scheduleFlush() {
         guard !isFlushScheduled else { return }
         isFlushScheduled = true
-        let interval = Self.flushInterval(base: Self.eventFlushInterval, streamedBytes: transcriptStreamBytes)
+        let interval = Self.flushInterval(
+            base: Self.eventFlushInterval,
+            streamedBytes: transcriptStreamBytes
+        )
         Task { @MainActor [weak self] in
             if interval > .zero {
                 try? await Task.sleep(for: interval)
@@ -200,8 +212,6 @@ public final class SessionModel {
         }
     }
 
-    /// ~60Hz under 48KB of transcript text, ~30Hz to 144KB, ~20Hz beyond.
-    /// A zero base (the test hook) stays zero.
     static func flushInterval(base: Duration, streamedBytes: Int) -> Duration {
         guard base > .zero else { return base }
         switch streamedBytes {
@@ -211,8 +221,6 @@ public final class SessionModel {
         }
     }
 
-    /// Total assistant/user text bytes in a rebuilt transcript — the seed for
-    /// `transcriptStreamBytes` after history replay.
     static func transcriptByteEstimate(of conversation: [ConversationItem]) -> Int {
         conversation.reduce(0) { total, item in
             switch item {
@@ -314,7 +322,7 @@ public final class SessionModel {
         }
 
         settleActiveItem()
-        settledConversation.append(.user(UserMessage(text: trimmed, attachments: attachments)))
+        appendSettled(.user(UserMessage(text: trimmed, attachments: attachments)))
         startActiveBubble()
         isSending = true
 
@@ -468,6 +476,29 @@ public final class SessionModel {
     /// its event cursor.
     public func loadHistory() async {
         do {
+            let page = try await transport.transcriptPage(limit: Self.initialTranscriptPageSize)
+            usesPaginatedHistory = true
+            olderHistoryCursor = page.nextBefore
+            hasOlderHistory = page.hasMore
+            setConversation(page.conversation)
+            transcriptStreamBytes = Self.transcriptByteEstimate(of: conversation)
+            serverEventCursor = page.eventCursor
+            queuedPrompts = (try? await transport.promptQueue()) ?? []
+            await startConsumer()
+            return
+        } catch let HerdManServerClientError.httpStatus(status, _) where status == 404 {
+            // Additive protocol compatibility: older remote servers keep using
+            // the legacy path until they are updated.
+        } catch {
+            errorMessage = serverErrorMessage(error)
+            return
+        }
+
+        await loadLegacyHistory()
+    }
+
+    private func loadLegacyHistory() async {
+        do {
             let snapshot = try await transport.snapshot()
             queuedPrompts = snapshot.promptQueue
 
@@ -504,8 +535,6 @@ public final class SessionModel {
                 isSending = lastTurnIsGenerating
                 serverEventCursor = history.cursor ?? snapshot.eventCursor
             }
-            // Seed the flush pacing: a reopened long chat must start at the
-            // cadence its mounted size warrants, not re-earn it per chunk.
             transcriptStreamBytes = Self.transcriptByteEstimate(of: conversation)
             await startConsumer()
         } catch {
@@ -547,6 +576,106 @@ public final class SessionModel {
         for option in changed {
             try? await transport.setConfigOption(configId: option.id, value: option.currentValue)
         }
+    }
+
+    /// Prepends one bounded page of older semantic rows. Requests are
+    /// deduplicated and stable ids prevent overlap if a retry races a prior load.
+    public func loadOlderHistory() async {
+        guard usesPaginatedHistory, hasOlderHistory, !isLoadingOlderHistory,
+              let cursor = olderHistoryCursor else { return }
+        isLoadingOlderHistory = true
+        defer { isLoadingOlderHistory = false }
+        do {
+            let page = try await transport.transcriptPage(
+                before: cursor,
+                limit: Self.olderTranscriptPageSize
+            )
+            let existing = Set(conversation.map(\.id))
+            let unique = page.conversation.filter { !existing.contains($0.id) }
+            settledConversation.insert(contentsOf: unique, at: 0)
+            rebuildSettledIndex()
+            transcriptStreamBytes = Self.transcriptByteEstimate(of: conversation)
+            olderHistoryCursor = page.nextBefore
+            hasOlderHistory = page.hasMore
+        } catch {
+            errorMessage = serverErrorMessage(error)
+        }
+    }
+
+    /// Hydrates one historical assistant turn on demand. Only the bounded
+    /// turn-scoped events are reduced; opening a disclosure never touches the
+    /// rest of the session history.
+    @discardableResult
+    public func loadTranscriptDetails(itemId: String) async -> Bool {
+        guard loadingDetailIds.insert(itemId).inserted else { return false }
+        defer { loadingDetailIds.remove(itemId) }
+        do {
+            let events = try await transport.transcriptDetails(itemId: itemId)
+            guard let location = transcriptItemLocation(itemId) else { return false }
+            let original = location.item
+            guard case let .assistant(originalMessage) = original else { return false }
+            var turn = AssistantTurn(
+                isGenerating: true,
+                isThinking: false,
+                startedAt: originalMessage.turn.startedAt
+            )
+            for event in events {
+                switch event {
+                case let .update(update):
+                    TranscriptReducer.apply(update, to: &turn)
+                case let .finished(reason, detail):
+                    turn.stopReason = reason
+                    turn.stopDetail = detail
+                    turn.isGenerating = false
+                case let .failed(message):
+                    turn.stopDetail = message
+                    turn.isGenerating = false
+                case .userMessage, .queueUpdated, .retrying, .backgroundTasks:
+                    break
+                }
+            }
+            turn.isGenerating = originalMessage.turn.isGenerating
+            turn.startedAt = originalMessage.turn.startedAt
+            turn.endedAt = originalMessage.turn.endedAt
+            turn.planDocument = turn.planDocument ?? originalMessage.turn.planDocument
+            turn.deferredDetailItemId = nil
+            turn.hasDeferredWorkedDetails = false
+            turn.detailRevision = originalMessage.turn.detailRevision
+            let hydrated = ConversationItem.assistant(AssistantMessage(id: originalMessage.id, turn: turn))
+            switch location.storage {
+            case let .settled(index): settledConversation[index] = hydrated
+            case .active: activeItem = hydrated
+            }
+            for call in turn.allToolCalls {
+                toolOwnerItemIds[call.toolCallId] = originalMessage.id
+            }
+            return true
+        } catch {
+            errorMessage = serverErrorMessage(error)
+            return false
+        }
+    }
+
+    private enum TranscriptStorageLocation {
+        case settled(Int)
+        case active
+    }
+
+    private func transcriptItemLocation(
+        _ itemId: String
+    ) -> (storage: TranscriptStorageLocation, item: ConversationItem)? {
+        if let index = settledConversation.firstIndex(where: { item in
+            guard case let .assistant(message) = item else { return false }
+            return message.turn.deferredDetailItemId == itemId
+        }) {
+            return (.settled(index), settledConversation[index])
+        }
+        if case let .assistant(message) = activeItem,
+           message.turn.deferredDetailItemId == itemId,
+           let activeItem {
+            return (.active, activeItem)
+        }
+        return nil
     }
 
     private var lastTurnIsGenerating: Bool {
@@ -629,6 +758,7 @@ public final class SessionModel {
                 guard case .assistant(var message) = activeItem else { return }
                 TranscriptReducer.apply(update, to: &message.turn)
                 activeItem = .assistant(message)
+                recordToolRoute(for: update, itemId: message.id)
             }
         default:
             // Updates that belong to an earlier bubble merge there without
@@ -642,6 +772,7 @@ public final class SessionModel {
                !(index == itemCount - 1 && message.turn.isGenerating) {
                 TranscriptReducer.apply(update, to: &message.turn)
                 setItem(.assistant(message), at: index)
+                recordToolRoute(for: update, itemId: message.id)
                 return
             }
             ensureAssistantTurn()
@@ -657,13 +788,12 @@ public final class SessionModel {
             if !isSending { isSending = true }
             TranscriptReducer.apply(update, to: &message.turn)
             activeItem = .assistant(message)
+            recordToolRoute(for: update, itemId: message.id)
         }
     }
 
-    /// The conversation index of the bubble that owns this update: the one
-    /// holding the parent tool call for parented updates, or the tool call
-    /// itself for updates addressed by id. Nil when nothing owns it (fresh
-    /// output for the current or a new turn).
+    /// The conversation index of the bubble that owns this update. Routing is
+    /// O(1) even after many history pages have been loaded.
     private func owningItemIndex(for update: SessionUpdate) -> Int? {
         var parentId: String?
         var toolCallId: String?
@@ -680,24 +810,22 @@ public final class SessionModel {
         default:
             return nil
         }
-        guard parentId != nil || toolCallId != nil else { return nil }
-        // Snapshot once: `conversation` is a computed merge of
-        // settledConversation + activeItem, so reading it inside the loop
-        // would rebuild the whole array every iteration (O(n²) per chunk).
-        let items = conversation
-        for index in items.indices.reversed() {
-            guard case let .assistant(message) = items[index] else { continue }
-            if let parentId,
-               message.turn.subagents[parentId] != nil
-                   || message.turn.toolCalls.contains(where: { $0.toolCallId == parentId }) {
-                return index
-            }
-            if let toolCallId,
-               message.turn.allToolCalls.contains(where: { $0.toolCallId == toolCallId }) {
-                return index
-            }
+        let ownerId = parentId.flatMap { toolOwnerItemIds[$0] }
+            ?? toolCallId.flatMap { toolOwnerItemIds[$0] }
+        guard let ownerId else { return nil }
+        if activeItem?.id == ownerId { return settledConversation.count }
+        return settledIndexById[ownerId]
+    }
+
+    private func recordToolRoute(for update: SessionUpdate, itemId: UUID) {
+        switch update {
+        case let .toolCall(call):
+            toolOwnerItemIds[call.toolCallId] = itemId
+        case let .toolCallUpdate(call):
+            toolOwnerItemIds[call.toolCallId] = itemId
+        default:
+            break
         }
-        return nil
     }
 
     private func apply(_ event: ServerSessionStreamEvent) {
@@ -801,7 +929,7 @@ public final class SessionModel {
             return
         }
         settleActiveItem()
-        settledConversation.append(.user(UserMessage(text: text, attachments: attachments)))
+        appendSettled(.user(UserMessage(text: text, attachments: attachments)))
         startActiveBubble()
         if !isSending { isSending = true }
     }
@@ -825,9 +953,20 @@ public final class SessionModel {
     /// `hasActiveItem`) never change on a token flush.
     private func settleActiveItem() {
         guard let item = activeItem else { return }
-        settledConversation.append(item)
+        appendSettled(item)
         activeItem = nil
         hasActiveItem = false
+    }
+
+    private func appendSettled(_ item: ConversationItem) {
+        settledIndexById[item.id] = settledConversation.count
+        settledConversation.append(item)
+    }
+
+    private func rebuildSettledIndex() {
+        settledIndexById = Dictionary(
+            uniqueKeysWithValues: settledConversation.enumerated().map { ($0.element.id, $0.offset) }
+        )
     }
 
     /// Starts a fresh generating assistant bubble as the active item.
@@ -855,6 +994,7 @@ public final class SessionModel {
             activeItem = nil
             if hasActiveItem { hasActiveItem = false }
         }
+        rebuildSettledIndex()
     }
 
     /// Read/replace by display index (settled items first, then the active

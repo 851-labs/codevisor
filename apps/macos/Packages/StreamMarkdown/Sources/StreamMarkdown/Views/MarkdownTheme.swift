@@ -12,6 +12,9 @@ public typealias CodeHighlighting = @Sendable (_ code: String, _ language: Strin
 public struct MarkdownTheme: Sendable {
     public var bodyFont: Font
     public var codeFont: Font
+    /// Base foreground for fenced code. Highlighted tokens override this;
+    /// uncolored tokens inherit it.
+    public var codeForeground: Color
     /// Font for `` `inline code` `` chips: monospaced and a touch smaller
     /// than the body text so chips sit flush in a line of prose.
     public var inlineCodeFont: Font
@@ -34,6 +37,7 @@ public struct MarkdownTheme: Sendable {
     public init(
         bodyFont: Font = .body,
         codeFont: Font = .system(.callout, design: .monospaced),
+        codeForeground: Color = .primary,
         inlineCodeFont: Font = .system(.callout, design: .monospaced),
         blockSpacing: CGFloat = 10,
         listItemSpacing: CGFloat = 4,
@@ -47,6 +51,7 @@ public struct MarkdownTheme: Sendable {
     ) {
         self.bodyFont = bodyFont
         self.codeFont = codeFont
+        self.codeForeground = codeForeground
         self.inlineCodeFont = inlineCodeFont
         self.blockSpacing = blockSpacing
         self.listItemSpacing = listItemSpacing
@@ -69,6 +74,7 @@ public struct MarkdownTheme: Sendable {
         var hasher = Hasher()
         hasher.combine(bodyFont)
         hasher.combine(codeFont)
+        hasher.combine(codeForeground)
         hasher.combine(inlineCodeFont)
         hasher.combine(blockSpacing)
         hasher.combine(listItemSpacing)

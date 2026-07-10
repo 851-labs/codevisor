@@ -552,12 +552,13 @@ const readSseEvents = async (
 const readWebSocketEvents = async (
   server: RunningHerdManServer,
   expectedCount: number,
-  since?: number | string
+  since?: number | string,
+  path = "/v1/events/socket"
 ): Promise<ReadonlyArray<unknown>> => {
   const eventsUrl =
     since === undefined
-      ? `${server.url.replace("http:", "ws:")}/v1/events/socket`
-      : `${server.url.replace("http:", "ws:")}/v1/events/socket?since=${since}`
+      ? `${server.url.replace("http:", "ws:")}${path}`
+      : `${server.url.replace("http:", "ws:")}${path}?since=${since}`
   const webSocket = new WebSocket(eventsUrl)
   const events: Array<unknown> = []
   let isDone = false
@@ -1182,24 +1183,24 @@ describe("@herdman/server", () => {
       ).body
     ).toMatchObject({ accepted: true, sessionId: session.id })
     await waitFor(() => agents.prompts.length === promptCountBeforeRawChunks + 1)
+    let rawConversation: ReadonlyArray<string> = []
+    let rawEvents: ReadonlyArray<unknown> = []
+    await waitFor(
+      async () => {
+        rawConversation = (await run(services.db.getSessionDetail(session.id))).conversation.map(
+          (item) => item.text
+        )
+        rawEvents = await run(services.db.listSubjectEvents(session.id))
+        return rawConversation.includes("Raw answer without id")
+      },
+      () => JSON.stringify({ rawConversation, rawEvents })
+    )
     expect(
       (await run(services.db.getSessionDetail(session.id))).conversation.map((item) => item.text)
     ).toEqual(
-      expect.arrayContaining([
-        "hello",
-        "Echo: hello",
-        "raw chunks",
-        "Raw answer",
-        "Raw answer without id"
-      ])
+      expect.arrayContaining(["hello", "Echo: hello", "raw chunks", "Raw answer without id"])
     )
-    expect(
-      (await run(services.db.getSessionDetail(session.id))).conversation.map((item) => [
-        item.messageId,
-        item.text
-      ])
-    ).toEqual(expect.arrayContaining([["assistant-raw", "Raw answer"]]))
-    expect(await run(services.db.listEvents(0))).toEqual(
+    expect(await run(services.db.listSubjectEvents(session.id))).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           kind: "session.output",
@@ -1213,6 +1214,58 @@ describe("@herdman/server", () => {
     const history = historyResponse.body as Array<{ subjectId: string; kind: string }>
     expect(history.length).toBeGreaterThan(0)
     expect(history.every((event) => event.subjectId === session.id)).toBe(true)
+    const scopedReplay = (await readWebSocketEvents(
+      server,
+      2,
+      0,
+      `/v1/sessions/${session.id}/events/socket`
+    )) as Array<{ id: number; subjectId: string; subjectRevision?: number }>
+    expect(scopedReplay.every((event) => event.subjectId === session.id)).toBe(true)
+    expect(scopedReplay.map((event) => event.id)).toEqual([1, 2])
+    expect(scopedReplay.map((event) => event.subjectRevision)).toEqual([1, 2])
+    const transcriptResponse = await jsonRequest(
+      server,
+      `/v1/sessions/${session.id}/transcript?limit=2`
+    )
+    expect(transcriptResponse.status).toBe(200)
+    const transcript = transcriptResponse.body as {
+      items: Array<{ id: string; role: string; text: string }>
+      hasMore: boolean
+      eventCursor: number
+    }
+    expect(transcript.items.length).toBeLessThanOrEqual(2)
+    expect(transcript.items.some((item) => item.role === "assistant")).toBe(true)
+    expect(transcript.eventCursor).toBeGreaterThan(0)
+    expect((await jsonRequest(server, `/v1/sessions/${session.id}/transcript`)).status).toBe(200)
+    const assistantTranscriptItem = transcript.items.find((item) => item.role === "assistant")!
+    const transcriptDetails = await jsonRequest(
+      server,
+      `/v1/sessions/${session.id}/transcript/${assistantTranscriptItem.id}/details`
+    )
+    expect(transcriptDetails.status).toBe(200)
+    expect(transcriptDetails.body).toMatchObject({ itemId: assistantTranscriptItem.id })
+    expect(
+      (
+        transcriptDetails.body as {
+          events: Array<{ subjectId: string }>
+        }
+      ).events.every((event) => event.subjectId === session.id)
+    ).toBe(true)
+    expect(
+      await jsonRequest(server, `/v1/sessions/${session.id}/transcript?before=wat`)
+    ).toMatchObject({ status: 400 })
+    expect(
+      await jsonRequest(server, `/v1/sessions/${session.id}/transcript?before=-1`)
+    ).toMatchObject({ status: 400 })
+    expect(
+      await jsonRequest(server, `/v1/sessions/${session.id}/transcript?limit=wat`)
+    ).toMatchObject({ status: 400 })
+    expect(
+      await jsonRequest(server, `/v1/sessions/${session.id}/transcript?limit=0`)
+    ).toMatchObject({ status: 400 })
+    expect(
+      await jsonRequest(server, `/v1/sessions/${session.id}/transcript/missing/details`)
+    ).toMatchObject({ status: 404 })
     const promptCountBeforeReturnedEvents = agents.prompts.length
     expect(
       (
@@ -1225,7 +1278,7 @@ describe("@herdman/server", () => {
     await waitFor(() => agents.prompts.length === promptCountBeforeReturnedEvents + 1)
     expect(
       (await run(services.db.getSessionDetail(session.id))).conversation.map((item) => item.text)
-    ).toEqual(expect.arrayContaining(["returned events", "Raw answer"]))
+    ).toEqual(expect.arrayContaining(["returned events", "Raw answer without id"]))
 
     const promptCountBeforeSlow = agents.prompts.length
     const slowResponse = (
@@ -1287,7 +1340,9 @@ describe("@herdman/server", () => {
       ).body
     ).toMatchObject({ accepted: true, sessionId: session.id })
     await waitFor(async () =>
-      (await run(services.db.listEvents(0))).some((event) => event.kind === "session.error")
+      (await run(services.db.listSubjectEvents(session.id))).some(
+        (event) => event.kind === "session.error"
+      )
     )
     expect(agents.loads).toContainEqual(["codex", session.agentSessionId, workspaceFolder])
     expect(
@@ -1677,8 +1732,7 @@ describe("@herdman/server", () => {
       }
     })
 
-    const events = await run(services.db.listEvents(0))
-    const sessionEvents = events.filter((event) => event.subjectId === session.id)
+    const sessionEvents = await run(services.db.listSubjectEvents(session.id))
     expect(sessionEvents).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -1739,8 +1793,8 @@ describe("@herdman/server", () => {
     })
 
     // The raw event is persisted for rich replay (nested transcripts)...
-    const events = await run(services.db.listEvents(0))
-    expect(events.filter((event) => event.subjectId === session.id)).toEqual(
+    const events = await run(services.db.listSubjectEvents(session.id))
+    expect(events).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           kind: "session.output",
@@ -2498,6 +2552,37 @@ describe("@herdman/server", () => {
     })
   })
 
+  it("falls back to the session server's project location for branch diffs", async () => {
+    const { services } = await makeServices("server-a")
+    const project = await run(services.db.createProject({ folderPath: "/tmp" }))
+    const session = await run(
+      services.db.createSession({ projectId: project.id, harnessId: "codex" })
+    )
+    const { cwd: _cwd, ...withoutCwd } = session
+    let projectedServerId = "server-a"
+    const server = await startWithApp({
+      ...services,
+      db: {
+        ...services.db,
+        getSessionSummary: (id) =>
+          id === session.id
+            ? Effect.succeed({ ...withoutCwd, serverId: projectedServerId })
+            : services.db.getSessionSummary(id)
+      }
+    })
+    runningServers.push(server)
+
+    expect(await jsonRequest(server, `/v1/sessions/${session.id}/branch-diff`)).toEqual({
+      body: null,
+      status: 200
+    })
+    projectedServerId = "server-without-location"
+    expect(await jsonRequest(server, `/v1/sessions/${session.id}/branch-diff`)).toEqual({
+      body: null,
+      status: 200
+    })
+  })
+
   it("buffers event websocket fanout that arrives during replay", async () => {
     const { services } = await makeServices("server-a")
     const fanout = await run(makeEventFanout)
@@ -2522,11 +2607,13 @@ describe("@herdman/server", () => {
         ...services,
         db: {
           ...services.db,
-          listEvents: () =>
-            Effect.promise(async () => {
-              await run(fanout.publish(liveEvent))
-              return [replayEvent]
-            })
+          listEvents: (since) =>
+            since >= Number.MAX_SAFE_INTEGER
+              ? Effect.succeed([])
+              : Effect.promise(async () => {
+                  await run(fanout.publish(liveEvent))
+                  return [replayEvent]
+                })
         }
       },
       fanout
@@ -2535,10 +2622,63 @@ describe("@herdman/server", () => {
 
     expect(await readWebSocketEvents(server, 2, 0)).toEqual([replayEvent, liveEvent])
     expect(await readWebSocketEvents(server, 1, 1)).toEqual([liveEvent])
-    expect(await readWebSocketEvents(server, 2, Number.MAX_SAFE_INTEGER)).toEqual([
-      replayEvent,
-      liveEvent
-    ])
+    const liveOnly = readWebSocketEvents(server, 1, Number.MAX_SAFE_INTEGER)
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    const afterSnapshot = { ...liveEvent, id: 3, payload: { id: "after-snapshot" } }
+    await run(fanout.publish(afterSnapshot))
+    expect(await liveOnly).toEqual([afterSnapshot])
+
+    const globalFiltered = readWebSocketEvents(server, 1, Number.MAX_SAFE_INTEGER)
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    await run(
+      fanout.publish({
+        ...afterSnapshot,
+        id: 4,
+        subjectId: "session-only",
+        subjectRevision: 1
+      })
+    )
+    const globalAfterFilter = { ...afterSnapshot, id: 5, subjectId: "global-after-filter" }
+    await run(fanout.publish(globalAfterFilter))
+    expect(await globalFiltered).toEqual([globalAfterFilter])
+
+    const scopedFiltered = readWebSocketEvents(
+      server,
+      1,
+      Number.MAX_SAFE_INTEGER,
+      "/v1/sessions/target-session/events/socket"
+    )
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    await run(
+      fanout.publish({
+        ...afterSnapshot,
+        id: 6,
+        subjectId: "other-session",
+        subjectRevision: 1
+      })
+    )
+    const scopedAfterFilter = {
+      ...afterSnapshot,
+      id: 7,
+      subjectId: "target-session",
+      subjectRevision: 2
+    }
+    await run(fanout.publish(scopedAfterFilter))
+    expect(await scopedFiltered).toEqual([{ ...scopedAfterFilter, id: 2 }])
+
+    const sseFiltered = readSseEvents(server, 1, Number.MAX_SAFE_INTEGER)
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    await run(
+      fanout.publish({
+        ...afterSnapshot,
+        id: 8,
+        subjectId: "session-only-sse",
+        subjectRevision: 1
+      })
+    )
+    const globalSseEvent = { ...afterSnapshot, id: 9, subjectId: "global-sse" }
+    await run(fanout.publish(globalSseEvent))
+    expect(await sseFiltered).toEqual([globalSseEvent])
   })
 
   it("exposes an Effect service layer and EventFanout subscription", async () => {

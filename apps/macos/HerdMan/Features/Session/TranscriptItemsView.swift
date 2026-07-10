@@ -25,7 +25,10 @@ struct TranscriptItemsView: View {
                 // Streaming render mode while the turn is live: commentary
                 // spans stream the same way the final answer does, so they get
                 // the same O(growing block) per-flush cost bound.
-                StreamingMarkdownView(markdown, isComplete: !isTurnActive)
+                StreamingMarkdownView(
+                    markdown,
+                    isComplete: !isTurnActive
+                )
                     .foregroundStyle(.secondary)
             case let .toolGroup(_, calls):
                 ToolGroupView(
@@ -60,11 +63,11 @@ struct SubagentSectionView: View {
     @Environment(\.runningSubagentToolCallIds) private var runningSubagentToolCallIds
     /// Transient one-shot guard for the settle collapse. Stays `@State`: it
     /// only matters while the subagent is running/settling, which happens in
-    /// the never-culled active row. A settled remount resets it harmlessly
+    /// the mounted active row. A settled remount resets it harmlessly
     /// (the settle onChange can't re-fire without a state change).
     @State private var hasAutoCollapsed = false
 
-    // Disclosure hoisted to the session store (survives occlusion culling).
+    // Disclosure hoisted to the session store (survives lazy remounts).
     // Default open while running, collapsed when revisiting a finished thread.
     private var store: TranscriptDisclosureStore { disclosureStore ?? .previews }
     private var disclosureKey: TranscriptDisclosureStore.Key { .subagent(call.toolCallId) }

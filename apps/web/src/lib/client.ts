@@ -149,10 +149,7 @@ export class HerdManClient {
   }
 
   sessionBranchDiff(id: string): Promise<BranchDiffTotalsType | null> {
-    return this.get(
-      `/v1/sessions/${encodeURIComponent(id)}/branch-diff`,
-      decodeBranchDiffTotals
-    )
+    return this.get(`/v1/sessions/${encodeURIComponent(id)}/branch-diff`, decodeBranchDiffTotals)
   }
 
   sessionEvents(id: string): Promise<readonly EventEnvelope[]> {

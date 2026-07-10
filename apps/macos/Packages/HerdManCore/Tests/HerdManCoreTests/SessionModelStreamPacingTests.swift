@@ -3,8 +3,7 @@ import Testing
 import ACPKit
 @testable import HerdManCore
 
-/// The flush-batch coalescing and adaptive pacing helpers: pure functions,
-/// but they sit on the hottest path in the app (every streamed token).
+/// Flush-batch coalescing helpers on the hottest path in the app.
 @MainActor
 @Suite("SessionModel stream pacing")
 struct SessionModelStreamPacingTests {
@@ -64,14 +63,4 @@ struct SessionModelStreamPacingTests {
         #expect(merged.entries == single.entries)
     }
 
-    @Test("Flush interval stretches with streamed size and keeps the zero test hook")
-    func adaptiveFlushInterval() {
-        let base = Duration.milliseconds(16)
-        #expect(SessionModel.flushInterval(base: base, streamedBytes: 0) == base)
-        #expect(SessionModel.flushInterval(base: base, streamedBytes: 48 * 1024 - 1) == base)
-        #expect(SessionModel.flushInterval(base: base, streamedBytes: 48 * 1024) == base * 2)
-        #expect(SessionModel.flushInterval(base: base, streamedBytes: 144 * 1024) == base * 3)
-        // The tests-only zero interval must stay zero at any size.
-        #expect(SessionModel.flushInterval(base: .zero, streamedBytes: 1_000_000) == .zero)
-    }
 }

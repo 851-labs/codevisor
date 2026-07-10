@@ -51,6 +51,7 @@ public final class AppEnvironment {
         composerDefaults: ComposerDefaultsStore? = nil,
         settings: AppSettingsModel,
         machineStore: any PersistenceStore = InMemoryStore(),
+        legacyCacheMigrationStore: (any PersistenceStore)? = nil,
         paneGroups: any PaneGroupRepository = DefaultPaneGroupRepository(store: InMemoryStore()),
         scratchpads: any ScratchpadRepository = DefaultScratchpadRepository(store: InMemoryStore()),
         localServer: LocalHerdManServer? = nil,
@@ -76,7 +77,8 @@ public final class AppEnvironment {
         )
         self.projectList = ProjectListModel(
             projectRepository: projectRepository,
-            sessionRepository: sessionRepository
+            sessionRepository: sessionRepository,
+            legacyMigrationStore: legacyCacheMigrationStore
         )
         self.configCache = configCache
         self.composerDefaults = composerDefaults ?? ComposerDefaultsStore(store: InMemoryStore())
@@ -199,6 +201,7 @@ public final class AppEnvironment {
             composerDefaults: ComposerDefaultsStore(store: store),
             settings: AppSettingsModel(store: store),
             machineStore: store,
+            legacyCacheMigrationStore: store,
             paneGroups: DefaultPaneGroupRepository(store: store),
             scratchpads: DefaultScratchpadRepository(store: store),
             localServer: localServer,

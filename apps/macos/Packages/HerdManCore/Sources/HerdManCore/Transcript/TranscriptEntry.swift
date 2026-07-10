@@ -83,6 +83,12 @@ public struct AssistantTurn: Sendable, Equatable {
     /// chunk `phase` — codex tags whole messages, Claude retro-tags preamble
     /// once a tool call proves it wasn't the answer.
     public var textPhases: [String: MessagePhase]
+    /// Server transcript item whose hidden worked details have not been fetched
+    /// yet. Summary/final text renders immediately; expansion hydrates only this
+    /// turn's bounded event set.
+    public var deferredDetailItemId: String?
+    public var hasDeferredWorkedDetails: Bool
+    public var detailRevision: Int
     /// Monotonic counter used to give each new text span a stable id.
     var nextTextId: Int
 
@@ -100,6 +106,9 @@ public struct AssistantTurn: Sendable, Equatable {
         endedAt: Date? = nil,
         subagents: [String: SubagentTranscript] = [:],
         textPhases: [String: MessagePhase] = [:],
+        deferredDetailItemId: String? = nil,
+        hasDeferredWorkedDetails: Bool = false,
+        detailRevision: Int = 0,
         nextTextId: Int = 0
     ) {
         self.entries = entries
@@ -115,6 +124,9 @@ public struct AssistantTurn: Sendable, Equatable {
         self.endedAt = endedAt
         self.subagents = subagents
         self.textPhases = textPhases
+        self.deferredDetailItemId = deferredDetailItemId
+        self.hasDeferredWorkedDetails = hasDeferredWorkedDetails
+        self.detailRevision = detailRevision
         self.nextTextId = nextTextId
     }
 }

@@ -4,12 +4,19 @@ import {
   resolveShellEnv,
   type BackgroundTerminalIntegration
 } from "@herdman/agent-runtime"
-import type { UpdateInfo } from "@herdman/api"
+import type { DataUpgradeProgress, UpdateInfo } from "@herdman/api"
 import { makeDatabase, type HerdManDatabaseService } from "@herdman/db"
 import { makeTerminalManager, type TerminalManagerService } from "@herdman/terminal"
 import { Effect } from "effect"
 import { spawn } from "node:child_process"
-import { createWriteStream, existsSync, mkdirSync, readFileSync } from "node:fs"
+import {
+  createWriteStream,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  writeFileSync
+} from "node:fs"
 import { tmpdir } from "node:os"
 import { Readable } from "node:stream"
 import { pipeline } from "node:stream/promises"
@@ -24,6 +31,13 @@ import {
 } from "./server.js"
 
 const SERVER_PROCESS_TITLE = "herdman-server"
+
+const writeDataUpgradeStatus = (path: string, progress: DataUpgradeProgress): void => {
+  mkdirSync(dirname(path), { recursive: true })
+  const temporary = `${path}.${process.pid}.tmp`
+  writeFileSync(temporary, `${JSON.stringify(progress)}\n`, "utf8")
+  renameSync(temporary, path)
+}
 
 /// Exit status used to hand an update back to a host macOS app: a server that
 /// lives inside the .app bundle can't replace that bundle, so instead of
@@ -278,10 +292,26 @@ const main = Effect.gen(function* () {
     .map((origin) => origin.trim())
     .filter((origin) => origin.length > 0)
   const databasePath = args.db ?? defaultDatabasePath()
+  const upgradeStatusPath =
+    args["upgrade-status"] ?? join(dirname(databasePath), "data-upgrade.json")
   const db = yield* makeDatabase({
     filename: databasePath,
-    serverId
-  })
+    serverId,
+    onDataUpgradeProgress: (progress) => writeDataUpgradeStatus(upgradeStatusPath, progress)
+  }).pipe(
+    Effect.tapError((cause) =>
+      Effect.sync(() =>
+        writeDataUpgradeStatus(upgradeStatusPath, {
+          state: "failed",
+          id: "database-startup",
+          name: "Applying update",
+          completed: 0,
+          total: 0,
+          error: cause.message
+        })
+      )
+    )
+  )
   // Self-update needs a known current version to compare against; dev runs
   // without a VERSION file simply don't offer it. The new runtime reads its
   // own bundled VERSION, so --version is not forwarded.

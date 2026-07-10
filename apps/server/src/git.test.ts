@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process"
-import { chmodSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs"
+import { chmodSync, mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
@@ -65,7 +65,7 @@ describe("git helper", () => {
   })
 
   it("parses text numstat totals while ignoring binary markers", () => {
-    expect(parseGitNumstat("3\t1\tapp.ts\n-\t-\timage.png\n2\t0\tnew.ts")).toEqual({
+    expect(parseGitNumstat("malformed\n3\t1\tapp.ts\n-\t-\timage.png\n2\t0\tnew.ts")).toEqual({
       added: 5,
       removed: 1
     })
@@ -75,17 +75,78 @@ describe("git helper", () => {
     const { repo } = makeRepo()
     writeFileSync(join(repo, "tracked.txt"), "one\ntwo\n")
     execFileSync("git", ["add", "tracked.txt"], { cwd: repo })
-    execFileSync(
-      "git",
-      ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-m", "baseline"],
-      { cwd: repo }
-    )
+    execFileSync("git", ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-m", "baseline"], {
+      cwd: repo
+    })
     writeFileSync(join(repo, "tracked.txt"), "one\nchanged\nthree\n")
     writeFileSync(join(repo, "untracked.txt"), "alpha\nbeta")
+    writeFileSync(join(repo, "trailing-newline.txt"), "alpha\n")
+    writeFileSync(join(repo, "empty.txt"), "")
+    writeFileSync(join(repo, "too-large.txt"), Buffer.alloc(4_000_001, 65))
     writeFileSync(join(repo, "binary.dat"), Buffer.from([0, 1, 2]))
+    symlinkSync(join(repo, "missing-target"), join(repo, "dangling-link"))
 
-    expect(await gitBranchDiffTotals(repo)).toEqual({ added: 4, removed: 1 })
+    expect(await gitBranchDiffTotals(repo)).toEqual({ added: 5, removed: 1 })
     expect(await gitBranchDiffTotals(join(repo, "missing"))).toBeUndefined()
+  })
+
+  it("hides failures while reading the untracked-file list", async () => {
+    for (const [name, diagnostic] of [
+      ["stderr", "echo raw failure >&2"],
+      ["silent", ""]
+    ] as const) {
+      const fakeBin = mkdtempSync(join(tmpdir(), `herdman-fake-git-${name}-`))
+      const fakeGit = join(fakeBin, "git")
+      writeFileSync(
+        fakeGit,
+        [
+          "#!/bin/sh",
+          'case "$1" in',
+          "  rev-parse) echo true; exit 0 ;;",
+          "  merge-base) echo fake-base; exit 0 ;;",
+          "  diff) printf '1\\t0\\tfile.txt\\n'; exit 0 ;;",
+          `  ls-files) ${diagnostic || ":"}; exit 2 ;;`,
+          "esac",
+          "exit 2",
+          ""
+        ].join("\n")
+      )
+      chmodSync(fakeGit, 0o755)
+      const previousPath = process.env["PATH"]
+      process.env["PATH"] = `${fakeBin}:${previousPath ?? ""}`
+      try {
+        expect(await gitBranchDiffTotals(fakeBin)).toBeUndefined()
+      } finally {
+        process.env["PATH"] = previousPath
+      }
+    }
+  })
+
+  it("falls back to HEAD when conventional base refs have no merge base", async () => {
+    const fakeBin = mkdtempSync(join(tmpdir(), "herdman-fake-git-no-base-"))
+    const fakeGit = join(fakeBin, "git")
+    writeFileSync(
+      fakeGit,
+      [
+        "#!/bin/sh",
+        'case "$1" in',
+        "  rev-parse) echo true; exit 0 ;;",
+        "  merge-base) exit 0 ;;",
+        "  diff) printf '2\\t1\\tfile.txt\\n'; exit 0 ;;",
+        "  ls-files) exit 0 ;;",
+        "esac",
+        "exit 2",
+        ""
+      ].join("\n")
+    )
+    chmodSync(fakeGit, 0o755)
+    const previousPath = process.env["PATH"]
+    process.env["PATH"] = `${fakeBin}:${previousPath ?? ""}`
+    try {
+      expect(await gitBranchDiffTotals(fakeBin)).toEqual({ added: 2, removed: 1 })
+    } finally {
+      process.env["PATH"] = previousPath
+    }
   })
 
   it("cuts worktrees from origin/main when the remote-tracking ref exists", async () => {

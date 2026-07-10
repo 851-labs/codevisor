@@ -3,6 +3,7 @@ import type {
   AttachmentRef,
   CreateProjectRequest,
   CreateSessionRequest,
+  DataUpgradeProgress,
   EventEnvelope,
   EventKind,
   FileMetadata,
@@ -12,6 +13,9 @@ import type {
   PromptQueueItem,
   SessionDetail,
   SessionSummary,
+  TranscriptItem,
+  TranscriptItemDetails,
+  TranscriptPage,
   UpdateProjectRequest,
   UpdateSessionRequest,
   UpdateInfo,
@@ -33,6 +37,10 @@ export class DatabaseError extends Schema.TaggedErrorClass<DatabaseError>()("Dat
 export interface HerdManDatabaseConfig {
   readonly filename: string
   readonly serverId: string
+  /// Synchronous by design: migrations use better-sqlite3 and report after
+  /// every durable batch. The app-hosted server writes this to a sidecar file
+  /// that remains readable while the HTTP server is still booting.
+  readonly onDataUpgradeProgress?: (progress: DataUpgradeProgress) => void
 }
 
 interface ProjectRow {
@@ -96,6 +104,60 @@ interface EventRow {
   readonly subject_id: string
   readonly created_at: string
   readonly payload: string
+  readonly transcript_item_id: string | null
+}
+
+interface TranscriptRow {
+  readonly id: string
+  readonly session_id: string
+  readonly sequence: number
+  readonly role: "user" | "assistant"
+  readonly text: string
+  readonly created_at: string
+  readonly updated_at: string
+  readonly is_generating: number
+  readonly has_details: number
+  readonly turn_id: string | null
+  readonly started_at: string | null
+  readonly ended_at: string | null
+  readonly stop_reason: string | null
+  readonly stop_detail: string | null
+  readonly plan_document: string | null
+  readonly attachments: string | null
+  readonly revision: number
+}
+
+interface ChatItemRow {
+  readonly id: string
+  readonly session_id: string
+  readonly position: number
+  readonly role: "user" | "assistant" | "system" | "tool"
+  readonly message_id: string | null
+  readonly status: "streaming" | "complete" | "failed"
+  readonly created_at: string
+  readonly updated_at: string
+  readonly turn_id: string | null
+  readonly started_at: string | null
+  readonly completed_at: string | null
+  readonly stop_reason: string | null
+  readonly stop_detail: string | null
+  readonly attachments: string | null
+  readonly has_details: number
+  readonly revision: number
+  /// Selected from the typed parts table by chat page queries.
+  readonly text: string
+  readonly plan_document: string | null
+}
+
+interface SessionEventRow {
+  readonly session_id: string
+  readonly revision: number
+  readonly global_event_id: number | null
+  readonly server_id: string
+  readonly kind: EventKind
+  readonly created_at: string
+  readonly payload: string
+  readonly chat_item_id: string | null
 }
 
 interface SessionActionRow {
@@ -356,8 +418,852 @@ const migrations: ReadonlyArray<Migration> = [
       alter table conversation_items add column attachments text;
       alter table prompt_queue_items add column attachments text;
     `
+  },
+  {
+    id: 7,
+    name: "paginated transcript projection",
+    sql: `
+      alter table events add column transcript_item_id text;
+
+      create index if not exists events_subject_id_idx on events(subject_id, id);
+      create index if not exists events_transcript_item_idx
+        on events(subject_id, transcript_item_id, id);
+
+      create table if not exists transcript_items (
+        id text primary key,
+        session_id text not null references sessions(id) on delete cascade,
+        sequence integer not null,
+        role text not null check(role in ('user', 'assistant')),
+        text text not null default '',
+        created_at text not null,
+        updated_at text not null,
+        is_generating integer not null default 0,
+        has_details integer not null default 0,
+        turn_id text,
+        started_at text,
+        ended_at text,
+        stop_reason text,
+        stop_detail text,
+        plan_document text,
+        attachments text,
+        revision integer not null default 1,
+        unique(session_id, sequence),
+        unique(session_id, turn_id)
+      );
+
+      create index if not exists transcript_items_session_sequence_idx
+        on transcript_items(session_id, sequence desc);
+
+      create table if not exists transcript_projection_state (
+        session_id text primary key references sessions(id) on delete cascade,
+        next_sequence integer not null default 0,
+        current_item_id text references transcript_items(id) on delete set null,
+        source_cursor integer not null default 0
+      );
+
+      create table if not exists transcript_routes (
+        session_id text not null references sessions(id) on delete cascade,
+        route_key text not null,
+        item_id text not null references transcript_items(id) on delete cascade,
+        primary key(session_id, route_key)
+      );
+
+      alter table backfill_jobs add column completed integer not null default 0;
+      alter table backfill_jobs add column total integer not null default 0;
+      alter table backfill_jobs add column error text;
+    `
+  },
+  {
+    id: 8,
+    name: "canonical session chat store",
+    sql: `
+      alter table sessions add column revision integer not null default 0;
+
+      create table if not exists chat_items (
+        id text primary key,
+        session_id text not null references sessions(id) on delete cascade,
+        position integer not null,
+        role text not null check(role in ('user', 'assistant', 'system', 'tool')),
+        message_id text,
+        status text not null check(status in ('streaming', 'complete', 'failed')),
+        created_at text not null,
+        updated_at text not null,
+        turn_id text,
+        started_at text,
+        completed_at text,
+        stop_reason text,
+        stop_detail text,
+        attachments text,
+        has_details integer not null default 0,
+        revision integer not null default 1,
+        unique(session_id, position),
+        unique(session_id, turn_id)
+      );
+
+      create index if not exists chat_items_session_position_idx
+        on chat_items(session_id, position desc);
+
+      create table if not exists chat_parts (
+        id text primary key,
+        item_id text not null references chat_items(id) on delete cascade,
+        position integer not null,
+        kind text not null,
+        text text,
+        data_json text,
+        revision integer not null default 1,
+        unique(item_id, position)
+      );
+
+      create index if not exists chat_parts_item_position_idx
+        on chat_parts(item_id, position);
+
+      create table if not exists session_chat_state (
+        session_id text primary key references sessions(id) on delete cascade,
+        next_position integer not null default 0,
+        current_item_id text references chat_items(id) on delete set null
+      );
+
+      create table if not exists chat_item_routes (
+        session_id text not null references sessions(id) on delete cascade,
+        route_key text not null,
+        item_id text not null references chat_items(id) on delete cascade,
+        primary key(session_id, route_key)
+      );
+
+      create table if not exists session_events (
+        session_id text not null references sessions(id) on delete cascade,
+        revision integer not null,
+        global_event_id integer unique,
+        server_id text not null,
+        kind text not null,
+        created_at text not null,
+        payload text not null,
+        chat_item_id text references chat_items(id) on delete set null,
+        primary key(session_id, revision)
+      );
+
+      create index if not exists session_events_item_idx
+        on session_events(session_id, chat_item_id, revision);
+    `
   }
 ]
+
+// A row count is not a render-cost bound: one assistant item can contain a
+// 20k-character essay. Keep reverse pages small enough for clients to parse
+// and lay out without a visible hitch, while always returning at least the
+// newest row so a single oversized answer can still be reached.
+const maxInitialTranscriptPageCharacters = 24_000
+const maxOlderTranscriptPageCharacters = 64_000
+
+type JsonRecord = Record<string, unknown>
+
+const jsonRecord = (value: unknown): JsonRecord | undefined =>
+  typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as JsonRecord)
+    : undefined
+
+const payloadText = (payload: JsonRecord): string | undefined => {
+  if (typeof payload.text === "string") {
+    return payload.text
+  }
+  const content = jsonRecord(payload.content)
+  return content?.type === "text" && typeof content.text === "string" ? content.text : undefined
+}
+
+const conversationEventPayload = (
+  payload: JsonRecord
+):
+  | {
+      readonly role: "user" | "assistant" | "system"
+      readonly text: string
+      readonly messageId?: string
+      readonly attachments?: ReadonlyArray<AttachmentRef>
+    }
+  | undefined => {
+  const role = payload.role
+  const direct =
+    (role === "user" || role === "assistant" || role === "system") &&
+    typeof payload.text === "string" &&
+    (payload.messageId === undefined || typeof payload.messageId === "string") &&
+    (payload.attachments === undefined || Array.isArray(payload.attachments))
+  if (direct) {
+    return {
+      role,
+      text: payload.text as string,
+      ...(typeof payload.messageId === "string" ? { messageId: payload.messageId } : {}),
+      ...(Array.isArray(payload.attachments)
+        ? { attachments: payload.attachments as ReadonlyArray<AttachmentRef> }
+        : {})
+    }
+  }
+  if (
+    typeof payload.sessionUpdate !== "string" ||
+    typeof payload.parentToolCallId === "string" ||
+    payload.phase === "commentary"
+  ) {
+    return undefined
+  }
+  const text = payloadText(payload)
+  if (text === undefined) return undefined
+  if (payload.sessionUpdate === "user_message_chunk") {
+    return {
+      role: "user",
+      text,
+      ...(typeof payload.messageId === "string" ? { messageId: payload.messageId } : {})
+    }
+  }
+  if (payload.sessionUpdate === "agent_message_chunk") {
+    return {
+      role: "assistant",
+      text,
+      ...(typeof payload.messageId === "string" ? { messageId: payload.messageId } : {})
+    }
+  }
+  return undefined
+}
+
+const canonicalChatBackfillId = "canonical-session-chat-v1"
+
+const reportDataUpgrade = (config: HerdManDatabaseConfig, progress: DataUpgradeProgress): void => {
+  config.onDataUpgradeProgress?.(progress)
+}
+
+const chatState = (
+  sqlite: Database.Database,
+  sessionId: string
+): { next_position: number; current_item_id: string | null } => {
+  sqlite
+    .prepare(
+      `insert into session_chat_state (session_id, next_position, current_item_id)
+       values (?, 0, null) on conflict(session_id) do nothing`
+    )
+    .run(sessionId)
+  return sqlite
+    .prepare("select next_position, current_item_id from session_chat_state where session_id = ?")
+    .get(sessionId) as { next_position: number; current_item_id: string | null }
+}
+
+const upsertChatPart = (
+  sqlite: Database.Database,
+  itemId: string,
+  kind: "text" | "plan",
+  text: string
+): void => {
+  const position = kind === "text" ? 0 : 1
+  sqlite
+    .prepare(
+      `insert into chat_parts (id, item_id, position, kind, text, data_json, revision)
+       values (?, ?, ?, ?, ?, null, 1)
+       on conflict(item_id, position) do update set
+         kind = excluded.kind, text = excluded.text, revision = chat_parts.revision + 1`
+    )
+    .run(`${itemId}:${kind}`, itemId, position, kind, text)
+}
+
+const createChatItem = (
+  sqlite: Database.Database,
+  sessionId: string,
+  role: "user" | "assistant" | "system" | "tool",
+  createdAt: string,
+  options: {
+    readonly id?: string
+    readonly position?: number
+    readonly text?: string
+    readonly messageId?: string
+    readonly planDocument?: string
+    readonly status: "streaming" | "complete" | "failed"
+    readonly turnId?: string
+    readonly startedAt?: string
+    readonly completedAt?: string
+    readonly stopReason?: string
+    readonly stopDetail?: string
+    readonly attachments?: ReadonlyArray<AttachmentRef>
+    readonly hasDetails?: boolean
+    readonly revision?: number
+  }
+): string => {
+  const state = chatState(sqlite, sessionId)
+  const id = options.id ?? randomUUID()
+  const position = options.position ?? state.next_position
+  sqlite
+    .prepare(
+      `insert into chat_items (
+        id, session_id, position, role, message_id, status, created_at, updated_at, turn_id,
+        started_at, completed_at, stop_reason, stop_detail, attachments, has_details, revision
+      ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      on conflict(id) do nothing`
+    )
+    .run(
+      id,
+      sessionId,
+      position,
+      role,
+      options.messageId ?? null,
+      options.status,
+      createdAt,
+      options.completedAt ?? createdAt,
+      options.turnId ?? null,
+      options.startedAt ?? null,
+      options.completedAt ?? null,
+      options.stopReason ?? null,
+      options.stopDetail ?? null,
+      serializeAttachments(options.attachments),
+      options.hasDetails === true ? 1 : 0,
+      options.revision ?? 1
+    )
+  if (options.text !== undefined) upsertChatPart(sqlite, id, "text", options.text)
+  if (options.planDocument !== undefined) upsertChatPart(sqlite, id, "plan", options.planDocument)
+  sqlite
+    .prepare(
+      `update session_chat_state set
+         next_position = max(next_position, ?),
+         current_item_id = case when ? = 'assistant' and ? = 'streaming' then ? else current_item_id end
+       where session_id = ?`
+    )
+    .run(position + 1, role, options.status, id, sessionId)
+  return id
+}
+
+const setChatRoute = (
+  sqlite: Database.Database,
+  sessionId: string,
+  key: string,
+  itemId: string
+): void => {
+  sqlite
+    .prepare(
+      `insert into chat_item_routes (session_id, route_key, item_id) values (?, ?, ?)
+       on conflict(session_id, route_key) do update set item_id = excluded.item_id`
+    )
+    .run(sessionId, key, itemId)
+}
+
+const chatRoute = (sqlite: Database.Database, sessionId: string, key: string): string | undefined =>
+  (
+    sqlite
+      .prepare("select item_id from chat_item_routes where session_id = ? and route_key = ?")
+      .get(sessionId, key) as { item_id: string } | undefined
+  )?.item_id
+
+const ensureAssistantChatItem = (
+  sqlite: Database.Database,
+  sessionId: string,
+  createdAt: string,
+  turnId?: string
+): string => {
+  if (turnId !== undefined) {
+    const routed = chatRoute(sqlite, sessionId, `turn:${turnId}`)
+    if (routed !== undefined) return routed
+  }
+  const current = chatState(sqlite, sessionId).current_item_id
+  if (current !== null) return current
+  const id = createChatItem(sqlite, sessionId, "assistant", createdAt, {
+    status: "streaming",
+    ...(turnId === undefined ? {} : { turnId })
+  })
+  if (turnId !== undefined) setChatRoute(sqlite, sessionId, `turn:${turnId}`, id)
+  return id
+}
+
+const chatAssistantSummary = (
+  sqlite: Database.Database,
+  sessionId: string,
+  itemId: string
+): { text: string; planDocument?: string } => {
+  const rows = sqlite
+    .prepare(
+      `select payload from session_events
+       where session_id = ? and chat_item_id = ? and kind = 'session.output'
+       order by revision asc`
+    )
+    .all(sessionId, itemId) as ReadonlyArray<{ payload: string }>
+  const spans: Array<{ chunks: Array<string>; phase?: string }> = []
+  const indexById = new Map<string, number>()
+  let anonymous = 0
+  let planDocument: string | undefined
+  for (const row of rows) {
+    const payload = jsonRecord(JSON.parse(row.payload))
+    /* v8 ignore next -- session events are encoded from object payloads; this only guards manually corrupted rows. */
+    if (payload === undefined) continue
+    if (payload.sessionUpdate === "plan_document" && typeof payload.markdown === "string") {
+      planDocument = payload.markdown
+      continue
+    }
+    const direct = payload.role === "assistant" && typeof payload.text === "string"
+    if (
+      !direct &&
+      (payload.sessionUpdate !== "agent_message_chunk" ||
+        typeof payload.parentToolCallId === "string")
+    ) {
+      anonymous += 1
+      continue
+    }
+    const text = payloadText(payload) ?? ""
+    if (text.length === 0) continue
+    const messageId =
+      typeof payload.messageId === "string" ? payload.messageId : `anonymous:${anonymous}`
+    let index = indexById.get(messageId)
+    if (index === undefined) {
+      index = spans.length
+      indexById.set(messageId, index)
+      spans.push({ chunks: [] })
+    }
+    const span = spans[index]
+    /* v8 ignore next -- index is created from spans.length immediately before lookup. */
+    if (span === undefined) continue
+    span.chunks.push(text)
+    if (typeof payload.phase === "string") span.phase = payload.phase
+  }
+  const final = [...spans].reverse().find((span) => span.phase !== "commentary")
+  return {
+    text: final?.chunks.join("") ?? "",
+    ...(planDocument === undefined ? {} : { planDocument })
+  }
+}
+
+const finishAssistantChatItem = (
+  sqlite: Database.Database,
+  sessionId: string,
+  itemId: string,
+  completedAt: string,
+  stopReason?: string,
+  stopDetail?: string,
+  failed = false
+): void => {
+  const summary = chatAssistantSummary(sqlite, sessionId, itemId)
+  upsertChatPart(sqlite, itemId, "text", summary.text)
+  if (summary.planDocument !== undefined) {
+    upsertChatPart(sqlite, itemId, "plan", summary.planDocument)
+  }
+  sqlite
+    .prepare(
+      `update chat_items set status = ?, completed_at = ?, updated_at = ?,
+       stop_reason = coalesce(?, stop_reason), stop_detail = coalesce(?, stop_detail),
+       revision = revision + 1 where id = ?`
+    )
+    .run(
+      failed ? "failed" : "complete",
+      completedAt,
+      completedAt,
+      stopReason ?? null,
+      stopDetail ?? null,
+      itemId
+    )
+}
+
+const projectChatEvent = (sqlite: Database.Database, event: SessionEventRow): void => {
+  const payload = jsonRecord(JSON.parse(event.payload))
+  if (payload === undefined) return
+  const sessionId = event.session_id
+  let itemId: string | undefined
+
+  if (event.kind === "session.updated" && payload.turnState === "started") {
+    const turnId = typeof payload.turnId === "string" ? payload.turnId : undefined
+    itemId = ensureAssistantChatItem(sqlite, sessionId, event.created_at, turnId)
+    sqlite
+      .prepare(
+        "update chat_items set started_at = coalesce(started_at, ?), updated_at = ? where id = ?"
+      )
+      .run(event.created_at, event.created_at, itemId)
+  } else if (event.kind === "session.output") {
+    const conversation = conversationEventPayload(payload)
+    if (conversation?.role === "user" || conversation?.role === "system") {
+      itemId = createChatItem(sqlite, sessionId, conversation.role, event.created_at, {
+        text: conversation.text,
+        ...(conversation.messageId === undefined ? {} : { messageId: conversation.messageId }),
+        status: "complete",
+        ...(conversation.attachments === undefined ? {} : { attachments: conversation.attachments })
+      })
+    } else if (conversation?.role === "assistant") {
+      itemId = ensureAssistantChatItem(sqlite, sessionId, event.created_at)
+      sqlite
+        .prepare(
+          `insert into chat_parts (id, item_id, position, kind, text, data_json, revision)
+           values (?, ?, 0, 'text', ?, null, 1)
+           on conflict(item_id, position) do update set
+             text = coalesce(chat_parts.text, '') || excluded.text,
+             revision = chat_parts.revision + 1`
+        )
+        .run(`${itemId}:text`, itemId, conversation.text)
+      sqlite
+        .prepare(
+          `update chat_items set message_id = coalesce(message_id, ?), updated_at = ?,
+           revision = revision + 1 where id = ?`
+        )
+        .run(conversation.messageId ?? null, event.created_at, itemId)
+    } else {
+      const update = typeof payload.sessionUpdate === "string" ? payload.sessionUpdate : undefined
+      if (update !== undefined) {
+        const parent =
+          typeof payload.parentToolCallId === "string" ? payload.parentToolCallId : undefined
+        const toolId = typeof payload.toolCallId === "string" ? payload.toolCallId : undefined
+        itemId =
+          (parent === undefined ? undefined : chatRoute(sqlite, sessionId, `tool:${parent}`)) ??
+          (toolId === undefined ? undefined : chatRoute(sqlite, sessionId, `tool:${toolId}`)) ??
+          ensureAssistantChatItem(sqlite, sessionId, event.created_at)
+        sqlite
+          .prepare(
+            `update chat_items set has_details = max(has_details, ?), updated_at = ?,
+             revision = revision + 1 where id = ?`
+          )
+          .run(1, event.created_at, itemId)
+        if (update === "plan_document" && typeof payload.markdown === "string") {
+          upsertChatPart(sqlite, itemId, "plan", payload.markdown)
+        }
+        if (toolId !== undefined) setChatRoute(sqlite, sessionId, `tool:${toolId}`, itemId)
+      }
+    }
+  } else if (
+    event.kind === "session.error" ||
+    (event.kind === "session.updated" &&
+      (payload.turnState === "ended" || typeof payload.stopReason === "string"))
+  ) {
+    const turnId = typeof payload.turnId === "string" ? payload.turnId : undefined
+    itemId =
+      (turnId === undefined ? undefined : chatRoute(sqlite, sessionId, `turn:${turnId}`)) ??
+      chatState(sqlite, sessionId).current_item_id ??
+      undefined
+    if (itemId !== undefined) {
+      finishAssistantChatItem(
+        sqlite,
+        sessionId,
+        itemId,
+        event.created_at,
+        typeof payload.stopReason === "string" ? payload.stopReason : undefined,
+        typeof payload.stopDetail === "string"
+          ? payload.stopDetail
+          : event.kind === "session.error" && typeof payload.message === "string"
+            ? payload.message
+            : undefined,
+        event.kind === "session.error"
+      )
+      sqlite
+        .prepare("update session_chat_state set current_item_id = null where session_id = ?")
+        .run(sessionId)
+    }
+  }
+
+  if (itemId !== undefined) {
+    sqlite
+      .prepare("update session_events set chat_item_id = ? where session_id = ? and revision = ?")
+      .run(itemId, sessionId, event.revision)
+  }
+}
+
+const insertSessionEvent = (
+  sqlite: Database.Database,
+  row: Omit<SessionEventRow, "revision" | "chat_item_id"> & {
+    readonly chat_item_id?: string | null
+  }
+): SessionEventRow => {
+  const revision = Number(
+    (
+      sqlite
+        .prepare("update sessions set revision = revision + 1 where id = ? returning revision")
+        .get(row.session_id) as { revision: number }
+    ).revision
+  )
+  const event: SessionEventRow = {
+    ...row,
+    revision,
+    chat_item_id: row.chat_item_id ?? null
+  }
+  sqlite
+    .prepare(
+      `insert into session_events (
+        session_id, revision, global_event_id, server_id, kind, created_at, payload, chat_item_id
+      ) values (?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+    .run(
+      event.session_id,
+      event.revision,
+      event.global_event_id,
+      event.server_id,
+      event.kind,
+      event.created_at,
+      event.payload,
+      event.chat_item_id
+    )
+  return event
+}
+
+const copyTranscriptItemToChat = (sqlite: Database.Database, row: TranscriptRow): void => {
+  const attachments = parseAttachments(row.attachments)
+  const itemId = createChatItem(sqlite, row.session_id, row.role, row.created_at, {
+    id: row.id,
+    position: row.sequence,
+    text: row.text,
+    status: row.is_generating === 1 ? "streaming" : "complete",
+    ...(row.plan_document === null ? {} : { planDocument: row.plan_document }),
+    ...(row.turn_id === null ? {} : { turnId: row.turn_id }),
+    ...(row.started_at === null ? {} : { startedAt: row.started_at }),
+    ...(row.ended_at === null ? {} : { completedAt: row.ended_at }),
+    ...(row.stop_reason === null ? {} : { stopReason: row.stop_reason }),
+    ...(row.stop_detail === null ? {} : { stopDetail: row.stop_detail }),
+    ...(attachments === undefined ? {} : { attachments }),
+    hasDetails: row.has_details === 1,
+    revision: row.revision
+  })
+  if (row.turn_id !== null) setChatRoute(sqlite, row.session_id, `turn:${row.turn_id}`, itemId)
+}
+
+const runCanonicalChatBackfill = (
+  sqlite: Database.Database,
+  config: HerdManDatabaseConfig
+): void => {
+  const existing = sqlite
+    .prepare("select state, completed, total from backfill_jobs where id = ?")
+    .get(canonicalChatBackfillId) as { state: string; completed: number; total: number } | undefined
+  if (existing?.state === "completed") {
+    reportDataUpgrade(config, {
+      state: "completed",
+      id: canonicalChatBackfillId,
+      name: "Updating chat history",
+      completed: existing.total,
+      total: existing.total
+    })
+    return
+  }
+
+  const transcriptTotal = Number(
+    (sqlite.prepare("select count(*) as count from transcript_items").get() as { count: number })
+      .count
+  )
+  const eventTotal = Number(
+    (
+      sqlite
+        .prepare(
+          `select count(*) as count from events
+           where exists (select 1 from sessions where sessions.id = events.subject_id)`
+        )
+        .get() as { count: number }
+    ).count
+  )
+  const sessionTotal = Number(
+    (sqlite.prepare("select count(*) as count from sessions").get() as { count: number }).count
+  )
+  const total = Math.max(1, transcriptTotal + eventTotal + sessionTotal)
+  let completed = Math.min(existing?.completed ?? 0, total)
+  const progress = (state: DataUpgradeProgress["state"], error?: string): void => {
+    const value: DataUpgradeProgress = {
+      state,
+      id: canonicalChatBackfillId,
+      name: "Updating chat history",
+      completed: state === "completed" ? total : Math.min(completed, total),
+      total,
+      ...(error === undefined ? {} : { error })
+    }
+    reportDataUpgrade(config, value)
+  }
+  sqlite
+    .prepare(
+      `insert into backfill_jobs (id, name, state, cursor, completed, total, error, updated_at)
+       values (?, ?, 'running', null, ?, ?, null, ?)
+       on conflict(id) do update set state = 'running', total = excluded.total,
+         error = null, updated_at = excluded.updated_at`
+    )
+    .run(
+      canonicalChatBackfillId,
+      "Build canonical session chat store",
+      completed,
+      total,
+      isoTimestamp()
+    )
+  progress("running")
+
+  const checkpoint = (delta: number): void => {
+    completed = Math.min(total, completed + delta)
+    sqlite
+      .prepare("update backfill_jobs set completed = ?, updated_at = ? where id = ?")
+      .run(completed, isoTimestamp(), canonicalChatBackfillId)
+    progress("running")
+  }
+
+  try {
+    while (true) {
+      const rows = sqlite
+        .prepare(
+          `select transcript_items.* from transcript_items
+           left join chat_items on chat_items.id = transcript_items.id
+           where chat_items.id is null order by transcript_items.rowid asc limit 100`
+        )
+        .all() as ReadonlyArray<TranscriptRow>
+      if (rows.length === 0) break
+      sqlite.transaction(() => {
+        for (const row of rows) copyTranscriptItemToChat(sqlite, row)
+      })()
+      checkpoint(rows.length)
+    }
+
+    sqlite.exec(`
+      insert into chat_item_routes (session_id, route_key, item_id)
+        select transcript_routes.session_id, transcript_routes.route_key, transcript_routes.item_id
+        from transcript_routes
+        join chat_items on chat_items.id = transcript_routes.item_id
+        on conflict(session_id, route_key) do nothing;
+    `)
+
+    while (true) {
+      const rows = sqlite
+        .prepare(
+          `select events.* from events
+           join sessions on sessions.id = events.subject_id
+           left join session_events on session_events.global_event_id = events.id
+           where session_events.global_event_id is null
+           order by events.id asc limit 500`
+        )
+        .all() as ReadonlyArray<EventRow>
+      if (rows.length === 0) break
+      sqlite.transaction(() => {
+        for (const row of rows) {
+          const linkedItem =
+            row.transcript_item_id !== null &&
+            sqlite.prepare("select 1 from chat_items where id = ?").get(row.transcript_item_id) !==
+              undefined
+              ? row.transcript_item_id
+              : null
+          const event = insertSessionEvent(sqlite, {
+            session_id: row.subject_id,
+            global_event_id: row.id,
+            server_id: row.server_id,
+            kind: row.kind,
+            created_at: row.created_at,
+            payload: row.payload,
+            chat_item_id: linkedItem
+          })
+          const hasTranscript =
+            sqlite
+              .prepare("select 1 from transcript_items where session_id = ? limit 1")
+              .get(row.subject_id) !== undefined
+          if (!hasTranscript) projectChatEvent(sqlite, event)
+        }
+      })()
+      checkpoint(rows.length)
+    }
+
+    const sessions = sqlite.prepare("select id from sessions order by id").all() as ReadonlyArray<{
+      id: string
+    }>
+    for (const session of sessions) {
+      sqlite.transaction(() => {
+        const hasChat =
+          sqlite
+            .prepare("select 1 from chat_items where session_id = ? limit 1")
+            .get(session.id) !== undefined
+        if (!hasChat) {
+          const rows = sqlite
+            .prepare(
+              `select * from conversation_items where session_id = ?
+               order by created_at asc, rowid asc`
+            )
+            .all(session.id) as ReadonlyArray<ConversationRow>
+          for (const row of rows) {
+            const attachments = parseAttachments(row.attachments)
+            createChatItem(sqlite, session.id, row.role, row.created_at, {
+              text: row.text,
+              status: row.is_generating === 1 ? "streaming" : "complete",
+              ...(attachments === undefined ? {} : { attachments })
+            })
+          }
+        }
+        chatState(sqlite, session.id)
+      })()
+      checkpoint(1)
+    }
+
+    const missingTranscript = Number(
+      (
+        sqlite
+          .prepare(
+            `select count(*) as count from transcript_items
+             left join chat_items on chat_items.id = transcript_items.id
+             where chat_items.id is null`
+          )
+          .get() as { count: number }
+      ).count
+    )
+    const missingEvents = Number(
+      (
+        sqlite
+          .prepare(
+            `select count(*) as count from events
+             join sessions on sessions.id = events.subject_id
+             left join session_events on session_events.global_event_id = events.id
+             where session_events.global_event_id is null`
+          )
+          .get() as { count: number }
+      ).count
+    )
+    const mismatchedTranscript = Number(
+      (
+        sqlite
+          .prepare(
+            `select count(*) as count from transcript_items legacy
+             join chat_items item on item.id = legacy.id
+             left join chat_parts text_part
+               on text_part.item_id = item.id and text_part.kind = 'text'
+             left join chat_parts plan_part
+               on plan_part.item_id = item.id and plan_part.kind = 'plan'
+             where item.session_id != legacy.session_id
+                or item.position != legacy.sequence
+                or item.role != legacy.role
+                or coalesce(text_part.text, '') != legacy.text
+                or coalesce(plan_part.text, '') != coalesce(legacy.plan_document, '')
+                or coalesce(item.attachments, '') != coalesce(legacy.attachments, '')`
+          )
+          .get() as { count: number }
+      ).count
+    )
+    if (missingTranscript !== 0 || missingEvents !== 0 || mismatchedTranscript !== 0) {
+      throw new Error(
+        `Canonical chat verification failed: ${missingTranscript} transcript items missing, ${mismatchedTranscript} differ, and ${missingEvents} session events are missing`
+      )
+    }
+
+    sqlite
+      .prepare(
+        `update backfill_jobs set state = 'completed', completed = total, error = null,
+         updated_at = ? where id = ?`
+      )
+      .run(isoTimestamp(), canonicalChatBackfillId)
+    completed = total
+    progress("completed")
+  } catch (cause) {
+    /* v8 ignore next -- SQLite and explicit verification failures are Error instances. */
+    const message = cause instanceof Error ? cause.message : String(cause)
+    sqlite
+      .prepare("update backfill_jobs set state = 'failed', error = ?, updated_at = ? where id = ?")
+      .run(message, isoTimestamp(), canonicalChatBackfillId)
+    progress("failed", message)
+    throw cause
+  }
+}
+
+/// Ordered registry for blocking, resumable data-version changes. Future
+/// breaking upgrades add one runner here; schema creation still happens in
+/// `migrations`, while the runner owns bounded commits, validation, progress,
+/// and its durable `backfill_jobs` checkpoint.
+const blockingDataUpgrades: ReadonlyArray<
+  (sqlite: Database.Database, config: HerdManDatabaseConfig) => void
+> = [runCanonicalChatBackfill]
+
+const runBlockingDataUpgrades = (
+  sqlite: Database.Database,
+  config: HerdManDatabaseConfig
+): void => {
+  for (const upgrade of blockingDataUpgrades) upgrade(sqlite, config)
+}
+
+const isSessionShellEvent = (kind: EventKind, payload: unknown): boolean => {
+  if (kind === "session.created" || kind === "session.archived" || kind === "session.deleted") {
+    return true
+  }
+  if (kind !== "session.updated") return false
+  const value = jsonRecord(payload)
+  // Metadata updates carry the full SessionSummary. Turn/config/stream state
+  // remains exclusively in the session log.
+  return typeof value?.id === "string" && typeof value.projectId === "string"
+}
 
 export interface HerdManDatabaseService {
   readonly migrate: Effect.Effect<ReadonlyArray<string>, DatabaseError>
@@ -383,7 +1289,17 @@ export interface HerdManDatabaseService {
     request: CreateSessionRequest
   ) => Effect.Effect<SessionSummary, DatabaseError>
   readonly listSessions: Effect.Effect<ReadonlyArray<SessionSummary>, DatabaseError>
+  readonly getSessionSummary: (id: string) => Effect.Effect<SessionSummary, DatabaseError>
   readonly getSessionDetail: (id: string) => Effect.Effect<SessionDetail, DatabaseError>
+  readonly getTranscriptPage: (
+    sessionId: string,
+    before: number | undefined,
+    limit: number
+  ) => Effect.Effect<TranscriptPage, DatabaseError>
+  readonly getTranscriptItemDetails: (
+    sessionId: string,
+    itemId: string
+  ) => Effect.Effect<TranscriptItemDetails | undefined, DatabaseError>
   readonly updateSession: (
     id: string,
     request: UpdateSessionRequest
@@ -405,7 +1321,8 @@ export interface HerdManDatabaseService {
   ) => Effect.Effect<EventEnvelope, DatabaseError>
   readonly listEvents: (since: number) => Effect.Effect<ReadonlyArray<EventEnvelope>, DatabaseError>
   readonly listSubjectEvents: (
-    subjectId: string
+    subjectId: string,
+    since?: number
   ) => Effect.Effect<ReadonlyArray<EventEnvelope>, DatabaseError>
   readonly createPromptQueueItem: (
     sessionId: string,
@@ -529,6 +1446,10 @@ const createService = (
         }
       })
       transaction()
+      // Required data upgrades run in bounded, checkpointed transactions
+      // after the schema commit. Startup remains blocking, but the old tables
+      // stay untouched and an interrupted process resumes from durable rows.
+      runBlockingDataUpgrades(sqlite, config)
     } finally {
       sqlite.pragma("foreign_keys = ON")
     }
@@ -542,19 +1463,49 @@ const createService = (
   ) {
     return yield* attempt("appendEvent", () => {
       const createdAt = isoTimestamp()
-      const result = sqlite
-        .prepare(
-          "insert into events (server_id, kind, subject_id, created_at, payload) values (?, ?, ?, ?, ?)"
-        )
-        .run(config.serverId, kind, subjectId, createdAt, JSON.stringify(payload))
-      return {
-        id: Number(result.lastInsertRowid),
-        serverId: config.serverId,
-        kind,
-        subjectId,
-        createdAt,
-        payload
-      }
+      return sqlite.transaction(() => {
+        const encoded = JSON.stringify(payload)
+        const sessionExists =
+          sqlite.prepare("select 1 from sessions where id = ?").get(subjectId) !== undefined
+        const belongsInShellLog = !sessionExists || isSessionShellEvent(kind, payload)
+        const globalEventId = belongsInShellLog
+          ? Number(
+              sqlite
+                .prepare(
+                  "insert into events (server_id, kind, subject_id, created_at, payload) values (?, ?, ?, ?, ?)"
+                )
+                .run(config.serverId, kind, subjectId, createdAt, encoded).lastInsertRowid
+            )
+          : undefined
+        let subjectRevision: number | undefined
+        if (sessionExists) {
+          const sessionEvent = insertSessionEvent(sqlite, {
+            session_id: subjectId,
+            global_event_id: globalEventId ?? null,
+            server_id: config.serverId,
+            kind,
+            created_at: createdAt,
+            payload: encoded
+          })
+          subjectRevision = sessionEvent.revision
+          projectChatEvent(sqlite, sessionEvent)
+          if (kind === "session.output") {
+            sqlite
+              .prepare("update sessions set updated_at = ? where id = ?")
+              .run(createdAt, subjectId)
+          }
+        }
+        return {
+          id: (globalEventId ?? subjectRevision)!,
+          ...(globalEventId === undefined ? {} : { globalEventId }),
+          ...(subjectRevision === undefined ? {} : { subjectRevision }),
+          serverId: config.serverId,
+          kind,
+          subjectId,
+          createdAt,
+          payload
+        }
+      })()
     })
   })
 
@@ -796,26 +1747,106 @@ const createService = (
           )
         )
     ),
+    getSessionSummary: (id) => attempt("getSessionSummary", () => getSession(id)),
     getSessionDetail: (id) =>
       attempt("getSessionDetail", () => ({
         session: getSession(id),
         conversation: sqlite
           .prepare(
-            "select * from conversation_items where session_id = ? order by created_at asc, rowid asc"
+            `select chat_items.id, chat_items.role, chat_items.message_id,
+               coalesce((select text from chat_parts
+                 where item_id = chat_items.id and kind = 'text' order by position limit 1), '') as text,
+               chat_items.created_at, case when chat_items.status = 'streaming' then 1 else 0 end as is_generating,
+               chat_items.attachments
+             from chat_items where session_id = ? order by position asc`
           )
           .all(id)
           .map((row) => conversationFromRow(row as ConversationRow)),
         promptQueue: listPromptQueueSync(sqlite, id),
         eventCursor: Number(
           (
-            sqlite.prepare("select coalesce(max(id), 0) as cursor from events").get() as {
+            sqlite.prepare("select revision as cursor from sessions where id = ?").get(id) as {
               readonly cursor: number
             }
           ).cursor
         )
       })),
+    getTranscriptPage: (sessionId, before, limit) =>
+      attempt("getTranscriptPage", () => {
+        getSession(sessionId)
+        const bounded = Math.max(1, Math.min(64, Math.trunc(limit)))
+        const rows = sqlite
+          .prepare(
+            `select chat_items.*,
+               coalesce((select text from chat_parts
+                 where item_id = chat_items.id and kind = 'text' order by position limit 1), '') as text,
+               (select text from chat_parts
+                 where item_id = chat_items.id and kind = 'plan' order by position limit 1) as plan_document
+             from chat_items
+             where session_id = ? and role in ('user', 'assistant')
+               and (? is null or position < ?)
+             order by position desc limit ?`
+          )
+          .all(sessionId, before ?? null, before ?? null, bounded + 1) as ReadonlyArray<ChatItemRow>
+        const candidates = rows.slice(0, bounded)
+        const pageRows: ChatItemRow[] = []
+        let characters = 0
+        const maxCharacters =
+          bounded <= 8 ? maxInitialTranscriptPageCharacters : maxOlderTranscriptPageCharacters
+        for (const row of candidates) {
+          const rowCharacters = row.text.length + (row.plan_document?.length ?? 0)
+          if (pageRows.length > 0 && characters + rowCharacters > maxCharacters) {
+            break
+          }
+          pageRows.push(row)
+          characters += rowCharacters
+        }
+        const hasMore = rows.length > pageRows.length
+        const items = [...pageRows].reverse().map((row) => {
+          const item = transcriptFromChatRow(row)
+          if (row.role !== "assistant" || row.status !== "streaming") return item
+          const summary = chatAssistantSummary(sqlite, sessionId, row.id)
+          return {
+            ...item,
+            text: summary.text,
+            ...(summary.planDocument === undefined ? {} : { planDocument: summary.planDocument })
+          }
+        })
+        const cursor = pageRows.at(-1)?.position
+        const eventCursor = Number(
+          (
+            sqlite
+              .prepare("select revision as cursor from sessions where id = ?")
+              .get(sessionId) as {
+              cursor: number
+            }
+          ).cursor
+        )
+        return {
+          items,
+          ...(hasMore ? { nextBefore: String(cursor!) } : {}),
+          hasMore,
+          eventCursor
+        }
+      }),
+    getTranscriptItemDetails: (sessionId, itemId) =>
+      attempt("getTranscriptItemDetails", () => {
+        const item = sqlite
+          .prepare("select revision from chat_items where session_id = ? and id = ?")
+          .get(sessionId, itemId) as { revision: number } | undefined
+        if (item === undefined) return undefined
+        const events = (
+          sqlite
+            .prepare(
+              `select * from session_events
+               where session_id = ? and chat_item_id = ? order by revision asc`
+            )
+            .all(sessionId, itemId) as ReadonlyArray<SessionEventRow>
+        ).map(sessionEventFromRow)
+        return { itemId, revision: item.revision, events }
+      }),
     // Metadata updates deliberately leave updated_at alone: recency ordering
-    // tracks conversation activity (appendConversationItem stamps it as items
+    // tracks conversation activity (chat events stamp it as items
     // land, the last being the finished assistant response), so opening or
     // renaming a session must not reshuffle the sidebar.
     updateSession: (id, request) =>
@@ -854,47 +1885,43 @@ const createService = (
         // replay-heavy. Coalescing needs a provable same-span signal, so
         // rows without a messageId (and attachment-bearing rows) still
         // insert normally.
-        if (messageId !== undefined && (attachments === undefined || attachments.length === 0)) {
+        sqlite.transaction(() => {
+          const routeKey = messageId === undefined ? undefined : `message:${role}:${messageId}`
+          const routed = routeKey === undefined ? undefined : chatRoute(sqlite, sessionId, routeKey)
           const last = sqlite
             .prepare(
-              `select id, role, message_id, attachments from conversation_items
-               where session_id = ? order by created_at desc, rowid desc limit 1`
+              "select id from chat_items where session_id = ? order by position desc limit 1"
             )
-            .get(sessionId) as
-            | { id: string; role: string; message_id: string | null; attachments: string | null }
-            | undefined
+            .get(sessionId) as { id: string } | undefined
           if (
-            last !== undefined &&
-            last.role === role &&
-            last.message_id === messageId &&
-            last.attachments === null
+            routed !== undefined &&
+            routed === last?.id &&
+            (attachments === undefined || attachments.length === 0)
           ) {
             sqlite
               .prepare(
-                "update conversation_items set text = text || ?, is_generating = ? where id = ?"
+                `update chat_parts set text = coalesce(text, '') || ?, revision = revision + 1
+                 where item_id = ? and kind = 'text'`
               )
-              .run(text, isGenerating ? 1 : 0, last.id)
-            sqlite.prepare("update sessions set updated_at = ? where id = ?").run(now, sessionId)
-            return
+              .run(text, routed)
+            sqlite
+              .prepare(
+                "update chat_items set status = ?, updated_at = ?, revision = revision + 1 where id = ?"
+              )
+              .run(isGenerating ? "streaming" : "complete", now, routed)
+          } else {
+            const itemId = createChatItem(sqlite, sessionId, role, now, {
+              text,
+              ...(messageId === undefined ? {} : { messageId }),
+              status: isGenerating ? "streaming" : "complete",
+              ...(attachments === undefined ? {} : { attachments })
+            })
+            if (routeKey !== undefined && (attachments === undefined || attachments.length === 0)) {
+              setChatRoute(sqlite, sessionId, routeKey, itemId)
+            }
           }
-        }
-        sqlite
-          .prepare(
-            `insert into conversation_items (
-              id, session_id, role, message_id, text, created_at, is_generating, attachments
-            ) values (?, ?, ?, ?, ?, ?, ?, ?)`
-          )
-          .run(
-            randomUUID(),
-            sessionId,
-            role,
-            messageId ?? null,
-            text,
-            now,
-            isGenerating ? 1 : 0,
-            serializeAttachments(attachments)
-          )
-        sqlite.prepare("update sessions set updated_at = ? where id = ?").run(now, sessionId)
+          sqlite.prepare("update sessions set updated_at = ? where id = ?").run(now, sessionId)
+        })()
       }),
     appendEvent,
     listEvents: (since) =>
@@ -904,13 +1931,23 @@ const createService = (
           .all(since)
           .map((row) => eventFromRow(row as EventRow))
       ),
-    listSubjectEvents: (subjectId) =>
-      attempt("listSubjectEvents", () =>
-        sqlite
-          .prepare("select * from events where subject_id = ? order by id asc")
-          .all(subjectId)
-          .map((row) => eventFromRow(row as EventRow))
-      ),
+    listSubjectEvents: (subjectId, since = 0) =>
+      attempt("listSubjectEvents", () => {
+        const isSession =
+          sqlite.prepare("select 1 from sessions where id = ?").get(subjectId) !== undefined
+        return isSession
+          ? sqlite
+              .prepare(
+                `select * from session_events
+                 where session_id = ? and revision > ? order by revision asc`
+              )
+              .all(subjectId, since)
+              .map((row) => sessionEventFromRow(row as SessionEventRow))
+          : sqlite
+              .prepare("select * from events where subject_id = ? and id > ? order by id asc")
+              .all(subjectId, since)
+              .map((row) => eventFromRow(row as EventRow))
+      }),
     createPromptQueueItem: (sessionId, text, attachments) =>
       attempt("createPromptQueueItem", () => {
         getSession(sessionId)
@@ -1205,6 +2242,33 @@ const conversationFromRow = (row: ConversationRow): SessionDetail["conversation"
   }
 }
 
+const transcriptFromChatRow = (row: ChatItemRow): TranscriptItem => {
+  const attachments = parseAttachments(row.attachments)
+  /* v8 ignore next 3 -- the query filters roles and chat_items enforces the same CHECK constraint. */
+  if (row.role !== "user" && row.role !== "assistant") {
+    throw new Error(`Unsupported transcript role: ${row.role}`)
+  }
+  return {
+    id: row.id,
+    sessionId: row.session_id,
+    sequence: row.position,
+    role: row.role,
+    text: row.text,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    isGenerating: row.status === "streaming",
+    hasDetails: row.has_details === 1,
+    ...(row.turn_id === null ? {} : { turnId: row.turn_id }),
+    ...(row.started_at === null ? {} : { startedAt: row.started_at }),
+    ...(row.completed_at === null ? {} : { endedAt: row.completed_at }),
+    ...(row.stop_reason === null ? {} : { stopReason: row.stop_reason }),
+    ...(row.stop_detail === null ? {} : { stopDetail: row.stop_detail }),
+    ...(row.plan_document === null ? {} : { planDocument: row.plan_document }),
+    ...(attachments === undefined ? {} : { attachments }),
+    revision: row.revision
+  }
+}
+
 const promptQueueFromRow = (row: PromptQueueRow): PromptQueueItem => {
   const attachments = parseAttachments(row.attachments)
   return {
@@ -1242,9 +2306,21 @@ const listPromptQueueSync = (
 
 const eventFromRow = (row: EventRow): EventEnvelope => ({
   id: row.id,
+  globalEventId: row.id,
   serverId: row.server_id,
   kind: row.kind,
   subjectId: row.subject_id,
+  createdAt: row.created_at,
+  payload: JSON.parse(row.payload) as unknown
+})
+
+const sessionEventFromRow = (row: SessionEventRow): EventEnvelope => ({
+  id: row.revision,
+  ...(row.global_event_id === null ? {} : { globalEventId: row.global_event_id }),
+  subjectRevision: row.revision,
+  serverId: row.server_id,
+  kind: row.kind,
+  subjectId: row.session_id,
   createdAt: row.created_at,
   payload: JSON.parse(row.payload) as unknown
 })

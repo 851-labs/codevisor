@@ -361,7 +361,8 @@ const handleRequest = async (
         kind: config.kind,
         version: config.version,
         platform: process.platform,
-        bindHost: config.host
+        bindHost: config.host,
+        features: ["canonical-chat-v1", "session-event-stream-v1", "transcript-pagination-v1"]
       })
       return
     }
@@ -1043,7 +1044,7 @@ const findSession = async (
   id: string
 ): Promise<SessionSummary | undefined> => {
   try {
-    return (await run(db.getSessionDetail(id))).session
+    return await run(db.getSessionSummary(id))
   } catch {
     return undefined
   }
@@ -1062,6 +1063,40 @@ const routeSessionActions = async (
   if (connectSessionId !== undefined && request.method === "POST") {
     const metadata = await ensureAgentSessionFor(services, fanout, config.id, connectSessionId)
     writeJson(response, 200, metadata)
+    return true
+  }
+
+  const transcriptSessionId = matchRoute(url.pathname, "/v1/sessions/:id/transcript")
+  if (transcriptSessionId !== undefined && request.method === "GET") {
+    const rawBefore = url.searchParams.get("before")
+    const before = rawBefore === null ? undefined : Number(rawBefore)
+    if (before !== undefined && (!Number.isSafeInteger(before) || before < 0)) {
+      throw new HttpFailure(400, "Invalid transcript cursor")
+    }
+    const rawLimit = url.searchParams.get("limit")
+    const limit = rawLimit === null ? 32 : Number(rawLimit)
+    if (!Number.isSafeInteger(limit) || limit < 1) {
+      throw new HttpFailure(400, "Invalid transcript page limit")
+    }
+    writeJson(
+      response,
+      200,
+      await run(services.db.getTranscriptPage(transcriptSessionId, before, limit))
+    )
+    return true
+  }
+
+  const transcriptDetails = matchRouteParams(
+    url.pathname,
+    "/v1/sessions/:id/transcript/:itemId/details"
+  )
+  if (transcriptDetails !== undefined && request.method === "GET") {
+    const { id, itemId } = transcriptDetails as { readonly id: string; readonly itemId: string }
+    const details = await run(services.db.getTranscriptItemDetails(id, itemId))
+    if (details === undefined) {
+      throw new HttpFailure(404, `Transcript item not found: ${itemId}`)
+    }
+    writeJson(response, 200, details)
     return true
   }
 
@@ -1398,12 +1433,12 @@ const sessionHistoryEventsWithSetup = async (
   if (sessionEvents.some((event) => event.kind === "worktree.setup")) {
     return sessionEvents
   }
-  const detail = await run(db.getSessionDetail(sessionId))
-  const worktreeName = detail.session.worktreeName
+  const session = await run(db.getSessionSummary(sessionId))
+  const worktreeName = session.worktreeName
   if (worktreeName === undefined) {
     return sessionEvents
   }
-  const worktree = (await run(db.listWorktrees(detail.session.projectId))).find(
+  const worktree = (await run(db.listWorktrees(session.projectId))).find(
     (candidate) => candidate.serverId === serverId && candidate.name === worktreeName
   )
   if (worktree === undefined) {
@@ -1494,9 +1529,14 @@ const handleEvents = async (
   for (const event of await run(db.listEvents(Number.isFinite(since) ? since : 0))) {
     writeSse(response, event)
   }
-  const unsubscribe = fanout.subscribe((event) => writeSse(response, event))
+  const unsubscribe = fanout.subscribe((event) => {
+    if (isGlobalShellEnvelope(event)) writeSse(response, event)
+  })
   response.on("close", unsubscribe)
 }
+
+const isGlobalShellEnvelope = (event: EventEnvelope): boolean =>
+  event.subjectRevision === undefined || event.globalEventId !== undefined
 
 const handleUpgrade = async (
   services: HerdManServerServices,
@@ -1513,6 +1553,20 @@ const handleUpgrade = async (
     if (request.method === "GET" && url.pathname === "/v1/events/socket") {
       webSocketServer.handleUpgrade(request, socket, head, (webSocket) => {
         void attachEventSocket(services.db, fanout, numberSearchParam(url, "since"), webSocket)
+      })
+      return
+    }
+
+    const sessionEventId = matchRoute(url.pathname, "/v1/sessions/:id/events/socket")
+    if (request.method === "GET" && sessionEventId !== undefined) {
+      webSocketServer.handleUpgrade(request, socket, head, (webSocket) => {
+        void attachEventSocket(
+          services.db,
+          fanout,
+          numberSearchParam(url, "since"),
+          webSocket,
+          sessionEventId
+        )
       })
       return
     }
@@ -1541,18 +1595,28 @@ const attachEventSocket = async (
   db: HerdManDatabaseService,
   fanout: EventFanout,
   since: number,
-  webSocket: WebSocket
+  webSocket: WebSocket,
+  subjectId?: string
 ): Promise<void> => {
-  let cursor = since >= Number.MAX_SAFE_INTEGER ? 0 : since
+  const liveOnly = since >= Number.MAX_SAFE_INTEGER
+  let cursor = liveOnly ? 0 : since
   let isReplaying = true
   const liveQueue: Array<EventEnvelope> = []
   const sendEvent = (event: EventEnvelope): void => {
-    if (event.id <= cursor) {
+    if (subjectId !== undefined && event.subjectId !== subjectId) {
       return
     }
-    cursor = event.id
+    // Session-only runtime traffic never enters the global shell log and must
+    // not wake every project-list subscriber.
+    if (subjectId === undefined && !isGlobalShellEnvelope(event)) {
+      return
+    }
+    const scopedId =
+      subjectId === undefined ? (event.globalEventId ?? event.id) : event.subjectRevision
+    if (scopedId === undefined || scopedId <= cursor) return
+    cursor = scopedId
     if (webSocket.readyState === WebSocket.OPEN) {
-      webSocket.send(JSON.stringify(event))
+      webSocket.send(JSON.stringify(subjectId === undefined ? event : { ...event, id: scopedId }))
     }
   }
   const unsubscribe = fanout.subscribe((event) => {
@@ -1564,8 +1628,12 @@ const attachEventSocket = async (
   })
   webSocket.on("close", unsubscribe)
   try {
-    for (const event of await run(db.listEvents(since))) {
-      sendEvent(event)
+    if (!liveOnly) {
+      const replay =
+        subjectId === undefined
+          ? await run(db.listEvents(since))
+          : await run(db.listSubjectEvents(subjectId, since))
+      for (const event of replay) sendEvent(event)
     }
     isReplaying = false
     for (const event of liveQueue) {
@@ -1675,37 +1743,38 @@ const ensureAgentSessionFor = async (
   serverId: string,
   sessionId: string
 ): Promise<AgentSessionMetadata> => {
-  const detail = await run(services.db.getSessionDetail(sessionId))
-  const project = await getProjectOrFail(services.db, detail.session.projectId)
-  const cwd = await resolveSessionCwdOrFail(
-    services,
-    serverId,
-    project,
-    detail.session.worktreeName
-  )
-  if (detail.session.agentSessionId === "") {
+  const session = await run(services.db.getSessionSummary(sessionId))
+  const project = await getProjectOrFail(services.db, session.projectId)
+  const cwd = await resolveSessionCwdOrFail(services, serverId, project, session.worktreeName)
+  if (session.agentSessionId === "") {
     const agentSessionId = await run(
       services.agents.createAgentSession(
-        detail.session.harnessId,
+        session.harnessId,
         cwd,
         sessionEventSink(services, fanout, serverId, sessionId)
       )
     )
-    const session = await run(services.db.updateSession(sessionId, { agentSessionId }))
-    await appendAndPublish(services.db, fanout, "session.updated", session.id, session)
+    const updatedSession = await run(services.db.updateSession(sessionId, { agentSessionId }))
+    await appendAndPublish(
+      services.db,
+      fanout,
+      "session.updated",
+      updatedSession.id,
+      updatedSession
+    )
     return run(
       services.agents.loadAgentSession(
-        detail.session.harnessId,
+        session.harnessId,
         agentSessionId,
         cwd,
         sessionEventSink(services, fanout, serverId, sessionId)
       )
     )
   }
-  const agentSessionId = detail.session.agentSessionId ?? sessionId
+  const agentSessionId = session.agentSessionId ?? sessionId
   return run(
     services.agents.loadAgentSession(
-      detail.session.harnessId,
+      session.harnessId,
       agentSessionId,
       cwd,
       sessionEventSink(services, fanout, serverId, sessionId)
@@ -1737,21 +1806,9 @@ const materializeRuntimeEvent = async (
   event: RuntimeEvent,
   subjectId: string
 ): Promise<void> => {
-  const conversation = conversationPayload(event.payload)
-  // Zero-length chunks are phase corrections (retro-tagging an already
-  // streamed span as commentary/final) — wire metadata, not conversation text.
-  if (event.kind === "session.output" && conversation !== undefined && conversation.text !== "") {
-    await run(
-      db.appendConversationItem(
-        subjectId,
-        conversation.role,
-        conversation.messageId,
-        conversation.text,
-        false,
-        conversation.attachments
-      )
-    )
-  }
+  // appendEvent atomically persists the session event and updates the
+  // canonical semantic chat rows. There is deliberately no second legacy
+  // conversation write here: a crash can no longer split the two stores.
   await appendAndPublish(db, fanout, event.kind, subjectId, {
     ...objectPayload(event.payload),
     serverId

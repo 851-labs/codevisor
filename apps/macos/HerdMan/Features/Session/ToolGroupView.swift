@@ -12,7 +12,7 @@ struct ToolGroupView: View {
     var autoExpanded: Bool = false
     @Environment(\.transcriptDisclosure) private var disclosureStore
 
-    // Disclosure hoisted to the session store (survives occlusion culling),
+    // Disclosure hoisted to the session store (survives lazy remounts),
     // keyed by the group's first call id (groups only append, so it's stable).
     // The seed default IS `autoExpanded`, so before any user tap the group
     // follows the work; the auto transition below writes through, and settled

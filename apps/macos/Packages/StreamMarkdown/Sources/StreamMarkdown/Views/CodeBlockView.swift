@@ -55,17 +55,10 @@ struct CodeBlockView: View {
 
             Divider()
 
-            ScrollView(.horizontal, showsIndicators: false) {
-                // The shared-cache probe makes a recycled block (scrolled out
-                // and back in a LazyVStack, which resets `highlighted`) render
-                // colored on its first frame — no plain flash, no relayout
-                // when the async highlighter would otherwise swap in.
-                Text(highlighted ?? settledCacheProbe ?? plainMemo.attributed(for: code))
-                    .font(theme.codeFont)
-                    .textSelection(.enabled)
-                    .padding(10)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
+            HorizontalCodeScrollView(
+                text: highlighted ?? settledCacheProbe ?? plainMemo.attributed(for: code),
+                foreground: theme.codeForeground
+            )
         }
         .background(theme.codeBackground)
         .clipShape(RoundedRectangle(cornerRadius: 8))
@@ -124,6 +117,183 @@ struct CodeBlockView: View {
         }
     }
 }
+
+#if canImport(AppKit)
+/// A horizontal-only code scroller that hands vertical trackpad gestures to
+/// the transcript. SwiftUI's horizontal `ScrollView` consumes both axes on
+/// macOS, so merely moving the pointer over a code block could stop the outer
+/// conversation mid-scroll.
+private struct HorizontalCodeScrollView: NSViewRepresentable {
+    let text: AttributedString
+    let foreground: Color
+
+    func makeNSView(context: Context) -> CodeScrollView {
+        let scrollView = CodeScrollView()
+        scrollView.setContent(text, foreground: foreground)
+        return scrollView
+    }
+
+    func updateNSView(_ scrollView: CodeScrollView, context: Context) {
+        scrollView.setContent(text, foreground: foreground)
+    }
+
+    func sizeThatFits(
+        _ proposal: ProposedViewSize, nsView scrollView: CodeScrollView, context: Context
+    ) -> CGSize? {
+        let contentSize = scrollView.contentFittingSize
+        let width = proposal.width.flatMap { $0.isFinite ? $0 : nil } ?? contentSize.width
+        return CGSize(width: width, height: contentSize.height)
+    }
+}
+
+@MainActor
+private final class CodeScrollView: NSScrollView {
+    private enum GestureAxis {
+        case horizontal
+        case vertical
+    }
+
+    private let codeTextView: NSTextView
+    private var gestureAxis: GestureAxis?
+    private var renderedText: AttributedString?
+    private var renderedForeground: Color?
+    private(set) var contentFittingSize = CGSize(width: 1, height: 1)
+
+    override init(frame frameRect: NSRect) {
+        let textStorage = NSTextStorage()
+        let layoutManager = NSLayoutManager()
+        textStorage.addLayoutManager(layoutManager)
+        let textContainer = NSTextContainer(
+            size: NSSize(
+                width: CGFloat.greatestFiniteMagnitude,
+                height: CGFloat.greatestFiniteMagnitude
+            )
+        )
+        textContainer.lineFragmentPadding = 0
+        textContainer.widthTracksTextView = false
+        textContainer.heightTracksTextView = false
+        layoutManager.addTextContainer(textContainer)
+        codeTextView = NSTextView(frame: .zero, textContainer: textContainer)
+
+        super.init(frame: frameRect)
+        drawsBackground = false
+        borderType = .noBorder
+        hasHorizontalScroller = false
+        hasVerticalScroller = false
+        horizontalScrollElasticity = .automatic
+        verticalScrollElasticity = .none
+        automaticallyAdjustsContentInsets = false
+        usesPredominantAxisScrolling = true
+
+        codeTextView.isEditable = false
+        codeTextView.isSelectable = true
+        codeTextView.isRichText = true
+        codeTextView.drawsBackground = false
+        codeTextView.textContainerInset = NSSize(width: 10, height: 10)
+        codeTextView.isHorizontallyResizable = true
+        codeTextView.isVerticallyResizable = true
+        codeTextView.minSize = .zero
+        codeTextView.maxSize = NSSize(
+            width: CGFloat.greatestFiniteMagnitude,
+            height: CGFloat.greatestFiniteMagnitude
+        )
+        codeTextView.focusRingType = .none
+        documentView = codeTextView
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    func setContent(_ text: AttributedString, foreground: Color) {
+        guard renderedText != text || renderedForeground != foreground else { return }
+        renderedText = text
+        renderedForeground = foreground
+
+        codeTextView.textStorage?.setAttributedString(
+            Self.nativeText(text, foreground: foreground)
+        )
+        guard let layoutManager = codeTextView.layoutManager,
+            let textContainer = codeTextView.textContainer
+        else { return }
+        layoutManager.ensureLayout(for: textContainer)
+        let used = layoutManager.usedRect(for: textContainer)
+        let size = CGSize(
+            width: max(1, ceil(used.width) + 20),
+            height: max(1, ceil(used.height) + 20)
+        )
+        contentFittingSize = size
+        if codeTextView.frame.size != size {
+            codeTextView.setFrameSize(size)
+            reflectScrolledClipView(contentView)
+        }
+    }
+
+    private static func nativeText(
+        _ text: AttributedString, foreground: Color
+    ) -> NSAttributedString {
+        let result = NSMutableAttributedString()
+        let font = NSFont.monospacedSystemFont(
+            ofSize: NSFont.preferredFont(forTextStyle: .callout).pointSize,
+            weight: .regular
+        )
+        for run in text.runs {
+            var attributes: [NSAttributedString.Key: Any] = [
+                .font: font,
+                .foregroundColor: NSColor(foreground),
+            ]
+            if let tokenColor = run.foregroundColor {
+                attributes[.foregroundColor] = NSColor(tokenColor)
+            }
+            result.append(
+                NSAttributedString(
+                    string: String(text[run.range].characters),
+                    attributes: attributes
+                )
+            )
+        }
+        return result
+    }
+
+    override func scrollWheel(with event: NSEvent) {
+        let hasGesturePhase = !event.phase.isEmpty || !event.momentumPhase.isEmpty
+        if event.phase.contains(.began) || gestureAxis == nil || !hasGesturePhase {
+            gestureAxis = preferredAxis(for: event)
+        }
+
+        if gestureAxis == .vertical, let outerScrollView = enclosingVerticalScrollView {
+            outerScrollView.scrollWheel(with: event)
+        } else {
+            super.scrollWheel(with: event)
+        }
+
+        if !hasGesturePhase || event.phase.contains(.ended) || event.phase.contains(.cancelled)
+            || event.momentumPhase.contains(.ended) || event.momentumPhase.contains(.cancelled)
+        {
+            gestureAxis = nil
+        }
+    }
+
+    private func preferredAxis(for event: NSEvent) -> GestureAxis {
+        if event.modifierFlags.contains(.shift) { return .horizontal }
+        return abs(event.scrollingDeltaY) > abs(event.scrollingDeltaX) ? .vertical : .horizontal
+    }
+
+    private var enclosingVerticalScrollView: NSScrollView? {
+        var ancestor = superview
+        while let view = ancestor {
+            if let scrollView = view as? NSScrollView, scrollView !== self,
+                scrollView.hasVerticalScroller
+            {
+                return scrollView
+            }
+            ancestor = view.superview
+        }
+        return nil
+    }
+}
+#endif
 
 /// Last-value memo for the un-highlighted fallback text. Plain class in
 /// `@State`: non-observable, and the `code` comparison is O(1) between

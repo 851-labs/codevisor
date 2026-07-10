@@ -10,6 +10,10 @@ import ACPKit
 @Observable
 final class SessionStore {
     private var controllers: [UUID: SessionController] = [:]
+    /// Tiny viewport snapshots outlive controller eviction. Observation is
+    /// intentionally disabled: scroll ticks must never invalidate the store's
+    /// sidebar/session observers.
+    @ObservationIgnored private var scrollStates: [UUID: SessionScrollState] = [:]
     private var paneGroups: [UUID: PaneGroupModel] = [:]
     private var scratchpads: [UUID: ScratchpadModel] = [:]
     /// The unsent new-chat draft. A single slot — the new-chat page is one
@@ -63,6 +67,10 @@ final class SessionStore {
         }
         controller.onAgentSessionCreated = { [weak projectList = environment.projectList] agentSessionId in
             projectList?.setAgentSessionId(agentSessionId, for: session.id)
+        }
+        controller.scrollState = scrollStates[session.id]
+        controller.onScrollStateChange = { [weak self] state in
+            self?.scrollStates[session.id] = state
         }
         controller.onTurnEnded = { [weak self] in self?.noteTurnEnded(for: session.id) }
         controllers[session.id] = controller
@@ -222,6 +230,10 @@ final class SessionStore {
     /// Registers a draft controller under a newly created session id and
     /// releases the draft slot so the next new chat starts fresh.
     func register(_ controller: SessionController, for sessionId: UUID) {
+        controller.scrollState = scrollStates[sessionId]
+        controller.onScrollStateChange = { [weak self] state in
+            self?.scrollStates[sessionId] = state
+        }
         controller.onTurnEnded = { [weak self] in self?.noteTurnEnded(for: sessionId) }
         controllers[sessionId] = controller
         if draft === controller { draft = nil }
@@ -238,6 +250,7 @@ final class SessionStore {
         scratchpads[sessionId]?.flush()
         scratchpads[sessionId] = nil
         unreadCounts[sessionId] = nil
+        scrollStates[sessionId] = nil
         draft = controller
     }
 
@@ -249,6 +262,7 @@ final class SessionStore {
         scratchpads[sessionId]?.flush()
         scratchpads[sessionId] = nil
         unreadCounts[sessionId] = nil
+        scrollStates[sessionId] = nil
         accessOrder.removeAll { $0 == sessionId }
     }
 

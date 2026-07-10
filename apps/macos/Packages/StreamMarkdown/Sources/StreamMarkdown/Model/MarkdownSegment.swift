@@ -9,6 +9,11 @@ import Foundation
 /// scoped per `Text` view, so selection can never cross the boundary between
 /// two separate `Text`s. One run → one `Text` → continuous selection.
 public enum MarkdownSegment: Sendable, Equatable {
+    /// One enormous selectable `Text` makes Core Text reflow the whole
+    /// document as it enters/leaves a lazy stack or the chat width changes.
+    /// Chunk at markdown block boundaries so long answers remain cheap to
+    /// mount and scroll. Normal responses still stay a single selectable run.
+    static let maximumTextRunCharacters = 4_096
     case textRun([MarkdownBlock])
     case block(MarkdownBlock)
 
@@ -27,16 +32,23 @@ public enum MarkdownSegment: Sendable, Equatable {
     public static func segments(from blocks: [MarkdownBlock]) -> [MarkdownSegment] {
         var result: [MarkdownSegment] = []
         var run: [MarkdownBlock] = []
+        var runCharacters = 0
 
         func flush() {
             guard !run.isEmpty else { return }
             result.append(.textRun(run))
             run = []
+            runCharacters = 0
         }
 
         for block in blocks {
             if isTextRunBlock(block) {
+                let characters = textLength(of: block)
+                if !run.isEmpty, runCharacters + characters > maximumTextRunCharacters {
+                    flush()
+                }
                 run.append(block)
+                runCharacters += characters
             } else {
                 flush()
                 result.append(.block(block))
@@ -44,5 +56,18 @@ public enum MarkdownSegment: Sendable, Equatable {
         }
         flush()
         return result
+    }
+
+    private static func textLength(of block: MarkdownBlock) -> Int {
+        switch block {
+        case let .heading(_, text), let .paragraph(text):
+            return text.count
+        case let .bulletList(items):
+            return items.reduce(0) { $0 + $1.count }
+        case let .orderedList(items):
+            return items.reduce(0) { $0 + $1.text.count }
+        case .codeBlock, .blockQuote, .table, .thematicBreak:
+            return 0
+        }
     }
 }

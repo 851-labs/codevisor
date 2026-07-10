@@ -289,6 +289,49 @@ export const ConversationItem = Schema.Struct({
 })
 export type ConversationItem = typeof ConversationItem.Type
 
+/// A lightweight, stable row in the session transcript. Historical worked
+/// details deliberately do not ride this payload; clients fetch those only
+/// when the disclosure is opened.
+export const TranscriptItem = Schema.Struct({
+  id: Schema.String,
+  sessionId: Schema.String,
+  sequence: Schema.Number,
+  role: Schema.Literals(["user", "assistant"]),
+  text: Schema.String,
+  createdAt: Schema.String,
+  updatedAt: Schema.String,
+  isGenerating: Schema.Boolean,
+  hasDetails: Schema.Boolean,
+  turnId: Schema.optional(Schema.String),
+  startedAt: Schema.optional(Schema.String),
+  endedAt: Schema.optional(Schema.String),
+  stopReason: Schema.optional(Schema.String),
+  stopDetail: Schema.optional(Schema.String),
+  planDocument: Schema.optional(Schema.String),
+  attachments: Schema.optional(Schema.Array(AttachmentRef)),
+  revision: Schema.Number
+})
+export type TranscriptItem = typeof TranscriptItem.Type
+
+/// Reverse-paginated transcript page. `items` are always oldest-to-newest for
+/// direct display; `nextBefore` is opaque to clients.
+export const TranscriptPage = Schema.Struct({
+  items: Schema.Array(TranscriptItem),
+  nextBefore: Schema.optional(Schema.String),
+  hasMore: Schema.Boolean,
+  eventCursor: Schema.Number
+})
+export type TranscriptPage = typeof TranscriptPage.Type
+
+/// The raw events assigned to one assistant turn. HerdManCore reduces this
+/// bounded set only when the user expands historical worked details.
+export const TranscriptItemDetails = Schema.Struct({
+  itemId: Schema.String,
+  revision: Schema.Number,
+  events: Schema.Array(Schema.suspend(() => EventEnvelope))
+})
+export type TranscriptItemDetails = typeof TranscriptItemDetails.Type
+
 export const PromptQueueItem = Schema.Struct({
   id: Schema.String,
   sessionId: Schema.String,
@@ -395,7 +438,16 @@ export type SetQuestionAnswerRequest = typeof SetQuestionAnswerRequest.Type
 export const HealthResponse = Schema.Struct({
   ok: Schema.Boolean,
   version: Schema.String,
-  database: Schema.Literals(["ready", "migrating"])
+  database: Schema.Literals(["ready", "migrating", "failed"]),
+  migration: Schema.optional(
+    Schema.Struct({
+      id: Schema.String,
+      name: Schema.String,
+      completed: Schema.Number,
+      total: Schema.Number,
+      error: Schema.optional(Schema.String)
+    })
+  )
 })
 export type HealthResponse = typeof HealthResponse.Type
 
@@ -405,7 +457,8 @@ export const ServerInfo = Schema.Struct({
   kind: ServerKind,
   version: Schema.String,
   platform: Schema.String,
-  bindHost: Schema.String
+  bindHost: Schema.String,
+  features: Schema.optional(Schema.Array(Schema.String))
 })
 export type ServerInfo = typeof ServerInfo.Type
 
@@ -446,6 +499,13 @@ export type EventKind = typeof EventKind.Type
 
 export const EventEnvelope = Schema.Struct({
   id: Schema.Number,
+  /// Global shell-log cursor when this event also changes project/session
+  /// metadata. Chat-only events intentionally omit it.
+  globalEventId: Schema.optional(Schema.Number),
+  /// Monotonic sequence within `subjectId`. Session-scoped streams use this
+  /// cursor so an unrelated project/session event can never invalidate a
+  /// chat's resume position.
+  subjectRevision: Schema.optional(Schema.Number),
   serverId: Schema.String,
   kind: EventKind,
   subjectId: Schema.String,
@@ -453,6 +513,16 @@ export const EventEnvelope = Schema.Struct({
   payload: Schema.Unknown
 })
 export type EventEnvelope = typeof EventEnvelope.Type
+
+export const DataUpgradeProgress = Schema.Struct({
+  state: Schema.Literals(["running", "completed", "failed"]),
+  id: Schema.String,
+  name: Schema.String,
+  completed: Schema.Number,
+  total: Schema.Number,
+  error: Schema.optional(Schema.String)
+})
+export type DataUpgradeProgress = typeof DataUpgradeProgress.Type
 
 export const TerminalCreateRequest = Schema.Struct({
   sessionId: Schema.String,
@@ -535,6 +605,8 @@ export const endpoints = [
   "GET /v1/sessions/:id/branch-diff",
   "PATCH /v1/sessions/:id",
   "DELETE /v1/sessions/:id",
+  "GET /v1/sessions/:id/transcript",
+  "GET /v1/sessions/:id/transcript/:itemId/details",
   "GET /v1/sessions/:id/events",
   "GET /v1/sessions/:id/queue",
   "PATCH /v1/sessions/:id/queue/:queueId",

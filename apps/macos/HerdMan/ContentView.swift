@@ -54,7 +54,12 @@ struct RootView: View {
 
     var body: some View {
         Group {
-            if environment.settings.hasCompletedOnboarding {
+            if let progress = environment.localServer?.dataUpgradeProgress,
+               progress.state == "running" || progress.state == "failed" {
+                DataUpgradeView(progress: progress) {
+                    Task { await environment.localServer?.ensureRunning() }
+                }
+            } else if environment.settings.hasCompletedOnboarding {
                 mainSplit
             } else {
                 OnboardingView { project in

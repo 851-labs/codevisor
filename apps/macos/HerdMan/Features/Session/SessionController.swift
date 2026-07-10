@@ -30,25 +30,37 @@ struct ComposerAttachment: Identifiable, Equatable {
     var hasVisualPreview: Bool { isImage || isPDF }
 }
 
+/// One measured settled-row height. The revision prevents a stale height from
+/// being reused if the row's content changed while it was offscreen.
+struct SessionMeasuredRow: Equatable {
+    var height: CGFloat
+    var revision: Int
+}
+
+/// Text layout depends on the actual row width and the app's typography. Keep
+/// those dimensions in the cache key so a sidebar resize cannot poison a later
+/// restoration at another width.
+struct SessionMeasurementCacheKey: Hashable {
+    /// Effective row width in half-point buckets. Sub-pixel window jitter does
+    /// not create a new cache, while a real reflow does.
+    var rowWidthHalfPoints: Int
+    var layoutFingerprint: Int
+}
+
 /// Where the transcript was scrolled when the user last looked at a session,
 /// kept on the cached controller so navigating away and back reopens the
 /// transcript at the same place instead of pinned to the bottom.
 struct SessionScrollState {
-    /// The scroll view's content offset (`contentOffset.y`) at capture time.
-    /// Only a first approximation for restoring: content above the anchor can
-    /// change height between mounts (turns collapsing, new messages), drifting
-    /// raw offsets — the item anchor below is what restores precisely.
-    var offsetY: CGFloat
-    /// The topmost visible conversation item at capture time — resolved from
-    /// the culler's height model, immune to content-above height changes.
-    var anchorItemID: UUID?
-    /// The anchor row's top relative to the viewport top at capture
-    /// (`rowTop - contentOffset`): 0 when flush with the top, negative when the
-    /// row started above the fold. Restore targets `rowTop - anchorDelta`.
-    var anchorDelta: CGFloat = 0
-    /// True when the user was reading the latest messages; reopening then
-    /// keeps the pin-to-bottom behavior (and follows new streamed output).
-    var isAtBottom: Bool
+    /// The single persisted viewport coordinate, matching ChatGPT's thread
+    /// scroll model. Zero means the latest content is visible.
+    var distanceFromBottom: CGFloat
+    /// A tiny, bounded LRU of exact settled-row measurements. Dictionary
+    /// snapshots are copy-on-write, so publishing scroll state remains O(1).
+    var measurementCaches: [SessionMeasurementCacheKey: [UUID: SessionMeasuredRow]]
+    var measurementCacheLRU: [SessionMeasurementCacheKey]
+    /// Follow state is derived from the canonical coordinate instead of being
+    /// persisted as a second value that can disagree with it.
+    var isAtBottom: Bool { distanceFromBottom <= 2 }
 }
 
 /// The facade for a session screen. Holds the composer text and harness
@@ -78,14 +90,15 @@ final class SessionController {
     /// The transcript scroll position, updated on every scroll tick and read
     /// back when the session screen remounts. Observation-ignored so the
     /// high-frequency writes don't invalidate views observing the controller.
-    @ObservationIgnored var scrollState: SessionScrollState?
-    /// Occlusion culler for the transcript — session-scoped so it survives the
-    /// screen remounting (a reopened long chat culls from the first frame).
-    /// Observation-ignored: its only observed state is per-row mount flags.
-    @ObservationIgnored let culler = TranscriptCuller()
+    @ObservationIgnored var scrollState: SessionScrollState? {
+        didSet { onScrollStateChange?(scrollState) }
+    }
+    /// SessionStore mirrors viewport state independently from the heavier
+    /// controller LRU, so browsing many chats can evict transcript models
+    /// without forgetting where the user was reading.
+    @ObservationIgnored var onScrollStateChange: ((SessionScrollState?) -> Void)?
     /// User-toggled expand/collapse state for transcript rows, hoisted out of
-    /// per-row `@State` so it survives a row's content being culled and later
-    /// remounted.
+    /// per-row `@State` so it survives lazy unmounts.
     @ObservationIgnored let disclosure = TranscriptDisclosureStore()
     /// Bumped on every user send; the session screen observes it to re-pin
     /// the transcript to the bottom (sending means "show me the newest").
@@ -194,6 +207,8 @@ final class SessionController {
     var settledConversation: [ConversationItem] { model?.settledConversation ?? [] }
     var activeItem: ConversationItem? { model?.activeItem }
     var hasActiveItem: Bool { model?.hasActiveItem ?? false }
+    var hasOlderHistory: Bool { model?.hasOlderHistory ?? false }
+    var isLoadingOlderHistory: Bool { model?.isLoadingOlderHistory ?? false }
     var queuedPrompts: [ServerPromptQueueItem] { model?.queuedPrompts ?? [] }
     var availableCommands: [AvailableCommand] { model?.availableCommands ?? [] }
     var isConnected: Bool { model != nil }
@@ -218,6 +233,15 @@ final class SessionController {
     }
     var errorMessage: String? { model?.errorMessage }
     var usage: SessionUsage? { model?.usage }
+
+    func loadOlderHistory() async {
+        await model?.loadOlderHistory()
+    }
+
+    @discardableResult
+    func loadTranscriptDetails(_ itemId: String) async -> Bool {
+        await model?.loadTranscriptDetails(itemId: itemId) ?? false
+    }
 
     // MARK: - Goals
 

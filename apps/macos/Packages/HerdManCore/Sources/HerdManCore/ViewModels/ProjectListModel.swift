@@ -13,6 +13,11 @@ public final class ProjectListModel {
 
     private let projectRepository: any ProjectRepository
     private let sessionRepository: any SessionRepository
+    /// Present only in the live app. It records the one-time handoff from the
+    /// old JSON authority to the server so legacy metadata is uploaded once,
+    /// never reconciled bidirectionally on every refresh.
+    private let legacyMigrationStore: (any PersistenceStore)?
+    private var legacyMigrationTasks: [String: Task<Void, Error>] = [:]
     private var serverClient: (any HerdManServerClienting)?
     /// Shared: `ISO8601DateFormatter()` construction is milliseconds-expensive
     /// and the import loops used to build one per imported session.
@@ -22,12 +27,14 @@ public final class ProjectListModel {
         projectRepository: any ProjectRepository,
         sessionRepository: any SessionRepository,
         selectedServerId: String = "local",
-        serverClient: (any HerdManServerClienting)? = nil
+        serverClient: (any HerdManServerClienting)? = nil,
+        legacyMigrationStore: (any PersistenceStore)? = nil
     ) {
         self.projectRepository = projectRepository
         self.sessionRepository = sessionRepository
         self.selectedServerId = selectedServerId
         self.serverClient = serverClient
+        self.legacyMigrationStore = legacyMigrationStore
         load()
         refreshFromServerIfConfigured()
     }
@@ -349,6 +356,7 @@ public final class ProjectListModel {
         // awaits would tag one machine's projects with another machine's id.
         let serverId = selectedServerId
         do {
+            try await migrateLegacyCacheIfNeeded(serverId: serverId, client: serverClient)
             let remoteProjects = try await serverClient.listProjects()
                 .compactMap { try? $0.project(serverId: serverId) }
             let remoteSessions = try await serverClient.listSessions()
@@ -362,70 +370,63 @@ public final class ProjectListModel {
             sessions = mergeSessions(local: sessions, remote: remoteSessions, serverId: serverId)
             persistProjects()
             persistSessions()
-            // Reconcile upward too: anything created while this server was
-            // unreachable (or before it ever ran) exists only in the local
-            // cache. Push it so the server — and every other client of it —
-            // catches up.
-            await pushMissingToServer(
-                knownProjectIds: Set(remoteProjects.map(\.id)),
-                knownSessionIds: Set(remoteSessions.map(\.id)),
-                serverId: serverId,
-                client: serverClient
-            )
         } catch {
-            // The local file cache remains authoritative until the server is reachable.
+            // Keep the last successful snapshot while the server is unreachable.
         }
     }
 
-    /// Pushes records the given server doesn't know yet. Takes the server id
-    /// and client as snapshots so a machine switch mid-push can't send one
-    /// machine's records to another machine's server.
-    private func pushMissingToServer(
-        knownProjectIds: Set<UUID>,
-        knownSessionIds: Set<UUID>,
+    /// The only upward reconciliation in the new architecture. Existing
+    /// installs may have records that predate the server database; upload that
+    /// snapshot once, persist a durable marker, then treat every subsequent
+    /// server snapshot as authoritative.
+    private func migrateLegacyCacheIfNeeded(
         serverId: String,
         client: any HerdManServerClienting
-    ) async {
-        let missingProjects = projects.filter {
-            $0.serverId == serverId && !knownProjectIds.contains($0.id)
+    ) async throws {
+        guard let legacyMigrationStore else { return }
+        let safeServerId = serverId.map { $0.isLetter || $0.isNumber ? $0 : "-" }
+        let key = "server-authority-v1-\(String(safeServerId))"
+        guard legacyMigrationStore.loadData(forKey: key) == nil else { return }
+        if let existing = legacyMigrationTasks[key] {
+            try await existing.value
+            return
         }
-        // Drafts (no agent session yet) stay local until their first send.
-        let missingSessions = sessions.filter {
-            $0.serverId == serverId && !$0.harnessId.isEmpty
-                && $0.agentSessionId != nil && !knownSessionIds.contains($0.id)
+
+        // Snapshot before the first await so a concurrent authoritative
+        // refresh cannot clear the legacy cache out from underneath the job.
+        let legacyProjects = projects.filter { $0.serverId == serverId }
+        let legacySessions = sessions.filter {
+            $0.serverId == serverId && !$0.harnessId.isEmpty && $0.agentSessionId != nil
         }
-        for project in missingProjects {
-            _ = try? await client.upsertProject(project)
+        let task = Task { @MainActor in
+            let knownProjects = Set(try await client.listProjects().compactMap { UUID(uuidString: $0.id) })
+            let knownSessions = Set(try await client.listSessions().compactMap { UUID(uuidString: $0.id) })
+            for project in legacyProjects where !knownProjects.contains(project.id) {
+                _ = try await client.upsertProject(project)
+            }
+            for session in legacySessions where !knownSessions.contains(session.id) {
+                _ = try await client.upsertSession(session)
+            }
+            try legacyMigrationStore.saveData(Data("completed".utf8), forKey: key)
         }
-        for session in missingSessions {
-            _ = try? await client.upsertSession(session)
-        }
+        legacyMigrationTasks[key] = task
+        defer { legacyMigrationTasks[key] = nil }
+        try await task.value
     }
 
     private func mergeProjects(local: [Project], remote: [Project], serverId: String) -> [Project] {
         let otherServers = local.filter { $0.serverId != serverId }
-        let selectedLocal = local.filter { $0.serverId == serverId }
-        var merged = Dictionary(uniqueKeysWithValues: selectedLocal.map { ($0.id, $0) })
-        for project in remote {
-            merged[project.id] = project
-        }
-        return (otherServers + merged.values).sorted { $0.createdAt > $1.createdAt }
+        return (otherServers + remote).sorted { $0.createdAt > $1.createdAt }
     }
 
     private func mergeSessions(local: [ChatSession], remote: [ChatSession], serverId: String) -> [ChatSession] {
         let otherServers = local.filter { $0.serverId != serverId }
-        let selectedLocal = local.filter { $0.serverId == serverId }
-        var merged = Dictionary(uniqueKeysWithValues: selectedLocal.map { ($0.id, $0) })
-        for session in remote {
-            merged[session.id] = session
-        }
-        return (otherServers + merged.values).sorted { ($0.updatedAt ?? $0.createdAt) > ($1.updatedAt ?? $1.createdAt) }
+        return (otherServers + remote).sorted { ($0.updatedAt ?? $0.createdAt) > ($1.updatedAt ?? $1.createdAt) }
     }
 
     /// Mirrors a record to the server it belongs to. The client at hand is the
     /// currently selected machine's, so records from another machine are NOT
-    /// pushed here — they reconcile via `pushMissingToServer` when that
-    /// machine is selected again.
+    /// pushed here.
     private func syncProject(_ project: Project) {
         guard let serverClient, project.serverId == selectedServerId else { return }
         Task { _ = try? await serverClient.upsertProject(project) }

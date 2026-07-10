@@ -243,6 +243,121 @@ struct SessionModelTests {
         #expect(user.attachments == [attachment])
     }
 
+    @Test("Paginated history opens from the newest page and hydrates details on demand")
+    func paginatedHistoryAndDeferredDetails() async {
+        let sessionId = UUID()
+        let olderId = UUID()
+        let assistantId = UUID()
+        let client = FakeSessionServerClient(sessionId: sessionId)
+        client.initialTranscriptPage = ServerTranscriptPage(
+            items: [ServerTranscriptItem(
+                id: assistantId.uuidString,
+                sessionId: sessionId.uuidString,
+                sequence: 1,
+                role: .assistant,
+                text: "Summary answer",
+                createdAt: "2026-06-30T00:00:01.000Z",
+                updatedAt: "2026-06-30T00:00:02.000Z",
+                isGenerating: false,
+                hasDetails: true,
+                turnId: "turn-1",
+                startedAt: "2026-06-30T00:00:01.000Z",
+                endedAt: "2026-06-30T00:00:02.000Z",
+                stopReason: "end_turn",
+                stopDetail: nil,
+                planDocument: nil,
+                attachments: nil,
+                revision: 4
+            )],
+            nextBefore: "1",
+            hasMore: true,
+            eventCursor: 12
+        )
+        client.olderTranscriptPage = ServerTranscriptPage(
+            items: [ServerTranscriptItem(
+                id: olderId.uuidString,
+                sessionId: sessionId.uuidString,
+                sequence: 0,
+                role: .user,
+                text: "Older question",
+                createdAt: "2026-06-30T00:00:00.000Z",
+                updatedAt: "2026-06-30T00:00:00.000Z",
+                isGenerating: false,
+                hasDetails: false,
+                turnId: nil,
+                startedAt: nil,
+                endedAt: nil,
+                stopReason: nil,
+                stopDetail: nil,
+                planDocument: nil,
+                attachments: nil,
+                revision: 1
+            )],
+            nextBefore: nil,
+            hasMore: false,
+            eventCursor: 12
+        )
+        client.transcriptDetailsByItem[assistantId.uuidString] = ServerTranscriptItemDetails(
+            itemId: assistantId.uuidString,
+            revision: 4,
+            events: [
+                ServerEventEnvelope(
+                    id: 10, serverId: "local", kind: "session.output",
+                    subjectId: sessionId.uuidString, createdAt: "2026-06-30T00:00:01.000Z",
+                    payload: .object([
+                        "sessionUpdate": .string("agent_message_chunk"),
+                        "messageId": .string("answer-1"),
+                        "content": .object(["type": .string("text"), "text": .string("Summary answer")])
+                    ])
+                ),
+                ServerEventEnvelope(
+                    id: 11, serverId: "local", kind: "session.output",
+                    subjectId: sessionId.uuidString, createdAt: "2026-06-30T00:00:01.500Z",
+                    payload: .object([
+                        "sessionUpdate": .string("tool_call"),
+                        "toolCallId": .string("tool-1"),
+                        "title": .string("Read file")
+                    ])
+                )
+            ]
+        )
+        let model = SessionModel(
+            serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
+            sessionId: sessionId.uuidString
+        )
+
+        await model.loadHistory()
+        #expect(model.conversation.count == 1)
+        #expect(model.hasOlderHistory)
+        #expect(client.transcriptPageRequests.first?.before == nil)
+        #expect(client.transcriptPageRequests.first?.limit == 8)
+        for _ in 0..<200 {
+            await Task.yield()
+            if !client.eventSinceValues.isEmpty { break }
+        }
+        #expect(client.eventSinceValues == [12])
+
+        await model.loadOlderHistory()
+        #expect(model.conversation.count == 2)
+        #expect(model.conversation.first?.id == olderId)
+        #expect(!model.hasOlderHistory)
+        #expect(client.transcriptPageRequests.last?.before == "1")
+        #expect(client.transcriptPageRequests.last?.limit == 16)
+
+        #expect(await model.loadTranscriptDetails(itemId: assistantId.uuidString))
+        guard case let .assistant(message) = model.conversation.last else {
+            Issue.record("expected hydrated assistant")
+            return
+        }
+        #expect(message.turn.finalText == .text(id: "acp:answer-1", markdown: "Summary answer"))
+        let hasToolCall = message.turn.entries.contains(where: { entry in
+            if case .tool = entry { return true }
+            return false
+        })
+        #expect(hasToolCall)
+        #expect(message.turn.deferredDetailItemId == nil)
+    }
+
     @Test("Replayed user events stamp attachments onto the optimistic echo and append remote ones")
     func userEventsCarryAttachments() async {
         let sessionId = UUID()
@@ -1552,6 +1667,7 @@ private final class FakeSessionServerClient: HerdManServerClienting, @unchecked 
     private var _cancelCount = 0
     private var _configUpdates: [(String, String)] = []
     private var _eventSinceValues: [Int] = []
+    private var _transcriptPageRequests: [(before: String?, limit: Int)] = []
     private var _goalUpdates: [(String?, GoalStatus?, TokenBudgetUpdate)] = []
     private var _goalClearCount = 0
     private var _lastBudget: Int?
@@ -1560,6 +1676,9 @@ private final class FakeSessionServerClient: HerdManServerClienting, @unchecked 
     var detailConversation: [ServerConversationItem] = []
     var detailCursor = 0
     var historyEvents: [ServerEventEnvelope] = []
+    var initialTranscriptPage: ServerTranscriptPage?
+    var olderTranscriptPage: ServerTranscriptPage?
+    var transcriptDetailsByItem: [String: ServerTranscriptItemDetails] = [:]
     /// When false, prompts are accepted without the scripted assistant echo,
     /// leaving the turn generating so tests can emit their own events.
     var echoOnPrompt = true
@@ -1587,6 +1706,10 @@ private final class FakeSessionServerClient: HerdManServerClienting, @unchecked 
 
     var eventSinceValues: [Int] {
         lock.withLock { _eventSinceValues }
+    }
+
+    var transcriptPageRequests: [(before: String?, limit: Int)] {
+        lock.withLock { _transcriptPageRequests }
     }
 
     var goalUpdates: [(String?, GoalStatus?, TokenBudgetUpdate)] {
@@ -1642,6 +1765,20 @@ private final class FakeSessionServerClient: HerdManServerClienting, @unchecked 
             conversation: detailConversation,
             eventCursor: detailCursor
         )
+    }
+
+    func transcriptPage(id: UUID, before: String?, limit: Int) async throws -> ServerTranscriptPage {
+        lock.withLock { _transcriptPageRequests.append((before, limit)) }
+        if before == nil, let initialTranscriptPage { return initialTranscriptPage }
+        if before != nil, let olderTranscriptPage { return olderTranscriptPage }
+        throw HerdManServerClientError.httpStatus(404, "")
+    }
+
+    func transcriptItemDetails(id: UUID, itemId: String) async throws -> ServerTranscriptItemDetails {
+        guard let details = transcriptDetailsByItem[itemId] else {
+            throw HerdManServerClientError.httpStatus(404, "")
+        }
+        return details
     }
 
     func upsertSession(_ session: ChatSession) async throws -> ServerSession { fatalError("unused") }

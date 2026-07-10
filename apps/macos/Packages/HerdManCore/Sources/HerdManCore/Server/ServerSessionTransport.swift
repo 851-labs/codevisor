@@ -7,6 +7,13 @@ public struct ServerSessionSnapshot: Equatable, Sendable {
     public var eventCursor: Int
 }
 
+public struct TranscriptHistoryPage: Equatable, Sendable {
+    public var conversation: [ConversationItem]
+    public var nextBefore: String?
+    public var hasMore: Bool
+    public var eventCursor: Int
+}
+
 public enum ServerSessionStreamEvent: Equatable, Sendable {
     case update(SessionUpdate)
     /// A persisted user message. Carried outside `SessionUpdate` because the
@@ -169,6 +176,27 @@ public struct ServerSessionTransport: Sendable {
         )
     }
 
+    public func promptQueue() async throws -> [ServerPromptQueueItem] {
+        try await client.promptQueue(id: sessionId)
+    }
+
+    /// Lightweight reverse-paginated history. Historical worked details are
+    /// represented by a deferred item id and fetched only on expansion.
+    public func transcriptPage(before: String? = nil, limit: Int = 32) async throws -> TranscriptHistoryPage {
+        let page = try await client.transcriptPage(id: sessionId, before: before, limit: limit)
+        return TranscriptHistoryPage(
+            conversation: page.items.map(Self.conversationItem(from:)),
+            nextBefore: page.nextBefore,
+            hasMore: page.hasMore,
+            eventCursor: page.eventCursor
+        )
+    }
+
+    public func transcriptDetails(itemId: String) async throws -> [ServerSessionStreamEvent] {
+        let details = try await client.transcriptItemDetails(id: sessionId, itemId: itemId)
+        return details.events.flatMap(Self.sessionStreamEvents(from:))
+    }
+
     public func updates(since: Int = Self.liveOnlyEventCursor) -> AsyncStream<SessionUpdate> {
         AsyncStream { continuation in
             let task = Task {
@@ -206,10 +234,30 @@ public struct ServerSessionTransport: Sendable {
         AsyncThrowingStream { continuation in
             let task = Task {
                 do {
-                    for try await event in client.eventStream(since: since) {
-                        guard event.subjectId.caseInsensitiveCompare(sessionId.uuidString) == .orderedSame else {
-                            continue
+                    for try await event in client.sessionEventStream(id: sessionId, since: since) {
+                        for update in Self.sessionStreamEvents(from: event) {
+                            continuation.yield(update)
                         }
+                    }
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+            continuation.onTermination = { _ in task.cancel() }
+        }
+    }
+
+    /// Compatibility path for servers that predate the canonical transcript
+    /// endpoint and therefore also lack the session-scoped WebSocket.
+    public func legacyStreamEvents(
+        since: Int
+    ) -> AsyncThrowingStream<ServerSessionStreamEvent, any Error> {
+        AsyncThrowingStream { continuation in
+            let task = Task {
+                do {
+                    for try await event in client.eventStream(since: since) where
+                        event.subjectId.caseInsensitiveCompare(sessionId.uuidString) == .orderedSame {
                         for update in Self.sessionStreamEvents(from: event) {
                             continuation.yield(update)
                         }
@@ -260,6 +308,40 @@ public struct ServerSessionTransport: Sendable {
         }
         flushAssistant()
         return conversation
+    }
+
+    private static func conversationItem(from item: ServerTranscriptItem) -> ConversationItem {
+        let id = uuid(from: item.id)
+        switch item.role {
+        case .user:
+            return .user(UserMessage(
+                id: id,
+                text: item.text,
+                attachments: (item.attachments ?? []).map(\.attachment)
+            ))
+        case .assistant:
+            let textId = "summary:\(item.id)"
+            let entries: [TranscriptEntry] = item.text.isEmpty ? [] : [.text(id: textId, markdown: item.text)]
+            let turn = AssistantTurn(
+                entries: entries,
+                isGenerating: item.isGenerating,
+                isThinking: item.isGenerating && item.text.isEmpty,
+                stopReason: item.stopReason.flatMap(StopReason.init(rawValue:)),
+                stopDetail: item.stopDetail,
+                planDocument: item.planDocument,
+                startedAt: item.startedAt.flatMap(parseServerDate),
+                endedAt: item.endedAt.flatMap(parseServerDate),
+                textPhases: item.text.isEmpty ? [:] : [textId: .final],
+                deferredDetailItemId: item.hasDetails ? item.id : nil,
+                hasDeferredWorkedDetails: item.hasDetails,
+                detailRevision: item.revision
+            )
+            return .assistant(AssistantMessage(id: id, turn: turn))
+        }
+    }
+
+    private static func parseServerDate(_ value: String) -> Date? {
+        try? Date.ISO8601FormatStyle(includingFractionalSeconds: true).parse(value)
     }
 
     private static func uuid(from id: String) -> UUID {

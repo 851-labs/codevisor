@@ -34,13 +34,10 @@ function readRememberedDefaults(): RememberedComposerDefaults {
     const record = value as Record<string, unknown>
     return {
       selectedHarnessId:
-        typeof record["selectedHarnessId"] === "string"
-          ? record["selectedHarnessId"]
-          : undefined,
+        typeof record["selectedHarnessId"] === "string" ? record["selectedHarnessId"] : undefined,
       runInWorktree: record["runInWorktree"] === true,
       configByHarness:
-        record["configByHarness"] != null &&
-        typeof record["configByHarness"] === "object"
+        record["configByHarness"] != null && typeof record["configByHarness"] === "object"
           ? (record["configByHarness"] as Record<string, Record<string, string>>)
           : {}
     }

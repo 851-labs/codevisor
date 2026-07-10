@@ -32,15 +32,17 @@ describe("new-chat draft state", () => {
       isGoalComposerArmed: true,
       error: "retrying",
       setupWorktreeId: "worktree-1",
-      setupPhases: [{
-        id: "phase-1",
-        activeTitle: "Setting up worktree",
-        completedTitle: "Set up worktree",
-        failedTitle: "Could not set up worktree",
-        startedAt: "2026-07-09T00:00:00.000Z",
-        outcome: "running" as const,
-        logs: []
-      }]
+      setupPhases: [
+        {
+          id: "phase-1",
+          activeTitle: "Setting up worktree",
+          completedTitle: "Set up worktree",
+          failedTitle: "Could not set up worktree",
+          startedAt: "2026-07-09T00:00:00.000Z",
+          outcome: "running" as const,
+          logs: []
+        }
+      ]
     }
 
     expect(

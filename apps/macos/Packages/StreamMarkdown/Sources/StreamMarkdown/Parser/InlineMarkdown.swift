@@ -41,12 +41,12 @@ public enum InlineMarkdown {
                 continue
             }
             piece.font = theme.inlineCodeFont
-            piece[InlineCodeChipKey.self] = true
+            piece.backgroundColor = theme.inlineCodeBackground
             // Narrow no-break spaces carry the chip background slightly past
             // the glyphs without allowing a line break between pad and code.
             var pad = AttributedString("\u{202F}")
             pad.font = theme.inlineCodeFont
-            pad[InlineCodeChipKey.self] = true
+            pad.backgroundColor = theme.inlineCodeBackground
             result += pad + piece + pad
         }
         return result

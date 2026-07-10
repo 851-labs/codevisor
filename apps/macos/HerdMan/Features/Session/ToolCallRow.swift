@@ -34,8 +34,7 @@ struct ToolCallRow: View {
         totalsCache.totals(for: call)
     }
 
-    // Disclosure state hoisted to the session store (survives occlusion
-    // culling); tool cards always seed collapsed.
+    // Disclosure state survives lazy row unmounts; tool cards seed collapsed.
     private var store: TranscriptDisclosureStore { disclosureStore ?? .previews }
     private var disclosureKey: TranscriptDisclosureStore.Key { .toolCall(call.toolCallId) }
     private var isExpanded: Bool { store.isExpanded(disclosureKey, default: false) }

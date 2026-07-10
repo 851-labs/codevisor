@@ -293,7 +293,8 @@ export function Composer({
             {chips}
             <span className="flex-1" />
             <UsageRingButton usage={usage} />
-            {isSending && onStop != null &&
+            {isSending &&
+              onStop != null &&
               (isCancelling ? (
                 <div
                   role="status"

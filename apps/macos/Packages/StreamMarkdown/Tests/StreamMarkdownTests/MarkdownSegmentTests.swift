@@ -32,6 +32,20 @@ struct MarkdownSegmentTests {
         ])
     }
 
+    @Test("Large text documents split into bounded layout runs")
+    func largeTextRunsSplitAtBlockBoundaries() {
+        let blocks: [MarkdownBlock] = [
+            .paragraph(String(repeating: "a", count: 3_000)),
+            .paragraph(String(repeating: "b", count: 3_000)),
+            .paragraph("tail"),
+        ]
+
+        #expect(MarkdownSegment.segments(from: blocks) == [
+            .textRun([blocks[0]]),
+            .textRun([blocks[1], blocks[2]]),
+        ])
+    }
+
     @Test("Standalone non-text blocks stay standalone")
     func standaloneNonTextBlocks() {
         let table = MarkdownBlock.table(headers: ["h"], alignments: [.none], rows: [["r"]])

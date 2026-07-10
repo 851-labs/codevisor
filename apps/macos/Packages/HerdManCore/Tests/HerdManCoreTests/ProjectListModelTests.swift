@@ -76,9 +76,8 @@ struct ProjectListModelTests {
         }
     }
 
-    @Test("Server refresh pushes local-only records up to the server")
-    func serverRefreshPushesLocalOnlyRecords() async throws {
-        // Created while no server was reachable: cache-only until a refresh.
+    @Test("Server refresh replaces stale local records without pushing them back")
+    func serverRefreshUsesServerAuthority() async throws {
         let (model, _, _) = makeModel()
         let project = model.addProject(folderURL: URL(fileURLWithPath: "/tmp/offline"))
         let session = model.newSession(in: project, title: "Offline chat", harnessId: "codex", syncToServer: false)
@@ -87,16 +86,46 @@ struct ProjectListModelTests {
         let fakeServer = FakeServerClient()
         model.selectServer(serverId: "local", serverClient: fakeServer)
 
-        var pushed = false
-        for _ in 0..<50 where !pushed {
-            let snapshot = await fakeServer.snapshot()
-            pushed = snapshot.upsertedProjectIDs.contains(project.id.uuidString)
-                && snapshot.upsertedSessionIDs.contains(session.id.uuidString)
-            if !pushed {
-                try await Task.sleep(nanoseconds: 10_000_000)
-            }
+        try await waitUntil { model.projects.isEmpty && model.sessions.isEmpty }
+        let snapshot = await fakeServer.snapshot()
+        #expect(!snapshot.upsertedProjectIDs.contains(project.id.uuidString))
+        #expect(!snapshot.upsertedSessionIDs.contains(session.id.uuidString))
+    }
+
+    @Test("Legacy JSON metadata is uploaded exactly once before server authority takes over")
+    func legacyCacheMigratesOnce() async throws {
+        let project = Project.fromFolder(URL(fileURLWithPath: "/tmp/legacy-project"))
+        let session = ChatSession(
+            projectId: project.id,
+            harnessId: "codex",
+            agentSessionId: "legacy-agent-session",
+            title: "Legacy chat"
+        )
+        let projectStore = InMemoryStore()
+        let sessionStore = InMemoryStore()
+        let migrationStore = InMemoryStore()
+        DefaultProjectRepository(store: projectStore).save([project])
+        DefaultSessionRepository(store: sessionStore).save([session])
+        let server = FakeServerClient()
+        let model = ProjectListModel(
+            projectRepository: DefaultProjectRepository(store: projectStore),
+            sessionRepository: DefaultSessionRepository(store: sessionStore),
+            serverClient: server,
+            legacyMigrationStore: migrationStore
+        )
+
+        try await waitUntil {
+            migrationStore.loadData(forKey: "server-authority-v1-local") != nil
         }
-        #expect(pushed, "local-only project and session should be upserted to the server")
+        var snapshot = await server.snapshot()
+        #expect(snapshot.upsertedProjectIDs == [project.id.uuidString])
+        #expect(snapshot.upsertedSessionIDs == [session.id.uuidString])
+        #expect(migrationStore.loadData(forKey: "server-authority-v1-local") != nil)
+
+        await model.refreshFromServer()
+        snapshot = await server.snapshot()
+        #expect(snapshot.upsertedProjectIDs == [project.id.uuidString])
+        #expect(snapshot.upsertedSessionIDs == [session.id.uuidString])
     }
 
     @Test("Server refresh is scoped to the selected machine")
