@@ -532,10 +532,12 @@ function rawUpdateEvents(payload: Record<string, unknown>): SessionStreamEvent[]
 function textUpdatesFrom(payload: Record<string, unknown>): SessionStreamEvent[] {
   const role = payload.role
   const text = payload.text
-  if (typeof role !== "string" || typeof text !== "string" || text === "") return []
+  if (typeof role !== "string" || typeof text !== "string") return []
   if (role !== "assistant" && role !== "user") return []
   const messageId = stringOrUndefined(payload.messageId)
   const attachments = attachmentsFrom(payload.attachments)
+  if (role === "assistant" && text === "") return []
+  if (role === "user" && text === "" && attachments == null) return []
   return [{ type: "textChunk", role, text, messageId, attachments }]
 }
 

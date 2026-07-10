@@ -55,6 +55,29 @@ describe("sessionStreamEvents", () => {
     ])
   })
 
+  it("keeps attachment-only user output", () => {
+    const attachment = {
+      fileId: "file-only",
+      name: "screenshot.png",
+      mimeType: "image/png",
+      sizeBytes: 2048,
+      kind: "image" as const
+    }
+    expect(
+      sessionStreamEvents(
+        envelope("session.output", { role: "user", text: "", attachments: [attachment] })
+      )
+    ).toEqual([
+      {
+        type: "textChunk",
+        role: "user",
+        text: "",
+        messageId: undefined,
+        attachments: [attachment]
+      }
+    ])
+  })
+
   it("drops empty and system output", () => {
     expect(
       sessionStreamEvents(envelope("session.output", { role: "assistant", text: "" }))

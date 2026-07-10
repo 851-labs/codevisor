@@ -954,6 +954,7 @@ function TranscriptStates() {
             text="Please compare this long path-like token inside the bubble: /Users/alexandru/repos/851-labs/herdman/apps/web/src/features/session/Transcript.tsx?with=a-very-long-query-string"
             attachments={userAttachments}
           />
+          <UserMessage text="" attachments={userAttachments} />
           <MarkdownTurnFixture />
           <ToolActivityStatesFixture />
           <TerminalTurnStatesFixture />

@@ -257,6 +257,20 @@ describe("replaySessionEvents", () => {
       text: "Look at this",
       attachments: [attachment]
     })
+
+    const attachmentOnly = replaySessionEvents(detail(), [
+      event(1, {
+        role: "user",
+        text: "",
+        attachments: [attachment]
+      })
+    ])
+    expect(attachmentOnly.conversation).toHaveLength(1)
+    expect(attachmentOnly.conversation[0]).toMatchObject({
+      role: "user",
+      text: "",
+      attachments: [attachment]
+    })
   })
 
   it("clears main thinking state when a turn settles", () => {
