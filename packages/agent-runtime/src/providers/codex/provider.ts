@@ -28,6 +28,7 @@ import {
   type AgentSessionHandle,
   type CreatedAgentSession,
   type HarnessDefinition,
+  type HarnessAccountContext,
   type LoadedAgentSession,
   type PromptInput,
   type ProviderEnvironment,
@@ -290,9 +291,17 @@ export const makeCodexProvider = (
     throw new Error(`${binary} not found on PATH or in the Codex app`)
   }
 
-  const connect = async (definition: HarnessDefinition, cwd: string): Promise<CodexClient> => {
+  const connect = async (
+    definition: HarnessDefinition,
+    cwd: string,
+    account?: HarnessAccountContext
+  ): Promise<CodexClient> => {
     const command = locateCodex(definition)
-    const client = await connector({ command, cwd, env: environment.env })
+    const client = await connector({
+      command,
+      cwd,
+      env: { ...environment.env, ...account?.env }
+    })
     await client.request("initialize", {
       // experimentalApi unlocks turn/start.collaborationMode (Plan mode) and
       // item/tool/requestUserInput.
@@ -308,9 +317,10 @@ export const makeCodexProvider = (
     definition: HarnessDefinition,
     cwd: string,
     emit: RuntimeEmit,
-    resumeThreadId: string | undefined
+    resumeThreadId: string | undefined,
+    account?: HarnessAccountContext
   ): Promise<CodexSession> => {
-    const client = await connect(definition, cwd)
+    const client = await connect(definition, cwd, account)
     let response: { thread?: { id?: string }; model?: string }
     if (resumeThreadId === undefined) {
       response = await client.request("thread/start", { cwd })
@@ -635,9 +645,14 @@ export const makeCodexProvider = (
   })
 
   return {
-    createSession: (definition, cwd, emit): Effect.Effect<CreatedAgentSession, AgentRuntimeError> =>
+    createSession: (
+      definition,
+      cwd,
+      emit,
+      account
+    ): Effect.Effect<CreatedAgentSession, AgentRuntimeError> =>
       adapterPromise("createSession", async () => {
-        const session = await startSession(definition, cwd, emit, undefined)
+        const session = await startSession(definition, cwd, emit, undefined, account)
         return {
           handle: handleFor(session),
           metadata: {
@@ -653,10 +668,11 @@ export const makeCodexProvider = (
       definition,
       agentSessionId,
       cwd,
-      emit
+      emit,
+      account
     ): Effect.Effect<LoadedAgentSession, AgentRuntimeError> =>
       adapterPromise("loadSession", async () => {
-        const session = await startSession(definition, cwd, emit, agentSessionId)
+        const session = await startSession(definition, cwd, emit, agentSessionId, account)
         return {
           handle: handleFor(session),
           metadata: {

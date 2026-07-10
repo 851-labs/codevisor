@@ -17,6 +17,52 @@ export const HarnessReadiness = Schema.Struct({
 })
 export type HarnessReadiness = typeof HarnessReadiness.Type
 
+export const HarnessAuthState = Schema.Literals([
+  "checking",
+  "authenticated",
+  "unauthenticated",
+  "expired",
+  "notRequired",
+  "unavailable",
+  "error"
+])
+export type HarnessAuthState = typeof HarnessAuthState.Type
+
+export const HarnessAuthMethod = Schema.Struct({
+  id: Schema.String,
+  name: Schema.String,
+  description: Schema.optional(Schema.String),
+  kind: Schema.Literals(["browser", "deviceCode", "terminal", "agent", "apiKey"])
+})
+export type HarnessAuthMethod = typeof HarnessAuthMethod.Type
+
+export const HarnessAccount = Schema.Struct({
+  id: Schema.String,
+  harnessId: Schema.String,
+  profileKind: Schema.Literals(["default", "managed"]),
+  label: Schema.String,
+  email: Schema.optional(Schema.String),
+  organizationId: Schema.optional(Schema.String),
+  authMethod: Schema.optional(Schema.String),
+  authState: HarnessAuthState,
+  isActive: Schema.Boolean,
+  canLogin: Schema.Boolean,
+  canLogout: Schema.Boolean,
+  lastCheckedAt: Schema.optional(Schema.String),
+  detail: Schema.optional(Schema.String)
+})
+export type HarnessAccount = typeof HarnessAccount.Type
+
+export const HarnessAuth = Schema.Struct({
+  state: HarnessAuthState,
+  activeAccountId: Schema.optional(Schema.String),
+  accounts: Schema.Array(HarnessAccount),
+  loginMethods: Schema.Array(HarnessAuthMethod),
+  supportsMultipleAccounts: Schema.Boolean,
+  detail: Schema.optional(Schema.String)
+})
+export type HarnessAuth = typeof HarnessAuth.Type
+
 export const Harness = Schema.Struct({
   id: Schema.String,
   name: Schema.String,
@@ -24,12 +70,63 @@ export const Harness = Schema.Struct({
   source: Schema.String,
   launchKind: Schema.Literals(["executable", "npx", "uvx", "unknown"]),
   enabled: Schema.Boolean,
+  /// Persisted user preference. `enabled` is the effective value after
+  /// installation and authentication gates have been applied. Optional for
+  /// compatibility with older HerdMan servers and cached client models.
+  desiredEnabled: Schema.optional(Schema.Boolean),
   readiness: HarnessReadiness,
+  /// Harness-owned authentication state. Optional while talking to servers
+  /// that predate account management.
+  auth: Schema.optional(HarnessAuth),
   /// Copyable shell command that installs the harness CLI; present only for
   /// harnesses with a well-known installer.
   installHint: Schema.optional(Schema.String)
 })
 export type Harness = typeof Harness.Type
+
+export const CreateHarnessAccountRequest = Schema.Struct({
+  label: Schema.optional(Schema.String)
+})
+export type CreateHarnessAccountRequest = typeof CreateHarnessAccountRequest.Type
+
+export const UpdateHarnessAccountRequest = Schema.Struct({
+  label: Schema.optional(Schema.String)
+})
+export type UpdateHarnessAccountRequest = typeof UpdateHarnessAccountRequest.Type
+
+export const StartHarnessLoginRequest = Schema.Struct({
+  methodId: Schema.optional(Schema.String),
+  apiKey: Schema.optional(Schema.String)
+})
+export type StartHarnessLoginRequest = typeof StartHarnessLoginRequest.Type
+
+export const HarnessAuthFlow = Schema.Union([
+  Schema.Struct({
+    id: Schema.String,
+    accountId: Schema.String,
+    kind: Schema.Literal("browser"),
+    url: Schema.String
+  }),
+  Schema.Struct({
+    id: Schema.String,
+    accountId: Schema.String,
+    kind: Schema.Literal("deviceCode"),
+    verificationUrl: Schema.String,
+    userCode: Schema.String
+  }),
+  Schema.Struct({
+    id: Schema.String,
+    accountId: Schema.String,
+    kind: Schema.Literal("terminal"),
+    terminalId: Schema.String
+  }),
+  Schema.Struct({
+    id: Schema.String,
+    accountId: Schema.String,
+    kind: Schema.Literal("complete")
+  })
+])
+export type HarnessAuthFlow = typeof HarnessAuthFlow.Type
 
 export const UpdateHarnessRequest = Schema.Struct({
   enabled: Schema.Boolean
@@ -238,6 +335,7 @@ export const SessionSummary = Schema.Struct({
   projectId: Schema.String,
   serverId: Schema.String,
   harnessId: Schema.String,
+  harnessAccountId: Schema.optional(Schema.String),
   agentSessionId: Schema.optional(Schema.String),
   title: Schema.String,
   origin: SessionOrigin,
@@ -354,6 +452,7 @@ export const CreateSessionRequest = Schema.Struct({
   id: Schema.optional(Schema.String),
   projectId: Schema.String,
   harnessId: Schema.String,
+  harnessAccountId: Schema.optional(Schema.String),
   agentSessionId: Schema.optional(Schema.String),
   /// Create only the HerdMan session row. The server starts and persists the
   /// agent session on the first prompt/config/goal action.
@@ -491,6 +590,10 @@ export const EventKind = Schema.Literals([
   "session.output",
   "session.queue.updated",
   "session.error",
+  "session.authRequired",
+  "harness.auth.updated",
+  "harness.account.updated",
+  "harness.authFlow.updated",
   "terminal.output",
   "terminal.exit",
   "update.changed"
@@ -530,6 +633,7 @@ export const TerminalCreateRequest = Schema.Struct({
   cols: Schema.Number,
   rows: Schema.Number,
   shell: Schema.optional(Schema.String),
+  args: Schema.optional(Schema.Array(Schema.String)),
   /** Attach to an existing (possibly exited) terminal under `sessionId`
    *  without ever spawning a shell — used for agent-owned background-task
    *  terminals, where the process lifecycle belongs to the agent runtime.
@@ -598,7 +702,17 @@ export const endpoints = [
   "GET /v1/projects/:id/worktrees",
   "POST /v1/projects/:id/worktrees",
   "GET /v1/harnesses",
+  "POST /v1/harnesses/auth/refresh",
   "PATCH /v1/harnesses/:id",
+  "GET /v1/harnesses/:id/accounts",
+  "POST /v1/harnesses/:id/accounts",
+  "PATCH /v1/harnesses/:id/accounts/:accountId",
+  "DELETE /v1/harnesses/:id/accounts/:accountId",
+  "POST /v1/harnesses/:id/accounts/:accountId/activate",
+  "POST /v1/harnesses/:id/accounts/:accountId/auth/probe",
+  "POST /v1/harnesses/:id/accounts/:accountId/login",
+  "DELETE /v1/harnesses/:id/accounts/:accountId/login/:flowId",
+  "POST /v1/harnesses/:id/accounts/:accountId/logout",
   "GET /v1/sessions",
   "POST /v1/sessions",
   "GET /v1/sessions/:id",

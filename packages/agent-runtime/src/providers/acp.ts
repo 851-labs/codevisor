@@ -37,6 +37,7 @@ import {
   type AgentSessionMetadata,
   type CreatedAgentSession,
   type HarnessDefinition,
+  type HarnessAccountContext,
   type LoadedAgentSession,
   type PromptInput,
   type ProviderEnvironment,
@@ -83,6 +84,21 @@ export interface AcpAgentConnection {
     questionId: string,
     answer: QuestionAnswer
   ) => Effect.Effect<void, AgentRuntimeError>
+  readonly probeAuth: (cwd: string) => Effect.Effect<
+    {
+      readonly state: "authenticated" | "unauthenticated" | "notRequired" | "error"
+      readonly methods: ReadonlyArray<{
+        readonly id: string
+        readonly name: string
+        readonly description?: string
+      }>
+      readonly canLogout: boolean
+      readonly detail?: string
+    },
+    AgentRuntimeError
+  >
+  readonly authenticate: (methodId: string) => Effect.Effect<void, AgentRuntimeError>
+  readonly logout: Effect.Effect<void, AgentRuntimeError>
   readonly close: Effect.Effect<void, AgentRuntimeError>
 }
 
@@ -174,7 +190,8 @@ export const makeAcpProvider = (
   const connect = (
     definition: HarnessDefinition,
     cwd: string,
-    emit: RuntimeEmit
+    emit: RuntimeEmit,
+    account?: HarnessAccountContext
   ): Effect.Effect<AcpAgentConnection, AgentRuntimeError> =>
     Effect.gen(function* () {
       const launch = yield* runtimeEffect("resolveHarness", () => {
@@ -189,7 +206,7 @@ export const makeAcpProvider = (
           args: launch.args,
           command: launch.command,
           cwd,
-          env: environment.env,
+          env: { ...environment.env, ...account?.env },
           harnessId: definition.id
         },
         emit
@@ -247,9 +264,14 @@ export const makeAcpProvider = (
       resolveLaunch(definition, environment) === undefined
         ? unavailableReadiness(definition, environment)
         : { state: "ready" },
-    createSession: (definition, cwd, emit): Effect.Effect<CreatedAgentSession, AgentRuntimeError> =>
+    createSession: (
+      definition,
+      cwd,
+      emit,
+      account
+    ): Effect.Effect<CreatedAgentSession, AgentRuntimeError> =>
       Effect.gen(function* () {
-        const connection = yield* connect(definition, cwd, emit)
+        const connection = yield* connect(definition, cwd, emit, account)
         const metadata = yield* connection.createSession(cwd)
         return { handle: handleFor(connection, metadata.sessionId, emit), metadata }
       }),
@@ -257,12 +279,47 @@ export const makeAcpProvider = (
       definition,
       agentSessionId,
       cwd,
-      emit
+      emit,
+      account
     ): Effect.Effect<LoadedAgentSession, AgentRuntimeError> =>
       Effect.gen(function* () {
-        const connection = yield* connect(definition, cwd, emit)
+        const connection = yield* connect(definition, cwd, emit, account)
         const sessionId = yield* connection.loadSession(agentSessionId, cwd)
         return { handle: handleFor(connection, sessionId, emit), sessionId }
+      }),
+    probeAuth: (definition, account) =>
+      Effect.gen(function* () {
+        const connection = yield* connect(
+          definition,
+          process.cwd(),
+          () => Promise.resolve(),
+          account
+        )
+        return yield* connection
+          .probeAuth(process.cwd())
+          .pipe(Effect.ensuring(connection.close.pipe(Effect.ignoreCause)))
+      }),
+    authenticate: (definition, methodId, account) =>
+      Effect.gen(function* () {
+        const connection = yield* connect(
+          definition,
+          process.cwd(),
+          () => Promise.resolve(),
+          account
+        )
+        yield* connection
+          .authenticate(methodId)
+          .pipe(Effect.ensuring(connection.close.pipe(Effect.ignoreCause)))
+      }),
+    logout: (definition, account) =>
+      Effect.gen(function* () {
+        const connection = yield* connect(
+          definition,
+          process.cwd(),
+          () => Promise.resolve(),
+          account
+        )
+        yield* connection.logout.pipe(Effect.ensuring(connection.close.pipe(Effect.ignoreCause)))
       })
   }
 }
@@ -438,7 +495,15 @@ export const makeStdioAcpConnector = (
           child.kill()
         },
         initialized?.agentCapabilities?.promptCapabilities ?? {},
-        { answerQuestion, cancelQuestions }
+        { answerQuestion, cancelQuestions },
+        {
+          methods: (initialized?.authMethods ?? []).map((method) => ({
+            id: method.id,
+            name: method.name,
+            ...(method.description == null ? {} : { description: method.description })
+          })),
+          canLogout: initialized?.agentCapabilities?.auth?.logout != null
+        }
       )
     })
 })
@@ -492,12 +557,22 @@ interface AcpQuestionControls {
   readonly cancelQuestions: (sessionId: string | undefined) => void
 }
 
+interface AcpAuthControls {
+  readonly methods: ReadonlyArray<{
+    readonly id: string
+    readonly name: string
+    readonly description?: string
+  }>
+  readonly canLogout: boolean
+}
+
 const sdkConnection = (
   connection: acp.ClientConnection,
   stderr: () => string,
   terminate: () => void = () => undefined,
   promptCapabilities: AcpPromptCapabilities = {},
-  questions?: AcpQuestionControls
+  questions?: AcpQuestionControls,
+  auth: AcpAuthControls = { methods: [], canLogout: false }
 ): AcpAgentConnection => {
   connection.closed.catch(() => undefined)
 
@@ -506,6 +581,44 @@ const sdkConnection = (
   const modelStates = new Map<string, AcpModelState>()
 
   return {
+    probeAuth: (cwd) =>
+      adapterPromise("probeAuth", async () => {
+        try {
+          await connection.agent.request(acp.methods.agent.session.new, { cwd, mcpServers: [] })
+          return {
+            state:
+              auth.methods.length === 0 ? ("notRequired" as const) : ("authenticated" as const),
+            methods: auth.methods,
+            canLogout: auth.canLogout
+          }
+        } catch (cause) {
+          const error = cause as { code?: number; message?: string }
+          if (
+            error.code === -32000 ||
+            error.message?.toLowerCase().includes("authentication required")
+          ) {
+            return {
+              state: "unauthenticated" as const,
+              methods: auth.methods,
+              canLogout: auth.canLogout
+            }
+          }
+          return {
+            state: "error" as const,
+            methods: auth.methods,
+            canLogout: auth.canLogout,
+            detail: cause instanceof Error ? cause.message : String(cause)
+          }
+        }
+      }),
+    authenticate: (methodId) =>
+      adapterPromise("authenticate", async () => {
+        await connection.agent.request(acp.methods.agent.authenticate, { methodId })
+      }),
+    logout: adapterPromise("logout", async () => {
+      if (!auth.canLogout) throw new Error("ACP agent did not advertise logout support")
+      await connection.agent.request(acp.methods.agent.logout, {})
+    }),
     ...(questions === undefined
       ? {}
       : {

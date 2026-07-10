@@ -37,3 +37,12 @@
 [submodule ".repos/typescript-sdk"]
 	path = .repos/typescript-sdk
 	url = https://github.com/agentclientprotocol/typescript-sdk.git
+[submodule ".repos/codex-lb"]
+	path = .repos/codex-lb
+	url = https://github.com/Soju06/codex-lb.git
+[submodule ".repos/claude-swap"]
+	path = .repos/claude-swap
+	url = https://github.com/realiti4/claude-swap.git
+[submodule ".repos/codex-multi-auth"]
+	path = .repos/codex-multi-auth
+	url = https://github.com/ndycode/codex-multi-auth.git

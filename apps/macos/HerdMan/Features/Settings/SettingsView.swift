@@ -225,6 +225,7 @@ struct HarnessesSettingsView: View {
     @State private var isScanning = true
     @State private var scanError: String?
     @State private var showsNotInstalled = false
+    @State private var authenticationHarness: ServerHarness?
 
     private var serverInstalled: [ServerHarness] { serverHarnesses.filter(\.isReady) }
     private var serverNotInstalled: [ServerHarness] { serverHarnesses.filter { !$0.isReady } }
@@ -281,23 +282,58 @@ struct HarnessesSettingsView: View {
         }
         .formStyle(.grouped)
         .task { await scan() }
+        .sheet(item: $authenticationHarness) { harness in
+            HarnessAuthenticationView(harness: harness) { replaceServerHarness($0) }
+        }
     }
 
     private func serverInstalledRow(_ harness: ServerHarness) -> some View {
-        Toggle(isOn: Binding(
-            get: { harness.enabled },
-            set: { enabled in
-                Task { await setServerHarness(harness.id, enabled: enabled) }
-            }
-        )) {
+        HStack(spacing: 10) {
             HStack(spacing: 10) {
                 HarnessIcon(harnessId: harness.id, fallbackSymbolName: harness.symbolName, size: 15)
                     .foregroundStyle(.secondary)
                     .frame(width: 20)
-                Text(harness.name)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(harness.name)
+                    Text(authStatus(harness))
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            Spacer()
+            if harness.auth != nil && !canUse(harness) {
+                Button("Sign In…") { authenticationHarness = harness }
+            } else {
+                if harness.auth != nil {
+                    Button("Manage…") { authenticationHarness = harness }
+                }
+                Toggle("Enable \(harness.name)", isOn: Binding(
+                    get: { harness.enabled },
+                    set: { enabled in Task { await setServerHarness(harness.id, enabled: enabled) } }
+                ))
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .controlSize(.small)
             }
         }
-        .toggleStyle(.switch)
+        .frame(maxWidth: .infinity, alignment: .trailing)
+    }
+
+    private func canUse(_ harness: ServerHarness) -> Bool {
+        harness.auth?.state == "authenticated" || harness.auth?.state == "notRequired"
+    }
+
+    private func authStatus(_ harness: ServerHarness) -> String {
+        guard let auth = harness.auth else { return "Sign-in status unavailable" }
+        let account = auth.accounts.first(where: { $0.id == auth.activeAccountId }) ?? auth.accounts.first
+        switch auth.state {
+        case "authenticated": return account?.email.map { "Signed in as \($0)" } ?? "Signed in"
+        case "notRequired": return "No sign-in required"
+        case "checking": return "Checking sign-in…"
+        case "expired": return "Sign-in expired"
+        case "error": return account?.detail ?? "Couldn't check sign-in"
+        default: return "Not signed in"
+        }
     }
 
     private func serverNotInstalledRow(_ harness: ServerHarness) -> some View {

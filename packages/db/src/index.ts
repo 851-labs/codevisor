@@ -8,6 +8,8 @@ import type {
   EventKind,
   FileMetadata,
   Harness,
+  HarnessAccount,
+  HarnessAuthState,
   Project,
   ProjectLocation,
   PromptQueueItem,
@@ -74,6 +76,7 @@ interface SessionRow {
   readonly project_id: string
   readonly server_id: string
   readonly harness_id: string
+  readonly harness_account_id: string | null
   readonly agent_session_id: string | null
   readonly title: string
   readonly origin: SessionSummary["origin"]
@@ -85,6 +88,60 @@ interface SessionRow {
   readonly usage_size: number | null
   readonly cost_amount: number | null
   readonly cost_currency: string | null
+}
+
+interface HarnessAccountRow {
+  readonly id: string
+  readonly harness_id: string
+  readonly profile_kind: HarnessAccount["profileKind"]
+  readonly profile_key: string | null
+  readonly label: string
+  readonly email: string | null
+  readonly organization_id: string | null
+  readonly auth_method: string | null
+  readonly auth_state: HarnessAuthState
+  readonly can_login: number
+  readonly can_logout: number
+  readonly last_checked_at: string | null
+  readonly detail: string | null
+  readonly created_at: string
+  readonly updated_at: string
+  readonly removed_at: string | null
+  readonly is_active: number
+}
+
+export interface HarnessAccountRecord extends HarnessAccount {
+  readonly profileKey?: string
+  readonly createdAt: string
+  readonly updatedAt: string
+}
+
+export interface SaveHarnessAccountRequest {
+  readonly id?: string
+  readonly harnessId: string
+  readonly profileKind: HarnessAccount["profileKind"]
+  readonly profileKey?: string
+  readonly label: string
+  readonly email?: string
+  readonly organizationId?: string
+  readonly authMethod?: string
+  readonly authState: HarnessAuthState
+  readonly canLogin: boolean
+  readonly canLogout: boolean
+  readonly lastCheckedAt?: string
+  readonly detail?: string
+}
+
+export interface UpdateHarnessAccountAuthRequest {
+  readonly label?: string
+  readonly email?: string | null
+  readonly organizationId?: string | null
+  readonly authMethod?: string | null
+  readonly authState: HarnessAuthState
+  readonly canLogin?: boolean
+  readonly canLogout?: boolean
+  readonly lastCheckedAt?: string
+  readonly detail?: string | null
 }
 
 interface ConversationRow {
@@ -544,6 +601,46 @@ const migrations: ReadonlyArray<Migration> = [
 
       create index if not exists session_events_item_idx
         on session_events(session_id, chat_item_id, revision);
+    `
+  },
+  {
+    id: 9,
+    name: "harness accounts and session identity",
+    sql: `
+      create table if not exists harness_accounts (
+        id text primary key,
+        harness_id text not null,
+        profile_kind text not null check(profile_kind in ('default', 'managed')),
+        profile_key text,
+        label text not null,
+        email text,
+        organization_id text,
+        auth_method text,
+        auth_state text not null default 'checking',
+        can_login integer not null default 1,
+        can_logout integer not null default 0,
+        last_checked_at text,
+        detail text,
+        created_at text not null,
+        updated_at text not null,
+        removed_at text
+      );
+
+      create unique index if not exists harness_accounts_default_idx
+        on harness_accounts(harness_id)
+        where profile_kind = 'default' and removed_at is null;
+
+      create unique index if not exists harness_accounts_profile_idx
+        on harness_accounts(harness_id, profile_key)
+        where profile_key is not null and removed_at is null;
+
+      create table if not exists harness_account_selection (
+        harness_id text primary key,
+        account_id text not null references harness_accounts(id)
+      );
+
+      alter table sessions add column harness_account_id text references harness_accounts(id);
+      create index if not exists sessions_harness_account_idx on sessions(harness_account_id);
     `
   }
 ]
@@ -1371,6 +1468,28 @@ export interface HerdManDatabaseService {
   readonly applyHarnessSettings: (
     harnesses: ReadonlyArray<Harness>
   ) => Effect.Effect<ReadonlyArray<Harness>, DatabaseError>
+  readonly listHarnessAccounts: (
+    harnessId: string
+  ) => Effect.Effect<ReadonlyArray<HarnessAccountRecord>, DatabaseError>
+  readonly getHarnessAccount: (
+    accountId: string
+  ) => Effect.Effect<HarnessAccountRecord | undefined, DatabaseError>
+  readonly saveHarnessAccount: (
+    request: SaveHarnessAccountRequest
+  ) => Effect.Effect<HarnessAccountRecord, DatabaseError>
+  readonly updateHarnessAccountAuth: (
+    accountId: string,
+    request: UpdateHarnessAccountAuthRequest
+  ) => Effect.Effect<HarnessAccountRecord, DatabaseError>
+  readonly setActiveHarnessAccount: (
+    harnessId: string,
+    accountId: string
+  ) => Effect.Effect<void, DatabaseError>
+  readonly removeHarnessAccount: (accountId: string) => Effect.Effect<void, DatabaseError>
+  readonly bindSessionHarnessAccount: (
+    sessionId: string,
+    accountId: string
+  ) => Effect.Effect<SessionSummary, DatabaseError>
   readonly issuePairingToken: Effect.Effect<string, DatabaseError>
   readonly verifyBearerToken: (token: string) => Effect.Effect<boolean, DatabaseError>
   readonly getUpdateInfo: Effect.Effect<UpdateInfo, DatabaseError>
@@ -1455,6 +1574,32 @@ const createService = (
     }
     return names
   })
+
+  const harnessAccountRows = (harnessId: string): ReadonlyArray<HarnessAccountRow> =>
+    sqlite
+      .prepare(
+        `select a.*,
+                case when s.account_id = a.id then 1 else 0 end as is_active
+         from harness_accounts a
+         left join harness_account_selection s on s.harness_id = a.harness_id
+         where a.harness_id = ? and a.removed_at is null
+         order by is_active desc, a.created_at asc`
+      )
+      .all(harnessId) as ReadonlyArray<HarnessAccountRow>
+
+  const requiredHarnessAccount = (accountId: string): HarnessAccountRecord => {
+    const row = sqlite
+      .prepare(
+        `select a.*,
+                case when s.account_id = a.id then 1 else 0 end as is_active
+         from harness_accounts a
+         left join harness_account_selection s on s.harness_id = a.harness_id
+         where a.id = ? and a.removed_at is null`
+      )
+      .get(accountId) as HarnessAccountRow | undefined
+    if (row === undefined) throw new Error(`Harness account not found: ${accountId}`)
+    return harnessAccountFromRow(row)
+  }
 
   const appendEvent = Effect.fn("HerdManDatabase.appendEvent")(function* (
     kind: EventKind,
@@ -1651,14 +1796,16 @@ const createService = (
       sqlite
         .prepare(
           `insert into sessions (
-            id, project_id, server_id, harness_id, agent_session_id, title, origin, is_archived, worktree_name, created_at, updated_at
-          ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+            id, project_id, server_id, harness_id, harness_account_id, agent_session_id,
+            title, origin, is_archived, worktree_name, created_at, updated_at
+          ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
         )
         .run(
           id,
           request.projectId,
           config.serverId,
           request.harnessId,
+          request.harnessAccountId ?? null,
           request.agentSessionId ?? null,
           request.title ?? "New Session",
           request.origin ?? "herdman",
@@ -2103,6 +2250,151 @@ const createService = (
         )
         return harnesses.map((harness) => ({ ...harness, enabled: !disabled.has(harness.id) }))
       }),
+    listHarnessAccounts: (harnessId) =>
+      attempt("listHarnessAccounts", () =>
+        harnessAccountRows(harnessId).map(harnessAccountFromRow)
+      ),
+    getHarnessAccount: (accountId) =>
+      attempt("getHarnessAccount", () => {
+        const row = sqlite
+          .prepare(
+            `select a.*,
+                    case when s.account_id = a.id then 1 else 0 end as is_active
+             from harness_accounts a
+             left join harness_account_selection s on s.harness_id = a.harness_id
+             where a.id = ? and a.removed_at is null`
+          )
+          .get(accountId) as HarnessAccountRow | undefined
+        return row === undefined ? undefined : harnessAccountFromRow(row)
+      }),
+    saveHarnessAccount: (request) =>
+      attempt("saveHarnessAccount", () => {
+        const now = isoTimestamp()
+        const existing =
+          request.profileKind === "default"
+            ? (sqlite
+                .prepare(
+                  "select id from harness_accounts where harness_id = ? and profile_kind = 'default' and removed_at is null"
+                )
+                .get(request.harnessId) as { readonly id: string } | undefined)
+            : request.profileKey === undefined
+              ? undefined
+              : (sqlite
+                  .prepare(
+                    "select id from harness_accounts where harness_id = ? and profile_key = ? and removed_at is null"
+                  )
+                  .get(request.harnessId, request.profileKey) as
+                  | { readonly id: string }
+                  | undefined)
+        const id = existing?.id ?? request.id ?? randomUUID()
+        sqlite
+          .prepare(
+            `insert into harness_accounts (
+               id, harness_id, profile_kind, profile_key, label, email, organization_id,
+               auth_method, auth_state, can_login, can_logout, last_checked_at, detail,
+               created_at, updated_at, removed_at
+             ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, null)
+             on conflict(id) do update set
+               label = excluded.label,
+               email = excluded.email,
+               organization_id = excluded.organization_id,
+               auth_method = excluded.auth_method,
+               auth_state = excluded.auth_state,
+               can_login = excluded.can_login,
+               can_logout = excluded.can_logout,
+               last_checked_at = excluded.last_checked_at,
+               detail = excluded.detail,
+               updated_at = excluded.updated_at,
+               removed_at = null`
+          )
+          .run(
+            id,
+            request.harnessId,
+            request.profileKind,
+            request.profileKey ?? null,
+            request.label,
+            request.email ?? null,
+            request.organizationId ?? null,
+            request.authMethod ?? null,
+            request.authState,
+            request.canLogin ? 1 : 0,
+            request.canLogout ? 1 : 0,
+            request.lastCheckedAt ?? null,
+            request.detail ?? null,
+            now,
+            now
+          )
+        const selected = sqlite
+          .prepare("select account_id from harness_account_selection where harness_id = ?")
+          .get(request.harnessId) as { readonly account_id: string } | undefined
+        if (selected === undefined) {
+          sqlite
+            .prepare("insert into harness_account_selection (harness_id, account_id) values (?, ?)")
+            .run(request.harnessId, id)
+        }
+        return requiredHarnessAccount(id)
+      }),
+    updateHarnessAccountAuth: (accountId, request) =>
+      attempt("updateHarnessAccountAuth", () => {
+        const current = requiredHarnessAccount(accountId)
+        sqlite
+          .prepare(
+            `update harness_accounts set
+               label = ?, email = ?, organization_id = ?, auth_method = ?, auth_state = ?,
+               can_login = ?, can_logout = ?, last_checked_at = ?, detail = ?, updated_at = ?
+             where id = ? and removed_at is null`
+          )
+          .run(
+            request.label ?? current.label,
+            request.email === undefined ? (current.email ?? null) : request.email,
+            request.organizationId === undefined
+              ? (current.organizationId ?? null)
+              : request.organizationId,
+            request.authMethod === undefined ? (current.authMethod ?? null) : request.authMethod,
+            request.authState,
+            (request.canLogin ?? current.canLogin) ? 1 : 0,
+            (request.canLogout ?? current.canLogout) ? 1 : 0,
+            request.lastCheckedAt ?? isoTimestamp(),
+            request.detail === undefined ? (current.detail ?? null) : request.detail,
+            isoTimestamp(),
+            accountId
+          )
+        return requiredHarnessAccount(accountId)
+      }),
+    setActiveHarnessAccount: (harnessId, accountId) =>
+      attempt("setActiveHarnessAccount", () => {
+        const account = requiredHarnessAccount(accountId)
+        if (account.harnessId !== harnessId) throw new Error("Account belongs to another harness")
+        sqlite
+          .prepare(
+            `insert into harness_account_selection (harness_id, account_id) values (?, ?)
+             on conflict(harness_id) do update set account_id = excluded.account_id`
+          )
+          .run(harnessId, accountId)
+      }),
+    removeHarnessAccount: (accountId) =>
+      attempt("removeHarnessAccount", () => {
+        const account = requiredHarnessAccount(accountId)
+        if (account.profileKind === "default") {
+          throw new Error("The default harness profile cannot be removed")
+        }
+        const inUse = sqlite
+          .prepare("select id from sessions where harness_account_id = ? limit 1")
+          .get(accountId)
+        if (inUse !== undefined) throw new Error("Account is used by an existing session")
+        sqlite.prepare("delete from harness_account_selection where account_id = ?").run(accountId)
+        sqlite
+          .prepare("update harness_accounts set removed_at = ?, updated_at = ? where id = ?")
+          .run(isoTimestamp(), isoTimestamp(), accountId)
+      }),
+    bindSessionHarnessAccount: (sessionId, accountId) =>
+      attempt("bindSessionHarnessAccount", () => {
+        requiredHarnessAccount(accountId)
+        sqlite
+          .prepare("update sessions set harness_account_id = ? where id = ?")
+          .run(accountId, sessionId)
+        return getSession(sessionId)
+      }),
     issuePairingToken: attempt("issuePairingToken", () => {
       const token = `hm_${randomBytes(24).toString("base64url")}`
       sqlite
@@ -2199,6 +2491,7 @@ const sessionFromRow = (row: SessionRow, folderPath: string | undefined): Sessio
     projectId: row.project_id,
     serverId: row.server_id,
     harnessId: row.harness_id,
+    ...(row.harness_account_id === null ? {} : { harnessAccountId: row.harness_account_id }),
     ...(row.agent_session_id === null ? {} : { agentSessionId: row.agent_session_id }),
     title: row.title,
     origin: row.origin,
@@ -2215,6 +2508,25 @@ const sessionFromRow = (row: SessionRow, folderPath: string | undefined): Sessio
     }
   }
 }
+
+const harnessAccountFromRow = (row: HarnessAccountRow): HarnessAccountRecord => ({
+  id: row.id,
+  harnessId: row.harness_id,
+  profileKind: row.profile_kind,
+  ...(row.profile_key === null ? {} : { profileKey: row.profile_key }),
+  label: row.label,
+  ...(row.email === null ? {} : { email: row.email }),
+  ...(row.organization_id === null ? {} : { organizationId: row.organization_id }),
+  ...(row.auth_method === null ? {} : { authMethod: row.auth_method }),
+  authState: row.auth_state,
+  isActive: row.is_active === 1,
+  canLogin: row.can_login === 1,
+  canLogout: row.can_logout === 1,
+  ...(row.last_checked_at === null ? {} : { lastCheckedAt: row.last_checked_at }),
+  ...(row.detail === null ? {} : { detail: row.detail }),
+  createdAt: row.created_at,
+  updatedAt: row.updated_at
+})
 
 const serializeAttachments = (
   attachments: ReadonlyArray<AttachmentRef> | undefined

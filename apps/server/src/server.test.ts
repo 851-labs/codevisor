@@ -44,6 +44,8 @@ import {
   sweepAttachmentTempFiles,
   type RunningHerdManServer
 } from "./server.js"
+import type { HarnessAuthManager } from "./harness-auth.js"
+import type { HerdManServerServices } from "./server.js"
 
 const run = <A, E>(effect: Effect.Effect<A, E>): Promise<A> => Effect.runPromise(effect)
 
@@ -196,6 +198,9 @@ const makeAgents = (): AgentRuntimeService & {
         }
         if (text === "prompt fails") {
           throw new Error("prompt failed")
+        }
+        if (text === "token expired") {
+          throw new Error("authentication token expired")
         }
         const turnId = `turn-${prompts.length}`
         await emit(sessionId, {
@@ -351,6 +356,9 @@ const makeAgents = (): AgentRuntimeService & {
           payload: { goalCleared: true }
         })
       }),
+    probeHarnessAuth: () => Effect.succeed({ state: "notRequired", methods: [], canLogout: false }),
+    authenticateHarness: () => Effect.void,
+    logoutHarness: () => Effect.void,
     answerQuestion: (sessionId, questionId, answer) =>
       Effect.promise(async () => {
         if (questionId === "stale-question") {
@@ -463,7 +471,7 @@ const start = async (auth = { allowLocalhostWithoutAuth: true, requireBearerToke
 }
 
 const startWithApp = async (
-  services: Awaited<ReturnType<typeof makeServices>>["services"],
+  services: HerdManServerServices,
   fanout?: EventFanout
 ): Promise<RunningHerdManServer> => {
   const appFanout = fanout ?? (await run(makeEventFanout))
@@ -603,6 +611,302 @@ const waitFor = async (
 }
 
 describe("@herdman/server", () => {
+  it("exposes harness authentication and account management routes", async () => {
+    const { services, agents } = await makeServices("server-a")
+    const legacyServer = await startWithApp(services)
+    runningServers.push(legacyServer)
+    const unavailableRequests: ReadonlyArray<readonly [string, string]> = [
+      ["POST", "/v1/harnesses/auth/refresh"],
+      ["DELETE", "/v1/harnesses/codex/accounts/account-1/login/flow-1"],
+      ["POST", "/v1/harnesses/codex/accounts/account-1/login"],
+      ["POST", "/v1/harnesses/codex/accounts/account-1/auth/probe"],
+      ["PATCH", "/v1/harnesses/codex/accounts/account-1"],
+      ["GET", "/v1/harnesses/codex/accounts"]
+    ]
+    for (const [method, path] of unavailableRequests) {
+      expect(
+        (
+          await jsonRequest(legacyServer, path, {
+            method,
+            ...(method === "PATCH" || method === "POST" ? { body: JSON.stringify({}) } : {})
+          })
+        ).status
+      ).toBe(501)
+    }
+
+    const account = {
+      id: "account-1",
+      harnessId: "codex",
+      profileKind: "default" as const,
+      label: "person@example.com",
+      email: "person@example.com",
+      authState: "authenticated" as const,
+      isActive: true,
+      canLogin: true,
+      canLogout: true
+    }
+    const accountList = [account]
+    let authState: "authenticated" | "unauthenticated" = "authenticated"
+    let activeContextAvailable = true
+    const auth: HarnessAuthManager = {
+      decorateHarnesses: async (values) =>
+        values.map((harness) => ({
+          ...harness,
+          desiredEnabled: harness.enabled,
+          auth: {
+            state: authState,
+            activeAccountId: account.id,
+            accounts: accountList,
+            loginMethods: [{ id: "browser", name: "Browser", kind: "browser" }],
+            supportsMultipleAccounts: true
+          }
+        })),
+      refresh: vi.fn(async () => undefined),
+      accounts: vi.fn(async () => accountList),
+      createAccount: vi.fn(async () => account),
+      renameAccount: vi.fn(async () => account),
+      removeAccount: vi.fn(async () => undefined),
+      activateAccount: vi.fn(async () => undefined),
+      probeAccount: vi.fn(async () => account),
+      beginLogin: vi.fn(async () => ({
+        id: "flow-1",
+        accountId: account.id,
+        kind: "complete" as const
+      })),
+      cancelLogin: vi.fn(async () => undefined),
+      logout: vi.fn(async () => ({ ...account, authState: "unauthenticated" as const })),
+      accountContext: vi.fn(async () => ({ id: account.id, profileKind: "default" as const })),
+      activeAccountContext: vi.fn(async () =>
+        activeContextAvailable ? { id: account.id, profileKind: "default" as const } : undefined
+      ),
+      markAccountExpired: vi.fn(async () => undefined),
+      subscribe: () => () => undefined
+    }
+    const server = await startWithApp({ ...services, auth })
+    runningServers.push(server)
+
+    expect((await jsonRequest(server, "/v1/harnesses")).status).toBe(200)
+    expect(
+      (await jsonRequest(server, "/v1/harnesses/auth/refresh", { method: "POST" })).status
+    ).toBe(200)
+    expect(
+      (
+        await jsonRequest(server, "/v1/harnesses/codex/accounts/account-1", {
+          method: "PATCH",
+          body: JSON.stringify({})
+        })
+      ).status
+    ).toBe(400)
+    expect(
+      (
+        await jsonRequest(server, "/v1/harnesses/codex/accounts/account-1/unknown", {
+          method: "POST",
+          body: JSON.stringify({})
+        })
+      ).status
+    ).toBe(404)
+    expect(
+      (
+        await jsonRequest(server, "/v1/harnesses/codex/accounts/account-1", {
+          method: "GET"
+        })
+      ).status
+    ).toBe(404)
+    expect((await jsonRequest(server, "/v1/harnesses/codex/accounts")).body).toEqual(accountList)
+    expect(
+      (
+        await jsonRequest(server, "/v1/harnesses/codex/accounts", {
+          method: "POST",
+          body: JSON.stringify({ label: "Work" })
+        })
+      ).status
+    ).toBe(201)
+    expect(
+      (
+        await jsonRequest(server, "/v1/harnesses/codex/accounts", {
+          method: "PUT",
+          body: JSON.stringify({})
+        })
+      ).status
+    ).toBe(404)
+    expect(
+      (
+        await jsonRequest(server, "/v1/harnesses/codex/accounts/account-1", {
+          method: "PATCH",
+          body: JSON.stringify({ label: "Renamed" })
+        })
+      ).status
+    ).toBe(200)
+    authState = "unauthenticated"
+    expect(
+      (
+        await jsonRequest(server, "/v1/harnesses/codex", {
+          method: "PATCH",
+          body: JSON.stringify({ enabled: true })
+        })
+      ).status
+    ).toBe(409)
+    authState = "authenticated"
+    expect(
+      (
+        await jsonRequest(server, "/v1/harnesses/codex/accounts/account-1/auth/probe", {
+          method: "POST"
+        })
+      ).status
+    ).toBe(200)
+    for (const action of ["activate", "login", "logout"]) {
+      expect(
+        (
+          await jsonRequest(server, `/v1/harnesses/codex/accounts/account-1/${action}`, {
+            method: "POST",
+            body: JSON.stringify(
+              action === "login" ? { methodId: "apiKey", apiKey: "sk-test-secret" } : {}
+            )
+          })
+        ).status
+      ).toBe(action === "login" ? 201 : 200)
+    }
+    expect(auth.beginLogin).toHaveBeenCalledWith("account-1", "apiKey", "sk-test-secret")
+    expect(
+      (
+        await jsonRequest(server, "/v1/harnesses/codex/accounts/account-1/login/flow-1", {
+          method: "DELETE"
+        })
+      ).status
+    ).toBe(204)
+    expect(
+      (
+        await jsonRequest(server, "/v1/harnesses/codex", {
+          method: "PATCH",
+          body: JSON.stringify({ enabled: true })
+        })
+      ).status
+    ).toBe(200)
+    expect(
+      (
+        await jsonRequest(server, "/v1/harnesses/codex/accounts/account-1", {
+          method: "DELETE"
+        })
+      ).status
+    ).toBe(204)
+
+    const projectFolder = mkdtempSync(join(tmpdir(), "herdman-auth-project-"))
+    tempDirs.push(projectFolder)
+    const project = (
+      await jsonRequest(server, "/v1/projects", {
+        method: "POST",
+        body: JSON.stringify({ folderPath: projectFolder })
+      })
+    ).body as { id: string }
+    await run(
+      services.db.saveHarnessAccount({
+        id: account.id,
+        harnessId: account.harnessId,
+        profileKind: account.profileKind,
+        label: account.label,
+        email: account.email,
+        authState: account.authState,
+        canLogin: account.canLogin,
+        canLogout: account.canLogout
+      })
+    )
+    const createdResponse = await jsonRequest(server, "/v1/sessions", {
+      method: "POST",
+      body: JSON.stringify({ projectId: project.id, harnessId: "codex" })
+    })
+    expect(createdResponse.status).toBe(201)
+    const created = createdResponse.body as {
+      id: string
+      agentSessionId: string
+      harnessAccountId: string
+    }
+    expect(created.harnessAccountId).toBe(account.id)
+    await agents.emit(created.agentSessionId, {
+      kind: "session.authRequired",
+      subjectId: created.agentSessionId,
+      payload: { detail: "Please sign in again" }
+    })
+    await agents.emit(created.agentSessionId, {
+      kind: "session.authRequired",
+      subjectId: created.agentSessionId,
+      payload: null
+    })
+    await waitFor(() => vi.mocked(auth.markAccountExpired).mock.calls.length === 2)
+    await jsonRequest(server, `/v1/sessions/${created.id}/prompt`, {
+      method: "POST",
+      body: JSON.stringify({ text: "token expired" })
+    })
+    await waitFor(() => vi.mocked(auth.markAccountExpired).mock.calls.length === 3)
+    await waitFor(async () =>
+      (await run(services.db.listSubjectEvents(created.id))).some(
+        (event) => event.kind === "session.error"
+      )
+    )
+
+    const explicitAccountSession = await jsonRequest(server, "/v1/sessions", {
+      method: "POST",
+      body: JSON.stringify({
+        projectId: project.id,
+        harnessId: "codex",
+        harnessAccountId: account.id,
+        deferAgentSession: true
+      })
+    })
+    expect(explicitAccountSession.status).toBe(201)
+
+    activeContextAvailable = false
+    expect(
+      (
+        await jsonRequest(server, "/v1/sessions", {
+          method: "POST",
+          body: JSON.stringify({ projectId: project.id, harnessId: "codex" })
+        })
+      ).status
+    ).toBe(409)
+
+    activeContextAvailable = true
+    const legacy = await run(
+      services.db.createSession({
+        projectId: project.id,
+        harnessId: "codex",
+        agentSessionId: ""
+      })
+    )
+    await jsonRequest(server, `/v1/sessions/${legacy.id}/prompt`, {
+      method: "POST",
+      body: JSON.stringify({ text: "hello" })
+    })
+    await waitFor(
+      async () =>
+        (await run(services.db.getSessionSummary(legacy.id))).harnessAccountId === account.id
+    )
+    await waitFor(async () => (await run(services.db.listPromptQueue(legacy.id))).length === 0)
+    await waitFor(async () =>
+      (await run(services.db.listSubjectEvents(legacy.id))).some(
+        (event) =>
+          event.kind === "session.updated" &&
+          typeof event.payload === "object" &&
+          event.payload !== null &&
+          "turnState" in event.payload &&
+          event.payload.turnState === "ended"
+      )
+    )
+
+    activeContextAvailable = false
+    const blocked = await run(
+      services.db.createSession({ projectId: project.id, harnessId: "codex", agentSessionId: "" })
+    )
+    await jsonRequest(server, `/v1/sessions/${blocked.id}/prompt`, {
+      method: "POST",
+      body: JSON.stringify({ text: "blocked" })
+    })
+    await waitFor(async () =>
+      (await run(services.db.listSubjectEvents(blocked.id))).some(
+        (event) => event.kind === "session.error"
+      )
+    )
+  })
+
   it("serves health, info, OpenAPI, update state, pairing, and auth", async () => {
     const { server, services } = await start()
 

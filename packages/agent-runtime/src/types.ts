@@ -118,6 +118,27 @@ export interface ProviderEnvironment {
   readonly locateExecutable: (name: string, env: NodeJS.ProcessEnv) => string | undefined
 }
 
+/// Server-resolved account profile for one harness invocation. Credentials
+/// remain owned by the harness inside this profile; HerdMan passes only the
+/// profile environment to child processes.
+export interface HarnessAccountContext {
+  readonly id: string
+  readonly profileKind: "default" | "managed"
+  readonly profilePath?: string
+  readonly env?: Readonly<Record<string, string>>
+}
+
+export interface HarnessAuthInspection {
+  readonly state: "authenticated" | "unauthenticated" | "notRequired" | "error"
+  readonly methods: ReadonlyArray<{
+    readonly id: string
+    readonly name: string
+    readonly description?: string
+  }>
+  readonly canLogout: boolean
+  readonly detail?: string
+}
+
 /// Per-session control surface returned by a provider. The heavy agent
 /// runtime lives in a child process owned by the handle; all session output
 /// flows through the `RuntimeEmit` the handle was created with.
@@ -163,21 +184,37 @@ export interface AgentProvider {
   readonly createSession: (
     definition: HarnessDefinition,
     cwd: string,
-    emit: RuntimeEmit
+    emit: RuntimeEmit,
+    account?: HarnessAccountContext
   ) => Effect.Effect<CreatedAgentSession, AgentRuntimeError>
   readonly loadSession: (
     definition: HarnessDefinition,
     agentSessionId: string,
     cwd: string,
-    emit: RuntimeEmit
+    emit: RuntimeEmit,
+    account?: HarnessAccountContext
   ) => Effect.Effect<LoadedAgentSession, AgentRuntimeError>
   /// Sessions from the harness's own on-disk store (run before/outside
   /// HerdMan) — powers onboarding's workspace suggestions and "import
   /// existing chats". Absent when the harness has no native store to scan
   /// (generic ACP adapters).
   readonly listAgentSessions?: (
-    definition: HarnessDefinition
+    definition: HarnessDefinition,
+    account?: HarnessAccountContext
   ) => Promise<ReadonlyArray<import("./agent-sessions.js").AgentSessionSummary>>
+  readonly probeAuth?: (
+    definition: HarnessDefinition,
+    account?: HarnessAccountContext
+  ) => Effect.Effect<HarnessAuthInspection, AgentRuntimeError>
+  readonly authenticate?: (
+    definition: HarnessDefinition,
+    methodId: string,
+    account?: HarnessAccountContext
+  ) => Effect.Effect<void, AgentRuntimeError>
+  readonly logout?: (
+    definition: HarnessDefinition,
+    account?: HarnessAccountContext
+  ) => Effect.Effect<void, AgentRuntimeError>
 }
 
 export const runtimeEffect = <A>(

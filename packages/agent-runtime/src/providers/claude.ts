@@ -35,6 +35,7 @@ import {
   type AgentSessionHandle,
   type CreatedAgentSession,
   type HarnessDefinition,
+  type HarnessAccountContext,
   type LoadedAgentSession,
   type PromptAttachmentInput,
   type PromptInput,
@@ -126,6 +127,14 @@ const recoveryBackoffMs = (retryIndex: number): number =>
 /// type. Pushed straight into the SDK input queue, so it never surfaces as a
 /// visible user message (the `user` echo carries no tool_result to forward).
 const CONTINUE_PROMPT = "Please continue."
+
+const CLAUDE_AUTH_OVERRIDE_ENV_VARS = [
+  "ANTHROPIC_API_KEY",
+  "ANTHROPIC_AUTH_TOKEN",
+  "CLAUDE_CODE_OAUTH_TOKEN",
+  "CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR",
+  "CLAUDE_CODE_API_KEY_FILE_DESCRIPTOR"
+] as const
 
 const PLAN_ENTRY_STATUSES = new Set(["pending", "in_progress", "completed"])
 
@@ -452,7 +461,8 @@ export const makeClaudeProvider = (
     definition: HarnessDefinition,
     cwd: string,
     emit: RuntimeEmit,
-    resume: string | undefined
+    resume: string | undefined,
+    account?: HarnessAccountContext
   ): Promise<ClaudeSession> => {
     const claudePath = locateClaude(definition)
     await guardVersion(claudePath)
@@ -464,11 +474,21 @@ export const makeClaudeProvider = (
     const sessionKey = resume ?? randomUUID()
     const input = new InputQueue()
     const abort = new AbortController()
+    const accountEnv = Object.fromEntries(
+      Object.entries(environment.env).filter(
+        (entry): entry is [string, string] => typeof entry[1] === "string"
+      )
+    )
+    if (account?.profileKind === "managed") {
+      for (const name of CLAUDE_AUTH_OVERRIDE_ENV_VARS) delete accountEnv[name]
+    }
+    Object.assign(accountEnv, account?.env)
     // Filled in below; the hook and pump close over it.
     let session: ClaudeSession | undefined
     const options: ClaudeOptions = {
       abortController: abort,
       cwd,
+      env: accountEnv,
       includePartialMessages: true,
       pathToClaudeCodeExecutable: claudePath,
       // The CLI invokes this only when the active permission mode requires a
@@ -869,9 +889,14 @@ export const makeClaudeProvider = (
   })
 
   return {
-    createSession: (definition, cwd, emit): Effect.Effect<CreatedAgentSession, AgentRuntimeError> =>
+    createSession: (
+      definition,
+      cwd,
+      emit,
+      account
+    ): Effect.Effect<CreatedAgentSession, AgentRuntimeError> =>
       adapterPromise("createSession", async () => {
-        const session = await startSession(definition, cwd, emit, undefined)
+        const session = await startSession(definition, cwd, emit, undefined, account)
         return {
           handle: handleFor(session),
           metadata: { sessionId: session.key, ...metadataFor(session) }
@@ -885,10 +910,11 @@ export const makeClaudeProvider = (
       definition,
       agentSessionId,
       cwd,
-      emit
+      emit,
+      account
     ): Effect.Effect<LoadedAgentSession, AgentRuntimeError> =>
       adapterPromise("loadSession", async () => {
-        const session = await startSession(definition, cwd, emit, agentSessionId)
+        const session = await startSession(definition, cwd, emit, agentSessionId, account)
         return {
           handle: handleFor(session),
           metadata: { sessionId: session.key, ...metadataFor(session) },
@@ -1773,6 +1799,9 @@ const logTurnEnd = (
 
 const handleResult = (session: ClaudeSession, message: SDKMessage & { type: "result" }): void => {
   const resolution = classifyResult(session, message)
+  const authFailure =
+    session.lastAssistantError === "authentication_failed" ||
+    session.lastAssistantError === "oauth_org_not_allowed"
   if (process.env.HERDMAN_DEBUG !== undefined) logTurnEnd(session, message, resolution)
   // Each `result` is classified on the assistant error seen since the previous
   // one; consume it so a stale error can't misclassify a later leg.
@@ -1797,6 +1826,15 @@ const handleResult = (session: ClaudeSession, message: SDKMessage & { type: "res
   // Terminal. A turn that ends with questions still open (interrupt, failure)
   // invalidates them — clients must not keep showing the picker.
   session.lastErrorText = undefined
+  if (authFailure) {
+    void session.emit({
+      kind: "session.authRequired",
+      subjectId: session.key,
+      payload: {
+        detail: resolution.kind === "end" ? resolution.stopDetail : "Claude sign-in is required."
+      }
+    })
+  }
   cancelClaudePendingQuestions(session)
   settleGoalOnTurnEnd(session, message)
   finishActiveTurn(session, resolution.stopReason, resolution.stopDetail)

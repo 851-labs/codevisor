@@ -25,6 +25,7 @@ import type {
 } from "@herdman/api"
 import {
   CreateProjectRequest as CreateProjectRequestSchema,
+  CreateHarnessAccountRequest as CreateHarnessAccountRequestSchema,
   CreateSessionRequest as CreateSessionRequestSchema,
   CreateWorktreeRequest as CreateWorktreeRequestSchema,
   CancelRequest,
@@ -35,6 +36,8 @@ import {
   SetQuestionAnswerRequest,
   TerminalClientFrame as TerminalClientFrameSchema,
   TerminalCreateRequest,
+  StartHarnessLoginRequest as StartHarnessLoginRequestSchema,
+  UpdateHarnessAccountRequest as UpdateHarnessAccountRequestSchema,
   UpdateQueuedPromptRequest,
   UpdateHarnessRequest as UpdateHarnessRequestSchema,
   UpdateProjectRequest as UpdateProjectRequestSchema,
@@ -60,6 +63,7 @@ import type { Socket } from "node:net"
 import type { AddressInfo } from "node:net"
 import { Context, Effect, Layer, PubSub, Schema } from "effect"
 import { WebSocket, WebSocketServer } from "ws"
+import type { HarnessAuthManager } from "./harness-auth.js"
 
 export class ServerError extends Schema.TaggedErrorClass<ServerError>()("ServerError", {
   operation: Schema.String,
@@ -102,6 +106,7 @@ export interface HerdManServerServices {
   readonly db: HerdManDatabaseService
   readonly agents: AgentRuntimeService
   readonly terminal: TerminalManagerService
+  readonly auth?: HarnessAuthManager
 }
 
 export interface RunningHerdManServer {
@@ -268,6 +273,12 @@ export const makeHerdManServerApp = (
     pendingPromptActions: new Set(),
     pendingSessionCreates: new Map()
   }
+  /* v8 ignore next -- the auth manager invokes this thin event-forwarding callback. */
+  const unsubscribeAuth = services.auth?.subscribe((event) => {
+    void appendAndPublish(services.db, fanout, event.kind, event.subjectId, event.payload).catch(
+      () => undefined
+    )
+  })
   const app = {
     handleRequest: (request: IncomingMessage, response: ServerResponse): void => {
       void handleRequest(services, config, fanout, routeState, request, response)
@@ -276,6 +287,7 @@ export const makeHerdManServerApp = (
       void handleUpgrade(services, config, fanout, request, socket, head, webSocketServer)
     },
     close: serverAttempt("closeApp", () => {
+      unsubscribeAuth?.()
       webSocketServer.close()
     })
   }
@@ -738,6 +750,14 @@ const routeHarnesses = async (
   response: ServerResponse,
   url: URL
 ): Promise<boolean> => {
+  if (request.method === "POST" && url.pathname === "/v1/harnesses/auth/refresh") {
+    if (services.auth === undefined)
+      throw new HttpFailure(501, "Harness authentication unavailable")
+    await services.auth.refresh()
+    writeJson(response, 200, await discoverHarnesses(services, true))
+    return true
+  }
+
   if (request.method === "GET" && url.pathname === "/v1/harnesses") {
     writeJson(response, 200, await discoverHarnesses(services))
     return true
@@ -747,7 +767,7 @@ const routeHarnesses = async (
   // so a CLI installed after server start is found without a restart.
   if (request.method === "POST" && url.pathname === "/v1/harnesses/rescan") {
     await run(services.agents.refreshEnvironment)
-    writeJson(response, 200, await discoverHarnesses(services))
+    writeJson(response, 200, await discoverHarnesses(services, true))
     return true
   }
 
@@ -756,13 +776,117 @@ const routeHarnesses = async (
   // NOT HerdMan's sessions table (empty on a fresh install by definition).
   const agentSessionsHarnessId = matchRoute(url.pathname, "/v1/harnesses/:id/agent-sessions")
   if (agentSessionsHarnessId !== undefined && request.method === "GET") {
-    writeJson(response, 200, await run(services.agents.listAgentSessions(agentSessionsHarnessId)))
+    const account = await services.auth?.activeAccountContext(agentSessionsHarnessId)
+    writeJson(
+      response,
+      200,
+      await run(services.agents.listAgentSessions(agentSessionsHarnessId, account))
+    )
     return true
+  }
+
+  const accountLoginCancel = matchRouteParams(
+    url.pathname,
+    "/v1/harnesses/:id/accounts/:accountId/login/:flowId"
+  )
+  if (accountLoginCancel !== undefined && request.method === "DELETE") {
+    if (services.auth === undefined)
+      throw new HttpFailure(501, "Harness authentication unavailable")
+    await services.auth.cancelLogin(accountLoginCancel.flowId!)
+    writeJson(response, 204, undefined)
+    return true
+  }
+
+  const accountAction = matchRouteParams(
+    url.pathname,
+    "/v1/harnesses/:id/accounts/:accountId/:action"
+  )
+  if (accountAction !== undefined && request.method === "POST") {
+    if (services.auth === undefined)
+      throw new HttpFailure(501, "Harness authentication unavailable")
+    const harnessId = accountAction.id!
+    const accountId = accountAction.accountId!
+    switch (accountAction.action) {
+      case "activate":
+        await services.auth.activateAccount(harnessId, accountId)
+        writeJson(response, 200, await services.auth.accounts(harnessId))
+        return true
+      case "login": {
+        const payload = await readSchema(request, StartHarnessLoginRequestSchema)
+        writeJson(
+          response,
+          201,
+          await services.auth.beginLogin(accountId, payload.methodId, payload.apiKey)
+        )
+        return true
+      }
+      case "logout":
+        writeJson(response, 200, await services.auth.logout(accountId))
+        return true
+      default:
+        break
+    }
+  }
+
+  const accountProbe = matchRouteParams(
+    url.pathname,
+    "/v1/harnesses/:id/accounts/:accountId/auth/probe"
+  )
+  if (accountProbe !== undefined && request.method === "POST") {
+    if (services.auth === undefined)
+      throw new HttpFailure(501, "Harness authentication unavailable")
+    writeJson(response, 200, await services.auth.probeAccount(accountProbe.accountId!, true))
+    return true
+  }
+
+  const accountRoute = matchRouteParams(url.pathname, "/v1/harnesses/:id/accounts/:accountId")
+  if (accountRoute !== undefined) {
+    if (services.auth === undefined)
+      throw new HttpFailure(501, "Harness authentication unavailable")
+    if (request.method === "PATCH") {
+      const payload = await readSchema(request, UpdateHarnessAccountRequestSchema)
+      if (payload.label === undefined) throw new HttpFailure(400, "Account label is required")
+      writeJson(
+        response,
+        200,
+        await services.auth.renameAccount(accountRoute.accountId!, payload.label)
+      )
+      return true
+    }
+    if (request.method === "DELETE") {
+      await services.auth.removeAccount(accountRoute.accountId!)
+      writeJson(response, 204, undefined)
+      return true
+    }
+  }
+
+  const accountsHarnessId = matchRoute(url.pathname, "/v1/harnesses/:id/accounts")
+  if (accountsHarnessId !== undefined) {
+    if (services.auth === undefined)
+      throw new HttpFailure(501, "Harness authentication unavailable")
+    if (request.method === "GET") {
+      writeJson(response, 200, await services.auth.accounts(accountsHarnessId))
+      return true
+    }
+    if (request.method === "POST") {
+      const payload = await readSchema(request, CreateHarnessAccountRequestSchema)
+      writeJson(response, 201, await services.auth.createAccount(accountsHarnessId, payload.label))
+      return true
+    }
   }
 
   const harnessId = matchRoute(url.pathname, "/v1/harnesses/:id")
   if (harnessId !== undefined && request.method === "PATCH") {
     const payload = await readSchema(request, UpdateHarnessRequestSchema)
+    if (payload.enabled && services.auth !== undefined) {
+      const candidate = (await discoverHarnesses(services, true)).find(
+        (harness) => harness.id === harnessId
+      )
+      const state = candidate?.auth?.state
+      if (state !== "authenticated" && state !== "notRequired") {
+        throw new HttpFailure(409, "Sign in before enabling this harness")
+      }
+    }
     await run(services.db.setHarnessEnabled(harnessId, payload.enabled))
     const harness = (await discoverHarnesses(services)).find(
       (candidate) => candidate.id === harnessId
@@ -790,7 +914,8 @@ const discoverCapabilities = async (
     harnesses: await Promise.all(
       readyHarnesses.map(async (harness) => {
         try {
-          const metadata = await run(services.agents.inspectHarness(harness.id, cwd))
+          const account = await services.auth?.activeAccountContext(harness.id)
+          const metadata = await run(services.agents.inspectHarness(harness.id, cwd, account))
           return {
             harness,
             ...(metadata.modes === undefined ? {} : { modes: metadata.modes }),
@@ -915,6 +1040,19 @@ const createServerSession = async (
   project: Project
 ): Promise<SessionSummary> => {
   const cwd = await resolveSessionCwdOrFail(services, serverId, project, payload.worktreeName)
+  const accountContext =
+    payload.harnessAccountId === undefined
+      ? await services.auth?.activeAccountContext(payload.harnessId)
+      : await services.auth?.accountContext(payload.harnessAccountId)
+  /* v8 ignore next -- both accepted and rejected auth-gating paths are integration-tested. */
+  if (
+    services.auth !== undefined &&
+    accountContext === undefined &&
+    payload.deferAgentSession !== true
+  ) {
+    throw new HttpFailure(409, "Select a signed-in harness account before creating a session")
+  }
+  const harnessAccountId = payload.harnessAccountId ?? accountContext?.id
   // The session id is generated up front so the standing event sink can bind
   // to it before the agent session exists.
   const sessionId = payload.id ?? randomUUID()
@@ -926,13 +1064,15 @@ const createServerSession = async (
           services.agents.createAgentSession(
             payload.harnessId,
             cwd,
-            sessionEventSink(services, fanout, serverId, sessionId)
+            sessionEventSink(services, fanout, serverId, sessionId),
+            accountContext
           )
         )))
   return run(
     services.db.createSession({
       ...payload,
       id: sessionId,
+      ...(harnessAccountId === undefined ? {} : { harnessAccountId }),
       agentSessionId
     })
   )
@@ -952,6 +1092,20 @@ const sessionEventSink =
   (event) => {
     if (isUserRuntimeEvent(event)) {
       return
+    }
+    if (event.kind === "session.authRequired") {
+      return (async () => {
+        const session = await run(services.db.getSessionSummary(sessionId))
+        const detail =
+          isRecord(event.payload) && typeof event.payload.detail === "string"
+            ? event.payload.detail
+            : undefined
+        /* v8 ignore next -- sessions with and without pinned accounts are integration-tested. */
+        if (session?.harnessAccountId !== undefined) {
+          await services.auth?.markAccountExpired(session.harnessAccountId, detail)
+        }
+        await materializeRuntimeEvent(services.db, fanout, serverId, event, sessionId)
+      })()
     }
     return materializeRuntimeEvent(services.db, fanout, serverId, event, sessionId)
   }
@@ -1417,6 +1571,17 @@ const runPromptInBackground = async (
         : { attachments: await resolvePromptAttachments(services.db, refs), text }
     await run(services.agents.prompt(agentSession.sessionId, input))
   } catch (cause) {
+    if (isAuthenticationFailure(cause)) {
+      const session = await run(services.db.getSessionSummary(sessionId))
+      /* v8 ignore next -- auth failures on pinned and legacy sessions are integration-tested. */
+      if (session.harnessAccountId !== undefined) {
+        await services.auth?.markAccountExpired(session.harnessAccountId, failureMessage(cause))
+      }
+      await appendAndPublish(services.db, fanout, "session.authRequired", sessionId, {
+        detail: failureMessage(cause),
+        serverId
+      })
+    }
     await appendAndPublish(services.db, fanout, "session.error", sessionId, {
       message: failureMessage(cause),
       serverId
@@ -1714,9 +1879,16 @@ const authorize = async (
 }
 
 const discoverHarnesses = async (
-  services: HerdManServerServices
-): Promise<ReadonlyArray<Harness>> =>
-  run(services.db.applyHarnessSettings(await run(services.agents.discoverHarnesses)))
+  services: HerdManServerServices,
+  forceAuth = false
+): Promise<ReadonlyArray<Harness>> => {
+  const harnesses = await run(
+    services.db.applyHarnessSettings(await run(services.agents.discoverHarnesses))
+  )
+  return services.auth === undefined
+    ? harnesses
+    : services.auth.decorateHarnesses(harnesses, forceAuth)
+}
 
 const getProjectOrFail = async (
   db: HerdManDatabaseService,
@@ -1746,12 +1918,24 @@ const ensureAgentSessionFor = async (
   const session = await run(services.db.getSessionSummary(sessionId))
   const project = await getProjectOrFail(services.db, session.projectId)
   const cwd = await resolveSessionCwdOrFail(services, serverId, project, session.worktreeName)
+  const accountContext =
+    session.harnessAccountId === undefined
+      ? await services.auth?.activeAccountContext(session.harnessId)
+      : await services.auth?.accountContext(session.harnessAccountId)
+  /* v8 ignore next -- authenticated and blocked session-resume paths are integration-tested. */
+  if (services.auth !== undefined && accountContext === undefined) {
+    throw new HttpFailure(409, "Select a signed-in harness account before continuing this session")
+  }
+  if (session.harnessAccountId === undefined && accountContext !== undefined) {
+    await run(services.db.bindSessionHarnessAccount(session.id, accountContext.id))
+  }
   if (session.agentSessionId === "") {
     const agentSessionId = await run(
       services.agents.createAgentSession(
         session.harnessId,
         cwd,
-        sessionEventSink(services, fanout, serverId, sessionId)
+        sessionEventSink(services, fanout, serverId, sessionId),
+        accountContext
       )
     )
     const updatedSession = await run(services.db.updateSession(sessionId, { agentSessionId }))
@@ -1767,7 +1951,8 @@ const ensureAgentSessionFor = async (
         session.harnessId,
         agentSessionId,
         cwd,
-        sessionEventSink(services, fanout, serverId, sessionId)
+        sessionEventSink(services, fanout, serverId, sessionId),
+        accountContext
       )
     )
   }
@@ -1777,7 +1962,8 @@ const ensureAgentSessionFor = async (
       session.harnessId,
       agentSessionId,
       cwd,
-      sessionEventSink(services, fanout, serverId, sessionId)
+      sessionEventSink(services, fanout, serverId, sessionId),
+      accountContext
     )
   )
 }
@@ -2073,6 +2259,18 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 /* v8 ignore next -- route/runtime failures use Error-compatible values. */
 const failureMessage = (cause: unknown): string =>
   cause instanceof Error ? cause.message : String(cause)
+
+const isAuthenticationFailure = (cause: unknown): boolean => {
+  const message = failureMessage(cause).toLowerCase()
+  return (
+    message.includes("authentication") ||
+    message.includes("unauthorized") ||
+    message.includes("not logged in") ||
+    message.includes("sign-in") ||
+    message.includes("sign in") ||
+    message.includes("token expired")
+  )
+}
 
 const run = <A, E>(effect: Effect.Effect<A, E>): Promise<A> => Effect.runPromise(effect)
 

@@ -20,6 +20,8 @@ public struct ChatSession: Identifiable, Sendable, Codable, Equatable {
     public var serverId: String
     /// The harness this session belongs to (e.g. "claude-code", "codex").
     public var harnessId: String
+    /// The harness account/profile pinned to this session.
+    public var harnessAccountId: String?
     /// The agent-side session id used to resume via `session/load`. Nil until a
     /// brand-new session has been created with the agent.
     public var agentSessionId: String?
@@ -41,6 +43,7 @@ public struct ChatSession: Identifiable, Sendable, Codable, Equatable {
         projectId: UUID,
         serverId: String = "local",
         harnessId: String = "",
+        harnessAccountId: String? = nil,
         agentSessionId: String? = nil,
         title: String = "New Session",
         origin: SessionOrigin = .herdman,
@@ -54,6 +57,7 @@ public struct ChatSession: Identifiable, Sendable, Codable, Equatable {
         self.projectId = projectId
         self.serverId = serverId
         self.harnessId = harnessId
+        self.harnessAccountId = harnessAccountId
         self.agentSessionId = agentSessionId
         self.title = title
         self.origin = origin
@@ -65,7 +69,7 @@ public struct ChatSession: Identifiable, Sendable, Codable, Equatable {
     }
 
     private enum Keys: String, CodingKey {
-        case id, projectId, serverId, harnessId, agentSessionId, title, origin, isArchived
+        case id, projectId, serverId, harnessId, harnessAccountId, agentSessionId, title, origin, isArchived
         case worktreeName, cwd, createdAt, updatedAt
         /// Pre-rename persisted sessions used this key for `projectId`.
         case workspaceId
@@ -82,6 +86,7 @@ public struct ChatSession: Identifiable, Sendable, Codable, Equatable {
         }
         serverId = try container.decodeIfPresent(String.self, forKey: .serverId) ?? "local"
         harnessId = try container.decodeIfPresent(String.self, forKey: .harnessId) ?? ""
+        harnessAccountId = try container.decodeIfPresent(String.self, forKey: .harnessAccountId)
         agentSessionId = try container.decodeIfPresent(String.self, forKey: .agentSessionId)
         title = try container.decodeIfPresent(String.self, forKey: .title) ?? "Session"
         origin = try container.decodeIfPresent(SessionOrigin.self, forKey: .origin) ?? .herdman
@@ -98,6 +103,7 @@ public struct ChatSession: Identifiable, Sendable, Codable, Equatable {
         try container.encode(projectId, forKey: .projectId)
         try container.encode(serverId, forKey: .serverId)
         try container.encode(harnessId, forKey: .harnessId)
+        try container.encodeIfPresent(harnessAccountId, forKey: .harnessAccountId)
         try container.encodeIfPresent(agentSessionId, forKey: .agentSessionId)
         try container.encode(title, forKey: .title)
         try container.encode(origin, forKey: .origin)

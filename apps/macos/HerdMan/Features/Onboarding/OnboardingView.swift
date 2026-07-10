@@ -41,6 +41,7 @@ struct OnboardingView: View {
     @State private var isFinishing = false
     @State private var recommendations: [ProjectRecommendation] = []
     @State private var showsNotInstalled = false
+    @State private var authenticationHarness: ServerHarness?
 
     private var installedHarnesses: [ServerHarness] { harnesses.filter(\.isReady) }
     private var notInstalledHarnesses: [ServerHarness] { harnesses.filter { !$0.isReady } }
@@ -84,6 +85,9 @@ struct OnboardingView: View {
             if case let .success(urls) = result, let url = urls.first {
                 projectFolder = url
             }
+        }
+        .sheet(item: $authenticationHarness) { harness in
+            HarnessAuthenticationView(harness: harness) { replaceHarness($0) }
         }
     }
 
@@ -223,15 +227,64 @@ struct OnboardingView: View {
     }
 
     private func harnessToggle(_ harness: ServerHarness) -> some View {
-        Toggle(isOn: Binding(
-            get: { environment.settings.isHarnessEnabled(harness.id) },
-            set: { environment.settings.setHarness(harness.id, enabled: $0) }
-        )) {
-            Text(harness.name)
-                .frame(maxWidth: .infinity, alignment: .leading)
+        HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(harness.name)
+                Text(authStatus(harness))
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            if harness.auth != nil && !canUse(harness) {
+                Button("Sign In…") { authenticationHarness = harness }
+            } else {
+                if harness.auth?.supportsMultipleAccounts == true {
+                    Button("Accounts…") { authenticationHarness = harness }
+                }
+                Toggle("Enable \(harness.name)", isOn: Binding(
+                    get: { harness.enabled },
+                    set: { enabled in Task { await setHarness(harness, enabled: enabled) } }
+                ))
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .controlSize(.small)
+            }
         }
-        .toggleStyle(.switch)
+        .frame(maxWidth: .infinity, alignment: .trailing)
         .padding(.vertical, 10)
+    }
+
+    private func canUse(_ harness: ServerHarness) -> Bool {
+        harness.auth?.state == "authenticated" || harness.auth?.state == "notRequired"
+    }
+
+    private func authStatus(_ harness: ServerHarness) -> String {
+        guard let auth = harness.auth else { return "Sign-in status unavailable" }
+        let account = auth.accounts.first(where: { $0.id == auth.activeAccountId }) ?? auth.accounts.first
+        switch auth.state {
+        case "authenticated": return account?.email.map { "Signed in as \($0)" } ?? "Signed in"
+        case "notRequired": return "No sign-in required"
+        case "checking": return "Checking sign-in…"
+        case "expired": return "Sign-in expired"
+        case "error": return account?.detail ?? "Couldn't check sign-in"
+        default: return "Not signed in"
+        }
+    }
+
+    private func setHarness(_ harness: ServerHarness, enabled: Bool) async {
+        do {
+            let updated = try await environment.serverClient.setHarnessEnabled(id: harness.id, enabled: enabled)
+            environment.settings.setHarness(harness.id, enabled: updated.enabled)
+            replaceHarness(updated)
+        } catch {
+            replaceHarness(harness)
+        }
+    }
+
+    private func replaceHarness(_ harness: ServerHarness) {
+        guard let index = harnesses.firstIndex(where: { $0.id == harness.id }) else { return }
+        harnesses[index] = harness
     }
 
     // MARK: - Detection

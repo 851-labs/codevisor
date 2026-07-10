@@ -15,6 +15,8 @@ import {
   type AgentSessionHandle,
   type AgentSessionMetadata,
   type HarnessDefinition,
+  type HarnessAccountContext,
+  type HarnessAuthInspection,
   type PromptInput,
   type PromptResult,
   type ProviderEnvironment,
@@ -88,22 +90,26 @@ export interface AgentRuntimeService {
   /// HerdMan). Empty for harnesses without a native store or a provider
   /// listing hook. Fails only for unknown harness ids.
   readonly listAgentSessions: (
-    harnessId: string
+    harnessId: string,
+    account?: HarnessAccountContext
   ) => Effect.Effect<ReadonlyArray<AgentSessionSummary>, AgentRuntimeError>
   readonly createAgentSession: (
     harnessId: string,
     cwd: string,
-    sink: RuntimeEventSink
+    sink: RuntimeEventSink,
+    account?: HarnessAccountContext
   ) => Effect.Effect<string, AgentRuntimeError>
   readonly inspectHarness: (
     harnessId: string,
-    cwd: string
+    cwd: string,
+    account?: HarnessAccountContext
   ) => Effect.Effect<AgentSessionMetadata, AgentRuntimeError>
   readonly loadAgentSession: (
     harnessId: string,
     agentSessionId: string,
     cwd: string,
-    sink: RuntimeEventSink
+    sink: RuntimeEventSink,
+    account?: HarnessAccountContext
   ) => Effect.Effect<AgentSessionMetadata, AgentRuntimeError>
   readonly prompt: (
     sessionId: string,
@@ -133,6 +139,19 @@ export interface AgentRuntimeService {
     sessionId: string,
     questionId: string,
     answer: QuestionAnswer
+  ) => Effect.Effect<void, AgentRuntimeError>
+  readonly probeHarnessAuth: (
+    harnessId: string,
+    account?: HarnessAccountContext
+  ) => Effect.Effect<HarnessAuthInspection, AgentRuntimeError>
+  readonly authenticateHarness: (
+    harnessId: string,
+    methodId: string,
+    account?: HarnessAccountContext
+  ) => Effect.Effect<void, AgentRuntimeError>
+  readonly logoutHarness: (
+    harnessId: string,
+    account?: HarnessAccountContext
   ) => Effect.Effect<void, AgentRuntimeError>
 }
 
@@ -225,6 +244,7 @@ export const harnessCatalog: ReadonlyArray<HarnessDefinition> = [
 
 interface ManagedSession {
   readonly harnessId: string
+  readonly harnessAccountId?: string
   readonly cwd: string
   readonly handle: AgentSessionHandle
   metadata: AgentSessionMetadata
@@ -333,14 +353,23 @@ export const makeAgentRuntime = (config: AgentRuntimeConfig = {}): AgentRuntimeS
     metadata: AgentSessionMetadata,
     cwd: string,
     handle: AgentSessionHandle,
-    sink: RuntimeEventSink
+    sink: RuntimeEventSink,
+    account?: HarnessAccountContext
   ): AgentSessionMetadata => {
     const sessionId = metadata.sessionId
     const previous = sessions.get(sessionId)
     if (previous !== undefined && previous.handle !== handle) {
       void Effect.runPromise(previous.handle.close).catch(() => undefined)
     }
-    sessions.set(sessionId, { chain: Promise.resolve(), cwd, handle, harnessId, metadata, sink })
+    sessions.set(sessionId, {
+      chain: Promise.resolve(),
+      cwd,
+      handle,
+      harnessId,
+      ...(account === undefined ? {} : { harnessAccountId: account.id }),
+      metadata,
+      sink
+    })
     return metadata
   }
 
@@ -380,7 +409,7 @@ export const makeAgentRuntime = (config: AgentRuntimeConfig = {}): AgentRuntimeS
         }
       })
     ),
-    listAgentSessions: (harnessId) =>
+    listAgentSessions: (harnessId, account) =>
       adapterPromise("listAgentSessions", async () => {
         const definition = harnessCatalog.find((candidate) => candidate.id === harnessId)
         if (definition === undefined) {
@@ -394,7 +423,7 @@ export const makeAgentRuntime = (config: AgentRuntimeConfig = {}): AgentRuntimeS
           return []
         }
         const list = provider.listAgentSessions
-        return list === undefined ? [] : await list(definition)
+        return list === undefined ? [] : await list(definition, account)
       }),
     refreshEnvironment: adapterPromise("refreshEnvironment", () => {
       const resolveEnv = config.resolveEnv
@@ -412,38 +441,50 @@ export const makeAgentRuntime = (config: AgentRuntimeConfig = {}): AgentRuntimeS
         })
       return envRefresh
     }),
-    createAgentSession: (harnessId, cwd, sink) =>
+    createAgentSession: (harnessId, cwd, sink, account) =>
       Effect.gen(function* () {
         const { definition, provider } = yield* definitionFor(harnessId)
-        const created = yield* provider.createSession(definition, cwd, dispatch)
-        manageSession(harnessId, created.metadata, cwd, created.handle, sink)
+        const created = yield* provider.createSession(definition, cwd, dispatch, account)
+        manageSession(harnessId, created.metadata, cwd, created.handle, sink, account)
         return created.metadata.sessionId
       }),
-    inspectHarness: (harnessId, cwd) =>
+    inspectHarness: (harnessId, cwd, account) =>
       Effect.gen(function* () {
         const { definition, provider } = yield* definitionFor(harnessId)
         const created = yield* provider.createSession(
           definition,
           cwd,
           /* v8 ignore next -- inspection sessions are closed before they can emit. */
-          () => Promise.resolve()
+          () => Promise.resolve(),
+          account
         )
         void Effect.runPromise(created.handle.close).catch(() => undefined)
         return created.metadata
       }),
-    loadAgentSession: (harnessId, agentSessionId, cwd, sink) =>
+    loadAgentSession: (harnessId, agentSessionId, cwd, sink, account) =>
       Effect.gen(function* () {
         const existing = sessions.get(agentSessionId)
-        if (existing !== undefined && existing.harnessId === harnessId && existing.cwd === cwd) {
+        if (
+          existing !== undefined &&
+          existing.harnessId === harnessId &&
+          existing.cwd === cwd &&
+          existing.harnessAccountId === account?.id
+        ) {
           // Reconnects re-bind the sink (e.g. a restarted client re-loading a
           // live session) without tearing down the agent process.
           existing.sink = sink
           return existing.metadata
         }
         const { definition, provider } = yield* definitionFor(harnessId)
-        const loaded = yield* provider.loadSession(definition, agentSessionId, cwd, dispatch)
+        const loaded = yield* provider.loadSession(
+          definition,
+          agentSessionId,
+          cwd,
+          dispatch,
+          account
+        )
         const metadata = loaded.metadata ?? { configOptions: [], sessionId: loaded.sessionId }
-        return manageSession(harnessId, metadata, cwd, loaded.handle, sink)
+        return manageSession(harnessId, metadata, cwd, loaded.handle, sink, account)
       }),
     prompt: (sessionId, input) =>
       Effect.gen(function* () {
@@ -515,6 +556,40 @@ export const makeAgentRuntime = (config: AgentRuntimeConfig = {}): AgentRuntimeS
           )
         }
         return yield* answerQuestion(questionId, answer)
+      }),
+    probeHarnessAuth: (harnessId, account) =>
+      Effect.gen(function* () {
+        const { definition, provider } = yield* definitionFor(harnessId)
+        if (provider.probeAuth === undefined) {
+          return { state: "notRequired" as const, methods: [], canLogout: false }
+        }
+        return yield* provider.probeAuth(definition, account)
+      }),
+    authenticateHarness: (harnessId, methodId, account) =>
+      Effect.gen(function* () {
+        const { definition, provider } = yield* definitionFor(harnessId)
+        if (provider.authenticate === undefined) {
+          return yield* Effect.fail(
+            new AgentRuntimeError({
+              operation: "authenticate",
+              message: "Authentication is not supported by this harness"
+            })
+          )
+        }
+        return yield* provider.authenticate(definition, methodId, account)
+      }),
+    logoutHarness: (harnessId, account) =>
+      Effect.gen(function* () {
+        const { definition, provider } = yield* definitionFor(harnessId)
+        if (provider.logout === undefined) {
+          return yield* Effect.fail(
+            new AgentRuntimeError({
+              operation: "logout",
+              message: "Logout is not supported by this harness"
+            })
+          )
+        }
+        return yield* provider.logout(definition, account)
       })
   }
 }

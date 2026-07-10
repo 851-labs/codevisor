@@ -39,6 +39,16 @@ public protocol HerdManServerClienting: Sendable {
     /// "import existing chats".
     func listAgentSessions(harnessId: String) async throws -> [SessionInfo]
     func setHarnessEnabled(id: String, enabled: Bool) async throws -> ServerHarness
+    func refreshHarnessAuth() async throws -> [ServerHarness]
+    func listHarnessAccounts(harnessId: String) async throws -> [ServerHarnessAccount]
+    func createHarnessAccount(harnessId: String, label: String?) async throws -> ServerHarnessAccount
+    func renameHarnessAccount(harnessId: String, accountId: String, label: String) async throws -> ServerHarnessAccount
+    func removeHarnessAccount(harnessId: String, accountId: String) async throws
+    func activateHarnessAccount(harnessId: String, accountId: String) async throws -> [ServerHarnessAccount]
+    func probeHarnessAccount(harnessId: String, accountId: String) async throws -> ServerHarnessAccount
+    func loginHarnessAccount(harnessId: String, accountId: String, methodId: String?, apiKey: String?) async throws -> ServerHarnessAuthFlow
+    func cancelHarnessLogin(harnessId: String, accountId: String, flowId: String) async throws
+    func logoutHarnessAccount(harnessId: String, accountId: String) async throws -> ServerHarnessAccount
     func listProjects() async throws -> [ServerProject]
     func upsertProject(_ project: Project) async throws -> ServerProject
     func updateProject(_ project: Project) async throws -> ServerProject
@@ -133,6 +143,27 @@ public extension HerdManServerClienting {
     /// Default for fakes/older transports: no native store to scan. The HTTP
     /// client overrides this with the real endpoint.
     func listAgentSessions(harnessId: String) async throws -> [SessionInfo] { [] }
+
+    func refreshHarnessAuth() async throws -> [ServerHarness] { try await listHarnesses() }
+    func listHarnessAccounts(harnessId: String) async throws -> [ServerHarnessAccount] { [] }
+    func createHarnessAccount(harnessId: String, label: String?) async throws -> ServerHarnessAccount {
+        throw HerdManServerClientError.invalidResponse
+    }
+    func renameHarnessAccount(harnessId: String, accountId: String, label: String) async throws -> ServerHarnessAccount {
+        throw HerdManServerClientError.invalidResponse
+    }
+    func removeHarnessAccount(harnessId: String, accountId: String) async throws {}
+    func activateHarnessAccount(harnessId: String, accountId: String) async throws -> [ServerHarnessAccount] { [] }
+    func probeHarnessAccount(harnessId: String, accountId: String) async throws -> ServerHarnessAccount {
+        throw HerdManServerClientError.invalidResponse
+    }
+    func loginHarnessAccount(harnessId: String, accountId: String, methodId: String?, apiKey: String?) async throws -> ServerHarnessAuthFlow {
+        throw HerdManServerClientError.invalidResponse
+    }
+    func cancelHarnessLogin(harnessId: String, accountId: String, flowId: String) async throws {}
+    func logoutHarnessAccount(harnessId: String, accountId: String) async throws -> ServerHarnessAccount {
+        throw HerdManServerClientError.invalidResponse
+    }
 
     /// Default for fakes/older transports: attachments are dropped and the
     /// text-only prompt path is used.
@@ -333,7 +364,9 @@ public struct ServerHarness: Codable, Equatable, Sendable {
     public var source: String
     public var launchKind: String
     public var enabled: Bool
+    public var desiredEnabled: Bool?
     public var readiness: ServerHarnessReadiness
+    public var auth: ServerHarnessAuth?
     /// Copyable shell command that installs the harness CLI; present only for
     /// harnesses with a well-known installer.
     public var installHint: String?
@@ -346,7 +379,9 @@ public struct ServerHarness: Codable, Equatable, Sendable {
         launchKind: String,
         enabled: Bool,
         readiness: ServerHarnessReadiness,
-        installHint: String? = nil
+        installHint: String? = nil,
+        desiredEnabled: Bool? = nil,
+        auth: ServerHarnessAuth? = nil
     ) {
         self.id = id
         self.name = name
@@ -354,9 +389,52 @@ public struct ServerHarness: Codable, Equatable, Sendable {
         self.source = source
         self.launchKind = launchKind
         self.enabled = enabled
+        self.desiredEnabled = desiredEnabled
         self.readiness = readiness
         self.installHint = installHint
+        self.auth = auth
     }
+}
+
+public struct ServerHarnessAuthMethod: Codable, Equatable, Identifiable, Sendable {
+    public var id: String
+    public var name: String
+    public var description: String?
+    public var kind: String
+}
+
+public struct ServerHarnessAccount: Codable, Equatable, Identifiable, Sendable {
+    public var id: String
+    public var harnessId: String
+    public var profileKind: String
+    public var label: String
+    public var email: String?
+    public var organizationId: String?
+    public var authMethod: String?
+    public var authState: String
+    public var isActive: Bool
+    public var canLogin: Bool
+    public var canLogout: Bool
+    public var lastCheckedAt: String?
+    public var detail: String?
+}
+
+public struct ServerHarnessAuth: Codable, Equatable, Sendable {
+    public var state: String
+    public var activeAccountId: String?
+    public var accounts: [ServerHarnessAccount]
+    public var loginMethods: [ServerHarnessAuthMethod]
+    public var supportsMultipleAccounts: Bool
+}
+
+public struct ServerHarnessAuthFlow: Codable, Equatable, Sendable {
+    public var id: String
+    public var accountId: String
+    public var kind: String
+    public var url: String?
+    public var verificationUrl: String?
+    public var userCode: String?
+    public var terminalId: String?
 }
 
 public struct ServerHarnessCapability: Codable, Equatable, Sendable {
@@ -515,6 +593,7 @@ public struct ServerSession: Decodable, Equatable, Sendable {
     public var projectId: String
     public var serverId: String
     public var harnessId: String
+    public var harnessAccountId: String?
     public var agentSessionId: String?
     public var title: String
     public var origin: SessionOrigin
@@ -537,6 +616,7 @@ public struct ServerSession: Decodable, Equatable, Sendable {
             projectId: projectUUID,
             serverId: scopedServerId ?? serverId,
             harnessId: harnessId,
+            harnessAccountId: harnessAccountId,
             agentSessionId: agentSessionId,
             title: title,
             origin: origin,
@@ -716,6 +796,58 @@ public final class HerdManServerClient: HerdManServerClienting, @unchecked Senda
             method: "PATCH",
             body: UpdateHarnessBody(enabled: enabled)
         )
+    }
+
+    public func refreshHarnessAuth() async throws -> [ServerHarness] {
+        try await send("/v1/harnesses/auth/refresh", method: "POST", body: Optional<EmptyBody>.none)
+    }
+
+    public func listHarnessAccounts(harnessId: String) async throws -> [ServerHarnessAccount] {
+        try await get(harnessAccountsPath(harnessId))
+    }
+
+    public func createHarnessAccount(harnessId: String, label: String?) async throws -> ServerHarnessAccount {
+        try await send(harnessAccountsPath(harnessId), method: "POST", body: HarnessAccountBody(label: label))
+    }
+
+    public func renameHarnessAccount(harnessId: String, accountId: String, label: String) async throws -> ServerHarnessAccount {
+        try await send(harnessAccountPath(harnessId, accountId), method: "PATCH", body: HarnessAccountBody(label: label))
+    }
+
+    public func removeHarnessAccount(harnessId: String, accountId: String) async throws {
+        try await sendNoResponse(harnessAccountPath(harnessId, accountId), method: "DELETE")
+    }
+
+    public func activateHarnessAccount(harnessId: String, accountId: String) async throws -> [ServerHarnessAccount] {
+        try await send("\(harnessAccountPath(harnessId, accountId))/activate", method: "POST", body: Optional<EmptyBody>.none)
+    }
+
+    public func probeHarnessAccount(harnessId: String, accountId: String) async throws -> ServerHarnessAccount {
+        try await send("\(harnessAccountPath(harnessId, accountId))/auth/probe", method: "POST", body: Optional<EmptyBody>.none)
+    }
+
+    public func loginHarnessAccount(harnessId: String, accountId: String, methodId: String?, apiKey: String?) async throws -> ServerHarnessAuthFlow {
+        try await send("\(harnessAccountPath(harnessId, accountId))/login", method: "POST", body: HarnessLoginBody(methodId: methodId, apiKey: apiKey))
+    }
+
+    public func cancelHarnessLogin(harnessId: String, accountId: String, flowId: String) async throws {
+        try await sendNoResponse("\(harnessAccountPath(harnessId, accountId))/login/\(pathComponent(flowId))", method: "DELETE")
+    }
+
+    public func logoutHarnessAccount(harnessId: String, accountId: String) async throws -> ServerHarnessAccount {
+        try await send("\(harnessAccountPath(harnessId, accountId))/logout", method: "POST", body: Optional<EmptyBody>.none)
+    }
+
+    private func harnessAccountsPath(_ harnessId: String) -> String {
+        "/v1/harnesses/\(pathComponent(harnessId))/accounts"
+    }
+
+    private func harnessAccountPath(_ harnessId: String, _ accountId: String) -> String {
+        "\(harnessAccountsPath(harnessId))/\(pathComponent(accountId))"
+    }
+
+    private func pathComponent(_ value: String) -> String {
+        value.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? value
     }
 
     public func listProjects() async throws -> [ServerProject] {
@@ -1277,6 +1409,7 @@ private struct CreateSessionBody: Encodable {
     var id: String
     var projectId: String
     var harnessId: String
+    var harnessAccountId: String?
     var agentSessionId: String?
     var title: String
     var origin: SessionOrigin
@@ -1289,6 +1422,7 @@ private struct CreateSessionBody: Encodable {
         id = session.id.uuidString
         projectId = session.projectId.uuidString
         harnessId = session.harnessId
+        harnessAccountId = session.harnessAccountId
         agentSessionId = session.agentSessionId
         title = session.title
         origin = session.origin
@@ -1297,6 +1431,12 @@ private struct CreateSessionBody: Encodable {
         createdAt = ServerDateCoding.string(from: session.createdAt)
         updatedAt = session.updatedAt.map(ServerDateCoding.string)
     }
+}
+
+private struct HarnessAccountBody: Encodable { var label: String? }
+private struct HarnessLoginBody: Encodable {
+    var methodId: String?
+    var apiKey: String?
 }
 
 private struct CreateWorktreeBody: Encodable {

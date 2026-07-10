@@ -69,7 +69,8 @@ const EXTERNAL_TERMINAL_MAX_FRAMES = 20_000
 
 export interface TerminalManagerService {
   readonly createTerminal: (
-    request: TerminalCreateRequest
+    request: TerminalCreateRequest,
+    envOverrides?: NodeJS.ProcessEnv
   ) => Effect.Effect<TerminalCreateResponse, TerminalError>
   readonly connectTerminal: (
     terminalId: string,
@@ -168,7 +169,7 @@ export const makeTerminalManager = (config: TerminalManagerConfig = {}): Termina
   }
 
   return {
-    createTerminal: (request) =>
+    createTerminal: (request, envOverrides) =>
       Effect.gen(function* () {
         if (request.cols < 1 || request.rows < 1) {
           return yield* Effect.fail(
@@ -202,7 +203,7 @@ export const makeTerminalManager = (config: TerminalManagerConfig = {}): Termina
         const spawnRequest: TerminalSpawnRequest = {
           ...request,
           shell: request.shell ?? defaultShell,
-          env
+          env: { ...env, ...envOverrides }
         }
         const pendingFrames: Array<TerminalFramePayload> = []
         let runningTerminal: RunningTerminal | undefined
@@ -400,7 +401,7 @@ export const nodePtySpawner: TerminalSpawner = {
     Effect.tryPromise({
       try: async () => {
         const pty = await import("node-pty")
-        const child = pty.spawn(request.shell, [], {
+        const child = pty.spawn(request.shell, [...(request.args ?? [])], {
           cols: request.cols,
           cwd: request.cwd,
           env: request.env,

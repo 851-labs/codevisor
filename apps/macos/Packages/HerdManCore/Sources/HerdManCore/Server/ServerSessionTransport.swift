@@ -371,6 +371,8 @@ public struct ServerSessionTransport: Sendable {
             return metadataUpdates(from: event.payload).map(ServerSessionStreamEvent.update)
         case "session.error":
             return [.failed(errorMessage(from: event.payload))]
+        case "session.authRequired":
+            return [.failed(event.payload["detail"]?.stringValue ?? "Sign-in expired. Sign in again in Harness Settings to continue.")]
         default:
             return []
         }

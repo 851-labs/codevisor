@@ -50,6 +50,23 @@ class FakeConnection implements AcpAgentConnection {
     this.failClose = request.cwd.includes("fail-close")
   }
 
+  probeAuth(): Effect.Effect<
+    {
+      readonly state: "notRequired"
+      readonly methods: []
+      readonly canLogout: false
+    },
+    AgentRuntimeError
+  > {
+    return Effect.succeed({ canLogout: false, methods: [], state: "notRequired" })
+  }
+
+  authenticate(_methodId: string): Effect.Effect<void, AgentRuntimeError> {
+    return Effect.void
+  }
+
+  readonly logout: Effect.Effect<void, AgentRuntimeError> = Effect.void
+
   createSession(cwd: string): Effect.Effect<
     {
       readonly sessionId: string
@@ -144,6 +161,51 @@ const conversationEvent = (
 })
 
 describe("@herdman/agent-runtime", () => {
+  it("probes and delegates harness authentication", async () => {
+    const connector = makeConnector()
+    const runtime = makeAgentRuntime({
+      connector,
+      env: { PATH: "/bin" },
+      executableExists: (name) => name === "gemini",
+      locateExecutable: (name) => `/bin/${name}`
+    })
+    const account = {
+      id: "account-1",
+      profileKind: "managed" as const,
+      env: { TEST_PROFILE: "account-1" }
+    }
+
+    await expect(run(runtime.probeHarnessAuth("gemini", account))).resolves.toEqual({
+      state: "notRequired",
+      methods: [],
+      canLogout: false
+    })
+    await expect(run(runtime.authenticateHarness("gemini", "browser", account))).resolves.toBe(
+      undefined
+    )
+    await expect(run(runtime.logoutHarness("gemini", account))).resolves.toBe(undefined)
+    expect(connector.requests.every((request) => request.env.TEST_PROFILE === "account-1")).toBe(
+      true
+    )
+    expect(connector.connections.every((connection) => connection.closeCount === 1)).toBe(true)
+    const sessionId = await run(
+      runtime.createAgentSession("gemini", "/tmp/auth-profile", () => Promise.resolve(), account)
+    )
+    await run(runtime.closeAgentSession(sessionId))
+
+    await expect(run(runtime.probeHarnessAuth("codex"))).resolves.toEqual({
+      state: "notRequired",
+      methods: [],
+      canLogout: false
+    })
+    await expect(run(runtime.authenticateHarness("codex", "browser"))).rejects.toMatchObject({
+      operation: "authenticate"
+    })
+    await expect(run(runtime.logoutHarness("codex"))).rejects.toMatchObject({
+      operation: "logout"
+    })
+  })
+
   it("discovers ready, missing-runner, and unavailable harnesses", async () => {
     const runtime = makeAgentRuntime({
       env: { PATH: "/bin" },

@@ -29,6 +29,7 @@ import {
   startHerdManServer,
   type HerdManServerUpdater
 } from "./server.js"
+import { makeHarnessAuthManager } from "./harness-auth.js"
 
 const SERVER_PROCESS_TITLE = "herdman-server"
 
@@ -344,6 +345,13 @@ const main = Effect.gen(function* () {
     ...(backgroundTerminals === undefined ? {} : { backgroundTerminals }),
     resolveEnv: () => resolveShellEnv()
   })
+  const auth = makeHarnessAuthManager({
+    dataDir: dirname(databasePath),
+    db,
+    agents,
+    terminal,
+    preferDeviceCode: (kind ?? (host === "127.0.0.1" ? "local" : "remote")) === "remote"
+  })
   // Self-heal PATH at boot, fire-and-forget: CLI-/brew-launched servers
   // inherit whatever PATH the parent had, and a slow login-shell probe must
   // not delay the health endpoint the launching app is waiting on.
@@ -351,6 +359,7 @@ const main = Effect.gen(function* () {
   const server = yield* startHerdManServer(
     {
       agents,
+      auth,
       db,
       terminal
     },
