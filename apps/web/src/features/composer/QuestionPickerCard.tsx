@@ -235,7 +235,9 @@ export function QuestionPickerCard({
           onKeyDown={(event) => {
             if (event.key === "Escape") {
               event.preventDefault()
+              event.stopPropagation()
               rootRef.current?.focus()
+              return
             }
             if (event.key === "Enter" && !event.shiftKey) {
               event.preventDefault()
