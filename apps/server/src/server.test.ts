@@ -171,7 +171,21 @@ const makeAgents = (): AgentRuntimeService & {
       Effect.sync(() => {
         loads.push([harnessId, agentSessionId, cwd])
         sinks.set(agentSessionId, sink)
-        return agentSessionId
+        return {
+          configOptions: [
+            {
+              category: "model",
+              currentValue: "gpt-current",
+              id: "model",
+              name: "Model",
+              options: [
+                { name: "GPT Current", value: "gpt-current" },
+                { name: "GPT New", value: "gpt-new" }
+              ]
+            }
+          ],
+          sessionId: agentSessionId
+        }
       }),
     prompt: (sessionId, input) =>
       Effect.promise(async () => {
@@ -1271,6 +1285,22 @@ describe("@herdman/server", () => {
       (await run(services.db.listEvents(0))).some((event) => event.kind === "session.error")
     )
     expect(agents.loads).toContainEqual(["codex", session.agentSessionId, workspaceFolder])
+    expect(
+      (
+        await jsonRequest(server, `/v1/sessions/${session.id}/connect`, {
+          method: "POST"
+        })
+      ).body
+    ).toMatchObject({
+      configOptions: [
+        {
+          currentValue: "gpt-current",
+          id: "model",
+          options: [{ value: "gpt-current" }, { value: "gpt-new" }]
+        }
+      ],
+      sessionId: session.agentSessionId
+    })
     expect(
       (
         await jsonRequest(server, `/v1/sessions/${session.id}/cancel`, {

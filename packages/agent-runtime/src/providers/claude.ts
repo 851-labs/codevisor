@@ -889,7 +889,11 @@ export const makeClaudeProvider = (
     ): Effect.Effect<LoadedAgentSession, AgentRuntimeError> =>
       adapterPromise("loadSession", async () => {
         const session = await startSession(definition, cwd, emit, agentSessionId)
-        return { handle: handleFor(session), sessionId: session.key }
+        return {
+          handle: handleFor(session),
+          metadata: { sessionId: session.key, ...metadataFor(session) },
+          sessionId: session.key
+        }
       }),
     readiness: (definition) => {
       const installed = definition.detectBinaries.some((binary) =>

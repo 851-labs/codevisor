@@ -1208,6 +1208,10 @@ describe("CodexProvider", () => {
   it("keeps the requested id when resuming, with thread/start fallback", async () => {
     const { client, loaded } = await setup({ resume: "old-thread" })
     expect(loaded?.sessionId).toBe("old-thread")
+    expect(loaded?.metadata?.sessionId).toBe("old-thread")
+    expect(
+      loaded?.metadata?.configOptions.find((option) => option.id === "model")?.options
+    ).toEqual(expect.arrayContaining([expect.objectContaining({ value: "gpt-5.5" })]))
     expect(client.requests.map((request) => request.method)).toContain("thread/resume")
 
     const fallback = await setup({ failResume: true, resume: "not-a-thread" })

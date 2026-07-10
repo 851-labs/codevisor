@@ -104,7 +104,7 @@ export interface AgentRuntimeService {
     agentSessionId: string,
     cwd: string,
     sink: RuntimeEventSink
-  ) => Effect.Effect<string, AgentRuntimeError>
+  ) => Effect.Effect<AgentSessionMetadata, AgentRuntimeError>
   readonly prompt: (
     sessionId: string,
     input: string | PromptInput
@@ -227,6 +227,7 @@ interface ManagedSession {
   readonly harnessId: string
   readonly cwd: string
   readonly handle: AgentSessionHandle
+  metadata: AgentSessionMetadata
   sink: RuntimeEventSink
   chain: Promise<void>
 }
@@ -275,6 +276,25 @@ export const makeAgentRuntime = (config: AgentRuntimeConfig = {}): AgentRuntimeS
     if (session === undefined) {
       return Promise.resolve()
     }
+    if (
+      event.kind === "session.updated" &&
+      typeof event.payload === "object" &&
+      event.payload !== null
+    ) {
+      const payload = event.payload as Record<string, unknown>
+      if (Array.isArray(payload.configOptions)) {
+        session.metadata = {
+          ...session.metadata,
+          configOptions: payload.configOptions as AgentSessionMetadata["configOptions"]
+        }
+      }
+      if (typeof payload.modeId === "string" && session.metadata.modes !== undefined) {
+        session.metadata = {
+          ...session.metadata,
+          modes: { ...session.metadata.modes, currentModeId: payload.modeId }
+        }
+      }
+    }
     const next = session.chain
       .then(() => session.sink(event))
       .then(
@@ -310,17 +330,18 @@ export const makeAgentRuntime = (config: AgentRuntimeConfig = {}): AgentRuntimeS
 
   const manageSession = (
     harnessId: string,
-    sessionId: string,
+    metadata: AgentSessionMetadata,
     cwd: string,
     handle: AgentSessionHandle,
     sink: RuntimeEventSink
-  ): string => {
+  ): AgentSessionMetadata => {
+    const sessionId = metadata.sessionId
     const previous = sessions.get(sessionId)
     if (previous !== undefined && previous.handle !== handle) {
       void Effect.runPromise(previous.handle.close).catch(() => undefined)
     }
-    sessions.set(sessionId, { chain: Promise.resolve(), cwd, handle, harnessId, sink })
-    return sessionId
+    sessions.set(sessionId, { chain: Promise.resolve(), cwd, handle, harnessId, metadata, sink })
+    return metadata
   }
 
   const sessionFor = (sessionId: string): Effect.Effect<ManagedSession, AgentRuntimeError> =>
@@ -395,7 +416,8 @@ export const makeAgentRuntime = (config: AgentRuntimeConfig = {}): AgentRuntimeS
       Effect.gen(function* () {
         const { definition, provider } = yield* definitionFor(harnessId)
         const created = yield* provider.createSession(definition, cwd, dispatch)
-        return manageSession(harnessId, created.metadata.sessionId, cwd, created.handle, sink)
+        manageSession(harnessId, created.metadata, cwd, created.handle, sink)
+        return created.metadata.sessionId
       }),
     inspectHarness: (harnessId, cwd) =>
       Effect.gen(function* () {
@@ -416,11 +438,12 @@ export const makeAgentRuntime = (config: AgentRuntimeConfig = {}): AgentRuntimeS
           // Reconnects re-bind the sink (e.g. a restarted client re-loading a
           // live session) without tearing down the agent process.
           existing.sink = sink
-          return agentSessionId
+          return existing.metadata
         }
         const { definition, provider } = yield* definitionFor(harnessId)
         const loaded = yield* provider.loadSession(definition, agentSessionId, cwd, dispatch)
-        return manageSession(harnessId, loaded.sessionId, cwd, loaded.handle, sink)
+        const metadata = loaded.metadata ?? { configOptions: [], sessionId: loaded.sessionId }
+        return manageSession(harnessId, metadata, cwd, loaded.handle, sink)
       }),
     prompt: (sessionId, input) =>
       Effect.gen(function* () {

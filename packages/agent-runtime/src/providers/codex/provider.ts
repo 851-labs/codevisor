@@ -657,7 +657,16 @@ export const makeCodexProvider = (
     ): Effect.Effect<LoadedAgentSession, AgentRuntimeError> =>
       adapterPromise("loadSession", async () => {
         const session = await startSession(definition, cwd, emit, agentSessionId)
-        return { handle: handleFor(session), sessionId: session.key }
+        return {
+          handle: handleFor(session),
+          metadata: {
+            configOptions: configOptionsFor(session),
+            modes: modesFor(session),
+            sessionId: session.key,
+            supportsGoals: true
+          },
+          sessionId: session.key
+        }
       }),
     // Native sessions from ~/.codex/sessions rollouts — workspace
     // suggestions and "import existing chats" for pre-HerdMan codex users.

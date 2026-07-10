@@ -1,4 +1,5 @@
 import type {
+  AgentSessionMetadata,
   AgentRuntimeService,
   PromptAttachmentInput,
   RuntimeEvent,
@@ -1033,6 +1034,13 @@ const routeSessionActions = async (
   url: URL,
   config: HerdManServerConfig
 ): Promise<boolean> => {
+  const connectSessionId = matchRoute(url.pathname, "/v1/sessions/:id/connect")
+  if (connectSessionId !== undefined && request.method === "POST") {
+    const metadata = await ensureAgentSessionFor(services, fanout, config.id, connectSessionId)
+    writeJson(response, 200, metadata)
+    return true
+  }
+
   const queueSessionId = matchRoute(url.pathname, "/v1/sessions/:id/queue")
   if (queueSessionId !== undefined && request.method === "GET") {
     writeJson(response, 200, await run(services.db.listPromptQueue(queueSessionId)))
@@ -1139,13 +1147,13 @@ const routeSessionActions = async (
       "cancel",
       payload,
       async () => {
-        const agentSessionId = await ensureAgentSessionFor(
+        const agentSession = await ensureAgentSessionFor(
           services,
           fanout,
           config.id,
           cancelSessionId
         )
-        await run(services.agents.cancel(agentSessionId))
+        await run(services.agents.cancel(agentSession.sessionId))
         return { cancelled: true }
       }
     )
@@ -1156,8 +1164,8 @@ const routeSessionActions = async (
   if (modeSessionId !== undefined && request.method === "POST") {
     const payload = await readSchema(request, SetModeRequest)
     await writeIdempotentAction(services, response, modeSessionId, "mode", payload, async () => {
-      const agentSessionId = await ensureAgentSessionFor(services, fanout, config.id, modeSessionId)
-      await run(services.agents.setMode(agentSessionId, payload.modeId))
+      const agentSession = await ensureAgentSessionFor(services, fanout, config.id, modeSessionId)
+      await run(services.agents.setMode(agentSession.sessionId, payload.modeId))
       return { modeId: payload.modeId }
     })
     return true
@@ -1173,13 +1181,15 @@ const routeSessionActions = async (
       "config",
       payload,
       async () => {
-        const agentSessionId = await ensureAgentSessionFor(
+        const agentSession = await ensureAgentSessionFor(
           services,
           fanout,
           config.id,
           configSessionId
         )
-        await run(services.agents.setConfigOption(agentSessionId, payload.configId, payload.value))
+        await run(
+          services.agents.setConfigOption(agentSession.sessionId, payload.configId, payload.value)
+        )
         return { configId: payload.configId }
       }
     )
@@ -1190,11 +1200,11 @@ const routeSessionActions = async (
   if (goalSessionId !== undefined && request.method === "POST") {
     const payload = await readSchema(request, SetGoalRequest)
     await writeIdempotentAction(services, response, goalSessionId, "goal", payload, async () => {
-      const agentSessionId = await ensureAgentSessionFor(services, fanout, config.id, goalSessionId)
+      const agentSession = await ensureAgentSessionFor(services, fanout, config.id, goalSessionId)
       // Double-option passthrough: only forward the tokenBudget key when the
       // client sent one (absent = keep, null = clear, number = set).
       return await run(
-        services.agents.setGoal(agentSessionId, {
+        services.agents.setGoal(agentSession.sessionId, {
           ...(payload.objective === undefined ? {} : { objective: payload.objective }),
           ...(payload.status === undefined ? {} : { status: payload.status }),
           ...("tokenBudget" in payload ? { tokenBudget: payload.tokenBudget ?? null } : {})
@@ -1204,8 +1214,8 @@ const routeSessionActions = async (
     return true
   }
   if (goalSessionId !== undefined && request.method === "DELETE") {
-    const agentSessionId = await ensureAgentSessionFor(services, fanout, config.id, goalSessionId)
-    await run(services.agents.clearGoal(agentSessionId))
+    const agentSession = await ensureAgentSessionFor(services, fanout, config.id, goalSessionId)
+    await run(services.agents.clearGoal(agentSession.sessionId))
     writeJson(response, 204, undefined)
     return true
   }
@@ -1225,14 +1235,14 @@ const routeSessionActions = async (
       "question-answer",
       payload,
       async () => {
-        const agentSessionId = await ensureAgentSessionFor(
+        const agentSession = await ensureAgentSessionFor(
           services,
           fanout,
           config.id,
           answerSessionId
         )
         await run(
-          services.agents.answerQuestion(agentSessionId, questionId, {
+          services.agents.answerQuestion(agentSession.sessionId, questionId, {
             outcome: payload.outcome,
             ...(payload.answers === undefined ? {} : { answers: payload.answers })
           })
@@ -1339,14 +1349,14 @@ const runPromptInBackground = async (
       },
       sessionId
     )
-    const agentSessionId = await ensureAgentSessionFor(services, fanout, serverId, sessionId)
+    const agentSession = await ensureAgentSessionFor(services, fanout, serverId, sessionId)
     // Session output, turn lifecycle, and the final stopReason all flow
     // through the standing sink registered at session create/load time.
     const input =
       refs.length === 0
         ? text
         : { attachments: await resolvePromptAttachments(services.db, refs), text }
-    await run(services.agents.prompt(agentSessionId, input))
+    await run(services.agents.prompt(agentSession.sessionId, input))
   } catch (cause) {
     await appendAndPublish(services.db, fanout, "session.error", sessionId, {
       message: failureMessage(cause),
@@ -1640,7 +1650,7 @@ const ensureAgentSessionFor = async (
   fanout: EventFanout,
   serverId: string,
   sessionId: string
-): Promise<string> => {
+): Promise<AgentSessionMetadata> => {
   const detail = await run(services.db.getSessionDetail(sessionId))
   const project = await getProjectOrFail(services.db, detail.session.projectId)
   const cwd = await resolveSessionCwdOrFail(
@@ -1659,7 +1669,14 @@ const ensureAgentSessionFor = async (
     )
     const session = await run(services.db.updateSession(sessionId, { agentSessionId }))
     await appendAndPublish(services.db, fanout, "session.updated", session.id, session)
-    return agentSessionId
+    return run(
+      services.agents.loadAgentSession(
+        detail.session.harnessId,
+        agentSessionId,
+        cwd,
+        sessionEventSink(services, fanout, serverId, sessionId)
+      )
+    )
   }
   const agentSessionId = detail.session.agentSessionId ?? sessionId
   return run(

@@ -38,6 +38,32 @@ struct SessionModelTests {
         #expect(client.cancelCount == 0)
     }
 
+    @Test("Cancellation is single-flight and clears on the terminal event")
+    func cancellationIsSingleFlight() async {
+        let sessionId = UUID()
+        let client = FakeSessionServerClient(sessionId: sessionId)
+        client.echoOnPrompt = false
+        let model = SessionModel(
+            serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
+            sessionId: sessionId.uuidString
+        )
+        await model.send("keep working")
+        #expect(model.isSending)
+
+        async let first: Void = model.cancel()
+        for _ in 0..<100 {
+            await Task.yield()
+            if client.cancelCount == 1 { break }
+        }
+        async let duplicate: Void = model.cancel()
+        client.emit(stopEnvelope(id: 9, sessionId: sessionId, stopReason: "cancelled"))
+        _ = await (first, duplicate)
+
+        #expect(client.cancelCount == 1)
+        #expect(model.isSending == false)
+        #expect(model.isCancelling == false)
+    }
+
     @Test("Server-backed sessions prompt through the server and consume event stream output")
     func serverBackedSendStreams() async {
         let sessionId = UUID()
@@ -1375,6 +1401,87 @@ struct SessionModelTests {
             if !client.eventSinceValues.isEmpty { break }
         }
         #expect(client.eventSinceValues == [4])
+    }
+
+    @Test("History restores selections without replacing the current config catalog")
+    func historyKeepsCurrentConfigCatalog() async {
+        let sessionId = UUID()
+        let client = FakeSessionServerClient(sessionId: sessionId)
+        client.historyEvents = [
+            ServerEventEnvelope(
+                id: 1,
+                serverId: "local",
+                kind: "session.updated",
+                subjectId: sessionId.uuidString,
+                createdAt: "2026-07-09T18:23:30.000Z",
+                payload: .object([
+                    "configOptions": .array([
+                        .object([
+                            "id": .string("model"),
+                            "name": .string("Model"),
+                            "category": .string("model"),
+                            "currentValue": .string("gpt-5.5"),
+                            "options": .array([
+                                .object(["value": .string("gpt-5.5"), "name": .string("GPT-5.5")]),
+                                .object(["value": .string("gpt-5.4"), "name": .string("GPT-5.4")])
+                            ])
+                        ]),
+                        .object([
+                            "id": .string("effort"),
+                            "name": .string("Reasoning"),
+                            "category": .string("thought_level"),
+                            "currentValue": .string("xhigh"),
+                            "options": .array([
+                                .object(["value": .string("low"), "name": .string("Low")]),
+                                .object(["value": .string("xhigh"), "name": .string("X-High")])
+                            ])
+                        ])
+                    ])
+                ])
+            )
+        ]
+        let currentOptions = [
+            SessionConfigOption(
+                id: "model",
+                name: "Model",
+                category: "model",
+                currentValue: "gpt-5.6-sol",
+                options: [
+                    SessionConfigSelectOption(value: "gpt-5.6-sol", name: "GPT-5.6-Sol"),
+                    SessionConfigSelectOption(value: "gpt-5.5", name: "GPT-5.5"),
+                    SessionConfigSelectOption(value: "gpt-5.6-terra", name: "GPT-5.6-Terra")
+                ]
+            ),
+            SessionConfigOption(
+                id: "effort",
+                name: "Reasoning",
+                category: "thought_level",
+                currentValue: "high",
+                options: [
+                    SessionConfigSelectOption(value: "low", name: "Low"),
+                    SessionConfigSelectOption(value: "high", name: "High"),
+                    SessionConfigSelectOption(value: "xhigh", name: "X-High")
+                ]
+            )
+        ]
+        let model = SessionModel(
+            serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
+            sessionId: sessionId.uuidString,
+            configOptions: currentOptions
+        )
+
+        await model.loadHistory()
+
+        let modelOption = model.configOptions.first { $0.id == "model" }
+        #expect(modelOption?.options.map(\.value) == ["gpt-5.6-sol", "gpt-5.5", "gpt-5.6-terra"])
+        #expect(modelOption?.currentValue == "gpt-5.5")
+        #expect(model.configOptions.first { $0.id == "effort" }?.currentValue == "xhigh")
+        #expect(client.configUpdates.map(\.0) == ["model", "effort"])
+    }
+
+    @Test("Event WebSockets accept bounded multi-megabyte tool results")
+    func eventWebSocketLimit() {
+        #expect(HerdManServerClient.eventWebSocketMaximumMessageSize == 16 * 1024 * 1024)
     }
 
     private func toolCallEnvelope(id: Int, sessionId: UUID, toolCallId: String, status: String) -> ServerEventEnvelope {

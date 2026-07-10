@@ -362,25 +362,32 @@ struct ComposerCard: View {
     @ViewBuilder
     private var stopButton: some View {
         if controller.isSending {
-            Button { Task { await controller.stop() } } label: {
-                Image(systemName: "stop.fill")
-                    .font(.system(size: 10, weight: .bold))
+            if controller.isCancelling {
+                ProgressView()
+                    .controlSize(.small)
                     .frame(width: 26, height: 26)
-                    .background(
-                        Circle()
-                            .fill(isStopButtonHovered ? Color.primary.opacity(0.06) : .clear)
-                    )
-                    .overlay(
-                        Circle()
-                            .strokeBorder(Color.secondary.opacity(isStopButtonHovered ? 0.55 : 0.35), lineWidth: 1)
-                    )
-                    .contentShape(Circle())
+                    .help("Stopping…")
+            } else {
+                Button { Task { await controller.stop() } } label: {
+                    Image(systemName: "stop.fill")
+                        .font(.system(size: 10, weight: .bold))
+                        .frame(width: 26, height: 26)
+                        .background(
+                            Circle()
+                                .fill(isStopButtonHovered ? Color.primary.opacity(0.06) : .clear)
+                        )
+                        .overlay(
+                            Circle()
+                                .strokeBorder(Color.secondary.opacity(isStopButtonHovered ? 0.55 : 0.35), lineWidth: 1)
+                        )
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(isStopButtonHovered ? .primary : .secondary)
+                .onHover { isStopButtonHovered = $0 }
+                .help("Stop")
+                .tooltip("Stop")
             }
-            .buttonStyle(.plain)
-            .foregroundStyle(isStopButtonHovered ? .primary : .secondary)
-            .onHover { isStopButtonHovered = $0 }
-            .help("Stop")
-            .tooltip("Stop")
         }
     }
 

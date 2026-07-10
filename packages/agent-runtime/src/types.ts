@@ -151,6 +151,10 @@ export interface CreatedAgentSession {
 export interface LoadedAgentSession {
   readonly sessionId: string
   readonly handle: AgentSessionHandle
+  /// Current session-specific configuration discovered while resuming. Older
+  /// ACP adapters may not return it, in which case callers fall back to the
+  /// harness capability catalog.
+  readonly metadata?: AgentSessionMetadata
 }
 
 export interface AgentProvider {

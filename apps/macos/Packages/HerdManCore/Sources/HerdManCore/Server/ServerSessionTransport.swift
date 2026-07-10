@@ -172,9 +172,15 @@ public struct ServerSessionTransport: Sendable {
     public func updates(since: Int = Self.liveOnlyEventCursor) -> AsyncStream<SessionUpdate> {
         AsyncStream { continuation in
             let task = Task {
-                for await streamEvent in streamEvents(since: since) {
-                    guard case let .update(update) = streamEvent else { continue }
-                    continuation.yield(update)
+                do {
+                    for try await streamEvent in streamEvents(since: since) {
+                        guard case let .update(update) = streamEvent else { continue }
+                        continuation.yield(update)
+                    }
+                } catch {
+                    // This compatibility wrapper cannot surface failures;
+                    // SessionModel consumes streamEvents directly and
+                    // performs durable reconciliation.
                 }
                 continuation.finish()
             }
@@ -194,8 +200,10 @@ public struct ServerSessionTransport: Sendable {
         return (events, envelopes.last?.id)
     }
 
-    public func streamEvents(since: Int = Self.liveOnlyEventCursor) -> AsyncStream<ServerSessionStreamEvent> {
-        AsyncStream { continuation in
+    public func streamEvents(
+        since: Int = Self.liveOnlyEventCursor
+    ) -> AsyncThrowingStream<ServerSessionStreamEvent, any Error> {
+        AsyncThrowingStream { continuation in
             let task = Task {
                 do {
                     for try await event in client.eventStream(since: since) {
@@ -208,7 +216,7 @@ public struct ServerSessionTransport: Sendable {
                     }
                     continuation.finish()
                 } catch {
-                    continuation.finish()
+                    continuation.finish(throwing: error)
                 }
             }
             continuation.onTermination = { _ in task.cancel() }

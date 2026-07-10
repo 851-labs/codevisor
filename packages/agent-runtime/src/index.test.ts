@@ -306,9 +306,9 @@ describe("@herdman/agent-runtime", () => {
     expect(created).toBe("agent-gemini-1")
     expect(inspected).toEqual({ configOptions: [], sessionId: "agent-gemini-1" })
     expect(inspectedWithCloseFailure).toEqual({ configOptions: [], sessionId: "agent-gemini-1" })
-    expect(loaded).toBe("agent-existing")
-    expect(loadedAgain).toBe("agent-existing")
-    expect(reloadedElsewhere).toBe("agent-existing")
+    expect(loaded).toEqual({ configOptions: [], sessionId: "agent-existing" })
+    expect(loadedAgain).toEqual({ configOptions: [], sessionId: "agent-existing" })
+    expect(reloadedElsewhere).toEqual({ configOptions: [], sessionId: "agent-existing" })
     expect(connector.requests).toHaveLength(5)
     expect(connector.requests[0]).toMatchObject({
       args: ["-y", "@google/gemini-cli@0.49.0", "--acp"],
@@ -689,7 +689,17 @@ describe("@herdman/agent-runtime", () => {
               setConfigOption: () => Effect.void,
               setMode: () => Effect.void
             },
-            metadata: { configOptions: [], sessionId: "custom-1" }
+            metadata: {
+              configOptions: [],
+              modes: {
+                availableModes: [
+                  { id: "default", name: "Default" },
+                  { id: "plan", name: "Plan" }
+                ],
+                currentModeId: "default"
+              },
+              sessionId: "custom-1"
+            }
           }
         }),
       id: "claude" as const,
@@ -711,8 +721,18 @@ describe("@herdman/agent-runtime", () => {
     // Events for sessions the runtime doesn't know are dropped, not crashed on.
     await capturedEmit?.({ kind: "session.output", payload: {}, subjectId: "unknown-session" })
     await capturedEmit?.({ kind: "session.output", payload: { ok: true }, subjectId: "custom-1" })
+    await capturedEmit?.({
+      kind: "session.updated",
+      payload: { modeId: "plan" },
+      subjectId: "custom-1"
+    })
+    const reloaded = await run(
+      runtime.loadAgentSession("claude-code", "custom-1", "/tmp/project", () => undefined)
+    )
+    expect(reloaded.modes?.currentModeId).toBe("plan")
     expect(events).toEqual([
-      { kind: "session.output", payload: { ok: true }, subjectId: "custom-1" }
+      { kind: "session.output", payload: { ok: true }, subjectId: "custom-1" },
+      { kind: "session.updated", payload: { modeId: "plan" }, subjectId: "custom-1" }
     ])
   })
 

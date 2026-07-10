@@ -51,6 +51,10 @@ public protocol HerdManServerClienting: Sendable {
     func createWorktree(projectId: UUID, id: String?, name: String?) async throws -> ServerWorktree
     func listSessions() async throws -> [ServerSession]
     func sessionDetail(id: UUID) async throws -> ServerSessionDetail
+    /// Starts or rebinds the existing agent runtime and returns its current,
+    /// session-specific picker metadata. Nil means the server predates this
+    /// endpoint and callers should keep the capability-cache fallback.
+    func connectSession(id: UUID) async throws -> ServerSessionRuntimeMetadata?
     func promptQueue(id: UUID) async throws -> [ServerPromptQueueItem]
     func sessionEvents(id: UUID) async throws -> [ServerEventEnvelope]
     func upsertSession(_ session: ChatSession) async throws -> ServerSession
@@ -86,6 +90,8 @@ public protocol HerdManServerClienting: Sendable {
 }
 
 public extension HerdManServerClienting {
+    func connectSession(id: UUID) async throws -> ServerSessionRuntimeMetadata? { nil }
+
     func promptQueue(id: UUID) async throws -> [ServerPromptQueueItem] { [] }
 
     /// Default for fakes/older transports: a plain list (no PATH refresh).
@@ -326,6 +332,13 @@ public struct ServerCapabilities: Codable, Equatable, Sendable {
     public var harnesses: [ServerHarnessCapability]
 }
 
+public struct ServerSessionRuntimeMetadata: Codable, Equatable, Sendable {
+    public var sessionId: String
+    public var modes: SessionModeState?
+    public var configOptions: [SessionConfigOption]
+    public var supportsGoals: Bool?
+}
+
 public struct ServerPromptAccepted: Decodable, Equatable, Sendable {
     public var accepted: Bool
     public var sessionId: String
@@ -548,6 +561,10 @@ public struct ServerEventEnvelope: Decodable, Equatable, Sendable {
 }
 
 public final class HerdManServerClient: HerdManServerClienting, @unchecked Sendable {
+    /// Foundation defaults WebSocket messages to 1 MiB. Tool results can
+    /// legitimately exceed that (for example a broad repository search), so
+    /// leave bounded headroom without altering the event payload.
+    static let eventWebSocketMaximumMessageSize = 16 * 1024 * 1024
     private let config: HerdManServerConfig
     private let urlSession: URLSession
     private let decoder = JSONDecoder()
@@ -659,6 +676,18 @@ public final class HerdManServerClient: HerdManServerClienting, @unchecked Senda
 
     public func sessionDetail(id: UUID) async throws -> ServerSessionDetail {
         try await get("/v1/sessions/\(id.uuidString)")
+    }
+
+    public func connectSession(id: UUID) async throws -> ServerSessionRuntimeMetadata? {
+        do {
+            return try await send(
+                "/v1/sessions/\(id.uuidString)/connect",
+                method: "POST",
+                body: Optional<EmptyBody>.none
+            )
+        } catch HerdManServerClientError.httpStatus(404, _) {
+            return nil
+        }
     }
 
     public func sessionEvents(id: UUID) async throws -> [ServerEventEnvelope] {
@@ -814,20 +843,27 @@ public final class HerdManServerClient: HerdManServerClienting, @unchecked Senda
                         var request = URLRequest(url: try websocketURL(for: "/v1/events/socket?since=\(cursor)"))
                         applyAuthorization(to: &request)
                         let socket = urlSession.webSocketTask(with: request)
+                        socket.maximumMessageSize = Self.eventWebSocketMaximumMessageSize
                         socket.resume()
                         defer { socket.cancel(with: .goingAway, reason: nil) }
-                        failures = 0
 
                         while !Task.isCancelled {
                             let message = try await socket.receive()
                             guard let data = Self.data(from: message) else { continue }
                             let event = try decoder.decode(ServerEventEnvelope.self, from: data)
                             cursor = max(cursor, event.id)
+                            failures = 0
                             continuation.yield(event)
                         }
                     } catch {
                         if Task.isCancelled {
                             continuation.finish()
+                            return
+                        }
+                        let failure = error as NSError
+                        if failure.domain == NSPOSIXErrorDomain,
+                           failure.code == POSIXErrorCode.EMSGSIZE.rawValue {
+                            continuation.finish(throwing: error)
                             return
                         }
                         failures += 1

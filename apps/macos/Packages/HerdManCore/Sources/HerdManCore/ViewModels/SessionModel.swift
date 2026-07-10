@@ -37,6 +37,7 @@ public final class SessionModel {
         return settledConversation
     }
     public private(set) var isSending = false
+    public private(set) var isCancelling = false
     public private(set) var queuedPrompts: [ServerPromptQueueItem] = []
     public var composerText: String = ""
     public private(set) var availableCommands: [AvailableCommand] = []
@@ -98,6 +99,12 @@ public final class SessionModel {
     private let sessionId: String
     private let now: @Sendable () -> Date
     private var serverEventCursor: Int?
+    /// History contains complete config-option snapshots from the runtime that
+    /// originally created the chat. During replay, retain only their selected
+    /// values; the option catalog itself must come from the runtime connected
+    /// today.
+    private var isReplayingHistory = false
+    private var historicalConfigSelections: [String: String] = [:]
 
     /// A single long-lived consumer of the session's event stream. The server
     /// delivers updates continuously — including agent-initiated turns with no
@@ -150,13 +157,19 @@ public final class SessionModel {
         guard consumerTask == nil else { return }
         let events = serverEventCursor.map { transport.streamEvents(since: $0) } ?? transport.streamEvents()
         consumerTask = Task { @MainActor [weak self] in
-            for await event in events {
-                guard let self else { break }
-                self.pendingEvents.append(event)
-                self.noteStreamedSize(of: event)
-                self.scheduleFlush()
+            do {
+                for try await event in events {
+                    guard let self else { break }
+                    self.pendingEvents.append(event)
+                    self.noteStreamedSize(of: event)
+                    self.scheduleFlush()
+                }
+                self?.flushPendingEvents()
+            } catch {
+                guard let self, !Task.isCancelled else { return }
+                self.consumerTask = nil
+                await self.reconcileFromServer()
             }
-            self?.flushPendingEvents()
         }
     }
 
@@ -340,8 +353,37 @@ public final class SessionModel {
 
     /// Requests cancellation of the in-flight turn.
     public func cancel() async {
-        guard isSending else { return }
-        try? await transport.cancel()
+        guard isSending, !isCancelling else { return }
+        isCancelling = true
+        defer { isCancelling = false }
+        do {
+            try await transport.cancel()
+        } catch {
+            errorMessage = serverErrorMessage(error)
+            return
+        }
+
+        // Normally the provider's terminal event arrives immediately. If it
+        // was already missed (for example while the event socket was down),
+        // rebuild from durable history instead of leaving a false Stop state.
+        for _ in 0..<20 {
+            try? await Task.sleep(for: .milliseconds(100))
+            flushPendingEvents()
+            if !isSending { return }
+        }
+        await reconcileFromServer()
+    }
+
+    private func reconcileFromServer() async {
+        let wasSending = isSending
+        consumerTask?.cancel()
+        consumerTask = nil
+        pendingEvents.removeAll(keepingCapacity: true)
+        isFlushScheduled = false
+        await loadHistory()
+        if wasSending, !isSending {
+            onTurnEnded?()
+        }
     }
 
     /// Switches the session mode.
@@ -438,6 +480,8 @@ public final class SessionModel {
                 serverEventCursor = snapshot.eventCursor
             } else {
                 setConversation([])
+                isReplayingHistory = true
+                historicalConfigSelections.removeAll(keepingCapacity: true)
                 // Hours-long sessions replay tens of thousands of events;
                 // yielding periodically keeps the run loop responsive (input,
                 // rendering) instead of beachballing the app while a session
@@ -449,6 +493,14 @@ public final class SessionModel {
                         await Task.yield()
                     }
                 }
+                isReplayingHistory = false
+                let runtimeOptions = configOptions
+                let restoredOptions = Self.mergingSupportedSelections(
+                    historicalConfigSelections,
+                    into: runtimeOptions
+                )
+                configOptions = restoredOptions
+                await restoreRuntimeConfigSelections(from: runtimeOptions, to: restoredOptions)
                 isSending = lastTurnIsGenerating
                 serverEventCursor = history.cursor ?? snapshot.eventCursor
             }
@@ -457,7 +509,43 @@ public final class SessionModel {
             transcriptStreamBytes = Self.transcriptByteEstimate(of: conversation)
             await startConsumer()
         } catch {
+            isReplayingHistory = false
             errorMessage = serverErrorMessage(error)
+        }
+    }
+
+    private static func mergingSupportedSelections(
+        _ selections: [String: String],
+        into currentOptions: [SessionConfigOption]
+    ) -> [SessionConfigOption] {
+        currentOptions.map { option in
+            guard let selected = selections[option.id],
+                  option.options.contains(where: { $0.value == selected }) else {
+                return option
+            }
+            var merged = option
+            merged.currentValue = selected
+            return merged
+        }
+    }
+
+    private func restoreRuntimeConfigSelections(
+        from runtimeOptions: [SessionConfigOption],
+        to restoredOptions: [SessionConfigOption]
+    ) async {
+        let runtimeValues = Dictionary(uniqueKeysWithValues: runtimeOptions.map { ($0.id, $0.currentValue) })
+        let categoryOrder = [
+            SessionConfigOption.Category.model: 0,
+            SessionConfigOption.Category.thoughtLevel: 1,
+            SessionConfigOption.Category.speed: 2
+        ]
+        let changed = restoredOptions
+            .filter { runtimeValues[$0.id] != $0.currentValue }
+            .sorted {
+                (categoryOrder[$0.category ?? ""] ?? 99) < (categoryOrder[$1.category ?? ""] ?? 99)
+            }
+        for option in changed {
+            try? await transport.setConfigOption(configId: option.id, value: option.currentValue)
         }
     }
 
@@ -515,7 +603,13 @@ public final class SessionModel {
                 modeState = state
             }
         case let .configOptionUpdate(options):
-            configOptions = options
+            if isReplayingHistory {
+                for option in options {
+                    historicalConfigSelections[option.id] = option.currentValue
+                }
+            } else {
+                configOptions = options
+            }
         case let .usageUpdate(usage):
             self.usage = usage
         case let .goalUpdate(goal):

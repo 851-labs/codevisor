@@ -2138,6 +2138,8 @@ describe("ClaudeProvider", () => {
     fake.push(initMessage("sdk-session-resumed"))
     const loaded = await loadPromise
     expect(loaded.sessionId).toBe("previous-session")
+    expect(loaded.metadata?.sessionId).toBe("previous-session")
+    expect(loaded.metadata?.configOptions.length).toBeGreaterThan(0)
     expect(fake.options?.resume).toBe("previous-session")
   })
 

@@ -648,6 +648,7 @@ final class SessionController {
 
     /// Whether the session is actively generating a response.
     var isSending: Bool { model?.isSending ?? false }
+    var isCancelling: Bool { model?.isCancelling ?? false }
 
     var isBusy: Bool {
         isConnecting || isSending
@@ -1252,6 +1253,22 @@ final class SessionController {
         if let agentSessionId = session.agentSessionId {
             connectedAgentSessionId = agentSessionId
             onAgentSessionCreated?(agentSessionId)
+        }
+
+        // Capability discovery describes a fresh harness session. A resumed
+        // thread can have a different current model and model-specific effort
+        // list, so let the loaded runtime replace the generic/cache snapshot.
+        if session.agentSessionId?.isEmpty == false,
+           let metadata = try await serverClient.connectSession(id: session.id) {
+            if !metadata.configOptions.isEmpty {
+                configOptionsByHarness[harness.id] = metadata.configOptions
+            }
+            if let modes = metadata.modes {
+                modeStateByHarness[harness.id] = modes
+            }
+            if let supportsGoals = metadata.supportsGoals {
+                supportsGoalsByHarness[harness.id] = supportsGoals
+            }
         }
 
         let transport = ServerSessionTransport(client: serverClient, sessionId: session.id)

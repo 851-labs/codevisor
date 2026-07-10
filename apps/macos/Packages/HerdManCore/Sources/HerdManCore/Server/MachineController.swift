@@ -235,13 +235,23 @@ public final class MachineController {
         let serverId = selectedMachine.id
         let client = selectedClient
         eventSyncTask = Task { [weak self] in
-            do {
-                for try await event in client.eventStream(since: 0) {
+            var cursor = 0
+            while !Task.isCancelled {
+                do {
+                    for try await event in client.eventStream(since: cursor) {
+                        guard let self, !Task.isCancelled else { return }
+                        cursor = max(cursor, event.id)
+                        self.handleSyncEvent(event, serverId: serverId)
+                    }
+                    return
+                } catch {
                     guard let self, !Task.isCancelled else { return }
-                    self.handleSyncEvent(event, serverId: serverId)
+                    // Reconcile durable metadata, then resume live-only. This
+                    // deliberately skips an event Foundation could not accept
+                    // instead of reconnecting forever at the same cursor.
+                    await self.projectList.refreshFromServer()
+                    cursor = ServerSessionTransport.liveOnlyEventCursor
                 }
-            } catch {
-                // The stream reconnects internally; it only ends on cancellation.
             }
         }
     }
