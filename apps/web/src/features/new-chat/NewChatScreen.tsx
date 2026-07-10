@@ -10,7 +10,7 @@ import {
   TargetIcon,
   TriangleAlertIcon
 } from "lucide-react"
-import { type DragEvent, useEffect, useMemo, useState } from "react"
+import { type DragEvent, useEffect, useMemo, useRef, useState } from "react"
 
 import { useApi } from "../../lib/api"
 import { cn } from "../../lib/cn"
@@ -41,8 +41,18 @@ import { useComposerDraftText } from "../composer/useComposerDraftText"
 import { DropToAttachOverlay } from "../attachments/AttachmentPreview"
 import { SessionSetupView } from "../session/SessionSetupView"
 import { ProjectMenu } from "./ProjectMenu"
+import {
+  moveNewChatDraftToProject,
+  rememberNewChatSessionDefaults,
+  updateNewChatDraftState,
+  useNewChatDraftState
+} from "./useNewChatDraftState"
 
 const MODEL_MENU_CATEGORIES = new Set(["model", "thought_level", "speed"])
+const REMEMBERED_CONFIG_CATEGORIES = new Set([
+  ...MODEL_MENU_CATEGORIES,
+  "model_config"
+])
 
 type PlanControl =
   | { kind: "mode"; planId: string; buildId: string }
@@ -127,18 +137,21 @@ export function NewChatScreen({ preferredProjectId }: { preferredProjectId?: str
   const setConfig = useSetSessionConfig()
   const updateSession = useUpdateSession()
 
-  const [selectedProjectId, setSelectedProjectId] = useState(preferredProjectId)
-  const [selectedHarnessId, setSelectedHarnessId] = useState<string>()
+  const draft = useNewChatDraftState()
   const [text, setText] = useComposerDraftText("new-chat")
-  const [error, setError] = useState<string>()
-  const [isGoalComposerArmed, setIsGoalComposerArmed] = useState(false)
-  const [runInWorktree, setRunInWorktree] = useState(false)
-  const [pendingModeId, setPendingModeId] = useState<string>()
-  const [pendingConfig, setPendingConfig] = useState<Record<string, string>>({})
-  const [setupWorktreeId, setSetupWorktreeId] = useState<string>()
-  const [setupPhases, setSetupPhases] = useState<SessionSetupPhaseInfo[]>([])
   const [isAttachmentDropTargeted, setIsAttachmentDropTargeted] = useState(false)
+  const hasInitializedProject = useRef(false)
   const composerAttachments = useComposerAttachments("new-chat")
+  const {
+    selectedProjectId,
+    selectedHarnessId,
+    runInWorktree,
+    pendingModeId,
+    isGoalComposerArmed,
+    error,
+    setupWorktreeId,
+    setupPhases
+  } = draft
 
   const projects = useMemo(
     () => (projectsQuery.data ?? []).filter((project) => !project.isArchived),
@@ -161,6 +174,8 @@ export function NewChatScreen({ preferredProjectId }: { preferredProjectId?: str
   const selectedCapability = capabilitiesQuery.data?.harnesses.find(
     (candidate) => candidate.harness.id === selectedHarness?.id
   )
+  const pendingConfig =
+    selectedHarness == null ? {} : (draft.configByHarness[selectedHarness.id] ?? {})
   const supportsGoals = selectedCapability?.supportsGoals === true
   const worktreeAvailable =
     selectedProject?.locations.some((location) => location.isGitRepository === true) === true
@@ -168,7 +183,11 @@ export function NewChatScreen({ preferredProjectId }: { preferredProjectId?: str
     () =>
       (selectedCapability?.configOptions ?? []).map((option) => {
         const pending = pendingConfig[option.id]
-        return pending == null ? option : { ...option, currentValue: pending }
+        if (pending == null) return option
+        const values = flattenConfigOptions(option)
+        return values.length > 0 && !values.some((value) => value.value === pending)
+          ? option
+          : { ...option, currentValue: pending }
       }),
     [selectedCapability?.configOptions, pendingConfig]
   )
@@ -195,19 +214,83 @@ export function NewChatScreen({ preferredProjectId }: { preferredProjectId?: str
   )
 
   useEffect(() => {
-    setPendingModeId(undefined)
-    setPendingConfig({})
-    setRunInWorktree(false)
-    setSetupWorktreeId(undefined)
-    setSetupPhases([])
-  }, [selectedProject?.id, selectedHarness?.id])
+    if (hasInitializedProject.current || projects.length === 0) return
+    hasInitializedProject.current = true
+    const explicitProject = projects.find((project) => project.id === preferredProjectId)
+    const retainedProject = projects.find((project) => project.id === selectedProjectId)
+    const project = explicitProject ?? retainedProject ?? projects[0]
+    if (project == null) return
+    const supportsWorktrees = project.locations.some(
+      (location) => location.isGitRepository === true
+    )
+    updateNewChatDraftState((current) =>
+      moveNewChatDraftToProject(current, project.id, supportsWorktrees)
+    )
+  }, [preferredProjectId, projects, selectedProjectId])
+
+  useEffect(() => {
+    if (selectedHarness == null || selectedHarness.id === selectedHarnessId) return
+    updateNewChatDraftState((current) => ({
+      ...current,
+      selectedHarnessId: selectedHarness.id,
+      pendingModeId: undefined
+    }))
+  }, [selectedHarness, selectedHarnessId])
+
+  useEffect(() => {
+    if (selectedCapability == null || supportsGoals || !isGoalComposerArmed) return
+    updateNewChatDraftState((current) => ({ ...current, isGoalComposerArmed: false }))
+  }, [isGoalComposerArmed, selectedCapability, supportsGoals])
 
   useEffect(() => {
     if (setupWorktreeId == null) return
     return events.subscribe((event) => {
-      setSetupPhases((current) => applyWorktreeSetupEvent(current, event, setupWorktreeId))
+      updateNewChatDraftState((current) => ({
+        ...current,
+        setupPhases: applyWorktreeSetupEvent(current.setupPhases, event, setupWorktreeId)
+      }))
     })
   }, [events, setupWorktreeId])
+
+  const setError = (value: string | undefined) => {
+    updateNewChatDraftState((current) => ({ ...current, error: value }))
+  }
+  const setIsGoalComposerArmed = (value: boolean) => {
+    updateNewChatDraftState((current) => ({ ...current, isGoalComposerArmed: value }))
+  }
+  const setRunInWorktree = (value: boolean) => {
+    updateNewChatDraftState((current) => ({ ...current, runInWorktree: value }))
+  }
+  const setPendingModeId = (value: string | undefined) => {
+    updateNewChatDraftState((current) => ({ ...current, pendingModeId: value }))
+  }
+  const setSetupWorktreeId = (value: string | undefined) => {
+    updateNewChatDraftState((current) => ({ ...current, setupWorktreeId: value }))
+  }
+  const setSetupPhases = (
+    update:
+      | SessionSetupPhaseInfo[]
+      | ((current: SessionSetupPhaseInfo[]) => SessionSetupPhaseInfo[])
+  ) => {
+    updateNewChatDraftState((current) => ({
+      ...current,
+      setupPhases:
+        typeof update === "function" ? update(current.setupPhases) : update
+    }))
+  }
+  const setPendingConfig = (
+    update: Record<string, string> | ((current: Record<string, string>) => Record<string, string>)
+  ) => {
+    if (selectedHarness == null) return
+    updateNewChatDraftState((current) => {
+      const existing = current.configByHarness[selectedHarness.id] ?? {}
+      const next = typeof update === "function" ? update(existing) : update
+      return {
+        ...current,
+        configByHarness: { ...current.configByHarness, [selectedHarness.id]: next }
+      }
+    })
+  }
 
   const exitGoalComposer = () => {
     setIsGoalComposerArmed(false)
@@ -278,13 +361,19 @@ export function NewChatScreen({ preferredProjectId }: { preferredProjectId?: str
       }
       if (isGoalComposerArmed) {
         await setGoal.mutateAsync({ id: session.id, objective: trimmedText })
-        setIsGoalComposerArmed(false)
       } else {
         await promptSession.mutateAsync({ id: session.id, text: trimmedText, attachments })
         composerAttachments.clearAttachments()
       }
-      setPendingModeId(undefined)
-      setPendingConfig({})
+      rememberNewChatSessionDefaults({
+        selectedHarnessId: selectedHarness.id,
+        runInWorktree,
+        config: Object.fromEntries(
+          configOptions
+            .filter((option) => REMEMBERED_CONFIG_CATEGORIES.has(option.category ?? ""))
+            .map((option) => [option.id, option.currentValue])
+        )
+      })
     } catch (sendError) {
       const message = sendError instanceof Error ? sendError.message : String(sendError)
       if (createdSessionId != null) {
@@ -343,7 +432,14 @@ export function NewChatScreen({ preferredProjectId }: { preferredProjectId?: str
             <ProjectMenu
               projects={projects}
               selected={selectedProject}
-              onSelect={(project) => setSelectedProjectId(project.id)}
+              onSelect={(project) => {
+                const supportsWorktrees = project.locations.some(
+                  (location) => location.isGitRepository === true
+                )
+                updateNewChatDraftState((current) =>
+                  moveNewChatDraftToProject(current, project.id, supportsWorktrees)
+                )
+              }}
             />
             ?
           </h1>
@@ -473,9 +569,12 @@ export function NewChatScreen({ preferredProjectId }: { preferredProjectId?: str
                   }))}
                   selectedValue={selectedHarness?.id}
                   onSelect={(harnessId) => {
-                    setSelectedHarnessId(harnessId)
-                    setPendingModeId(undefined)
-                    setPendingConfig({})
+                    updateNewChatDraftState((current) => ({
+                      ...current,
+                      selectedHarnessId: harnessId,
+                      pendingModeId: undefined,
+                      error: undefined
+                    }))
                   }}
                 />
               )}
