@@ -4,6 +4,7 @@ import {
   assistantTurnShowsActivityIndicator,
   assistantTurnDisclosureTransition,
   shouldCollapseSubagentDisclosure,
+  subagentRendersAsSection,
   subagentDisclosureKey,
   turnDisclosureKey,
   turnImplementationDisclosureKey
@@ -139,5 +140,13 @@ describe("subagent disclosure transitions", () => {
   it("collapses only when a running subagent settles", () => {
     expect(shouldCollapseSubagentDisclosure(true, false)).toBe(true)
     expect(shouldCollapseSubagentDisclosure(true, true)).toBe(false)
+  })
+})
+
+describe("subagent nesting", () => {
+  it("matches the native two-section rendering cap", () => {
+    expect(subagentRendersAsSection(0)).toBe(true)
+    expect(subagentRendersAsSection(1)).toBe(true)
+    expect(subagentRendersAsSection(2)).toBe(false)
   })
 })

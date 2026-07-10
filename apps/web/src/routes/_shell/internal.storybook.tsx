@@ -713,12 +713,13 @@ function NestedSubagentFixture() {
     "turn:assistant-nested-agents": true,
     "subagent:nested-agent-outer": true,
     "subagent:nested-agent-inner": true,
+    "subagent:nested-agent-deepest": true,
     "toolGroup:nested-agent-command": true,
     "toolCall:nested-agent-command": true
   })
   const outer: ToolCallInfo = {
     toolCallId: "nested-agent-outer",
-    title: "Agent: inspect transcript parity",
+    title: "",
     kind: "agent",
     status: "completed"
   }
@@ -730,11 +731,18 @@ function NestedSubagentFixture() {
     parentToolCallId: outer.toolCallId
   }
   const child: ToolCallInfo = {
+    toolCallId: "nested-agent-deepest",
+    title: "Agent: verify the nesting guard",
+    kind: "agent",
+    status: "completed",
+    parentToolCallId: inner.toolCallId
+  }
+  const command: ToolCallInfo = {
     toolCallId: "nested-agent-command",
     title: "Ran bun test",
     kind: "execute",
     status: "completed",
-    parentToolCallId: inner.toolCallId,
+    parentToolCallId: child.toolCallId,
     content: [{ type: "content", content: { type: "text", text: "91 tests passed" } }]
   }
   const item: ConversationItem = {
@@ -761,6 +769,11 @@ function NestedSubagentFixture() {
       },
       [inner.toolCallId]: {
         entries: [{ type: "tool", call: child }],
+        isThinking: false,
+        nextTextId: 0
+      },
+      [child.toolCallId]: {
+        entries: [{ type: "tool", call: command }],
         isThinking: false,
         nextTextId: 0
       }

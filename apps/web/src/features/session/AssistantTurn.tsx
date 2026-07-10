@@ -15,7 +15,9 @@ import type { TranscriptEntryInfo, TurnMeta } from "../../lib/queries"
 import type { ToolCallInfo } from "../../lib/session-events"
 import { MessageCopyButton } from "./MessageCopyButton"
 import { ProposedPlanView } from "./PlanView"
-import { ToolCallRow, ToolGroup } from "./ToolGroup"
+import { ToolCallRow, ToolGroup, toolCallDisplayTitle } from "./ToolGroup"
+
+const maxSubagentNestingDepth = 3
 
 function formatSeconds(seconds: number): string {
   return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${seconds % 60}s`
@@ -56,6 +58,10 @@ export function turnImplementationDisclosureKey(turnId: string): string {
 
 export function subagentDisclosureKey(toolCallId: string): string {
   return `subagent:${toolCallId}`
+}
+
+export function subagentRendersAsSection(depth: number): boolean {
+  return depth + 1 < maxSubagentNestingDepth
 }
 
 function finalTextIndex(meta: TurnMeta | undefined): number | undefined {
@@ -556,7 +562,7 @@ function TranscriptItems({
               />
             )
           case "subagent":
-            return depth < 3 ? (
+            return subagentRendersAsSection(depth) ? (
               <SubagentSection
                 key={`subagent:${workedItem.id}`}
                 call={workedItem.call}
@@ -631,7 +637,7 @@ function SubagentSection({
       >
         <WandSparklesIcon className="size-3.5 shrink-0" />
         <span className={cn("min-w-0 flex-1 truncate", isRunning && "animate-pulse")}>
-          {call.title?.trim() === "" || call.title == null ? "Agent" : call.title}
+          {toolCallDisplayTitle(call)}
         </span>
         {call.status === "failed" && (
           <CircleXIcon className="size-3 text-[var(--herdman-status-error)]" />

@@ -103,7 +103,7 @@ function isSettled(call: ToolCallInfo): boolean {
   return call.status === "completed" || call.status === "failed" || call.status === "cancelled"
 }
 
-function displayTitle(call: ToolCallInfo): string {
+export function toolCallDisplayTitle(call: ToolCallInfo): string {
   const title = call.title?.trim() ?? ""
   if (call.kind !== "edit" || isSettled(call) || diffTotals(call) != null) {
     return title === "" ? "Working…" : title
@@ -195,7 +195,7 @@ export function ToolCallRow({
             isTurnActive && !isSettled(call) && "animate-pulse"
           )}
         >
-          {displayTitle(call)}
+          {toolCallDisplayTitle(call)}
         </span>
         <DiffBadge call={call} />
         {hasContent && (

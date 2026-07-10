@@ -6,6 +6,7 @@ import {
   diffLineCounts,
   parseResourceLinkUrl,
   resourceLinkLabel,
+  toolCallDisplayTitle,
   toolCallDisclosureKey,
   toolGroupDisclosureKey,
   toolGroupSymbol
@@ -15,6 +16,14 @@ import type { ToolCallInfo } from "../../lib/session-events"
 function call(kind: string): ToolCallInfo {
   return { toolCallId: crypto.randomUUID(), kind, title: "t" }
 }
+
+describe("tool call titles", () => {
+  it("matches the native fallback for untitled calls", () => {
+    expect(toolCallDisplayTitle({ toolCallId: "agent-1", kind: "agent", title: "  " })).toBe(
+      "Working…"
+    )
+  })
+})
 
 describe("tool diff rendering", () => {
   it("uses Pierre's parser for fallback line totals", () => {
