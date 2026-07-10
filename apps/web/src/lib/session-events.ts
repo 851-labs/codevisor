@@ -497,7 +497,7 @@ function rawUpdateEvents(payload: Record<string, unknown>): SessionStreamEvent[]
     }
     case "plan_document": {
       const markdown = stringOrUndefined(payload.markdown)
-      return markdown != null && markdown !== "" ? [{ type: "planDocumentUpdated", markdown }] : []
+      return markdown != null ? [{ type: "planDocumentUpdated", markdown }] : []
     }
     case "plan":
       return [{ type: "planUpdated", entries: planEntriesFrom(payload) }]

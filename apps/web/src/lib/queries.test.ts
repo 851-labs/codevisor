@@ -444,6 +444,16 @@ describe("replaySessionEvents", () => {
     expect(meta?.plan).toEqual(replayed.sessionPlan)
   })
 
+  it("clears a proposed plan when the provider sends an empty document", () => {
+    const replayed = replaySessionEvents(detail(), [
+      event(1, { sessionUpdate: "plan_document", markdown: "Draft plan" }),
+      event(2, { sessionUpdate: "plan_document", markdown: "" })
+    ])
+
+    const assistant = replayed.conversation.find((item) => item.role === "assistant")
+    expect(replayed.turnMeta?.[assistant?.id ?? ""]?.planDocument).toBe("")
+  })
+
   it("replays config option snapshots into session state", () => {
     const configOptions = [
       {

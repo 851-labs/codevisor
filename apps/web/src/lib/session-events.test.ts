@@ -426,6 +426,11 @@ describe("sessionStreamEvents", () => {
     expect(events).toEqual([
       { type: "planDocumentUpdated", markdown: "1. Read code\n2. Implement" }
     ])
+    expect(
+      sessionStreamEvents(
+        envelope("session.output", { sessionUpdate: "plan_document", markdown: "" })
+      )
+    ).toEqual([{ type: "planDocumentUpdated", markdown: "" }])
   })
 
   it("maps raw available-commands updates", () => {
