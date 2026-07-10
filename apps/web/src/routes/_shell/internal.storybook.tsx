@@ -5,7 +5,7 @@ import type {
   SessionConfigOption,
   SessionGoal
 } from "@herdman/api"
-import { createFileRoute, Link } from "@tanstack/react-router"
+import { createFileRoute } from "@tanstack/react-router"
 import {
   BlocksIcon,
   Code2Icon,
@@ -773,8 +773,7 @@ function InternalStorybookRoute() {
       ["primitives", "Primitives"],
       ["composer", "Composer"],
       ["transcript", "Transcript"],
-      ["chrome", "Chrome"],
-      ["verification", "Verifier routes"]
+      ["chrome", "Chrome"]
     ] as const,
     []
   )
@@ -832,31 +831,7 @@ function InternalStorybookRoute() {
         <Section id="chrome" title="Chrome" description="Surfaces around the main chat body.">
           <ChromeStates />
         </Section>
-
-        <Section
-          id="verification"
-          title="Verifier Routes"
-          description="Deterministic routes remain available for screenshot capture and focused regressions."
-        >
-          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-            <VerifierLink to="/verify/chat-parity" label="Chat parity" />
-            <VerifierLink to="/verify/chat-composer" label="Composer" />
-            <VerifierLink to="/verify/session-setup" label="Setup" />
-            <VerifierLink to="/verify/pane-bar" label="Pane bar" />
-          </div>
-        </Section>
       </div>
     </div>
-  )
-}
-
-function VerifierLink({ to, label }: { to: string; label: string }) {
-  return (
-    <Link
-      to={to}
-      className="border-border text-muted-foreground hover:bg-accent hover:text-foreground rounded-md border px-3 py-2 text-sm"
-    >
-      {label}
-    </Link>
   )
 }

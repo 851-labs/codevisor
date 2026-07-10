@@ -1,6 +1,7 @@
 import { isTauri } from "@tauri-apps/api/core"
-import { createFileRoute, Outlet, redirect } from "@tanstack/react-router"
+import { createFileRoute, Outlet, redirect, useRouterState } from "@tanstack/react-router"
 
+import { InternalSidebar } from "../features/internal/InternalSidebar"
 import { Sidebar } from "../features/sidebar/Sidebar"
 import { cn } from "../lib/cn"
 
@@ -26,6 +27,12 @@ export const Route = createFileRoute("/_shell")({
 // the drag region and the sidebar leaves room for the traffic lights.
 function ShellLayout() {
   const inTauri = isTauri()
+  const usesInternalSidebar = useRouterState({
+    select: (state) => {
+      const pathname = state.location.pathname
+      return pathname.startsWith("/internal/") || pathname.startsWith("/verify/")
+    }
+  })
   return (
     <div className="relative flex h-full">
       {inTauri && <div data-tauri-drag-region className="absolute inset-x-0 top-0 z-40 h-9" />}
@@ -35,7 +42,7 @@ function ShellLayout() {
           inTauri && "pt-9"
         )}
       >
-        <Sidebar />
+        {usesInternalSidebar ? <InternalSidebar /> : <Sidebar />}
       </div>
       <main className="bg-background min-w-0 flex-1">
         <Outlet />
