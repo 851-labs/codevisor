@@ -137,38 +137,45 @@ function hasOptimisticUserPrompt(
   )
 }
 
-function withoutMatchingOptimisticUser(
-  conversation: readonly ConversationItem[],
-  text: string,
-  attachments: readonly AttachmentRef[] | undefined
-): ConversationItem[] {
-  return conversation.filter(
-    (item) => !(isOptimisticUserItem(item) && isSameUserPrompt(item, text, attachments))
-  )
-}
-
 export function canAppendOptimisticUserPrompt(detail: SessionDetailCache): boolean {
   return detail.conversation.every((item) => !item.isGenerating)
 }
 
-function withOptimisticUserPrompt(
+export function withOptimisticUserPrompt(
   detail: SessionDetailCache,
   text: string,
   attachments: readonly AttachmentRef[] | undefined
 ): SessionDetailCache {
   if (!canAppendOptimisticUserPrompt(detail)) return detail
   const trimmed = text.trim()
-  const item: ConversationItem & { optimistic: true } = {
+  const startedAt = isoTimestamp()
+  const user: ConversationItem & { optimistic: true } = {
     id: `optimistic:${crypto.randomUUID()}`,
     role: "user",
     messageId: undefined,
     text: trimmed,
-    createdAt: isoTimestamp(),
+    createdAt: startedAt,
     isGenerating: false,
     optimistic: true,
     ...(attachments == null || attachments.length === 0 ? {} : { attachments: [...attachments] })
   }
-  return { ...detail, conversation: [...detail.conversation, item] }
+  const assistant: ConversationItem = {
+    id: `optimistic-assistant:${crypto.randomUUID()}`,
+    role: "assistant",
+    messageId: undefined,
+    text: "",
+    createdAt: startedAt,
+    isGenerating: true
+  }
+  return {
+    ...detail,
+    streamError: undefined,
+    conversation: [...detail.conversation, user, assistant],
+    turnMeta: {
+      ...detail.turnMeta,
+      [assistant.id]: { ...initialTurnMeta(startedAt), isThinking: true }
+    }
+  }
 }
 
 function applySetupEvent(detail: SessionDetailCache, event: EventEnvelope): SessionDetailCache {
@@ -515,6 +522,8 @@ function appendTextChunk(
   chunk: Extract<SessionStreamEvent, { type: "textChunk" }>,
   createdAt: string = isoTimestamp()
 ): SessionDetailCache {
+  if (chunk.role === "user") return appendUserChunk(detail, chunk, createdAt)
+
   if (chunk.role === "assistant" && chunk.parentToolCallId != null) {
     return updateOwnedOrActiveTurnMeta(
       detail,
@@ -559,10 +568,7 @@ function appendTextChunk(
     }
   }
 
-  const conversation: ConversationItem[] =
-    chunk.role === "user"
-      ? withoutMatchingOptimisticUser(detail.conversation, chunk.text, chunk.attachments)
-      : [...detail.conversation]
+  const conversation: ConversationItem[] = [...detail.conversation]
   const last = conversation[conversation.length - 1]
   // Assistant chunks always continue the running turn — only a user message
   // starts a new bubble (TranscriptReducer semantics). A change of (non-null)
@@ -592,7 +598,6 @@ function appendTextChunk(
     })
   }
   const withConversation = { ...detail, conversation, streamError: undefined }
-  if (chunk.role !== "assistant") return withConversation
   return updateTurnMeta(
     withConversation,
     (meta) => {
@@ -612,6 +617,84 @@ function appendTextChunk(
     },
     createdAt
   )
+}
+
+function appendUserChunk(
+  detail: SessionDetailCache,
+  chunk: Extract<SessionStreamEvent, { type: "textChunk" }>,
+  createdAt: string
+): SessionDetailCache {
+  const trimmed = chunk.text.trim()
+  const optimisticIndex = detail.conversation.findIndex(
+    (item) => isOptimisticUserItem(item) && item.text === trimmed
+  )
+  if (optimisticIndex !== -1) {
+    const conversation = [...detail.conversation]
+    const optimistic = conversation[optimisticIndex]
+    if (optimistic != null) {
+      const attachments = chunk.attachments ?? optimistic.attachments
+      conversation[optimisticIndex] = {
+        id: optimistic.id,
+        role: "user",
+        messageId: chunk.messageId ?? optimistic.messageId,
+        text: trimmed,
+        createdAt: optimistic.createdAt,
+        isGenerating: false,
+        ...(attachments == null || attachments.length === 0
+          ? {}
+          : { attachments: [...attachments] })
+      }
+    }
+    return { ...detail, conversation, streamError: undefined }
+  }
+
+  const last = detail.conversation[detail.conversation.length - 1]
+  const previous = detail.conversation[detail.conversation.length - 2]
+  if (
+    last?.role === "assistant" &&
+    last.isGenerating &&
+    previous?.role === "user" &&
+    previous.text === trimmed
+  ) {
+    if ((previous.attachments?.length ?? 0) === 0 && (chunk.attachments?.length ?? 0) > 0) {
+      const conversation = [...detail.conversation]
+      conversation[conversation.length - 2] = {
+        ...previous,
+        attachments: [...(chunk.attachments ?? [])]
+      }
+      return { ...detail, conversation }
+    }
+    return detail
+  }
+
+  const assistant: ConversationItem = {
+    id: crypto.randomUUID(),
+    role: "assistant",
+    messageId: undefined,
+    text: "",
+    createdAt,
+    isGenerating: true
+  }
+  const user: ConversationItem = {
+    id: crypto.randomUUID(),
+    role: "user",
+    messageId: chunk.messageId,
+    text: trimmed,
+    createdAt,
+    isGenerating: false,
+    ...(chunk.attachments == null || chunk.attachments.length === 0
+      ? {}
+      : { attachments: [...chunk.attachments] })
+  }
+  return {
+    ...detail,
+    streamError: undefined,
+    conversation: [...detail.conversation, user, assistant],
+    turnMeta: {
+      ...detail.turnMeta,
+      [assistant.id]: { ...initialTurnMeta(createdAt), isThinking: true }
+    }
+  }
 }
 
 function upsertToolCall(

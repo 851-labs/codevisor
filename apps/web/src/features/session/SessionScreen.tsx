@@ -48,7 +48,7 @@ import { TerminalPanel } from "../terminal/TerminalPanel"
 import { TodoPanelView } from "./PlanView"
 import { PromptQueue } from "./PromptQueue"
 import { StatusBar, type TerminalPaneTab } from "./StatusBar"
-import { type PendingUserMessage, Transcript } from "./Transcript"
+import { Transcript } from "./Transcript"
 import { projectFolderPath } from "../../lib/client"
 import { DiffCounter } from "./DiffCounter"
 
@@ -68,8 +68,7 @@ export function SessionHeader({
   title: string
   diffTotals?: BranchDiffTotals | null
 }) {
-  const showsDiff =
-    diffTotals != null && (diffTotals.added > 0 || diffTotals.removed > 0)
+  const showsDiff = diffTotals != null && (diffTotals.added > 0 || diffTotals.removed > 0)
   return (
     <header className="border-border-opaque flex h-9 shrink-0 items-center gap-2 border-b px-3">
       <h1 className="min-w-0 truncate text-sm font-semibold" aria-label="Session title">
@@ -82,6 +81,13 @@ export function SessionHeader({
 
 export function answersImplementPlan(answers: Record<string, QuestionAnswerEntry>) {
   return answers[EXIT_PLAN_MODE_QUESTION_ID]?.answers[0] === IMPLEMENT_PLAN_LABEL
+}
+
+export function sessionTurnIsRunning(
+  serverIsRunning: boolean,
+  conversation: readonly { isGenerating: boolean }[]
+): boolean {
+  return serverIsRunning || conversation.some((item) => item.isGenerating)
 }
 
 type PlanControl =
@@ -146,7 +152,7 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
   const clearGoal = useClearSessionGoal()
   const setMode = useSetSessionMode()
   const setConfig = useSetSessionConfig()
-  const isRunning = useIsSessionRunning(sessionId)
+  const serverIsRunning = useIsSessionRunning(sessionId)
 
   const [composerText, setComposerText] = useComposerDraftText(`session:${sessionId}`)
   const [composerError, setComposerError] = useState<string>()
@@ -157,7 +163,6 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
   const [isTodosExpanded, setIsTodosExpanded] = useState(true)
   const [isQueueExpanded, setIsQueueExpanded] = useState(true)
   const [dismissedPlanApprovalKey, setDismissedPlanApprovalKey] = useState<string>()
-  const [pendingUserMessage, setPendingUserMessage] = useState<PendingUserMessage>()
   const [composerSendRevision, setComposerSendRevision] = useState(0)
   const [mountedTerminalPaneIds, setMountedTerminalPaneIds] = useState<string[]>([])
   const [isAttachmentDropTargeted, setIsAttachmentDropTargeted] = useState(false)
@@ -168,6 +173,7 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
   const selectedPane = paneState.panes.find((pane) => pane.id === paneState.selectedPaneId)
 
   const detail = detailQuery.data
+  const isRunning = sessionTurnIsRunning(serverIsRunning, detail?.conversation ?? [])
   const project = projectsQuery.data?.find(
     (candidate) => candidate.id === detail?.session.projectId
   )
@@ -308,12 +314,10 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
       const attachments = await composerAttachments.collectForSend()
       const trimmedText = text.trim()
       setComposerText("")
-      setPendingUserMessage({ text: trimmedText, attachments })
       setComposerSendRevision((revision) => revision + 1)
       await promptSession.mutateAsync({ id: sessionId, text: trimmedText, attachments })
       composerAttachments.clearAttachments()
     } catch (sendError) {
-      setPendingUserMessage(undefined)
       setComposerText(text)
       setComposerError(sendError instanceof Error ? sendError.message : String(sendError))
     }
@@ -330,12 +334,6 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
       setComposerError(cancelError instanceof Error ? cancelError.message : String(cancelError))
     }
   }
-
-  useEffect(() => {
-    if (pendingUserMessage != null && (detail?.conversation.length ?? 0) > 0) {
-      setPendingUserMessage(undefined)
-    }
-  }, [detail?.conversation.length, pendingUserMessage])
 
   useEffect(() => {
     if (!isRunning) setIsCancelling(false)
@@ -733,7 +731,6 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
             <WaitingBackgroundTaskIndicator tasks={waitingBackgroundTasks} />
           ) : null
         }
-        pendingUserMessage={pendingUserMessage}
         composerHeight={composerHeight}
         streamFingerprint={streamFingerprint}
         setupPhases={setupPhases}

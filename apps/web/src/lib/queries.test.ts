@@ -1,7 +1,11 @@
 import type { EventEnvelope, SessionDetail } from "@herdman/api"
 import { describe, expect, it } from "vitest"
 
-import { canAppendOptimisticUserPrompt, replaySessionEvents } from "./queries"
+import {
+  canAppendOptimisticUserPrompt,
+  replaySessionEvents,
+  withOptimisticUserPrompt
+} from "./queries"
 
 function event(id: number, payload: unknown, kind: EventEnvelope["kind"] = "session.output") {
   return {
@@ -62,6 +66,23 @@ describe("replaySessionEvents", () => {
       })
     ])
     expect(canAppendOptimisticUserPrompt(generating)).toBe(false)
+  })
+
+  it("starts an optimistic assistant turn with an immediate user prompt", () => {
+    const optimistic = withOptimisticUserPrompt(
+      replaySessionEvents(detail(), []),
+      "  start now  ",
+      undefined
+    )
+
+    expect(
+      optimistic.conversation.map((item) => [item.role, item.text, item.isGenerating])
+    ).toEqual([
+      ["user", "start now", false],
+      ["assistant", "", true]
+    ])
+    const assistant = optimistic.conversation[1]
+    expect(optimistic.turnMeta?.[assistant?.id ?? ""]?.isThinking).toBe(true)
   })
 
   it("preserves retry progress until real content arrives", () => {
@@ -157,7 +178,7 @@ describe("replaySessionEvents", () => {
     const assistant = replayed.conversation.find((item) => item.role === "assistant")
     expect(assistant).toBeDefined()
     const meta = replayed.turnMeta?.[assistant?.id ?? ""]
-    expect(meta?.startedAt).toBe("2026-01-01T00:00:02.000Z")
+    expect(meta?.startedAt).toBe("2026-01-01T00:00:01.000Z")
     expect(meta?.endedAt).toBe("2026-01-01T00:00:06.000Z")
     expect(meta?.planDocument).toBe("1. Inspect\n2. Patch")
     expect(meta?.toolCalls).toHaveLength(1)
@@ -291,12 +312,13 @@ describe("replaySessionEvents", () => {
       })
     ])
 
-    expect(replayed.conversation).toHaveLength(1)
+    expect(replayed.conversation).toHaveLength(2)
     expect(replayed.conversation[0]).toMatchObject({
       role: "user",
       text: "Look at this",
       attachments: [attachment]
     })
+    expect(replayed.conversation[1]).toMatchObject({ role: "assistant", isGenerating: true })
 
     const attachmentOnly = replaySessionEvents(detail(), [
       event(1, {
@@ -305,10 +327,41 @@ describe("replaySessionEvents", () => {
         attachments: [attachment]
       })
     ])
-    expect(attachmentOnly.conversation).toHaveLength(1)
+    expect(attachmentOnly.conversation).toHaveLength(2)
     expect(attachmentOnly.conversation[0]).toMatchObject({
       role: "user",
       text: "",
+      attachments: [attachment]
+    })
+    expect(attachmentOnly.conversation[1]).toMatchObject({ role: "assistant", isGenerating: true })
+  })
+
+  it("deduplicates provider user echoes while preserving attachments", () => {
+    const attachment = {
+      fileId: "file-echo",
+      name: "shot.png",
+      mimeType: "image/png",
+      sizeBytes: 2048,
+      kind: "image" as const
+    }
+    const replayed = replaySessionEvents(detail(), [
+      event(1, { role: "user", text: "inspect this", attachments: [attachment] }),
+      event(2, {
+        sessionUpdate: "user_message_chunk",
+        messageId: "user-raw",
+        content: { type: "text", text: "inspect this" }
+      }),
+      event(3, {
+        sessionUpdate: "agent_message_chunk",
+        messageId: "answer",
+        content: { type: "text", text: "Done." }
+      }),
+      event(4, { stopReason: "end_turn" }, "session.updated")
+    ])
+
+    expect(replayed.conversation.map((item) => item.role)).toEqual(["user", "assistant"])
+    expect(replayed.conversation[0]).toMatchObject({
+      text: "inspect this",
       attachments: [attachment]
     })
   })

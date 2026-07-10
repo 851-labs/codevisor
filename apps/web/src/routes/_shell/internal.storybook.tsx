@@ -671,6 +671,43 @@ function ToolActivityStatesFixture() {
   )
 }
 
+function EstablishedOptimisticTranscriptFixture() {
+  const startedAt = useMemo(() => new Date().toISOString(), [])
+  const user: ConversationItem = {
+    id: "established-optimistic-user",
+    role: "user",
+    text: "Continue this existing session.",
+    createdAt: startedAt,
+    isGenerating: false
+  }
+  const assistant: ConversationItem = {
+    id: "established-optimistic-assistant",
+    role: "assistant",
+    text: "",
+    createdAt: startedAt,
+    isGenerating: true
+  }
+  const meta: TurnMeta = {
+    startedAt,
+    thoughts: "",
+    toolCalls: [],
+    entries: [],
+    subagents: {},
+    textPhases: {},
+    nextTextId: 0,
+    isThinking: true
+  }
+  return (
+    <Transcript
+      conversation={[user, assistant]}
+      turnMeta={{ [assistant.id]: meta }}
+      composerOverlay={null}
+      composerHeight={0}
+      streamFingerprint="internal-established-optimistic"
+    />
+  )
+}
+
 function NestedSubagentFixture() {
   const [disclosureValues, setDisclosureValues] = useState<Record<string, boolean>>({
     "turn:assistant-nested-agents": true,
@@ -985,7 +1022,7 @@ function TranscriptStates() {
         </StateBlock>
       </SurfaceGrid>
       <StateBlock title="Transcript placement fixtures">
-        <div className="grid gap-4 lg:grid-cols-2">
+        <div className="grid gap-4 lg:grid-cols-3">
           <div className="h-64 overflow-hidden border border-[var(--herdman-separator)]">
             <Transcript
               conversation={[]}
@@ -997,6 +1034,9 @@ function TranscriptStates() {
                 attachments: []
               }}
             />
+          </div>
+          <div className="h-64 overflow-hidden border border-[var(--herdman-separator)]">
+            <EstablishedOptimisticTranscriptFixture />
           </div>
           <div className="h-64 overflow-hidden border border-[var(--herdman-separator)]">
             <Transcript

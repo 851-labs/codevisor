@@ -4,8 +4,17 @@ import {
   answersImplementPlan,
   formatElapsed,
   formatTokenCount,
+  sessionTurnIsRunning,
   waitingBackgroundTaskLabel
 } from "./SessionScreen"
+
+describe("session running state", () => {
+  it("includes an optimistic generating turn before the server lifecycle event", () => {
+    expect(sessionTurnIsRunning(false, [{ isGenerating: true }])).toBe(true)
+    expect(sessionTurnIsRunning(true, [{ isGenerating: false }])).toBe(true)
+    expect(sessionTurnIsRunning(false, [{ isGenerating: false }])).toBe(false)
+  })
+})
 
 describe("goal banner formatting", () => {
   it("formats token counts like the macOS goal banner", () => {
