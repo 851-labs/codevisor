@@ -3,7 +3,7 @@ import { CheckIcon, ChevronsUpDownIcon } from "lucide-react"
 import type { ComponentPropsWithRef } from "react"
 
 import { cn } from "../../lib/cn"
-import { menuItemClassName, popupSurfaceClassName } from "./menu"
+import { menuItemClassName, popupSurfaceClassName, popupViewportClassName } from "./menu"
 
 const Select = BaseSelect.Root
 const SelectValue = BaseSelect.Value
@@ -45,11 +45,7 @@ function SelectContent({
         <BaseSelect.ScrollUpArrow className="top-0 z-10 flex h-5 w-full items-center justify-center rounded-t-lg bg-[var(--herdman-popover-bg)] text-xs" />
         <BaseSelect.Popup
           data-slot="select-content"
-          className={cn(
-            popupSurfaceClassName,
-            "max-h-[min(24rem,var(--available-height))] overflow-y-auto",
-            className
-          )}
+          className={cn(popupSurfaceClassName, popupViewportClassName, className)}
           {...props}
         >
           {children}

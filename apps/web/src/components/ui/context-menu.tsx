@@ -2,7 +2,7 @@ import { ContextMenu as BaseContextMenu } from "@base-ui/react/context-menu"
 import type { ComponentPropsWithRef } from "react"
 
 import { cn } from "../../lib/cn"
-import { menuItemClassName, popupSurfaceClassName } from "./menu"
+import { menuItemClassName, popupSurfaceClassName, popupViewportClassName } from "./menu"
 
 const ContextMenu = BaseContextMenu.Root
 const ContextMenuTrigger = BaseContextMenu.Trigger
@@ -17,7 +17,7 @@ function ContextMenuContent({
       <BaseContextMenu.Positioner className="z-50">
         <BaseContextMenu.Popup
           data-slot="context-menu-content"
-          className={cn(popupSurfaceClassName, className)}
+          className={cn(popupSurfaceClassName, popupViewportClassName, className)}
           {...props}
         >
           {children}

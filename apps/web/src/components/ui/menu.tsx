@@ -15,6 +15,9 @@ export const popupSurfaceClassName = cn(
   "data-[ending-style]:scale-95 data-[ending-style]:opacity-0"
 )
 
+export const popupViewportClassName =
+  "max-h-[min(24rem,var(--available-height))] max-w-[var(--available-width)] overflow-y-auto overscroll-contain"
+
 export const menuItemClassName = cn(
   "flex cursor-default items-center gap-2 px-2.5 py-1.5 text-sm outline-none select-none",
   "data-[highlighted]:bg-[var(--herdman-popover-hover-bg)]",
@@ -45,7 +48,7 @@ function MenuContent({
       <BaseMenu.Positioner align={align} side={side} sideOffset={sideOffset} className="z-50">
         <BaseMenu.Popup
           data-slot="menu-content"
-          className={cn(popupSurfaceClassName, className)}
+          className={cn(popupSurfaceClassName, popupViewportClassName, className)}
           {...props}
         >
           {children}

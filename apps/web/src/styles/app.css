@@ -222,6 +222,9 @@
   #root {
     height: 100%;
   }
+  #root {
+    isolation: isolate;
+  }
   body {
     @apply bg-background text-foreground font-sans;
     -webkit-font-smoothing: antialiased;

@@ -2,7 +2,7 @@ import { Popover as BasePopover } from "@base-ui/react/popover"
 import type { ComponentPropsWithRef } from "react"
 
 import { cn } from "../../lib/cn"
-import { popupSurfaceClassName } from "./menu"
+import { popupSurfaceClassName, popupViewportClassName } from "./menu"
 
 const Popover = BasePopover.Root
 const PopoverTrigger = BasePopover.Trigger
@@ -25,7 +25,7 @@ function PopoverContent({
       <BasePopover.Positioner align={align} side={side} sideOffset={sideOffset} className="z-50">
         <BasePopover.Popup
           data-slot="popover-content"
-          className={cn(popupSurfaceClassName, "w-72 p-3", className)}
+          className={cn(popupSurfaceClassName, popupViewportClassName, "w-72 p-3", className)}
           {...props}
         >
           {children}
