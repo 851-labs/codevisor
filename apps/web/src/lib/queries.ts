@@ -699,6 +699,7 @@ function finishGenerating(
 ): SessionDetailCache {
   return {
     ...detail,
+    pendingQuestion: undefined,
     conversation: detail.conversation.map((item) =>
       item.isGenerating ? { ...item, isGenerating: false } : item
     ),

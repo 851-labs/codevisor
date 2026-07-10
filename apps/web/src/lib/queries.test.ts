@@ -323,6 +323,40 @@ describe("replaySessionEvents", () => {
     ])
 
     expect(resolved.pendingQuestion).toBeUndefined()
+
+    const finished = replaySessionEvents(detail(), [
+      event(1, {
+        sessionUpdate: "question",
+        questionId: "q1",
+        questions: [
+          {
+            id: "choice",
+            question: "Proceed?",
+            options: [{ label: "Yes" }, { label: "No" }],
+            allowsOther: false
+          }
+        ]
+      }),
+      event(2, { stopReason: "end_turn" }, "session.updated")
+    ])
+    expect(finished.pendingQuestion).toBeUndefined()
+
+    const failed = replaySessionEvents(detail(), [
+      event(1, {
+        sessionUpdate: "question",
+        questionId: "q1",
+        questions: [
+          {
+            id: "choice",
+            question: "Proceed?",
+            options: [{ label: "Yes" }, { label: "No" }],
+            allowsOther: false
+          }
+        ]
+      }),
+      event(2, { message: "Connection lost" }, "session.error")
+    ])
+    expect(failed.pendingQuestion).toBeUndefined()
   })
 
   it("replays plan updates into pinned session todos", () => {
