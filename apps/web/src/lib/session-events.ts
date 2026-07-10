@@ -515,6 +515,17 @@ function rawUpdateEvents(payload: Record<string, unknown>): SessionStreamEvent[]
       const modeId = stringOrUndefined(payload.currentModeId)
       return modeId != null ? [{ type: "modeChanged", modeId }] : []
     }
+    case "config_option_update":
+      try {
+        return [
+          {
+            type: "configOptionsChanged",
+            configOptions: decodeConfigOptions(payload.configOptions)
+          }
+        ]
+      } catch {
+        return []
+      }
     case "usage_update":
       return [{ type: "usageChanged", usage: usageFrom(payload) }]
     case "goal_update": {

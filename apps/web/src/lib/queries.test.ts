@@ -590,6 +590,27 @@ describe("replaySessionEvents", () => {
     expect(replayed.configOptions).toEqual(configOptions)
   })
 
+  it("replays raw ACP config option updates into session state", () => {
+    const configOptions = [
+      {
+        id: "thought_level",
+        name: "Reasoning",
+        category: "thought_level",
+        currentValue: "high",
+        options: [
+          { value: "medium", name: "Medium" },
+          { value: "high", name: "High" }
+        ]
+      }
+    ]
+
+    const replayed = replaySessionEvents(detail(), [
+      event(1, { sessionUpdate: "config_option_update", configOptions })
+    ])
+
+    expect(replayed.configOptions).toEqual(configOptions)
+  })
+
   it("replays goal snapshots and clears into session state", () => {
     const goal = {
       objective: "ship parity",

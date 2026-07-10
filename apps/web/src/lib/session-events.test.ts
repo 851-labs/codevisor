@@ -523,6 +523,25 @@ describe("sessionStreamEvents", () => {
     expect(events).toMatchObject([{ type: "configOptionsChanged" }])
   })
 
+  it("maps raw ACP config option updates", () => {
+    const configOptions = [
+      {
+        id: "model",
+        name: "Model",
+        currentValue: "opus",
+        options: [{ value: "opus", name: "Opus" }]
+      }
+    ]
+    const events = sessionStreamEvents(
+      envelope("session.output", {
+        sessionUpdate: "config_option_update",
+        configOptions
+      })
+    )
+
+    expect(events).toEqual([{ type: "configOptionsChanged", configOptions }])
+  })
+
   it("prefers config options over mode when both are present", () => {
     const events = sessionStreamEvents(
       envelope("session.updated", {
