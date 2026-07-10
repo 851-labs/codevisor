@@ -611,6 +611,28 @@ describe("replaySessionEvents", () => {
     expect(replayed.configOptions).toEqual(configOptions)
   })
 
+  it("replaces usage snapshots so omitted values do not stay stale", () => {
+    const replayed = replaySessionEvents(detail(), [
+      event(1, {
+        sessionUpdate: "usage_update",
+        used: 1200,
+        size: 200000,
+        cost: { amount: 0.42, currency: "USD" }
+      }),
+      event(2, {
+        sessionUpdate: "usage_update",
+        used: 800
+      })
+    ])
+
+    expect(replayed.liveUsage).toEqual({
+      used: 800,
+      size: undefined,
+      costAmount: undefined,
+      costCurrency: undefined
+    })
+  })
+
   it("replays goal snapshots and clears into session state", () => {
     const goal = {
       objective: "ship parity",

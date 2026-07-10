@@ -880,7 +880,7 @@ function applySessionEvent(
     case "commandsChanged":
       return { ...detail, availableCommands: event.commands }
     case "usageChanged":
-      return { ...detail, liveUsage: { ...detail.liveUsage, ...event.usage } }
+      return { ...detail, liveUsage: event.usage }
     case "goalChanged":
       return { ...detail, goal: event.goal }
     case "goalCleared":
