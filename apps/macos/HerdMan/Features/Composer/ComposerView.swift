@@ -259,7 +259,9 @@ struct ComposerCard: View {
                 .font(.system(size: 12, weight: .semibold))
                 .frame(width: 26, height: 26)
                 .foregroundStyle(isOn ? AnyShapeStyle(theme.windowBackground) : AnyShapeStyle(.secondary))
-                .background(Circle().fill(isOn ? AnyShapeStyle(theme.accent) : AnyShapeStyle(.clear)))
+                .background(
+                    Circle().fill(isOn ? Color.primary.opacity(0.82) : .clear)
+                )
                 .contentShape(Circle())
         }
         .buttonStyle(HoverIconButtonStyle())
@@ -299,7 +301,9 @@ struct ComposerCard: View {
                 .font(.system(size: 12, weight: .semibold))
                 .frame(width: 26, height: 26)
                 .foregroundStyle(isArmed ? AnyShapeStyle(theme.windowBackground) : AnyShapeStyle(.secondary))
-                .background(Circle().fill(isArmed ? AnyShapeStyle(theme.accent) : AnyShapeStyle(.clear)))
+                .background(
+                    Circle().fill(isArmed ? Color.primary.opacity(0.82) : .clear)
+                )
                 .contentShape(Circle())
         }
         .buttonStyle(HoverIconButtonStyle())
