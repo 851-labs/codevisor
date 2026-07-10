@@ -452,8 +452,29 @@ describe("sessionStreamEvents", () => {
   })
 
   it("maps stop reasons on session.updated to finished", () => {
-    const events = sessionStreamEvents(envelope("session.updated", { stopReason: "end_turn" }))
-    expect(events).toEqual([{ type: "finished", stopReason: "end_turn" }])
+    const events = sessionStreamEvents(
+      envelope("session.updated", {
+        stopReason: "max_tokens",
+        stopDetail: "The model reached its token limit."
+      })
+    )
+    expect(events).toEqual([
+      {
+        type: "finished",
+        stopReason: "max_tokens",
+        stopDetail: "The model reached its token limit."
+      }
+    ])
+  })
+
+  it("maps retry progress before other session metadata", () => {
+    const events = sessionStreamEvents(
+      envelope("session.updated", {
+        retrying: { attempt: 2, of: 5 },
+        stopReason: "end_turn"
+      })
+    )
+    expect(events).toEqual([{ type: "retrying", retry: { attempt: 2, of: 5 } }])
   })
 
   it("maps mode changes on session.updated", () => {

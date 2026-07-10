@@ -548,6 +548,73 @@ function MarkdownTurnFixture() {
   return <AssistantTurn item={item} meta={meta} />
 }
 
+function TerminalTurnStatesFixture() {
+  const retryStartedAt = useMemo(() => new Date().toISOString(), [])
+  const retryingItem: ConversationItem = {
+    id: "assistant-retrying",
+    role: "assistant",
+    text: "",
+    createdAt: retryStartedAt,
+    isGenerating: true
+  }
+  const retryingMeta: TurnMeta = {
+    startedAt: retryingItem.createdAt,
+    thoughts: "",
+    toolCalls: [],
+    entries: [],
+    subagents: {},
+    textPhases: {},
+    nextTextId: 0,
+    retryStatus: { attempt: 2, of: 5 }
+  }
+  const stoppedWithoutAnswer: ConversationItem = {
+    id: "assistant-stopped-empty",
+    role: "assistant",
+    text: "",
+    createdAt: "2026-07-08T12:03:30.000Z",
+    isGenerating: false
+  }
+  const stoppedWithoutAnswerMeta: TurnMeta = {
+    startedAt: stoppedWithoutAnswer.createdAt,
+    endedAt: "2026-07-08T12:03:35.000Z",
+    thoughts: "",
+    toolCalls: [],
+    entries: [],
+    subagents: {},
+    textPhases: {},
+    nextTextId: 0,
+    stopReason: "max_tokens",
+    stopDetail: "The model stopped before producing an answer."
+  }
+  const stoppedWithAnswer: ConversationItem = {
+    id: "assistant-stopped-answer",
+    role: "assistant",
+    text: "I could only complete part of the requested change.",
+    createdAt: "2026-07-08T12:03:40.000Z",
+    isGenerating: false
+  }
+  const stoppedWithAnswerMeta: TurnMeta = {
+    startedAt: stoppedWithAnswer.createdAt,
+    endedAt: "2026-07-08T12:03:46.000Z",
+    thoughts: "",
+    toolCalls: [],
+    entries: [{ type: "text", id: "stopped-final", markdown: stoppedWithAnswer.text }],
+    subagents: {},
+    textPhases: { "stopped-final": "final" },
+    nextTextId: 1,
+    stopReason: "refusal",
+    stopDetail: "The model declined to continue this turn."
+  }
+
+  return (
+    <div className="flex flex-col gap-5">
+      <AssistantTurn item={retryingItem} meta={retryingMeta} />
+      <AssistantTurn item={stoppedWithoutAnswer} meta={stoppedWithoutAnswerMeta} />
+      <AssistantTurn item={stoppedWithAnswer} meta={stoppedWithAnswerMeta} />
+    </div>
+  )
+}
+
 function NestedSubagentFixture() {
   const [disclosureValues, setDisclosureValues] = useState<Record<string, boolean>>({
     "turn:assistant-nested-agents": true,
@@ -832,6 +899,7 @@ function TranscriptStates() {
             attachments={userAttachments}
           />
           <MarkdownTurnFixture />
+          <TerminalTurnStatesFixture />
           <PlannedTurnFixture />
           <NestedSubagentFixture />
           <WaitingBackgroundTaskIndicator tasks={waitingTasks} />

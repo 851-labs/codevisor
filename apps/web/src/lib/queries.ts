@@ -39,6 +39,7 @@ import {
   type CommandInfo,
   type MessagePhase,
   type PlanEntryInfo,
+  type RetryStatusInfo,
   type QuestionRequestInfo,
   type QuestionResolutionInfo,
   type SessionStreamEvent,
@@ -70,6 +71,9 @@ export interface TurnMeta {
   textPhases: Record<string, MessagePhase>
   nextTextId: number
   isThinking?: boolean
+  retryStatus?: RetryStatusInfo
+  stopReason?: string
+  stopDetail?: string
   planDocument?: string
   planBoundary?: number
   plan?: PlanEntryInfo[]
@@ -451,7 +455,8 @@ function cascadeSettledSubagents(meta: TurnMeta, parentToolCallId: string): Turn
 function settleTurnMeta(
   meta: TurnMeta,
   status: "completed" | "failed" | "cancelled",
-  endedAt: string
+  endedAt: string,
+  terminal?: { stopReason?: string; stopDetail?: string }
 ): TurnMeta {
   const subagents = Object.fromEntries(
     Object.entries(meta.subagents).map(([id, bucket]) => [
@@ -463,6 +468,9 @@ function settleTurnMeta(
     ...meta,
     endedAt,
     isThinking: false,
+    retryStatus: undefined,
+    stopReason: terminal?.stopReason,
+    stopDetail: terminal?.stopDetail,
     toolCalls: meta.toolCalls.map((call) => (isSettled(call) ? call : { ...call, status })),
     entries: settleEntries(meta.entries, status),
     subagents
@@ -541,6 +549,7 @@ function appendTextChunk(
     if (existingTurnId != null) {
       return updateTurnMetaById(detail, existingTurnId, (meta) => ({
         ...meta,
+        retryStatus: undefined,
         textPhases: { ...meta.textPhases, [entryId]: chunk.phase ?? "commentary" }
       }))
     }
@@ -590,6 +599,7 @@ function appendTextChunk(
           : meta.textPhases
       return {
         ...meta,
+        retryStatus: undefined,
         entries: appended.entries,
         nextTextId: appended.nextTextId,
         textPhases
@@ -621,7 +631,10 @@ function upsertToolCall(
             [call.toolCallId]: { entries: [], isThinking: false, nextTextId: 0 }
           }
         : meta.subagents
-    return cascadeSettledSubagents({ ...meta, toolCalls, entries, subagents }, call.toolCallId)
+    return cascadeSettledSubagents(
+      { ...meta, retryStatus: undefined, toolCalls, entries, subagents },
+      call.toolCallId
+    )
   }
 
   const parentToolCallId = call.parentToolCallId
@@ -630,11 +643,15 @@ function upsertToolCall(
       detail,
       (meta) => ownsParent(meta, parentToolCallId),
       (meta) => {
-        let updated = updateSubagent(meta, parentToolCallId, (bucket) => ({
-          ...bucket,
-          isThinking: false,
-          entries: upsertToolEntry(bucket.entries, call, isUpdate)
-        }))
+        let updated = updateSubagent(
+          { ...meta, retryStatus: undefined },
+          parentToolCallId,
+          (bucket) => ({
+            ...bucket,
+            isThinking: false,
+            entries: upsertToolEntry(bucket.entries, call, isUpdate)
+          })
+        )
         if (!isUpdate && call.kind === "agent" && updated.subagents[call.toolCallId] == null) {
           updated = {
             ...updated,
@@ -677,7 +694,8 @@ function upsertToolCall(
 function finishGenerating(
   detail: SessionDetailCache,
   status: "completed" | "failed" | "cancelled" = "completed",
-  endedAt: string = isoTimestamp()
+  endedAt: string = isoTimestamp(),
+  terminal?: { stopReason?: string; stopDetail?: string }
 ): SessionDetailCache {
   return {
     ...detail,
@@ -691,7 +709,7 @@ function finishGenerating(
             Object.entries(detail.turnMeta).map(([itemId, meta]) => [
               itemId,
               detail.conversation.find((item) => item.id === itemId && item.isGenerating) != null
-                ? settleTurnMeta(meta, status, endedAt)
+                ? settleTurnMeta(meta, status, endedAt, terminal)
                 : meta
             ])
           )
@@ -712,10 +730,14 @@ function applySessionEvent(
           detail,
           (meta) => ownsParent(meta, event.parentToolCallId ?? ""),
           (meta) =>
-            updateSubagent(meta, event.parentToolCallId ?? "", (bucket) => ({
-              ...bucket,
-              isThinking: true
-            })),
+            updateSubagent(
+              { ...meta, retryStatus: undefined },
+              event.parentToolCallId ?? "",
+              (bucket) => ({
+                ...bucket,
+                isThinking: true
+              })
+            ),
           createdAt
         )
       }
@@ -723,6 +745,7 @@ function applySessionEvent(
         detail,
         (meta) => ({
           ...meta,
+          retryStatus: undefined,
           isThinking: true,
           thoughts: meta.thoughts + event.text
         }),
@@ -737,6 +760,7 @@ function applySessionEvent(
         detail,
         (meta) => ({
           ...meta,
+          retryStatus: undefined,
           isThinking: false,
           planDocument: event.markdown,
           planBoundary: meta.entries.length
@@ -746,7 +770,7 @@ function applySessionEvent(
     case "planUpdated":
       return updateTurnMeta(
         { ...detail, sessionPlan: event.entries },
-        (meta) => ({ ...meta, plan: event.entries }),
+        (meta) => ({ ...meta, retryStatus: undefined, plan: event.entries }),
         createdAt
       )
     case "questionAsked":
@@ -779,13 +803,16 @@ function applySessionEvent(
           (item) => !hasOptimisticUserPrompt(detail, item.text, item.attachments)
         )
       }
+    case "retrying":
+      return updateTurnMeta(detail, (meta) => ({ ...meta, retryStatus: event.retry }), createdAt)
     case "finished":
       return finishGenerating(
         detail,
         event.stopReason === "cancelled" || event.stopReason === "interrupted"
           ? "cancelled"
           : "completed",
-        createdAt
+        createdAt,
+        { stopReason: event.stopReason, stopDetail: event.stopDetail }
       )
     case "modeChanged":
       return { ...detail, currentModeId: event.modeId }

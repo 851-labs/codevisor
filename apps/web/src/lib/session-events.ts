@@ -75,6 +75,11 @@ export interface UsageInfo {
   costCurrency?: string
 }
 
+export interface RetryStatusInfo {
+  attempt: number
+  of: number
+}
+
 export interface BackgroundTaskInfo {
   id: string
   description: string
@@ -143,7 +148,8 @@ export type SessionStreamEvent =
   | { type: "goalChanged"; goal: SessionGoalType }
   | { type: "goalCleared" }
   | { type: "queueUpdated"; queue: readonly PromptQueueItem[] }
-  | { type: "finished"; stopReason: string }
+  | { type: "retrying"; retry: RetryStatusInfo }
+  | { type: "finished"; stopReason: string; stopDetail?: string }
   | { type: "modeChanged"; modeId: string }
   | { type: "configOptionsChanged"; configOptions: readonly SessionConfigOption[] }
   | { type: "failed"; message: string }
@@ -163,6 +169,16 @@ function stringOrUndefined(value: unknown): string | undefined {
 
 function numberOrUndefined(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined
+}
+
+function retryStatusFrom(payload: Record<string, unknown>): RetryStatusInfo | undefined {
+  if (!isRecord(payload.retrying)) return undefined
+  const attempt = numberOrUndefined(payload.retrying.attempt)
+  const of = numberOrUndefined(payload.retrying.of)
+  if (attempt == null || of == null || !Number.isInteger(attempt) || !Number.isInteger(of)) {
+    return undefined
+  }
+  return { attempt, of }
 }
 
 function booleanOrUndefined(value: unknown): boolean | undefined {
@@ -566,8 +582,16 @@ export function sessionStreamEvents(event: EventEnvelope): SessionStreamEvent[] 
     case "session.output":
       return textUpdatesFrom(payload)
     case "session.updated": {
+      const retry = retryStatusFrom(payload)
+      if (retry != null) return [{ type: "retrying", retry }]
       if (typeof payload.stopReason === "string") {
-        return [{ type: "finished", stopReason: payload.stopReason }]
+        return [
+          {
+            type: "finished",
+            stopReason: payload.stopReason,
+            stopDetail: stringOrUndefined(payload.stopDetail)
+          }
+        ]
       }
       return metadataUpdatesFrom(payload)
     }

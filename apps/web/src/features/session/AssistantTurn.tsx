@@ -1,5 +1,11 @@
 import type { ConversationItem } from "@herdman/api"
-import { ChevronRightIcon, CircleSlashIcon, CircleXIcon, WandSparklesIcon } from "lucide-react"
+import {
+  ChevronRightIcon,
+  CircleSlashIcon,
+  CircleXIcon,
+  TriangleAlertIcon,
+  WandSparklesIcon
+} from "lucide-react"
 import { useEffect, useMemo, useRef, useState } from "react"
 
 import { ShimmerText } from "../../components/ShimmerText"
@@ -193,20 +199,13 @@ export function assistantTurnDisclosureTransition(
   if (!previous.isFinalAsserted && current.isFinalAsserted && current.isGenerating) {
     return "collapse"
   }
-  if (
-    previous.hasRunningSubagent &&
-    !current.hasRunningSubagent &&
-    !current.isGenerating
-  ) {
+  if (previous.hasRunningSubagent && !current.hasRunningSubagent && !current.isGenerating) {
     return "collapse"
   }
   return undefined
 }
 
-export function shouldCollapseSubagentDisclosure(
-  wasRunning: boolean,
-  isRunning: boolean
-): boolean {
+export function shouldCollapseSubagentDisclosure(wasRunning: boolean, isRunning: boolean): boolean {
   return wasRunning && !isRunning
 }
 
@@ -367,7 +366,11 @@ export function AssistantTurn({
         />
       )}
 
-      {isThinking && <ShimmerText>Thinking…</ShimmerText>}
+      {isGenerating && meta?.retryStatus != null ? (
+        <ShimmerText>{`Retrying… (${meta.retryStatus.attempt}/${meta.retryStatus.of})`}</ShimmerText>
+      ) : (
+        isThinking && <ShimmerText>Thinking…</ShimmerText>
+      )}
 
       {responseText !== "" && (
         <>
@@ -382,6 +385,19 @@ export function AssistantTurn({
           )}
         </>
       )}
+
+      {!isGenerating &&
+        meta?.stopDetail != null &&
+        (responseText === "" ? (
+          <p className="herdman-selectable text-sm text-[var(--herdman-status-error)]">
+            {meta.stopDetail}
+          </p>
+        ) : (
+          <p className="herdman-selectable flex items-start gap-1.5 text-xs text-[var(--herdman-status-error)]">
+            <TriangleAlertIcon className="mt-px size-3.5 shrink-0" />
+            <span>{meta.stopDetail}</span>
+          </p>
+        ))}
     </div>
   )
 }

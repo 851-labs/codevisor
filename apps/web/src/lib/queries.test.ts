@@ -24,6 +24,57 @@ function detail(): SessionDetail {
 }
 
 describe("replaySessionEvents", () => {
+  it("preserves retry progress until real content arrives", () => {
+    const retrying = replaySessionEvents(detail(), [
+      event(1, { retrying: { attempt: 2, of: 5 } }, "session.updated")
+    ])
+    const retryingAssistant = retrying.conversation.find((item) => item.role === "assistant")
+    expect(retryingAssistant?.isGenerating).toBe(true)
+    expect(retrying.turnMeta?.[retryingAssistant?.id ?? ""]?.retryStatus).toEqual({
+      attempt: 2,
+      of: 5
+    })
+
+    const recovered = replaySessionEvents(detail(), [
+      event(1, { retrying: { attempt: 2, of: 5 } }, "session.updated"),
+      event(2, {
+        sessionUpdate: "agent_message_chunk",
+        messageId: "answer",
+        content: { type: "text", text: "Recovered." }
+      }),
+      event(
+        3,
+        { stopReason: "max_tokens", stopDetail: "The model reached its token limit." },
+        "session.updated"
+      )
+    ])
+    const recoveredAssistant = recovered.conversation.find((item) => item.role === "assistant")
+    expect(recoveredAssistant?.isGenerating).toBe(false)
+    expect(recovered.turnMeta?.[recoveredAssistant?.id ?? ""]).toMatchObject({
+      retryStatus: undefined,
+      stopReason: "max_tokens",
+      stopDetail: "The model reached its token limit."
+    })
+
+    const phaseRecovered = replaySessionEvents(detail(), [
+      event(1, {
+        sessionUpdate: "agent_message_chunk",
+        messageId: "answer",
+        phase: "commentary",
+        content: { type: "text", text: "Checking." }
+      }),
+      event(2, { retrying: { attempt: 1, of: 3 } }, "session.updated"),
+      event(3, {
+        sessionUpdate: "agent_message_chunk",
+        messageId: "answer",
+        phase: "final",
+        content: { type: "text", text: "" }
+      })
+    ])
+    const phaseAssistant = phaseRecovered.conversation.find((item) => item.role === "assistant")
+    expect(phaseRecovered.turnMeta?.[phaseAssistant?.id ?? ""]?.retryStatus).toBeUndefined()
+  })
+
   it("rebuilds a rich transcript from raw session history", () => {
     const replayed = replaySessionEvents(detail(), [
       event(1, {
