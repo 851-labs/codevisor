@@ -139,14 +139,7 @@ public final class ThemeManager {
     /// The default location for imported theme files:
     /// `Application Support/<variant>/themes`.
     public static func defaultCustomThemesDirectory() -> URL {
-        let base = (try? FileManager.default.url(
-            for: .applicationSupportDirectory,
-            in: .userDomainMask,
-            appropriateFor: nil,
-            create: true
-        )) ?? FileManager.default.temporaryDirectory
-        return base
-            .appendingPathComponent(HerdManAppVariant.applicationSupportDirectoryName, isDirectory: true)
+        HerdManAppVariant.applicationSupportURL()
             .appendingPathComponent("themes", isDirectory: true)
     }
 }

@@ -80,9 +80,9 @@ struct SessionSetupTests {
         #expect(phase.failureMessage == nil)
 
         phase.appendLog(stream: "stderr", line: "Preparing worktree")
-        phase.appendLog(stream: "stdout", line: "refs pull")
+        phase.appendLog(stream: "stdout", line: "git submodule update")
         #expect(phase.logs.map(\.id) == [0, 1])
-        #expect(phase.logs.map(\.text) == ["Preparing worktree", "refs pull"])
+        #expect(phase.logs.map(\.text) == ["Preparing worktree", "git submodule update"])
 
         // A server-measured duration wins over local clocks.
         phase.succeed(durationMs: 60_000, at: start.addingTimeInterval(99))

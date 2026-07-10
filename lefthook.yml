@@ -6,5 +6,5 @@ pre-commit:
 
 post-checkout:
   commands:
-    refs-pull:
-      run: scripts/git-hooks/post-checkout-refs-pull.sh {1} {2} {3}
+    worktree-ready:
+      run: scripts/git-hooks/post-checkout-worktree-ready.sh {1} {2} {3}

@@ -2,7 +2,7 @@ import Foundation
 
 /// An sRGB color with channels in 0...255 and alpha in 0...1, mirroring the
 /// representation used by the reference TypeScript implementation
-/// (`references/pierre/packages/theming/src/modules/color.ts`) so the ported
+/// (`.repos/pierre/packages/theming/src/modules/color.ts`) so the ported
 /// math stays comparable value-for-value.
 public struct RGBA: Equatable, Hashable, Sendable {
     public var r: Double

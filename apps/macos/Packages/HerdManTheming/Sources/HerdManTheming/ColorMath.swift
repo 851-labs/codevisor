@@ -1,7 +1,7 @@
 import Foundation
 
 /// Canonical color/contrast primitives, ported from
-/// `references/pierre/packages/theming/src/modules/color.ts`. All functions
+/// `.repos/pierre/packages/theming/src/modules/color.ts`. All functions
 /// take theme color strings (usually hex) and degrade gracefully on formats
 /// they can't measure, matching the reference behavior.
 public enum ColorMath {

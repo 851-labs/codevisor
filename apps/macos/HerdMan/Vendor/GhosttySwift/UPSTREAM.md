@@ -10,7 +10,7 @@ handling) instead of a hand-rolled reimplementation.
   (must match `GHOSTTY_REF` in `apps/macos/scripts/build-ghostty.sh` — the
   Swift layer and the GhosttyKit.xcframework MUST always be built from the
   same commit; the libghostty C API is explicitly unstable)
-- **Source root**: `references/ghostty/macos/Sources/`
+- **Source root**: `.repos/ghostty/macos/Sources/`
 
 ## Layout
 
@@ -57,7 +57,7 @@ Patch classes (12 files):
 1. Update `GHOSTTY_REF` in `apps/macos/scripts/build-ghostty.sh`; run it to
    rebuild `Frameworks/GhosttyKit.xcframework` (needs Zig 0.15.2).
 2. Run `apps/macos/scripts/sync-ghostty-swift.sh` — copies the manifest files
-   from `references/ghostty` over this directory and prints the diff.
+   from `.repos/ghostty` over this directory and prints the diff.
 3. Re-apply the patches: `git diff` will show upstream's changes mixed with
    reverted HERDMAN-PATCH blocks; restore each marked patch (grep above).
 4. Build; new `MemberImportVisibility` or isolation errors mean new patch-class-1

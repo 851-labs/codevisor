@@ -5,38 +5,26 @@ description: Start the HerdMan development server and build/run the native macOS
 
 # Run the HerdMan dev app/server
 
-## Dev server
-
-From the repo root:
+From the repository worktree root, run:
 
 ```sh
-bun run dev:server
+bun run dev
 ```
 
-Runs `apps/server` on port **49362** — the fixed dev port the macOS app connects to.
+This is the canonical development command. It:
 
-If a dev server is already running, kill it first so you don't test against stale server code:
+- derives a stable identity and preferred port from the current worktree;
+- builds the TypeScript server and native Swift app;
+- uses worktree-local `DerivedData`;
+- launches `HerdMan (<worktree-name>)` with an isolated database and Application Support directory;
+- owns both processes and stops the server when the app exits or the command is interrupted.
 
-```sh
-lsof -ti :49362 | xargs kill
-```
+Do not start the development server by itself. The app and server are one development instance and must receive the same port and data configuration.
 
-## macOS app
-
-Interactive: open `apps/macos/HerdMan.xcodeproj` in Xcode and Run.
-
-CLI:
-
-```sh
-bun run xcode:list   # list schemes
-xcodebuild -project apps/macos/HerdMan.xcodeproj -scheme HerdMan \
-  -derivedDataPath DerivedData build
-```
-
-The built app lands under `DerivedData/Build/Products/Debug/HerdMan.app`; launch it with `open`.
+Set `HERDMAN_DEV_PORT` only when a specific port is required. Ordinarily the runner selects a deterministic available port automatically.
 
 ## Rules
 
-- **Always pass `-derivedDataPath DerivedData`** (or `.derivedData`). Never invent variants like `.derived-data` — only those two names are gitignored.
-- **Never `xcodebuild` a shared main checkout** that other agent sessions may be editing. Build from your own git worktree (or a scratch worktree with your diff applied) with a worktree-local `-derivedDataPath`, so untracked WIP files and DerivedData don't cross-contaminate builds.
-- Other dev targets: `bun run dev:web` (web app), `bun run dev:desktop` (desktop app; builds `@herdman/server` first).
+- Never `xcodebuild` a shared main checkout that other agent sessions may be editing. Run from your own git worktree; the development command uses that worktree's ignored `DerivedData` directory.
+- Stop a running development instance through its owning `bun run dev` process. Do not kill arbitrary listeners by port.
+- Other targets remain separate: `bun run dev:web` runs the public website and `bun run dev:desktop` runs the Tauri parity app.

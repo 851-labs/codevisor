@@ -1,18 +1,39 @@
-[submodule ".repos/acp-typescript-sdk"]
-	path = .repos/acp-typescript-sdk
-	url = https://github.com/agentclientprotocol/typescript-sdk.git
-[submodule ".repos/codex-acp"]
-	path = .repos/codex-acp
-	url = https://github.com/agentclientprotocol/codex-acp.git
+[submodule ".repos/agent-client-protocol"]
+	path = .repos/agent-client-protocol
+	url = https://github.com/agentclientprotocol/agent-client-protocol.git
 [submodule ".repos/claude-agent-acp"]
 	path = .repos/claude-agent-acp
 	url = https://github.com/agentclientprotocol/claude-agent-acp.git
+[submodule ".repos/codex"]
+	path = .repos/codex
+	url = https://github.com/openai/codex.git
+[submodule ".repos/codex-acp"]
+	path = .repos/codex-acp
+	url = https://github.com/agentclientprotocol/codex-acp.git
+[submodule ".repos/effect-smol"]
+	path = .repos/effect-smol
+	url = https://github.com/Effect-TS/effect-smol.git
+[submodule ".repos/ghostty"]
+	path = .repos/ghostty
+	url = https://github.com/ghostty-org/ghostty.git
+[submodule ".repos/lobe-icons"]
+	path = .repos/lobe-icons
+	url = https://github.com/lobehub/lobe-icons.git
+[submodule ".repos/mosh"]
+	path = .repos/mosh
+	url = https://github.com/mobile-shell/mosh.git
 [submodule ".repos/opencode"]
 	path = .repos/opencode
 	url = https://github.com/anomalyco/opencode.git
-[submodule ".repos/effect-smol"]
-	path = .repos/effect-smol
-	url = https://github.com/effect-ts/effect-smol.git
 [submodule ".repos/pierre"]
 	path = .repos/pierre
 	url = https://github.com/pierrecomputer/pierre.git
+[submodule ".repos/rust-sdk"]
+	path = .repos/rust-sdk
+	url = https://github.com/agentclientprotocol/rust-sdk.git
+[submodule ".repos/streamdown"]
+	path = .repos/streamdown
+	url = https://github.com/vercel/streamdown.git
+[submodule ".repos/typescript-sdk"]
+	path = .repos/typescript-sdk
+	url = https://github.com/agentclientprotocol/typescript-sdk.git

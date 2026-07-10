@@ -12,12 +12,12 @@
 #
 # Usage:
 #   apps/macos/scripts/build-ghostty.sh --fetch-only
-#   nix develop ./references/ghostty -c apps/macos/scripts/build-ghostty.sh
+#   nix develop ./.repos/ghostty -c apps/macos/scripts/build-ghostty.sh
 set -euo pipefail
 
 MACOS_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 REPO_ROOT="$(cd "$MACOS_ROOT/../.." && pwd)"
-GHOSTTY_DIR="$REPO_ROOT/references/ghostty"
+GHOSTTY_DIR="$REPO_ROOT/.repos/ghostty"
 DEST_DIR="$MACOS_ROOT/Frameworks"
 GHOSTTY_REPOSITORY="${GHOSTTY_REPOSITORY:-https://github.com/ghostty-org/ghostty.git}"
 GHOSTTY_REF="${GHOSTTY_REF:-28f9367bee11ad42f40f8aa589eb8c6db62d34be}"

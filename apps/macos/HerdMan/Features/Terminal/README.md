@@ -16,9 +16,9 @@ scoped to the session's working directory.
    xcodebuild -downloadComponent MetalToolchain   # one-time
    # shim: make `xcrun --show-sdk-path` return a stable arm64 SDK
    #   e.g. /Library/Developer/CommandLineTools/SDKs/MacOSX15.2.sdk
-   cd references/ghostty
+   cd .repos/ghostty
    zig build -Demit-xcframework=true -Dxcframework-target=universal -Doptimize=ReleaseFast
-   # → references/ghostty/macos/GhosttyKit.xcframework ; copied to repo Frameworks/
+   # → .repos/ghostty/macos/GhosttyKit.xcframework ; copied to repo Frameworks/
    ```
 2. Linked into the HerdMan target via build settings:
    - `SWIFT_INCLUDE_PATHS` points at the GhosttyKit macOS slice headers.
@@ -39,7 +39,7 @@ embedded terminal scale matches the rest of the app chrome.
 `GHOSTTY_RESOURCES_DIR=<that>/ghostty` **before `ghostty_init`** (it captures the
 dir at init). libghostty then sets `TERM=xterm-ghostty` and injects zsh/bash/etc.
 shell integration. To regenerate the tarball after a Ghostty bump:
-`cd references/ghostty/zig-out/share && tar czf <repo>/HerdMan/Resources/ghostty-resources.tar.gz ghostty/shell-integration terminfo`.
+`cd .repos/ghostty/zig-out/share && tar czf <repo>/HerdMan/Resources/ghostty-resources.tar.gz ghostty/shell-integration terminfo`.
 
 ## What's implemented
 

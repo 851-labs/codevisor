@@ -2,7 +2,6 @@ apps/macos/
 coverage/
 dist/
 node_modules/
-references/
 .turbo/
 bun.lock
 *.xcworkspace/

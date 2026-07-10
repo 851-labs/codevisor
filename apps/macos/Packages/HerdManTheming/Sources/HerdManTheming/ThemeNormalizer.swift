@@ -3,7 +3,7 @@ import Foundation
 /// Resolves a theme's workbench `colors` map: applies the standard fallback
 /// chains and a few universal repairs so every consumer reads one resolved set
 /// of keys instead of re-deriving the chains. Ported from
-/// `references/pierre/packages/theming/src/modules/normalizeThemeColors.ts`.
+/// `.repos/pierre/packages/theming/src/modules/normalizeThemeColors.ts`.
 ///
 /// What it fills (mechanical fallback, no opinion):
 ///   - surfaces: editor/sideBar background+foreground, input.background,

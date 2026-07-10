@@ -212,9 +212,9 @@ describe("git helper", () => {
       fakeGit,
       [
         "#!/bin/sh",
-        "printf '\\033[38;2;5;5;5mrefs pull: 1/12\\033[m\\r'",
-        "printf '\\033[38;2;5;5;5mrefs pull: 1/12\\033[m\\r'",
-        "printf 'refs pull: 12/12\\n'",
+        "printf '\\033[38;2;5;5;5mgit submodule update: 1/12\\033[m\\r'",
+        "printf '\\033[38;2;5;5;5mgit submodule update: 1/12\\033[m\\r'",
+        "printf 'git submodule update: 12/12\\n'",
         "printf '\\033[2K\\033[1G\\n'",
         "printf 'done\\n'",
         "exit 0",
@@ -229,7 +229,7 @@ describe("git helper", () => {
       await addWorktree(fakeBin, join(fakeBin, "worktree"), "herdman/fake", (_stream, line) => {
         lines.push(line)
       })
-      expect(lines).toEqual(["refs pull: 1/12", "refs pull: 12/12", "done"])
+      expect(lines).toEqual(["git submodule update: 1/12", "git submodule update: 12/12", "done"])
     } finally {
       process.env["PATH"] = previousPath
     }

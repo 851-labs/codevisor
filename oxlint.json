@@ -6,7 +6,6 @@
     "coverage/**",
     "dist/**",
     "node_modules/**",
-    "references/**",
     "**/routeTree.gen.ts"
   ],
   "plugins": ["typescript", "import", "unicorn", "oxc"],

@@ -151,7 +151,7 @@ jobs:
           determinate: true
       - name: Build GhosttyKit
         if: steps.ghosttykit-cache.outputs.cache-hit != 'true'
-        run: nix develop ./references/ghostty -c apps/macos/scripts/build-ghostty.sh
+        run: nix develop ./.repos/ghostty -c apps/macos/scripts/build-ghostty.sh
       - name: Verify GhosttyKit cache
         shell: bash
         run: |

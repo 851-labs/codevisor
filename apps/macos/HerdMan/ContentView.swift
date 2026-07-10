@@ -159,7 +159,9 @@ struct RootView: View {
                 // debug marker — so they're recognizable at a glance.
                 .toolbar {
                     ToolbarItem {
-                        Button {} label: {
+                        Button {
+                            showDevelopmentInfo()
+                        } label: {
                             Image(systemName: "ant")
                         }
                         .buttonStyle(.borderedProminent)
@@ -182,6 +184,21 @@ struct RootView: View {
             UserDefaults.standard.set(newValue == .detailOnly, forKey: "sidebar.collapsed")
         }
     }
+
+    #if DEBUG
+    private func showDevelopmentInfo() {
+        let alert = NSAlert()
+        alert.messageText = "HerdMan Development Build"
+        alert.informativeText = "Worktree: \(HerdManAppVariant.developmentWorktreeName)\nServer port: \(HerdManAppVariant.localServerPort)\nData: \(HerdManAppVariant.applicationSupportURL().path)"
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "OK")
+        if let window = NSApp.keyWindow {
+            alert.beginSheetModal(for: window)
+        } else {
+            alert.runModal()
+        }
+    }
+    #endif
 
     @ViewBuilder
     private func detail(_ store: SessionStore) -> some View {

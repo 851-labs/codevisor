@@ -8,6 +8,7 @@
     "packages/*"
   ],
   "scripts": {
+    "dev": "bun scripts/dev.mjs",
     "build": "turbo run build",
     "typecheck": "turbo run typecheck",
     "lint": "oxlint --disable-nested-config --ignore-pattern '.repos/**' .",
@@ -17,7 +18,6 @@
     "test:coverage": "turbo run test:coverage",
     "check": "bun run format:check && bun run lint && bun run typecheck && bun run test:coverage && bun run swift:test",
     "dev:web": "bun run --cwd apps/www dev",
-    "dev:server": "bun run --cwd apps/server dev -- --port 49362",
     "dev:tauri-web": "bun run --cwd apps/web dev",
     "dev:desktop": "turbo run build --filter=@herdman/server && bun run --cwd apps/desktop dev",
     "verify:tauri-chat": "bash scripts/verify-tauri-chat-ui.sh",

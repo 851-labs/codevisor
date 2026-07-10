@@ -173,7 +173,7 @@ struct SessionSetupPhaseView: View {
 #Preview("Setup phases") {
     var running = SessionSetupPhase.worktree(startedAt: Date().addingTimeInterval(-12))
     running.appendLog(stream: "stderr", line: "Preparing worktree (new branch 'herdman/fearless-raven')")
-    running.appendLog(stream: "stdout", line: "refs pull: cloning 12 repositories…")
+    running.appendLog(stream: "stdout", line: "git submodule update: cloning 12 repositories…")
 
     var done = SessionSetupPhase.worktree(startedAt: Date().addingTimeInterval(-64))
     done.succeed(durationMs: 60_000)

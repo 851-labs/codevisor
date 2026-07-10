@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Re-syncs the vendored Ghostty Swift surface layer from references/ghostty.
+# Re-syncs the vendored Ghostty Swift surface layer from .repos/ghostty.
 #
 # Copies the manifest files verbatim over apps/macos/HerdMan/Vendor/GhosttySwift
 # and prints the resulting git diff stat. HERDMAN-PATCH blocks are clobbered by
@@ -12,7 +12,7 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
-SRC="$REPO_ROOT/references/ghostty/macos/Sources"
+SRC="$REPO_ROOT/.repos/ghostty/macos/Sources"
 DST="$REPO_ROOT/apps/macos/HerdMan/Vendor/GhosttySwift"
 
 if [[ ! -d "$SRC" ]]; then
@@ -66,7 +66,7 @@ for entry in "${MANIFEST[@]}"; do
   echo "synced: $dst_rel"
 done
 
-cp "$REPO_ROOT/references/ghostty/LICENSE" "$DST/LICENSE"
+cp "$REPO_ROOT/.repos/ghostty/LICENSE" "$DST/LICENSE"
 
 echo
 echo "== diff vs HEAD (re-apply HERDMAN-PATCH blocks before committing) =="

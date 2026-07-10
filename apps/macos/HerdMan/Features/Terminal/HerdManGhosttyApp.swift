@@ -1,6 +1,6 @@
 //  HerdManGhosttyApp: the process-wide libghostty runtime host.
 //
-//  Replaces the role of upstream Ghostty's `Ghostty.App` (references/ghostty/
+//  Replaces the role of upstream Ghostty's `Ghostty.App` (.repos/ghostty/
 //  macos/Sources/Ghostty/Ghostty.App.swift) for HerdMan's embedding: it owns the
 //  single `ghostty_app_t`, registers the runtime callbacks (clipboard, wakeup,
 //  action dispatch), and manages HerdMan's theme-driven config. Callback and
@@ -183,14 +183,12 @@ final class HerdManGhosttyApp {
         let fm = FileManager.default
         guard let tarball = Bundle.main.url(forResource: "ghostty-resources", withExtension: "tar.gz")
             ?? Bundle.main.resourceURL?.appendingPathComponent("ghostty-resources.tar.gz"),
-              fm.fileExists(atPath: tarball.path),
-              let support = try? fm.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
+              fm.fileExists(atPath: tarball.path)
         else {
             fatalError("Missing bundled ghostty-resources.tar.gz.")
         }
 
-        let base = support
-            .appendingPathComponent(HerdManAppVariant.applicationSupportDirectoryName, isDirectory: true)
+        let base = HerdManAppVariant.applicationSupportURL(fileManager: fm)
             .appendingPathComponent("ghostty-resources", isDirectory: true)
         let ghosttyDir = base.appendingPathComponent("ghostty", isDirectory: true)
 

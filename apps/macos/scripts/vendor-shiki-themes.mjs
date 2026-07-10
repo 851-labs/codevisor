@@ -46,7 +46,7 @@ const SHIKI_THEMES = [
 ]
 
 // The Pierre themes are committed directly (copied from
-// references/pierre/packages/theme/themes); the manifest indexes them so the
+// .repos/pierre/packages/theme/themes); the manifest indexes them so the
 // catalog reads one file for ordering and grouping.
 const PIERRE_THEMES = [
   "pierre-light",

@@ -191,7 +191,7 @@ public final class AppEnvironment {
     )!
 
     public static func live() -> AppEnvironment {
-        let store = FileSystemStore()
+        let store = FileSystemStore(directory: HerdManAppVariant.applicationSupportURL())
         let serverClient = HerdManServerClient(config: .localDefault)
         let localServer = LocalHerdManServer(client: serverClient)
         return AppEnvironment(

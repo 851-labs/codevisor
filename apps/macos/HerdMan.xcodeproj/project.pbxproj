@@ -289,7 +289,10 @@
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "HerdMan Dev";
+				HERDMAN_DEV_BUNDLE_IDENTIFIER = com.851labs.HerdMan.Development;
+				HERDMAN_DEV_DISPLAY_NAME = "HerdMan Dev";
+				HERDMAN_DEV_PRODUCT_NAME = "HerdMan Dev";
+				INFOPLIST_KEY_CFBundleDisplayName = "$(HERDMAN_DEV_DISPLAY_NAME)";
 				INFOPLIST_KEY_CFBundleIconFile = AppIconDev;
 				INFOPLIST_KEY_CFBundleIconName = AppIconDev;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
@@ -347,8 +350,9 @@
 					"-framework",
 					Combine,
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.851labs.HerdMan.Development;
-				PRODUCT_NAME = "HerdMan Dev";
+				PRODUCT_BUNDLE_IDENTIFIER = "$(HERDMAN_DEV_BUNDLE_IDENTIFIER)";
+				PRODUCT_MODULE_NAME = HerdMan_Dev;
+				PRODUCT_NAME = "$(HERDMAN_DEV_PRODUCT_NAME)";
 				REGISTER_APP_GROUPS = YES;
 				SDKROOT = macosx;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
