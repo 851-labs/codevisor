@@ -147,12 +147,8 @@ function withoutMatchingOptimisticUser(
   )
 }
 
-function isIdleForOptimisticPrompt(detail: SessionDetailCache): boolean {
-  return (
-    detail.conversation.every((item) => !item.isGenerating) &&
-    (detail.backgroundTasks?.length ?? 0) === 0 &&
-    detail.promptQueue.length === 0
-  )
+export function canAppendOptimisticUserPrompt(detail: SessionDetailCache): boolean {
+  return detail.conversation.every((item) => !item.isGenerating)
 }
 
 function withOptimisticUserPrompt(
@@ -160,7 +156,7 @@ function withOptimisticUserPrompt(
   text: string,
   attachments: readonly AttachmentRef[] | undefined
 ): SessionDetailCache {
-  if (!isIdleForOptimisticPrompt(detail)) return detail
+  if (!canAppendOptimisticUserPrompt(detail)) return detail
   const trimmed = text.trim()
   const item: ConversationItem & { optimistic: true } = {
     id: `optimistic:${crypto.randomUUID()}`,

@@ -1,7 +1,7 @@
 import type { EventEnvelope, SessionDetail } from "@herdman/api"
 import { describe, expect, it } from "vitest"
 
-import { replaySessionEvents } from "./queries"
+import { canAppendOptimisticUserPrompt, replaySessionEvents } from "./queries"
 
 function event(id: number, payload: unknown, kind: EventEnvelope["kind"] = "session.output") {
   return {
@@ -24,6 +24,46 @@ function detail(): SessionDetail {
 }
 
 describe("replaySessionEvents", () => {
+  it("allows optimistic prompts between turns while background work remains", () => {
+    const settled = replaySessionEvents(detail(), [
+      event(1, {
+        sessionUpdate: "agent_message_chunk",
+        content: { type: "text", text: "First answer." }
+      }),
+      event(2, { stopReason: "end_turn" }, "session.updated")
+    ])
+    expect(
+      canAppendOptimisticUserPrompt({
+        ...settled,
+        backgroundTasks: [
+          {
+            id: "task-1",
+            description: "Watch tests",
+            status: "running",
+            taskType: "subagent"
+          }
+        ],
+        promptQueue: [
+          {
+            id: "queued-1",
+            sessionId: "session-1",
+            text: "Queued follow-up",
+            createdAt: "2026-01-01T00:00:03.000Z",
+            updatedAt: "2026-01-01T00:00:03.000Z"
+          }
+        ]
+      })
+    ).toBe(true)
+
+    const generating = replaySessionEvents(detail(), [
+      event(1, {
+        sessionUpdate: "agent_thought_chunk",
+        content: { type: "text", text: "thinking" }
+      })
+    ])
+    expect(canAppendOptimisticUserPrompt(generating)).toBe(false)
+  })
+
   it("preserves retry progress until real content arrives", () => {
     const retrying = replaySessionEvents(detail(), [
       event(1, { retrying: { attempt: 2, of: 5 } }, "session.updated")
