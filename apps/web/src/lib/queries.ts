@@ -736,7 +736,7 @@ function upsertToolCall(
           parentToolCallId,
           (bucket) => ({
             ...bucket,
-            isThinking: false,
+            isThinking: isUpdate ? bucket.isThinking : false,
             entries: upsertToolEntry(bucket.entries, call, isUpdate)
           })
         )

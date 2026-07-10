@@ -709,6 +709,7 @@ function EstablishedOptimisticTranscriptFixture() {
 }
 
 function NestedSubagentFixture() {
+  const startedAt = new Date(Date.now() - 12_000).toISOString()
   const [disclosureValues, setDisclosureValues] = useState<Record<string, boolean>>({
     "turn:assistant-nested-agents": true,
     "subagent:nested-agent-outer": true,
@@ -749,12 +750,12 @@ function NestedSubagentFixture() {
     id: "assistant-nested-agents",
     role: "assistant",
     text: "Nested agent verification completed.",
-    createdAt: "2026-07-08T12:04:00.000Z",
+    createdAt: startedAt,
     isGenerating: false
   }
   const meta: TurnMeta = {
-    startedAt: "2026-07-08T12:04:00.000Z",
-    endedAt: "2026-07-08T12:04:12.000Z",
+    startedAt,
+    endedAt: new Date().toISOString(),
     thoughts: "",
     toolCalls: [outer],
     entries: [
@@ -764,7 +765,7 @@ function NestedSubagentFixture() {
     subagents: {
       [outer.toolCallId]: {
         entries: [{ type: "tool", call: inner }],
-        isThinking: false,
+        isThinking: true,
         nextTextId: 0
       },
       [inner.toolCallId]: {
@@ -785,6 +786,7 @@ function NestedSubagentFixture() {
     <AssistantTurn
       item={item}
       meta={meta}
+      runningSubagentToolCallIds={[outer.toolCallId]}
       disclosureValues={disclosureValues}
       setDisclosureValue={(key, expanded) =>
         setDisclosureValues((current) => ({ ...current, [key]: expanded }))

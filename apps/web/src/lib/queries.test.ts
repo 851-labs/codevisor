@@ -296,6 +296,29 @@ describe("replaySessionEvents", () => {
     expect(meta?.subagents["task-2"]?.isThinking).toBe(false)
   })
 
+  it("preserves subagent thinking when an unseen parented tool update arrives", () => {
+    const replayed = replaySessionEvents(detail(), [
+      event(1, {
+        sessionUpdate: "agent_thought_chunk",
+        parentToolCallId: "task-9",
+        content: { type: "text", text: "Considering the result" }
+      }),
+      event(2, {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "sub-x",
+        parentToolCallId: "task-9",
+        status: "in_progress"
+      })
+    ])
+
+    const assistant = replayed.conversation.find((item) => item.role === "assistant")
+    const bucket = replayed.turnMeta?.[assistant?.id ?? ""]?.subagents["task-9"]
+    expect(bucket?.isThinking).toBe(true)
+    expect(bucket?.entries).toMatchObject([
+      { type: "tool", call: { toolCallId: "sub-x", parentToolCallId: "task-9" } }
+    ])
+  })
+
   it("preserves live user attachments while replaying output events", () => {
     const attachment = {
       fileId: "file-1",
