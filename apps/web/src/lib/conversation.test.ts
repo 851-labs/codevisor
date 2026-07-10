@@ -53,12 +53,18 @@ describe("foldConversation", () => {
     expect(folded[0]?.text).toBe("part one continues\n\npart two")
   })
 
-  it("keeps generating state when any merged row is generating", () => {
-    const folded = foldConversation([
-      item("assistant", "a"),
+  it("uses the final assistant row as the folded generating state", () => {
+    const settled = foldConversation([
+      item("assistant", "a", { isGenerating: true }),
+      item("assistant", "b", { isGenerating: false })
+    ])
+    expect(settled[0]?.isGenerating).toBe(false)
+
+    const generating = foldConversation([
+      item("assistant", "a", { isGenerating: false }),
       item("assistant", "b", { isGenerating: true })
     ])
-    expect(folded[0]?.isGenerating).toBe(true)
+    expect(generating[0]?.isGenerating).toBe(true)
   })
 
   it("drops system rows but flushes the turn across them", () => {

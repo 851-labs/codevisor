@@ -25,7 +25,7 @@ export function foldConversation(items: readonly ConversationItem[]): Conversati
         ...last,
         text: last.text + (isMessageBoundary ? "\n\n" : "") + item.text,
         messageId: item.messageId ?? last.messageId,
-        isGenerating: last.isGenerating || item.isGenerating
+        isGenerating: item.isGenerating
       }
       continue
     }
