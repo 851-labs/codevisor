@@ -588,6 +588,18 @@ function ComposerStates() {
           onAttachFiles={() => undefined}
         />
       </StateBlock>
+      <StateBlock title="Agent stopping">
+        <Composer
+          value=""
+          onValueChange={() => undefined}
+          isSending
+          isCancelling
+          chips={toolbarChips({})}
+          onStop={() => undefined}
+          onSend={() => undefined}
+          onAttachFiles={() => undefined}
+        />
+      </StateBlock>
       <StateBlock title="Retained attachment draft">
         <PersistentAttachmentFixture />
       </StateBlock>

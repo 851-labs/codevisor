@@ -150,6 +150,7 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
 
   const [composerText, setComposerText] = useComposerDraftText(`session:${sessionId}`)
   const [composerError, setComposerError] = useState<string>()
+  const [isCancelling, setIsCancelling] = useState(false)
   const [paneState, setPaneState] = useState(() => loadTerminalPaneState(sessionId))
   const [isGoalComposerArmed, setIsGoalComposerArmed] = useState(false)
   const [isGoalEditing, setIsGoalEditing] = useState(false)
@@ -318,11 +319,31 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
     }
   }
 
+  const stop = async () => {
+    if (!isRunning || isCancelling) return
+    setComposerError(undefined)
+    setIsCancelling(true)
+    try {
+      await cancelSession.mutateAsync(sessionId)
+    } catch (cancelError) {
+      setIsCancelling(false)
+      setComposerError(cancelError instanceof Error ? cancelError.message : String(cancelError))
+    }
+  }
+
   useEffect(() => {
     if (pendingUserMessage != null && (detail?.conversation.length ?? 0) > 0) {
       setPendingUserMessage(undefined)
     }
   }, [detail?.conversation.length, pendingUserMessage])
+
+  useEffect(() => {
+    if (!isRunning) setIsCancelling(false)
+  }, [isRunning])
+
+  useEffect(() => {
+    setIsCancelling(false)
+  }, [sessionId])
 
   useEffect(() => {
     setPaneState(loadTerminalPaneState(sessionId))
@@ -636,6 +657,7 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
                 : composerText.trim() !== "" || composerAttachments.attachments.length > 0
             }
             isSending={isGoalComposerArmed ? setGoal.isPending : isRunning}
+            isCancelling={!isGoalComposerArmed && isCancelling}
             isGoalEditing={isGoalEditing}
             onAttachFiles={isGoalComposerArmed ? undefined : composerAttachments.stageFiles}
             onRemoveAttachment={
@@ -646,7 +668,7 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
             }
             onSend={() => void send()}
             onEscape={isGoalComposerArmed ? exitGoalComposer : undefined}
-            onStop={isGoalComposerArmed ? undefined : () => cancelSession.mutate(sessionId)}
+            onStop={isGoalComposerArmed ? undefined : () => void stop()}
             chips={
               <>
                 {!isGoalEditing && (

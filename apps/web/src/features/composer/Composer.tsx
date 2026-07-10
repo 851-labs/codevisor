@@ -47,6 +47,7 @@ export function Composer({
   usage,
   canSend,
   isSending = false,
+  isCancelling = false,
   isGoalEditing = false,
   autoFocus = false,
   onAttachFiles,
@@ -65,6 +66,7 @@ export function Composer({
   usage?: UsageInfo
   canSend?: boolean
   isSending?: boolean
+  isCancelling?: boolean
   isGoalEditing?: boolean
   autoFocus?: boolean
   onAttachFiles?: (files: readonly File[]) => void
@@ -291,17 +293,27 @@ export function Composer({
             {chips}
             <span className="flex-1" />
             <UsageRingButton usage={usage} />
-            {isSending && onStop != null && (
-              <button
-                type="button"
-                aria-label="Stop"
-                title="Stop"
-                onClick={onStop}
-                className="text-muted-foreground hover:text-foreground flex size-[26px] cursor-default items-center justify-center rounded-full border border-[var(--herdman-separator)] outline-none hover:bg-[color-mix(in_srgb,var(--foreground)_6%,transparent)] active:opacity-80"
-              >
-                <SquareIcon className="size-2.5 fill-current" />
-              </button>
-            )}
+            {isSending && onStop != null &&
+              (isCancelling ? (
+                <div
+                  role="status"
+                  aria-label="Stopping"
+                  title="Stopping..."
+                  className="text-muted-foreground flex size-[26px] items-center justify-center"
+                >
+                  <LoaderCircleIcon className="size-3.5 animate-spin" />
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  aria-label="Stop"
+                  title="Stop"
+                  onClick={onStop}
+                  className="text-muted-foreground hover:text-foreground flex size-[26px] cursor-default items-center justify-center rounded-full border border-[var(--herdman-separator)] outline-none hover:bg-[color-mix(in_srgb,var(--foreground)_6%,transparent)] active:opacity-80"
+                >
+                  <SquareIcon className="size-2.5 fill-current" />
+                </button>
+              ))}
             {(isSubmittingOnly || !isSending || hasDraft) && sendButton}
           </>
         )}
