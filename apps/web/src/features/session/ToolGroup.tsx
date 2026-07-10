@@ -1,4 +1,11 @@
 import {
+  getFiletypeFromFileName,
+  parseDiffFromFile,
+  preloadHighlighter,
+  type FileDiffOptions
+} from "@pierre/diffs"
+import { MultiFileDiff } from "@pierre/diffs/react"
+import {
   CheckIcon,
   ChevronRightIcon,
   CircleSlashIcon,
@@ -14,10 +21,13 @@ import {
   WrenchIcon,
   XIcon
 } from "lucide-react"
-import { type CSSProperties, useEffect, useMemo, useRef } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 
+import { Spinner } from "../../components/ui/spinner"
 import { cn } from "../../lib/cn"
 import type { ContentBlockInfo, ToolCallContentInfo, ToolCallInfo } from "../../lib/session-events"
+import { useThemeSelection } from "../../theme/useThemeSelection"
+import { useThemeSource } from "../../theme/useThemeSource"
 
 export type ToolDisclosureValues = Record<string, boolean>
 
@@ -84,10 +94,9 @@ function diffTotals(call: ToolCallInfo): { added: number; removed: number } | un
 
   return diffs.reduce(
     (totals, diff) => {
-      for (const row of diffRows(diff.oldText, diff.newText)) {
-        if (row.kind === "added") totals.added += 1
-        else if (row.kind === "removed") totals.removed += 1
-      }
+      const counts = diffLineCounts(diff.oldText, diff.newText)
+      totals.added += counts.added
+      totals.removed += counts.removed
       return totals
     },
     { added: 0, removed: 0 }
@@ -510,52 +519,65 @@ function DiffBlock({
   oldText?: string
   newText: string
 }) {
-  const rows = useMemo(() => {
+  const { lightThemeName, darkThemeName } = useThemeSelection()
+  const { activeTheme } = useThemeSource()
+  const language = useMemo(() => getFiletypeFromFileName(path), [path])
+  const highlighterKey = `${lightThemeName}\0${darkThemeName}\0${language}`
+  const [loadedHighlighterKey, setLoadedHighlighterKey] = useState<string>()
+  const files = useMemo(() => {
     const dedented = dedentDiffTexts(oldText, newText)
-    return diffRows(dedented.oldText, dedented.newText)
-  }, [oldText, newText])
-  const maxLine = rows.reduce((max, row) => Math.max(max, row.oldLine ?? 0, row.newLine ?? 0), 1)
-  const gutterWidth = `${Math.max(2, String(maxLine).length)}ch`
+    return {
+      oldFile: { name: path, contents: dedented.oldText ?? "" },
+      newFile: { name: path, contents: dedented.newText }
+    }
+  }, [newText, oldText, path])
+  const options = useMemo<FileDiffOptions<undefined>>(
+    () => ({
+      theme: { light: lightThemeName, dark: darkThemeName },
+      themeType: activeTheme.colorScheme,
+      diffStyle: "unified",
+      diffIndicators: "classic",
+      disableFileHeader: true,
+      hunkSeparators: "simple",
+      lineDiffType: "word-alt",
+      overflow: "scroll"
+    }),
+    [activeTheme.colorScheme, darkThemeName, lightThemeName]
+  )
+  useEffect(() => {
+    let cancelled = false
+    void preloadHighlighter({
+      themes: [...new Set([lightThemeName, darkThemeName])],
+      langs: [language]
+    })
+      .then(() => {
+        if (!cancelled) setLoadedHighlighterKey(highlighterKey)
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) console.error("Could not initialize the diff highlighter", error)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [darkThemeName, highlighterKey, language, lightThemeName])
 
   return (
-    <div
-      className="herdman-selectable max-h-80 overflow-auto rounded-lg border border-[var(--border)] bg-[var(--herdman-code-bg)] font-mono text-xs leading-relaxed"
-      title={path}
-    >
-      <div className="min-w-full py-1">
-        {rows.map((row, index) => (
-          <div
-            key={index}
-            className={cn(
-              "grid grid-cols-[var(--old-gutter)_var(--new-gutter)_8px_1fr] gap-1.5 px-2 py-px",
-              row.kind === "removed" &&
-                "bg-[color-mix(in_srgb,var(--herdman-diff-del-fg)_10%,transparent)]",
-              row.kind === "added" &&
-                "bg-[color-mix(in_srgb,var(--herdman-diff-add-fg)_10%,transparent)]"
-            )}
-            style={
-              {
-                "--old-gutter": gutterWidth,
-                "--new-gutter": gutterWidth
-              } as CSSProperties
-            }
-          >
-            <span className={lineNumberClass(row.kind)}>{row.oldLine ?? ""}</span>
-            <span className={lineNumberClass(row.kind)}>{row.newLine ?? ""}</span>
-            <span className={markerClass(row.kind)}>{markerFor(row.kind)}</span>
-            <span className="whitespace-pre">{row.text === "" ? " " : row.text}</span>
-          </div>
-        ))}
-      </div>
+    <div className="max-h-80 overflow-auto rounded-lg border border-[var(--border)] bg-[var(--herdman-code-bg)]">
+      {loadedHighlighterKey === highlighterKey ? (
+        <MultiFileDiff
+          oldFile={files.oldFile}
+          newFile={files.newFile}
+          options={options}
+          disableWorkerPool
+          className="herdman-pierre-diff herdman-selectable min-w-0"
+        />
+      ) : (
+        <div className="flex h-[5.625rem] items-center justify-center">
+          <Spinner />
+        </div>
+      )}
     </div>
   )
-}
-
-type DiffRow = {
-  kind: "context" | "removed" | "added"
-  oldLine?: number
-  newLine?: number
-  text: string
 }
 
 function splitLines(text: string | undefined): string[] {
@@ -604,81 +626,22 @@ function stripIndentPrefix(prefix: string, text: string): string {
     .join("\n")
 }
 
-export function diffRows(oldText: string | undefined, newText: string): DiffRow[] {
-  const oldLines = splitLines(oldText)
-  const newLines = splitLines(newText)
-  if (oldLines.length === 0) {
-    return newLines.map((text, index) => ({ kind: "added", newLine: index + 1, text }))
-  }
-
-  const table: number[][] = Array.from({ length: oldLines.length + 1 }, () =>
-    Array.from({ length: newLines.length + 1 }, () => 0)
+export function diffLineCounts(
+  oldText: string | undefined,
+  newText: string
+): { added: number; removed: number } {
+  const previous = oldText ?? ""
+  if (previous === newText) return { added: 0, removed: 0 }
+  const diff = parseDiffFromFile(
+    { name: "before.txt", contents: previous },
+    { name: "after.txt", contents: newText }
   )
-  for (let oldIndex = oldLines.length - 1; oldIndex >= 0; oldIndex -= 1) {
-    for (let newIndex = newLines.length - 1; newIndex >= 0; newIndex -= 1) {
-      table[oldIndex]![newIndex] =
-        oldLines[oldIndex] === newLines[newIndex]
-          ? (table[oldIndex + 1]?.[newIndex + 1] ?? 0) + 1
-          : Math.max(table[oldIndex + 1]?.[newIndex] ?? 0, table[oldIndex]?.[newIndex + 1] ?? 0)
-    }
-  }
-
-  const rows: DiffRow[] = []
-  let oldIndex = 0
-  let newIndex = 0
-  while (oldIndex < oldLines.length || newIndex < newLines.length) {
-    if (oldLines[oldIndex] === newLines[newIndex]) {
-      rows.push({
-        kind: "context",
-        oldLine: oldIndex + 1,
-        newLine: newIndex + 1,
-        text: oldLines[oldIndex] ?? ""
-      })
-      oldIndex += 1
-      newIndex += 1
-    } else if (
-      newIndex >= newLines.length ||
-      (oldIndex < oldLines.length &&
-        (table[oldIndex + 1]?.[newIndex] ?? 0) >= (table[oldIndex]?.[newIndex + 1] ?? 0))
-    ) {
-      rows.push({ kind: "removed", oldLine: oldIndex + 1, text: oldLines[oldIndex] ?? "" })
-      oldIndex += 1
-    } else {
-      rows.push({ kind: "added", newLine: newIndex + 1, text: newLines[newIndex] ?? "" })
-      newIndex += 1
-    }
-  }
-  return rows
-}
-
-function markerFor(kind: DiffRow["kind"]): string {
-  switch (kind) {
-    case "added":
-      return "+"
-    case "removed":
-      return "-"
-    case "context":
-      return " "
-  }
-}
-
-function markerClass(kind: DiffRow["kind"]): string {
-  switch (kind) {
-    case "added":
-      return "text-[var(--herdman-diff-add-fg)]"
-    case "removed":
-      return "text-[var(--herdman-diff-del-fg)]"
-    case "context":
-      return "text-muted-foreground"
-  }
-}
-
-function lineNumberClass(kind: DiffRow["kind"]): string {
-  return cn(
-    "text-right tabular-nums",
-    kind === "added" && "text-[var(--herdman-diff-add-fg)]",
-    kind === "removed" && "text-[var(--herdman-diff-del-fg)]",
-    kind === "context" && "text-muted-foreground/70"
+  return diff.hunks.reduce(
+    (counts, hunk) => ({
+      added: counts.added + hunk.additionLines,
+      removed: counts.removed + hunk.deletionLines
+    }),
+    { added: 0, removed: 0 }
   )
 }
 

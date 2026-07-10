@@ -297,6 +297,17 @@
   overflow-wrap: anywhere;
 }
 
+.herdman-pierre-diff {
+  --diffs-font-family: var(--font-mono);
+  --diffs-font-size: 0.75rem;
+  --diffs-line-height: 1.25rem;
+  --diffs-gap-inline: 0.5rem;
+  --diffs-gap-block: 0.25rem;
+  --diffs-bg: var(--herdman-code-bg);
+  --diffs-addition-color-override: var(--herdman-diff-add-fg);
+  --diffs-deletion-color-override: var(--herdman-diff-del-fg);
+}
+
 .herdman-prose :where(p, ul, ol, pre, blockquote) {
   margin-block: 0.55em;
 }
