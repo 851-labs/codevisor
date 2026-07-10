@@ -133,6 +133,7 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
   const [isQueueExpanded, setIsQueueExpanded] = useState(true)
   const [dismissedPlanApprovalKey, setDismissedPlanApprovalKey] = useState<string>()
   const [pendingUserMessage, setPendingUserMessage] = useState<PendingUserMessage>()
+  const [composerSendRevision, setComposerSendRevision] = useState(0)
   const [mountedTerminalPaneIds, setMountedTerminalPaneIds] = useState<string[]>([])
   const [isAttachmentDropTargeted, setIsAttachmentDropTargeted] = useState(false)
   const [composerRef, composerHeight] = useElementHeight()
@@ -283,6 +284,7 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
       const trimmedText = text.trim()
       setComposerText("")
       setPendingUserMessage({ text: trimmedText, attachments })
+      setComposerSendRevision((revision) => revision + 1)
       await promptSession.mutateAsync({ id: sessionId, text: trimmedText, attachments })
       composerAttachments.clearAttachments()
     } catch (sendError) {
@@ -674,6 +676,7 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
       onDrop={handleAttachmentDrop}
     >
       <Transcript
+        key={sessionId}
         conversation={detail.conversation}
         turnMeta={detail.turnMeta}
         errorMessage={detail.streamError}
@@ -688,6 +691,8 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
         streamFingerprint={streamFingerprint}
         setupPhases={setupPhases}
         runningSubagentToolCallIds={detail.runningSubagentToolCallIds}
+        persistenceKey={sessionId}
+        pinRevision={composerSendRevision}
       />
       <StatusBar
         terminalVisible={terminalVisible}

@@ -178,6 +178,38 @@ function useVerifyExpanded(): boolean {
   return expanded
 }
 
+interface AssistantTurnDisclosureState {
+  isGenerating: boolean
+  isFinalAsserted: boolean
+  hasRunningSubagent: boolean
+}
+
+export function assistantTurnDisclosureTransition(
+  previous: AssistantTurnDisclosureState,
+  current: AssistantTurnDisclosureState
+): "expand" | "collapse" | undefined {
+  if (!previous.isGenerating && current.isGenerating) return "expand"
+  if (previous.isGenerating && !current.isGenerating) return "collapse"
+  if (!previous.isFinalAsserted && current.isFinalAsserted && current.isGenerating) {
+    return "collapse"
+  }
+  if (
+    previous.hasRunningSubagent &&
+    !current.hasRunningSubagent &&
+    !current.isGenerating
+  ) {
+    return "collapse"
+  }
+  return undefined
+}
+
+export function shouldCollapseSubagentDisclosure(
+  wasRunning: boolean,
+  isRunning: boolean
+): boolean {
+  return wasRunning && !isRunning
+}
+
 export function AssistantTurn({
   item,
   meta,
@@ -195,8 +227,13 @@ export function AssistantTurn({
   const hasRunningSubagent = turnHasRunningSubagent(meta, runningSubagentToolCallIds)
   const isActive = isGenerating || hasRunningSubagent
   const [isHovered, setIsHovered] = useState(false)
-  const hasAutoCollapsed = useRef(false)
-  const fallbackFinishedAt = useRef<number | undefined>(undefined)
+  const hasAutoCollapsed = useRef(isGenerating && finalTextIsAsserted(meta))
+  const previousDisclosureState = useRef<AssistantTurnDisclosureState>({
+    isGenerating,
+    isFinalAsserted: finalTextIsAsserted(meta),
+    hasRunningSubagent
+  })
+  const fallbackFinishedAt = useRef<number | undefined>(isActive ? undefined : Date.now())
 
   const elapsed = useElapsedSeconds(meta?.startedAt ?? item.createdAt, isActive)
   const planningItems = useMemo(() => workedItemsBeforePlan(meta), [meta])
@@ -222,29 +259,32 @@ export function AssistantTurn({
   const implementationExpanded =
     disclosureValues[implementationDisclosureKey] ?? defaultSectionExpanded
 
-  // Expanded while working; one-time auto-collapse when a final answer is
-  // asserted or when the turn finishes, matching AssistantTurnView.swift.
+  // Match SwiftUI's onChange behavior: only live state transitions write to
+  // the disclosure store. A settled row remount must preserve the user's
+  // session-scoped disclosure choice.
   useEffect(() => {
-    if (forceExpanded) {
-      return
+    const currentState = { isGenerating, isFinalAsserted, hasRunningSubagent }
+    const transition = assistantTurnDisclosureTransition(
+      previousDisclosureState.current,
+      currentState
+    )
+    previousDisclosureState.current = currentState
+
+    if (!isActive && fallbackFinishedAt.current == null) {
+      fallbackFinishedAt.current = Date.now()
     }
-    if (isGenerating && isFinalAsserted) {
-      if (!hasRunningSubagent && !hasAutoCollapsed.current) {
-        hasAutoCollapsed.current = true
-        setDisclosureValue(planningDisclosureKey, false)
-        setDisclosureValue(implementationDisclosureKey, false)
-      }
-      return
-    }
-    if (isActive) {
+
+    if (forceExpanded || transition == null) return
+
+    if (transition === "expand") {
       if (!hasAutoCollapsed.current) {
         setDisclosureValue(planningDisclosureKey, true)
         setDisclosureValue(implementationDisclosureKey, true)
       }
       return
     }
-    if (fallbackFinishedAt.current == null) fallbackFinishedAt.current = Date.now()
-    if (!hasAutoCollapsed.current) {
+
+    if (!hasRunningSubagent && !hasAutoCollapsed.current) {
       hasAutoCollapsed.current = true
       setDisclosureValue(planningDisclosureKey, false)
       setDisclosureValue(implementationDisclosureKey, false)
@@ -253,7 +293,6 @@ export function AssistantTurn({
     forceExpanded,
     hasRunningSubagent,
     implementationDisclosureKey,
-    isActive,
     isFinalAsserted,
     isGenerating,
     planningDisclosureKey,
@@ -545,16 +584,14 @@ function SubagentSection({
   const disclosureKey = subagentDisclosureKey(call.toolCallId)
   const expanded = disclosureValues[disclosureKey] ?? isRunning
   const hasAutoCollapsed = useRef(false)
+  const wasRunning = useRef(isRunning)
   const items = bucket == null ? [] : groupedItems(meta, bucket.entries)
 
   useEffect(() => {
-    if (forceExpanded) {
-      return
-    }
-    if (isRunning) {
-      return
-    }
-    if (!hasAutoCollapsed.current) {
+    const shouldCollapse = shouldCollapseSubagentDisclosure(wasRunning.current, isRunning)
+    wasRunning.current = isRunning
+
+    if (!forceExpanded && shouldCollapse && !hasAutoCollapsed.current) {
       hasAutoCollapsed.current = true
       setDisclosureValue(disclosureKey, false)
     }

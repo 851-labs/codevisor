@@ -117,6 +117,61 @@ const AT_BOTTOM_THRESHOLD = 2
 // scrolling up mid-stream disengages instead of snapping back.
 const REPIN_DISTANCE = 40
 
+const MAX_PERSISTED_TRANSCRIPTS = 64
+
+export interface TranscriptScrollState {
+  scrollTop: number
+  anchorItemId?: string
+  anchorDelta: number
+  isAtBottom: boolean
+}
+
+const scrollStates = new Map<string, TranscriptScrollState>()
+const disclosureStates = new Map<string, TranscriptDisclosureValues>()
+
+function rememberSessionValue<T>(cache: Map<string, T>, key: string, value: T) {
+  cache.delete(key)
+  cache.set(key, value)
+  if (cache.size <= MAX_PERSISTED_TRANSCRIPTS) return
+  const oldest = cache.keys().next().value
+  if (oldest != null) cache.delete(oldest)
+}
+
+export function transcriptRestoreTarget(
+  state: TranscriptScrollState,
+  anchorContentTop: number | undefined
+): number {
+  return Math.max(
+    0,
+    anchorContentTop == null ? state.scrollTop : anchorContentTop - state.anchorDelta
+  )
+}
+
+function topVisibleAnchor(container: HTMLElement) {
+  const containerTop = container.getBoundingClientRect().top
+  const rows = container.querySelectorAll<HTMLElement>("[data-transcript-item-id]")
+  for (const row of rows) {
+    const rect = row.getBoundingClientRect()
+    if (rect.bottom > containerTop) {
+      return {
+        id: row.dataset.transcriptItemId,
+        delta: rect.top - containerTop
+      }
+    }
+  }
+  return undefined
+}
+
+function captureScrollState(container: HTMLElement, isAtBottom: boolean): TranscriptScrollState {
+  const anchor = topVisibleAnchor(container)
+  return {
+    scrollTop: container.scrollTop,
+    anchorItemId: anchor?.id,
+    anchorDelta: anchor?.delta ?? 0,
+    isAtBottom
+  }
+}
+
 // The streaming transcript: opens pinned to the end of the history (no scroll
 // animation), tracks whether the user is pinned to the bottom, auto-scrolls on
 // stream growth only while pinned, floats the composer overlay over the bottom
@@ -132,7 +187,9 @@ export function Transcript({
   composerHeight,
   streamFingerprint,
   setupPhases = [],
-  runningSubagentToolCallIds = []
+  runningSubagentToolCallIds = [],
+  persistenceKey,
+  pinRevision
 }: {
   conversation: readonly ConversationItem[]
   turnMeta?: Record<string, TurnMeta>
@@ -144,18 +201,30 @@ export function Transcript({
   streamFingerprint: string
   setupPhases?: readonly SessionSetupPhaseInfo[]
   runningSubagentToolCallIds?: readonly string[]
+  persistenceKey?: string
+  pinRevision?: number
 }) {
+  const initialScrollState = persistenceKey == null ? undefined : scrollStates.get(persistenceKey)
   const scrollRef = useRef<HTMLDivElement>(null)
-  const [isAtBottom, setIsAtBottom] = useState(true)
-  const [disclosureValues, setDisclosureValues] = useState<TranscriptDisclosureValues>({})
-  const isAtBottomRef = useRef(true)
+  const [isAtBottom, setIsAtBottom] = useState(initialScrollState?.isAtBottom ?? true)
+  const [disclosureValues, setDisclosureValues] = useState<TranscriptDisclosureValues>(() =>
+    persistenceKey == null ? {} : { ...disclosureStates.get(persistenceKey) }
+  )
+  const isAtBottomRef = useRef(initialScrollState?.isAtBottom ?? true)
   const lastTopRef = useRef(0)
+  const lastPinRevisionRef = useRef(pinRevision)
 
-  const setDisclosureValue = useCallback((key: string, expanded: boolean) => {
-    setDisclosureValues((current) =>
-      current[key] === expanded ? current : { ...current, [key]: expanded }
-    )
-  }, [])
+  const setDisclosureValue = useCallback(
+    (key: string, expanded: boolean) => {
+      setDisclosureValues((current) => {
+        if (current[key] === expanded) return current
+        const next = { ...current, [key]: expanded }
+        if (persistenceKey != null) rememberSessionValue(disclosureStates, persistenceKey, next)
+        return next
+      })
+    },
+    [persistenceKey]
+  )
 
   const scrollToBottom = useCallback((smooth: boolean) => {
     const container = scrollRef.current
@@ -185,17 +254,54 @@ export function Transcript({
     else if (top > prevTop && distance <= REPIN_DISTANCE) pinned = true
     isAtBottomRef.current = pinned
     setIsAtBottom(pinned)
+    if (persistenceKey != null) {
+      rememberSessionValue(scrollStates, persistenceKey, captureScrollState(container, pinned))
+    }
   }
 
-  // Open at the end of the history — jump there before first paint, no
-  // scroll animation. History that loads later is pinned by the
-  // streamFingerprint effect below (isAtBottom starts true).
+  // Restore the session's top visible message before paint. The row anchor
+  // absorbs height changes above the viewport; the raw offset is a fallback
+  // when that message no longer exists.
   useLayoutEffect(() => {
     const container = scrollRef.current
     if (container == null) return
-    container.scrollTop = container.scrollHeight
+    const saved = persistenceKey == null ? undefined : scrollStates.get(persistenceKey)
+    const restore = () => {
+      if (saved == null || saved.isAtBottom) {
+        container.scrollTop = container.scrollHeight
+        return
+      }
+      const anchor =
+        saved.anchorItemId == null
+          ? undefined
+          : container.querySelector<HTMLElement>(
+              `[data-transcript-item-id="${CSS.escape(saved.anchorItemId)}"]`
+            )
+      const anchorContentTop =
+        anchor == null
+          ? undefined
+          : container.scrollTop +
+            anchor.getBoundingClientRect().top -
+            container.getBoundingClientRect().top
+      container.scrollTop = transcriptRestoreTarget(saved, anchorContentTop)
+    }
+    restore()
     lastTopRef.current = container.scrollTop
-  }, [])
+    const frame = requestAnimationFrame(() => {
+      restore()
+      lastTopRef.current = container.scrollTop
+    })
+    return () => {
+      cancelAnimationFrame(frame)
+      if (persistenceKey != null) {
+        rememberSessionValue(
+          scrollStates,
+          persistenceKey,
+          captureScrollState(container, isAtBottomRef.current)
+        )
+      }
+    }
+  }, [persistenceKey])
 
   // Follow the stream while pinned; never yank the user down while they're
   // reading earlier history.
@@ -207,6 +313,16 @@ export function Transcript({
   useEffect(() => {
     if (isAtBottomRef.current) scrollToBottom(false)
   }, [composerHeight, scrollToBottom])
+
+  // A user send always resumes following the conversation, even when the
+  // reader had previously scrolled up in this session.
+  useEffect(() => {
+    if (pinRevision == null || pinRevision === lastPinRevisionRef.current) return
+    lastPinRevisionRef.current = pinRevision
+    isAtBottomRef.current = true
+    setIsAtBottom(true)
+    scrollToBottom(false)
+  }, [pinRevision, scrollToBottom])
 
   return (
     <div className="relative min-h-0 flex-1">
@@ -300,13 +416,15 @@ function TranscriptItemWithSetup({
   return (
     <>
       {index === 0 && item.role === "assistant" && setup}
-      <TranscriptItem
-        item={item}
-        meta={meta}
-        runningSubagentToolCallIds={runningSubagentToolCallIds}
-        disclosureValues={disclosureValues}
-        setDisclosureValue={setDisclosureValue}
-      />
+      <div data-transcript-item-id={item.id}>
+        <TranscriptItem
+          item={item}
+          meta={meta}
+          runningSubagentToolCallIds={runningSubagentToolCallIds}
+          disclosureValues={disclosureValues}
+          setDisclosureValue={setDisclosureValue}
+        />
+      </div>
       {index === 0 && item.role === "user" && setup}
     </>
   )

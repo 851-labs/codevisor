@@ -7,6 +7,7 @@ import type {
 } from "@herdman/api"
 import { createFileRoute } from "@tanstack/react-router"
 import {
+  ArrowUpIcon,
   BlocksIcon,
   Code2Icon,
   FolderIcon,
@@ -187,7 +188,11 @@ const setupPhases: SessionSetupPhaseInfo[] = [
 
 const todos: PlanEntryInfo[] = [
   { content: "Read the existing macOS session views", priority: "high", status: "completed" },
-  { content: "Implement the Tauri plan and todo rendering", priority: "medium", status: "in_progress" },
+  {
+    content: "Implement the Tauri plan and todo rendering",
+    priority: "medium",
+    status: "in_progress"
+  },
   { content: "Capture verification screenshots", priority: "low", status: "pending" }
 ]
 
@@ -225,13 +230,14 @@ const sampleToolCalls: ToolCallInfo[] = [
         type: "diff",
         path: "apps/web/src/features/composer/Composer.tsx",
         oldText: "        const maxHeight = 200\n        submitOrAcceptSlash()\n",
-        newText: "        const maxHeight = 240\n        acceptSlashWithTab()\n        submitOrAcceptSlash()\n"
+        newText:
+          "        const maxHeight = 240\n        acceptSlashWithTab()\n        submitOrAcceptSlash()\n"
       }
     ]
   },
   {
     toolCallId: "internal-shell",
-    title: "Ran rg -n \"ComposerCard\"",
+    title: 'Ran rg -n "ComposerCard"',
     kind: "execute",
     status: "completed",
     content: [
@@ -316,7 +322,12 @@ const goal: SessionGoal = {
 }
 
 const waitingTasks: BackgroundTaskInfo[] = [
-  { id: "bg-1", description: "Inspect transcript rendering", status: "running", taskType: "subagent" },
+  {
+    id: "bg-1",
+    description: "Inspect transcript rendering",
+    status: "running",
+    taskType: "subagent"
+  },
   { id: "bg-2", description: "Run fixture capture", status: "running", taskType: "shell" }
 ]
 
@@ -329,6 +340,46 @@ const waitingConversation: ConversationItem[] = [
     isGenerating: false
   }
 ]
+
+const persistenceTurnId = "persistence-assistant-8"
+const persistenceConversation: ConversationItem[] = Array.from({ length: 18 }, (_, index) => {
+  if (index === 8) {
+    return {
+      id: persistenceTurnId,
+      role: "assistant",
+      text: "The anchored worked section should keep its disclosure state.",
+      createdAt: "2026-07-08T12:08:00.000Z",
+      isGenerating: false
+    }
+  }
+  return {
+    id: `persistence-user-${index}`,
+    role: "user",
+    text: `Persistent transcript message ${index + 1}: keep this row in the same viewport position after navigating away and back.`,
+    createdAt: `2026-07-08T12:${String(index).padStart(2, "0")}:00.000Z`,
+    isGenerating: false
+  }
+})
+
+const persistenceTurnMeta: Record<string, TurnMeta> = {
+  [persistenceTurnId]: {
+    startedAt: "2026-07-08T12:08:00.000Z",
+    endedAt: "2026-07-08T12:08:12.000Z",
+    thoughts: "",
+    toolCalls: [sampleToolCalls[1]!],
+    entries: [
+      { type: "tool", call: sampleToolCalls[1]! },
+      {
+        type: "text",
+        id: "persistence-final",
+        markdown: "The anchored worked section should keep its disclosure state."
+      }
+    ],
+    subagents: {},
+    textPhases: { "persistence-final": "final" },
+    nextTextId: 1
+  }
+}
 
 function toolbarChips({
   goalArmed = false,
@@ -366,7 +417,9 @@ function toolbarChips({
         aria-pressed={planOn}
         className={cn(
           "flex size-7 cursor-default items-center justify-center rounded-full outline-none",
-          planOn ? "bg-primary/85 text-primary-foreground" : "text-muted-foreground hover:bg-primary/5"
+          planOn
+            ? "bg-primary/85 text-primary-foreground"
+            : "text-muted-foreground hover:bg-primary/5"
         )}
       >
         <ListTodoIcon className="size-4" />
@@ -404,7 +457,9 @@ function Section({
       <div className="mb-4 flex items-start justify-between gap-4">
         <div>
           <h2 className="text-lg font-semibold">{title}</h2>
-          {description != null && <p className="text-muted-foreground mt-1 text-sm">{description}</p>}
+          {description != null && (
+            <p className="text-muted-foreground mt-1 text-sm">{description}</p>
+          )}
         </div>
         <a href={`#${id}`} className="text-muted-foreground hover:text-foreground text-xs">
           #{id}
@@ -602,6 +657,7 @@ function PrimitiveStates() {
 function TranscriptStates() {
   const [todosExpanded, setTodosExpanded] = useState(true)
   const [queueExpanded, setQueueExpanded] = useState(true)
+  const [persistencePinRevision, setPersistencePinRevision] = useState(0)
 
   return (
     <div className="flex flex-col gap-4">
@@ -675,7 +731,10 @@ function TranscriptStates() {
               composerOverlay={null}
               composerHeight={0}
               streamFingerprint="internal-optimistic"
-              pendingUserMessage={{ text: "Start the agent and show my prompt while setup begins.", attachments: [] }}
+              pendingUserMessage={{
+                text: "Start the agent and show my prompt while setup begins.",
+                attachments: []
+              }}
             />
           </div>
           <div className="h-64 overflow-hidden border border-[var(--herdman-separator)]">
@@ -687,6 +746,32 @@ function TranscriptStates() {
               waitingIndicator={<WaitingBackgroundTaskIndicator tasks={waitingTasks} />}
             />
           </div>
+        </div>
+      </StateBlock>
+      <StateBlock title="Session persistence">
+        <div className="flex flex-col gap-2">
+          <div className="flex h-64 overflow-hidden border border-[var(--herdman-separator)]">
+            <Transcript
+              conversation={persistenceConversation}
+              turnMeta={persistenceTurnMeta}
+              composerOverlay={null}
+              composerHeight={0}
+              streamFingerprint="internal-persistence"
+              persistenceKey="internal-transcript-persistence-v2"
+              pinRevision={persistencePinRevision}
+            />
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            className="self-end"
+            aria-label="Simulate user send"
+            title="Simulate user send"
+            onClick={() => setPersistencePinRevision((revision) => revision + 1)}
+          >
+            <ArrowUpIcon className="size-3.5" strokeWidth={3} />
+          </Button>
         </div>
       </StateBlock>
     </div>
@@ -769,12 +854,13 @@ function ChromeStates() {
 
 function InternalStorybookRoute() {
   const sections = useMemo(
-    () => [
-      ["primitives", "Primitives"],
-      ["composer", "Composer"],
-      ["transcript", "Transcript"],
-      ["chrome", "Chrome"]
-    ] as const,
+    () =>
+      [
+        ["primitives", "Primitives"],
+        ["composer", "Composer"],
+        ["transcript", "Transcript"],
+        ["chrome", "Chrome"]
+      ] as const,
     []
   )
 
