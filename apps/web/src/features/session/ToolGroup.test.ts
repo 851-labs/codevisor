@@ -66,6 +66,7 @@ describe("tool source links", () => {
   it("only treats absolute urls as clickable sources", () => {
     expect(parseResourceLinkUrl("https://example.com/docs")?.host).toBe("example.com")
     expect(parseResourceLinkUrl("not a url")).toBeUndefined()
+    expect(parseResourceLinkUrl("javascript:alert(1)")).toBeUndefined()
   })
 })
 

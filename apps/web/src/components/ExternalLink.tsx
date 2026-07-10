@@ -24,9 +24,12 @@ export function ExternalLink({
 }: ComponentPropsWithoutRef<"a"> & { node?: unknown }) {
   const handleClick = (event: MouseEvent<HTMLAnchorElement>) => {
     onClick?.(event)
-    if (event.defaultPrevented || href == null || !isTauri() || !isSupportedExternalUrl(href)) {
+    if (event.defaultPrevented || href == null) return
+    if (!isSupportedExternalUrl(href)) {
+      event.preventDefault()
       return
     }
+    if (!isTauri()) return
     event.preventDefault()
     void openExternalUrl(href)
   }

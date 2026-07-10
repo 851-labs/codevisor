@@ -23,7 +23,7 @@ import {
 } from "lucide-react"
 import { useEffect, useMemo, useRef, useState } from "react"
 
-import { ExternalLink } from "../../components/ExternalLink"
+import { ExternalLink, isSupportedExternalUrl } from "../../components/ExternalLink"
 import { Spinner } from "../../components/ui/spinner"
 import { cn } from "../../lib/cn"
 import type { ContentBlockInfo, ToolCallContentInfo, ToolCallInfo } from "../../lib/session-events"
@@ -481,7 +481,7 @@ export function resourceLinkLabel({
 
 export function parseResourceLinkUrl(uri: string): URL | undefined {
   try {
-    return new URL(uri)
+    return isSupportedExternalUrl(uri) ? new URL(uri) : undefined
   } catch {
     return undefined
   }
