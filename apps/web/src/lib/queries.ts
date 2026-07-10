@@ -222,7 +222,14 @@ function withGeneratingAssistant(
     createdAt,
     isGenerating: true
   }
-  return { detail: { ...detail, conversation: [...detail.conversation, item] }, item }
+  return {
+    detail: {
+      ...detail,
+      conversation: [...detail.conversation, item],
+      streamError: undefined
+    },
+    item
+  }
 }
 
 function updateTurnMeta(

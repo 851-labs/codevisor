@@ -273,6 +273,22 @@ describe("replaySessionEvents", () => {
     expect(replayed.turnMeta?.[assistant?.id ?? ""]?.isThinking).toBe(false)
   })
 
+  it("clears a stale stream error when a non-text update starts a new turn", () => {
+    const replayed = replaySessionEvents(detail(), [
+      event(1, { message: "Connection lost" }, "session.error"),
+      event(2, {
+        sessionUpdate: "tool_call",
+        toolCallId: "read-1",
+        kind: "read",
+        status: "in_progress",
+        title: "Read queries.ts"
+      })
+    ])
+
+    expect(replayed.streamError).toBeUndefined()
+    expect(replayed.conversation).toMatchObject([{ role: "assistant", isGenerating: true }])
+  })
+
   it("keeps a pending question until its resolution arrives", () => {
     const replayed = replaySessionEvents(detail(), [
       event(1, {
