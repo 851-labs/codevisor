@@ -91,7 +91,7 @@ export function Sidebar() {
   }
 
   return (
-    <aside className="border-border-opaque bg-sidebar flex h-full w-full flex-col border-r">
+    <aside className="flex h-full w-full flex-col">
       <ScrollArea className="min-h-0 flex-1">
         <nav className="flex flex-col gap-px p-2">
           <Link to="/" search={{}} className={cn(sidebarRowClassName, "text-foreground")}>

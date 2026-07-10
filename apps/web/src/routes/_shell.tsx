@@ -29,7 +29,12 @@ function ShellLayout() {
   return (
     <div className="relative flex h-full">
       {inTauri && <div data-tauri-drag-region className="absolute inset-x-0 top-0 z-40 h-9" />}
-      <div className={cn("w-[270px] shrink-0", inTauri && "pt-9")}>
+      <div
+        className={cn(
+          "border-border-opaque bg-sidebar w-[270px] shrink-0 border-r",
+          inTauri && "pt-9"
+        )}
+      >
         <Sidebar />
       </div>
       <main className="bg-background min-w-0 flex-1">
