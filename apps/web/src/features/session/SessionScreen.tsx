@@ -39,6 +39,7 @@ import { Composer } from "../composer/Composer"
 import { ModelConfigMenu } from "../composer/ModelConfigMenu"
 import { QuestionPickerCard } from "../composer/QuestionPickerCard"
 import { useComposerAttachments } from "../composer/useComposerAttachments"
+import { useComposerDraftText } from "../composer/useComposerDraftText"
 import { DropToAttachOverlay } from "../attachments/AttachmentPreview"
 import { useIsSessionRunning } from "../sidebar/SessionRow"
 import { TerminalPanel } from "../terminal/TerminalPanel"
@@ -124,7 +125,7 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
   const setConfig = useSetSessionConfig()
   const isRunning = useIsSessionRunning(sessionId)
 
-  const [composerText, setComposerText] = useState("")
+  const [composerText, setComposerText] = useComposerDraftText(`session:${sessionId}`)
   const [composerError, setComposerError] = useState<string>()
   const [paneState, setPaneState] = useState(() => loadTerminalPaneState(sessionId))
   const [isGoalComposerArmed, setIsGoalComposerArmed] = useState(false)

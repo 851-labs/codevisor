@@ -37,6 +37,7 @@ import { ChipMenu } from "../composer/ChipMenu"
 import { Composer } from "../composer/Composer"
 import { ModelConfigMenu } from "../composer/ModelConfigMenu"
 import { useComposerAttachments } from "../composer/useComposerAttachments"
+import { useComposerDraftText } from "../composer/useComposerDraftText"
 import { DropToAttachOverlay } from "../attachments/AttachmentPreview"
 import { SessionSetupView } from "../session/SessionSetupView"
 import { ProjectMenu } from "./ProjectMenu"
@@ -128,7 +129,7 @@ export function NewChatScreen({ preferredProjectId }: { preferredProjectId?: str
 
   const [selectedProjectId, setSelectedProjectId] = useState(preferredProjectId)
   const [selectedHarnessId, setSelectedHarnessId] = useState<string>()
-  const [text, setText] = useState("")
+  const [text, setText] = useComposerDraftText("new-chat")
   const [error, setError] = useState<string>()
   const [isGoalComposerArmed, setIsGoalComposerArmed] = useState(false)
   const [runInWorktree, setRunInWorktree] = useState(false)
@@ -236,9 +237,9 @@ export function NewChatScreen({ preferredProjectId }: { preferredProjectId?: str
       return
     }
     setError(undefined)
+    const trimmedText = text.trim()
     let createdSessionId: string | undefined
     try {
-      const trimmedText = text.trim()
       const attachments = isGoalComposerArmed
         ? undefined
         : await composerAttachments.collectForSend()
@@ -289,6 +290,7 @@ export function NewChatScreen({ preferredProjectId }: { preferredProjectId?: str
       if (createdSessionId != null) {
         await client.deleteSession(createdSessionId).catch(() => undefined)
         void navigate({ to: "/" })
+        setText(trimmedText)
       }
       setError(message)
       setSetupPhases((current) =>

@@ -29,6 +29,7 @@ import { ModelConfigMenu } from "../../features/composer/ModelConfigMenu"
 import { QuestionPickerCard } from "../../features/composer/QuestionPickerCard"
 import { UsageRingButton } from "../../features/composer/UsageRingButton"
 import type { ComposerAttachmentItem } from "../../features/composer/useComposerAttachments"
+import { useComposerDraftText } from "../../features/composer/useComposerDraftText"
 import { AssistantTurn } from "../../features/session/AssistantTurn"
 import { MessageCopyButton } from "../../features/session/MessageCopyButton"
 import { PlanView, TodoPanelView } from "../../features/session/PlanView"
@@ -544,7 +545,10 @@ function MarkdownTurnFixture() {
 
 function ComposerStates() {
   const [slashText, setSlashText] = useState("/")
-  const [draftText, setDraftText] = useState("Follow up with the implementation details.")
+  const [draftText, setDraftText] = useComposerDraftText(
+    "internal-storybook-composer",
+    "Follow up with the implementation details."
+  )
   const [goalText, setGoalText] = useState("Ship parity for composer states")
 
   return (
