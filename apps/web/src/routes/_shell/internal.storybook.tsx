@@ -214,6 +214,8 @@ const richMarkdown = `A paragraph with **bold**, *italic*, and \`inline code\`.
 
 > Keep quote blocks aligned with the macOS transcript.
 
+[Open the HerdMan repository](https://github.com/851-labs/herdman).
+
 | Name | Role |
 | :--- | ---: |
 | Web | Renderer |

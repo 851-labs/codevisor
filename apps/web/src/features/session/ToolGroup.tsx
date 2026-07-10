@@ -23,6 +23,7 @@ import {
 } from "lucide-react"
 import { useEffect, useMemo, useRef, useState } from "react"
 
+import { ExternalLink } from "../../components/ExternalLink"
 import { Spinner } from "../../components/ui/spinner"
 import { cn } from "../../lib/cn"
 import type { ContentBlockInfo, ToolCallContentInfo, ToolCallInfo } from "../../lib/session-events"
@@ -459,19 +460,13 @@ function ResourceLink({ block }: { block: Extract<ContentBlockInfo, { type: "res
   }
 
   return (
-    <a
-      href={block.uri}
-      target="_blank"
-      rel="noreferrer"
-      title={block.uri}
-      className="flex min-w-0 items-start gap-1.5"
-    >
+    <ExternalLink href={block.uri} title={block.uri} className="flex min-w-0 items-start gap-1.5">
       <GlobeIcon className="text-muted-foreground/70 mt-0.5 size-3 shrink-0" />
       <span className="flex min-w-0 flex-col">
         <span className="truncate text-xs text-[var(--herdman-accent)]">{label}</span>
         <span className="text-muted-foreground truncate text-[11px]">{url.host}</span>
       </span>
-    </a>
+    </ExternalLink>
   )
 }
 

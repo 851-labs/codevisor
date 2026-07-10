@@ -1,10 +1,25 @@
 import { CheckIcon, CopyIcon } from "lucide-react"
-import { memo, type SVGProps } from "react"
+import { memo, type ComponentProps, type SVGProps } from "react"
 import { Streamdown, type ThemeInput } from "streamdown"
 
 import { cn } from "../../lib/cn"
 import { herdmanThemeResolver } from "../../theme/themeController"
 import { useThemeSelection } from "../../theme/useThemeSelection"
+import { ExternalLink } from "../ExternalLink"
+
+function MarkdownExternalLink({ className, ...props }: ComponentProps<typeof ExternalLink>) {
+  return (
+    <ExternalLink
+      {...props}
+      className={cn(
+        "wrap-anywhere font-medium text-[var(--herdman-accent)] underline",
+        className
+      )}
+    />
+  )
+}
+
+const markdownComponents = { a: MarkdownExternalLink }
 
 // The resolved pierre/shiki theme object for a catalog name, falling back to
 // a stock shiki theme until the resolver has it (the active scheme's theme is
@@ -54,6 +69,7 @@ export const StreamingMarkdown = memo(function StreamingMarkdown({
         shikiThemeFor(darkThemeName, "github-dark")
       ]}
       controls={{ code: { copy: true, download: false }, table: false, mermaid: false }}
+      components={markdownComponents}
       icons={{
         CheckIcon: StreamdownCheckIcon,
         CopyIcon: StreamdownCopyIcon
