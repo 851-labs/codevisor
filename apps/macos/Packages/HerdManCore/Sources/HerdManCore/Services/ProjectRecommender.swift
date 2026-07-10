@@ -23,15 +23,22 @@ public enum ProjectRecommender {
     public static func recommend(
         from sessions: [ImportedSession],
         limit: Int = 2,
+        managedWorktreesRoot: URL = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("herdman", isDirectory: true),
         directoryExists: (String) -> Bool = { path in
             var isDirectory: ObjCBool = false
             return FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory) && isDirectory.boolValue
         }
     ) -> [ProjectRecommendation] {
+        let worktreesRootPath = managedWorktreesRoot.standardizedFileURL.path
         var grouped: [String: (count: Int, lastActivity: Date?)] = [:]
         for session in sessions {
             let path = URL(fileURLWithPath: session.info.cwd).standardizedFileURL.path
-            guard !path.isEmpty, path != "/" else { continue }
+            guard !path.isEmpty,
+                  path != "/",
+                  path != worktreesRootPath,
+                  !path.hasPrefix(worktreesRootPath + "/")
+            else { continue }
             let activity = session.info.updatedAt.flatMap(Self.date(from:))
             let existing = grouped[path]
             grouped[path] = (

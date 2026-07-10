@@ -86,4 +86,23 @@ struct ProjectRecommenderTests {
 
         #expect(recommendations.map(\.name) == ["one", "two"])
     }
+
+    @Test("Excludes HerdMan-managed worktrees")
+    func excludesManagedWorktrees() {
+        let sessions = [
+            session("root", cwd: "/Users/test/herdman", updatedAt: "2026-07-03T00:00:00Z"),
+            session("worktree", cwd: "/Users/test/herdman/project-id/fix-auth", updatedAt: "2026-07-02T00:00:00Z"),
+            session("similarly-named", cwd: "/Users/test/herdman-project", updatedAt: "2026-07-01T00:00:00Z"),
+            session("project", cwd: "/src/project", updatedAt: "2026-06-01T00:00:00Z")
+        ]
+
+        let recommendations = ProjectRecommender.recommend(
+            from: sessions,
+            limit: 4,
+            managedWorktreesRoot: URL(fileURLWithPath: "/Users/test/herdman"),
+            directoryExists: { _ in true }
+        )
+
+        #expect(recommendations.map(\.folderURL.path) == ["/Users/test/herdman-project", "/src/project"])
+    }
 }
