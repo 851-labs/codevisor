@@ -19,6 +19,7 @@ struct SessionScreen: View {
     @State private var attachmentImages: AttachmentImageStore?
     @State private var scrollCommand = TranscriptScrollCommand()
     @State private var historyLoadTask: Task<Void, Never>?
+    @State private var composerMaskSize: CGSize = .zero
 
     var body: some View {
         VStack(spacing: 0) {
@@ -115,6 +116,12 @@ struct SessionScreen: View {
         .onChange(of: controller.userSendSignal) { _, _ in
             autoFollow = true
             scrollCommand.token &+= 1
+        }
+        .mask {
+            ComposerTranscriptMask(
+                composerSize: controller.activeQuestion == nil ? composerMaskSize : .zero,
+                bottomInset: 16
+            )
         }
         .overlay(alignment: .bottom) {
             if !isAtBottom {
@@ -341,6 +348,11 @@ struct SessionScreen: View {
                     placeholder: "Ask for follow-up changes",
                     onTextViewReady: { focus.composerTextView = $0 }
                 )
+                .onGeometryChange(for: CGSize.self) { geometry in
+                    geometry.size
+                } action: { size in
+                    composerMaskSize = size
+                }
             }
             statusLabel
         }
@@ -348,23 +360,6 @@ struct SessionScreen: View {
         .frame(maxWidth: 880)
         .padding(.bottom, 16)
         .padding(.top, 24)
-        // The fade sits behind the composer column only (not the full row
-        // width), so transcript text in the side gutters stays legible.
-        .background(
-            LinearGradient(
-                colors: [
-                    theme.windowBackground.opacity(0),
-                    theme.windowBackground.opacity(0.9),
-                    theme.windowBackground
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            // Start the fade a touch above the overlay's own bounds without
-            // affecting layout (inset or scroll-button anchoring).
-            .padding(.top, -12)
-            .allowsHitTesting(false)
-        )
         .frame(maxWidth: .infinity)
         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { composerHeight = $0 }
         .animation(.snappy(duration: 0.2), value: controller.queuedPrompts.map(\.id))
@@ -521,6 +516,40 @@ private struct PromptQueueView: View {
     private var queueCountText: String {
         let count = controller.queuedPrompts.count
         return count == 1 ? "1 message" : "\(count) messages"
+    }
+}
+
+/// Removes transcript pixels beneath the lower half of the floating composer.
+/// The transparent hole reveals the chat panel's existing backing surface, so
+/// no sampled or theme-derived fill color can drift from the surrounding page.
+private struct ComposerTranscriptMask: View {
+    let composerSize: CGSize
+    let bottomInset: CGFloat
+
+    var body: some View {
+        Canvas { context, size in
+            var visibleArea = Path()
+            visibleArea.addRect(CGRect(origin: .zero, size: size))
+
+            if composerSize.width > 0, composerSize.height > 0 {
+                let holeWidth = min(composerSize.width, size.width)
+                let holeHeight = min(composerSize.height / 2 + bottomInset, size.height)
+                visibleArea.addRect(CGRect(
+                    x: (size.width - holeWidth) / 2,
+                    y: size.height - holeHeight,
+                    width: holeWidth,
+                    height: holeHeight
+                ))
+            }
+
+            context.fill(
+                visibleArea,
+                with: .color(.white),
+                style: FillStyle(eoFill: true)
+            )
+        }
+        .accessibilityHidden(true)
+        .allowsHitTesting(false)
     }
 }
 
