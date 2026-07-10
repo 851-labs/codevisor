@@ -548,6 +548,78 @@ function MarkdownTurnFixture() {
   return <AssistantTurn item={item} meta={meta} />
 }
 
+function NestedSubagentFixture() {
+  const [disclosureValues, setDisclosureValues] = useState<Record<string, boolean>>({
+    "turn:assistant-nested-agents": true,
+    "subagent:nested-agent-outer": true,
+    "subagent:nested-agent-inner": true,
+    "toolGroup:nested-agent-command": true,
+    "toolCall:nested-agent-command": true
+  })
+  const outer: ToolCallInfo = {
+    toolCallId: "nested-agent-outer",
+    title: "Agent: inspect transcript parity",
+    kind: "agent",
+    status: "completed"
+  }
+  const inner: ToolCallInfo = {
+    toolCallId: "nested-agent-inner",
+    title: "Agent: inspect tool rendering",
+    kind: "agent",
+    status: "completed",
+    parentToolCallId: outer.toolCallId
+  }
+  const child: ToolCallInfo = {
+    toolCallId: "nested-agent-command",
+    title: "Ran bun test",
+    kind: "execute",
+    status: "completed",
+    parentToolCallId: inner.toolCallId,
+    content: [{ type: "content", content: { type: "text", text: "91 tests passed" } }]
+  }
+  const item: ConversationItem = {
+    id: "assistant-nested-agents",
+    role: "assistant",
+    text: "Nested agent verification completed.",
+    createdAt: "2026-07-08T12:04:00.000Z",
+    isGenerating: false
+  }
+  const meta: TurnMeta = {
+    startedAt: "2026-07-08T12:04:00.000Z",
+    endedAt: "2026-07-08T12:04:12.000Z",
+    thoughts: "",
+    toolCalls: [outer],
+    entries: [
+      { type: "tool", call: outer },
+      { type: "text", id: "nested-final", markdown: item.text }
+    ],
+    subagents: {
+      [outer.toolCallId]: {
+        entries: [{ type: "tool", call: inner }],
+        isThinking: false,
+        nextTextId: 0
+      },
+      [inner.toolCallId]: {
+        entries: [{ type: "tool", call: child }],
+        isThinking: false,
+        nextTextId: 0
+      }
+    },
+    textPhases: { "nested-final": "final" },
+    nextTextId: 1
+  }
+  return (
+    <AssistantTurn
+      item={item}
+      meta={meta}
+      disclosureValues={disclosureValues}
+      setDisclosureValue={(key, expanded) =>
+        setDisclosureValues((current) => ({ ...current, [key]: expanded }))
+      }
+    />
+  )
+}
+
 function ComposerStates() {
   const [slashText, setSlashText] = useState("/")
   const [draftText, setDraftText] = useComposerDraftText(
@@ -761,6 +833,7 @@ function TranscriptStates() {
           />
           <MarkdownTurnFixture />
           <PlannedTurnFixture />
+          <NestedSubagentFixture />
           <WaitingBackgroundTaskIndicator tasks={waitingTasks} />
         </div>
       </StateBlock>

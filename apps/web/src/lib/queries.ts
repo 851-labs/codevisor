@@ -415,6 +415,39 @@ function settleEntries(
   })
 }
 
+function settledToolStatus(
+  status: string | undefined
+): "completed" | "failed" | "cancelled" | undefined {
+  return status === "completed" || status === "failed" || status === "cancelled"
+    ? status
+    : undefined
+}
+
+function cascadeSettledSubagents(meta: TurnMeta, parentToolCallId: string): TurnMeta {
+  const parent = mainTool(meta, parentToolCallId) ?? subagentTool(meta, parentToolCallId)
+  const status = settledToolStatus(parent?.status)
+  if (status == null || meta.subagents[parentToolCallId] == null) return meta
+
+  const subagents = { ...meta.subagents }
+  const queue = [parentToolCallId]
+  const visited = new Set<string>()
+  while (queue.length > 0) {
+    const id = queue.pop()
+    if (id == null || visited.has(id)) continue
+    visited.add(id)
+    const bucket = subagents[id]
+    if (bucket == null) continue
+    const entries = settleEntries(bucket.entries, status)
+    subagents[id] = { ...bucket, isThinking: false, entries }
+    for (const entry of entries) {
+      if (entry.type === "tool" && subagents[entry.call.toolCallId] != null) {
+        queue.push(entry.call.toolCallId)
+      }
+    }
+  }
+  return { ...meta, subagents }
+}
+
 function settleTurnMeta(
   meta: TurnMeta,
   status: "completed" | "failed" | "cancelled",
@@ -588,7 +621,7 @@ function upsertToolCall(
             [call.toolCallId]: { entries: [], isThinking: false, nextTextId: 0 }
           }
         : meta.subagents
-    return { ...meta, toolCalls, entries, subagents }
+    return cascadeSettledSubagents({ ...meta, toolCalls, entries, subagents }, call.toolCallId)
   }
 
   const parentToolCallId = call.parentToolCallId
@@ -596,12 +629,23 @@ function upsertToolCall(
     return updateOwnedOrActiveTurnMeta(
       detail,
       (meta) => ownsParent(meta, parentToolCallId),
-      (meta) =>
-        updateSubagent(meta, parentToolCallId, (bucket) => ({
+      (meta) => {
+        let updated = updateSubagent(meta, parentToolCallId, (bucket) => ({
           ...bucket,
           isThinking: false,
           entries: upsertToolEntry(bucket.entries, call, isUpdate)
-        })),
+        }))
+        if (!isUpdate && call.kind === "agent" && updated.subagents[call.toolCallId] == null) {
+          updated = {
+            ...updated,
+            subagents: {
+              ...updated.subagents,
+              [call.toolCallId]: { entries: [], isThinking: false, nextTextId: 0 }
+            }
+          }
+        }
+        return cascadeSettledSubagents(updated, call.toolCallId)
+      },
       createdAt
     )
   }
@@ -618,10 +662,11 @@ function upsertToolCall(
         )
         if (owner == null) return updateMain(meta)
         const [parentId] = owner
-        return updateSubagent(meta, parentId, (bucket) => ({
+        const updated = updateSubagent(meta, parentId, (bucket) => ({
           ...bucket,
           entries: upsertToolEntry(bucket.entries, call, true)
         }))
+        return cascadeSettledSubagents(updated, call.toolCallId)
       })
     }
   }

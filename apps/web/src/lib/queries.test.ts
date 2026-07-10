@@ -139,6 +139,51 @@ describe("replaySessionEvents", () => {
     ])
   })
 
+  it("routes nested agent output to its original turn and cascades parent settlement", () => {
+    const replayed = replaySessionEvents(detail(), [
+      event(1, {
+        sessionUpdate: "tool_call",
+        toolCallId: "task-1",
+        kind: "agent",
+        status: "in_progress",
+        title: "Agent: outer"
+      }),
+      event(2, {
+        sessionUpdate: "tool_call",
+        toolCallId: "task-2",
+        kind: "agent",
+        status: "in_progress",
+        title: "Agent: inner",
+        parentToolCallId: "task-1"
+      }),
+      event(3, { stopReason: "end_turn" }, "session.updated"),
+      event(4, {
+        sessionUpdate: "tool_call",
+        toolCallId: "sub-run",
+        kind: "execute",
+        status: "in_progress",
+        title: "Run checks",
+        parentToolCallId: "task-2"
+      }),
+      event(5, {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "task-1",
+        status: "completed"
+      })
+    ])
+
+    const assistants = replayed.conversation.filter((item) => item.role === "assistant")
+    expect(assistants).toHaveLength(1)
+    const meta = replayed.turnMeta?.[assistants[0]?.id ?? ""]
+    expect(meta?.subagents["task-1"]?.entries).toMatchObject([
+      { type: "tool", call: { toolCallId: "task-2", status: "completed" } }
+    ])
+    expect(meta?.subagents["task-2"]?.entries).toMatchObject([
+      { type: "tool", call: { toolCallId: "sub-run", status: "completed" } }
+    ])
+    expect(meta?.subagents["task-2"]?.isThinking).toBe(false)
+  })
+
   it("preserves live user attachments while replaying output events", () => {
     const attachment = {
       fileId: "file-1",
