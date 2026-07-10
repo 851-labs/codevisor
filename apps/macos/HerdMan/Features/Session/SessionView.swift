@@ -345,7 +345,13 @@ struct SessionScreen: View {
                 ComposerCard(
                     controller: controller,
                     placeholder: "Ask for follow-up changes",
-                    onTextViewReady: { focus.composerTextView = $0 }
+                    onTextViewReady: { textView in
+                        focus.composerTextView = textView
+                        // Sidebar selection mounts a fresh session screen. Wait
+                        // until its text view is attached, then move keyboard
+                        // focus out of the sidebar and into the composer.
+                        DispatchQueue.main.async { focus.focusComposer() }
+                    }
                 )
                 .onGeometryChange(for: CGSize.self) { geometry in
                     geometry.size

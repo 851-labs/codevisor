@@ -649,6 +649,7 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
             value={composerText}
             onValueChange={setComposerText}
             placeholder={isGoalComposerArmed ? "Describe the goal" : "Ask for follow-up changes"}
+            autoFocus
             commands={detail.availableCommands ?? []}
             attachments={isGoalComposerArmed ? [] : composerAttachments.attachments}
             usage={usage}
