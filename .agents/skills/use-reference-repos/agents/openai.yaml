@@ -1,0 +1,4 @@
+interface:
+  display_name: "Use Reference Repos"
+  short_description: "Inspect open-source code through .repos"
+  default_prompt: "Use $use-reference-repos to inspect the relevant upstream source code."
