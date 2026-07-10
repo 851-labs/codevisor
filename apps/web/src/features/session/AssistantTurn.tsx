@@ -162,6 +162,17 @@ function isSettled(call: ToolCallInfo): boolean {
   return call.status === "completed" || call.status === "failed" || call.status === "cancelled"
 }
 
+export function assistantTurnShowsActivityIndicator(
+  item: ConversationItem,
+  meta: TurnMeta | undefined
+): boolean {
+  if (!item.isGenerating) return false
+  if (meta?.isThinking === true) return true
+  const hasFinalText = finalTextIndex(meta) != null || (meta == null && item.text !== "")
+  const hasRunningToolCall = meta?.toolCalls.some((call) => !isSettled(call)) === true
+  return !hasFinalText && !hasRunningToolCall
+}
+
 function readVerifyExpanded(): boolean {
   if (typeof window === "undefined") return false
   const params = new URLSearchParams(window.location.search)
@@ -246,9 +257,7 @@ export function AssistantTurn({
       : isActive || hasStructuredWorkedContent || hasLegacyWorkedContent
   const responseText = finalMarkdown(item, meta)
   const isFinalAsserted = finalTextIsAsserted(meta)
-  const isThinking =
-    meta?.isThinking === true ||
-    (isGenerating && responseText === "" && !hasStructuredWorkedContent)
+  const showsActivityIndicator = assistantTurnShowsActivityIndicator(item, meta)
   const headerLockedOpen = isActive && !hasAutoCollapsed.current
   const planningDisclosureKey = turnDisclosureKey(item.id)
   const implementationDisclosureKey = turnImplementationDisclosureKey(item.id)
@@ -369,7 +378,7 @@ export function AssistantTurn({
       {isGenerating && meta?.retryStatus != null ? (
         <ShimmerText>{`Retrying… (${meta.retryStatus.attempt}/${meta.retryStatus.of})`}</ShimmerText>
       ) : (
-        isThinking && <ShimmerText>Thinking…</ShimmerText>
+        showsActivityIndicator && <ShimmerText>Thinking…</ShimmerText>
       )}
 
       {responseText !== "" && (

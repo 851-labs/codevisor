@@ -1,12 +1,96 @@
 import { describe, expect, it } from "vitest"
 
 import {
+  assistantTurnShowsActivityIndicator,
   assistantTurnDisclosureTransition,
   shouldCollapseSubagentDisclosure,
   subagentDisclosureKey,
   turnDisclosureKey,
   turnImplementationDisclosureKey
 } from "./AssistantTurn"
+
+const generatingItem = {
+  id: "turn-1",
+  role: "assistant" as const,
+  text: "",
+  createdAt: "2026-07-09T00:00:00.000Z",
+  isGenerating: true
+}
+
+const emptyMeta = {
+  startedAt: generatingItem.createdAt,
+  thoughts: "",
+  toolCalls: [],
+  entries: [],
+  subagents: {},
+  textPhases: {},
+  nextTextId: 0
+}
+
+describe("assistant activity indicator", () => {
+  it("matches the native lull behavior after a tool settles", () => {
+    const completedTool = {
+      toolCallId: "read-1",
+      title: "Read SessionView.swift",
+      kind: "read",
+      status: "completed"
+    }
+    expect(
+      assistantTurnShowsActivityIndicator(generatingItem, {
+        ...emptyMeta,
+        toolCalls: [completedTool],
+        entries: [{ type: "tool", call: completedTool }]
+      })
+    ).toBe(true)
+  })
+
+  it("defers to visible running tools and final text", () => {
+    const runningTool = {
+      toolCallId: "read-1",
+      title: "Read SessionView.swift",
+      kind: "read",
+      status: "in_progress"
+    }
+    expect(
+      assistantTurnShowsActivityIndicator(generatingItem, {
+        ...emptyMeta,
+        toolCalls: [runningTool],
+        entries: [{ type: "tool", call: runningTool }]
+      })
+    ).toBe(false)
+    expect(
+      assistantTurnShowsActivityIndicator(
+        { ...generatingItem, text: "Done." },
+        {
+          ...emptyMeta,
+          entries: [{ type: "text", id: "final", markdown: "Done." }],
+          textPhases: { final: "final" }
+        }
+      )
+    ).toBe(false)
+  })
+
+  it("shows explicit thinking even while a tool is running", () => {
+    const runningTool = {
+      toolCallId: "read-1",
+      status: "in_progress"
+    }
+    expect(
+      assistantTurnShowsActivityIndicator(generatingItem, {
+        ...emptyMeta,
+        isThinking: true,
+        toolCalls: [runningTool],
+        entries: [{ type: "tool", call: runningTool }]
+      })
+    ).toBe(true)
+    expect(
+      assistantTurnShowsActivityIndicator(
+        { ...generatingItem, isGenerating: false },
+        { ...emptyMeta, isThinking: true }
+      )
+    ).toBe(false)
+  })
+})
 
 describe("transcript disclosure keys", () => {
   it("uses stable keys matching the macOS transcript disclosure store cases", () => {
@@ -38,17 +122,11 @@ describe("assistant turn disclosure transitions", () => {
   })
 
   it("collapses when generation or the final background subagent finishes", () => {
+    expect(assistantTurnDisclosureTransition({ ...settled, isGenerating: true }, settled)).toBe(
+      "collapse"
+    )
     expect(
-      assistantTurnDisclosureTransition(
-        { ...settled, isGenerating: true },
-        settled
-      )
-    ).toBe("collapse")
-    expect(
-      assistantTurnDisclosureTransition(
-        { ...settled, hasRunningSubagent: true },
-        settled
-      )
+      assistantTurnDisclosureTransition({ ...settled, hasRunningSubagent: true }, settled)
     ).toBe("collapse")
   })
 })
