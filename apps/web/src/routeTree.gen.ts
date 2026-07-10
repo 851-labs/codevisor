@@ -17,6 +17,7 @@ import { Route as ShellVerifyPaneBarRouteImport } from './routes/_shell/verify.p
 import { Route as ShellVerifyChatParityRouteImport } from './routes/_shell/verify.chat-parity'
 import { Route as ShellVerifyChatComposerRouteImport } from './routes/_shell/verify.chat-composer'
 import { Route as ShellSessionSessionIdRouteImport } from './routes/_shell/session.$sessionId'
+import { Route as ShellInternalStorybookRouteImport } from './routes/_shell/internal.storybook'
 
 const OnboardingRoute = OnboardingRouteImport.update({
   id: '/onboarding',
@@ -57,10 +58,16 @@ const ShellSessionSessionIdRoute = ShellSessionSessionIdRouteImport.update({
   path: '/session/$sessionId',
   getParentRoute: () => ShellRoute,
 } as any)
+const ShellInternalStorybookRoute = ShellInternalStorybookRouteImport.update({
+  id: '/internal/storybook',
+  path: '/internal/storybook',
+  getParentRoute: () => ShellRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof ShellIndexRoute
   '/onboarding': typeof OnboardingRoute
+  '/internal/storybook': typeof ShellInternalStorybookRoute
   '/session/$sessionId': typeof ShellSessionSessionIdRoute
   '/verify/chat-composer': typeof ShellVerifyChatComposerRoute
   '/verify/chat-parity': typeof ShellVerifyChatParityRoute
@@ -70,6 +77,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/onboarding': typeof OnboardingRoute
   '/': typeof ShellIndexRoute
+  '/internal/storybook': typeof ShellInternalStorybookRoute
   '/session/$sessionId': typeof ShellSessionSessionIdRoute
   '/verify/chat-composer': typeof ShellVerifyChatComposerRoute
   '/verify/chat-parity': typeof ShellVerifyChatParityRoute
@@ -81,6 +89,7 @@ export interface FileRoutesById {
   '/_shell': typeof ShellRouteWithChildren
   '/onboarding': typeof OnboardingRoute
   '/_shell/': typeof ShellIndexRoute
+  '/_shell/internal/storybook': typeof ShellInternalStorybookRoute
   '/_shell/session/$sessionId': typeof ShellSessionSessionIdRoute
   '/_shell/verify/chat-composer': typeof ShellVerifyChatComposerRoute
   '/_shell/verify/chat-parity': typeof ShellVerifyChatParityRoute
@@ -92,6 +101,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/onboarding'
+    | '/internal/storybook'
     | '/session/$sessionId'
     | '/verify/chat-composer'
     | '/verify/chat-parity'
@@ -101,6 +111,7 @@ export interface FileRouteTypes {
   to:
     | '/onboarding'
     | '/'
+    | '/internal/storybook'
     | '/session/$sessionId'
     | '/verify/chat-composer'
     | '/verify/chat-parity'
@@ -111,6 +122,7 @@ export interface FileRouteTypes {
     | '/_shell'
     | '/onboarding'
     | '/_shell/'
+    | '/_shell/internal/storybook'
     | '/_shell/session/$sessionId'
     | '/_shell/verify/chat-composer'
     | '/_shell/verify/chat-parity'
@@ -181,11 +193,19 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ShellSessionSessionIdRouteImport
       parentRoute: typeof ShellRoute
     }
+    '/_shell/internal/storybook': {
+      id: '/_shell/internal/storybook'
+      path: '/internal/storybook'
+      fullPath: '/internal/storybook'
+      preLoaderRoute: typeof ShellInternalStorybookRouteImport
+      parentRoute: typeof ShellRoute
+    }
   }
 }
 
 interface ShellRouteChildren {
   ShellIndexRoute: typeof ShellIndexRoute
+  ShellInternalStorybookRoute: typeof ShellInternalStorybookRoute
   ShellSessionSessionIdRoute: typeof ShellSessionSessionIdRoute
   ShellVerifyChatComposerRoute: typeof ShellVerifyChatComposerRoute
   ShellVerifyChatParityRoute: typeof ShellVerifyChatParityRoute
@@ -195,6 +215,7 @@ interface ShellRouteChildren {
 
 const ShellRouteChildren: ShellRouteChildren = {
   ShellIndexRoute: ShellIndexRoute,
+  ShellInternalStorybookRoute: ShellInternalStorybookRoute,
   ShellSessionSessionIdRoute: ShellSessionSessionIdRoute,
   ShellVerifyChatComposerRoute: ShellVerifyChatComposerRoute,
   ShellVerifyChatParityRoute: ShellVerifyChatParityRoute,

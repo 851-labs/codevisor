@@ -1,6 +1,6 @@
 import type { SessionSummary } from "@herdman/api"
 import { Link } from "@tanstack/react-router"
-import { SquarePenIcon } from "lucide-react"
+import { BlocksIcon, SquarePenIcon } from "lucide-react"
 import { useMemo, useState } from "react"
 
 import { ScrollArea } from "../../components/ui/scroll-area"
@@ -139,6 +139,16 @@ export function Sidebar() {
         </nav>
       </ScrollArea>
       <div className="border-border-opaque border-t p-2">
+        <Link
+          to="/internal/storybook"
+          className={cn(sidebarRowClassName, "text-muted-foreground mb-1")}
+          activeProps={{
+            className: "text-foreground bg-[var(--herdman-row-selected-bg)]"
+          }}
+        >
+          <BlocksIcon className="text-muted-foreground size-4 shrink-0" />
+          <span>Internal UI</span>
+        </Link>
         <ThemePicker />
       </div>
     </aside>
