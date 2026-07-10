@@ -19,6 +19,11 @@ public final class ProjectListModel {
     private let legacyMigrationStore: (any PersistenceStore)?
     private var legacyMigrationTasks: [String: Task<Void, Error>] = [:]
     private var serverClient: (any HerdManServerClienting)?
+    /// Sessions created locally while a server client is active, but not yet
+    /// observed in an authoritative server snapshot. A metadata refresh can
+    /// race the slow first agent startup; preserving these rows prevents the
+    /// selected session from disappearing until creation is acknowledged.
+    private var pendingServerSessionIds: Set<UUID> = []
     /// Shared: `ISO8601DateFormatter()` construction is milliseconds-expensive
     /// and the import loops used to build one per imported session.
     private static let importTimestampFormatter = ISO8601DateFormatter()
@@ -104,6 +109,7 @@ public final class ProjectListModel {
         let removedSessionIDs = sessions
             .filter { $0.serverId == project.serverId && $0.projectId == project.id }
             .map(\.id)
+        pendingServerSessionIds.subtract(removedSessionIDs)
         projects.removeAll { $0.id == project.id }
         sessions.removeAll { $0.serverId == project.serverId && $0.projectId == project.id }
         persistProjects()
@@ -158,6 +164,13 @@ public final class ProjectListModel {
             cwd: cwd
         )
         sessions.append(session)
+        // Even deferred first-send sessions are already in the process of
+        // being created by SessionController. Only mark rows when a client is
+        // configured: JSON records loaded before server authority is selected
+        // are legacy cache, not active in-flight creations.
+        if serverClient != nil {
+            pendingServerSessionIds.insert(session.id)
+        }
         persistSessions()
         if syncToServer {
             syncSession(session)
@@ -269,6 +282,7 @@ public final class ProjectListModel {
     }
 
     public func deleteSession(_ session: ChatSession) {
+        pendingServerSessionIds.remove(session.id)
         sessions.removeAll { $0.id == session.id }
         persistSessions()
         deleteSessionFromServer(session.id)
@@ -278,6 +292,7 @@ public final class ProjectListModel {
     /// client's event); intentionally does not call back to the server.
     public func removeSessionLocally(id: UUID) {
         guard sessions.contains(where: { $0.id == id }) else { return }
+        pendingServerSessionIds.remove(id)
         sessions.removeAll { $0.id == id }
         persistSessions()
     }
@@ -285,6 +300,8 @@ public final class ProjectListModel {
     /// Applies a project deletion that already happened on the server.
     public func removeProjectLocally(id: UUID) {
         guard projects.contains(where: { $0.id == id }) else { return }
+        let removedSessionIds = Set(sessions.lazy.filter { $0.projectId == id }.map(\.id))
+        pendingServerSessionIds.subtract(removedSessionIds)
         projects.removeAll { $0.id == id }
         sessions.removeAll { $0.projectId == id }
         persistProjects()
@@ -295,6 +312,7 @@ public final class ProjectListModel {
     public func removeAll() {
         let projectIDs = projects.filter { $0.serverId == selectedServerId }.map(\.id)
         let sessionIDs = sessions.filter { $0.serverId == selectedServerId }.map(\.id)
+        pendingServerSessionIds.subtract(sessionIDs)
         projects.removeAll { $0.serverId == selectedServerId }
         sessions.removeAll { $0.serverId == selectedServerId }
         persistProjects()
@@ -420,8 +438,17 @@ public final class ProjectListModel {
     }
 
     private func mergeSessions(local: [ChatSession], remote: [ChatSession], serverId: String) -> [ChatSession] {
+        let remoteIds = Set(remote.map(\.id))
+        // Seeing the row in a snapshot is the durable acknowledgement. A
+        // later refresh can now treat the server copy as fully authoritative.
+        pendingServerSessionIds.subtract(remoteIds)
         let otherServers = local.filter { $0.serverId != serverId }
-        return (otherServers + remote).sorted { ($0.updatedAt ?? $0.createdAt) > ($1.updatedAt ?? $1.createdAt) }
+        let pending = local.filter {
+            $0.serverId == serverId && pendingServerSessionIds.contains($0.id)
+        }
+        return (otherServers + pending + remote).sorted {
+            ($0.updatedAt ?? $0.createdAt) > ($1.updatedAt ?? $1.createdAt)
+        }
     }
 
     /// Mirrors a record to the server it belongs to. The client at hand is the
@@ -437,10 +464,18 @@ public final class ProjectListModel {
               session.serverId == selectedServerId else { return }
         let project = projects.first { $0.serverId == session.serverId && $0.id == session.projectId }
         Task {
-            if let project {
-                _ = try? await serverClient.upsertProject(project)
+            do {
+                if let project {
+                    _ = try await serverClient.upsertProject(project)
+                }
+                _ = try await serverClient.upsertSession(session)
+                pendingServerSessionIds.remove(session.id)
+            } catch {
+                // Keep the optimistic row pending. A later mutation can retry
+                // the upsert, and authoritative refreshes must not make the
+                // active session flicker out merely because the server is slow
+                // or temporarily unreachable.
             }
-            _ = try? await serverClient.upsertSession(session)
         }
     }
 

@@ -88,6 +88,35 @@ struct SessionModelTests {
         #expect(assistant.turn.stopDetail == nil)
     }
 
+    @Test("A new empty session negotiates the scoped stream before its first prompt")
+    func newSessionFirstPromptUsesScopedStream() async {
+        let sessionId = UUID()
+        let client = FakeSessionServerClient(sessionId: sessionId)
+        client.initialTranscriptPage = ServerTranscriptPage(
+            items: [],
+            nextBefore: nil,
+            hasMore: false,
+            eventCursor: 0
+        )
+        let model = SessionModel(
+            serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
+            sessionId: sessionId.uuidString
+        )
+
+        await model.loadHistory()
+        await model.send("first prompt")
+
+        #expect(client.sessionEventSinceValues == [0])
+        #expect(client.eventSinceValues.isEmpty)
+        #expect(model.isSending == false)
+        guard case let .assistant(assistant) = model.conversation.last else {
+            Issue.record("expected assistant")
+            return
+        }
+        #expect(assistant.turn.finalText == .text(id: "t0", markdown: "Echo: first prompt"))
+        #expect(assistant.turn.stopReason == .endTurn)
+    }
+
     @Test("A turn that ends abnormally surfaces its stopDetail on the turn")
     func abnormalStopSurfacesDetail() async {
         let sessionId = UUID()
@@ -333,9 +362,10 @@ struct SessionModelTests {
         #expect(client.transcriptPageRequests.first?.limit == 8)
         for _ in 0..<200 {
             await Task.yield()
-            if !client.eventSinceValues.isEmpty { break }
+            if !client.sessionEventSinceValues.isEmpty { break }
         }
-        #expect(client.eventSinceValues == [12])
+        #expect(client.sessionEventSinceValues == [12])
+        #expect(client.eventSinceValues.isEmpty)
 
         await model.loadOlderHistory()
         #expect(model.conversation.count == 2)
@@ -1667,6 +1697,7 @@ private final class FakeSessionServerClient: HerdManServerClienting, @unchecked 
     private var _cancelCount = 0
     private var _configUpdates: [(String, String)] = []
     private var _eventSinceValues: [Int] = []
+    private var _sessionEventSinceValues: [Int] = []
     private var _transcriptPageRequests: [(before: String?, limit: Int)] = []
     private var _goalUpdates: [(String?, GoalStatus?, TokenBudgetUpdate)] = []
     private var _goalClearCount = 0
@@ -1706,6 +1737,10 @@ private final class FakeSessionServerClient: HerdManServerClienting, @unchecked 
 
     var eventSinceValues: [Int] {
         lock.withLock { _eventSinceValues }
+    }
+
+    var sessionEventSinceValues: [Int] {
+        lock.withLock { _sessionEventSinceValues }
     }
 
     var transcriptPageRequests: [(before: String?, limit: Int)] {
@@ -1880,6 +1915,14 @@ private final class FakeSessionServerClient: HerdManServerClienting, @unchecked 
 
     func eventStream(since: Int) -> AsyncThrowingStream<ServerEventEnvelope, any Error> {
         lock.withLock { _eventSinceValues.append(since) }
+        return stream
+    }
+
+    func sessionEventStream(
+        id: UUID,
+        since: Int
+    ) -> AsyncThrowingStream<ServerEventEnvelope, any Error> {
+        lock.withLock { _sessionEventSinceValues.append(since) }
         return stream
     }
 }

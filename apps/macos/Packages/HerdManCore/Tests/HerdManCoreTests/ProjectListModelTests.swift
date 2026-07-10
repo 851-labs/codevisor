@@ -92,6 +92,36 @@ struct ProjectListModelTests {
         #expect(!snapshot.upsertedSessionIDs.contains(session.id.uuidString))
     }
 
+    @Test("Server refresh preserves a new local session until creation is acknowledged")
+    func serverRefreshPreservesPendingSession() async throws {
+        let project = Project.fromFolder(URL(fileURLWithPath: "/tmp/pending-session"))
+        let fakeServer = FakeServerClient(projects: [serverProject(from: project)])
+        let model = ProjectListModel(
+            projectRepository: DefaultProjectRepository(store: InMemoryStore()),
+            sessionRepository: DefaultSessionRepository(store: InMemoryStore()),
+            serverClient: fakeServer
+        )
+        try await waitUntil { model.projects.contains { $0.id == project.id } }
+
+        // First-send promotion is local and immediate; the controller creates
+        // the server row after agent startup, so an intervening empty snapshot
+        // must not remove the selected session.
+        let session = model.newSession(
+            in: project,
+            title: "First prompt",
+            harnessId: "codex",
+            syncToServer: false
+        )
+        await model.refreshFromServer()
+        #expect(model.sessions.contains { $0.id == session.id })
+
+        // Once the server exposes the row, the normal authoritative copy wins
+        // and no duplicate optimistic record remains.
+        _ = try await fakeServer.upsertSession(session)
+        await model.refreshFromServer()
+        #expect(model.sessions.filter { $0.id == session.id }.count == 1)
+    }
+
     @Test("Legacy JSON metadata is uploaded exactly once before server authority takes over")
     func legacyCacheMigratesOnce() async throws {
         let project = Project.fromFolder(URL(fileURLWithPath: "/tmp/legacy-project"))

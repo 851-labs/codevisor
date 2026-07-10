@@ -1306,9 +1306,15 @@ final class SessionController {
             self?.noteTurnEndedForPlanApproval()
             self?.onTurnEnded?()
         }
-        if resumeAgentSessionId != nil {
-            await model.loadHistory()
-        }
+        // Negotiate the canonical transcript + session-scoped event stream
+        // for every server-backed model, including a brand-new empty chat.
+        // Skipping this on first send leaves `usesPaginatedHistory` false, so
+        // SessionModel falls back to the global compatibility stream. Current
+        // servers deliberately exclude session runtime traffic from that
+        // stream, which means the answer is persisted but its chunks and
+        // terminal event never reach the live UI. Older servers still fall
+        // back inside loadHistory() when the transcript endpoint returns 404.
+        await model.loadHistory()
 
         if let pendingModeId {
             await model.setMode(pendingModeId)
