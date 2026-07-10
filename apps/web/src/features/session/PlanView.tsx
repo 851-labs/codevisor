@@ -71,7 +71,7 @@ export function TodoPanelView({
   const showsCollapsedCurrentStep = !isExpanded && currentStep != null
 
   return (
-    <section className="flex flex-col gap-1.5 rounded-lg border border-[var(--herdman-separator)] bg-[var(--herdman-card-bg)] p-2.5">
+    <section className="bg-composer flex flex-col gap-1.5 rounded-lg border border-[var(--herdman-separator)] p-2.5">
       <button
         type="button"
         aria-label={`Todos, ${completedCount} of ${entries.length} done`}

@@ -14,6 +14,9 @@ final class SessionStore {
     /// intentionally disabled: scroll ticks must never invalidate the store's
     /// sidebar/session observers.
     @ObservationIgnored private var scrollStates: [UUID: SessionScrollState] = [:]
+    /// Per-session todo-panel expansion, kept outside the controller cache for
+    /// the same reason as transcript viewport state.
+    @ObservationIgnored private var todoExpansionStates: [UUID: Bool] = [:]
     private var paneGroups: [UUID: PaneGroupModel] = [:]
     private var scratchpads: [UUID: ScratchpadModel] = [:]
     /// The unsent new-chat draft. A single slot — the new-chat page is one
@@ -71,6 +74,10 @@ final class SessionStore {
         controller.scrollState = scrollStates[session.id]
         controller.onScrollStateChange = { [weak self] state in
             self?.scrollStates[session.id] = state
+        }
+        controller.isTodosExpanded = todoExpansionStates[session.id] ?? true
+        controller.onTodosExpandedChange = { [weak self] isExpanded in
+            self?.todoExpansionStates[session.id] = isExpanded
         }
         controller.onTurnEnded = { [weak self] in self?.noteTurnEnded(for: session.id) }
         controllers[session.id] = controller
@@ -234,6 +241,10 @@ final class SessionStore {
         controller.onScrollStateChange = { [weak self] state in
             self?.scrollStates[sessionId] = state
         }
+        controller.isTodosExpanded = todoExpansionStates[sessionId] ?? true
+        controller.onTodosExpandedChange = { [weak self] isExpanded in
+            self?.todoExpansionStates[sessionId] = isExpanded
+        }
         controller.onTurnEnded = { [weak self] in self?.noteTurnEnded(for: sessionId) }
         controllers[sessionId] = controller
         if draft === controller { draft = nil }
@@ -251,6 +262,7 @@ final class SessionStore {
         scratchpads[sessionId] = nil
         unreadCounts[sessionId] = nil
         scrollStates[sessionId] = nil
+        todoExpansionStates[sessionId] = nil
         draft = controller
     }
 
@@ -263,6 +275,7 @@ final class SessionStore {
         scratchpads[sessionId] = nil
         unreadCounts[sessionId] = nil
         scrollStates[sessionId] = nil
+        todoExpansionStates[sessionId] = nil
         accessOrder.removeAll { $0 == sessionId }
     }
 

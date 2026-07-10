@@ -68,7 +68,7 @@ struct TodoPanelView: View {
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 8).fill(theme.cardBackground))
+        .background(RoundedRectangle(cornerRadius: 8).fill(theme.composerBackground))
         .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(.separator, lineWidth: 1))
     }
 

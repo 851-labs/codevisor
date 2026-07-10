@@ -97,6 +97,13 @@ final class SessionController {
     /// controller LRU, so browsing many chats can evict transcript models
     /// without forgetting where the user was reading.
     @ObservationIgnored var onScrollStateChange: ((SessionScrollState?) -> Void)?
+    /// Whether the pinned todo checklist is expanded. SessionStore mirrors
+    /// this independently so navigation and controller eviction preserve the
+    /// last state the user chose for each chat.
+    var isTodosExpanded = true {
+        didSet { onTodosExpandedChange?(isTodosExpanded) }
+    }
+    @ObservationIgnored var onTodosExpandedChange: ((Bool) -> Void)?
     /// User-toggled expand/collapse state for transcript rows, hoisted out of
     /// per-row `@State` so it survives lazy unmounts.
     @ObservationIgnored let disclosure = TranscriptDisclosureStore()

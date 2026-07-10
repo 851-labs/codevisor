@@ -15,7 +15,6 @@ struct SessionScreen: View {
     @State private var composerHeight: CGFloat = 96
     @State private var focus = TerminalFocusController()
     @State private var isQueueExpanded = true
-    @State private var isTodosExpanded = true
     @State private var attachmentImages: AttachmentImageStore?
     @State private var scrollCommand = TranscriptScrollCommand()
     @State private var historyLoadTask: Task<Void, Never>?
@@ -322,7 +321,7 @@ struct SessionScreen: View {
     private var composerOverlay: some View {
         VStack(spacing: 8) {
             if let todos = controller.todos, !todos.entries.isEmpty {
-                TodoPanelView(plan: todos, isExpanded: $isTodosExpanded)
+                TodoPanelView(plan: todos, isExpanded: $controller.isTodosExpanded)
                     .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
             }
             // Hidden while editing: the composer IS the goal UI in that mode.

@@ -52,6 +52,7 @@ import { Transcript } from "./Transcript"
 import { projectFolderPath } from "../../lib/client"
 import { DiffCounter } from "./DiffCounter"
 import { usePlanApprovalDismissal } from "./usePlanApprovalDismissal"
+import { useTodoExpansionState } from "./useTodoExpansionState"
 
 const MIN_TERMINAL_HEIGHT = 120
 const MAX_TERMINAL_HEIGHT = 800
@@ -161,7 +162,7 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
   const [paneState, setPaneState] = useState(() => loadTerminalPaneState(sessionId))
   const [isGoalComposerArmed, setIsGoalComposerArmed] = useState(false)
   const [isGoalEditing, setIsGoalEditing] = useState(false)
-  const [isTodosExpanded, setIsTodosExpanded] = useState(true)
+  const [isTodosExpanded, setIsTodosExpanded] = useTodoExpansionState(sessionId)
   const [isQueueExpanded, setIsQueueExpanded] = useState(true)
   const [dismissedPlanApprovalKey, setDismissedPlanApprovalKey] =
     usePlanApprovalDismissal(sessionId)
@@ -581,7 +582,7 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
           <TodoPanelView
             entries={detail.sessionPlan}
             isExpanded={isTodosExpanded}
-            onToggle={() => setIsTodosExpanded((expanded) => !expanded)}
+            onToggle={() => setIsTodosExpanded(!isTodosExpanded)}
           />
         )}
         {supportsGoals && detail.goal != null && !isGoalEditing && (
