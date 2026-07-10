@@ -120,33 +120,40 @@ export function AttachmentLightbox({ item, onClose }: { item: LightboxItem; onCl
         </LightboxButton>
       </div>
       <div
-        className="flex min-h-0 flex-1 items-center justify-center p-12"
+        className="herdman-scrollbar min-h-0 flex-1 overflow-auto"
         onClick={(event) => event.stopPropagation()}
       >
         {objectUrl != null ? (
-          isPdfAttachment(item) ? (
-            <iframe
-              src={objectUrl}
-              title={item.name}
-              className="h-full max-h-full w-full max-w-5xl rounded-lg border border-white/15 bg-white"
-              style={{ transform: `scale(${clampedZoom})`, transformOrigin: "center" }}
-            />
-          ) : (
-            <img
-              src={objectUrl}
-              alt={item.name}
-              className="max-h-full max-w-full object-contain"
-              style={{ transform: `scale(${clampedZoom})` }}
-              draggable={false}
-            />
-          )
+          <div
+            className="flex min-h-full min-w-full items-center justify-center p-12"
+            style={lightboxCanvasSize(clampedZoom)}
+          >
+            {isPdfAttachment(item) ? (
+              <iframe
+                src={objectUrl}
+                title={item.name}
+                className="h-[calc(100vh-6rem)] w-[min(64rem,calc(100vw-6rem))] shrink-0 rounded-lg border border-white/15 bg-white"
+                style={{ transform: `scale(${clampedZoom})` }}
+              />
+            ) : (
+              <img
+                src={objectUrl}
+                alt={item.name}
+                className="max-h-[calc(100vh-6rem)] max-w-[calc(100vw-6rem)] shrink-0 object-contain"
+                style={{ transform: `scale(${clampedZoom})` }}
+                draggable={false}
+              />
+            )}
+          </div>
         ) : loadFailed ? (
-          <div className="flex flex-col items-center gap-2 text-white/70">
+          <div className="flex min-h-full flex-col items-center justify-center gap-2 text-white/70">
             <ImageIcon className="size-9" />
             <p>This attachment is no longer available.</p>
           </div>
         ) : (
-          <LoaderCircleIcon className="size-7 animate-spin text-white/70" />
+          <div className="flex min-h-full items-center justify-center">
+            <LoaderCircleIcon className="size-7 animate-spin text-white/70" />
+          </div>
         )}
       </div>
       <div className="absolute bottom-5 left-1/2 flex -translate-x-1/2 items-center gap-1 rounded-full bg-white/14 px-3 py-1.5 text-sm shadow-lg ring-1 ring-white/15 backdrop-blur">
@@ -160,6 +167,14 @@ export function AttachmentLightbox({ item, onClose }: { item: LightboxItem; onCl
       </div>
     </div>
   )
+}
+
+export function lightboxCanvasSize(zoom: number) {
+  const canvasScale = Math.max(1, zoom)
+  return {
+    width: `${canvasScale * 100}%`,
+    height: `${canvasScale * 100}%`
+  }
 }
 
 export function RemoteAttachmentThumb({ attachment }: { attachment: AttachmentRef }) {
