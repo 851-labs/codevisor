@@ -44,7 +44,7 @@ export function UserMessage({
         {attachments.length > 0 && <AttachmentStrip attachments={attachments} />}
         {text !== "" && (
           <>
-            <div className="bg-bubble max-w-full rounded-[14px] px-3 py-2 text-left text-sm break-words whitespace-pre-wrap select-text">
+            <div className="herdman-selectable bg-bubble max-w-full rounded-[14px] px-3 py-2 text-left text-sm break-words whitespace-pre-wrap">
               {text}
             </div>
             <div
@@ -100,7 +100,7 @@ const TranscriptItem = memo(function TranscriptItem({
 
 export function ErrorBanner({ message }: { message: string }) {
   return (
-    <div className="flex items-center gap-2 rounded-lg bg-[color-mix(in_srgb,var(--herdman-status-error)_10%,transparent)] p-2.5 text-sm text-[var(--herdman-status-error)]">
+    <div className="herdman-selectable flex items-center gap-2 rounded-lg bg-[color-mix(in_srgb,var(--herdman-status-error)_10%,transparent)] p-2.5 text-sm text-[var(--herdman-status-error)]">
       <TriangleAlertIcon className="size-4 shrink-0" />
       {message}
     </div>

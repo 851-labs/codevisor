@@ -93,7 +93,7 @@ function SessionSetupPhaseView({ phase }: { phase: SessionSetupPhaseInfo }) {
       {isExpanded && hasDetail && (
         <div className="flex flex-col gap-2 border-t border-[var(--herdman-separator)] pt-2">
           {phase.failureMessage != null && (
-            <div className="flex items-start gap-1.5 text-sm text-[var(--herdman-status-error)]">
+            <div className="herdman-selectable flex items-start gap-1.5 text-sm text-[var(--herdman-status-error)]">
               <TriangleAlertIcon className="mt-0.5 size-4 shrink-0" />
               <span className="min-w-0 break-words">{phase.failureMessage}</span>
             </div>
@@ -101,7 +101,7 @@ function SessionSetupPhaseView({ phase }: { phase: SessionSetupPhaseInfo }) {
           {phase.logs.length > 0 && (
             <div
               ref={logRef}
-              className="herdman-scrollbar max-h-[200px] overflow-y-auto rounded-lg bg-[var(--herdman-card-quiet-bg)] p-2.5 font-mono text-xs"
+              className="herdman-scrollbar herdman-selectable max-h-[200px] overflow-y-auto rounded-lg bg-[var(--herdman-card-quiet-bg)] p-2.5 font-mono text-xs"
             >
               {phase.logs.map((line) => (
                 <div

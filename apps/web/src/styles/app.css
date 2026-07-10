@@ -225,7 +225,9 @@
   body {
     @apply bg-background text-foreground font-sans;
     -webkit-font-smoothing: antialiased;
+    -webkit-user-select: none;
     text-rendering: optimizeLegibility;
+    user-select: none;
     /* The desktop shell paints the sidebar surface behind everything
        (including the transparent macOS titlebar overlay region). */
     background-color: var(--herdman-sidebar-bg);
@@ -233,6 +235,13 @@
   }
   textarea {
     @apply outline-offset-1;
+  }
+  input,
+  textarea,
+  [contenteditable="true"],
+  .herdman-selectable {
+    -webkit-user-select: text;
+    user-select: text;
   }
   code {
     font-family: var(--font-mono);

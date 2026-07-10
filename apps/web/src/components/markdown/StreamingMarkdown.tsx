@@ -48,7 +48,7 @@ export const StreamingMarkdown = memo(function StreamingMarkdown({
   const { lightThemeName, darkThemeName } = useThemeSelection()
   return (
     <Streamdown
-      className={cn("herdman-prose min-w-0 text-sm leading-relaxed", className)}
+      className={cn("herdman-prose herdman-selectable min-w-0 text-sm leading-relaxed", className)}
       shikiTheme={[
         shikiThemeFor(lightThemeName, "github-light"),
         shikiThemeFor(darkThemeName, "github-dark")

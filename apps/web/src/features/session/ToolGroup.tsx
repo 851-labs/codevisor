@@ -491,7 +491,7 @@ function MonospaceBlock({ text, muted = false }: { text: string; muted?: boolean
   return (
     <pre
       className={cn(
-        "max-h-80 overflow-auto whitespace-pre-wrap break-words text-xs",
+        "herdman-selectable max-h-80 overflow-auto whitespace-pre-wrap break-words text-xs",
         "font-mono leading-relaxed",
         muted ? "text-muted-foreground" : "text-foreground"
       )}
@@ -519,7 +519,7 @@ function DiffBlock({
 
   return (
     <div
-      className="max-h-80 overflow-auto rounded-lg border border-[var(--border)] bg-[var(--herdman-code-bg)] font-mono text-xs leading-relaxed"
+      className="herdman-selectable max-h-80 overflow-auto rounded-lg border border-[var(--border)] bg-[var(--herdman-code-bg)] font-mono text-xs leading-relaxed"
       title={path}
     >
       <div className="min-w-full py-1">
