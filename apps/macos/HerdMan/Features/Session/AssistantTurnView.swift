@@ -218,10 +218,14 @@ struct AssistantTurnView: View {
                 .buttonStyle(.plain)
             }
 
-            if expanded, !items.isEmpty || turn.hasDeferredWorkedDetails {
+            // The divider belongs to the disclosure header, not its revealed
+            // contents, so a rendered Worked section keeps the line in both
+            // its collapsed and expanded states.
+            Divider()
+
+            if expanded && (!items.isEmpty || turn.hasDeferredWorkedDetails) {
                 WorkedContentReveal(key: key, store: store) {
                     VStack(alignment: .leading, spacing: 12) {
-                        Divider()
                         // Answered questions ride here too: the reducer synthesizes
                         // a tool call for each, so they group and render inline with
                         // the other tool calls that surround them.

@@ -124,9 +124,7 @@ const jsonSchema = (schema: Schema.Constraint): JsonObject => {
     additionalProperties: false,
     generateDescriptions: true
   })
-  return Object.keys(document.definitions).length === 0
-    ? document.schema
-    : { ...document.schema, $defs: document.definitions }
+  return { ...document.schema, $defs: document.definitions }
 }
 
 const arrayOf = (schema: Schema.Constraint): Schema.Constraint => Schema.Array(schema)

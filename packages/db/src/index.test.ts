@@ -813,6 +813,105 @@ describe("@herdman/db", () => {
     ])
   })
 
+  it("repairs stale worked-detail markers when migration 10 is applied", async () => {
+    const filename = tempDatabase()
+    const db = await run(makeDatabase({ filename, serverId: "local" }))
+    const project = await run(db.createProject({ folderPath: "/tmp/worked-detail-migration" }))
+    const session = await run(db.createSession({ projectId: project.id, harnessId: "codex" }))
+
+    for (const turn of [
+      { id: "empty", thought: "", answer: "No visible work" },
+      { id: "visible", thought: "Inspecting files", answer: "Visible work" }
+    ]) {
+      await run(
+        db.appendEvent("session.updated", session.id, {
+          turnId: turn.id,
+          turnState: "started"
+        })
+      )
+      await run(
+        db.appendEvent("session.output", session.id, {
+          content: { type: "text", text: turn.thought },
+          sessionUpdate: "agent_thought_chunk"
+        })
+      )
+      await run(
+        db.appendEvent("session.output", session.id, {
+          content: { type: "text", text: turn.answer },
+          sessionUpdate: "agent_message_chunk"
+        })
+      )
+      await run(
+        db.appendEvent("session.updated", session.id, {
+          turnId: turn.id,
+          turnState: "ended"
+        })
+      )
+    }
+    await run(db.close)
+
+    const sqlite = new Database(filename)
+    const items = sqlite
+      .prepare("select id, has_details from chat_items where role = 'assistant' order by position")
+      .all() as Array<{ id: string; has_details: number }>
+    expect(items).toHaveLength(2)
+    sqlite.prepare("update chat_items set has_details = 1 where id = ?").run(items[0]!.id)
+    sqlite.prepare("update chat_items set has_details = 0 where id = ?").run(items[1]!.id)
+    const insertSyntheticDetail = sqlite.prepare(
+      `insert into session_events (
+        session_id, revision, global_event_id, server_id, kind, created_at, payload, chat_item_id
+      ) values (?, ?, null, 'local', 'session.output', ?, ?, ?)`
+    )
+    for (const [revision, payload] of [
+      [9, "{"],
+      [10, JSON.stringify({ sessionUpdate: 42 })],
+      [11, JSON.stringify({ content: { type: "status" }, sessionUpdate: "agent_thought_chunk" })],
+      [
+        12,
+        JSON.stringify({
+          content: { type: "text", text: "Commentary" },
+          phase: "commentary",
+          sessionUpdate: "agent_message_chunk"
+        })
+      ],
+      [
+        13,
+        JSON.stringify({
+          content: { type: "text", text: "" },
+          messageId: "retroactive-commentary",
+          phase: "commentary",
+          sessionUpdate: "agent_message_chunk"
+        })
+      ],
+      [
+        14,
+        JSON.stringify({
+          content: { type: "text", text: "" },
+          phase: "commentary",
+          sessionUpdate: "agent_message_chunk"
+        })
+      ]
+    ] as const) {
+      insertSyntheticDetail.run(
+        session.id,
+        revision,
+        `2026-07-10T00:00:${String(revision).padStart(2, "0")}.000Z`,
+        payload,
+        items[1]!.id
+      )
+    }
+    sqlite.prepare("delete from schema_migrations where id = 10").run()
+    sqlite.close()
+
+    const migrated = await run(makeDatabase({ filename, serverId: "local" }))
+    const page = await run(migrated.getTranscriptPage(session.id, undefined, 32))
+    expect(page.items.filter((item) => item.role === "assistant")).toMatchObject([
+      { text: "No visible work", hasDetails: false },
+      { text: "Visible work", hasDetails: true }
+    ])
+    await run(migrated.close)
+  })
+
   it("projects alternate event shapes, plans, tools, and failed turns", async () => {
     const filename = tempDatabase()
     const db = await run(makeDatabase({ filename, serverId: "local" }))
