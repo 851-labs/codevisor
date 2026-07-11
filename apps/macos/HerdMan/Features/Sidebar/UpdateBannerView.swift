@@ -31,6 +31,7 @@ struct UpdateBannerView: View {
                     .controlSize(.small)
                     .disabled(hasRunningChats)
                     .help(hasRunningChats ? Self.runningChatsHint : "")
+                    .tooltip(hasRunningChats ? Self.runningChatsHint : "")
                 }
             }
 
@@ -94,6 +95,7 @@ struct ServerUpdateBannerView: View {
                     .controlSize(.small)
                     .disabled(hasRunningChats)
                     .help(hasRunningChats ? Self.runningChatsHint : "")
+                    .tooltip(hasRunningChats ? Self.runningChatsHint : "")
                 }
             }
 
