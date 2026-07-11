@@ -406,8 +406,10 @@ struct SessionScreen: View {
 /// cost that made streaming degrade with conversation length.
 private struct TranscriptActiveItemView: View {
     let controller: SessionController
+    @Environment(\.transcriptInvalidateRowMeasurement) private var invalidateRowMeasurement
 
     var body: some View {
+        let revision = controller.activeItemRevision
         if let item = controller.activeItem {
             ConversationItemView(item: item)
                 // The active row is hosted behind the transcript's observation
@@ -421,6 +423,9 @@ private struct TranscriptActiveItemView: View {
                     controller.runningSubagentToolCallIds
                 )
                 .id(item.id)
+                .onChange(of: revision, initial: true) { _, _ in
+                    invalidateRowMeasurement?()
+                }
         }
     }
 }

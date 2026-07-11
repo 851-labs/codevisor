@@ -128,9 +128,18 @@ private final class FlippedTranscriptDocumentView: NSView {
 private final class TranscriptContentHostingController: NSHostingController<AnyView> {
     var onLaidOutHeightChange: ((CGFloat) -> Void)?
     private var lastReportedHeight: CGFloat = 0
+    private var pendingMeasurementTask: Task<Void, Never>?
 
     override func viewDidLayout() {
         super.viewDidLayout()
+        measureAndReportHeight()
+    }
+
+    deinit {
+        pendingMeasurementTask?.cancel()
+    }
+
+    private func measureAndReportHeight() {
         let proposedSize = CGSize(
             width: max(1, view.bounds.width),
             height: .greatestFiniteMagnitude
@@ -143,7 +152,20 @@ private final class TranscriptContentHostingController: NSHostingController<AnyV
 
     func invalidateContentSize() {
         view.invalidateIntrinsicContentSize()
+        view.needsLayout = true
         view.superview?.needsLayout = true
+        // SwiftUI observation can update content entirely inside this hosting
+        // controller without causing AppKit to lay the explicitly-sized outer
+        // wrapper out again. Measure after SwiftUI commits that update so the
+        // virtualizer never keeps positioning later rows from a stale height.
+        guard pendingMeasurementTask == nil else { return }
+        pendingMeasurementTask = Task { @MainActor [weak self] in
+            await Task.yield()
+            guard let self, !Task.isCancelled else { return }
+            self.pendingMeasurementTask = nil
+            self.view.layoutSubtreeIfNeeded()
+            self.measureAndReportHeight()
+        }
     }
 
     func resetReportedHeight() {
@@ -207,6 +229,10 @@ private final class TranscriptRowHost: NSView {
 
     func prepareForMountedRow() {
         contentController.resetReportedHeight()
+    }
+
+    func requestContentMeasurement() {
+        contentController.invalidateContentSize()
     }
 
     private func contentHeightDidChange(_ height: CGFloat) {
@@ -928,6 +954,9 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
             rowContent(row)
                 .environment(\.transcriptPerformAnchoredDisclosureChange) { [weak self] change in
                     self?.performAnchoredDisclosureChange(in: key, change: change) ?? change()
+                }
+                .environment(\.transcriptInvalidateRowMeasurement) { [weak self] in
+                    self?.mountedHosts[key]?.requestContentMeasurement()
                 }
                 // The hosting view's measured height is rounded up to keep
                 // row geometry stable. Pin the SwiftUI root to the top so any

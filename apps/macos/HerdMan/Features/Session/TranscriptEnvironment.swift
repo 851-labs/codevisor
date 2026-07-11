@@ -16,4 +16,8 @@ extension EnvironmentValues {
     /// Runs a user disclosure change while the containing transcript row is
     /// pinned to its current viewport position.
     @Entry var transcriptPerformAnchoredDisclosureChange: ((@escaping () -> Void) -> Void)?
+
+    /// Requests a fresh intrinsic-height measurement from the containing
+    /// native transcript row after isolated SwiftUI content changes.
+    @Entry var transcriptInvalidateRowMeasurement: (() -> Void)?
 }

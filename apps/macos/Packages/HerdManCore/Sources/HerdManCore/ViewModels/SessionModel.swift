@@ -27,7 +27,14 @@ public final class SessionModel {
     /// layout/render on a long chat). Stays set after its turn finishes —
     /// settling happens lazily when the NEXT bubble starts — so finalize
     /// keeps the row's view identity (collapse animation, hover state).
-    public private(set) var activeItem: ConversationItem?
+    public private(set) var activeItem: ConversationItem? {
+        didSet { activeItemRevision &+= 1 }
+    }
+    /// Cheap monotonic signal for the native row host. The active bubble is
+    /// deliberately observed inside its own SwiftUI subtree, so its AppKit
+    /// wrapper otherwise has no reliable indication that its intrinsic height
+    /// may have changed during a token flush.
+    public private(set) var activeItemRevision: UInt64 = 0
     /// Stored, boundary-guarded mirror of `activeItem != nil`: containers
     /// that only need existence (empty-state, setup-section placement) read
     /// this instead of `activeItem`, so they don't re-render per flush.

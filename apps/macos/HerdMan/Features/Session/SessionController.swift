@@ -232,6 +232,7 @@ final class SessionController {
     /// that need existence without per-flush invalidation.
     var settledConversation: [ConversationItem] { model?.settledConversation ?? [] }
     var activeItem: ConversationItem? { model?.activeItem }
+    var activeItemRevision: UInt64 { model?.activeItemRevision ?? 0 }
     var hasActiveItem: Bool { model?.hasActiveItem ?? false }
     var hasOlderHistory: Bool { model?.hasOlderHistory ?? false }
     var isLoadingOlderHistory: Bool { model?.isLoadingOlderHistory ?? false }
