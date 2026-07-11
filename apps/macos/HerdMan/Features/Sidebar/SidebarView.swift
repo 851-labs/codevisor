@@ -596,9 +596,10 @@ struct SidebarView: View {
             .padding(.vertical, 5)
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
-            // Whole-row hit target; the hover archive button still wins clicks
-            // on itself over this row-level gesture.
-            .onTapGesture { selection = .session(session.id) }
+            // A zero-distance drag begins on mouse-down, unlike a tap gesture,
+            // which waits for mouse-up. Child controls (the hover archive
+            // button) retain gesture precedence over this row gesture.
+            .gesture(sessionActivationGesture(session.id))
             .foregroundStyle(isSelected ? Color.primary : .secondary)
         }
         .contextMenu {
@@ -674,7 +675,7 @@ struct SidebarView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
             .foregroundStyle(isSelected ? Color.primary : .secondary)
-            .onTapGesture { selection = .session(session.id) }
+            .gesture(sessionActivationGesture(session.id))
         }
         .contextMenu {
             Button {
@@ -702,6 +703,18 @@ struct SidebarView: View {
         withAnimation(.snappy(duration: 0.28)) {
             if expanded.contains(id) { expanded.remove(id) } else { expanded.insert(id) }
         }
+    }
+
+    /// Activate a chat as soon as the primary pointer goes down. Keeping this
+    /// as a row gesture (rather than an overlay) preserves child button and
+    /// context-menu hit testing.
+    private func sessionActivationGesture(_ sessionID: UUID) -> some Gesture {
+        DragGesture(minimumDistance: 0)
+            .onChanged { _ in
+                let target = SidebarSelection.session(sessionID)
+                guard selection != target else { return }
+                selection = target
+            }
     }
 
     private func orderedSessions(in project: Project) -> [ChatSession] {
