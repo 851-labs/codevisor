@@ -796,7 +796,7 @@ final class SessionController {
     }
 
     /// Fetches stored attachment bytes through this session's server client —
-    /// history thumbnails and the lightbox load through here so auth carries
+    /// History thumbnails and Quick Look load through here so auth carries
     /// over for remote servers.
     func fileData(id: String) async throws -> Data {
         guard let serverClient else { throw SessionControllerError.serverUnavailable }

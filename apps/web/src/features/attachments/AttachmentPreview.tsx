@@ -111,7 +111,10 @@ export function AttachmentLightbox({ item, onClose }: { item: LightboxItem; onCl
       aria-label={`Attachment viewer, ${item.name}`}
       onClick={onClose}
     >
-      <div className="absolute top-5 right-5 z-10 flex gap-2">
+      <div
+        className="absolute top-5 right-5 z-10 flex gap-2"
+        onClick={(event) => event.stopPropagation()}
+      >
         <LightboxButton label="Download" onClick={download}>
           <DownloadIcon className="size-4" />
         </LightboxButton>
@@ -119,10 +122,7 @@ export function AttachmentLightbox({ item, onClose }: { item: LightboxItem; onCl
           <XIcon className="size-4" />
         </LightboxButton>
       </div>
-      <div
-        className="herdman-scrollbar min-h-0 flex-1 overflow-auto"
-        onClick={(event) => event.stopPropagation()}
-      >
+      <div className="herdman-scrollbar min-h-0 flex-1 overflow-auto">
         {objectUrl != null ? (
           <div
             className="flex min-h-full min-w-full items-center justify-center p-12"
@@ -134,6 +134,7 @@ export function AttachmentLightbox({ item, onClose }: { item: LightboxItem; onCl
                 title={item.name}
                 className="h-[calc(100vh-6rem)] w-[min(64rem,calc(100vw-6rem))] shrink-0 rounded-lg border border-white/15 bg-white"
                 style={{ transform: `scale(${clampedZoom})` }}
+                onClick={(event) => event.stopPropagation()}
               />
             ) : (
               <img
@@ -142,6 +143,7 @@ export function AttachmentLightbox({ item, onClose }: { item: LightboxItem; onCl
                 className="max-h-[calc(100vh-6rem)] max-w-[calc(100vw-6rem)] shrink-0 object-contain"
                 style={{ transform: `scale(${clampedZoom})` }}
                 draggable={false}
+                onClick={(event) => event.stopPropagation()}
               />
             )}
           </div>
@@ -156,7 +158,10 @@ export function AttachmentLightbox({ item, onClose }: { item: LightboxItem; onCl
           </div>
         )}
       </div>
-      <div className="absolute bottom-5 left-1/2 flex -translate-x-1/2 items-center gap-1 rounded-full bg-white/14 px-3 py-1.5 text-sm shadow-lg ring-1 ring-white/15 backdrop-blur">
+      <div
+        className="absolute bottom-5 left-1/2 flex -translate-x-1/2 items-center gap-1 rounded-full bg-white/14 px-3 py-1.5 text-sm shadow-lg ring-1 ring-white/15 backdrop-blur"
+        onClick={(event) => event.stopPropagation()}
+      >
         <LightboxButton label="Zoom out" onClick={() => setZoom((value) => value - 0.25)}>
           <MinusIcon className="size-4" />
         </LightboxButton>

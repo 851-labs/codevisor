@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import HerdManCore
+import QuickLook
 
 @main
 struct HerdManApp: App {
@@ -47,7 +48,7 @@ struct RootView: View {
     @State private var store: SessionStore?
     @State private var preferredProjectId: UUID?
     @State private var preparedMachineId: String?
-    @State private var lightbox = LightboxController()
+    @State private var quickLook = QuickLookController()
     @State private var panelLayout = AdaptivePanelLayout()
 
     var body: some View {
@@ -67,22 +68,16 @@ struct RootView: View {
             }
         }
         .environment(panelLayout)
-        .environment(\.lightbox, lightbox)
+        .environment(\.quickLook, quickLook)
+        .quickLookPreview(
+            Binding(
+                get: { quickLook.previewURL },
+                set: { quickLook.updatePreviewURL($0) }
+            )
+        )
         // Locks the composer's submit action while an update installs (the
         // app or selected server is about to restart).
         .environment(\.isAppUpdateInProgress, environment.isUpdateInProgress)
-        // Window-level so the viewer covers the sidebar too, matching a true
-        // full-window lightbox rather than a session-column sheet. The window
-        // toolbar (session title, sidebar toggle) draws above SwiftUI
-        // overlays, so it is hidden while the viewer is up.
-        .toolbar(lightbox.item == nil ? .automatic : .hidden, for: .windowToolbar)
-        .overlay {
-            if let item = lightbox.item {
-                AttachmentLightbox(item: item, controller: lightbox)
-                    .transition(.opacity)
-            }
-        }
-        .animation(.snappy(duration: 0.15), value: lightbox.item)
         .onGeometryChange(for: CGFloat.self) { proxy in
             proxy.size.width
         } action: { width in

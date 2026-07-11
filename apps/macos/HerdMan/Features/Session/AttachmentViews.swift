@@ -47,43 +47,31 @@ final class AttachmentImageStore {
     }
 }
 
-// MARK: - Lightbox presentation
+// MARK: - Quick Look presentation
 
-/// What the lightbox is showing: bytes already on hand (composer drafts) or a
+/// What Quick Look is showing: bytes already on hand (composer drafts) or a
 /// stored file fetched by id (history).
-enum LightboxItem: Equatable {
-    case local(data: Data, name: String)
-    case remote(fileId: String, name: String)
+enum QuickLookItem: Equatable {
+    case local(data: Data, name: String, mimeType: String)
+    case remote(fileId: String, name: String, mimeType: String)
 
     var name: String {
         switch self {
-        case let .local(_, name): return name
-        case let .remote(_, name): return name
+        case let .local(_, name, _): return name
+        case let .remote(_, name, _): return name
+        }
+    }
+
+    var mimeType: String {
+        switch self {
+        case let .local(_, _, mimeType): return mimeType
+        case let .remote(_, _, mimeType): return mimeType
         }
     }
 }
 
-/// Window-level lightbox state; presented as an overlay at the app root so it
-/// covers the whole window, not just the session column.
-@MainActor
-@Observable
-final class LightboxController {
-    var item: LightboxItem?
-    /// Resolves remote items; stamped by the screen that presented the item.
-    var imageStore: AttachmentImageStore?
-
-    func present(_ item: LightboxItem, imageStore: AttachmentImageStore?) {
-        self.imageStore = imageStore
-        self.item = item
-    }
-
-    func dismiss() {
-        item = nil
-    }
-}
-
 extension EnvironmentValues {
-    @Entry var lightbox: LightboxController? = nil
+    @Entry var quickLook: QuickLookController? = nil
     @Entry var attachmentImages: AttachmentImageStore? = nil
 }
 
@@ -114,12 +102,11 @@ struct PDFBadge: View {
     }
 }
 
-/// A small rounded thumbnail for an image or PDF attachment in the
-/// transcript, or a file chip for other types. Clicking a preview opens the
-/// lightbox; clicking a file offers a save panel.
+/// A small rounded thumbnail for an image or PDF attachment in the transcript,
+/// or a file chip for other types. Every attachment opens with Quick Look.
 struct AttachmentThumbnailView: View {
     @Environment(\.theme) private var theme
-    @Environment(\.lightbox) private var lightbox
+    @Environment(\.quickLook) private var quickLook
     @Environment(\.attachmentImages) private var attachmentImages
     let attachment: Attachment
 
@@ -137,7 +124,7 @@ struct AttachmentThumbnailView: View {
                     }
             } else {
                 AttachmentFileChip(name: attachment.name) {
-                    saveFile()
+                    preview()
                 }
             }
         }
@@ -171,26 +158,22 @@ struct AttachmentThumbnailView: View {
         )
         .contentShape(RoundedRectangle(cornerRadius: 8))
         .onTapGesture {
-            lightbox?.present(
-                .remote(fileId: attachment.fileId, name: attachment.name),
-                imageStore: attachmentImages
-            )
+            preview()
         }
         .help(attachment.name)
-        .accessibilityLabel("Attached image \(attachment.name)")
+        .accessibilityLabel("Attachment \(attachment.name)")
         .accessibilityAddTraits(.isButton)
     }
 
-    private func saveFile() {
-        guard let attachmentImages else { return }
-        let attachment = attachment
-        Task { @MainActor in
-            guard let data = try? await attachmentImages.data(for: attachment.fileId) else { return }
-            let panel = NSSavePanel()
-            panel.nameFieldStringValue = attachment.name
-            guard panel.runModal() == .OK, let url = panel.url else { return }
-            try? data.write(to: url)
-        }
+    private func preview() {
+        quickLook?.present(
+            .remote(
+                fileId: attachment.fileId,
+                name: attachment.name,
+                mimeType: attachment.mimeType
+            ),
+            attachmentStore: attachmentImages
+        )
     }
 }
 

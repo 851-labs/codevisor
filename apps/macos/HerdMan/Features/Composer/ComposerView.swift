@@ -525,7 +525,7 @@ struct ComposerAttachmentRow: View {
 
 private struct ComposerAttachmentThumb: View {
     @Environment(\.theme) private var theme
-    @Environment(\.lightbox) private var lightbox
+    @Environment(\.quickLook) private var quickLook
     let attachment: ComposerAttachment
     let onRemove: () -> Void
     let onRetry: () -> Void
@@ -557,15 +557,10 @@ private struct ComposerAttachmentThumb: View {
                             }
                         }
                         .contentShape(RoundedRectangle(cornerRadius: 8))
-                        .onTapGesture {
-                            lightbox?.present(
-                                .local(data: attachment.localData, name: attachment.name),
-                                imageStore: nil
-                            )
-                        }
+                        .onTapGesture { preview() }
                         .help(attachment.name)
                 } else {
-                    AttachmentFileChip(name: attachment.name)
+                    AttachmentFileChip(name: attachment.name) { preview() }
                 }
             }
             .overlay {
@@ -597,6 +592,17 @@ private struct ComposerAttachmentThumb: View {
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Attachment \(attachment.name)")
+    }
+
+    private func preview() {
+        quickLook?.present(
+            .local(
+                data: attachment.localData,
+                name: attachment.name,
+                mimeType: attachment.mimeType
+            ),
+            attachmentStore: nil
+        )
     }
 
     @ViewBuilder

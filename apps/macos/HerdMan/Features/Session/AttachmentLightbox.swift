@@ -1,252 +1,171 @@
-import SwiftUI
 import AppKit
-import PDFKit
+import Observation
+import UniformTypeIdentifiers
 
-/// A full-window attachment viewer: dark backdrop, centered image or PDF,
-/// zoom controls (percentage with − / + in 25% steps), download, and close.
-/// Presented from composer thumbnails and transcript attachments via
-/// `LightboxController`.
-struct AttachmentLightbox: View {
-    let item: LightboxItem
-    let controller: LightboxController
+/// Materializes attachment bytes as local files for SwiftUI's system-owned
+/// Quick Look presentation. The native modifier owns all window chrome,
+/// transitions, keyboard behavior, and dismissal.
+@MainActor
+@Observable
+final class QuickLookController {
+    private(set) var previewURL: URL?
+    /// Quick Look may continue reading a replaced preview URL asynchronously,
+    /// so retain every directory used by the active system preview until it closes.
+    private var temporaryDirectories: [URL] = []
+    private var presentationTask: Task<Void, Never>?
+    private var presentationID = UUID()
 
-    @State private var image: NSImage?
-    @State private var pdfDocument: PDFDocument?
-    @State private var loadFailed = false
-    /// 1.0 == fit-to-window; the label shows it as 100%.
-    @State private var zoom: CGFloat = 1.0
-    @FocusState private var isFocused: Bool
+    func present(_ item: QuickLookItem, attachmentStore: AttachmentImageStore?) {
+        presentationTask?.cancel()
+        presentationID = UUID()
+        let presentationID = presentationID
 
-    private static let zoomStep: CGFloat = 0.25
-    private static let zoomRange: ClosedRange<CGFloat> = 0.1...5.0
-
-    var body: some View {
-        ZStack {
-            Color.black.opacity(0.88)
-                .onTapGesture { controller.dismiss() }
-
-            content
-
-            VStack {
-                HStack {
-                    Spacer()
-                    HStack(spacing: 10) {
-                        controlCircle(systemName: "square.and.arrow.down", help: "Download") { download() }
-                        controlCircle(systemName: "xmark", help: "Close (⎋)") { controller.dismiss() }
-                            // Escape as the standard cancel action; key
-                            // equivalents win over the focused text view.
-                            .keyboardShortcut(.cancelAction)
+        presentationTask = Task { [weak self] in
+            guard let self else { return }
+            let itemName = item.name
+            let itemMimeType = item.mimeType
+            do {
+                let data: Data
+                switch item {
+                case let .local(localData, _, _):
+                    data = localData
+                case let .remote(fileId, _, _):
+                    guard let attachmentStore else {
+                        throw QuickLookError.attachmentUnavailable
                     }
+                    data = try await attachmentStore.data(for: fileId)
                 }
-                .padding(20)
-                Spacer()
-            }
 
-            VStack {
-                Spacer()
-                zoomControls
-                    .padding(.bottom, 20)
+                try Task.checkCancellation()
+                guard presentationID == self.presentationID else { return }
+
+                let materialized = try await Task.detached(priority: .userInitiated) {
+                    try Self.materialize(
+                        data: data,
+                        name: itemName,
+                        mimeType: itemMimeType
+                    )
+                }.value
+                guard presentationID == self.presentationID else {
+                    try? FileManager.default.removeItem(at: materialized.directory)
+                    return
+                }
+                self.temporaryDirectories.append(materialized.directory)
+                self.previewURL = materialized.file
+            } catch is CancellationError {
+                // A newer attachment was selected while this one was loading.
+            } catch {
+                guard presentationID == self.presentationID else { return }
+                self.showFailure(for: itemName, error: error)
             }
         }
-        // The whole lightbox is full-bleed: without this, the control stack
-        // respects the (hidden) titlebar's top safe-area inset and the close
-        // buttons hang noticeably lower than the zoom pill's bottom margin.
-        .ignoresSafeArea()
-        .task(id: item) { await load() }
-        .onExitCommand { controller.dismiss() }
-        // Focusable so Escape (onExitCommand) reaches the overlay — and
-        // actually focused on appear, otherwise first responder stays on the
-        // composer text view and Escape never gets here.
-        .focusable()
-        .focusEffectDisabled()
-        .focused($isFocused)
-        .onAppear { isFocused = true }
-        .accessibilityLabel("Image viewer, \(item.name)")
     }
 
-    @ViewBuilder
-    private var content: some View {
-        if let pdfDocument {
-            LightboxPDFView(document: pdfDocument, zoom: zoom)
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-                .padding(.horizontal, 64)
-                .padding(.top, 64)
-                .padding(.bottom, 76)
-        } else if let image {
-            GeometryReader { proxy in
-                ScrollView([.horizontal, .vertical], showsIndicators: false) {
-                    Image(nsImage: image)
-                        .resizable()
-                        .aspectRatio(contentMode: .fit)
-                        .frame(
-                            width: fittedSize(image: image, in: proxy.size).width * zoom,
-                            height: fittedSize(image: image, in: proxy.size).height * zoom
-                        )
-                        .frame(
-                            minWidth: proxy.size.width,
-                            minHeight: proxy.size.height
-                        )
-                }
+    /// Called by the native SwiftUI Quick Look modifier. The system writes nil
+    /// when the user closes its preview.
+    func updatePreviewURL(_ url: URL?) {
+        guard previewURL != url else { return }
+        previewURL = url
+        guard url == nil else { return }
+
+        presentationTask?.cancel()
+        presentationTask = nil
+        presentationID = UUID()
+        scheduleTemporaryDirectoryCleanup()
+    }
+
+    func dismiss() {
+        updatePreviewURL(nil)
+    }
+
+    private func scheduleTemporaryDirectoryCleanup() {
+        let directories = temporaryDirectories
+        temporaryDirectories.removeAll()
+        Task.detached(priority: .utility) {
+            // Let the system preview finish its closing animation before the
+            // backing files disappear.
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            for directory in directories {
+                try? FileManager.default.removeItem(at: directory)
             }
-            .padding(48)
-        } else if loadFailed {
-            VStack(spacing: 8) {
-                Image(systemName: "photo.badge.exclamationmark")
-                    .font(.system(size: 34))
-                    .foregroundStyle(.secondary)
-                Text("This attachment is no longer available.")
-                    .foregroundStyle(.secondary)
-            }
+        }
+    }
+
+    private func showFailure(for name: String, error: Error) {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Unable to Preview Attachment"
+        alert.informativeText = "\(name) could not be prepared for Quick Look. \(error.localizedDescription)"
+        alert.addButton(withTitle: "OK")
+        if let window = NSApp.keyWindow ?? NSApp.mainWindow {
+            alert.beginSheetModal(for: window)
         } else {
-            ProgressView()
-                .controlSize(.large)
+            alert.runModal()
         }
     }
 
-    private var zoomControls: some View {
-        HStack(spacing: 4) {
-            Button {
-                setZoom(zoom - Self.zoomStep)
-            } label: {
-                Image(systemName: "minus")
-                    .frame(width: 30, height: 30)
-                    .contentShape(Circle())
+    nonisolated private static func materialize(
+        data: Data,
+        name: String,
+        mimeType: String
+    ) throws -> (directory: URL, file: URL) {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("HerdMan-QuickLook", isDirectory: true)
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true
+        )
+
+        do {
+            let file = directory.appendingPathComponent(
+                safeFilename(name: name, mimeType: mimeType),
+                isDirectory: false
+            )
+            try data.write(to: file, options: .atomic)
+            return (directory, file)
+        } catch {
+            try? FileManager.default.removeItem(at: directory)
+            throw error
+        }
+    }
+
+    /// Keeps Quick Look's type inference intact while preventing attachment
+    /// names from escaping their per-preview temporary directory.
+    nonisolated private static func safeFilename(name: String, mimeType: String) -> String {
+        var candidate = (name as NSString).lastPathComponent
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        candidate = candidate.unicodeScalars.map { scalar in
+            if CharacterSet.controlCharacters.contains(scalar) || scalar == "/" || scalar == ":" {
+                return "_"
             }
-            .buttonStyle(.plain)
-            .help("Zoom out")
+            return String(scalar)
+        }.joined()
 
-            Text("\(Int((zoom * 100).rounded()))%")
-                .font(.callout.monospacedDigit())
-                .frame(minWidth: 48)
-
-            Button {
-                setZoom(zoom + Self.zoomStep)
-            } label: {
-                Image(systemName: "plus")
-                    .frame(width: 30, height: 30)
-                    .contentShape(Circle())
-            }
-            .buttonStyle(.plain)
-            .help("Zoom in")
+        if candidate.isEmpty || candidate == "." || candidate == ".." {
+            candidate = "Attachment"
         }
-        .foregroundStyle(.white)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 4)
-        .glassEffect(.regular.interactive(), in: Capsule())
-    }
 
-    private func controlCircle(systemName: String, help: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: systemName)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(.white)
-                .frame(width: 34, height: 34)
-                .contentShape(Circle())
+        if (candidate as NSString).pathExtension.isEmpty,
+           let inferredExtension = UTType(mimeType: mimeType)?.preferredFilenameExtension {
+            candidate += ".\(inferredExtension)"
         }
-        .buttonStyle(.plain)
-        .glassEffect(.regular.interactive(), in: Circle())
-        .help(help)
-    }
 
-    private func setZoom(_ value: CGFloat) {
-        zoom = min(max(value, Self.zoomRange.lowerBound), Self.zoomRange.upperBound)
-    }
-
-    private func fittedSize(image: NSImage, in container: CGSize) -> CGSize {
-        let size = image.size
-        guard size.width > 0, size.height > 0, container.width > 0, container.height > 0 else {
-            return size
-        }
-        // Fit within the padded container; never upscale past natural size at 100%.
-        let scale = min(container.width / size.width, container.height / size.height, 1)
-        return CGSize(width: size.width * scale, height: size.height * scale)
-    }
-
-    private func load() async {
-        zoom = 1.0
-        loadFailed = false
-        image = nil
-        pdfDocument = nil
-        let data: Data?
-        switch item {
-        case let .local(localData, _):
-            data = localData
-        case let .remote(fileId, _):
-            data = try? await controller.imageStore?.data(for: fileId)
-        }
-        guard let data else {
-            loadFailed = true
-            return
-        }
-        if isPDFData(data), let document = PDFDocument(data: data) {
-            pdfDocument = document
-            return
-        }
-        image = NSImage(data: data)
-        loadFailed = image == nil
-    }
-
-    private func isPDFData(_ data: Data) -> Bool {
-        data.prefix(5).elementsEqual(Array("%PDF-".utf8))
-    }
-
-    private func download() {
-        let item = item
-        Task { @MainActor in
-            let data: Data?
-            switch item {
-            case let .local(localData, _):
-                data = localData
-            case let .remote(fileId, _):
-                data = try? await controller.imageStore?.data(for: fileId)
-            }
-            guard let data else { return }
-            let panel = NSSavePanel()
-            panel.nameFieldStringValue = item.name
-            guard panel.runModal() == .OK, let url = panel.url else { return }
-            try? data.write(to: url)
-        }
+        let pathExtension = String((candidate as NSString).pathExtension.prefix(32))
+        guard !pathExtension.isEmpty else { return String(candidate.prefix(180)) }
+        let stem = (candidate as NSString).deletingPathExtension
+        let stemLimit = max(1, 179 - pathExtension.count)
+        return "\(stem.prefix(stemLimit)).\(pathExtension)"
     }
 }
 
-/// PDFKit-backed document view for the lightbox: vertical continuous pages
-/// with the shared zoom controls mapped onto PDFView's scale (1.0 == fit).
-private struct LightboxPDFView: NSViewRepresentable {
-    let document: PDFDocument
-    let zoom: CGFloat
+private enum QuickLookError: LocalizedError {
+    case attachmentUnavailable
 
-    func makeCoordinator() -> Coordinator { Coordinator() }
-
-    final class Coordinator {
-        var appliedZoom: CGFloat = 1.0
-    }
-
-    func makeNSView(context: Context) -> PDFView {
-        let view = PDFView()
-        view.document = document
-        view.displayMode = .singlePageContinuous
-        view.displayDirection = .vertical
-        view.autoScales = true
-        return view
-    }
-
-    func updateNSView(_ view: PDFView, context: Context) {
-        if view.document !== document {
-            view.document = document
-            view.autoScales = true
-            context.coordinator.appliedZoom = 1.0
-        }
-        // Only touch the scale when OUR control changed, so PDFView's own
-        // pinch/trackpad zoom isn't fought on unrelated SwiftUI updates.
-        guard context.coordinator.appliedZoom != zoom else { return }
-        context.coordinator.appliedZoom = zoom
-        if zoom == 1.0 {
-            view.autoScales = true
-        } else {
-            let fit = view.scaleFactorForSizeToFit
-            if fit > 0 {
-                view.scaleFactor = fit * zoom
-            }
+    var errorDescription: String? {
+        switch self {
+        case .attachmentUnavailable:
+            "The attachment is no longer available."
         }
     }
 }
