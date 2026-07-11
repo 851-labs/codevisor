@@ -1,0 +1,34 @@
+---
+title: Operations and troubleshooting
+description: Monitor, update, restart, and troubleshoot a HerdMan Server.
+icon: Wrench
+---
+
+## Service status
+
+```bash
+systemctl --user status herdman-server
+journalctl --user -u herdman-server -f
+```
+
+For a root installation, omit `--user`.
+
+## Health and identity
+
+`GET /v1/health` reports the release and database readiness. `GET /v1/info` reports the server ID,
+kind, platform, bind address, and feature markers.
+
+## Updates
+
+Standalone release builds check the stable release manifest. `GET /v1/update` reports update state;
+`POST /v1/update/apply` downloads the matching runtime and restarts when no prompt is in flight. A
+busy server rejects the restart without interrupting active work.
+
+## Common checks
+
+1. Confirm the process is listening on the expected address and port.
+2. Call `/v1/health` locally before diagnosing remote authentication.
+3. Verify the remote request includes `Authorization: Bearer …`.
+4. Check firewall, reverse-proxy, and TLS configuration independently.
+5. Confirm the service user's `PATH` contains the coding-agent CLIs you expect the server to use.
+6. Use `POST /v1/harnesses/rescan` after installing a CLI without restarting the server.

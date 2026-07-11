@@ -1,0 +1,38 @@
+---
+title: Events and replay
+description: Consume global and session-scoped updates over HTTP, SSE, or WebSocket.
+icon: Radio
+---
+
+Every event is an envelope with a server ID, kind, subject, timestamp, cursor information, and an
+event-specific payload.
+
+```json
+{
+  "id": 42,
+  "serverId": "build-box",
+  "kind": "session.updated",
+  "subjectId": "session-id",
+  "createdAt": "2026-07-10T12:00:00.000Z",
+  "payload": {}
+}
+```
+
+## Persisted session history
+
+`GET /v1/sessions/{id}/events` returns the stored history for one session as JSON. Use it to rebuild
+rich transcripts containing tool calls, diffs, plans, and other non-text events.
+
+## Server-Sent Events
+
+`GET /v1/events?since=CURSOR` returns `text/event-stream`, replays persisted global events after the
+cursor, and stays open for new events.
+
+## WebSockets
+
+- `/v1/events/socket?since=CURSOR` streams global shell events.
+- `/v1/sessions/{id}/events/socket?since=CURSOR` streams one session and uses its subject revision as
+  the cursor.
+
+Each WebSocket message is one JSON-encoded event envelope. Reconnect with the last processed cursor.
+Passing `Number.MAX_SAFE_INTEGER` as `since` requests live events without replay.

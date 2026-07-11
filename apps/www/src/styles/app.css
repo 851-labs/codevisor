@@ -1,4 +1,7 @@
 @import "tailwindcss";
+@import "fumadocs-ui/css/neutral.css";
+@import "fumadocs-ui/css/preset.css";
+@import "fumadocs-openapi/css/preset.css";
 
 @theme {
   --font-sans:
@@ -17,11 +20,26 @@ html {
 }
 
 body {
-  background-color: var(--color-page);
-  color: var(--color-text);
+  background-color: var(--color-fd-background);
+  color: var(--color-fd-foreground);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+}
+
+.marketing-shell {
+  background-color: var(--color-page);
+  color: var(--color-text);
+  color-scheme: dark;
+}
+
+html {
+  scrollbar-gutter: stable;
+}
+
+html > body[data-scroll-locked] {
+  margin-right: 0 !important;
+  --removed-body-scroll-bar-size: 0px !important;
 }
 
 @media (prefers-reduced-motion: reduce) {

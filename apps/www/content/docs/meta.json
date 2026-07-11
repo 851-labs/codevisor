@@ -1,0 +1,17 @@
+{
+  "pages": [
+    "index",
+    "quickstart",
+    "installation",
+    "configuration",
+    "authentication",
+    "security",
+    "api-concepts",
+    "realtime",
+    "terminals",
+    "operations",
+    "---API reference---",
+    "api-reference",
+    "...(openapi)"
+  ]
+}

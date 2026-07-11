@@ -1,0 +1,46 @@
+---
+title: API reference
+description: Complete reference for the experimental HerdMan Server HTTP, SSE, and WebSocket surface.
+icon: BookOpen
+---
+
+The reference pages are generated from the same OpenAPI document served by
+`GET /v1/openapi.json`. Request examples are safe to copy, but this hosted site never executes them.
+
+<Cards>
+  <Card
+    title="Server"
+    description="Health, identity, capabilities, and the OpenAPI document."
+    href="/docs/api-reference/server/get-health"
+  />
+  <Card
+    title="Authentication"
+    description="Issue pairing credentials from a trusted local connection."
+    href="/docs/api-reference/authentication/post-auth-pairing-token"
+  />
+  <Card
+    title="Projects"
+    description="Manage project locations and Git worktrees."
+    href="/docs/api-reference/projects/get-projects"
+  />
+  <Card
+    title="Harnesses"
+    description="Discover agents and manage their accounts."
+    href="/docs/api-reference/harnesses/get-harnesses"
+  />
+  <Card
+    title="Sessions"
+    description="Create sessions, send prompts, and inspect transcripts."
+    href="/docs/api-reference/sessions/get-sessions"
+  />
+  <Card
+    title="Events"
+    description="Consume global updates with SSE or WebSocket."
+    href="/docs/api-reference/events/get-events"
+  />
+  <Card
+    title="Terminals"
+    description="Create terminals and attach bidirectional sockets."
+    href="/docs/api-reference/terminals/post-terminals"
+  />
+</Cards>

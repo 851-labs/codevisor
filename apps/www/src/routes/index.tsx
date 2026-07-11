@@ -10,7 +10,7 @@ const INSTALL_CMD = "curl -fsSL https://www.herdman.dev/install.sh | sh"
 
 function Home() {
   return (
-    <>
+    <div className="marketing-shell min-h-screen">
       <Nav />
       <main>
         <Hero />
@@ -34,7 +34,7 @@ function Home() {
         <Install />
       </main>
       <Footer />
-    </>
+    </div>
   )
 }
 
@@ -47,6 +47,9 @@ function Nav() {
           HerdMan
         </a>
         <div className="flex items-center gap-6 text-muted">
+          <a href="/docs" className="transition-colors hover:text-text">
+            Docs
+          </a>
           <a href="#install" className="transition-colors hover:text-text">
             Install
           </a>

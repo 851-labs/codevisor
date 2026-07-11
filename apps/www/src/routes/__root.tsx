@@ -1,6 +1,7 @@
 /// <reference types="vite/client" />
 import type { ReactNode } from "react"
 import { HeadContent, Outlet, Scripts, createRootRoute } from "@tanstack/react-router"
+import { RootProvider } from "fumadocs-ui/provider/tanstack"
 
 import appCss from "../styles/app.css?url"
 
@@ -42,12 +43,12 @@ function RootComponent() {
 
 function RootDocument({ children }: Readonly<{ children: ReactNode }>) {
   return (
-    <html lang="en" className="scheme-dark">
+    <html lang="en" suppressHydrationWarning>
       <head>
         <HeadContent />
       </head>
       <body>
-        {children}
+        <RootProvider>{children}</RootProvider>
         <Scripts />
       </body>
     </html>

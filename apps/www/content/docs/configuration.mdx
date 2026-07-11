@@ -1,0 +1,32 @@
+---
+title: Configuration
+description: Configure server identity, networking, authentication, storage, and browser origins.
+icon: Settings
+---
+
+HerdMan Server currently uses command-line flags rather than a configuration file.
+
+```bash
+herdman-server serve \
+  --host 0.0.0.0 \
+  --port 49361 \
+  --auth token \
+  --serverId build-box \
+  --name "Build box" \
+  --kind remote
+```
+
+| Flag               | Description                     | Default                                |
+| ------------------ | ------------------------------- | -------------------------------------- |
+| `--host`           | Bind address                    | `127.0.0.1`                            |
+| `--port`           | HTTP and WebSocket port         | `49361`                                |
+| `--auth`           | `none` or `token`               | `none` on loopback, otherwise `token`  |
+| `--serverId`       | Stable server identifier        | `local`                                |
+| `--name`           | Human-readable machine name     | `Local HerdMan` or the server ID       |
+| `--kind`           | `local` or `remote`             | Derived from the bind address          |
+| `--db`             | SQLite database path            | Platform application-support directory |
+| `--cors-origins`   | Comma-separated browser origins | Disabled                               |
+| `--upgrade-status` | Data-migration status file      | Beside the database                    |
+
+Never configure a wildcard CORS origin. Trusted localhost requests bypass bearer authentication, so
+a wildcard would allow an arbitrary website to drive the local server.

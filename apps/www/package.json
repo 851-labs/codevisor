@@ -5,20 +5,28 @@
   "scripts": {
     "dev": "vite dev",
     "build": "vite build",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "fumadocs-mdx && tsc --noEmit",
     "preview": "vite preview",
     "deploy": "bun run build && wrangler deploy",
     "cf-typegen": "wrangler types"
   },
   "dependencies": {
+    "@herdman/api": "workspace:*",
     "@tanstack/react-router": "^1.135.0",
     "@tanstack/react-start": "^1.135.0",
+    "fumadocs-core": "16.11.2",
+    "fumadocs-mdx": "15.1.0",
+    "fumadocs-openapi": "11.1.1",
+    "fumadocs-ui": "16.11.2",
+    "lucide-react": "^1.23.0",
     "react": "^19.2.0",
-    "react-dom": "^19.2.0"
+    "react-dom": "^19.2.0",
+    "shiki": "^4.3.1"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "^1.16.0",
     "@tailwindcss/vite": "^4.1.0",
+    "@types/mdx": "^2.0.14",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "^5.0.0",

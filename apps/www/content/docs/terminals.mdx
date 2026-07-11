@@ -1,0 +1,35 @@
+---
+title: Terminal protocol
+description: Create terminals and exchange input, output, resize, close, and exit frames.
+icon: SquareTerminal
+---
+
+Create a terminal with `POST /v1/terminals`. The response contains a terminal ID, a WebSocket path,
+and the next output sequence.
+
+Connect to `/v1/terminals/{id}/socket?lastOutputSeq=N`. The server replays output after the supplied
+sequence before sending live frames.
+
+## Client frames
+
+Every client frame carries a stable `clientId` and a monotonic `clientSeq`.
+
+```json
+{ "type": "input", "clientId": "client-1", "clientSeq": 1, "data": "ls\n" }
+```
+
+```json
+{ "type": "resize", "clientId": "client-1", "clientSeq": 2, "cols": 120, "rows": 36 }
+```
+
+```json
+{ "type": "close", "clientId": "client-1", "clientSeq": 3 }
+```
+
+## Server frames
+
+Server frames are `output`, `exit`, or `error` objects. Their `seq` field is the replay cursor.
+Persist the highest processed sequence and supply it as `lastOutputSeq` after reconnecting.
+
+Deleting `/v1/terminals/session/{sessionId}` closes the live terminal associated with a session so a
+later create request can start a fresh shell.

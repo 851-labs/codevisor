@@ -1,0 +1,47 @@
+---
+title: HerdMan Server
+description: Run coding agents on another machine and build clients against the experimental HerdMan Server API.
+icon: Server
+---
+
+HerdMan Server hosts projects, coding-agent sessions, event streams, files, and terminals. The
+HerdMan macOS app uses the same HTTP and WebSocket API documented here.
+
+<Callout type="warning" title="Experimental API">
+  The `/v1` API is public for experimentation, but its compatibility policy is not finalized yet.
+  Pin the HerdMan Server release you test against and read release notes before upgrading.
+</Callout>
+
+## Start here
+
+<Cards>
+  <Card
+    title="Quickstart"
+    description="Install a Linux server, pair it, and make your first request."
+    href="/docs/quickstart"
+  />
+  <Card
+    title="Authentication"
+    description="Understand localhost trust and remote bearer tokens."
+    href="/docs/authentication"
+  />
+  <Card
+    title="API concepts"
+    description="Learn resources, errors, cursors, and idempotent actions."
+    href="/docs/api-concepts"
+  />
+  <Card
+    title="API reference"
+    description="Browse every current HTTP and streaming endpoint."
+    href="/docs/api-reference"
+  />
+</Cards>
+
+## Default endpoint
+
+A standalone server listens on `127.0.0.1:49361` unless configured otherwise. The Linux installer
+binds to `0.0.0.0:49361`, enables token authentication, and can install a systemd service.
+
+```bash
+curl http://127.0.0.1:49361/v1/health
+```

@@ -1,0 +1,44 @@
+---
+title: Authentication
+description: Pair clients and authenticate remote HTTP and WebSocket requests.
+icon: KeyRound
+---
+
+## Authentication modes
+
+`--auth none` accepts every request and is appropriate only for a loopback-only development server.
+`--auth token` requires a valid bearer token for remote requests while continuing to trust requests
+that originate from localhost.
+
+## Pairing
+
+Pairing tokens are issued through the API. Because the issuance endpoint is authenticated remotely,
+the initial token must be requested locally:
+
+```bash
+curl -fsS -X POST http://127.0.0.1:49361/v1/auth/pairing-token
+```
+
+```json
+{
+  "token": "hm_…",
+  "createdAt": "2026-07-10T12:00:00.000Z"
+}
+```
+
+## HTTP requests
+
+```bash
+curl http://SERVER_ADDRESS:49361/v1/projects \
+  -H "Authorization: Bearer hm_…"
+```
+
+## WebSocket requests
+
+Send the same `Authorization` header during the WebSocket upgrade. A rejected upgrade returns
+`401 Unauthorized` and closes the connection.
+
+<Callout type="info">
+  Tokens are credentials. Do not put them in URLs, browser storage, logs, screenshots, or the hosted
+  documentation site.
+</Callout>

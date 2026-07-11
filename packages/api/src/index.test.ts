@@ -302,10 +302,27 @@ describe("@herdman/api", () => {
     expect(() => decode(SetGoalRequest)({ status: "later" })).toThrow()
   })
 
-  it("exports the server endpoint inventory as OpenAPI metadata", () => {
+  it("exports the complete server endpoint inventory as OpenAPI operations", () => {
     const doc = makeOpenApiDocument("0.1.0")
     expect(doc.info.version).toBe("0.1.0")
-    expect(Object.keys(doc.paths).sort()).toEqual([...endpoints].sort())
+    const documented = Object.entries(doc.paths).flatMap(([path, operations]) =>
+      Object.keys(operations).map(
+        (method) => `${method.toUpperCase()} ${path.replace(/\{([A-Za-z][A-Za-z0-9]*)\}/g, ":$1")}`
+      )
+    )
+    expect(documented.sort()).toEqual([...endpoints].sort())
+    const operations = Object.values(doc.paths).flatMap((path) => Object.values(path)) as Array<
+      Record<string, unknown>
+    >
+    const operationIds = operations.map((operation) => operation.operationId)
+    expect(new Set(operationIds).size).toBe(operationIds.length)
+    expect(operations.every((operation) => operation.responses !== undefined)).toBe(true)
+    expect(doc.components).toHaveProperty("securitySchemes.bearerAuth")
+    expect(doc.paths["/v1/health"]?.get).toMatchObject({ security: [] })
+    expect(doc.paths["/v1/projects"]?.post).toMatchObject({
+      operationId: "post-projects",
+      security: [{ bearerAuth: [] }]
+    })
   })
 
   it("creates ISO timestamps for server state", () => {

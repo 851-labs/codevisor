@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - "apps/www/**"
+      - "packages/api/**"
       - "bun.lock"
       - ".github/workflows/deploy-www.yml"
   workflow_dispatch:
@@ -32,8 +33,7 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
       - name: Build and typecheck
-        working-directory: apps/www
-        run: bun run build && bun run typecheck
+        run: bunx turbo run build typecheck --filter=@herdman/www
       - name: Deploy to Cloudflare
         working-directory: apps/www
         env:

@@ -1,0 +1,42 @@
+---
+title: API concepts
+description: Understand resources, errors, pagination, idempotency, and compatibility.
+icon: Braces
+---
+
+## Base URL and encoding
+
+All endpoints are under `/v1`. JSON endpoints use `application/json`; file upload and download use
+binary bodies. Successful deletion commonly returns `204 No Content`.
+
+## Errors
+
+Errors use an HTTP status and a JSON object:
+
+```json
+{ "error": "Project not found" }
+```
+
+Validation failures return `422`. Authentication failures return `401`. Resource conflicts and
+unsupported state transitions may return `409`.
+
+## Resource model
+
+A project points to a folder on a server. A worktree is a server-created Git worktree for that
+project. A session selects a project, harness, optional account, and optional worktree. Prompts are
+queued and session output arrives through persisted events.
+
+## Cursors and replay
+
+Transcript pagination uses `before` and `limit`. Event streams use a monotonic `since` cursor. Save
+the last processed cursor and pass it when reconnecting so the server can replay missed events.
+
+## Idempotent actions
+
+Prompt and control payloads that accept `clientActionId` persist the result for that action. Reusing
+the same identifier for a retry returns the stored result instead of performing the action twice.
+
+## Compatibility
+
+The API is currently experimental. `/v1` identifies the current protocol family, but does not yet
+promise that every shape remains unchanged between HerdMan releases.

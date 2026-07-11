@@ -1,0 +1,20 @@
+---
+title: Network security
+description: Expose a remote HerdMan Server without exposing its credentials or transport.
+icon: ShieldCheck
+---
+
+HerdMan Server speaks plain HTTP and WebSocket. It does not terminate TLS. For access outside a
+trusted private network, put it behind a TLS-terminating reverse proxy or a private overlay network.
+
+## Recommended baseline
+
+- Run with `--auth token` whenever the bind address is not loopback.
+- Restrict port `49361` with a host firewall or private network policy.
+- Terminate HTTPS and WSS before traffic crosses an untrusted network.
+- Keep the SQLite database and installation directory readable only by the service user.
+- Configure explicit CORS origins only for browser clients you control.
+- Store pairing tokens in a credential manager; the current API does not expose token revocation.
+
+The hosted API reference intentionally does not execute requests. This prevents server addresses and
+bearer tokens from being sent to `www.herdman.dev`.

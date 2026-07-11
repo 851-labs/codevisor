@@ -1,0 +1,41 @@
+---
+title: Installation
+description: Install and run HerdMan Server on Linux or macOS.
+icon: Download
+---
+
+## Installer behavior
+
+```bash
+curl -fsSL https://www.herdman.dev/install.sh | sh
+```
+
+On Linux, the installer downloads the matching `linux-x64` or `linux-arm64` archive, verifies its
+SHA-256 checksum when `sha256sum` is available, and links `herdman-server` and
+`herdman-terminal-proxy` into a bin directory.
+
+| Variable               | Purpose                        | Default                               |
+| ---------------------- | ------------------------------ | ------------------------------------- |
+| `HERDMAN_VERSION`      | Install a specific release     | Latest stable                         |
+| `HERDMAN_INSTALL_DIR`  | Runtime installation directory | `~/.herdman/server` or `/opt/herdman` |
+| `HERDMAN_BIN_DIR`      | Command symlink directory      | `~/.local/bin` or `/usr/local/bin`    |
+| `HERDMAN_PORT`         | Listening port                 | `49361`                               |
+| `HERDMAN_NO_SERVICE=1` | Skip systemd setup             | systemd enabled when available        |
+
+## Without systemd
+
+```bash
+HERDMAN_NO_SERVICE=1 curl -fsSL https://www.herdman.dev/install.sh | sh
+herdman-server serve --host 0.0.0.0 --port 49361 --auth token
+```
+
+Run the process under your preferred supervisor and give it a persistent home directory.
+
+## User service persistence
+
+A systemd user service normally stops after its user logs out. Enable lingering if this machine
+should remain available:
+
+```bash
+sudo loginctl enable-linger "$USER"
+```

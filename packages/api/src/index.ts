@@ -677,77 +677,7 @@ export const TerminalServerFrame = Schema.Union([
 ])
 export type TerminalServerFrame = typeof TerminalServerFrame.Type
 
-export const HerdManOpenApi = Schema.Struct({
-  openapi: Schema.Literal("3.1.0"),
-  info: Schema.Struct({
-    title: Schema.String,
-    version: Schema.String
-  }),
-  paths: Schema.Record(Schema.String, Schema.Unknown)
-})
-export type HerdManOpenApi = typeof HerdManOpenApi.Type
-
-export const endpoints = [
-  "GET /v1/health",
-  "GET /v1/info",
-  "GET /v1/update",
-  "POST /v1/update/apply",
-  "POST /v1/shutdown",
-  "GET /v1/capabilities",
-  "POST /v1/auth/pairing-token",
-  "GET /v1/projects",
-  "POST /v1/projects",
-  "PATCH /v1/projects/:id",
-  "DELETE /v1/projects/:id",
-  "GET /v1/projects/:id/worktrees",
-  "POST /v1/projects/:id/worktrees",
-  "GET /v1/harnesses",
-  "POST /v1/harnesses/auth/refresh",
-  "PATCH /v1/harnesses/:id",
-  "GET /v1/harnesses/:id/accounts",
-  "POST /v1/harnesses/:id/accounts",
-  "PATCH /v1/harnesses/:id/accounts/:accountId",
-  "DELETE /v1/harnesses/:id/accounts/:accountId",
-  "POST /v1/harnesses/:id/accounts/:accountId/activate",
-  "POST /v1/harnesses/:id/accounts/:accountId/auth/probe",
-  "POST /v1/harnesses/:id/accounts/:accountId/login",
-  "DELETE /v1/harnesses/:id/accounts/:accountId/login/:flowId",
-  "POST /v1/harnesses/:id/accounts/:accountId/logout",
-  "GET /v1/sessions",
-  "POST /v1/sessions",
-  "GET /v1/sessions/:id",
-  "GET /v1/sessions/:id/branch-diff",
-  "PATCH /v1/sessions/:id",
-  "DELETE /v1/sessions/:id",
-  "GET /v1/sessions/:id/transcript",
-  "GET /v1/sessions/:id/transcript/:itemId/details",
-  "GET /v1/sessions/:id/events",
-  "GET /v1/sessions/:id/queue",
-  "PATCH /v1/sessions/:id/queue/:queueId",
-  "DELETE /v1/sessions/:id/queue/:queueId",
-  "POST /v1/sessions/:id/prompt",
-  "POST /v1/sessions/:id/cancel",
-  "POST /v1/sessions/:id/mode",
-  "POST /v1/sessions/:id/config",
-  "POST /v1/sessions/:id/goal",
-  "DELETE /v1/sessions/:id/goal",
-  "POST /v1/sessions/:id/questions/:questionId/answer",
-  "POST /v1/files",
-  "GET /v1/files/:id",
-  "GET /v1/events",
-  "GET /v1/events/socket",
-  "POST /v1/terminals",
-  "GET /v1/terminals/:id/socket"
-] as const
-
-export const makeOpenApiDocument = (version: string): HerdManOpenApi => ({
-  openapi: "3.1.0",
-  info: {
-    title: "HerdMan Server API",
-    version
-  },
-  paths: Object.fromEntries(endpoints.map((endpoint) => [endpoint, { "x-herdman-endpoint": true }]))
-})
+export * from "./openapi.js"
 
 export const decode =
   <S extends Schema.ConstraintDecoder<unknown>>(schema: S) =>

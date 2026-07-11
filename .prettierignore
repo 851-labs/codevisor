@@ -11,3 +11,4 @@ apps/desktop/src-tauri/target/
 apps/desktop/src-tauri/gen/
 apps/desktop/src-tauri/icons/
 .repos/
+apps/www/.source/
