@@ -60,6 +60,7 @@ struct SessionScreen: View {
             paneGroup.requestToggle = { togglePanes() }
             // ⌘W closing the last tab collapses the group; focus returns here.
             paneGroup.requestComposerFocus = { focus.focusComposer() }
+            focus.startTypeToFocus()
             if attachmentImages == nil {
                 attachmentImages = AttachmentImageStore { [weak controller] fileId in
                     guard let controller else { throw SessionControllerError.serverUnavailable }
@@ -68,6 +69,7 @@ struct SessionScreen: View {
             }
         }
         .onDisappear {
+            focus.stopTypeToFocus()
             historyLoadTask?.cancel()
             historyLoadTask = nil
         }

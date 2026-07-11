@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import HerdManCore
+import GhosttyKit
 
 /// Moves AppKit first-responder focus between the composer's text view and the
 /// session's pane group (its selected pane). Holds weak references so it never
@@ -10,6 +11,7 @@ import HerdManCore
 final class TerminalFocusController {
     weak var composerTextView: NSView?
     weak var paneGroup: PaneGroupModel?
+    private var typeToFocusMonitor: Any?
 
     func apply(_ target: SessionFocusTarget) {
         switch target {
@@ -25,6 +27,60 @@ final class TerminalFocusController {
 
     func focusTerminal() {
         paneGroup?.focusSelectedPane()
+    }
+
+    /// Makes ordinary typing anywhere in the session move focus into the
+    /// composer without dropping the first character. The monitor is scoped
+    /// to the active session screen and removed when that screen disappears.
+    func startTypeToFocus() {
+        guard typeToFocusMonitor == nil else { return }
+        typeToFocusMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            self?.handleTypeToFocus(event) ?? event
+        }
+    }
+
+    func stopTypeToFocus() {
+        guard let typeToFocusMonitor else { return }
+        NSEvent.removeMonitor(typeToFocusMonitor)
+        self.typeToFocusMonitor = nil
+    }
+
+    private func handleTypeToFocus(_ event: NSEvent) -> NSEvent? {
+        guard let textView = composerTextView as? NSTextView,
+              textView.isEditable,
+              let window = textView.window,
+              event.window === window,
+              window.isKeyWindow,
+              window.attachedSheet == nil,
+              NSApp.modalWindow == nil,
+              window.firstResponder !== textView,
+              let text = Self.typeToFocusText(for: event) else {
+            return event
+        }
+
+        // Never steal input from another editor or from the terminal. AppKit
+        // represents an active text field with its NSTextView field editor.
+        if window.firstResponder is NSTextView ||
+            window.firstResponder is NSTextField ||
+            window.firstResponder is Ghostty.SurfaceView {
+            return event
+        }
+
+        guard window.makeFirstResponder(textView) else { return event }
+        textView.insertText(text, replacementRange: textView.selectedRange())
+        return nil
+    }
+
+    private static func typeToFocusText(for event: NSEvent) -> String? {
+        let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        guard modifiers.intersection([.command, .control, .option, .function]).isEmpty,
+              event.specialKey == nil,
+              let characters = event.characters,
+              !characters.isEmpty,
+              characters.rangeOfCharacter(from: .controlCharacters) == nil else {
+            return nil
+        }
+        return characters
     }
 }
 
