@@ -155,6 +155,11 @@ public final class AppUpdateModel {
             }
             phase = .available(release)
         } catch {
+            // Routine when offline or rate-limited; the banner simply
+            // doesn't appear.
+            Log.updates.debug(
+                "Update check failed: \(String(describing: error), privacy: .public)"
+            )
             if showsCheckingPhase {
                 phase = .idle
             }

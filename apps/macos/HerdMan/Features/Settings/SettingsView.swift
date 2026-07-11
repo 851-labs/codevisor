@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import HerdManCore
+import os
 
 enum SettingsTab: String {
     case general
@@ -219,11 +220,19 @@ struct GeneralSettingsView: View {
 /// rescan for newly installed ones, and see which known harnesses aren't
 /// installed yet.
 struct HarnessesSettingsView: View {
+    /// A failed enable/disable toggle, pending display in an alert.
+    private struct ToggleError: Identifiable {
+        let id = UUID()
+        let title: String
+        let message: String
+    }
+
     @Environment(AppEnvironment.self) private var environment
 
     @State private var serverHarnesses: [ServerHarness] = []
     @State private var isScanning = true
     @State private var scanError: String?
+    @State private var toggleError: ToggleError?
     @State private var showsNotInstalled = false
     @State private var authenticationHarness: ServerHarness?
 
@@ -284,6 +293,18 @@ struct HarnessesSettingsView: View {
         .task { await scan() }
         .sheet(item: $authenticationHarness) { harness in
             HarnessAuthenticationView(harness: harness) { replaceServerHarness($0) }
+        }
+        .alert(
+            toggleError?.title ?? "",
+            isPresented: Binding(
+                get: { toggleError != nil },
+                set: { if !$0 { toggleError = nil } }
+            ),
+            presenting: toggleError
+        ) { _ in
+            Button("OK") {}
+        } message: { error in
+            Text(error.message)
         }
     }
 
@@ -361,6 +382,12 @@ struct HarnessesSettingsView: View {
             replaceServerHarness(updated)
         } catch {
             updateServerHarness(id, enabled: !enabled)
+            Log.server.error("Setting harness \(id, privacy: .public) enabled=\(enabled, privacy: .public) failed: \(String(describing: error), privacy: .public)")
+            let name = serverHarnesses.first(where: { $0.id == id })?.name ?? id
+            toggleError = ToggleError(
+                title: enabled ? "Couldn't turn on \(name)" : "Couldn't turn off \(name)",
+                message: ErrorReporter.userFacingMessage(for: error)
+            )
         }
     }
 

@@ -256,12 +256,31 @@ struct NewChatView: View {
         )
     }
 
+    /// Inline error for a failed session start. This page has no transcript
+    /// yet, so directly beneath the composer IS adjacent to where the failure
+    /// happened (HIG: show errors near their source).
     @ViewBuilder
     private func statusLabel(_ controller: SessionController) -> some View {
         if case let .failed(message) = controller.status {
-            Label(message, systemImage: "exclamationmark.triangle.fill")
-                .font(.callout)
-                .foregroundStyle(theme.statusWarn)
+            HStack(spacing: 12) {
+                Label(message, systemImage: "exclamationmark.triangle.fill")
+                    .font(.callout)
+                    .foregroundStyle(theme.statusError)
+                Spacer(minLength: 0)
+                // Relaunching the app restarts the managed server too.
+                if message == serverUnreachableErrorMessage {
+                    Button("Restart") { AppRelauncher.relaunch() }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .help("Restart HerdMan and its server")
+                }
+            }
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 8).fill(theme.statusError.opacity(0.1))
+            )
+            .accessibilityElement(children: .combine)
         }
     }
 

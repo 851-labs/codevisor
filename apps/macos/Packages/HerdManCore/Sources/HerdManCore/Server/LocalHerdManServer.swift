@@ -194,7 +194,14 @@ public final class LocalHerdManServer {
     /// on the next launch. Asks politely over HTTP first (the server may not be
     /// a process we own), then force-terminates any owned process that lingers.
     public func shutdown() async {
-        try? await client.requestShutdown()
+        do {
+            try await client.requestShutdown()
+        } catch {
+            // Expected when the server is already gone; termination follows.
+            Log.server.debug(
+                "Shutdown request failed: \(String(describing: error), privacy: .public)"
+            )
+        }
         for _ in 0..<20 {
             if !(await isHealthy()) { break }
             try? await Task.sleep(for: .milliseconds(150))
@@ -230,7 +237,16 @@ public final class LocalHerdManServer {
     private func bundledServerVersion() -> String? {
         guard let entrypoint else { return nil }
         let versionURL = entrypoint.deletingLastPathComponent().appendingPathComponent("VERSION")
-        guard let raw = try? String(contentsOf: versionURL, encoding: .utf8) else { return nil }
+        let raw: String
+        do {
+            raw = try String(contentsOf: versionURL, encoding: .utf8)
+        } catch {
+            // Expected in development runs, where no VERSION file is stamped.
+            Log.server.debug(
+                "No bundled server VERSION file: \(String(describing: error), privacy: .public)"
+            )
+            return nil
+        }
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
     }
@@ -275,6 +291,9 @@ public final class LocalHerdManServer {
             do {
                 try process.run()
             } catch {
+                Log.server.debug(
+                    "lsof probe for port listeners failed: \(String(describing: error), privacy: .public)"
+                )
                 process.terminationHandler = nil
                 continuation.resume(returning: [])
             }
@@ -282,8 +301,16 @@ public final class LocalHerdManServer {
     }
 
     private func currentHealth() async -> ServerHealth? {
-        guard let health = try? await client.health(), health.ok else { return nil }
-        return health
+        do {
+            let health = try await client.health()
+            return health.ok ? health : nil
+        } catch {
+            // Expected when no server is running yet; launch follows.
+            Log.server.debug(
+                "Health probe failed: \(String(describing: error), privacy: .public)"
+            )
+            return nil
+        }
     }
 
     /// The server binds every interface so paired remote clients can reach it;
@@ -332,10 +359,17 @@ public final class LocalHerdManServer {
     }
 
     private func refreshDataUpgradeProgress() {
-        guard let data = try? Data(contentsOf: dataUpgradeStatusURL),
-              let progress = try? JSONDecoder().decode(LocalDataUpgradeProgress.self, from: data)
-        else { return }
-        dataUpgradeProgress = progress
+        // A missing status file is the normal no-upgrade-running case (and
+        // this polls, so it stays unlogged); a file that exists but doesn't
+        // decode hides real upgrade progress.
+        guard let data = try? Data(contentsOf: dataUpgradeStatusURL) else { return }
+        do {
+            dataUpgradeProgress = try JSONDecoder().decode(LocalDataUpgradeProgress.self, from: data)
+        } catch {
+            Log.server.debug(
+                "Failed to decode data-upgrade progress: \(String(describing: error), privacy: .public)"
+            )
+        }
     }
 
     public static func launchProcess(_ request: LocalHerdManServerLaunchRequest) throws -> Process {

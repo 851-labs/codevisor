@@ -5,6 +5,7 @@
 import AppKit
 import Combine
 import GhosttyKit
+import HerdManCore
 import os
 
 /// Upstream sizes the libghostty surface only via `sizeDidChange`, called from
@@ -143,6 +144,10 @@ final class GhosttyTerminalSurface: TerminalSurface {
         let view = HerdManGhosttySurfaceView(HerdManGhosttyApp.shared.app, baseConfig: config)
         if view.error != nil {
             Ghostty.logger.error("terminal surface creation failed for \(descriptor.workingDirectory.path, privacy: .public)")
+            ErrorReporter.shared.report(
+                "Couldn't Open the Terminal",
+                message: "Try closing and reopening the pane."
+            )
         }
         // Upstream initializes SurfaceView.focused to true before the C surface
         // exists. HerdMan mounts the view later, so reset the surface to the real

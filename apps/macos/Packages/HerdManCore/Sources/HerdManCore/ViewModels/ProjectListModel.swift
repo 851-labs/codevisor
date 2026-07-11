@@ -187,7 +187,16 @@ public final class ProjectListModel {
         sessions[index].updatedAt = now
         persistSessions()
         guard let serverClient else { return }
-        Task { try? await serverClient.touchSession(id: sessionId, updatedAt: now) }
+        Task {
+            do {
+                try await serverClient.touchSession(id: sessionId, updatedAt: now)
+            } catch {
+                // Recency-only mirror; the next sync carries the stamp.
+                Log.sync.debug(
+                    "Failed to touch session \(sessionId.uuidString, privacy: .public) on the server: \(String(describing: error), privacy: .public)"
+                )
+            }
+        }
     }
 
     /// Records the worktree a draft session ended up running in. The session
@@ -376,9 +385,28 @@ public final class ProjectListModel {
         do {
             try await migrateLegacyCacheIfNeeded(serverId: serverId, client: serverClient)
             let remoteProjects = try await serverClient.listProjects()
-                .compactMap { try? $0.project(serverId: serverId) }
+                .compactMap { record -> Project? in
+                    do {
+                        return try record.project(serverId: serverId)
+                    } catch {
+                        // Drop the unmappable row rather than failing the list.
+                        Log.sync.error(
+                            "Dropping server project \(record.id, privacy: .public) that failed to map: \(String(describing: error), privacy: .public)"
+                        )
+                        return nil
+                    }
+                }
             let remoteSessions = try await serverClient.listSessions()
-                .compactMap { try? $0.chatSession(serverId: serverId) }
+                .compactMap { record -> ChatSession? in
+                    do {
+                        return try record.chatSession(serverId: serverId)
+                    } catch {
+                        Log.sync.error(
+                            "Dropping server session \(record.id, privacy: .public) that failed to map: \(String(describing: error), privacy: .public)"
+                        )
+                        return nil
+                    }
+                }
             // The user switched machines while the fetch was in flight: drop
             // the stale response. The newly selected machine triggers its own
             // refresh, and this one would merge (and persist) another
@@ -390,6 +418,9 @@ public final class ProjectListModel {
             persistSessions()
         } catch {
             // Keep the last successful snapshot while the server is unreachable.
+            Log.sync.error(
+                "Failed to refresh projects/sessions from server: \(String(describing: error), privacy: .public)"
+            )
         }
     }
 
@@ -456,7 +487,16 @@ public final class ProjectListModel {
     /// pushed here.
     private func syncProject(_ project: Project) {
         guard let serverClient, project.serverId == selectedServerId else { return }
-        Task { _ = try? await serverClient.upsertProject(project) }
+        Task {
+            do {
+                _ = try await serverClient.upsertProject(project)
+            } catch {
+                Log.sync.error(
+                    "Failed to sync project \(project.id.uuidString, privacy: .public) to the server: \(String(describing: error), privacy: .public)"
+                )
+                ErrorReporter.shared.report("Couldn't Sync the Project to the Server", error: error)
+            }
+        }
     }
 
     private func syncSession(_ session: ChatSession) {
@@ -475,6 +515,9 @@ public final class ProjectListModel {
                 // the upsert, and authoritative refreshes must not make the
                 // active session flicker out merely because the server is slow
                 // or temporarily unreachable.
+                Log.sync.error(
+                    "Failed to sync session \(session.id.uuidString, privacy: .public) to the server: \(String(describing: error), privacy: .public)"
+                )
             }
         }
     }
@@ -484,39 +527,110 @@ public final class ProjectListModel {
         let currentProjects = projects.filter { $0.serverId == selectedServerId }
         let currentSessions = sessions.filter { $0.serverId == selectedServerId && !$0.harnessId.isEmpty }
         Task {
+            var failureCount = 0
             for project in currentProjects {
-                _ = try? await serverClient.upsertProject(project)
+                do {
+                    _ = try await serverClient.upsertProject(project)
+                } catch {
+                    failureCount += 1
+                    Log.sync.error(
+                        "Failed to sync project \(project.id.uuidString, privacy: .public) to the server: \(String(describing: error), privacy: .public)"
+                    )
+                }
             }
             for session in currentSessions {
-                _ = try? await serverClient.upsertSession(session)
+                do {
+                    _ = try await serverClient.upsertSession(session)
+                } catch {
+                    failureCount += 1
+                    Log.sync.error(
+                        "Failed to sync session \(session.id.uuidString, privacy: .public) to the server: \(String(describing: error), privacy: .public)"
+                    )
+                }
+            }
+            if failureCount > 0 {
+                ErrorReporter.shared.report(
+                    "Couldn't Sync to the Server",
+                    message: "Some items couldn't be uploaded. They'll be retried the next time they change."
+                )
             }
         }
     }
 
     private func deleteSessionFromServer(_ sessionID: UUID) {
         guard let serverClient else { return }
-        Task { try? await serverClient.deleteSession(id: sessionID) }
+        Task {
+            do {
+                try await serverClient.deleteSession(id: sessionID)
+            } catch {
+                Log.sync.error(
+                    "Failed to delete session \(sessionID.uuidString, privacy: .public) on the server: \(String(describing: error), privacy: .public)"
+                )
+                reportServerDeleteFailure()
+            }
+        }
     }
 
     private func deleteProjectFromServer(_ projectID: UUID, removedSessionIDs: [UUID]) {
         guard let serverClient else { return }
         Task {
+            var didFail = false
             for sessionID in removedSessionIDs {
-                try? await serverClient.deleteSession(id: sessionID)
+                do {
+                    try await serverClient.deleteSession(id: sessionID)
+                } catch {
+                    didFail = true
+                    Log.sync.error(
+                        "Failed to delete session \(sessionID.uuidString, privacy: .public) on the server: \(String(describing: error), privacy: .public)"
+                    )
+                }
             }
-            try? await serverClient.deleteProject(id: projectID)
+            do {
+                try await serverClient.deleteProject(id: projectID)
+            } catch {
+                didFail = true
+                Log.sync.error(
+                    "Failed to delete project \(projectID.uuidString, privacy: .public) on the server: \(String(describing: error), privacy: .public)"
+                )
+            }
+            if didFail { reportServerDeleteFailure() }
         }
     }
 
     private func deleteAllFromServer(projectIDs: [UUID], sessionIDs: [UUID]) {
         guard let serverClient else { return }
         Task {
+            var didFail = false
             for sessionID in sessionIDs {
-                try? await serverClient.deleteSession(id: sessionID)
+                do {
+                    try await serverClient.deleteSession(id: sessionID)
+                } catch {
+                    didFail = true
+                    Log.sync.error(
+                        "Failed to delete session \(sessionID.uuidString, privacy: .public) on the server: \(String(describing: error), privacy: .public)"
+                    )
+                }
             }
             for projectID in projectIDs {
-                try? await serverClient.deleteProject(id: projectID)
+                do {
+                    try await serverClient.deleteProject(id: projectID)
+                } catch {
+                    didFail = true
+                    Log.sync.error(
+                        "Failed to delete project \(projectID.uuidString, privacy: .public) on the server: \(String(describing: error), privacy: .public)"
+                    )
+                }
             }
+            if didFail { reportServerDeleteFailure() }
         }
+    }
+
+    /// One banner per user-initiated delete action, even when a bulk delete
+    /// fails for several records.
+    private func reportServerDeleteFailure() {
+        ErrorReporter.shared.report(
+            "Couldn't Delete on the Server",
+            message: "It may reappear the next time the list refreshes."
+        )
     }
 }

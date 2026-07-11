@@ -16,20 +16,39 @@ public protocol SessionRepository: Sendable {
 public struct CodableRepository<Element: Codable & Sendable>: Sendable {
     private let store: any PersistenceStore
     private let key: String
+    /// Banner title shown when the persisted file fails to decode; nil keeps
+    /// corruption log-and-quarantine only.
+    private let corruptionTitle: String?
 
-    public init(store: any PersistenceStore, key: String) {
+    public init(store: any PersistenceStore, key: String, corruptionTitle: String? = nil) {
         self.store = store
         self.key = key
+        self.corruptionTitle = corruptionTitle
     }
 
     public func load() -> [Element] {
         guard let data = store.loadData(forKey: key) else { return [] }
-        return (try? JSONDecoder().decode([Element].self, from: data)) ?? []
+        do {
+            return try JSONDecoder().decode([Element].self, from: data)
+        } catch {
+            handleCorruptPayload(
+                store: store,
+                key: key,
+                data: data,
+                error: error,
+                reportTitle: corruptionTitle,
+                reportMessage: "The file was unreadable. A backup was saved in HerdMan's data folder."
+            )
+            return []
+        }
     }
 
     public func save(_ elements: [Element]) {
-        guard let data = try? JSONEncoder().encode(elements) else { return }
-        try? store.saveData(data, forKey: key)
+        do {
+            try store.saveData(JSONEncoder().encode(elements), forKey: key)
+        } catch {
+            Log.persistence.error("Failed to save \(key, privacy: .public): \(String(describing: error), privacy: .public)")
+        }
     }
 }
 
@@ -40,7 +59,11 @@ public struct DefaultProjectRepository: ProjectRepository {
 
     public init(store: any PersistenceStore) {
         self.store = store
-        self.repository = CodableRepository(store: store, key: "projects")
+        self.repository = CodableRepository(
+            store: store,
+            key: "projects",
+            corruptionTitle: "Couldn't Read Your Saved Projects"
+        )
     }
 
     public func load() -> [Project] {
@@ -64,7 +87,11 @@ public struct DefaultSessionRepository: SessionRepository {
     private let repository: CodableRepository<ChatSession>
 
     public init(store: any PersistenceStore) {
-        self.repository = CodableRepository(store: store, key: "sessions")
+        self.repository = CodableRepository(
+            store: store,
+            key: "sessions",
+            corruptionTitle: "Couldn't Read Your Saved Sessions"
+        )
     }
 
     public func load() -> [ChatSession] { repository.load() }

@@ -1,6 +1,7 @@
 import SwiftUI
 import UniformTypeIdentifiers
 import HerdManCore
+import os
 
 private enum SidebarOrganization: String, CaseIterable {
     case byProject
@@ -59,6 +60,7 @@ struct SidebarView: View {
     @State private var showingImporter = false
     @State private var showingRemoteMachine = false
     @State private var showingRemoteProject = false
+    @State private var addMachineError: String?
     @State private var pendingImport: PendingSessionImport?
     // Seeded from UserDefaults (same key as `expandedProjectsRaw`) so
     // per-project disclosure survives relaunch; written back via onChange
@@ -266,10 +268,26 @@ struct SidebarView: View {
         }
         .sheet(isPresented: $showingRemoteMachine) {
             RemoteMachineSheet { host, name, token in
-                if (try? environment.machines.addRemote(host: host, name: name, token: token)) != nil {
+                do {
+                    try environment.machines.addRemote(host: host, name: name, token: token)
                     selection = .newChat(nil)
+                } catch {
+                    Log.machines.error("Adding remote machine failed: \(String(describing: error), privacy: .public)")
+                    addMachineError = ErrorReporter.userFacingMessage(for: error)
                 }
             }
+        }
+        .alert(
+            "Couldn't Add the Machine",
+            isPresented: Binding(
+                get: { addMachineError != nil },
+                set: { if !$0 { addMachineError = nil } }
+            ),
+            presenting: addMachineError
+        ) { _ in
+            Button("OK") {}
+        } message: { message in
+            Text(message)
         }
         .sheet(isPresented: $showingRemoteProject) {
             RemoteProjectSheet { path in

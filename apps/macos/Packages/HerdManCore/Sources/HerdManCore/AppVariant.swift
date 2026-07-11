@@ -44,13 +44,21 @@ public enum HerdManAppVariant: Sendable {
            let override = environment["HERDMAN_DEV_DATA_DIR"],
            !override.isEmpty {
             let directory = URL(fileURLWithPath: override, isDirectory: true)
-            try? fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+            do {
+                try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+            } catch {
+                Log.persistence.error("Failed to create data directory \(directory.path, privacy: .public): \(String(describing: error), privacy: .public)")
+            }
             return directory
         }
         let base = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? fileManager.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support")
         let directory = base.appendingPathComponent(applicationSupportDirectoryName, isDirectory: true)
-        try? fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        do {
+            try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        } catch {
+            Log.persistence.error("Failed to create data directory \(directory.path, privacy: .public): \(String(describing: error), privacy: .public)")
+        }
         return directory
     }
 }

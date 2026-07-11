@@ -209,6 +209,9 @@ public struct ServerSessionTransport: Sendable {
                     // This compatibility wrapper cannot surface failures;
                     // SessionModel consumes streamEvents directly and
                     // performs durable reconciliation.
+                    Log.session.debug(
+                        "Legacy updates() stream ended with error: \(String(describing: error), privacy: .public)"
+                    )
                 }
                 continuation.finish()
             }
@@ -384,6 +387,9 @@ public struct ServerSessionTransport: Sendable {
             let data = try JSONEncoder().encode(JSONValue.array(queue))
             return try JSONDecoder().decode([ServerPromptQueueItem].self, from: data)
         } catch {
+            Log.session.error(
+                "Failed to decode prompt-queue payload: \(String(describing: error), privacy: .public)"
+            )
             return []
         }
     }
@@ -394,6 +400,9 @@ public struct ServerSessionTransport: Sendable {
             let data = try JSONEncoder().encode(payload)
             return try JSONDecoder().decode(SessionUpdate.self, from: data)
         } catch {
+            Log.session.error(
+                "Failed to decode session-update payload: \(String(describing: error), privacy: .public)"
+            )
             return nil
         }
     }
@@ -421,6 +430,9 @@ public struct ServerSessionTransport: Sendable {
             let data = try JSONEncoder().encode(JSONValue.array(raw))
             return try JSONDecoder().decode([ServerAttachmentRef].self, from: data).map(\.attachment)
         } catch {
+            Log.session.error(
+                "Failed to decode attachments payload: \(String(describing: error), privacy: .public)"
+            )
             return []
         }
     }
@@ -449,6 +461,9 @@ public struct ServerSessionTransport: Sendable {
         } catch {
             // Lenient like the other decoders: an unknown status or malformed
             // snapshot degrades to skipping the update.
+            Log.session.error(
+                "Failed to decode goal payload: \(String(describing: error), privacy: .public)"
+            )
             return nil
         }
     }
@@ -471,6 +486,9 @@ public struct ServerSessionTransport: Sendable {
             let data = try JSONEncoder().encode(JSONValue.array(raw))
             return try JSONDecoder().decode([BackgroundTaskInfo].self, from: data)
         } catch {
+            Log.session.error(
+                "Failed to decode background-tasks payload: \(String(describing: error), privacy: .public)"
+            )
             return []
         }
     }
@@ -485,6 +503,9 @@ public struct ServerSessionTransport: Sendable {
             let data = try JSONEncoder().encode(value)
             return try JSONDecoder().decode([SessionConfigOption].self, from: data)
         } catch {
+            Log.session.error(
+                "Failed to decode config-options payload: \(String(describing: error), privacy: .public)"
+            )
             return nil
         }
     }

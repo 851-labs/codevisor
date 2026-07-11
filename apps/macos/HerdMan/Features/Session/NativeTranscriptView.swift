@@ -13,6 +13,7 @@ struct TranscriptVirtualRow: Identifiable, Equatable {
         case optimistic
         case backgroundTask
         case error
+        case statusError
         case bottomSpacer
 
         var layoutKey: String {
@@ -23,6 +24,7 @@ struct TranscriptVirtualRow: Identifiable, Equatable {
             case .optimistic: "special:optimistic"
             case .backgroundTask: "special:background"
             case .error: "special:error"
+            case .statusError: "special:status-error"
             case .bottomSpacer: "special:bottom-spacer"
             }
         }

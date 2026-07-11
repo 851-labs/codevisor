@@ -1,6 +1,14 @@
 import SwiftUI
 import AppKit
 import HerdManCore
+import os
+
+/// A failed machine action (add/rename/remove), pending display in an alert.
+private struct MachineActionError: Identifiable {
+    let id = UUID()
+    let title: String
+    let message: String
+}
 
 /// Machines settings — every HerdMan server this app knows about: connect to
 /// one, add remotes, rename them, or remove ones you no longer use.
@@ -12,6 +20,7 @@ struct MachinesSettingsView: View {
     @State private var renaming: HerdManMachine?
     @State private var removing: HerdManMachine?
     @State private var tokenNotice: String?
+    @State private var actionError: MachineActionError?
 
     private var machines: MachineController { environment.machines }
 
@@ -36,14 +45,29 @@ struct MachinesSettingsView: View {
         .formStyle(.grouped)
         .sheet(isPresented: $showingAdd) {
             RemoteMachineSheet { host, name, token in
-                if (try? machines.addRemote(host: host, name: name, token: token)) != nil {
+                do {
+                    try machines.addRemote(host: host, name: name, token: token)
                     Task { await machines.refreshStatus(for: machines.selectedMachineId) }
+                } catch {
+                    Log.machines.error("Adding remote machine failed: \(String(describing: error), privacy: .public)")
+                    actionError = MachineActionError(
+                        title: "Couldn't Add the Machine",
+                        message: ErrorReporter.userFacingMessage(for: error)
+                    )
                 }
             }
         }
         .sheet(item: $renaming) { machine in
             RenameMachineSheet(machine: machine) { name in
-                try? machines.renameMachine(machine.id, to: name)
+                do {
+                    try machines.renameMachine(machine.id, to: name)
+                } catch {
+                    Log.machines.error("Renaming machine failed: \(String(describing: error), privacy: .public)")
+                    actionError = MachineActionError(
+                        title: "Couldn't Rename the Machine",
+                        message: ErrorReporter.userFacingMessage(for: error)
+                    )
+                }
             }
         }
         .confirmationDialog(
@@ -56,7 +80,15 @@ struct MachinesSettingsView: View {
             presenting: removing
         ) { machine in
             Button("Remove Machine", role: .destructive) {
-                try? machines.removeMachine(machine.id)
+                do {
+                    try machines.removeMachine(machine.id)
+                } catch {
+                    Log.machines.error("Removing machine failed: \(String(describing: error), privacy: .public)")
+                    actionError = MachineActionError(
+                        title: "Couldn't Remove the Machine",
+                        message: ErrorReporter.userFacingMessage(for: error)
+                    )
+                }
             }
             Button("Cancel", role: .cancel) {}
         } message: { machine in
@@ -74,6 +106,18 @@ struct MachinesSettingsView: View {
             Button("OK") {}
         } message: { notice in
             Text(notice)
+        }
+        .alert(
+            actionError?.title ?? "",
+            isPresented: Binding(
+                get: { actionError != nil },
+                set: { if !$0 { actionError = nil } }
+            ),
+            presenting: actionError
+        ) { _ in
+            Button("OK") {}
+        } message: { error in
+            Text(error.message)
         }
     }
 

@@ -235,7 +235,12 @@ final class HerdManGhosttyApp {
             guard tar.terminationStatus == 0, fm.fileExists(atPath: ghosttyDir.path) else {
                 fatalError("Failed to extract Ghostty resources from \(tarball.path).")
             }
-            try? stamp.write(to: stampURL, atomically: true, encoding: .utf8)
+            do {
+                try stamp.write(to: stampURL, atomically: true, encoding: .utf8)
+            } catch {
+                // Non-fatal: extraction just reruns on the next launch.
+                Log.terminal.debug("ghostty resources stamp write failed: \(String(describing: error), privacy: .public)")
+            }
             return ghosttyDir.path
         } catch {
             fatalError("Failed to prepare Ghostty resources: \(error).")
@@ -286,6 +291,8 @@ final class HerdManGhosttyApp {
             try contents.write(to: url, atomically: true, encoding: .utf8)
             return url.path
         } catch {
+            // Ghostty falls back to its default fonts/colors without the file.
+            Log.terminal.error("ghostty override config write failed: \(String(describing: error), privacy: .public)")
             return nil
         }
     }

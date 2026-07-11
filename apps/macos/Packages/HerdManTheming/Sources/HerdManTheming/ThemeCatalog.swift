@@ -110,7 +110,16 @@ public final class ThemeCatalog {
     /// document survives for the highlighter). Returns the new descriptor.
     @discardableResult
     public func importTheme(data: Data, suggestedName: String? = nil) throws -> ThemeDescriptor {
-        guard let theme = try? VSCodeTheme.decode(from: data), theme.hasColorData else {
+        let theme: VSCodeTheme
+        do {
+            theme = try VSCodeTheme.decode(from: data)
+        } catch {
+            themingLog.debug(
+                "Imported file failed to decode as a theme: \(String(describing: error), privacy: .public)"
+            )
+            throw ThemeCatalogError.notATheme
+        }
+        guard theme.hasColorData else {
             throw ThemeCatalogError.notATheme
         }
         guard PaletteDeriver.derive(from: theme) != nil else {
@@ -143,7 +152,19 @@ public final class ThemeCatalog {
         guard customDescriptors.contains(where: { $0.id == id }) else {
             throw ThemeCatalogError.unknownTheme(id)
         }
-        try? FileManager.default.removeItem(at: customFileURL(for: id))
+        do {
+            try FileManager.default.removeItem(at: customFileURL(for: id))
+        } catch let error as CocoaError
+            where error.code == .fileNoSuchFile || error.code == .fileReadNoSuchFile
+        {
+            // Already gone — clearing the catalog entry is all that's left.
+            themingLog.debug("Custom theme file for \(id, privacy: .public) was already missing")
+        } catch {
+            themingLog.error(
+                "Failed to delete custom theme \(id, privacy: .public): \(String(describing: error), privacy: .public)"
+            )
+            throw error
+        }
         customDescriptors.removeAll { $0.id == id }
         parsedThemes.removeValue(forKey: id)
     }
@@ -157,6 +178,8 @@ public final class ThemeCatalog {
             let data = try? Data(contentsOf: url),
             let entries = try? JSONDecoder().decode([ManifestEntry].self, from: data)
         else {
+            themingLog.fault(
+                "Bundled theme manifest is missing or malformed — all preset themes unavailable")
             assertionFailure("Bundled theme manifest is missing or malformed")
             return []
         }
@@ -175,11 +198,21 @@ public final class ThemeCatalog {
             .filter { $0.pathExtension.lowercased() == "json" }
             .sorted { $0.lastPathComponent < $1.lastPathComponent }
             .compactMap { url in
-                guard
-                    let data = try? Data(contentsOf: url),
-                    let theme = try? VSCodeTheme.decode(from: data),
-                    theme.hasColorData
-                else { return nil }
+                let theme: VSCodeTheme
+                do {
+                    theme = try VSCodeTheme.decode(from: try Data(contentsOf: url))
+                } catch {
+                    themingLog.error(
+                        "Skipped custom theme \(url.lastPathComponent, privacy: .public): \(String(describing: error), privacy: .public)"
+                    )
+                    return nil
+                }
+                guard theme.hasColorData else {
+                    themingLog.error(
+                        "Skipped custom theme \(url.lastPathComponent, privacy: .public): no color data"
+                    )
+                    return nil
+                }
                 let slug = url.deletingPathExtension().lastPathComponent
                 return ThemeDescriptor(
                     id: "custom:\(slug)",

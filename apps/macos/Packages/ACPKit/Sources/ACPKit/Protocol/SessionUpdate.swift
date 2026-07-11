@@ -242,8 +242,7 @@ public enum SessionUpdate: Sendable, Codable, Equatable {
                 messageId: try container.decodeIfPresent(String.self, forKey: .messageId),
                 parentToolCallId: try container.decodeIfPresent(String.self, forKey: .parentToolCallId),
                 // Lenient: an unknown phase value decodes as nil, not an error.
-                phase: ((try? container.decodeIfPresent(String.self, forKey: .phase)) ?? nil)
-                    .flatMap(MessagePhase.init(rawValue:))
+                phase: Self.decodePhase(from: container)
             )
         case "agent_thought_chunk":
             self = .agentThoughtChunk(
@@ -307,6 +306,26 @@ public enum SessionUpdate: Sendable, Codable, Equatable {
                 debugDescription: "Unknown session update: \(kind)"
             )
         }
+    }
+
+    // Lenient phase decode: unknown or malformed values become nil (a newer
+    // server must never make the client drop the chunk), with a .debug trace.
+    private static func decodePhase(from container: KeyedDecodingContainer<Keys>) -> MessagePhase? {
+        let raw: String?
+        do {
+            raw = try container.decodeIfPresent(String.self, forKey: .phase)
+        } catch {
+            acpLog.debug(
+                "Message phase failed to decode: \(String(describing: error), privacy: .public)"
+            )
+            return nil
+        }
+        guard let raw else { return nil }
+        guard let phase = MessagePhase(rawValue: raw) else {
+            acpLog.debug("Unknown message phase \"\(raw, privacy: .public)\" — treating as absent")
+            return nil
+        }
+        return phase
     }
 
     public func encode(to encoder: any Encoder) throws {

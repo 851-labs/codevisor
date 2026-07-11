@@ -2,14 +2,22 @@ import HerdManCore
 import HerdManTheming
 import SwiftUI
 import UniformTypeIdentifiers
+import os
 
 /// The Settings ▸ Appearance tab: color mode, per-scheme theme pickers over
 /// the System/Pierre/Shiki/Custom catalog, a live preview, and custom theme
 /// import/removal.
 struct AppearanceSettingsView: View {
+    /// A failed theme action (import/delete), pending display in an alert.
+    private struct ThemeError: Identifiable {
+        let id = UUID()
+        let title: String
+        let message: String
+    }
+
     @Environment(AppEnvironment.self) private var environment
     @State private var showingImporter = false
-    @State private var importError: String?
+    @State private var themeError: ThemeError?
 
     private var manager: ThemeManager { environment.theme }
 
@@ -52,7 +60,15 @@ struct AppearanceSettingsView: View {
                                 .foregroundStyle(.tertiary)
                             Spacer()
                             Button {
-                                try? manager.deleteCustomTheme(id: descriptor.id)
+                                do {
+                                    try manager.deleteCustomTheme(id: descriptor.id)
+                                } catch {
+                                    Log.theming.error("Deleting custom theme \(descriptor.id, privacy: .public) failed: \(String(describing: error), privacy: .public)")
+                                    themeError = ThemeError(
+                                        title: "Couldn't Delete the Theme",
+                                        message: ErrorReporter.userFacingMessage(for: error)
+                                    )
+                                }
                             } label: {
                                 Image(systemName: "trash")
                             }
@@ -75,19 +91,24 @@ struct AppearanceSettingsView: View {
             do {
                 try manager.importTheme(from: url)
             } catch {
-                importError = error.localizedDescription
+                Log.theming.error("Importing theme failed: \(String(describing: error), privacy: .public)")
+                themeError = ThemeError(
+                    title: "Couldn't Import Theme",
+                    message: ErrorReporter.userFacingMessage(for: error)
+                )
             }
         }
         .alert(
-            "Couldn't Import Theme",
+            themeError?.title ?? "",
             isPresented: Binding(
-                get: { importError != nil },
-                set: { if !$0 { importError = nil } }
-            )
-        ) {
+                get: { themeError != nil },
+                set: { if !$0 { themeError = nil } }
+            ),
+            presenting: themeError
+        ) { _ in
             Button("OK", role: .cancel) {}
-        } message: {
-            Text(importError ?? "")
+        } message: { error in
+            Text(error.message)
         }
     }
 

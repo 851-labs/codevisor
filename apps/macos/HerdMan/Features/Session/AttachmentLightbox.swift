@@ -1,6 +1,8 @@
 import AppKit
 import Observation
 import UniformTypeIdentifiers
+import HerdManCore
+import os
 
 /// Materializes attachment bytes as local files for SwiftUI's system-owned
 /// Quick Look presentation. The native modifier owns all window chrome,
@@ -92,6 +94,9 @@ final class QuickLookController {
     }
 
     private func showFailure(for name: String, error: Error) {
+        Log.attachments.error(
+            "Quick Look preparation failed for \(name, privacy: .public): \(String(describing: error), privacy: .public)"
+        )
         let alert = NSAlert()
         alert.alertStyle = .warning
         alert.messageText = "Unable to Preview Attachment"

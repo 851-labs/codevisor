@@ -190,6 +190,9 @@ public final class SessionModel {
                 self?.flushPendingEvents()
             } catch {
                 guard let self, !Task.isCancelled else { return }
+                Log.session.error(
+                    "Session event stream failed; reconciling from server: \(String(describing: error), privacy: .public)"
+                )
                 self.consumerTask = nil
                 await self.reconcileFromServer()
             }
@@ -401,9 +404,19 @@ public final class SessionModel {
         }
     }
 
-    /// Switches the session mode.
+    /// Switches the session mode. The optimistic local update only applies
+    /// when the server accepted the switch — otherwise the picker would show
+    /// a mode the agent never entered.
     public func setMode(_ modeId: String) async {
-        try? await transport.setMode(modeId)
+        do {
+            try await transport.setMode(modeId)
+        } catch {
+            Log.session.error(
+                "Failed to set session mode \(modeId, privacy: .public): \(String(describing: error), privacy: .public)"
+            )
+            errorMessage = serverErrorMessage(error)
+            return
+        }
         if var state = modeState {
             state.currentModeId = modeId
             modeState = state
@@ -490,7 +503,15 @@ public final class SessionModel {
             setConversation(page.conversation)
             transcriptStreamBytes = Self.transcriptByteEstimate(of: conversation)
             serverEventCursor = page.eventCursor
-            queuedPrompts = (try? await transport.promptQueue()) ?? []
+            do {
+                queuedPrompts = try await transport.promptQueue()
+            } catch {
+                // Best-effort: history still renders without the queue.
+                Log.session.error(
+                    "Failed to load prompt queue: \(String(describing: error), privacy: .public)"
+                )
+                queuedPrompts = []
+            }
             await startConsumer()
             return
         } catch let HerdManServerClientError.httpStatus(status, _) where status == 404 {
@@ -581,7 +602,14 @@ public final class SessionModel {
                 (categoryOrder[$0.category ?? ""] ?? 99) < (categoryOrder[$1.category ?? ""] ?? 99)
             }
         for option in changed {
-            try? await transport.setConfigOption(configId: option.id, value: option.currentValue)
+            do {
+                try await transport.setConfigOption(configId: option.id, value: option.currentValue)
+            } catch {
+                // Best-effort restore: the remaining options still apply.
+                Log.session.error(
+                    "Failed to restore config option \(option.id, privacy: .public): \(String(describing: error), privacy: .public)"
+                )
+            }
         }
     }
 

@@ -1,5 +1,11 @@
 import Foundation
 import SwiftUI
+import os
+
+/// Package-private logging handle: StreamMarkdown must not depend on
+/// HerdManCore, so it carries its own `Logger` under the app's shared
+/// subsystem. `.debug` only — this file is on the per-render hot path.
+private let log = Logger(subsystem: "com.851labs.herdman", category: "markdown")
 
 /// Renders inline markdown spans (emphasis, code, links) to `AttributedString`.
 ///
@@ -12,10 +18,16 @@ public enum InlineMarkdown {
             interpretedSyntax: .inlineOnlyPreservingWhitespace,
             failurePolicy: .returnPartiallyParsedIfPossible
         )
-        if let attributed = try? AttributedString(markdown: markdown, options: options) {
-            return attributed
+        do {
+            return try AttributedString(markdown: markdown, options: options)
+        } catch {
+            // Expected for partially-formed streaming markdown; plain text is
+            // the designed fallback. Debug-only so the hot path stays quiet.
+            log.debug(
+                "Inline markdown parse failed, falling back to plain text: \(String(describing: error), privacy: .public)"
+            )
+            return AttributedString(markdown)
         }
-        return AttributedString(markdown)
     }
 
     /// Parses inline markdown and styles `` `code` `` spans as chips: a

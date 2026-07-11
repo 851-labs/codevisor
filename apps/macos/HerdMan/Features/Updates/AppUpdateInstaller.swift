@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import HerdManCore
+import os
 
 /// Installs a downloaded release over the running app: extracts the archive,
 /// verifies the new bundle, stops the local server (so the relaunched app boots
@@ -14,6 +15,7 @@ struct AppUpdateInstaller {
         case appBundleMissing
         case signatureInvalid
         case extractionFailed
+        case relaunchFailed
 
         var errorDescription: String? {
             switch self {
@@ -25,6 +27,8 @@ struct AppUpdateInstaller {
                 return "The downloaded app failed code signature verification."
             case .extractionFailed:
                 return "The downloaded archive couldn't be extracted."
+            case .relaunchFailed:
+                return "The update was installed, but HerdMan couldn't relaunch itself. Quit and reopen HerdMan to finish."
             }
         }
     }
@@ -64,11 +68,15 @@ struct AppUpdateInstaller {
             try FileManager.default.moveItem(at: newApp, to: bundleURL)
         } catch {
             // Put the old app back so the user isn't left without one.
-            try? FileManager.default.moveItem(at: backup, to: bundleURL)
+            do {
+                try FileManager.default.moveItem(at: backup, to: bundleURL)
+            } catch let rollbackError {
+                Log.updates.error("update rollback failed, app bundle missing from \(bundleURL.path, privacy: .public): \(String(describing: rollbackError), privacy: .public)")
+            }
             throw error
         }
 
-        relaunch(bundleURL: bundleURL)
+        try relaunch(bundleURL: bundleURL)
     }
 
     private func locateAppBundle(in directory: URL) throws -> URL {
@@ -96,11 +104,18 @@ struct AppUpdateInstaller {
     /// Relaunches the (now replaced) app bundle and terminates this process.
     /// The helper shell outlives us, waits for the process to exit, and opens
     /// the new bundle with a fresh instance.
-    private func relaunch(bundleURL: URL) {
+    private func relaunch(bundleURL: URL) throws {
         let helper = Process()
         helper.executableURL = URL(fileURLWithPath: "/bin/sh")
         helper.arguments = ["-c", "sleep 0.5; /usr/bin/open -n \"\(bundleURL.path)\""]
-        try? helper.run()
+        do {
+            try helper.run()
+        } catch {
+            // The swap already happened; quitting now would strand the user
+            // with no running app and no explanation. Surface it instead.
+            Log.updates.fault("update relaunch helper failed to launch: \(String(describing: error), privacy: .public)")
+            throw InstallError.relaunchFailed
+        }
         NSApp.terminate(nil)
     }
 

@@ -5,6 +5,38 @@ import Foundation
 public protocol PersistenceStore: Sendable {
     func loadData(forKey key: String) -> Data?
     func saveData(_ data: Data, forKey key: String) throws
+    /// Moves the persisted payload for `key` aside after a decode failure so
+    /// the next save doesn't overwrite the evidence. Stores without durable
+    /// files can rely on the default no-op.
+    func quarantineCorruptData(forKey key: String)
+}
+
+extension PersistenceStore {
+    public func quarantineCorruptData(forKey key: String) {}
+}
+
+/// Shared handling for a persisted payload that failed to decode: quarantines
+/// the on-disk file (keeping a backup instead of letting the next save
+/// overwrite it), logs a fault, and optionally surfaces a banner. Empty
+/// payloads are logged but not quarantined — there is nothing to back up.
+func handleCorruptPayload(
+    store: any PersistenceStore,
+    key: String,
+    data: Data,
+    error: any Error,
+    reportTitle: String? = nil,
+    reportMessage: String? = nil
+) {
+    guard !data.isEmpty else {
+        Log.persistence.error("Empty persisted payload for \(key, privacy: .public): \(String(describing: error), privacy: .public)")
+        return
+    }
+    store.quarantineCorruptData(forKey: key)
+    Log.persistence.fault("Corrupt persisted payload for \(key, privacy: .public); kept a backup: \(String(describing: error), privacy: .public)")
+    guard let reportTitle else { return }
+    Task { @MainActor in
+        ErrorReporter.shared.report(reportTitle, message: reportMessage)
+    }
 }
 
 /// A `PersistenceStore` backed by JSON files in the app's Application Support
@@ -25,26 +57,50 @@ public final class FileSystemStore: PersistenceStore, @unchecked Sendable {
     /// Latest not-yet-flushed bytes per key — the coalescing buffer and the
     /// read-your-writes source.
     private var pending: [String: Data] = [:]
+    /// Keys whose failed writes were already surfaced to the user this run,
+    /// so a repeatedly failing save logs every time but banners once.
+    private var reportedWriteFailures: Set<String> = []
     private var terminationObserver: (any NSObjectProtocol)?
+    /// Called (on the write queue) when a queued disk write fails. When nil,
+    /// the failure is surfaced through `ErrorReporter` on the main actor.
+    private let onWriteFailure: (@Sendable (String, any Error) -> Void)?
 
     public init(
         directory: URL? = nil,
         fileManager: FileManager = .default,
-        appFolderName: String = HerdManAppVariant.applicationSupportDirectoryName
+        appFolderName: String = HerdManAppVariant.applicationSupportDirectoryName,
+        onWriteFailure: (@Sendable (String, any Error) -> Void)? = nil
     ) {
         self.fileManager = fileManager
+        self.onWriteFailure = onWriteFailure
         if let directory {
             self.directory = directory
         } else {
-            let base = (try? fileManager.url(
-                for: .applicationSupportDirectory,
-                in: .userDomainMask,
-                appropriateFor: nil,
-                create: true
-            )) ?? fileManager.temporaryDirectory
+            let base: URL
+            do {
+                base = try fileManager.url(
+                    for: .applicationSupportDirectory,
+                    in: .userDomainMask,
+                    appropriateFor: nil,
+                    create: true
+                )
+            } catch {
+                base = fileManager.temporaryDirectory
+                Log.persistence.fault("Application Support is unavailable; falling back to the temporary directory: \(String(describing: error), privacy: .public)")
+                Task { @MainActor in
+                    ErrorReporter.shared.report(
+                        "HerdMan Can't Access Its Data Folder",
+                        message: "Changes made now may not be saved after you quit."
+                    )
+                }
+            }
             self.directory = base.appendingPathComponent(appFolderName, isDirectory: true)
         }
-        try? fileManager.createDirectory(at: self.directory, withIntermediateDirectories: true)
+        do {
+            try fileManager.createDirectory(at: self.directory, withIntermediateDirectories: true)
+        } catch {
+            Log.persistence.error("Failed to create data directory \(self.directory.path, privacy: .public): \(String(describing: error), privacy: .public)")
+        }
 
         // Drain queued writes before the process exits so a state change
         // made just before quitting isn't lost. Name-based so this Foundation
@@ -72,7 +128,15 @@ public final class FileSystemStore: PersistenceStore, @unchecked Sendable {
 
     public func loadData(forKey key: String) -> Data? {
         if let queued = pendingLock.withLock({ pending[key] }) { return queued }
-        return try? Data(contentsOf: url(forKey: key))
+        do {
+            return try Data(contentsOf: url(forKey: key))
+        } catch let error as CocoaError where error.code == .fileReadNoSuchFile {
+            // A fresh key with no file yet is the normal empty state.
+            return nil
+        } catch {
+            Log.persistence.error("Failed to read \(key, privacy: .public): \(String(describing: error), privacy: .public)")
+            return nil
+        }
     }
 
     public func saveData(_ data: Data, forKey key: String) throws {
@@ -92,7 +156,50 @@ public final class FileSystemStore: PersistenceStore, @unchecked Sendable {
                 return data
             }
             guard let payload else { return }
-            try? payload.write(to: self.url(forKey: key), options: .atomic)
+            do {
+                try payload.write(to: self.url(forKey: key), options: .atomic)
+            } catch {
+                Log.persistence.error("Failed to write \(key, privacy: .public): \(String(describing: error), privacy: .public)")
+                self.notifyWriteFailure(key: key, error: error)
+            }
+        }
+    }
+
+    /// Surfaces a failed disk write. A custom handler gets every failure; the
+    /// default banner fires at most once per key per app run (each occurrence
+    /// is still logged above).
+    private func notifyWriteFailure(key: String, error: any Error) {
+        if let onWriteFailure {
+            onWriteFailure(key, error)
+            return
+        }
+        let isFirstForKey = pendingLock.withLock { reportedWriteFailures.insert(key).inserted }
+        guard isFirstForKey else { return }
+        Task { @MainActor in
+            ErrorReporter.shared.report(
+                "Couldn't Save Your Data",
+                message: "HerdMan couldn't write “\(key)” to its data folder, so recent changes may be lost. Check that your disk isn't full."
+            )
+        }
+    }
+
+    /// Renames the payload file for `key` to `<name>.corrupt-<timestamp>` so
+    /// corrupt data survives for diagnosis instead of being overwritten by the
+    /// next save.
+    public func quarantineCorruptData(forKey key: String) {
+        let source = url(forKey: key)
+        guard fileManager.fileExists(atPath: source.path) else { return }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyyMMdd-HHmmss"
+        let destination = directory.appendingPathComponent(
+            "\(source.lastPathComponent).corrupt-\(formatter.string(from: Date()))"
+        )
+        do {
+            try fileManager.moveItem(at: source, to: destination)
+            Log.persistence.fault("Quarantined corrupt \(key, privacy: .public) as \(destination.lastPathComponent, privacy: .public)")
+        } catch {
+            Log.persistence.error("Failed to quarantine corrupt \(key, privacy: .public): \(String(describing: error), privacy: .public)")
         }
     }
 

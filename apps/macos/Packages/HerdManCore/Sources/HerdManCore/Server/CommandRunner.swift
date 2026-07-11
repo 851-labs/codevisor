@@ -60,7 +60,17 @@ public struct ProcessCommandRunner: CommandRunner {
     private func readToEnd(_ handle: FileHandle) async -> Data {
         await withCheckedContinuation { continuation in
             DispatchQueue.global().async {
-                let data = (try? handle.readToEnd()) ?? Data()
+                let data: Data
+                do {
+                    data = try handle.readToEnd() ?? Data()
+                } catch {
+                    // Empty output keeps the command result usable; the read
+                    // failure must not masquerade as a silent command.
+                    Log.server.error(
+                        "Failed to read process output: \(String(describing: error), privacy: .public)"
+                    )
+                    data = Data()
+                }
                 continuation.resume(returning: data)
             }
         }

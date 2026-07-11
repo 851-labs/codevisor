@@ -20,7 +20,7 @@ public final class ScratchpadModel {
     /// character counts only — never note content). Debug level: visible via
     /// `log stream --predicate 'subsystem == "com.851labs.herdman"'` when
     /// chasing persistence issues, free otherwise.
-    private static let log = Logger(subsystem: "com.851labs.herdman", category: "scratchpad")
+    private static let log = Log.scratchpad
 
     public var text: AttributedString {
         didSet {

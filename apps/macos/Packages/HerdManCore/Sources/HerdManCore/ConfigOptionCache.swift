@@ -62,11 +62,15 @@ public final class ConfigOptionCache {
     }
 
     private func persist() {
-        if let data = try? JSONEncoder().encode(cache) {
-            try? store.saveData(data, forKey: key)
+        do {
+            try store.saveData(JSONEncoder().encode(cache), forKey: key)
+        } catch {
+            Log.persistence.error("Failed to save \(self.key, privacy: .public): \(String(describing: error), privacy: .public)")
         }
-        if let data = try? JSONEncoder().encode(capabilitiesCache) {
-            try? store.saveData(data, forKey: capabilitiesKey)
+        do {
+            try store.saveData(JSONEncoder().encode(capabilitiesCache), forKey: capabilitiesKey)
+        } catch {
+            Log.persistence.error("Failed to save \(self.capabilitiesKey, privacy: .public): \(String(describing: error), privacy: .public)")
         }
     }
 }

@@ -78,6 +78,9 @@ struct RootView: View {
         // Locks the composer's submit action while an update installs (the
         // app or selected server is about to restart).
         .environment(\.isAppUpdateInProgress, environment.isUpdateInProgress)
+        // App-level fallback surface for errors with no natural home in the
+        // UI (background sync, persistence).
+        .overlay { ErrorBannerLayer() }
         .onGeometryChange(for: CGFloat.self) { proxy in
             proxy.size.width
         } action: { width in

@@ -44,6 +44,25 @@ struct RepositoryTests {
         #expect(repository.load().isEmpty)
     }
 
+    @Test("Corrupt file is quarantined instead of overwritten")
+    func corruptFileQuarantine() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("herdman-store-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try Data("not json".utf8).write(to: directory.appendingPathComponent("projects.json"))
+
+        let store = FileSystemStore(directory: directory)
+        let repository = DefaultProjectRepository(store: store)
+        #expect(repository.load().isEmpty)
+
+        // The unreadable payload was renamed to a .corrupt-<timestamp> backup
+        // so the next save can't destroy the only copy.
+        let contents = try FileManager.default.contentsOfDirectory(atPath: directory.path)
+        #expect(!contents.contains("projects.json"))
+        #expect(contents.contains { $0.hasPrefix("projects.json.corrupt-") })
+    }
+
     @Test("FileSystemStore persists to a temp directory")
     func fileSystemStore() throws {
         let directory = FileManager.default.temporaryDirectory

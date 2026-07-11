@@ -81,12 +81,25 @@ public struct EnvironmentProbe: Sendable {
     /// variable is always colon-separated.
     public func resolvedPath() async -> String {
         var probed: [String] = []
-        if let result = try? await runner.run(
-            executableURL: loginShell,
-            arguments: ["-ilc", "/usr/bin/env"],
-            environment: baseEnvironment
-        ), result.exitCode == 0, let path = Self.pathFromEnvOutput(result.standardOutput) {
-            probed = Self.splitPath(path)
+        do {
+            let result = try await runner.run(
+                executableURL: loginShell,
+                arguments: ["-ilc", "/usr/bin/env"],
+                environment: baseEnvironment
+            )
+            if result.exitCode == 0, let path = Self.pathFromEnvOutput(result.standardOutput) {
+                probed = Self.splitPath(path)
+            } else {
+                Log.server.debug(
+                    "Login-shell PATH probe yielded no PATH (exit code \(result.exitCode)); using fallback directories"
+                )
+            }
+        } catch {
+            // Fallback directories keep detection working, but a failed probe
+            // is the usual reason an installed CLI reads as "not found".
+            Log.server.error(
+                "Login-shell PATH probe failed; using fallback directories: \(String(describing: error), privacy: .public)"
+            )
         }
         let home = baseEnvironment["HOME"] ?? NSHomeDirectory()
         return Self.mergedPath([
@@ -142,7 +155,19 @@ public struct EnvironmentProbe: Sendable {
         var results: [URL] = []
         let fileManager = FileManager.default
         for directory in path.split(separator: ":").map(String.init) where !directory.isEmpty {
-            guard let entries = try? fileManager.contentsOfDirectory(atPath: directory) else { continue }
+            let entries: [String]
+            do {
+                entries = try fileManager.contentsOfDirectory(atPath: directory)
+            } catch {
+                // Nonexistent PATH entries are routine noise; an existing but
+                // unreadable directory hides installed CLIs.
+                if fileManager.fileExists(atPath: directory) {
+                    Log.server.debug(
+                        "Skipping unreadable PATH directory \(directory, privacy: .public): \(String(describing: error), privacy: .public)"
+                    )
+                }
+                continue
+            }
             for entry in entries where predicate(entry) {
                 let fullPath = (directory as NSString).appendingPathComponent(entry)
                 if fileProbe.isExecutableFile(atPath: fullPath) {

@@ -74,7 +74,14 @@ public struct LenientlyDecoded<Wrapped: Decodable>: Decodable {
     public let value: Wrapped?
 
     public init(from decoder: any Decoder) {
-        value = try? Wrapped(from: decoder)
+        do {
+            value = try Wrapped(from: decoder)
+        } catch {
+            value = nil
+            acpLog.error(
+                "Skipped malformed \(String(describing: Wrapped.self), privacy: .public) element: \(String(describing: error), privacy: .public)"
+            )
+        }
     }
 }
 
@@ -150,19 +157,57 @@ private struct ToolCallFields {
     var parentToolCallId: String?
 
     init(from container: KeyedDecodingContainer<ToolCallKeys>) {
-        title = try? container.decodeIfPresent(String.self, forKey: .title)
-        kind = try? container.decodeIfPresent(ToolKind.self, forKey: .kind)
-        if let raw = try? container.decodeIfPresent(String.self, forKey: .status) {
-            status = ToolCallStatus(rawValue: raw)
+        title = Self.lenient(String.self, from: container, forKey: .title)
+        kind = Self.lenient(ToolKind.self, from: container, forKey: .kind)
+        // Status and content affect turn liveness (a lost terminal status
+        // leaves the call spinning forever), so their swallows log at .error.
+        do {
+            if let raw = try container.decodeIfPresent(String.self, forKey: .status) {
+                status = ToolCallStatus(rawValue: raw)
+                if status == nil {
+                    acpLog.error(
+                        "Unknown tool call status \"\(raw, privacy: .public)\" — treating as absent"
+                    )
+                }
+            }
+        } catch {
+            acpLog.error(
+                "Tool call status failed to decode: \(String(describing: error), privacy: .public)"
+            )
         }
-        if let elements = try? container.decodeIfPresent([LenientlyDecoded<ToolCallContent>].self, forKey: .content) {
-            content = elements.compactMap(\.value)
+        do {
+            if let elements = try container.decodeIfPresent(
+                [LenientlyDecoded<ToolCallContent>].self, forKey: .content)
+            {
+                content = elements.compactMap(\.value)
+            }
+        } catch {
+            acpLog.error(
+                "Tool call content failed to decode: \(String(describing: error), privacy: .public)"
+            )
         }
-        locations = try? container.decodeIfPresent([ToolCallLocation].self, forKey: .locations)
-        rawInput = try? container.decodeIfPresent(JSONValue.self, forKey: .rawInput)
-        rawOutput = try? container.decodeIfPresent(JSONValue.self, forKey: .rawOutput)
-        diffStats = try? container.decodeIfPresent([ToolCallDiffStat].self, forKey: .diffStats)
-        parentToolCallId = try? container.decodeIfPresent(String.self, forKey: .parentToolCallId)
+        locations = Self.lenient([ToolCallLocation].self, from: container, forKey: .locations)
+        rawInput = Self.lenient(JSONValue.self, from: container, forKey: .rawInput)
+        rawOutput = Self.lenient(JSONValue.self, from: container, forKey: .rawOutput)
+        diffStats = Self.lenient([ToolCallDiffStat].self, from: container, forKey: .diffStats)
+        parentToolCallId = Self.lenient(String.self, from: container, forKey: .parentToolCallId)
+    }
+
+    // Decodes an optional field, logging (rather than silently dropping) a
+    // value that was present but malformed. Absent keys stay silent.
+    private static func lenient<T: Decodable>(
+        _ type: T.Type,
+        from container: KeyedDecodingContainer<ToolCallKeys>,
+        forKey key: ToolCallKeys
+    ) -> T? {
+        do {
+            return try container.decodeIfPresent(T.self, forKey: key)
+        } catch {
+            acpLog.debug(
+                "Tool call \(key.stringValue, privacy: .public) failed to decode: \(String(describing: error), privacy: .public)"
+            )
+            return nil
+        }
     }
 }
 

@@ -44,12 +44,27 @@ public final class DefaultScratchpadRepository: ScratchpadRepository {
 
     public func load(sessionId: UUID) -> ScratchpadState? {
         guard let data = store.loadData(forKey: key(sessionId)) else { return nil }
-        return try? JSONDecoder().decode(ScratchpadState.self, from: data)
+        do {
+            return try JSONDecoder().decode(ScratchpadState.self, from: data)
+        } catch {
+            handleCorruptPayload(
+                store: store,
+                key: key(sessionId),
+                data: data,
+                error: error,
+                reportTitle: "Couldn't Read a Scratchpad",
+                reportMessage: "The file was unreadable. A backup was saved in HerdMan's data folder."
+            )
+            return nil
+        }
     }
 
     public func save(_ state: ScratchpadState, sessionId: UUID) {
-        guard let data = try? JSONEncoder().encode(state) else { return }
-        try? store.saveData(data, forKey: key(sessionId))
+        do {
+            try store.saveData(JSONEncoder().encode(state), forKey: key(sessionId))
+        } catch {
+            Log.persistence.error("Failed to save \(self.key(sessionId), privacy: .public): \(String(describing: error), privacy: .public)")
+        }
     }
 
     private func key(_ sessionId: UUID) -> String {

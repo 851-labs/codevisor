@@ -36,7 +36,16 @@ public struct ServerHarnessService: HarnessServicing {
     }
 
     public func readyHarnesses() async -> [ServerHarness] {
-        ((try? await allHarnesses()) ?? []).filter { $0.enabled && $0.isReady }
+        do {
+            return try await allHarnesses().filter { $0.enabled && $0.isReady }
+        } catch {
+            // Best-effort by contract: an unreachable server reads as "none
+            // ready", but the failure must stay diagnosable.
+            Log.server.error(
+                "Failed to list harnesses; treating as none ready: \(String(describing: error), privacy: .public)"
+            )
+            return []
+        }
     }
 
     public func allHarnesses() async throws -> [ServerHarness] {

@@ -1,17 +1,36 @@
 import Foundation
 import ACPKit
 
-public enum HerdManServerClientError: Error, Equatable, Sendable {
+public enum HerdManServerClientError: Error, Equatable, Sendable, LocalizedError {
     case invalidURL(String)
     case invalidResponse
     case httpStatus(Int, String)
     case invalidDate(String)
     case invalidUUID(String)
+
+    public var errorDescription: String? {
+        switch self {
+        case let .invalidURL(url):
+            "The server address “\(url)” isn't valid."
+        case .invalidResponse:
+            "The HerdMan server sent an unexpected response. Try again in a moment."
+        case let .httpStatus(_, body):
+            body.isEmpty ? "The HerdMan server rejected the request." : body
+        case .invalidDate, .invalidUUID:
+            "The HerdMan server sent data this version of HerdMan couldn't read. Updating HerdMan may fix this."
+        }
+    }
 }
 
-/// A human-readable message for errors surfaced in the UI: HTTP failures
-/// carry a JSON `{"error": "..."}` body from the server — show that sentence,
-/// not the wrapped enum description.
+/// The one message used for connection-level failures. Views compare an
+/// error string against this to pair the message with a "Restart" recovery
+/// action (HIG: offer the way out right where the error appears).
+public let serverUnreachableErrorMessage = "Can't connect to the HerdMan server."
+
+/// A human-readable message for errors surfaced in the UI (HIG: say what
+/// happened and what to do next, in plain language — never a raw NSError
+/// dump). HTTP failures carry a JSON `{"error": "..."}` body from the
+/// server — show that sentence, not the wrapped enum description.
 public func serverErrorMessage(_ error: any Error) -> String {
     if case let HerdManServerClientError.httpStatus(_, body) = error {
         if let data = body.data(using: .utf8),
@@ -20,6 +39,29 @@ public func serverErrorMessage(_ error: any Error) -> String {
             return message
         }
         return body.isEmpty ? "The HerdMan server rejected the request." : body
+    }
+    // Connection-level failures: the URL, task ids, and CFNetwork internals
+    // mean nothing to the user — reduce to the situation and the way out.
+    if let urlError = error as? URLError {
+        switch urlError.code {
+        case .cannotConnectToHost, .cannotFindHost, .networkConnectionLost,
+             .timedOut, .secureConnectionFailed, .cannotLoadFromNetwork:
+            return serverUnreachableErrorMessage
+        case .notConnectedToInternet, .internationalRoamingOff, .dataNotAllowed:
+            return "You appear to be offline. Check your network connection, then try again."
+        default:
+            return urlError.localizedDescription
+        }
+    }
+    if let localized = error as? LocalizedError, let description = localized.errorDescription {
+        return description
+    }
+    // Cocoa/POSIX errors carry a system-provided sentence; anything else
+    // falls back to its description rather than showing nothing.
+    let nsError = error as NSError
+    if nsError.domain == NSCocoaErrorDomain || nsError.domain == NSURLErrorDomain
+        || nsError.domain == NSPOSIXErrorDomain {
+        return nsError.localizedDescription
     }
     return String(describing: error)
 }
@@ -1123,6 +1165,9 @@ public final class HerdManServerClient: HerdManServerClienting, @unchecked Senda
                             return
                         }
                         failures += 1
+                        Log.server.error(
+                            "Event socket connection failed (consecutive failures: \(failures)); reconnecting: \(String(describing: error), privacy: .public)"
+                        )
                         try? await Task.sleep(for: Self.eventReconnectDelay(failures: failures))
                     }
                 }

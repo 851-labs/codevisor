@@ -7,6 +7,7 @@ import Foundation
 import Observation
 import SwiftUI
 import HerdManCore
+import os
 
 @MainActor
 @Observable
@@ -123,7 +124,12 @@ final class TerminalPane: Pane, Identifiable {
         if let token = machine.token {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
-        _ = try? await URLSession.shared.data(for: request)
+        do {
+            _ = try await URLSession.shared.data(for: request)
+        } catch {
+            // Best-effort cleanup; the server reaps orphaned shells itself.
+            Log.terminal.debug("server shell delete failed for \(self.descriptor.terminalKey, privacy: .public): \(String(describing: error), privacy: .public)")
+        }
     }
 }
 

@@ -73,6 +73,12 @@ public struct SessionConfigOption: Sendable, Codable, Equatable, Identifiable {
             options = grouped.flatMap(\.options)
         } else {
             options = []
+            if container.contains(.options) {
+                let optionId = id
+                acpLog.error(
+                    "Config option \"\(optionId, privacy: .public)\" options decoded in neither flat nor grouped shape — falling back to none"
+                )
+            }
         }
     }
 

@@ -245,6 +245,12 @@ struct SessionScreen: View {
         if let error = controller.errorMessage {
             result.append(.init(id: .error, content: .error(error), estimatedHeight: 56))
         }
+        // Failures land in the chat history, right where the turn they broke
+        // would have appeared — not detached beneath the composer (HIG: show
+        // errors close to where the problem occurred).
+        if case let .failed(message) = controller.status, message != controller.errorMessage {
+            result.append(.init(id: .statusError, content: .error(message), estimatedHeight: 56))
+        }
         result.append(.init(
             id: .bottomSpacer,
             content: .bottomSpacer(max(1, composerHeight + 24)),
@@ -361,7 +367,6 @@ struct SessionScreen: View {
                     composerMaskSize = size
                 }
             }
-            statusLabel
         }
         .padding(.horizontal, 24)
         .frame(maxWidth: 880)
@@ -373,27 +378,25 @@ struct SessionScreen: View {
         .animation(.snappy(duration: 0.2), value: isQueueExpanded)
     }
 
-    @ViewBuilder
-    private var statusLabel: some View {
-        switch controller.status {
-        case .connecting:
-            EmptyView()
-        case let .failed(message):
+    private func errorBanner(_ message: String) -> some View {
+        HStack(spacing: 12) {
             Label(message, systemImage: "exclamationmark.triangle.fill")
                 .font(.callout)
-                .foregroundStyle(theme.statusWarn)
-        case .idle:
-            EmptyView()
+                .foregroundStyle(theme.statusError)
+            Spacer(minLength: 0)
+            // A dead server has one remedy: relaunching the app restarts the
+            // managed server too. Offer it right where the error appears.
+            if message == serverUnreachableErrorMessage {
+                Button("Restart") { AppRelauncher.relaunch() }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .help("Restart HerdMan and its server")
+            }
         }
-    }
-
-    private func errorBanner(_ message: String) -> some View {
-        Label(message, systemImage: "exclamationmark.triangle.fill")
-            .font(.callout)
-            .foregroundStyle(theme.statusError)
-            .padding(10)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: 8).fill(theme.statusError.opacity(0.1)))
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 8).fill(theme.statusError.opacity(0.1)))
+        .accessibilityElement(children: .combine)
     }
 }
 

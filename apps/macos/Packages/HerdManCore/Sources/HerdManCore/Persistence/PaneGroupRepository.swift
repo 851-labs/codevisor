@@ -33,15 +33,25 @@ public final class DefaultPaneGroupRepository: PaneGroupRepository, @unchecked S
         var all = loadAll()
         all[sessionId.uuidString] = state
         lock.withLock { cache = all }
-        guard let data = try? JSONEncoder().encode(all) else { return }
-        try? store.saveData(data, forKey: key)
+        do {
+            try store.saveData(JSONEncoder().encode(all), forKey: key)
+        } catch {
+            Log.persistence.error("Failed to save \(self.key, privacy: .public): \(String(describing: error), privacy: .public)")
+        }
     }
 
     private func loadAll() -> [String: PaneGroupState] {
         if let cached = lock.withLock({ cache }) { return cached }
         let loaded: [String: PaneGroupState]
         if let data = store.loadData(forKey: key) {
-            loaded = (try? JSONDecoder().decode([String: PaneGroupState].self, from: data)) ?? [:]
+            do {
+                loaded = try JSONDecoder().decode([String: PaneGroupState].self, from: data)
+            } catch {
+                // No banner: a lost tab layout is recoverable in place; the
+                // quarantined backup and fault log keep it diagnosable.
+                handleCorruptPayload(store: store, key: key, data: data, error: error)
+                loaded = [:]
+            }
         } else {
             loaded = [:]
         }

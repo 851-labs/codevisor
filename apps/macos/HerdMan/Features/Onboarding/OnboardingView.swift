@@ -1,6 +1,7 @@
 import SwiftUI
 import HerdManCore
 import UniformTypeIdentifiers
+import os
 
 /// First-launch onboarding, presented as a short paginated flow:
 /// 1. Welcome, 2. Choose your harnesses, 3. Open a project folder.
@@ -36,6 +37,7 @@ struct OnboardingView: View {
     @State private var harnesses: [ServerHarness] = []
     @State private var detection: HarnessDetection = .connecting
     @State private var isRescanning = false
+    @State private var rescanError: String?
     @State private var projectFolder: URL?
     @State private var showingFolderPicker = false
     @State private var isFinishing = false
@@ -209,6 +211,13 @@ struct OnboardingView: View {
                 }
             }
             .disabled(isRescanning)
+
+            if let rescanError {
+                Text(rescanError)
+                    .font(.callout)
+                    .foregroundStyle(theme.statusWarn)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
 
@@ -322,8 +331,12 @@ struct OnboardingView: View {
     private func rescanHarnesses() async {
         isRescanning = true
         defer { isRescanning = false }
-        if let loaded = try? await environment.harnessService.rescanHarnesses() {
-            harnesses = loaded
+        do {
+            harnesses = try await environment.harnessService.rescanHarnesses()
+            rescanError = nil
+        } catch {
+            Log.onboarding.error("Harness rescan failed: \(String(describing: error), privacy: .public)")
+            rescanError = "Couldn't check for installed agents. Make sure the HerdMan server is running, then try again."
         }
     }
 

@@ -1,10 +1,21 @@
 import Foundation
 import Observation
 
-public enum MachineControllerError: Error, Equatable, Sendable {
+public enum MachineControllerError: Error, Equatable, Sendable, LocalizedError {
     case invalidHost(String)
     case cannotRemoveLocal
     case cannotRenameLocal
+
+    public var errorDescription: String? {
+        switch self {
+        case let .invalidHost(host):
+            "“\(host)” isn't a valid host. Enter a hostname or IP address, like 192.168.1.20 or mac-studio.local."
+        case .cannotRemoveLocal:
+            "This Mac can't be removed from the machine list."
+        case .cannotRenameLocal:
+            "This Mac can't be renamed here. Its name follows the computer name in System Settings."
+        }
+    }
 }
 
 public struct HerdManMachine: Identifiable, Sendable, Codable, Equatable {
@@ -96,9 +107,20 @@ public final class MachineController {
         self.clientFactory = clientFactory ?? { HerdManServerClient(config: $0.serverConfig) }
         self.updatePollInterval = updatePollInterval
         self.updatePollAttempts = updatePollAttempts
-        if let data = store.loadData(forKey: key),
-           let decoded = try? JSONDecoder().decode(MachineRegistry.self, from: data) {
-            registry = decoded.normalized()
+        if let data = store.loadData(forKey: "machines") {
+            do {
+                registry = try JSONDecoder().decode(MachineRegistry.self, from: data).normalized()
+            } catch {
+                registry = MachineRegistry()
+                handleCorruptPayload(
+                    store: store,
+                    key: "machines",
+                    data: data,
+                    error: error,
+                    reportTitle: "Couldn't Read Your Machine List",
+                    reportMessage: "The file was unreadable. A backup was saved in HerdMan's data folder."
+                )
+            }
         } else {
             registry = MachineRegistry()
         }
@@ -217,7 +239,13 @@ public final class MachineController {
                 // invisible to it. Fire one rescan so it re-resolves PATH —
                 // off the critical path so machine prep isn't delayed.
                 let client = selectedClient
-                Task { _ = try? await client.rescanHarnesses() }
+                Task {
+                    do {
+                        _ = try await client.rescanHarnesses()
+                    } catch {
+                        Log.machines.error("Harness rescan failed: \(String(describing: error), privacy: .public)")
+                    }
+                }
             }
         }
         await refreshStatus(for: selectedMachine.id)
@@ -246,6 +274,7 @@ public final class MachineController {
                     }
                     return
                 } catch {
+                    Log.machines.error("Event sync for \(serverId, privacy: .public) failed; resubscribing: \(String(describing: error), privacy: .public)")
                     guard let self, !Task.isCancelled else { return }
                     // Reconcile durable metadata, then subscribe live-only
                     // again. This skips a malformed event instead of retrying
@@ -300,7 +329,12 @@ public final class MachineController {
         do {
             let info = try await client.info()
             statusByMachineId[id] = MachineStatus(isReachable: true, label: "\(info.name) \(info.version)")
-            updateInfoByMachineId[id] = try? await client.updateInfo()
+            do {
+                updateInfoByMachineId[id] = try await client.updateInfo()
+            } catch {
+                updateInfoByMachineId[id] = nil
+                Log.machines.debug("Update info probe for \(id, privacy: .public) failed: \(String(describing: error), privacy: .public)")
+            }
         } catch {
             // A local server that failed to start has a more useful story
             // than "Unreachable" — surface why instead.
@@ -403,8 +437,11 @@ public final class MachineController {
     }
 
     private func persist() {
-        guard let data = try? JSONEncoder().encode(registry.normalized()) else { return }
-        try? store.saveData(data, forKey: key)
+        do {
+            try store.saveData(JSONEncoder().encode(registry.normalized()), forKey: key)
+        } catch {
+            Log.persistence.error("Failed to save \(self.key, privacy: .public): \(String(describing: error), privacy: .public)")
+        }
     }
 }
 

@@ -61,9 +61,20 @@ public final class AppSettingsModel {
 
     public init(store: any PersistenceStore) {
         self.store = store
-        if let data = store.loadData(forKey: key),
-           let decoded = try? JSONDecoder().decode(AppSettings.self, from: data) {
-            settings = decoded
+        if let data = store.loadData(forKey: "settings") {
+            do {
+                settings = try JSONDecoder().decode(AppSettings.self, from: data)
+            } catch {
+                settings = AppSettings()
+                handleCorruptPayload(
+                    store: store,
+                    key: "settings",
+                    data: data,
+                    error: error,
+                    reportTitle: "Couldn't Read Your Settings",
+                    reportMessage: "HerdMan is starting with default settings. A backup of the old file was kept."
+                )
+            }
         } else {
             settings = AppSettings()
         }
@@ -126,7 +137,10 @@ public final class AppSettingsModel {
     }
 
     private func persist() {
-        guard let data = try? JSONEncoder().encode(settings) else { return }
-        try? store.saveData(data, forKey: key)
+        do {
+            try store.saveData(JSONEncoder().encode(settings), forKey: key)
+        } catch {
+            Log.persistence.error("Failed to save \(self.key, privacy: .public): \(String(describing: error), privacy: .public)")
+        }
     }
 }

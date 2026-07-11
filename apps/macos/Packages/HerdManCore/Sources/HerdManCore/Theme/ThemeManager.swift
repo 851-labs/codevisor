@@ -83,7 +83,15 @@ public final class ThemeManager {
     public func palette(forThemeId id: String) -> DerivedPalette? {
         if ThemeCatalog.isSystemTheme(id: id) { return nil }
         if let cached = paletteCache[id] { return cached }
-        let palette = (try? catalog.loadTheme(id: id)).flatMap(PaletteDeriver.derive(from:))
+        var palette: DerivedPalette?
+        do {
+            palette = PaletteDeriver.derive(from: try catalog.loadTheme(id: id))
+        } catch {
+            // The slot falls back to the stock system look via themeId(for:).
+            Log.theming.error(
+                "Failed to load theme \(id, privacy: .public); falling back to the system look: \(String(describing: error), privacy: .public)"
+            )
+        }
         paletteCache[id] = palette
         return palette
     }
@@ -93,7 +101,14 @@ public final class ThemeManager {
     public func themeData(for scheme: ThemeDescriptor.SchemeType) -> Data? {
         let id = themeId(for: scheme)
         guard !ThemeCatalog.isSystemTheme(id: id) else { return nil }
-        return try? catalog.loadThemeData(id: id)
+        do {
+            return try catalog.loadThemeData(id: id)
+        } catch {
+            Log.theming.error(
+                "Failed to load theme data for \(id, privacy: .public); syntax highlighting falls back to the stock look: \(String(describing: error), privacy: .public)"
+            )
+            return nil
+        }
     }
 
     // MARK: - Custom themes

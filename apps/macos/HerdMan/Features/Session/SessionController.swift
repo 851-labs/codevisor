@@ -3,6 +3,7 @@ import Observation
 import HerdManCore
 import ACPKit
 import UniformTypeIdentifiers
+import os
 
 /// A file staged in the composer: bytes held locally for instant thumbnails,
 /// uploaded eagerly so send only has to collect the server refs.
@@ -756,15 +757,19 @@ final class SessionController {
             : .file
         let maxBytes = Self.maxAttachmentBytes
         Task { [weak self] in
-            // (data, oversized): (nil, false) = unreadable → skip, matching
-            // the old behavior for unreadable URLs.
-            let result: (data: Data?, oversized: Bool) = await Task.detached(priority: .userInitiated) {
+            // (data, oversized, readError): (nil, false, error) = unreadable →
+            // staged as a failed chip, same surface as oversized files.
+            let result: (data: Data?, oversized: Bool, readError: String?) = await Task.detached(priority: .userInitiated) {
                 if let size = (try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize,
                    size > maxBytes {
-                    return (nil, true)
+                    return (nil, true, nil)
                 }
-                guard let data = try? Data(contentsOf: url) else { return (nil, false) }
-                return data.count > maxBytes ? (nil, true) : (data, false)
+                do {
+                    let data = try Data(contentsOf: url)
+                    return data.count > maxBytes ? (nil, true, nil) : (data, false, nil)
+                } catch {
+                    return (nil, false, String(describing: error))
+                }
             }.value
             guard let self else { return }
             if result.oversized {
@@ -774,6 +779,13 @@ final class SessionController {
                 )
             } else if let data = result.data {
                 self.stageAttachment(name: url.lastPathComponent, mimeType: mimeType, kind: kind, data: data)
+            } else {
+                Log.attachments.error("attachment read failed for \(url.lastPathComponent, privacy: .public): \(result.readError ?? "unknown", privacy: .public)")
+                self.stageAttachment(
+                    name: url.lastPathComponent, mimeType: mimeType, kind: kind,
+                    data: Data(),
+                    failureMessage: "Couldn't read “\(url.lastPathComponent)”. Check that you have permission to open it, then try again."
+                )
             }
         }
     }
@@ -805,7 +817,8 @@ final class SessionController {
     }
 
     private func stageAttachment(
-        name: String, mimeType: String, kind: Attachment.Kind, data: Data, oversized: Bool = false
+        name: String, mimeType: String, kind: Attachment.Kind, data: Data, oversized: Bool = false,
+        failureMessage: String? = nil
     ) {
         guard composerAttachments.count < Self.maxAttachments else {
             status = .failed("A message can carry at most \(Self.maxAttachments) attachments.")
@@ -819,6 +832,11 @@ final class SessionController {
             localData: data,
             state: .uploading
         )
+        if let failureMessage {
+            attachment.state = .failed(failureMessage)
+            composerAttachments.append(attachment)
+            return
+        }
         if oversized || data.count > Self.maxAttachmentBytes {
             attachment.state = .failed("Larger than 25 MB")
             composerAttachments.append(attachment)
@@ -1118,6 +1136,7 @@ final class SessionController {
                 }
             } catch {
                 // The stream is cosmetic; a drop just stops the live tail.
+                Log.session.debug("worktree setup log tail dropped: \(String(describing: error), privacy: .public)")
             }
         }
         defer { follow.cancel() }
@@ -1374,6 +1393,7 @@ final class SessionController {
             configCache.store(capabilities, forServer: project.serverId)
             return true
         } catch {
+            Log.session.error("capability fetch failed: \(String(describing: error), privacy: .public)")
             return false
         }
     }

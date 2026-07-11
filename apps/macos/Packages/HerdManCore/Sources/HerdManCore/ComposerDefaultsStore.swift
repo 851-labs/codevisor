@@ -64,8 +64,10 @@ public final class ComposerDefaultsStore {
     }
 
     private func persist() {
-        if let data = try? JSONEncoder().encode(defaults) {
-            try? store.saveData(data, forKey: key)
+        do {
+            try store.saveData(JSONEncoder().encode(defaults), forKey: key)
+        } catch {
+            Log.persistence.error("Failed to save \(self.key, privacy: .public): \(String(describing: error), privacy: .public)")
         }
     }
 }
