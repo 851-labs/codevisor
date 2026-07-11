@@ -410,6 +410,16 @@ private struct TranscriptActiveItemView: View {
     var body: some View {
         if let item = controller.activeItem {
             ConversationItemView(item: item)
+                // The active row is hosted behind the transcript's observation
+                // isolation boundary, so environment values injected by the
+                // outer row factory are otherwise frozen until this row is
+                // remounted. Read and inject subagent activity here so a newly
+                // active child starts shimmering while its parent is still
+                // generating, not only after the parent turn settles.
+                .environment(
+                    \.runningSubagentToolCallIds,
+                    controller.runningSubagentToolCallIds
+                )
                 .id(item.id)
         }
     }
