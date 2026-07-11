@@ -289,6 +289,10 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
     private var rowContent: ((TranscriptVirtualRow) -> AnyView)?
     private var pendingMeasuredHeights: [String: CGFloat] = [:]
     private var measurementCommitTask: Task<Void, Never>?
+    /// A scrollbar-knob drag can cross dozens of virtual windows in a single
+    /// frame. Mount only the latest one at a display-friendly cadence instead
+    /// of making AppKit wait for every intermediate SwiftUI host tree.
+    private var knobDragMountTask: Task<Void, Never>?
 
     private struct DisclosureViewportAnchor {
         let id: UUID
@@ -376,6 +380,9 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
                 queue: .main
             ) { [weak self] _ in
                 MainActor.assumeIsolated {
+                    self?.knobDragMountTask?.cancel()
+                    self?.knobDragMountTask = nil
+                    self?.updateMountedRows()
                     self?.emitViewportSnapshot()
                     self?.isHandlingUserInput = false
                     self?.isLiveScrolling = false
@@ -392,6 +399,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
 
     deinit {
         measurementCommitTask?.cancel()
+        knobDragMountTask?.cancel()
         disclosureAnchorReleaseTask?.cancel()
         if let boundsObserver {
             NotificationCenter.default.removeObserver(boundsObserver)
@@ -824,7 +832,11 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
         let previousDistance = lastDistanceFromBottom
         let distance = currentDistanceFromBottom()
         lastDistanceFromBottom = distance
-        updateMountedRows()
+        if isDraggingScrollerKnob {
+            scheduleKnobDragMountUpdate()
+        } else {
+            updateMountedRows()
+        }
 
         let atBottom = distance <= Self.atBottomThreshold
         publishBottomState(atBottom)
@@ -848,9 +860,30 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
         // to the first row during navigation.
         if !isApplyingPosition, isHandlingUserInput || isLiveScrolling {
             lockedRestoreDistance = nil
-            emitViewportSnapshot()
+            // A live scroll (including knob tracking) publishes one exact
+            // snapshot in didEndLiveScroll. Rebuilding it for every bounds
+            // tick adds work without making restoration more accurate.
+            if !isLiveScrolling {
+                emitViewportSnapshot()
+            }
         }
         checkForHistoryPrefetch()
+    }
+
+    private var isDraggingScrollerKnob: Bool {
+        verticalScroller?.hitPart == .knob
+    }
+
+    private func scheduleKnobDragMountUpdate() {
+        guard knobDragMountTask == nil else { return }
+        knobDragMountTask = Task { @MainActor [weak self] in
+            // The scroller itself remains fully native and tracks every event;
+            // transcript host churn is capped at roughly one update per frame.
+            try? await Task.sleep(for: .milliseconds(16))
+            guard let self, !Task.isCancelled else { return }
+            self.knobDragMountTask = nil
+            self.updateMountedRows()
+        }
     }
 
     private func markRecentUserInput() {
@@ -1116,14 +1149,12 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
                 count: last - first + 1
             )
         }
-        let rowHeights = Dictionary(uniqueKeysWithValues: virtualLayout.keys.compactMap { key in
-            measuredHeights[key].flatMap { height in
-                height > 0 ? (key, height) : nil
-            }
-        })
         return SessionVirtualTranscriptRestoreState(
             measurementCacheKey: activeMeasurementCacheKey,
-            rowHeightsByKey: rowHeights,
+            // Dictionary assignment is copy-on-write. Restore already ignores
+            // keys absent from the current transcript, so this keeps viewport
+            // snapshots O(mounted rows) instead of walking the full history.
+            rowHeightsByKey: measuredHeights,
             renderedWindow: renderedWindow
         )
     }
