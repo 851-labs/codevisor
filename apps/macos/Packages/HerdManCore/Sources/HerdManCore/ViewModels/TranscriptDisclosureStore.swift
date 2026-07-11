@@ -37,7 +37,8 @@ public final class TranscriptDisclosureStore {
     }
 
     private var values: [Key: Bool] = [:]
-
+    private var revealGenerations: [Key: Int] = [:]
+    private var claimedRevealGenerations: [Key: Int] = [:]
     public init() {}
 
     /// Shared throwaway store for previews / detached contexts where no
@@ -60,4 +61,23 @@ public final class TranscriptDisclosureStore {
     public func toggle(_ key: Key, default defaultValue: Bool) {
         values[key] = !(values[key] ?? defaultValue)
     }
+
+    public func requestReveal(_ key: Key) {
+        revealGenerations[key, default: 0] &+= 1
+    }
+
+    public func revealGeneration(for key: Key) -> Int {
+        revealGenerations[key, default: 0]
+    }
+
+    public func hasUnclaimedReveal(_ key: Key, generation: Int) -> Bool {
+        generation > 0 && claimedRevealGenerations[key, default: 0] < generation
+    }
+
+    public func claimReveal(_ key: Key, generation: Int) -> Bool {
+        guard hasUnclaimedReveal(key, generation: generation) else { return false }
+        claimedRevealGenerations[key] = generation
+        return true
+    }
+
 }

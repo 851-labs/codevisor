@@ -47,6 +47,23 @@ struct SessionMeasurementCacheKey: Hashable {
     var layoutFingerprint: Int
 }
 
+/// The mounted virtual window saved alongside a transcript coordinate. This
+/// mirrors ChatGPT's `renderedWindow`: restoration mounts the same neighborhood
+/// before any estimates are allowed to choose a different part of the thread.
+struct SessionRenderedTranscriptWindow: Equatable {
+    var anchorKey: String
+    var count: Int
+}
+
+/// Virtualizer-owned restore data. The height map is the exact geometry that
+/// produced the saved coordinate; the regular LRU remains the longer-lived
+/// cache used across width changes.
+struct SessionVirtualTranscriptRestoreState: Equatable {
+    var measurementCacheKey: SessionMeasurementCacheKey?
+    var rowHeightsByKey: [String: CGFloat]
+    var renderedWindow: SessionRenderedTranscriptWindow?
+}
+
 /// Where the transcript was scrolled when the user last looked at a session,
 /// kept on the cached controller so navigating away and back reopens the
 /// transcript at the same place instead of pinned to the bottom.
@@ -58,6 +75,8 @@ struct SessionScrollState {
     /// snapshots are copy-on-write, so publishing scroll state remains O(1).
     var measurementCaches: [SessionMeasurementCacheKey: [UUID: SessionMeasuredRow]]
     var measurementCacheLRU: [SessionMeasurementCacheKey]
+    /// Exact virtual window and row geometry from the last mounted view.
+    var virtualTranscript: SessionVirtualTranscriptRestoreState?
     /// Follow state is derived from the canonical coordinate instead of being
     /// persisted as a second value that can disagree with it.
     var isAtBottom: Bool { distanceFromBottom <= 2 }

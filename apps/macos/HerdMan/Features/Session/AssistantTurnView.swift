@@ -15,6 +15,7 @@ struct AssistantTurnView: View {
     @Environment(\.transcriptDisclosure) private var disclosureStore
     @Environment(\.runningSubagentToolCallIds) private var runningSubagentToolCallIds
     @Environment(\.transcriptController) private var transcriptController
+    @Environment(\.transcriptPerformAnchoredDisclosureChange) private var performAnchoredDisclosureChange
     @Environment(\.theme) private var theme
     /// Transient one-shot guard for the finish/assert auto-collapse. Stays
     /// `@State`: it only matters while the turn is generating/settling, which
@@ -55,13 +56,12 @@ struct AssistantTurnView: View {
             && turn.subagents.keys.contains { runningSubagentToolCallIds.contains($0) }
     }
 
-    /// The planning section shows while the turn is still working toward a plan
-    /// (and for any non-plan turn); once a plan exists it shows only if there
-    /// was pre-plan work to display.
+    /// Match the actual collapsible content: streaming by itself is represented
+    /// by the separate activity indicator and must not create an empty Worked
+    /// disclosure.
     private func showsPlanningSection(_ items: [WorkedItem]) -> Bool {
         if turn.hasDeferredWorkedDetails { return true }
-        if turn.planBoundary != nil { return !items.isEmpty }
-        return turn.isGenerating || !items.isEmpty
+        return !items.isEmpty
     }
 
     var body: some View {
@@ -181,16 +181,9 @@ struct AssistantTurnView: View {
         // background; this re-fires from the onChange above once it settles.
         guard !turnHasRunningSubagent else { return }
         hasAutoCollapsed = true
-        // Animating the removal of an enormous worked section (an
-        // hours-long turn is most of the transcript's height) is a
-        // main-thread layout hazard; past a size threshold collapse
-        // instantly instead.
-        let collapse = { for key in sectionKeys { store.setExpanded(key, false) } }
-        if turn.entries.count > 80 {
-            collapse()
-        } else {
-            withAnimation(.snappy(duration: 0.28)) { collapse() }
-        }
+        // Commit layout immediately. The reveal component animates only its
+        // pixels; virtual-row height is never an intermediate animation value.
+        for key in sectionKeys { store.setExpanded(key, false) }
     }
 
     /// One "Worked for…" disclosure over `items`, keyed independently so the
@@ -209,10 +202,15 @@ struct AssistantTurnView: View {
                 workedHeader(label: sectionLabel(timer: timerLabel), showsChevron: false, expanded: expanded)
             } else {
                 Button {
-                    let settled = !turn.isGenerating || turn.finalTextIsAsserted
-                    withAnimation(.snappy(duration: 0.28)) {
-                        store.toggle(key, default: initiallyExpanded ?? !settled)
+                    let change = {
+                        if expanded {
+                            store.setExpanded(key, false)
+                        } else {
+                            store.requestReveal(key)
+                            store.setExpanded(key, true)
+                        }
                     }
+                    performAnchoredDisclosureChange?(change) ?? change()
                 } label: {
                     workedHeader(label: sectionLabel(timer: timerLabel), showsChevron: true, expanded: expanded)
                         .contentShape(Rectangle())
@@ -221,38 +219,40 @@ struct AssistantTurnView: View {
             }
 
             if expanded, !items.isEmpty || turn.hasDeferredWorkedDetails {
-                VStack(alignment: .leading, spacing: 12) {
-                    Divider()
-                    // Answered questions ride here too: the reducer synthesizes
-                    // a tool call for each, so they group and render inline with
-                    // the other tool calls that surround them.
-                    if turn.hasDeferredWorkedDetails,
-                       let itemId = turn.deferredDetailItemId,
-                       let transcriptController {
-                        DeferredTranscriptDetails(controller: transcriptController, itemId: itemId)
-                    } else {
-                        TranscriptItemsView(items: items, turn: turn, isTurnActive: turn.isGenerating)
+                WorkedContentReveal(key: key, store: store) {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Divider()
+                        // Answered questions ride here too: the reducer synthesizes
+                        // a tool call for each, so they group and render inline with
+                        // the other tool calls that surround them.
+                        if turn.hasDeferredWorkedDetails,
+                           let itemId = turn.deferredDetailItemId,
+                           let transcriptController {
+                            DeferredTranscriptDetails(controller: transcriptController, itemId: itemId)
+                        } else {
+                            TranscriptItemsView(items: items, turn: turn, isTurnActive: turn.isGenerating)
+                        }
                     }
                 }
-                .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
             }
         }
-        .clipped()
     }
 
     private func workedHeader(label: some View, showsChevron: Bool, expanded: Bool) -> some View {
         HStack(spacing: 6) {
             label
             if showsChevron {
-                Image(systemName: "chevron.right")
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.tertiary)
-                    .rotationEffect(.degrees(expanded ? 90 : 0))
+                TranscriptDisclosureChevron(expanded: expanded)
             }
             Spacer(minLength: 0)
         }
         .font(.callout)
         .foregroundStyle(.secondary)
+        // The worked-section reveal must never animate or displace its label
+        // row. The nested chevron still installs its own value-scoped rotation.
+        .transaction { transaction in
+            transaction.animation = nil
+        }
     }
 
     /// The section label: the live "Working for Xs" / final "Worked for Xs"
@@ -286,6 +286,211 @@ struct AssistantTurnView: View {
     private var workedTitle: String {
         guard let duration = turn.duration, duration >= 1 else { return "Worked for a moment" }
         return "Worked for \(format(Int(duration.rounded())))"
+    }
+}
+
+/// The disclosure indicator owns its rotation animation. The section body has
+/// a separate entrance animation, so the label and chevron never fade or move
+/// with the expanded content.
+struct TranscriptDisclosureChevron: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    let expanded: Bool
+
+    var body: some View {
+        Image(systemName: "chevron.right")
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(.tertiary)
+            .frame(width: 10, height: 10)
+            // Scope interpolation to rotation only. A value-based animation
+            // also captured position changes from the expanding parent.
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.16)) { chevron in
+                chevron.rotationEffect(.degrees(expanded ? 90 : 0))
+            }
+    }
+}
+
+private struct WorkedContentReveal<Content: View>: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    let key: TranscriptDisclosureStore.Key
+    let store: TranscriptDisclosureStore
+    let revealGeneration: Int
+    @State private var isVisible: Bool
+    private let content: Content
+
+    init(
+        key: TranscriptDisclosureStore.Key,
+        store: TranscriptDisclosureStore,
+        @ViewBuilder content: () -> Content
+    ) {
+        self.key = key
+        self.store = store
+        let generation = store.revealGeneration(for: key)
+        revealGeneration = generation
+        _isVisible = State(
+            initialValue: !store.hasUnclaimedReveal(key, generation: generation)
+        )
+        self.content = content()
+    }
+
+    var body: some View {
+        content
+            .opacity(isVisible ? 1 : 0)
+            .offset(y: isVisible || reduceMotion ? 0 : -8)
+            .onAppear {
+                let shouldAnimate = store.claimReveal(key, generation: revealGeneration)
+                guard shouldAnimate, !reduceMotion else {
+                    isVisible = true
+                    return
+                }
+                withAnimation(.easeOut(duration: 0.20)) {
+                    isVisible = true
+                }
+            }
+    }
+}
+
+struct TranscriptDisclosureContentReveal<Content: View>: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    let isExpanded: Bool
+    @State private var phase: Phase
+    @State private var measuredHeight: CGFloat = 0
+    @State private var presentedHeight: CGFloat?
+    @State private var presentedOpacity: CGFloat
+    @State private var animationGeneration = 0
+    private let content: Content
+
+    private enum Phase {
+        case collapsed
+        case measuring
+        case expanding
+        case expanded
+        case collapsing
+    }
+
+    private static var animation: Animation {
+        .timingCurve(0.16, 1, 0.3, 1, duration: 0.25)
+    }
+
+    init(isExpanded: Bool, @ViewBuilder content: () -> Content) {
+        self.isExpanded = isExpanded
+        _phase = State(initialValue: isExpanded ? .expanded : .collapsed)
+        _presentedHeight = State(initialValue: isExpanded ? nil : 0)
+        _presentedOpacity = State(initialValue: isExpanded ? 1 : 0)
+        self.content = content()
+    }
+
+    @ViewBuilder
+    var body: some View {
+        Group {
+            if phase != .collapsed {
+                content
+                    .fixedSize(horizontal: false, vertical: true)
+                    .background {
+                        GeometryReader { proxy in
+                            Color.clear.preference(
+                                key: DisclosureContentHeightKey.self,
+                                value: proxy.size.height
+                            )
+                        }
+                    }
+                    // Scope interpolation to these presentation modifiers.
+                    // The enclosing tool group, Worked section, and message
+                    // root receive ordinary layout updates, never this
+                    // animation transaction.
+                    .animation(reduceMotion ? nil : Self.animation) { body in
+                        body
+                            .opacity(presentedOpacity)
+                            .frame(height: presentedHeight, alignment: .top)
+                    }
+                    .clipped()
+                    .allowsHitTesting(phase == .expanded)
+            }
+        }
+        .onPreferenceChange(DisclosureContentHeightKey.self) { height in
+            guard height > 0 else { return }
+            measuredHeight = height
+            if phase == .measuring {
+                expandMeasuredContent(to: height)
+            }
+        }
+        .onChange(of: isExpanded) { _, expanded in
+            setExpanded(expanded)
+        }
+    }
+
+    private func setExpanded(_ expanded: Bool) {
+        if reduceMotion {
+            animationGeneration &+= 1
+            phase = expanded ? .expanded : .collapsed
+            presentedHeight = expanded ? nil : 0
+            presentedOpacity = expanded ? 1 : 0
+            return
+        }
+
+        if expanded {
+            switch phase {
+            case .collapsed:
+                presentedHeight = 0
+                presentedOpacity = 0
+                phase = .measuring
+            case .collapsing:
+                phase = .expanding
+                presentedHeight = measuredHeight > 0 ? measuredHeight : nil
+                presentedOpacity = 1
+                scheduleSettlement(expanded: true)
+            case .measuring, .expanding, .expanded:
+                break
+            }
+        } else {
+            switch phase {
+            case .measuring:
+                phase = .collapsed
+                presentedHeight = 0
+                presentedOpacity = 0
+            case .expanding, .expanded:
+                phase = .collapsing
+                presentedHeight = measuredHeight > 0 ? measuredHeight : presentedHeight
+                presentedHeight = 0
+                presentedOpacity = 0
+                scheduleSettlement(expanded: false)
+            case .collapsed, .collapsing:
+                break
+            }
+        }
+    }
+
+    private func expandMeasuredContent(to height: CGFloat) {
+        guard isExpanded, phase == .measuring else { return }
+        phase = .expanding
+        presentedHeight = height
+        presentedOpacity = 1
+        scheduleSettlement(expanded: true)
+    }
+
+    private func scheduleSettlement(expanded: Bool) {
+        animationGeneration &+= 1
+        let generation = animationGeneration
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(260))
+            guard generation == animationGeneration,
+                  isExpanded == expanded else { return }
+            if expanded {
+                guard phase == .expanding else { return }
+                phase = .expanded
+                presentedHeight = nil
+            } else {
+                guard phase == .collapsing else { return }
+                phase = .collapsed
+            }
+        }
+    }
+}
+
+private struct DisclosureContentHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
     }
 }
 

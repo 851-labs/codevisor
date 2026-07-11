@@ -36,6 +36,14 @@ struct VirtualTranscriptLayoutTests {
         ) == 0..<4)
     }
 
+    @Test func restoresRenderedWindowFromAnchorKey() {
+        let layout = VirtualTranscriptLayout(items: items, measuredHeights: [:], spacing: 10)
+
+        #expect(layout.renderedRange(anchorKey: "b", count: 2) == 1..<3)
+        #expect(layout.renderedRange(anchorKey: "d", count: 3) == 3..<4)
+        #expect(layout.renderedRange(anchorKey: "missing", count: 2) == nil)
+    }
+
     @Test func bottomDistanceSurvivesPrependingRows() {
         let original = VirtualTranscriptLayout(items: items, measuredHeights: [:], spacing: 10)
         let viewportHeight: CGFloat = 250
@@ -81,5 +89,41 @@ struct VirtualTranscriptLayoutTests {
         )
 
         #expect(restoredTop == 490)
+    }
+
+    @Test func anchorCompensationIgnoresChangesAboveTheViewport() {
+        let initial = VirtualTranscriptLayout(items: items, measuredHeights: [:], spacing: 10)
+        let measured = VirtualTranscriptLayout(
+            items: items,
+            measuredHeights: ["a": 180],
+            spacing: 10
+        )
+
+        let distance = measured.distanceFromBottom(
+            preservingAnchor: "c",
+            previousLayout: initial,
+            previousDistanceFromBottom: 120
+        )
+
+        #expect(distance == 120)
+    }
+
+    @Test func anchorCompensationOffsetsGrowthBelowTheViewport() {
+        let initial = VirtualTranscriptLayout(items: items, measuredHeights: [:], spacing: 10)
+        let measured = VirtualTranscriptLayout(
+            items: items,
+            measuredHeights: ["d": 520],
+            spacing: 10
+        )
+
+        let distance = measured.distanceFromBottom(
+            preservingAnchor: "b",
+            previousLayout: initial,
+            previousDistanceFromBottom: 120
+        )
+
+        #expect(distance == 240)
+        #expect(initial.viewportTop(distanceFromBottom: 120, viewportHeight: 250)
+            == measured.viewportTop(distanceFromBottom: distance ?? 0, viewportHeight: 250))
     }
 }

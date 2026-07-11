@@ -76,6 +76,28 @@ public struct VirtualTranscriptLayout: Sendable, Equatable {
         max(0, totalHeight - (max(0, viewportTop) + max(0, viewportHeight)))
     }
 
+    /// Translates a bottom-relative viewport coordinate across a layout
+    /// change while keeping the same row fixed in the viewport. Changes below
+    /// the anchor increase the distance from the bottom; changes above it do
+    /// not move the reader's content.
+    public func distanceFromBottom(
+        preservingAnchor key: String,
+        previousLayout: VirtualTranscriptLayout,
+        previousDistanceFromBottom: CGFloat
+    ) -> CGFloat? {
+        guard let previousIndex = previousLayout.indexByKey[key],
+              let nextIndex = indexByKey[key] else { return nil }
+        let previousAnchorTopFromBottom = previousLayout.bottomOffsets[previousIndex]
+            + previousLayout.heights[previousIndex]
+        let nextAnchorTopFromBottom = bottomOffsets[nextIndex] + heights[nextIndex]
+        return max(
+            0,
+            previousDistanceFromBottom
+                + nextAnchorTopFromBottom
+                - previousAnchorTopFromBottom
+        )
+    }
+
     /// Rows intersecting the viewport plus a small row-count overscan. Long
     /// chat turns make row-count overscan more useful than a fixed pixel band.
     public func visibleRange(
@@ -94,6 +116,14 @@ public struct VirtualTranscriptLayout: Sendable, Equatable {
         let start = max(0, first - max(0, overscanCount))
         let overscannedEnd = min(keys.count, max(first + 1, end) + max(0, overscanCount))
         return start..<overscannedEnd
+    }
+
+    /// Recreates a previously rendered virtual window around its first key.
+    /// Saved windows are advisory: missing keys fall back to the ordinary
+    /// distance-based range and counts are clamped to the current transcript.
+    public func renderedRange(anchorKey: String, count: Int) -> Range<Int>? {
+        guard let start = indexByKey[anchorKey] else { return nil }
+        return start..<min(keys.count, start + max(1, count))
     }
 
     private func firstIndexWhoseBottomExceeds(_ value: CGFloat) -> Int {

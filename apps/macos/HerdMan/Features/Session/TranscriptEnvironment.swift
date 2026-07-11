@@ -12,4 +12,8 @@ extension EnvironmentValues {
 
     /// Stable session facade used by deferred historical detail sections.
     @Entry var transcriptController: SessionController?
+
+    /// Runs a user disclosure change while the containing transcript row is
+    /// pinned to its current viewport position.
+    @Entry var transcriptPerformAnchoredDisclosureChange: ((@escaping () -> Void) -> Void)?
 }

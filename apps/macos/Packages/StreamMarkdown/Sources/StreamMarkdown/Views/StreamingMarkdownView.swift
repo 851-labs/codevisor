@@ -52,13 +52,27 @@ struct MarkdownSegmentListView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: theme.blockSpacing) {
             ForEach(Array(segments.enumerated()), id: \.offset) { _, segment in
-                switch segment {
-                case let .textRun(runBlocks):
-                    MarkdownTextRunView(blocks: runBlocks)
-                case let .block(block):
-                    MarkdownBlockView(block: block)
-                }
+                MarkdownSegmentView(segment: segment)
+                    .equatable()
             }
+        }
+    }
+}
+
+/// A settled streaming segment is an explicit SwiftUI equality boundary.
+/// Growing the hosting surface still lays out the stack, but it cannot rebuild
+/// or repaint the already-rendered prefix; only the changing tail crosses this
+/// boundary. `StreamingSegmenter` preserves the values of settled segments,
+/// making the comparison O(1) in the steady state.
+private struct MarkdownSegmentView: View, Equatable {
+    let segment: MarkdownSegment
+
+    var body: some View {
+        switch segment {
+        case let .textRun(runBlocks):
+            MarkdownTextRunView(blocks: runBlocks)
+        case let .block(block):
+            MarkdownBlockView(block: block)
         }
     }
 }

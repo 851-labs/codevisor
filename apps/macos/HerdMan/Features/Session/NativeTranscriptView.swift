@@ -125,6 +125,107 @@ private final class FlippedTranscriptDocumentView: NSView {
     override var isFlipped: Bool { true }
 }
 
+private final class TranscriptContentHostingController: NSHostingController<AnyView> {
+    var onLaidOutHeightChange: ((CGFloat) -> Void)?
+    private var lastReportedHeight: CGFloat = 0
+
+    override func viewDidLayout() {
+        super.viewDidLayout()
+        let proposedSize = CGSize(
+            width: max(1, view.bounds.width),
+            height: .greatestFiniteMagnitude
+        )
+        let height = max(1, sizeThatFits(in: proposedSize).height.rounded(.up))
+        guard abs(lastReportedHeight - height) > 0.5 else { return }
+        lastReportedHeight = height
+        onLaidOutHeightChange?(height)
+    }
+
+    func invalidateContentSize() {
+        view.invalidateIntrinsicContentSize()
+        view.superview?.needsLayout = true
+    }
+
+    func resetReportedHeight() {
+        lastReportedHeight = 0
+    }
+}
+
+/// A mounted row's SwiftUI content owns its natural height. The virtualizer
+/// supplies only the row's top position and width, then observes the hosting
+/// view's laid-out height to move later rows. Estimated outer heights are never
+/// imposed back onto mounted content.
+@MainActor
+private final class TranscriptRowHost: NSView {
+    private let contentController = TranscriptContentHostingController(rootView: AnyView(EmptyView()))
+    private var contentHost: NSView { contentController.view }
+    private lazy var contentWidthConstraint = contentHost.widthAnchor.constraint(equalToConstant: 1)
+    private lazy var contentHeightConstraint = contentHost.heightAnchor.constraint(equalToConstant: 1)
+    var onHeightChange: ((CGFloat) -> Void)?
+
+    override var isFlipped: Bool { true }
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        contentHost.translatesAutoresizingMaskIntoConstraints = false
+        contentController.sizingOptions = [.intrinsicContentSize]
+        contentHost.setContentHuggingPriority(.required, for: .vertical)
+        contentHost.setContentCompressionResistancePriority(.required, for: .vertical)
+        addSubview(contentHost)
+        NSLayoutConstraint.activate([
+            contentHost.topAnchor.constraint(equalTo: topAnchor),
+            contentHost.leadingAnchor.constraint(equalTo: leadingAnchor),
+            contentWidthConstraint,
+            contentHeightConstraint,
+        ])
+        contentController.onLaidOutHeightChange = { [weak self] height in
+            self?.contentHeightDidChange(height)
+        }
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func layout() {
+        let width = max(1, bounds.width)
+        if abs(contentWidthConstraint.constant - width) > 0.5 {
+            contentWidthConstraint.constant = width
+            contentController.invalidateContentSize()
+        }
+        super.layout()
+    }
+
+    var rootView: AnyView {
+        get { contentController.rootView }
+        set {
+            contentController.rootView = newValue
+            contentController.invalidateContentSize()
+        }
+    }
+
+    func prepareForMountedRow() {
+        contentController.resetReportedHeight()
+    }
+
+    private func contentHeightDidChange(_ height: CGFloat) {
+        // SwiftUI can lay out beyond this wrapper's estimated height before the
+        // virtualizer consumes the measurement. Keep the AppKit wrapper in sync
+        // immediately so its visible content and pointer hit-test bounds never
+        // disagree during that window.
+        if abs(contentHeightConstraint.constant - height) > 0.5 {
+            contentHeightConstraint.constant = height
+        }
+        if abs(frame.height - height) > 0.5 {
+            var nextFrame = frame
+            nextFrame.size.height = height
+            frame = nextFrame
+        }
+        onHeightChange?(height)
+    }
+}
+
 /// One authoritative owner for viewport position, virtual row mounting, and
 /// compensation. It mirrors the architecture of ChatGPT's web scroll
 /// controller while retaining AppKit's native gestures, momentum, elasticity,
@@ -155,9 +256,18 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
     private var activeMeasurementCacheKey: SessionMeasurementCacheKey?
     private var layoutFingerprint = 0
 
-    private var mountedHosts: [String: NSHostingView<AnyView>] = [:]
-    private var recycledHosts: [NSHostingView<AnyView>] = []
+    private var mountedHosts: [String: TranscriptRowHost] = [:]
+    private var recycledHosts: [TranscriptRowHost] = []
     private var rowContent: ((TranscriptVirtualRow) -> AnyView)?
+    private var pendingMeasuredHeights: [String: CGFloat] = [:]
+    private var measurementCommitTask: Task<Void, Never>?
+
+    private struct DisclosureViewportAnchor {
+        let id: UUID
+        let viewportTop: CGFloat
+    }
+    private var disclosureViewportAnchor: DisclosureViewportAnchor?
+    private var disclosureAnchorReleaseTask: Task<Void, Never>?
 
     private var pendingInitialState: SessionScrollState?
     /// The saved bottom-distance stays authoritative through initial layout,
@@ -175,6 +285,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
     private var positionApplicationDepth = 0
     private var isApplyingPosition: Bool { positionApplicationDepth > 0 }
     private var isHandlingUserInput = false
+    private var isLiveScrolling = false
     /// AppKit can deliver the clip-view bounds notification after
     /// `scrollWheel(with:)` returns. Keep a short intent window so that delayed
     /// notification is still classified as user movement, not a system scroll.
@@ -225,6 +336,8 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
                 queue: .main
             ) { [weak self] _ in
                 MainActor.assumeIsolated {
+                    self?.cancelDisclosureViewportAnchor()
+                    self?.isLiveScrolling = true
                     self?.isHandlingUserInput = true
                     self?.markRecentUserInput()
                 }
@@ -235,7 +348,9 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
                 queue: .main
             ) { [weak self] _ in
                 MainActor.assumeIsolated {
+                    self?.emitViewportSnapshot()
                     self?.isHandlingUserInput = false
+                    self?.isLiveScrolling = false
                     self?.markRecentUserInput()
                 }
             },
@@ -248,6 +363,8 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
     }
 
     deinit {
+        measurementCommitTask?.cancel()
+        disclosureAnchorReleaseTask?.cancel()
         if let boundsObserver {
             NotificationCenter.default.removeObserver(boundsObserver)
         }
@@ -285,6 +402,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
     }
 
     override func scrollWheel(with event: NSEvent) {
+        cancelDisclosureViewportAnchor()
         lockedRestoreDistance = nil
         isHandlingUserInput = true
         markRecentUserInput()
@@ -300,6 +418,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
             super.keyDown(with: event)
             return
         }
+        cancelDisclosureViewportAnchor()
         lockedRestoreDistance = nil
         isHandlingUserInput = true
         markRecentUserInput()
@@ -465,8 +584,12 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
             measurementCaches.removeValue(forKey: evicted)
         }
 
-        // Measurements for active/setup/spacer rows are intentionally not
-        // shared across widths. They are few, mounted, and remeasure quickly.
+        // Keep mounted heights as provisional geometry while their independent
+        // inner hosts remeasure at the new width. Provisional values are not
+        // written into the new width's cache.
+        let provisionalMountedHeights = Dictionary(uniqueKeysWithValues: mountedHosts.keys.compactMap { key in
+            measuredHeights[key].map { (key, $0) }
+        })
         measuredHeights.removeAll(keepingCapacity: true)
         let cached = measurementCaches[key] ?? [:]
         var valid: [UUID: SessionMeasuredRow] = [:]
@@ -486,19 +609,65 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
                 measuredHeights[row.id.layoutKey] = height
             }
         }
+        for (key, height) in provisionalMountedHeights where measuredHeights[key] == nil {
+            measuredHeights[key] = height
+        }
+        // ChatGPT restores the exact height map that produced its saved
+        // coordinate before mounting the saved rendered window. Apply it only
+        // when the width/typography key still matches; current measurements
+        // replace these provisional values as soon as the hosts lay out.
+        if let restore = pendingInitialState?.virtualTranscript,
+           restore.measurementCacheKey == key {
+            for (rowKey, height) in restore.rowHeightsByKey
+            where rowByKey[rowKey] != nil && height > 0 {
+                measuredHeights[rowKey] = height
+            }
+        }
         return true
     }
 
     private func rebuildDocumentGeometry() {
-        // Capture the only viewport coordinate before changing document size.
-        // A locked restore target wins until the user deliberately scrolls.
+        // Capture the viewport before changing document size. A locked restore
+        // target wins until the user deliberately scrolls. Once the reader has
+        // moved away from the bottom, preserve the first visible row instead
+        // of preserving a raw bottom distance: streaming growth below that row
+        // must not pull the viewport down with it.
+        let previousLayout = virtualLayout
+        let previousDistance = initialPositionApplied ? currentDistanceFromBottom() : nil
+        // ChatGPT follows the bottom only while the latest turn is live. An
+        // idle transcript is static even when its distance is zero, so opening
+        // a disclosure preserves the reader's viewport instead of pushing the
+        // clicked header offscreen.
+        let followsStreamingLatest = followsLatest && rows.contains { $0.id == .active }
+        let visibleAnchorKey: String?
+        if !followsStreamingLatest, let previousDistance, !previousLayout.isEmpty {
+            let visibleRange = previousLayout.visibleRange(
+                distanceFromBottom: previousDistance,
+                viewportHeight: contentView.bounds.height,
+                overscanCount: 0
+            )
+            // Match ChatGPT's compensation rule: prefer a visible row whose
+            // height is already measured, then fall back to the first visible
+            // key. Estimates must not become an anchor when an exact row is
+            // available in the same viewport.
+            visibleAnchorKey = visibleRange.compactMap { index -> String? in
+                guard previousLayout.keys.indices.contains(index) else { return nil }
+                let key = previousLayout.keys[index]
+                return measuredHeights[key] == nil ? nil : key
+            }.first ?? visibleRange.first.flatMap { index in
+                previousLayout.keys.indices.contains(index) ? previousLayout.keys[index] : nil
+            }
+        } else {
+            visibleAnchorKey = nil
+        }
         let distanceToPreserve: CGFloat? = if let lockedRestoreDistance {
             lockedRestoreDistance
         } else if initialPositionApplied {
-            followsLatest ? 0 : currentDistanceFromBottom()
+            followsStreamingLatest ? 0 : currentDistanceFromBottom()
         } else {
             nil
         }
+        var initialRestoreRange: Range<Int>?
         applyPositionTransaction {
             virtualLayout = VirtualTranscriptLayout(
                 items: rows.map {
@@ -507,6 +676,9 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
                 measuredHeights: measuredHeights,
                 spacing: Self.rowSpacing
             )
+            initialRestoreRange = pendingInitialState?.virtualTranscript?.renderedWindow.flatMap {
+                virtualLayout.renderedRange(anchorKey: $0.anchorKey, count: $0.count)
+            }
 
             let width = max(1, contentView.bounds.width)
             transcriptDocumentView.frame = CGRect(
@@ -519,18 +691,39 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
 
             if !initialPositionApplied {
                 applyPendingInitialPositionIfPossible()
+            } else if let anchor = disclosureViewportAnchor {
+                setViewportTop(anchor.viewportTop)
             } else if let distanceToPreserve {
-                setDistanceFromBottom(distanceToPreserve)
+                let anchoredDistance = visibleAnchorKey.flatMap { key in
+                    virtualLayout.distanceFromBottom(
+                        preservingAnchor: key,
+                        previousLayout: previousLayout,
+                        previousDistanceFromBottom: distanceToPreserve
+                    )
+                }
+                let resolvedDistance = anchoredDistance ?? distanceToPreserve
+                if lockedRestoreDistance != nil {
+                    lockedRestoreDistance = resolvedDistance
+                }
+                setDistanceFromBottom(resolvedDistance)
             }
             // A delayed bounds notification after this transaction sees the
             // final canonical distance, not the transient pre-compensation one.
             lastDistanceFromBottom = currentDistanceFromBottom()
         }
-        updateMountedRows()
+        updateMountedRows(rangeOverride: initialRestoreRange)
     }
 
     private func applyPendingInitialPositionIfPossible() {
         guard !initialPositionApplied, contentView.bounds.height > 0 else { return }
+
+        let restoredRange = pendingInitialState?.virtualTranscript?.renderedWindow.flatMap {
+            virtualLayout.renderedRange(anchorKey: $0.anchorKey, count: $0.count)
+        }
+        // Mount the same neighborhood that was present when the coordinate was
+        // saved. Otherwise estimates can select a different part of the thread
+        // and the first measurement pass starts from the wrong content.
+        updateMountedRows(rangeOverride: restoredRange)
 
         if let state = pendingInitialState, !state.isAtBottom {
             let maximumDistance = max(
@@ -553,7 +746,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
 
         initialPositionApplied = true
         pendingInitialState = nil
-        updateMountedRows()
+        updateMountedRows(rangeOverride: restoredRange)
         // A saved target is already the authoritative persisted state. Do not
         // replace it with a clamped/intermediate first-layout coordinate.
         if lastStableScrollState == nil || followsLatest {
@@ -607,7 +800,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
 
         let atBottom = distance <= Self.atBottomThreshold
         publishBottomState(atBottom)
-        let isRecentUserMovement = isHandlingUserInput
+        let isRecentUserMovement = isHandlingUserInput || isLiveScrolling
             || ProcessInfo.processInfo.systemUptime <= userInputDeadline
         // Moving away from the end is authoritative intent. Layout-driven
         // position changes are wrapped in `isApplyingPosition`; requiring a
@@ -625,14 +818,9 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
         // event. Bounds changes also fire for document resize, restoration,
         // and teardown; treating those as user position is what reset chats
         // to the first row during navigation.
-        if isHandlingUserInput {
-            switch NSApp.currentEvent?.type {
-            case .scrollWheel, .leftMouseDown, .leftMouseDragged, .keyDown:
-                lockedRestoreDistance = nil
-                emitViewportSnapshot()
-            default:
-                break
-            }
+        if !isApplyingPosition, isHandlingUserInput || isLiveScrolling {
+            lockedRestoreDistance = nil
+            emitViewportSnapshot()
         }
         checkForHistoryPrefetch()
     }
@@ -663,14 +851,29 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
         onNearTop?()
     }
 
-    private func updateMountedRows() {
+    private func updateMountedRows(rangeOverride: Range<Int>? = nil) {
         guard initialPositionApplied || contentView.bounds.height > 0 else { return }
         let distance = currentDistanceFromBottom()
-        let range = virtualLayout.visibleRange(
+        let targetRange = rangeOverride ?? virtualLayout.visibleRange(
             distanceFromBottom: distance,
             viewportHeight: contentView.bounds.height,
             overscanCount: Self.overscanCount
         )
+        // Preserve a rendered window that already contains the target. This is
+        // ChatGPT's rendered-range containment rule: height changes inside a
+        // visible turn must not recycle that turn halfway through its update.
+        let mountedIndices = mountedHosts.keys.compactMap { virtualLayout.indexByKey[$0] }
+        let mountedRange: Range<Int>? = mountedIndices.min().flatMap { lower in
+            mountedIndices.max().map { upper in lower..<(upper + 1) }
+        }
+        let range: Range<Int> = if rangeOverride == nil,
+                                  let mountedRange,
+                                  mountedRange.lowerBound <= targetRange.lowerBound,
+                                  mountedRange.upperBound >= targetRange.upperBound {
+            mountedRange
+        } else {
+            targetRange
+        }
         let requiredKeys = Set(range.compactMap { index in
             virtualLayout.keys.indices.contains(index) ? virtualLayout.keys[index] : nil
         })
@@ -688,8 +891,11 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
             guard virtualLayout.keys.indices.contains(index) else { continue }
             let key = virtualLayout.keys[index]
             if mountedHosts[key] == nil, let row = rowByKey[key] {
-                let host = recycledHosts.popLast() ?? NSHostingView(rootView: AnyView(EmptyView()))
-                host.wantsLayer = true
+                let host = recycledHosts.popLast() ?? TranscriptRowHost(frame: .zero)
+                host.prepareForMountedRow()
+                host.onHeightChange = { [weak self] height in
+                    self?.recordMeasuredHeight(height, for: key)
+                }
                 host.rootView = measuredRootView(for: row)
                 transcriptDocumentView.addSubview(host)
                 mountedHosts[key] = host
@@ -720,21 +926,92 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
         let key = row.id.layoutKey
         return AnyView(
             rowContent(row)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .fixedSize(horizontal: false, vertical: true)
-                .onGeometryChange(for: CGFloat.self) { geometry in
-                    geometry.size.height
-                } action: { [weak self] height in
-                    self?.recordMeasuredHeight(height, for: key)
+                .environment(\.transcriptPerformAnchoredDisclosureChange) { [weak self] change in
+                    self?.performAnchoredDisclosureChange(in: key, change: change) ?? change()
                 }
+                // The hosting view's measured height is rounded up to keep
+                // row geometry stable. Pin the SwiftUI root to the top so any
+                // sub-point rounding slack stays below the message instead of
+                // recentering it when a disclosure changes the row height.
+                .frame(maxWidth: .infinity, alignment: .topLeading)
                 .id(key)
         )
     }
 
+    private func performAnchoredDisclosureChange(
+        in rowKey: String,
+        change: @escaping () -> Void
+    ) {
+        guard initialPositionApplied,
+              virtualLayout.indexByKey[rowKey] != nil else {
+            change()
+            return
+        }
+
+        disclosureAnchorReleaseTask?.cancel()
+        let anchor = DisclosureViewportAnchor(
+            id: UUID(),
+            viewportTop: contentView.bounds.minY
+        )
+        disclosureViewportAnchor = anchor
+        change()
+
+        disclosureAnchorReleaseTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(450))
+            guard !Task.isCancelled,
+                  self?.disclosureViewportAnchor?.id == anchor.id else { return }
+            self?.disclosureViewportAnchor = nil
+            self?.disclosureAnchorReleaseTask = nil
+        }
+    }
+
+    private func cancelDisclosureViewportAnchor() {
+        disclosureAnchorReleaseTask?.cancel()
+        disclosureAnchorReleaseTask = nil
+        disclosureViewportAnchor = nil
+    }
+
     private func recordMeasuredHeight(_ rawHeight: CGFloat, for key: String) {
         let height = max(1, rawHeight.rounded(.up))
-        guard rowByKey[key] != nil,
-              abs((measuredHeights[key] ?? 0) - height) > 0.5 else { return }
+        guard rowByKey[key] != nil else { return }
+        let current = pendingMeasuredHeights[key] ?? measuredHeights[key] ?? 0
+        guard abs(current - height) > 0.5 else { return }
+        pendingMeasuredHeights[key] = height
+
+        // A streaming active row needs its latest height in the same update;
+        // ordinary/history rows are committed together after SwiftUI finishes
+        // the current layout pass so hosts never use mixed geometry snapshots.
+        if key == TranscriptVirtualRow.ID.active.layoutKey, !inLiveResize {
+            measurementCommitTask?.cancel()
+            measurementCommitTask = nil
+            commitPendingMeasurements()
+            return
+        }
+        guard measurementCommitTask == nil else { return }
+        measurementCommitTask = Task { @MainActor [weak self] in
+            await Task.yield()
+            guard !Task.isCancelled else { return }
+            self?.commitPendingMeasurements()
+        }
+    }
+
+    private func commitPendingMeasurements() {
+        measurementCommitTask = nil
+        let pending = pendingMeasuredHeights
+        pendingMeasuredHeights.removeAll(keepingCapacity: true)
+        var changed = false
+        for (key, height) in pending {
+            guard rowByKey[key] != nil,
+                  abs((measuredHeights[key] ?? 0) - height) > 0.5 else { continue }
+            storeMeasuredHeight(height, for: key)
+            changed = true
+        }
+        if changed {
+            rebuildDocumentGeometry()
+        }
+    }
+
+    private func storeMeasuredHeight(_ height: CGFloat, for key: String) {
         measuredHeights[key] = height
         if let row = rowByKey[key], let id = row.id.messageID {
             let measurement = SessionMeasuredRow(
@@ -746,7 +1023,6 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
                 measurementCaches[activeMeasurementCacheKey, default: [:]][id] = measurement
             }
         }
-        rebuildDocumentGeometry()
     }
 
     private func positionMountedRows() {
@@ -756,7 +1032,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
         }
     }
 
-    private func position(host: NSHostingView<AnyView>, at index: Int) {
+    private func position(host: TranscriptRowHost, at index: Int) {
         let viewportWidth = max(1, contentView.bounds.width)
         let availableWidth = max(1, viewportWidth - Self.horizontalPadding * 2)
         let rowWidth = min(Self.maxRowWidth, availableWidth)
@@ -781,7 +1057,8 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
         let state = SessionScrollState(
             distanceFromBottom: distance,
             measurementCaches: measurementCaches,
-            measurementCacheLRU: measurementCacheLRU
+            measurementCacheLRU: measurementCacheLRU,
+            virtualTranscript: currentVirtualRestoreState()
         )
         lastStableScrollState = state
         onViewportChange?(state)
@@ -793,7 +1070,30 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
         // the next mount, but they do not authorize a different position.
         state.measurementCaches = measurementCaches
         state.measurementCacheLRU = measurementCacheLRU
+        state.virtualTranscript = currentVirtualRestoreState()
         lastStableScrollState = state
         onViewportChange?(state)
+    }
+
+    private func currentVirtualRestoreState() -> SessionVirtualTranscriptRestoreState {
+        let indices = mountedHosts.keys.compactMap { virtualLayout.indexByKey[$0] }.sorted()
+        let renderedWindow: SessionRenderedTranscriptWindow? = indices.first.flatMap { first in
+            guard let last = indices.last,
+                  virtualLayout.keys.indices.contains(first) else { return nil }
+            return SessionRenderedTranscriptWindow(
+                anchorKey: virtualLayout.keys[first],
+                count: last - first + 1
+            )
+        }
+        let rowHeights = Dictionary(uniqueKeysWithValues: virtualLayout.keys.compactMap { key in
+            measuredHeights[key].flatMap { height in
+                height > 0 ? (key, height) : nil
+            }
+        })
+        return SessionVirtualTranscriptRestoreState(
+            measurementCacheKey: activeMeasurementCacheKey,
+            rowHeightsByKey: rowHeights,
+            renderedWindow: renderedWindow
+        )
     }
 }

@@ -751,6 +751,68 @@ describe("@herdman/db", () => {
     migrated.close()
   })
 
+  it("only marks assistant turns with renderable worked details", async () => {
+    const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
+    const project = await run(db.createProject({ folderPath: "/tmp/worked-details" }))
+    const session = await run(db.createSession({ projectId: project.id, harnessId: "codex" }))
+
+    await run(
+      db.appendEvent("session.updated", session.id, {
+        turnId: "empty-work",
+        turnState: "started"
+      })
+    )
+    await run(
+      db.appendEvent("session.output", session.id, {
+        content: { type: "text", text: "" },
+        sessionUpdate: "agent_thought_chunk"
+      })
+    )
+    await run(
+      db.appendEvent("session.output", session.id, {
+        content: { type: "text", text: "Answer without work" },
+        sessionUpdate: "agent_message_chunk"
+      })
+    )
+    await run(
+      db.appendEvent("session.updated", session.id, {
+        turnId: "empty-work",
+        turnState: "ended"
+      })
+    )
+
+    await run(
+      db.appendEvent("session.updated", session.id, {
+        turnId: "visible-work",
+        turnState: "started"
+      })
+    )
+    await run(
+      db.appendEvent("session.output", session.id, {
+        content: { type: "text", text: "Inspecting files" },
+        sessionUpdate: "agent_thought_chunk"
+      })
+    )
+    await run(
+      db.appendEvent("session.output", session.id, {
+        content: { type: "text", text: "Answer after work" },
+        sessionUpdate: "agent_message_chunk"
+      })
+    )
+    await run(
+      db.appendEvent("session.updated", session.id, {
+        turnId: "visible-work",
+        turnState: "ended"
+      })
+    )
+
+    const page = await run(db.getTranscriptPage(session.id, undefined, 32))
+    expect(page.items.filter((item) => item.role === "assistant")).toMatchObject([
+      { text: "Answer without work", hasDetails: false },
+      { text: "Answer after work", hasDetails: true }
+    ])
+  })
+
   it("projects alternate event shapes, plans, tools, and failed turns", async () => {
     const filename = tempDatabase()
     const db = await run(makeDatabase({ filename, serverId: "local" }))

@@ -61,6 +61,7 @@ struct SubagentSectionView: View {
     @Environment(\.theme) private var theme
     @Environment(\.transcriptDisclosure) private var disclosureStore
     @Environment(\.runningSubagentToolCallIds) private var runningSubagentToolCallIds
+    @Environment(\.transcriptPerformAnchoredDisclosureChange) private var performAnchoredDisclosureChange
     /// Transient one-shot guard for the settle collapse. Stays `@State`: it
     /// only matters while the subagent is running/settling, which happens in
     /// the mounted active row. A settled remount resets it harmlessly
@@ -86,9 +87,9 @@ struct SubagentSectionView: View {
     private var transcript: SubagentTranscript? { turn.subagents[call.toolCallId] }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 0) {
             header
-            if isExpanded {
+            TranscriptDisclosureContentReveal(isExpanded: isExpanded) {
                 VStack(alignment: .leading, spacing: 12) {
                     TranscriptItemsView(items: items, turn: turn, isTurnActive: isTurnActive, depth: depth)
                     if isRunning, transcript?.isThinking == true {
@@ -98,16 +99,15 @@ struct SubagentSectionView: View {
                     }
                 }
                 .padding(.leading, 24)
-                .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
+                .padding(.top, 8)
             }
         }
-        .clipped()
         // Collapse once the subagent stops running — including background work
         // that outlives the turn; manual toggles still work after.
         .onChange(of: isRunning) { _, running in
             if !running, !hasAutoCollapsed {
                 hasAutoCollapsed = true
-                withAnimation(.snappy(duration: 0.25)) { store.setExpanded(disclosureKey, false) }
+                store.setExpanded(disclosureKey, false)
             }
         }
     }
@@ -124,17 +124,13 @@ struct SubagentSectionView: View {
                 .foregroundStyle(.secondary)
                 .shimmering(isRunning)
             statusGlyph
-            Image(systemName: "chevron.right")
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
-                .rotationEffect(.degrees(isExpanded ? 90 : 0))
+            TranscriptDisclosureChevron(expanded: isExpanded)
             Spacer(minLength: 0)
         }
         .contentShape(Rectangle())
         .onTapGesture {
-            withAnimation(.snappy(duration: 0.25)) {
-                store.toggle(disclosureKey, default: isRunning)
-            }
+            let change = { store.toggle(disclosureKey, default: isRunning) }
+            performAnchoredDisclosureChange?(change) ?? change()
         }
     }
 

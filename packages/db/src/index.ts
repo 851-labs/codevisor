@@ -642,6 +642,43 @@ const migrations: ReadonlyArray<Migration> = [
       alter table sessions add column harness_account_id text references harness_accounts(id);
       create index if not exists sessions_harness_account_idx on sessions(harness_account_id);
     `
+  },
+  {
+    id: 10,
+    name: "accurate worked detail markers",
+    sql: "",
+    run: (sqlite) => {
+      const itemIdsWithDetails = new Set<string>()
+      const detailEvents = sqlite
+        .prepare(
+          `select chat_item_id, payload from session_events
+           where chat_item_id is not null and kind = 'session.output'
+           order by session_id, revision asc`
+        )
+        .iterate() as Iterable<{
+        readonly chat_item_id: string
+        readonly payload: string
+      }>
+      for (const event of detailEvents) {
+        const payload = parseJsonRecord(event.payload)
+        if (payload !== undefined && isRenderableWorkedEvent(payload)) {
+          itemIdsWithDetails.add(event.chat_item_id)
+        }
+      }
+
+      const items = sqlite
+        .prepare("select id, has_details from chat_items where role = 'assistant'")
+        .all() as ReadonlyArray<{ readonly id: string; readonly has_details: number }>
+      const updateItem = sqlite.prepare(
+        `update chat_items set has_details = ?, revision = revision + 1
+         where id = ? and has_details != ?`
+      )
+
+      for (const item of items) {
+        const value = itemIdsWithDetails.has(item.id) ? 1 : 0
+        updateItem.run(value, item.id, value)
+      }
+    }
   }
 ]
 
@@ -659,12 +696,45 @@ const jsonRecord = (value: unknown): JsonRecord | undefined =>
     ? (value as JsonRecord)
     : undefined
 
+const parseJsonRecord = (raw: string): JsonRecord | undefined => {
+  try {
+    return jsonRecord(JSON.parse(raw))
+  } catch {
+    return undefined
+  }
+}
+
 const payloadText = (payload: JsonRecord): string | undefined => {
   if (typeof payload.text === "string") {
     return payload.text
   }
   const content = jsonRecord(payload.content)
   return content?.type === "text" && typeof content.text === "string" ? content.text : undefined
+}
+
+/** Whether replaying this non-answer update can produce something inside the
+ * collapsible Worked section. Transport/config updates and empty thought
+ * chunks must not create a disclosure with an empty body. */
+const hasRenderableWorkedDetail = (payload: JsonRecord): boolean => {
+  const update = typeof payload.sessionUpdate === "string" ? payload.sessionUpdate : undefined
+  switch (update) {
+    case "tool_call":
+    case "tool_call_update":
+    case "question":
+    case "question_resolved":
+      return true
+    case "agent_thought_chunk":
+      return (payloadText(payload)?.trim().length ?? 0) > 0
+    case "agent_message_chunk":
+      // A zero-length commentary chunk can retroactively classify the earlier
+      // text span with the same message id as work rather than final output.
+      return (
+        (payloadText(payload)?.trim().length ?? 0) > 0 ||
+        (payload.phase === "commentary" && typeof payload.messageId === "string")
+      )
+    default:
+      return false
+  }
 }
 
 const conversationEventPayload = (
@@ -718,6 +788,9 @@ const conversationEventPayload = (
   }
   return undefined
 }
+
+const isRenderableWorkedEvent = (payload: JsonRecord): boolean =>
+  conversationEventPayload(payload) === undefined && hasRenderableWorkedDetail(payload)
 
 const canonicalChatBackfillId = "canonical-session-chat-v1"
 
@@ -1003,7 +1076,7 @@ const projectChatEvent = (sqlite: Database.Database, event: SessionEventRow): vo
             `update chat_items set has_details = max(has_details, ?), updated_at = ?,
              revision = revision + 1 where id = ?`
           )
-          .run(1, event.created_at, itemId)
+          .run(hasRenderableWorkedDetail(payload) ? 1 : 0, event.created_at, itemId)
         if (update === "plan_document" && typeof payload.markdown === "string") {
           upsertChatPart(sqlite, itemId, "plan", payload.markdown)
         }

@@ -11,6 +11,7 @@ struct ToolGroupView: View {
     /// has followed it yet); collapses when the model moves on to prose.
     var autoExpanded: Bool = false
     @Environment(\.transcriptDisclosure) private var disclosureStore
+    @Environment(\.transcriptPerformAnchoredDisclosureChange) private var performAnchoredDisclosureChange
 
     // Disclosure hoisted to the session store (survives lazy remounts),
     // keyed by the group's first call id (groups only append, so it's stable).
@@ -22,7 +23,7 @@ struct ToolGroupView: View {
     private var isExpanded: Bool { store.isExpanded(disclosureKey, default: autoExpanded) }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 8) {
                 // Pinned to the first call's icon — a group's icon flipping
                 // as more calls stream in reads as UI churn.
@@ -32,35 +33,32 @@ struct ToolGroupView: View {
                     .frame(width: 16)
                 Text(ToolCallSummary.describe(calls))
                     .foregroundStyle(.secondary)
-                Image(systemName: "chevron.right")
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-                    .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                TranscriptDisclosureChevron(expanded: isExpanded)
                 Spacer(minLength: 0)
             }
             .contentShape(Rectangle())
             .onTapGesture {
-                withAnimation(.snappy(duration: 0.25)) { store.toggle(disclosureKey, default: autoExpanded) }
+                let change = { store.toggle(disclosureKey, default: autoExpanded) }
+                performAnchoredDisclosureChange?(change) ?? change()
             }
 
-            if isExpanded {
+            TranscriptDisclosureContentReveal(isExpanded: isExpanded) {
                 VStack(alignment: .leading, spacing: 8) {
                     ForEach(calls) { call in
                         ToolCallRow(call: call, isTurnActive: isTurnActive)
                     }
                 }
                 .padding(.leading, 24)
-                .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
+                .padding(.top, 8)
             }
         }
-        .clipped()
         // The group follows the work: open while the model is working through
         // it so the live rows (shimmer, counters) are visible, closed once
         // the next text part arrives. Manual toggles still work in between.
         // (No onAppear seed — the store default IS autoExpanded, so a remount
         // renders correctly without re-running a side effect.)
         .onChange(of: autoExpanded) { _, expanded in
-            withAnimation(.snappy(duration: 0.25)) { store.setExpanded(disclosureKey, expanded) }
+            store.setExpanded(disclosureKey, expanded)
         }
     }
 }

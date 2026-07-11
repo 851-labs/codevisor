@@ -12,6 +12,7 @@ struct ToolCallRow: View {
     var isTurnActive: Bool = false
     @Environment(\.theme) private var theme
     @Environment(\.transcriptDisclosure) private var disclosureStore
+    @Environment(\.transcriptPerformAnchoredDisclosureChange) private var performAnchoredDisclosureChange
     /// Memoizes the content-diff fallback of `diffTotals` (a full Myers diff
     /// of the edited file): rows re-render on every stream flush while their
     /// turn is active, and diffing entire file contents in `body` was a
@@ -41,7 +42,7 @@ struct ToolCallRow: View {
 
     var body: some View {
         let totals = counterTotals
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 6) {
                 Text(call.displayTitle(diffTotals: totals))
                     .lineLimit(1)
@@ -52,39 +53,37 @@ struct ToolCallRow: View {
                     DiffCounter(totals: totals)
                 }
                 if hasContent {
-                    Image(systemName: "chevron.right")
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
-                        .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                    TranscriptDisclosureChevron(expanded: isExpanded)
                 }
                 Spacer(minLength: 0)
             }
             .contentShape(Rectangle())
             .onTapGesture {
                 if hasContent {
-                    withAnimation(.snappy(duration: 0.25)) { store.toggle(disclosureKey, default: false) }
+                    let change = { store.toggle(disclosureKey, default: false) }
+                    performAnchoredDisclosureChange?(change) ?? change()
                 }
             }
 
-            if isExpanded, hasContent {
+            TranscriptDisclosureContentReveal(isExpanded: isExpanded && hasContent) {
                 // Diffs carry their own card; wrapping them in the labeled
                 // output card double-borders them for no benefit.
-                if hasOnlyDiffContent {
-                    VStack(alignment: .leading, spacing: 8) {
-                        ForEach(Array((call.content ?? []).enumerated()), id: \.offset) { _, content in
-                            if case let .diff(path, oldText, newText) = content {
-                                DiffView(path: path, oldText: oldText, newText: newText)
+                Group {
+                    if hasOnlyDiffContent {
+                        VStack(alignment: .leading, spacing: 8) {
+                            ForEach(Array((call.content ?? []).enumerated()), id: \.offset) { _, content in
+                                if case let .diff(path, oldText, newText) = content {
+                                    DiffView(path: path, oldText: oldText, newText: newText)
+                                }
                             }
                         }
+                    } else {
+                        ToolCallContentCard(call: call)
                     }
-                    .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
-                } else {
-                    ToolCallContentCard(call: call)
-                        .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
                 }
+                .padding(.top, 6)
             }
         }
-        .clipped()
     }
 }
 
