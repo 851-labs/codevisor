@@ -26,6 +26,10 @@ public struct MarkdownTheme: Sendable {
     public var codeBackground: Color
     /// Background tint for `` `inline code` `` chips.
     public var inlineCodeBackground: Color
+    /// Corner radius of the rounded chip background painted behind
+    /// `` `inline code` `` runs (clamped to half the chip height at draw
+    /// time).
+    public var inlineCodeCornerRadius: CGFloat
     public var quoteBarColor: Color
     public var tableBorderColor: Color
     public var codeHighlighter: CodeHighlighting?
@@ -44,6 +48,7 @@ public struct MarkdownTheme: Sendable {
         lineSpacing: CGFloat = 3,
         codeBackground: Color = Color.secondary.opacity(0.12),
         inlineCodeBackground: Color = Color.secondary.opacity(0.18),
+        inlineCodeCornerRadius: CGFloat = 4,
         quoteBarColor: Color = Color.secondary.opacity(0.4),
         tableBorderColor: Color = Color.secondary.opacity(0.25),
         codeHighlighter: CodeHighlighting? = nil,
@@ -58,6 +63,7 @@ public struct MarkdownTheme: Sendable {
         self.lineSpacing = lineSpacing
         self.codeBackground = codeBackground
         self.inlineCodeBackground = inlineCodeBackground
+        self.inlineCodeCornerRadius = inlineCodeCornerRadius
         self.quoteBarColor = quoteBarColor
         self.tableBorderColor = tableBorderColor
         self.codeHighlighter = codeHighlighter
@@ -80,6 +86,7 @@ public struct MarkdownTheme: Sendable {
         hasher.combine(listItemSpacing)
         hasher.combine(codeBackground)
         hasher.combine(inlineCodeBackground)
+        hasher.combine(inlineCodeCornerRadius)
         hasher.combine(quoteBarColor)
         hasher.combine(tableBorderColor)
         hasher.combine(codeThemeKey)

@@ -31,16 +31,19 @@ public enum InlineMarkdown {
     }
 
     /// Parses inline markdown and styles `` `code` `` spans as chips: a
-    /// slightly smaller monospaced font on a tinted background, padded on each
-    /// side with a narrow no-break space so the background extends a little
-    /// past the glyphs (approximating the pill look within a single
-    /// selectable `Text`).
+    /// slightly smaller monospaced font, padded on each side with a narrow
+    /// no-break space, and tagged with `InlineCodeChipAttribute` so the chip
+    /// renderer can paint a rounded background behind the run (see
+    /// `InlineCodeChipRenderer`).
     public static func attributedString(from markdown: String, theme: MarkdownTheme) -> AttributedString {
         styleInlineCode(in: attributedString(from: markdown), theme: theme)
     }
 
     /// Applies the inline-code chip styling to any `.code` runs in an
-    /// already-parsed attributed string.
+    /// already-parsed attributed string. The chip background itself is NOT an
+    /// attribute (`AttributedString.backgroundColor` can only paint square
+    /// rects): runs are tagged with `InlineCodeChipAttribute` and painted by
+    /// `InlineCodeChipRenderer` with rounded corners.
     public static func styleInlineCode(in attributed: AttributedString, theme: MarkdownTheme) -> AttributedString {
         guard attributed.runs.contains(where: { $0.inlinePresentationIntent?.contains(.code) == true })
         else { return attributed }
@@ -53,14 +56,34 @@ public enum InlineMarkdown {
                 continue
             }
             piece.font = theme.inlineCodeFont
-            piece.backgroundColor = theme.inlineCodeBackground
-            // Narrow no-break spaces carry the chip background slightly past
+            piece[InlineCodeChipAttribute.self] = true
+            // Narrow no-break spaces extend the chip background slightly past
             // the glyphs without allowing a line break between pad and code.
             var pad = AttributedString("\u{202F}")
             pad.font = theme.inlineCodeFont
-            pad.backgroundColor = theme.inlineCodeBackground
+            pad[InlineCodeChipAttribute.self] = true
             result += pad + piece + pad
         }
         return result
+    }
+
+    /// Splits an attributed string into maximal contiguous pieces of chip /
+    /// non-chip content. `MarkdownTextRunView` builds its merged `Text` by
+    /// concatenating these pieces, attaching the SwiftUI `InlineCodeChip`
+    /// custom attribute to the chip ones — `Text(AttributedString)` cannot
+    /// carry custom text attributes directly, but `Text` concatenation
+    /// preserves them and keeps selection continuous.
+    static func chipPieces(in attributed: AttributedString) -> [(text: AttributedString, isChip: Bool)] {
+        var pieces: [(text: AttributedString, isChip: Bool)] = []
+        for run in attributed.runs {
+            let isChip = run[InlineCodeChipAttribute.self] == true
+            let piece = AttributedString(attributed[run.range])
+            if !pieces.isEmpty, pieces[pieces.count - 1].isChip == isChip {
+                pieces[pieces.count - 1].text += piece
+            } else {
+                pieces.append((piece, isChip))
+            }
+        }
+        return pieces
     }
 }

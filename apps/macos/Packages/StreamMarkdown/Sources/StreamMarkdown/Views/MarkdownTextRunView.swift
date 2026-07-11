@@ -19,12 +19,58 @@ struct MarkdownTextRunView: View {
     @State private var memo = TextRunMemo()
 
     var body: some View {
-        let text = memo.text(for: blocks, theme: theme)
-        text
+        let rendered = memo.rendered(for: blocks, theme: theme)
+        let text = rendered.text
             .font(theme.bodyFont)
             .lineSpacing(theme.lineSpacing)
             .textSelection(.enabled)
             .fixedSize(horizontal: false, vertical: true)
+        // Chip-bearing runs get a glyph-less backdrop `Text` that paints the
+        // rounded chip backgrounds: the selectable foreground text ignores
+        // custom TextRenderers (see InlineCodeChipRenderer), and only runs
+        // that actually contain inline code pay for the second layout — the
+        // common no-code paragraph stays a single stock `Text`.
+        if rendered.hasChips {
+            text.background(alignment: .topLeading) {
+                rendered.text
+                    .font(theme.bodyFont)
+                    .lineSpacing(theme.lineSpacing)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textRenderer(
+                        InlineCodeChipRenderer(
+                            background: theme.inlineCodeBackground,
+                            cornerRadius: theme.inlineCodeCornerRadius
+                        )
+                    )
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
+        } else {
+            text
+        }
+    }
+
+    /// Builds the single selectable `Text` for the run. When the merged
+    /// attributed string contains inline-code chips, the `Text` is built by
+    /// concatenating chip / non-chip pieces so chip pieces can carry the
+    /// `InlineCodeChip` custom attribute (concatenation preserves the single
+    /// `Text`, and with it cross-block selection). `hasChips` tells the view
+    /// whether the chip renderer needs to be attached at all.
+    static func text(for blocks: [MarkdownBlock], theme: MarkdownTheme) -> (text: Text, hasChips: Bool) {
+        let merged = attributedString(for: blocks, theme: theme)
+        guard merged.runs.contains(where: { $0[InlineCodeChipAttribute.self] == true }) else {
+            return (Text(merged), false)
+        }
+        var text = Text(verbatim: "")
+        for piece in InlineMarkdown.chipPieces(in: merged) {
+            let pieceText = Text(piece.text)
+            if piece.isChip {
+                text = Text("\(text)\(pieceText.customAttribute(InlineCodeChip()))")
+            } else {
+                text = Text("\(text)\(pieceText)")
+            }
+        }
+        return (text, true)
     }
 
     /// Merges the blocks into one attributed string. Blocks are separated by a
@@ -117,17 +163,17 @@ struct MarkdownTextRunView: View {
 private final class TextRunMemo {
     private var blocks: [MarkdownBlock]?
     private var themeFingerprint: Int?
-    private var cached: Text?
+    private var cached: (text: Text, hasChips: Bool)?
 
-    func text(for blocks: [MarkdownBlock], theme: MarkdownTheme) -> Text {
+    func rendered(for blocks: [MarkdownBlock], theme: MarkdownTheme) -> (text: Text, hasChips: Bool) {
         let fingerprint = theme.renderFingerprint
         if let cached, blocks == self.blocks, fingerprint == themeFingerprint {
             return cached
         }
-        let text = Text(MarkdownTextRunView.attributedString(for: blocks, theme: theme))
+        let rendered = MarkdownTextRunView.text(for: blocks, theme: theme)
         self.blocks = blocks
         themeFingerprint = fingerprint
-        cached = text
-        return text
+        cached = rendered
+        return rendered
     }
 }

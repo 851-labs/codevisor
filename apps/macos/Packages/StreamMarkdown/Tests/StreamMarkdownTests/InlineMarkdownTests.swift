@@ -23,16 +23,25 @@ struct InlineMarkdownTests {
         #expect(hasCode)
     }
 
-    @Test("Themed inline code gets a background chip with padding spaces")
+    @Test("Themed inline code gets chip-tagged runs with padding spaces")
     func codeChip() {
         let attributed = InlineMarkdown.attributedString(from: "call `foo()` now", theme: .default)
         let hasChip = attributed.runs.contains { run in
             run.inlinePresentationIntent?.contains(.code) == true
-                && run.backgroundColor != nil
+                && run[InlineCodeChipAttribute.self] == true
         }
         #expect(hasChip)
-        // Narrow no-break spaces pad each side of the code span.
+        // The chip background is painted by InlineCodeChipRenderer (rounded
+        // corners), never by the square-only backgroundColor attribute.
+        #expect(attributed.runs.allSatisfy { $0.backgroundColor == nil })
+        // Narrow no-break spaces pad each side of the code span; the pads are
+        // chip-tagged too so the pill covers them.
         #expect(String(attributed.characters).contains("\u{202F}foo()\u{202F}"))
+        let padsAreTagged = attributed.runs.allSatisfy { run in
+            !String(attributed[run.range].characters).contains("\u{202F}")
+                || run[InlineCodeChipAttribute.self] == true
+        }
+        #expect(padsAreTagged)
     }
 
     @Test("Themed text without code is unchanged")
@@ -40,6 +49,32 @@ struct InlineMarkdownTests {
         let attributed = InlineMarkdown.attributedString(from: "just **words**", theme: .default)
         #expect(String(attributed.characters) == "just words")
         #expect(attributed.runs.allSatisfy { $0.backgroundColor == nil })
+        #expect(attributed.runs.allSatisfy { $0[InlineCodeChipAttribute.self] == nil })
+    }
+
+    @Test("Chip pieces group contiguous chip and non-chip runs")
+    func chipPieces() {
+        let attributed = InlineMarkdown.attributedString(
+            from: "call `foo()` and **also** `bar`", theme: .default
+        )
+        let pieces = InlineMarkdown.chipPieces(in: attributed)
+        #expect(pieces.map(\.isChip) == [false, true, false, true])
+        #expect(String(pieces[0].text.characters) == "call ")
+        #expect(String(pieces[1].text.characters) == "\u{202F}foo()\u{202F}")
+        // The bold span stays merged into the surrounding non-chip piece even
+        // though it is a separate attribute run.
+        #expect(String(pieces[2].text.characters) == " and also ")
+        #expect(String(pieces[3].text.characters) == "\u{202F}bar\u{202F}")
+        // Re-joining the pieces reproduces the source text exactly.
+        #expect(pieces.map { String($0.text.characters) }.joined() == String(attributed.characters))
+    }
+
+    @Test("Chip pieces of chip-free text is one non-chip piece")
+    func chipPiecesPlain() {
+        let attributed = InlineMarkdown.attributedString(from: "just **words**", theme: .default)
+        let pieces = InlineMarkdown.chipPieces(in: attributed)
+        #expect(pieces.map(\.isChip) == [false])
+        #expect(String(pieces[0].text.characters) == "just words")
     }
 
     @Test("Plain text passes through unchanged")
