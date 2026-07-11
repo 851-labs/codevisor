@@ -650,6 +650,7 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
             onValueChange={setComposerText}
             placeholder={isGoalComposerArmed ? "Describe the goal" : "Ask for follow-up changes"}
             autoFocus
+            focusOnTyping
             commands={detail.availableCommands ?? []}
             attachments={isGoalComposerArmed ? [] : composerAttachments.attachments}
             usage={usage}

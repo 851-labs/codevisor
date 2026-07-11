@@ -50,6 +50,7 @@ export function Composer({
   isCancelling = false,
   isGoalEditing = false,
   autoFocus = false,
+  focusOnTyping = false,
   onAttachFiles,
   onRemoveAttachment,
   onRetryAttachment,
@@ -69,6 +70,7 @@ export function Composer({
   isCancelling?: boolean
   isGoalEditing?: boolean
   autoFocus?: boolean
+  focusOnTyping?: boolean
   onAttachFiles?: (files: readonly File[]) => void
   onRemoveAttachment?: (id: string) => void
   onRetryAttachment?: (id: string) => void
@@ -101,8 +103,44 @@ export function Composer({
   }, [value])
 
   useEffect(() => {
-    if (autoFocus) textareaRef.current?.focus()
+    if (!autoFocus) return
+    const textarea = textareaRef.current
+    if (textarea == null) return
+    textarea.focus()
+    textarea.setSelectionRange(textarea.value.length, textarea.value.length)
   }, [autoFocus])
+
+  useEffect(() => {
+    if (!focusOnTyping) return
+
+    const handleWindowKeyDown = (event: globalThis.KeyboardEvent) => {
+      const textarea = textareaRef.current
+      if (
+        textarea == null ||
+        textarea.disabled ||
+        document.activeElement === textarea ||
+        !isTypeToFocusKey(event) ||
+        hasCompetingTextFocus(event.target) ||
+        document.querySelector('[data-popup-open], [role="dialog"]') != null
+      ) {
+        return
+      }
+
+      const selectionStart = textarea.selectionStart ?? textarea.value.length
+      const selectionEnd = textarea.selectionEnd ?? selectionStart
+      const nextValue =
+        textarea.value.slice(0, selectionStart) + event.key + textarea.value.slice(selectionEnd)
+      const nextSelection = selectionStart + event.key.length
+
+      event.preventDefault()
+      textarea.focus()
+      onValueChange(nextValue)
+      requestAnimationFrame(() => textarea.setSelectionRange(nextSelection, nextSelection))
+    }
+
+    window.addEventListener("keydown", handleWindowKeyDown)
+    return () => window.removeEventListener("keydown", handleWindowKeyDown)
+  }, [focusOnTyping, onValueChange])
 
   const hasDraft = value.trim() !== "" || attachments.length > 0
   const sendEnabled = (canSend ?? hasDraft) || visibleMatches.length > 0
@@ -321,6 +359,38 @@ export function Composer({
       </div>
     </div>
   )
+}
+
+export function isTypeToFocusKey(
+  event: Pick<
+    globalThis.KeyboardEvent,
+    "key" | "ctrlKey" | "metaKey" | "altKey" | "isComposing" | "defaultPrevented"
+  >
+) {
+  return (
+    !event.defaultPrevented &&
+    !event.isComposing &&
+    !event.ctrlKey &&
+    !event.metaKey &&
+    !event.altKey &&
+    event.key.length === 1
+  )
+}
+
+function hasCompetingTextFocus(eventTarget: EventTarget | null) {
+  const focused = document.activeElement
+  return [eventTarget, focused].some((candidate) => {
+    if (!(candidate instanceof HTMLElement)) return false
+    return (
+      candidate instanceof HTMLInputElement ||
+      candidate instanceof HTMLTextAreaElement ||
+      candidate instanceof HTMLSelectElement ||
+      candidate.isContentEditable ||
+      candidate.closest(
+        '[contenteditable="true"], [role="textbox"], [role="menu"], [role="listbox"]'
+      ) != null
+    )
+  })
 }
 
 function ComposerAttachmentRow({
