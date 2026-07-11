@@ -3,6 +3,11 @@ import HerdManTheming
 import StreamMarkdown
 import SwiftUI
 
+private struct TerminalThemeUpdate: Equatable {
+    let palette: TerminalPalette?
+    let isDark: Bool
+}
+
 /// Resolves the active theme from the ThemeManager and injects the token set
 /// into the environment. Must be applied at EVERY hosting root — the main
 /// `WindowGroup` and the `Settings` scene are separate SwiftUI hierarchies and
@@ -16,6 +21,10 @@ struct ThemedRoot: ViewModifier {
         let scheme = resolvedScheme
         let theme = Theme(palette: environment.theme.palette(for: scheme))
         let highlight = environment.theme.highlightTheme(for: scheme)
+        let terminalUpdate = TerminalThemeUpdate(
+            palette: theme.palette?.terminal,
+            isDark: scheme == .dark
+        )
         content
             .environment(\.theme, theme)
             .environment(
@@ -34,8 +43,8 @@ struct ThemedRoot: ViewModifier {
             .tint(theme.isSystem ? nil : theme.accent)
             // Seed the terminal theme before the Ghostty runtime prewarns
             // (initial: true) and re-theme live surfaces on switches.
-            .onChange(of: theme.palette?.terminal, initial: true) { _, terminal in
-                HerdManGhosttyApp.applyTheme(terminal)
+            .onChange(of: terminalUpdate, initial: true) { _, update in
+                HerdManGhosttyApp.applyTheme(update.palette, systemIsDark: update.isDark)
             }
     }
 

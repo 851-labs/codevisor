@@ -45,15 +45,22 @@ final class HerdManGhosttyApp {
     /// (so the first config is already themed) and updated on theme switches.
     /// Static so setting it never instantiates the runtime.
     private static var currentTheme: TerminalPalette?
+    /// The resolved app appearance. This matters when `currentTheme` is nil:
+    /// both system theme slots use nil palettes, but Ghostty still needs a
+    /// config reload when the system moves between light and dark.
+    private static var currentSystemIsDark: Bool?
     /// Flipped at the end of init; applyTheme only reloads a runtime that exists.
     private static var runtimeInitialized = false
 
     /// Applies a theme (nil = system look): stores it for a not-yet-created
     /// runtime, or rebuilds the live config and pushes it to the app and all
     /// open surfaces.
-    static func applyTheme(_ theme: TerminalPalette?) {
-        guard theme != currentTheme else { return }
+    static func applyTheme(_ theme: TerminalPalette?, systemIsDark: Bool) {
+        let themeChanged = theme != currentTheme
+        let systemAppearanceChanged = theme == nil && currentSystemIsDark != systemIsDark
         currentTheme = theme
+        currentSystemIsDark = systemIsDark
+        guard themeChanged || systemAppearanceChanged else { return }
         guard runtimeInitialized else { return }
         shared.reloadConfig()
     }
@@ -67,7 +74,10 @@ final class HerdManGhosttyApp {
 
         _ = ghostty_init(UInt(CommandLine.argc), CommandLine.unsafeArgv)
 
-        let config = Ghostty.Config(config: Self.buildConfig(theme: Self.currentTheme))
+        let config = Ghostty.Config(config: Self.buildConfig(
+            theme: Self.currentTheme,
+            systemIsDark: Self.currentSystemIsDark
+        ))
         self.config = config
 
         // Runtime config modeled on upstream Ghostty.App.init (L60-70). The
@@ -150,10 +160,13 @@ final class HerdManGhosttyApp {
 
     /// Builds a finalized raw config: default files + our override file (font,
     /// background, and — when themed — the full terminal palette).
-    private static func buildConfig(theme: TerminalPalette?) -> ghostty_config_t {
+    private static func buildConfig(
+        theme: TerminalPalette?,
+        systemIsDark: Bool?
+    ) -> ghostty_config_t {
         let cfg = ghostty_config_new()
         ghostty_config_load_default_files(cfg)
-        if let overrideFile = writeOverrideConfig(theme: theme) {
+        if let overrideFile = writeOverrideConfig(theme: theme, systemIsDark: systemIsDark) {
             ghostty_config_load_file(cfg, overrideFile)
         }
         ghostty_config_finalize(cfg)
@@ -164,7 +177,10 @@ final class HerdManGhosttyApp {
     /// Rebuilds the config for the current theme and pushes it to the app and
     /// every live surface.
     private func reloadConfig() {
-        let newConfig = Ghostty.Config(config: Self.buildConfig(theme: Self.currentTheme))
+        let newConfig = Ghostty.Config(config: Self.buildConfig(
+            theme: Self.currentTheme,
+            systemIsDark: Self.currentSystemIsDark
+        ))
         ghostty_app_update_config(app, newConfig.config!)
         for view in surfaces.allObjects {
             if let surface = view.surface {
@@ -229,7 +245,10 @@ final class HerdManGhosttyApp {
     /// Writes a tiny config file with our font + color overrides, and returns
     /// its path. With no theme, the terminal follows the system light/dark
     /// appearance; with a theme, it takes the theme's full palette.
-    private static func writeOverrideConfig(theme: TerminalPalette?) -> String? {
+    private static func writeOverrideConfig(
+        theme: TerminalPalette?,
+        systemIsDark: Bool?
+    ) -> String? {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("herdman-ghostty.conf")
         var contents = """
         font-family = Menlo
@@ -255,7 +274,8 @@ final class HerdManGhosttyApp {
                 }
             }
         } else {
-            let isDark = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            let isDark = systemIsDark
+                ?? (NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua)
             let background = isDark ? "1E1E1E" : "FFFFFF"
             let foreground = isDark ? "FFFFFF" : "000000"
             contents += "background = \(background)\n"
