@@ -46,3 +46,6 @@
 [submodule ".repos/codex-multi-auth"]
 	path = .repos/codex-multi-auth
 	url = https://github.com/ndycode/codex-multi-auth.git
+[submodule ".repos/fumadocs"]
+	path = .repos/fumadocs
+	url = https://github.com/fuma-nama/fumadocs.git
