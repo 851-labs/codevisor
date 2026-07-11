@@ -15,6 +15,7 @@ struct SessionContainerView: View {
 
     @Environment(AppEnvironment.self) private var environment
     @Environment(\.theme) private var theme
+    @Environment(AdaptivePanelLayout.self) private var panelLayout
     @State private var controller: SessionController?
     /// Last user-chosen inspector width. The system only tracks a drag for
     /// the current presentation — the detail subtree's `.id(session.id)`
@@ -102,8 +103,11 @@ struct SessionContainerView: View {
         // top bar), instead of sliding underneath a band painted across the
         // whole window.
         .inspector(isPresented: Binding(
-            get: { scratchpad.isVisible },
-            set: { scratchpad.setVisible($0) }
+            get: { panelLayout.docksInspector && scratchpad.isVisible },
+            set: { visible in
+                guard panelLayout.docksInspector else { return }
+                scratchpad.setVisible(visible)
+            }
         )) {
             SessionInspectorView(controller: controller, scratchpad: scratchpad)
                 .inspectorColumnWidth(
@@ -135,8 +139,20 @@ struct SessionContainerView: View {
                     scratchpadToggleButton
                 }
         }
+        .overlay {
+            AdaptiveDrawerLayer(
+                isPresented: !panelLayout.docksInspector && panelLayout.activeDrawer == .trailing,
+                edge: .trailing,
+                width: compactInspectorWidth
+            ) {
+                SessionInspectorView(controller: controller, scratchpad: scratchpad)
+                    .background(theme.sidebarBackground, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .shadow(color: .black.opacity(0.22), radius: 18, y: 6)
+            }
+        }
         .focusedSceneValue(\.scratchpadToggle, ScratchpadToggleAction(sessionId: session.id) {
-            scratchpad.toggle()
+            toggleScratchpad()
         })
         .task(id: session.id) {
             store.markOpened(session.id)
@@ -155,11 +171,26 @@ struct SessionContainerView: View {
 
     private var scratchpadToggleButton: some View {
         Button {
-            scratchpad.toggle()
+            toggleScratchpad()
         } label: {
             Image(systemName: "sidebar.trailing")
         }
         .help("Toggle Scratchpad (⌥⌘I)")
+    }
+
+    private var compactInspectorWidth: CGFloat {
+        min(
+            max(CGFloat(inspectorWidth), Self.inspectorMinWidth),
+            min(Self.inspectorMaxWidth, panelLayout.windowWidth - 16)
+        )
+    }
+
+    private func toggleScratchpad() {
+        if panelLayout.docksInspector {
+            scratchpad.toggle()
+        } else {
+            panelLayout.toggleDrawer(.trailing)
+        }
     }
 
     /// The directory whose git state the top-bar diff reflects: the session's

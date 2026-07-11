@@ -54,6 +54,7 @@ struct SidebarView: View {
     @Environment(\.theme) private var theme
     @Binding var selection: SidebarSelection?
     var store: SessionStore? = nil
+    var publishesSceneActions = true
 
     @State private var showingImporter = false
     @State private var showingRemoteMachine = false
@@ -281,11 +282,16 @@ struct SidebarView: View {
         .onChange(of: expanded) { _, newValue in
             expandedProjectsRaw = newValue.map(\.uuidString).sorted().joined(separator: "\n")
         }
-        .focusedSceneValue(\.sidebarActions, SidebarActions(
-            newChat: { selection = .newChat(nil) },
-            newProject: { startAddProject() },
-            addRemoteMachine: { showingRemoteMachine = true }
-        ))
+        .focusedSceneValue(
+            \.sidebarActions,
+            publishesSceneActions
+                ? SidebarActions(
+                    newChat: { selection = .newChat(nil) },
+                    newProject: { startAddProject() },
+                    addRemoteMachine: { showingRemoteMachine = true }
+                )
+                : nil
+        )
     }
 
     /// Local machines pick a folder; remote machines prompt for a path.

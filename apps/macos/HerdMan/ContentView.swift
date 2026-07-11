@@ -9,10 +9,11 @@ struct HerdManApp: App {
     var body: some Scene {
         WindowGroup {
             RootView()
+                .frame(minWidth: 480, minHeight: 600)
                 .themedRoot()
                 .environment(environment)
         }
-        .defaultSize(width: 980, height: 640)
+        .defaultSize(width: 1280, height: 820)
         .windowResizability(.contentMinSize)
         .commands {
             AppUpdateCommands(appUpdate: environment.appUpdate)
@@ -42,15 +43,12 @@ struct RootView: View {
     @Environment(AppEnvironment.self) private var environment
     @Environment(\.theme) private var theme
     @State private var selection: SidebarSelection?
-    // Seeded from UserDefaults so a collapsed sidebar survives relaunch;
-    // written back in `mainSplit`'s onChange. `NavigationSplitViewVisibility`
-    // isn't RawRepresentable, so it can't live in @AppStorage directly.
-    @State private var columnVisibility: NavigationSplitViewVisibility =
-        UserDefaults.standard.bool(forKey: "sidebar.collapsed") ? .detailOnly : .all
+    @AppStorage("sidebar.collapsed") private var sidebarCollapsed = false
     @State private var store: SessionStore?
     @State private var preferredProjectId: UUID?
     @State private var preparedMachineId: String?
     @State private var lightbox = LightboxController()
+    @State private var panelLayout = AdaptivePanelLayout()
 
     var body: some View {
         Group {
@@ -68,6 +66,7 @@ struct RootView: View {
                 }
             }
         }
+        .environment(panelLayout)
         .environment(\.lightbox, lightbox)
         // Locks the composer's submit action while an update installs (the
         // app or selected server is about to restart).
@@ -84,9 +83,15 @@ struct RootView: View {
             }
         }
         .animation(.snappy(duration: 0.15), value: lightbox.item)
+        .onGeometryChange(for: CGFloat.self) { proxy in
+            proxy.size.width
+        } action: { width in
+            panelLayout.updateWindowWidth(width)
+        }
         // Track which session is on screen so finished turns only badge the
         // sidebar rows of chats the user hasn't opened.
         .onChange(of: selection) { _, newValue in
+            panelLayout.dismissDrawer(.leading)
             guard let store else { return }
             if case let .session(sessionId) = newValue {
                 store.markOpened(sessionId)
@@ -150,7 +155,7 @@ struct RootView: View {
     }
 
     private var mainSplit: some View {
-        NavigationSplitView(columnVisibility: $columnVisibility) {
+        NavigationSplitView(columnVisibility: sidebarColumnVisibility) {
             SidebarView(selection: $selection, store: store)
                 .navigationSplitViewColumnWidth(min: 230, ideal: 270, max: 360)
                 .themedToolbarBackground(theme, surface: theme.sidebarBackground)
@@ -180,9 +185,36 @@ struct RootView: View {
             }
             .themedToolbarBackground(theme, surface: theme.windowBackground)
         }
-        .onChange(of: columnVisibility) { _, newValue in
-            UserDefaults.standard.set(newValue == .detailOnly, forKey: "sidebar.collapsed")
+        .overlay {
+            AdaptiveDrawerLayer(
+                isPresented: !panelLayout.docksSidebar && panelLayout.activeDrawer == .leading,
+                edge: .leading,
+                width: min(270, panelLayout.windowWidth - 16)
+            ) {
+                SidebarView(selection: $selection, store: store, publishesSceneActions: false)
+                    .background(theme.sidebarBackground, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .shadow(color: .black.opacity(0.22), radius: 18, y: 6)
+            }
         }
+    }
+
+    /// At compact widths the system sidebar remains collapsed and its normal
+    /// toggle opens our transient drawer instead. Automatic collapse doesn't
+    /// touch the persisted `sidebarCollapsed` preference.
+    private var sidebarColumnVisibility: Binding<NavigationSplitViewVisibility> {
+        Binding(
+            get: {
+                panelLayout.docksSidebar && !sidebarCollapsed ? .all : .detailOnly
+            },
+            set: { visibility in
+                if panelLayout.docksSidebar {
+                    sidebarCollapsed = visibility == .detailOnly
+                } else if visibility != .detailOnly {
+                    panelLayout.toggleDrawer(.leading)
+                }
+            }
+        )
     }
 
     #if DEBUG

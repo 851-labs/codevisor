@@ -73,7 +73,6 @@ struct OnboardingView: View {
                 .padding(.horizontal, 40)
                 .padding(.vertical, 24)
         }
-        .frame(minWidth: 640, minHeight: 460)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .animation(.smooth(duration: 0.3), value: step)
         .task { await detectHarnesses() }
