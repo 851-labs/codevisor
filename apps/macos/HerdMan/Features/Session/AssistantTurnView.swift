@@ -307,7 +307,7 @@ struct TranscriptDisclosureChevron: View {
             .frame(width: 10, height: 10)
             // Scope interpolation to rotation only. A value-based animation
             // also captured position changes from the expanding parent.
-            .animation(reduceMotion ? nil : .easeOut(duration: 0.16)) { chevron in
+            .animation(Motion.indicator(reduceMotion: reduceMotion)) { chevron in
                 chevron.rotationEffect(.degrees(expanded ? 90 : 0))
             }
     }
@@ -346,7 +346,7 @@ private struct WorkedContentReveal<Content: View>: View {
                     isVisible = true
                     return
                 }
-                withAnimation(.easeOut(duration: 0.20)) {
+                withAnimation(Motion.entrance()) {
                     isVisible = true
                 }
             }
@@ -369,10 +369,6 @@ struct TranscriptDisclosureContentReveal<Content: View>: View {
         case expanding
         case expanded
         case collapsing
-    }
-
-    private static var animation: Animation {
-        .timingCurve(0.16, 1, 0.3, 1, duration: 0.25)
     }
 
     init(isExpanded: Bool, @ViewBuilder content: () -> Content) {
@@ -401,7 +397,7 @@ struct TranscriptDisclosureContentReveal<Content: View>: View {
                     // The enclosing tool group, Worked section, and message
                     // root receive ordinary layout updates, never this
                     // animation transaction.
-                    .animation(reduceMotion ? nil : Self.animation) { body in
+                    .animation(Motion.reveal(reduceMotion: reduceMotion)) { body in
                         body
                             .opacity(presentedOpacity)
                             .frame(height: presentedHeight, alignment: .top)
@@ -475,7 +471,7 @@ struct TranscriptDisclosureContentReveal<Content: View>: View {
         animationGeneration &+= 1
         let generation = animationGeneration
         Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(260))
+            try? await Task.sleep(for: Motion.revealSettleDelay)
             guard generation == animationGeneration,
                   isExpanded == expanded else { return }
             if expanded {

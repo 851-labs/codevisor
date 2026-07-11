@@ -78,6 +78,6 @@ struct AdaptiveDrawerLayer<DrawerContent: View>: View {
         }
         .allowsHitTesting(isPresented)
         .onExitCommand { panelLayout.dismissDrawer() }
-        .animation(reduceMotion ? nil : .snappy(duration: 0.2), value: isPresented)
+        .animation(Motion.quick(reduceMotion: reduceMotion), value: isPresented)
     }
 }

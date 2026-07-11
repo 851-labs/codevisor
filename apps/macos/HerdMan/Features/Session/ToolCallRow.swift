@@ -123,6 +123,7 @@ private final class DiffTotalsCache {
 struct DiffCounter: View {
     let totals: LineDiff.Totals
     @Environment(\.theme) private var theme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         HStack(spacing: 4) {
@@ -134,7 +135,7 @@ struct DiffCounter: View {
                 .contentTransition(.numericText(value: Double(totals.removed)))
         }
         .font(.caption.monospacedDigit())
-        .animation(.snappy(duration: 0.3), value: totals)
+        .animation(Motion.quick(reduceMotion: reduceMotion), value: totals)
     }
 }
 

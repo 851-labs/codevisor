@@ -9,6 +9,7 @@ struct TodoPanelView: View {
     let plan: Plan
     @Binding var isExpanded: Bool
     @Environment(\.theme) private var theme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var completedCount: Int {
         plan.entries.count { $0.status == .completed }
@@ -21,7 +22,7 @@ struct TodoPanelView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Button {
-                withAnimation(.snappy(duration: 0.18)) { isExpanded.toggle() }
+                withAnimation(Motion.quick(reduceMotion: reduceMotion)) { isExpanded.toggle() }
             } label: {
                 HStack(spacing: 6) {
                     Image(systemName: "checklist")

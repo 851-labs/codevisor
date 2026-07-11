@@ -8,6 +8,7 @@ import ACPKit
 struct SessionScreen: View {
     @Environment(\.theme) private var theme
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Bindable var controller: SessionController
     var paneGroup: PaneGroupModel
     @State private var isAtBottom = true
@@ -35,7 +36,7 @@ struct SessionScreen: View {
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
-        .animation(.snappy(duration: 0.25), value: paneGroup.state.isVisible)
+        .animation(Motion.panel(reduceMotion: reduceMotion), value: paneGroup.state.isVisible)
         .focusedSceneValue(\.terminalToggle, TerminalToggleAction(sessionId: paneGroup.sessionId) {
             togglePanes()
         })
@@ -128,11 +129,11 @@ struct SessionScreen: View {
             if !isAtBottom {
                 scrollToBottomButton
                     .padding(.bottom, composerHeight - 10)
-                    .transition(.opacity.combined(with: .scale(scale: 0.85)))
+                    .transition(Motion.pop(reduceMotion: reduceMotion))
             }
         }
         .overlay(alignment: .bottom) { composerOverlay }
-        .animation(.snappy(duration: 0.2), value: isAtBottom)
+        .animation(Motion.quick(reduceMotion: reduceMotion), value: isAtBottom)
     }
 
     /// Toggles the pane group's content and moves keyboard focus to match
@@ -330,17 +331,17 @@ struct SessionScreen: View {
         VStack(spacing: 8) {
             if let todos = controller.todos, !todos.entries.isEmpty {
                 TodoPanelView(plan: todos, isExpanded: $controller.isTodosExpanded)
-                    .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
+                    .transition(Motion.unfold(reduceMotion: reduceMotion))
             }
             // Hidden while editing: the composer IS the goal UI in that mode.
             if controller.supportsGoals, !controller.isGoalEditing,
                let goal = controller.goal ?? controller.draftGoal {
                 GoalBannerView(controller: controller, goal: goal)
-                    .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
+                    .transition(Motion.unfold(reduceMotion: reduceMotion))
             }
             if !controller.queuedPrompts.isEmpty {
                 PromptQueueView(controller: controller, isExpanded: $isQueueExpanded)
-                    .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
+                    .transition(Motion.unfold(reduceMotion: reduceMotion))
             }
             // A blocking agent question replaces the composer with the picker
             // until it's answered or dismissed (codex CLI behavior). Both plan
@@ -348,7 +349,7 @@ struct SessionScreen: View {
             // from the runtime, and codex's client-side post-turn prompt.
             if let question = controller.activeQuestion {
                 QuestionPickerCard(controller: controller, request: question)
-                    .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .bottom)))
+                    .transition(Motion.unfold(reduceMotion: reduceMotion, anchor: .bottom))
             } else {
                 ComposerCard(
                     controller: controller,
@@ -374,8 +375,8 @@ struct SessionScreen: View {
         .padding(.top, 24)
         .frame(maxWidth: .infinity)
         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { composerHeight = $0 }
-        .animation(.snappy(duration: 0.2), value: controller.queuedPrompts.map(\.id))
-        .animation(.snappy(duration: 0.2), value: isQueueExpanded)
+        .animation(Motion.quick(reduceMotion: reduceMotion), value: controller.queuedPrompts.map(\.id))
+        .animation(Motion.quick(reduceMotion: reduceMotion), value: isQueueExpanded)
     }
 
     private func errorBanner(_ message: String) -> some View {
@@ -435,6 +436,7 @@ private struct TranscriptActiveItemView: View {
 
 private struct PromptQueueView: View {
     @Environment(\.theme) private var theme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Bindable var controller: SessionController
     @Binding var isExpanded: Bool
     @State private var editingQueueId: String?
@@ -443,7 +445,7 @@ private struct PromptQueueView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Button {
-                withAnimation(.snappy(duration: 0.2)) {
+                withAnimation(Motion.quick(reduceMotion: reduceMotion)) {
                     isExpanded.toggle()
                 }
             } label: {
@@ -469,7 +471,7 @@ private struct PromptQueueView: View {
                         queueRow(item)
                     }
                 }
-                .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
+                .transition(Motion.unfold(reduceMotion: reduceMotion))
             }
         }
         .padding(10)
