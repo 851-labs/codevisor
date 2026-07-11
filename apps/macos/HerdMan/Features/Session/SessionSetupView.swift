@@ -40,10 +40,10 @@ struct SessionSetupPhaseView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 0) {
             if hasDetail {
                 Button {
-                    withAnimation(.snappy(duration: 0.28)) { isExpanded.toggle() }
+                    isExpanded.toggle()
                 } label: {
                     header(showsChevron: true)
                         .contentShape(Rectangle())
@@ -53,7 +53,7 @@ struct SessionSetupPhaseView: View {
                 header(showsChevron: false)
             }
 
-            if isExpanded && hasDetail {
+            TranscriptDisclosureContentReveal(isExpanded: isExpanded && hasDetail) {
                 VStack(alignment: .leading, spacing: 8) {
                     Divider()
                     if let message = phase.failureMessage {
@@ -66,19 +66,21 @@ struct SessionSetupPhaseView: View {
                         logLines
                     }
                 }
-                .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
+                // Keep the header gap inside the measured reveal. If this is
+                // outer VStack spacing, it survives at zero height until the
+                // reveal settles, then disappears as a final 12pt jump.
+                .padding(.top, 12)
             }
         }
-        .clipped()
         .onChange(of: phase.outcome) { _, outcome in
             switch outcome {
             case .failed:
                 // Surface what went wrong without a click.
                 guard !hasAutoExpandedFailure else { return }
                 hasAutoExpandedFailure = true
-                withAnimation(.snappy(duration: 0.28)) { isExpanded = true }
+                isExpanded = true
             case .succeeded:
-                withAnimation(.snappy(duration: 0.28)) { isExpanded = false }
+                isExpanded = false
             case .running:
                 break
             }
@@ -89,15 +91,17 @@ struct SessionSetupPhaseView: View {
         HStack(spacing: 6) {
             label
             if showsChevron {
-                Image(systemName: "chevron.right")
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.tertiary)
-                    .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                TranscriptDisclosureChevron(expanded: isExpanded)
             }
             Spacer(minLength: 0)
         }
         .font(.callout)
         .foregroundStyle(.secondary)
+        // Keep the setup label stable while the shared disclosure primitives
+        // animate only the chevron and the revealed content.
+        .transaction { transaction in
+            transaction.animation = nil
+        }
     }
 
     /// "Setting up worktree… 12s" (shimmering, live timer) while running;
