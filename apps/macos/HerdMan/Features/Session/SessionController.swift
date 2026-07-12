@@ -95,12 +95,22 @@ final class SessionController {
         case failed(String)
     }
 
+    /// Loading, an authoritative empty result, and a request failure are
+    /// distinct UI states. An empty harness array alone cannot represent all
+    /// three without briefly claiming that no agent is installed.
+    enum PreparationState: Equatable {
+        case loading
+        case ready
+        case failed
+    }
+
     var composerText: String = ""
     private(set) var composerAttachments: [ComposerAttachment] = []
     /// Attachments shown with the optimistic first message while connecting.
     private(set) var pendingUserAttachments: [Attachment] = []
     private var uploadTasks: [UUID: Task<Void, Never>] = [:]
     private(set) var harnesses: [ServerHarness] = []
+    private(set) var preparationState: PreparationState = .loading
     var selectedHarnessId: String?
     private(set) var model: SessionModel?
     private(set) var status: Status = .idle
@@ -209,10 +219,12 @@ final class SessionController {
         self.composerDefaults = composerDefaults
         self.settings = settings
         self.serverClient = serverClient
-        seedFromCachedServerCapabilities()
+        if seedFromCachedServerCapabilities() {
+            preparationState = .ready
+        }
     }
 
-    var isPrepared: Bool { !harnesses.isEmpty }
+    var isPrepared: Bool { preparationState == .ready }
 
     /// The directory the agent runs in: the session's server-resolved cwd
     /// (project folder or worktree), a just-created worktree, or the project
@@ -909,11 +921,16 @@ final class SessionController {
     /// harnesses if they've disabled everything); a resumed session always
     /// keeps its own harness.
     func prepare() async {
-        guard let serverClient else { return }
+        guard let serverClient else {
+            preparationState = .failed
+            return
+        }
         if seedFromCachedServerCapabilities() {
+            preparationState = .ready
             Task { await self.prepareFromServerCapabilities(serverClient) }
             return
         }
+        preparationState = .loading
         _ = await prepareFromServerCapabilities(serverClient)
     }
 
@@ -960,7 +977,9 @@ final class SessionController {
         // project; the new project gets its own on the next send.
         sessionCwdOverride = nil
         worktreeName = nil
-        seedFromCachedServerCapabilities()
+        if seedFromCachedServerCapabilities() {
+            preparationState = .ready
+        }
         await reconnect()
     }
 
@@ -1391,9 +1410,13 @@ final class SessionController {
                 configCache.store(capability.configOptions, forHarness: capability.harness.id)
             }
             configCache.store(capabilities, forServer: project.serverId)
+            preparationState = .ready
             return true
         } catch {
             Log.session.error("capability fetch failed: \(String(describing: error), privacy: .public)")
+            if harnesses.isEmpty {
+                preparationState = .failed
+            }
             return false
         }
     }
@@ -1454,6 +1477,7 @@ extension SessionController {
             configCache: ConfigOptionCache(store: InMemoryStore())
         )
         controller.harnesses = harnesses
+        controller.preparationState = .ready
         controller.selectedHarnessId = harnesses.first?.id
         controller.model = model
         // Surface the plan and goal affordances in previews: goals for every

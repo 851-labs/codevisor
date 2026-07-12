@@ -30,6 +30,7 @@ import { makeAcpTerminalHost, type AcpTerminalHost } from "./acp-terminals.js"
 import {
   adapterPromise,
   normalizePromptInput,
+  runtimeError,
   runtimeEffect,
   type AgentProvider,
   type AgentRuntimeError,
@@ -175,6 +176,12 @@ const unavailableReadiness = (
 
 export interface AcpProviderConfig {
   readonly connector?: AcpConnector
+  /// Bounds the authentication-only ACP session used during discovery. Some
+  /// agents accept initialize but never answer session/new; discovery must
+  /// still settle and tear down their process.
+  readonly authProbeTimeoutMs?: number
+  /// Bounds the ACP initialize handshake for stdio agents.
+  readonly connectTimeoutMs?: number
   /// When set, the client advertises the ACP `terminal` capability and backs
   /// `terminal/*` with server-owned processes (surfaced as terminal tabs once
   /// they outlive the promotion delay).
@@ -185,7 +192,9 @@ export const makeAcpProvider = (
   environment: ProviderEnvironment,
   config: AcpProviderConfig = {}
 ): AgentProvider => {
-  const connector = config.connector ?? makeStdioAcpConnector(config.backgroundTerminals)
+  const authProbeTimeoutMs = config.authProbeTimeoutMs ?? 10_000
+  const connector =
+    config.connector ?? makeStdioAcpConnector(config.backgroundTerminals, config.connectTimeoutMs)
 
   const connect = (
     definition: HarnessDefinition,
@@ -272,8 +281,15 @@ export const makeAcpProvider = (
     ): Effect.Effect<CreatedAgentSession, AgentRuntimeError> =>
       Effect.gen(function* () {
         const connection = yield* connect(definition, cwd, emit, account)
-        const metadata = yield* connection.createSession(cwd)
-        return { handle: handleFor(connection, metadata.sessionId, emit), metadata }
+        return yield* connection.createSession(cwd).pipe(
+          Effect.map((metadata) => ({
+            handle: handleFor(connection, metadata.sessionId, emit),
+            metadata
+          })),
+          // A failed or interrupted setup never enters the runtime's managed
+          // session map, so the provider owns cleaning up its process.
+          Effect.onError(() => connection.close.pipe(Effect.ignoreCause))
+        )
       }),
     loadSession: (
       definition,
@@ -295,9 +311,18 @@ export const makeAcpProvider = (
           () => Promise.resolve(),
           account
         )
-        return yield* connection
-          .probeAuth(process.cwd())
-          .pipe(Effect.ensuring(connection.close.pipe(Effect.ignoreCause)))
+        return yield* connection.probeAuth(process.cwd()).pipe(
+          Effect.timeout(authProbeTimeoutMs),
+          Effect.mapError((cause) =>
+            runtimeError(
+              "probeAuth",
+              cause._tag === "TimeoutError"
+                ? new Error(`ACP authentication probe timed out after ${authProbeTimeoutMs}ms`)
+                : cause
+            )
+          ),
+          Effect.ensuring(connection.close.pipe(Effect.ignoreCause))
+        )
       }),
     authenticate: (definition, methodId, account) =>
       Effect.gen(function* () {
@@ -342,15 +367,20 @@ const turnLifecycleEvent = (
 
 /* v8 ignore start -- stdio ACP adapter is exercised by integration/packaging smoke tests. */
 export const makeStdioAcpConnector = (
-  backgroundTerminals?: BackgroundTerminalIntegration
+  backgroundTerminals?: BackgroundTerminalIntegration,
+  connectTimeoutMs = 10_000
 ): AcpConnector => ({
   connect: (request, emit) =>
     adapterPromise("connect", async () => {
       const child = spawn(request.command, [...request.args], {
         cwd: request.cwd,
+        // npx/npm launch the actual agent as a descendant. A separate process
+        // group lets close/timeout reliably terminate the whole ACP tree.
+        detached: process.platform !== "win32",
         env: request.env,
         stdio: ["pipe", "pipe", "pipe"]
       })
+      const terminate = processGroupTerminator(child)
       let closeConnection: ((error: Error) => void) | undefined
       const spawnFailure = new Promise<never>((_resolve, reject) => {
         child.once("error", (error) => {
@@ -471,28 +501,40 @@ export const makeStdioAcpConnector = (
         terminals?.closeAll()
         connection.close(new Error(stderr()))
       })
-      const initialized = await Promise.race([
-        connection.agent.request(acp.methods.agent.initialize, {
-          clientCapabilities: {
-            plan: {},
-            terminal: terminals !== undefined
-          },
-          clientInfo: {
-            name: "HerdMan",
-            title: "HerdMan",
-            version: "0.1.0"
-          },
-          protocolVersion: acp.PROTOCOL_VERSION
-        }),
-        spawnFailure
-      ])
+      let initialized: acp.InitializeResponse
+      try {
+        initialized = await promiseWithTimeout(
+          Promise.race([
+            connection.agent.request(acp.methods.agent.initialize, {
+              clientCapabilities: {
+                plan: {},
+                terminal: terminals !== undefined
+              },
+              clientInfo: {
+                name: "HerdMan",
+                title: "HerdMan",
+                version: "0.1.0"
+              },
+              protocolVersion: acp.PROTOCOL_VERSION
+            }),
+            spawnFailure
+          ]),
+          connectTimeoutMs,
+          `ACP initialize timed out after ${connectTimeoutMs}ms`
+        )
+      } catch (cause) {
+        const error = cause instanceof Error ? cause : new Error(String(cause))
+        closeConnection(error)
+        terminate()
+        throw error
+      }
       return sdkConnection(
         connection,
         stderr,
         () => {
           cancelQuestions(undefined)
           terminals?.closeAll()
-          child.kill()
+          terminate()
         },
         initialized?.agentCapabilities?.promptCapabilities ?? {},
         { answerQuestion, cancelQuestions },
@@ -507,6 +549,47 @@ export const makeStdioAcpConnector = (
       )
     })
 })
+
+const promiseWithTimeout = <A>(
+  promise: Promise<A>,
+  timeoutMs: number,
+  message: string
+): Promise<A> => {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const timeout = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => reject(new Error(message)), timeoutMs)
+    timer.unref()
+  })
+  return Promise.race([promise, timeout]).finally(() => {
+    if (timer !== undefined) clearTimeout(timer)
+  })
+}
+
+const processGroupTerminator = (child: ChildProcessWithoutNullStreams): (() => void) => {
+  let terminated = false
+  return () => {
+    if (terminated) return
+    terminated = true
+    const pid = child.pid
+    if (pid === undefined || process.platform === "win32") {
+      child.kill()
+      return
+    }
+    try {
+      process.kill(-pid, "SIGTERM")
+    } catch {
+      child.kill()
+    }
+    const forceKill = setTimeout(() => {
+      try {
+        process.kill(-pid, "SIGKILL")
+      } catch {
+        // The process group already exited.
+      }
+    }, 1_000)
+    forceKill.unref()
+  }
+}
 
 export const stdioAcpConnector: AcpConnector = makeStdioAcpConnector()
 

@@ -50,6 +50,7 @@ struct OnboardingView: View {
     @State private var showingFolderPicker = false
     @State private var isFinishing = false
     @State private var recommendations: [ProjectRecommendation] = []
+    @State private var isLoadingRecommendations = true
     @State private var showsNotInstalled = false
     @State private var authenticationHarness: ServerHarness?
 
@@ -168,7 +169,7 @@ struct OnboardingView: View {
                 VStack(spacing: 10) {
                     ProgressView()
                         .controlSize(.small)
-                    Text("Starting HerdMan…")
+                    Text("Checking agents…")
                         .foregroundStyle(.secondary)
                 }
                 .padding(.vertical, 20)
@@ -351,6 +352,7 @@ struct OnboardingView: View {
     /// port and misreport "No harnesses found".
     private func detectHarnesses() async {
         detection = .connecting
+        isLoadingRecommendations = true
         if !AppPreview.isRunning {
             // Joins the root view's in-flight server start (ensureRunning
             // dedups concurrent callers) instead of racing ahead of it.
@@ -365,12 +367,14 @@ struct OnboardingView: View {
                 // Suggest project folders from the user's most recent harness
                 // sessions so the project step offers one-click choices.
                 recommendations = await environment.recommendedProjects()
+                isLoadingRecommendations = false
                 return
             }
             if attempt < 7 {
                 try? await Task.sleep(for: .milliseconds(500))
             }
         }
+        isLoadingRecommendations = false
         detection = .unreachable(serverFailureMessage)
     }
 
@@ -438,7 +442,20 @@ struct OnboardingView: View {
             )
 
             VStack(alignment: .leading, spacing: 8) {
-                if !folderChoices.isEmpty {
+                if isLoadingRecommendations {
+                    // HIG: recommendation discovery has no measurable duration,
+                    // so show a small indeterminate activity indicator where
+                    // its results will appear. Keep the manual picker available.
+                    HStack {
+                        Spacer()
+                        ProgressView()
+                            .controlSize(.small)
+                            .help("Finding recent projects")
+                            .accessibilityLabel("Finding recent projects")
+                        Spacer()
+                    }
+                    .frame(minHeight: 64)
+                } else if !folderChoices.isEmpty {
                     HStack(alignment: .firstTextBaseline) {
                         Text("Suggested from your recent sessions")
                             .font(.callout.weight(.medium))
@@ -589,17 +606,24 @@ struct OnboardingView: View {
     // MARK: - Footer
 
     private var footer: some View {
-        HStack {
-            if step != .welcome {
-                Button("Back") { goBack() }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.secondary)
-            }
-            Spacer()
+        // Keep the page control on the window's center axis. Putting it in
+        // the navigation HStack centers it only in the space left between
+        // unequal Back and primary buttons, which visibly shifts it.
+        ZStack {
             pageDots
-            Spacer()
-            primaryButton
+
+            HStack {
+                if step != .welcome {
+                    Button("Back") { goBack() }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                primaryButton
+            }
+            .frame(maxWidth: .infinity)
         }
+        .frame(maxWidth: .infinity)
     }
 
     private var pageDots: some View {
@@ -670,6 +694,10 @@ struct OnboardingView: View {
             step = .harnesses
         case .harnesses:
             step = .project
+            // Capability inspection starts agents to discover models/modes and
+            // can take a few seconds. Hide that latency behind project choice;
+            // onboarding remains interactive and never waits on this warm.
+            Task { await environment.warmHarnessCapabilities() }
         case .project:
             finish()
         }

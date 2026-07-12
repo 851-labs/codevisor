@@ -60,4 +60,32 @@ struct ConfigOptionCacheTests {
         let cache = ConfigOptionCache(store: store)
         #expect(cache.options(forHarness: "x").isEmpty)
     }
+
+    @Test("Speculative warm does not overwrite an existing capability snapshot")
+    func speculativeWarmPreservesExistingSnapshot() {
+        let cache = ConfigOptionCache(store: InMemoryStore())
+        let warm = capability(model: "warm")
+        let projectSpecific = capability(model: "project")
+
+        #expect(cache.storeIfEmpty([warm], forServer: "local"))
+        cache.store([projectSpecific], forServer: "local")
+        #expect(!cache.storeIfEmpty([warm], forServer: "local"))
+        #expect(cache.capabilities(forServer: "local").first?.configOptions.first?.currentValue == "project")
+    }
+
+    private func capability(model: String) -> ServerHarnessCapability {
+        ServerHarnessCapability(
+            harness: ServerHarness(
+                id: "codex",
+                name: "Codex",
+                symbolName: "chevron.left.forwardslash.chevron.right",
+                source: "registry",
+                launchKind: "npx",
+                enabled: true,
+                readiness: ServerHarnessReadiness(state: "ready", detail: nil)
+            ),
+            modes: nil,
+            configOptions: [option(model)]
+        )
+    }
 }

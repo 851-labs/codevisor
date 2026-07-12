@@ -54,6 +54,16 @@ public final class ConfigOptionCache {
         persist()
     }
 
+    /// Stores a speculative warm only while this server has no capability
+    /// snapshot. A project-specific composer refresh is more authoritative;
+    /// if it wins the race, a generic onboarding warm must not overwrite it.
+    @discardableResult
+    public func storeIfEmpty(_ capabilities: [ServerHarnessCapability], forServer serverId: String) -> Bool {
+        guard capabilitiesCache[serverId] == nil else { return false }
+        store(capabilities, forServer: serverId)
+        return true
+    }
+
     /// Clears all cached config (used by "Delete all data").
     public func clear() {
         cache = [:]

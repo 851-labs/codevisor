@@ -5,6 +5,7 @@ import { join } from "node:path"
 import { describe, expect, it } from "vitest"
 import {
   AgentRuntime,
+  AgentRuntimeError,
   acpModelConfigId,
   acpModelConfigOption,
   acpPermissionOutcome,
@@ -24,7 +25,6 @@ import {
   type AcpAgentConnection,
   type AcpConnector,
   type AcpHarnessLaunchRequest,
-  type AgentRuntimeError,
   type PromptAttachmentInput,
   type PromptInput,
   type RuntimeEmit,
@@ -58,6 +58,7 @@ class FakeConnection implements AcpAgentConnection {
     },
     AgentRuntimeError
   > {
+    if (this.request.env.HANG_AUTH === "1") return Effect.never
     return Effect.succeed({ canLogout: false, methods: [], state: "notRequired" })
   }
 
@@ -74,6 +75,12 @@ class FakeConnection implements AcpAgentConnection {
     },
     AgentRuntimeError
   > {
+    if (cwd.includes("hang-inspection")) return Effect.never
+    if (cwd.includes("fail-inspection")) {
+      return Effect.fail(
+        new AgentRuntimeError({ message: "Inspection setup failed", operation: "createSession" })
+      )
+    }
     return Effect.sync(() => {
       this.created.push(cwd)
       return { configOptions: [], sessionId: `agent-${this.request.harnessId}-1` }
@@ -204,6 +211,31 @@ describe("@herdman/agent-runtime", () => {
     await expect(run(runtime.logoutHarness("codex"))).rejects.toMatchObject({
       operation: "logout"
     })
+  })
+
+  it("times out a hung ACP auth probe and closes its connection", async () => {
+    const connector = makeConnector()
+    const runtime = makeAgentRuntime({
+      acpAuthProbeTimeoutMs: 10,
+      connector,
+      env: { PATH: "/bin" },
+      executableExists: (name) => name === "gemini",
+      locateExecutable: (name) => `/bin/${name}`
+    })
+
+    await expect(
+      run(
+        runtime.probeHarnessAuth("gemini", {
+          env: { HANG_AUTH: "1" },
+          id: "hung-account",
+          profileKind: "default"
+        })
+      )
+    ).rejects.toMatchObject({
+      message: "ACP authentication probe timed out after 10ms",
+      operation: "probeAuth"
+    })
+    expect(connector.connections[0]?.closeCount).toBe(1)
   })
 
   it("discovers ready, missing-runner, and unavailable harnesses", async () => {
@@ -382,6 +414,43 @@ describe("@herdman/agent-runtime", () => {
     expect(connector.connections[3]?.loaded).toEqual([["agent-existing", "/tmp/project"]])
     expect(previousLoadedConnection.closeCount).toBe(1)
     expect(connector.connections[4]?.loaded).toEqual([["agent-existing", "/tmp/other"]])
+  })
+
+  it("times out hung harness inspection and closes its connection", async () => {
+    const connector = makeConnector()
+    const runtime = makeAgentRuntime({
+      connector,
+      env: { PATH: "/bin" },
+      executableExists: (name) => ["gemini", "npx"].includes(name),
+      harnessInspectionTimeoutMs: 10,
+      locateExecutable: (name) => `/bin/${name}`
+    })
+
+    await expect(
+      run(runtime.inspectHarness("gemini", "/tmp/hang-inspection"))
+    ).rejects.toMatchObject({
+      message: "Harness inspection timed out after 10ms",
+      operation: "inspectHarness"
+    })
+    expect(connector.connections[0]?.closeCount).toBe(1)
+  })
+
+  it("maps harness inspection failures and closes their connection", async () => {
+    const connector = makeConnector()
+    const runtime = makeAgentRuntime({
+      connector,
+      env: { PATH: "/bin" },
+      executableExists: (name) => ["gemini", "npx"].includes(name),
+      locateExecutable: (name) => `/bin/${name}`
+    })
+
+    await expect(
+      run(runtime.inspectHarness("gemini", "/tmp/fail-inspection"))
+    ).rejects.toMatchObject({
+      message: "Inspection setup failed",
+      operation: "inspectHarness"
+    })
+    expect(connector.connections[0]?.closeCount).toBe(1)
   })
 
   it("closes a loaded agent session and forgets it", async () => {

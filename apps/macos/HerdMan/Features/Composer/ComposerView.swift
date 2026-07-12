@@ -760,7 +760,26 @@ struct HarnessPickerMenu: View {
 
     var body: some View {
         if controller.canChooseHarness {
-            if controller.harnesses.isEmpty {
+            if controller.preparationState == .loading {
+                // HIG: use a small, unlabeled indeterminate spinner for an
+                // unpredictable background operation in a constrained control.
+                ProgressView()
+                    .controlSize(.small)
+                    .frame(minWidth: 96)
+                    .help("Checking available agents")
+                    .accessibilityLabel("Checking available agents")
+            } else if controller.preparationState == .failed {
+                Button {
+                    Task { await controller.prepare() }
+                } label: {
+                    PickerChip(text: "Agents unavailable") {
+                        Image(systemName: "exclamationmark.triangle")
+                    }
+                }
+                .buttonStyle(HoverIconButtonStyle(shape: .chip))
+                .help("Couldn't load agents. Click to try again.")
+                .accessibilityLabel("Agents unavailable. Try again")
+            } else if controller.harnesses.isEmpty {
                 PickerChip(text: "No agent installed") { EmptyView() }
             } else {
                 Menu {

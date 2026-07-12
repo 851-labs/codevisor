@@ -10,6 +10,7 @@ import { makeCodexProvider } from "./providers/codex/provider.js"
 import {
   AgentRuntimeError,
   adapterPromise,
+  runtimeError,
   runtimeEffect,
   type AgentProvider,
   type AgentSessionHandle,
@@ -65,6 +66,8 @@ export interface AgentRuntimeConfig {
   readonly executableExists?: (name: string, env: NodeJS.ProcessEnv) => boolean
   readonly locateExecutable?: (name: string, env: NodeJS.ProcessEnv) => string | undefined
   readonly connector?: AcpConnector
+  readonly acpAuthProbeTimeoutMs?: number
+  readonly harnessInspectionTimeoutMs?: number
   /// Server-owned terminals for agent background processes; providers surface
   /// long-running agent commands through it as attachable terminal tabs.
   /// Absent (tests, embedded runtimes), providers keep the plain behavior.
@@ -277,7 +280,10 @@ export const makeAgentRuntime = (config: AgentRuntimeConfig = {}): AgentRuntimeS
     "acp",
     makeAcpProvider(environment, {
       ...backgroundTerminals,
-      ...(config.connector === undefined ? {} : { connector: config.connector })
+      ...(config.connector === undefined ? {} : { connector: config.connector }),
+      ...(config.acpAuthProbeTimeoutMs === undefined
+        ? {}
+        : { authProbeTimeoutMs: config.acpAuthProbeTimeoutMs })
     })
   )
   providers.set("claude", makeClaudeProvider(environment, backgroundTerminals))
@@ -451,13 +457,26 @@ export const makeAgentRuntime = (config: AgentRuntimeConfig = {}): AgentRuntimeS
     inspectHarness: (harnessId, cwd, account) =>
       Effect.gen(function* () {
         const { definition, provider } = yield* definitionFor(harnessId)
-        const created = yield* provider.createSession(
-          definition,
-          cwd,
-          /* v8 ignore next -- inspection sessions are closed before they can emit. */
-          () => Promise.resolve(),
-          account
-        )
+        const timeoutMs = config.harnessInspectionTimeoutMs ?? 15_000
+        const created = yield* provider
+          .createSession(
+            definition,
+            cwd,
+            /* v8 ignore next -- inspection sessions are closed before they can emit. */
+            () => Promise.resolve(),
+            account
+          )
+          .pipe(
+            Effect.timeout(timeoutMs),
+            Effect.mapError((cause) =>
+              runtimeError(
+                "inspectHarness",
+                cause._tag === "TimeoutError"
+                  ? new Error(`Harness inspection timed out after ${timeoutMs}ms`)
+                  : cause
+              )
+            )
+          )
         void Effect.runPromise(created.handle.close).catch(() => undefined)
         return created.metadata
       }),

@@ -138,6 +138,32 @@ public final class AppEnvironment {
         await machines.prepareSelectedMachine()
     }
 
+    /// Best-effort first-run warm for the new-chat composer. Onboarding has
+    /// already discovered the harness catalog by this point, but model and
+    /// mode metadata come from the more expensive capabilities request. Run
+    /// that inspection while the user chooses projects, without delaying the
+    /// onboarding flow. The composer still refreshes against its real cwd.
+    public func warmHarnessCapabilities() async {
+        let serverId = machines.selectedMachineId
+        guard configCache.capabilities(forServer: serverId).isEmpty else { return }
+        let client = machines.client(for: serverId)
+        do {
+            let response = try await client.capabilities(
+                cwd: FileManager.default.temporaryDirectory.path
+            )
+            let capabilities = response.harnesses.filter { capability in
+                capability.harness.enabled && capability.harness.isReady
+            }
+            configCache.storeIfEmpty(capabilities, forServer: serverId)
+        } catch {
+            // This is speculative only. The composer owns the visible retry
+            // and error state if its normal project-specific load also fails.
+            Log.onboarding.error(
+                "Capability cache warm failed: \(String(describing: error), privacy: .public)"
+            )
+        }
+    }
+
     public func harnessService(for serverId: String) -> any HarnessServicing {
         harnessServiceOverride ?? ServerHarnessService(client: machines.client(for: serverId))
     }
