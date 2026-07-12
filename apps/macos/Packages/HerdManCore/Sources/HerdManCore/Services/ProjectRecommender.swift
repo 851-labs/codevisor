@@ -17,17 +17,32 @@ public struct ProjectRecommendation: Equatable, Sendable, Identifiable {
     }
 }
 
-/// Turns sessions discovered across harnesses (`session/list`) into a short
-/// list of suggested project folders, most recently active first.
+/// Turns sessions discovered across harnesses (`session/list`) into a list of
+/// suggested project folders, most recently active first.
+///
+/// Worktrees are deliberately excluded — both HerdMan-managed ones (under
+/// `managedWorktreesRoot`) and hand-made `git worktree` checkouts anywhere
+/// else. A worktree usually exists for a single change and is abandoned
+/// afterwards, so suggesting it as a "project" is noise.
 public enum ProjectRecommender {
     public static func recommend(
         from sessions: [ImportedSession],
-        limit: Int = 2,
+        limit: Int = 12,
         managedWorktreesRoot: URL = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("herdman", isDirectory: true),
         directoryExists: (String) -> Bool = { path in
             var isDirectory: ObjCBool = false
             return FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory) && isDirectory.boolValue
+        },
+        isLinkedWorktree: (String) -> Bool = { path in
+            // A linked `git worktree` checkout has a `.git` *file* (pointing
+            // at the primary checkout's gitdir) where a normal clone has a
+            // `.git` directory. Submodule checkouts share this shape and get
+            // filtered too, which is acceptable for suggestions.
+            var isDirectory: ObjCBool = false
+            let gitPath = (path as NSString).appendingPathComponent(".git")
+            return FileManager.default.fileExists(atPath: gitPath, isDirectory: &isDirectory)
+                && !isDirectory.boolValue
         }
     ) -> [ProjectRecommendation] {
         let worktreesRootPath = managedWorktreesRoot.standardizedFileURL.path
@@ -48,7 +63,7 @@ public enum ProjectRecommender {
         }
 
         return grouped
-            .filter { directoryExists($0.key) }
+            .filter { directoryExists($0.key) && !isLinkedWorktree($0.key) }
             .map { path, info in
                 let url = URL(fileURLWithPath: path)
                 return ProjectRecommendation(

@@ -1,16 +1,19 @@
 import SwiftUI
+import AppKit
 import HerdManCore
 import UniformTypeIdentifiers
 import os
 
 /// First-launch onboarding, presented as a short paginated flow:
-/// 1. Welcome, 2. Choose your harnesses, 3. Open a project folder.
-/// Completing the last step opens a new chat in the chosen project.
+/// 1. Welcome, 2. Choose your harnesses, 3. Choose your projects.
+/// The project step is a multi-select over suggested folders; completing it
+/// adds every selected folder as a project and opens a new chat in the first.
 struct OnboardingView: View {
     @Environment(AppEnvironment.self) private var environment
     @Environment(\.theme) private var theme
 
-    /// Called when setup finishes, with the project for the chosen folder.
+    /// Called when setup finishes, with the project to open a new chat in
+    /// (the first of the user's selected folders).
     var onComplete: (Project?) -> Void
 
     enum Step: Int, CaseIterable {
@@ -38,7 +41,12 @@ struct OnboardingView: View {
     @State private var detection: HarnessDetection = .connecting
     @State private var isRescanning = false
     @State private var rescanError: String?
-    @State private var projectFolder: URL?
+    /// Folders the user has ticked, in selection order — the first one is the
+    /// project a new chat opens in after setup.
+    @State private var selectedFolders: [URL] = []
+    /// Folders added through the open panel (they aren't in `recommendations`
+    /// but should render as selectable rows alongside them).
+    @State private var customFolders: [URL] = []
     @State private var showingFolderPicker = false
     @State private var isFinishing = false
     @State private var recommendations: [ProjectRecommendation] = []
@@ -55,7 +63,7 @@ struct OnboardingView: View {
                     VStack(spacing: 0) {
                         Spacer(minLength: 0)
                         content
-                            .frame(maxWidth: 440)
+                            .frame(maxWidth: contentMaxWidth)
                             .padding(.horizontal, 40)
                             .transition(.asymmetric(
                                 insertion: .move(edge: .trailing).combined(with: .opacity),
@@ -71,7 +79,7 @@ struct OnboardingView: View {
                 .scrollIndicators(.hidden)
             }
             footer
-                .frame(maxWidth: 440)
+                .frame(maxWidth: 560)
                 .padding(.horizontal, 40)
                 .padding(.vertical, 24)
         }
@@ -81,15 +89,20 @@ struct OnboardingView: View {
         .fileImporter(
             isPresented: $showingFolderPicker,
             allowedContentTypes: [.folder],
-            allowsMultipleSelection: false
+            allowsMultipleSelection: true
         ) { result in
-            if case let .success(urls) = result, let url = urls.first {
-                projectFolder = url
+            if case let .success(urls) = result {
+                addPickedFolders(urls)
             }
         }
         .sheet(item: $authenticationHarness) { harness in
             HarnessAuthenticationView(harness: harness) { replaceHarness($0) }
         }
+    }
+
+    /// The project step earns extra width for its two-column suggestion grid.
+    private var contentMaxWidth: CGFloat {
+        step == .project ? 560 : 460
     }
 
     // MARK: - Content
@@ -103,37 +116,64 @@ struct OnboardingView: View {
         }
     }
 
+    // MARK: - Welcome
+
     private var welcomeStep: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(spacing: 0) {
+            Image(nsImage: NSApp.applicationIconImage)
+                .resizable()
+                .frame(width: 108, height: 108)
+                .shadow(color: .black.opacity(0.22), radius: 14, y: 8)
+                .accessibilityHidden(true)
+
             Text("Welcome to HerdMan")
-                .font(.system(size: 38, weight: .bold))
-            Text("HerdMan runs your local ACP coding agents in one place. Let's get you set up in a few quick steps.")
+                .font(.system(size: 36, weight: .bold))
+                .padding(.top, 22)
+
+            Text("All your coding agents, working in one place.")
                 .font(.title3)
                 .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+                .multilineTextAlignment(.center)
+                .padding(.top, 6)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity)
     }
 
+    // MARK: - Step header
+
+    private func stepHeader(title: String, subtitle: String) -> some View {
+        VStack(spacing: 6) {
+            Text(title)
+                .font(.system(size: 28, weight: .bold))
+            Text(subtitle)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: 420)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    // MARK: - Harnesses
+
     private var harnessesStep: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Choose your harnesses")
-                    .font(.system(size: 28, weight: .bold))
-                Text("These are the ACP harnesses we found on your computer. Turn on the ones you'd like to use.")
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+        VStack(spacing: 20) {
+            stepHeader(
+                title: "Choose your harnesses",
+                subtitle: "These are the ACP coding agents we found on your Mac. Turn on the ones you'd like to use."
+            )
 
             switch detection {
             case .connecting:
-                HStack(spacing: 8) {
-                    ProgressView().controlSize(.small)
-                    Text("Starting HerdMan…").foregroundStyle(.secondary)
+                VStack(spacing: 10) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("Starting HerdMan…")
+                        .foregroundStyle(.secondary)
                 }
-                .padding(.vertical, 8)
+                .padding(.vertical, 20)
             case let .unreachable(message):
-                VStack(alignment: .leading, spacing: 12) {
+                VStack(spacing: 12) {
                     Label {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Can't reach the HerdMan server").fontWeight(.medium)
@@ -144,41 +184,44 @@ struct OnboardingView: View {
                     } icon: {
                         Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(theme.statusWarn)
                     }
+                    .padding(14)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(RoundedRectangle(cornerRadius: 12).fill(theme.cardBackground))
                     Button {
                         Task { await detectHarnesses() }
                     } label: {
                         Label("Try Again", systemImage: "arrow.clockwise")
                     }
                 }
-                .padding(.vertical, 4)
             case .loaded:
                 if installedHarnesses.isEmpty {
                     noHarnessesContent
                 } else {
-                    VStack(spacing: 0) {
-                        ForEach(Array(installedHarnesses.enumerated()), id: \.element.id) { index, harness in
-                            harnessToggle(harness)
-                            if index < installedHarnesses.count - 1 { Divider() }
+                    VStack(alignment: .leading, spacing: 12) {
+                        VStack(spacing: 0) {
+                            ForEach(Array(installedHarnesses.enumerated()), id: \.element.id) { index, harness in
+                                harnessRow(harness)
+                                if index < installedHarnesses.count - 1 { Divider() }
+                            }
                         }
-                    }
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 4)
-                    .background(RoundedRectangle(cornerRadius: 12).fill(theme.cardBackground))
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 4)
+                        .background(RoundedRectangle(cornerRadius: 12).fill(theme.cardBackground))
 
-                    if !notInstalledHarnesses.isEmpty {
-                        DisclosureGroup(isExpanded: $showsNotInstalled) {
-                            notInstalledList
-                                .padding(.top, 8)
-                        } label: {
-                            Text("Not installed (\(notInstalledHarnesses.count))")
-                                .foregroundStyle(.secondary)
+                        if !notInstalledHarnesses.isEmpty {
+                            DisclosureGroup(isExpanded: $showsNotInstalled) {
+                                notInstalledList
+                                    .padding(.top, 8)
+                            } label: {
+                                Text("Not installed (\(notInstalledHarnesses.count))")
+                                    .foregroundStyle(.secondary)
+                            }
                         }
                     }
                 }
             }
-
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity)
     }
 
     /// The "nothing installed" empty state: every known harness with an
@@ -234,10 +277,16 @@ struct OnboardingView: View {
         .background(RoundedRectangle(cornerRadius: 12).fill(theme.cardBackground))
     }
 
-    private func harnessToggle(_ harness: ServerHarness) -> some View {
-        HStack(spacing: 10) {
+    private func harnessRow(_ harness: ServerHarness) -> some View {
+        HStack(spacing: 12) {
+            HarnessIcon(harnessId: harness.id, fallbackSymbolName: harness.symbolName, size: 18)
+                .frame(width: 34, height: 34)
+                .background(RoundedRectangle(cornerRadius: 8).fill(theme.cardHoverBackground))
+                .accessibilityHidden(true)
+
             VStack(alignment: .leading, spacing: 2) {
                 Text(harness.name)
+                    .fontWeight(.medium)
                 Text(authStatus(harness))
                     .font(.callout)
                     .foregroundStyle(.secondary)
@@ -259,7 +308,6 @@ struct OnboardingView: View {
                 .controlSize(.small)
             }
         }
-        .frame(maxWidth: .infinity, alignment: .trailing)
         .padding(.vertical, 10)
     }
 
@@ -315,7 +363,7 @@ struct OnboardingView: View {
                 harnesses = loaded
                 detection = .loaded
                 // Suggest project folders from the user's most recent harness
-                // sessions so the project step can offer a one-click choice.
+                // sessions so the project step offers one-click choices.
                 recommendations = await environment.recommendedProjects()
                 return
             }
@@ -347,120 +395,195 @@ struct OnboardingView: View {
         return "The HerdMan server didn't respond. Try again, or check Settings → General for server status."
     }
 
+    // MARK: - Projects
+
+    /// A selectable folder row: either a recommendation or a custom pick.
+    private struct FolderChoice: Identifiable {
+        let url: URL
+        let title: String
+        let subtitle: String
+        var id: String { url.standardizedFileURL.path }
+    }
+
+    /// Custom picks first (most deliberate), then the suggestions.
+    private var folderChoices: [FolderChoice] {
+        let custom = customFolders.map { url in
+            FolderChoice(
+                url: url,
+                title: url.lastPathComponent.isEmpty ? url.path : url.lastPathComponent,
+                subtitle: abbreviatedPath(url)
+            )
+        }
+        let suggested = recommendations
+            .filter { recommendation in
+                !customFolders.contains {
+                    $0.standardizedFileURL.path == recommendation.folderURL.standardizedFileURL.path
+                }
+            }
+            .map { recommendation in
+                FolderChoice(
+                    url: recommendation.folderURL,
+                    title: recommendation.name,
+                    subtitle: recommendationSubtitle(recommendation)
+                )
+            }
+        return custom + suggested
+    }
+
     private var projectStep: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Open a project")
-                    .font(.system(size: 28, weight: .bold))
-                Text("Pick a folder to work in. HerdMan opens a new chat scoped to this project.")
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+        VStack(spacing: 20) {
+            stepHeader(
+                title: "Choose your projects",
+                subtitle: "Select the folders you want to work in."
+            )
 
-            Button {
-                showingFolderPicker = true
-            } label: {
-                HStack(spacing: 12) {
-                    Image(systemName: isCustomFolderSelected ? "folder.fill" : "folder.badge.plus")
-                        .font(.title2)
-                        .foregroundStyle(.tint)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(isCustomFolderSelected
-                             ? (projectFolder?.lastPathComponent ?? "")
-                             : "Choose a folder…")
-                            .fontWeight(.medium)
-                            .foregroundStyle(.primary)
-                        if isCustomFolderSelected, let projectFolder {
-                            Text(projectFolder.path)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                                .truncationMode(.middle)
+            VStack(alignment: .leading, spacing: 8) {
+                if !folderChoices.isEmpty {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text("Suggested from your recent sessions")
+                            .font(.callout.weight(.medium))
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        if !selectedFolders.isEmpty {
+                            Text(selectionCountLabel)
+                                .font(.callout.monospacedDigit())
+                                .foregroundStyle(.tint)
+                                .contentTransition(.numericText())
+                                .animation(.snappy(duration: 0.2), value: selectedFolders.count)
                         }
                     }
-                    Spacer()
-                    if isCustomFolderSelected {
-                        selectionCheckmark
-                    }
-                }
-                .padding(14)
-                .background(RoundedRectangle(cornerRadius: 12).fill(theme.cardBackground))
-            }
-            .buttonStyle(.plain)
 
-            if !recommendations.isEmpty {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Suggested workspaces")
-                        .font(.callout.weight(.medium))
-                        .foregroundStyle(.secondary)
-                    VStack(spacing: 6) {
-                        ForEach(recommendations) { recommendation in
-                            recommendationRow(recommendation)
+                    LazyVGrid(
+                        columns: [
+                            GridItem(.flexible(), spacing: 8),
+                            GridItem(.flexible(), spacing: 8)
+                        ],
+                        spacing: 8
+                    ) {
+                        ForEach(folderChoices) { choice in
+                            folderChoiceRow(choice)
                         }
                     }
                 }
+
+                addFolderButton
+                    .padding(.top, folderChoices.isEmpty ? 0 : 4)
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity)
     }
 
-    /// Whether the chosen folder came from the folder picker rather than a
-    /// recommendation.
-    private var isCustomFolderSelected: Bool {
-        guard let projectFolder else { return false }
-        return !recommendations.contains { $0.folderURL.standardizedFileURL.path == projectFolder.standardizedFileURL.path }
+    private var selectionCountLabel: String {
+        selectedFolders.count == 1 ? "1 selected" : "\(selectedFolders.count) selected"
     }
 
-    private func recommendationRow(_ recommendation: ProjectRecommendation) -> some View {
-        let isSelected = projectFolder?.standardizedFileURL.path == recommendation.folderURL.standardizedFileURL.path
+    private func folderChoiceRow(_ choice: FolderChoice) -> some View {
+        let isSelected = isSelected(choice.url)
         return Button {
-            projectFolder = recommendation.folderURL
+            toggleSelection(choice.url)
         } label: {
-            HStack(spacing: 12) {
-                Image(systemName: "clock.arrow.circlepath")
+            HStack(spacing: 10) {
+                Image(systemName: "folder.fill")
                     .font(.title3)
-                    .foregroundStyle(.tint)
+                    .foregroundStyle(isSelected ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
                     .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(recommendation.name)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(choice.title)
                         .fontWeight(.medium)
                         .foregroundStyle(.primary)
-                    Text(recommendationSubtitle(recommendation))
+                        .lineLimit(1)
+                    Text(choice.subtitle)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .truncationMode(.middle)
                 }
-                Spacer()
-                if isSelected {
-                    selectionCheckmark
-                }
+                Spacer(minLength: 4)
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .foregroundStyle(isSelected ? AnyShapeStyle(.tint) : AnyShapeStyle(.quaternary))
+                    .contentTransition(.symbolEffect(.replace))
+                    .accessibilityHidden(true)
             }
-            .padding(14)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
             .background(
-                RoundedRectangle(cornerRadius: 12)
+                RoundedRectangle(cornerRadius: 10)
                     .fill(isSelected ? AnyShapeStyle(theme.rowSelectedBackground) : theme.cardBackground)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 12)
+                RoundedRectangle(cornerRadius: 10)
                     .strokeBorder(isSelected ? AnyShapeStyle(.tint) : AnyShapeStyle(.clear), lineWidth: 1)
             )
-            .contentShape(RoundedRectangle(cornerRadius: 12))
+            .contentShape(RoundedRectangle(cornerRadius: 10))
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("\(recommendation.name), \(recommendationSubtitle(recommendation))")
+        .help(choice.url.standardizedFileURL.path)
+        .accessibilityLabel("\(choice.title), \(choice.subtitle)")
         .accessibilityAddTraits(isSelected ? .isSelected : [])
+        .animation(.snappy(duration: 0.15), value: isSelected)
     }
 
-    private var selectionCheckmark: some View {
-        Image(systemName: "checkmark.circle.fill")
-            .foregroundStyle(.tint)
-            .accessibilityHidden(true)
+    private var addFolderButton: some View {
+        Button {
+            showingFolderPicker = true
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "plus.circle")
+                    .font(.title3)
+                    .foregroundStyle(.tint)
+                    .accessibilityHidden(true)
+                Text(folderChoices.isEmpty ? "Choose a folder…" : "Add another folder…")
+                    .fontWeight(.medium)
+                    .foregroundStyle(.primary)
+                Spacer()
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .background(RoundedRectangle(cornerRadius: 10).fill(theme.cardBackground))
+            .contentShape(RoundedRectangle(cornerRadius: 10))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func isSelected(_ url: URL) -> Bool {
+        let path = url.standardizedFileURL.path
+        return selectedFolders.contains { $0.standardizedFileURL.path == path }
+    }
+
+    private func toggleSelection(_ url: URL) {
+        let path = url.standardizedFileURL.path
+        if let index = selectedFolders.firstIndex(where: { $0.standardizedFileURL.path == path }) {
+            selectedFolders.remove(at: index)
+        } else {
+            selectedFolders.append(url)
+        }
+    }
+
+    /// Folders picked in the open panel join the list pre-selected; picks that
+    /// match an existing suggestion just select that suggestion's row.
+    private func addPickedFolders(_ urls: [URL]) {
+        for url in urls {
+            let path = url.standardizedFileURL.path
+            let isRecommended = recommendations.contains {
+                $0.folderURL.standardizedFileURL.path == path
+            }
+            let isCustom = customFolders.contains { $0.standardizedFileURL.path == path }
+            if !isRecommended && !isCustom {
+                customFolders.append(url)
+            }
+            if !isSelected(url) {
+                selectedFolders.append(url)
+            }
+        }
     }
 
     private func recommendationSubtitle(_ recommendation: ProjectRecommendation) -> String {
         let chats = recommendation.sessionCount == 1 ? "1 chat" : "\(recommendation.sessionCount) chats"
-        return "\(chats) · \(recommendation.folderURL.path)"
+        return "\(chats) · \(abbreviatedPath(recommendation.folderURL))"
+    }
+
+    private func abbreviatedPath(_ url: URL) -> String {
+        (url.standardizedFileURL.path as NSString).abbreviatingWithTildeInPath
     }
 
     // MARK: - Footer
@@ -482,11 +605,14 @@ struct OnboardingView: View {
     private var pageDots: some View {
         HStack(spacing: 6) {
             ForEach(Step.allCases, id: \.rawValue) { dot in
-                Circle()
+                Capsule()
                     .fill(dot == step ? AnyShapeStyle(.tint) : AnyShapeStyle(.quaternary))
-                    .frame(width: 7, height: 7)
+                    .frame(width: dot == step ? 18 : 7, height: 7)
             }
         }
+        .animation(.smooth(duration: 0.3), value: step)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Step \(step.rawValue + 1) of \(Step.allCases.count)")
     }
 
     private var primaryButton: some View {
@@ -501,20 +627,24 @@ struct OnboardingView: View {
                     }
                 } else {
                     Text(primaryTitle)
+                        .contentTransition(.numericText())
                 }
             }
             .frame(minWidth: 96)
         }
         .buttonStyle(.borderedProminent)
         .controlSize(.large)
+        .keyboardShortcut(.defaultAction)
         .disabled(isPrimaryDisabled)
+        .animation(.snappy(duration: 0.2), value: primaryTitle)
     }
 
     private var primaryTitle: String {
         switch step {
-        case .welcome: return "Get started"
+        case .welcome: return "Get Started"
         case .harnesses: return "Continue"
-        case .project: return "Finish"
+        case .project:
+            return selectedFolders.count > 1 ? "Add \(selectedFolders.count) Projects" : "Open Project"
         }
     }
 
@@ -523,7 +653,7 @@ struct OnboardingView: View {
         switch step {
         case .welcome: return false
         case .harnesses: return detection == .connecting
-        case .project: return projectFolder == nil
+        case .project: return selectedFolders.isEmpty
         }
     }
 
@@ -546,12 +676,13 @@ struct OnboardingView: View {
     }
 
     private func finish() {
-        guard let folder = projectFolder else { return }
+        guard !selectedFolders.isEmpty else { return }
         isFinishing = true
         Task {
-            // Adds the project; existing agent chats are not imported here
-            // (importing stays an explicit action, not an onboarding default).
-            let project = await environment.finishOnboarding(projectFolder: folder)
+            // Adds every selected folder as a project; existing agent chats
+            // are not imported here (importing stays an explicit action, not
+            // an onboarding default). The first selection opens a new chat.
+            let project = await environment.finishOnboarding(projectFolders: selectedFolders)
             onComplete(project)
         }
     }

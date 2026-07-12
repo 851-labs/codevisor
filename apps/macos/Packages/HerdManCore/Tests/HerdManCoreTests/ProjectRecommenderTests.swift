@@ -105,4 +105,21 @@ struct ProjectRecommenderTests {
 
         #expect(recommendations.map(\.folderURL.path) == ["/Users/test/herdman-project", "/src/project"])
     }
+
+    @Test("Excludes linked git-worktree checkouts anywhere on disk")
+    func excludesLinkedWorktrees() {
+        let sessions = [
+            session("worktree", cwd: "/src/app-fix-auth", updatedAt: "2026-07-03T00:00:00Z"),
+            session("clone", cwd: "/src/app", updatedAt: "2026-07-02T00:00:00Z")
+        ]
+
+        let recommendations = ProjectRecommender.recommend(
+            from: sessions,
+            limit: 4,
+            directoryExists: { _ in true },
+            isLinkedWorktree: { $0 == "/src/app-fix-auth" }
+        )
+
+        #expect(recommendations.map(\.folderURL.path) == ["/src/app"])
+    }
 }

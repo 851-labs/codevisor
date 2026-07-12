@@ -59,6 +59,23 @@ struct AppEnvironmentTests {
         #expect(environment.projectList.sessions(in: project).isEmpty)
     }
 
+    @Test("Onboarding with multiple folders adds every project and returns the first")
+    func onboardingAddsMultipleProjects() async {
+        let environment = AppEnvironment.preview(seedProjects: [], hasOnboarded: false)
+
+        let first = await environment.finishOnboarding(projectFolders: [
+            URL(fileURLWithPath: "/Users/me/src/website"),
+            URL(fileURLWithPath: "/Users/me/src/HerdMan"),
+            // Duplicates collapse into the existing project.
+            URL(fileURLWithPath: "/Users/me/src/website")
+        ])
+
+        #expect(environment.settings.hasCompletedOnboarding)
+        #expect(first?.folderURL.path == "/Users/me/src/website")
+        #expect(environment.projectList.projects.map(\.folderURL.path).sorted()
+            == ["/Users/me/src/HerdMan", "/Users/me/src/website"])
+    }
+
     @Test("Importable sessions are scoped to the folder and exclude known ones")
     func importableSessionsScopedToFolder() async {
         let environment = AppEnvironment.preview(seedProjects: [])

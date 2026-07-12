@@ -104,9 +104,10 @@ public final class AppEnvironment {
         projectList.showsImportedSessions = settings.importExternalSessions
     }
 
-    /// A couple of project-folder suggestions based on the user's most recent
-    /// harness sessions (used by onboarding's project step).
-    public func recommendedProjects(limit: Int = 2) async -> [ProjectRecommendation] {
+    /// Project-folder suggestions based on the user's most recent harness
+    /// sessions (used by onboarding's project step). Worktree checkouts are
+    /// excluded — see `ProjectRecommender`.
+    public func recommendedProjects(limit: Int = 12) async -> [ProjectRecommendation] {
         ProjectRecommender.recommend(from: await sessionImporter.fetchAll(), limit: limit)
     }
 
@@ -170,15 +171,28 @@ public final class AppEnvironment {
         return projectList.addProject(folderURL: projectFolder)
     }
 
-    /// Completes onboarding for the chosen project folder: adds the project
-    /// and opens it fresh. Existing agent chats are deliberately NOT pulled
-    /// in here — a first project pre-filled with old CLI sessions the user
-    /// never asked for reads as clutter; importing stays an explicit action.
+    /// Completes onboarding for the chosen project folders: adds each as a
+    /// project and returns the first so the caller can open a new chat in it.
+    /// Existing agent chats are deliberately NOT pulled in here — a first
+    /// project pre-filled with old CLI sessions the user never asked for
+    /// reads as clutter; importing stays an explicit action.
     @discardableResult
-    public func finishOnboarding(projectFolder: URL) async -> Project {
+    public func finishOnboarding(projectFolders: [URL]) async -> Project? {
         settings.completeOnboarding(importExternalSessions: false)
         projectList.showsImportedSessions = settings.importExternalSessions
-        return projectList.addProject(folderURL: projectFolder)
+        var first: Project?
+        for folder in projectFolders {
+            let project = projectList.addProject(folderURL: folder)
+            if first == nil { first = project }
+        }
+        return first
+    }
+
+    /// Single-folder convenience over `finishOnboarding(projectFolders:)`.
+    @discardableResult
+    public func finishOnboarding(projectFolder: URL) async -> Project {
+        // The array overload always returns a project for a non-empty list.
+        await finishOnboarding(projectFolders: [projectFolder])!
     }
 
     /// The production environment: file-backed persistence and real agent
