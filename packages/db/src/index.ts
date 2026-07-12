@@ -968,6 +968,7 @@ const chatAssistantSummary = (
       anonymous += 1
       continue
     }
+    /* v8 ignore next -- projected answer events always carry text; this only guards manually corrupted rows. */
     const text = payloadText(payload) ?? ""
     if (text.length === 0) continue
     const messageId =
@@ -1063,7 +1064,16 @@ const projectChatEvent = (sqlite: Database.Database, event: SessionEventRow): vo
         .run(conversation.messageId ?? null, event.created_at, itemId)
     } else {
       const update = typeof payload.sessionUpdate === "string" ? payload.sessionUpdate : undefined
-      if (update !== undefined) {
+      // ACP agents can publish session-scoped metadata (available commands,
+      // mode/config changes, usage) as `session.output` before the first
+      // prompt. Those events remain in the session event log, but they must
+      // not materialize an empty streaming assistant item ahead of the user's
+      // first message. Only updates that can render inside an assistant turn
+      // belong to the canonical chat projection.
+      const rendersInAssistantTurn =
+        hasRenderableWorkedDetail(payload) ||
+        (update === "plan_document" && typeof payload.markdown === "string")
+      if (update !== undefined && rendersInAssistantTurn) {
         const parent =
           typeof payload.parentToolCallId === "string" ? payload.parentToolCallId : undefined
         const toolId = typeof payload.toolCallId === "string" ? payload.toolCallId : undefined

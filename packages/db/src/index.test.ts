@@ -1103,6 +1103,54 @@ describe("@herdman/db", () => {
     await Effect.runPromise(db.close)
   })
 
+  it("does not project ACP startup metadata as an assistant turn", async () => {
+    const filename = tempDatabase()
+    const db = await run(makeDatabase({ filename, serverId: "local" }))
+    const project = await run(db.createProject({ folderPath: "/tmp/acp-startup-metadata" }))
+    const session = await run(db.createSession({ projectId: project.id, harnessId: "opencode" }))
+
+    await run(
+      db.appendEvent("session.output", session.id, {
+        availableCommands: [{ description: "Start a new session", name: "new" }],
+        sessionUpdate: "available_commands_update"
+      })
+    )
+    await run(
+      db.appendEvent("session.output", session.id, {
+        currentModeId: "build",
+        sessionUpdate: "current_mode_update"
+      })
+    )
+
+    expect((await run(db.getTranscriptPage(session.id, undefined, 32))).items).toEqual([])
+
+    await run(db.appendEvent("session.output", session.id, { role: "user", text: "hello" }))
+    await run(
+      db.appendEvent("session.updated", session.id, {
+        turnId: "first-turn",
+        turnState: "started"
+      })
+    )
+    await run(
+      db.appendEvent("session.output", session.id, {
+        content: { type: "text", text: "Hello! How can I help?" },
+        sessionUpdate: "agent_message_chunk"
+      })
+    )
+    await run(
+      db.appendEvent("session.updated", session.id, {
+        turnId: "first-turn",
+        turnState: "ended"
+      })
+    )
+
+    expect((await run(db.getTranscriptPage(session.id, undefined, 32))).items).toMatchObject([
+      { role: "user", text: "hello" },
+      { role: "assistant", text: "Hello! How can I help?" }
+    ])
+    await run(db.close)
+  })
+
   it("backfills complete legacy transcript rows and blocks a mismatched projection", async () => {
     const filename = tempDatabase()
     const initial = await run(makeDatabase({ filename, serverId: "local" }))
