@@ -195,6 +195,8 @@ final class SessionController {
     /// Called each time a live turn ends — forwarded from the connected
     /// `SessionModel` so the session store can badge unopened chats.
     var onTurnEnded: (() -> Void)?
+    /// Called when a live question pauses the agent for user input.
+    var onActionRequired: (() -> Void)?
     /// The agent session id currently connected (resumed or newly created).
     private(set) var connectedAgentSessionId: String?
 
@@ -1026,6 +1028,10 @@ final class SessionController {
     func send() async {
         let text = composerText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty || !composerAttachments.isEmpty, !isConnecting, !isSubmitting else { return }
+        // Ask at the first moment notifications become useful instead of at
+        // launch: the user just started work that may finish while they are in
+        // another app. The task is intentionally nonblocking for the send.
+        Task { await ChatNotificationManager.shared.prepareAuthorizationIfNeeded() }
         // Sending expresses "take me to the newest content": the transcript
         // re-pins to the bottom on every send, even if the user had scrolled
         // up to read history.
@@ -1415,6 +1421,9 @@ final class SessionController {
         model.onTurnEnded = { [weak self] in
             self?.noteTurnEndedForPlanApproval()
             self?.onTurnEnded?()
+        }
+        model.onActionRequired = { [weak self] in
+            self?.onActionRequired?()
         }
         // Negotiate the canonical transcript + session-scoped event stream
         // for every server-backed model, including a brand-new empty chat.

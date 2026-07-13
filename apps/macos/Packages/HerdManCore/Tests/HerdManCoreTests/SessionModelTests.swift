@@ -1169,6 +1169,8 @@ struct SessionModelTests {
             serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
             sessionId: sessionId.uuidString
         )
+        var actionRequiredCount = 0
+        model.onActionRequired = { actionRequiredCount += 1 }
         await model.loadHistory()
 
         client.emit(ServerEventEnvelope(
@@ -1192,12 +1194,10 @@ struct SessionModelTests {
                 ])])
             ])
         ))
-        for _ in 0..<20 {
-            await Task.yield()
-            if model.pendingQuestion != nil { break }
-        }
+        await settleUntil { model.pendingQuestion != nil }
         #expect(model.pendingQuestion?.questionId == "q-1")
         #expect(model.pendingQuestion?.questions.first?.options.count == 2)
+        #expect(actionRequiredCount == 1)
 
         // Answer posts to the server and clears optimistically.
         await model.answerQuestion(answers: ["approach": QuestionAnswerEntry(answers: ["MVP first"])])

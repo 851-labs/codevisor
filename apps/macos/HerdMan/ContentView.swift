@@ -5,7 +5,13 @@ import QuickLook
 
 @main
 struct HerdManApp: App {
-    @State private var environment = AppEnvironment.live()
+    @State private var environment: AppEnvironment
+
+    init() {
+        let environment = AppEnvironment.live()
+        _environment = State(initialValue: environment)
+        ChatNotificationManager.shared.configure(settings: environment.settings)
+    }
 
     var body: some Scene {
         WindowGroup {
@@ -43,6 +49,7 @@ struct RootView: View {
 
     @Environment(AppEnvironment.self) private var environment
     @Environment(\.theme) private var theme
+    @Environment(\.controlActiveState) private var controlActiveState
     @State private var selection: SidebarSelection?
     @AppStorage("sidebar.collapsed") private var sidebarCollapsed = false
     @State private var store: SessionStore?
@@ -97,9 +104,19 @@ struct RootView: View {
                 store.clearOpenSession()
             }
         }
+        .onChange(of: controlActiveState, initial: true) { _, state in
+            store?.setWindowFocused(state == .key)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .herdManOpenChatNotification)) { note in
+            guard let sessionIdString = note.userInfo?["sessionId"] as? String,
+                  let sessionId = UUID(uuidString: sessionIdString),
+                  let serverId = note.userInfo?["serverId"] as? String else { return }
+            Task { await openNotificationSession(sessionId, serverId: serverId) }
+        }
         .task {
             if store == nil {
                 store = SessionStore(environment: environment)
+                store?.setWindowFocused(controlActiveState == .key)
             }
             if !AppPreview.isRunning {
                 environment.appUpdate.installHandler = { [environment] release in
@@ -150,6 +167,16 @@ struct RootView: View {
             guard !Task.isCancelled else { return }
             await environment.appUpdate.checkForUpdatesInBackground()
         }
+    }
+
+    private func openNotificationSession(_ sessionId: UUID, serverId: String) async {
+        if environment.machines.selectedMachineId != serverId {
+            environment.machines.selectMachine(serverId)
+            await environment.prepareSelectedMachine()
+        }
+        guard let session = environment.projectList.sessions.first(where: { $0.id == sessionId }) else { return }
+        preferredProjectId = session.projectId
+        selection = .session(sessionId)
     }
 
     private var mainSplit: some View {

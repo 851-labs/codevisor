@@ -6,6 +6,8 @@ import Observation
 /// that were created outside HerdMan (imported via `session/list`), and the
 /// appearance/theme selection.
 public struct AppSettings: Sendable, Codable, Equatable {
+    public static let defaultNotificationSoundPath = "/System/Library/Sounds/Glass.aiff"
+
     public var hasCompletedOnboarding: Bool
     public var importExternalSessions: Bool
     /// Harness ids the user has explicitly turned off. A harness is "enabled"
@@ -18,6 +20,15 @@ public struct AppSettings: Sendable, Codable, Equatable {
     /// defaults are the system entries, which render the stock Apple look.
     public var lightThemeId: String
     public var darkThemeId: String
+    /// Chat attention preferences are local to this device. Keeping them out
+    /// of server state is intentional: a future iPhone client can choose its
+    /// own sounds while a server-side presence coordinator chooses which
+    /// active device receives each event.
+    public var notificationsEnabled: Bool
+    public var systemNotificationsEnabled: Bool
+    public var notificationSoundsEnabled: Bool
+    public var chatFinishedSoundPath: String
+    public var actionRequiredSoundPath: String
 
     public init(
         hasCompletedOnboarding: Bool = false,
@@ -25,7 +36,12 @@ public struct AppSettings: Sendable, Codable, Equatable {
         disabledHarnessIds: Set<String> = [],
         themeMode: ThemeMode = .system,
         lightThemeId: String = ThemeCatalog.systemLightID,
-        darkThemeId: String = ThemeCatalog.systemDarkID
+        darkThemeId: String = ThemeCatalog.systemDarkID,
+        notificationsEnabled: Bool = true,
+        systemNotificationsEnabled: Bool = true,
+        notificationSoundsEnabled: Bool = true,
+        chatFinishedSoundPath: String = AppSettings.defaultNotificationSoundPath,
+        actionRequiredSoundPath: String = AppSettings.defaultNotificationSoundPath
     ) {
         self.hasCompletedOnboarding = hasCompletedOnboarding
         self.importExternalSessions = importExternalSessions
@@ -33,11 +49,18 @@ public struct AppSettings: Sendable, Codable, Equatable {
         self.themeMode = themeMode
         self.lightThemeId = lightThemeId
         self.darkThemeId = darkThemeId
+        self.notificationsEnabled = notificationsEnabled
+        self.systemNotificationsEnabled = systemNotificationsEnabled
+        self.notificationSoundsEnabled = notificationSoundsEnabled
+        self.chatFinishedSoundPath = chatFinishedSoundPath
+        self.actionRequiredSoundPath = actionRequiredSoundPath
     }
 
     private enum CodingKeys: String, CodingKey {
         case hasCompletedOnboarding, importExternalSessions, disabledHarnessIds
         case themeMode, lightThemeId, darkThemeId
+        case notificationsEnabled, systemNotificationsEnabled, notificationSoundsEnabled
+        case chatFinishedSoundPath, actionRequiredSoundPath
     }
 
     public init(from decoder: any Decoder) throws {
@@ -48,6 +71,17 @@ public struct AppSettings: Sendable, Codable, Equatable {
         themeMode = try container.decodeIfPresent(ThemeMode.self, forKey: .themeMode) ?? .system
         lightThemeId = try container.decodeIfPresent(String.self, forKey: .lightThemeId) ?? ThemeCatalog.systemLightID
         darkThemeId = try container.decodeIfPresent(String.self, forKey: .darkThemeId) ?? ThemeCatalog.systemDarkID
+        notificationsEnabled = try container.decodeIfPresent(Bool.self, forKey: .notificationsEnabled) ?? true
+        systemNotificationsEnabled = try container.decodeIfPresent(Bool.self, forKey: .systemNotificationsEnabled) ?? true
+        notificationSoundsEnabled = try container.decodeIfPresent(Bool.self, forKey: .notificationSoundsEnabled) ?? true
+        chatFinishedSoundPath = try container.decodeIfPresent(
+            String.self,
+            forKey: .chatFinishedSoundPath
+        ) ?? Self.defaultNotificationSoundPath
+        actionRequiredSoundPath = try container.decodeIfPresent(
+            String.self,
+            forKey: .actionRequiredSoundPath
+        ) ?? Self.defaultNotificationSoundPath
     }
 }
 
@@ -127,6 +161,31 @@ public final class AppSettingsModel {
 
     public func setDarkThemeId(_ id: String) {
         settings.darkThemeId = id
+        persist()
+    }
+
+    public func setNotificationsEnabled(_ value: Bool) {
+        settings.notificationsEnabled = value
+        persist()
+    }
+
+    public func setSystemNotificationsEnabled(_ value: Bool) {
+        settings.systemNotificationsEnabled = value
+        persist()
+    }
+
+    public func setNotificationSoundsEnabled(_ value: Bool) {
+        settings.notificationSoundsEnabled = value
+        persist()
+    }
+
+    public func setChatFinishedSoundPath(_ path: String) {
+        settings.chatFinishedSoundPath = path
+        persist()
+    }
+
+    public func setActionRequiredSoundPath(_ path: String) {
+        settings.actionRequiredSoundPath = path
         persist()
     }
 

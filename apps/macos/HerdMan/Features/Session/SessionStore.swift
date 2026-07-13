@@ -38,6 +38,9 @@ final class SessionStore {
     /// The session currently shown in the detail column; its finished turns
     /// never count as unread.
     private var openSessionId: UUID?
+    /// Whether this store's window is key. A selected chat behind Settings or
+    /// another HerdMan window is not the focused chat for sound suppression.
+    private var isWindowFocused = false
     /// Session ids in access order, most recent last — drives controller
     /// eviction so browsing many sessions doesn't accumulate every transcript
     /// ever opened (conversations retain full tool outputs and diffs).
@@ -46,9 +49,14 @@ final class SessionStore {
     /// controllers stay cached before the least-recently-used are evicted.
     private static let maxIdleControllers = 12
     private let environment: AppEnvironment
+    private let notificationDelivery: any ChatNotificationDelivering
 
-    init(environment: AppEnvironment) {
+    init(
+        environment: AppEnvironment,
+        notificationDelivery: (any ChatNotificationDelivering)? = nil
+    ) {
         self.environment = environment
+        self.notificationDelivery = notificationDelivery ?? ChatNotificationManager.shared
     }
 
     /// Returns the cached controller for a session, creating + configuring it
@@ -89,6 +97,7 @@ final class SessionStore {
             self?.todoCompletionStates[session.id] = isCompleted
         }
         controller.onTurnEnded = { [weak self] in self?.noteTurnEnded(for: session.id) }
+        controller.onActionRequired = { [weak self] in self?.noteActionRequired(for: session.id) }
         controllers[session.id] = controller
         return controller
     }
@@ -219,6 +228,7 @@ final class SessionStore {
     func markOpened(_ sessionId: UUID) {
         openSessionId = sessionId
         unreadCounts[sessionId] = nil
+        notificationDelivery.clearNotifications(for: sessionId)
     }
 
     /// Called when navigation leaves the session detail (new chat, nothing
@@ -227,15 +237,38 @@ final class SessionStore {
         openSessionId = nil
     }
 
+    func setWindowFocused(_ focused: Bool) {
+        isWindowFocused = focused
+    }
+
     private func noteTurnEnded(for sessionId: UUID) {
         activityRevision &+= 1
-        guard sessionId != openSessionId else { return }
         // A turn that ends into a "waiting on background work" state isn't the
         // end of the agent's work — it will start an agent-initiated turn when
         // the task settles. Hold the unread badge (the spinner covers this via
         // `isRunning`) until that follow-up turn ends with nothing left waiting.
         if controllers[sessionId]?.isWaitingOnBackgroundTasks == true { return }
+        let kind: ChatAttentionKind = isWaitingOnUser(sessionId) ? .actionRequired : .finished
+        deliverNotification(for: sessionId, kind: kind)
+        guard sessionId != openSessionId else { return }
         unreadCounts[sessionId, default: 0] += 1
+    }
+
+    private func noteActionRequired(for sessionId: UUID) {
+        deliverNotification(for: sessionId, kind: .actionRequired)
+    }
+
+    private func deliverNotification(for sessionId: UUID, kind: ChatAttentionKind) {
+        guard let session = environment.projectList.sessions.first(where: { $0.id == sessionId }) else { return }
+        notificationDelivery.deliver(
+            ChatAttentionEvent(
+                sessionId: session.id,
+                serverId: session.serverId,
+                sessionTitle: session.title,
+                kind: kind
+            ),
+            sessionIsOpen: sessionId == openSessionId && isWindowFocused
+        )
     }
 
     /// Registers a draft controller under a newly created session id and
@@ -256,6 +289,7 @@ final class SessionStore {
             self?.todoCompletionStates[sessionId] = isCompleted
         }
         controller.onTurnEnded = { [weak self] in self?.noteTurnEnded(for: sessionId) }
+        controller.onActionRequired = { [weak self] in self?.noteActionRequired(for: sessionId) }
         controllers[sessionId] = controller
         if draft === controller { draft = nil }
     }

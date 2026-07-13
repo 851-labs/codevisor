@@ -92,5 +92,10 @@ struct ThemeManagerTests {
         #expect(decoded.themeMode == .system)
         #expect(decoded.lightThemeId == ThemeCatalog.systemLightID)
         #expect(decoded.darkThemeId == ThemeCatalog.systemDarkID)
+        #expect(decoded.notificationsEnabled)
+        #expect(decoded.systemNotificationsEnabled)
+        #expect(decoded.notificationSoundsEnabled)
+        #expect(decoded.chatFinishedSoundPath == AppSettings.defaultNotificationSoundPath)
+        #expect(decoded.actionRequiredSoundPath == AppSettings.defaultNotificationSoundPath)
     }
 }

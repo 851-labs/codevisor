@@ -29,9 +29,16 @@ struct SessionOverlayTests {
         let store = InMemoryStore()
         let model = AppSettingsModel(store: store)
         #expect(model.hasCompletedOnboarding == false)
+        #expect(model.settings.notificationsEnabled)
+        #expect(model.settings.systemNotificationsEnabled)
+        #expect(model.settings.notificationSoundsEnabled)
         model.completeOnboarding(importExternalSessions: true)
+        model.setChatFinishedSoundPath("/System/Library/Sounds/Ping.aiff")
+        model.setActionRequiredSoundPath("/System/Library/Sounds/Hero.aiff")
         #expect(AppSettingsModel(store: store).hasCompletedOnboarding)
         #expect(AppSettingsModel(store: store).importExternalSessions)
+        #expect(AppSettingsModel(store: store).settings.chatFinishedSoundPath.hasSuffix("Ping.aiff"))
+        #expect(AppSettingsModel(store: store).settings.actionRequiredSoundPath.hasSuffix("Hero.aiff"))
     }
 
     @Test("Importing creates projects by cwd and dedups")

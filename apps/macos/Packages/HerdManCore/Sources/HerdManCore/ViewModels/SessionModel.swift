@@ -116,6 +116,10 @@ public final class SessionModel {
     /// the "chat finished" signal for surfaces outside this screen, like the
     /// sidebar's unread badge. Never fired by history replay.
     public var onTurnEnded: (() -> Void)?
+    /// Fired when a live agent question first blocks on the user. This is
+    /// separate from turn end because question tools pause an in-flight turn.
+    /// Never fired while replaying transcript history.
+    public var onActionRequired: (() -> Void)?
 
     private let transport: ServerSessionTransport
     private let sessionId: String
@@ -794,7 +798,11 @@ public final class SessionModel {
         case .goalCleared:
             goal = nil
         case let .question(request):
+            let isNewQuestion = pendingQuestion?.questionId != request.questionId
             pendingQuestion = request
+            if isNewQuestion, !isReplayingHistory {
+                onActionRequired?()
+            }
         case let .questionResolved(resolution):
             if pendingQuestion?.questionId == resolution.questionId {
                 pendingQuestion = nil
