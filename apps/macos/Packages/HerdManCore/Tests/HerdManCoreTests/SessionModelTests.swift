@@ -117,6 +117,75 @@ struct SessionModelTests {
         #expect(assistant.turn.stopReason == .endTurn)
     }
 
+    @Test("Paginated reconnect restores a blocking question at the stream cursor")
+    func paginatedReconnectRestoresPendingQuestion() async {
+        let sessionId = UUID()
+        let assistantId = UUID()
+        let client = FakeSessionServerClient(sessionId: sessionId)
+        let question = QuestionRequest(
+            questionId: "question-after-reconnect",
+            questions: [QuestionSpec(
+                id: "choice",
+                question: "Continue?",
+                options: [QuestionOption(label: "Yes"), QuestionOption(label: "No")],
+                allowsOther: false
+            )]
+        )
+        client.initialTranscriptPage = ServerTranscriptPage(
+            items: [ServerTranscriptItem(
+                id: assistantId.uuidString,
+                sessionId: sessionId.uuidString,
+                sequence: 0,
+                role: .assistant,
+                text: "",
+                createdAt: "2026-07-13T00:00:00.000Z",
+                updatedAt: "2026-07-13T00:00:01.000Z",
+                isGenerating: true,
+                hasDetails: true,
+                turnId: "turn-before-reconnect",
+                startedAt: "2026-07-13T00:00:00.000Z",
+                endedAt: nil,
+                stopReason: nil,
+                stopDetail: nil,
+                planDocument: nil,
+                attachments: nil,
+                revision: 2
+            )],
+            nextBefore: nil,
+            hasMore: false,
+            eventCursor: 2,
+            pendingQuestion: question,
+            backgroundTasks: [BackgroundTaskInfo(
+                id: "task-after-reconnect",
+                description: "Run checks",
+                status: "running",
+                taskType: "shell"
+            )]
+        )
+        let model = SessionModel(
+            serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
+            sessionId: sessionId.uuidString
+        )
+
+        await model.loadHistory()
+
+        #expect(model.pendingQuestion == question)
+        #expect(model.isSending)
+        #expect(model.backgroundTasks.map(\.id) == ["task-after-reconnect"])
+        #expect(model.hasBackgroundTaskSnapshot)
+        for _ in 0..<20 {
+            if !client.sessionEventSinceValues.isEmpty { break }
+            await Task.yield()
+        }
+        #expect(client.sessionEventSinceValues == [2])
+        await model.answerQuestion(
+            answers: ["choice": QuestionAnswerEntry(answers: ["Yes"])]
+        )
+        #expect(model.pendingQuestion == nil)
+        #expect(client.questionAnswers.count == 1)
+        #expect(client.questionAnswers.first?.0 == "question-after-reconnect")
+    }
+
     @Test("A turn that ends abnormally surfaces its stopDetail on the turn")
     func abnormalStopSurfacesDetail() async {
         let sessionId = UUID()

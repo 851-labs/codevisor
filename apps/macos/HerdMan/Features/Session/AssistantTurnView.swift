@@ -11,6 +11,7 @@ struct AssistantTurnView: View {
     /// Stable id of the owning assistant message — the disclosure key, stable
     /// across the active→settled transition and lazy remounts.
     let turnID: UUID
+    let isWaitingOnUser: Bool
     private let initiallyExpanded: Bool?
     @Environment(\.transcriptDisclosure) private var disclosureStore
     @Environment(\.runningSubagentToolCallIds) private var runningSubagentToolCallIds
@@ -23,10 +24,16 @@ struct AssistantTurnView: View {
     @State private var hasAutoCollapsed = false
     @State private var isHovered = false
 
-    init(turn: AssistantTurn, turnID: UUID = UUID(), initiallyExpanded: Bool? = nil) {
+    init(
+        turn: AssistantTurn,
+        turnID: UUID = UUID(),
+        initiallyExpanded: Bool? = nil,
+        isWaitingOnUser: Bool = false
+    ) {
         self.turn = turn
         self.turnID = turnID
         self.initiallyExpanded = initiallyExpanded
+        self.isWaitingOnUser = isWaitingOnUser
         _hasAutoCollapsed = State(initialValue: turn.isGenerating && turn.finalTextIsAsserted)
     }
 
@@ -89,9 +96,9 @@ struct AssistantTurnView: View {
 
             // A transient failure (e.g. 529 overload) is being retried — show it
             // instead of the plain "Thinking…" so the chat isn't a silent freeze.
-            if turn.isGenerating, let retry = turn.retryStatus {
+            if !isWaitingOnUser, turn.isGenerating, let retry = turn.retryStatus {
                 ShimmeringText(text: "Retrying… (\(retry.attempt)/\(retry.of))")
-            } else if turn.showsActivityIndicator {
+            } else if !isWaitingOnUser, turn.showsActivityIndicator {
                 ShimmeringText.thinking
             }
 

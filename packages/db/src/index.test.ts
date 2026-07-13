@@ -332,6 +332,107 @@ describe("@herdman/db", () => {
     await Effect.runPromise(db.close)
   })
 
+  it("snapshots a pending question with the session cursor and clears it terminally", async () => {
+    const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
+    const project = await run(db.createProject({ folderPath: "/tmp/pending-question" }))
+    const session = await run(db.createSession({ projectId: project.id, harnessId: "codex" }))
+    const question = {
+      sessionUpdate: "question" as const,
+      questionId: "question-1",
+      questions: [
+        {
+          id: "choice",
+          question: "Continue?",
+          options: [{ label: "Yes" }, { label: "No" }],
+          allowsOther: false
+        }
+      ]
+    }
+
+    await run(
+      db.appendEvent("session.updated", session.id, {
+        initiatedBy: "user",
+        turnId: "turn-1",
+        turnState: "started"
+      })
+    )
+    await run(db.appendEvent("session.output", session.id, question))
+
+    expect(await run(db.getTranscriptPage(session.id, undefined, 8))).toMatchObject({
+      eventCursor: 2,
+      pendingQuestion: question
+    })
+    expect((await run(db.getSessionDetail(session.id))).pendingQuestion).toEqual(question)
+
+    const backgroundTasks = [
+      {
+        id: "task-1",
+        description: "Run checks",
+        status: "running",
+        taskType: "shell"
+      }
+    ]
+    await run(db.appendEvent("session.updated", session.id, { backgroundTasks }))
+    expect(await run(db.getTranscriptPage(session.id, undefined, 8))).toMatchObject({
+      pendingQuestion: question,
+      backgroundTasks
+    })
+    expect((await run(db.getSessionDetail(session.id))).backgroundTasks).toEqual(backgroundTasks)
+
+    // A stale resolution must not release a newer pending continuation.
+    await run(
+      db.appendEvent("session.output", session.id, {
+        sessionUpdate: "question_resolved",
+        questionId: "different-question",
+        outcome: "cancelled",
+        questions: []
+      })
+    )
+    expect((await run(db.getTranscriptPage(session.id, undefined, 8))).pendingQuestion).toEqual(
+      question
+    )
+
+    await run(
+      db.appendEvent("session.output", session.id, {
+        sessionUpdate: "question_resolved",
+        questionId: question.questionId,
+        outcome: "answered",
+        questions: question.questions
+      })
+    )
+    expect(
+      (await run(db.getTranscriptPage(session.id, undefined, 8))).pendingQuestion
+    ).toBeUndefined()
+    // Resolution delivery is idempotent even after the blocking snapshot has
+    // already been cleared.
+    await run(
+      db.appendEvent("session.output", session.id, {
+        sessionUpdate: "question_resolved",
+        questionId: question.questionId,
+        outcome: "answered",
+        questions: question.questions
+      })
+    )
+    await run(db.appendEvent("session.output", session.id, question))
+
+    await run(db.appendEvent("session.updated", session.id, { backgroundTasks: [] }))
+    expect((await run(db.getTranscriptPage(session.id, undefined, 8))).backgroundTasks).toEqual([])
+
+    await run(
+      db.appendEvent("session.updated", session.id, {
+        initiatedBy: "user",
+        turnId: "turn-1",
+        turnState: "ended",
+        stopReason: "interrupted"
+      })
+    )
+    expect(
+      (await run(db.getTranscriptPage(session.id, undefined, 8))).pendingQuestion
+    ).toBeUndefined()
+    expect((await run(db.getSessionDetail(session.id))).pendingQuestion).toBeUndefined()
+    await Effect.runPromise(db.close)
+  })
+
   it("migrates a v4 database to projects without losing session children", async () => {
     const filename = tempDatabase()
     buildV4Fixture(filename)
@@ -579,10 +680,15 @@ describe("@herdman/db", () => {
     expect(
       await run(db.updatePromptQueueItem(firstSession.id, queuedB.id, "queued b edited"))
     ).toMatchObject({ text: "queued b edited" })
-    expect(await run(db.shiftPromptQueueItem(firstSession.id))).toMatchObject({
+    expect(await run(db.claimPromptQueueItem(firstSession.id))).toMatchObject({
       id: queuedA.id,
       text: "queued a"
     })
+    expect(await run(db.listPromptQueue(firstSession.id))).toMatchObject([{ id: queuedB.id }])
+    expect(await run(db.listProcessingPromptQueue(firstSession.id))).toMatchObject([
+      { id: queuedA.id }
+    ])
+    await run(db.completePromptQueueItem(firstSession.id, queuedA.id))
     await run(db.deletePromptQueueItem(firstSession.id, queuedB.id))
     expect(await run(db.listPromptQueue(firstSession.id))).toEqual([])
     await expect(
@@ -591,7 +697,16 @@ describe("@herdman/db", () => {
     await expect(
       run(db.deletePromptQueueItem(firstSession.id, "missing-queue-item"))
     ).rejects.toBeInstanceOf(DatabaseError)
-    expect(await run(db.shiftPromptQueueItem(firstSession.id))).toBeUndefined()
+    expect(await run(db.claimPromptQueueItem(firstSession.id))).toBeUndefined()
+
+    expect(await run(db.hasConversationMessage(firstSession.id, "dispatch-1"))).toBe(false)
+    await run(db.appendConversationItem(firstSession.id, "user", "dispatch-1", "run it", false))
+    expect(await run(db.hasConversationMessage(firstSession.id, "dispatch-1"))).toBe(true)
+    expect(await run(db.hasTerminalAssistantAfterMessage(firstSession.id, "dispatch-1"))).toBe(
+      false
+    )
+    await run(db.appendConversationItem(firstSession.id, "assistant", undefined, "done", false))
+    expect(await run(db.hasTerminalAssistantAfterMessage(firstSession.id, "dispatch-1"))).toBe(true)
 
     const sqlite = new Database(filename)
     sqlite
@@ -1407,13 +1522,14 @@ describe("@herdman/db", () => {
     const queued = await run(db.createPromptQueueItem(session.id, "with file", [ref]))
     expect(queued.attachments).toEqual([ref])
     expect((await run(db.listPromptQueue(session.id)))[0]?.attachments).toEqual([ref])
-    expect(await run(db.shiftPromptQueueItem(session.id))).toMatchObject({
+    expect(await run(db.claimPromptQueueItem(session.id))).toMatchObject({
       text: "with file",
       attachments: [ref]
     })
+    await run(db.completePromptQueueItem(session.id, queued.id))
     const queuedPlain = await run(db.createPromptQueueItem(session.id, "no file", []))
     expect(queuedPlain.attachments).toBeUndefined()
-    expect(await run(db.shiftPromptQueueItem(session.id))).toMatchObject({ text: "no file" })
+    expect(await run(db.claimPromptQueueItem(session.id))).toMatchObject({ text: "no file" })
 
     await run(
       db.appendConversationItem(session.id, "user", undefined, "look at this", false, [ref])

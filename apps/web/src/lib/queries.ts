@@ -92,7 +92,10 @@ export interface SubagentTranscriptInfo {
 // The session-detail cache: the server payload plus stream-derived fields the
 // REST shape doesn't carry (a live error banner, current mode, slash
 // commands, usage, and per-turn worked metadata).
-export interface SessionDetailCache extends SessionDetail {
+export interface SessionDetailCache extends Omit<
+  SessionDetail,
+  "pendingQuestion" | "backgroundTasks"
+> {
   streamError?: string
   currentModeId?: string
   availableCommands?: CommandInfo[]
@@ -105,6 +108,27 @@ export interface SessionDetailCache extends SessionDetail {
   runningSubagentToolCallIds?: string[]
   pendingQuestion?: QuestionRequestInfo
   turnMeta?: Record<string, TurnMeta>
+}
+
+function snapshotQuestion(
+  request: SessionDetail["pendingQuestion"]
+): QuestionRequestInfo | undefined {
+  if (request == null) return undefined
+  return {
+    questionId: request.questionId,
+    message: request.message,
+    questions: request.questions.map((question) => ({
+      ...question,
+      options: question.options.map((option) => ({ ...option }))
+    })),
+    autoResolutionMs: request.autoResolutionMs
+  }
+}
+
+function snapshotBackgroundTasks(
+  tasks: SessionDetail["backgroundTasks"]
+): BackgroundTaskInfo[] | undefined {
+  return tasks?.map((task) => ({ ...task }))
 }
 
 function isOptimisticUserItem(item: ConversationItem): boolean {
@@ -950,7 +974,9 @@ export function replaySessionEvents(
     {
       ...detail,
       conversation: [],
-      eventCursor: 0
+      eventCursor: 0,
+      pendingQuestion: snapshotQuestion(detail.pendingQuestion),
+      backgroundTasks: snapshotBackgroundTasks(detail.backgroundTasks)
     }
   )
   return {
@@ -998,6 +1024,8 @@ export function foldSessionSnapshot(detail: SessionDetail): SessionDetailCache {
   return {
     ...detail,
     conversation: foldConversation(detail.conversation),
+    pendingQuestion: snapshotQuestion(detail.pendingQuestion),
+    backgroundTasks: snapshotBackgroundTasks(detail.backgroundTasks),
     turnMeta
   }
 }

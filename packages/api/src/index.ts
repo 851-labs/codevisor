@@ -1,5 +1,5 @@
 import { Schema } from "effect"
-import { QuestionAnswerEntry } from "./session-updates.js"
+import { BackgroundTask, QuestionAnswerEntry, QuestionPayload } from "./session-updates.js"
 
 export * from "./session-updates.js"
 
@@ -513,7 +513,11 @@ export const TranscriptPage = Schema.Struct({
   items: Schema.Array(TranscriptItem),
   nextBefore: Schema.optional(Schema.String),
   hasMore: Schema.Boolean,
-  eventCursor: Schema.Number
+  eventCursor: Schema.Number,
+  /** Current blocking question, snapshotted at the same revision as
+   * `eventCursor` so a reconnect cannot skip the event that created it. */
+  pendingQuestion: Schema.optional(QuestionPayload),
+  backgroundTasks: Schema.optional(Schema.Array(BackgroundTask))
 })
 export type TranscriptPage = typeof TranscriptPage.Type
 
@@ -540,7 +544,9 @@ export const SessionDetail = Schema.Struct({
   session: SessionSummary,
   conversation: Schema.Array(ConversationItem),
   promptQueue: Schema.Array(PromptQueueItem),
-  eventCursor: Schema.Number
+  eventCursor: Schema.Number,
+  pendingQuestion: Schema.optional(QuestionPayload),
+  backgroundTasks: Schema.optional(Schema.Array(BackgroundTask))
 })
 export type SessionDetail = typeof SessionDetail.Type
 

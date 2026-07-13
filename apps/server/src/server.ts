@@ -307,19 +307,50 @@ export const startHerdManServer = (
   Effect.gen(function* () {
     const fanout = yield* makeEventFanout
     yield* Effect.sync(() => sweepAttachmentTempFiles())
+    // Every runtime continuation belongs to this server process. If the
+    // previous process died mid-turn, restore the durable harness thread when
+    // possible, then close only the orphaned turn before accepting clients.
+    // This makes startup reconciliation idempotent and prevents a reconnecting
+    // UI from inheriting a generating row that can never emit again.
     return yield* Effect.tryPromise({
       try: () =>
         new Promise<RunningHerdManServer>((resolve, reject) => {
-          const app = makeHerdManServerApp(services, config, fanout)
-          const server = createServer(app.handleRequest)
-          server.on("upgrade", app.handleUpgrade)
+          let app: ReturnType<typeof makeHerdManServerApp> | undefined
+          const server = createServer((request, response) => {
+            if (app === undefined) {
+              response.writeHead(503, { "Content-Type": "application/json" })
+              response.end(JSON.stringify({ error: "Server recovery is still in progress" }))
+              return
+            }
+            app.handleRequest(request, response)
+          })
+          server.on("upgrade", (request, socket, head) => {
+            if (app === undefined) {
+              socket.destroy()
+              return
+            }
+            app.handleUpgrade(request, socket as Socket, head)
+          })
           server.once("error", reject)
-          server.listen(config.port, config.host, () => {
+          server.listen(config.port, config.host, async () => {
             server.off("error", reject)
             const address = server.address()
             /* v8 ignore next -- TCP listen always returns AddressInfo here. */
             const port = isAddressInfo(address) ? address.port : config.port
             services.mcp?.setBaseUrl(`http://${config.host}:${port}`)
+            try {
+              await reconcileOrphanedSessionTurns(services, fanout, config.id)
+            } catch (cause) {
+              server.close()
+              reject(
+                new ServerError({
+                  operation: "reconcileOrphanedSessions",
+                  message: failureMessage(cause)
+                })
+              )
+              return
+            }
+            app = makeHerdManServerApp(services, config, fanout)
             resolve({
               host: config.host,
               port,
@@ -336,6 +367,113 @@ export const startHerdManServer = (
         })
     })
   })
+
+export const reconcileOrphanedSessionTurns = async (
+  services: HerdManServerServices,
+  fanout: EventFanout,
+  serverId: string
+): Promise<void> => {
+  const sessions = await run(services.db.listSessions)
+  for (const session of sessions) {
+    if (session.isArchived) continue
+    const page = await run(services.db.getTranscriptPage(session.id, undefined, 1))
+    const active = page.items.at(-1)
+    const hasOrphanedTurn = active?.role === "assistant" && active.isGenerating
+    // The database projection always supplies the full background-task
+    // snapshot; the API field is optional only for older remote clients.
+    const hasOrphanedTasks = page.backgroundTasks!.length > 0
+    const claimedPrompts = await run(services.db.listProcessingPromptQueue(session.id))
+    const processingPrompts: Array<PromptQueueItem> = []
+    for (const item of claimedPrompts) {
+      if (await run(services.db.hasTerminalAssistantAfterMessage(session.id, item.id))) {
+        // The provider finished and only the queue acknowledgement was lost.
+        // Its terminal chat row is sufficient proof that replay is unnecessary.
+        await run(services.db.completePromptQueueItem(session.id, item.id))
+      } else {
+        processingPrompts.push(item)
+      }
+    }
+    if (!hasOrphanedTurn && !hasOrphanedTasks && processingPrompts.length === 0) continue
+
+    let restored = false
+    let restoreFailure = "unknown error"
+    try {
+      await ensureAgentSessionFor(services, fanout, serverId, session.id)
+      restored = true
+    } catch (cause) {
+      restoreFailure = failureMessage(cause)
+    }
+
+    // The provider-side resolver vanished with the old process. Pair a
+    // persisted question before ending the turn so event replay never leaves
+    // an apparently answerable request behind.
+    if (hasOrphanedTurn && page.pendingQuestion !== undefined) {
+      await appendAndPublish(services.db, fanout, "session.output", session.id, {
+        outcome: "cancelled",
+        questionId: page.pendingQuestion.questionId,
+        questions: page.pendingQuestion.questions,
+        sessionUpdate: "question_resolved",
+        serverId
+      })
+    }
+
+    // Process-owned background tasks cannot survive the same crash. Publish a
+    // full empty snapshot before the terminal event so another crash can never
+    // persist the terminal row while leaving stale work behind. If startup
+    // dies between these appends, the still-generating turn is reconciled again.
+    if (hasOrphanedTasks) {
+      await appendAndPublish(services.db, fanout, "session.updated", session.id, {
+        backgroundTasks: [],
+        serverId
+      })
+    }
+    // A prompt remains durably claimed until its provider call finishes. If
+    // the process died while dispatching it, make sure the user's input is
+    // represented exactly once, then create a deterministic interrupted turn
+    // when the provider had not emitted one yet. The claim is acknowledged
+    // only after another durable generating row exists, so every crash point
+    // leaves at least one marker for the next startup pass to reconcile.
+    for (const item of processingPrompts) {
+      if (!(await run(services.db.hasConversationMessage(session.id, item.id)))) {
+        await appendAndPublish(services.db, fanout, "session.output", session.id, {
+          role: "user",
+          messageId: item.id,
+          text: item.text,
+          ...(item.attachments === undefined ? {} : { attachments: item.attachments }),
+          serverId
+        })
+      }
+    }
+
+    let terminalTurnId = hasOrphanedTurn ? active.turnId : undefined
+    if (!hasOrphanedTurn && processingPrompts.length > 0) {
+      terminalTurnId = `recovered-prompt:${processingPrompts[0]!.id}`
+      await appendAndPublish(services.db, fanout, "session.updated", session.id, {
+        initiatedBy: "user",
+        turnId: terminalTurnId,
+        turnState: "started",
+        serverId
+      })
+    }
+    for (const item of processingPrompts) {
+      await run(services.db.completePromptQueueItem(session.id, item.id))
+    }
+
+    if (!hasOrphanedTurn && terminalTurnId === undefined) continue
+
+    const stopDetail = restored
+      ? "The server restarted before this turn finished. The agent session was restored; send a message to continue."
+      : `The server restarted before this turn finished and could not restore the agent session: ${restoreFailure}`
+    await appendAndPublish(services.db, fanout, "session.updated", session.id, {
+      ...(terminalTurnId === undefined
+        ? {}
+        : { initiatedBy: "user", turnId: terminalTurnId, turnState: "ended" }),
+      serverId,
+      stopDetail,
+      stopReason: "interrupted"
+    })
+  }
+}
 
 const handleRequest = async (
   services: HerdManServerServices,
@@ -1681,7 +1819,7 @@ const drainPromptQueue = async (
   routeState.activePromptSessions.add(sessionId)
   try {
     while (true) {
-      const item = await run(services.db.shiftPromptQueueItem(sessionId))
+      const item = await run(services.db.claimPromptQueueItem(sessionId))
       if (item === undefined) {
         await publishPromptQueue(services.db, fanout, sessionId)
         return
@@ -1692,9 +1830,11 @@ const drainPromptQueue = async (
         fanout,
         serverId,
         sessionId,
+        item.id,
         item.text,
         item.attachments
       )
+      await run(services.db.completePromptQueueItem(sessionId, item.id))
     }
   } finally {
     routeState.activePromptSessions.delete(sessionId)
@@ -1706,6 +1846,7 @@ const runPromptInBackground = async (
   fanout: EventFanout,
   serverId: string,
   sessionId: string,
+  queueItemId: string,
   text: string,
   attachments?: ReadonlyArray<AttachmentRef>
 ): Promise<void> => {
@@ -1718,7 +1859,12 @@ const runPromptInBackground = async (
       {
         kind: "session.output",
         subjectId: sessionId,
-        payload: { role: "user", text, ...(refs.length === 0 ? {} : { attachments: refs }) }
+        payload: {
+          role: "user",
+          messageId: queueItemId,
+          text,
+          ...(refs.length === 0 ? {} : { attachments: refs })
+        }
       },
       sessionId
     )

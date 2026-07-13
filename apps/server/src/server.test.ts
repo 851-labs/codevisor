@@ -18,6 +18,7 @@ import type {
 import { makeTerminalManager, TerminalError } from "@herdman/terminal"
 import { Effect } from "effect"
 import { execFile } from "node:child_process"
+import { randomUUID } from "node:crypto"
 import { createServer } from "node:http"
 import {
   existsSync,
@@ -40,6 +41,7 @@ import {
   HerdManServer,
   makeHerdManServerApp,
   makeEventFanout,
+  reconcileOrphanedSessionTurns,
   startHerdManServer,
   sweepAttachmentTempFiles,
   type RunningHerdManServer
@@ -621,6 +623,356 @@ describe("@herdman/server", () => {
   it("bounds long-lived OAuth refresh timers to Node's supported range", () => {
     expect(boundedMcpTimerDelay(2_591_232_324)).toBe(2_147_000_000)
     expect(boundedMcpTimerDelay(3_480_000)).toBe(3_480_000)
+  })
+
+  it("gates HTTP and websocket clients until startup recovery finishes", async () => {
+    const { services } = await makeServices("server-a")
+    const reservation = createServer()
+    await new Promise<void>((resolve) => reservation.listen(0, "127.0.0.1", resolve))
+    const address = reservation.address()
+    const port = typeof address === "object" && address !== null ? address.port : 0
+    await new Promise<void>((resolve) => reservation.close(() => resolve()))
+
+    let releaseRecovery: (() => void) | undefined
+    const recoveryGate = new Promise<void>((resolve) => {
+      releaseRecovery = resolve
+    })
+    const gatedServices: HerdManServerServices = {
+      ...services,
+      db: {
+        ...services.db,
+        listSessions: Effect.promise(async () => {
+          await recoveryGate
+          return await run(services.db.listSessions)
+        })
+      }
+    }
+    const starting = run(
+      startHerdManServer(gatedServices, defaultServerConfig({ id: "server-a", port }))
+    )
+
+    let recoveryResponse: Response | undefined
+    await waitFor(
+      async () => {
+        try {
+          const response = await fetch(`http://127.0.0.1:${port}/v1/health`)
+          if (response.status !== 503) return false
+          recoveryResponse = response
+          return true
+        } catch {
+          return false
+        }
+      },
+      () => "for the recovery-gated listener"
+    )
+    expect(await recoveryResponse?.json()).toEqual({
+      error: "Server recovery is still in progress"
+    })
+
+    await new Promise<void>((resolve) => {
+      const socket = new WebSocket(`ws://127.0.0.1:${port}/v1/events`)
+      socket.once("error", () => resolve())
+    })
+
+    releaseRecovery?.()
+    const server = await starting
+    runningServers.push(server)
+    expect(await (await fetch(`${server.url}/v1/health`)).json()).toMatchObject({ ok: true })
+  })
+
+  it("fails startup cleanly when orphan reconciliation cannot read sessions", async () => {
+    const { services } = await makeServices("server-a")
+    const failingServices: HerdManServerServices = {
+      ...services,
+      db: {
+        ...services.db,
+        listSessions: Effect.sync(() => {
+          throw new Error("recovery database unavailable")
+        })
+      }
+    }
+
+    await expect(
+      run(startHerdManServer(failingServices, defaultServerConfig({ id: "server-a", port: 0 })))
+    ).rejects.toMatchObject({
+      operation: "start",
+      message: "recovery database unavailable"
+    })
+  })
+
+  it("restores session context and terminalizes a turn orphaned by server restart", async () => {
+    const { agents, services } = await makeServices("server-a")
+    const folder = mkdtempSync(join(tmpdir(), "herdman-recovery-project-"))
+    tempDirs.push(folder)
+    const project = await run(services.db.createProject({ folderPath: folder }))
+    const session = await run(
+      services.db.createSession({
+        projectId: project.id,
+        harnessId: "codex",
+        agentSessionId: "agent-before-crash"
+      })
+    )
+    await run(
+      services.db.appendEvent("session.updated", session.id, {
+        initiatedBy: "user",
+        turnId: "orphaned-turn",
+        turnState: "started"
+      })
+    )
+
+    const backgroundOnly = await run(
+      services.db.createSession({
+        projectId: project.id,
+        harnessId: "codex",
+        agentSessionId: "background-only-agent"
+      })
+    )
+    await run(
+      services.db.appendEvent("session.updated", backgroundOnly.id, {
+        backgroundTasks: [
+          {
+            id: "background-only-task",
+            description: "Run detached work",
+            status: "running",
+            taskType: "shell"
+          }
+        ]
+      })
+    )
+    const archived = await run(
+      services.db.createSession({
+        projectId: project.id,
+        harnessId: "codex",
+        agentSessionId: "archived-agent"
+      })
+    )
+    await run(
+      services.db.appendEvent("session.updated", archived.id, {
+        initiatedBy: "user",
+        turnId: "archived-turn",
+        turnState: "started"
+      })
+    )
+    await run(services.db.archiveSession(archived.id))
+    await run(
+      services.db.appendEvent("session.output", session.id, {
+        sessionUpdate: "question",
+        questionId: "orphaned-question",
+        questions: [
+          {
+            id: "choice",
+            question: "Continue?",
+            options: [{ label: "Yes" }],
+            allowsOther: false
+          }
+        ]
+      })
+    )
+    await run(
+      services.db.appendEvent("session.updated", session.id, {
+        backgroundTasks: [
+          {
+            id: "orphaned-background-task",
+            description: "Run checks",
+            status: "running",
+            taskType: "shell"
+          }
+        ]
+      })
+    )
+
+    const server = await run(
+      startHerdManServer(services, defaultServerConfig({ id: "server-a", port: 0 }))
+    )
+    runningServers.push(server)
+
+    expect(agents.loads).toContainEqual(["codex", "agent-before-crash", folder])
+    const page = await run(services.db.getTranscriptPage(session.id, undefined, 8))
+    expect(page.pendingQuestion).toBeUndefined()
+    expect(page.backgroundTasks).toEqual([])
+    expect(
+      (await run(services.db.getTranscriptPage(backgroundOnly.id, undefined, 8))).backgroundTasks
+    ).toEqual([])
+    expect(
+      (await run(services.db.getTranscriptPage(archived.id, undefined, 8))).items.at(-1)
+    ).toMatchObject({ isGenerating: true })
+    expect(page.items.at(-1)).toMatchObject({
+      isGenerating: false,
+      stopReason: "interrupted",
+      stopDetail:
+        "The server restarted before this turn finished. The agent session was restored; send a message to continue."
+    })
+    const events = await run(services.db.listSubjectEvents(session.id))
+    expect(events.map((event) => event.payload)).toContainEqual(
+      expect.objectContaining({
+        outcome: "cancelled",
+        questionId: "orphaned-question",
+        sessionUpdate: "question_resolved"
+      })
+    )
+    expect(events.map((event) => event.payload)).toContainEqual(
+      expect.objectContaining({
+        stopReason: "interrupted",
+        turnId: "orphaned-turn",
+        turnState: "ended"
+      })
+    )
+  })
+
+  it("terminalizes a durably claimed prompt instead of losing or replaying it after restart", async () => {
+    const { services } = await makeServices("server-a")
+    const folder = mkdtempSync(join(tmpdir(), "herdman-claimed-prompt-project-"))
+    tempDirs.push(folder)
+    const project = await run(services.db.createProject({ folderPath: folder }))
+    const session = await run(
+      services.db.createSession({
+        projectId: project.id,
+        harnessId: "codex",
+        agentSessionId: "agent-before-prompt-crash"
+      })
+    )
+    const queued = await run(services.db.createPromptQueueItem(session.id, "do not lose me"))
+    expect(await run(services.db.claimPromptQueueItem(session.id))).toMatchObject({ id: queued.id })
+
+    const completedSession = await run(
+      services.db.createSession({
+        projectId: project.id,
+        harnessId: "codex",
+        agentSessionId: "agent-after-complete"
+      })
+    )
+    const completed = await run(
+      services.db.createPromptQueueItem(completedSession.id, "already finished")
+    )
+    await run(services.db.claimPromptQueueItem(completedSession.id))
+    await run(
+      services.db.appendEvent("session.output", completedSession.id, {
+        role: "user",
+        messageId: completed.id,
+        text: completed.text
+      })
+    )
+    await run(
+      services.db.appendEvent("session.output", completedSession.id, {
+        role: "assistant",
+        text: "done"
+      })
+    )
+    await run(
+      services.db.appendEvent("session.updated", completedSession.id, {
+        stopReason: "end_turn"
+      })
+    )
+
+    const dispatchedSession = await run(
+      services.db.createSession({
+        projectId: project.id,
+        harnessId: "codex",
+        agentSessionId: "agent-after-user-dispatch"
+      })
+    )
+    const attachment = {
+      fileId: "durable-file",
+      name: "recovery.txt",
+      mimeType: "text/plain",
+      sizeBytes: 8,
+      kind: "file" as const
+    }
+    const attachedMissingSession = await run(
+      services.db.createSession({
+        projectId: project.id,
+        harnessId: "codex",
+        agentSessionId: "agent-before-attached-dispatch"
+      })
+    )
+    await run(
+      services.db.createPromptQueueItem(attachedMissingSession.id, "dispatch attachment", [
+        attachment
+      ])
+    )
+    await run(services.db.claimPromptQueueItem(attachedMissingSession.id))
+    const dispatched = await run(
+      services.db.createPromptQueueItem(dispatchedSession.id, "already dispatched", [attachment])
+    )
+    await run(services.db.claimPromptQueueItem(dispatchedSession.id))
+    await run(
+      services.db.appendEvent("session.output", dispatchedSession.id, {
+        role: "user",
+        messageId: dispatched.id,
+        text: dispatched.text,
+        attachments: [attachment]
+      })
+    )
+
+    const server = await run(
+      startHerdManServer(services, defaultServerConfig({ id: "server-a", port: 0 }))
+    )
+    runningServers.push(server)
+
+    const page = await run(services.db.getTranscriptPage(session.id, undefined, 8))
+    expect(page.items).toMatchObject([
+      { role: "user", text: "do not lose me", isGenerating: false },
+      { role: "assistant", stopReason: "interrupted", isGenerating: false }
+    ])
+    expect(await run(services.db.listPromptQueue(session.id))).toEqual([])
+    expect(await run(services.db.listProcessingPromptQueue(session.id))).toEqual([])
+
+    const completedPage = await run(
+      services.db.getTranscriptPage(completedSession.id, undefined, 8)
+    )
+    expect(completedPage.items).toMatchObject([
+      { role: "user", text: "already finished" },
+      { role: "assistant", text: "done", stopReason: "end_turn" }
+    ])
+    expect(await run(services.db.listProcessingPromptQueue(completedSession.id))).toEqual([])
+
+    const dispatchedPage = await run(
+      services.db.getTranscriptPage(dispatchedSession.id, undefined, 8)
+    )
+    expect(dispatchedPage.items).toMatchObject([
+      { role: "user", text: "already dispatched", attachments: [attachment] },
+      { role: "assistant", stopReason: "interrupted" }
+    ])
+    expect(await run(services.db.listProcessingPromptQueue(dispatchedSession.id))).toEqual([])
+    expect(await run(services.db.listProcessingPromptQueue(attachedMissingSession.id))).toEqual([])
+
+    const before = await run(services.db.listSubjectEvents(session.id))
+    await reconcileOrphanedSessionTurns(services, await run(makeEventFanout), "server-a")
+    expect(await run(services.db.listSubjectEvents(session.id))).toHaveLength(before.length)
+  })
+
+  it("terminalizes an orphaned turn when its agent session cannot be restored", async () => {
+    const { services } = await makeServices("server-a")
+    const missingFolder = join(tmpdir(), `herdman-missing-${randomUUID()}`)
+    const project = await run(services.db.createProject({ folderPath: missingFolder }))
+    const session = await run(
+      services.db.createSession({
+        projectId: project.id,
+        harnessId: "codex",
+        agentSessionId: "unrestorable-agent"
+      })
+    )
+    await run(
+      services.db.appendEvent("session.output", session.id, {
+        role: "assistant",
+        text: "partial answer"
+      })
+    )
+
+    const server = await run(
+      startHerdManServer(services, defaultServerConfig({ id: "server-a", port: 0 }))
+    )
+    runningServers.push(server)
+
+    expect(await run(services.db.getTranscriptPage(session.id, undefined, 8))).toMatchObject({
+      items: [
+        {
+          isGenerating: false,
+          stopReason: "interrupted",
+          stopDetail: expect.stringContaining("could not restore the agent session")
+        }
+      ]
+    })
   })
 
   it("loads a large SSE tool catalog without opening the optional notification stream", async () => {

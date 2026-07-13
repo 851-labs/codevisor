@@ -300,7 +300,7 @@ struct SessionScreen: View {
     private func virtualRowContent(_ row: TranscriptVirtualRow) -> some View {
         switch row.content {
         case let .message(item):
-            ConversationItemView(item: item)
+            ConversationItemView(item: item, isWaitingOnUser: controller.pendingQuestion != nil)
         case .active:
             TranscriptActiveItemView(controller: controller)
         case let .setup(phases):
@@ -415,7 +415,7 @@ private struct TranscriptActiveItemView: View {
     var body: some View {
         let revision = controller.activeItemRevision
         if let item = controller.activeItem {
-            ConversationItemView(item: item)
+            ConversationItemView(item: item, isWaitingOnUser: controller.pendingQuestion != nil)
                 // The active row is hosted behind the transcript's observation
                 // isolation boundary, so environment values injected by the
                 // outer row factory are otherwise frozen until this row is

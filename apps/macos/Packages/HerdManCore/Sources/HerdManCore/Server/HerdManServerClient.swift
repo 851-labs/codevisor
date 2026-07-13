@@ -856,17 +856,23 @@ public struct ServerSessionDetail: Decodable, Equatable, Sendable {
     public var conversation: [ServerConversationItem]
     public var promptQueue: [ServerPromptQueueItem]
     public var eventCursor: Int
+    public var pendingQuestion: QuestionRequest?
+    public var backgroundTasks: [BackgroundTaskInfo]?
 
     public init(
         session: ServerSession,
         conversation: [ServerConversationItem],
         promptQueue: [ServerPromptQueueItem] = [],
-        eventCursor: Int
+        eventCursor: Int,
+        pendingQuestion: QuestionRequest? = nil,
+        backgroundTasks: [BackgroundTaskInfo]? = nil
     ) {
         self.session = session
         self.conversation = conversation
         self.promptQueue = promptQueue
         self.eventCursor = eventCursor
+        self.pendingQuestion = pendingQuestion
+        self.backgroundTasks = backgroundTasks
     }
 
     enum CodingKeys: String, CodingKey {
@@ -874,6 +880,8 @@ public struct ServerSessionDetail: Decodable, Equatable, Sendable {
         case conversation
         case promptQueue
         case eventCursor
+        case pendingQuestion
+        case backgroundTasks
     }
 
     public init(from decoder: any Decoder) throws {
@@ -882,6 +890,8 @@ public struct ServerSessionDetail: Decodable, Equatable, Sendable {
         conversation = try container.decode([ServerConversationItem].self, forKey: .conversation)
         promptQueue = try container.decodeIfPresent([ServerPromptQueueItem].self, forKey: .promptQueue) ?? []
         eventCursor = try container.decode(Int.self, forKey: .eventCursor)
+        pendingQuestion = try container.decodeIfPresent(QuestionRequest.self, forKey: .pendingQuestion)
+        backgroundTasks = try container.decodeIfPresent([BackgroundTaskInfo].self, forKey: .backgroundTasks)
     }
 }
 
@@ -915,6 +925,8 @@ public struct ServerTranscriptPage: Decodable, Equatable, Sendable {
     public var nextBefore: String?
     public var hasMore: Bool
     public var eventCursor: Int
+    public var pendingQuestion: QuestionRequest? = nil
+    public var backgroundTasks: [BackgroundTaskInfo]? = nil
 }
 
 public struct ServerTranscriptItemDetails: Decodable, Equatable, Sendable {

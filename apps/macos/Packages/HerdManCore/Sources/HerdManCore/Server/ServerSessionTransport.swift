@@ -5,6 +5,8 @@ public struct ServerSessionSnapshot: Equatable, Sendable {
     public var conversation: [ConversationItem]
     public var promptQueue: [ServerPromptQueueItem]
     public var eventCursor: Int
+    public var pendingQuestion: QuestionRequest?
+    public var backgroundTasks: [BackgroundTaskInfo]?
 }
 
 public struct TranscriptHistoryPage: Equatable, Sendable {
@@ -12,6 +14,8 @@ public struct TranscriptHistoryPage: Equatable, Sendable {
     public var nextBefore: String?
     public var hasMore: Bool
     public var eventCursor: Int
+    public var pendingQuestion: QuestionRequest? = nil
+    public var backgroundTasks: [BackgroundTaskInfo]? = nil
 }
 
 public enum ServerSessionStreamEvent: Equatable, Sendable {
@@ -172,7 +176,9 @@ public struct ServerSessionTransport: Sendable {
         return ServerSessionSnapshot(
             conversation: Self.conversationItems(from: detail.conversation),
             promptQueue: detail.promptQueue,
-            eventCursor: detail.eventCursor
+            eventCursor: detail.eventCursor,
+            pendingQuestion: detail.pendingQuestion,
+            backgroundTasks: detail.backgroundTasks
         )
     }
 
@@ -188,7 +194,9 @@ public struct ServerSessionTransport: Sendable {
             conversation: page.items.map(Self.conversationItem(from:)),
             nextBefore: page.nextBefore,
             hasMore: page.hasMore,
-            eventCursor: page.eventCursor
+            eventCursor: page.eventCursor,
+            pendingQuestion: page.pendingQuestion,
+            backgroundTasks: page.backgroundTasks
         )
     }
 

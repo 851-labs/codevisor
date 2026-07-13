@@ -501,6 +501,12 @@ public final class SessionModel {
             olderHistoryCursor = page.nextBefore
             hasOlderHistory = page.hasMore
             setConversation(page.conversation)
+            pendingQuestion = page.pendingQuestion
+            if let tasks = page.backgroundTasks {
+                backgroundTasks = tasks
+                hasBackgroundTaskSnapshot = true
+            }
+            isSending = lastTurnIsGenerating
             transcriptStreamBytes = Self.transcriptByteEstimate(of: conversation)
             serverEventCursor = page.eventCursor
             do {
@@ -536,9 +542,15 @@ public final class SessionModel {
             let history = try await transport.history()
             if history.events.isEmpty {
                 setConversation(snapshot.conversation)
+                pendingQuestion = snapshot.pendingQuestion
+                if let tasks = snapshot.backgroundTasks {
+                    backgroundTasks = tasks
+                    hasBackgroundTaskSnapshot = true
+                }
                 serverEventCursor = snapshot.eventCursor
             } else {
                 setConversation([])
+                pendingQuestion = nil
                 isReplayingHistory = true
                 historicalConfigSelections.removeAll(keepingCapacity: true)
                 // Hours-long sessions replay tens of thousands of events;

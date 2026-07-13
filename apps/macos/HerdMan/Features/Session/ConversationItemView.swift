@@ -4,13 +4,18 @@ import HerdManCore
 /// Renders a single conversation item: a user prompt bubble or an assistant turn.
 struct ConversationItemView: View {
     let item: ConversationItem
+    var isWaitingOnUser = false
 
     var body: some View {
         switch item {
         case let .user(message):
             UserMessageView(message: message)
         case let .assistant(message):
-            AssistantTurnView(turn: message.turn, turnID: message.id)
+            AssistantTurnView(
+                turn: message.turn,
+                turnID: message.id,
+                isWaitingOnUser: isWaitingOnUser
+            )
         }
     }
 }

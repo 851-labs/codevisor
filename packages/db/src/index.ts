@@ -1,6 +1,7 @@
 import type {
   AttachmentKind,
   AttachmentRef,
+  BackgroundTask,
   CreateProjectRequest,
   CreateSessionRequest,
   DataUpgradeProgress,
@@ -17,6 +18,7 @@ import type {
   Project,
   ProjectLocation,
   PromptQueueItem,
+  QuestionPayload,
   SessionDetail,
   SessionSummary,
   TranscriptItem,
@@ -92,6 +94,8 @@ interface SessionRow {
   readonly usage_size: number | null
   readonly cost_amount: number | null
   readonly cost_currency: string | null
+  readonly pending_question: string | null
+  readonly background_tasks: string
 }
 
 interface HarnessAccountRow {
@@ -274,6 +278,7 @@ interface PromptQueueRow {
   readonly created_at: string
   readonly updated_at: string
   readonly attachments: string | null
+  readonly state: "pending" | "processing"
 }
 
 interface FileRow {
@@ -765,6 +770,25 @@ const migrations: ReadonlyArray<Migration> = [
         primary key (session_id, mcp_server_id)
       );
     `
+  },
+  {
+    id: 13,
+    name: "durable live session state",
+    sql: `
+      alter table sessions add column pending_question text;
+      alter table sessions add column background_tasks text not null default '[]';
+    `
+  },
+  {
+    id: 14,
+    name: "durable prompt dispatch",
+    sql: `
+      alter table prompt_queue_items add column state text not null default 'pending'
+        check(state in ('pending', 'processing'));
+
+      create index if not exists prompt_queue_items_session_state_created_idx
+        on prompt_queue_items(session_id, state, created_at);
+    `
   }
 ]
 
@@ -789,6 +813,12 @@ const parseJsonRecord = (raw: string): JsonRecord | undefined => {
     return undefined
   }
 }
+
+const pendingQuestionFromRaw = (raw: string | null): QuestionPayload | undefined =>
+  raw === null ? undefined : (JSON.parse(raw) as QuestionPayload)
+
+const backgroundTasksFromRaw = (raw: string): ReadonlyArray<BackgroundTask> =>
+  JSON.parse(raw) as ReadonlyArray<BackgroundTask>
 
 const payloadText = (payload: JsonRecord): string | undefined => {
   if (typeof payload.text === "string") {
@@ -1214,6 +1244,46 @@ const projectChatEvent = (sqlite: Database.Database, event: SessionEventRow): vo
       .prepare("update session_events set chat_item_id = ? where session_id = ? and revision = ?")
       .run(itemId, sessionId, event.revision)
   }
+
+  // A question is session-level blocking state, not merely transcript detail.
+  // Keep a single current-state projection in the same transaction as the
+  // append so reconnect snapshots cannot advance past the event while losing
+  // the question needed to release the provider's pending continuation.
+  const update = typeof payload.sessionUpdate === "string" ? payload.sessionUpdate : undefined
+  if (
+    event.kind === "session.output" &&
+    update === "question" &&
+    typeof payload.questionId === "string" &&
+    Array.isArray(payload.questions)
+  ) {
+    sqlite
+      .prepare("update sessions set pending_question = ? where id = ?")
+      .run(event.payload, sessionId)
+  } else if (
+    event.kind === "session.output" &&
+    update === "question_resolved" &&
+    typeof payload.questionId === "string"
+  ) {
+    const current = sqlite
+      .prepare("select pending_question from sessions where id = ?")
+      .get(sessionId) as { readonly pending_question: string | null }
+    const projected =
+      current.pending_question === null ? undefined : parseJsonRecord(current.pending_question)
+    if (projected?.questionId === payload.questionId) {
+      sqlite.prepare("update sessions set pending_question = null where id = ?").run(sessionId)
+    }
+  } else if (
+    event.kind === "session.error" ||
+    (event.kind === "session.updated" &&
+      (payload.turnState === "ended" || typeof payload.stopReason === "string"))
+  ) {
+    sqlite.prepare("update sessions set pending_question = null where id = ?").run(sessionId)
+  }
+  if (event.kind === "session.updated" && Array.isArray(payload.backgroundTasks)) {
+    sqlite
+      .prepare("update sessions set background_tasks = ? where id = ?")
+      .run(JSON.stringify(payload.backgroundTasks), sessionId)
+  }
 }
 
 const insertSessionEvent = (
@@ -1617,9 +1687,24 @@ export interface HerdManDatabaseService {
     sessionId: string,
     queueItemId: string
   ) => Effect.Effect<void, DatabaseError>
-  readonly shiftPromptQueueItem: (
+  readonly claimPromptQueueItem: (
     sessionId: string
   ) => Effect.Effect<PromptQueueItem | undefined, DatabaseError>
+  readonly completePromptQueueItem: (
+    sessionId: string,
+    queueItemId: string
+  ) => Effect.Effect<void, DatabaseError>
+  readonly listProcessingPromptQueue: (
+    sessionId: string
+  ) => Effect.Effect<ReadonlyArray<PromptQueueItem>, DatabaseError>
+  readonly hasConversationMessage: (
+    sessionId: string,
+    messageId: string
+  ) => Effect.Effect<boolean, DatabaseError>
+  readonly hasTerminalAssistantAfterMessage: (
+    sessionId: string,
+    messageId: string
+  ) => Effect.Effect<boolean, DatabaseError>
   readonly getSessionActionResult: (
     sessionId: string,
     clientActionId: string
@@ -2085,28 +2170,38 @@ const createService = (
     ),
     getSessionSummary: (id) => attempt("getSessionSummary", () => getSession(id)),
     getSessionDetail: (id) =>
-      attempt("getSessionDetail", () => ({
-        session: getSession(id),
-        conversation: sqlite
+      attempt("getSessionDetail", () => {
+        const session = getSession(id)
+        const state = sqlite
           .prepare(
-            `select chat_items.id, chat_items.role, chat_items.message_id,
-               coalesce((select text from chat_parts
-                 where item_id = chat_items.id and kind = 'text' order by position limit 1), '') as text,
-               chat_items.created_at, case when chat_items.status = 'streaming' then 1 else 0 end as is_generating,
-               chat_items.attachments
-             from chat_items where session_id = ? order by position asc`
+            "select revision as cursor, pending_question, background_tasks from sessions where id = ?"
           )
-          .all(id)
-          .map((row) => conversationFromRow(row as ConversationRow)),
-        promptQueue: listPromptQueueSync(sqlite, id),
-        eventCursor: Number(
-          (
-            sqlite.prepare("select revision as cursor from sessions where id = ?").get(id) as {
-              readonly cursor: number
-            }
-          ).cursor
-        )
-      })),
+          .get(id) as {
+          readonly cursor: number
+          readonly pending_question: string | null
+          readonly background_tasks: string
+        }
+        const pendingQuestion = pendingQuestionFromRaw(state.pending_question)
+        const backgroundTasks = backgroundTasksFromRaw(state.background_tasks)
+        return {
+          session,
+          conversation: sqlite
+            .prepare(
+              `select chat_items.id, chat_items.role, chat_items.message_id,
+                 coalesce((select text from chat_parts
+                   where item_id = chat_items.id and kind = 'text' order by position limit 1), '') as text,
+                 chat_items.created_at, case when chat_items.status = 'streaming' then 1 else 0 end as is_generating,
+                 chat_items.attachments
+               from chat_items where session_id = ? order by position asc`
+            )
+            .all(id)
+            .map((row) => conversationFromRow(row as ConversationRow)),
+          promptQueue: listPromptQueueSync(sqlite, id),
+          eventCursor: Number(state.cursor),
+          ...(pendingQuestion === undefined ? {} : { pendingQuestion }),
+          backgroundTasks
+        }
+      }),
     getTranscriptPage: (sessionId, before, limit) =>
       attempt("getTranscriptPage", () => {
         getSession(sessionId)
@@ -2149,20 +2244,24 @@ const createService = (
           }
         })
         const cursor = pageRows.at(-1)?.position
-        const eventCursor = Number(
-          (
-            sqlite
-              .prepare("select revision as cursor from sessions where id = ?")
-              .get(sessionId) as {
-              cursor: number
-            }
-          ).cursor
-        )
+        const state = sqlite
+          .prepare(
+            "select revision as cursor, pending_question, background_tasks from sessions where id = ?"
+          )
+          .get(sessionId) as {
+          readonly cursor: number
+          readonly pending_question: string | null
+          readonly background_tasks: string
+        }
+        const pendingQuestion = pendingQuestionFromRaw(state.pending_question)
+        const backgroundTasks = backgroundTasksFromRaw(state.background_tasks)
         return {
           items,
           ...(hasMore ? { nextBefore: String(cursor!) } : {}),
           hasMore,
-          eventCursor
+          eventCursor: Number(state.cursor),
+          ...(pendingQuestion === undefined ? {} : { pendingQuestion }),
+          backgroundTasks
         }
       }),
     getTranscriptItemDetails: (sessionId, itemId) =>
@@ -2383,13 +2482,13 @@ const createService = (
           throw new Error(`Prompt queue item not found: ${queueItemId}`)
         }
       }),
-    shiftPromptQueueItem: (sessionId) =>
-      attempt("shiftPromptQueueItem", () => {
+    claimPromptQueueItem: (sessionId) =>
+      attempt("claimPromptQueueItem", () => {
         const transaction = sqlite.transaction(() => {
           const row = sqlite
             .prepare(
               `select * from prompt_queue_items
-               where session_id = ?
+               where session_id = ? and state = 'pending'
                order by created_at asc, rowid asc
                limit 1`
             )
@@ -2397,11 +2496,52 @@ const createService = (
           if (row === undefined) {
             return undefined
           }
-          sqlite.prepare("delete from prompt_queue_items where id = ?").run(row.id)
+          sqlite
+            .prepare("update prompt_queue_items set state = 'processing' where id = ?")
+            .run(row.id)
           return promptQueueFromRow(row)
         })
         return transaction()
       }),
+    completePromptQueueItem: (sessionId, queueItemId) =>
+      attempt("completePromptQueueItem", () => {
+        sqlite
+          .prepare(
+            "delete from prompt_queue_items where session_id = ? and id = ? and state = 'processing'"
+          )
+          .run(sessionId, queueItemId)
+      }),
+    listProcessingPromptQueue: (sessionId) =>
+      attempt("listProcessingPromptQueue", () => {
+        getSession(sessionId)
+        return listPromptQueueSync(sqlite, sessionId, "processing")
+      }),
+    hasConversationMessage: (sessionId, messageId) =>
+      attempt("hasConversationMessage", () =>
+        Boolean(
+          sqlite
+            .prepare("select 1 from chat_items where session_id = ? and message_id = ? limit 1")
+            .get(sessionId, messageId)
+        )
+      ),
+    hasTerminalAssistantAfterMessage: (sessionId, messageId) =>
+      attempt("hasTerminalAssistantAfterMessage", () =>
+        Boolean(
+          sqlite
+            .prepare(
+              `select 1
+               from chat_items as input
+               join chat_items as answer
+                 on answer.session_id = input.session_id
+                and answer.position > input.position
+                and answer.role = 'assistant'
+                and answer.status != 'streaming'
+               where input.session_id = ? and input.message_id = ?
+               limit 1`
+            )
+            .get(sessionId, messageId)
+        )
+      ),
     getSessionActionResult: (sessionId, clientActionId) =>
       attempt("getSessionActionResult", () => {
         const row = sqlite
@@ -2909,15 +3049,16 @@ const fileMetadataFromRow = (row: FileRow): FileMetadata => ({
 
 const listPromptQueueSync = (
   sqlite: Database.Database,
-  sessionId: string
+  sessionId: string,
+  state: PromptQueueRow["state"] = "pending"
 ): ReadonlyArray<PromptQueueItem> =>
   sqlite
     .prepare(
       `select * from prompt_queue_items
-       where session_id = ?
+       where session_id = ? and state = ?
        order by created_at asc, rowid asc`
     )
-    .all(sessionId)
+    .all(sessionId, state)
     .map((row) => promptQueueFromRow(row as PromptQueueRow))
 
 const eventFromRow = (row: EventRow): EventEnvelope => ({
