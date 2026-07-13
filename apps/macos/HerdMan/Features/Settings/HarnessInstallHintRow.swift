@@ -32,6 +32,7 @@ struct HarnessInstallHintRow: View {
 struct InstallCommandChip: View {
     let command: String
 
+    @Environment(\.theme) private var theme
     @State private var copied = false
 
     var body: some View {
@@ -47,7 +48,7 @@ struct InstallCommandChip: View {
             } label: {
                 Image(systemName: copied ? "checkmark" : "doc.on.doc")
                     .font(.caption)
-                    .foregroundStyle(copied ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
+                    .foregroundStyle(copied ? AnyShapeStyle(theme.statusOK) : AnyShapeStyle(theme.textSecondary))
                     .contentTransition(.symbolEffect(.replace))
             }
             .buttonStyle(.plain)

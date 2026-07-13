@@ -4,6 +4,7 @@ import SwiftUI
 
 struct McpSettingsView: View {
     @Environment(AppEnvironment.self) private var environment
+    @Environment(\.theme) private var theme
     @State private var servers: [ServerMcpServer] = []
     @State private var isLoading = true
     @State private var errorMessage: String?
@@ -13,22 +14,104 @@ struct McpSettingsView: View {
     @State private var serverPendingRemoval: ServerMcpServer?
 
     var body: some View {
+        content
+            .background {
+                if !theme.isSystem { theme.windowBackground }
+            }
+            .task { await reload() }
+            .sheet(isPresented: $showingAdd) {
+                McpServerEditorSheet(initialServer: nil) { values in
+                    let created = try await environment.serverClient.createMcpServer(values.createBody)
+                    servers.append(created)
+                    servers.sort { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+                    if created.authType == "oauth" {
+                        Task {
+                            do { try await beginOAuth(created) }
+                            catch { errorMessage = ErrorReporter.userFacingMessage(for: error) }
+                        }
+                    }
+                }
+            }
+            .sheet(item: $editingServer) { server in
+                McpServerEditorSheet(initialServer: server) { values in
+                    let updated = try await environment.serverClient.updateMcpServer(
+                        id: server.id,
+                        request: values.updateBody
+                    )
+                    replace(server, with: updated)
+                    if updated.authType == "oauth" && updated.connectionState == "needsAuthorization" {
+                        Task {
+                            do { try await beginOAuth(updated) }
+                            catch { errorMessage = ErrorReporter.userFacingMessage(for: error) }
+                        }
+                    }
+                }
+            }
+            .sheet(item: $selectedServer) { server in
+                McpServerDetailSheet(server: server) {
+                    await reload()
+                }
+                .environment(environment)
+            }
+            .confirmationDialog(
+                "Remove \(serverPendingRemoval?.name ?? "MCP server")?",
+                isPresented: Binding(
+                    get: { serverPendingRemoval != nil },
+                    set: { if !$0 { serverPendingRemoval = nil } }
+                ),
+                titleVisibility: .visible
+            ) {
+                Button("Remove MCP Server", role: .destructive) {
+                    guard let server = serverPendingRemoval else { return }
+                    Task { await remove(server) }
+                }
+                .settingsActionTint(theme)
+                Button("Cancel", role: .cancel) { serverPendingRemoval = nil }
+                    .settingsActionTint(theme)
+            } message: {
+                Text("This removes its configuration and saved authorization from HerdMan.")
+            }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        if isLoading, servers.isEmpty {
+            ProgressView()
+                .controlSize(.regular)
+                .tint(theme.isSystem ? nil : theme.accent)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .accessibilityLabel("Loading MCP servers")
+        } else if errorMessage == nil, servers.isEmpty {
+            emptyState
+        } else {
+            serverList
+        }
+    }
+
+    private var emptyState: some View {
+        ContentUnavailableView {
+            Label("No MCP Servers", systemImage: "puzzlepiece.extension")
+        } description: {
+            Text("Add a server to make its tools available to every harness.")
+        } actions: {
+            Button {
+                showingAdd = true
+            } label: {
+                Label("Add MCP Server…", systemImage: "plus")
+            }
+            .settingsActionTint(theme)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(.horizontal, 40)
+        .padding(.bottom, 24)
+    }
+
+    private var serverList: some View {
         Form {
             Section {
-                if isLoading && servers.isEmpty {
-                    HStack(spacing: 8) {
-                        ProgressView().controlSize(.small)
-                        Text("Loading MCP servers…").foregroundStyle(.secondary)
-                    }
-                } else if let errorMessage, servers.isEmpty {
+                if let errorMessage, servers.isEmpty {
                     Label(errorMessage, systemImage: "exclamationmark.triangle")
                         .foregroundStyle(.secondary)
-                } else if servers.isEmpty {
-                    ContentUnavailableView(
-                        "No MCP Servers",
-                        systemImage: "puzzlepiece.extension",
-                        description: Text("Add a server to make its tools available to every harness.")
-                    )
                 } else {
                     ForEach(servers) { server in
                         serverRow(server)
@@ -45,62 +128,13 @@ struct McpSettingsView: View {
                     }
                     .labelStyle(.iconOnly)
                     .buttonStyle(.borderless)
+                    .settingsActionTint(theme)
                     .help("Add MCP Server")
                 }
             }
+            .listRowBackground(theme.isSystem ? nil : theme.cardQuietBackground)
         }
-        .formStyle(.grouped)
-        .task { await reload() }
-        .sheet(isPresented: $showingAdd) {
-            McpServerEditorSheet(initialServer: nil) { values in
-                let created = try await environment.serverClient.createMcpServer(values.createBody)
-                servers.append(created)
-                servers.sort { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
-                if created.authType == "oauth" {
-                    Task {
-                        do { try await beginOAuth(created) }
-                        catch { errorMessage = ErrorReporter.userFacingMessage(for: error) }
-                    }
-                }
-            }
-        }
-        .sheet(item: $editingServer) { server in
-            McpServerEditorSheet(initialServer: server) { values in
-                let updated = try await environment.serverClient.updateMcpServer(
-                    id: server.id,
-                    request: values.updateBody
-                )
-                replace(server, with: updated)
-                if updated.authType == "oauth" && updated.connectionState == "needsAuthorization" {
-                    Task {
-                        do { try await beginOAuth(updated) }
-                        catch { errorMessage = ErrorReporter.userFacingMessage(for: error) }
-                    }
-                }
-            }
-        }
-        .sheet(item: $selectedServer) { server in
-            McpServerDetailSheet(server: server) {
-                await reload()
-            }
-            .environment(environment)
-        }
-        .confirmationDialog(
-            "Remove \(serverPendingRemoval?.name ?? "MCP server")?",
-            isPresented: Binding(
-                get: { serverPendingRemoval != nil },
-                set: { if !$0 { serverPendingRemoval = nil } }
-            ),
-            titleVisibility: .visible
-        ) {
-            Button("Remove MCP Server", role: .destructive) {
-                guard let server = serverPendingRemoval else { return }
-                Task { await remove(server) }
-            }
-            Button("Cancel", role: .cancel) { serverPendingRemoval = nil }
-        } message: {
-            Text("This removes its configuration and saved authorization from HerdMan.")
-        }
+        .settingsPaneFormStyle(theme)
     }
 
     private func serverRow(_ server: ServerMcpServer) -> some View {
@@ -123,6 +157,7 @@ struct McpSettingsView: View {
                 Button("Connect…") {
                     Task { try? await beginOAuth(server) }
                 }
+                .settingsActionTint(theme)
                 .controlSize(.small)
             } else {
                 Toggle("Enable \(server.name)", isOn: Binding(
@@ -143,10 +178,10 @@ struct McpSettingsView: View {
             }
             .labelStyle(.iconOnly)
             .buttonStyle(.borderless)
+            .settingsActionTint(theme)
             .menuIndicator(.hidden)
             .help("More Actions")
         }
-        .padding(.vertical, 2)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("\(server.name), \(statusText(server)), \(server.enabled ? "enabled" : "disabled")")
     }
@@ -186,9 +221,9 @@ struct McpSettingsView: View {
             return AnyShapeStyle(.secondary)
         }
         switch server.connectionState {
-        case "connected": return AnyShapeStyle(.green)
-        case "needsAuthorization", "expired": return AnyShapeStyle(.orange)
-        case "error": return AnyShapeStyle(.red)
+        case "connected": return AnyShapeStyle(theme.statusOK)
+        case "needsAuthorization", "expired": return AnyShapeStyle(theme.statusWarn)
+        case "error": return AnyShapeStyle(theme.statusError)
         default: return AnyShapeStyle(.secondary)
         }
     }
@@ -313,6 +348,7 @@ private struct McpScrollingTextField: NSViewRepresentable {
     let placeholder: String
     let isEditable: Bool
     let isSelected: Bool
+    let theme: Theme
     let onFocus: () -> Void
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
@@ -335,10 +371,18 @@ private struct McpScrollingTextField: NSViewRepresentable {
 
     func updateNSView(_ textField: NSTextField, context: Context) {
         context.coordinator.parent = self
-        textField.placeholderString = placeholder
         textField.isEditable = isEditable
         textField.isSelectable = isEditable
-        textField.textColor = isSelected ? .alternateSelectedControlTextColor : .labelColor
+        if theme.isSystem {
+            textField.placeholderString = placeholder
+            textField.textColor = isSelected ? .alternateSelectedControlTextColor : .labelColor
+        } else {
+            textField.placeholderAttributedString = NSAttributedString(
+                string: placeholder,
+                attributes: [.foregroundColor: NSColor(theme.textTertiary)]
+            )
+            textField.textColor = NSColor(theme.textPrimary)
+        }
         if textField.currentEditor() == nil, textField.stringValue != text {
             textField.stringValue = text
         }
@@ -365,6 +409,7 @@ private struct McpScrollingTextField: NSViewRepresentable {
 /// A compact key/value editor using the shared container structure found in
 /// System Settings: header, rows, and an integrated add/remove bar.
 private struct McpKeyValueEditor: View {
+    @Environment(\.theme) private var theme
     @Binding var entries: [McpSecretEntry]
     let nameHeading: String
     let namePrompt: String
@@ -387,6 +432,7 @@ private struct McpKeyValueEditor: View {
             .background(containerBackground)
 
             Divider()
+                .overlay(theme.isSystem ? Color.clear : theme.separator)
 
             ScrollViewReader { proxy in
                 ScrollView(.vertical) {
@@ -409,6 +455,7 @@ private struct McpKeyValueEditor: View {
                                         placeholder: namePrompt,
                                         isEditable: !entry.existing,
                                         isSelected: isSelected,
+                                        theme: theme,
                                         onFocus: { selection = entryID }
                                     )
                                     .padding(.horizontal, 12)
@@ -419,6 +466,7 @@ private struct McpKeyValueEditor: View {
                                         placeholder: entry.existing ? "Keep saved value" : valuePrompt,
                                         isEditable: true,
                                         isSelected: isSelected,
+                                        theme: theme,
                                         onFocus: { selection = entryID }
                                     )
                                     .padding(.horizontal, 12)
@@ -429,7 +477,7 @@ private struct McpKeyValueEditor: View {
                                 .frame(height: 24)
                                 .background(
                                     isSelected
-                                        ? Color(nsColor: .selectedContentBackgroundColor)
+                                        ? selectedRowBackground
                                         : rowBackground(at: index)
                                 )
                                 .contentShape(Rectangle())
@@ -448,6 +496,7 @@ private struct McpKeyValueEditor: View {
             .frame(height: bodyHeight)
 
             Divider()
+                .overlay(theme.isSystem ? Color.clear : theme.separator)
 
             HStack(spacing: 0) {
                 Button {
@@ -460,10 +509,13 @@ private struct McpKeyValueEditor: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.borderless)
+                .settingsActionTint(theme)
                 .accessibilityLabel(addLabel)
                 .help(addLabel)
 
-                Divider().frame(height: 16)
+                Divider()
+                    .overlay(theme.isSystem ? Color.clear : theme.separator)
+                    .frame(height: 16)
 
                 Button {
                     guard let selection else { return }
@@ -475,6 +527,7 @@ private struct McpKeyValueEditor: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.borderless)
+                .settingsActionTint(theme)
                 .disabled(selection == nil)
                 .accessibilityLabel("Remove selected \(nameHeading.lowercased())")
                 .help("Remove Selected")
@@ -486,6 +539,12 @@ private struct McpKeyValueEditor: View {
         }
         .background(rowBackground(at: 0))
         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay {
+            if !theme.isSystem {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .strokeBorder(theme.border, lineWidth: 1)
+            }
+        }
         .onChange(of: entries.map(\.id)) { _, ids in
             if let selection, !ids.contains(selection) { self.selection = nil }
         }
@@ -498,12 +557,20 @@ private struct McpKeyValueEditor: View {
     }
 
     private var containerBackground: Color {
-        Color(nsColor: NSColor.alternatingContentBackgroundColors[1])
+        if !theme.isSystem { return theme.cardQuietBackground }
+        return Color(nsColor: NSColor.alternatingContentBackgroundColors[1])
     }
 
     private func rowBackground(at index: Int) -> Color {
+        if !theme.isSystem {
+            return index.isMultiple(of: 2) ? theme.composerBackground : theme.cardQuietBackground
+        }
         let colors = NSColor.alternatingContentBackgroundColors
         return Color(nsColor: colors[index % colors.count])
+    }
+
+    private var selectedRowBackground: Color {
+        theme.isSystem ? Color(nsColor: .selectedContentBackgroundColor) : theme.rowSelectedBackground
     }
 
     private func columns<Leading: View, Trailing: View>(
@@ -514,6 +581,7 @@ private struct McpKeyValueEditor: View {
             leading()
                 .frame(maxWidth: .infinity, alignment: .leading)
             Divider()
+                .overlay(theme.isSystem ? Color.clear : theme.separator)
             trailing()
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -523,6 +591,7 @@ private struct McpKeyValueEditor: View {
 private struct McpServerEditorSheet: View {
     @Environment(AppEnvironment.self) private var environment
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.theme) private var theme
     let initialServer: ServerMcpServer?
     let save: (McpFormValues) async throws -> Void
     @State private var name: String
@@ -537,6 +606,8 @@ private struct McpServerEditorSheet: View {
     @State private var clientSecret = ""
     @State private var headerEntries: [McpSecretEntry]
     @State private var environmentEntries: [McpSecretEntry]
+    @State private var isOAuthAdvancedExpanded = false
+    @State private var isKeyValueEditorExpanded = false
     private let initialHeaderNames: Set<String>
     private let initialEnvironmentNames: Set<String>
     @State private var nameWasEdited: Bool
@@ -578,133 +649,130 @@ private struct McpServerEditorSheet: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 20)
                 .padding(.top, 18)
-            ScrollView {
-                VStack(spacing: 0) {
-                    Form {
-                        Section("Connection") {
-                            if initialServer == nil {
-                                Picker("Transport", selection: $transport) {
-                                    Text("HTTP").tag("http")
-                                    Text("Local Command").tag("stdio")
-                                }
-                                .pickerStyle(.segmented)
-                                .onChange(of: transport) { _, value in
-                                    if value == "stdio" && authSelection == "oauth" {
-                                        authSelection = "auto"
-                                    }
-                                }
-                            } else {
-                                LabeledContent(
-                                    "Transport",
-                                    value: transport == "http" ? "HTTP" : "Local Command"
-                                )
-                            }
-                            if transport == "http" {
-                                TextField(
-                                    "Server URL",
-                                    text: $location,
-                                    prompt: Text(verbatim: "https://mcp.sentry.dev")
-                                )
-                                TextField("Name", text: Binding(
-                                    get: { name },
-                                    set: { name = $0; nameWasEdited = true }
-                                ), prompt: Text("Sentry"))
-                            } else {
-                                TextField("Name", text: Binding(
-                                    get: { name },
-                                    set: { name = $0; nameWasEdited = true }
-                                ), prompt: Text("Playwright"))
-                                TextField(
-                                    "Command",
-                                    text: $location,
-                                    prompt: Text("npx @playwright/mcp@latest")
-                                )
-                            }
-                        }
-                        if transport == "http" {
-                            Section("Authentication") {
-                                Picker(selection: $authSelection) {
-                                    Text(automaticAuthorizationLabel).tag("auto")
-                                    Text("None").tag("none")
-                                    Text("Bearer Token").tag("bearer")
-                                    Text("OAuth").tag("oauth")
-                                } label: {
-                                    HStack(spacing: 6) {
-                                        Text("Authorization")
-                                        if isDetecting { ProgressView().controlSize(.small) }
-                                    }
-                                }
-                                if effectiveAuthType == "bearer" {
-                                    SecureField("Bearer Token", text: $bearerToken, prompt: Text("Paste token"))
+            Form {
+                Section("Connection") {
+                    if initialServer == nil {
+                        transportPicker
+                            .onChange(of: transport) { _, value in
+                                if value == "stdio" && authSelection == "oauth" {
+                                    authSelection = "auto"
                                 }
                             }
-                        }
+                    } else {
+                        LabeledContent(
+                            "Transport",
+                            value: transport == "http" ? "HTTP" : "STDIO"
+                        )
                     }
-                    .formStyle(.grouped)
-                    .scrollDisabled(true)
-                    .frame(height: primaryFormHeight)
-
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text(transport == "http" ? "HTTP Headers" : "Environment")
-                            .font(.headline)
-
-                        if transport == "http" {
-                            McpKeyValueEditor(
-                                entries: $headerEntries,
-                                nameHeading: "Header",
-                                namePrompt: "Authorization",
-                                valuePrompt: "Bearer token",
-                                emptyLabel: "No custom headers",
-                                addLabel: "Add Header"
-                            )
-                        } else {
-                            McpKeyValueEditor(
-                                entries: $environmentEntries,
-                                nameHeading: "Variable",
-                                namePrompt: "DEBUG",
-                                valuePrompt: "pw:mcp",
-                                emptyLabel: "No environment variables",
-                                addLabel: "Add Environment Variable"
-                            )
+                    if transport == "http" {
+                        TextField(
+                            "Server URL",
+                            text: $location,
+                            prompt: Text(verbatim: "https://mcp.sentry.dev")
+                        )
+                        TextField("Name", text: Binding(
+                            get: { name },
+                            set: { name = $0; nameWasEdited = true }
+                        ), prompt: Text("Sentry"))
+                        authorizationPicker
+                        if effectiveAuthType == "bearer" {
+                            SecureField("Bearer Token", text: $bearerToken, prompt: Text("Paste token"))
                         }
-                    }
-                    .padding(.horizontal, 20)
-                    .padding(.bottom, 12)
-
-                    if effectiveAuthType == "oauth" {
-                        Form {
-                            Section("OAuth Advanced") {
-                                TextField("Scopes", text: $oauthScope, prompt: Text("org:read project:read"))
-                                TextField("Client ID", text: $clientId, prompt: Text("Optional client ID"))
-                                SecureField("Client Secret", text: $clientSecret, prompt: Text("Optional client secret"))
-                            }
-                        }
-                        .formStyle(.grouped)
-                        .scrollDisabled(true)
-                        .frame(height: 190)
-                    }
-
-                    if let errorMessage {
-                        Text(errorMessage)
-                            .foregroundStyle(.red)
-                            .font(.callout)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.horizontal, 20)
+                    } else {
+                        TextField(
+                            "Command",
+                            text: $location,
+                            prompt: Text("npx @playwright/mcp@latest")
+                        )
+                        TextField("Name", text: Binding(
+                            get: { name },
+                            set: { name = $0; nameWasEdited = true }
+                        ), prompt: Text("Playwright"))
                     }
                 }
+                .listRowBackground(themedFormRowBackground)
+
+                if effectiveAuthType == "oauth" {
+                    Section {
+                        McpDisclosureRow(
+                            "Advanced OAuth",
+                            isExpanded: $isOAuthAdvancedExpanded
+                        ) {
+                            VStack(spacing: 10) {
+                                TextField("Scopes", text: $oauthScope, prompt: Text("org:read project:read"))
+                                TextField("Client ID", text: $clientId, prompt: Text("Optional client ID"))
+                                SecureField(
+                                    "Client Secret",
+                                    text: $clientSecret,
+                                    prompt: Text("Optional client secret")
+                                )
+                            }
+                        }
+                    }
+                    .listRowBackground(themedFormRowBackground)
+                }
+
+                Section {
+                    McpDisclosureRow(
+                        transport == "http" ? "HTTP Headers" : "Environment Variables",
+                        isExpanded: $isKeyValueEditorExpanded
+                    ) {
+                        Group {
+                            if transport == "http" {
+                                McpKeyValueEditor(
+                                    entries: $headerEntries,
+                                    nameHeading: "Header",
+                                    namePrompt: "Authorization",
+                                    valuePrompt: "Bearer token",
+                                    emptyLabel: "No custom headers",
+                                    addLabel: "Add Header"
+                                )
+                            } else {
+                                McpKeyValueEditor(
+                                    entries: $environmentEntries,
+                                    nameHeading: "Variable",
+                                    namePrompt: "DEBUG",
+                                    valuePrompt: "pw:mcp",
+                                    emptyLabel: "No environment variables",
+                                    addLabel: "Add Environment Variable"
+                                )
+                            }
+                        }
+                    }
+                }
+                .listRowBackground(themedFormRowBackground)
+
+                if let errorMessage {
+                    Section {
+                        Text(errorMessage)
+                            .foregroundStyle(theme.statusError)
+                            .font(.callout)
+                    }
+                    .listRowBackground(themedFormRowBackground)
+                }
             }
+            .formStyle(.grouped)
+            .scrollContentBackground(theme.isSystem ? .automatic : .hidden)
             Divider()
+                .overlay(theme.isSystem ? Color.clear : theme.separator)
             HStack {
                 Spacer()
-                Button("Cancel") { dismiss() }
-                    .keyboardShortcut(.cancelAction)
+                cancelButton
                 Button(initialServer == nil ? "Add" : "Save") { Task { await submit() } }
+                    .buttonStyle(.borderedProminent)
                     .keyboardShortcut(.defaultAction)
                     .disabled(!isValid || isSaving)
             }
             .padding()
+            .background {
+                if !theme.isSystem { theme.popoverBackground }
+            }
         }
         .frame(width: 560, height: 570)
+        .scrollContentBackground(theme.isSystem ? .automatic : .hidden)
+        .background {
+            if !theme.isSystem { theme.popoverBackground }
+        }
         .task(id: location) { await detectAuthorization() }
     }
 
@@ -713,9 +781,63 @@ private struct McpServerEditorSheet: View {
         return authSelection == "auto" ? (detectedAuthType ?? "none") : authSelection
     }
 
-    private var primaryFormHeight: CGFloat {
-        if transport == "stdio" { return 190 }
-        return effectiveAuthType == "bearer" ? 305 : 270
+    private var themedFormRowBackground: Color? {
+        theme.isSystem ? nil : theme.cardQuietBackground
+    }
+
+    @ViewBuilder
+    private var transportPicker: some View {
+        if theme.isSystem {
+            Picker("Transport", selection: $transport) {
+                Text("HTTP").tag("http")
+                Text("STDIO").tag("stdio")
+            }
+            .pickerStyle(.segmented)
+        } else {
+            LabeledContent("Transport") {
+                McpThemedTransportPicker(selection: $transport, theme: theme)
+                    .frame(width: 244)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var authorizationPicker: some View {
+        if theme.isSystem {
+            Picker(selection: $authSelection) {
+                Text(automaticAuthorizationLabel).tag("auto")
+                Text("None").tag("none")
+                Text("Bearer Token").tag("bearer")
+                Text("OAuth").tag("oauth")
+            } label: {
+                authorizationLabel
+            }
+            .pickerStyle(.menu)
+        } else {
+            LabeledContent {
+                McpThemedAuthorizationPicker(
+                    selection: $authSelection,
+                    automaticLabel: automaticAuthorizationLabel,
+                    theme: theme
+                )
+                .frame(width: 244)
+            } label: {
+                authorizationLabel
+            }
+        }
+    }
+
+    private var authorizationLabel: some View {
+        HStack(spacing: 6) {
+            Text("Authorization")
+            if isDetecting { ProgressView().controlSize(.small) }
+        }
+    }
+
+    private var cancelButton: some View {
+        Button("Cancel", role: .cancel) { dismiss() }
+            .settingsActionTint(theme)
+            .keyboardShortcut(.cancelAction)
     }
 
     private var automaticAuthorizationLabel: String {
@@ -806,9 +928,206 @@ private struct McpServerEditorSheet: View {
     }
 }
 
+/// A macOS disclosure row whose full width is the trigger, preserving the
+/// familiar disclosure triangle while providing a larger pointer target.
+private struct McpDisclosureRow<Content: View>: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.theme) private var theme
+    let title: String
+    @Binding var isExpanded: Bool
+    @ViewBuilder let content: () -> Content
+
+    init(
+        _ title: String,
+        isExpanded: Binding<Bool>,
+        @ViewBuilder content: @escaping () -> Content
+    ) {
+        self.title = title
+        _isExpanded = isExpanded
+        self.content = content
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Button {
+                var transaction = Transaction()
+                transaction.animation = reduceMotion ? nil : .easeInOut(duration: 0.15)
+                withTransaction(transaction) {
+                    isExpanded.toggle()
+                }
+            } label: {
+                HStack(spacing: 7) {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 10, weight: .semibold))
+                        .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                        .foregroundStyle(theme.isSystem ? Color.secondary : theme.textSecondary)
+                        .accessibilityHidden(true)
+                    Text(title)
+                        .foregroundStyle(theme.isSystem ? Color.primary : theme.textPrimary)
+                    Spacer(minLength: 0)
+                }
+                .frame(maxWidth: .infinity, minHeight: 20, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(title)
+            .accessibilityValue(isExpanded ? "Expanded" : "Collapsed")
+            .accessibilityHint(isExpanded ? "Collapses this section" : "Expands this section")
+
+            if isExpanded {
+                content()
+                    .padding(.top, 8)
+            }
+        }
+    }
+}
+
+/// The native AppKit segmented bezel doesn't consume SwiftUI theme tokens.
+/// This two-choice equivalent preserves the segmented interaction model while
+/// using the active palette for its surface, selection, border, and labels.
+private struct McpThemedTransportPicker: View {
+    private struct Option: Identifiable {
+        let id: String
+        let label: String
+    }
+
+    @Binding var selection: String
+    let theme: Theme
+    @FocusState private var focusedOption: String?
+
+    private let options = [
+        Option(id: "http", label: "HTTP"),
+        Option(id: "stdio", label: "STDIO"),
+    ]
+
+    var body: some View {
+        HStack(spacing: 2) {
+            ForEach(options) { option in
+                let isSelected = selection == option.id
+                Button {
+                    selection = option.id
+                } label: {
+                    Text(option.label)
+                        .foregroundStyle(isSelected ? theme.textPrimary : theme.textSecondary)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 24)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .focused($focusedOption, equals: option.id)
+                .background {
+                    RoundedRectangle(cornerRadius: 5, style: .continuous)
+                        .fill(isSelected ? theme.rowSelectedBackground : Color.clear)
+                }
+                .overlay {
+                    if isSelected {
+                        RoundedRectangle(cornerRadius: 5, style: .continuous)
+                            .strokeBorder(theme.border, lineWidth: 1)
+                    }
+                }
+                .accessibilityLabel(option.label)
+                .accessibilityValue(isSelected ? "Selected" : "Not selected")
+                .accessibilityAddTraits(isSelected ? .isSelected : [])
+            }
+        }
+        .padding(2)
+        .background {
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .fill(theme.composerBackground)
+        }
+        .overlay {
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .strokeBorder(theme.border, lineWidth: 1)
+        }
+        .onMoveCommand { direction in
+            guard let currentIndex = options.firstIndex(where: { $0.id == selection }) else { return }
+            let nextIndex: Int
+            switch direction {
+            case .left: nextIndex = max(options.startIndex, currentIndex - 1)
+            case .right: nextIndex = min(options.index(before: options.endIndex), currentIndex + 1)
+            default: return
+            }
+            selection = options[nextIndex].id
+            focusedOption = selection
+        }
+    }
+}
+
+/// A theme-token-backed macOS pop-up button for the short authorization list.
+/// Menu items retain the familiar checkmark selection while the collapsed
+/// control uses the same surface and border language as the themed form.
+private struct McpThemedAuthorizationPicker: View {
+    private struct Option: Identifiable {
+        let id: String
+        let label: String
+    }
+
+    @Binding var selection: String
+    let automaticLabel: String
+    let theme: Theme
+
+    private var options: [Option] {
+        [
+            Option(id: "auto", label: automaticLabel),
+            Option(id: "none", label: "None"),
+            Option(id: "bearer", label: "Bearer Token"),
+            Option(id: "oauth", label: "OAuth"),
+        ]
+    }
+
+    private var selectedLabel: String {
+        options.first { $0.id == selection }?.label ?? automaticLabel
+    }
+
+    var body: some View {
+        Menu {
+            ForEach(options) { option in
+                Button {
+                    selection = option.id
+                } label: {
+                    if selection == option.id {
+                        Label(option.label, systemImage: "checkmark")
+                    } else {
+                        Text(option.label)
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 8) {
+                Text(selectedLabel)
+                    .foregroundStyle(theme.textPrimary)
+                    .lineLimit(1)
+                Spacer(minLength: 8)
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.caption2.weight(.medium))
+                    .foregroundStyle(theme.textSecondary)
+                    .accessibilityHidden(true)
+            }
+            .padding(.horizontal, 9)
+            .frame(maxWidth: .infinity)
+            .frame(height: 28)
+            .background {
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(theme.composerBackground)
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .strokeBorder(theme.border, lineWidth: 1)
+            }
+            .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .accessibilityLabel("Authorization")
+        .accessibilityValue(selectedLabel)
+    }
+}
+
 private struct McpServerDetailSheet: View {
     @Environment(AppEnvironment.self) private var environment
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.theme) private var theme
     let server: ServerMcpServer
     let didChange: () async -> Void
     @State private var tools: [ServerMcpTool] = []
@@ -820,7 +1139,11 @@ private struct McpServerDetailSheet: View {
         VStack(spacing: 0) {
             HStack(spacing: 10) {
                 Image(systemName: server.connectionState == "connected" ? "checkmark.circle.fill" : "circle")
-                    .foregroundStyle(server.connectionState == "connected" ? AnyShapeStyle(.green) : AnyShapeStyle(.secondary))
+                    .foregroundStyle(
+                        server.connectionState == "connected"
+                            ? AnyShapeStyle(theme.statusOK)
+                            : AnyShapeStyle(.secondary)
+                    )
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(server.name).font(.headline)
@@ -854,7 +1177,10 @@ private struct McpServerDetailSheet: View {
                         LabeledContent("HTTP Headers", value: "\(count) configured")
                     }
                     if server.transport == "stdio", let count = server.environmentNames?.count, count > 0 {
-                        LabeledContent("Environment", value: "\(count) variable\(count == 1 ? "" : "s")")
+                        LabeledContent(
+                            "Environment Variables",
+                            value: "\(count) variable\(count == 1 ? "" : "s")"
+                        )
                     }
                     if server.transport == "http", server.authType == "oauth" {
                         Text("Authorization renews automatically.")
@@ -862,6 +1188,7 @@ private struct McpServerDetailSheet: View {
                             .foregroundStyle(.secondary)
                     }
                 }
+                .listRowBackground(themedFormRowBackground)
                 Section("Tools") {
                     if isLoadingTools {
                         ProgressView().controlSize(.small)
@@ -878,21 +1205,35 @@ private struct McpServerDetailSheet: View {
                         }
                     }
                 }
-                if let errorMessage { Text(errorMessage).foregroundStyle(.red) }
+                .listRowBackground(themedFormRowBackground)
+                if let errorMessage { Text(errorMessage).foregroundStyle(theme.statusError) }
             }
             .formStyle(.grouped)
+            .scrollContentBackground(theme.isSystem ? .automatic : .hidden)
             Divider()
+                .overlay(theme.isSystem ? Color.clear : theme.separator)
             HStack {
                 Button("Remove…", role: .destructive) { confirmingRemoval = true }
+                    .settingsActionTint(theme)
                 if server.authType == "oauth" && server.connectionState == "connected" {
                     Button("Sign Out") { Task { await disconnect() } }
+                        .settingsActionTint(theme)
                 }
                 Spacer()
-                Button("Done") { dismiss() }.keyboardShortcut(.defaultAction)
+                Button("Done") { dismiss() }
+                    .settingsActionTint(theme)
+                    .keyboardShortcut(.defaultAction)
             }
             .padding()
+            .background {
+                if !theme.isSystem { theme.popoverBackground }
+            }
         }
         .frame(width: 540, height: 470)
+        .scrollContentBackground(theme.isSystem ? .automatic : .hidden)
+        .background {
+            if !theme.isSystem { theme.popoverBackground }
+        }
         .task { await loadTools() }
         .confirmationDialog(
             "Remove \(server.name)?",
@@ -900,7 +1241,9 @@ private struct McpServerDetailSheet: View {
             titleVisibility: .visible
         ) {
             Button("Remove MCP Server", role: .destructive) { Task { await remove() } }
+                .settingsActionTint(theme)
             Button("Cancel", role: .cancel) {}
+                .settingsActionTint(theme)
         } message: {
             Text("This removes its configuration and saved authorization from HerdMan.")
         }
@@ -915,6 +1258,10 @@ private struct McpServerDetailSheet: View {
         case "error": return server.detail ?? "Connection failed"
         default: return server.enabled ? "Not connected" : "Disabled"
         }
+    }
+
+    private var themedFormRowBackground: Color? {
+        theme.isSystem ? nil : theme.cardQuietBackground
     }
 
     private var authorizationLabel: String {

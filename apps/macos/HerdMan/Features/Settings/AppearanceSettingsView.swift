@@ -16,6 +16,7 @@ struct AppearanceSettingsView: View {
     }
 
     @Environment(AppEnvironment.self) private var environment
+    @Environment(\.theme) private var theme
     @State private var showingImporter = false
     @State private var themeError: ThemeError?
 
@@ -73,16 +74,18 @@ struct AppearanceSettingsView: View {
                                 Image(systemName: "trash")
                             }
                             .buttonStyle(.borderless)
+                            .settingsActionTint(theme)
                             .help("Remove this theme")
                         }
                     }
                 }
                 Button("Import Theme…") { showingImporter = true }
+                    .settingsActionTint(theme)
             } header: {
                 Text("Custom Themes")
             }
         }
-        .formStyle(.grouped)
+        .settingsPaneFormStyle(theme)
         .fileImporter(
             isPresented: $showingImporter,
             allowedContentTypes: [.json]
@@ -107,6 +110,7 @@ struct AppearanceSettingsView: View {
             presenting: themeError
         ) { _ in
             Button("OK", role: .cancel) {}
+                .settingsActionTint(theme)
         } message: { error in
             Text(error.message)
         }
@@ -146,6 +150,7 @@ struct AppearanceSettingsView: View {
                 }
             }
             .menuStyle(.borderlessButton)
+            .settingsActionTint(theme)
             .fixedSize()
         }
     }

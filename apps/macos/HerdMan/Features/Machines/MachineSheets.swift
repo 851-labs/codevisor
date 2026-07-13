@@ -5,6 +5,7 @@ import HerdManCore
 /// Used from the sidebar's machine picker and the Machines settings tab.
 struct RemoteMachineSheet: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.theme) private var theme
     @State private var name = ""
     @State private var host = ""
     @State private var token = ""
@@ -32,11 +33,13 @@ struct RemoteMachineSheet: View {
             HStack {
                 Spacer()
                 Button("Cancel") { dismiss() }
+                    .settingsActionTint(theme)
                 Button("Add") {
                     let trimmedToken = token.trimmingCharacters(in: .whitespacesAndNewlines)
                     onAdd(trimmedHost, trimmedName, trimmedToken.isEmpty ? nil : trimmedToken)
                     dismiss()
                 }
+                .settingsActionTint(theme)
                 .keyboardShortcut(.defaultAction)
                 .disabled(trimmedName.isEmpty || trimmedHost.isEmpty)
             }
@@ -67,6 +70,7 @@ struct RemoteMachineSheet: View {
 /// Sheet for renaming an existing remote machine.
 struct RenameMachineSheet: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.theme) private var theme
     @State private var name: String
     let machine: HerdManMachine
     let onRename: (String) -> Void
@@ -89,10 +93,12 @@ struct RenameMachineSheet: View {
             HStack {
                 Spacer()
                 Button("Cancel") { dismiss() }
+                    .settingsActionTint(theme)
                 Button("Save") {
                     onRename(name)
                     dismiss()
                 }
+                .settingsActionTint(theme)
                 .keyboardShortcut(.defaultAction)
                 .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }

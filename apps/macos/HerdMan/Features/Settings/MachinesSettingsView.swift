@@ -30,19 +30,17 @@ struct MachinesSettingsView: View {
                 ForEach(machines.machines) { machine in
                     machineRow(machine)
                 }
-            } header: {
-                Text("Machines")
-            }
-
-            Section {
                 Button {
                     showingAdd = true
                 } label: {
                     Label("Add Remote Machine…", systemImage: "plus")
                 }
+                .settingsActionTint(theme)
+            } header: {
+                Text("Machines")
             }
         }
-        .formStyle(.grouped)
+        .settingsPaneFormStyle(theme)
         .sheet(isPresented: $showingAdd) {
             RemoteMachineSheet { host, name, token in
                 do {
@@ -90,7 +88,9 @@ struct MachinesSettingsView: View {
                     )
                 }
             }
+            .settingsActionTint(theme)
             Button("Cancel", role: .cancel) {}
+                .settingsActionTint(theme)
         } message: { machine in
             Text("HerdMan will forget “\(machine.name)”. Nothing on the machine itself is changed.")
         }
@@ -104,6 +104,7 @@ struct MachinesSettingsView: View {
             presenting: tokenNotice
         ) { _ in
             Button("OK") {}
+                .settingsActionTint(theme)
         } message: { notice in
             Text(notice)
         }
@@ -116,6 +117,7 @@ struct MachinesSettingsView: View {
             presenting: actionError
         ) { _ in
             Button("OK") {}
+                .settingsActionTint(theme)
         } message: { error in
             Text(error.message)
         }
@@ -152,8 +154,8 @@ struct MachinesSettingsView: View {
                             .font(.caption2.weight(.semibold))
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
-                            .background(Capsule().fill(.tint.opacity(0.15)))
-                            .foregroundStyle(.tint)
+                            .background(Capsule().fill(theme.accent.opacity(0.15)))
+                            .foregroundStyle(theme.textPrimary)
                     }
                 }
                 Text(machine.baseURL.absoluteString)
@@ -168,6 +170,7 @@ struct MachinesSettingsView: View {
                 Button("Connect") {
                     machines.selectMachine(machine.id)
                 }
+                .settingsActionTint(theme)
                 .controlSize(.small)
             }
             if machine.isLocal {
@@ -179,6 +182,7 @@ struct MachinesSettingsView: View {
                 }
                 .menuStyle(.button)
                 .buttonStyle(.plain)
+                .settingsActionTint(theme)
                 .menuIndicator(.hidden)
                 .fixedSize()
                 .help("Machine actions")
@@ -194,13 +198,13 @@ struct MachinesSettingsView: View {
                 }
                 .menuStyle(.button)
                 .buttonStyle(.plain)
+                .settingsActionTint(theme)
                 .menuIndicator(.hidden)
                 .fixedSize()
                 .help("Machine actions")
                 .accessibilityLabel("Actions for \(machine.name)")
             }
         }
-        .padding(.vertical, 2)
         .accessibilityElement(children: .combine)
     }
 

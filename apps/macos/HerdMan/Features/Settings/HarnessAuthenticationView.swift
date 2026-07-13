@@ -5,6 +5,7 @@ import SwiftUI
 struct HarnessAuthenticationView: View {
     @Environment(AppEnvironment.self) private var environment
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.theme) private var theme
 
     let harness: ServerHarness
     var onChange: (ServerHarness) -> Void
@@ -28,6 +29,7 @@ struct HarnessAuthenticationView: View {
                 }
                 Spacer()
                 Button("Done") { dismiss() }
+                    .settingsActionTint(theme)
                     .keyboardShortcut(.defaultAction)
             }
             .padding(20)
@@ -60,6 +62,7 @@ struct HarnessAuthenticationView: View {
                             } label: {
                                 Label("Add Account", systemImage: "plus")
                             }
+                            .settingsActionTint(theme)
                             .disabled(isWorking)
                         }
                     }
@@ -72,8 +75,10 @@ struct HarnessAuthenticationView: View {
                                 .textSelection(.enabled)
                             HStack {
                                 Button("Copy Code") { copy(flow.userCode ?? "") }
+                                    .settingsActionTint(theme)
                                 if let value = flow.verificationUrl, let url = URL(string: value) {
                                     Button("Open Browser") { NSWorkspace.shared.open(url) }
+                                        .settingsActionTint(theme)
                                 }
                             }
                             authProgress
@@ -92,8 +97,10 @@ struct HarnessAuthenticationView: View {
                                 .foregroundStyle(.secondary)
                             HStack {
                                 Button("Cancel") { clearApiKeyEntry() }
+                                    .settingsActionTint(theme)
                                 Spacer()
                                 Button("Sign In") { submitApiKey(account: account, method: method) }
+                                    .settingsActionTint(theme)
                                     .keyboardShortcut(.defaultAction)
                                     .disabled(apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isWorking)
                             }
@@ -119,7 +126,7 @@ struct HarnessAuthenticationView: View {
     private func accountRow(_ account: ServerHarnessAccount) -> some View {
         HStack(spacing: 10) {
             Image(systemName: account.isActive ? "checkmark.circle.fill" : "circle")
-                .foregroundStyle(account.isActive ? Color.accentColor : Color.secondary)
+                .foregroundStyle(account.isActive ? theme.textPrimary : theme.textSecondary)
                 .accessibilityLabel(account.isActive ? "Selected" : "Not selected")
             VStack(alignment: .leading, spacing: 2) {
                 Text(account.label)
@@ -131,9 +138,11 @@ struct HarnessAuthenticationView: View {
             if account.authState == "authenticated" || account.authState == "notRequired" {
                 if !account.isActive {
                     Button("Use") { Task { await activate(account) } }
+                        .settingsActionTint(theme)
                 }
                 if account.canLogout {
                     Button("Sign Out") { Task { await logout(account) } }
+                        .settingsActionTint(theme)
                 }
             } else if account.canLogin {
                 loginControl(account)
@@ -145,6 +154,7 @@ struct HarnessAuthenticationView: View {
                     Image(systemName: "ellipsis.circle")
                 }
                 .menuStyle(.borderlessButton)
+                .settingsActionTint(theme)
                 .accessibilityLabel("More account actions")
             }
         }
@@ -159,6 +169,7 @@ struct HarnessAuthenticationView: View {
                     Button(method.name) { selectLoginMethod(method, for: account) }
                 }
             }
+            .settingsActionTint(theme)
         } else {
             Button("Sign In") {
                 if let method = methods.first {
@@ -167,6 +178,7 @@ struct HarnessAuthenticationView: View {
                     Task { await login(account, methodId: nil) }
                 }
             }
+            .settingsActionTint(theme)
         }
     }
 
@@ -176,6 +188,7 @@ struct HarnessAuthenticationView: View {
             Text("Waiting for sign-in…").foregroundStyle(.secondary)
             Spacer()
             Button("Cancel") { Task { await cancelFlow() } }
+                .settingsActionTint(theme)
         }
     }
 

@@ -54,7 +54,29 @@ struct SettingsView: View {
     }
 }
 
-/// General settings — currently just "Delete all data".
+extension View {
+    /// Keeps every top-level Settings pane on the same native grouped-Form
+    /// layout and background behavior.
+    func settingsPaneFormStyle(_ theme: Theme) -> some View {
+        formStyle(.grouped)
+            .scrollContentBackground(theme.isSystem ? .automatic : .hidden)
+    }
+
+    /// Native macOS button and menu styles resolve their label color from the
+    /// control tint, bypassing the themed root foreground. Keep their native
+    /// interaction and disabled-state behavior while using the palette's
+    /// accessible primary text color for custom themes.
+    @ViewBuilder
+    func settingsActionTint(_ theme: Theme) -> some View {
+        if theme.isSystem {
+            self
+        } else {
+            tint(theme.textPrimary)
+        }
+    }
+}
+
+/// General server, remote-access, and local-data settings.
 struct GeneralSettingsView: View {
     @Environment(AppEnvironment.self) private var environment
     @Environment(\.theme) private var theme
@@ -89,28 +111,31 @@ struct GeneralSettingsView: View {
                             Label("Copy", systemImage: "doc.on.doc")
                         }
                     }
+                    .settingsActionTint(theme)
                 }
             } header: {
                 Text("Remote Access")
             }
 
-            Section {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Delete all data")
-                        .font(.headline)
-                    Text("Removes all projects, sessions, cached settings, and onboarding state, then restarts setup. Your agents' own sessions are not affected.")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Button("Delete all data…", role: .destructive) {
+            Section("Data") {
+                HStack(alignment: .center, spacing: 16) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Delete all data")
+                        Text("Removes projects, sessions, cached settings, and onboarding state, then restarts setup. Agent sessions are unaffected.")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer(minLength: 8)
+                    Button("Delete…", role: .destructive) {
                         showingConfirmation = true
                     }
-                    .padding(.top, 4)
+                    .settingsActionTint(theme)
+                    .fixedSize()
                 }
-                .padding(.vertical, 4)
             }
         }
-        .formStyle(.grouped)
+        .settingsPaneFormStyle(theme)
         .confirmationDialog(
             "Delete all HerdMan data?",
             isPresented: $showingConfirmation,
@@ -119,7 +144,9 @@ struct GeneralSettingsView: View {
             Button("Delete everything", role: .destructive) {
                 environment.deleteAllData()
             }
+            .settingsActionTint(theme)
             Button("Cancel", role: .cancel) {}
+                .settingsActionTint(theme)
         } message: {
             Text("This can't be undone. You'll be taken back through setup.")
         }
@@ -153,6 +180,7 @@ struct GeneralSettingsView: View {
                     Label("Refresh", systemImage: "arrow.clockwise")
                 }
             }
+            .settingsActionTint(theme)
             .disabled(serverStatus.isRefreshing)
         } else {
             HStack(spacing: 8) {
@@ -182,8 +210,8 @@ struct GeneralSettingsView: View {
                 )
                 Spacer()
                 Text(update.updateAvailable
-                     ? "\(update.currentVersion) → \(update.latestVersion)"
-                     : update.currentVersion)
+                    ? "\(update.currentVersion) → \(update.latestVersion)"
+                    : update.currentVersion)
                     .foregroundStyle(.secondary)
             }
             if update.migrationState != "idle" {
@@ -232,6 +260,7 @@ struct HarnessesSettingsView: View {
     }
 
     @Environment(AppEnvironment.self) private var environment
+    @Environment(\.theme) private var theme
 
     @State private var serverHarnesses: [ServerHarness] = []
     @State private var isScanning = true
@@ -263,6 +292,13 @@ struct HarnessesSettingsView: View {
                         serverInstalledRow(harness)
                     }
                 }
+                Button {
+                    Task { await scan() }
+                } label: {
+                    Label("Refresh", systemImage: "arrow.clockwise")
+                }
+                .settingsActionTint(theme)
+                .disabled(isScanning)
             } header: {
                 Text("Installed")
             } footer: {
@@ -281,19 +317,8 @@ struct HarnessesSettingsView: View {
                     }
                 }
             }
-
-            Section {
-                HStack {
-                    Button {
-                        Task { await scan() }
-                    } label: {
-                        Label("Refresh", systemImage: "arrow.clockwise")
-                    }
-                    .disabled(isScanning)
-                }
-            }
         }
-        .formStyle(.grouped)
+        .settingsPaneFormStyle(theme)
         .task { await scan() }
         .sheet(item: $authenticationHarness) { harness in
             HarnessAuthenticationView(harness: harness) { replaceServerHarness($0) }
@@ -307,6 +332,7 @@ struct HarnessesSettingsView: View {
             presenting: toggleError
         ) { _ in
             Button("OK") {}
+                .settingsActionTint(theme)
         } message: { error in
             Text(error.message)
         }
@@ -328,9 +354,11 @@ struct HarnessesSettingsView: View {
             Spacer()
             if harness.auth != nil && !canUse(harness) {
                 Button("Sign In…") { authenticationHarness = harness }
+                    .settingsActionTint(theme)
             } else {
                 if harness.auth != nil {
                     Button("Manage…") { authenticationHarness = harness }
+                        .settingsActionTint(theme)
                 }
                 Toggle("Enable \(harness.name)", isOn: Binding(
                     get: { harness.enabled },
