@@ -27,6 +27,15 @@ private enum SidebarOrder: String, CaseIterable {
     }
 }
 
+/// State groups used ahead of recency when the sidebar is ordered by last
+/// updated. Lower values appear first.
+private enum SidebarSessionPriority: Int {
+    case waitingForUser
+    case unread
+    case inProgress
+    case idle
+}
+
 private struct SidebarSessionListItem: Identifiable {
     let session: ChatSession
     let project: Project
@@ -85,6 +94,7 @@ struct SidebarView: View {
     private var list: ProjectListModel { environment.projectList }
     private var organization: SidebarOrganization { SidebarOrganization(rawValue: organizationRaw) ?? .byProject }
     private var order: SidebarOrder { SidebarOrder(rawValue: orderRaw) ?? .updated }
+    private var notificationColor: Color { theme.isSystem ? .blue : theme.accent }
 
     private var projectOrder: [UUID] {
         manualProjectOrderRaw
@@ -584,36 +594,7 @@ struct SidebarView: View {
                     Spacer(minLength: 6)
                 }
 
-                // Fixed-size trailing slot so swapping the timestamp for the spinner,
-                // unread badge, or archive button on hover doesn't change the row height.
-                Group {
-                    if store?.isWaitingOnUser(session.id) == true {
-                        // Blocked on the user (agent question / plan approval):
-                        // the attention badge signals action required, not the
-                        // "working" spinner that reads as the model being busy.
-                        UnreadBadge()
-                    } else if store?.isRunning(session.id) == true {
-                        ProgressView().controlSize(.mini)
-                    } else if isHovered {
-                        Button {
-                            list.archiveSession(session)
-                            if selection == .session(session.id) { selection = .newChat(nil) }
-                        } label: {
-                            Image(systemName: "archivebox")
-                                .font(.caption2)
-                        }
-                        .buttonStyle(.plain)
-                        .foregroundStyle(.secondary)
-                        .help("Archive chat")
-                    } else if unreadCount(for: session) != nil {
-                        UnreadBadge()
-                    } else {
-                        Text(RelativeTime.short(from: timestamp(for: session)))
-                            .font(.caption2)
-                            .foregroundStyle(.tertiary)
-                    }
-                }
-                .frame(width: 24, height: 14, alignment: .trailing)
+                sessionStatus(session, isHovered: isHovered)
             }
             .padding(.horizontal, 8)
             .padding(.leading, 8)
@@ -665,34 +646,7 @@ struct SidebarView: View {
                         .lineLimit(1)
                 }
                 Spacer(minLength: 6)
-                Group {
-                    if store?.isWaitingOnUser(session.id) == true {
-                        // Blocked on the user (agent question / plan approval):
-                        // the attention badge signals action required, not the
-                        // "working" spinner that reads as the model being busy.
-                        UnreadBadge()
-                    } else if store?.isRunning(session.id) == true {
-                        ProgressView().controlSize(.mini)
-                    } else if isHovered {
-                        Button {
-                            list.archiveSession(session)
-                            if selection == .session(session.id) { selection = .newChat(nil) }
-                        } label: {
-                            Image(systemName: "archivebox")
-                                .font(.caption2)
-                        }
-                        .buttonStyle(.plain)
-                        .foregroundStyle(.secondary)
-                        .help("Archive chat")
-                    } else if unreadCount(for: session) != nil {
-                        UnreadBadge()
-                    } else {
-                        Text(RelativeTime.short(from: timestamp(for: session)))
-                            .font(.caption2)
-                            .foregroundStyle(.tertiary)
-                    }
-                }
-                .frame(width: 24, height: 14, alignment: .trailing)
+                sessionStatus(session, isHovered: isHovered)
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 5)
@@ -745,11 +699,53 @@ struct SidebarView: View {
         list.sessions(in: project).sorted(by: compareSessions)
     }
 
+    @ViewBuilder
+    private func sessionStatus(_ session: ChatSession, isHovered: Bool) -> some View {
+        if store?.isWaitingOnUser(session.id) == true {
+            // A blocking question is actionable rather than unread or busy.
+            // Keep it inline where the row's notification indicator lives.
+            ActionRequiredBadge(color: notificationColor)
+        } else {
+            // Fixed-size trailing slot so swapping the timestamp for the spinner,
+            // unread badge, or archive button doesn't change the row height.
+            Group {
+                if store?.isRunning(session.id) == true {
+                    ProgressView().controlSize(.mini)
+                } else if isHovered {
+                    Button {
+                        list.archiveSession(session)
+                        if selection == .session(session.id) { selection = .newChat(nil) }
+                    } label: {
+                        Image(systemName: "archivebox")
+                            .font(.caption2)
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
+                    .help("Archive chat")
+                } else if unreadCount(for: session) != nil {
+                    UnreadBadge(color: notificationColor)
+                } else {
+                    Text(RelativeTime.short(from: timestamp(for: session)))
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+            }
+            .frame(width: 24, height: 14, alignment: .trailing)
+        }
+    }
+
     private func sortedProjects(_ projects: [Project]) -> [Project] {
         projects.sorted(by: compareProjects)
     }
 
     private func compareProjects(_ left: Project, _ right: Project) -> Bool {
+        if order == .updated {
+            let leftPriority = projectPriority(for: left)
+            let rightPriority = projectPriority(for: right)
+            if leftPriority != rightPriority {
+                return leftPriority.rawValue < rightPriority.rawValue
+            }
+        }
         let leftTimestamp = projectTimestamp(for: left)
         let rightTimestamp = projectTimestamp(for: right)
         if leftTimestamp != rightTimestamp {
@@ -759,15 +755,11 @@ struct SidebarView: View {
     }
 
     private func compareSessions(_ left: ChatSession, _ right: ChatSession) -> Bool {
-        // In last-updated order, actively working sessions always float to
-        // the top. Deliberately NOT `isRunning`: that includes the transient
-        // connect pulse fired on every first open, which briefly floated the
-        // just-clicked row and made the sidebar reorder-then-revert.
         if order == .updated {
-            let leftRunning = store?.isActivelyWorking(left.id) == true
-            let rightRunning = store?.isActivelyWorking(right.id) == true
-            if leftRunning != rightRunning {
-                return leftRunning
+            let leftPriority = sessionPriority(for: left)
+            let rightPriority = sessionPriority(for: right)
+            if leftPriority != rightPriority {
+                return leftPriority.rawValue < rightPriority.rawValue
             }
         }
         let leftTimestamp = timestamp(for: left)
@@ -776,6 +768,20 @@ struct SidebarView: View {
             return leftTimestamp > rightTimestamp
         }
         return left.title.localizedCaseInsensitiveCompare(right.title) == .orderedAscending
+    }
+
+    private func projectPriority(for project: Project) -> SidebarSessionPriority {
+        list.sessions(in: project)
+            .map(sessionPriority)
+            .min { $0.rawValue < $1.rawValue }
+            ?? .idle
+    }
+
+    private func sessionPriority(for session: ChatSession) -> SidebarSessionPriority {
+        if store?.isWaitingOnUser(session.id) == true { return .waitingForUser }
+        if unreadCount(for: session) != nil { return .unread }
+        if store?.isInProgress(session.id) == true { return .inProgress }
+        return .idle
     }
 
     /// The unread-turn count for a session's badge; nil when there is nothing
@@ -915,10 +921,30 @@ struct RemoteProjectSheet: View {
 
 /// A count-less notification badge for chats that changed while unopened.
 private struct UnreadBadge: View {
+    let color: Color
+
     var body: some View {
         Circle()
-            .fill(.blue)
+            .fill(color)
             .frame(width: 8, height: 8)
+    }
+}
+
+/// Inline attention status for a chat blocked on a question or plan approval.
+private struct ActionRequiredBadge: View {
+    let color: Color
+
+    var body: some View {
+        Text("Action required")
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(color)
+            .lineLimit(1)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(color.opacity(0.14), in: Capsule())
+            .fixedSize()
+            .accessibilityLabel("Action required")
+            .help("This chat needs your response")
     }
 }
 

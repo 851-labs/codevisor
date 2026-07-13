@@ -153,31 +153,22 @@ final class SessionStore {
     /// on its own — everything the sidebar spinner covers.
     func isRunning(_ sessionId: UUID) -> Bool {
         guard let controller = controllers[sessionId] else { return false }
-        return controller.isSending
-            || controller.isConnecting
-            || controller.setupPhases.contains(where: \.isRunning)
-            // The turn ended but the agent still owns a subagent / poll-and-resume
-            // task; keep the spinner (not the unread badge) until it comes back.
-            || controller.isWaitingOnBackgroundTasks
+        return Self.isInProgress(controller) || controller.isConnecting
     }
 
-    /// Whether the session is doing real work: generating a response or
-    /// running pre-chat setup. Unlike `isRunning`, this excludes the
-    /// transient connect pulse (`isConnecting` flips on for the few hundred
-    /// milliseconds after a session is first opened). The sidebar's
-    /// "active sessions float to the top" sort keys off this — keying off
-    /// the connect pulse made the list reorder and immediately snap back on
-    /// every first open.
-    func isActivelyWorking(_ sessionId: UUID) -> Bool {
+    /// Whether the session is doing work represented by the sidebar spinner,
+    /// excluding the short connection pulse caused by opening a session.
+    /// Sidebar ordering uses this narrower signal so selecting an idle row
+    /// cannot make it jump temporarily while its transcript connects.
+    func isInProgress(_ sessionId: UUID) -> Bool {
         guard let controller = controllers[sessionId] else { return false }
-        return Self.isActivelyWorking(controller)
+        return Self.isInProgress(controller)
     }
 
     /// Whether any cached session on a given server is doing real work
     /// (generating a response or running pre-chat setup). Gates app/server
-    /// updates so a restart never interrupts a live turn; uses the same
-    /// "actively working" signal as the sort so the transient connect pulse
-    /// on first open doesn't briefly block the update button.
+    /// updates so a restart never interrupts a live turn. The transient
+    /// connect pulse on first open deliberately does not block an update.
     func hasActiveSessions(onServer serverId: String) -> Bool {
         _ = activityRevision
         return controllers.values.contains { controller in
@@ -188,6 +179,10 @@ final class SessionStore {
     private static func isActivelyWorking(_ controller: SessionController) -> Bool {
         controller.isSending
             || controller.setupPhases.contains(where: \.isRunning)
+    }
+
+    private static func isInProgress(_ controller: SessionController) -> Bool {
+        isActivelyWorking(controller) || controller.isWaitingOnBackgroundTasks
     }
 
     /// Whether the session is blocked waiting on the user — an agent question or
