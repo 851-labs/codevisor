@@ -134,6 +134,10 @@ final class SessionController {
         didSet { onTodosExpandedChange?(isTodosExpanded) }
     }
     @ObservationIgnored var onTodosExpandedChange: ((Bool) -> Void)?
+    /// Tracks the completion edge separately from disclosure state so a user
+    /// can reopen a finished checklist without it immediately closing again.
+    @ObservationIgnored private var todosWereCompleted = false
+    @ObservationIgnored var onTodosCompletionChange: ((Bool) -> Void)?
     /// User-toggled expand/collapse state for transcript rows, hoisted out of
     /// per-row `@State` so it survives lazy unmounts.
     @ObservationIgnored let disclosure = TranscriptDisclosureStore()
@@ -455,6 +459,30 @@ final class SessionController {
 
     /// The session's latest todo checklist, pinned above the composer.
     var todos: Plan? { model?.sessionPlan }
+
+    /// Records the latest checklist state and reports only the unfinished →
+    /// finished edge. SessionScreen owns the animation for the resulting
+    /// disclosure change.
+    @discardableResult
+    func observeTodoCompletion(_ plan: Plan?) -> Bool {
+        // A missing model means the resumed session has not loaded yet. Keep
+        // the cached edge intact so remounting cannot close a checklist the
+        // user deliberately reopened.
+        guard model != nil else { return false }
+        let isCompleted = plan?.entries.isEmpty == false
+            && plan?.entries.allSatisfy { $0.status == .completed } == true
+        guard isCompleted != todosWereCompleted else { return false }
+        todosWereCompleted = isCompleted
+        onTodosCompletionChange?(isCompleted)
+        return isCompleted
+    }
+
+    /// Restores both halves of the per-session todo UI state after controller
+    /// creation or LRU eviction.
+    func restoreTodoDisclosure(isExpanded: Bool, wasCompleted: Bool) {
+        isTodosExpanded = isExpanded
+        todosWereCompleted = wasCompleted
+    }
 
     // MARK: - Questions
 

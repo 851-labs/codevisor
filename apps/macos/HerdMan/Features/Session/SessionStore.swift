@@ -17,6 +17,9 @@ final class SessionStore {
     /// Per-session todo-panel expansion, kept outside the controller cache for
     /// the same reason as transcript viewport state.
     @ObservationIgnored private var todoExpansionStates: [UUID: Bool] = [:]
+    /// Completion edges are cached alongside expansion so reopening a finished
+    /// checklist survives navigation and controller eviction.
+    @ObservationIgnored private var todoCompletionStates: [UUID: Bool] = [:]
     private var paneGroups: [UUID: PaneGroupModel] = [:]
     private var scratchpads: [UUID: ScratchpadModel] = [:]
     /// The unsent new-chat draft. A single slot — the new-chat page is one
@@ -75,9 +78,15 @@ final class SessionStore {
         controller.onScrollStateChange = { [weak self] state in
             self?.scrollStates[session.id] = state
         }
-        controller.isTodosExpanded = todoExpansionStates[session.id] ?? true
+        controller.restoreTodoDisclosure(
+            isExpanded: todoExpansionStates[session.id] ?? true,
+            wasCompleted: todoCompletionStates[session.id] ?? false
+        )
         controller.onTodosExpandedChange = { [weak self] isExpanded in
             self?.todoExpansionStates[session.id] = isExpanded
+        }
+        controller.onTodosCompletionChange = { [weak self] isCompleted in
+            self?.todoCompletionStates[session.id] = isCompleted
         }
         controller.onTurnEnded = { [weak self] in self?.noteTurnEnded(for: session.id) }
         controllers[session.id] = controller
@@ -236,9 +245,15 @@ final class SessionStore {
         controller.onScrollStateChange = { [weak self] state in
             self?.scrollStates[sessionId] = state
         }
-        controller.isTodosExpanded = todoExpansionStates[sessionId] ?? true
+        controller.restoreTodoDisclosure(
+            isExpanded: todoExpansionStates[sessionId] ?? true,
+            wasCompleted: todoCompletionStates[sessionId] ?? false
+        )
         controller.onTodosExpandedChange = { [weak self] isExpanded in
             self?.todoExpansionStates[sessionId] = isExpanded
+        }
+        controller.onTodosCompletionChange = { [weak self] isCompleted in
+            self?.todoCompletionStates[sessionId] = isCompleted
         }
         controller.onTurnEnded = { [weak self] in self?.noteTurnEnded(for: sessionId) }
         controllers[sessionId] = controller
@@ -258,6 +273,7 @@ final class SessionStore {
         unreadCounts[sessionId] = nil
         scrollStates[sessionId] = nil
         todoExpansionStates[sessionId] = nil
+        todoCompletionStates[sessionId] = nil
         draft = controller
     }
 
@@ -271,6 +287,7 @@ final class SessionStore {
         unreadCounts[sessionId] = nil
         scrollStates[sessionId] = nil
         todoExpansionStates[sessionId] = nil
+        todoCompletionStates[sessionId] = nil
         accessOrder.removeAll { $0 == sessionId }
     }
 

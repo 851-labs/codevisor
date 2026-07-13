@@ -155,6 +155,13 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
   const setMode = useSetSessionMode()
   const setConfig = useSetSessionConfig()
   const serverIsRunning = useIsSessionRunning(sessionId)
+  const detail = detailQuery.data
+  const todosAreCompleted =
+    detail == null
+      ? undefined
+      : detail.sessionPlan != null &&
+        detail.sessionPlan.length > 0 &&
+        detail.sessionPlan.every((entry) => entry.status === "completed")
 
   const [composerText, setComposerText] = useComposerDraftText(`session:${sessionId}`)
   const [composerError, setComposerError] = useState<string>()
@@ -162,7 +169,7 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
   const [paneState, setPaneState] = useState(() => loadTerminalPaneState(sessionId))
   const [isGoalComposerArmed, setIsGoalComposerArmed] = useState(false)
   const [isGoalEditing, setIsGoalEditing] = useState(false)
-  const [isTodosExpanded, setIsTodosExpanded] = useTodoExpansionState(sessionId)
+  const [isTodosExpanded, setIsTodosExpanded] = useTodoExpansionState(sessionId, todosAreCompleted)
   const [isQueueExpanded, setIsQueueExpanded] = useState(true)
   const [dismissedPlanApprovalKey, setDismissedPlanApprovalKey] =
     usePlanApprovalDismissal(sessionId)
@@ -175,7 +182,6 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
   const terminalHeight = paneState.height
   const selectedPane = paneState.panes.find((pane) => pane.id === paneState.selectedPaneId)
 
-  const detail = detailQuery.data
   const isRunning = sessionTurnIsRunning(serverIsRunning, detail?.conversation ?? [])
   const project = projectsQuery.data?.find(
     (candidate) => candidate.id === detail?.session.projectId

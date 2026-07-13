@@ -52,6 +52,14 @@ struct SessionScreen: View {
                 pruneEnded: controller.hasBackgroundTaskSnapshot
             )
         }
+        .onChange(of: controller.todos, initial: true) { _, todos in
+            guard controller.observeTodoCompletion(todos), controller.isTodosExpanded else {
+                return
+            }
+            withAnimation(Motion.quick(reduceMotion: reduceMotion)) {
+                controller.isTodosExpanded = false
+            }
+        }
         .onAppear {
             autoFollow = controller.scrollState?.isAtBottom ?? true
             isAtBottom = controller.scrollState?.isAtBottom ?? true
