@@ -60,17 +60,20 @@ const STREAM_STATS_INTERVAL_MS = 250
 /// `EffortLevel` union.
 const SETTABLE_EFFORT_LEVELS = new Set(["low", "medium", "high", "xhigh", "max"])
 
-/// Tools rendered as plans instead of tool calls: TodoWrite carries the step
-/// checklist (`input.todos`), ExitPlanMode the plan-mode plan document
-/// (`input.plan`). Their generic tool-call lifecycle is suppressed entirely —
-/// the client renders the plan updates instead (same posture as the
-/// codex-acp/claude-acp adapters).
+/// Snapshot-style tools rendered as plans instead of tool calls: TodoWrite
+/// carries the step checklist (`input.todos`), ExitPlanMode the plan-mode plan
+/// document (`input.plan`).
 const PLAN_TOOLS = new Set(["TodoWrite", "ExitPlanMode"])
 
+/// Newer headless Claude sessions use an incremental task API in every
+/// permission mode instead of TodoWrite's full snapshots. HerdMan accumulates
+/// these mutations into the same plan wire shape clients use for checklists.
+const TASK_TOOLS = new Set(["TaskCreate", "TaskUpdate", "TaskList", "TaskGet"])
+
 /// Tools whose generic tool-call lifecycle never reaches the wire: plan tools
-/// surface as plan updates, AskUserQuestion as a blocking `question` event
-/// handled through canUseTool.
-const HIDDEN_TOOLS = new Set([...PLAN_TOOLS, "AskUserQuestion"])
+/// and task tools surface as plan updates, AskUserQuestion as a blocking
+/// `question` event handled through canUseTool.
+const HIDDEN_TOOLS = new Set([...PLAN_TOOLS, ...TASK_TOOLS, "AskUserQuestion"])
 
 /// Model-level stop reasons that mean "I ran out of room, not out of work":
 /// the assistant message was truncated by the per-response output-token cap.
@@ -160,6 +163,105 @@ const planEntriesFromTodos = (
       }
     ]
   })
+
+interface ClaudeTaskEntry {
+  readonly subject: string
+  readonly status: "pending" | "in_progress" | "completed"
+  readonly activeForm?: string
+  readonly description?: string
+}
+
+type ClaudeTaskState = Map<string, ClaudeTaskEntry>
+
+interface ClaudeTaskToolUse {
+  readonly name: string
+  readonly input: unknown
+}
+
+const planEntriesFromTasks = (
+  tasks: ClaudeTaskState
+): Array<{ content: string; priority: string; status: string }> =>
+  [...tasks.values()].map((task) => ({
+    content: task.subject,
+    priority: "medium",
+    status: task.status
+  }))
+
+const taskIdFromCreateResult = (content: unknown): string | undefined => {
+  const parseText = (text: string): string | undefined => {
+    try {
+      const parsed = JSON.parse(text) as unknown
+      if (isRecord(parsed) && isRecord(parsed.task) && typeof parsed.task.id === "string") {
+        return parsed.task.id
+      }
+    } catch {
+      // Claude Code currently renders this as "Task #1 created successfully".
+    }
+    return /^Task #([^\s]+) created successfully\b/.exec(text)?.[1]
+  }
+
+  if (typeof content === "string") return parseText(content)
+  if (!Array.isArray(content)) return undefined
+  for (const block of content) {
+    if (!isRecord(block) || block.type !== "text" || typeof block.text !== "string") continue
+    const taskId = parseText(block.text)
+    if (taskId !== undefined) return taskId
+  }
+  return undefined
+}
+
+const applyTaskCreate = (
+  tasks: ClaudeTaskState,
+  taskId: string | undefined,
+  input: unknown
+): boolean => {
+  if (taskId === undefined || !isRecord(input) || typeof input.subject !== "string") return false
+  if (tasks.has(taskId)) return false
+  tasks.set(taskId, {
+    subject: input.subject,
+    status: "pending",
+    ...(typeof input.activeForm === "string" ? { activeForm: input.activeForm } : {}),
+    ...(typeof input.description === "string" ? { description: input.description } : {})
+  })
+  return true
+}
+
+const applyTaskUpdate = (tasks: ClaudeTaskState, input: unknown): boolean => {
+  if (!isRecord(input) || typeof input.taskId !== "string") return false
+  if (input.status === "deleted") return tasks.delete(input.taskId)
+
+  const existing = tasks.get(input.taskId)
+  const subject = typeof input.subject === "string" ? input.subject : existing?.subject
+  if (subject === undefined) return false
+  const status =
+    input.status === "pending" || input.status === "in_progress" || input.status === "completed"
+      ? input.status
+      : (existing?.status ?? "pending")
+  const next: ClaudeTaskEntry = {
+    subject,
+    status,
+    ...(typeof input.activeForm === "string"
+      ? { activeForm: input.activeForm }
+      : existing?.activeForm === undefined
+        ? {}
+        : { activeForm: existing.activeForm }),
+    ...(typeof input.description === "string"
+      ? { description: input.description }
+      : existing?.description === undefined
+        ? {}
+        : { description: existing.description })
+  }
+  if (
+    existing?.subject === next.subject &&
+    existing.status === next.status &&
+    existing.activeForm === next.activeForm &&
+    existing.description === next.description
+  ) {
+    return false
+  }
+  tasks.set(input.taskId, next)
+  return true
+}
 
 interface ClaudeModel {
   readonly value: string
@@ -399,6 +501,11 @@ interface ClaudeSession {
   models: ReadonlyArray<ClaudeModel>
   readonly accumulators: Map<string, ToolInputAccumulator>
   readonly openToolCalls: Set<string>
+  /// Authoritative Task* inputs keyed by tool_use id, retained until the
+  /// matching result confirms whether the mutation succeeded.
+  readonly taskToolUses: Map<string, ClaudeTaskToolUse>
+  /// Cross-turn checklist state built from Task* mutations and task hooks.
+  readonly tasks: ClaudeTaskState
   /// Current message id per streaming subagent, keyed by the subagent's
   /// parent tool_use id — keeps subagent text spans stable across replay
   /// without touching the main agent's `currentMessageId`.
@@ -537,6 +644,41 @@ export const makeClaudeProvider = (
             ]
           }
         ],
+        TaskCreated: [
+          {
+            hooks: [
+              async (hookInput) => {
+                if (
+                  hookInput.hook_event_name === "TaskCreated" &&
+                  session !== undefined &&
+                  applyTaskCreate(session.tasks, hookInput.task_id, {
+                    description: hookInput.task_description,
+                    subject: hookInput.task_subject
+                  })
+                ) {
+                  emitTaskPlanUpdate(session)
+                }
+                return {}
+              }
+            ]
+          }
+        ],
+        TaskCompleted: [
+          {
+            hooks: [
+              async (hookInput) => {
+                if (hookInput.hook_event_name === "TaskCompleted" && session !== undefined) {
+                  const existing = session.tasks.get(hookInput.task_id)
+                  if (existing !== undefined && existing.status !== "completed") {
+                    session.tasks.set(hookInput.task_id, { ...existing, status: "completed" })
+                    emitTaskPlanUpdate(session)
+                  }
+                }
+                return {}
+              }
+            ]
+          }
+        ],
         // Hooks run in every permission mode (unlike canUseTool, which the
         // bypassPermissions default never invokes) — the only reliable seam
         // for rewriting background Bash through the server's terminal host.
@@ -593,6 +735,8 @@ export const makeClaudeProvider = (
       key: sessionKey,
       models: [],
       openToolCalls: new Set(),
+      taskToolUses: new Map(),
+      tasks: new Map(),
       pendingPrompt: undefined,
       currentGoal: undefined,
       pendingQuestions: new Map(),
@@ -1024,6 +1168,10 @@ const handleMessage = (
             emitPlanUpdate(session, toolName, block.input)
             continue
           }
+          if (TASK_TOOLS.has(toolName)) {
+            session.taskToolUses.set(toolUseId, { input: block.input, name: toolName })
+            continue
+          }
           // AskUserQuestion surfaces as a blocking question via canUseTool.
           if (HIDDEN_TOOLS.has(toolName)) continue
           const stats = authoritativeStatsFromInput(session, toolName, block.input, readFile)
@@ -1056,6 +1204,24 @@ const handleMessage = (
           const toolUseId = String(block.tool_use_id)
           session.openToolCalls.delete(toolUseId)
           const accumulator = session.accumulators.get(toolUseId)
+          const taskToolUse = session.taskToolUses.get(toolUseId)
+          session.taskToolUses.delete(toolUseId)
+          if (taskToolUse !== undefined) {
+            if (block.is_error !== true) {
+              const changed =
+                taskToolUse.name === "TaskCreate"
+                  ? applyTaskCreate(
+                      session.tasks,
+                      taskIdFromCreateResult(block.content),
+                      taskToolUse.input
+                    )
+                  : taskToolUse.name === "TaskUpdate"
+                    ? applyTaskUpdate(session.tasks, taskToolUse.input)
+                    : false
+              if (changed) emitTaskPlanUpdate(session)
+            }
+            continue
+          }
           // Plan tools have no tool-call lifecycle on the wire — their result
           // is the plan/plan_document update already emitted.
           if (accumulator !== undefined && HIDDEN_TOOLS.has(accumulator.toolName)) continue
@@ -1493,6 +1659,14 @@ const emitPlanUpdate = (session: ClaudeSession, toolName: string, input: unknown
   })
 }
 
+const emitTaskPlanUpdate = (session: ClaudeSession): void => {
+  void session.emit({
+    kind: "session.output",
+    payload: { entries: planEntriesFromTasks(session.tasks), sessionUpdate: "plan" },
+    subjectId: session.key
+  })
+}
+
 const handleStreamEvent = (
   session: ClaudeSession,
   message: Extract<SDKMessage, { type: "stream_event" }>,
@@ -1888,6 +2062,7 @@ const finishActiveTurn = (
     })
   }
   session.accumulators.clear()
+  session.taskToolUses.clear()
   session.subagentMessageIds.clear()
 
   const ended: RuntimeEvent = {

@@ -660,6 +660,224 @@ describe("ClaudeProvider", () => {
     ])
   })
 
+  it("renders incremental Task tools as checklist snapshots outside plan mode", async () => {
+    const fake = new FakeQuery()
+    const provider = makeProvider(fake)
+    const events: Array<RuntimeEvent> = []
+    const createPromise = run(
+      provider.createSession(definition, "/tmp", async (event) => {
+        events.push(event)
+      })
+    )
+    await settle()
+    fake.push(initMessage())
+    const created = await createPromise
+    expect(created.metadata.modes?.currentModeId).toBe("bypassPermissions")
+
+    const promptPromise = run(created.handle.prompt("make a checklist"))
+    await settle()
+    fake.push(streamEvent({ message: { id: "msg-tasks" }, type: "message_start" }))
+    fake.push(
+      streamEvent({
+        content_block: { id: "create-1", name: "TaskCreate", type: "tool_use" },
+        index: 1,
+        type: "content_block_start"
+      })
+    )
+    fake.push({
+      message: {
+        content: [
+          {
+            id: "create-1",
+            input: {
+              activeForm: "Writing tests",
+              description: "Cover the task flow",
+              subject: "Write tests"
+            },
+            name: "TaskCreate",
+            type: "tool_use"
+          }
+        ],
+        role: "assistant"
+      },
+      parent_tool_use_id: null,
+      session_id: "sdk-session-1",
+      type: "assistant"
+    } as never)
+
+    const taskCreatedHook = fake.options?.hooks?.TaskCreated?.[0]?.hooks[0]
+    expect(taskCreatedHook).toBeDefined()
+    await taskCreatedHook?.(
+      {
+        hook_event_name: "TaskCreated",
+        session_id: "sdk-session-1",
+        task_description: "Cover the task flow",
+        task_id: "1",
+        task_subject: "Write tests"
+      } as never,
+      "create-1",
+      { signal: new AbortController().signal }
+    )
+    fake.push({
+      message: {
+        content: [
+          {
+            content: "Task #1 created successfully: Write tests",
+            is_error: false,
+            tool_use_id: "create-1",
+            type: "tool_result"
+          }
+        ],
+        role: "user"
+      },
+      parent_tool_use_id: null,
+      session_id: "sdk-session-1",
+      type: "user"
+    } as never)
+
+    fake.push(
+      streamEvent({
+        content_block: { id: "update-1", name: "TaskUpdate", type: "tool_use" },
+        index: 2,
+        type: "content_block_start"
+      })
+    )
+    fake.push({
+      message: {
+        content: [
+          {
+            id: "update-1",
+            input: { status: "in_progress", taskId: "1" },
+            name: "TaskUpdate",
+            type: "tool_use"
+          }
+        ],
+        role: "assistant"
+      },
+      parent_tool_use_id: null,
+      session_id: "sdk-session-1",
+      type: "assistant"
+    } as never)
+    fake.push({
+      message: {
+        content: [
+          {
+            content: "Updated task #1 status",
+            is_error: false,
+            tool_use_id: "update-1",
+            type: "tool_result"
+          }
+        ],
+        role: "user"
+      },
+      parent_tool_use_id: null,
+      session_id: "sdk-session-1",
+      type: "user"
+    } as never)
+    await settle()
+
+    const taskCompletedHook = fake.options?.hooks?.TaskCompleted?.[0]?.hooks[0]
+    expect(taskCompletedHook).toBeDefined()
+    await taskCompletedHook?.(
+      {
+        hook_event_name: "TaskCompleted",
+        session_id: "sdk-session-1",
+        task_id: "1",
+        task_subject: "Write tests"
+      } as never,
+      "update-2",
+      { signal: new AbortController().signal }
+    )
+    fake.push(resultMessage())
+    await promptPromise
+
+    const payloads = events.map((event) => event.payload as Record<string, unknown>)
+    expect(
+      payloads.filter(
+        (payload) =>
+          payload.sessionUpdate === "tool_call" || payload.sessionUpdate === "tool_call_update"
+      )
+    ).toEqual([])
+    expect(payloads.filter((payload) => payload.sessionUpdate === "plan")).toEqual([
+      {
+        entries: [{ content: "Write tests", priority: "medium", status: "pending" }],
+        sessionUpdate: "plan"
+      },
+      {
+        entries: [{ content: "Write tests", priority: "medium", status: "in_progress" }],
+        sessionUpdate: "plan"
+      },
+      {
+        entries: [{ content: "Write tests", priority: "medium", status: "completed" }],
+        sessionUpdate: "plan"
+      }
+    ])
+  })
+
+  it("recovers a TaskCreate id from Claude's rendered tool result", async () => {
+    const fake = new FakeQuery()
+    const provider = makeProvider(fake)
+    const events: Array<RuntimeEvent> = []
+    const created = await run(
+      provider.createSession(definition, "/tmp", async (event) => {
+        events.push(event)
+      })
+    )
+    const promptPromise = run(created.handle.prompt("make a task"))
+    await settle()
+
+    fake.push(
+      streamEvent({
+        content_block: { id: "create-fallback", name: "TaskCreate", type: "tool_use" },
+        index: 1,
+        type: "content_block_start"
+      })
+    )
+    fake.push({
+      message: {
+        content: [
+          {
+            id: "create-fallback",
+            input: { description: "Fallback coverage", subject: "Recovered task" },
+            name: "TaskCreate",
+            type: "tool_use"
+          }
+        ],
+        role: "assistant"
+      },
+      parent_tool_use_id: null,
+      session_id: "sdk-session-1",
+      type: "assistant"
+    } as never)
+    fake.push({
+      message: {
+        content: [
+          {
+            content: "Task #42 created successfully: Recovered task",
+            is_error: false,
+            tool_use_id: "create-fallback",
+            type: "tool_result"
+          }
+        ],
+        role: "user"
+      },
+      parent_tool_use_id: null,
+      session_id: "sdk-session-1",
+      type: "user"
+    } as never)
+    fake.push(resultMessage())
+    await promptPromise
+
+    expect(
+      events
+        .map((event) => event.payload as Record<string, unknown>)
+        .find((payload) => payload.sessionUpdate === "plan")
+    ).toEqual({
+      entries: [{ content: "Recovered task", priority: "medium", status: "pending" }],
+      sessionUpdate: "plan"
+    })
+  })
+
   it("surfaces tool approvals as Allow/Deny questions in ask modes", async () => {
     const fake = new FakeQuery()
     const provider = makeProvider(fake)
