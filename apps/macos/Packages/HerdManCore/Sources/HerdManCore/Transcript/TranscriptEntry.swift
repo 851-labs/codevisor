@@ -37,14 +37,16 @@ public struct SubagentTranscript: Sendable, Equatable {
     }
 }
 
-/// Progress of an in-flight transient retry (e.g. a 529 overload being retried),
-/// driving the visible "Retrying… (attempt/of)" status.
+/// Status of an in-flight transient retry (e.g. a 529 overload being retried).
+/// Progress is optional because some harnesses only announce reconnection.
 public struct RetryStatus: Sendable, Equatable {
-    public let attempt: Int
-    public let of: Int
-    public init(attempt: Int, of: Int) {
+    public let attempt: Int?
+    public let of: Int?
+    public let message: String
+    public init(attempt: Int? = nil, of: Int? = nil, message: String = "Server is busy, reconnecting") {
         self.attempt = attempt
         self.of = of
+        self.message = message
     }
 }
 
@@ -59,6 +61,9 @@ public struct AssistantTurn: Sendable, Equatable {
     /// completion or a silently-recovered turn; when present it renders as a
     /// per-turn line so a non-clean stop is never silent.
     public var stopDetail: String?
+    /// True when the provider exhausted automatic retries and the original
+    /// prompt can safely be submitted again by the user.
+    public var retryable: Bool
     /// Set while a transient failure is being retried; drives the visible
     /// "Retrying…" status. Cleared once new content streams or the turn ends.
     public var retryStatus: RetryStatus?
@@ -98,6 +103,7 @@ public struct AssistantTurn: Sendable, Equatable {
         isThinking: Bool = false,
         stopReason: StopReason? = nil,
         stopDetail: String? = nil,
+        retryable: Bool = false,
         retryStatus: RetryStatus? = nil,
         plan: Plan? = nil,
         planDocument: String? = nil,
@@ -116,6 +122,7 @@ public struct AssistantTurn: Sendable, Equatable {
         self.isThinking = isThinking
         self.stopReason = stopReason
         self.stopDetail = stopDetail
+        self.retryable = retryable
         self.retryStatus = retryStatus
         self.plan = plan
         self.planDocument = planDocument

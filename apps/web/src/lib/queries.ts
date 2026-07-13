@@ -74,6 +74,7 @@ export interface TurnMeta {
   retryStatus?: RetryStatusInfo
   stopReason?: string
   stopDetail?: string
+  retryable?: boolean
   planDocument?: string
   planBoundary?: number
   plan?: PlanEntryInfo[]
@@ -490,7 +491,7 @@ function settleTurnMeta(
   meta: TurnMeta,
   status: "completed" | "failed" | "cancelled",
   endedAt: string,
-  terminal?: { stopReason?: string; stopDetail?: string }
+  terminal?: { stopReason?: string; stopDetail?: string; retryable?: boolean }
 ): TurnMeta {
   const subagents = Object.fromEntries(
     Object.entries(meta.subagents).map(([id, bucket]) => [
@@ -505,6 +506,7 @@ function settleTurnMeta(
     retryStatus: undefined,
     stopReason: terminal?.stopReason,
     stopDetail: terminal?.stopDetail,
+    retryable: terminal?.retryable,
     toolCalls: meta.toolCalls.map((call) => (isSettled(call) ? call : { ...call, status })),
     entries: settleEntries(meta.entries, status),
     subagents
@@ -807,7 +809,7 @@ function finishGenerating(
   detail: SessionDetailCache,
   status: "completed" | "failed" | "cancelled" = "completed",
   endedAt: string = isoTimestamp(),
-  terminal?: { stopReason?: string; stopDetail?: string }
+  terminal?: { stopReason?: string; stopDetail?: string; retryable?: boolean }
 ): SessionDetailCache {
   return {
     ...detail,
@@ -925,7 +927,11 @@ function applySessionEvent(
           ? "cancelled"
           : "completed",
         createdAt,
-        { stopReason: event.stopReason, stopDetail: event.stopDetail }
+        {
+          stopReason: event.stopReason,
+          stopDetail: event.stopDetail,
+          retryable: event.retryable
+        }
       )
     case "modeChanged":
       return { ...detail, currentModeId: event.modeId }

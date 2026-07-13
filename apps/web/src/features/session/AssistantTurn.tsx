@@ -3,6 +3,8 @@ import {
   ChevronRightIcon,
   CircleSlashIcon,
   CircleXIcon,
+  LoaderCircleIcon,
+  RotateCcwIcon,
   TriangleAlertIcon,
   WandSparklesIcon
 } from "lucide-react"
@@ -236,12 +238,16 @@ export function assistantTurnSectionIsLockedOpen(
 export function AssistantTurn({
   item,
   meta,
+  onRetry,
+  retryPending = false,
   runningSubagentToolCallIds = [],
   disclosureValues = {},
   setDisclosureValue = () => undefined
 }: {
   item: ConversationItem
   meta?: TurnMeta
+  onRetry?: () => void
+  retryPending?: boolean
   runningSubagentToolCallIds?: readonly string[]
   disclosureValues?: TranscriptDisclosureValues
   setDisclosureValue?: (key: string, expanded: boolean) => void
@@ -388,7 +394,19 @@ export function AssistantTurn({
       )}
 
       {isGenerating && meta?.retryStatus != null ? (
-        <ShimmerText>{`Retrying… (${meta.retryStatus.attempt}/${meta.retryStatus.of})`}</ShimmerText>
+        <div
+          className="text-muted-foreground flex items-center gap-2 text-sm"
+          role="status"
+          aria-live="polite"
+        >
+          <LoaderCircleIcon className="size-3.5 shrink-0 animate-spin" />
+          <span>
+            {meta.retryStatus.message}
+            {meta.retryStatus.attempt != null && meta.retryStatus.of != null
+              ? ` ${meta.retryStatus.attempt}/${meta.retryStatus.of}`
+              : ""}
+          </span>
+        </div>
       ) : (
         showsActivityIndicator && <ShimmerText>Thinking…</ShimmerText>
       )}
@@ -407,18 +425,33 @@ export function AssistantTurn({
         </>
       )}
 
-      {!isGenerating &&
-        meta?.stopDetail != null &&
-        (responseText === "" ? (
-          <p className="herdman-selectable text-sm text-[var(--herdman-status-error)]">
-            {meta.stopDetail}
-          </p>
-        ) : (
-          <p className="herdman-selectable flex items-start gap-1.5 text-xs text-[var(--herdman-status-error)]">
-            <TriangleAlertIcon className="mt-px size-3.5 shrink-0" />
-            <span>{meta.stopDetail}</span>
-          </p>
-        ))}
+      {!isGenerating && meta?.stopDetail != null && (
+        <div
+          className={cn(
+            "flex items-start gap-2 text-[var(--herdman-status-error)]",
+            meta.retryable &&
+              "rounded-lg bg-[color-mix(in_srgb,var(--herdman-status-error)_8%,transparent)] p-2.5"
+          )}
+        >
+          <TriangleAlertIcon className="mt-0.5 size-3.5 shrink-0" />
+          <div className="min-w-0 flex-1">
+            <p className={cn("herdman-selectable", responseText === "" ? "text-sm" : "text-xs")}>
+              {meta.stopDetail}
+            </p>
+            {meta.retryable && onRetry != null && (
+              <button
+                type="button"
+                disabled={retryPending}
+                onClick={onRetry}
+                className="mt-2 inline-flex cursor-default items-center gap-1.5 rounded-md border border-current/25 px-2 py-1 text-xs font-medium outline-none hover:bg-current/5 disabled:opacity-50"
+              >
+                <RotateCcwIcon className="size-3" />
+                {retryPending ? "Retrying…" : "Keep retrying"}
+              </button>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

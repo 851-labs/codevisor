@@ -27,9 +27,9 @@ public enum ServerSessionStreamEvent: Equatable, Sendable {
     /// A turn ended. `stopDetail` is a short human-readable reason present only
     /// when the ending was abnormal (error / limit / refusal / gave-up
     /// truncation); the client renders it as a per-turn line.
-    case finished(StopReason, stopDetail: String?)
+    case finished(StopReason, stopDetail: String?, retryable: Bool = false)
     /// A transient failure is being retried; the turn stays alive. Drives the
-    /// visible "Retrying… (attempt/of)" status.
+    /// visible reconnecting status, with progress when the harness provides it.
     case retrying(RetryStatus)
     case failed(String)
     /// Full replace-on-update snapshot of the agent's in-flight background
@@ -339,6 +339,7 @@ public struct ServerSessionTransport: Sendable {
                 isThinking: item.isGenerating && item.text.isEmpty,
                 stopReason: item.stopReason.flatMap(StopReason.init(rawValue:)),
                 stopDetail: item.stopDetail,
+                retryable: item.retryable == true,
                 planDocument: item.planDocument,
                 startedAt: item.startedAt.flatMap(parseServerDate),
                 endedAt: item.endedAt.flatMap(parseServerDate),
@@ -374,7 +375,11 @@ public struct ServerSessionTransport: Sendable {
                 return [.retrying(retry)]
             }
             if let stopReason = stopReason(from: event.payload) {
-                return [.finished(stopReason, stopDetail: event.payload["stopDetail"]?.stringValue)]
+                return [.finished(
+                    stopReason,
+                    stopDetail: event.payload["stopDetail"]?.stringValue,
+                    retryable: event.payload["retryable"]?.boolValue == true
+                )]
             }
             if let tasks = backgroundTasks(from: event.payload) {
                 return [.backgroundTasks(tasks)]
@@ -482,10 +487,12 @@ public struct ServerSessionTransport: Sendable {
     }
 
     private static func retryStatus(from payload: JSONValue) -> RetryStatus? {
-        guard let retry = payload["retrying"],
-              let attempt = retry["attempt"]?.intValue,
-              let of = retry["of"]?.intValue else { return nil }
-        return RetryStatus(attempt: attempt, of: of)
+        guard let retry = payload["retrying"] else { return nil }
+        return RetryStatus(
+            attempt: retry["attempt"]?.intValue,
+            of: retry["of"]?.intValue,
+            message: retry["message"]?.stringValue ?? "Server is busy, reconnecting"
+        )
     }
 
     private static func backgroundTasks(from payload: JSONValue) -> [BackgroundTaskInfo]? {

@@ -1140,6 +1140,7 @@ describe("@herdman/db", () => {
     await run(
       db.appendEvent("session.error", session.id, {
         message: "provider failed",
+        retryable: true,
         stopReason: "error",
         turnId: "unknown-turn"
       })
@@ -1204,6 +1205,7 @@ describe("@herdman/db", () => {
       hasDetails: true,
       isGenerating: false,
       planDocument: "- [ ] ship",
+      retryable: true,
       text: "anonymous answer",
       stopDetail: "provider failed",
       stopReason: "error"

@@ -74,12 +74,16 @@ const TranscriptItem = memo(function TranscriptItem({
   item,
   meta,
   runningSubagentToolCallIds,
+  onRetryTurn,
+  retryPending,
   disclosureValues,
   setDisclosureValue
 }: {
   item: ConversationItem
   meta?: TurnMeta
   runningSubagentToolCallIds: readonly string[]
+  onRetryTurn?: (itemId: string) => void
+  retryPending?: boolean
   disclosureValues: TranscriptDisclosureValues
   setDisclosureValue: (key: string, expanded: boolean) => void
 }) {
@@ -89,6 +93,8 @@ const TranscriptItem = memo(function TranscriptItem({
       <AssistantTurn
         item={item}
         meta={meta}
+        onRetry={onRetryTurn == null ? undefined : () => onRetryTurn(item.id)}
+        retryPending={retryPending}
         runningSubagentToolCallIds={runningSubagentToolCallIds}
         disclosureValues={disclosureValues}
         setDisclosureValue={setDisclosureValue}
@@ -189,7 +195,9 @@ export function Transcript({
   setupPhases = [],
   runningSubagentToolCallIds = [],
   persistenceKey,
-  pinRevision
+  pinRevision,
+  onRetryTurn,
+  retryPending = false
 }: {
   conversation: readonly ConversationItem[]
   turnMeta?: Record<string, TurnMeta>
@@ -203,6 +211,8 @@ export function Transcript({
   runningSubagentToolCallIds?: readonly string[]
   persistenceKey?: string
   pinRevision?: number
+  onRetryTurn?: (itemId: string) => void
+  retryPending?: boolean
 }) {
   const initialScrollState = persistenceKey == null ? undefined : scrollStates.get(persistenceKey)
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -357,6 +367,8 @@ export function Transcript({
               runningSubagentToolCallIds={runningSubagentToolCallIds}
               disclosureValues={disclosureValues}
               setDisclosureValue={setDisclosureValue}
+              onRetryTurn={onRetryTurn}
+              retryPending={retryPending}
             />
           ))}
           {waitingIndicator}
@@ -396,7 +408,9 @@ function TranscriptItemWithSetup({
   meta,
   runningSubagentToolCallIds,
   disclosureValues,
-  setDisclosureValue
+  setDisclosureValue,
+  onRetryTurn,
+  retryPending
 }: {
   item: ConversationItem
   index: number
@@ -405,6 +419,8 @@ function TranscriptItemWithSetup({
   runningSubagentToolCallIds: readonly string[]
   disclosureValues: TranscriptDisclosureValues
   setDisclosureValue: (key: string, expanded: boolean) => void
+  onRetryTurn?: (itemId: string) => void
+  retryPending?: boolean
 }) {
   const setup =
     setupPhases.length === 0 ? null : index === 0 && item.role === "assistant" ? (
@@ -423,6 +439,8 @@ function TranscriptItemWithSetup({
           runningSubagentToolCallIds={runningSubagentToolCallIds}
           disclosureValues={disclosureValues}
           setDisclosureValue={setDisclosureValue}
+          onRetryTurn={onRetryTurn}
+          retryPending={retryPending}
         />
       </div>
       {index === 0 && item.role === "user" && setup}

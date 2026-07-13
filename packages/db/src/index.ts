@@ -225,6 +225,7 @@ interface TranscriptRow {
   readonly ended_at: string | null
   readonly stop_reason: string | null
   readonly stop_detail: string | null
+  readonly retryable: number
   readonly plan_document: string | null
   readonly attachments: string | null
   readonly revision: number
@@ -244,6 +245,7 @@ interface ChatItemRow {
   readonly completed_at: string | null
   readonly stop_reason: string | null
   readonly stop_detail: string | null
+  readonly retryable: number
   readonly attachments: string | null
   readonly has_details: number
   readonly revision: number
@@ -789,6 +791,14 @@ const migrations: ReadonlyArray<Migration> = [
       create index if not exists prompt_queue_items_session_state_created_idx
         on prompt_queue_items(session_id, state, created_at);
     `
+  },
+  {
+    id: 15,
+    name: "retryable assistant turns",
+    sql: `
+      alter table transcript_items add column retryable integer not null default 0;
+      alter table chat_items add column retryable integer not null default 0;
+    `
   }
 ]
 
@@ -963,6 +973,7 @@ const createChatItem = (
     readonly completedAt?: string
     readonly stopReason?: string
     readonly stopDetail?: string
+    readonly retryable?: boolean
     readonly attachments?: ReadonlyArray<AttachmentRef>
     readonly hasDetails?: boolean
     readonly revision?: number
@@ -975,8 +986,8 @@ const createChatItem = (
     .prepare(
       `insert into chat_items (
         id, session_id, position, role, message_id, status, created_at, updated_at, turn_id,
-        started_at, completed_at, stop_reason, stop_detail, attachments, has_details, revision
-      ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        started_at, completed_at, stop_reason, stop_detail, retryable, attachments, has_details, revision
+      ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       on conflict(id) do nothing`
     )
     .run(
@@ -993,6 +1004,7 @@ const createChatItem = (
       options.completedAt ?? null,
       options.stopReason ?? null,
       options.stopDetail ?? null,
+      Number(options.retryable === true),
       serializeAttachments(options.attachments),
       options.hasDetails === true ? 1 : 0,
       options.revision ?? 1
@@ -1115,6 +1127,7 @@ const finishAssistantChatItem = (
   completedAt: string,
   stopReason?: string,
   stopDetail?: string,
+  retryable = false,
   failed = false
 ): void => {
   const summary = chatAssistantSummary(sqlite, sessionId, itemId)
@@ -1126,6 +1139,7 @@ const finishAssistantChatItem = (
     .prepare(
       `update chat_items set status = ?, completed_at = ?, updated_at = ?,
        stop_reason = coalesce(?, stop_reason), stop_detail = coalesce(?, stop_detail),
+       retryable = ?,
        revision = revision + 1 where id = ?`
     )
     .run(
@@ -1134,6 +1148,7 @@ const finishAssistantChatItem = (
       completedAt,
       stopReason ?? null,
       stopDetail ?? null,
+      retryable ? 1 : 0,
       itemId
     )
 }
@@ -1231,6 +1246,7 @@ const projectChatEvent = (sqlite: Database.Database, event: SessionEventRow): vo
           : event.kind === "session.error" && typeof payload.message === "string"
             ? payload.message
             : undefined,
+        payload.retryable === true,
         event.kind === "session.error"
       )
       sqlite
@@ -1336,6 +1352,7 @@ const copyTranscriptItemToChat = (sqlite: Database.Database, row: TranscriptRow)
     ...(row.ended_at === null ? {} : { completedAt: row.ended_at }),
     ...(row.stop_reason === null ? {} : { stopReason: row.stop_reason }),
     ...(row.stop_detail === null ? {} : { stopDetail: row.stop_detail }),
+    retryable: row.retryable === 1,
     ...(attachments === undefined ? {} : { attachments }),
     hasDetails: row.has_details === 1,
     revision: row.revision
@@ -3019,6 +3036,7 @@ const transcriptFromChatRow = (row: ChatItemRow): TranscriptItem => {
     ...(row.completed_at === null ? {} : { endedAt: row.completed_at }),
     ...(row.stop_reason === null ? {} : { stopReason: row.stop_reason }),
     ...(row.stop_detail === null ? {} : { stopDetail: row.stop_detail }),
+    ...(row.retryable === 1 ? { retryable: true } : {}),
     ...(row.plan_document === null ? {} : { planDocument: row.plan_document }),
     ...(attachments === undefined ? {} : { attachments }),
     revision: row.revision

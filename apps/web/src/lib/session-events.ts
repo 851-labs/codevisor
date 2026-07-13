@@ -76,8 +76,9 @@ export interface UsageInfo {
 }
 
 export interface RetryStatusInfo {
-  attempt: number
-  of: number
+  attempt?: number
+  of?: number
+  message: string
 }
 
 export interface BackgroundTaskInfo {
@@ -149,7 +150,7 @@ export type SessionStreamEvent =
   | { type: "goalCleared" }
   | { type: "queueUpdated"; queue: readonly PromptQueueItem[] }
   | { type: "retrying"; retry: RetryStatusInfo }
-  | { type: "finished"; stopReason: string; stopDetail?: string }
+  | { type: "finished"; stopReason: string; stopDetail?: string; retryable?: boolean }
   | { type: "modeChanged"; modeId: string }
   | { type: "configOptionsChanged"; configOptions: readonly SessionConfigOption[] }
   | { type: "failed"; message: string }
@@ -180,10 +181,12 @@ function retryStatusFrom(payload: Record<string, unknown>): RetryStatusInfo | un
   if (!isRecord(payload.retrying)) return undefined
   const attempt = numberOrUndefined(payload.retrying.attempt)
   const of = numberOrUndefined(payload.retrying.of)
-  if (attempt == null || of == null || !Number.isInteger(attempt) || !Number.isInteger(of)) {
-    return undefined
+  const message = stringOrUndefined(payload.retrying.message) ?? "Server is busy, reconnecting"
+  return {
+    ...(attempt == null || !Number.isInteger(attempt) ? {} : { attempt }),
+    ...(of == null || !Number.isInteger(of) ? {} : { of }),
+    message
   }
-  return { attempt, of }
 }
 
 function booleanOrUndefined(value: unknown): boolean | undefined {
@@ -605,7 +608,8 @@ export function sessionStreamEvents(event: EventEnvelope): SessionStreamEvent[] 
           {
             type: "finished",
             stopReason,
-            stopDetail: stringOrUndefined(payload.stopDetail)
+            stopDetail: stringOrUndefined(payload.stopDetail),
+            retryable: booleanOrUndefined(payload.retryable)
           }
         ]
       }

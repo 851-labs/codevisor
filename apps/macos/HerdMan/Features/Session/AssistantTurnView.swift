@@ -97,7 +97,14 @@ struct AssistantTurnView: View {
             // A transient failure (e.g. 529 overload) is being retried — show it
             // instead of the plain "Thinking…" so the chat isn't a silent freeze.
             if !isWaitingOnUser, turn.isGenerating, let retry = turn.retryStatus {
-                ShimmeringText(text: "Retrying… (\(retry.attempt)/\(retry.of))")
+                HStack(spacing: 8) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text(retryLabel(retry))
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+                .accessibilityElement(children: .combine)
             } else if !isWaitingOnUser, turn.showsActivityIndicator {
                 ShimmeringText.thinking
             }
@@ -136,22 +143,32 @@ struct AssistantTurnView: View {
             // reason". Clean completions and silently-recovered turns carry no
             // stopDetail and render nothing.
             if !turn.isGenerating, let stopDetail = turn.stopDetail {
-                if turn.finalText == nil {
-                    // No answer was produced (e.g. an exhausted 529 retry): show
-                    // the error in the answer slot, in red.
-                    Text(stopDetail)
-                        .font(.callout)
-                        .foregroundStyle(theme.statusError)
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                } else {
-                    // An answer did stream (e.g. a refusal note); mark the reason
-                    // as a compact red line beneath it.
-                    Label(stopDetail, systemImage: "exclamationmark.triangle")
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle")
                         .font(.caption)
-                        .foregroundStyle(theme.statusError)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(stopDetail)
+                            .font(turn.finalText == nil ? .callout : .caption)
+                            .textSelection(.enabled)
+                        if turn.retryable, let transcriptController {
+                            Button {
+                                Task { await transcriptController.retryTurn(turnID) }
+                            } label: {
+                                Label("Keep retrying", systemImage: "arrow.counterclockwise")
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                            .disabled(transcriptController.model?.isSending == true)
+                        }
+                    }
                 }
+                .foregroundStyle(theme.statusError)
+                .padding(turn.retryable ? 10 : 0)
+                .background(
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(theme.statusError.opacity(turn.retryable ? 0.08 : 0))
+                )
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -180,6 +197,11 @@ struct AssistantTurnView: View {
         .onChange(of: turnHasRunningSubagent) { _, running in
             if !running, !turn.isGenerating { autoCollapse() }
         }
+    }
+
+    private func retryLabel(_ retry: RetryStatus) -> String {
+        guard let attempt = retry.attempt, let of = retry.of else { return retry.message }
+        return "\(retry.message) \(attempt)/\(of)"
     }
 
     private func autoCollapse() {

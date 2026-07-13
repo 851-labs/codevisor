@@ -915,6 +915,7 @@ public struct ServerTranscriptItem: Decodable, Equatable, Sendable {
     public var endedAt: String?
     public var stopReason: String?
     public var stopDetail: String?
+    public var retryable: Bool?
     public var planDocument: String?
     public var attachments: [ServerAttachmentRef]?
     public var revision: Int

@@ -203,6 +203,7 @@ interface CodexSession {
   readonly emit: RuntimeEmit
   readonly cwd: string
   activeTurnId: string | undefined
+  pendingTurnError: { message: string; retryable: boolean } | undefined
   pendingPrompt: { resolve: (value: { stopReason: string }) => void } | undefined
   interruptRequested: boolean
   currentModel: string
@@ -392,6 +393,7 @@ export const makeCodexProvider = (
       models: [],
       pendingGoalSnapshot: undefined,
       pendingPrompt: undefined,
+      pendingTurnError: undefined,
       pendingQuestions: new Map(),
       threadId
     }
@@ -1276,6 +1278,49 @@ const flushPendingGoalSnapshot = (session: CodexSession): Promise<void> => {
   return emitGoalSnapshot(session, pending)
 }
 
+const codexErrorDetails = (
+  payload: Record<string, unknown>
+): { message: string; retryable: boolean } => {
+  const error = isRecord(payload.error) ? payload.error : payload
+  const message =
+    typeof error.message === "string"
+      ? error.message
+      : typeof payload.message === "string"
+        ? payload.message
+        : "Codex error"
+  const info = error.codexErrorInfo
+  const response = isRecord(info) ? info : undefined
+  const serializedInfo = (() => {
+    try {
+      return JSON.stringify(info)
+    } catch {
+      return ""
+    }
+  })()
+  const statusCode =
+    response !== undefined && typeof response.httpStatusCode === "number"
+      ? response.httpStatusCode
+      : undefined
+  const retryable =
+    info === "serverOverloaded" ||
+    info === "rateLimitExceeded" ||
+    statusCode === 429 ||
+    statusCode === 503 ||
+    /serverOverloaded|rateLimitExceeded|"httpStatusCode"\s*:\s*(?:429|503)/i.test(serializedInfo) ||
+    /\b(overload(?:ed)?|server (?:is )?busy|rate.?limit|429|503)\b/i.test(message)
+  return { message, retryable }
+}
+
+const codexRetryStatus = (payload: Record<string, unknown>) => {
+  const { message } = codexErrorDetails(payload)
+  const progress = /(?:reconnecting|retrying)[^\d]*(\d+)\s*\/\s*(\d+)/i.exec(message)
+  return {
+    ...(progress?.[1] === undefined ? {} : { attempt: Number(progress[1]) }),
+    message: "Server is busy, reconnecting",
+    ...(progress?.[2] === undefined ? {} : { of: Number(progress[2]) })
+  }
+}
+
 // MARK: notification mapping
 
 const handleNotification = (session: CodexSession, method: string, params: unknown): void => {
@@ -1304,6 +1349,7 @@ const handleNotification = (session: CodexSession, method: string, params: unkno
     case "turn/started": {
       const turn = isRecord(payload.turn) ? payload.turn : {}
       session.activeTurnId = typeof turn.id === "string" ? turn.id : randomUUID()
+      session.pendingTurnError = undefined
       void session.emit({
         kind: "session.updated",
         payload: {
@@ -1324,21 +1370,17 @@ const handleNotification = (session: CodexSession, method: string, params: unkno
           : status === "failed"
             ? "end_turn"
             : "end_turn"
-      if (status === "failed" && !session.interruptRequested) {
-        const error = isRecord(turn.error) ? turn.error : {}
-        void session.emit({
-          kind: "session.error",
-          payload: {
-            message: typeof error.message === "string" ? error.message : "Codex turn failed"
-          },
-          subjectId: session.key
-        })
-      }
+      const completedError =
+        status === "failed" && !session.interruptRequested && isRecord(turn.error)
+          ? codexErrorDetails({ error: turn.error })
+          : undefined
+      const terminalError = completedError ?? session.pendingTurnError
       const pending = session.pendingPrompt
       session.pendingPrompt = undefined
       session.interruptRequested = false
       const turnId = session.activeTurnId ?? randomUUID()
       session.activeTurnId = undefined
+      session.pendingTurnError = undefined
       // A turn that ends with questions still open (interrupt, failure)
       // invalidates them — clients must not keep showing the picker.
       cancelPendingQuestions(session)
@@ -1351,6 +1393,8 @@ const handleNotification = (session: CodexSession, method: string, params: unkno
             payload: {
               initiatedBy: pending === undefined ? "agent" : "user",
               stopReason,
+              ...(terminalError === undefined ? {} : { stopDetail: terminalError.message }),
+              ...(terminalError?.retryable === true ? { retryable: true } : {}),
               turnId,
               turnState: "ended"
             },
@@ -1497,10 +1541,25 @@ const handleNotification = (session: CodexSession, method: string, params: unkno
       break
     }
     case "error": {
-      if (payload.willRetry === true) break
+      if (payload.willRetry === true) {
+        void session.emit({
+          kind: "session.updated",
+          payload: {
+            retrying: codexRetryStatus(payload),
+            ...(session.activeTurnId === undefined ? {} : { turnId: session.activeTurnId })
+          },
+          subjectId: session.key
+        })
+        break
+      }
+      const terminalError = codexErrorDetails(payload)
+      if (session.activeTurnId !== undefined) {
+        session.pendingTurnError = terminalError
+        break
+      }
       void session.emit({
         kind: "session.error",
-        payload: { message: String(payload.message ?? "Codex error") },
+        payload: { message: terminalError.message },
         subjectId: session.key
       })
       break

@@ -501,6 +501,7 @@ export const TranscriptItem = Schema.Struct({
   endedAt: Schema.optional(Schema.String),
   stopReason: Schema.optional(Schema.String),
   stopDetail: Schema.optional(Schema.String),
+  retryable: Schema.optional(Schema.Boolean),
   planDocument: Schema.optional(Schema.String),
   attachments: Schema.optional(Schema.Array(AttachmentRef)),
   revision: Schema.Number

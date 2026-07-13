@@ -581,7 +581,7 @@ function TerminalTurnStatesFixture() {
     subagents: {},
     textPhases: {},
     nextTextId: 0,
-    retryStatus: { attempt: 2, of: 5 }
+    retryStatus: { attempt: 2, message: "Server is busy, reconnecting", of: 5 }
   }
   const stoppedWithoutAnswer: ConversationItem = {
     id: "assistant-stopped-empty",

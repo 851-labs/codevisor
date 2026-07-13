@@ -513,7 +513,36 @@ describe("sessionStreamEvents", () => {
         stopReason: "end_turn"
       })
     )
-    expect(events).toEqual([{ type: "retrying", retry: { attempt: 2, of: 5 } }])
+    expect(events).toEqual([
+      {
+        type: "retrying",
+        retry: { attempt: 2, message: "Server is busy, reconnecting", of: 5 }
+      }
+    ])
+  })
+
+  it("maps retry status without harness progress and terminal retryability", () => {
+    expect(
+      sessionStreamEvents(
+        envelope("session.updated", { retrying: { message: "Server is busy, reconnecting" } })
+      )
+    ).toEqual([{ type: "retrying", retry: { message: "Server is busy, reconnecting" } }])
+    expect(
+      sessionStreamEvents(
+        envelope("session.updated", {
+          retryable: true,
+          stopDetail: "The server is overloaded.",
+          stopReason: "end_turn"
+        })
+      )
+    ).toEqual([
+      {
+        retryable: true,
+        stopDetail: "The server is overloaded.",
+        stopReason: "end_turn",
+        type: "finished"
+      }
+    ])
   })
 
   it("maps mode changes on session.updated", () => {

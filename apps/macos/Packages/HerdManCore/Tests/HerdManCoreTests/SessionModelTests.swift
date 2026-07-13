@@ -204,7 +204,8 @@ struct SessionModelTests {
             subjectId: sessionId.uuidString, createdAt: "2026-06-30T00:00:00.000Z",
             payload: .object([
                 "stopReason": .string("end_turn"),
-                "stopDetail": .string("The Claude API was overloaded.")
+                "stopDetail": .string("The Claude API was overloaded."),
+                "retryable": .bool(true)
             ])
         ))
         await settleUntil { model.isSending == false }
@@ -214,6 +215,7 @@ struct SessionModelTests {
             return
         }
         #expect(message.turn.stopDetail == "The Claude API was overloaded.")
+        #expect(message.turn.retryable)
         #expect(message.turn.isGenerating == false)
     }
 

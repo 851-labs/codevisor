@@ -1461,6 +1461,7 @@ describe("ClaudeProvider", () => {
       .map((event) => event.payload as Record<string, unknown>)
       .find((payload) => payload.turnState === "ended")
     expect(endedPayload?.stopDetail).toBe(errorText)
+    expect(endedPayload?.retryable).toBe(true)
     expect(retryingEvents()).toHaveLength(3)
   })
 

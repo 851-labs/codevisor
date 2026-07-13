@@ -197,6 +197,56 @@ describe("CodexProvider", () => {
     vi.useRealTimers()
   })
 
+  it("surfaces harness retries and marks an exhausted overload retryable", async () => {
+    const { client, created, events } = await setup()
+    const prompt = run(created!.handle.prompt("try this"))
+    await Promise.resolve()
+    client.emit("turn/started", {
+      threadId: "thread-new",
+      turn: { id: "turn-overloaded", status: "inProgress" }
+    })
+    client.emit("error", {
+      error: {
+        codexErrorInfo: "serverOverloaded",
+        message: "Server is busy. Reconnecting... 2/5"
+      },
+      threadId: "thread-new",
+      turnId: "turn-overloaded",
+      willRetry: true
+    })
+
+    expect(events.at(-1)?.payload).toMatchObject({
+      retrying: {
+        attempt: 2,
+        message: "Server is busy, reconnecting",
+        of: 5
+      },
+      turnId: "turn-overloaded"
+    })
+
+    client.emit("error", {
+      error: { codexErrorInfo: "serverOverloaded", message: "The server is overloaded." },
+      threadId: "thread-new",
+      turnId: "turn-overloaded",
+      willRetry: false
+    })
+    client.emit("turn/completed", {
+      threadId: "thread-new",
+      turn: {
+        id: "turn-overloaded",
+        status: "failed"
+      }
+    })
+    await prompt
+
+    expect(events.some((event) => event.kind === "session.error")).toBe(false)
+    expect(events.at(-1)?.payload).toMatchObject({
+      retryable: true,
+      stopDetail: "The server is overloaded.",
+      turnState: "ended"
+    })
+  })
+
   it("preserves MCP arguments and results for semantic tool-call presentation", async () => {
     const { client, events } = await setup()
     client.emit("item/started", {

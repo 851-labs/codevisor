@@ -4,6 +4,7 @@ import {
   answersImplementPlan,
   formatElapsed,
   formatTokenCount,
+  retryPromptForTurn,
   sessionTurnIsRunning,
   waitingBackgroundTaskLabel
 } from "./SessionScreen"
@@ -13,6 +14,42 @@ describe("session running state", () => {
     expect(sessionTurnIsRunning(false, [{ isGenerating: true }])).toBe(true)
     expect(sessionTurnIsRunning(true, [{ isGenerating: false }])).toBe(true)
     expect(sessionTurnIsRunning(false, [{ isGenerating: false }])).toBe(false)
+  })
+})
+
+describe("manual turn retry", () => {
+  it("reuses the user prompt and attachments that own the failed assistant turn", () => {
+    const prompt = {
+      attachments: [
+        {
+          fileId: "file-1",
+          kind: "file" as const,
+          mimeType: "text/plain",
+          name: "notes.txt",
+          sizeBytes: 12
+        }
+      ],
+      createdAt: "2026-07-13T00:00:00.000Z",
+      id: "user-1",
+      isGenerating: false,
+      role: "user" as const,
+      text: "Try this"
+    }
+    expect(
+      retryPromptForTurn(
+        [
+          prompt,
+          {
+            createdAt: "2026-07-13T00:00:01.000Z",
+            id: "assistant-1",
+            isGenerating: false,
+            role: "assistant",
+            text: ""
+          }
+        ],
+        "assistant-1"
+      )
+    ).toEqual(prompt)
   })
 })
 

@@ -670,9 +670,10 @@ public final class SessionModel {
                 switch event {
                 case let .update(update):
                     TranscriptReducer.apply(update, to: &turn)
-                case let .finished(reason, detail):
+                case let .finished(reason, detail, retryable):
                     turn.stopReason = reason
                     turn.stopDetail = detail
+                    turn.retryable = retryable
                     turn.isGenerating = false
                 case let .failed(message):
                     turn.stopDetail = message
@@ -882,11 +883,12 @@ public final class SessionModel {
         case let .userMessage(text, attachments):
             appliedUpdateCount += 1
             appendRemoteUserIfNeeded(text: text, attachments: attachments)
-        case let .finished(stopReason, stopDetail):
+        case let .finished(stopReason, stopDetail, retryable):
             finish(
                 stopReason: stopReason,
                 outcome: stopReason == .cancelled ? .cancelled : .completed,
-                stopDetail: stopDetail
+                stopDetail: stopDetail,
+                retryable: retryable
             )
             endTurn()
         case let .failed(message):
@@ -923,7 +925,8 @@ public final class SessionModel {
     private func finish(
         stopReason: StopReason?,
         outcome: TranscriptReducer.TurnOutcome,
-        stopDetail: String? = nil
+        stopDetail: String? = nil,
+        retryable: Bool = false
     ) {
         // A question can't outlive its turn; providers emit the resolution,
         // but a dropped event must not leave the picker stuck.
@@ -936,6 +939,7 @@ public final class SessionModel {
         // Present only when the turn ended abnormally; drives the per-turn reason
         // line so a non-clean stop is never silent.
         message.turn.stopDetail = stopDetail
+        message.turn.retryable = retryable
         message.turn.endedAt = now()
         TranscriptReducer.settleToolCalls(&message.turn, outcome: outcome)
         // Stays the active item: settling happens when the next bubble

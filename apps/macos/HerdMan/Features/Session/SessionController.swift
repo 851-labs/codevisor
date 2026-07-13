@@ -1137,6 +1137,23 @@ final class SessionController {
         }
     }
 
+    /// Re-submits the user prompt that owns an exhausted retryable assistant
+    /// turn. Automatic retries remain provider-owned; this is the explicit
+    /// user choice offered after they give up.
+    func retryTurn(_ assistantID: UUID) async {
+        guard let model, !model.isSending, !isConnecting, !isSubmitting else { return }
+        guard let assistantIndex = model.conversation.firstIndex(where: { item in
+            if case let .assistant(message) = item { return message.id == assistantID }
+            return false
+        }) else { return }
+        guard let prompt = model.conversation[..<assistantIndex].reversed().compactMap({ item in
+            if case let .user(message) = item { return message }
+            return nil
+        }).first else { return }
+        userSendSignal &+= 1
+        await model.send(prompt.text, attachments: prompt.attachments)
+    }
+
     /// Rolls a failed first send back to the draft state. The setup sections
     /// belong to the session page being torn down; the error travels back to
     /// the new-chat page as a `.failed` status, and `onSetupFailed` (wired by

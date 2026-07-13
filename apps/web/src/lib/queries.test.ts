@@ -94,6 +94,7 @@ describe("replaySessionEvents", () => {
     expect(retryingAssistant?.isGenerating).toBe(true)
     expect(retrying.turnMeta?.[retryingAssistant?.id ?? ""]?.retryStatus).toEqual({
       attempt: 2,
+      message: "Server is busy, reconnecting",
       of: 5
     })
 
@@ -106,7 +107,11 @@ describe("replaySessionEvents", () => {
       }),
       event(
         3,
-        { stopReason: "max_tokens", stopDetail: "The model reached its token limit." },
+        {
+          stopReason: "max_tokens",
+          stopDetail: "The model reached its token limit.",
+          retryable: true
+        },
         "session.updated"
       )
     ])
@@ -115,7 +120,8 @@ describe("replaySessionEvents", () => {
     expect(recovered.turnMeta?.[recoveredAssistant?.id ?? ""]).toMatchObject({
       retryStatus: undefined,
       stopReason: "max_tokens",
-      stopDetail: "The model reached its token limit."
+      stopDetail: "The model reached its token limit.",
+      retryable: true
     })
 
     const phaseRecovered = replaySessionEvents(detail(), [

@@ -1834,7 +1834,12 @@ const detectApiErrorMessage = (message: SDKMessage & { type: "assistant" }): str
 type TurnResolution =
   | { readonly kind: "continue" }
   | { readonly kind: "retry"; readonly delayMs: number; readonly attempt: number }
-  | { readonly kind: "end"; readonly stopReason: string; readonly stopDetail?: string | undefined }
+  | {
+      readonly kind: "end"
+      readonly stopReason: string
+      readonly stopDetail?: string | undefined
+      readonly retryable?: boolean | undefined
+    }
 
 /// Classifies an SDK `result`:
 ///  - output-token truncation (`max_tokens`/`max_output_tokens`) or the
@@ -1896,6 +1901,7 @@ const classifyResult = (
   return {
     kind: "end",
     stopReason: subtype === "error_max_turns" ? "max_turn_requests" : "end_turn",
+    ...(transient ? { retryable: true } : {}),
     stopDetail:
       transient && session.lastErrorText !== undefined
         ? session.lastErrorText
@@ -1967,7 +1973,10 @@ const scheduleRecovery = (session: ClaudeSession, delayMs: number): void => {
 const emitRetrying = (session: ClaudeSession, attempt: number, of: number): void => {
   void session.emit({
     kind: "session.updated",
-    payload: { retrying: { attempt, of }, turnId: session.turnId },
+    payload: {
+      retrying: { attempt, message: "Server is busy, reconnecting", of },
+      turnId: session.turnId
+    },
     subjectId: session.key
   })
 }
@@ -2034,7 +2043,7 @@ const handleResult = (session: ClaudeSession, message: SDKMessage & { type: "res
   }
   cancelClaudePendingQuestions(session)
   settleGoalOnTurnEnd(session, message)
-  finishActiveTurn(session, resolution.stopReason, resolution.stopDetail)
+  finishActiveTurn(session, resolution.stopReason, resolution.stopDetail, resolution.retryable)
 }
 
 /// Ends the in-flight turn: settles any tool calls that never got a result,
@@ -2046,7 +2055,8 @@ const handleResult = (session: ClaudeSession, message: SDKMessage & { type: "res
 const finishActiveTurn = (
   session: ClaudeSession,
   stopReason: string,
-  stopDetail?: string | undefined
+  stopDetail?: string | undefined,
+  retryable?: boolean | undefined
 ): void => {
   // Anything still open never got a tool_result (interrupt/failure/stream end).
   for (const toolUseId of [...session.openToolCalls]) {
@@ -2073,6 +2083,7 @@ const finishActiveTurn = (
       // Only present when the turn ended abnormally (error / limit / refusal /
       // truncation we gave up on); the client renders it as a per-turn reason.
       ...(stopDetail === undefined ? {} : { stopDetail }),
+      ...(retryable === true ? { retryable: true } : {}),
       turnId: session.turnId,
       turnState: "ended"
     },

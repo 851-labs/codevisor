@@ -31,7 +31,10 @@ export const TurnLifecycle = Schema.Struct({
   stopReason: Schema.optional(Schema.String),
   /** Short human-readable reason present only on an abnormal end (error / limit
    *  / refusal / gave-up truncation); clients render it as a per-turn line. */
-  stopDetail: Schema.optional(Schema.String)
+  stopDetail: Schema.optional(Schema.String),
+  /** The failed prompt can safely be submitted again after provider retries
+   *  have been exhausted. */
+  retryable: Schema.optional(Schema.Boolean)
 })
 export type TurnLifecycle = typeof TurnLifecycle.Type
 

@@ -1,5 +1,6 @@
 import type {
   BranchDiffTotals,
+  ConversationItem,
   QuestionAnswerEntry,
   SessionConfigOption,
   SessionGoal,
@@ -90,6 +91,18 @@ export function sessionTurnIsRunning(
   conversation: readonly { isGenerating: boolean }[]
 ): boolean {
   return serverIsRunning || conversation.some((item) => item.isGenerating)
+}
+
+export function retryPromptForTurn(
+  conversation: readonly ConversationItem[],
+  assistantItemId: string
+): ConversationItem | undefined {
+  const assistantIndex = conversation.findIndex((item) => item.id === assistantItemId)
+  if (assistantIndex < 1) return undefined
+  return conversation
+    .slice(0, assistantIndex)
+    .reverse()
+    .find((item) => item.role === "user")
 }
 
 type PlanControl =
@@ -329,6 +342,23 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
     } catch (sendError) {
       setComposerText(text)
       setComposerError(sendError instanceof Error ? sendError.message : String(sendError))
+    }
+  }
+
+  const retryTurn = async (assistantItemId: string) => {
+    if (detail == null || isRunning || promptSession.isPending) return
+    const prompt = retryPromptForTurn(detail.conversation, assistantItemId)
+    if (prompt == null) return
+    setComposerError(undefined)
+    setComposerSendRevision((revision) => revision + 1)
+    try {
+      await promptSession.mutateAsync({
+        id: sessionId,
+        text: prompt.text,
+        attachments: prompt.attachments
+      })
+    } catch (retryError) {
+      setComposerError(retryError instanceof Error ? retryError.message : String(retryError))
     }
   }
 
@@ -748,6 +778,8 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
         runningSubagentToolCallIds={detail.runningSubagentToolCallIds}
         persistenceKey={sessionId}
         pinRevision={composerSendRevision}
+        onRetryTurn={(itemId) => void retryTurn(itemId)}
+        retryPending={isRunning || promptSession.isPending}
       />
       <StatusBar
         terminalVisible={terminalVisible}
