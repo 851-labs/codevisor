@@ -1,37 +1,35 @@
 {
-  "features" : [
-    "refractivity"
-  ],
   "fill" : {
     "automatic-gradient" : "extended-srgb:0.00000,0.53333,1.00000,1.00000"
   },
   "groups" : [
     {
-      "blur-material" : 0.5,
+      "blur-material" : null,
       "layers" : [
         {
-          "fill" : {
-            "linear-gradient" : [
-              "srgb:0.57415,0.57416,0.57415,0.50000",
-              "srgb:1.00000,1.00000,1.00000,0.89942"
-            ]
-          },
+          "blend-mode" : "normal",
+          "fill-specializations" : [
+            {
+              "value" : "automatic"
+            },
+            {
+              "appearance" : "dark",
+              "value" : "automatic"
+            }
+          ],
+          "glass" : true,
           "image-name" : "icon-v2.svg",
           "name" : "icon"
         }
       ],
-      "refractivity" : {
-        "depth" : 0,
-        "enabled" : true,
-        "strength" : 0.5
-      },
+      "lighting" : "individual",
       "shadow" : {
-        "kind" : "layer-color",
+        "kind" : "neutral",
         "opacity" : 0.6
       },
       "translucency" : {
         "enabled" : true,
-        "value" : 0.27
+        "value" : 0.2
       }
     }
   ],
