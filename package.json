@@ -37,7 +37,7 @@
     "prettier": "3.8.1",
     "turbo": "2.6.1",
     "typescript": "6.0.2",
-    "vitest": "4.1.4"
+    "vitest": "4.1.6"
   },
   "dependencies": {
     "@agentclientprotocol/sdk": "1.1.0",

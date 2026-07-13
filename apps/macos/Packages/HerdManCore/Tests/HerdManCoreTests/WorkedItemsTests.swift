@@ -138,6 +138,17 @@ struct WorkedItemsTests {
         #expect(ToolCallSummary.symbol([call(.webSearch)]) == "magnifyingglass")
     }
 
+    @Test("HerdMan gateway groups use integration presentation")
+    func gatewaySummary() {
+        let calls = [
+            ToolCall(toolCallId: "1", title: "ToolSearch"),
+            ToolCall(toolCallId: "2", title: "mcp__herdman__search"),
+            ToolCall(toolCallId: "3", title: "herdman_execute")
+        ]
+        #expect(ToolCallSummary.describe(calls) == "Used 3 integration tools")
+        #expect(ToolCallSummary.symbol(calls) == "puzzlepiece.extension")
+    }
+
     private func call(_ kind: ToolKind) -> ToolCall {
         ToolCall(toolCallId: UUID().uuidString, title: "t", kind: kind)
     }

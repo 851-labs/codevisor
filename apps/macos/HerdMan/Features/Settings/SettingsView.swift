@@ -8,6 +8,7 @@ enum SettingsTab: String {
     case appearance
     case machines
     case harnesses
+    case mcps
 }
 
 /// Routes programmatic Settings navigation (e.g. the sidebar's
@@ -40,8 +41,11 @@ struct SettingsView: View {
             HarnessesSettingsView()
                 .tabItem { Label("Harnesses", systemImage: "cpu") }
                 .tag(SettingsTab.harnesses)
+            McpSettingsView()
+                .tabItem { Label("MCPs", systemImage: "puzzlepiece.extension") }
+                .tag(SettingsTab.mcps)
         }
-        .frame(width: 520, height: 420)
+        .frame(width: 560, height: 460)
         // When themed, drop the grouped forms' own backdrop so the theme
         // surface (painted by ThemedRoot) shows through, and paint the tab
         // strip opaquely on-theme; system themes keep the native look.

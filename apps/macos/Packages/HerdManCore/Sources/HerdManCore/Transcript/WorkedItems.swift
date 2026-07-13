@@ -133,6 +133,9 @@ public enum ToolCallSummary {
 
     public static func describe(_ calls: [ToolCall]) -> String {
         guard !calls.isEmpty else { return "" }
+        if calls.allSatisfy(\.isIntegrationPresentationCall) {
+            return calls.count == 1 ? "Used an integration tool" : "Used \(calls.count) integration tools"
+        }
         var order: [Category] = []
         var counts: [Category: Int] = [:]
         for call in calls {
@@ -145,6 +148,9 @@ public enum ToolCallSummary {
     }
 
     public static func symbol(_ calls: [ToolCall]) -> String {
+        if !calls.isEmpty, calls.allSatisfy(\.isIntegrationPresentationCall) {
+            return "puzzlepiece.extension"
+        }
         var counts: [Category: Int] = [:]
         for call in calls { counts[category(call.kind), default: 0] += 1 }
         let dominant = counts.max { lhs, rhs in lhs.value < rhs.value }?.key ?? .other

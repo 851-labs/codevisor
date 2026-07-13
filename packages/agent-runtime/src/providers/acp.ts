@@ -44,7 +44,8 @@ import {
   type ProviderEnvironment,
   type QuestionAnswer,
   type RuntimeEmit,
-  type RuntimeEvent
+  type RuntimeEvent,
+  type ToolGatewayConfig
 } from "../types.js"
 
 export const acpProtocolVersion = acp.PROTOCOL_VERSION
@@ -62,8 +63,15 @@ export interface AcpHarnessLaunchRequest {
 /// that arrive between turns — which is what keeps background/agent-initiated
 /// work from being dropped.
 export interface AcpAgentConnection {
-  readonly createSession: (cwd: string) => Effect.Effect<AgentSessionMetadata, AgentRuntimeError>
-  readonly loadSession: (sessionId: string, cwd: string) => Effect.Effect<string, AgentRuntimeError>
+  readonly createSession: (
+    cwd: string,
+    toolGateway?: ToolGatewayConfig
+  ) => Effect.Effect<AgentSessionMetadata, AgentRuntimeError>
+  readonly loadSession: (
+    sessionId: string,
+    cwd: string,
+    toolGateway?: ToolGatewayConfig
+  ) => Effect.Effect<string, AgentRuntimeError>
   readonly prompt: (
     sessionId: string,
     input: string | PromptInput
@@ -277,11 +285,12 @@ export const makeAcpProvider = (
       definition,
       cwd,
       emit,
-      account
+      account,
+      toolGateway
     ): Effect.Effect<CreatedAgentSession, AgentRuntimeError> =>
       Effect.gen(function* () {
         const connection = yield* connect(definition, cwd, emit, account)
-        return yield* connection.createSession(cwd).pipe(
+        return yield* connection.createSession(cwd, toolGateway).pipe(
           Effect.map((metadata) => ({
             handle: handleFor(connection, metadata.sessionId, emit),
             metadata
@@ -296,11 +305,12 @@ export const makeAcpProvider = (
       agentSessionId,
       cwd,
       emit,
-      account
+      account,
+      toolGateway
     ): Effect.Effect<LoadedAgentSession, AgentRuntimeError> =>
       Effect.gen(function* () {
         const connection = yield* connect(definition, cwd, emit, account)
-        const sessionId = yield* connection.loadSession(agentSessionId, cwd)
+        const sessionId = yield* connection.loadSession(agentSessionId, cwd, toolGateway)
         return { handle: handleFor(connection, sessionId, emit), sessionId }
       }),
     probeAuth: (definition, account) =>
@@ -484,7 +494,7 @@ export const makeStdioAcpConnector = (
       /// ACP spec: a cancelled turn (and a closing connection) must resolve
       /// pending permission requests as cancelled.
       const cancelQuestions = (sessionId: string | undefined): void => {
-        for (const [questionId, pending] of [...pendingQuestions]) {
+        for (const [questionId, pending] of pendingQuestions) {
           if (sessionId !== undefined && pending.sessionId !== sessionId) continue
           pendingQuestions.delete(questionId)
           pending.resolve({ outcome: { outcome: "cancelled" } })
@@ -663,6 +673,18 @@ const sdkConnection = (
   // later `session/set_model` can rebuild the picker with the new current value.
   const modelStates = new Map<string, AcpModelState>()
 
+  const mcpServers = (toolGateway: ToolGatewayConfig | undefined) =>
+    toolGateway === undefined
+      ? []
+      : [
+          {
+            type: "http" as const,
+            name: toolGateway.name,
+            url: toolGateway.url,
+            headers: [{ name: "Authorization", value: `Bearer ${toolGateway.bearerToken}` }]
+          }
+        ]
+
   return {
     probeAuth: (cwd) =>
       adapterPromise("probeAuth", async () => {
@@ -710,23 +732,23 @@ const sdkConnection = (
               questions.answerQuestion(sessionId, questionId, answer)
             )
         }),
-    createSession: (cwd) =>
+    createSession: (cwd, toolGateway) =>
       adapterPromise("createSession", async () => {
-        const response = await connection.agent.request(acp.methods.agent.session.new, {
+        const response = (await connection.agent.request(acp.methods.agent.session.new, {
           cwd,
-          mcpServers: []
-        })
+          mcpServers: mcpServers(toolGateway)
+        })) as NewSessionResponse
         const modelState = extractAcpModelState(response)
         if (modelState !== undefined) {
           modelStates.set(response.sessionId, modelState)
         }
         return sessionMetadata(response, modelState)
       }),
-    loadSession: (sessionId, cwd) =>
+    loadSession: (sessionId, cwd, toolGateway) =>
       adapterPromise("loadSession", async () => {
         const response = await connection.agent.request(acp.methods.agent.session.load, {
           cwd,
-          mcpServers: [],
+          mcpServers: mcpServers(toolGateway),
           sessionId
         })
         const modelState = extractAcpModelState(response)

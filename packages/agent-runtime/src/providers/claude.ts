@@ -42,7 +42,8 @@ import {
   type ProviderEnvironment,
   type QuestionAnswer,
   type RuntimeEmit,
-  type RuntimeEvent
+  type RuntimeEvent,
+  type ToolGatewayConfig
 } from "../types.js"
 
 /// Claude Code versions older than this predate the control-protocol features
@@ -462,7 +463,8 @@ export const makeClaudeProvider = (
     cwd: string,
     emit: RuntimeEmit,
     resume: string | undefined,
-    account?: HarnessAccountContext
+    account?: HarnessAccountContext,
+    toolGateway?: ToolGatewayConfig
   ): Promise<ClaudeSession> => {
     const claudePath = locateClaude(definition)
     await guardVersion(claudePath)
@@ -491,6 +493,18 @@ export const makeClaudeProvider = (
       env: accountEnv,
       includePartialMessages: true,
       pathToClaudeCodeExecutable: claudePath,
+      ...(toolGateway === undefined
+        ? {}
+        : {
+            strictMcpConfig: true,
+            mcpServers: {
+              [toolGateway.name]: {
+                type: "http" as const,
+                url: toolGateway.url,
+                headers: { Authorization: `Bearer ${toolGateway.bearerToken}` }
+              }
+            }
+          }),
       // The CLI invokes this only when the active permission mode requires a
       // human decision (never in the bypassPermissions default). Questions
       // and approvals both surface through the blocking question pipeline.
@@ -893,10 +907,11 @@ export const makeClaudeProvider = (
       definition,
       cwd,
       emit,
-      account
+      account,
+      toolGateway
     ): Effect.Effect<CreatedAgentSession, AgentRuntimeError> =>
       adapterPromise("createSession", async () => {
-        const session = await startSession(definition, cwd, emit, undefined, account)
+        const session = await startSession(definition, cwd, emit, undefined, account, toolGateway)
         return {
           handle: handleFor(session),
           metadata: { sessionId: session.key, ...metadataFor(session) }
@@ -911,10 +926,18 @@ export const makeClaudeProvider = (
       agentSessionId,
       cwd,
       emit,
-      account
+      account,
+      toolGateway
     ): Effect.Effect<LoadedAgentSession, AgentRuntimeError> =>
       adapterPromise("loadSession", async () => {
-        const session = await startSession(definition, cwd, emit, agentSessionId, account)
+        const session = await startSession(
+          definition,
+          cwd,
+          emit,
+          agentSessionId,
+          account,
+          toolGateway
+        )
         return {
           handle: handleFor(session),
           metadata: { sessionId: session.key, ...metadataFor(session) },

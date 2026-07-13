@@ -100,7 +100,8 @@ export interface AgentRuntimeService {
     harnessId: string,
     cwd: string,
     sink: RuntimeEventSink,
-    account?: HarnessAccountContext
+    account?: HarnessAccountContext,
+    toolGateway?: import("./types.js").ToolGatewayConfig
   ) => Effect.Effect<string, AgentRuntimeError>
   readonly inspectHarness: (
     harnessId: string,
@@ -112,7 +113,8 @@ export interface AgentRuntimeService {
     agentSessionId: string,
     cwd: string,
     sink: RuntimeEventSink,
-    account?: HarnessAccountContext
+    account?: HarnessAccountContext,
+    toolGateway?: import("./types.js").ToolGatewayConfig
   ) => Effect.Effect<AgentSessionMetadata, AgentRuntimeError>
   readonly prompt: (
     sessionId: string,
@@ -447,10 +449,16 @@ export const makeAgentRuntime = (config: AgentRuntimeConfig = {}): AgentRuntimeS
         })
       return envRefresh
     }),
-    createAgentSession: (harnessId, cwd, sink, account) =>
+    createAgentSession: (harnessId, cwd, sink, account, toolGateway) =>
       Effect.gen(function* () {
         const { definition, provider } = yield* definitionFor(harnessId)
-        const created = yield* provider.createSession(definition, cwd, dispatch, account)
+        const created = yield* provider.createSession(
+          definition,
+          cwd,
+          dispatch,
+          account,
+          toolGateway
+        )
         manageSession(harnessId, created.metadata, cwd, created.handle, sink, account)
         return created.metadata.sessionId
       }),
@@ -480,7 +488,7 @@ export const makeAgentRuntime = (config: AgentRuntimeConfig = {}): AgentRuntimeS
         void Effect.runPromise(created.handle.close).catch(() => undefined)
         return created.metadata
       }),
-    loadAgentSession: (harnessId, agentSessionId, cwd, sink, account) =>
+    loadAgentSession: (harnessId, agentSessionId, cwd, sink, account, toolGateway) =>
       Effect.gen(function* () {
         const existing = sessions.get(agentSessionId)
         if (
@@ -500,7 +508,8 @@ export const makeAgentRuntime = (config: AgentRuntimeConfig = {}): AgentRuntimeS
           agentSessionId,
           cwd,
           dispatch,
-          account
+          account,
+          toolGateway
         )
         const metadata = loaded.metadata ?? { configOptions: [], sessionId: loaded.sessionId }
         return manageSession(harnessId, metadata, cwd, loaded.handle, sink, account)

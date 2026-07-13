@@ -10,6 +10,10 @@ import type {
   Harness,
   HarnessAccount,
   HarnessAuthState,
+  McpAuthType,
+  McpConnectionState,
+  McpServer,
+  McpTransport,
   Project,
   ProjectLocation,
   PromptQueueItem,
@@ -108,6 +112,44 @@ interface HarnessAccountRow {
   readonly updated_at: string
   readonly removed_at: string | null
   readonly is_active: number
+}
+
+interface McpServerRow {
+  readonly id: string
+  readonly name: string
+  readonly transport: McpTransport
+  readonly url: string | null
+  readonly command: string | null
+  readonly args: string
+  readonly enabled: number
+  readonly auth_type: McpAuthType
+  readonly oauth_scope: string | null
+  readonly connection_state: McpConnectionState
+  readonly tool_count: number
+  readonly detail: string | null
+  readonly secret_cipher: string | null
+  readonly created_at: string
+  readonly updated_at: string
+}
+
+export interface McpServerRecord extends McpServer {
+  readonly secretCipher?: string
+}
+
+export interface SaveMcpServerRecordRequest {
+  readonly id?: string
+  readonly name: string
+  readonly transport: McpTransport
+  readonly url?: string
+  readonly command?: string
+  readonly args?: ReadonlyArray<string>
+  readonly enabled: boolean
+  readonly authType: McpAuthType
+  readonly oauthScope?: string
+  readonly connectionState: McpConnectionState
+  readonly toolCount: number
+  readonly detail?: string
+  readonly secretCipher?: string
 }
 
 export interface HarnessAccountRecord extends HarnessAccount {
@@ -679,6 +721,50 @@ const migrations: ReadonlyArray<Migration> = [
         updateItem.run(value, item.id, value)
       }
     }
+  },
+  {
+    id: 11,
+    name: "mcp servers",
+    sql: `
+      create table if not exists mcp_servers (
+        id text primary key,
+        name text not null,
+        transport text not null check(transport in ('http', 'stdio')),
+        url text,
+        command text,
+        args text not null default '[]',
+        enabled integer not null default 1,
+        auth_type text not null default 'none' check(auth_type in ('none', 'bearer', 'oauth')),
+        oauth_scope text,
+        connection_state text not null default 'disconnected',
+        tool_count integer not null default 0,
+        detail text,
+        secret_cipher text,
+        created_at text not null,
+        updated_at text not null
+      );
+
+      create index if not exists mcp_servers_enabled_idx on mcp_servers(enabled);
+    `
+  },
+  {
+    id: 12,
+    name: "scoped mcp settings",
+    sql: `
+      create table if not exists project_mcp_settings (
+        project_id text not null references projects(id) on delete cascade,
+        mcp_server_id text not null references mcp_servers(id) on delete cascade,
+        enabled integer not null,
+        primary key (project_id, mcp_server_id)
+      );
+
+      create table if not exists session_mcp_settings (
+        session_id text not null references sessions(id) on delete cascade,
+        mcp_server_id text not null references mcp_servers(id) on delete cascade,
+        enabled integer not null,
+        primary key (session_id, mcp_server_id)
+      );
+    `
   }
 ]
 
@@ -1551,6 +1637,26 @@ export interface HerdManDatabaseService {
   readonly applyHarnessSettings: (
     harnesses: ReadonlyArray<Harness>
   ) => Effect.Effect<ReadonlyArray<Harness>, DatabaseError>
+  readonly listMcpServers: Effect.Effect<ReadonlyArray<McpServerRecord>, DatabaseError>
+  readonly getMcpServer: (id: string) => Effect.Effect<McpServerRecord | undefined, DatabaseError>
+  readonly saveMcpServer: (
+    request: SaveMcpServerRecordRequest
+  ) => Effect.Effect<McpServerRecord, DatabaseError>
+  readonly deleteMcpServer: (id: string) => Effect.Effect<void, DatabaseError>
+  readonly setProjectMcpEnabled: (
+    projectId: string,
+    mcpServerId: string,
+    enabled: boolean
+  ) => Effect.Effect<void, DatabaseError>
+  readonly setSessionMcpEnabled: (
+    sessionId: string,
+    mcpServerId: string,
+    enabled: boolean
+  ) => Effect.Effect<void, DatabaseError>
+  readonly resolveMcpServers: (
+    projectId?: string,
+    sessionId?: string
+  ) => Effect.Effect<ReadonlyArray<McpServerRecord>, DatabaseError>
   readonly listHarnessAccounts: (
     harnessId: string
   ) => Effect.Effect<ReadonlyArray<HarnessAccountRecord>, DatabaseError>
@@ -2333,6 +2439,121 @@ const createService = (
         )
         return harnesses.map((harness) => ({ ...harness, enabled: !disabled.has(harness.id) }))
       }),
+    listMcpServers: attempt("listMcpServers", () =>
+      (
+        sqlite
+          .prepare("select * from mcp_servers order by name collate nocase")
+          .all() as ReadonlyArray<McpServerRow>
+      ).map(mcpServerFromRow)
+    ),
+    getMcpServer: (id) =>
+      attempt("getMcpServer", () => {
+        const row = sqlite.prepare("select * from mcp_servers where id = ?").get(id) as
+          | McpServerRow
+          | undefined
+        return row === undefined ? undefined : mcpServerFromRow(row)
+      }),
+    saveMcpServer: (request) =>
+      attempt("saveMcpServer", () => {
+        const id = request.id ?? randomUUID()
+        const now = isoTimestamp()
+        sqlite
+          .prepare(
+            `insert into mcp_servers (
+               id, name, transport, url, command, args, enabled, auth_type, oauth_scope,
+               connection_state, tool_count, detail, secret_cipher, created_at, updated_at
+             ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             on conflict(id) do update set
+               name = excluded.name, transport = excluded.transport, url = excluded.url,
+               command = excluded.command, args = excluded.args, enabled = excluded.enabled,
+               auth_type = excluded.auth_type, oauth_scope = excluded.oauth_scope,
+               connection_state = excluded.connection_state, tool_count = excluded.tool_count,
+               detail = excluded.detail, secret_cipher = excluded.secret_cipher,
+               updated_at = excluded.updated_at`
+          )
+          .run(
+            id,
+            request.name,
+            request.transport,
+            request.url ?? null,
+            request.command ?? null,
+            JSON.stringify(request.args ?? []),
+            request.enabled ? 1 : 0,
+            request.authType,
+            request.oauthScope ?? null,
+            request.connectionState,
+            request.toolCount,
+            request.detail ?? null,
+            request.secretCipher ?? null,
+            now,
+            now
+          )
+        return mcpServerFromRow(
+          sqlite.prepare("select * from mcp_servers where id = ?").get(id) as McpServerRow
+        )
+      }),
+    deleteMcpServer: (id) =>
+      attempt("deleteMcpServer", () => {
+        sqlite.prepare("delete from mcp_servers where id = ?").run(id)
+      }),
+    setProjectMcpEnabled: (projectId, mcpServerId, enabled) =>
+      attempt("setProjectMcpEnabled", () => {
+        sqlite
+          .prepare(
+            `insert into project_mcp_settings (project_id, mcp_server_id, enabled) values (?, ?, ?)
+             on conflict(project_id, mcp_server_id) do update set enabled = excluded.enabled`
+          )
+          .run(projectId, mcpServerId, enabled ? 1 : 0)
+      }),
+    setSessionMcpEnabled: (sessionId, mcpServerId, enabled) =>
+      attempt("setSessionMcpEnabled", () => {
+        sqlite
+          .prepare(
+            `insert into session_mcp_settings (session_id, mcp_server_id, enabled) values (?, ?, ?)
+             on conflict(session_id, mcp_server_id) do update set enabled = excluded.enabled`
+          )
+          .run(sessionId, mcpServerId, enabled ? 1 : 0)
+      }),
+    resolveMcpServers: (projectId, sessionId) =>
+      attempt("resolveMcpServers", () => {
+        const projectSettings =
+          projectId === undefined
+            ? new Map<string, boolean>()
+            : new Map(
+                (
+                  sqlite
+                    .prepare(
+                      "select mcp_server_id, enabled from project_mcp_settings where project_id = ?"
+                    )
+                    .all(projectId) as ReadonlyArray<{ mcp_server_id: string; enabled: number }>
+                ).map((row) => [row.mcp_server_id, row.enabled === 1] as const)
+              )
+        const sessionSettings =
+          sessionId === undefined
+            ? new Map<string, boolean>()
+            : new Map(
+                (
+                  sqlite
+                    .prepare(
+                      "select mcp_server_id, enabled from session_mcp_settings where session_id = ?"
+                    )
+                    .all(sessionId) as ReadonlyArray<{ mcp_server_id: string; enabled: number }>
+                ).map((row) => [row.mcp_server_id, row.enabled === 1] as const)
+              )
+        return (
+          sqlite
+            .prepare("select * from mcp_servers order by name collate nocase")
+            .all() as ReadonlyArray<McpServerRow>
+        )
+          .map(mcpServerFromRow)
+          .map((server) => ({
+            ...server,
+            enabled:
+              server.enabled &&
+              projectSettings.get(server.id) !== false &&
+              sessionSettings.get(server.id) !== false
+          }))
+      }),
     listHarnessAccounts: (harnessId) =>
       attempt("listHarnessAccounts", () =>
         harnessAccountRows(harnessId).map(harnessAccountFromRow)
@@ -2727,6 +2948,24 @@ const updateFromRow = (row: UpdateRow): UpdateInfo => ({
   channel: row.channel,
   ...(row.checked_at === null ? {} : { checkedAt: row.checked_at }),
   migrationState: row.migration_state
+})
+
+const mcpServerFromRow = (row: McpServerRow): McpServerRecord => ({
+  id: row.id,
+  name: row.name,
+  transport: row.transport,
+  ...(row.url === null ? {} : { url: row.url }),
+  ...(row.command === null ? {} : { command: row.command }),
+  args: JSON.parse(row.args) as ReadonlyArray<string>,
+  enabled: row.enabled === 1,
+  authType: row.auth_type,
+  ...(row.oauth_scope === null ? {} : { oauthScope: row.oauth_scope }),
+  connectionState: row.connection_state,
+  toolCount: row.tool_count,
+  ...(row.detail === null ? {} : { detail: row.detail }),
+  ...(row.secret_cipher === null ? {} : { secretCipher: row.secret_cipher }),
+  createdAt: row.created_at,
+  updatedAt: row.updated_at
 })
 
 const hashToken = (token: string): string => createHash("sha256").update(token).digest("hex")

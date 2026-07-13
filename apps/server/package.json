@@ -20,11 +20,14 @@
     "@herdman/api": "workspace:*",
     "@herdman/db": "workspace:*",
     "@herdman/terminal": "workspace:*",
+    "@executor-js/runtime-quickjs": "1.5.32",
+    "@modelcontextprotocol/sdk": "1.29.0",
     "effect": "4.0.0-beta.92",
-    "ws": "8.18.3"
+    "ws": "8.18.3",
+    "zod": "4.4.3"
   },
   "devDependencies": {
     "@types/ws": "8.5.13",
-    "vitest": "4.1.4"
+    "vitest": "4.1.6"
   }
 }

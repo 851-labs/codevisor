@@ -6,7 +6,7 @@ import type {
   RuntimeEventSink,
   SetGoalUpdate
 } from "@herdman/agent-runtime"
-import type { Harness } from "@herdman/api"
+import type { Harness, McpServer } from "@herdman/api"
 import { makeDatabase, type HerdManDatabaseService } from "@herdman/db"
 import Database from "better-sqlite3"
 import type {
@@ -46,6 +46,11 @@ import {
 } from "./server.js"
 import type { HarnessAuthManager } from "./harness-auth.js"
 import type { HerdManServerServices } from "./server.js"
+import { boundedMcpTimerDelay, makeMcpManager, NodeStreamableHttpTransport } from "./mcp-manager.js"
+import { Client as McpClient } from "@modelcontextprotocol/sdk/client/index.js"
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
+import type { Transport as McpTransport } from "@modelcontextprotocol/sdk/shared/transport.js"
+import { ToolListChangedNotificationSchema } from "@modelcontextprotocol/sdk/types.js"
 
 const run = <A, E>(effect: Effect.Effect<A, E>): Promise<A> => Effect.runPromise(effect)
 
@@ -443,11 +448,13 @@ const makeServices = async (serverId = "test") => {
   databases.push(db)
   const spawner = makeSpawner()
   const agents = makeAgents()
+  const mcp = makeMcpManager({ db, dataDir: dir })
   return {
     agents,
     services: {
       agents,
       db,
+      mcp,
       terminal: makeTerminalManager({ defaultShell: "/bin/sh", env: {}, spawner })
     },
     spawner
@@ -611,6 +618,373 @@ const waitFor = async (
 }
 
 describe("@herdman/server", () => {
+  it("bounds long-lived OAuth refresh timers to Node's supported range", () => {
+    expect(boundedMcpTimerDelay(2_591_232_324)).toBe(2_147_000_000)
+    expect(boundedMcpTimerDelay(3_480_000)).toBe(3_480_000)
+  })
+
+  it("loads a large SSE tool catalog without opening the optional notification stream", async () => {
+    const receivedHeaders: Array<string | undefined> = []
+    const upstream = createServer(async (request, response) => {
+      const workspace = request.headers["x-workspace"]
+      receivedHeaders.push(Array.isArray(workspace) ? workspace.join(",") : workspace)
+      if (request.method === "GET") {
+        response.writeHead(500)
+        response.end()
+        return
+      }
+      const chunks: Buffer[] = []
+      for await (const chunk of request) chunks.push(Buffer.from(chunk))
+      const message = JSON.parse(Buffer.concat(chunks).toString("utf8")) as {
+        id?: string | number
+        method: string
+      }
+      if (message.method === "notifications/initialized") {
+        response.writeHead(202)
+        response.end()
+        return
+      }
+      const result =
+        message.method === "initialize"
+          ? {
+              protocolVersion: "2025-11-25",
+              capabilities: { tools: { listChanged: true } },
+              serverInfo: { name: "large-catalog", version: "1" }
+            }
+          : {
+              tools: [
+                {
+                  name: "large_tool",
+                  description: "x".repeat(30_000),
+                  inputSchema: { type: "object" }
+                }
+              ]
+            }
+      response.writeHead(200, { "content-type": "text/event-stream" })
+      response.end(
+        `event: message\ndata: ${JSON.stringify({ jsonrpc: "2.0", id: message.id, result })}\n\n`
+      )
+    })
+    await new Promise<void>((resolve) => upstream.listen(0, "127.0.0.1", resolve))
+    const address = upstream.address()
+    if (address === null || typeof address === "string") throw new Error("Missing upstream port")
+    const transport = new NodeStreamableHttpTransport(
+      new URL(`http://127.0.0.1:${address.port}/mcp`),
+      undefined,
+      { "X-Workspace": "emojis" }
+    )
+    const client = new McpClient({ name: "node-transport-test", version: "1" })
+    try {
+      await client.connect(transport)
+      expect((await client.listTools()).tools).toHaveLength(1)
+      expect(receivedHeaders).not.toContain(undefined)
+      expect(receivedHeaders).toContain("emojis")
+    } finally {
+      await client.close()
+      await new Promise<void>((resolve, reject) =>
+        upstream.close((error) => (error === undefined ? resolve() : reject(error)))
+      )
+    }
+  })
+
+  it("serves the fixed session-scoped MCP gateway surface", async () => {
+    const { server, services } = await start()
+    await services.mcp.create({
+      authType: "none",
+      command: "herdman-missing-posthog-mcp",
+      name: "PostHog",
+      transport: "stdio"
+    })
+    const firstGateway = await services.mcp.issueGateway("session-1")
+    const gateway = await services.mcp.issueGateway("session-1")
+    const otherSessionGateway = await services.mcp.issueGateway("session-2")
+    expect(gateway).toEqual(firstGateway)
+    expect(otherSessionGateway.bearerToken).toBe(gateway.bearerToken)
+    expect(otherSessionGateway.url).not.toBe(gateway.url)
+    const client = new McpClient({ name: "gateway-test", version: "1" })
+    await client.connect(
+      new StreamableHTTPClientTransport(new URL(gateway.url), {
+        requestInit: { headers: { Authorization: `Bearer ${gateway.bearerToken}` } }
+      }) as unknown as McpTransport
+    )
+    const listed = await client.listTools()
+    expect(listed.tools.map((tool) => tool.name)).toEqual([
+      "search",
+      "describe",
+      "execute",
+      "run_code"
+    ])
+    expect(listed.tools.find((tool) => tool.name === "search")?.description).toContain("PostHog")
+    expect(listed.tools.find((tool) => tool.name === "run_code")?.description).toContain("PostHog")
+    let toolListChanges = 0
+    client.setNotificationHandler(ToolListChangedNotificationSchema, () => {
+      toolListChanges += 1
+    })
+    await services.mcp.create({
+      authType: "none",
+      command: "herdman-missing-linear-mcp",
+      name: "Linear",
+      transport: "stdio"
+    })
+    await waitFor(() => toolListChanges > 0)
+    expect(
+      (await client.listTools()).tools.find((tool) => tool.name === "search")?.description
+    ).toContain("Linear")
+    const executed = await client.callTool({
+      name: "run_code",
+      arguments: { code: "async () => 6 * 7" }
+    })
+    expect(executed.isError).not.toBe(true)
+    expect(JSON.stringify(executed.content)).toContain("42")
+    const searchedInCode = await client.callTool({
+      name: "run_code",
+      arguments: { code: 'async () => await tools.search({ query: "missing" })' }
+    })
+    expect(searchedInCode.isError).not.toBe(true)
+    expect(JSON.stringify(searchedInCode.content)).toContain('\\"total\\":0')
+    await client.close()
+
+    const unauthorized = await fetch(`${server.url}/mcp/gateway`, { method: "POST" })
+    expect(unauthorized.status).toBe(401)
+  })
+
+  it("detects MCP authorization challenges", async () => {
+    const detector = createServer((request, response) => {
+      if (request.url === "/oauth") {
+        response.writeHead(401, {
+          "www-authenticate": 'Bearer resource_metadata="https://auth.example.test/resource"'
+        })
+      } else if (request.url === "/bearer") {
+        response.writeHead(401, { "www-authenticate": "Bearer" })
+      } else if (request.url === "/metadata") {
+        response.writeHead(401)
+      } else if (request.url === "/required") {
+        response.writeHead(401)
+      } else if (request.url === "/.well-known/oauth-protected-resource/metadata") {
+        response.writeHead(200, { "content-type": "application/json" })
+        response.end(
+          JSON.stringify({
+            authorization_servers: ["https://auth.example.test"],
+            resource: `http://${request.headers.host}/metadata`
+          })
+        )
+        return
+      } else if (request.url?.startsWith("/.well-known/")) {
+        response.writeHead(404)
+      } else {
+        response.writeHead(200, { "content-type": "application/json" })
+      }
+      response.end("{}")
+    })
+    await new Promise<void>((resolve) => detector.listen(0, "127.0.0.1", resolve))
+    const address = detector.address()
+    if (address === null || typeof address === "string") throw new Error("Missing detector port")
+    const { server } = await start()
+    try {
+      for (const [path, authType] of [
+        ["none", "none"],
+        ["bearer", "bearer"],
+        ["metadata", "oauth"],
+        ["required", "bearer"],
+        ["oauth", "oauth"]
+      ] as const) {
+        const detected = await jsonRequest(server, "/v1/mcps/detect-auth", {
+          method: "POST",
+          body: JSON.stringify({ url: `http://127.0.0.1:${address.port}/${path}` })
+        })
+        expect(detected.status).toBe(200)
+        expect(detected.body).toMatchObject({ authType })
+      }
+      const created = await jsonRequest(server, "/v1/mcps", {
+        method: "POST",
+        body: JSON.stringify({
+          enabled: false,
+          name: "Auto OAuth",
+          transport: "http",
+          url: `http://127.0.0.1:${address.port}/oauth`
+        })
+      })
+      expect(created.status).toBe(201)
+      expect(created.body).toMatchObject({
+        authType: "oauth",
+        connectionState: "needsAuthorization",
+        enabled: false
+      })
+    } finally {
+      await new Promise<void>((resolve, reject) =>
+        detector.close((error) => (error === undefined ? resolve() : reject(error)))
+      )
+    }
+  })
+
+  it("manages MCP installations without returning encrypted credentials", async () => {
+    const { server, services } = await start()
+    const created = await jsonRequest(server, "/v1/mcps", {
+      method: "POST",
+      body: JSON.stringify({
+        authType: "bearer",
+        bearerToken: "secret-token",
+        headers: { "X-Workspace": "emojis", Authorization: "secret-header" },
+        enabled: false,
+        name: "Example",
+        transport: "http",
+        url: "https://example.test/mcp"
+      })
+    })
+    expect(created.status).toBe(201)
+    expect(created.body).toMatchObject({
+      authType: "bearer",
+      enabled: false,
+      name: "Example"
+    })
+    expect(JSON.stringify(created.body)).not.toContain("secret-token")
+    expect(created.body).toMatchObject({ headerNames: ["Authorization", "X-Workspace"] })
+    expect(JSON.stringify(created.body)).not.toContain("secret-header")
+    expect(JSON.stringify(created.body)).not.toContain("secretCipher")
+
+    const id = (created.body as { id: string }).id
+    const updated = await jsonRequest(server, `/v1/mcps/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ name: "Renamed" })
+    })
+    expect(updated.status).toBe(200)
+    expect(updated.body).toMatchObject({ enabled: false, name: "Renamed" })
+
+    const listed = await jsonRequest(server, "/v1/mcps")
+    expect(listed.body).toEqual([expect.objectContaining({ id, name: "Renamed" })])
+
+    expect((await jsonRequest(server, `/v1/mcps/${id}`, { method: "DELETE" })).status).toBe(204)
+
+    const local = await jsonRequest(server, "/v1/mcps", {
+      method: "POST",
+      body: JSON.stringify({
+        authType: "none",
+        command: "missing-local-mcp",
+        enabled: false,
+        env: { API_KEY: "local-secret", REGION: "us-west" },
+        name: "Local",
+        transport: "stdio"
+      })
+    })
+    expect(local.status).toBe(201)
+    expect(local.body).toMatchObject({ environmentNames: ["API_KEY", "REGION"] })
+    expect(JSON.stringify(local.body)).not.toContain("local-secret")
+    const localId = (local.body as { id: string }).id
+    const changedLocal = await jsonRequest(server, `/v1/mcps/${localId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ env: { ACCOUNT: "new-secret" }, removeEnv: ["REGION"] })
+    })
+    expect(changedLocal.body).toMatchObject({ environmentNames: ["ACCOUNT", "API_KEY"] })
+    expect(JSON.stringify(changedLocal.body)).not.toContain("new-secret")
+
+    const project = await run(services.db.createProject({ folderPath: "/tmp/mcp-route-scope" }))
+    const session = await run(
+      services.db.createSession({ harnessId: "codex", projectId: project.id, title: "Scoped" })
+    )
+    expect(
+      (
+        await jsonRequest(server, `/v1/projects/${project.id}/mcps/${localId}`, {
+          method: "PATCH",
+          body: JSON.stringify({ enabled: false })
+        })
+      ).status
+    ).toBe(200)
+    expect(
+      (
+        await jsonRequest(server, `/v1/sessions/${session.id}/mcps/${localId}`, {
+          method: "PATCH",
+          body: JSON.stringify({ enabled: false })
+        })
+      ).status
+    ).toBe(200)
+    expect(
+      (
+        await jsonRequest(server, `/v1/projects/${project.id}/mcps/${localId}`, {
+          method: "PATCH",
+          body: JSON.stringify({})
+        })
+      ).status
+    ).toBe(400)
+    expect(
+      (
+        await jsonRequest(server, `/v1/sessions/${session.id}/mcps/${localId}`, {
+          method: "PATCH",
+          body: JSON.stringify({})
+        })
+      ).status
+    ).toBe(400)
+
+    const publicLocal = local.body as McpServer
+    vi.spyOn(services.mcp, "connect").mockResolvedValue(publicLocal)
+    vi.spyOn(services.mcp, "tools").mockResolvedValue([])
+    vi.spyOn(services.mcp, "beginOAuth").mockResolvedValue("https://example.test/authorize")
+    vi.spyOn(services.mcp, "disconnectOAuth").mockResolvedValue(publicLocal)
+    const finishOAuth = vi.spyOn(services.mcp, "finishOAuth").mockResolvedValue(publicLocal)
+    expect((await jsonRequest(server, `/v1/mcps/${localId}/tools`)).status).toBe(200)
+    expect(
+      (await jsonRequest(server, `/v1/mcps/${localId}/connect`, { method: "POST" })).status
+    ).toBe(200)
+    expect(
+      (await jsonRequest(server, `/v1/mcps/${localId}/oauth-start`, { method: "POST" })).status
+    ).toBe(201)
+    expect(
+      (await jsonRequest(server, `/v1/mcps/${localId}/oauth-disconnect`, { method: "POST" })).status
+    ).toBe(200)
+    expect(
+      (await jsonRequest(server, `/v1/mcps/${localId}/unknown`, { method: "POST" })).status
+    ).toBe(404)
+    expect((await jsonRequest(server, "/v1/mcps", { method: "PUT" })).status).toBe(404)
+    expect((await jsonRequest(server, `/v1/mcps/${localId}`)).status).toBe(404)
+    expect(
+      await fetch(`${server.url}/v1/mcps/oauth/callback?state=state-1&code=code-1`).then(
+        (response) => response.status
+      )
+    ).toBe(200)
+    expect(finishOAuth).toHaveBeenCalledWith("state-1", "code-1")
+    expect(
+      await fetch(`${server.url}/v1/mcps/oauth/callback?state=state-1`).then(
+        (response) => response.status
+      )
+    ).toBe(400)
+    expect(
+      await fetch(`${server.url}/v1/mcps/oauth/complete`).then((response) => response.status)
+    ).toBe(200)
+
+    expect((await jsonRequest(server, `/v1/mcps/${localId}`, { method: "DELETE" })).status).toBe(
+      204
+    )
+    expect((await jsonRequest(server, "/v1/mcps")).body).toEqual([])
+
+    const { mcp: _mcp, ...withoutMcp } = services
+    const unavailable = await startWithApp(withoutMcp)
+    runningServers.push(unavailable)
+    expect((await jsonRequest(unavailable, "/v1/mcps")).status).toBe(501)
+    expect(
+      (
+        await jsonRequest(unavailable, `/v1/projects/${project.id}/mcps/${localId}`, {
+          method: "PATCH",
+          body: JSON.stringify({ enabled: true })
+        })
+      ).status
+    ).toBe(501)
+    expect(
+      (
+        await jsonRequest(unavailable, `/v1/sessions/${session.id}/mcps/${localId}`, {
+          method: "PATCH",
+          body: JSON.stringify({ enabled: true })
+        })
+      ).status
+    ).toBe(501)
+    expect(
+      await fetch(`${unavailable.url}/mcp/gateway`, { method: "POST" }).then((r) => r.status)
+    ).toBe(501)
+    expect(
+      await fetch(`${unavailable.url}/v1/mcps/oauth/callback?state=x&code=y`).then(
+        (response) => response.status
+      )
+    ).toBe(501)
+  })
+
   it("exposes harness authentication and account management routes", async () => {
     const { services, agents } = await makeServices("server-a")
     const legacyServer = await startWithApp(services)

@@ -91,6 +91,16 @@ public protocol HerdManServerClienting: Sendable {
     func loginHarnessAccount(harnessId: String, accountId: String, methodId: String?, apiKey: String?) async throws -> ServerHarnessAuthFlow
     func cancelHarnessLogin(harnessId: String, accountId: String, flowId: String) async throws
     func logoutHarnessAccount(harnessId: String, accountId: String) async throws -> ServerHarnessAccount
+    func listMcpServers() async throws -> [ServerMcpServer]
+    func detectMcpAuth(url: String) async throws -> ServerMcpAuthDetection
+    func createMcpServer(_ request: CreateMcpServerBody) async throws -> ServerMcpServer
+    func updateMcpServer(id: String, request: UpdateMcpServerBody) async throws -> ServerMcpServer
+    func setMcpServerEnabled(id: String, enabled: Bool) async throws -> ServerMcpServer
+    func connectMcpServer(id: String) async throws -> ServerMcpServer
+    func startMcpOAuth(id: String) async throws -> ServerMcpOAuthStart
+    func disconnectMcpOAuth(id: String) async throws -> ServerMcpServer
+    func removeMcpServer(id: String) async throws
+    func listMcpTools(id: String) async throws -> [ServerMcpTool]
     func listProjects() async throws -> [ServerProject]
     func upsertProject(_ project: Project) async throws -> ServerProject
     func updateProject(_ project: Project) async throws -> ServerProject
@@ -206,6 +216,30 @@ public extension HerdManServerClienting {
     func logoutHarnessAccount(harnessId: String, accountId: String) async throws -> ServerHarnessAccount {
         throw HerdManServerClientError.invalidResponse
     }
+    func listMcpServers() async throws -> [ServerMcpServer] { [] }
+    func detectMcpAuth(url: String) async throws -> ServerMcpAuthDetection {
+        .init(authType: "none", detail: "No authorization challenge detected")
+    }
+    func createMcpServer(_ request: CreateMcpServerBody) async throws -> ServerMcpServer {
+        throw HerdManServerClientError.invalidResponse
+    }
+    func updateMcpServer(id: String, request: UpdateMcpServerBody) async throws -> ServerMcpServer {
+        throw HerdManServerClientError.invalidResponse
+    }
+    func setMcpServerEnabled(id: String, enabled: Bool) async throws -> ServerMcpServer {
+        throw HerdManServerClientError.invalidResponse
+    }
+    func connectMcpServer(id: String) async throws -> ServerMcpServer {
+        throw HerdManServerClientError.invalidResponse
+    }
+    func startMcpOAuth(id: String) async throws -> ServerMcpOAuthStart {
+        throw HerdManServerClientError.invalidResponse
+    }
+    func disconnectMcpOAuth(id: String) async throws -> ServerMcpServer {
+        throw HerdManServerClientError.invalidResponse
+    }
+    func removeMcpServer(id: String) async throws {}
+    func listMcpTools(id: String) async throws -> [ServerMcpTool] { [] }
 
     /// Default for fakes/older transports: attachments are dropped and the
     /// text-only prompt path is used.
@@ -435,6 +469,136 @@ public struct ServerHarness: Codable, Equatable, Sendable {
         self.readiness = readiness
         self.installHint = installHint
         self.auth = auth
+    }
+}
+
+public struct ServerMcpServer: Codable, Equatable, Identifiable, Sendable {
+    public var id: String
+    public var name: String
+    public var transport: String
+    public var url: String?
+    public var command: String?
+    public var args: [String]
+    public var headerNames: [String]?
+    public var environmentNames: [String]?
+    public var enabled: Bool
+    public var authType: String
+    public var oauthScope: String?
+    public var connectionState: String
+    public var toolCount: Int
+    public var detail: String?
+    public var createdAt: String
+    public var updatedAt: String
+}
+
+public struct ServerMcpTool: Codable, Equatable, Identifiable, Sendable {
+    public var serverId: String
+    public var serverName: String
+    public var name: String
+    public var title: String?
+    public var description: String?
+    public var id: String { "\(serverId)/\(name)" }
+}
+
+public struct ServerMcpOAuthStart: Codable, Equatable, Sendable {
+    public var authorizationUrl: String
+}
+
+public struct ServerMcpAuthDetection: Codable, Equatable, Sendable {
+    public var authType: String
+    public var detail: String
+    public var suggestedName: String? = nil
+}
+
+public struct CreateMcpServerBody: Encodable, Equatable, Sendable {
+    public var name: String
+    public var transport: String
+    public var url: String?
+    public var command: String?
+    public var args: [String]?
+    public var env: [String: String]?
+    public var headers: [String: String]?
+    public var enabled: Bool?
+    public var authType: String?
+    public var bearerToken: String?
+    public var oauthScope: String?
+    public var oauthClientId: String?
+    public var oauthClientSecret: String?
+
+    public init(
+        name: String,
+        transport: String,
+        url: String? = nil,
+        command: String? = nil,
+        args: [String]? = nil,
+        env: [String: String]? = nil,
+        headers: [String: String]? = nil,
+        enabled: Bool? = true,
+        authType: String? = nil,
+        bearerToken: String? = nil,
+        oauthScope: String? = nil,
+        oauthClientId: String? = nil,
+        oauthClientSecret: String? = nil
+    ) {
+        self.name = name
+        self.transport = transport
+        self.url = url
+        self.command = command
+        self.args = args
+        self.env = env
+        self.headers = headers
+        self.enabled = enabled
+        self.authType = authType
+        self.bearerToken = bearerToken
+        self.oauthScope = oauthScope
+        self.oauthClientId = oauthClientId
+        self.oauthClientSecret = oauthClientSecret
+    }
+}
+
+public struct UpdateMcpServerBody: Encodable, Equatable, Sendable {
+    public var name: String?
+    public var url: String?
+    public var command: String?
+    public var args: [String]?
+    public var env: [String: String]?
+    public var headers: [String: String]?
+    public var removeEnv: [String]?
+    public var removeHeaders: [String]?
+    public var authType: String?
+    public var bearerToken: String?
+    public var oauthScope: String?
+    public var oauthClientId: String?
+    public var oauthClientSecret: String?
+
+    public init(
+        name: String? = nil,
+        url: String? = nil,
+        command: String? = nil,
+        args: [String]? = nil,
+        env: [String: String]? = nil,
+        headers: [String: String]? = nil,
+        removeEnv: [String]? = nil,
+        removeHeaders: [String]? = nil,
+        authType: String? = nil,
+        bearerToken: String? = nil,
+        oauthScope: String? = nil,
+        oauthClientId: String? = nil,
+        oauthClientSecret: String? = nil
+    ) {
+        self.name = name
+        self.url = url
+        self.command = command
+        self.args = args
+        self.env = env
+        self.headers = headers
+        self.removeEnv = removeEnv
+        self.removeHeaders = removeHeaders
+        self.authType = authType
+        self.bearerToken = bearerToken
+        self.oauthScope = oauthScope
+        self.oauthClientId = oauthClientId
+        self.oauthClientSecret = oauthClientSecret
     }
 }
 
@@ -878,6 +1042,66 @@ public final class HerdManServerClient: HerdManServerClienting, @unchecked Senda
 
     public func logoutHarnessAccount(harnessId: String, accountId: String) async throws -> ServerHarnessAccount {
         try await send("\(harnessAccountPath(harnessId, accountId))/logout", method: "POST", body: Optional<EmptyBody>.none)
+    }
+
+    public func listMcpServers() async throws -> [ServerMcpServer] {
+        try await get("/v1/mcps")
+    }
+
+    public func detectMcpAuth(url: String) async throws -> ServerMcpAuthDetection {
+        try await send(
+            "/v1/mcps/detect-auth",
+            method: "POST",
+            body: DetectMcpAuthBody(url: url)
+        )
+    }
+
+    public func createMcpServer(_ request: CreateMcpServerBody) async throws -> ServerMcpServer {
+        try await send("/v1/mcps", method: "POST", body: request)
+    }
+
+    public func updateMcpServer(id: String, request: UpdateMcpServerBody) async throws -> ServerMcpServer {
+        try await send("/v1/mcps/\(pathComponent(id))", method: "PATCH", body: request)
+    }
+
+    public func setMcpServerEnabled(id: String, enabled: Bool) async throws -> ServerMcpServer {
+        try await send(
+            "/v1/mcps/\(pathComponent(id))",
+            method: "PATCH",
+            body: UpdateMcpEnabledBody(enabled: enabled)
+        )
+    }
+
+    public func connectMcpServer(id: String) async throws -> ServerMcpServer {
+        try await send(
+            "/v1/mcps/\(pathComponent(id))/connect",
+            method: "POST",
+            body: Optional<EmptyBody>.none
+        )
+    }
+
+    public func startMcpOAuth(id: String) async throws -> ServerMcpOAuthStart {
+        try await send(
+            "/v1/mcps/\(pathComponent(id))/oauth-start",
+            method: "POST",
+            body: Optional<EmptyBody>.none
+        )
+    }
+
+    public func disconnectMcpOAuth(id: String) async throws -> ServerMcpServer {
+        try await send(
+            "/v1/mcps/\(pathComponent(id))/oauth-disconnect",
+            method: "POST",
+            body: Optional<EmptyBody>.none
+        )
+    }
+
+    public func removeMcpServer(id: String) async throws {
+        try await sendNoResponse("/v1/mcps/\(pathComponent(id))", method: "DELETE")
+    }
+
+    public func listMcpTools(id: String) async throws -> [ServerMcpTool] {
+        try await get("/v1/mcps/\(pathComponent(id))/tools")
     }
 
     private func harnessAccountsPath(_ harnessId: String) -> String {
@@ -1416,6 +1640,14 @@ private struct AnswerQuestionBody: Encodable {
 
 private struct UpdateHarnessBody: Encodable {
     var enabled: Bool
+}
+
+private struct UpdateMcpEnabledBody: Encodable {
+    var enabled: Bool
+}
+
+private struct DetectMcpAuthBody: Encodable {
+    var url: String
 }
 
 private struct CreateProjectBody: Encodable {

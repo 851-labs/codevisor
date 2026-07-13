@@ -67,4 +67,26 @@ struct ToolCallDiffTotalsTests {
         #expect(ToolCall(toolCallId: "t", title: "Ran ls", kind: .execute, status: .inProgress).displayTitle == "Ran ls")
         #expect(ToolCall(toolCallId: "t", title: "", kind: .execute, status: .inProgress).displayTitle == "Working…")
     }
+
+    @Test("HerdMan gateway names become semantic action titles across harnesses")
+    func gatewayDisplayTitle() {
+        #expect(ToolCall(
+            toolCallId: "claude", title: "herdman.search", status: .completed,
+            rawInput: ["query": "Sentry"]
+        ).displayTitle == "Searched integrations for Sentry")
+        #expect(ToolCall(
+            toolCallId: "codex", title: "mcp__herdman__execute", status: .inProgress,
+            rawInput: ["tool": "find_organizations"]
+        ).displayTitle == "Running find organizations…")
+        #expect(ToolCall(
+            toolCallId: "acp", title: "herdman_describe", status: .completed,
+            rawInput: ["tool": "search_issues"]
+        ).displayTitle == "Inspected search issues")
+        #expect(ToolCall(
+            toolCallId: "code", title: "herdman.run_code", status: .completed
+        ).displayTitle == "Ran an integration workflow")
+        #expect(ToolCall(
+            toolCallId: "search", title: "ToolSearch", status: .completed
+        ).displayTitle == "Searched available tools")
+    }
 }

@@ -49,3 +49,9 @@
 [submodule ".repos/fumadocs"]
 	path = .repos/fumadocs
 	url = https://github.com/fuma-nama/fumadocs.git
+[submodule ".repos/executor"]
+	path = .repos/executor
+	url = https://github.com/UsefulSoftwareCo/executor.git
+[submodule ".repos/modelcontextprotocol"]
+	path = .repos/modelcontextprotocol
+	url = https://github.com/modelcontextprotocol/modelcontextprotocol.git

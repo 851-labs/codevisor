@@ -25,6 +25,8 @@ import type {
 } from "@herdman/api"
 import {
   CreateProjectRequest as CreateProjectRequestSchema,
+  CreateMcpServerRequest as CreateMcpServerRequestSchema,
+  DetectMcpAuthRequest as DetectMcpAuthRequestSchema,
   CreateHarnessAccountRequest as CreateHarnessAccountRequestSchema,
   CreateSessionRequest as CreateSessionRequestSchema,
   CreateWorktreeRequest as CreateWorktreeRequestSchema,
@@ -40,6 +42,7 @@ import {
   UpdateHarnessAccountRequest as UpdateHarnessAccountRequestSchema,
   UpdateQueuedPromptRequest,
   UpdateHarnessRequest as UpdateHarnessRequestSchema,
+  UpdateMcpServerRequest as UpdateMcpServerRequestSchema,
   UpdateProjectRequest as UpdateProjectRequestSchema,
   UpdateSessionRequest as UpdateSessionRequestSchema,
   decode,
@@ -64,6 +67,7 @@ import type { AddressInfo } from "node:net"
 import { Context, Effect, Layer, PubSub, Schema } from "effect"
 import { WebSocket, WebSocketServer } from "ws"
 import type { HarnessAuthManager } from "./harness-auth.js"
+import type { McpManager } from "./mcp-manager.js"
 
 export class ServerError extends Schema.TaggedErrorClass<ServerError>()("ServerError", {
   operation: Schema.String,
@@ -107,6 +111,7 @@ export interface HerdManServerServices {
   readonly agents: AgentRuntimeService
   readonly terminal: TerminalManagerService
   readonly auth?: HarnessAuthManager
+  readonly mcp?: McpManager
 }
 
 export interface RunningHerdManServer {
@@ -289,6 +294,7 @@ export const makeHerdManServerApp = (
     close: serverAttempt("closeApp", () => {
       unsubscribeAuth?.()
       webSocketServer.close()
+      void services.mcp?.close()
     })
   }
   return app
@@ -313,6 +319,7 @@ export const startHerdManServer = (
             const address = server.address()
             /* v8 ignore next -- TCP listen always returns AddressInfo here. */
             const port = isAddressInfo(address) ? address.port : config.port
+            services.mcp?.setBaseUrl(`http://${config.host}:${port}`)
             resolve({
               host: config.host,
               port,
@@ -355,6 +362,36 @@ const handleRequest = async (
     }
     if (request.method === "GET" && url.pathname === "/v1/health") {
       writeJson(response, 200, { ok: true, version: config.version, database: "ready" })
+      return
+    }
+
+    // The gateway carries its own short-lived per-session bearer credential;
+    // do not run it through the machine-pairing token verifier.
+    if (url.pathname === "/mcp/gateway") {
+      if (services.mcp === undefined) throw new HttpFailure(501, "MCP gateway unavailable")
+      await services.mcp.handleGatewayRequest(request, response)
+      return
+    }
+
+    // OAuth providers redirect a browser without the HerdMan API token. The
+    // high-entropy, single-installation state value is validated by the manager.
+    if (request.method === "GET" && url.pathname === "/v1/mcps/oauth/callback") {
+      if (services.mcp === undefined) throw new HttpFailure(501, "MCP gateway unavailable")
+      const state = url.searchParams.get("state")
+      const code = url.searchParams.get("code")
+      if (state === null || code === null) throw new HttpFailure(400, "Missing OAuth callback data")
+      await services.mcp.finishOAuth(state, code)
+      response.writeHead(200, { "content-type": "text/html; charset=utf-8" })
+      response.end(
+        "<!doctype html><title>HerdMan</title><p>Authorization complete. HerdMan is connecting to the MCP server. You can close this window.</p>"
+      )
+      return
+    }
+    if (request.method === "GET" && url.pathname === "/v1/mcps/oauth/complete") {
+      response.writeHead(200, { "content-type": "text/html; charset=utf-8" })
+      response.end(
+        "<!doctype html><title>HerdMan</title><p>HerdMan is reconnecting to the MCP server. You can close this window.</p>"
+      )
       return
     }
 
@@ -441,6 +478,12 @@ const handleRequest = async (
     if (await routeHarnesses(services, request, response, url)) {
       return
     }
+    if (await routeMcps(services, request, response, url)) {
+      return
+    }
+    if (await routeMcpScopes(services, request, response, url)) {
+      return
+    }
     if (await routeSessions(services, fanout, routeState, request, response, url, config)) {
       return
     }
@@ -455,6 +498,121 @@ const handleRequest = async (
   } catch (cause) {
     writeFailure(response, cause)
   }
+}
+
+const routeMcps = async (
+  services: HerdManServerServices,
+  request: IncomingMessage,
+  response: ServerResponse,
+  url: URL
+): Promise<boolean> => {
+  const manager = services.mcp
+  if (!url.pathname.startsWith("/v1/mcps")) return false
+  if (manager === undefined) throw new HttpFailure(501, "MCP gateway unavailable")
+
+  if (url.pathname === "/v1/mcps") {
+    if (request.method === "GET") {
+      writeJson(response, 200, await manager.list())
+      return true
+    }
+    if (request.method === "POST") {
+      writeJson(
+        response,
+        201,
+        await manager.create(await readSchema(request, CreateMcpServerRequestSchema))
+      )
+      return true
+    }
+  }
+
+  if (url.pathname === "/v1/mcps/detect-auth" && request.method === "POST") {
+    const payload = await readSchema(request, DetectMcpAuthRequestSchema)
+    writeJson(response, 200, await manager.detectAuth(payload.url))
+    return true
+  }
+
+  const toolsId = matchRoute(url.pathname, "/v1/mcps/:id/tools")
+  if (toolsId !== undefined && request.method === "GET") {
+    writeJson(response, 200, await manager.tools(toolsId))
+    return true
+  }
+
+  const action = matchRouteParams(url.pathname, "/v1/mcps/:id/:action")
+  if (action !== undefined && request.method === "POST") {
+    switch (action.action) {
+      case "connect":
+        writeJson(response, 200, await manager.connect(action.id!))
+        return true
+      case "oauth-start":
+        writeJson(response, 201, {
+          authorizationUrl: await manager.beginOAuth(action.id!, url.origin)
+        })
+        return true
+      case "oauth-disconnect":
+        writeJson(response, 200, await manager.disconnectOAuth(action.id!))
+        return true
+      default:
+        break
+    }
+  }
+
+  const id = matchRoute(url.pathname, "/v1/mcps/:id")
+  if (id !== undefined) {
+    if (request.method === "PATCH") {
+      writeJson(
+        response,
+        200,
+        await manager.update(id, await readSchema(request, UpdateMcpServerRequestSchema))
+      )
+      return true
+    }
+    if (request.method === "DELETE") {
+      await manager.remove(id)
+      writeJson(response, 204, undefined)
+      return true
+    }
+  }
+  return false
+}
+
+const routeMcpScopes = async (
+  services: HerdManServerServices,
+  request: IncomingMessage,
+  response: ServerResponse,
+  url: URL
+): Promise<boolean> => {
+  const manager = services.mcp
+  const projectRoute = matchRouteParams(url.pathname, "/v1/projects/:id/mcps/:mcpId")
+  if (projectRoute !== undefined && request.method === "PATCH") {
+    if (manager === undefined) throw new HttpFailure(501, "MCP gateway unavailable")
+    const payload = await readSchema(request, UpdateMcpServerRequestSchema)
+    if (payload.enabled === undefined) throw new HttpFailure(400, "enabled is required")
+    writeJson(
+      response,
+      200,
+      await manager.setProjectEnabled(projectRoute.id!, projectRoute.mcpId!, payload.enabled)
+    )
+    return true
+  }
+  const sessionRoute = matchRouteParams(url.pathname, "/v1/sessions/:id/mcps/:mcpId")
+  if (sessionRoute !== undefined && request.method === "PATCH") {
+    if (manager === undefined) throw new HttpFailure(501, "MCP gateway unavailable")
+    const payload = await readSchema(request, UpdateMcpServerRequestSchema)
+    if (payload.enabled === undefined) throw new HttpFailure(400, "enabled is required")
+    const session = await run(services.db.getSessionSummary(sessionRoute.id!))
+    writeJson(
+      response,
+      200,
+      await manager.setSessionEnabled(
+        session.id,
+        sessionRoute.mcpId!,
+        payload.enabled,
+        session.projectId
+      )
+    )
+    return true
+  }
+  return false
 }
 
 const routeProjects = async (
@@ -1056,6 +1214,7 @@ const createServerSession = async (
   // The session id is generated up front so the standing event sink can bind
   // to it before the agent session exists.
   const sessionId = payload.id ?? randomUUID()
+  const toolGateway = await services.mcp?.issueGateway(sessionId, project.id)
   const agentSessionId =
     payload.deferAgentSession === true
       ? ""
@@ -1065,7 +1224,8 @@ const createServerSession = async (
             payload.harnessId,
             cwd,
             sessionEventSink(services, fanout, serverId, sessionId),
-            accountContext
+            accountContext,
+            toolGateway
           )
         )))
   return run(
@@ -1930,12 +2090,14 @@ const ensureAgentSessionFor = async (
     await run(services.db.bindSessionHarnessAccount(session.id, accountContext.id))
   }
   if (session.agentSessionId === "") {
+    const toolGateway = await services.mcp?.issueGateway(session.id, session.projectId)
     const agentSessionId = await run(
       services.agents.createAgentSession(
         session.harnessId,
         cwd,
         sessionEventSink(services, fanout, serverId, sessionId),
-        accountContext
+        accountContext,
+        toolGateway
       )
     )
     const updatedSession = await run(services.db.updateSession(sessionId, { agentSessionId }))
@@ -1952,18 +2114,21 @@ const ensureAgentSessionFor = async (
         agentSessionId,
         cwd,
         sessionEventSink(services, fanout, serverId, sessionId),
-        accountContext
+        accountContext,
+        toolGateway
       )
     )
   }
   const agentSessionId = session.agentSessionId ?? sessionId
+  const toolGateway = await services.mcp?.issueGateway(session.id, session.projectId)
   return run(
     services.agents.loadAgentSession(
       session.harnessId,
       agentSessionId,
       cwd,
       sessionEventSink(services, fanout, serverId, sessionId),
-      accountContext
+      accountContext,
+      toolGateway
     )
   )
 }

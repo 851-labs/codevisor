@@ -30,6 +30,7 @@ import {
   type HerdManServerUpdater
 } from "./server.js"
 import { makeHarnessAuthManager } from "./harness-auth.js"
+import { makeMcpManager } from "./mcp-manager.js"
 
 const SERVER_PROCESS_TITLE = "herdman-server"
 
@@ -352,6 +353,7 @@ const main = Effect.gen(function* () {
     terminal,
     preferDeviceCode: (kind ?? (host === "127.0.0.1" ? "local" : "remote")) === "remote"
   })
+  const mcp = makeMcpManager({ db, dataDir: dirname(databasePath) })
   // Self-heal PATH at boot, fire-and-forget: CLI-/brew-launched servers
   // inherit whatever PATH the parent had, and a slow login-shell probe must
   // not delay the health endpoint the launching app is waiting on.
@@ -361,6 +363,7 @@ const main = Effect.gen(function* () {
       agents,
       auth,
       db,
+      mcp,
       terminal
     },
     defaultServerConfig({

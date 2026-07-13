@@ -133,6 +133,102 @@ export const UpdateHarnessRequest = Schema.Struct({
 })
 export type UpdateHarnessRequest = typeof UpdateHarnessRequest.Type
 
+export const McpTransport = Schema.Literals(["http", "stdio"])
+export type McpTransport = typeof McpTransport.Type
+
+export const McpAuthType = Schema.Literals(["none", "bearer", "oauth"])
+export type McpAuthType = typeof McpAuthType.Type
+
+export const DetectMcpAuthRequest = Schema.Struct({ url: Schema.String })
+export type DetectMcpAuthRequest = typeof DetectMcpAuthRequest.Type
+
+export const McpAuthDetection = Schema.Struct({
+  authType: McpAuthType,
+  detail: Schema.String,
+  suggestedName: Schema.optional(Schema.String)
+})
+export type McpAuthDetection = typeof McpAuthDetection.Type
+
+export const McpConnectionState = Schema.Literals([
+  "disconnected",
+  "connecting",
+  "connected",
+  "needsAuthorization",
+  "expired",
+  "error"
+])
+export type McpConnectionState = typeof McpConnectionState.Type
+
+export const McpServer = Schema.Struct({
+  id: Schema.String,
+  name: Schema.String,
+  transport: McpTransport,
+  url: Schema.optional(Schema.String),
+  command: Schema.optional(Schema.String),
+  args: Schema.Array(Schema.String),
+  headerNames: Schema.optional(Schema.Array(Schema.String)),
+  environmentNames: Schema.optional(Schema.Array(Schema.String)),
+  enabled: Schema.Boolean,
+  authType: McpAuthType,
+  oauthScope: Schema.optional(Schema.String),
+  connectionState: McpConnectionState,
+  toolCount: Schema.Number,
+  detail: Schema.optional(Schema.String),
+  createdAt: Schema.String,
+  updatedAt: Schema.String
+})
+export type McpServer = typeof McpServer.Type
+
+export const McpTool = Schema.Struct({
+  serverId: Schema.String,
+  serverName: Schema.String,
+  name: Schema.String,
+  title: Schema.optional(Schema.String),
+  description: Schema.optional(Schema.String),
+  inputSchema: Schema.Unknown
+})
+export type McpTool = typeof McpTool.Type
+
+export const CreateMcpServerRequest = Schema.Struct({
+  name: Schema.String,
+  transport: McpTransport,
+  url: Schema.optional(Schema.String),
+  command: Schema.optional(Schema.String),
+  args: Schema.optional(Schema.Array(Schema.String)),
+  env: Schema.optional(Schema.Record(Schema.String, Schema.String)),
+  headers: Schema.optional(Schema.Record(Schema.String, Schema.String)),
+  enabled: Schema.optional(Schema.Boolean),
+  authType: Schema.optional(McpAuthType),
+  bearerToken: Schema.optional(Schema.String),
+  oauthScope: Schema.optional(Schema.String),
+  oauthClientId: Schema.optional(Schema.String),
+  oauthClientSecret: Schema.optional(Schema.String)
+})
+export type CreateMcpServerRequest = typeof CreateMcpServerRequest.Type
+
+export const UpdateMcpServerRequest = Schema.Struct({
+  name: Schema.optional(Schema.String),
+  enabled: Schema.optional(Schema.Boolean),
+  url: Schema.optional(Schema.String),
+  command: Schema.optional(Schema.String),
+  args: Schema.optional(Schema.Array(Schema.String)),
+  env: Schema.optional(Schema.Record(Schema.String, Schema.String)),
+  headers: Schema.optional(Schema.Record(Schema.String, Schema.String)),
+  removeEnv: Schema.optional(Schema.Array(Schema.String)),
+  removeHeaders: Schema.optional(Schema.Array(Schema.String)),
+  authType: Schema.optional(McpAuthType),
+  bearerToken: Schema.optional(Schema.String),
+  oauthScope: Schema.optional(Schema.String),
+  oauthClientId: Schema.optional(Schema.String),
+  oauthClientSecret: Schema.optional(Schema.String)
+})
+export type UpdateMcpServerRequest = typeof UpdateMcpServerRequest.Type
+
+export const McpOAuthStartResponse = Schema.Struct({
+  authorizationUrl: Schema.String
+})
+export type McpOAuthStartResponse = typeof McpOAuthStartResponse.Type
+
 /// A session from a harness's own on-disk store (run before/outside
 /// HerdMan) — the source for onboarding's workspace suggestions and
 /// "import existing chats".

@@ -128,6 +128,15 @@ export interface HarnessAccountContext {
   readonly env?: Readonly<Record<string, string>>
 }
 
+/// A session-scoped credential for HerdMan's single MCP tool gateway. It is
+/// intentionally distinct from upstream MCP credentials, which never leave
+/// the server process.
+export interface ToolGatewayConfig {
+  readonly name: string
+  readonly url: string
+  readonly bearerToken: string
+}
+
 export interface HarnessAuthInspection {
   readonly state: "authenticated" | "unauthenticated" | "notRequired" | "error"
   readonly methods: ReadonlyArray<{
@@ -185,14 +194,16 @@ export interface AgentProvider {
     definition: HarnessDefinition,
     cwd: string,
     emit: RuntimeEmit,
-    account?: HarnessAccountContext
+    account?: HarnessAccountContext,
+    toolGateway?: ToolGatewayConfig
   ) => Effect.Effect<CreatedAgentSession, AgentRuntimeError>
   readonly loadSession: (
     definition: HarnessDefinition,
     agentSessionId: string,
     cwd: string,
     emit: RuntimeEmit,
-    account?: HarnessAccountContext
+    account?: HarnessAccountContext,
+    toolGateway?: ToolGatewayConfig
   ) => Effect.Effect<LoadedAgentSession, AgentRuntimeError>
   /// Sessions from the harness's own on-disk store (run before/outside
   /// HerdMan) — powers onboarding's workspace suggestions and "import

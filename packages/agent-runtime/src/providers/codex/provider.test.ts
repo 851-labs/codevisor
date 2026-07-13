@@ -197,6 +197,53 @@ describe("CodexProvider", () => {
     vi.useRealTimers()
   })
 
+  it("preserves MCP arguments and results for semantic tool-call presentation", async () => {
+    const { client, events } = await setup()
+    client.emit("item/started", {
+      item: {
+        arguments: { server: "server-id", tool: "find_organizations" },
+        id: "mcp-1",
+        server: "herdman",
+        status: "inProgress",
+        tool: "execute",
+        type: "mcpToolCall"
+      },
+      threadId: "thread-new",
+      turnId: "turn-1"
+    })
+    client.emit("item/completed", {
+      item: {
+        arguments: { server: "server-id", tool: "find_organizations" },
+        id: "mcp-1",
+        result: { content: [{ text: "ok", type: "text" }] },
+        server: "herdman",
+        status: "completed",
+        tool: "execute",
+        type: "mcpToolCall"
+      },
+      threadId: "thread-new",
+      turnId: "turn-1"
+    })
+
+    const payloads = events.map((event) => event.payload as Record<string, unknown>)
+    expect(payloads).toContainEqual(
+      expect.objectContaining({
+        rawInput: { server: "server-id", tool: "find_organizations" },
+        sessionUpdate: "tool_call",
+        title: "herdman.execute",
+        toolCallId: "mcp-1"
+      })
+    )
+    expect(payloads).toContainEqual(
+      expect.objectContaining({
+        rawOutput: { content: [{ text: "ok", type: "text" }] },
+        sessionUpdate: "tool_call_update",
+        status: "completed",
+        toolCallId: "mcp-1"
+      })
+    )
+  })
+
   it("handshakes, starts a thread, and reports config options", async () => {
     const { client, created, spawns } = await setup()
     expect(spawns[0]).toMatchObject({ command: "/bin/codex", cwd: "/tmp/project" })
@@ -1124,7 +1171,7 @@ describe("CodexProvider", () => {
       threadId: "thread-new",
       turnId: "turn-1"
     })
-    expect((events.at(-1)?.payload as Record<string, unknown>).sessionUpdate).toBe("tool_call")
+    expect((events.at(-1)!.payload as Record<string, unknown>).sessionUpdate).toBe("tool_call")
   })
 
   it("counts add/delete changes from raw content, updates from unified diffs", async () => {
@@ -1135,7 +1182,7 @@ describe("CodexProvider", () => {
       threadId: "thread-new",
       turnId: "turn-1"
     })
-    expect((events.at(-1)?.payload as Record<string, unknown>).diffStats).toEqual([
+    expect((events.at(-1)!.payload as Record<string, unknown>).diffStats).toEqual([
       { added: 3, path: "new.txt", removed: 0 }
     ])
     client.emit("item/completed", {

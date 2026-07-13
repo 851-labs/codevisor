@@ -35,7 +35,8 @@ import {
   type QuestionAnswer,
   type RuntimeEmit,
   type RuntimeEvent,
-  type SetGoalUpdate
+  type SetGoalUpdate,
+  type ToolGatewayConfig
 } from "../../types.js"
 import { findKnownModel, highestThinkingLevel, sanitizeModelValue } from "../model-selection.js"
 import { spawnCodexClient, type CodexClient, type CodexConnector } from "./client.js"
@@ -294,13 +295,18 @@ export const makeCodexProvider = (
   const connect = async (
     definition: HarnessDefinition,
     cwd: string,
-    account?: HarnessAccountContext
+    account?: HarnessAccountContext,
+    toolGateway?: ToolGatewayConfig
   ): Promise<CodexClient> => {
     const command = locateCodex(definition)
     const client = await connector({
       command,
       cwd,
-      env: { ...environment.env, ...account?.env }
+      env: {
+        ...environment.env,
+        ...account?.env,
+        ...(toolGateway === undefined ? {} : { HERDMAN_MCP_GATEWAY_TOKEN: toolGateway.bearerToken })
+      }
     })
     await client.request("initialize", {
       // experimentalApi unlocks turn/start.collaborationMode (Plan mode) and
@@ -318,20 +324,43 @@ export const makeCodexProvider = (
     cwd: string,
     emit: RuntimeEmit,
     resumeThreadId: string | undefined,
-    account?: HarnessAccountContext
+    account?: HarnessAccountContext,
+    toolGateway?: ToolGatewayConfig
   ): Promise<CodexSession> => {
-    const client = await connect(definition, cwd, account)
+    const client = await connect(definition, cwd, account, toolGateway)
+    const threadConfig =
+      toolGateway === undefined
+        ? undefined
+        : {
+            mcp_servers: {
+              [toolGateway.name]: {
+                url: toolGateway.url,
+                bearer_token_env_var: "HERDMAN_MCP_GATEWAY_TOKEN",
+                default_tools_approval_mode: "approve"
+              }
+            }
+          }
     let response: { thread?: { id?: string }; model?: string }
     if (resumeThreadId === undefined) {
-      response = await client.request("thread/start", { cwd })
+      response = await client.request("thread/start", {
+        cwd,
+        ...(threadConfig === undefined ? {} : { config: threadConfig })
+      })
     } else {
       try {
-        response = await client.request("thread/resume", { cwd, threadId: resumeThreadId })
+        response = await client.request("thread/resume", {
+          cwd,
+          threadId: resumeThreadId,
+          ...(threadConfig === undefined ? {} : { config: threadConfig })
+        })
       } catch {
         // Sessions created by the old codex-acp adapter may not be app-server
         // thread ids; fall back to a fresh thread rather than failing the
         // session outright (history is lost, the session keeps working).
-        response = await client.request("thread/start", { cwd })
+        response = await client.request("thread/start", {
+          cwd,
+          ...(threadConfig === undefined ? {} : { config: threadConfig })
+        })
       }
     }
     const threadId = response.thread?.id
@@ -649,10 +678,11 @@ export const makeCodexProvider = (
       definition,
       cwd,
       emit,
-      account
+      account,
+      toolGateway
     ): Effect.Effect<CreatedAgentSession, AgentRuntimeError> =>
       adapterPromise("createSession", async () => {
-        const session = await startSession(definition, cwd, emit, undefined, account)
+        const session = await startSession(definition, cwd, emit, undefined, account, toolGateway)
         return {
           handle: handleFor(session),
           metadata: {
@@ -669,10 +699,18 @@ export const makeCodexProvider = (
       agentSessionId,
       cwd,
       emit,
-      account
+      account,
+      toolGateway
     ): Effect.Effect<LoadedAgentSession, AgentRuntimeError> =>
       adapterPromise("loadSession", async () => {
-        const session = await startSession(definition, cwd, emit, agentSessionId, account)
+        const session = await startSession(
+          definition,
+          cwd,
+          emit,
+          agentSessionId,
+          account,
+          toolGateway
+        )
         return {
           handle: handleFor(session),
           metadata: {
@@ -1679,7 +1717,8 @@ const emitItemLifecycle = (
             sessionUpdate: "tool_call",
             status: "in_progress",
             title,
-            toolCallId: itemId
+            toolCallId: itemId,
+            ...(item.arguments === undefined ? {} : { rawInput: item.arguments })
           })
         )
       } else {
@@ -1687,7 +1726,12 @@ const emitItemLifecycle = (
           event({
             sessionUpdate: "tool_call_update",
             status: item.status === "failed" ? "failed" : "completed",
-            toolCallId: itemId
+            toolCallId: itemId,
+            ...(item.result !== undefined && item.result !== null
+              ? { rawOutput: item.result }
+              : item.error !== undefined && item.error !== null
+                ? { rawOutput: item.error }
+                : {})
           })
         )
       }
