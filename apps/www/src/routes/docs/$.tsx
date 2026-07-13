@@ -21,10 +21,11 @@ export const Route = createFileRoute("/docs/$")({
   },
   head: ({ loaderData }) => ({
     meta: [
-      { title: `${loaderData?.title ?? "Server docs"} — HerdMan` },
+      { title: `${loaderData?.title ?? "Server docs"} — Codevisor` },
       {
         name: "description",
-        content: loaderData?.description ?? "Documentation for the experimental HerdMan Server API."
+        content:
+          loaderData?.description ?? "Documentation for the experimental Codevisor Server API."
       }
     ]
   })

@@ -1,18 +1,18 @@
-import type { Harness } from "@herdman/api"
+import type { Harness } from "@codevisor/api"
 import Database from "better-sqlite3"
 import { Effect } from "effect"
 import { mkdtempSync, rmSync } from "node:fs"
 import { homedir, tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
-import { DatabaseError, HerdManDatabase, makeDatabase, worktreePath } from "./index.js"
+import { DatabaseError, CodevisorDatabase, makeDatabase, worktreePath } from "./index.js"
 
 const tempDirs: Array<string> = []
 
 const tempDatabase = (): string => {
-  const dir = mkdtempSync(join(tmpdir(), "herdman-db-"))
+  const dir = mkdtempSync(join(tmpdir(), "codevisor-db-"))
   tempDirs.push(dir)
-  return join(dir, "herdman.sqlite")
+  return join(dir, "codevisor.sqlite")
 }
 
 const run = <A>(effect: Effect.Effect<A, DatabaseError>): Promise<A> => Effect.runPromise(effect)
@@ -123,9 +123,12 @@ const buildV4Fixture = (filename: string): void => {
     );
 
     insert into workspaces (id, name, folder_path, is_archived, symbol_name, origin, created_at)
-      values ('ws-1', 'HerdMan', '/tmp/herdman', 0, 'folder', 'herdman', '2026-06-01T00:00:00.000Z');
+      values ('ws-1', 'Codevisor', '/tmp/codevisor', 0, 'folder', 'herdman', '2026-06-01T00:00:00.000Z');
     insert into sessions (id, workspace_id, server_id, harness_id, agent_session_id, title, origin, is_archived, created_at)
       values ('sess-1', 'ws-1', 'local', 'codex', 'agent-1', 'Old Session', 'herdman', 0, '2026-06-01T01:00:00.000Z');
+    insert into events (server_id, kind, subject_id, created_at, payload)
+      values ('local', 'session.created', 'sess-1', '2026-06-01T01:00:00.000Z',
+        '{"id":"sess-1","origin":"herdman"}');
     insert into conversation_items (id, session_id, role, text, created_at, is_generating, message_id)
       values ('conv-1', 'sess-1', 'user', 'hello', '2026-06-01T01:01:00.000Z', 0, 'user-1');
     insert into prompt_queue_items (id, session_id, text, created_at, updated_at)
@@ -136,7 +139,7 @@ const buildV4Fixture = (filename: string): void => {
   sqlite.close()
 }
 
-describe("@herdman/db", () => {
+describe("@codevisor/db", () => {
   it("persists harness accounts, selection, auth state, and session bindings", async () => {
     const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
     const project = await run(db.createProject({ name: "Auth", folderPath: "/tmp/auth" }))
@@ -441,13 +444,13 @@ describe("@herdman/db", () => {
 
     const projects = await run(db.listProjects)
     expect(projects).toHaveLength(1)
-    expect(projects[0]).toMatchObject({ id: "ws-1", name: "HerdMan", origin: "herdman" })
+    expect(projects[0]).toMatchObject({ id: "ws-1", name: "Codevisor", origin: "codevisor" })
     expect(projects[0]?.locations).toEqual([
       {
         id: "ws-1",
         projectId: "ws-1",
         serverId: "machine-a",
-        folderPath: "/tmp/herdman",
+        folderPath: "/tmp/codevisor",
         createdAt: "2026-06-01T00:00:00.000Z"
       }
     ])
@@ -457,7 +460,7 @@ describe("@herdman/db", () => {
       projectId: "ws-1",
       harnessId: "codex",
       agentSessionId: "agent-1",
-      cwd: "/tmp/herdman"
+      cwd: "/tmp/codevisor"
     })
     expect(detail.session.worktreeName).toBeUndefined()
     expect(detail.conversation.map((item) => item.text)).toEqual(["hello"])
@@ -468,6 +471,24 @@ describe("@herdman/db", () => {
     expect(await run(db.getSessionActionResult("sess-1", "action-1"))).toEqual({})
 
     const sqlite = new Database(filename)
+    expect(
+      JSON.parse(
+        (
+          sqlite.prepare("select payload from events where subject_id = 'sess-1'").get() as {
+            payload: string
+          }
+        ).payload
+      )
+    ).toMatchObject({ origin: "codevisor" })
+    expect(
+      JSON.parse(
+        (
+          sqlite
+            .prepare("select payload from session_events where session_id = 'sess-1'")
+            .get() as { payload: string }
+        ).payload
+      )
+    ).toMatchObject({ origin: "codevisor" })
     expect(
       sqlite
         .prepare("select name from sqlite_master where type = 'table' and name = 'workspaces'")
@@ -490,7 +511,7 @@ describe("@herdman/db", () => {
     sqlite
       .prepare(
         `insert into sessions (id, workspace_id, server_id, harness_id, title, origin, is_archived, created_at)
-         values ('orphan', 'missing-workspace', 'local', 'codex', 'Orphan', 'herdman', 0, '2026-06-01T02:00:00.000Z')`
+         values ('orphan', 'missing-workspace', 'local', 'codex', 'Orphan', 'codevisor', 0, '2026-06-01T02:00:00.000Z')`
       )
       .run()
     sqlite.close()
@@ -506,7 +527,7 @@ describe("@herdman/db", () => {
 
     expect(await run(db.migrate)).toEqual([])
 
-    const firstProject = await run(db.createProject({ folderPath: "/tmp/herdman" }))
+    const firstProject = await run(db.createProject({ folderPath: "/tmp/codevisor" }))
     const secondProject = await run(
       db.createProject({ folderPath: "/tmp/named", name: "Named Project" })
     )
@@ -522,7 +543,7 @@ describe("@herdman/db", () => {
         createdAt: "2026-06-30T00:00:00.000Z"
       })
     )
-    expect(firstProject.name).toBe("herdman")
+    expect(firstProject.name).toBe("codevisor")
     expect(secondProject.name).toBe("Named Project")
     expect(emptyProject.name).toBe("")
     expect(clientProject).toMatchObject({
@@ -543,13 +564,13 @@ describe("@herdman/db", () => {
     const updatedProject = await run(
       db.updateProject(firstProject.id, {
         isArchived: true,
-        name: "Archived HerdMan",
+        name: "Archived Codevisor",
         symbolName: "archivebox"
       })
     )
     expect(updatedProject).toMatchObject({
       isArchived: true,
-      name: "Archived HerdMan",
+      name: "Archived Codevisor",
       symbolName: "archivebox"
     })
     expect(await run(db.updateProject(secondProject.id, {}))).toMatchObject({
@@ -590,7 +611,7 @@ describe("@herdman/db", () => {
     )
     expect(firstSession.title).toBe("New Session")
     expect(firstSession.agentSessionId).toBe("agent-1")
-    expect(firstSession.cwd).toBe("/tmp/herdman")
+    expect(firstSession.cwd).toBe("/tmp/codevisor")
     expect(firstSession.worktreeName).toBeUndefined()
     expect(secondSession.title).toBe("Explicit title")
     expect(clientSession).toMatchObject({
@@ -1555,13 +1576,13 @@ describe("@herdman/db", () => {
     const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
     const project = await run(db.createProject({ folderPath: "/tmp/worktree-project" }))
 
-    const worktree = await run(db.createWorktree(project.id, "fix-auth", "herdman/fix-auth"))
+    const worktree = await run(db.createWorktree(project.id, "fix-auth", "codevisor/fix-auth"))
     expect(worktree).toMatchObject({
       projectId: project.id,
       serverId: "local",
       name: "fix-auth",
-      branch: "herdman/fix-auth",
-      path: join(homedir(), "herdman", project.id, "fix-auth")
+      branch: "codevisor/fix-auth",
+      path: join(homedir(), "codevisor", project.id, "fix-auth")
     })
     expect(worktree.path).toBe(worktreePath(project.id, "fix-auth"))
 
@@ -1570,10 +1591,10 @@ describe("@herdman/db", () => {
 
     // Same name for the same project on the same server is rejected.
     await expect(
-      run(db.createWorktree(project.id, "fix-auth", "herdman/fix-auth-2"))
+      run(db.createWorktree(project.id, "fix-auth", "codevisor/fix-auth-2"))
     ).rejects.toBeInstanceOf(DatabaseError)
     await expect(
-      run(db.createWorktree("missing", "fix-auth", "herdman/fix-auth"))
+      run(db.createWorktree("missing", "fix-auth", "codevisor/fix-auth"))
     ).rejects.toBeInstanceOf(DatabaseError)
 
     const session = await run(
@@ -1586,7 +1607,7 @@ describe("@herdman/db", () => {
     expect(session.worktreeName).toBe("fix-auth")
     expect(session.cwd).toBe(worktreePath(project.id, "fix-auth"))
 
-    const doomed = await run(db.createWorktree(project.id, "doomed", "herdman/doomed"))
+    const doomed = await run(db.createWorktree(project.id, "doomed", "codevisor/doomed"))
     await run(db.deleteWorktree(doomed.id))
     expect((await run(db.listWorktrees(project.id))).map((w) => w.name)).toEqual(["fix-auth"])
     // Deleting an unknown worktree is a no-op rather than an error.
@@ -1692,13 +1713,13 @@ describe("@herdman/db", () => {
   it("constructs the Effect service layer", async () => {
     const info = await Effect.runPromise(
       Effect.gen(function* () {
-        const db = yield* HerdManDatabase
+        const db = yield* CodevisorDatabase
         const update = yield* db.getUpdateInfo
         yield* db.close
         return update
       }).pipe(
         Effect.provide(
-          HerdManDatabase.layer({
+          CodevisorDatabase.layer({
             filename: tempDatabase(),
             serverId: "layered"
           })

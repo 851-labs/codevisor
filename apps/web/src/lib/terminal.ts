@@ -1,10 +1,10 @@
 // Terminal transport: POST /v1/terminals to create, then a WebSocket carrying
-// JSON frames (TerminalClientFrame / TerminalServerFrame from @herdman/api).
+// JSON frames (TerminalClientFrame / TerminalServerFrame from @codevisor/api).
 // Reconnects resume from the last seen output sequence, which the server
 // replays from its buffer.
-import { decode, type TerminalClientFrame, TerminalServerFrame } from "@herdman/api"
+import { decode, type TerminalClientFrame, TerminalServerFrame } from "@codevisor/api"
 
-import type { HerdManClient } from "./client"
+import type { CodevisorClient } from "./client"
 import type { ServerConfig } from "./server-config"
 
 const decodeServerFrame = decode(TerminalServerFrame)
@@ -21,7 +21,7 @@ function reconnectDelayMs(failures: number): number {
 }
 
 export class TerminalTransport {
-  private readonly client: HerdManClient
+  private readonly client: CodevisorClient
   private readonly config: ServerConfig
   private readonly delegate: TerminalDelegate
   private readonly clientId = crypto.randomUUID()
@@ -33,7 +33,7 @@ export class TerminalTransport {
   private failures = 0
   private closed = false
 
-  constructor(client: HerdManClient, config: ServerConfig, delegate: TerminalDelegate) {
+  constructor(client: CodevisorClient, config: ServerConfig, delegate: TerminalDelegate) {
     this.client = client
     this.config = config
     this.delegate = delegate

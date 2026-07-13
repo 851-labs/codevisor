@@ -5,9 +5,9 @@ import { join } from "node:path"
 /// Native harness session discovery.
 ///
 /// Onboarding suggests workspaces from the coding-agent sessions the user ran
-/// BEFORE ever installing HerdMan, and "import existing chats" lists them —
+/// BEFORE ever installing Codevisor, and "import existing chats" lists them —
 /// so these must come from the harnesses' own on-disk stores (Claude Code's
-/// `~/.claude/projects`, Codex's `~/.codex/sessions`), not HerdMan's
+/// `~/.claude/projects`, Codex's `~/.codex/sessions`), not Codevisor's
 /// database, which is empty on a fresh install by definition.
 
 /// One session from a harness's native store.

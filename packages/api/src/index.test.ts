@@ -20,21 +20,36 @@ import {
   makeOpenApiDocument
 } from "./index.js"
 
-describe("@herdman/api", () => {
-  it("decodes and encodes project payloads", () => {
-    const project = decode(Project)({
+describe("@codevisor/api", () => {
+  it("normalizes pre-rename session origins", () => {
+    const legacy = decode(Project)({
       id: "project-1",
-      name: "HerdMan",
+      name: "Legacy",
       isArchived: false,
       symbolName: "folder",
       origin: "herdman",
+      createdAt: "2026-06-30T00:00:00.000Z",
+      locations: []
+    })
+
+    expect(legacy.origin).toBe("codevisor")
+    expect(encode(Project)(legacy).origin).toBe("codevisor")
+  })
+
+  it("decodes and encodes project payloads", () => {
+    const project = decode(Project)({
+      id: "project-1",
+      name: "Codevisor",
+      isArchived: false,
+      symbolName: "folder",
+      origin: "codevisor",
       createdAt: "2026-06-30T00:00:00.000Z",
       locations: [
         {
           id: "location-1",
           projectId: "project-1",
           serverId: "local",
-          folderPath: "/Users/me/src/HerdMan",
+          folderPath: "/Users/me/src/Codevisor",
           createdAt: "2026-06-30T00:00:00.000Z",
           isGitRepository: true
         }
@@ -43,17 +58,17 @@ describe("@herdman/api", () => {
 
     expect(encode(Project)(project)).toEqual({
       id: "project-1",
-      name: "HerdMan",
+      name: "Codevisor",
       isArchived: false,
       symbolName: "folder",
-      origin: "herdman",
+      origin: "codevisor",
       createdAt: "2026-06-30T00:00:00.000Z",
       locations: [
         {
           id: "location-1",
           projectId: "project-1",
           serverId: "local",
-          folderPath: "/Users/me/src/HerdMan",
+          folderPath: "/Users/me/src/Codevisor",
           createdAt: "2026-06-30T00:00:00.000Z",
           isGitRepository: true
         }
@@ -65,8 +80,8 @@ describe("@herdman/api", () => {
     expect(
       decode(CreateProjectRequest)({
         id: "project-1",
-        folderPath: "/Users/me/src/HerdMan",
-        name: "HerdMan",
+        folderPath: "/Users/me/src/Codevisor",
+        name: "Codevisor",
         isArchived: true,
         symbolName: "archivebox",
         origin: "imported",
@@ -86,7 +101,7 @@ describe("@herdman/api", () => {
         harnessId: "codex",
         agentSessionId: "agent-1",
         title: "Synced",
-        origin: "herdman",
+        origin: "codevisor",
         isArchived: false,
         deferAgentSession: true,
         worktreeName: "fix-auth",
@@ -109,11 +124,11 @@ describe("@herdman/api", () => {
         projectId: "project-1",
         serverId: "local",
         name: "fix-auth",
-        branch: "herdman/fix-auth",
-        path: "/Users/me/herdman/project-1/fix-auth",
+        branch: "codevisor/fix-auth",
+        path: "/Users/me/codevisor/project-1/fix-auth",
         createdAt: "2026-06-30T00:00:00.000Z"
       }).branch
-    ).toBe("herdman/fix-auth")
+    ).toBe("codevisor/fix-auth")
 
     expect(decode(CreateWorktreeRequest)({})).toEqual({})
     expect(decode(CreateWorktreeRequest)({ name: "fix-auth" })).toEqual({ name: "fix-auth" })
@@ -137,9 +152,9 @@ describe("@herdman/api", () => {
         worktreeId: "worktree-1",
         projectId: "project-1",
         name: "fix-auth",
-        branch: "herdman/fix-auth",
+        branch: "codevisor/fix-auth",
         stream: "stderr",
-        line: "Preparing worktree (new branch 'herdman/fix-auth')"
+        line: "Preparing worktree (new branch 'codevisor/fix-auth')"
       }).line
     ).toContain("Preparing worktree")
 
@@ -149,8 +164,8 @@ describe("@herdman/api", () => {
         worktreeId: "worktree-1",
         projectId: "project-1",
         name: "fix-auth",
-        branch: "herdman/fix-auth",
-        message: "fatal: a branch named 'herdman/fix-auth' already exists",
+        branch: "codevisor/fix-auth",
+        message: "fatal: a branch named 'codevisor/fix-auth' already exists",
         durationMs: 42
       }).durationMs
     ).toBe(42)
@@ -201,7 +216,7 @@ describe("@herdman/api", () => {
         serverId: "local",
         harnessId: "codex",
         title: "Synced",
-        origin: "herdman",
+        origin: "codevisor",
         isArchived: false,
         createdAt: "2026-06-30T00:00:00.000Z"
       },

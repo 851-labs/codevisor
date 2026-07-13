@@ -1,5 +1,5 @@
 {
-  "name": "@herdman/macos",
+  "name": "@codevisor/macos",
   "private": true,
   "type": "module",
   "description": "Build-time script dependencies for the native macOS app (theme vendoring, highlighter bundling). No runtime JS ships from here except the committed highlighter bundle.",

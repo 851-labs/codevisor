@@ -11,8 +11,8 @@ import type {
   SessionConfigOption,
   SessionGoal,
   SessionModeState
-} from "@herdman/api"
-import { isoTimestamp } from "@herdman/api"
+} from "@codevisor/api"
+import { isoTimestamp } from "@codevisor/api"
 import { execFile } from "node:child_process"
 import { randomUUID } from "node:crypto"
 import { readFileSync } from "node:fs"
@@ -66,7 +66,7 @@ const SETTABLE_EFFORT_LEVELS = new Set(["low", "medium", "high", "xhigh", "max"]
 const PLAN_TOOLS = new Set(["TodoWrite", "ExitPlanMode"])
 
 /// Newer headless Claude sessions use an incremental task API in every
-/// permission mode instead of TodoWrite's full snapshots. HerdMan accumulates
+/// permission mode instead of TodoWrite's full snapshots. Codevisor accumulates
 /// these mutations into the same plan wire shape clients use for checklists.
 const TASK_TOOLS = new Set(["TaskCreate", "TaskUpdate", "TaskList", "TaskGet"])
 
@@ -520,7 +520,7 @@ interface ClaudeSession {
   /// question id → held AskUserQuestion canUseTool promise.
   readonly pendingQuestions: Map<string, PendingClaudeQuestion>
   /// Client-side goal snapshot. Claude Code's goal mode is driven through the
-  /// CLI's `/goal` slash command (the SDK has no goal API yet), so HerdMan
+  /// CLI's `/goal` slash command (the SDK has no goal API yet), so Codevisor
   /// tracks the last state it set — the CLI gives no structured feedback.
   currentGoal: SessionGoal | undefined
 }
@@ -993,7 +993,7 @@ export const makeClaudeProvider = (
       adapterPromise("answerQuestion", () => answerClaudeQuestion(session, questionId, answer)),
     // Claude Code's goal mode has no SDK API yet — it's driven by the CLI's
     // `/goal` slash command, which the SDK forwards like any prompt. The
-    // snapshots HerdMan emits are therefore client-side bookkeeping (no token
+    // snapshots Codevisor emits are therefore client-side bookkeeping (no token
     // accounting); the CLI's own reply narrates the goal state in the chat.
     setGoal: (update) =>
       adapterPromise("setGoal", async () => {
@@ -1063,7 +1063,7 @@ export const makeClaudeProvider = (
       }),
     id: "claude",
     // Native sessions from ~/.claude/projects — workspace suggestions and
-    // "import existing chats" for users who ran the CLI before HerdMan.
+    // "import existing chats" for users who ran the CLI before Codevisor.
     listAgentSessions: () => listClaudeAgentSessions(),
     loadSession: (
       definition,
@@ -1981,7 +1981,7 @@ const emitRetrying = (session: ClaudeSession, attempt: number, of: number): void
   })
 }
 
-/// Dev-only turn-end trace (gated on HERDMAN_DEBUG). The provider has no logger;
+/// Dev-only turn-end trace (gated on CODEVISOR_DEBUG). The provider has no logger;
 /// this matches the plain-console style used in apps/server/src/main.ts. This is
 /// how we learn the real dominant stop reason without shipping any UI noise.
 const logTurnEnd = (
@@ -2008,7 +2008,9 @@ const handleResult = (session: ClaudeSession, message: SDKMessage & { type: "res
   const authFailure =
     session.lastAssistantError === "authentication_failed" ||
     session.lastAssistantError === "oauth_org_not_allowed"
-  if (process.env.HERDMAN_DEBUG !== undefined) logTurnEnd(session, message, resolution)
+  if (process.env.CODEVISOR_DEBUG !== undefined || process.env.HERDMAN_DEBUG !== undefined) {
+    logTurnEnd(session, message, resolution)
+  }
   // Each `result` is classified on the assistant error seen since the previous
   // one; consume it so a stale error can't misclassify a later leg.
   session.lastAssistantError = undefined
@@ -2363,7 +2365,7 @@ const toolKind = (toolName: string): string => {
       return "search"
     case "WebFetch":
       return "fetch"
-    // Not ACP vocabulary — HerdMan's own extension so clients can phrase web
+    // Not ACP vocabulary — Codevisor's own extension so clients can phrase web
     // searches as searches ("Searched the web") instead of fetches.
     case "WebSearch":
       return "web_search"

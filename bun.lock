@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "herdman",
+      "name": "codevisor",
       "dependencies": {
         "@agentclientprotocol/sdk": "1.1.0",
         "@effect/platform-node": "4.0.0-beta.92",
@@ -29,13 +29,13 @@
       },
     },
     "apps/desktop": {
-      "name": "@herdman/desktop",
+      "name": "@codevisor/desktop",
       "devDependencies": {
         "@tauri-apps/cli": "^2.9.0",
       },
     },
     "apps/macos": {
-      "name": "@herdman/macos",
+      "name": "@codevisor/macos",
       "devDependencies": {
         "@shikijs/core": "^4",
         "@shikijs/engine-javascript": "^4",
@@ -44,18 +44,18 @@
       },
     },
     "apps/server": {
-      "name": "@herdman/server",
+      "name": "@codevisor/server",
       "bin": {
-        "herdman-server": "./dist/main.js",
-        "herdman-terminal-proxy": "./dist/terminal-proxy.js",
+        "codevisor-server": "./dist/main.js",
+        "codevisor-terminal-proxy": "./dist/terminal-proxy.js",
       },
       "dependencies": {
         "@effect/platform-node": "4.0.0-beta.92",
         "@executor-js/runtime-quickjs": "1.5.32",
-        "@herdman/agent-runtime": "workspace:*",
-        "@herdman/api": "workspace:*",
-        "@herdman/db": "workspace:*",
-        "@herdman/terminal": "workspace:*",
+        "@codevisor/agent-runtime": "workspace:*",
+        "@codevisor/api": "workspace:*",
+        "@codevisor/db": "workspace:*",
+        "@codevisor/terminal": "workspace:*",
         "@modelcontextprotocol/sdk": "1.29.0",
         "effect": "4.0.0-beta.92",
         "ws": "8.18.3",
@@ -67,10 +67,10 @@
       },
     },
     "apps/web": {
-      "name": "@herdman/web",
+      "name": "@codevisor/web",
       "dependencies": {
         "@base-ui/react": "^1.6.0",
-        "@herdman/api": "workspace:*",
+        "@codevisor/api": "workspace:*",
         "@pierre/diffs": "1.2.12",
         "@pierre/theme": "1.1.0",
         "@pierre/theming": "0.0.2",
@@ -106,9 +106,9 @@
       },
     },
     "apps/www": {
-      "name": "@herdman/www",
+      "name": "@codevisor/www",
       "dependencies": {
-        "@herdman/api": "workspace:*",
+        "@codevisor/api": "workspace:*",
         "@tanstack/react-router": "^1.135.0",
         "@tanstack/react-start": "^1.135.0",
         "fumadocs-core": "16.11.2",
@@ -134,11 +134,11 @@
       },
     },
     "packages/agent-runtime": {
-      "name": "@herdman/agent-runtime",
+      "name": "@codevisor/agent-runtime",
       "dependencies": {
         "@agentclientprotocol/sdk": "1.1.0",
         "@anthropic-ai/claude-agent-sdk": "0.3.195",
-        "@herdman/api": "workspace:*",
+        "@codevisor/api": "workspace:*",
         "diff": "8.0.2",
         "effect": "4.0.0-beta.92",
         "zod": "4.4.3",
@@ -148,7 +148,7 @@
       },
     },
     "packages/api": {
-      "name": "@herdman/api",
+      "name": "@codevisor/api",
       "dependencies": {
         "effect": "4.0.0-beta.92",
       },
@@ -157,9 +157,9 @@
       },
     },
     "packages/db": {
-      "name": "@herdman/db",
+      "name": "@codevisor/db",
       "dependencies": {
-        "@herdman/api": "workspace:*",
+        "@codevisor/api": "workspace:*",
         "better-sqlite3": "12.9.0",
         "effect": "4.0.0-beta.92",
       },
@@ -169,9 +169,9 @@
       },
     },
     "packages/terminal": {
-      "name": "@herdman/terminal",
+      "name": "@codevisor/terminal",
       "dependencies": {
-        "@herdman/api": "workspace:*",
+        "@codevisor/api": "workspace:*",
         "effect": "4.0.0-beta.92",
         "node-pty": "1.1.0-beta34",
       },
@@ -365,23 +365,23 @@
 
     "@fumari/stf": ["@fumari/stf@1.1.0", "", { "peerDependencies": { "@types/react": "*", "react": "^19.2.0", "react-dom": "^19.2.0" }, "optionalPeers": ["@types/react"] }, "sha512-ta/qVbB03SSQ29185hNkF4E+DcteLTuX6FOjzRpQehk5738VLkfw2mIZuejqrubmoRAeKfxSrtqLwnS9W9XgKQ=="],
 
-    "@herdman/agent-runtime": ["@herdman/agent-runtime@workspace:packages/agent-runtime"],
+    "@codevisor/agent-runtime": ["@codevisor/agent-runtime@workspace:packages/agent-runtime"],
 
-    "@herdman/api": ["@herdman/api@workspace:packages/api"],
+    "@codevisor/api": ["@codevisor/api@workspace:packages/api"],
 
-    "@herdman/db": ["@herdman/db@workspace:packages/db"],
+    "@codevisor/db": ["@codevisor/db@workspace:packages/db"],
 
-    "@herdman/desktop": ["@herdman/desktop@workspace:apps/desktop"],
+    "@codevisor/desktop": ["@codevisor/desktop@workspace:apps/desktop"],
 
-    "@herdman/macos": ["@herdman/macos@workspace:apps/macos"],
+    "@codevisor/macos": ["@codevisor/macos@workspace:apps/macos"],
 
-    "@herdman/server": ["@herdman/server@workspace:apps/server"],
+    "@codevisor/server": ["@codevisor/server@workspace:apps/server"],
 
-    "@herdman/terminal": ["@herdman/terminal@workspace:packages/terminal"],
+    "@codevisor/terminal": ["@codevisor/terminal@workspace:packages/terminal"],
 
-    "@herdman/web": ["@herdman/web@workspace:apps/web"],
+    "@codevisor/web": ["@codevisor/web@workspace:apps/web"],
 
-    "@herdman/www": ["@herdman/www@workspace:apps/www"],
+    "@codevisor/www": ["@codevisor/www@workspace:apps/www"],
 
     "@hono/node-server": ["@hono/node-server@1.19.14", "", { "peerDependencies": { "hono": "^4" } }, "sha512-GwtvgtXxnWsucXvbQXkRgqksiH2Qed37H9xHZocE5sA3N8O8O8/8FA3uclQXxXVzc9XBZuEOMK7+r02FmSpHtw=="],
 
@@ -1985,7 +1985,7 @@
 
     "@effect/platform-node-shared/ws": ["ws@8.21.0", "", { "peerDependencies": { "bufferutil": "^4.0.1", "utf-8-validate": ">=5.0.2" }, "optionalPeers": ["bufferutil", "utf-8-validate"] }, "sha512-Vsp28b7DRcimFQvrqu2Wek3z1iYxDCWqHYB8Qsnk/S4RfaCQzPGPyBNuVjJV3cd6UiKtUtp6sNM77gWvzcCH+g=="],
 
-    "@herdman/web/@shikijs/themes": ["@shikijs/themes@4.3.1", "", { "dependencies": { "@shikijs/types": "4.3.1" } }, "sha512-dgpoJ4WqNi2yTmizQHBJ5zcX6j2lE6icN/0yt4l1kkf16jrY/pwPLoTb1ETsWMz0OBLf9ZNvwmxft+cH+N9qSA=="],
+    "@codevisor/web/@shikijs/themes": ["@shikijs/themes@4.3.1", "", { "dependencies": { "@shikijs/types": "4.3.1" } }, "sha512-dgpoJ4WqNi2yTmizQHBJ5zcX6j2lE6icN/0yt4l1kkf16jrY/pwPLoTb1ETsWMz0OBLf9ZNvwmxft+cH+N9qSA=="],
 
     "@pierre/diffs/diff": ["diff@9.0.0", "", {}, "sha512-svtcdpS8CgJyqAjEQIXdb3OjhFVVYjzGAPO8WGCmRbrml64SPw/jJD4GoE98aR7r25A0XcgrK3F02yw9R/vhQw=="],
 
@@ -2073,7 +2073,7 @@
 
     "youch/cookie": ["cookie@1.1.1", "", {}, "sha512-ei8Aos7ja0weRpFzJnEA9UHJ/7XQmqglbRwnf2ATjcB9Wq874VKH9kfjjirM6UhU2/E5fFYadylyhFldcqSidQ=="],
 
-    "@herdman/web/@shikijs/themes/@shikijs/types": ["@shikijs/types@4.3.1", "", { "dependencies": { "@shikijs/vscode-textmate": "^10.0.2", "@types/hast": "^3.0.4" } }, "sha512-CHFxE0jztBIZRHH6gxXE7DXUCFXjReEGxZ/j0rfSLGKZuwp2xBYycEP14875DSa9KLL/6700oxIq6oO6ef9K2g=="],
+    "@codevisor/web/@shikijs/themes/@shikijs/types": ["@shikijs/types@4.3.1", "", { "dependencies": { "@shikijs/vscode-textmate": "^10.0.2", "@types/hast": "^3.0.4" } }, "sha512-CHFxE0jztBIZRHH6gxXE7DXUCFXjReEGxZ/j0rfSLGKZuwp2xBYycEP14875DSa9KLL/6700oxIq6oO6ef9K2g=="],
 
     "@shikijs/transformers/@shikijs/core/@shikijs/primitive": ["@shikijs/primitive@4.3.1", "", { "dependencies": { "@shikijs/types": "4.3.1", "@shikijs/vscode-textmate": "^10.0.2", "@types/hast": "^3.0.4" } }, "sha512-CXQRQOYy1leqQ8ceTeJdmXv/bsUY++6QyLpXJ94LZAAYj5X2SKRdc5ipguv4NPyGVKItB2PPwUpRNe0Sjh5S1A=="],
 

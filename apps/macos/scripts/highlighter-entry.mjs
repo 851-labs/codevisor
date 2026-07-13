@@ -1,6 +1,6 @@
 // Entry point for the Shiki highlighter bundle that runs inside
 // JavaScriptCore in the macOS app. Bundled by build-highlighter.mjs into a
-// self-contained IIFE exposing `herdmanHighlight` on the global object.
+// self-contained IIFE exposing `codevisorHighlight` on the global object.
 //
 // Uses Shiki's pure-JavaScript regex engine (no WASM — JSC-friendly) with a
 // curated grammar set matching the languages that show up in agent chats.
@@ -55,7 +55,7 @@ const themeCache = new Map()
  * `{ content, color }` tokens — or the literal string "null" when the
  * language is unknown (caller renders plain text).
  */
-globalThis.herdmanHighlight = function herdmanHighlight(code, lang, themeKey, themeJSON) {
+globalThis.codevisorHighlight = function codevisorHighlight(code, lang, themeKey, themeJSON) {
   const language = resolveLanguage(lang)
   if (language == null) return "null"
 

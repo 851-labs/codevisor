@@ -46,7 +46,7 @@ export function StatusBar({
   return (
     <div
       className={cn(
-        "relative flex h-8 shrink-0 items-center gap-3 border-t border-[var(--herdman-separator)] bg-background px-2.5",
+        "relative flex h-8 shrink-0 items-center gap-3 border-t border-[var(--codevisor-separator)] bg-background px-2.5",
         terminalVisible && "border-b"
       )}
       onPointerMove={handlePointerMove}
@@ -60,7 +60,7 @@ export function StatusBar({
         />
       )}
       <div className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden">
-        <div className="herdman-scrollbar flex min-w-0 items-center gap-px overflow-x-auto">
+        <div className="codevisor-scrollbar flex min-w-0 items-center gap-px overflow-x-auto">
           {panes.map((pane) => {
             const selected = terminalVisible && pane.id === selectedPaneId
             const PaneIcon = pane.attachOnly ? ServerIcon : TerminalIcon
@@ -78,7 +78,7 @@ export function StatusBar({
                 {selected ? (
                   <span
                     aria-hidden
-                    className="absolute inset-x-0 bottom-0 h-[27px] rounded-t-[6px] bg-[var(--herdman-separator)]"
+                    className="absolute inset-x-0 bottom-0 h-[27px] rounded-t-[6px] bg-[var(--codevisor-separator)]"
                   />
                 ) : (
                   <span

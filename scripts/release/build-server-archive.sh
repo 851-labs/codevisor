@@ -6,7 +6,7 @@ usage() {
   cat >&2 <<'EOF'
 usage: scripts/release/build-server-archive.sh <version> <output-dir> [target]
 
-Builds herdman-server-<target>.tar.gz for the current machine unless target is
+Builds codevisor-server-<target>.tar.gz for the current machine unless target is
 provided. The archive is intended for the Homebrew formula.
 EOF
 }
@@ -33,7 +33,7 @@ fi
 
 work_dir="$repo_root/dist/release/work/server-$target"
 runtime_dir="$work_dir/runtime"
-archive_name="herdman-server-$target.tar.gz"
+archive_name="codevisor-server-$target.tar.gz"
 archive_path="$output_dir/$archive_name"
 
 mkdir -p "$output_dir"

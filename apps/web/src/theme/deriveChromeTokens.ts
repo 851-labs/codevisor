@@ -14,7 +14,7 @@
 import type { ThemeLike } from "@pierre/theming"
 import { colorUtils, normalizeThemeColors } from "@pierre/theming/color"
 
-// The opinionated app-chrome token set herdmanChromeMapping maps onto the
+// The opinionated app-chrome token set codevisorChromeMapping maps onto the
 // app's CSS variables.
 export interface ChromeTokens {
   accent: string

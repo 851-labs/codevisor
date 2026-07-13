@@ -1,4 +1,4 @@
-import type { ConversationItem } from "@herdman/api"
+import type { ConversationItem } from "@codevisor/api"
 import {
   ChevronRightIcon,
   CircleSlashIcon,
@@ -193,11 +193,11 @@ function useVerifyExpanded(): boolean {
     const update = () => setExpanded(readVerifyExpanded())
     window.addEventListener("popstate", update)
     window.addEventListener("hashchange", update)
-    window.addEventListener("herdman-route-changed", update)
+    window.addEventListener("codevisor-route-changed", update)
     return () => {
       window.removeEventListener("popstate", update)
       window.removeEventListener("hashchange", update)
-      window.removeEventListener("herdman-route-changed", update)
+      window.removeEventListener("codevisor-route-changed", update)
     }
   }, [])
   return expanded
@@ -428,14 +428,14 @@ export function AssistantTurn({
       {!isGenerating && meta?.stopDetail != null && (
         <div
           className={cn(
-            "flex items-start gap-2 text-[var(--herdman-status-error)]",
+            "flex items-start gap-2 text-[var(--codevisor-status-error)]",
             meta.retryable &&
-              "rounded-lg bg-[color-mix(in_srgb,var(--herdman-status-error)_8%,transparent)] p-2.5"
+              "rounded-lg bg-[color-mix(in_srgb,var(--codevisor-status-error)_8%,transparent)] p-2.5"
           )}
         >
           <TriangleAlertIcon className="mt-0.5 size-3.5 shrink-0" />
           <div className="min-w-0 flex-1">
-            <p className={cn("herdman-selectable", responseText === "" ? "text-sm" : "text-xs")}>
+            <p className={cn("codevisor-selectable", responseText === "" ? "text-sm" : "text-xs")}>
               {meta.stopDetail}
             </p>
             {meta.retryable && onRetry != null && (
@@ -516,7 +516,7 @@ function WorkedSection({
         </button>
       )}
       {expanded && hasContent && meta != null && (
-        <div className="flex flex-col gap-3 border-t border-[var(--herdman-separator)] pt-3">
+        <div className="flex flex-col gap-3 border-t border-[var(--codevisor-separator)] pt-3">
           {items.length > 0 ? (
             <TranscriptItems
               items={items}
@@ -679,7 +679,7 @@ function SubagentSection({
           {toolCallDisplayTitle(call)}
         </span>
         {call.status === "failed" && (
-          <CircleXIcon className="size-3 text-[var(--herdman-status-error)]" />
+          <CircleXIcon className="size-3 text-[var(--codevisor-status-error)]" />
         )}
         {call.status === "cancelled" && (
           <CircleSlashIcon className="text-muted-foreground size-3" />

@@ -279,7 +279,7 @@ describe("listCodexAgentSessions", () => {
 })
 
 describe("defaultAgentSessionFileSystem", () => {
-  const scratch = mkdtempSync(join(tmpdir(), "herdman-agent-sessions-"))
+  const scratch = mkdtempSync(join(tmpdir(), "codevisor-agent-sessions-"))
   afterAll(() => rmSync(scratch, { recursive: true, force: true }))
 
   it("reads real directories, stats, heads, and existence", async () => {

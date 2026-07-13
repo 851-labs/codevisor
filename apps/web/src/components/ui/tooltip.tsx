@@ -24,8 +24,8 @@ function TooltipContent({
           data-slot="tooltip-content"
           className={cn(
             "rounded-md border px-2 py-1 text-xs",
-            "bg-[var(--herdman-popover-bg)] text-[var(--herdman-popover-fg)]",
-            "border-[var(--herdman-popover-border)] shadow-[var(--herdman-popover-shadow)]",
+            "bg-[var(--codevisor-popover-bg)] text-[var(--codevisor-popover-fg)]",
+            "border-[var(--codevisor-popover-border)] shadow-[var(--codevisor-popover-shadow)]",
             "transition-opacity duration-100",
             "data-[starting-style]:opacity-0 data-[ending-style]:opacity-0",
             className

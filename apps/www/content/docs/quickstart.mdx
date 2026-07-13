@@ -1,6 +1,6 @@
 ---
 title: Quickstart
-description: Install a remote HerdMan Server, pair a client, and verify the connection.
+description: Install a remote Codevisor Server, pair a client, and verify the connection.
 icon: Rocket
 ---
 
@@ -10,11 +10,11 @@ The installer supports Linux on x86-64 and arm64. It downloads a self-contained 
 when systemd is available, starts it as a service.
 
 ```bash
-curl -fsSL https://www.herdman.dev/install.sh | sh
+curl -fsSL https://www.codevisor.dev/install.sh | sh
 ```
 
-The default port is `49361`. A non-root install lives under `~/.herdman/server` and creates a user
-service; a root install uses `/opt/herdman` and a system service.
+The default port is `49361`. A non-root install lives under `~/.codevisor/server` and creates a user
+service; a root install uses `/opt/codevisor` and a system service.
 
 ## Check health locally
 
@@ -41,4 +41,4 @@ curl http://SERVER_ADDRESS:49361/v1/info \
   -H "Authorization: Bearer $TOKEN"
 ```
 
-You can also enter the machine address and token in HerdMan under **Machines → Add Machine**.
+You can also enter the machine address and token in Codevisor under **Machines → Add Machine**.

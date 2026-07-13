@@ -1,4 +1,4 @@
-import type { SessionSummary, Project } from "@herdman/api"
+import type { SessionSummary, Project } from "@codevisor/api"
 import { useNavigate } from "@tanstack/react-router"
 import { ChevronRightIcon, FolderIcon, SquarePenIcon } from "lucide-react"
 

@@ -42,7 +42,7 @@ function SelectContent({
   return (
     <BaseSelect.Portal>
       <BaseSelect.Positioner className="z-50 outline-none" sideOffset={4}>
-        <BaseSelect.ScrollUpArrow className="top-0 z-10 flex h-5 w-full items-center justify-center rounded-t-lg bg-[var(--herdman-popover-bg)] text-xs" />
+        <BaseSelect.ScrollUpArrow className="top-0 z-10 flex h-5 w-full items-center justify-center rounded-t-lg bg-[var(--codevisor-popover-bg)] text-xs" />
         <BaseSelect.Popup
           data-slot="select-content"
           className={cn(popupSurfaceClassName, popupViewportClassName, className)}
@@ -50,7 +50,7 @@ function SelectContent({
         >
           {children}
         </BaseSelect.Popup>
-        <BaseSelect.ScrollDownArrow className="bottom-0 z-10 flex h-5 w-full items-center justify-center rounded-b-lg bg-[var(--herdman-popover-bg)] text-xs" />
+        <BaseSelect.ScrollDownArrow className="bottom-0 z-10 flex h-5 w-full items-center justify-center rounded-b-lg bg-[var(--codevisor-popover-bg)] text-xs" />
       </BaseSelect.Positioner>
     </BaseSelect.Portal>
   )
@@ -83,7 +83,7 @@ function SelectGroupLabel({
     <BaseSelect.GroupLabel
       data-slot="select-group-label"
       className={cn(
-        "px-2.5 py-1.5 text-xs font-medium text-[var(--herdman-popover-muted-fg)]",
+        "px-2.5 py-1.5 text-xs font-medium text-[var(--codevisor-popover-muted-fg)]",
         className
       )}
       {...props}
@@ -98,7 +98,7 @@ function SelectSeparator({
   return (
     <BaseSelect.Separator
       data-slot="select-separator"
-      className={cn("my-1 h-px bg-[var(--herdman-popover-border)]", className)}
+      className={cn("my-1 h-px bg-[var(--codevisor-popover-border)]", className)}
       {...props}
     />
   )

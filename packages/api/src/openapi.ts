@@ -44,7 +44,7 @@ import {
   Worktree
 } from "./index.js"
 
-export interface HerdManOpenApi {
+export interface CodevisorOpenApi {
   readonly openapi: "3.1.0"
   readonly info: {
     readonly title: string
@@ -388,7 +388,7 @@ const makeOperation = (
   return operation
 }
 
-export const makeOpenApiDocument = (version: string): HerdManOpenApi => {
+export const makeOpenApiDocument = (version: string): CodevisorOpenApi => {
   const requests = requestSchemas()
   const responses = responseSchemas()
   const paths: Record<string, Record<string, unknown>> = {}
@@ -414,10 +414,10 @@ export const makeOpenApiDocument = (version: string): HerdManOpenApi => {
   return {
     openapi: "3.1.0",
     info: {
-      title: "HerdMan Server API",
+      title: "Codevisor Server API",
       version,
       description:
-        "Experimental public API for running coding-agent sessions, projects, files, events, and terminals on a HerdMan server."
+        "Experimental public API for running coding-agent sessions, projects, files, events, and terminals on a Codevisor server."
     },
     servers: [
       {
@@ -442,7 +442,7 @@ export const makeOpenApiDocument = (version: string): HerdManOpenApi => {
         bearerAuth: {
           type: "http",
           scheme: "bearer",
-          bearerFormat: "HerdMan pairing token"
+          bearerFormat: "Codevisor pairing token"
         }
       },
       responses: {

@@ -74,7 +74,7 @@ export function UsageRingButton({
   const fraction = usageFraction(usage)
   const circumference = 2 * Math.PI * 7
   const contextPercent = usageContextPercent(usage)
-  const ringColor = fraction > 0.85 ? "var(--herdman-status-warn)" : "var(--herdman-accent)"
+  const ringColor = fraction > 0.85 ? "var(--codevisor-status-warn)" : "var(--codevisor-accent)"
 
   return (
     <div

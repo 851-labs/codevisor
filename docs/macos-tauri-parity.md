@@ -41,9 +41,9 @@ Evidence:
 
 - Native pagination: `SessionModel.loadHistory()`,
   `SessionModel.loadOlderHistory()`, and `SessionModel.hasOlderHistory` in
-  `apps/macos/Packages/HerdManCore/Sources/HerdManCore/ViewModels/SessionModel.swift`.
+  `apps/macos/Packages/CodevisorCore/Sources/CodevisorCore/ViewModels/SessionModel.swift`.
 - Native virtualization: `VirtualizedTranscriptScrollView` in
-  `apps/macos/HerdMan/Features/Session/NativeTranscriptView.swift`.
+  `apps/macos/Codevisor/Features/Session/NativeTranscriptView.swift`.
 - Available server endpoints: `GET /v1/sessions/:id/transcript` and
   `GET /v1/sessions/:id/transcript/:itemId/details` in
   `apps/server/src/server.ts`.
@@ -77,14 +77,14 @@ examples in the internal storybook.
 Evidence:
 
 - Inspector composition: `SessionInspectorView` and `SessionInfoPanel` in
-  `apps/macos/HerdMan/Features/Scratchpad/SessionInspectorView.swift`.
+  `apps/macos/Codevisor/Features/Scratchpad/SessionInspectorView.swift`.
 - Notes editor: `ScratchpadNotesView` in
-  `apps/macos/HerdMan/Features/Scratchpad/ScratchpadNotesView.swift`.
+  `apps/macos/Codevisor/Features/Scratchpad/ScratchpadNotesView.swift`.
 - Persistence: `ScratchpadModel` and `ScratchpadRepository` under
-  `apps/macos/Packages/HerdManCore/Sources/HerdManCore/Scratchpad` and
+  `apps/macos/Packages/CodevisorCore/Sources/CodevisorCore/Scratchpad` and
   `Persistence`.
 - Presentation and saved width: `SessionContainerView` in
-  `apps/macos/HerdMan/Features/Session/SessionContainerView.swift`.
+  `apps/macos/Codevisor/Features/Session/SessionContainerView.swift`.
 - No corresponding scratchpad, inspector, or notes persistence exists under
   `apps/web/src`.
 
@@ -111,7 +111,7 @@ Evidence:
 
 - Native thresholds, hysteresis, backdrops, animation, and Escape dismissal:
   `AdaptivePanelLayout` and `AdaptiveDrawerLayer` in
-  `apps/macos/HerdMan/DesignSystem/AdaptivePanelLayout.swift`.
+  `apps/macos/Codevisor/DesignSystem/AdaptivePanelLayout.swift`.
 - Native integration: `ContentView.swift` and
   `Features/Session/SessionContainerView.swift`.
 - Fixed Tauri shell: `ShellLayout` in `apps/web/src/routes/_shell.tsx`.
@@ -165,7 +165,7 @@ Evidence:
 
 - Native reveals: `WorkedContentReveal` and
   `TranscriptDisclosureContentReveal` in
-  `apps/macos/HerdMan/Features/Session/AssistantTurnView.swift`.
+  `apps/macos/Codevisor/Features/Session/AssistantTurnView.swift`.
 - Native anchor transaction: `performAnchoredDisclosureChange` in
   `AssistantTurnView.swift`, `ToolGroupView.swift`, `ToolCallRow.swift`, and
   `NativeTranscriptView.swift`.
@@ -193,7 +193,7 @@ it immediately, and the staged generic file chip is inert.
 Evidence:
 
 - Native preview entry points: `AttachmentViews.swift` and
-  `ComposerView.swift` under `apps/macos/HerdMan/Features`.
+  `ComposerView.swift` under `apps/macos/Codevisor/Features`.
 - Tauri transcript behavior: `RemoteAttachmentThumb.open()` in
   `apps/web/src/features/attachments/AttachmentPreview.tsx`.
 - Tauri staged behavior: `ComposerAttachmentThumb` renders `FileChip` without
@@ -250,7 +250,7 @@ expanded body, so the divider disappears when collapsed.
 Evidence:
 
 - Native: `WorkedSection` in
-  `apps/macos/HerdMan/Features/Session/AssistantTurnView.swift`.
+  `apps/macos/Codevisor/Features/Session/AssistantTurnView.swift`.
 - Tauri: `WorkedSection` in
   `apps/web/src/features/session/AssistantTurn.tsx`.
 
@@ -267,7 +267,7 @@ Tauri uses router links and changes route on click, after pointer-up.
 Evidence:
 
 - Native: `sessionActivationGesture(_:)` in
-  `apps/macos/HerdMan/Features/Sidebar/SidebarView.swift`.
+  `apps/macos/Codevisor/Features/Sidebar/SidebarView.swift`.
 - Tauri: router `Link` rows in
   `apps/web/src/features/sidebar/SessionRow.tsx`.
 

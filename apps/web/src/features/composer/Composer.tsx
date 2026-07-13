@@ -246,7 +246,7 @@ export function Composer({
 
   return (
     <div
-      className="bg-composer relative flex flex-col gap-2.5 rounded-2xl border border-[var(--herdman-separator)] p-3"
+      className="bg-composer relative flex flex-col gap-2.5 rounded-2xl border border-[var(--codevisor-separator)] p-3"
       onDragOver={(event) => {
         if (event.dataTransfer.types.includes("Files")) event.preventDefault()
       }}
@@ -348,7 +348,7 @@ export function Composer({
                   aria-label="Stop"
                   title="Stop"
                   onClick={onStop}
-                  className="text-muted-foreground hover:text-foreground flex size-[26px] cursor-default items-center justify-center rounded-full border border-[var(--herdman-separator)] outline-none hover:bg-[color-mix(in_srgb,var(--foreground)_6%,transparent)] active:opacity-80"
+                  className="text-muted-foreground hover:text-foreground flex size-[26px] cursor-default items-center justify-center rounded-full border border-[var(--codevisor-separator)] outline-none hover:bg-[color-mix(in_srgb,var(--foreground)_6%,transparent)] active:opacity-80"
                 >
                   <SquareIcon className="size-2.5 fill-current" />
                 </button>
@@ -403,7 +403,7 @@ function ComposerAttachmentRow({
   onRetry?: (id: string) => void
 }) {
   return (
-    <div className="herdman-scrollbar -mx-1 flex gap-2.5 overflow-x-auto px-1 pb-0.5">
+    <div className="codevisor-scrollbar -mx-1 flex gap-2.5 overflow-x-auto px-1 pb-0.5">
       {attachments.map((attachment) => (
         <ComposerAttachmentThumb
           key={attachment.id}
@@ -452,7 +452,7 @@ function ComposerAttachmentThumb({
         }}
         className="absolute inset-0 flex flex-col items-center justify-center gap-1 rounded-lg bg-black/40 text-white outline-none"
       >
-        <TriangleAlertIcon className="size-4 text-[var(--herdman-status-warn)]" />
+        <TriangleAlertIcon className="size-4 text-[var(--codevisor-status-warn)]" />
         <span className="text-[11px] font-medium">Retry</span>
       </div>
     ) : undefined
@@ -537,7 +537,7 @@ function SlashCommandMenu({
       aria-label="Slash commands"
       className={cn(
         "absolute bottom-full left-0 z-30 mb-2 max-h-[220px] w-full max-w-[520px] overflow-y-auto rounded-[10px] border p-1.5",
-        "border-[var(--herdman-separator)] bg-[var(--herdman-composer-bg)] text-foreground shadow-[0_4px_12px_rgb(0_0_0/0.16)]"
+        "border-[var(--codevisor-separator)] bg-[var(--codevisor-composer-bg)] text-foreground shadow-[0_4px_12px_rgb(0_0_0/0.16)]"
       )}
     >
       {matches.map((command, index) => {
@@ -550,7 +550,7 @@ function SlashCommandMenu({
             data-index={index}
             className={cn(
               "flex cursor-default items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm",
-              isSelected && "bg-[var(--herdman-accent)] text-white"
+              isSelected && "bg-[var(--codevisor-accent)] text-white"
             )}
             onMouseDown={(mouseEvent) => {
               // Keep textarea focus; accepting is a click-through action.

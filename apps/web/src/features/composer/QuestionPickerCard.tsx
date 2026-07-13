@@ -1,4 +1,4 @@
-import type { QuestionAnswerEntry } from "@herdman/api"
+import type { QuestionAnswerEntry } from "@codevisor/api"
 import {
   ArrowLeftIcon,
   ArrowRightIcon,

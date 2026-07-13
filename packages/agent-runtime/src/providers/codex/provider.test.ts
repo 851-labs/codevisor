@@ -253,7 +253,7 @@ describe("CodexProvider", () => {
       item: {
         arguments: { server: "server-id", tool: "find_organizations" },
         id: "mcp-1",
-        server: "herdman",
+        server: "codevisor",
         status: "inProgress",
         tool: "execute",
         type: "mcpToolCall"
@@ -266,7 +266,7 @@ describe("CodexProvider", () => {
         arguments: { server: "server-id", tool: "find_organizations" },
         id: "mcp-1",
         result: { content: [{ text: "ok", type: "text" }] },
-        server: "herdman",
+        server: "codevisor",
         status: "completed",
         tool: "execute",
         type: "mcpToolCall"
@@ -280,7 +280,7 @@ describe("CodexProvider", () => {
       expect.objectContaining({
         rawInput: { server: "server-id", tool: "find_organizations" },
         sessionUpdate: "tool_call",
-        title: "herdman.execute",
+        title: "codevisor.execute",
         toolCallId: "mcp-1"
       })
     )

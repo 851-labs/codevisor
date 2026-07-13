@@ -5,8 +5,8 @@ export function baseOptions(): BaseLayoutProps {
     nav: {
       title: (
         <span className="flex items-center gap-2 font-semibold">
-          <img src="/sheep.svg" alt="" className="size-4" />
-          HerdMan Server
+          <img src="/codevisor-icon.png" alt="" className="size-4 rounded" />
+          Codevisor Server
         </span>
       )
     },

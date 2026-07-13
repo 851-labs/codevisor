@@ -255,7 +255,7 @@ describe("ClaudeProvider", () => {
     expect(created.metadata.modes?.availableModes.find((mode) => mode.id === "default")?.name).toBe(
       "Always Ask"
     )
-    // Permission modes carry the canonical HerdMan vocabulary + descriptions.
+    // Permission modes carry the canonical Codevisor vocabulary + descriptions.
     expect(created.metadata.modes?.availableModes.map((mode) => mode.canonicalId)).toEqual([
       "ask",
       "autoEdit",

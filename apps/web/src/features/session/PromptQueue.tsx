@@ -1,4 +1,4 @@
-import type { PromptQueueItem } from "@herdman/api"
+import type { PromptQueueItem } from "@codevisor/api"
 import {
   CheckIcon,
   ChevronRightIcon,
@@ -44,7 +44,7 @@ export function PromptQueue({
   }
 
   return (
-    <div className="rounded-[10px] border border-[var(--herdman-separator)] bg-[color-mix(in_srgb,var(--herdman-composer-bg)_96%,transparent)] p-2.5">
+    <div className="rounded-[10px] border border-[var(--codevisor-separator)] bg-[color-mix(in_srgb,var(--codevisor-composer-bg)_96%,transparent)] p-2.5">
       <button
         type="button"
         onClick={onToggleExpanded}

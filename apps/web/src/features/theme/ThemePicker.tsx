@@ -14,7 +14,7 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from "../../components/ui/popover"
 import { ToggleGroup, ToggleGroupItem } from "../../components/ui/toggle-group"
 import { cn } from "../../lib/cn"
-import { herdmanThemeCatalog } from "../../theme/themeCatalog"
+import { codevisorThemeCatalog } from "../../theme/themeCatalog"
 import { useTheme } from "../../theme/ThemeProvider"
 import { useThemeSelection } from "../../theme/useThemeSelection"
 
@@ -30,7 +30,7 @@ function useThemeSections(names: readonly string[]) {
     const pierre: string[] = []
     const shiki: string[] = []
     for (const name of names) {
-      const descriptor = herdmanThemeCatalog.getTheme(name)
+      const descriptor = codevisorThemeCatalog.getTheme(name)
       if (descriptor?.collection === "pierre") pierre.push(name)
       else shiki.push(name)
     }
@@ -42,7 +42,7 @@ function useThemeSections(names: readonly string[]) {
 }
 
 function displayNameOf(name: string): string {
-  return herdmanThemeCatalog.getTheme(name)?.displayName ?? name
+  return codevisorThemeCatalog.getTheme(name)?.displayName ?? name
 }
 
 function ThemeSelect({
@@ -101,7 +101,7 @@ export function ThemePicker({ className }: { className?: string }) {
       <PopoverTrigger
         className={cn(
           "flex w-full cursor-default items-center gap-2 rounded-md px-2 py-1.5 text-sm outline-none",
-          "hover:bg-[var(--herdman-row-hover-bg)] data-[popup-open]:bg-[var(--herdman-row-hover-bg)]",
+          "hover:bg-[var(--codevisor-row-hover-bg)] data-[popup-open]:bg-[var(--codevisor-row-hover-bg)]",
           "focus-visible:ring-ring/50 focus-visible:ring-2",
           className
         )}

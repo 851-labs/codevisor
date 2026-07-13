@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 import { createHash } from "node:crypto"
-import { readdirSync, readFileSync, writeFileSync } from "node:fs"
+import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { basename, join } from "node:path"
 
 const tapDir = process.argv[2]
 const version = process.env.VERSION
-const repository = process.env.REPOSITORY ?? process.env.GITHUB_REPOSITORY ?? "851-labs/herdman"
+const repository = process.env.REPOSITORY ?? process.env.GITHUB_REPOSITORY ?? "851-labs/codevisor"
 const artifactDir = process.env.ARTIFACT_DIR ?? "dist/release"
 const artifactBaseUrl =
   process.env.ARTIFACT_BASE_URL ?? `https://github.com/${repository}/releases/download/v#{version}`
@@ -18,14 +18,14 @@ if (version === undefined || version.length === 0) {
 }
 
 const files = readdirSync(artifactDir)
-const appZip = files.find((file) => file === "HerdMan-macOS.zip")
-const serverArchives = files.filter((file) => /^herdman-server-.+\.tar\.gz$/.test(file)).sort()
+const appZip = files.find((file) => file === "Codevisor-macOS.zip")
+const serverArchives = files.filter((file) => /^codevisor-server-.+\.tar\.gz$/.test(file)).sort()
 
 if (appZip === undefined) {
-  throw new Error(`HerdMan-macOS.zip not found in ${artifactDir}`)
+  throw new Error(`Codevisor-macOS.zip not found in ${artifactDir}`)
 }
 if (serverArchives.length === 0) {
-  throw new Error(`No herdman-server archives found in ${artifactDir}`)
+  throw new Error(`No codevisor-server archives found in ${artifactDir}`)
 }
 
 const sha256 = (file) =>
@@ -33,23 +33,29 @@ const sha256 = (file) =>
     .update(readFileSync(join(artifactDir, file)))
     .digest("hex")
 const releaseUrl = (file) => `${artifactBaseUrl.replace(/\/$/, "")}/${file}`
+const updateRenameFile = (filename, oldName, newName) => {
+  const path = join(tapDir, filename)
+  const renames = existsSync(path) ? JSON.parse(readFileSync(path, "utf8")) : {}
+  renames[oldName] = newName
+  writeFileSync(path, `${JSON.stringify(renames, null, 2)}\n`)
+}
 
 writeFileSync(
-  join(tapDir, "Casks", "herdman.rb"),
-  `cask "herdman" do
+  join(tapDir, "Casks", "codevisor.rb"),
+  `cask "codevisor" do
   version "${version}"
   sha256 "${sha256(appZip)}"
 
   url "${releaseUrl(appZip)}"
-  name "HerdMan"
-  desc "ACP chat client and local HerdMan server"
+  name "Codevisor"
+  desc "ACP chat client and local Codevisor server"
   homepage "https://github.com/${repository}"
 
   # The app also updates itself in place, so only explicit \`brew upgrade\`
   # (or --greedy) should touch it.
   auto_updates true
 
-  app "HerdMan.app"
+  app "Codevisor.app"
 
   # Quit a running app before the bundle is swapped. The preflight covers
   # upgrades from cask versions that predate the uninstall stanza; the guard
@@ -70,16 +76,18 @@ writeFileSync(
   # current app (which in turn restarts an outdated local server on launch).
   postflight do
     system_command "/usr/bin/open",
-                   args: ["-a", "#{appdir}/HerdMan.app"],
+                   args: ["-a", "#{appdir}/Codevisor.app"],
                    must_succeed: false
   end
 end
 `
 )
+updateRenameFile("cask_renames.json", "herdman", "codevisor")
+rmSync(join(tapDir, "Casks", "herdman.rb"), { force: true })
 
 const targetAssets = Object.fromEntries(
   serverArchives.map((file) => [
-    file.replace(/^herdman-server-/, "").replace(/\.tar\.gz$/, ""),
+    file.replace(/^codevisor-server-/, "").replace(/\.tar\.gz$/, ""),
     file
   ])
 )
@@ -118,28 +126,30 @@ ${block}`
 const supportedTargets = Object.keys(targetAssets).join(", ")
 
 writeFileSync(
-  join(tapDir, "Formula", "herdman-server.rb"),
-  `class HerdmanServer < Formula
-  desc "Local and remote HerdMan ACP server"
+  join(tapDir, "Formula", "codevisor-server.rb"),
+  `class CodevisorServer < Formula
+  desc "Local and remote Codevisor ACP server"
   homepage "https://github.com/${repository}"
   version "${version}"
 
 ${urlBlock}
   else
-    odie "No HerdMan server archive is available for this platform. Supported targets: ${supportedTargets}"
+    odie "No Codevisor server archive is available for this platform. Supported targets: ${supportedTargets}"
   end
 
   def install
     libexec.install Dir["*"]
-    bin.install_symlink libexec/"bin/herdman-server"
-    bin.install_symlink libexec/"bin/herdman-terminal-proxy"
+    bin.install_symlink libexec/"bin/codevisor-server"
+    bin.install_symlink libexec/"bin/codevisor-terminal-proxy"
   end
 
   test do
-    assert_match "Missing --server", shell_output("#{bin}/herdman-terminal-proxy 2>&1", 1)
+    assert_match "Missing --server", shell_output("#{bin}/codevisor-terminal-proxy 2>&1", 1)
   end
 end
 `
 )
+updateRenameFile("formula_renames.json", "herdman-server", "codevisor-server")
+rmSync(join(tapDir, "Formula", "herdman-server.rb"), { force: true })
 
-console.log(`Updated ${basename(tapDir)} for HerdMan ${version}`)
+console.log(`Updated ${basename(tapDir)} for Codevisor ${version}`)

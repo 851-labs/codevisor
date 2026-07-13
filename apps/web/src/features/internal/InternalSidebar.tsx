@@ -25,7 +25,7 @@ export function InternalSidebar() {
       <div className="p-2">
         <Link to="/" search={{}} className={cn(sidebarRowClassName, "text-muted-foreground")}>
           <ArrowLeftIcon className="size-4 shrink-0" />
-          <span>Back to HerdMan</span>
+          <span>Back to Codevisor</span>
         </Link>
       </div>
 
@@ -42,7 +42,7 @@ export function InternalSidebar() {
             to={to}
             className={cn(sidebarRowClassName, "text-muted-foreground")}
             activeProps={{
-              className: "bg-[var(--herdman-row-selected-bg)] text-foreground"
+              className: "bg-[var(--codevisor-row-selected-bg)] text-foreground"
             }}
           >
             <Icon className="size-4 shrink-0" />

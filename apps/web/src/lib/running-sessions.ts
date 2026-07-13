@@ -2,7 +2,7 @@
 // derived from the event stream (assistant output marks running; a stop
 // reason or error clears it). Drives the sidebar's per-session spinner
 // without loading every session's detail.
-import type { EventEnvelope } from "@herdman/api"
+import type { EventEnvelope } from "@codevisor/api"
 
 import { sessionStreamEvents } from "./session-events"
 

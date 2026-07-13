@@ -6,8 +6,8 @@ import { fixedSource, type ThemeInput } from "./ThemeSource"
 import { useThemeResolver, useThemeSource } from "./useThemeSource"
 
 // Returns the spreadable chrome style props for the active theme, mapped to
-// the app's CSS variables by the supplied mapping (herdman passes
-// herdmanChromeMapping).
+// the app's CSS variables by the supplied mapping (codevisor passes
+// codevisorChromeMapping).
 export function useChromeThemeProps(
   mapping: ChromeMapping,
   theme?: ThemeInput

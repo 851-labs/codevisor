@@ -8,7 +8,13 @@ export const isoTimestamp = (): string => new Date().toISOString()
 export const ServerKind = Schema.Literals(["local", "remote"])
 export type ServerKind = typeof ServerKind.Type
 
-export const SessionOrigin = Schema.Literals(["herdman", "imported"])
+export const SessionOrigin = Schema.Union([
+  Schema.Literal("codevisor"),
+  Schema.Literal("imported"),
+  // Decode payloads from pre-rename servers without leaking the former value
+  // into the current application model.
+  Schema.Literal("herdman").transform("codevisor")
+])
 export type SessionOrigin = typeof SessionOrigin.Type
 
 export const HarnessReadiness = Schema.Struct({
@@ -72,7 +78,7 @@ export const Harness = Schema.Struct({
   enabled: Schema.Boolean,
   /// Persisted user preference. `enabled` is the effective value after
   /// installation and authentication gates have been applied. Optional for
-  /// compatibility with older HerdMan servers and cached client models.
+  /// compatibility with older Codevisor servers and cached client models.
   desiredEnabled: Schema.optional(Schema.Boolean),
   readiness: HarnessReadiness,
   /// Harness-owned authentication state. Optional while talking to servers
@@ -230,7 +236,7 @@ export const McpOAuthStartResponse = Schema.Struct({
 export type McpOAuthStartResponse = typeof McpOAuthStartResponse.Type
 
 /// A session from a harness's own on-disk store (run before/outside
-/// HerdMan) — the source for onboarding's workspace suggestions and
+/// Codevisor) — the source for onboarding's workspace suggestions and
 /// "import existing chats".
 export const AgentSessionSummary = Schema.Struct({
   sessionId: Schema.String,
@@ -240,7 +246,7 @@ export const AgentSessionSummary = Schema.Struct({
 })
 export type AgentSessionSummary = typeof AgentSessionSummary.Type
 
-/// HerdMan's harness-independent mode vocabulary. Providers map their native
+/// Codevisor's harness-independent mode vocabulary. Providers map their native
 /// permission/approval modes onto these ids so the client can render one
 /// consistent picker; modes without a mapping stay native-only.
 export const CanonicalModeId = Schema.Literals([
@@ -385,7 +391,7 @@ export const CreateWorktreeRequest = Schema.Struct({
   /// Client-supplied worktree id so callers can follow `worktree.setup` events
   /// (subjectId = worktree id) while the create request is still in flight.
   id: Schema.optional(Schema.String),
-  /// Optional HerdMan session id that should also receive mirrored
+  /// Optional Codevisor session id that should also receive mirrored
   /// `worktree.setup` progress while the session is waiting for first setup.
   sessionId: Schema.optional(Schema.String),
   name: Schema.optional(Schema.String)
@@ -522,7 +528,7 @@ export const TranscriptPage = Schema.Struct({
 })
 export type TranscriptPage = typeof TranscriptPage.Type
 
-/// The raw events assigned to one assistant turn. HerdManCore reduces this
+/// The raw events assigned to one assistant turn. CodevisorCore reduces this
 /// bounded set only when the user expands historical worked details.
 export const TranscriptItemDetails = Schema.Struct({
   itemId: Schema.String,
@@ -557,7 +563,7 @@ export const CreateSessionRequest = Schema.Struct({
   harnessId: Schema.String,
   harnessAccountId: Schema.optional(Schema.String),
   agentSessionId: Schema.optional(Schema.String),
-  /// Create only the HerdMan session row. The server starts and persists the
+  /// Create only the Codevisor session row. The server starts and persists the
   /// agent session on the first prompt/config/goal action.
   deferAgentSession: Schema.optional(Schema.Boolean),
   title: Schema.optional(Schema.String),

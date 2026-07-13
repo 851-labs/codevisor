@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>HerdMan</title>
+    <title>Codevisor</title>
     <!-- Pre-paint theme bootstrap: sets the light/dark class before the module
          bundle loads so the first frame matches the persisted color mode.
          Storage key mirrors themeController.ts (this inline script can't
@@ -11,7 +11,23 @@
     <script>
       ;(function applyInitialTheme() {
         try {
-          var storedMode = window.localStorage.getItem("herdman-color-mode")
+          // Preserve every browser-only preference across the product rename.
+          // This runs before modules initialize so their first read sees the
+          // canonical key (including dynamic terminal-pane keys).
+          var legacyKeys = []
+          for (var index = 0; index < window.localStorage.length; index += 1) {
+            var key = window.localStorage.key(index)
+            if (key && /^(herdman[.-])/.test(key)) legacyKeys.push(key)
+          }
+          for (var legacyKey of legacyKeys) {
+            var codevisorKey = legacyKey.replace(/^herdman/, "codevisor")
+            if (window.localStorage.getItem(codevisorKey) === null) {
+              var legacyValue = window.localStorage.getItem(legacyKey)
+              if (legacyValue !== null) window.localStorage.setItem(codevisorKey, legacyValue)
+            }
+            window.localStorage.removeItem(legacyKey)
+          }
+          var storedMode = window.localStorage.getItem("codevisor-color-mode")
           var mode = storedMode === "light" || storedMode === "dark" ? storedMode : "system"
           var resolved =
             mode === "system"

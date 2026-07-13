@@ -1,10 +1,10 @@
 {
-  "name": "@herdman/server",
+  "name": "@codevisor/server",
   "private": true,
   "type": "module",
   "bin": {
-    "herdman-server": "./dist/main.js",
-    "herdman-terminal-proxy": "./dist/terminal-proxy.js"
+    "codevisor-server": "./dist/main.js",
+    "codevisor-terminal-proxy": "./dist/terminal-proxy.js"
   },
   "scripts": {
     "build": "tsc -b tsconfig.json",
@@ -16,10 +16,10 @@
   },
   "dependencies": {
     "@effect/platform-node": "4.0.0-beta.92",
-    "@herdman/agent-runtime": "workspace:*",
-    "@herdman/api": "workspace:*",
-    "@herdman/db": "workspace:*",
-    "@herdman/terminal": "workspace:*",
+    "@codevisor/agent-runtime": "workspace:*",
+    "@codevisor/api": "workspace:*",
+    "@codevisor/db": "workspace:*",
+    "@codevisor/terminal": "workspace:*",
     "@executor-js/runtime-quickjs": "1.5.32",
     "@modelcontextprotocol/sdk": "1.29.0",
     "effect": "4.0.0-beta.92",

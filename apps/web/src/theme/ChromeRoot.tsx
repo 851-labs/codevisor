@@ -1,6 +1,6 @@
 import { useLayoutEffect, useRef } from "react"
 
-import { herdmanChromeMapping } from "./herdmanChromeMapping"
+import { codevisorChromeMapping } from "./codevisorChromeMapping"
 import { useChromeThemeProps } from "./useChromeThemeProps"
 
 // camelCase CSSProperties key (backgroundColor) → CSS property (background-color).
@@ -16,7 +16,7 @@ function cssPropertyName(key: string): string {
 // precedence the token contract wants: fallback until a theme resolves, then
 // the derived palette everywhere.
 export function ChromeRoot() {
-  const { style } = useChromeThemeProps(herdmanChromeMapping)
+  const { style } = useChromeThemeProps(codevisorChromeMapping)
   const appliedProperties = useRef<Set<string>>(new Set())
 
   useLayoutEffect(() => {

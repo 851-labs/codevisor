@@ -2,7 +2,7 @@ import { useSyncExternalStore } from "react"
 
 import type { SessionSetupPhaseInfo } from "../../lib/session-setup"
 
-const STORAGE_KEY = "herdman-composer-defaults"
+const STORAGE_KEY = "codevisor-composer-defaults"
 
 export interface NewChatDraftState {
   selectedProjectId?: string

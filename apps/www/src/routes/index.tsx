@@ -6,7 +6,7 @@ export const Route = createFileRoute("/")({
   component: Home
 })
 
-const INSTALL_CMD = "curl -fsSL https://www.herdman.dev/install.sh | sh"
+const INSTALL_CMD = "curl -fsSL https://www.codevisor.dev/install.sh | sh"
 
 function Home() {
   return (
@@ -16,19 +16,19 @@ function Home() {
         <Hero />
         <Screenshot
           src="/screenshots/chat.png"
-          alt="HerdMan running a Claude Code chat that fixes flaky webhook retries, with the conversation and code changes side by side"
+          alt="Codevisor running a Claude Code chat that fixes flaky webhook retries, with the conversation and code changes side by side"
         />
         <Feature
           title="A real terminal. Built in."
           body="Watch your agents work, or take the wheel yourself. Every chat has a terminal underneath it, right where the work happens."
           src="/screenshots/terminal.png"
-          alt="HerdMan with the built-in terminal open under an agent chat"
+          alt="Codevisor with the built-in terminal open under an agent chat"
         />
         <Feature
           title="Projects keep the thread."
-          body="Point HerdMan at a folder and every conversation about that code lives together — including the agent chats you already had."
+          body="Point Codevisor at a folder and every conversation about that code lives together — including the agent chats you already had."
           src="/screenshots/new-chat.png"
-          alt="HerdMan project view listing chats for the api-gateway project"
+          alt="Codevisor project view listing chats for the api-gateway project"
         />
         <TextFeatures />
         <Install />
@@ -43,8 +43,8 @@ function Nav() {
     <header className="fixed inset-x-0 top-0 z-40 border-b border-hairline bg-black/80 backdrop-blur-xl">
       <nav className="mx-auto flex h-11 max-w-5xl items-center justify-between px-6 text-xs">
         <a href="/" className="flex items-center gap-2 font-semibold tracking-tight text-text">
-          <img src="/sheep.svg" alt="" className="size-4" />
-          HerdMan
+          <img src="/codevisor-icon.png" alt="" className="size-4 rounded" />
+          Codevisor
         </a>
         <div className="flex items-center gap-6 text-muted">
           <a href="/docs" className="transition-colors hover:text-text">
@@ -72,7 +72,7 @@ function Hero() {
         Every coding agent. One app.
       </h1>
       <p className="mx-auto mt-6 max-w-xl text-lg text-muted">
-        HerdMan runs Claude Code, Codex, and any ACP agent on your machines — in one native macOS
+        Codevisor runs Claude Code, Codex, and any ACP agent on your machines — in one native macOS
         app.
       </p>
       <div className="mt-8 flex flex-col items-center gap-3">
@@ -161,10 +161,10 @@ function TextFeatures() {
 function Install() {
   return (
     <section id="install" className="mx-auto max-w-xl px-6 pt-28 pb-32 text-center sm:pt-36">
-      <h2 className="text-3xl font-semibold tracking-tight sm:text-5xl">Get HerdMan.</h2>
+      <h2 className="text-3xl font-semibold tracking-tight sm:text-5xl">Get Codevisor.</h2>
       <p className="mt-4 text-lg text-muted">
         Download the app for macOS, or run one command — it installs the app on a Mac and sets up
-        the HerdMan server on Linux.
+        the Codevisor server on Linux.
       </p>
       <div className="mt-8 flex flex-col items-center gap-4">
         <a
@@ -178,7 +178,7 @@ function Install() {
         </div>
         <p className="text-[13px] text-muted">
           Homebrew:{" "}
-          <span className="font-mono text-[12px]">brew install --cask 851-labs/tap/herdman</span>
+          <span className="font-mono text-[12px]">brew install --cask 851-labs/tap/codevisor</span>
         </p>
       </div>
     </section>

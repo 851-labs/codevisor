@@ -1,4 +1,4 @@
-import type { EventEnvelope, SessionDetail } from "@herdman/api"
+import type { EventEnvelope, SessionDetail } from "@codevisor/api"
 import { describe, expect, it } from "vitest"
 
 import {
@@ -680,7 +680,7 @@ it("replays worktree setup phases for worktree-backed sessions", () => {
           worktreeId: "wt-1",
           projectId: "project-1",
           name: "fix-auth-1234",
-          branch: "herdman/fix-auth-1234"
+          branch: "codevisor/fix-auth-1234"
         },
         "worktree.setup"
       ),
@@ -691,7 +691,7 @@ it("replays worktree setup phases for worktree-backed sessions", () => {
           worktreeId: "wt-1",
           projectId: "project-1",
           name: "fix-auth-1234",
-          branch: "herdman/fix-auth-1234",
+          branch: "codevisor/fix-auth-1234",
           stream: "stderr",
           line: "Preparing worktree..."
         },
@@ -704,7 +704,7 @@ it("replays worktree setup phases for worktree-backed sessions", () => {
           worktreeId: "wt-1",
           projectId: "project-1",
           name: "fix-auth-1234",
-          branch: "herdman/fix-auth-1234",
+          branch: "codevisor/fix-auth-1234",
           durationMs: 2000
         },
         "worktree.setup"
@@ -735,7 +735,7 @@ it("replays session-subject worktree setup before the worktree name is patched",
           worktreeId: "wt-1",
           projectId: "project-1",
           name: "fix-auth-1234",
-          branch: "herdman/fix-auth-1234"
+          branch: "codevisor/fix-auth-1234"
         },
         "worktree.setup"
       ),
@@ -746,7 +746,7 @@ it("replays session-subject worktree setup before the worktree name is patched",
           worktreeId: "wt-1",
           projectId: "project-1",
           name: "fix-auth-1234",
-          branch: "herdman/fix-auth-1234",
+          branch: "codevisor/fix-auth-1234",
           durationMs: 1500
         },
         "worktree.setup"

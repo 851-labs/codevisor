@@ -1,7 +1,7 @@
 import { invoke, isTauri } from "@tauri-apps/api/core"
 import { listen, type UnlistenFn } from "@tauri-apps/api/event"
 
-// Where the app finds its herdman server. Inside Tauri the Rust side owns the
+// Where the app finds its codevisor server. Inside Tauri the Rust side owns the
 // server lifecycle and hands us the loopback endpoint; in a plain browser the
 // endpoint comes from env/localStorage, defaulting to same-origin (the vite
 // dev proxy forwards /v1 to the dev server).
@@ -22,7 +22,7 @@ interface TauriServerConfig {
   state: ServerLifecycleState
 }
 
-const STATE_EVENT = "herdman://server-state"
+const STATE_EVENT = "codevisor://server-state"
 
 function toWebSocketUrl(httpUrl: string): string {
   return httpUrl.replace(/^http:/, "ws:").replace(/^https:/, "wss:")
@@ -51,13 +51,15 @@ export async function resolveServerConfig(): Promise<ServerConfig> {
     }
   }
   const explicit =
+    (import.meta.env.VITE_CODEVISOR_SERVER_URL as string | undefined) ??
     (import.meta.env.VITE_HERDMAN_SERVER_URL as string | undefined) ??
-    readBrowserOverride("herdman.serverUrl") ??
+    readBrowserOverride("codevisor.serverUrl") ??
     ""
   const baseUrl = explicit.replace(/\/+$/, "")
   const token =
+    (import.meta.env.VITE_CODEVISOR_SERVER_TOKEN as string | undefined) ??
     (import.meta.env.VITE_HERDMAN_SERVER_TOKEN as string | undefined) ??
-    readBrowserOverride("herdman.serverToken")
+    readBrowserOverride("codevisor.serverToken")
   return {
     baseUrl,
     wsBaseUrl: baseUrl === "" ? sameOriginWsBase() : toWebSocketUrl(baseUrl),

@@ -1,5 +1,5 @@
 {
-  "name": "@herdman/db",
+  "name": "@codevisor/db",
   "private": true,
   "type": "module",
   "exports": {
@@ -15,7 +15,7 @@
     "test:coverage": "vitest run src --coverage"
   },
   "dependencies": {
-    "@herdman/api": "workspace:*",
+    "@codevisor/api": "workspace:*",
     "better-sqlite3": "12.9.0",
     "effect": "4.0.0-beta.92"
   },

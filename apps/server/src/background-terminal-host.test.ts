@@ -69,7 +69,7 @@ describe("background terminal host", () => {
 
   it("bridges wrapper frames to the registry and forwards input/kill back", async () => {
     const { registered, registry } = makeRegistry()
-    const socketPath = join(mkdtempSync(join(tmpdir(), "herdman-test-")), "bg.sock")
+    const socketPath = join(mkdtempSync(join(tmpdir(), "codevisor-test-")), "bg.sock")
     // A stale socket file from a previous process gets replaced.
     writeFileSync(socketPath, "")
     host = await startBackgroundTerminalHost({ registry, socketPath })
@@ -120,7 +120,7 @@ describe("background terminal host", () => {
 
   it("ends the stream when a wrapper dies without an exit frame", async () => {
     const { registered, registry } = makeRegistry()
-    const socketPath = join(mkdtempSync(join(tmpdir(), "herdman-test-")), "bg.sock")
+    const socketPath = join(mkdtempSync(join(tmpdir(), "codevisor-test-")), "bg.sock")
     host = await startBackgroundTerminalHost({ registry, socketPath })
 
     const wrapper = await connectWrapper(socketPath)
@@ -134,7 +134,7 @@ describe("background terminal host", () => {
 
   it("propagates codeless exit frames and rejects on listen failures", async () => {
     const { registered, registry } = makeRegistry()
-    const socketPath = join(mkdtempSync(join(tmpdir(), "herdman-test-")), "bg.sock")
+    const socketPath = join(mkdtempSync(join(tmpdir(), "codevisor-test-")), "bg.sock")
     host = await startBackgroundTerminalHost({ registry, socketPath })
     const wrapper = await connectWrapper(socketPath)
     send(wrapper, { type: "hello", key: "session:bg:tool-3" })
@@ -156,13 +156,13 @@ describe("background terminal host", () => {
     const wrap = wrapBackgroundCommand({
       nodePath: "/usr/local/bin/node",
       socketPath: "/tmp/bg.sock",
-      wrapperPath: "/opt/herdman/bg-wrap.js"
+      wrapperPath: "/opt/codevisor/bg-wrap.js"
     })
     const command = wrap("session:bg:tool-9", "npm run dev")
     expect(command).toBe(
       [
         "'/usr/local/bin/node'",
-        "'/opt/herdman/bg-wrap.js'",
+        "'/opt/codevisor/bg-wrap.js'",
         "'/tmp/bg.sock'",
         "'session:bg:tool-9'",
         Buffer.from("npm run dev", "utf8").toString("base64")

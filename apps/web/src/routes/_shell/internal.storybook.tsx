@@ -4,7 +4,7 @@ import type {
   PromptQueueItem,
   SessionConfigOption,
   SessionGoal
-} from "@herdman/api"
+} from "@codevisor/api"
 import { createFileRoute } from "@tanstack/react-router"
 import {
   ArrowUpIcon,
@@ -183,7 +183,7 @@ const setupPhases: SessionSetupPhaseInfo[] = [
     startedAt: new Date(Date.now() - 8_000).toISOString(),
     endedAt: new Date(Date.now() - 1_000).toISOString(),
     outcome: "failed",
-    failureMessage: "fatal: a branch named 'herdman/fix-auth' already exists",
+    failureMessage: "fatal: a branch named 'codevisor/fix-auth' already exists",
     logs: Array.from({ length: 14 }, (_, index) => ({
       id: index,
       stream: index % 4 === 0 ? "stderr" : "stdout",
@@ -214,7 +214,7 @@ const richMarkdown = `A paragraph with **bold**, *italic*, and \`inline code\`.
 
 > Keep quote blocks aligned with the macOS transcript.
 
-[Open the HerdMan repository](https://github.com/851-labs/herdman).
+[Open the Codevisor repository](https://github.com/851-labs/codevisor).
 
 | Name | Role |
 | :--- | ---: |
@@ -253,7 +253,7 @@ const sampleToolCalls: ToolCallInfo[] = [
         type: "content",
         content: {
           type: "text",
-          text: "apps/macos/HerdMan/Features/Composer/ComposerView.swift:18:struct ComposerCard: View"
+          text: "apps/macos/Codevisor/Features/Composer/ComposerView.swift:18:struct ComposerCard: View"
         }
       }
     ]
@@ -461,7 +461,7 @@ function Section({
   children: ReactNode
 }) {
   return (
-    <section id={id} className="scroll-mt-6 border-t border-[var(--herdman-separator)] pt-6">
+    <section id={id} className="scroll-mt-6 border-t border-[var(--codevisor-separator)] pt-6">
       <div className="mb-4 flex items-start justify-between gap-4">
         <div>
           <h2 className="text-lg font-semibold">{title}</h2>
@@ -965,7 +965,7 @@ function PrimitiveStates() {
       </StateBlock>
       <StateBlock title="Inputs and feedback">
         <div className="flex max-w-md flex-col gap-3">
-          <Input placeholder="Project name" defaultValue="herdman" />
+          <Input placeholder="Project name" defaultValue="codevisor" />
           <Textarea rows={3} placeholder="Notes" defaultValue="Jot down notes for this session." />
           <div className="flex items-center gap-3">
             <Switch checked={checked} onCheckedChange={setChecked} aria-label="Sample switch" />
@@ -1019,7 +1019,7 @@ function TranscriptStates() {
       <StateBlock title="Transcript rows">
         <div className="flex flex-col gap-5">
           <UserMessage
-            text="Please compare this long path-like token inside the bubble: /Users/alexandru/repos/851-labs/herdman/apps/web/src/features/session/Transcript.tsx?with=a-very-long-query-string"
+            text="Please compare this long path-like token inside the bubble: /Users/alexandru/repos/851-labs/codevisor/apps/web/src/features/session/Transcript.tsx?with=a-very-long-query-string"
             attachments={userAttachments}
           />
           <UserMessage text="" attachments={userAttachments} />
@@ -1054,7 +1054,7 @@ function TranscriptStates() {
       </SurfaceGrid>
       <StateBlock title="Transcript placement fixtures">
         <div className="grid gap-4 lg:grid-cols-3">
-          <div className="h-64 overflow-hidden border border-[var(--herdman-separator)]">
+          <div className="h-64 overflow-hidden border border-[var(--codevisor-separator)]">
             <Transcript
               conversation={[]}
               composerOverlay={null}
@@ -1066,10 +1066,10 @@ function TranscriptStates() {
               }}
             />
           </div>
-          <div className="h-64 overflow-hidden border border-[var(--herdman-separator)]">
+          <div className="h-64 overflow-hidden border border-[var(--codevisor-separator)]">
             <EstablishedOptimisticTranscriptFixture />
           </div>
-          <div className="h-64 overflow-hidden border border-[var(--herdman-separator)]">
+          <div className="h-64 overflow-hidden border border-[var(--codevisor-separator)]">
             <Transcript
               conversation={waitingConversation}
               composerOverlay={null}
@@ -1082,7 +1082,7 @@ function TranscriptStates() {
       </StateBlock>
       <StateBlock title="Session persistence">
         <div className="flex flex-col gap-2">
-          <div className="flex h-64 overflow-hidden border border-[var(--herdman-separator)]">
+          <div className="flex h-64 overflow-hidden border border-[var(--codevisor-separator)]">
             <Transcript
               conversation={persistenceConversation}
               turnMeta={persistenceTurnMeta}
@@ -1120,16 +1120,16 @@ function ChromeStates() {
   return (
     <SurfaceGrid>
       <StateBlock title="Session header">
-        <div className="overflow-hidden border border-[var(--herdman-separator)]">
+        <div className="overflow-hidden border border-[var(--codevisor-separator)]">
           <SessionHeader
             title="Implement macOS chat parity"
             diffTotals={{ added: 128, removed: 34 }}
           />
-          <div className="h-20 bg-[var(--herdman-card-quiet-bg)]" />
+          <div className="h-20 bg-[var(--codevisor-card-quiet-bg)]" />
         </div>
       </StateBlock>
       <StateBlock title="Bottom pane bar">
-        <div className="overflow-hidden rounded-md border border-[var(--herdman-separator)]">
+        <div className="overflow-hidden rounded-md border border-[var(--codevisor-separator)]">
           <StatusBar
             terminalVisible
             panes={panes}
@@ -1140,7 +1140,7 @@ function ChromeStates() {
             onClosePane={() => undefined}
             onAddTerminalPane={() => undefined}
           />
-          <div className="bg-[var(--herdman-card-quiet-bg)] p-4 font-mono text-xs text-muted-foreground">
+          <div className="bg-[var(--codevisor-card-quiet-bg)] p-4 font-mono text-xs text-muted-foreground">
             $ bun run test
           </div>
         </div>
@@ -1155,7 +1155,7 @@ function ChromeStates() {
             onSend={() => undefined}
             onAttachFiles={() => undefined}
           />
-          <div className="flex items-center gap-3 rounded-b-2xl border border-t-0 border-[var(--herdman-card-border)] bg-[var(--herdman-card-bg)] px-3.5 pt-7 pb-2 text-sm">
+          <div className="flex items-center gap-3 rounded-b-2xl border border-t-0 border-[var(--codevisor-card-border)] bg-[var(--codevisor-card-bg)] px-3.5 pt-7 pb-2 text-sm">
             <ChipMenu
               label="Codex"
               title="Agent"
@@ -1214,7 +1214,7 @@ function InternalStorybookRoute() {
             <h1 className="text-2xl font-semibold">Internal UI</h1>
           </div>
           <p className="text-muted-foreground max-w-3xl text-sm">
-            A kitchen sink for HerdMan UI states. Use this page to inspect common controls,
+            A kitchen sink for Codevisor UI states. Use this page to inspect common controls,
             transcript rows, tool calls, composer modes, and app chrome without needing a live
             session in a particular state.
           </p>

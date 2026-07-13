@@ -5,17 +5,17 @@ import type {
   RuntimeEvent,
   RuntimeEventSink,
   SetGoalUpdate
-} from "@herdman/agent-runtime"
-import type { Harness, McpServer } from "@herdman/api"
-import { makeDatabase, type HerdManDatabaseService } from "@herdman/db"
+} from "@codevisor/agent-runtime"
+import type { Harness, McpServer } from "@codevisor/api"
+import { makeDatabase, type CodevisorDatabaseService } from "@codevisor/db"
 import Database from "better-sqlite3"
 import type {
   TerminalHandlers,
   TerminalProcess,
   TerminalSpawnRequest,
   TerminalSpawner
-} from "@herdman/terminal"
-import { makeTerminalManager, TerminalError } from "@herdman/terminal"
+} from "@codevisor/terminal"
+import { makeTerminalManager, TerminalError } from "@codevisor/terminal"
 import { Effect } from "effect"
 import { execFile } from "node:child_process"
 import { randomUUID } from "node:crypto"
@@ -38,16 +38,16 @@ import {
   defaultDatabasePath,
   defaultServerConfig,
   EventFanout,
-  HerdManServer,
-  makeHerdManServerApp,
+  CodevisorServer,
+  makeCodevisorServerApp,
   makeEventFanout,
   reconcileOrphanedSessionTurns,
-  startHerdManServer,
+  startCodevisorServer,
   sweepAttachmentTempFiles,
-  type RunningHerdManServer
+  type RunningCodevisorServer
 } from "./server.js"
 import type { HarnessAuthManager } from "./harness-auth.js"
-import type { HerdManServerServices } from "./server.js"
+import type { CodevisorServerServices } from "./server.js"
 import { boundedMcpTimerDelay, makeMcpManager, NodeStreamableHttpTransport } from "./mcp-manager.js"
 import { Client as McpClient } from "@modelcontextprotocol/sdk/client/index.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
@@ -428,8 +428,8 @@ const makeSpawner = (): TerminalSpawner & {
 }
 
 const tempDirs: Array<string> = []
-const runningServers: Array<RunningHerdManServer> = []
-const databases: Array<HerdManDatabaseService> = []
+const runningServers: Array<RunningCodevisorServer> = []
+const databases: Array<CodevisorDatabaseService> = []
 
 afterEach(async () => {
   for (const server of runningServers.splice(0)) {
@@ -444,9 +444,9 @@ afterEach(async () => {
 })
 
 const makeServices = async (serverId = "test") => {
-  const dir = mkdtempSync(join(tmpdir(), "herdman-server-"))
+  const dir = mkdtempSync(join(tmpdir(), "codevisor-server-"))
   tempDirs.push(dir)
-  const db = await run(makeDatabase({ filename: join(dir, "herdman.sqlite"), serverId }))
+  const db = await run(makeDatabase({ filename: join(dir, "codevisor.sqlite"), serverId }))
   databases.push(db)
   const spawner = makeSpawner()
   const agents = makeAgents()
@@ -466,7 +466,7 @@ const makeServices = async (serverId = "test") => {
 const start = async (auth = { allowLocalhostWithoutAuth: true, requireBearerToken: false }) => {
   const { agents, services, spawner } = await makeServices("server-a")
   const server = await run(
-    startHerdManServer(
+    startCodevisorServer(
       services,
       defaultServerConfig({
         auth,
@@ -480,12 +480,12 @@ const start = async (auth = { allowLocalhostWithoutAuth: true, requireBearerToke
 }
 
 const startWithApp = async (
-  services: HerdManServerServices,
+  services: CodevisorServerServices,
   fanout?: EventFanout
-): Promise<RunningHerdManServer> => {
+): Promise<RunningCodevisorServer> => {
   const appFanout = fanout ?? (await run(makeEventFanout))
   return await new Promise((resolve, reject) => {
-    const app = makeHerdManServerApp(
+    const app = makeCodevisorServerApp(
       services,
       defaultServerConfig({ id: "server-a", port: 0 }),
       appFanout
@@ -514,7 +514,7 @@ const startWithApp = async (
 }
 
 const jsonRequest = async (
-  server: RunningHerdManServer,
+  server: RunningCodevisorServer,
   path: string,
   init: RequestInit = {}
 ): Promise<{ readonly status: number; readonly body: unknown }> => {
@@ -533,7 +533,7 @@ const jsonRequest = async (
 }
 
 const readSseEvents = async (
-  server: RunningHerdManServer,
+  server: RunningCodevisorServer,
   expectedCount: number,
   since?: number | string
 ): Promise<ReadonlyArray<unknown>> => {
@@ -567,7 +567,7 @@ const readSseEvents = async (
 }
 
 const readWebSocketEvents = async (
-  server: RunningHerdManServer,
+  server: RunningCodevisorServer,
   expectedCount: number,
   since?: number | string,
   path = "/v1/events/socket"
@@ -619,7 +619,7 @@ const waitFor = async (
   throw new Error(`Timed out waiting for condition ${describeState()}`)
 }
 
-describe("@herdman/server", () => {
+describe("@codevisor/server", () => {
   it("bounds long-lived OAuth refresh timers to Node's supported range", () => {
     expect(boundedMcpTimerDelay(2_591_232_324)).toBe(2_147_000_000)
     expect(boundedMcpTimerDelay(3_480_000)).toBe(3_480_000)
@@ -637,7 +637,7 @@ describe("@herdman/server", () => {
     const recoveryGate = new Promise<void>((resolve) => {
       releaseRecovery = resolve
     })
-    const gatedServices: HerdManServerServices = {
+    const gatedServices: CodevisorServerServices = {
       ...services,
       db: {
         ...services.db,
@@ -648,7 +648,7 @@ describe("@herdman/server", () => {
       }
     }
     const starting = run(
-      startHerdManServer(gatedServices, defaultServerConfig({ id: "server-a", port }))
+      startCodevisorServer(gatedServices, defaultServerConfig({ id: "server-a", port }))
     )
 
     let recoveryResponse: Response | undefined
@@ -682,7 +682,7 @@ describe("@herdman/server", () => {
 
   it("fails startup cleanly when orphan reconciliation cannot read sessions", async () => {
     const { services } = await makeServices("server-a")
-    const failingServices: HerdManServerServices = {
+    const failingServices: CodevisorServerServices = {
       ...services,
       db: {
         ...services.db,
@@ -693,7 +693,7 @@ describe("@herdman/server", () => {
     }
 
     await expect(
-      run(startHerdManServer(failingServices, defaultServerConfig({ id: "server-a", port: 0 })))
+      run(startCodevisorServer(failingServices, defaultServerConfig({ id: "server-a", port: 0 })))
     ).rejects.toMatchObject({
       operation: "start",
       message: "recovery database unavailable"
@@ -702,7 +702,7 @@ describe("@herdman/server", () => {
 
   it("restores session context and terminalizes a turn orphaned by server restart", async () => {
     const { agents, services } = await makeServices("server-a")
-    const folder = mkdtempSync(join(tmpdir(), "herdman-recovery-project-"))
+    const folder = mkdtempSync(join(tmpdir(), "codevisor-recovery-project-"))
     tempDirs.push(folder)
     const project = await run(services.db.createProject({ folderPath: folder }))
     const session = await run(
@@ -782,7 +782,7 @@ describe("@herdman/server", () => {
     )
 
     const server = await run(
-      startHerdManServer(services, defaultServerConfig({ id: "server-a", port: 0 }))
+      startCodevisorServer(services, defaultServerConfig({ id: "server-a", port: 0 }))
     )
     runningServers.push(server)
 
@@ -821,7 +821,7 @@ describe("@herdman/server", () => {
 
   it("terminalizes a durably claimed prompt instead of losing or replaying it after restart", async () => {
     const { services } = await makeServices("server-a")
-    const folder = mkdtempSync(join(tmpdir(), "herdman-claimed-prompt-project-"))
+    const folder = mkdtempSync(join(tmpdir(), "codevisor-claimed-prompt-project-"))
     tempDirs.push(folder)
     const project = await run(services.db.createProject({ folderPath: folder }))
     const session = await run(
@@ -905,7 +905,7 @@ describe("@herdman/server", () => {
     )
 
     const server = await run(
-      startHerdManServer(services, defaultServerConfig({ id: "server-a", port: 0 }))
+      startCodevisorServer(services, defaultServerConfig({ id: "server-a", port: 0 }))
     )
     runningServers.push(server)
 
@@ -943,7 +943,7 @@ describe("@herdman/server", () => {
 
   it("terminalizes an orphaned turn when its agent session cannot be restored", async () => {
     const { services } = await makeServices("server-a")
-    const missingFolder = join(tmpdir(), `herdman-missing-${randomUUID()}`)
+    const missingFolder = join(tmpdir(), `codevisor-missing-${randomUUID()}`)
     const project = await run(services.db.createProject({ folderPath: missingFolder }))
     const session = await run(
       services.db.createSession({
@@ -960,7 +960,7 @@ describe("@herdman/server", () => {
     )
 
     const server = await run(
-      startHerdManServer(services, defaultServerConfig({ id: "server-a", port: 0 }))
+      startCodevisorServer(services, defaultServerConfig({ id: "server-a", port: 0 }))
     )
     runningServers.push(server)
 
@@ -1043,7 +1043,7 @@ describe("@herdman/server", () => {
     const { server, services } = await start()
     await services.mcp.create({
       authType: "none",
-      command: "herdman-missing-posthog-mcp",
+      command: "codevisor-missing-posthog-mcp",
       name: "PostHog",
       transport: "stdio"
     })
@@ -1074,7 +1074,7 @@ describe("@herdman/server", () => {
     })
     await services.mcp.create({
       authType: "none",
-      command: "herdman-missing-linear-mcp",
+      command: "codevisor-missing-linear-mcp",
       name: "Linear",
       transport: "stdio"
     })
@@ -1516,7 +1516,7 @@ describe("@herdman/server", () => {
       ).status
     ).toBe(204)
 
-    const projectFolder = mkdtempSync(join(tmpdir(), "herdman-auth-project-"))
+    const projectFolder = mkdtempSync(join(tmpdir(), "codevisor-auth-project-"))
     tempDirs.push(projectFolder)
     const project = (
       await jsonRequest(server, "/v1/projects", {
@@ -1654,7 +1654,7 @@ describe("@herdman/server", () => {
       host: "127.0.0.1",
       id: "local",
       kind: "local",
-      name: "Local HerdMan",
+      name: "Local Codevisor",
       port: 49361,
       version: "0.1.0"
     })
@@ -1663,7 +1663,7 @@ describe("@herdman/server", () => {
     ).toMatchObject({
       token: expect.stringMatching(/^hm_/)
     })
-    expect(defaultDatabasePath()).toContain("herdman-server.sqlite")
+    expect(defaultDatabasePath()).toContain("codevisor-server.sqlite")
 
     // Shutdown is acknowledged even when the host process installed no handler.
     expect((await jsonRequest(server, "/v1/shutdown", { method: "POST" })).status).toBe(202)
@@ -1673,7 +1673,7 @@ describe("@herdman/server", () => {
 
     let shutdownRequests = 0
     const stoppable = await run(
-      startHerdManServer(
+      startCodevisorServer(
         services,
         defaultServerConfig({
           id: "server-stoppable",
@@ -1693,7 +1693,7 @@ describe("@herdman/server", () => {
     // Servers with an updater report fresh update state and apply on request.
     const updaterState = { available: true, applyCalls: 0, applyFails: false }
     const updatable = await run(
-      startHerdManServer(
+      startCodevisorServer(
         services,
         defaultServerConfig({
           id: "server-updatable",
@@ -1742,7 +1742,7 @@ describe("@herdman/server", () => {
 
     const token = await run(services.db.issuePairingToken)
     const secured = await run(
-      startHerdManServer(
+      startCodevisorServer(
         services,
         defaultServerConfig({
           auth: {
@@ -1786,7 +1786,7 @@ describe("@herdman/server", () => {
     })
 
     const localhostSecured = await run(
-      startHerdManServer(
+      startCodevisorServer(
         services,
         defaultServerConfig({
           auth: {
@@ -1805,7 +1805,7 @@ describe("@herdman/server", () => {
   it("refuses to apply an update while a chat is mid-turn", async () => {
     const { agents, services } = await makeServices("server-busy")
     const server = await run(
-      startHerdManServer(
+      startCodevisorServer(
         services,
         defaultServerConfig({
           id: "server-busy",
@@ -1826,9 +1826,9 @@ describe("@herdman/server", () => {
     )
     runningServers.push(server)
 
-    const workspaceRoot = mkdtempSync(join(tmpdir(), "herdman-server-busy-"))
+    const workspaceRoot = mkdtempSync(join(tmpdir(), "codevisor-server-busy-"))
     tempDirs.push(workspaceRoot)
-    const workspaceFolder = join(workspaceRoot, "herdman")
+    const workspaceFolder = join(workspaceRoot, "codevisor")
     mkdirSync(workspaceFolder)
     const workspace = (
       await jsonRequest(server, "/v1/projects", {
@@ -1865,7 +1865,7 @@ describe("@herdman/server", () => {
   it("applies the CORS allowlist to browser origins", async () => {
     const { services } = await makeServices("server-cors")
     const server = await run(
-      startHerdManServer(
+      startCodevisorServer(
         services,
         defaultServerConfig({
           corsOrigins: ["tauri://localhost"],
@@ -1906,7 +1906,7 @@ describe("@herdman/server", () => {
     // Without a configured allowlist, no CORS headers are emitted at all.
     const { services: plainServices } = await makeServices("server-no-cors")
     const plain = await run(
-      startHerdManServer(plainServices, defaultServerConfig({ id: "server-no-cors", port: 0 }))
+      startCodevisorServer(plainServices, defaultServerConfig({ id: "server-no-cors", port: 0 }))
     )
     runningServers.push(plain)
     const noCors = await fetch(`${plain.url}/v1/health`, {
@@ -1917,9 +1917,9 @@ describe("@herdman/server", () => {
 
   it("manages workspaces, harnesses, sessions, actions, and event replay", async () => {
     const { agents, server, services } = await start()
-    const workspaceRoot = mkdtempSync(join(tmpdir(), "herdman-server-workspace-"))
+    const workspaceRoot = mkdtempSync(join(tmpdir(), "codevisor-server-workspace-"))
     tempDirs.push(workspaceRoot)
-    const workspaceFolder = join(workspaceRoot, "herdman")
+    const workspaceFolder = join(workspaceRoot, "codevisor")
     const noModesFolder = join(workspaceRoot, "no-modes")
     const capabilityFailFolder = join(workspaceRoot, "capability-fail")
     const cwdFile = join(workspaceRoot, "cwd-file")
@@ -1927,7 +1927,7 @@ describe("@herdman/server", () => {
     mkdirSync(noModesFolder)
     mkdirSync(capabilityFailFolder)
     writeFileSync(cwdFile, "")
-    const legacyRoot = mkdtempSync(join(tmpdir(), "herdman-server-legacy-"))
+    const legacyRoot = mkdtempSync(join(tmpdir(), "codevisor-server-legacy-"))
     tempDirs.push(legacyRoot)
     const legacyWorkspaceFolder = join(legacyRoot, "legacy-agent-session")
     mkdirSync(legacyWorkspaceFolder)
@@ -1995,7 +1995,7 @@ describe("@herdman/server", () => {
     })
     const missingCwdCapabilities = await jsonRequest(
       server,
-      "/v1/capabilities?cwd=%2Ftmp%2Fmissing-herdman-workspace"
+      "/v1/capabilities?cwd=%2Ftmp%2Fmissing-codevisor-workspace"
     )
     expect(missingCwdCapabilities.body).toMatchObject({
       harnesses: [{ harness: { id: "codex" } }]
@@ -2053,7 +2053,7 @@ describe("@herdman/server", () => {
       method: "POST"
     })
     const session = sessionResponse.body as { readonly id: string; readonly agentSessionId: string }
-    expect(session.agentSessionId).toBe("agent-codex-herdman")
+    expect(session.agentSessionId).toBe("agent-codex-codevisor")
     expect(
       (
         await jsonRequest(server, "/v1/sessions", {
@@ -2066,7 +2066,7 @@ describe("@herdman/server", () => {
           method: "POST"
         })
       ).body
-    ).toMatchObject({ agentSessionId: "agent-codex-herdman", id: session.id })
+    ).toMatchObject({ agentSessionId: "agent-codex-codevisor", id: session.id })
 
     const deferredResponse = await jsonRequest(server, "/v1/sessions", {
       body: JSON.stringify({
@@ -2091,8 +2091,8 @@ describe("@herdman/server", () => {
     const deferredDetail = (await jsonRequest(server, `/v1/sessions/${deferred.id}`)).body as {
       readonly session: { readonly agentSessionId?: string }
     }
-    expect(deferredDetail.session.agentSessionId).toBe("agent-codex-herdman")
-    expect(agents.prompts).toContainEqual(["agent-codex-herdman", "hello deferred"])
+    expect(deferredDetail.session.agentSessionId).toBe("agent-codex-codevisor")
+    expect(agents.prompts).toContainEqual(["agent-codex-codevisor", "hello deferred"])
 
     const concurrentSessionBody = JSON.stringify({
       id: "client-session-concurrent",
@@ -2115,7 +2115,7 @@ describe("@herdman/server", () => {
     ])
     expect([firstConcurrent.status, secondConcurrent.status].sort()).toEqual([200, 201])
     expect(firstConcurrent.body).toMatchObject({
-      agentSessionId: "agent-codex-herdman",
+      agentSessionId: "agent-codex-codevisor",
       id: "client-session-concurrent"
     })
     expect(secondConcurrent.body).toEqual(firstConcurrent.body)
@@ -2148,7 +2148,7 @@ describe("@herdman/server", () => {
     ).toBe(404)
     const missingWorkspaceResponse = await jsonRequest(server, "/v1/projects", {
       body: JSON.stringify({
-        folderPath: "/tmp/herdman-missing-session-workspace",
+        folderPath: "/tmp/codevisor-missing-session-workspace",
         id: "missing-folder-workspace"
       }),
       method: "POST"
@@ -2163,7 +2163,7 @@ describe("@herdman/server", () => {
         method: "POST"
       })
     ).toEqual({
-      body: { error: "Project folder does not exist: /tmp/herdman-missing-session-workspace" },
+      body: { error: "Project folder does not exist: /tmp/codevisor-missing-session-workspace" },
       status: 400
     })
     expect((await jsonRequest(server, "/v1/sessions/missing")).status).toBe(500)
@@ -2678,7 +2678,7 @@ describe("@herdman/server", () => {
     const { agents, services } = await makeServices("server-a")
     const server = await startWithApp(services)
     runningServers.push(server)
-    const projectRoot = mkdtempSync(join(tmpdir(), "herdman-server-pending-create-"))
+    const projectRoot = mkdtempSync(join(tmpdir(), "codevisor-server-pending-create-"))
     tempDirs.push(projectRoot)
     const workspaceFolder = join(projectRoot, "workspace")
     mkdirSync(workspaceFolder)
@@ -2712,9 +2712,9 @@ describe("@herdman/server", () => {
 
   it("persists and fans out agent-initiated events with no prompt in flight", async () => {
     const { agents, server, services } = await start()
-    const workspaceRoot = mkdtempSync(join(tmpdir(), "herdman-server-background-"))
+    const workspaceRoot = mkdtempSync(join(tmpdir(), "codevisor-server-background-"))
     tempDirs.push(workspaceRoot)
-    const workspaceFolder = join(workspaceRoot, "herdman")
+    const workspaceFolder = join(workspaceRoot, "codevisor")
     mkdirSync(workspaceFolder)
     const workspace = (
       await jsonRequest(server, "/v1/projects", {
@@ -2785,9 +2785,9 @@ describe("@herdman/server", () => {
 
   it("keeps subagent-attributed chunks out of the conversation snapshot", async () => {
     const { agents, server, services } = await start()
-    const workspaceRoot = mkdtempSync(join(tmpdir(), "herdman-server-subagent-"))
+    const workspaceRoot = mkdtempSync(join(tmpdir(), "codevisor-server-subagent-"))
     tempDirs.push(workspaceRoot)
-    const workspaceFolder = join(workspaceRoot, "herdman")
+    const workspaceFolder = join(workspaceRoot, "codevisor")
     mkdirSync(workspaceFolder)
     const workspace = (
       await jsonRequest(server, "/v1/projects", {
@@ -2843,14 +2843,14 @@ describe("@herdman/server", () => {
     const git = (args: ReadonlyArray<string>, cwd: string) =>
       execFileAsync("git", [...args], { cwd })
 
-    const worktreesRoot = mkdtempSync(join(tmpdir(), "herdman-worktrees-"))
+    const worktreesRoot = mkdtempSync(join(tmpdir(), "codevisor-worktrees-"))
     tempDirs.push(worktreesRoot)
-    process.env["HERDMAN_WORKTREES_ROOT"] = worktreesRoot
+    process.env["CODEVISOR_WORKTREES_ROOT"] = worktreesRoot
     try {
       const { agents, server, services } = await start()
       // makeServices' temp dir (the newest entry) holds the server database.
-      const serverDatabasePath = join(tempDirs[tempDirs.length - 1] as string, "herdman.sqlite")
-      const repoRoot = mkdtempSync(join(tmpdir(), "herdman-repo-"))
+      const serverDatabasePath = join(tempDirs[tempDirs.length - 1] as string, "codevisor.sqlite")
+      const repoRoot = mkdtempSync(join(tmpdir(), "codevisor-repo-"))
       tempDirs.push(repoRoot)
       const repoFolder = join(repoRoot, "repo")
       const plainFolder = join(repoRoot, "plain")
@@ -2914,7 +2914,7 @@ describe("@herdman/server", () => {
       })
       // Every name carries a random four-digit suffix so names never conflict.
       expect(worktree.name).toMatch(/^fix-auth-\d{4}$/)
-      expect(worktree.branch).toBe(`herdman/${worktree.name}`)
+      expect(worktree.branch).toBe(`codevisor/${worktree.name}`)
       expect(worktree.path).toBe(join(worktreesRoot, "git-project", worktree.name))
       expect(existsSync(join(worktree.path, ".git"))).toBe(true)
 
@@ -2970,7 +2970,7 @@ describe("@herdman/server", () => {
       ).body as { readonly name: string; readonly branch: string }
       expect(secondWorktree.name).toMatch(/^fix-auth-\d{4}$/)
       expect(secondWorktree.name).not.toBe(worktree.name)
-      expect(secondWorktree.branch).toBe(`herdman/${secondWorktree.name}`)
+      expect(secondWorktree.branch).toBe(`codevisor/${secondWorktree.name}`)
       // Missing name gets a random memorable slug like "ferocious-walrus-8392".
       const randomNamed = (
         await jsonRequest(server, "/v1/projects/git-project/worktrees", {
@@ -2978,7 +2978,7 @@ describe("@herdman/server", () => {
         })
       ).body as { readonly name: string; readonly branch: string }
       expect(randomNamed.name).toMatch(/^[a-z]+-[a-z]+-\d{4}$/)
-      expect(randomNamed.branch).toBe(`herdman/${randomNamed.name}`)
+      expect(randomNamed.branch).toBe(`codevisor/${randomNamed.name}`)
       expect(
         ((await jsonRequest(server, "/v1/projects/git-project/worktrees")).body as Array<unknown>)
           .length
@@ -2987,7 +2987,7 @@ describe("@herdman/server", () => {
       // A failing git operation (branch already exists) surfaces as 422 and
       // releases the reserved name for a retry. Pin the digit draw so the
       // pre-created branch matches the generated name.
-      await git(["branch", "herdman/doomed-8392"], repoFolder)
+      await git(["branch", "codevisor/doomed-8392"], repoFolder)
       const doomedSpy = vi.spyOn(Math, "random").mockReturnValue(0.8392)
       const failed = await jsonRequest(server, "/v1/projects/git-project/worktrees", {
         body: JSON.stringify({ id: "wt-doomed", name: "doomed" }),
@@ -3205,13 +3205,13 @@ describe("@herdman/server", () => {
         ).status
       ).toBe(400)
     } finally {
-      delete process.env["HERDMAN_WORKTREES_ROOT"]
+      delete process.env["CODEVISOR_WORKTREES_ROOT"]
     }
   })
 
   it("stores files and threads prompt attachments end to end", async () => {
     const { agents, server, services } = await start()
-    const projectRoot = mkdtempSync(join(tmpdir(), "herdman-server-attachments-"))
+    const projectRoot = mkdtempSync(join(tmpdir(), "codevisor-server-attachments-"))
     tempDirs.push(projectRoot)
     const projectFolder = join(projectRoot, "project")
     mkdirSync(projectFolder)
@@ -3419,7 +3419,7 @@ describe("@herdman/server", () => {
   })
 
   it("sweeps stale materialized attachment temp files at startup", async () => {
-    const root = join(tmpdir(), "herdman-attachments")
+    const root = join(tmpdir(), "codevisor-attachments")
     mkdirSync(root, { recursive: true })
     const stale = join(root, "sweep-test-stale")
     const fresh = join(root, "sweep-test-fresh")
@@ -3449,7 +3449,12 @@ describe("@herdman/server", () => {
     expect(missing.body).toEqual({ closed: false })
 
     await jsonRequest(server, "/v1/terminals", {
-      body: JSON.stringify({ sessionId: "session-kill", cwd: "/tmp/herdman", cols: 80, rows: 24 }),
+      body: JSON.stringify({
+        sessionId: "session-kill",
+        cwd: "/tmp/codevisor",
+        cols: 80,
+        rows: 24
+      }),
       method: "POST"
     })
     const closed = await jsonRequest(server, "/v1/terminals/session/session-kill", {
@@ -3463,7 +3468,7 @@ describe("@herdman/server", () => {
   it("bridges terminal create and websocket traffic", async () => {
     const { server, spawner } = await start()
     const terminalResponse = await jsonRequest(server, "/v1/terminals", {
-      body: JSON.stringify({ sessionId: "session-1", cwd: "/tmp/herdman", cols: 80, rows: 24 }),
+      body: JSON.stringify({ sessionId: "session-1", cwd: "/tmp/codevisor", cols: 80, rows: 24 }),
       method: "POST"
     })
     expect((await jsonRequest(server, "/v1/terminals", { method: "POST" })).status).toBe(400)
@@ -3715,9 +3720,9 @@ describe("@herdman/server", () => {
     const { services } = await makeServices("layered")
     const layered = await run(
       Effect.gen(function* () {
-        const server = yield* HerdManServer
+        const server = yield* CodevisorServer
         return yield* server.db.getUpdateInfo
-      }).pipe(Effect.provide(HerdManServer.layer(services)))
+      }).pipe(Effect.provide(CodevisorServer.layer(services)))
     )
     expect(layered.currentVersion).toBe("0.1.0")
 

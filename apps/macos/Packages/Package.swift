@@ -1,34 +1,34 @@
 // swift-tools-version: 6.0
 import PackageDescription
 
-// Umbrella package exposing the three HerdMan libraries as a single local
+// Umbrella package exposing the three Codevisor libraries as a single local
 // Swift package, so the app links one package reference. Each target reuses the
 // per-module folder layout under Packages/<Module>/.
 let package = Package(
-    name: "HerdManKit",
+    name: "CodevisorKit",
     platforms: [
         .macOS("26.0")
     ],
     products: [
         .library(name: "ACPKit", targets: ["ACPKit"]),
         .library(name: "StreamMarkdown", targets: ["StreamMarkdown"]),
-        .library(name: "HerdManTheming", targets: ["HerdManTheming"]),
+        .library(name: "CodevisorTheming", targets: ["CodevisorTheming"]),
         .library(name: "CodeHighlighter", targets: ["CodeHighlighter"]),
-        .library(name: "HerdManCore", targets: ["HerdManCore"])
+        .library(name: "CodevisorCore", targets: ["CodevisorCore"])
     ],
     targets: [
-        // MARK: HerdManTheming (VSCode/Shiki theme parsing, normalization,
+        // MARK: CodevisorTheming (VSCode/Shiki theme parsing, normalization,
         // palette derivation — Foundation-only, no SwiftUI)
         .target(
-            name: "HerdManTheming",
-            path: "HerdManTheming/Sources/HerdManTheming",
+            name: "CodevisorTheming",
+            path: "CodevisorTheming/Sources/CodevisorTheming",
             resources: [.copy("Resources/Themes")],
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),
         .testTarget(
-            name: "HerdManThemingTests",
-            dependencies: ["HerdManTheming"],
-            path: "HerdManTheming/Tests/HerdManThemingTests",
+            name: "CodevisorThemingTests",
+            dependencies: ["CodevisorTheming"],
+            path: "CodevisorTheming/Tests/CodevisorThemingTests",
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),
 
@@ -73,17 +73,17 @@ let package = Package(
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),
 
-        // MARK: HerdManCore (app logic: models, repositories, DI, view models)
+        // MARK: CodevisorCore (app logic: models, repositories, DI, view models)
         .target(
-            name: "HerdManCore",
-            dependencies: ["ACPKit", "HerdManTheming"],
-            path: "HerdManCore/Sources/HerdManCore",
+            name: "CodevisorCore",
+            dependencies: ["ACPKit", "CodevisorTheming"],
+            path: "CodevisorCore/Sources/CodevisorCore",
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),
         .testTarget(
-            name: "HerdManCoreTests",
-            dependencies: ["HerdManCore", "ACPKit"],
-            path: "HerdManCore/Tests/HerdManCoreTests",
+            name: "CodevisorCoreTests",
+            dependencies: ["CodevisorCore", "ACPKit"],
+            path: "CodevisorCore/Tests/CodevisorCoreTests",
             swiftSettings: [.swiftLanguageMode(.v6)]
         )
     ]

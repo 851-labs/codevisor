@@ -1,4 +1,0 @@
-interface:
-  display_name: "Release HerdMan"
-  short_description: "Build and publish a HerdMan release"
-  default_prompt: "Use $release-herdman to cut and verify a HerdMan release."

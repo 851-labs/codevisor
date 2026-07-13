@@ -167,7 +167,7 @@ const conversationEvent = (
   subjectId: sessionId
 })
 
-describe("@herdman/agent-runtime", () => {
+describe("@codevisor/agent-runtime", () => {
   it("probes and delegates harness authentication", async () => {
     const connector = makeConnector()
     const runtime = makeAgentRuntime({
@@ -500,14 +500,14 @@ describe("@herdman/agent-runtime", () => {
       connector,
       env: { PATH: "/bin" },
       executableExists: (name) => name === "opencode",
-      locateExecutable: (name) => (name === "opencode" ? "/opt/herdman/bin/opencode" : undefined)
+      locateExecutable: (name) => (name === "opencode" ? "/opt/codevisor/bin/opencode" : undefined)
     })
 
     await run(runtime.createAgentSession("opencode", "/tmp/project", () => undefined))
 
     expect(connector.requests[0]).toMatchObject({
       args: ["acp"],
-      command: "/opt/herdman/bin/opencode",
+      command: "/opt/codevisor/bin/opencode",
       cwd: "/tmp/project",
       harnessId: "opencode"
     })
@@ -549,7 +549,7 @@ describe("@herdman/agent-runtime", () => {
   })
 
   it("locates absolute and ~-prefixed fallback candidates directly", () => {
-    const home = mkdtempSync(join(tmpdir(), "herdman-locate-"))
+    const home = mkdtempSync(join(tmpdir(), "codevisor-locate-"))
     const bundled = join(home, "Applications", "Codex.app", "Contents", "Resources")
     mkdirSync(bundled, { recursive: true })
     const binary = join(bundled, "codex")

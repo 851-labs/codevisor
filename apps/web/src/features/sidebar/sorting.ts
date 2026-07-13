@@ -1,6 +1,6 @@
 // Sidebar ordering helpers, ported from SidebarView.swift
 // (compareProjects / compareSessions / timestamp / projectTimestamp).
-import type { SessionSummary, Project } from "@herdman/api"
+import type { SessionSummary, Project } from "@codevisor/api"
 
 export type SidebarOrganization = "byProject" | "chronological"
 export type SidebarOrder = "updated" | "created"

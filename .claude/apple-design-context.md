@@ -2,7 +2,7 @@
 
 ## Product
 
-- **Name**: HerdMan
+- **Name**: Codevisor
 - **Description**: A native macOS app for running Claude Code, Codex, and ACP coding agents across local and remote machines.
 - **Category**: Developer productivity
 - **Stage**: Development

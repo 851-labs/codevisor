@@ -1,4 +1,4 @@
-import type { ConversationItem } from "@herdman/api"
+import type { ConversationItem } from "@codevisor/api"
 
 // Folds the server's per-chunk conversation rows into displayable turns,
 // mirroring the Swift client (ServerSessionTransport.conversationItems +

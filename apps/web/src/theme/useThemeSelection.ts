@@ -3,7 +3,7 @@ import { createThemeResolver } from "@pierre/theming"
 import { useThemeController } from "@pierre/theming/react"
 import { useContext, useMemo } from "react"
 
-import { herdmanThemeCatalog } from "./themeCatalog"
+import { codevisorThemeCatalog } from "./themeCatalog"
 import { ThemeControllerContext } from "./useThemeSource"
 
 export interface ThemeSelectionResult {
@@ -72,8 +72,8 @@ export function useThemeSelection(): ThemeSelectionResult {
       colorMode: state.mode,
       darkThemeName: state.darkThemeName,
       lightThemeName: state.lightThemeName,
-      darkThemeNames: herdmanThemeCatalog.getThemeNames({ colorScheme: "dark" }),
-      lightThemeNames: herdmanThemeCatalog.getThemeNames({ colorScheme: "light" }),
+      darkThemeNames: codevisorThemeCatalog.getThemeNames({ colorScheme: "dark" }),
+      lightThemeNames: codevisorThemeCatalog.getThemeNames({ colorScheme: "light" }),
       setColorMode: (mode: ColorMode) => controller.setColorMode(mode),
       setDarkThemeName: (name: string) => controller.setThemeNameForScheme("dark", name),
       setLightThemeName: (name: string) => controller.setThemeNameForScheme("light", name)

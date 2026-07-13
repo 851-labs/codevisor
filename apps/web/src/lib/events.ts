@@ -2,7 +2,7 @@
 // client's reconnect semantics — exponential backoff with jitter, resuming
 // from the last seen cursor (`?since=`). The server replays persisted events
 // past the cursor on reconnect, so subscribers never miss events.
-import { decode, EventEnvelope } from "@herdman/api"
+import { decode, EventEnvelope } from "@codevisor/api"
 
 import type { ServerConfig } from "./server-config"
 

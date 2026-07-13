@@ -4,7 +4,7 @@ import { StrictMode } from "react"
 import ReactDOM from "react-dom/client"
 
 import { type Api, ApiProvider } from "./lib/api"
-import { HerdManClient } from "./lib/client"
+import { CodevisorClient } from "./lib/client"
 import { EventSocket } from "./lib/events"
 import { wireServerEvents } from "./lib/queries"
 import { resolveServerConfig } from "./lib/server-config"
@@ -25,7 +25,7 @@ declare module "@tanstack/react-router" {
 const config = await resolveServerConfig()
 const api: Api = {
   config,
-  client: new HerdManClient(config),
+  client: new CodevisorClient(config),
   events: new EventSocket(config)
 }
 api.events.start()

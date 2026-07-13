@@ -1,10 +1,10 @@
 ---
 title: Network security
-description: Expose a remote HerdMan Server without exposing its credentials or transport.
+description: Expose a remote Codevisor Server without exposing its credentials or transport.
 icon: ShieldCheck
 ---
 
-HerdMan Server speaks plain HTTP and WebSocket. It does not terminate TLS. For access outside a
+Codevisor Server speaks plain HTTP and WebSocket. It does not terminate TLS. For access outside a
 trusted private network, put it behind a TLS-terminating reverse proxy or a private overlay network.
 
 ## Recommended baseline
@@ -17,4 +17,4 @@ trusted private network, put it behind a TLS-terminating reverse proxy or a priv
 - Store pairing tokens in a credential manager; the current API does not expose token revocation.
 
 The hosted API reference intentionally does not execute requests. This prevents server addresses and
-bearer tokens from being sent to `www.herdman.dev`.
+bearer tokens from being sent to `www.codevisor.dev`.

@@ -1,14 +1,11 @@
 #!/usr/bin/env bash
 #
 # Builds GhosttyKit.xcframework from the vendored Ghostty source and copies it
-# next to the app for linking. HerdMan requires the real libghostty-backed
+# next to the app for linking. Codevisor requires the real libghostty-backed
 # terminal; app and release builds should fail if this framework is missing.
 #
 # Requirements:
-#   - Zig 0.15.2 (Ghostty pins this exact version in build.zig).
-#   - A STABLE macOS SDK. NOTE: Zig 0.15.2 cannot link against the macOS 26/27
-#     *beta* SDK (its libSystem.tbd lacks the plain arm64 slice), so build this
-#     on a machine with a released SDK, or once Zig supports the beta SDK.
+#   - Zig 0.16.0 (the pinned Ghostty revision's required version).
 #
 # Usage:
 #   apps/macos/scripts/build-ghostty.sh --fetch-only
@@ -20,7 +17,7 @@ REPO_ROOT="$(cd "$MACOS_ROOT/../.." && pwd)"
 GHOSTTY_DIR="$REPO_ROOT/.repos/ghostty"
 DEST_DIR="$MACOS_ROOT/Frameworks"
 GHOSTTY_REPOSITORY="${GHOSTTY_REPOSITORY:-https://github.com/ghostty-org/ghostty.git}"
-GHOSTTY_REF="${GHOSTTY_REF:-28f9367bee11ad42f40f8aa589eb8c6db62d34be}"
+GHOSTTY_REF="${GHOSTTY_REF:-b5d14da0977ff19ef639629304328d8062f7bf04}"
 FETCH_ONLY=0
 
 if [[ "${1:-}" == "--fetch-only" ]]; then
@@ -46,22 +43,26 @@ if [[ "$FETCH_ONLY" == 1 ]]; then
 fi
 
 if ! command -v zig >/dev/null 2>&1; then
-  echo "error: zig not found on PATH. Install Zig 0.15.2 (https://ziglang.org/download/)." >&2
+  echo "error: zig not found on PATH. Install Zig 0.16.0 (https://ziglang.org/download/)." >&2
   exit 1
 fi
 
 ZIG_VERSION="$(zig version)"
-if [[ "$ZIG_VERSION" != 0.15.2* ]]; then
-  echo "warning: Ghostty requires Zig 0.15.2; found $ZIG_VERSION. The build may be rejected." >&2
+if [[ "$ZIG_VERSION" != 0.16.0* ]]; then
+  echo "warning: Ghostty requires Zig 0.16.0; found $ZIG_VERSION. The build may be rejected." >&2
 fi
 
 echo "Building GhosttyKit.xcframework (this takes a while)…"
 cd "$GHOSTTY_DIR"
+rm -rf "$GHOSTTY_DIR/macos/GhosttyKit.xcframework" "$GHOSTTY_DIR/zig-out"
+set +e
 zig build \
   -Demit-xcframework=true \
   -Dxcframework-target=universal \
   -Demit-macos-app=false \
   -Doptimize=ReleaseFast
+BUILD_STATUS=$?
+set -e
 
 # Ghostty installs the framework under macos/ for its own Xcode project.
 SRC="$GHOSTTY_DIR/macos/GhosttyKit.xcframework"
@@ -74,8 +75,32 @@ if [[ -z "${SRC:-}" || ! -d "$SRC" ]]; then
   exit 1
 fi
 
+# The pinned Zig 0.16 migration currently reports a later, unrelated lib-vt
+# install failure with Xcode 27 after successfully producing GhosttyKit. Only
+# accept that non-zero status when a fresh universal macOS framework validates.
+MACOS_SLICE="$SRC/macos-arm64_x86_64"
+MACOS_LIBRARY="$MACOS_SLICE/ghostty-internal.a"
+if ! plutil -lint "$SRC/Info.plist" >/dev/null; then
+  echo "error: generated GhosttyKit.xcframework has an invalid Info.plist." >&2
+  exit 1
+fi
+if [[ ! -d "$MACOS_SLICE/Headers" || ! -f "$MACOS_LIBRARY" ]]; then
+  echo "error: generated GhosttyKit.xcframework is missing its universal macOS slice." >&2
+  exit 1
+fi
+MACOS_ARCHS="$(lipo -archs "$MACOS_LIBRARY")"
+for REQUIRED_ARCH in arm64 x86_64; do
+  if [[ " $MACOS_ARCHS " != *" $REQUIRED_ARCH "* ]]; then
+    echo "error: generated GhosttyKit macOS library is missing $REQUIRED_ARCH (found: $MACOS_ARCHS)." >&2
+    exit 1
+  fi
+done
+if [[ "$BUILD_STATUS" -ne 0 ]]; then
+  echo "warning: Ghostty's aggregate build exited $BUILD_STATUS after producing a valid GhosttyKit.xcframework." >&2
+fi
+
 mkdir -p "$DEST_DIR"
 rm -rf "$DEST_DIR/GhosttyKit.xcframework"
 cp -R "$SRC" "$DEST_DIR/"
 echo "Copied GhosttyKit.xcframework to $DEST_DIR"
-echo "Next: verify the HerdMan app target build settings still point at this framework."
+echo "Next: verify the Codevisor app target build settings still point at this framework."

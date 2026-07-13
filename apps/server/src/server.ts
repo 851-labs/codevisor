@@ -4,7 +4,7 @@ import type {
   PromptAttachmentInput,
   RuntimeEvent,
   RuntimeEventSink
-} from "@herdman/agent-runtime"
+} from "@codevisor/agent-runtime"
 import { randomUUID } from "node:crypto"
 import type {
   AttachmentRef,
@@ -22,7 +22,7 @@ import type {
   UpdateInfo,
   Worktree,
   WorktreeSetupUpdate
-} from "@herdman/api"
+} from "@codevisor/api"
 import {
   CreateProjectRequest as CreateProjectRequestSchema,
   CreateMcpServerRequest as CreateMcpServerRequestSchema,
@@ -47,9 +47,9 @@ import {
   UpdateSessionRequest as UpdateSessionRequestSchema,
   decode,
   makeOpenApiDocument
-} from "@herdman/api"
-import type { HerdManDatabaseService } from "@herdman/db"
-import type { TerminalManagerService } from "@herdman/terminal"
+} from "@codevisor/api"
+import type { CodevisorDatabaseService } from "@codevisor/db"
+import type { TerminalManagerService } from "@codevisor/terminal"
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http"
 import { existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -74,7 +74,7 @@ export class ServerError extends Schema.TaggedErrorClass<ServerError>()("ServerE
   message: Schema.String
 }) {}
 
-export interface HerdManServerAuthConfig {
+export interface CodevisorServerAuthConfig {
   readonly requireBearerToken: boolean
   readonly allowLocalhostWithoutAuth: boolean
 }
@@ -82,19 +82,19 @@ export interface HerdManServerAuthConfig {
 /// Lets the host process implement self-updating: `check` refreshes and
 /// returns the update state, `apply` installs the newer release and restarts
 /// the server process. Wired up in main.ts; absent in tests and embedded runs.
-export interface HerdManServerUpdater {
+export interface CodevisorServerUpdater {
   readonly check: () => Promise<UpdateInfo>
   readonly apply: () => Promise<void>
 }
 
-export interface HerdManServerConfig {
+export interface CodevisorServerConfig {
   readonly id: string
   readonly name: string
   readonly version: string
   readonly kind: ServerKind
   readonly host: string
   readonly port: number
-  readonly auth: HerdManServerAuthConfig
+  readonly auth: CodevisorServerAuthConfig
   /// Origins allowed to call the HTTP API from a browser context (e.g. the
   /// Tauri desktop webview's tauri://localhost). Never a wildcard: loopback
   /// requests skip token auth, so a wildcard would let any website drive the
@@ -103,25 +103,25 @@ export interface HerdManServerConfig {
   /// Invoked after `POST /v1/shutdown` is acknowledged so the host process can
   /// exit (used by the macOS app to swap in an updated server runtime).
   readonly onShutdownRequested?: (() => void) | undefined
-  readonly updater?: HerdManServerUpdater | undefined
+  readonly updater?: CodevisorServerUpdater | undefined
 }
 
-export interface HerdManServerServices {
-  readonly db: HerdManDatabaseService
+export interface CodevisorServerServices {
+  readonly db: CodevisorDatabaseService
   readonly agents: AgentRuntimeService
   readonly terminal: TerminalManagerService
   readonly auth?: HarnessAuthManager
   readonly mcp?: McpManager
 }
 
-export interface RunningHerdManServer {
+export interface RunningCodevisorServer {
   readonly url: string
   readonly host: string
   readonly port: number
   readonly close: Effect.Effect<void, ServerError>
 }
 
-export interface HerdManServerApp {
+export interface CodevisorServerApp {
   readonly handleRequest: (request: IncomingMessage, response: ServerResponse) => void
   readonly handleUpgrade: (request: IncomingMessage, socket: Socket, head: Buffer) => void
   readonly close: Effect.Effect<void, ServerError>
@@ -133,11 +133,11 @@ interface RouteState {
   readonly activePromptSessions: Set<string>
 }
 
-export class HerdManServer extends Context.Service<HerdManServer, HerdManServerServices>()(
-  "@herdman/server/HerdManServer"
+export class CodevisorServer extends Context.Service<CodevisorServer, CodevisorServerServices>()(
+  "@codevisor/server/CodevisorServer"
 ) {
-  static readonly layer = (services: HerdManServerServices): Layer.Layer<HerdManServer> =>
-    Layer.succeed(HerdManServer, HerdManServer.of(services))
+  static readonly layer = (services: CodevisorServerServices): Layer.Layer<CodevisorServer> =>
+    Layer.succeed(CodevisorServer, CodevisorServer.of(services))
 }
 
 export class EventFanout {
@@ -178,7 +178,7 @@ const MAX_PROMPT_ATTACHMENTS = 10
 /// a session could still reference it.
 const ATTACHMENT_TEMP_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000
 
-const attachmentsTempRoot = (): string => join(tmpdir(), "herdman-attachments")
+const attachmentsTempRoot = (): string => join(tmpdir(), "codevisor-attachments")
 
 const IMAGE_MAGIC_BYTES: ReadonlyArray<readonly [ReadonlyArray<number>, number]> = [
   [[0x89, 0x50, 0x4e, 0x47], 0], // png
@@ -210,7 +210,7 @@ const sanitizeFileName = (name: string): string => {
 /// (Codex localImage, path notes for arbitrary files) can reference them.
 /// Files are immutable, so an existing materialization is reused.
 const resolvePromptAttachments = async (
-  db: HerdManDatabaseService,
+  db: CodevisorDatabaseService,
   refs: ReadonlyArray<AttachmentRef>
 ): Promise<Array<PromptAttachmentInput>> => {
   const resolved: Array<PromptAttachmentInput> = []
@@ -250,10 +250,10 @@ export const sweepAttachmentTempFiles = (now = Date.now()): void => {
 }
 
 export const defaultServerConfig = (
-  overrides: Partial<HerdManServerConfig> = {}
-): HerdManServerConfig => ({
+  overrides: Partial<CodevisorServerConfig> = {}
+): CodevisorServerConfig => ({
   id: overrides.id ?? "local",
-  name: overrides.name ?? "Local HerdMan",
+  name: overrides.name ?? "Local Codevisor",
   version: overrides.version ?? "0.1.0",
   kind: overrides.kind ?? "local",
   host: overrides.host ?? "127.0.0.1",
@@ -267,12 +267,12 @@ export const defaultServerConfig = (
   updater: overrides.updater
 })
 
-export const makeHerdManServerApp = (
-  services: HerdManServerServices,
-  config: HerdManServerConfig,
+export const makeCodevisorServerApp = (
+  services: CodevisorServerServices,
+  config: CodevisorServerConfig,
   fanout: EventFanout,
   webSocketServer = new WebSocketServer({ noServer: true })
-): HerdManServerApp => {
+): CodevisorServerApp => {
   const routeState: RouteState = {
     activePromptSessions: new Set(),
     pendingPromptActions: new Set(),
@@ -300,10 +300,10 @@ export const makeHerdManServerApp = (
   return app
 }
 
-export const startHerdManServer = (
-  services: HerdManServerServices,
-  config: HerdManServerConfig
-): Effect.Effect<RunningHerdManServer, ServerError> =>
+export const startCodevisorServer = (
+  services: CodevisorServerServices,
+  config: CodevisorServerConfig
+): Effect.Effect<RunningCodevisorServer, ServerError> =>
   Effect.gen(function* () {
     const fanout = yield* makeEventFanout
     yield* Effect.sync(() => sweepAttachmentTempFiles())
@@ -314,8 +314,8 @@ export const startHerdManServer = (
     // UI from inheriting a generating row that can never emit again.
     return yield* Effect.tryPromise({
       try: () =>
-        new Promise<RunningHerdManServer>((resolve, reject) => {
-          let app: ReturnType<typeof makeHerdManServerApp> | undefined
+        new Promise<RunningCodevisorServer>((resolve, reject) => {
+          let app: ReturnType<typeof makeCodevisorServerApp> | undefined
           const server = createServer((request, response) => {
             if (app === undefined) {
               response.writeHead(503, { "Content-Type": "application/json" })
@@ -350,7 +350,7 @@ export const startHerdManServer = (
               )
               return
             }
-            app = makeHerdManServerApp(services, config, fanout)
+            app = makeCodevisorServerApp(services, config, fanout)
             resolve({
               host: config.host,
               port,
@@ -369,7 +369,7 @@ export const startHerdManServer = (
   })
 
 export const reconcileOrphanedSessionTurns = async (
-  services: HerdManServerServices,
+  services: CodevisorServerServices,
   fanout: EventFanout,
   serverId: string
 ): Promise<void> => {
@@ -476,8 +476,8 @@ export const reconcileOrphanedSessionTurns = async (
 }
 
 const handleRequest = async (
-  services: HerdManServerServices,
-  config: HerdManServerConfig,
+  services: CodevisorServerServices,
+  config: CodevisorServerConfig,
   fanout: EventFanout,
   routeState: RouteState,
   request: IncomingMessage,
@@ -511,7 +511,7 @@ const handleRequest = async (
       return
     }
 
-    // OAuth providers redirect a browser without the HerdMan API token. The
+    // OAuth providers redirect a browser without the Codevisor API token. The
     // high-entropy, single-installation state value is validated by the manager.
     if (request.method === "GET" && url.pathname === "/v1/mcps/oauth/callback") {
       if (services.mcp === undefined) throw new HttpFailure(501, "MCP gateway unavailable")
@@ -521,14 +521,14 @@ const handleRequest = async (
       await services.mcp.finishOAuth(state, code)
       response.writeHead(200, { "content-type": "text/html; charset=utf-8" })
       response.end(
-        "<!doctype html><title>HerdMan</title><p>Authorization complete. HerdMan is connecting to the MCP server. You can close this window.</p>"
+        "<!doctype html><title>Codevisor</title><p>Authorization complete. Codevisor is connecting to the MCP server. You can close this window.</p>"
       )
       return
     }
     if (request.method === "GET" && url.pathname === "/v1/mcps/oauth/complete") {
       response.writeHead(200, { "content-type": "text/html; charset=utf-8" })
       response.end(
-        "<!doctype html><title>HerdMan</title><p>HerdMan is reconnecting to the MCP server. You can close this window.</p>"
+        "<!doctype html><title>Codevisor</title><p>Codevisor is reconnecting to the MCP server. You can close this window.</p>"
       )
       return
     }
@@ -639,7 +639,7 @@ const handleRequest = async (
 }
 
 const routeMcps = async (
-  services: HerdManServerServices,
+  services: CodevisorServerServices,
   request: IncomingMessage,
   response: ServerResponse,
   url: URL
@@ -714,7 +714,7 @@ const routeMcps = async (
 }
 
 const routeMcpScopes = async (
-  services: HerdManServerServices,
+  services: CodevisorServerServices,
   request: IncomingMessage,
   response: ServerResponse,
   url: URL
@@ -754,7 +754,7 @@ const routeMcpScopes = async (
 }
 
 const routeProjects = async (
-  services: HerdManServerServices,
+  services: CodevisorServerServices,
   serverId: string,
   fanout: EventFanout,
   request: IncomingMessage,
@@ -816,7 +816,7 @@ const routeProjects = async (
     const existing = new Set((await run(services.db.listWorktrees(project.id))).map((w) => w.name))
     const requested = slugifyWorktreeName(payload.name)
     const name = suffixedWorktreeName(requested ?? randomWorktreeBase(), existing)
-    const branch = `herdman/${name}`
+    const branch = `codevisor/${name}`
     const worktree = await run(services.db.createWorktree(project.id, name, branch, payload.id))
     const startedAt = Date.now()
     const publishSetup = makeWorktreeSetupPublisher(
@@ -1001,7 +1001,7 @@ type WorktreeSetupDetail = Omit<WorktreeSetupUpdate, "worktreeId" | "projectId" 
 /// that update is durable; failures surface to awaited call sites without
 /// stalling later updates.
 const makeWorktreeSetupPublisher = (
-  db: HerdManDatabaseService,
+  db: CodevisorDatabaseService,
   fanout: EventFanout,
   worktree: Worktree,
   mirrorSubjectId?: string
@@ -1041,7 +1041,7 @@ const probeProject = async (serverId: string, project: Project): Promise<Project
 })
 
 const routeHarnesses = async (
-  services: HerdManServerServices,
+  services: CodevisorServerServices,
   request: IncomingMessage,
   response: ServerResponse,
   url: URL
@@ -1068,8 +1068,8 @@ const routeHarnesses = async (
   }
 
   // Sessions from the harness's own on-disk store (run before/outside
-  // HerdMan) — onboarding workspace suggestions and chat import read these,
-  // NOT HerdMan's sessions table (empty on a fresh install by definition).
+  // Codevisor) — onboarding workspace suggestions and chat import read these,
+  // NOT Codevisor's sessions table (empty on a fresh install by definition).
   const agentSessionsHarnessId = matchRoute(url.pathname, "/v1/harnesses/:id/agent-sessions")
   if (agentSessionsHarnessId !== undefined && request.method === "GET") {
     const account = await services.auth?.activeAccountContext(agentSessionsHarnessId)
@@ -1198,7 +1198,7 @@ const routeHarnesses = async (
 }
 
 const discoverCapabilities = async (
-  services: HerdManServerServices,
+  services: CodevisorServerServices,
   url: URL
 ): Promise<{ readonly harnesses: ReadonlyArray<HarnessCapability> }> => {
   const cwd = existingDirectory(url.searchParams.get("cwd")) ?? tmpdir()
@@ -1232,13 +1232,13 @@ const discoverCapabilities = async (
 }
 
 const routeSessions = async (
-  services: HerdManServerServices,
+  services: CodevisorServerServices,
   fanout: EventFanout,
   routeState: RouteState,
   request: IncomingMessage,
   response: ServerResponse,
   url: URL,
-  config: HerdManServerConfig
+  config: CodevisorServerConfig
 ): Promise<boolean> => {
   if (request.method === "GET" && url.pathname === "/v1/sessions") {
     writeJson(response, 200, await run(services.db.listSessions))
@@ -1329,7 +1329,7 @@ const routeSessions = async (
 }
 
 const createServerSession = async (
-  services: HerdManServerServices,
+  services: CodevisorServerServices,
   fanout: EventFanout,
   serverId: string,
   payload: CreateSessionRequest,
@@ -1382,7 +1382,7 @@ const createServerSession = async (
 /// accepted.
 const sessionEventSink =
   (
-    services: HerdManServerServices,
+    services: CodevisorServerServices,
     fanout: EventFanout,
     serverId: string,
     sessionId: string
@@ -1409,10 +1409,10 @@ const sessionEventSink =
   }
 
 /// Derives the directory a session runs in: the project's folder on this
-/// server, or its worktree at ~/herdman/{projectId}/{worktreeName}. The result
+/// server, or its worktree at ~/codevisor/{projectId}/{worktreeName}. The result
 /// must stay deterministic per session so the agent-runtime session cache hits.
 const resolveSessionCwdOrFail = async (
-  services: HerdManServerServices,
+  services: CodevisorServerServices,
   serverId: string,
   project: Project,
   worktreeName: string | undefined
@@ -1439,7 +1439,7 @@ const resolveSessionCwdOrFail = async (
 /// dev server must not keep running under an archived chat. Best-effort: the
 /// archive itself must succeed even if the runtime is already gone.
 const archiveSessionRuntime = async (
-  services: HerdManServerServices,
+  services: CodevisorServerServices,
   session: SessionSummary
 ): Promise<void> => {
   /* v8 ignore next -- SessionSummary types agentSessionId as optional, but created sessions always carry one. */
@@ -1462,7 +1462,7 @@ const archiveSessionRuntime = async (
 /// The just-archived session is already flagged archived here, so it never
 /// counts itself as an active user.
 const removeArchivedSessionWorktree = async (
-  services: HerdManServerServices,
+  services: CodevisorServerServices,
   serverId: string,
   session: SessionSummary
 ): Promise<void> => {
@@ -1492,7 +1492,7 @@ const removeArchivedSessionWorktree = async (
 }
 
 const findSession = async (
-  db: HerdManDatabaseService,
+  db: CodevisorDatabaseService,
   id: string
 ): Promise<SessionSummary | undefined> => {
   try {
@@ -1503,13 +1503,13 @@ const findSession = async (
 }
 
 const routeSessionActions = async (
-  services: HerdManServerServices,
+  services: CodevisorServerServices,
   fanout: EventFanout,
   routeState: RouteState,
   request: IncomingMessage,
   response: ServerResponse,
   url: URL,
-  config: HerdManServerConfig
+  config: CodevisorServerConfig
 ): Promise<boolean> => {
   const connectSessionId = matchRoute(url.pathname, "/v1/sessions/:id/connect")
   if (connectSessionId !== undefined && request.method === "POST") {
@@ -1768,7 +1768,7 @@ const routeSessionActions = async (
 }
 
 const writeIdempotentAction = async (
-  services: HerdManServerServices,
+  services: CodevisorServerServices,
   response: ServerResponse,
   sessionId: string,
   actionKind: string,
@@ -1797,7 +1797,7 @@ const actionIdKey = (sessionId: string, clientActionId: string | undefined): str
   clientActionId === undefined ? undefined : `${sessionId}:${clientActionId}`
 
 const publishPromptQueue = async (
-  db: HerdManDatabaseService,
+  db: CodevisorDatabaseService,
   fanout: EventFanout,
   sessionId: string
 ): Promise<ReadonlyArray<PromptQueueItem>> => {
@@ -1807,7 +1807,7 @@ const publishPromptQueue = async (
 }
 
 const drainPromptQueue = async (
-  services: HerdManServerServices,
+  services: CodevisorServerServices,
   fanout: EventFanout,
   routeState: RouteState,
   serverId: string,
@@ -1842,7 +1842,7 @@ const drainPromptQueue = async (
 }
 
 const runPromptInBackground = async (
-  services: HerdManServerServices,
+  services: CodevisorServerServices,
   fanout: EventFanout,
   serverId: string,
   sessionId: string,
@@ -1896,7 +1896,7 @@ const runPromptInBackground = async (
 }
 
 const sessionHistoryEventsWithSetup = async (
-  db: HerdManDatabaseService,
+  db: CodevisorDatabaseService,
   serverId: string,
   sessionId: string
 ): Promise<ReadonlyArray<EventEnvelope>> => {
@@ -1920,7 +1920,7 @@ const sessionHistoryEventsWithSetup = async (
 }
 
 const routeFiles = async (
-  services: HerdManServerServices,
+  services: CodevisorServerServices,
   request: IncomingMessage,
   response: ServerResponse,
   url: URL
@@ -1959,7 +1959,7 @@ const routeFiles = async (
 }
 
 const routeTerminals = async (
-  services: HerdManServerServices,
+  services: CodevisorServerServices,
   request: IncomingMessage,
   response: ServerResponse,
   url: URL
@@ -1986,7 +1986,7 @@ const routeTerminals = async (
 }
 
 const handleEvents = async (
-  db: HerdManDatabaseService,
+  db: CodevisorDatabaseService,
   fanout: EventFanout,
   url: URL,
   response: ServerResponse
@@ -2010,8 +2010,8 @@ const isGlobalShellEnvelope = (event: EventEnvelope): boolean =>
   event.subjectRevision === undefined || event.globalEventId !== undefined
 
 const handleUpgrade = async (
-  services: HerdManServerServices,
-  config: HerdManServerConfig,
+  services: CodevisorServerServices,
+  config: CodevisorServerConfig,
   fanout: EventFanout,
   request: IncomingMessage,
   socket: Socket,
@@ -2063,7 +2063,7 @@ const handleUpgrade = async (
 }
 
 const attachEventSocket = async (
-  db: HerdManDatabaseService,
+  db: CodevisorDatabaseService,
   fanout: EventFanout,
   since: number,
   webSocket: WebSocket,
@@ -2150,9 +2150,9 @@ const attachTerminalSocket = async (
 }
 
 /// Echoes Access-Control-Allow-Origin for requests from an allowlisted
-/// browser origin (never a wildcard — see HerdManServerConfig.corsOrigins).
+/// browser origin (never a wildcard — see CodevisorServerConfig.corsOrigins).
 const applyCorsHeaders = (
-  config: HerdManServerConfig,
+  config: CodevisorServerConfig,
   request: IncomingMessage,
   response: ServerResponse
 ): void => {
@@ -2167,8 +2167,8 @@ const applyCorsHeaders = (
 }
 
 const authorize = async (
-  db: HerdManDatabaseService,
-  config: HerdManServerConfig,
+  db: CodevisorDatabaseService,
+  config: CodevisorServerConfig,
   request: IncomingMessage
 ): Promise<void> => {
   if (!config.auth.requireBearerToken) {
@@ -2185,7 +2185,7 @@ const authorize = async (
 }
 
 const discoverHarnesses = async (
-  services: HerdManServerServices,
+  services: CodevisorServerServices,
   forceAuth = false
 ): Promise<ReadonlyArray<Harness>> => {
   const harnesses = await run(
@@ -2197,7 +2197,7 @@ const discoverHarnesses = async (
 }
 
 const getProjectOrFail = async (
-  db: HerdManDatabaseService,
+  db: CodevisorDatabaseService,
   projectId: string
 ): Promise<Project> => {
   const project = (await run(db.listProjects)).find((candidate) => candidate.id === projectId)
@@ -2216,7 +2216,7 @@ const localLocationOrFail = (serverId: string, project: Project): ProjectLocatio
 }
 
 const ensureAgentSessionFor = async (
-  services: HerdManServerServices,
+  services: CodevisorServerServices,
   fanout: EventFanout,
   serverId: string,
   sessionId: string
@@ -2297,7 +2297,7 @@ const assertLocationFolderExists = (location: ProjectLocation): void => {
 }
 
 const materializeRuntimeEvent = async (
-  db: HerdManDatabaseService,
+  db: CodevisorDatabaseService,
   fanout: EventFanout,
   serverId: string,
   event: RuntimeEvent,
@@ -2313,7 +2313,7 @@ const materializeRuntimeEvent = async (
 }
 
 const appendAndPublish = async (
-  db: HerdManDatabaseService,
+  db: CodevisorDatabaseService,
   fanout: EventFanout,
   kind: EventEnvelope["kind"],
   subjectId: string,
@@ -2597,7 +2597,7 @@ class HttpFailure extends Error {
   }
 }
 
-const closeServer = (server: Server, app: HerdManServerApp): Effect.Effect<void, ServerError> =>
+const closeServer = (server: Server, app: CodevisorServerApp): Effect.Effect<void, ServerError> =>
   Effect.tryPromise({
     try: () =>
       new Promise<void>((resolve, reject) => {
@@ -2624,4 +2624,4 @@ const serverAttempt = <A>(operation: string, runSync: () => A): Effect.Effect<A,
       })
   })
 
-export const defaultDatabasePath = (): string => join(tmpdir(), "herdman-server.sqlite")
+export const defaultDatabasePath = (): string => join(tmpdir(), "codevisor-server.sqlite")

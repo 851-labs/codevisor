@@ -3,10 +3,10 @@ import {
   makeAgentRuntime,
   resolveShellEnv,
   type BackgroundTerminalIntegration
-} from "@herdman/agent-runtime"
-import type { DataUpgradeProgress, UpdateInfo } from "@herdman/api"
-import { makeDatabase, type HerdManDatabaseService } from "@herdman/db"
-import { makeTerminalManager, type TerminalManagerService } from "@herdman/terminal"
+} from "@codevisor/agent-runtime"
+import type { DataUpgradeProgress, UpdateInfo } from "@codevisor/api"
+import { makeDatabase, worktreesRoot, type CodevisorDatabaseService } from "@codevisor/db"
+import { makeTerminalManager, type TerminalManagerService } from "@codevisor/terminal"
 import { Effect } from "effect"
 import { spawn } from "node:child_process"
 import {
@@ -26,13 +26,14 @@ import { startBackgroundTerminalHost, wrapBackgroundCommand } from "./background
 import {
   defaultDatabasePath,
   defaultServerConfig,
-  startHerdManServer,
-  type HerdManServerUpdater
+  startCodevisorServer,
+  type CodevisorServerUpdater
 } from "./server.js"
 import { makeHarnessAuthManager } from "./harness-auth.js"
 import { makeMcpManager } from "./mcp-manager.js"
+import { migrateLegacyLayout } from "./legacy-layout.js"
 
-const SERVER_PROCESS_TITLE = "herdman-server"
+const SERVER_PROCESS_TITLE = "codevisor-server"
 
 const writeDataUpgradeStatus = (path: string, progress: DataUpgradeProgress): void => {
   mkdirSync(dirname(path), { recursive: true })
@@ -45,7 +46,7 @@ const writeDataUpgradeStatus = (path: string, progress: DataUpgradeProgress): vo
 /// lives inside the .app bundle can't replace that bundle, so instead of
 /// swapping a standalone runtime (which the app's next launch would discard) it
 /// exits with this status and the app performs the full app update + relaunch.
-/// Must match `LocalHerdManServer.updateHandoffExitStatus`.
+/// Must match `LocalCodevisorServer.updateHandoffExitStatus`.
 const APP_UPDATE_HANDOFF_EXIT_CODE = 85
 
 process.title = SERVER_PROCESS_TITLE
@@ -63,8 +64,9 @@ const parseArgs = (args: ReadonlyArray<string>): Record<string, string> => {
 }
 
 const bundledVersion = (): string | undefined => {
-  if (process.env.HERDMAN_VERSION !== undefined && process.env.HERDMAN_VERSION.length > 0) {
-    return process.env.HERDMAN_VERSION
+  const override = process.env.CODEVISOR_VERSION ?? process.env.HERDMAN_VERSION
+  if (override !== undefined && override.length > 0) {
+    return override
   }
 
   const versionPath = join(dirname(fileURLToPath(import.meta.url)), "VERSION")
@@ -80,8 +82,9 @@ const bundledVersion = (): string | undefined => {
 /// the Homebrew formula installs from). The source repository is private, so
 /// update checks go through this bucket, not the GitHub API.
 const RELEASE_BASE_URL =
+  process.env.CODEVISOR_RELEASE_BASE_URL ??
   process.env.HERDMAN_RELEASE_BASE_URL ??
-  "https://pub-d2d6eb72b71c4986a742c0527774c9f0.r2.dev/releases/herdman"
+  "https://pub-d2d6eb72b71c4986a742c0527774c9f0.r2.dev/releases/codevisor"
 
 /// "darwin-arm64", "linux-x64", … matching the published server archives.
 const releaseTarget = (): string | undefined => {
@@ -111,10 +114,10 @@ const isNewerVersion = (candidate: string, current: string): boolean => {
 /// unpacks it next to the database, hands off to the new runtime, and exits.
 const makeSelfUpdater = (options: {
   readonly currentVersion: string
-  readonly db: HerdManDatabaseService
+  readonly db: CodevisorDatabaseService
   readonly dataDir: string
   readonly serveArgs: ReadonlyArray<string>
-}): HerdManServerUpdater => {
+}): CodevisorServerUpdater => {
   let cached: { readonly at: number; readonly info: UpdateInfo } | undefined
 
   const check = async (): Promise<UpdateInfo> => {
@@ -161,7 +164,7 @@ const makeSelfUpdater = (options: {
     // Hand the update back to the app — it replaces the whole bundle and
     // relaunches, bringing a fresh bundled server — by exiting with the agreed
     // status the app is watching for.
-    if (process.env.HERDMAN_APP_HOSTED === "1") {
+    if (process.env.CODEVISOR_APP_HOSTED === "1" || process.env.HERDMAN_APP_HOSTED === "1") {
       console.log("Handing update off to the host macOS app")
       setTimeout(() => process.exit(APP_UPDATE_HANDOFF_EXIT_CODE), 300)
       return
@@ -172,12 +175,12 @@ const makeSelfUpdater = (options: {
     }
 
     const updateDir = join(options.dataDir, "server-updates", info.latestVersion)
-    const archivePath = join(updateDir, `herdman-server-${target}.tar.gz`)
+    const archivePath = join(updateDir, `codevisor-server-${target}.tar.gz`)
     const runtimeDir = join(updateDir, "runtime")
     mkdirSync(runtimeDir, { recursive: true })
 
-    const url = `${RELEASE_BASE_URL}/v${info.latestVersion}/herdman-server-${target}.tar.gz`
-    console.log(`Downloading HerdMan server ${info.latestVersion} from ${url}`)
+    const url = `${RELEASE_BASE_URL}/v${info.latestVersion}/codevisor-server-${target}.tar.gz`
+    console.log(`Downloading Codevisor server ${info.latestVersion} from ${url}`)
     const response = await fetch(url, { signal: AbortSignal.timeout(300_000) })
     if (!response.ok || response.body === null) {
       throw new Error(`Failed to download ${url}: HTTP ${response.status}`)
@@ -203,7 +206,7 @@ const makeSelfUpdater = (options: {
 
     // Hand off: the replacement waits a beat for this process to release the
     // port, then execs the new runtime with the same serve arguments.
-    console.log(`Restarting into HerdMan server ${info.latestVersion}`)
+    console.log(`Restarting into Codevisor server ${info.latestVersion}`)
     const handoff = spawn(
       "/bin/bash",
       [
@@ -249,7 +252,7 @@ const backgroundTerminalIntegration = async (
       registry,
       // tmpdir keeps the path under the unix-socket length limit (the data
       // dir under Application Support routinely is not).
-      socketPath: join(tmpdir(), `herdman-bg-${process.pid}.sock`)
+      socketPath: join(tmpdir(), `codevisor-bg-${process.pid}.sock`)
     })
     const runtimeDir = dirname(fileURLToPath(import.meta.url))
     return {
@@ -296,6 +299,13 @@ const main = Effect.gen(function* () {
   const databasePath = args.db ?? defaultDatabasePath()
   const upgradeStatusPath =
     args["upgrade-status"] ?? join(dirname(databasePath), "data-upgrade.json")
+  yield* Effect.tryPromise(() =>
+    migrateLegacyLayout({
+      databasePath,
+      worktreesRoot: worktreesRoot(),
+      onProgress: (progress) => writeDataUpgradeStatus(upgradeStatusPath, progress)
+    })
+  )
   const db = yield* makeDatabase({
     filename: databasePath,
     serverId,
@@ -358,7 +368,7 @@ const main = Effect.gen(function* () {
   // inherit whatever PATH the parent had, and a slow login-shell probe must
   // not delay the health endpoint the launching app is waiting on.
   void Effect.runPromise(agents.refreshEnvironment).catch(() => undefined)
-  const server = yield* startHerdManServer(
+  const server = yield* startCodevisorServer(
     {
       agents,
       auth,
@@ -372,7 +382,7 @@ const main = Effect.gen(function* () {
       // The app launches its own server bound to 0.0.0.0 so remote clients
       // can connect; --kind lets it stay "local" despite the network bind.
       kind: kind ?? (host === "127.0.0.1" ? "local" : "remote"),
-      name: args.name ?? (host === "127.0.0.1" ? "Local HerdMan" : serverId),
+      name: args.name ?? (host === "127.0.0.1" ? "Local Codevisor" : serverId),
       port,
       ...(version === undefined ? {} : { version }),
       ...(corsOrigins.length === 0 ? {} : { corsOrigins }),
@@ -384,14 +394,14 @@ const main = Effect.gen(function* () {
         requireBearerToken: authMode === "token"
       },
       onShutdownRequested: () => {
-        console.log("HerdMan server shutting down (requested by client)")
+        console.log("Codevisor server shutting down (requested by client)")
         // Let the 202 response flush before the process exits.
         setTimeout(() => process.exit(0), 250)
       },
       updater
     })
   )
-  console.log(`HerdMan server listening at ${server.url}`)
+  console.log(`Codevisor server listening at ${server.url}`)
 })
 
 Effect.runPromise(main).catch((cause: unknown) => {

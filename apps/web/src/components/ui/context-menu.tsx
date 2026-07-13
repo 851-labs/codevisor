@@ -47,7 +47,7 @@ function ContextMenuSeparator({
   return (
     <BaseContextMenu.Separator
       data-slot="context-menu-separator"
-      className={cn("my-1 h-px bg-[var(--herdman-popover-border)]", className)}
+      className={cn("my-1 h-px bg-[var(--codevisor-popover-border)]", className)}
       {...props}
     />
   )

@@ -1,4 +1,4 @@
-import type { EventEnvelope } from "@herdman/api"
+import type { EventEnvelope } from "@codevisor/api"
 import { describe, expect, it } from "vitest"
 
 import {
@@ -19,7 +19,7 @@ function event(id: number, state: string, payload: Record<string, unknown> = {})
       worktreeId: "wt-1",
       projectId: "project-1",
       name: "fix-auth-1234",
-      branch: "herdman/fix-auth-1234",
+      branch: "codevisor/fix-auth-1234",
       ...payload
     },
     createdAt: `2026-07-08T10:00:0${id}.000Z`

@@ -7,7 +7,7 @@ import type {
   SessionConfigOption,
   SessionGoal,
   SessionModeState
-} from "@herdman/api"
+} from "@codevisor/api"
 import { execFileSync } from "node:child_process"
 import { randomUUID } from "node:crypto"
 import { Effect } from "effect"
@@ -256,7 +256,7 @@ export const makeCodexProvider = (
 
   // PATH first, then fallbackPaths. When both the user CLI and Codex.app
   // bundle are present, compare resolved binary versions and run the newer
-  // app-server so HerdMan sees the newest Codex model catalog.
+  // app-server so Codevisor sees the newest Codex model catalog.
   const codexCandidates = (definition: HarnessDefinition): ReadonlyArray<string> => [
     ...definition.detectBinaries,
     ...(definition.fallbackPaths ?? [])
@@ -306,14 +306,20 @@ export const makeCodexProvider = (
       env: {
         ...environment.env,
         ...account?.env,
-        ...(toolGateway === undefined ? {} : { HERDMAN_MCP_GATEWAY_TOKEN: toolGateway.bearerToken })
+        ...(toolGateway === undefined
+          ? {}
+          : {
+              CODEVISOR_MCP_GATEWAY_TOKEN: toolGateway.bearerToken,
+              // Resumed pre-rename threads may still reference this env key.
+              HERDMAN_MCP_GATEWAY_TOKEN: toolGateway.bearerToken
+            })
       }
     })
     await client.request("initialize", {
       // experimentalApi unlocks turn/start.collaborationMode (Plan mode) and
       // item/tool/requestUserInput.
       capabilities: { experimentalApi: true },
-      clientInfo: { name: "HerdMan", title: "HerdMan", version: "0.1.0" }
+      clientInfo: { name: "Codevisor", title: "Codevisor", version: "0.1.0" }
     })
     // The server rejects all other requests until this lands.
     client.notify("initialized")
@@ -336,7 +342,7 @@ export const makeCodexProvider = (
             mcp_servers: {
               [toolGateway.name]: {
                 url: toolGateway.url,
-                bearer_token_env_var: "HERDMAN_MCP_GATEWAY_TOKEN",
+                bearer_token_env_var: "CODEVISOR_MCP_GATEWAY_TOKEN",
                 default_tools_approval_mode: "approve"
               }
             }
@@ -725,7 +731,7 @@ export const makeCodexProvider = (
         }
       }),
     // Native sessions from ~/.codex/sessions rollouts — workspace
-    // suggestions and "import existing chats" for pre-HerdMan codex users.
+    // suggestions and "import existing chats" for pre-Codevisor codex users.
     listAgentSessions: () => listCodexAgentSessions(),
     readiness: (definition) => {
       const installed = codexCandidates(definition).some((candidate) =>
@@ -1566,7 +1572,7 @@ const handleNotification = (session: CodexSession, method: string, params: unkno
     }
     default:
       // turn/diff/updated is deliberately ignored for stats: it aggregates the
-      // whole turn, and HerdMan counters are per tool call.
+      // whole turn, and Codevisor counters are per tool call.
       break
   }
 }
@@ -1752,7 +1758,7 @@ const emitItemLifecycle = (
       break
     }
     case "plan": {
-      // EXPERIMENTAL codex plan-mode proposed-plan document. HerdMan doesn't
+      // EXPERIMENTAL codex plan-mode proposed-plan document. Codevisor doesn't
       // expose the collaboration-mode toggle yet, but if a plan item arrives
       // it renders as a plan document rather than an opaque tool call. The
       // completed item is authoritative; deltas are ignored.
@@ -1810,7 +1816,7 @@ const emitItemLifecycle = (
       if (started) {
         void session.emit(
           event({
-            // Not ACP vocabulary — HerdMan's own extension so clients can
+            // Not ACP vocabulary — Codevisor's own extension so clients can
             // phrase web searches as searches instead of fetches.
             kind: "web_search",
             sessionUpdate: "tool_call",

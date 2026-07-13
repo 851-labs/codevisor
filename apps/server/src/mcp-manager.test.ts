@@ -1,7 +1,7 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js"
-import { makeDatabase, type HerdManDatabaseService } from "@herdman/db"
+import { makeDatabase, type CodevisorDatabaseService } from "@codevisor/db"
 import { Effect } from "effect"
 import { createServer, type Server } from "node:http"
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
@@ -13,7 +13,7 @@ import { makeMcpManager, NodeStreamableHttpTransport, type McpManager } from "./
 const run = <A, E>(effect: Effect.Effect<A, E>): Promise<A> => Effect.runPromise(effect)
 
 const directories: string[] = []
-const databases: HerdManDatabaseService[] = []
+const databases: CodevisorDatabaseService[] = []
 const managers: McpManager[] = []
 const servers: Server[] = []
 
@@ -46,11 +46,11 @@ const listen = async (server: Server): Promise<string> => {
   return `http://127.0.0.1:${address.port}`
 }
 
-const testManager = async (): Promise<{ db: HerdManDatabaseService; manager: McpManager }> => {
-  const directory = mkdtempSync(join(tmpdir(), "herdman-mcp-manager-"))
+const testManager = async (): Promise<{ db: CodevisorDatabaseService; manager: McpManager }> => {
+  const directory = mkdtempSync(join(tmpdir(), "codevisor-mcp-manager-"))
   directories.push(directory)
   const db = await run(
-    makeDatabase({ filename: join(directory, "herdman.sqlite"), serverId: "test" })
+    makeDatabase({ filename: join(directory, "codevisor.sqlite"), serverId: "test" })
   )
   databases.push(db)
   const manager = makeMcpManager({ db, dataDir: directory })
@@ -472,7 +472,7 @@ describe("MCP manager", () => {
 
     const disconnected = await manager.create({
       authType: "none",
-      command: "herdman-missing-mcp",
+      command: "codevisor-missing-mcp",
       enabled: false,
       name: "Disconnected",
       transport: "stdio"
@@ -492,21 +492,21 @@ describe("MCP manager", () => {
     )
     expect((await manager.list()).some((server) => server.name === "No secrets")).toBe(true)
 
-    const invalidKeyDirectory = mkdtempSync(join(tmpdir(), "herdman-invalid-mcp-key-"))
+    const invalidKeyDirectory = mkdtempSync(join(tmpdir(), "codevisor-invalid-mcp-key-"))
     directories.push(invalidKeyDirectory)
     writeFileSync(join(invalidKeyDirectory, "mcp-secret-key"), "short")
     expect(() => makeMcpManager({ db, dataDir: invalidKeyDirectory })).toThrow(
       "Invalid MCP secret key"
     )
 
-    vi.stubEnv("HERDMAN_MCP_SECRET_KEY", "invalid")
+    vi.stubEnv("CODEVISOR_MCP_SECRET_KEY", "invalid")
     expect(() => makeMcpManager({ db, dataDir: invalidKeyDirectory })).toThrow("must be 32 bytes")
-    vi.stubEnv("HERDMAN_MCP_SECRET_KEY", Buffer.alloc(32, 7).toString("base64"))
+    vi.stubEnv("CODEVISOR_MCP_SECRET_KEY", Buffer.alloc(32, 7).toString("base64"))
     const configuredKeyDirectory = join(invalidKeyDirectory, "configured")
     mkdirSync(configuredKeyDirectory)
     const configuredDb = await run(
       makeDatabase({
-        filename: join(configuredKeyDirectory, "herdman.sqlite"),
+        filename: join(configuredKeyDirectory, "codevisor.sqlite"),
         serverId: "configured-key"
       })
     )

@@ -8,8 +8,8 @@ import { cn } from "../../lib/cn"
 // select). Reads the chrome-derived popover tokens.
 export const popupSurfaceClassName = cn(
   "z-50 min-w-36 rounded-lg border py-1",
-  "bg-[var(--herdman-popover-bg)] text-[var(--herdman-popover-fg)]",
-  "border-[var(--herdman-popover-border)] shadow-[var(--herdman-popover-shadow)]",
+  "bg-[var(--codevisor-popover-bg)] text-[var(--codevisor-popover-fg)]",
+  "border-[var(--codevisor-popover-border)] shadow-[var(--codevisor-popover-shadow)]",
   "outline-none transition-[transform,scale,opacity] duration-100",
   "data-[starting-style]:scale-95 data-[starting-style]:opacity-0",
   "data-[ending-style]:scale-95 data-[ending-style]:opacity-0"
@@ -20,7 +20,7 @@ export const popupViewportClassName =
 
 export const menuItemClassName = cn(
   "flex cursor-default items-center gap-2 px-2.5 py-1.5 text-sm outline-none select-none",
-  "data-[highlighted]:bg-[var(--herdman-popover-hover-bg)]",
+  "data-[highlighted]:bg-[var(--codevisor-popover-hover-bg)]",
   "data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
   "[&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0"
 )
@@ -110,7 +110,7 @@ function MenuGroupLabel({
     <BaseMenu.GroupLabel
       data-slot="menu-group-label"
       className={cn(
-        "px-2.5 py-1.5 text-xs font-medium text-[var(--herdman-popover-muted-fg)]",
+        "px-2.5 py-1.5 text-xs font-medium text-[var(--codevisor-popover-muted-fg)]",
         className
       )}
       {...props}
@@ -122,7 +122,7 @@ function MenuSeparator({ className, ...props }: ComponentPropsWithRef<typeof Bas
   return (
     <BaseMenu.Separator
       data-slot="menu-separator"
-      className={cn("my-1 h-px bg-[var(--herdman-popover-border)]", className)}
+      className={cn("my-1 h-px bg-[var(--codevisor-popover-border)]", className)}
       {...props}
     />
   )
@@ -138,7 +138,7 @@ function MenuSubmenuTrigger({
       data-slot="menu-submenu-trigger"
       className={cn(
         menuItemClassName,
-        "data-[popup-open]:bg-[var(--herdman-popover-hover-bg)]",
+        "data-[popup-open]:bg-[var(--codevisor-popover-hover-bg)]",
         className
       )}
       {...props}

@@ -1,4 +1,4 @@
-import type { SessionSummary, Project } from "@herdman/api"
+import type { SessionSummary, Project } from "@codevisor/api"
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router"
 import { ArchiveIcon, FolderIcon } from "lucide-react"
 import { useSyncExternalStore } from "react"
@@ -36,7 +36,7 @@ function useSelectedSessionId(): string | undefined {
 
 export const sidebarRowClassName = cn(
   "group flex w-full cursor-default items-center gap-1.5 rounded-md px-2 py-[5px] text-sm outline-none",
-  "hover:bg-[var(--herdman-row-hover-bg)]"
+  "hover:bg-[var(--codevisor-row-hover-bg)]"
 )
 
 // Fixed-size trailing slot so swapping the timestamp for the spinner or
@@ -106,7 +106,7 @@ export function SessionRow({ session, order }: { session: SessionSummary; order:
             className={cn(
               sidebarRowClassName,
               "text-muted-foreground pl-[30px]",
-              isSelected && "text-foreground bg-[var(--herdman-row-selected-bg)]"
+              isSelected && "text-foreground bg-[var(--codevisor-row-selected-bg)]"
             )}
           >
             <span className="min-w-0 flex-1 truncate">{session.title}</span>
@@ -144,7 +144,7 @@ export function ChronologicalSessionRow({
             className={cn(
               sidebarRowClassName,
               "text-muted-foreground",
-              isSelected && "text-foreground bg-[var(--herdman-row-selected-bg)]"
+              isSelected && "text-foreground bg-[var(--codevisor-row-selected-bg)]"
             )}
           >
             <FolderIcon className="text-muted-foreground size-4 shrink-0" />

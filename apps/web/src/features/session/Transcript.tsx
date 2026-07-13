@@ -1,4 +1,4 @@
-import type { AttachmentRef, ConversationItem } from "@herdman/api"
+import type { AttachmentRef, ConversationItem } from "@codevisor/api"
 import { ArrowDownIcon, TriangleAlertIcon } from "lucide-react"
 import {
   memo,
@@ -44,7 +44,7 @@ export function UserMessage({
         {attachments.length > 0 && <AttachmentStrip attachments={attachments} />}
         {text !== "" && (
           <>
-            <div className="herdman-selectable bg-bubble max-w-full rounded-[14px] px-3 py-2 text-left text-sm break-words whitespace-pre-wrap">
+            <div className="codevisor-selectable bg-bubble max-w-full rounded-[14px] px-3 py-2 text-left text-sm break-words whitespace-pre-wrap">
               {text}
             </div>
             <div
@@ -106,7 +106,7 @@ const TranscriptItem = memo(function TranscriptItem({
 
 export function ErrorBanner({ message }: { message: string }) {
   return (
-    <div className="herdman-selectable flex items-center gap-2 rounded-lg bg-[color-mix(in_srgb,var(--herdman-status-error)_10%,transparent)] p-2.5 text-sm text-[var(--herdman-status-error)]">
+    <div className="codevisor-selectable flex items-center gap-2 rounded-lg bg-[color-mix(in_srgb,var(--codevisor-status-error)_10%,transparent)] p-2.5 text-sm text-[var(--codevisor-status-error)]">
       <TriangleAlertIcon className="size-4 shrink-0" />
       {message}
     </div>
@@ -339,7 +339,7 @@ export function Transcript({
       <div
         ref={scrollRef}
         onScroll={handleScroll}
-        className="herdman-scrollbar h-full overflow-y-auto"
+        className="codevisor-scrollbar h-full overflow-y-auto"
       >
         <div
           className="mx-auto flex max-w-[880px] flex-col gap-5 px-6 pt-7"
@@ -384,8 +384,8 @@ export function Transcript({
           onClick={() => scrollToBottom(true)}
           className={cn(
             "absolute left-1/2 z-20 flex size-7 -translate-x-1/2 cursor-default items-center justify-center rounded-full border outline-none",
-            "bg-[var(--herdman-popover-bg)] text-[var(--herdman-popover-muted-fg)]",
-            "border-[var(--herdman-popover-border)] shadow-[var(--herdman-popover-shadow)]"
+            "bg-[var(--codevisor-popover-bg)] text-[var(--codevisor-popover-muted-fg)]",
+            "border-[var(--codevisor-popover-border)] shadow-[var(--codevisor-popover-shadow)]"
           )}
           style={{ bottom: composerHeight + 4 }}
         >

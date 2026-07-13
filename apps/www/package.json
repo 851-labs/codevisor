@@ -1,5 +1,5 @@
 {
-  "name": "@herdman/www",
+  "name": "@codevisor/www",
   "private": true,
   "type": "module",
   "scripts": {
@@ -11,7 +11,7 @@
     "cf-typegen": "wrangler types"
   },
   "dependencies": {
-    "@herdman/api": "workspace:*",
+    "@codevisor/api": "workspace:*",
     "@tanstack/react-router": "^1.135.0",
     "@tanstack/react-start": "^1.135.0",
     "fumadocs-core": "16.11.2",

@@ -6,9 +6,9 @@ usage() {
   cat >&2 <<'EOF'
 usage: scripts/release/build-macos-app.sh <version> <output-dir>
 
-Builds HerdMan.app, bundles the local server runtime into
+Builds Codevisor.app, bundles the local server runtime into
 Contents/Resources/server, optionally signs/notarizes the app, and writes
-HerdMan-macOS.zip for the Homebrew cask.
+Codevisor-macOS.zip for the Homebrew cask.
 
 Optional environment:
   APPLE_CODESIGN_IDENTITY       Developer ID Application identity, or empty for ad-hoc signing.
@@ -19,13 +19,13 @@ Optional environment:
                                 Path to App Store Connect API key .p8 for notarization.
   APP_STORE_CONNECT_API_KEY_ID  App Store Connect API key id for notarization.
   APP_STORE_CONNECT_ISSUER_ID   App Store Connect issuer id for notarization.
-  HERDMAN_XCODE_SCHEME          Defaults to HerdMan.
-  HERDMAN_BUILD_NUMBER          Defaults to GITHUB_RUN_NUMBER or 1.
-  HERDMAN_DARWIN_ARM64_RUNTIME_ARCHIVE
+  CODEVISOR_XCODE_SCHEME          Defaults to Codevisor.
+  CODEVISOR_BUILD_NUMBER          Defaults to GITHUB_RUN_NUMBER or 1.
+  CODEVISOR_DARWIN_ARM64_RUNTIME_ARCHIVE
                                 Optional prebuilt darwin-arm64 server runtime tarball.
-  HERDMAN_DARWIN_X64_RUNTIME_ARCHIVE
+  CODEVISOR_DARWIN_X64_RUNTIME_ARCHIVE
                                 Optional prebuilt darwin-x64 server runtime tarball.
-  HERDMAN_REQUIRE_UNIVERSAL_MACOS_APP
+  CODEVISOR_REQUIRE_UNIVERSAL_MACOS_APP
                                 Set to 1 to require both macOS server runtimes.
 EOF
 }
@@ -45,21 +45,21 @@ fi
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "$script_dir/../.." && pwd)"
-scheme="${HERDMAN_XCODE_SCHEME:-HerdMan}"
-build_number="${HERDMAN_BUILD_NUMBER:-${GITHUB_RUN_NUMBER:-1}}"
+scheme="${CODEVISOR_XCODE_SCHEME:-Codevisor}"
+build_number="${CODEVISOR_BUILD_NUMBER:-${GITHUB_RUN_NUMBER:-1}}"
 derived_data="$repo_root/dist/release/DerivedData"
 runtime_root="$repo_root/dist/release/work/app-server-runtimes"
-archive_path="$output_dir/HerdMan-macOS.zip"
+archive_path="$output_dir/Codevisor-macOS.zip"
 node_entitlements="$script_dir/node-entitlements.plist"
 host_target="$("$script_dir/detect-target.sh")"
 
 runtime_archive_for_target() {
   case "$1" in
     darwin-arm64)
-      printf "%s" "${HERDMAN_DARWIN_ARM64_RUNTIME_ARCHIVE:-}"
+      printf "%s" "${CODEVISOR_DARWIN_ARM64_RUNTIME_ARCHIVE:-}"
       ;;
     darwin-x64)
-      printf "%s" "${HERDMAN_DARWIN_X64_RUNTIME_ARCHIVE:-}"
+      printf "%s" "${CODEVISOR_DARWIN_X64_RUNTIME_ARCHIVE:-}"
       ;;
     *)
       return 1
@@ -97,8 +97,8 @@ prepare_server_runtime() {
       exit 1
     fi
     tar -C "$destination" -xzf "$archive"
-  elif [[ "${HERDMAN_REQUIRE_UNIVERSAL_MACOS_APP:-}" == 1 ]]; then
-    echo "error: HERDMAN_REQUIRE_UNIVERSAL_MACOS_APP=1 but no $target runtime archive was provided" >&2
+  elif [[ "${CODEVISOR_REQUIRE_UNIVERSAL_MACOS_APP:-}" == 1 ]]; then
+    echo "error: CODEVISOR_REQUIRE_UNIVERSAL_MACOS_APP=1 but no $target runtime archive was provided" >&2
     exit 1
   else
     rm -rf "$destination"
@@ -126,7 +126,7 @@ prepare_server_runtime "darwin-x64"
 
 rm -rf "$derived_data"
 xcode_args=(
-  -project "$repo_root/apps/macos/HerdMan.xcodeproj" \
+  -project "$repo_root/apps/macos/Codevisor.xcodeproj" \
   -scheme "$scheme" \
   -configuration Release \
   -derivedDataPath "$derived_data" \
@@ -154,7 +154,7 @@ while IFS= read -r candidate; do
 done < <(find "$ghostty_framework" -name "*.a" -type f -print 2>/dev/null | sort)
 ghostty_slice_dir="$(dirname "$ghostty_library")"
 ghostty_headers="$ghostty_slice_dir/Headers/ghostty.h"
-ghostty_resources="$repo_root/apps/macos/HerdMan/Resources/ghostty-resources.tar.gz"
+ghostty_resources="$repo_root/apps/macos/Codevisor/Resources/ghostty-resources.tar.gz"
 if [[ -z "$ghostty_library" || ! -f "$ghostty_library" ]]; then
   echo "error: GhosttyKit must include a universal macOS static library with arm64 and x86_64 slices." >&2
   exit 1
@@ -198,9 +198,9 @@ xcodebuild "${xcode_args[@]}" \
   SWIFT_INCLUDE_PATHS="$ghostty_slice_dir/Headers" \
   build
 
-app_path="$derived_data/Build/Products/Release/HerdMan.app"
+app_path="$derived_data/Build/Products/Release/Codevisor.app"
 if [[ ! -d "$app_path" ]]; then
-  echo "error: HerdMan.app was not produced at $app_path" >&2
+  echo "error: Codevisor.app was not produced at $app_path" >&2
   exit 1
 fi
 
@@ -294,16 +294,16 @@ fi
 
 shasum -a 256 "$archive_path" | awk '{print $1}' > "$archive_path.sha256"
 
-# DMG for direct download from www.herdman.dev (installs without Homebrew).
+# DMG for direct download from www.codevisor.dev (installs without Homebrew).
 # The app inside is already notarized and stapled; the image is signed and
 # notarized as well so Gatekeeper accepts it straight from a browser download.
-dmg_path="$output_dir/HerdMan.dmg"
+dmg_path="$output_dir/Codevisor.dmg"
 dmg_root="$repo_root/dist/release/work/dmg-root"
 rm -rf "$dmg_root" "$dmg_path"
 mkdir -p "$dmg_root"
-ditto "$app_path" "$dmg_root/HerdMan.app"
+ditto "$app_path" "$dmg_root/Codevisor.app"
 ln -s /Applications "$dmg_root/Applications"
-hdiutil create -volname "HerdMan" -srcfolder "$dmg_root" -fs HFS+ -format UDZO -ov "$dmg_path"
+hdiutil create -volname "Codevisor" -srcfolder "$dmg_root" -fs HFS+ -format UDZO -ov "$dmg_path"
 
 if [[ -n "${APPLE_CODESIGN_IDENTITY:-}" ]]; then
   codesign --force --sign "$APPLE_CODESIGN_IDENTITY" "$dmg_path"

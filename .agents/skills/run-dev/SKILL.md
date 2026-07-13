@@ -1,9 +1,9 @@
 ---
 name: run-dev
-description: Start the HerdMan development server and build/run the native macOS app for local testing. Use when asked to run, launch, or test the dev app or server.
+description: Start the Codevisor development server and build/run the native macOS app for local testing. Use when asked to run, launch, or test the dev app or server.
 ---
 
-# Run the HerdMan dev app/server
+# Run the Codevisor dev app/server
 
 From the repository worktree root, run:
 
@@ -16,12 +16,12 @@ This is the canonical development command. It:
 - derives a stable identity and preferred port from the current worktree;
 - builds the TypeScript server and native Swift app;
 - uses worktree-local `DerivedData`;
-- launches `HerdMan (<worktree-name>)` with an isolated database and Application Support directory;
+- launches `Codevisor (<worktree-name>)` with an isolated database and Application Support directory;
 - owns both processes and stops the server when the app exits or the command is interrupted.
 
 Do not start the development server by itself. The app and server are one development instance and must receive the same port and data configuration.
 
-Set `HERDMAN_DEV_PORT` only when a specific port is required. Ordinarily the runner selects a deterministic available port automatically.
+Set `CODEVISOR_DEV_PORT` only when a specific port is required. Ordinarily the runner selects a deterministic available port automatically.
 
 ## Rules
 

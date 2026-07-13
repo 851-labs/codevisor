@@ -8,7 +8,7 @@ import SwiftUI
 /// anywhere the renderer isn't attached.
 enum InlineCodeChipAttribute: AttributedStringKey {
     typealias Value = Bool
-    static let name = "com.851labs.herdman.inlineCodeChip"
+    static let name = "com.851labs.codevisor.inlineCodeChip"
 }
 
 /// The `Text`-level marker for chip runs. `Text.Layout.Run`s tagged with this

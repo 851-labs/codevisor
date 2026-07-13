@@ -14,7 +14,7 @@ function statusIcon(status: string) {
   switch (status) {
     case "completed":
       return (
-        <CheckCircle2Icon className="text-background size-3.5 fill-[var(--herdman-status-ok)]" />
+        <CheckCircle2Icon className="text-background size-3.5 fill-[var(--codevisor-status-ok)]" />
       )
     case "in_progress":
       return (
@@ -71,7 +71,7 @@ export function TodoPanelView({
   const showsCollapsedCurrentStep = !isExpanded && currentStep != null
 
   return (
-    <section className="bg-composer flex flex-col gap-1.5 rounded-lg border border-[var(--herdman-separator)] p-2.5">
+    <section className="bg-composer flex flex-col gap-1.5 rounded-lg border border-[var(--codevisor-separator)] p-2.5">
       <button
         type="button"
         aria-label={`Todos, ${completedCount} of ${entries.length} done`}
@@ -117,7 +117,7 @@ export function ProposedPlanView({ markdown }: { markdown: string }) {
   return (
     <section
       aria-label="Proposed plan"
-      className="flex flex-col gap-2 rounded-lg border border-[var(--herdman-separator)] bg-[var(--herdman-card-bg)] p-3"
+      className="flex flex-col gap-2 rounded-lg border border-[var(--codevisor-separator)] bg-[var(--codevisor-card-bg)] p-3"
     >
       <div className="text-muted-foreground flex items-center gap-1.5 text-sm font-semibold">
         <ClipboardListIcon className="size-3.5" />

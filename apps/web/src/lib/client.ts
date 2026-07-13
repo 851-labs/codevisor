@@ -1,6 +1,6 @@
-// Typed HTTP client for the herdman server, mirroring the Swift
-// HerdManServerClient method-for-method. Responses are decoded with the
-// @herdman/api Effect schemas so the wire contract stays single-sourced.
+// Typed HTTP client for the codevisor server, mirroring the Swift
+// CodevisorServerClient method-for-method. Responses are decoded with the
+// @codevisor/api Effect schemas so the wire contract stays single-sourced.
 // Effect imports stay confined to this module (and session-events.ts).
 import {
   type AttachmentRef,
@@ -40,17 +40,17 @@ import {
   type UpdateProjectRequest,
   Project,
   Worktree
-} from "@herdman/api"
+} from "@codevisor/api"
 import { Schema } from "effect"
 
 import type { ServerConfig } from "./server-config"
 
-export class HerdManHttpError extends Error {
+export class CodevisorHttpError extends Error {
   readonly status: number
 
   constructor(status: number, message: string) {
     super(message === "" ? `HTTP ${status}` : message)
-    this.name = "HerdManHttpError"
+    this.name = "CodevisorHttpError"
     this.status = status
   }
 }
@@ -81,7 +81,7 @@ const decodeQueue = decode(Schema.Array(PromptQueueItem))
 const decodeTerminalCreated = decode(TerminalCreateResponse)
 const decodePairingToken = decode(PairingTokenResponse)
 
-export class HerdManClient {
+export class CodevisorClient {
   readonly config: ServerConfig
   private readonly fetchFn: typeof fetch
 
@@ -204,7 +204,7 @@ export class HerdManClient {
     )
     const text = await response.text()
     if (!response.ok) {
-      throw new HerdManHttpError(response.status, text)
+      throw new CodevisorHttpError(response.status, text)
     }
     return decodeFileMetadata(JSON.parse(text) as unknown)
   }
@@ -219,7 +219,7 @@ export class HerdManClient {
       { method: "GET", headers }
     )
     if (!response.ok) {
-      throw new HerdManHttpError(response.status, await response.text())
+      throw new CodevisorHttpError(response.status, await response.text())
     }
     return response.blob()
   }
@@ -337,7 +337,7 @@ export class HerdManClient {
     })
     const text = await response.text()
     if (!response.ok) {
-      throw new HerdManHttpError(response.status, text)
+      throw new CodevisorHttpError(response.status, text)
     }
     if (text === "") return undefined
     try {

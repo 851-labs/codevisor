@@ -5,7 +5,7 @@ usage() {
   cat <<'EOF'
 usage: scripts/release/upload-r2-artifacts.sh <version> <artifact-dir>
 
-Uploads Homebrew release artifacts to the HerdMan R2 bucket via the S3 API,
+Uploads Codevisor release artifacts to the existing R2 bucket via the S3 API,
 which multipart-uploads large files (wrangler caps out at 300 MiB). Requires
 the aws CLI plus R2 S3 credentials in AWS_ACCESS_KEY_ID,
 AWS_SECRET_ACCESS_KEY, and R2_S3_API_ENDPOINT.
@@ -42,7 +42,8 @@ export AWS_REQUEST_CHECKSUM_CALCULATION="${AWS_REQUEST_CHECKSUM_CALCULATION:-whe
 export AWS_RESPONSE_CHECKSUM_VALIDATION="${AWS_RESPONSE_CHECKSUM_VALIDATION:-when_required}"
 
 bucket="${R2_BUCKET:-herdman}"
-prefix="${R2_PREFIX:-releases/herdman}"
+prefix="${R2_PREFIX:-releases/codevisor}"
+legacy_prefix="${R2_LEGACY_PREFIX:-releases/herdman}"
 cache_control="${R2_CACHE_CONTROL:-public, max-age=31536000, immutable}"
 
 shopt -s nullglob
@@ -75,6 +76,22 @@ for artifact in "${artifacts[@]}"; do
     --endpoint-url "$R2_S3_API_ENDPOINT" \
     --content-type "$content_type" \
     --cache-control "$cache_control"
+
+  # Existing HerdMan apps and standalone servers must be able to discover and
+  # download this first Codevisor update. Publish branded aliases under the
+  # former prefix until those clients have crossed the rename boundary.
+  legacy_name=""
+  case "$name" in
+    Codevisor-macOS.zip) legacy_name="HerdMan-macOS.zip" ;;
+    Codevisor.dmg) legacy_name="HerdMan.dmg" ;;
+    codevisor-server-*.tar.gz) legacy_name="herdman-${name#codevisor-}" ;;
+  esac
+  if [[ -n "$legacy_name" ]]; then
+    aws s3 cp "$artifact" "s3://$bucket/$legacy_prefix/v$version/$legacy_name" \
+      --endpoint-url "$R2_S3_API_ENDPOINT" \
+      --content-type "$content_type" \
+      --cache-control "$cache_control"
+  fi
 done
 
 # The manifest the app and server update checks read (the GitHub repository is
@@ -85,6 +102,10 @@ manifest="$(mktemp)"
 trap 'rm -f "$manifest"' EXIT
 printf '{"version":"%s"}\n' "$version" > "$manifest"
 aws s3 cp "$manifest" "s3://$bucket/$prefix/latest.json" \
+  --endpoint-url "$R2_S3_API_ENDPOINT" \
+  --content-type "application/json" \
+  --cache-control "${R2_LATEST_CACHE_CONTROL:-public, max-age=60}"
+aws s3 cp "$manifest" "s3://$bucket/$legacy_prefix/latest.json" \
   --endpoint-url "$R2_S3_API_ENDPOINT" \
   --content-type "application/json" \
   --cache-control "${R2_LATEST_CACHE_CONTROL:-public, max-age=60}"

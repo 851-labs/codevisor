@@ -3,7 +3,7 @@ import {
   type EventEnvelope,
   WorktreeSetupUpdate,
   type WorktreeSetupUpdate as WorktreeSetupUpdateType
-} from "@herdman/api"
+} from "@codevisor/api"
 
 export interface SessionSetupLogLineInfo {
   id: number

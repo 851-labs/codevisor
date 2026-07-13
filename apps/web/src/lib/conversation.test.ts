@@ -1,4 +1,4 @@
-import type { ConversationItem } from "@herdman/api"
+import type { ConversationItem } from "@codevisor/api"
 import { describe, expect, it } from "vitest"
 
 import { foldConversation } from "./conversation"

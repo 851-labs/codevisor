@@ -7,7 +7,7 @@ import { cn } from "../lib/cn"
 
 function isOnboarded(): boolean {
   try {
-    return window.localStorage.getItem("herdman-onboarded") === "true"
+    return window.localStorage.getItem("codevisor-onboarded") === "true"
   } catch {
     return false
   }

@@ -4,7 +4,7 @@ import type {
   TerminalSpawnRequest,
   TerminalSpawner
 } from "./index.js"
-import type { TerminalClientFrame } from "@herdman/api"
+import type { TerminalClientFrame } from "@codevisor/api"
 import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
 import { makeTerminalManager, TerminalError, TerminalManager } from "./index.js"
@@ -59,7 +59,7 @@ const makeSpawner = (
   }
 }
 
-describe("@herdman/terminal", () => {
+describe("@codevisor/terminal", () => {
   it("creates terminals through an Effect layer and rejects invalid dimensions", async () => {
     const spawner = makeSpawner()
     const response = await run(

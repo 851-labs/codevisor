@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router"
 
-const RELEASE_BASE = "https://pub-d2d6eb72b71c4986a742c0527774c9f0.r2.dev/releases/herdman"
+const RELEASE_BASE = "https://pub-d2d6eb72b71c4986a742c0527774c9f0.r2.dev/releases/codevisor"
 
 // Resolves the latest release from the public R2 manifest and redirects to the
 // DMG. Releases published before the DMG existed only have the zip, so fall
@@ -15,9 +15,9 @@ export const Route = createFileRoute("/download/macos")({
         }
         const { version } = (await manifest.json()) as { version: string }
         const v = version.replace(/^v/, "")
-        const dmgUrl = `${RELEASE_BASE}/v${v}/HerdMan.dmg`
+        const dmgUrl = `${RELEASE_BASE}/v${v}/Codevisor.dmg`
         const dmg = await fetch(dmgUrl, { method: "HEAD" })
-        const target = dmg.ok ? dmgUrl : `${RELEASE_BASE}/v${v}/HerdMan-macOS.zip`
+        const target = dmg.ok ? dmgUrl : `${RELEASE_BASE}/v${v}/Codevisor-macOS.zip`
         return new Response(null, {
           status: 302,
           headers: {

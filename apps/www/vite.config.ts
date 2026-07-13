@@ -16,7 +16,7 @@ export default defineConfig({
   ],
   resolve: {
     alias: {
-      "@herdman/api": fileURLToPath(new URL("../../packages/api/src/index.ts", import.meta.url))
+      "@codevisor/api": fileURLToPath(new URL("../../packages/api/src/index.ts", import.meta.url))
     }
   },
   ssr: {

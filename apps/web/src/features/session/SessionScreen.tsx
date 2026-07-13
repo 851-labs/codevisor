@@ -5,7 +5,7 @@ import type {
   SessionConfigOption,
   SessionGoal,
   SessionModeState
-} from "@herdman/api"
+} from "@codevisor/api"
 import {
   HistoryIcon,
   ListTodoIcon,
@@ -514,7 +514,7 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
     return (
       <div className="flex h-full items-center justify-center">
         {detailQuery.isError ? (
-          <p className="flex items-center gap-2 text-sm text-[var(--herdman-status-error)]">
+          <p className="flex items-center gap-2 text-sm text-[var(--codevisor-status-error)]">
             <TriangleAlertIcon className="size-4" />
             {detailQuery.error instanceof Error ? detailQuery.error.message : "Failed to load"}
           </p>
@@ -976,7 +976,7 @@ function clampTerminalHeight(height: number): number {
 }
 
 function terminalPaneStorageKey(sessionId: string): string {
-  return `herdman.terminalPanes.${sessionId}`
+  return `codevisor.terminalPanes.${sessionId}`
 }
 
 export function WaitingBackgroundTaskIndicator({
@@ -1008,7 +1008,7 @@ export function waitingBackgroundTaskLabel(
 
 export function ComposerStatusLabel({ message }: { message: string }) {
   return (
-    <p className="flex items-center gap-1.5 text-sm text-[var(--herdman-status-warn)]">
+    <p className="flex items-center gap-1.5 text-sm text-[var(--codevisor-status-warn)]">
       <TriangleAlertIcon className="size-4 shrink-0" />
       <span>{message}</span>
     </p>
@@ -1039,7 +1039,7 @@ export function GoalBanner({
   return (
     <div
       aria-label={`Goal: ${goal.objective}, ${goalStatusText(goal.status)}`}
-      className="flex items-start gap-2.5 rounded-lg border border-[var(--herdman-separator)] bg-[var(--herdman-card-bg)] p-2.5"
+      className="flex items-start gap-2.5 rounded-lg border border-[var(--codevisor-separator)] bg-[var(--codevisor-card-bg)] p-2.5"
     >
       <TargetIcon className="text-muted-foreground mt-[3px] size-3.5 shrink-0" />
       <div className="min-w-0 flex-1">
@@ -1049,7 +1049,7 @@ export function GoalBanner({
             className={cn(
               "mt-0.5 shrink-0 rounded-full bg-[color-mix(in_srgb,currentColor_15%,transparent)] px-1.5 py-0.5 text-[11px] font-semibold",
               isTroubleGoalStatus(goal.status)
-                ? "text-[var(--herdman-status-warn)]"
+                ? "text-[var(--codevisor-status-warn)]"
                 : goal.status === "active"
                   ? "text-foreground"
                   : "text-muted-foreground"

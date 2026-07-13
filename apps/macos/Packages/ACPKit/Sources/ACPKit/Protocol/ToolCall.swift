@@ -21,16 +21,16 @@ public enum ToolKind: String, Sendable, Codable, Equatable, CaseIterable {
     case think
     case fetch
     case switchMode = "switch_mode"
-    /// A web search. Not part of the ACP kind vocabulary — HerdMan's own
+    /// A web search. Not part of the ACP kind vocabulary — Codevisor's own
     /// extension so clients can phrase these as searches ("Searched the
     /// web") instead of generic fetches.
     case webSearch = "web_search"
     /// A subagent spawn (e.g. Claude's Task tool). Not part of the ACP kind
-    /// vocabulary — HerdMan's own extension so clients can render a nested
+    /// vocabulary — Codevisor's own extension so clients can render a nested
     /// transcript section for the call.
     case agent
     /// A question the agent asked the user (AskUserQuestion). Not part of the
-    /// ACP kind vocabulary — HerdMan synthesizes an answered question into the
+    /// ACP kind vocabulary — Codevisor synthesizes an answered question into the
     /// transcript as a tool call so it renders as a normal worked-for row.
     case question
     case other

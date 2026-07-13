@@ -5,20 +5,20 @@ import {
   spawnCodexClient,
   type AgentRuntimeService,
   type HarnessAccountContext
-} from "@herdman/agent-runtime"
+} from "@codevisor/agent-runtime"
 import type {
   Harness,
   HarnessAccount,
   HarnessAuth,
   HarnessAuthFlow,
   HarnessAuthMethod
-} from "@herdman/api"
+} from "@codevisor/api"
 import type {
   HarnessAccountRecord,
-  HerdManDatabaseService,
+  CodevisorDatabaseService,
   UpdateHarnessAccountAuthRequest
-} from "@herdman/db"
-import type { TerminalManagerService } from "@herdman/terminal"
+} from "@codevisor/db"
+import type { TerminalManagerService } from "@codevisor/terminal"
 import { execFile } from "node:child_process"
 import { spawn } from "node:child_process"
 import { chmod, mkdir, readFile, rm, writeFile } from "node:fs/promises"
@@ -47,7 +47,7 @@ export interface HarnessAuthEvent {
 
 export interface HarnessAuthManagerConfig {
   readonly dataDir: string
-  readonly db: HerdManDatabaseService
+  readonly db: CodevisorDatabaseService
   readonly agents: AgentRuntimeService
   readonly terminal: TerminalManagerService
   readonly preferDeviceCode?: boolean
@@ -210,7 +210,7 @@ export const makeHarnessAuthManager = (config: HarnessAuthManagerConfig): Harnes
     try {
       await client.request("initialize", {
         capabilities: { experimentalApi: true },
-        clientInfo: { name: "HerdMan", title: "HerdMan", version: "0.1.0" }
+        clientInfo: { name: "Codevisor", title: "Codevisor", version: "0.1.0" }
       })
       client.notify("initialized")
       const response = await client.request<{
@@ -367,7 +367,7 @@ export const makeHarnessAuthManager = (config: HarnessAuthManagerConfig): Harnes
           id: "chatgptDeviceCode",
           name: "Sign in with a code",
           kind: "deviceCode",
-          description: "Best for a remote HerdMan server."
+          description: "Best for a remote Codevisor server."
         },
         {
           id: "apiKey",
@@ -522,7 +522,7 @@ export const makeHarnessAuthManager = (config: HarnessAuthManagerConfig): Harnes
     })
     await client.request("initialize", {
       capabilities: { experimentalApi: true },
-      clientInfo: { name: "HerdMan", title: "HerdMan", version: "0.1.0" }
+      clientInfo: { name: "Codevisor", title: "Codevisor", version: "0.1.0" }
     })
     client.notify("initialized")
     return client

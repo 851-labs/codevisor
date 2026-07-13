@@ -2,7 +2,7 @@ import { execFile, spawn } from "node:child_process"
 import { readFile } from "node:fs/promises"
 import { join } from "node:path"
 
-import type { BranchDiffTotals } from "@herdman/api"
+import type { BranchDiffTotals } from "@codevisor/api"
 
 export class GitError extends Error {
   constructor(

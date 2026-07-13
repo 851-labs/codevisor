@@ -56,7 +56,7 @@ export function ChipMenu({
             <span className="flex min-w-0 flex-col">
               <span>{option.label}</span>
               {option.description != null && (
-                <span className="text-xs text-[var(--herdman-popover-muted-fg)]">
+                <span className="text-xs text-[var(--codevisor-popover-muted-fg)]">
                   {option.description}
                 </span>
               )}

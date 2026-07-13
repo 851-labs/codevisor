@@ -1,5 +1,5 @@
 {
-  "name": "@herdman/agent-runtime",
+  "name": "@codevisor/agent-runtime",
   "private": true,
   "type": "module",
   "exports": {
@@ -16,7 +16,7 @@
   },
   "dependencies": {
     "@agentclientprotocol/sdk": "1.1.0",
-    "@herdman/api": "workspace:*",
+    "@codevisor/api": "workspace:*",
     "diff": "8.0.2",
     "effect": "4.0.0-beta.92",
     "zod": "4.4.3",

@@ -1,4 +1,4 @@
-import type { Project } from "@herdman/api"
+import type { Project } from "@codevisor/api"
 import { CheckIcon, FolderPlusIcon } from "lucide-react"
 
 import { Menu, MenuContent, MenuItem, MenuSeparator, MenuTrigger } from "../../components/ui/menu"

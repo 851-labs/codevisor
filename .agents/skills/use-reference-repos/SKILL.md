@@ -1,6 +1,6 @@
 ---
 name: use-reference-repos
-description: Pull and inspect open-source reference code under .repos. Use when the user asks to examine code from an upstream project, when debugging or implementing an integration would benefit from reading dependency source, or when comparing HerdMan behavior with another open-source project.
+description: Pull and inspect open-source reference code under .repos. Use when the user asks to examine code from an upstream project, when debugging or implementing an integration would benefit from reading dependency source, or when comparing Codevisor behavior with another open-source project.
 ---
 
 # Use reference repositories

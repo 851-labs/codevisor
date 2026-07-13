@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Re-syncs the vendored Ghostty Swift surface layer from .repos/ghostty.
 #
-# Copies the manifest files verbatim over apps/macos/HerdMan/Vendor/GhosttySwift
-# and prints the resulting git diff stat. HERDMAN-PATCH blocks are clobbered by
+# Copies the manifest files verbatim over apps/macos/Codevisor/Vendor/GhosttySwift
+# and prints the resulting git diff stat. CODEVISOR-PATCH blocks are clobbered by
 # this copy ON PURPOSE — re-apply them by hand afterwards (see UPSTREAM.md;
-# `grep -rn HERDMAN-PATCH` on the previous commit shows every patch).
+# `grep -rn CODEVISOR-PATCH` on the previous commit shows every patch).
 #
 # The vendored Swift layer must match the commit GhosttyKit.xcframework is
 # built from (GHOSTTY_REF in build-ghostty.sh). Run build-ghostty.sh first
@@ -13,7 +13,7 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 SRC="$REPO_ROOT/.repos/ghostty/macos/Sources"
-DST="$REPO_ROOT/apps/macos/HerdMan/Vendor/GhosttySwift"
+DST="$REPO_ROOT/apps/macos/Codevisor/Vendor/GhosttySwift"
 
 if [[ ! -d "$SRC" ]]; then
   echo "error: $SRC not found — run apps/macos/scripts/build-ghostty.sh --fetch-only first" >&2
@@ -69,5 +69,5 @@ done
 cp "$REPO_ROOT/.repos/ghostty/LICENSE" "$DST/LICENSE"
 
 echo
-echo "== diff vs HEAD (re-apply HERDMAN-PATCH blocks before committing) =="
+echo "== diff vs HEAD (re-apply CODEVISOR-PATCH blocks before committing) =="
 git -C "$REPO_ROOT" diff --stat -- "$DST"

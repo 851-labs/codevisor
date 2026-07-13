@@ -33,7 +33,7 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
       - name: Build and typecheck
-        run: bunx turbo run build typecheck --filter=@herdman/www
+        run: bunx turbo run build typecheck --filter=@codevisor/www
       - name: Deploy to Cloudflare
         working-directory: apps/www
         env:

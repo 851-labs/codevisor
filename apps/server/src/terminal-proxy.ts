@@ -1,5 +1,9 @@
 #!/usr/bin/env node
-import type { TerminalClientFrame, TerminalCreateResponse, TerminalServerFrame } from "@herdman/api"
+import type {
+  TerminalClientFrame,
+  TerminalCreateResponse,
+  TerminalServerFrame
+} from "@codevisor/api"
 import { randomUUID } from "node:crypto"
 import { setTimeout as sleep } from "node:timers/promises"
 import { WebSocket } from "ws"

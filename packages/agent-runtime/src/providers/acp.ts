@@ -16,7 +16,7 @@ import type {
   SessionConfigSelectGroup,
   SessionConfigSelectOption,
   SessionModeState
-} from "@herdman/api"
+} from "@codevisor/api"
 import { randomUUID } from "node:crypto"
 import { spawn } from "node:child_process"
 import type { ChildProcessWithoutNullStreams } from "node:child_process"
@@ -25,7 +25,7 @@ import { pathToFileURL } from "node:url"
 import { Effect } from "effect"
 import type { BackgroundTerminalIntegration } from "../background-terminals.js"
 import { diffStatsFromTexts } from "../diff-stats.js"
-import type { DiffStat } from "@herdman/api"
+import type { DiffStat } from "@codevisor/api"
 import { makeAcpTerminalHost, type AcpTerminalHost } from "./acp-terminals.js"
 import {
   adapterPromise,
@@ -521,8 +521,8 @@ export const makeStdioAcpConnector = (
                 terminal: terminals !== undefined
               },
               clientInfo: {
-                name: "HerdMan",
-                title: "HerdMan",
+                name: "Codevisor",
+                title: "Codevisor",
                 version: "0.1.0"
               },
               protocolVersion: acp.PROTOCOL_VERSION
@@ -808,7 +808,7 @@ const createClientApp = (
   terminals?: AcpTerminalHost
 ): acp.ClientApp => {
   const app = acp
-    .client({ name: "HerdMan" })
+    .client({ name: "Codevisor" })
     .onNotification(acp.methods.client.session.update, ({ params }) => {
       onSessionUpdate(params)
     })
@@ -1082,7 +1082,7 @@ export const extractAcpModelState = (response: unknown): AcpModelState | undefin
   return { availableModels, currentModelId }
 }
 
-/// Synthesizes the HerdMan `category: "model"` picker option from the ACP model
+/// Synthesizes the Codevisor `category: "model"` picker option from the ACP model
 /// extension so clients render a model chip — mirroring the shape claude/codex
 /// build for their native model pickers.
 export const acpModelConfigOption = (state: AcpModelState): SessionConfigOption => ({
@@ -1158,7 +1158,7 @@ const sessionMetadata = (
   }
 }
 
-/// Best-effort mapping from agent-defined ACP mode ids/names onto HerdMan's
+/// Best-effort mapping from agent-defined ACP mode ids/names onto Codevisor's
 /// canonical vocabulary. Order matters: the first matching pattern wins.
 /// Unmapped modes stay native-only and render in the picker's overflow section.
 const CANONICAL_MODE_PATTERNS: ReadonlyArray<{

@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto"
 import { spawn } from "node:child_process"
-import { access, cp, mkdir, realpath } from "node:fs/promises"
+import { access, cp, mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises"
 import { createServer } from "node:net"
 import { homedir } from "node:os"
 import { basename, join } from "node:path"
@@ -10,57 +10,72 @@ import { fileURLToPath } from "node:url"
 const repoRoot = await realpath(fileURLToPath(new URL("..", import.meta.url)))
 const worktreeName = basename(repoRoot)
 const instanceHash = createHash("sha256").update(repoRoot).digest("hex").slice(0, 10)
+const worktreeHash = createHash("sha256").update(worktreeName).digest("hex")
+const developmentIconColor = colorFromHash(worktreeHash)
 const instanceName = `${worktreeName}-${instanceHash}`
-const appName = `HerdMan (${worktreeName})`
+const appName = `Codevisor (${worktreeName})`
 const derivedDataPath = join(repoRoot, "DerivedData")
 const dataDirectory =
+  process.env.CODEVISOR_DEV_DATA_DIR ??
   process.env.HERDMAN_DEV_DATA_DIR ??
-  join(homedir(), "Library", "Application Support", "HerdMan Development", instanceName)
+  join(homedir(), "Library", "Application Support", "Codevisor Development", instanceName)
 const worktreesDirectory =
-  process.env.HERDMAN_WORKTREES_ROOT ?? join(homedir(), "herdman-development", instanceName)
+  process.env.CODEVISOR_WORKTREES_ROOT ??
+  process.env.HERDMAN_WORKTREES_ROOT ??
+  join(homedir(), "codevisor-development", instanceName)
 
 const preferredPort = 51_000 + (Number.parseInt(instanceHash.slice(0, 8), 16) % 10_000)
-const requestedPort = parsePort(process.env.HERDMAN_DEV_PORT)
+const requestedPort = parsePort(process.env.CODEVISOR_DEV_PORT ?? process.env.HERDMAN_DEV_PORT)
 const port = requestedPort ?? (await findAvailablePort(preferredPort))
 
 await mkdir(dataDirectory, { recursive: true })
 await mkdir(worktreesDirectory, { recursive: true })
 
-console.log(`HerdMan development instance: ${worktreeName}`)
+console.log(`Codevisor development instance: ${worktreeName}`)
 console.log(`  app:      ${appName}`)
 console.log(`  server:   http://127.0.0.1:${port}`)
 console.log(`  data:     ${dataDirectory}`)
 console.log(`  worktrees:${worktreesDirectory}`)
+console.log(`  icon:     ${developmentIconColor.hex}`)
 
 if (!(await pathExists(join(repoRoot, "node_modules", ".bin", "tsc")))) {
   await run("bun", ["install", "--frozen-lockfile"])
 }
 await ensureGhosttyFramework()
 await run("bun", ["run", "--cwd", "apps/server", "build"])
-await run("xcodebuild", [
-  "-project",
-  "apps/macos/HerdMan.xcodeproj",
-  "-scheme",
-  "HerdMan",
-  "-configuration",
-  "Debug",
-  "-derivedDataPath",
-  derivedDataPath,
-  `HERDMAN_DEV_PRODUCT_NAME=${appName}`,
-  `HERDMAN_DEV_DISPLAY_NAME=${appName}`,
-  `HERDMAN_DEV_BUNDLE_IDENTIFIER=com.851labs.HerdMan.Development.${instanceHash}`,
-  "build"
-])
+const generatedIconDirectory = await createDevelopmentAppIcon()
+try {
+  await run("xcodebuild", [
+    "-project",
+    "apps/macos/Codevisor.xcodeproj",
+    "-scheme",
+    "Codevisor",
+    "-configuration",
+    "Debug",
+    "-derivedDataPath",
+    derivedDataPath,
+    `CODEVISOR_DEV_PRODUCT_NAME=${appName}`,
+    `CODEVISOR_DEV_DISPLAY_NAME=${appName}`,
+    `CODEVISOR_DEV_BUNDLE_IDENTIFIER=com.851labs.Codevisor.Development.${instanceHash}`,
+    "ASSETCATALOG_COMPILER_APPICON_NAME=AppIconDevGenerated",
+    "INFOPLIST_KEY_CFBundleIconFile=AppIconDevGenerated",
+    "INFOPLIST_KEY_CFBundleIconName=AppIconDevGenerated",
+    "build"
+  ])
+} finally {
+  await rm(generatedIconDirectory, { recursive: true, force: true })
+}
 
 const sharedEnvironment = {
   ...process.env,
-  HERDMAN_DEV_WORKTREE: worktreeName,
-  HERDMAN_DEV_INSTANCE_ID: instanceName,
-  HERDMAN_DEV_PORT: String(port),
-  HERDMAN_DEV_DATA_DIR: dataDirectory,
-  HERDMAN_WORKTREES_ROOT: worktreesDirectory
+  CODEVISOR_DEV_WORKTREE: worktreeName,
+  CODEVISOR_DEV_INSTANCE_ID: instanceName,
+  CODEVISOR_DEV_ICON_COLOR: developmentIconColor.hex,
+  CODEVISOR_DEV_PORT: String(port),
+  CODEVISOR_DEV_DATA_DIR: dataDirectory,
+  CODEVISOR_WORKTREES_ROOT: worktreesDirectory
 }
-const databasePath = join(dataDirectory, "herdman-server.sqlite")
+const databasePath = join(dataDirectory, "codevisor-server.sqlite")
 const upgradeStatusPath = join(dataDirectory, "data-upgrade.json")
 const server = spawn(
   "node",
@@ -110,7 +125,7 @@ for (const signal of ["SIGINT", "SIGTERM"]) {
 
 const serverExit = waitForExit(server).then(async (result) => {
   if (!stopping) {
-    console.error(`HerdMan server exited unexpectedly (${describeExit(result)}).`)
+    console.error(`Codevisor server exited unexpectedly (${describeExit(result)}).`)
     await stop(result.code ?? 1)
   }
 })
@@ -141,10 +156,67 @@ function parsePort(value) {
   const parsed = Number(value)
   if (!Number.isInteger(parsed) || parsed < 1_024 || parsed > 65_535) {
     throw new Error(
-      `HERDMAN_DEV_PORT must be an integer from 1024 through 65535; received ${value}`
+      `CODEVISOR_DEV_PORT must be an integer from 1024 through 65535; received ${value}`
     )
   }
   return parsed
+}
+
+function colorFromHash(hash) {
+  const hue = Number.parseInt(hash.slice(0, 8), 16) % 360
+  const saturation = 0.68
+  const lightness = 0.5
+  const chroma = (1 - Math.abs(2 * lightness - 1)) * saturation
+  const section = hue / 60
+  const x = chroma * (1 - Math.abs((section % 2) - 1))
+  const [red, green, blue] =
+    section < 1
+      ? [chroma, x, 0]
+      : section < 2
+        ? [x, chroma, 0]
+        : section < 3
+          ? [0, chroma, x]
+          : section < 4
+            ? [0, x, chroma]
+            : section < 5
+              ? [x, 0, chroma]
+              : [chroma, 0, x]
+  const match = lightness - chroma / 2
+  const channels = [red + match, green + match, blue + match]
+  const bytes = channels.map((channel) => Math.round(channel * 255))
+  return {
+    hex: `#${bytes.map((byte) => byte.toString(16).padStart(2, "0")).join("")}`,
+    composer: `extended-srgb:${channels.map((channel) => channel.toFixed(5)).join(",")},1.00000`
+  }
+}
+
+async function createDevelopmentAppIcon() {
+  const templateDirectory = join(
+    repoRoot,
+    "apps",
+    "macos",
+    "Codevisor",
+    "Resources",
+    "AppIconDev.icon"
+  )
+  const generatedDirectory = join(
+    repoRoot,
+    "apps",
+    "macos",
+    "Codevisor",
+    "Resources",
+    "AppIconDevGenerated.icon"
+  )
+  await rm(generatedDirectory, { recursive: true, force: true })
+  await mkdir(join(generatedDirectory, "Assets"), { recursive: true })
+  const manifest = JSON.parse(await readFile(join(templateDirectory, "icon.json"), "utf8"))
+  manifest.fill = { "automatic-gradient": developmentIconColor.composer }
+  await writeFile(join(generatedDirectory, "icon.json"), `${JSON.stringify(manifest, null, 2)}\n`)
+  await cp(
+    join(templateDirectory, "Assets", "icon-v2.svg"),
+    join(generatedDirectory, "Assets", "icon-v2.svg")
+  )
+  return generatedDirectory
 }
 
 async function findAvailablePort(preferred) {
@@ -152,7 +224,7 @@ async function findAvailablePort(preferred) {
     const candidate = 51_000 + ((preferred - 51_000 + offset) % 10_000)
     if (await isPortAvailable(candidate)) return candidate
   }
-  throw new Error("No available HerdMan development port was found in 51000-60999")
+  throw new Error("No available Codevisor development port was found in 51000-60999")
 }
 
 function isPortAvailable(port) {
@@ -229,7 +301,7 @@ async function pathExists(path) {
 
 async function waitForHealth(port, child) {
   for (let attempt = 0; attempt < 120; attempt += 1) {
-    if (child.exitCode !== null) throw new Error("HerdMan server exited before becoming healthy")
+    if (child.exitCode !== null) throw new Error("Codevisor server exited before becoming healthy")
     try {
       const response = await fetch(`http://127.0.0.1:${port}/v1/health`)
       if (response.ok) return
@@ -238,7 +310,7 @@ async function waitForHealth(port, child) {
     }
     await delay(250)
   }
-  throw new Error(`Timed out waiting for the HerdMan server on port ${port}`)
+  throw new Error(`Timed out waiting for the Codevisor server on port ${port}`)
 }
 
 function waitForExit(child) {

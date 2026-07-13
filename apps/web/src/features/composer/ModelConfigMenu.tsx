@@ -1,4 +1,4 @@
-import type { SessionConfigOption } from "@herdman/api"
+import type { SessionConfigOption } from "@codevisor/api"
 import { BoltIcon } from "lucide-react"
 
 import {

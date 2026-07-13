@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
 	<!--
-	  HerdMan servers speak plain HTTP: the local server on 127.0.0.1 and
+	  Codevisor servers speak plain HTTP: the local server on 127.0.0.1 and
 	  remote machines over private networks (e.g. Tailscale, which encrypts
 	  the transport itself). App Transport Security would otherwise reject
 	  every remote machine connection with NSURLError -1022.

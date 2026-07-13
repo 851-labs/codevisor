@@ -5,23 +5,23 @@ set -euo pipefail
 #
 # Preconditions:
 # - `bun run dev:desktop` is running.
-# - The dev server is reachable on HERDMAN_DEV_SERVER_URL, default 49362.
+# - The dev server is reachable on CODEVISOR_DEV_SERVER_URL, default 49362.
 # - macOS has granted screen-recording permission to the calling terminal/app.
 #
-# Tip: set HERDMAN_VERIFY_ROUTE to a session route with `?verify=expanded`
+# Tip: set CODEVISOR_VERIFY_ROUTE to a session route with `?verify=expanded`
 # to force worked sections, tool groups, tool rows, and subagents open for
 # deterministic transcript/tool-call screenshots, for example:
-# HERDMAN_VERIFY_ROUTE='/session/<id>?verify=expanded' bun run verify:tauri-chat
+# CODEVISOR_VERIFY_ROUTE='/session/<id>?verify=expanded' bun run verify:tauri-chat
 #
 # Stable fixture routes for surfaces that may not exist in the shared dev DB:
-# HERDMAN_VERIFY_ROUTE='/verify/chat-parity' bun run verify:tauri-chat
-# HERDMAN_VERIFY_ROUTE='/verify/chat-composer' bun run verify:tauri-chat
+# CODEVISOR_VERIFY_ROUTE='/verify/chat-parity' bun run verify:tauri-chat
+# CODEVISOR_VERIFY_ROUTE='/verify/chat-composer' bun run verify:tauri-chat
 
-SERVER_URL="${HERDMAN_DEV_SERVER_URL:-http://127.0.0.1:49362}"
-PROCESS_NAME="${HERDMAN_TAURI_PROCESS:-herdman-desktop}"
-WINDOW_NAME="${HERDMAN_TAURI_WINDOW-HerdMan}"
-TAURI_BINARY="${HERDMAN_TAURI_BINARY:-apps/desktop/src-tauri/target/debug/herdman-desktop}"
-VERIFY_ROUTE="${HERDMAN_VERIFY_ROUTE:-}"
+SERVER_URL="${CODEVISOR_DEV_SERVER_URL:-http://127.0.0.1:49362}"
+PROCESS_NAME="${CODEVISOR_TAURI_PROCESS:-codevisor-desktop}"
+WINDOW_NAME="${CODEVISOR_TAURI_WINDOW-Codevisor}"
+TAURI_BINARY="${CODEVISOR_TAURI_BINARY:-apps/desktop/src-tauri/target/debug/codevisor-desktop}"
+VERIFY_ROUTE="${CODEVISOR_VERIFY_ROUTE:-}"
 OUT_DIR="${1:-.tmp/chat-parity}"
 STAMP="$(date +%Y%m%d-%H%M%S)"
 
@@ -33,12 +33,12 @@ SCREENSHOT_PATH="$OUT_DIR/tauri-chat-$STAMP.png"
 curl -fsS "$SERVER_URL/v1/health" >"$HEALTH_PATH"
 
 WINDOW_ID="$(
-  HERDMAN_TAURI_PROCESS="$PROCESS_NAME" HERDMAN_TAURI_WINDOW="$WINDOW_NAME" swift -e '
+  CODEVISOR_TAURI_PROCESS="$PROCESS_NAME" CODEVISOR_TAURI_WINDOW="$WINDOW_NAME" swift -e '
 import CoreGraphics
 import Foundation
 
-let targetOwner = ProcessInfo.processInfo.environment["HERDMAN_TAURI_PROCESS"] ?? "herdman-desktop"
-let targetName = ProcessInfo.processInfo.environment["HERDMAN_TAURI_WINDOW"] ?? "HerdMan"
+let targetOwner = ProcessInfo.processInfo.environment["CODEVISOR_TAURI_PROCESS"] ?? "codevisor-desktop"
+let targetName = ProcessInfo.processInfo.environment["CODEVISOR_TAURI_WINDOW"] ?? "Codevisor"
 let windows = CGWindowListCopyWindowInfo([.optionAll], kCGNullWindowID) as? [[String: Any]] ?? []
 
 let candidates: [(id: Int, area: Int)] = windows.compactMap { window in
@@ -71,7 +71,7 @@ fi
 if [[ -n "$VERIFY_ROUTE" ]]; then
   if [[ ! -x "$TAURI_BINARY" ]]; then
     echo "Cannot route Tauri window: binary is not executable at '$TAURI_BINARY'." >&2
-    echo "Set HERDMAN_TAURI_BINARY or run bun run dev:desktop once." >&2
+    echo "Set CODEVISOR_TAURI_BINARY or run bun run dev:desktop once." >&2
     exit 1
   fi
   "$TAURI_BINARY" --route "$VERIFY_ROUTE" >/dev/null 2>&1 || true
@@ -98,6 +98,6 @@ Open the screenshot and compare against macOS source-of-truth surfaces:
 - tool-call groups and plan/todo sections are visible when present
 - composer controls match macOS for attachments, goal mode, plan mode, stop/send, and questions
 - for tool-call parity, prefer a session route with ?verify=expanded
-- for plan/todo parity, use HERDMAN_VERIFY_ROUTE='/verify/chat-parity'
-- for composer/question parity, use HERDMAN_VERIFY_ROUTE='/verify/chat-composer'
+- for plan/todo parity, use CODEVISOR_VERIFY_ROUTE='/verify/chat-parity'
+- for composer/question parity, use CODEVISOR_VERIFY_ROUTE='/verify/chat-composer'
 EOF

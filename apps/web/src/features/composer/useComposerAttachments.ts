@@ -1,4 +1,4 @@
-import type { AttachmentRef, FileMetadata } from "@herdman/api"
+import type { AttachmentRef, FileMetadata } from "@codevisor/api"
 import { useCallback, useEffect, useRef, useSyncExternalStore } from "react"
 
 import { useApi } from "../../lib/api"

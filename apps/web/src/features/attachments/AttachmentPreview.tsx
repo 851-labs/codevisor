@@ -1,4 +1,4 @@
-import type { AttachmentRef } from "@herdman/api"
+import type { AttachmentRef } from "@codevisor/api"
 import {
   DownloadIcon,
   FileIcon,
@@ -122,7 +122,7 @@ export function AttachmentLightbox({ item, onClose }: { item: LightboxItem; onCl
           <XIcon className="size-4" />
         </LightboxButton>
       </div>
-      <div className="herdman-scrollbar min-h-0 flex-1 overflow-auto">
+      <div className="codevisor-scrollbar min-h-0 flex-1 overflow-auto">
         {objectUrl != null ? (
           <div
             className="flex min-h-full min-w-full items-center justify-center p-12"
@@ -273,7 +273,7 @@ export function VisualThumb({
       onClick={onClick}
       onKeyDown={handleKeyDown}
       className={cn(
-        "relative size-14 shrink-0 cursor-default overflow-hidden rounded-lg border border-[var(--herdman-separator)] bg-bubble outline-none",
+        "relative size-14 shrink-0 cursor-default overflow-hidden rounded-lg border border-[var(--codevisor-separator)] bg-bubble outline-none",
         className
       )}
     >
@@ -306,8 +306,8 @@ export function VisualThumb({
 export function FileChip({ name, onClick }: { name: string; onClick?: () => void }) {
   const longName = name.length > 24
   const className = cn(
-    "flex h-14 max-w-[200px] items-center gap-1.5 overflow-hidden rounded-lg border border-[var(--herdman-separator)] bg-bubble px-2.5 text-sm outline-none",
-    onClick != null && "cursor-default hover:bg-[var(--herdman-card-hover-bg)]",
+    "flex h-14 max-w-[200px] items-center gap-1.5 overflow-hidden rounded-lg border border-[var(--codevisor-separator)] bg-bubble px-2.5 text-sm outline-none",
+    onClick != null && "cursor-default hover:bg-[var(--codevisor-card-hover-bg)]",
     longName && "w-[200px]"
   )
   const content = (
@@ -360,7 +360,7 @@ export function PdfBadge() {
 export function DropToAttachOverlay() {
   return (
     <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center bg-background/92">
-      <div className="absolute inset-4 rounded-2xl border-2 border-dashed border-[var(--herdman-accent)]/80" />
+      <div className="absolute inset-4 rounded-2xl border-2 border-dashed border-[var(--codevisor-accent)]/80" />
       <div className="flex flex-col items-center gap-2.5">
         <PaperclipIcon className="text-muted-foreground size-[30px]" strokeWidth={2} />
         <span className="text-2xl font-semibold">Drop to attach</span>

@@ -19,8 +19,8 @@ function DialogContent({
         data-slot="dialog-content"
         className={cn(
           "fixed top-1/2 left-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-xl border p-5",
-          "bg-[var(--herdman-popover-bg)] text-[var(--herdman-popover-fg)]",
-          "border-[var(--herdman-popover-border)] shadow-[var(--herdman-popover-shadow)]",
+          "bg-[var(--codevisor-popover-bg)] text-[var(--codevisor-popover-fg)]",
+          "border-[var(--codevisor-popover-border)] shadow-[var(--codevisor-popover-shadow)]",
           "outline-none transition-[transform,scale,opacity] duration-150",
           "data-[starting-style]:scale-95 data-[starting-style]:opacity-0",
           "data-[ending-style]:scale-95 data-[ending-style]:opacity-0",

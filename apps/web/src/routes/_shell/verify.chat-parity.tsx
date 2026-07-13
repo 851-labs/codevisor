@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router"
-import type { AttachmentRef, ConversationItem, PromptQueueItem, SessionGoal } from "@herdman/api"
+import type { AttachmentRef, ConversationItem, PromptQueueItem, SessionGoal } from "@codevisor/api"
 import { useMemo, useState } from "react"
 
 import type { BackgroundTaskInfo, PlanEntryInfo, ToolCallInfo } from "../../lib/session-events"
@@ -95,7 +95,7 @@ const sampleUserAttachments: AttachmentRef[] = [
 ]
 
 const longUserMessage =
-  "Please compare the macOS transcript row behavior against the Tauri implementation, including this long path-like token that should wrap inside the bubble: /Users/alexandru/repos/851-labs/herdman/apps/web/src/features/session/Transcript.tsx?with=a-very-long-query-string-for-wrapping-verification"
+  "Please compare the macOS transcript row behavior against the Tauri implementation, including this long path-like token that should wrap inside the bubble: /Users/alexandru/repos/851-labs/codevisor/apps/web/src/features/session/Transcript.tsx?with=a-very-long-query-string-for-wrapping-verification"
 
 const transcriptWaitingConversation: ConversationItem[] = [
   {
@@ -148,7 +148,7 @@ const sampleToolCalls: ToolCallInfo[] = [
         type: "content",
         content: {
           type: "text",
-          text: "apps/macos/HerdMan/Features/Composer/ComposerView.swift:18:struct ComposerCard: View\napps/web/src/features/composer/Composer.tsx:34:export function Composer({"
+          text: "apps/macos/Codevisor/Features/Composer/ComposerView.swift:18:struct ComposerCard: View\napps/web/src/features/composer/Composer.tsx:34:export function Composer({"
         }
       }
     ]
@@ -206,7 +206,7 @@ const firstIconToolCalls: ToolCallInfo[] = [
         type: "content",
         content: {
           type: "text",
-          text: "# HerdMan"
+          text: "# Codevisor"
         }
       }
     ]
@@ -221,7 +221,7 @@ const firstIconToolCalls: ToolCallInfo[] = [
         type: "content",
         content: {
           type: "text",
-          text: "apps/macos/HerdMan/Features/Session/SessionView.swift:1:import SwiftUI"
+          text: "apps/macos/Codevisor/Features/Session/SessionView.swift:1:import SwiftUI"
         }
       }
     ]
@@ -236,7 +236,7 @@ const firstIconToolCalls: ToolCallInfo[] = [
         type: "content",
         content: {
           type: "text",
-          text: "apps/macos/HerdMan/Features/Session/ToolGroupView.swift:7:struct ToolGroupView: View"
+          text: "apps/macos/Codevisor/Features/Session/ToolGroupView.swift:7:struct ToolGroupView: View"
         }
       }
     ]
@@ -253,7 +253,7 @@ const shortShellToolCall: ToolCallInfo = {
       type: "content",
       content: {
         type: "text",
-        text: "/Users/alexandru/repos/851-labs/herdman"
+        text: "/Users/alexandru/repos/851-labs/codevisor"
       }
     }
   ]

@@ -1,5 +1,5 @@
 import { diffLines } from "diff"
-import type { DiffStat } from "@herdman/api"
+import type { DiffStat } from "@codevisor/api"
 
 /** Number of lines in `text`, where an empty string has zero lines and a
  *  trailing newline does not open a final empty line. */

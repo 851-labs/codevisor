@@ -1,4 +1,4 @@
-import type { SessionSummary } from "@herdman/api"
+import type { SessionSummary } from "@codevisor/api"
 import { Link } from "@tanstack/react-router"
 import { BlocksIcon, SquarePenIcon } from "lucide-react"
 import { useMemo, useState } from "react"
@@ -33,11 +33,11 @@ export function Sidebar() {
   const projectsQuery = useProjects()
   const sessionsQuery = useSessions()
   const [organizationRaw, setOrganizationRaw] = useLocalStorage(
-    "herdman-sidebar-organization",
+    "codevisor-sidebar-organization",
     "byProject"
   )
-  const [orderRaw, setOrderRaw] = useLocalStorage("herdman-sidebar-order", "updated")
-  const [manualOrderRaw] = useLocalStorage("herdman-sidebar-project-order", "")
+  const [orderRaw, setOrderRaw] = useLocalStorage("codevisor-sidebar-order", "updated")
+  const [manualOrderRaw] = useLocalStorage("codevisor-sidebar-project-order", "")
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set())
 
   const organization = narrowOrganization(organizationRaw)
@@ -143,7 +143,7 @@ export function Sidebar() {
           to="/internal/storybook"
           className={cn(sidebarRowClassName, "text-muted-foreground mb-1")}
           activeProps={{
-            className: "text-foreground bg-[var(--herdman-row-selected-bg)]"
+            className: "text-foreground bg-[var(--codevisor-row-selected-bg)]"
           }}
         >
           <BlocksIcon className="text-muted-foreground size-4 shrink-0" />

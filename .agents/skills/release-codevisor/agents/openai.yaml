@@ -1,0 +1,4 @@
+interface:
+  display_name: "Release Codevisor"
+  short_description: "Build and publish a Codevisor release"
+  default_prompt: "Use $release-codevisor to cut and verify a Codevisor release."

@@ -1,5 +1,5 @@
 {
-  "name": "@herdman/api",
+  "name": "@codevisor/api",
   "private": true,
   "type": "module",
   "exports": {

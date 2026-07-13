@@ -47,7 +47,7 @@ function setupPhases(now: number): SessionSetupPhaseInfo[] {
       startedAt: new Date(now - 8_000).toISOString(),
       endedAt: new Date(now - 1_000).toISOString(),
       outcome: "failed",
-      failureMessage: "fatal: a branch named 'herdman/fix-auth' already exists",
+      failureMessage: "fatal: a branch named 'codevisor/fix-auth' already exists",
       logs: manyLogs
     }
   ]

@@ -3,7 +3,7 @@ import type {
   TerminalCreateRequest,
   TerminalCreateResponse,
   TerminalServerFrame
-} from "@herdman/api"
+} from "@codevisor/api"
 import { randomUUID } from "node:crypto"
 import { Context, Effect, Layer, Schema } from "effect"
 
@@ -105,7 +105,7 @@ export interface TerminalManagerService {
 }
 
 export class TerminalManager extends Context.Service<TerminalManager, TerminalManagerService>()(
-  "@herdman/terminal/TerminalManager"
+  "@codevisor/terminal/TerminalManager"
 ) {
   static readonly layer = (config: TerminalManagerConfig = {}): Layer.Layer<TerminalManager> =>
     Layer.succeed(TerminalManager, TerminalManager.of(makeTerminalManager(config)))

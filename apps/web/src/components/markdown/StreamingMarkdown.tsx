@@ -3,7 +3,7 @@ import { memo, type ComponentProps, type SVGProps } from "react"
 import { Streamdown, type ThemeInput } from "streamdown"
 
 import { cn } from "../../lib/cn"
-import { herdmanThemeResolver } from "../../theme/themeController"
+import { codevisorThemeResolver } from "../../theme/themeController"
 import { useThemeSelection } from "../../theme/useThemeSelection"
 import { ExternalLink } from "../ExternalLink"
 
@@ -11,7 +11,10 @@ function MarkdownExternalLink({ className, ...props }: ComponentProps<typeof Ext
   return (
     <ExternalLink
       {...props}
-      className={cn("wrap-anywhere font-medium text-[var(--herdman-accent)] underline", className)}
+      className={cn(
+        "wrap-anywhere font-medium text-[var(--codevisor-accent)] underline",
+        className
+      )}
     />
   )
 }
@@ -22,7 +25,7 @@ const markdownComponents = { a: MarkdownExternalLink }
 // a stock shiki theme until the resolver has it (the active scheme's theme is
 // always resolved by the controller before it paints).
 function shikiThemeFor(name: string, fallback: ThemeInput): ThemeInput {
-  const resolved = herdmanThemeResolver.getResolvedTheme(name)
+  const resolved = codevisorThemeResolver.getResolvedTheme(name)
   return (resolved as ThemeInput | undefined) ?? fallback
 }
 
@@ -30,7 +33,7 @@ function StreamdownCopyIcon({ size = 14 }: SVGProps<SVGSVGElement> & { size?: nu
   return (
     <CopyIcon
       className="shrink-0"
-      data-herdman-streamdown-copy-state="copy"
+      data-codevisor-streamdown-copy-state="copy"
       style={{ width: size, height: size }}
     />
   )
@@ -40,7 +43,7 @@ function StreamdownCheckIcon({ size = 14 }: SVGProps<SVGSVGElement> & { size?: n
   return (
     <CheckIcon
       className="shrink-0"
-      data-herdman-streamdown-copy-state="copied"
+      data-codevisor-streamdown-copy-state="copied"
       style={{ width: size, height: size }}
     />
   )
@@ -60,7 +63,10 @@ export const StreamingMarkdown = memo(function StreamingMarkdown({
   const { lightThemeName, darkThemeName } = useThemeSelection()
   return (
     <Streamdown
-      className={cn("herdman-prose herdman-selectable min-w-0 text-sm leading-relaxed", className)}
+      className={cn(
+        "codevisor-prose codevisor-selectable min-w-0 text-sm leading-relaxed",
+        className
+      )}
       shikiTheme={[
         shikiThemeFor(lightThemeName, "github-light"),
         shikiThemeFor(darkThemeName, "github-dark")

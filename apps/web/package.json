@@ -1,5 +1,5 @@
 {
-  "name": "@herdman/web",
+  "name": "@codevisor/web",
   "private": true,
   "type": "module",
   "scripts": {
@@ -11,7 +11,7 @@
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",
-    "@herdman/api": "workspace:*",
+    "@codevisor/api": "workspace:*",
     "@pierre/diffs": "1.2.12",
     "@pierre/theme": "1.1.0",
     "@pierre/theming": "0.0.2",

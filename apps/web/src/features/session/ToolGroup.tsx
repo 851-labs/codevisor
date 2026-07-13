@@ -417,7 +417,7 @@ export function ToolGroup({
 
 function ToolCallContentCard({ call }: { call: ToolCallInfo }) {
   return (
-    <div className="flex w-full min-w-0 flex-col gap-2 rounded-lg bg-[var(--herdman-card-bg)] p-2.5">
+    <div className="flex w-full min-w-0 flex-col gap-2 rounded-lg bg-[var(--codevisor-card-bg)] p-2.5">
       <div className="text-muted-foreground text-xs font-semibold">{labelForKind(call.kind)}</div>
       {call.content?.map((content, index) => (
         <ToolCallContent key={index} content={content} />
@@ -463,7 +463,7 @@ function ResourceLink({ block }: { block: Extract<ContentBlockInfo, { type: "res
     <ExternalLink href={block.uri} title={block.uri} className="flex min-w-0 items-start gap-1.5">
       <GlobeIcon className="text-muted-foreground/70 mt-0.5 size-3 shrink-0" />
       <span className="flex min-w-0 flex-col">
-        <span className="truncate text-xs text-[var(--herdman-accent)]">{label}</span>
+        <span className="truncate text-xs text-[var(--codevisor-accent)]">{label}</span>
         <span className="text-muted-foreground truncate text-[11px]">{url.host}</span>
       </span>
     </ExternalLink>
@@ -491,7 +491,7 @@ function MonospaceBlock({ text, muted = false }: { text: string; muted?: boolean
   return (
     <pre
       className={cn(
-        "herdman-selectable max-h-80 overflow-auto whitespace-pre-wrap break-words text-xs",
+        "codevisor-selectable max-h-80 overflow-auto whitespace-pre-wrap break-words text-xs",
         "font-mono leading-relaxed",
         muted ? "text-muted-foreground" : "text-foreground"
       )}
@@ -553,14 +553,14 @@ function DiffBlock({
   }, [darkThemeName, highlighterKey, language, lightThemeName])
 
   return (
-    <div className="max-h-80 overflow-auto rounded-lg border border-[var(--border)] bg-[var(--herdman-code-bg)]">
+    <div className="max-h-80 overflow-auto rounded-lg border border-[var(--border)] bg-[var(--codevisor-code-bg)]">
       {loadedHighlighterKey === highlighterKey ? (
         <MultiFileDiff
           oldFile={files.oldFile}
           newFile={files.newFile}
           options={options}
           disableWorkerPool
-          className="herdman-pierre-diff herdman-selectable min-w-0"
+          className="codevisor-pierre-diff codevisor-selectable min-w-0"
         />
       ) : (
         <div className="flex h-[5.625rem] items-center justify-center">
@@ -640,14 +640,14 @@ function StatusBadge({ status }: { status: string | undefined }) {
   switch (status) {
     case "completed":
       return (
-        <span className="flex items-center gap-1 text-xs text-[var(--herdman-status-ok)]">
+        <span className="flex items-center gap-1 text-xs text-[var(--codevisor-status-ok)]">
           <CheckIcon className="size-3" />
           Success
         </span>
       )
     case "failed":
       return (
-        <span className="flex items-center gap-1 text-xs text-[var(--herdman-status-error)]">
+        <span className="flex items-center gap-1 text-xs text-[var(--codevisor-status-error)]">
           <XIcon className="size-3" />
           Failed
         </span>

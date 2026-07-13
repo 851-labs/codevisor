@@ -1,4 +1,4 @@
-import type { SessionConfigOption } from "@herdman/api"
+import type { SessionConfigOption } from "@codevisor/api"
 import { createFileRoute } from "@tanstack/react-router"
 import { Code2Icon, FolderIcon, GitBranchIcon, ListTodoIcon, TargetIcon } from "lucide-react"
 import { useState } from "react"
@@ -186,7 +186,7 @@ function ComposerFixture({ title, children }: { title: string; children: React.R
 
 function NewChatAccessoryFixture() {
   return (
-    <div className="flex items-center gap-3 rounded-b-2xl border border-t-0 border-[var(--herdman-card-border)] bg-[var(--herdman-card-bg)] px-3.5 pt-7 pb-2 text-sm">
+    <div className="flex items-center gap-3 rounded-b-2xl border border-t-0 border-[var(--codevisor-card-border)] bg-[var(--codevisor-card-bg)] px-3.5 pt-7 pb-2 text-sm">
       <ChipMenu
         label="Codex"
         title="Agent"

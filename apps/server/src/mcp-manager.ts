@@ -4,8 +4,8 @@ import type {
   McpServer,
   McpTool,
   UpdateMcpServerRequest
-} from "@herdman/api"
-import type { HerdManDatabaseService, McpServerRecord } from "@herdman/db"
+} from "@codevisor/api"
+import type { CodevisorDatabaseService, McpServerRecord } from "@codevisor/db"
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import {
   auth,
@@ -127,7 +127,7 @@ export interface McpManager {
 }
 
 export interface McpManagerConfig {
-  readonly db: HerdManDatabaseService
+  readonly db: CodevisorDatabaseService
   readonly dataDir: string
 }
 
@@ -351,10 +351,10 @@ export class NodeStreamableHttpTransport implements Transport {
 }
 
 const loadEncryptionKey = (dataDir: string): Buffer => {
-  const configured = process.env.HERDMAN_MCP_SECRET_KEY
+  const configured = process.env.CODEVISOR_MCP_SECRET_KEY ?? process.env.HERDMAN_MCP_SECRET_KEY
   if (configured !== undefined) {
     const key = Buffer.from(configured, "base64")
-    if (key.length !== 32) throw new Error("HERDMAN_MCP_SECRET_KEY must be 32 bytes in base64")
+    if (key.length !== 32) throw new Error("CODEVISOR_MCP_SECRET_KEY must be 32 bytes in base64")
     return key
   }
   mkdirSync(dataDir, { recursive: true, mode: 0o700 })
@@ -388,6 +388,8 @@ const decryptSecrets = (key: Buffer, value: string | undefined): StoredSecrets =
 
 export const makeMcpManager = (config: McpManagerConfig): McpManager => {
   const key = loadEncryptionKey(config.dataDir)
+  // This is a cryptographic compatibility label, not a user-facing brand.
+  // Keep it stable so resumed sessions retain a valid gateway credential.
   const gatewayBearerToken = createHash("sha256")
     .update("herdman-mcp-gateway-v1")
     .update(key)
@@ -420,12 +422,12 @@ export const makeMcpManager = (config: McpManagerConfig): McpManager => {
       },
       body: JSON.stringify({
         jsonrpc: "2.0",
-        id: "herdman-auth-detection",
+        id: "codevisor-auth-detection",
         method: "initialize",
         params: {
           protocolVersion: "2025-11-25",
           capabilities: {},
-          clientInfo: { name: "HerdMan", version: "0.1.0" }
+          clientInfo: { name: "Codevisor", version: "0.1.0" }
         }
       })
     })
@@ -554,7 +556,7 @@ export const makeMcpManager = (config: McpManagerConfig): McpManager => {
       redirectUrl,
       get clientMetadata(): OAuthClientMetadata {
         return {
-          client_name: "HerdMan",
+          client_name: "Codevisor",
           redirect_uris: [redirectUrl],
           grant_types: ["authorization_code", "refresh_token"],
           response_types: ["code"],
@@ -713,14 +715,14 @@ export const makeMcpManager = (config: McpManagerConfig): McpManager => {
       .filter((name) => name.length > 0)
       .sort((left, right) => left.localeCompare(right))
     if (names.length === 0) return "Available integrations: none."
-    return ["Available integrations through HerdMan:", ...names.map((name) => `- ${name}`)].join(
+    return ["Available integrations through Codevisor:", ...names.map((name) => `- ${name}`)].join(
       "\n"
     )
   }
 
   const searchToolDescription = (inventory: string): string =>
     [
-      "Entry point for every integration connected through HerdMan. When the user asks to use a named service or external system, call this tool first even if no direct connector is visible. Search returns exact tool paths and the next steps; continue with describe and execute instead of stopping after discovery.",
+      "Entry point for every integration connected through Codevisor. When the user asks to use a named service or external system, call this tool first even if no direct connector is visible. Search returns exact tool paths and the next steps; continue with describe and execute instead of stopping after discovery.",
       inventory
     ].join("\n\n")
 
@@ -763,7 +765,7 @@ export const makeMcpManager = (config: McpManagerConfig): McpManager => {
         await saveRecord(server, { connectionState: "connecting", detail: undefined })
       }
       const stored = secrets(server)
-      const client = new Client({ name: "HerdMan", version: "0.1.0" }, { capabilities: {} })
+      const client = new Client({ name: "Codevisor", version: "0.1.0" }, { capabilities: {} })
       /* v8 ignore next -- OAuth access tokens are supplied by the live OAuth adapter above. */
       const accessToken = stored.bearerToken ?? stored.oauth?.tokens?.access_token
       const transport =
@@ -926,10 +928,10 @@ export const makeMcpManager = (config: McpManagerConfig): McpManager => {
   const gatewayRuntime = async (sessionId: string, projectId?: string) => {
     const inventory = await integrationInventory(projectId, sessionId)
     const sdkServer = new McpSdkServer(
-      { name: "HerdMan Tool Gateway", version: "0.1.0" },
+      { name: "Codevisor Tool Gateway", version: "0.1.0" },
       {
         instructions: [
-          "HerdMan provides access to the user's enabled integrations. Use search to discover tools, describe to inspect a schema, and execute to call it. Do not conclude that an integration is unavailable before searching HerdMan. Tool calls are approved by default.",
+          "Codevisor provides access to the user's enabled integrations. Use search to discover tools, describe to inspect a schema, and execute to call it. Do not conclude that an integration is unavailable before searching Codevisor. Tool calls are approved by default.",
           inventory
         ].join("\n\n")
       }
@@ -1348,7 +1350,7 @@ export const makeMcpManager = (config: McpManagerConfig): McpManager => {
       if (existingId !== undefined && gateways.has(existingId)) {
         const existingUrl = new URL("/mcp/gateway", gatewayBaseUrl)
         existingUrl.searchParams.set("gateway", existingId)
-        return { name: "herdman", url: existingUrl.toString(), bearerToken: gatewayBearerToken }
+        return { name: "codevisor", url: existingUrl.toString(), bearerToken: gatewayBearerToken }
       }
       const gatewayId = randomBytes(24).toString("base64url")
       const runtime = await gatewayRuntime(sessionId, projectId)
@@ -1357,7 +1359,7 @@ export const makeMcpManager = (config: McpManagerConfig): McpManager => {
       const url = new URL("/mcp/gateway", gatewayBaseUrl)
       url.searchParams.set("gateway", gatewayId)
       return {
-        name: "herdman",
+        name: "codevisor",
         url: url.toString(),
         bearerToken: gatewayBearerToken
       }
@@ -1371,7 +1373,7 @@ export const makeMcpManager = (config: McpManagerConfig): McpManager => {
         timingSafeEqual(Buffer.from(token), Buffer.from(gatewayBearerToken))
       if (!authorized) {
         response.writeHead(401, { "content-type": "application/json" })
-        response.end(JSON.stringify({ error: "Invalid HerdMan tool gateway token" }))
+        response.end(JSON.stringify({ error: "Invalid Codevisor tool gateway token" }))
         return
       }
       /* v8 ignore next -- Node HTTP requests always carry a URL. */
@@ -1380,7 +1382,7 @@ export const makeMcpManager = (config: McpManagerConfig): McpManager => {
       const runtime = gatewayId === null ? undefined : gateways.get(gatewayId)
       if (runtime === undefined) {
         response.writeHead(404, { "content-type": "application/json" })
-        response.end(JSON.stringify({ error: "HerdMan tool gateway session not found" }))
+        response.end(JSON.stringify({ error: "Codevisor tool gateway session not found" }))
         return
       }
       await runtime.transport.handleRequest(request, response)

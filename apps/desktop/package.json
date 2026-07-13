@@ -1,5 +1,5 @@
 {
-  "name": "@herdman/desktop",
+  "name": "@codevisor/desktop",
   "private": true,
   "type": "module",
   "scripts": {

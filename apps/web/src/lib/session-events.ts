@@ -14,7 +14,7 @@ import {
   SessionGoal,
   type AttachmentRef as AttachmentRefInfo,
   type SessionGoal as SessionGoalType
-} from "@herdman/api"
+} from "@codevisor/api"
 import { Schema } from "effect"
 
 export interface ToolCallInfo {

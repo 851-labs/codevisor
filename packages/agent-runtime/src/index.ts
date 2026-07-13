@@ -1,5 +1,5 @@
-import type { EventEnvelope, Harness, SessionGoal } from "@herdman/api"
-import { isoTimestamp } from "@herdman/api"
+import type { EventEnvelope, Harness, SessionGoal } from "@codevisor/api"
+import { isoTimestamp } from "@codevisor/api"
 import type { AgentSessionSummary } from "./agent-sessions.js"
 import { accessSync, constants } from "node:fs"
 import { Context, Effect, Layer } from "effect"
@@ -90,7 +90,7 @@ export interface AgentRuntimeService {
   /// server start. Concurrent refreshes share one in-flight resolution.
   readonly refreshEnvironment: Effect.Effect<void, AgentRuntimeError>
   /// Sessions from the harness's own on-disk store (run before/outside
-  /// HerdMan). Empty for harnesses without a native store or a provider
+  /// Codevisor). Empty for harnesses without a native store or a provider
   /// listing hook. Fails only for unknown harness ids.
   readonly listAgentSessions: (
     harnessId: string,
@@ -161,7 +161,7 @@ export interface AgentRuntimeService {
 }
 
 export class AgentRuntime extends Context.Service<AgentRuntime, AgentRuntimeService>()(
-  "@herdman/agent-runtime/AgentRuntime"
+  "@codevisor/agent-runtime/AgentRuntime"
 ) {
   static readonly layer = (config: AgentRuntimeConfig = {}): Layer.Layer<AgentRuntime> =>
     Layer.succeed(AgentRuntime, AgentRuntime.of(makeAgentRuntime(config)))

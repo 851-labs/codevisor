@@ -28,8 +28,8 @@ import type {
   UpdateSessionRequest,
   UpdateInfo,
   Worktree
-} from "@herdman/api"
-import { isoTimestamp } from "@herdman/api"
+} from "@codevisor/api"
+import { isoTimestamp } from "@codevisor/api"
 import Database from "better-sqlite3"
 import { createHash, randomBytes, randomUUID } from "node:crypto"
 import { Context, Effect, Layer, Schema } from "effect"
@@ -42,7 +42,7 @@ export class DatabaseError extends Schema.TaggedErrorClass<DatabaseError>()("Dat
   message: Schema.String
 }) {}
 
-export interface HerdManDatabaseConfig {
+export interface CodevisorDatabaseConfig {
   readonly filename: string
   readonly serverId: string
   /// Synchronous by design: migrations use better-sqlite3 and report after
@@ -307,7 +307,7 @@ interface Migration {
   readonly name: string
   readonly sql: string
   /** Runs inside the migration transaction, after `sql`; use for backfills that need config values. */
-  readonly run?: (sqlite: Database.Database, config: HerdManDatabaseConfig) => void
+  readonly run?: (sqlite: Database.Database, config: CodevisorDatabaseConfig) => void
 }
 
 const migrations: ReadonlyArray<Migration> = [
@@ -799,6 +799,20 @@ const migrations: ReadonlyArray<Migration> = [
       alter table transcript_items add column retryable integer not null default 0;
       alter table chat_items add column retryable integer not null default 0;
     `
+  },
+  {
+    id: 16,
+    name: "Codevisor session origins",
+    sql: `
+      update projects set origin = 'codevisor' where origin = 'herdman';
+      update sessions set origin = 'codevisor' where origin = 'herdman';
+      update events
+        set payload = json_set(payload, '$.origin', 'codevisor')
+        where json_valid(payload) and json_extract(payload, '$.origin') = 'herdman';
+      update session_events
+        set payload = json_set(payload, '$.origin', 'codevisor')
+        where json_valid(payload) and json_extract(payload, '$.origin') = 'herdman';
+    `
   }
 ]
 
@@ -920,7 +934,10 @@ const isRenderableWorkedEvent = (payload: JsonRecord): boolean =>
 
 const canonicalChatBackfillId = "canonical-session-chat-v1"
 
-const reportDataUpgrade = (config: HerdManDatabaseConfig, progress: DataUpgradeProgress): void => {
+const reportDataUpgrade = (
+  config: CodevisorDatabaseConfig,
+  progress: DataUpgradeProgress
+): void => {
   config.onDataUpgradeProgress?.(progress)
 }
 
@@ -1362,7 +1379,7 @@ const copyTranscriptItemToChat = (sqlite: Database.Database, row: TranscriptRow)
 
 const runCanonicalChatBackfill = (
   sqlite: Database.Database,
-  config: HerdManDatabaseConfig
+  config: CodevisorDatabaseConfig
 ): void => {
   const existing = sqlite
     .prepare("select state, completed, total from backfill_jobs where id = ?")
@@ -1597,12 +1614,12 @@ const runCanonicalChatBackfill = (
 /// `migrations`, while the runner owns bounded commits, validation, progress,
 /// and its durable `backfill_jobs` checkpoint.
 const blockingDataUpgrades: ReadonlyArray<
-  (sqlite: Database.Database, config: HerdManDatabaseConfig) => void
+  (sqlite: Database.Database, config: CodevisorDatabaseConfig) => void
 > = [runCanonicalChatBackfill]
 
 const runBlockingDataUpgrades = (
   sqlite: Database.Database,
-  config: HerdManDatabaseConfig
+  config: CodevisorDatabaseConfig
 ): void => {
   for (const upgrade of blockingDataUpgrades) upgrade(sqlite, config)
 }
@@ -1618,7 +1635,7 @@ const isSessionShellEvent = (kind: EventKind, payload: unknown): boolean => {
   return typeof value?.id === "string" && typeof value.projectId === "string"
 }
 
-export interface HerdManDatabaseService {
+export interface CodevisorDatabaseService {
   readonly migrate: Effect.Effect<ReadonlyArray<string>, DatabaseError>
   readonly close: Effect.Effect<void>
   readonly createProject: (request: CreateProjectRequest) => Effect.Effect<Project, DatabaseError>
@@ -1787,21 +1804,22 @@ export interface HerdManDatabaseService {
   readonly setUpdateInfo: (update: UpdateInfo) => Effect.Effect<UpdateInfo, DatabaseError>
 }
 
-export class HerdManDatabase extends Context.Service<HerdManDatabase, HerdManDatabaseService>()(
-  "@herdman/db/HerdManDatabase"
-) {
+export class CodevisorDatabase extends Context.Service<
+  CodevisorDatabase,
+  CodevisorDatabaseService
+>()("@codevisor/db/CodevisorDatabase") {
   static readonly layer = (
-    config: HerdManDatabaseConfig
-  ): Layer.Layer<HerdManDatabase, DatabaseError> =>
+    config: CodevisorDatabaseConfig
+  ): Layer.Layer<CodevisorDatabase, DatabaseError> =>
     Layer.effect(
-      HerdManDatabase,
-      Effect.map(makeDatabase(config), (service) => HerdManDatabase.of(service))
+      CodevisorDatabase,
+      Effect.map(makeDatabase(config), (service) => CodevisorDatabase.of(service))
     )
 }
 
 export const makeDatabase = (
-  config: HerdManDatabaseConfig
-): Effect.Effect<HerdManDatabaseService, DatabaseError> =>
+  config: CodevisorDatabaseConfig
+): Effect.Effect<CodevisorDatabaseService, DatabaseError> =>
   Effect.gen(function* () {
     const sqlite = yield* attempt("open", () => new Database(config.filename))
     sqlite.pragma("foreign_keys = ON")
@@ -1813,8 +1831,8 @@ export const makeDatabase = (
 
 const createService = (
   sqlite: Database.Database,
-  config: HerdManDatabaseConfig
-): HerdManDatabaseService => {
+  config: CodevisorDatabaseConfig
+): CodevisorDatabaseService => {
   const migrate = attempt("migrate", () => {
     sqlite.exec(
       "create table if not exists schema_migrations (id integer primary key, name text not null)"
@@ -1892,7 +1910,7 @@ const createService = (
     return harnessAccountFromRow(row)
   }
 
-  const appendEvent = Effect.fn("HerdManDatabase.appendEvent")(function* (
+  const appendEvent = Effect.fn("CodevisorDatabase.appendEvent")(function* (
     kind: EventKind,
     subjectId: string,
     payload: unknown
@@ -1975,7 +1993,7 @@ const createService = (
     return sessionFromRow(row, localLocationFor(row.project_id)?.folder_path)
   }
 
-  const createProject = Effect.fn("HerdManDatabase.createProject")(function* (
+  const createProject = Effect.fn("CodevisorDatabase.createProject")(function* (
     request: CreateProjectRequest
   ) {
     return yield* attempt("createProject", () => {
@@ -2015,7 +2033,7 @@ const createService = (
               request.name ?? basename(request.folderPath),
               (request.isArchived ?? false) ? 1 : 0,
               request.symbolName ?? "folder.fill",
-              request.origin ?? "herdman",
+              request.origin ?? "codevisor",
               createdAt
             )
           for (const table of ["project_locations", "sessions", "worktrees"]) {
@@ -2040,7 +2058,7 @@ const createService = (
         name: request.name ?? basename(request.folderPath),
         isArchived: request.isArchived ?? false,
         symbolName: request.symbolName ?? "folder.fill",
-        origin: request.origin ?? "herdman",
+        origin: request.origin ?? "codevisor",
         createdAt,
         locations: [location]
       }
@@ -2078,7 +2096,7 @@ const createService = (
     })
   })
 
-  const createSession = Effect.fn("HerdManDatabase.createSession")(function* (
+  const createSession = Effect.fn("CodevisorDatabase.createSession")(function* (
     request: CreateSessionRequest
   ) {
     return yield* attempt("createSession", () => {
@@ -2099,7 +2117,7 @@ const createService = (
           request.harnessAccountId ?? null,
           request.agentSessionId ?? null,
           request.title ?? "New Session",
-          request.origin ?? "herdman",
+          request.origin ?? "codevisor",
           (request.isArchived ?? false) ? 1 : 0,
           request.worktreeName ?? null,
           request.createdAt ?? now,

@@ -6,8 +6,8 @@ usage() {
   cat >&2 <<'EOF'
 usage: scripts/release/build-server-runtime.sh <version> <runtime-dir> [target]
 
-Builds a self-contained Node runtime directory for herdman-server and
-herdman-terminal-proxy. The runtime includes compiled JS, production
+Builds a self-contained Node runtime directory for codevisor-server and
+codevisor-terminal-proxy. The runtime includes compiled JS, production
 node_modules, a pinned Node executable, and launcher scripts under bin/.
 
 The optional target must match the current machine. Native Node addons are
@@ -45,9 +45,9 @@ if [[ ! -f "$repo_root/apps/server/dist/main.js" ]]; then
   (cd "$repo_root" && bun run build)
 fi
 
-node_runtime="${HERDMAN_RELEASE_NODE:-$(command -v node || true)}"
+node_runtime="${CODEVISOR_RELEASE_NODE:-$(command -v node || true)}"
 if [[ -z "$node_runtime" || ! -x "$node_runtime" ]]; then
-  echo "error: a Node executable is required to package the HerdMan server runtime." >&2
+  echo "error: a Node executable is required to package the Codevisor server runtime." >&2
   exit 1
 fi
 node_runtime_dir="$(cd "$(dirname "$node_runtime")" && pwd)"
@@ -59,7 +59,7 @@ fi
 case "$node_version" in
   v24.*) ;;
   *)
-    echo "error: HerdMan release artifacts must bundle Node 24.x; found $node_version at $node_runtime" >&2
+    echo "error: Codevisor release artifacts must bundle Node 24.x; found $node_version at $node_runtime" >&2
     exit 1
     ;;
 esac
@@ -103,7 +103,7 @@ fi
 # Filtered to the server workspace so the other apps' dependency trees stay
 # out of the runtime; hoisted keeps the classic node_modules layout that the
 # bundled Node resolves (and that survives zipping into the app bundle).
-(cd "$runtime_dir" && PATH="$node_runtime_dir:$PATH" npm_config_node_gyp="$node_gyp" bun install --production --frozen-lockfile --filter '@herdman/server' --linker hoisted)
+(cd "$runtime_dir" && PATH="$node_runtime_dir:$PATH" npm_config_node_gyp="$node_gyp" bun install --production --frozen-lockfile --filter '@codevisor/server' --linker hoisted)
 cp "$node_runtime" "$runtime_dir/bin/node"
 chmod +x "$runtime_dir/bin/node"
 echo "Bundled $node_version from $node_runtime"
@@ -124,10 +124,10 @@ if [[ -n "$leftover" ]]; then
   exit 1
 fi
 
-mkdir -p "$runtime_dir/node_modules/@herdman"
+mkdir -p "$runtime_dir/node_modules/@codevisor"
 for package_name in agent-runtime api db terminal; do
-  rm -f "$runtime_dir/node_modules/@herdman/$package_name"
-  ln -s "../../packages/$package_name" "$runtime_dir/node_modules/@herdman/$package_name"
+  rm -f "$runtime_dir/node_modules/@codevisor/$package_name"
+  ln -s "../../packages/$package_name" "$runtime_dir/node_modules/@codevisor/$package_name"
 done
 
 # The macOS app looks for Resources/server/main.js and terminal-proxy.js.
@@ -136,28 +136,28 @@ done
 cp "$runtime_dir/apps/server/dist/"*.js "$runtime_dir/"
 cp "$runtime_dir/apps/server/dist/"*.d.ts "$runtime_dir/" 2>/dev/null || true
 
-cat > "$runtime_dir/bin/herdman-server" <<'EOF'
+cat > "$runtime_dir/bin/codevisor-server" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-node_bin="${HERDMAN_NODE:-}"
+node_bin="${CODEVISOR_NODE:-}"
 if [[ -z "$node_bin" && -x "$root/bin/node" ]]; then
   node_bin="$root/bin/node"
 fi
-exec -a herdman-server "${node_bin:-node}" "$root/main.js" "$@"
+exec -a codevisor-server "${node_bin:-node}" "$root/main.js" "$@"
 EOF
 
-cat > "$runtime_dir/bin/herdman-terminal-proxy" <<'EOF'
+cat > "$runtime_dir/bin/codevisor-terminal-proxy" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-node_bin="${HERDMAN_NODE:-}"
+node_bin="${CODEVISOR_NODE:-}"
 if [[ -z "$node_bin" && -x "$root/bin/node" ]]; then
   node_bin="$root/bin/node"
 fi
-exec -a herdman-terminal-proxy "${node_bin:-node}" "$root/terminal-proxy.js" "$@"
+exec -a codevisor-terminal-proxy "${node_bin:-node}" "$root/terminal-proxy.js" "$@"
 EOF
 
-chmod +x "$runtime_dir/bin/herdman-server" "$runtime_dir/bin/herdman-terminal-proxy"
+chmod +x "$runtime_dir/bin/codevisor-server" "$runtime_dir/bin/codevisor-terminal-proxy"
 printf "%s\n" "$version" > "$runtime_dir/VERSION"
 printf "%s\n" "$target" > "$runtime_dir/TARGET"

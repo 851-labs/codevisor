@@ -1,5 +1,5 @@
-// Local herdman server lifecycle: a port of the Swift app's
-// LocalHerdManServer (apps/macos/.../Server/LocalHerdManServer.swift). The
+// Local codevisor server lifecycle: a port of the Swift app's
+// LocalCodevisorServer (apps/macos/.../Server/LocalCodevisorServer.swift). The
 // server is a durable multi-client daemon shared with the Swift app — same
 // port, same database — so both apps see the same workspaces and sessions.
 //
@@ -22,7 +22,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 pub const PRODUCTION_PORT: u16 = 49361;
 pub const DEVELOPMENT_PORT: u16 = 49362;
 
-const STATE_EVENT: &str = "herdman://server-state";
+const STATE_EVENT: &str = "codevisor://server-state";
 
 pub fn local_server_port() -> u16 {
     // Match the Swift app's variant split so dev builds share the dev server
@@ -36,9 +36,9 @@ pub fn local_server_port() -> u16 {
 
 fn application_support_directory_name() -> &'static str {
     if cfg!(debug_assertions) {
-        "HerdMan Development"
+        "Codevisor Development"
     } else {
-        "HerdMan"
+        "Codevisor"
     }
 }
 
@@ -52,7 +52,7 @@ fn application_support_dir() -> PathBuf {
 }
 
 fn database_path() -> PathBuf {
-    application_support_dir().join("herdman-server.sqlite")
+    application_support_dir().join("codevisor-server.sqlite")
 }
 
 fn log_path() -> PathBuf {
@@ -223,7 +223,9 @@ fn development_entrypoint() -> Option<PathBuf> {
 }
 
 fn resolve_entrypoint(app: &AppHandle) -> Option<PathBuf> {
-    if let Ok(path) = std::env::var("HERDMAN_SERVER_ENTRYPOINT") {
+    if let Ok(path) = std::env::var("CODEVISOR_SERVER_ENTRYPOINT")
+        .or_else(|_| std::env::var("HERDMAN_SERVER_ENTRYPOINT"))
+    {
         if !path.is_empty() {
             return Some(PathBuf::from(path));
         }
@@ -238,7 +240,7 @@ fn resolve_entrypoint(app: &AppHandle) -> Option<PathBuf> {
 }
 
 fn resolve_node(app: &AppHandle, resolved_path: &str) -> PathBuf {
-    if let Ok(path) = std::env::var("HERDMAN_NODE") {
+    if let Ok(path) = std::env::var("CODEVISOR_NODE").or_else(|_| std::env::var("HERDMAN_NODE")) {
         if !path.is_empty() {
             return PathBuf::from(path);
         }
@@ -364,7 +366,7 @@ fn server_display_name() -> String {
         .filter(|output| output.status.success())
         .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_string())
         .filter(|name| !name.is_empty())
-        .unwrap_or_else(|| "Local HerdMan".to_string())
+        .unwrap_or_else(|| "Local Codevisor".to_string())
 }
 
 // ---------------------------------------------------------------------------
@@ -522,7 +524,7 @@ pub fn ensure_running(app: &AppHandle) {
     let Some(entrypoint) = entrypoint else {
         manager.set(
             app,
-            ServerState::Unavailable("HerdMan server entrypoint was not found".to_string()),
+            ServerState::Unavailable("Codevisor server entrypoint was not found".to_string()),
         );
         return;
     };
@@ -538,7 +540,7 @@ pub fn ensure_running(app: &AppHandle) {
         manager.set(
             app,
             ServerState::Unavailable(format!(
-                "Timed out waiting for HerdMan server. See {}",
+                "Timed out waiting for Codevisor server. See {}",
                 log_path().display()
             )),
         );

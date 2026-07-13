@@ -1,11 +1,11 @@
 import { createContext, type ReactNode, useContext } from "react"
 
-import type { HerdManClient } from "./client"
+import type { CodevisorClient } from "./client"
 import type { EventSocket } from "./events"
 import type { ServerConfig } from "./server-config"
 
 export interface Api {
-  client: HerdManClient
+  client: CodevisorClient
   events: EventSocket
   config: ServerConfig
 }

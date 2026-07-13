@@ -1,4 +1,4 @@
-import type { SessionConfigOption, SessionModeState } from "@herdman/api"
+import type { SessionConfigOption, SessionModeState } from "@codevisor/api"
 import { useNavigate } from "@tanstack/react-router"
 import {
   Code2Icon,
@@ -550,7 +550,7 @@ export function NewChatScreen({ preferredProjectId }: { preferredProjectId?: str
                 </>
               }
             />
-            <div className="-mt-4 flex items-center gap-3 rounded-b-2xl border border-t-0 border-[var(--herdman-card-border)] bg-[var(--herdman-card-bg)] px-3.5 pt-7 pb-2 text-sm">
+            <div className="-mt-4 flex items-center gap-3 rounded-b-2xl border border-t-0 border-[var(--codevisor-card-border)] bg-[var(--codevisor-card-bg)] px-3.5 pt-7 pb-2 text-sm">
               {harnesses.length === 0 ? (
                 <span className="text-muted-foreground">No agent installed</span>
               ) : (
@@ -612,7 +612,7 @@ export function NewChatScreen({ preferredProjectId }: { preferredProjectId?: str
           </div>
         )}
         {(error ?? composerAttachments.error) != null && (
-          <p className="flex items-center gap-1.5 text-sm text-[var(--herdman-status-warn)]">
+          <p className="flex items-center gap-1.5 text-sm text-[var(--codevisor-status-warn)]">
             <TriangleAlertIcon className="size-4" />
             {error ?? composerAttachments.error}
           </p>

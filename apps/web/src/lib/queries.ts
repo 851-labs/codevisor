@@ -18,8 +18,8 @@ import type {
   SessionGoal,
   UpdateSessionRequest,
   UpdateProjectRequest
-} from "@herdman/api"
-import { isoTimestamp } from "@herdman/api"
+} from "@codevisor/api"
+import { isoTimestamp } from "@codevisor/api"
 import { QueryClient, useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 
 import { useApi } from "./api"

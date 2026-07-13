@@ -22,7 +22,7 @@ function ScrollArea({
         orientation="vertical"
         className="flex w-2.5 justify-center px-0.5 py-1 opacity-0 transition-opacity data-[hovering]:opacity-100 data-[scrolling]:opacity-100"
       >
-        <BaseScrollArea.Thumb className="w-full rounded-full bg-[var(--herdman-scrollbar-thumb-bg)]" />
+        <BaseScrollArea.Thumb className="w-full rounded-full bg-[var(--codevisor-scrollbar-thumb-bg)]" />
       </BaseScrollArea.Scrollbar>
     </BaseScrollArea.Root>
   )

@@ -14,7 +14,7 @@ type Step = (typeof STEPS)[number]
 
 function markOnboarded(): void {
   try {
-    window.localStorage.setItem("herdman-onboarded", "true")
+    window.localStorage.setItem("codevisor-onboarded", "true")
   } catch {
     // Non-fatal; the guard will show onboarding again next launch.
   }
@@ -39,9 +39,9 @@ function PageDots({ step }: { step: Step }) {
 function WelcomeStep() {
   return (
     <div className="flex flex-col gap-3.5">
-      <h1 className="text-[38px] leading-tight font-bold">Welcome to HerdMan</h1>
+      <h1 className="text-[38px] leading-tight font-bold">Welcome to Codevisor</h1>
       <p className="text-muted-foreground text-lg">
-        HerdMan runs your local ACP coding agents in one place. Let&apos;s get you set up in a few
+        Codevisor runs your local ACP coding agents in one place. Let&apos;s get you set up in a few
         quick steps.
       </p>
     </div>
@@ -69,7 +69,7 @@ function HarnessesStep() {
         </div>
       ) : harnesses.length === 0 ? (
         <div className="flex items-start gap-2.5 py-1">
-          <TriangleAlertIcon className="mt-0.5 size-4 shrink-0 text-[var(--herdman-status-warn)]" />
+          <TriangleAlertIcon className="mt-0.5 size-4 shrink-0 text-[var(--codevisor-status-warn)]" />
           <div className="flex flex-col gap-0.5">
             <p className="text-sm font-medium">No harnesses found</p>
             <p className="text-muted-foreground text-sm">
@@ -78,7 +78,7 @@ function HarnessesStep() {
           </div>
         </div>
       ) : (
-        <div className="rounded-xl bg-[var(--herdman-card-bg)] px-3.5 py-1">
+        <div className="rounded-xl bg-[var(--codevisor-card-bg)] px-3.5 py-1">
           {harnesses.map((harness, index) => (
             <div key={harness.id}>
               {index > 0 && <div className="bg-border h-px" />}
@@ -118,7 +118,7 @@ function ProjectStep({
       <div className="flex flex-col gap-1.5">
         <h1 className="text-[28px] font-bold">Open a project</h1>
         <p className="text-muted-foreground">
-          Pick a folder to work in. HerdMan opens a new chat scoped to this project.
+          Pick a folder to work in. Codevisor opens a new chat scoped to this project.
         </p>
       </div>
       <button
@@ -130,7 +130,7 @@ function ProjectStep({
         }}
         className={cn(
           "flex cursor-default items-center gap-3 rounded-xl p-3.5 text-left outline-none",
-          "bg-[var(--herdman-card-bg)] hover:bg-[var(--herdman-card-hover-bg)]",
+          "bg-[var(--codevisor-card-bg)] hover:bg-[var(--codevisor-card-hover-bg)]",
           folderPath != null && "border-ring border"
         )}
       >
@@ -202,7 +202,7 @@ export function OnboardingFlow() {
           {step === "harnesses" && <HarnessesStep />}
           {step === "project" && <ProjectStep folderPath={folderPath} onPick={setFolderPath} />}
           {finishError != null && (
-            <p className="mt-4 flex items-start gap-2 text-sm text-[var(--herdman-status-error)]">
+            <p className="mt-4 flex items-start gap-2 text-sm text-[var(--codevisor-status-error)]">
               <TriangleAlertIcon className="mt-0.5 size-4 shrink-0" />
               {finishError}
             </p>

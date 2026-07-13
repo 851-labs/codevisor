@@ -6,7 +6,7 @@ import type {
   SessionConfigOption,
   SessionGoal,
   SessionModeState
-} from "@herdman/api"
+} from "@codevisor/api"
 import { Effect, Schema } from "effect"
 
 export class AgentRuntimeError extends Schema.TaggedErrorClass<AgentRuntimeError>()(
@@ -119,7 +119,7 @@ export interface ProviderEnvironment {
 }
 
 /// Server-resolved account profile for one harness invocation. Credentials
-/// remain owned by the harness inside this profile; HerdMan passes only the
+/// remain owned by the harness inside this profile; Codevisor passes only the
 /// profile environment to child processes.
 export interface HarnessAccountContext {
   readonly id: string
@@ -128,7 +128,7 @@ export interface HarnessAccountContext {
   readonly env?: Readonly<Record<string, string>>
 }
 
-/// A session-scoped credential for HerdMan's single MCP tool gateway. It is
+/// A session-scoped credential for Codevisor's single MCP tool gateway. It is
 /// intentionally distinct from upstream MCP credentials, which never leave
 /// the server process.
 export interface ToolGatewayConfig {
@@ -206,7 +206,7 @@ export interface AgentProvider {
     toolGateway?: ToolGatewayConfig
   ) => Effect.Effect<LoadedAgentSession, AgentRuntimeError>
   /// Sessions from the harness's own on-disk store (run before/outside
-  /// HerdMan) — powers onboarding's workspace suggestions and "import
+  /// Codevisor) — powers onboarding's workspace suggestions and "import
   /// existing chats". Absent when the harness has no native store to scan
   /// (generic ACP adapters).
   readonly listAgentSessions?: (

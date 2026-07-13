@@ -1,10 +1,12 @@
 import { homedir } from "node:os"
 import { join } from "node:path"
 
-/// The worktree location is fixed at ~/herdman by design (sessions derive
+/// The worktree location is fixed at ~/codevisor by design (sessions derive
 /// their cwd from it on any machine). The env override exists for tests only.
 export const worktreesRoot = (): string =>
-  process.env["HERDMAN_WORKTREES_ROOT"] ?? join(homedir(), "herdman")
+  process.env["CODEVISOR_WORKTREES_ROOT"] ??
+  process.env["HERDMAN_WORKTREES_ROOT"] ??
+  join(homedir(), "codevisor")
 
 export const worktreePath = (projectId: string, worktreeName: string): string =>
   join(worktreesRoot(), projectId, worktreeName)

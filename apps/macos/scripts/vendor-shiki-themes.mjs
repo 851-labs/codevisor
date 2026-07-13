@@ -1,4 +1,4 @@
-// Vendors the curated Shiki preset themes into the HerdManTheming package
+// Vendors the curated Shiki preset themes into the CodevisorTheming package
 // resources and regenerates the theme manifest (which also indexes the Pierre
 // themes already committed there). Output is committed; rerun when bumping the
 // shiki dependency or changing the curated set:
@@ -22,7 +22,7 @@ async function findShikiThemesDist() {
 const shikiDist = await findShikiThemesDist()
 const themesDir = join(
   repoRoot,
-  "apps/macos/Packages/HerdManTheming/Sources/HerdManTheming/Resources/Themes"
+  "apps/macos/Packages/CodevisorTheming/Sources/CodevisorTheming/Resources/Themes"
 )
 
 // Curated Shiki presets, a spread of well-known light and dark themes.

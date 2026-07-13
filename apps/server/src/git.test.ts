@@ -15,7 +15,7 @@ import {
 } from "./git.js"
 
 const makeRepo = (): { readonly root: string; readonly repo: string } => {
-  const root = mkdtempSync(join(tmpdir(), "herdman-git-"))
+  const root = mkdtempSync(join(tmpdir(), "codevisor-git-"))
   const repo = join(root, "repo")
   mkdirSync(repo)
   execFileSync("git", ["init"], { cwd: repo })
@@ -32,9 +32,9 @@ describe("git helper", () => {
     // A nonexistent cwd fails before git can write to stderr, so the error
     // message comes from the spawn error itself.
     const failure = await addWorktree(
-      "/nonexistent-herdman-repo",
-      "/tmp/nonexistent-herdman-worktree",
-      "herdman/none"
+      "/nonexistent-codevisor-repo",
+      "/tmp/nonexistent-codevisor-worktree",
+      "codevisor/none"
     ).catch((cause: unknown) => cause)
     expect(failure).toBeInstanceOf(GitError)
     expect((failure as GitError).message.length).toBeGreaterThan(0)
@@ -43,13 +43,13 @@ describe("git helper", () => {
   it("treats a nonexistent directory as not a git worktree", async () => {
     // The spawn fails before git can write to stderr, exercising the
     // error-message fallback in the buffered git helper.
-    expect(await isGitWorkTree("/nonexistent-herdman-repo")).toBe(false)
+    expect(await isGitWorkTree("/nonexistent-codevisor-repo")).toBe(false)
   })
 
   it("streams git output lines while adding a worktree", async () => {
     const { repo, root } = makeRepo()
     const lines: Array<readonly [GitOutputStream, string]> = []
-    await addWorktree(repo, join(root, "worktree"), "herdman/stream-test", (stream, line) => {
+    await addWorktree(repo, join(root, "worktree"), "codevisor/stream-test", (stream, line) => {
       lines.push([stream, line])
     })
     expect(lines.length).toBeGreaterThan(0)
@@ -95,7 +95,7 @@ describe("git helper", () => {
       ["stderr", "echo raw failure >&2"],
       ["silent", ""]
     ] as const) {
-      const fakeBin = mkdtempSync(join(tmpdir(), `herdman-fake-git-${name}-`))
+      const fakeBin = mkdtempSync(join(tmpdir(), `codevisor-fake-git-${name}-`))
       const fakeGit = join(fakeBin, "git")
       writeFileSync(
         fakeGit,
@@ -123,7 +123,7 @@ describe("git helper", () => {
   })
 
   it("falls back to HEAD when conventional base refs have no merge base", async () => {
-    const fakeBin = mkdtempSync(join(tmpdir(), "herdman-fake-git-no-base-"))
+    const fakeBin = mkdtempSync(join(tmpdir(), "codevisor-fake-git-no-base-"))
     const fakeGit = join(fakeBin, "git")
     writeFileSync(
       fakeGit,
@@ -153,7 +153,7 @@ describe("git helper", () => {
     // An "origin" repo with one commit on main, cloned locally; the clone's
     // main then drifts ahead with a local-only commit. New worktrees should
     // start from origin/main, not the drifted local main.
-    const root = mkdtempSync(join(tmpdir(), "herdman-git-remote-"))
+    const root = mkdtempSync(join(tmpdir(), "codevisor-git-remote-"))
     const origin = join(root, "origin")
     mkdirSync(origin)
     execFileSync("git", ["init", "-b", "main"], { cwd: origin })
@@ -175,7 +175,7 @@ describe("git helper", () => {
     const startPoint = await worktreeStartPoint(clone)
     expect(startPoint).toBe("origin/main")
     const worktree = join(root, "worktree")
-    await addWorktree(clone, worktree, "herdman/from-remote", undefined, startPoint)
+    await addWorktree(clone, worktree, "codevisor/from-remote", undefined, startPoint)
     const worktreeHead = execFileSync("git", ["rev-parse", "HEAD"], { cwd: worktree })
       .toString()
       .trim()
@@ -184,8 +184,8 @@ describe("git helper", () => {
 
   it("rejects with the collected stderr when git fails", async () => {
     const { repo, root } = makeRepo()
-    execFileSync("git", ["branch", "herdman/taken"], { cwd: repo })
-    const failure = await addWorktree(repo, join(root, "worktree"), "herdman/taken").catch(
+    execFileSync("git", ["branch", "codevisor/taken"], { cwd: repo })
+    const failure = await addWorktree(repo, join(root, "worktree"), "codevisor/taken").catch(
       (cause: unknown) => cause
     )
     expect(failure).toBeInstanceOf(GitError)
@@ -206,7 +206,7 @@ describe("git helper", () => {
   it("emits distinct sanitized frames for progress-style repainting output", async () => {
     // A fake `git` behaving like a TUI hook: colored panels, carriage-return
     // repaints of the same frame, and erase sequences on otherwise-empty lines.
-    const fakeBin = mkdtempSync(join(tmpdir(), "herdman-fake-git-"))
+    const fakeBin = mkdtempSync(join(tmpdir(), "codevisor-fake-git-"))
     const fakeGit = join(fakeBin, "git")
     writeFileSync(
       fakeGit,
@@ -226,7 +226,7 @@ describe("git helper", () => {
     process.env["PATH"] = `${fakeBin}:${previousPath ?? ""}`
     try {
       const lines: Array<string> = []
-      await addWorktree(fakeBin, join(fakeBin, "worktree"), "herdman/fake", (_stream, line) => {
+      await addWorktree(fakeBin, join(fakeBin, "worktree"), "codevisor/fake", (_stream, line) => {
         lines.push(line)
       })
       expect(lines).toEqual(["git submodule update: 1/12", "git submodule update: 12/12", "done"])
@@ -238,7 +238,7 @@ describe("git helper", () => {
   it("falls back to the exit code for silent failures and flushes partial output lines", async () => {
     // A fake `git` that emits an unterminated stdout line and exits non-zero
     // without writing to stderr.
-    const fakeBin = mkdtempSync(join(tmpdir(), "herdman-fake-git-"))
+    const fakeBin = mkdtempSync(join(tmpdir(), "codevisor-fake-git-"))
     const fakeGit = join(fakeBin, "git")
     writeFileSync(fakeGit, "#!/bin/sh\nprintf 'partial-stdout-line'\nexit 2\n")
     chmodSync(fakeGit, 0o755)
@@ -249,7 +249,7 @@ describe("git helper", () => {
       const failure = await addWorktree(
         fakeBin,
         join(fakeBin, "worktree"),
-        "herdman/fake",
+        "codevisor/fake",
         (stream, line) => {
           lines.push([stream, line])
         }
