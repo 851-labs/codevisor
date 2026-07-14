@@ -60,7 +60,6 @@ private struct PendingSessionImport: Identifiable {
 /// `List` outline coordinator crashes on the current macOS SDK.
 struct SidebarView: View {
     @Environment(AppEnvironment.self) private var environment
-    @Environment(\.openSettings) private var openSettings
     @Environment(\.theme) private var theme
     @Binding var selection: SidebarSelection?
     var store: SessionStore? = nil
@@ -227,9 +226,6 @@ struct SidebarView: View {
             .scrollContentBackground(.hidden)
             .scrollBounceBehavior(.basedOnSize)
 
-            Divider()
-            machinePicker
-                .padding(8)
         }
         .background(theme.sidebarBackground)
         .fileImporter(isPresented: $showingImporter, allowedContentTypes: [.folder]) { result in
@@ -354,62 +350,6 @@ struct SidebarView: View {
     }
 
     // MARK: - Header rows
-
-    private var machinePicker: some View {
-        Menu {
-            ForEach(environment.machines.machines) { machine in
-                Button {
-                    environment.machines.selectMachine(machine.id)
-                    selection = .newChat(nil)
-                } label: {
-                    if machine.id == environment.machines.selectedMachineId {
-                        Label(machine.name, systemImage: "checkmark")
-                    } else {
-                        Text(machine.name)
-                    }
-                }
-            }
-            Divider()
-            Button {
-                showingRemoteMachine = true
-            } label: {
-                Label("Add remote machine…", systemImage: "plus")
-            }
-            Button {
-                SettingsRouter.shared.selectedTab = .machines
-                openSettings()
-            } label: {
-                Label("Manage machines…", systemImage: "gearshape")
-            }
-        } label: {
-            HStack(spacing: 8) {
-                Image(systemName: environment.machines.selectedMachine.isLocal ? "desktopcomputer" : "network")
-                    .foregroundStyle(.secondary)
-                    .frame(width: 18)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(environment.machines.selectedMachine.name)
-                        .font(.subheadline.weight(.semibold))
-                        .lineLimit(1)
-                    Text(environment.machines.selectedMachine.baseURL.host ?? environment.machines.selectedMachine.baseURL.absoluteString)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-                Spacer(minLength: 4)
-                Image(systemName: "chevron.down")
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.tertiary)
-            }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 7)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
-            .sidebarRowHover()
-        }
-        .menuStyle(.button)
-        .buttonStyle(.plain)
-        .help("Select machine")
-    }
 
     private func actionRow(_ title: String, systemImage: String, id: String, action: @escaping () -> Void) -> some View {
         HStack(spacing: 8) {

@@ -11,13 +11,15 @@ private struct MachineActionError: Identifiable {
 }
 
 /// Machines settings — every Codevisor server this app knows about: connect to
-/// one, add remotes, rename them, or remove ones you no longer use.
+/// one, customize its identity, add remotes, rename them, or remove ones you
+/// no longer use.
 struct MachinesSettingsView: View {
     @Environment(AppEnvironment.self) private var environment
     @Environment(\.theme) private var theme
 
     @State private var showingAdd = false
     @State private var renaming: CodevisorMachine?
+    @State private var customizing: CodevisorMachine?
     @State private var removing: CodevisorMachine?
     @State private var tokenNotice: String?
     @State private var actionError: MachineActionError?
@@ -66,6 +68,11 @@ struct MachinesSettingsView: View {
                         message: ErrorReporter.userFacingMessage(for: error)
                     )
                 }
+            }
+        }
+        .sheet(item: $customizing) { machine in
+            MachineAppearanceSheet(machine: machine) { appearance in
+                machines.setAppearance(appearance, for: machine.id)
             }
         }
         .confirmationDialog(
@@ -141,8 +148,9 @@ struct MachinesSettingsView: View {
     private func machineRow(_ machine: CodevisorMachine) -> some View {
         let isSelected = machine.id == machines.selectedMachineId
         return HStack(spacing: 10) {
-            Image(systemName: machine.isLocal ? "desktopcomputer" : "network")
-                .foregroundStyle(.secondary)
+            Image(systemName: machine.resolvedAppearance.symbolName)
+                .symbolRenderingMode(.monochrome)
+                .foregroundStyle(theme.textPrimary)
                 .frame(width: 20)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
@@ -175,6 +183,8 @@ struct MachinesSettingsView: View {
             }
             if machine.isLocal {
                 Menu {
+                    Button("Customize Icon…") { customizing = machine }
+                    Divider()
                     Button("Copy Connection Token") { copyConnectionToken() }
                 } label: {
                     Image(systemName: "ellipsis.circle")
@@ -189,6 +199,7 @@ struct MachinesSettingsView: View {
                 .accessibilityLabel("Actions for \(machine.name)")
             } else {
                 Menu {
+                    Button("Customize Icon…") { customizing = machine }
                     Button("Rename…") { renaming = machine }
                     Divider()
                     Button("Remove…", role: .destructive) { removing = machine }

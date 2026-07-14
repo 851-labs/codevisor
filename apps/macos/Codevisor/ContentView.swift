@@ -1,7 +1,5 @@
 import SwiftUI
-import AppKit
 import CodevisorCore
-import CodevisorTheming
 import QuickLook
 
 @main
@@ -185,22 +183,11 @@ struct RootView: View {
             SidebarView(selection: $selection, store: store)
                 .navigationSplitViewColumnWidth(min: 230, ideal: 270, max: 360)
                 .themedToolbarBackground(theme, surface: theme.sidebarBackground)
-                #if DEBUG
-                // Dev builds show an ant in the sidebar toolbar — the classic
-                // debug marker — so they're recognizable at a glance.
                 .toolbar {
                     ToolbarItem {
-                        Button {
-                            showDevelopmentInfo()
-                        } label: {
-                            Image(systemName: "ant")
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .tint(developmentIconColor)
-                        .help("Development build")
+                        MachinePickerToolbarMenu()
                     }
                 }
-                #endif
         } detail: {
             Group {
                 if let store {
@@ -242,28 +229,6 @@ struct RootView: View {
             }
         )
     }
-
-    #if DEBUG
-    private var developmentIconColor: Color {
-        guard let rgba = RGBA(hex: CodevisorAppVariant.developmentIconColorHex) else {
-            return .blue
-        }
-        return Color(rgba: rgba)
-    }
-
-    private func showDevelopmentInfo() {
-        let alert = NSAlert()
-        alert.messageText = "Codevisor Development Build"
-        alert.informativeText = "Worktree: \(CodevisorAppVariant.developmentWorktreeName)\nServer port: \(CodevisorAppVariant.localServerPort)\nData: \(CodevisorAppVariant.applicationSupportURL().path)"
-        alert.alertStyle = .informational
-        alert.addButton(withTitle: "OK")
-        if let window = NSApp.keyWindow {
-            alert.beginSheetModal(for: window)
-        } else {
-            alert.runModal()
-        }
-    }
-    #endif
 
     @ViewBuilder
     private func detail(_ store: SessionStore) -> some View {

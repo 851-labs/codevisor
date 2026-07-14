@@ -2,7 +2,7 @@ import SwiftUI
 import CodevisorCore
 
 /// Sheet for adding a remote machine by host, with an optional display name.
-/// Used from the sidebar's machine picker and the Machines settings tab.
+/// Used from the toolbar's machine picker and the Machines settings tab.
 struct RemoteMachineSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.theme) private var theme

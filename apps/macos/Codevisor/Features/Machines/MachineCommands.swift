@@ -30,12 +30,14 @@ private struct MachinePickerItems: View {
 
     var body: some View {
         ForEach(machines.machines) { machine in
-            Toggle(machine.name, isOn: Binding(
+            Toggle(isOn: Binding(
                 get: { machines.selectedMachineId == machine.id },
                 set: { isOn in
                     if isOn { machines.selectMachine(machine.id) }
                 }
-            ))
+            )) {
+                Label(machine.name, systemImage: machine.resolvedAppearance.symbolName)
+            }
         }
     }
 }

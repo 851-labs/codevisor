@@ -18,6 +18,23 @@ public enum MachineControllerError: Error, Equatable, Sendable, LocalizedError {
     }
 }
 
+/// User-chosen SF Symbol used to identify a machine.
+public struct MachineAppearance: Sendable, Codable, Equatable {
+    public var symbolName: String
+
+    public init(symbolName: String) {
+        self.symbolName = symbolName
+    }
+
+    public static let localDefault = MachineAppearance(
+        symbolName: "desktopcomputer"
+    )
+
+    public static let remoteDefault = MachineAppearance(
+        symbolName: "network"
+    )
+}
+
 public struct CodevisorMachine: Identifiable, Sendable, Codable, Equatable {
     public var id: String
     public var name: String
@@ -26,16 +43,36 @@ public struct CodevisorMachine: Identifiable, Sendable, Codable, Equatable {
     /// Bearer token for this machine's server. Nil for the local machine —
     /// same-machine connections are exempt from the server's token auth.
     public var token: String?
+    /// Nil means the machine uses the appropriate local or remote default.
+    /// Keeping this optional makes existing persisted registries decode
+    /// without a migration.
+    public var appearance: MachineAppearance?
 
-    public init(id: String, name: String, baseURL: URL, kind: String, token: String? = nil) {
+    public init(
+        id: String,
+        name: String,
+        baseURL: URL,
+        kind: String,
+        token: String? = nil,
+        appearance: MachineAppearance? = nil
+    ) {
         self.id = id
         self.name = name
         self.baseURL = baseURL
         self.kind = kind
         self.token = token
+        self.appearance = appearance
     }
 
     public var isLocal: Bool { id == Self.local.id }
+
+    public var resolvedAppearance: MachineAppearance {
+        let fallback = isLocal ? MachineAppearance.localDefault : .remoteDefault
+        guard let appearance,
+              !appearance.symbolName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else { return fallback }
+        return appearance
+    }
 
     public var serverConfig: CodevisorServerConfig {
         CodevisorServerConfig(baseURL: baseURL, bearerToken: token)
@@ -52,10 +89,18 @@ public struct CodevisorMachine: Identifiable, Sendable, Codable, Equatable {
 public struct MachineRegistry: Sendable, Codable, Equatable {
     public var selectedMachineId: String
     public var remoteMachines: [CodevisorMachine]
+    /// The local machine isn't stored in `remoteMachines`, so its optional
+    /// appearance override lives alongside the remote registry.
+    public var localAppearance: MachineAppearance?
 
-    public init(selectedMachineId: String = CodevisorMachine.local.id, remoteMachines: [CodevisorMachine] = []) {
+    public init(
+        selectedMachineId: String = CodevisorMachine.local.id,
+        remoteMachines: [CodevisorMachine] = [],
+        localAppearance: MachineAppearance? = nil
+    ) {
         self.selectedMachineId = selectedMachineId
         self.remoteMachines = remoteMachines
+        self.localAppearance = localAppearance
     }
 }
 
@@ -132,7 +177,9 @@ public final class MachineController {
     }
 
     public var machines: [CodevisorMachine] {
-        [CodevisorMachine.local] + registry.remoteMachines
+        var local = CodevisorMachine.local
+        local.appearance = registry.localAppearance
+        return [local] + registry.remoteMachines
     }
 
     public var selectedMachineId: String {
@@ -212,6 +259,27 @@ public final class MachineController {
               let index = registry.remoteMachines.firstIndex(where: { $0.id == id })
         else { return }
         registry.remoteMachines[index].name = customName
+        persist()
+    }
+
+    /// Updates the icon used to identify a machine throughout the app.
+    /// Invalid values fall back to that machine kind's safe default.
+    public func setAppearance(_ appearance: MachineAppearance, for id: String) {
+        guard let machine = machine(for: id) else { return }
+        let normalized = CodevisorMachine(
+            id: machine.id,
+            name: machine.name,
+            baseURL: machine.baseURL,
+            kind: machine.kind,
+            token: machine.token,
+            appearance: appearance
+        ).resolvedAppearance
+
+        if machine.isLocal {
+            registry.localAppearance = normalized
+        } else if let index = registry.remoteMachines.firstIndex(where: { $0.id == id }) {
+            registry.remoteMachines[index].appearance = normalized
+        }
         persist()
     }
 
@@ -451,7 +519,8 @@ private extension MachineRegistry {
         let allIds = Set(remotes.map(\.id)).union([CodevisorMachine.local.id])
         return MachineRegistry(
             selectedMachineId: allIds.contains(selectedMachineId) ? selectedMachineId : CodevisorMachine.local.id,
-            remoteMachines: remotes
+            remoteMachines: remotes,
+            localAppearance: localAppearance
         )
     }
 }

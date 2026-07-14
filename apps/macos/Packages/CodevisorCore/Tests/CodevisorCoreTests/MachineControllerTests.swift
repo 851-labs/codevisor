@@ -101,6 +101,61 @@ struct MachineControllerTests {
         #expect(second.controller.machine(for: remote.id)?.name == "Build box")
     }
 
+    @Test("Machine icon customizations persist for local and remote machines")
+    func machineAppearancesPersist() throws {
+        let store = InMemoryStore()
+        let first = makeController(store: store)
+        let remote = try first.controller.addRemote(host: "mac-mini.tailnet.ts.net")
+        let localAppearance = MachineAppearance(symbolName: "laptopcomputer")
+        let remoteAppearance = MachineAppearance(symbolName: "server.rack")
+
+        first.controller.setAppearance(localAppearance, for: CodevisorMachine.local.id)
+        first.controller.setAppearance(remoteAppearance, for: remote.id)
+
+        #expect(first.controller.machine(for: "local")?.resolvedAppearance == localAppearance)
+        #expect(first.controller.machine(for: remote.id)?.resolvedAppearance == remoteAppearance)
+
+        let second = makeController(store: store)
+        #expect(second.controller.machine(for: "local")?.resolvedAppearance == localAppearance)
+        #expect(second.controller.machine(for: remote.id)?.resolvedAppearance == remoteAppearance)
+    }
+
+    @Test("Machines without saved appearance metadata use stable defaults")
+    func legacyAppearanceDefaults() throws {
+        let legacyRegistry = """
+        {
+          "selectedMachineId": "remote-studio-49361",
+          "remoteMachines": [{
+            "id": "remote-studio-49361",
+            "name": "Studio",
+            "baseURL": "http://studio:49361",
+            "kind": "remote"
+          }]
+        }
+        """
+        let store = InMemoryStore()
+        try store.saveData(Data(legacyRegistry.utf8), forKey: "machines")
+
+        let controller = makeController(store: store).controller
+
+        #expect(controller.machine(for: "local")?.resolvedAppearance == .localDefault)
+        #expect(controller.machine(for: "remote-studio-49361")?.resolvedAppearance == .remoteDefault)
+    }
+
+    @Test("Legacy saved colors are ignored while their icons remain")
+    func legacyMachineColorsAreIgnored() throws {
+        let legacyAppearance = """
+        {
+          "symbolName": "server.rack",
+          "colorHex": "#ff3b30"
+        }
+        """
+
+        let appearance = try JSONDecoder().decode(MachineAppearance.self, from: Data(legacyAppearance.utf8))
+
+        #expect(appearance == MachineAppearance(symbolName: "server.rack"))
+    }
+
     @Test("Removing the selected remote falls back to local")
     func removeSelectedRemote() throws {
         let (controller, projectList, _) = makeController()
