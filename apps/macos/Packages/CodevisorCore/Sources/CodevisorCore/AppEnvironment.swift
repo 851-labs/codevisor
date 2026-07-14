@@ -105,8 +105,8 @@ public final class AppEnvironment {
     }
 
     /// Project-folder suggestions based on the user's most recent harness
-    /// sessions (used by onboarding's project step). Worktree checkouts are
-    /// excluded — see `ProjectRecommender`.
+    /// sessions (used by onboarding's project step). Worktree activity is
+    /// attributed to its primary checkout — see `ProjectRecommender`.
     public func recommendedProjects(limit: Int = 12) async -> [ProjectRecommendation] {
         ProjectRecommender.recommend(from: await sessionImporter.fetchAll(), limit: limit)
     }

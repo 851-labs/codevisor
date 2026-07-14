@@ -87,8 +87,8 @@ struct ProjectRecommenderTests {
         #expect(recommendations.map(\.name) == ["one", "two"])
     }
 
-    @Test("Excludes Codevisor-managed worktrees")
-    func excludesManagedWorktrees() {
+    @Test("Attributes Codevisor-managed worktrees to their primary checkout")
+    func resolvesManagedWorktrees() {
         let sessions = [
             session("root", cwd: "/Users/test/codevisor", updatedAt: "2026-07-03T00:00:00Z"),
             session("worktree", cwd: "/Users/test/codevisor/project-id/fix-auth", updatedAt: "2026-07-02T00:00:00Z"),
@@ -100,26 +100,81 @@ struct ProjectRecommenderTests {
             from: sessions,
             limit: 4,
             managedWorktreesRoot: URL(fileURLWithPath: "/Users/test/codevisor"),
-            directoryExists: { _ in true }
+            directoryExists: { _ in true },
+            linkedWorktreeRoot: {
+                $0 == "/Users/test/codevisor/project-id/fix-auth" ? "/src/root-project" : nil
+            }
         )
 
-        #expect(recommendations.map(\.folderURL.path) == ["/Users/test/codevisor-project", "/src/project"])
+        #expect(
+            recommendations.map(\.folderURL.path)
+                == ["/src/root-project", "/Users/test/codevisor-project", "/src/project"]
+        )
     }
 
-    @Test("Excludes linked git-worktree checkouts anywhere on disk")
-    func excludesLinkedWorktrees() {
+    @Test("Attributes linked worktrees to their primary checkout and groups activity")
+    func resolvesAndGroupsLinkedWorktrees() {
         let sessions = [
             session("worktree", cwd: "/src/app-fix-auth", updatedAt: "2026-07-03T00:00:00Z"),
-            session("clone", cwd: "/src/app", updatedAt: "2026-07-02T00:00:00Z")
+            session("clone", cwd: "/src/app", updatedAt: "2026-07-02T00:00:00Z"),
+            session("other", cwd: "/src/other", updatedAt: "2026-07-01T00:00:00Z")
         ]
 
         let recommendations = ProjectRecommender.recommend(
             from: sessions,
             limit: 4,
             directoryExists: { _ in true },
-            isLinkedWorktree: { $0 == "/src/app-fix-auth" }
+            linkedWorktreeRoot: { $0 == "/src/app-fix-auth" ? "/src/app" : nil }
         )
 
-        #expect(recommendations.map(\.folderURL.path) == ["/src/app"])
+        #expect(recommendations.map(\.folderURL.path) == ["/src/app", "/src/other"])
+        #expect(recommendations.first?.sessionCount == 2)
+        #expect(recommendations.first?.lastActivity == ISO8601DateFormatter().date(from: "2026-07-03T00:00:00Z"))
+    }
+
+    @Test("Skips worktrees when the primary checkout no longer exists")
+    func skipsMissingWorktreeRoots() {
+        let sessions = [
+            session("worktree", cwd: "/src/app-fix-auth", updatedAt: "2026-07-03T00:00:00Z"),
+            session("project", cwd: "/src/project", updatedAt: "2026-07-02T00:00:00Z")
+        ]
+
+        let recommendations = ProjectRecommender.recommend(
+            from: sessions,
+            directoryExists: { _ in true },
+            isLinkedWorktree: { $0 == "/src/app-fix-auth" },
+            linkedWorktreeRoot: { _ in nil }
+        )
+
+        #expect(recommendations.map(\.folderURL.path) == ["/src/project"])
+    }
+
+    @Test("Resolves a primary checkout from Git worktree metadata")
+    func resolvesGitWorktreeMetadata() throws {
+        let fileManager = FileManager.default
+        let scratch = fileManager.temporaryDirectory
+            .appendingPathComponent("project-recommender-\(UUID().uuidString)", isDirectory: true)
+        defer { try? fileManager.removeItem(at: scratch) }
+
+        let root = scratch.appendingPathComponent("app", isDirectory: true)
+        let gitDir = root
+            .appendingPathComponent(".git", isDirectory: true)
+            .appendingPathComponent("worktrees/fix-auth", isDirectory: true)
+        let worktree = scratch.appendingPathComponent("app-fix-auth", isDirectory: true)
+        try fileManager.createDirectory(at: gitDir, withIntermediateDirectories: true)
+        try fileManager.createDirectory(at: worktree, withIntermediateDirectories: true)
+        try "gitdir: \(gitDir.path)\n".write(
+            to: worktree.appendingPathComponent(".git"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try "../..\n".write(
+            to: gitDir.appendingPathComponent("commondir"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        #expect(ProjectRecommender.isLinkedWorktree(at: worktree.path))
+        #expect(ProjectRecommender.linkedWorktreeRoot(at: worktree.path) == root.path)
     }
 }
