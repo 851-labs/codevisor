@@ -129,7 +129,7 @@ struct SessionScreen: View {
         }
         .mask {
             ComposerTranscriptMask(
-                composerSize: controller.activeQuestion == nil ? composerMaskSize : .zero,
+                composerSize: composerMaskSize,
                 bottomInset: 16
             )
         }
@@ -355,26 +355,30 @@ struct SessionScreen: View {
             // until it's answered or dismissed (codex CLI behavior). Both plan
             // approvals ride the same picker: Claude's ExitPlanMode question
             // from the runtime, and codex's client-side post-turn prompt.
-            if let question = controller.activeQuestion {
-                QuestionPickerCard(controller: controller, request: question)
-                    .transition(Motion.unfold(reduceMotion: reduceMotion, anchor: .bottom))
-            } else {
-                ComposerCard(
-                    controller: controller,
-                    placeholder: "Ask for follow-up changes",
-                    onTextViewReady: { textView in
-                        focus.composerTextView = textView
-                        // Sidebar selection mounts a fresh session screen. Wait
-                        // until its text view is attached, then move keyboard
-                        // focus out of the sidebar and into the composer.
-                        DispatchQueue.main.async { focus.focusComposer() }
-                    }
-                )
-                .onGeometryChange(for: CGSize.self) { geometry in
-                    geometry.size
-                } action: { size in
-                    composerMaskSize = size
+            Group {
+                if let question = controller.activeQuestion {
+                    QuestionPickerCard(controller: controller, request: question)
+                        .transition(Motion.unfold(reduceMotion: reduceMotion, anchor: .bottom))
+                } else {
+                    ComposerCard(
+                        controller: controller,
+                        placeholder: "Ask for follow-up changes",
+                        onTextViewReady: { textView in
+                            focus.composerTextView = textView
+                            // Sidebar selection mounts a fresh session screen. Wait
+                            // until its text view is attached, then move keyboard
+                            // focus out of the sidebar and into the composer.
+                            DispatchQueue.main.async { focus.focusComposer() }
+                        }
+                    )
                 }
+            }
+            // Every card that replaces the composer floats over the transcript,
+            // so keep the transcript mask in sync with whichever variant is live.
+            .onGeometryChange(for: CGSize.self) { geometry in
+                geometry.size
+            } action: { size in
+                composerMaskSize = size
             }
         }
         .padding(.horizontal, 24)
