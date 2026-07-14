@@ -9,6 +9,13 @@ import os
 /// The project step is a multi-select over suggested folders; completing it
 /// adds every selected folder as a project and opens a new chat in the first.
 struct OnboardingView: View {
+    /// A failed harness enable/disable request, pending display in an alert.
+    private struct ToggleError: Identifiable {
+        let id = UUID()
+        let title: String
+        let message: String
+    }
+
     @Environment(AppEnvironment.self) private var environment
     @Environment(\.theme) private var theme
 
@@ -53,6 +60,7 @@ struct OnboardingView: View {
     @State private var isLoadingRecommendations = true
     @State private var showsNotInstalled = false
     @State private var authenticationHarness: ServerHarness?
+    @State private var toggleError: ToggleError?
 
     private var installedHarnesses: [ServerHarness] { harnesses.filter(\.isReady) }
     private var notInstalledHarnesses: [ServerHarness] { harnesses.filter { !$0.isReady } }
@@ -98,6 +106,18 @@ struct OnboardingView: View {
         }
         .sheet(item: $authenticationHarness) { harness in
             HarnessAuthenticationView(harness: harness) { replaceHarness($0) }
+        }
+        .alert(
+            toggleError?.title ?? "",
+            isPresented: Binding(
+                get: { toggleError != nil },
+                set: { if !$0 { toggleError = nil } }
+            ),
+            presenting: toggleError
+        ) { _ in
+            Button("OK") {}
+        } message: { error in
+            Text(error.message)
         }
     }
 
@@ -330,13 +350,24 @@ struct OnboardingView: View {
     }
 
     private func setHarness(_ harness: ServerHarness, enabled: Bool) async {
+        updateHarness(harness.id, enabled: enabled)
         do {
             let updated = try await environment.serverClient.setHarnessEnabled(id: harness.id, enabled: enabled)
             environment.settings.setHarness(harness.id, enabled: updated.enabled)
             replaceHarness(updated)
         } catch {
             replaceHarness(harness)
+            Log.server.error("Setting harness \(harness.id, privacy: .public) enabled=\(enabled, privacy: .public) during onboarding failed: \(String(describing: error), privacy: .public)")
+            toggleError = ToggleError(
+                title: enabled ? "Couldn't turn on \(harness.name)" : "Couldn't turn off \(harness.name)",
+                message: ErrorReporter.userFacingMessage(for: error)
+            )
         }
+    }
+
+    private func updateHarness(_ id: String, enabled: Bool) {
+        guard let index = harnesses.firstIndex(where: { $0.id == id }) else { return }
+        harnesses[index].enabled = enabled
     }
 
     private func replaceHarness(_ harness: ServerHarness) {
