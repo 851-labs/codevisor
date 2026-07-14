@@ -13,6 +13,7 @@ struct AssistantTurnView: View {
     /// across the active→settled transition and lazy remounts.
     let turnID: UUID
     let isWaitingOnUser: Bool
+    let waitingOnBackgroundTask: String?
     private let initiallyExpanded: Bool?
     @Environment(\.transcriptDisclosure) private var disclosureStore
     @Environment(\.runningSubagentToolCallIds) private var runningSubagentToolCallIds
@@ -29,12 +30,14 @@ struct AssistantTurnView: View {
         turn: AssistantTurn,
         turnID: UUID = UUID(),
         initiallyExpanded: Bool? = nil,
-        isWaitingOnUser: Bool = false
+        isWaitingOnUser: Bool = false,
+        waitingOnBackgroundTask: String? = nil
     ) {
         self.turn = turn
         self.turnID = turnID
         self.initiallyExpanded = initiallyExpanded
         self.isWaitingOnUser = isWaitingOnUser
+        self.waitingOnBackgroundTask = waitingOnBackgroundTask
         _hasAutoCollapsed = State(initialValue: turn.isGenerating && turn.finalTextIsAsserted)
     }
 
@@ -130,6 +133,15 @@ struct AssistantTurnView: View {
                     markdown,
                     isComplete: !turn.isGenerating
                 )
+                if let waitingOnBackgroundTask {
+                    HStack(spacing: 8) {
+                        Image(systemName: "clock.arrow.circlepath")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                        ShimmeringText.waitingOnBackgroundTask(waitingOnBackgroundTask)
+                        Spacer(minLength: 0)
+                    }
+                }
                 if !turn.isGenerating {
                     // Copies just the final answer text, not the worked/tool
                     // content. Hidden until hover so the transcript stays clean.

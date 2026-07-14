@@ -179,6 +179,14 @@ struct SessionScreen: View {
     private var transcriptRows: [TranscriptVirtualRow] {
         var result: [TranscriptVirtualRow] = []
         let settled = controller.settledConversation
+        let waitingDescription = controller.waitingBackgroundTaskDescription
+        let waitingAssistantID: UUID? = {
+            guard !controller.hasActiveItem,
+                  waitingDescription != nil,
+                  case let .assistant(message)? = settled.last,
+                  message.turn.finalText != nil else { return nil }
+            return message.id
+        }()
 
         if settled.isEmpty, !controller.hasActiveItem {
             if controller.isConnecting || controller.pendingUserText != nil {
@@ -216,9 +224,15 @@ struct SessionScreen: View {
             }
             result.append(.init(
                 id: .message(item.id),
-                content: .message(item),
+                content: .message(
+                    item,
+                    waitingOnBackgroundTask: item.id == waitingAssistantID ? waitingDescription : nil
+                ),
                 estimatedHeight: Self.estimatedHeight(for: item),
-                measurementRevision: Self.measurementRevision(for: item)
+                measurementRevision: Self.measurementRevision(
+                    for: item,
+                    waitingOnBackgroundTask: item.id == waitingAssistantID ? waitingDescription : nil
+                )
             ))
             if index == 0, case .user = item, !controller.setupPhases.isEmpty {
                 result.append(.init(
@@ -239,15 +253,10 @@ struct SessionScreen: View {
         if controller.hasActiveItem {
             result.append(.init(id: .active, content: .active, estimatedHeight: 320))
         }
-        if controller.isWaitingOnBackgroundTasks {
-            let task = controller.waitingBackgroundTasks.first
-            let extra = controller.waitingBackgroundTasks.count - 1
-            let description = task.map {
-                extra > 0 ? "\($0.description) and \(extra) more" : $0.description
-            } ?? "background task"
+        if let waitingDescription, waitingAssistantID == nil, !controller.hasActiveItem {
             result.append(.init(
                 id: .backgroundTask,
-                content: .backgroundTask(description),
+                content: .backgroundTask(waitingDescription),
                 estimatedHeight: 32
             ))
         }
@@ -279,7 +288,10 @@ struct SessionScreen: View {
 
     /// Does not walk large Markdown payloads: counts and the model's existing
     /// monotonic/fingerprint fields are enough to guard in-memory measurements.
-    private static func measurementRevision(for item: ConversationItem) -> Int {
+    private static func measurementRevision(
+        for item: ConversationItem,
+        waitingOnBackgroundTask: String?
+    ) -> Int {
         var hasher = Hasher()
         switch item {
         case let .user(message):
@@ -301,14 +313,19 @@ struct SessionScreen: View {
             hasher.combine(turn.stopDetail?.utf8.count ?? 0)
             hasher.combine(turn.subagentActivityFingerprint)
         }
+        hasher.combine(waitingOnBackgroundTask)
         return hasher.finalize()
     }
 
     @ViewBuilder
     private func virtualRowContent(_ row: TranscriptVirtualRow) -> some View {
         switch row.content {
-        case let .message(item):
-            ConversationItemView(item: item, isWaitingOnUser: controller.pendingQuestion != nil)
+        case let .message(item, waitingOnBackgroundTask):
+            ConversationItemView(
+                item: item,
+                isWaitingOnUser: controller.pendingQuestion != nil,
+                waitingOnBackgroundTask: waitingOnBackgroundTask
+            )
         case .active:
             TranscriptActiveItemView(controller: controller)
         case let .setup(phases):
@@ -426,8 +443,13 @@ private struct TranscriptActiveItemView: View {
 
     var body: some View {
         let revision = controller.activeItemRevision
+        let waitingOnBackgroundTask = controller.waitingBackgroundTaskDescription
         if let item = controller.activeItem {
-            ConversationItemView(item: item, isWaitingOnUser: controller.pendingQuestion != nil)
+            ConversationItemView(
+                item: item,
+                isWaitingOnUser: controller.pendingQuestion != nil,
+                waitingOnBackgroundTask: waitingOnBackgroundTask
+            )
                 // The active row is hosted behind the transcript's observation
                 // isolation boundary, so environment values injected by the
                 // outer row factory are otherwise frozen until this row is
@@ -438,8 +460,16 @@ private struct TranscriptActiveItemView: View {
                     \.runningSubagentToolCallIds,
                     controller.runningSubagentToolCallIds
                 )
+                // Like subagent activity above, the outer active-row host's
+                // environment is frozen from when streaming began. Refresh
+                // hover suspension here so copy affordances wake up as soon
+                // as the turn ends into a background-task wait.
+                .environment(\.hoverTrackingSuspended, controller.isSending)
                 .id(item.id)
                 .onChange(of: revision, initial: true) { _, _ in
+                    invalidateRowMeasurement?()
+                }
+                .onChange(of: waitingOnBackgroundTask) { _, _ in
                     invalidateRowMeasurement?()
                 }
         }

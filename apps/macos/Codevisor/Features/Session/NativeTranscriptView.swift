@@ -36,7 +36,7 @@ struct TranscriptVirtualRow: Identifiable, Equatable {
     }
 
     enum Content: Equatable {
-        case message(ConversationItem)
+        case message(ConversationItem, waitingOnBackgroundTask: String?)
         case active
         case setup([SessionSetupPhase])
         case optimistic(UserMessage, showsStartingAgent: Bool)

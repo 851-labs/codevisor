@@ -7,6 +7,7 @@ import SwiftUI
 struct ConversationItemView: View {
     let item: ConversationItem
     var isWaitingOnUser = false
+    var waitingOnBackgroundTask: String? = nil
 
     var body: some View {
         switch item {
@@ -16,7 +17,8 @@ struct ConversationItemView: View {
             AssistantTurnView(
                 turn: message.turn,
                 turnID: message.id,
-                isWaitingOnUser: isWaitingOnUser
+                isWaitingOnUser: isWaitingOnUser,
+                waitingOnBackgroundTask: waitingOnBackgroundTask
             )
         }
     }
