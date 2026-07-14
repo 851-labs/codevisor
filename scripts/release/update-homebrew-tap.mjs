@@ -68,6 +68,8 @@ writeFileSync(
                      'tell application id "com.851labs.HerdMan" to quit'
                    ],
                    must_succeed: false
+    system_command "/bin/rm",
+                   args: ["-rf", "#{appdir}/HerdMan.app"]
   end
 
   uninstall quit: "com.851labs.HerdMan"
