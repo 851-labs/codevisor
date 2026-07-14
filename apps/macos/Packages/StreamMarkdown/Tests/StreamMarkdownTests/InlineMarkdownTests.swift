@@ -31,8 +31,8 @@ struct InlineMarkdownTests {
                 && run[InlineCodeChipAttribute.self] == true
         }
         #expect(hasChip)
-        // The chip background is painted by InlineCodeChipRenderer (rounded
-        // corners), never by the square-only backgroundColor attribute.
+        // The chip background is painted by the TextKit layout manager
+        // (rounded corners), never by the square-only backgroundColor attribute.
         #expect(attributed.runs.allSatisfy { $0.backgroundColor == nil })
         // Narrow no-break spaces pad each side of the code span; the pads are
         // chip-tagged too so the pill covers them.

@@ -1,5 +1,7 @@
-import SwiftUI
+import AppKit
 import CodevisorCore
+import StreamMarkdown
+import SwiftUI
 
 /// Renders a single conversation item: a user prompt bubble or an assistant turn.
 struct ConversationItemView: View {
@@ -39,11 +41,14 @@ struct UserMessageView: View {
                     }
                 }
                 if !message.text.isEmpty {
-                    Text(message.text)
-                        .textSelection(.enabled)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background(RoundedRectangle(cornerRadius: 14).fill(theme.bubbleBackground))
+                    SelectableTextView(
+                        message.text,
+                        font: .preferredFont(forTextStyle: .body),
+                        foregroundColor: NSColor(theme.textPrimary)
+                    )
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(RoundedRectangle(cornerRadius: 14).fill(theme.bubbleBackground))
                     // Kept in the layout (hidden until hover) so the row
                     // height doesn't jump when the pointer enters.
                     MessageCopyButton(text: message.text, help: "Copy message", isRevealed: isHovered)

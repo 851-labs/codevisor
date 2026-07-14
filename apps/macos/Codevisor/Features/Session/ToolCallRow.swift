@@ -1,7 +1,8 @@
-import SwiftUI
 import ACPKit
+import AppKit
 import CodevisorCore
 import StreamMarkdown
+import SwiftUI
 
 /// A single tool call as a one-line title that expands to a content card
 /// (terminal output, diff, or text) with a status badge. The title shimmers
@@ -175,10 +176,16 @@ struct ToolCallContentCard: View {
         case let .content(block):
             switch block {
             case let .text(text, _):
-                Text(text)
-                    .font(.caption.monospaced())
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                SelectableTextView(
+                    text,
+                    font: .monospacedSystemFont(
+                        ofSize: NSFont.preferredFont(forTextStyle: .caption1).pointSize,
+                        weight: .regular
+                    ),
+                    foregroundColor: NSColor(theme.textPrimary),
+                    fillsWidth: true
+                )
+                .frame(maxWidth: .infinity, alignment: .leading)
             // Web-search sources arrive as resource_link blocks; render each as
             // a tappable title over its host.
             case let .resourceLink(link):

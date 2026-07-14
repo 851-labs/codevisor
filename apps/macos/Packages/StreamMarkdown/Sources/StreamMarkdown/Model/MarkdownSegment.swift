@@ -1,15 +1,13 @@
 import Foundation
 
 /// A renderable segment of a markdown document: either a run of consecutive
-/// text-like blocks that can merge into a single selectable `Text`, or a
+/// text-like blocks that can merge into one selectable TextKit storage, or a
 /// standalone block that needs its own view (code, table, quote, rule).
 ///
-/// Merging consecutive text blocks into one run is what makes multi-line /
-/// multi-block text selection work: SwiftUI's `.textSelection(.enabled)` is
-/// scoped per `Text` view, so selection can never cross the boundary between
-/// two separate `Text`s. One run → one `Text` → continuous selection.
+/// Merging consecutive text blocks into one native storage is what makes
+/// multi-line / multi-block text selection continuous.
 public enum MarkdownSegment: Sendable, Equatable {
-    /// One enormous selectable `Text` makes Core Text reflow the whole
+    /// One enormous selectable text storage makes TextKit reflow the whole
     /// document as it enters/leaves a lazy stack or the chat width changes.
     /// Chunk at markdown block boundaries so long answers remain cheap to
     /// mount and scroll. Normal responses still stay a single selectable run.

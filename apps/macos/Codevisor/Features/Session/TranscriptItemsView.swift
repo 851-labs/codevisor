@@ -1,13 +1,14 @@
-import SwiftUI
 import ACPKit
 import CodevisorCore
 import StreamMarkdown
+import SwiftUI
 
 /// Renders a list of worked items — reasoning text, tool groups, and subagent
 /// sections. Shared by the top-level turn transcript and each nested subagent
 /// section, so a subagent's thread is literally the same UI, one level down.
 struct TranscriptItemsView: View {
     let items: [WorkedItem]
+    @Environment(\.theme) private var theme
     /// The owning turn: subagent threads are looked up here by tool call id.
     let turn: AssistantTurn
     let isTurnActive: Bool
@@ -27,9 +28,9 @@ struct TranscriptItemsView: View {
                 // the same O(growing block) per-flush cost bound.
                 StreamingMarkdownView(
                     markdown,
-                    isComplete: !isTurnActive
+                    isComplete: !isTurnActive,
+                    foregroundColor: theme.textSecondary
                 )
-                    .foregroundStyle(.secondary)
             case let .toolGroup(_, calls):
                 ToolGroupView(
                     calls: calls,
@@ -72,6 +73,7 @@ struct SubagentSectionView: View {
     // Default open while running, collapsed when revisiting a finished thread.
     private var store: TranscriptDisclosureStore { disclosureStore ?? .previews }
     private var disclosureKey: TranscriptDisclosureStore.Key { .subagent(call.toolCallId) }
+
     private var isExpanded: Bool {
         store.isExpanded(disclosureKey, default: isRunning)
     }
@@ -83,6 +85,7 @@ struct SubagentSectionView: View {
     private var isRunning: Bool {
         (isTurnActive && !call.isSettled) || runningSubagentToolCallIds.contains(call.toolCallId)
     }
+
     private var items: [WorkedItem] { turn.subagentItems(call.toolCallId) }
     private var transcript: SubagentTranscript? { turn.subagents[call.toolCallId] }
 

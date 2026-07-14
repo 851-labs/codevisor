@@ -1,5 +1,7 @@
-import SwiftUI
+import AppKit
 import CodevisorCore
+import StreamMarkdown
+import SwiftUI
 
 /// The pre-chat setup sections shown at the top of a brand-new session:
 /// "Setting up worktree…" / "Starting Claude Code…" rows styled like the
@@ -57,10 +59,17 @@ struct SessionSetupPhaseView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Divider()
                     if let message = phase.failureMessage {
-                        Label(message, systemImage: "exclamationmark.triangle.fill")
-                            .font(.callout)
-                            .foregroundStyle(theme.statusError)
-                            .textSelection(.enabled)
+                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .font(.callout)
+                            SelectableTextView(
+                                message,
+                                font: .preferredFont(forTextStyle: .callout),
+                                foregroundColor: NSColor(theme.statusError),
+                                fillsWidth: true
+                            )
+                        }
+                        .foregroundStyle(theme.statusError)
                     }
                     if !phase.logs.isEmpty {
                         logLines
@@ -133,19 +142,11 @@ struct SessionSetupPhaseView: View {
 
     private var logLines: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 2) {
-                ForEach(phase.logs) { line in
-                    Text(line.text)
-                        .font(.caption.monospaced())
-                        .foregroundStyle(line.stream == "stderr" ? .secondary : .tertiary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+            SelectableTextView(attributedText: logText, fillsWidth: true)
+                .padding(10)
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: {
+                    logContentHeight = $0
                 }
-            }
-            .textSelection(.enabled)
-            .padding(10)
-            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: {
-                logContentHeight = $0
-            }
         }
         // Sized to the content until it overflows, then scrolls pinned to the
         // newest line as output streams in.
@@ -155,6 +156,32 @@ struct SessionSetupPhaseView: View {
             RoundedRectangle(cornerRadius: 8)
                 .fill(theme.cardQuietBackground)
         )
+    }
+
+    private var logText: NSAttributedString {
+        let result = NSMutableAttributedString()
+        let font = NSFont.monospacedSystemFont(
+            ofSize: NSFont.preferredFont(forTextStyle: .caption1).pointSize,
+            weight: .regular
+        )
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineSpacing = 2
+        for (index, line) in phase.logs.enumerated() {
+            if index > 0 { result.append(NSAttributedString(string: "\n")) }
+            result.append(
+                NSAttributedString(
+                    string: line.text,
+                    attributes: [
+                        .font: font,
+                        .paragraphStyle: paragraph,
+                        .foregroundColor: NSColor(
+                            line.stream == "stderr" ? theme.textSecondary : theme.textTertiary
+                        ),
+                    ]
+                )
+            )
+        }
+        return result
     }
 
     private var completedTitle: String {

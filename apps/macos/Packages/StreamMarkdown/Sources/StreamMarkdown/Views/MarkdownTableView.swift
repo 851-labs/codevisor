@@ -204,7 +204,7 @@ private struct SelectableTextTableView: NSViewRepresentable {
 /// yields one cell per line (each cell is its own paragraph in the backing
 /// store), losing the row/column shape when pasted as plain text. The rich (RTF)
 /// representation from `super` is preserved for apps that accept it.
-final class TableTextView: NSTextView {
+final class TableTextView: TranscriptSelectableTextView {
     private var model: TableModel?
     private var builtWidth: CGFloat = -1
 

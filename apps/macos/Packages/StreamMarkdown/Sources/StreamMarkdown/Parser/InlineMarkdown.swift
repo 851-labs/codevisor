@@ -32,9 +32,8 @@ public enum InlineMarkdown {
 
     /// Parses inline markdown and styles `` `code` `` spans as chips: a
     /// slightly smaller monospaced font, padded on each side with a narrow
-    /// no-break space, and tagged with `InlineCodeChipAttribute` so the chip
-    /// renderer can paint a rounded background behind the run (see
-    /// `InlineCodeChipRenderer`).
+    /// no-break space, and tagged with `InlineCodeChipAttribute` so the
+    /// TextKit bridge can paint a rounded background behind the run.
     public static func attributedString(from markdown: String, theme: MarkdownTheme) -> AttributedString {
         styleInlineCode(in: attributedString(from: markdown), theme: theme)
     }
@@ -43,7 +42,7 @@ public enum InlineMarkdown {
     /// already-parsed attributed string. The chip background itself is NOT an
     /// attribute (`AttributedString.backgroundColor` can only paint square
     /// rects): runs are tagged with `InlineCodeChipAttribute` and painted by
-    /// `InlineCodeChipRenderer` with rounded corners.
+    /// the TextKit layout manager with rounded corners.
     public static func styleInlineCode(in attributed: AttributedString, theme: MarkdownTheme) -> AttributedString {
         guard attributed.runs.contains(where: { $0.inlinePresentationIntent?.contains(.code) == true })
         else { return attributed }
@@ -68,11 +67,8 @@ public enum InlineMarkdown {
     }
 
     /// Splits an attributed string into maximal contiguous pieces of chip /
-    /// non-chip content. `MarkdownTextRunView` builds its merged `Text` by
-    /// concatenating these pieces, attaching the SwiftUI `InlineCodeChip`
-    /// custom attribute to the chip ones — `Text(AttributedString)` cannot
-    /// carry custom text attributes directly, but `Text` concatenation
-    /// preserves them and keeps selection continuous.
+    /// non-chip content. Kept as a parser-level regression seam for verifying
+    /// chip markers independently of the renderer.
     static func chipPieces(in attributed: AttributedString) -> [(text: AttributedString, isChip: Bool)] {
         var pieces: [(text: AttributedString, isChip: Bool)] = []
         for run in attributed.runs {

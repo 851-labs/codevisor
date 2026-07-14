@@ -13,6 +13,8 @@ import SwiftUI
 public struct StreamingMarkdownView: View {
     private let text: String
     private let isComplete: Bool
+    private let foregroundColor: Color?
+    @Environment(\.markdownTheme) private var theme
     /// Per-view-identity incremental state (see `StreamingSegmenter`). A
     /// plain non-observable class held in `@State`: `body` runs far more
     /// often than the text changes (theme changes, sibling observable churn,
@@ -22,37 +24,50 @@ public struct StreamingMarkdownView: View {
     /// `MarkdownSegmentCache`.
     @State private var segmenter = StreamingSegmenter()
 
-    public init(_ text: String, isComplete: Bool = true) {
+    public init(
+        _ text: String,
+        isComplete: Bool = true,
+        foregroundColor: Color? = nil
+    ) {
         self.text = text
         self.isComplete = isComplete
+        self.foregroundColor = foregroundColor
     }
 
     public var body: some View {
-        MarkdownSegmentListView(segments: segmenter.segments(for: text, isComplete: isComplete))
+        MarkdownSegmentListView(
+            segments: segmenter.segments(for: text, isComplete: isComplete),
+            foregroundColor: foregroundColor ?? theme.textForeground
+        )
     }
 }
 
 /// Renders markdown blocks as segments: consecutive text-like blocks merge
-/// into a single selectable `Text` (so selection can span multiple lines and
-/// blocks — SwiftUI text selection cannot cross `Text` boundaries), while
-/// code blocks, tables, quotes, and rules keep their own views.
+/// into a single selectable TextKit storage so selection can span multiple
+/// lines and blocks, while code blocks, tables, quotes, and rules keep their
+/// own views.
 struct MarkdownSegmentsView: View {
     let blocks: [MarkdownBlock]
+    let foregroundColor: Color
 
     var body: some View {
-        MarkdownSegmentListView(segments: MarkdownSegment.segments(from: blocks))
+        MarkdownSegmentListView(
+            segments: MarkdownSegment.segments(from: blocks),
+            foregroundColor: foregroundColor
+        )
     }
 }
 
 /// Renders pre-computed markdown segments in document order.
 struct MarkdownSegmentListView: View {
     let segments: [MarkdownSegment]
+    let foregroundColor: Color
     @Environment(\.markdownTheme) private var theme
 
     var body: some View {
         VStack(alignment: .leading, spacing: theme.blockSpacing) {
             ForEach(Array(segments.enumerated()), id: \.offset) { _, segment in
-                MarkdownSegmentView(segment: segment)
+                MarkdownSegmentView(segment: segment, foregroundColor: foregroundColor)
                     .equatable()
             }
         }
@@ -66,13 +81,14 @@ struct MarkdownSegmentListView: View {
 /// making the comparison O(1) in the steady state.
 private struct MarkdownSegmentView: View, Equatable {
     let segment: MarkdownSegment
+    let foregroundColor: Color
 
     var body: some View {
         switch segment {
         case let .textRun(runBlocks):
-            MarkdownTextRunView(blocks: runBlocks)
+            MarkdownTextRunView(blocks: runBlocks, foregroundColor: foregroundColor)
         case let .block(block):
-            MarkdownBlockView(block: block)
+            MarkdownBlockView(block: block, foregroundColor: foregroundColor)
         }
     }
 }
@@ -80,6 +96,7 @@ private struct MarkdownSegmentView: View, Equatable {
 /// Renders a single markdown block.
 struct MarkdownBlockView: View {
     let block: MarkdownBlock
+    let foregroundColor: Color
     @Environment(\.markdownTheme) private var theme
 
     var body: some View {
@@ -88,7 +105,7 @@ struct MarkdownBlockView: View {
             // Normally coalesced into a MarkdownTextRunView by
             // MarkdownSegmentsView; render standalone blocks the same way so
             // they stay selectable.
-            MarkdownTextRunView(blocks: [block])
+            MarkdownTextRunView(blocks: [block], foregroundColor: foregroundColor)
 
         case let .codeBlock(language, code, isComplete):
             CodeBlockView(language: language, code: code, isComplete: isComplete)
@@ -98,7 +115,7 @@ struct MarkdownBlockView: View {
                 Rectangle()
                     .fill(theme.quoteBarColor)
                     .frame(width: 3)
-                MarkdownSegmentsView(blocks: blocks)
+                MarkdownSegmentsView(blocks: blocks, foregroundColor: foregroundColor)
             }
             .fixedSize(horizontal: false, vertical: true)
 

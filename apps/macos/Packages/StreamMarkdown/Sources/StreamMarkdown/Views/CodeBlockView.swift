@@ -153,7 +153,7 @@ private final class CodeScrollView: NSScrollView {
         case vertical
     }
 
-    private let codeTextView: NSTextView
+    private let codeTextView: TranscriptSelectableTextView
     private var gestureAxis: GestureAxis?
     private var renderedText: AttributedString?
     private var renderedForeground: Color?
@@ -173,7 +173,7 @@ private final class CodeScrollView: NSScrollView {
         textContainer.widthTracksTextView = false
         textContainer.heightTracksTextView = false
         layoutManager.addTextContainer(textContainer)
-        codeTextView = NSTextView(frame: .zero, textContainer: textContainer)
+        codeTextView = TranscriptSelectableTextView(frame: .zero, textContainer: textContainer)
 
         super.init(frame: frameRect)
         drawsBackground = false

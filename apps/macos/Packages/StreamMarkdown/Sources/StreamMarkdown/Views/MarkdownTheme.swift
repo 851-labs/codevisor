@@ -12,6 +12,11 @@ public typealias CodeHighlighting = @Sendable (_ code: String, _ language: Strin
 public struct MarkdownTheme: Sendable {
     public var bodyFont: Font
     public var codeFont: Font
+    /// Primary and secondary prose colors. Native TextKit views cannot inherit
+    /// SwiftUI's foreground-style environment, so the host supplies both
+    /// semantic colors explicitly with the rest of the markdown theme.
+    public var textForeground: Color
+    public var secondaryTextForeground: Color
     /// Base foreground for fenced code. Highlighted tokens override this;
     /// uncolored tokens inherit it.
     public var codeForeground: Color
@@ -41,6 +46,8 @@ public struct MarkdownTheme: Sendable {
     public init(
         bodyFont: Font = .body,
         codeFont: Font = .system(.callout, design: .monospaced),
+        textForeground: Color = .primary,
+        secondaryTextForeground: Color = .secondary,
         codeForeground: Color = .primary,
         inlineCodeFont: Font = .system(.callout, design: .monospaced),
         blockSpacing: CGFloat = 10,
@@ -56,6 +63,8 @@ public struct MarkdownTheme: Sendable {
     ) {
         self.bodyFont = bodyFont
         self.codeFont = codeFont
+        self.textForeground = textForeground
+        self.secondaryTextForeground = secondaryTextForeground
         self.codeForeground = codeForeground
         self.inlineCodeFont = inlineCodeFont
         self.blockSpacing = blockSpacing
@@ -80,10 +89,13 @@ public struct MarkdownTheme: Sendable {
         var hasher = Hasher()
         hasher.combine(bodyFont)
         hasher.combine(codeFont)
+        hasher.combine(textForeground)
+        hasher.combine(secondaryTextForeground)
         hasher.combine(codeForeground)
         hasher.combine(inlineCodeFont)
         hasher.combine(blockSpacing)
         hasher.combine(listItemSpacing)
+        hasher.combine(lineSpacing)
         hasher.combine(codeBackground)
         hasher.combine(inlineCodeBackground)
         hasher.combine(inlineCodeCornerRadius)

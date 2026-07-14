@@ -1,7 +1,8 @@
-import SwiftUI
-import CodevisorCore
 import ACPKit
+import AppKit
+import CodevisorCore
 import StreamMarkdown
+import SwiftUI
 
 /// Renders one assistant turn: reasoning text and tool-call groups collapse into
 /// a "Worked for…" disclosure, the final answer renders expanded at the bottom,
@@ -116,16 +117,15 @@ struct AssistantTurnView: View {
             // newer text span starts — codex tags messages up front, so its
             // candidate never demotes.
             if let final = turn.finalText, case let .text(_, markdown) = final {
-                // No .textSelection here: the Texts inside StreamingMarkdownView
-                // already enable it per-run. Applying it again on the whole
-                // segment stack forces the entire VStack through the selection
-                // layout path on first click, causing a visible layout shift.
+                // Selection lives inside each native TextKit run. Keeping it
+                // there avoids a selection modifier on the segment VStack and
+                // keeps first-click geometry identical to display geometry.
                 //
                 // isComplete keys the streaming render mode: while generating,
                 // the segmenter re-parses only the growing tail and skips
                 // text-run merging, so a flush costs O(growing block) instead
                 // of O(whole answer). The finalize flip merges runs back into
-                // one selectable Text.
+                // one selectable TextKit storage.
                 StreamingMarkdownView(
                     markdown,
                     isComplete: !turn.isGenerating
@@ -147,9 +147,13 @@ struct AssistantTurnView: View {
                     Image(systemName: "exclamationmark.triangle")
                         .font(.caption)
                     VStack(alignment: .leading, spacing: 8) {
-                        Text(stopDetail)
-                            .font(turn.finalText == nil ? .callout : .caption)
-                            .textSelection(.enabled)
+                        SelectableTextView(
+                            stopDetail,
+                            font: .preferredFont(
+                                forTextStyle: turn.finalText == nil ? .callout : .caption1
+                            ),
+                            foregroundColor: NSColor(theme.statusError)
+                        )
                         if turn.retryable, let transcriptController {
                             Button {
                                 Task { await transcriptController.retryTurn(turnID) }
@@ -329,6 +333,7 @@ struct TranscriptDisclosureChevron: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let expanded: Bool
 
+    @ViewBuilder
     var body: some View {
         Image(systemName: "chevron.right")
             .font(.caption2.weight(.semibold))
@@ -408,7 +413,6 @@ struct TranscriptDisclosureContentReveal<Content: View>: View {
         self.content = content()
     }
 
-    @ViewBuilder
     var body: some View {
         Group {
             if phase != .collapsed {

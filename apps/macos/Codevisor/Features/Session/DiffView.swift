@@ -1,5 +1,7 @@
+import AppKit
 import CodeHighlighter
 import CodevisorCore
+import StreamMarkdown
 import SwiftUI
 
 /// Computed rows + highlights for recently rendered diffs. DiffView's
@@ -155,8 +157,10 @@ struct DiffView: View {
                 .foregroundStyle(tint(for: row.kind))
             // Removed lines keep full syntax colors (pierre does not dim or
             // strike them); the row tint alone marks the deletion.
-            rowText(row, highlights: highlights)
-                .textSelection(.enabled)
+            SelectableTextView(
+                attributedText: rowText(row, highlights: highlights),
+                fillsWidth: false
+            )
             Spacer(minLength: 0)
         }
         .font(.caption.monospaced())
@@ -177,10 +181,37 @@ struct DiffView: View {
 
     /// Row text: Shiki-highlighted when the path's language and the theme
     /// allow it, plain otherwise. Blank lines render a space to keep height.
-    private func rowText(_ row: LineDiff.Row, highlights: [Int: AttributedString]) -> Text {
-        if row.text.isEmpty { return Text(" ") }
-        if let highlighted = highlights[row.id] { return Text(highlighted) }
-        return Text(row.text)
+    private func rowText(
+        _ row: LineDiff.Row,
+        highlights: [Int: AttributedString]
+    ) -> NSAttributedString {
+        let font = NSFont.monospacedSystemFont(
+            ofSize: NSFont.preferredFont(forTextStyle: .caption1).pointSize,
+            weight: .regular
+        )
+        guard let highlighted = highlights[row.id], !row.text.isEmpty else {
+            return NSAttributedString(
+                string: row.text.isEmpty ? " " : row.text,
+                attributes: [
+                    .font: font,
+                    .foregroundColor: NSColor(theme.textPrimary),
+                ]
+            )
+        }
+        let result = NSMutableAttributedString()
+        for run in highlighted.runs {
+            result.append(
+                NSAttributedString(
+                    string: String(highlighted[run.range].characters),
+                    attributes: [
+                        .font: font,
+                        .foregroundColor: run.foregroundColor.map { NSColor($0) }
+                            ?? NSColor(theme.textPrimary),
+                    ]
+                )
+            )
+        }
+        return result
     }
 
     /// Recomputes the diff rows (when the content changed) and re-highlights.

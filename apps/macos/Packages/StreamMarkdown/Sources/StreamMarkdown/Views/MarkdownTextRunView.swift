@@ -1,178 +1,281 @@
+import AppKit
 import SwiftUI
 
-/// Renders a run of consecutive text-like markdown blocks (headings,
-/// paragraphs, lists) as a SINGLE `Text` built from one merged
-/// `AttributedString`.
-///
-/// This is deliberate: `.textSelection(.enabled)` is scoped per `Text` view on
-/// macOS, so selection can never span two separate `Text`s. Rendering each
-/// block as its own `Text` (the old approach) made multi-line selection across
-/// paragraphs impossible. One merged `Text` gives continuous, native
-/// multi-block selection.
+/// Renders consecutive text-like Markdown blocks in one native TextKit view.
+/// A single text storage keeps selection continuous across headings,
+/// paragraphs, and lists without SwiftUI changing layout engines on click.
 struct MarkdownTextRunView: View {
     let blocks: [MarkdownBlock]
+    let foregroundColor: Color
     @Environment(\.markdownTheme) private var theme
-    /// Memoizes the built `Text`: `body` runs far more often than `blocks`
-    /// changes (sibling streaming churn, hover state, the finalize collapse),
-    /// and rebuilding the merged AttributedString plus the chip-run walk is
-    /// O(run length) — for a finalized message, the whole document.
+    /// The segmenter pointer-stabilizes settled blocks, so this memo makes
+    /// repeated transcript body evaluations O(1) for unchanged text.
     @State private var memo = TextRunMemo()
 
     var body: some View {
-        let rendered = memo.rendered(for: blocks, theme: theme)
-        let text = rendered.text
-            .font(theme.bodyFont)
-            .lineSpacing(theme.lineSpacing)
-            .textSelection(.enabled)
-            .fixedSize(horizontal: false, vertical: true)
-        // Chip-bearing runs get a glyph-less backdrop `Text` that paints the
-        // rounded chip backgrounds: the selectable foreground text ignores
-        // custom TextRenderers (see InlineCodeChipRenderer), and only runs
-        // that actually contain inline code pay for the second layout — the
-        // common no-code paragraph stays a single stock `Text`.
-        if rendered.hasChips {
-            text.background(alignment: .topLeading) {
-                rendered.text
-                    .font(theme.bodyFont)
-                    .lineSpacing(theme.lineSpacing)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .textRenderer(
-                        InlineCodeChipRenderer(
-                            background: theme.inlineCodeBackground,
-                            cornerRadius: theme.inlineCodeCornerRadius
-                        )
-                    )
-                    .allowsHitTesting(false)
-                    .accessibilityHidden(true)
-            }
-        } else {
-            text
-        }
-    }
-
-    /// Builds the single selectable `Text` for the run. When the merged
-    /// attributed string contains inline-code chips, the `Text` is built by
-    /// concatenating chip / non-chip pieces so chip pieces can carry the
-    /// `InlineCodeChip` custom attribute (concatenation preserves the single
-    /// `Text`, and with it cross-block selection). `hasChips` tells the view
-    /// whether the chip renderer needs to be attached at all.
-    static func text(for blocks: [MarkdownBlock], theme: MarkdownTheme) -> (text: Text, hasChips: Bool) {
-        let merged = attributedString(for: blocks, theme: theme)
-        guard merged.runs.contains(where: { $0[InlineCodeChipAttribute.self] == true }) else {
-            return (Text(merged), false)
-        }
-        var text = Text(verbatim: "")
-        for piece in InlineMarkdown.chipPieces(in: merged) {
-            let pieceText = Text(piece.text)
-            if piece.isChip {
-                text = Text("\(text)\(pieceText.customAttribute(InlineCodeChip()))")
-            } else {
-                text = Text("\(text)\(pieceText)")
-            }
-        }
-        return (text, true)
-    }
-
-    /// Merges the blocks into one attributed string. Blocks are separated by a
-    /// blank line whose font size approximates `theme.blockSpacing`, so the
-    /// visual rhythm matches the VStack spacing used between non-text segments.
-    static func attributedString(for blocks: [MarkdownBlock], theme: MarkdownTheme) -> AttributedString {
-        var result = AttributedString()
-        for (index, block) in blocks.enumerated() {
-            let piece = attributedString(for: block, theme: theme)
-            guard !piece.characters.isEmpty else { continue }
-            if index > 0, !result.characters.isEmpty {
-                var separator = AttributedString("\n\n")
-                // The empty line between blocks takes its height from this
-                // font, approximating the theme's block spacing. Line spacing
-                // is applied above and below the blank line too, so subtract
-                // it to keep the block rhythm as lineSpacing grows.
-                separator.font = .system(size: max(2, (theme.blockSpacing - 2 * theme.lineSpacing) * 0.8))
-                result += separator
-            }
-            result += piece
-        }
-        return result
-    }
-
-    private static func attributedString(for block: MarkdownBlock, theme: MarkdownTheme) -> AttributedString {
-        switch block {
-        case let .heading(level, text):
-            var attributed = InlineMarkdown.attributedString(from: text)
-            attributed.font = headingFont(for: level).weight(.semibold)
-            // Code chip styling comes after the heading font so `code` spans
-            // keep their monospaced chip look inside headings.
-            return InlineMarkdown.styleInlineCode(in: attributed, theme: theme)
-
-        case let .paragraph(text):
-            // No explicit font: inherits the body font from the Text view, so
-            // strong/emphasis presentation intents resolve correctly.
-            return InlineMarkdown.attributedString(from: text, theme: theme)
-
-        case let .bulletList(items):
-            return list(items: items.map { (marker: "•", text: $0) }, theme: theme)
-
-        case let .orderedList(items):
-            return list(items: items.map { (marker: "\($0.number).", text: $0.text) }, theme: theme)
-
-        case .codeBlock, .blockQuote, .table, .thematicBreak:
-            // Not text-run blocks; rendered by MarkdownBlockView instead.
-            return AttributedString()
-        }
-    }
-
-    private static func list(items: [(marker: String, text: String)], theme: MarkdownTheme) -> AttributedString {
-        var result = AttributedString()
-        for (index, item) in items.enumerated() {
-            if index > 0 {
-                // Same trick as the block separator: an empty line whose tiny
-                // font height adds `listItemSpacing` of air between items,
-                // since per-range line spacing isn't available in SwiftUI.
-                // Line spacing already contributes around the blank line, so
-                // it counts toward the item gap.
-                var separator = AttributedString("\n\n")
-                separator.font = .system(size: max(1, (theme.listItemSpacing - 2 * theme.lineSpacing) * 0.8))
-                result += separator
-            }
-            var marker = AttributedString("\(item.marker) ")
-            marker.foregroundColor = .secondary
-            result += marker
-            result += InlineMarkdown.attributedString(from: item.text, theme: theme)
-        }
-        return result
-    }
-
-    static func headingFont(for level: Int) -> Font {
-        switch level {
-        case 1: return .title
-        case 2: return .title2
-        case 3: return .title3
-        case 4: return .headline
-        default: return .subheadline
-        }
+        SelectableTextView(
+            attributedText: memo.rendered(
+                for: blocks,
+                theme: theme,
+                foregroundColor: foregroundColor
+            )
+        )
     }
 }
 
-/// Last-value memo for a text run's built `Text`. A plain class held in
-/// `@State` — non-observable, so cache writes never re-render the view.
-/// The unchanged-blocks comparison is O(1) in the streaming steady state:
-/// the segmenter pointer-stabilizes unchanged segments, so `==` on the same
-/// String storage short-circuits. Returning the identical `Text` value also
-/// lets SwiftUI's change detection skip the row entirely.
+/// Converts parsed Markdown runs to AppKit attributes. Font choices match the
+/// semantic SwiftUI styles previously used by `MarkdownTextRunView`; the host
+/// does not override MarkdownTheme's fonts today (tables follow the same
+/// semantic-font contract).
+enum MarkdownTextRunRenderer {
+    static func attributedString(
+        for blocks: [MarkdownBlock],
+        theme: MarkdownTheme,
+        foregroundColor: Color
+    ) -> NSAttributedString {
+        let result = NSMutableAttributedString()
+        let foreground = NSColor(foregroundColor)
+        let chipBackground = TextKitRoundedBackground(
+            color: NSColor(theme.inlineCodeBackground),
+            cornerRadius: theme.inlineCodeCornerRadius
+        )
+
+        for (index, block) in blocks.enumerated() {
+            let piece = attributedString(
+                for: block,
+                theme: theme,
+                foreground: foreground,
+                chipBackground: chipBackground
+            )
+            guard piece.length > 0 else { continue }
+            if index > 0, result.length > 0 {
+                result.append(
+                    verticalSeparator(
+                        size: max(2, (theme.blockSpacing - 2 * theme.lineSpacing) * 0.8),
+                        lineSpacing: theme.lineSpacing,
+                        foreground: foreground
+                    )
+                )
+            }
+            result.append(piece)
+        }
+        return result.copy() as! NSAttributedString
+    }
+
+    private static func attributedString(
+        for block: MarkdownBlock,
+        theme: MarkdownTheme,
+        foreground: NSColor,
+        chipBackground: TextKitRoundedBackground
+    ) -> NSAttributedString {
+        switch block {
+        case let .heading(level, text):
+            inlineAttributed(
+                text,
+                baseFont: headingFont(for: level),
+                theme: theme,
+                foreground: foreground,
+                chipBackground: chipBackground
+            )
+
+        case let .paragraph(text):
+            inlineAttributed(
+                text,
+                baseFont: bodyFont,
+                theme: theme,
+                foreground: foreground,
+                chipBackground: chipBackground
+            )
+
+        case let .bulletList(items):
+            list(
+                items: items.map { (marker: "•", text: $0) },
+                theme: theme,
+                foreground: foreground,
+                chipBackground: chipBackground
+            )
+
+        case let .orderedList(items):
+            list(
+                items: items.map { (marker: "\($0.number).", text: $0.text) },
+                theme: theme,
+                foreground: foreground,
+                chipBackground: chipBackground
+            )
+
+        case .codeBlock, .blockQuote, .table, .thematicBreak:
+            NSAttributedString()
+        }
+    }
+
+    private static func list(
+        items: [(marker: String, text: String)],
+        theme: MarkdownTheme,
+        foreground: NSColor,
+        chipBackground: TextKitRoundedBackground
+    ) -> NSAttributedString {
+        let result = NSMutableAttributedString()
+        for (index, item) in items.enumerated() {
+            if index > 0 {
+                result.append(
+                    verticalSeparator(
+                        size: max(1, (theme.listItemSpacing - 2 * theme.lineSpacing) * 0.8),
+                        lineSpacing: theme.lineSpacing,
+                        foreground: foreground
+                    )
+                )
+            }
+            result.append(
+                NSAttributedString(
+                    string: "\(item.marker) ",
+                    attributes: baseAttributes(
+                        font: bodyFont,
+                        foreground: NSColor(theme.secondaryTextForeground),
+                        lineSpacing: theme.lineSpacing
+                    )
+                )
+            )
+            result.append(
+                inlineAttributed(
+                    item.text,
+                    baseFont: bodyFont,
+                    theme: theme,
+                    foreground: foreground,
+                    chipBackground: chipBackground
+                )
+            )
+        }
+        return result
+    }
+
+    private static func inlineAttributed(
+        _ markdown: String,
+        baseFont: NSFont,
+        theme: MarkdownTheme,
+        foreground: NSColor,
+        chipBackground: TextKitRoundedBackground
+    ) -> NSAttributedString {
+        let parsed = InlineMarkdown.attributedString(from: markdown, theme: theme)
+        let output = NSMutableAttributedString()
+        let codeFont = NSFont.monospacedSystemFont(
+            ofSize: NSFont.preferredFont(forTextStyle: .callout).pointSize,
+            weight: .regular
+        )
+
+        for run in parsed.runs {
+            let substring = String(parsed[run.range].characters)
+            guard !substring.isEmpty else { continue }
+            let intent = run.inlinePresentationIntent
+            let isCode = run[InlineCodeChipAttribute.self] == true
+                || intent?.contains(.code) == true
+            let font = isCode
+                ? codeFont
+                : styled(
+                    baseFont,
+                    bold: intent?.contains(.stronglyEmphasized) == true,
+                    italic: intent?.contains(.emphasized) == true
+                )
+            var attributes = baseAttributes(
+                font: font,
+                foreground: run.link == nil ? foreground : .linkColor,
+                lineSpacing: theme.lineSpacing
+            )
+            if let link = run.link {
+                attributes[.link] = link
+            }
+            if isCode {
+                attributes[.streamMarkdownRoundedBackground] = chipBackground
+            }
+            output.append(NSAttributedString(string: substring, attributes: attributes))
+        }
+        return output
+    }
+
+    private static func verticalSeparator(
+        size: CGFloat,
+        lineSpacing: CGFloat,
+        foreground: NSColor
+    ) -> NSAttributedString {
+        NSAttributedString(
+            string: "\n\n",
+            attributes: baseAttributes(
+                font: .systemFont(ofSize: size),
+                foreground: foreground,
+                lineSpacing: lineSpacing
+            )
+        )
+    }
+
+    private static func baseAttributes(
+        font: NSFont,
+        foreground: NSColor,
+        lineSpacing: CGFloat
+    ) -> [NSAttributedString.Key: Any] {
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineSpacing = lineSpacing
+        return [
+            .font: font,
+            .foregroundColor: foreground,
+            .paragraphStyle: paragraph,
+        ]
+    }
+
+    private static var bodyFont: NSFont {
+        .preferredFont(forTextStyle: .body)
+    }
+
+    static func headingFont(for level: Int) -> NSFont {
+        let style: NSFont.TextStyle = switch level {
+        case 1: .title1
+        case 2: .title2
+        case 3: .title3
+        case 4: .headline
+        default: .subheadline
+        }
+        return styled(.preferredFont(forTextStyle: style), bold: true, italic: false)
+    }
+
+    private static func styled(_ font: NSFont, bold: Bool, italic: Bool) -> NSFont {
+        guard bold || italic else { return font }
+        var traits = font.fontDescriptor.symbolicTraits
+        if bold { traits.insert(.bold) }
+        if italic { traits.insert(.italic) }
+        let descriptor = font.fontDescriptor.withSymbolicTraits(traits)
+        return NSFont(descriptor: descriptor, size: font.pointSize) ?? font
+    }
+}
+
+/// Last-value memo for the immutable attributed string handed to both the
+/// displayed TextKit view and its scratch measurer. Returning the same object
+/// identity lets both paths skip unchanged settled Markdown in O(1).
 @MainActor
 private final class TextRunMemo {
     private var blocks: [MarkdownBlock]?
     private var themeFingerprint: Int?
-    private var cached: (text: Text, hasChips: Bool)?
+    private var foregroundColor: Color?
+    private var cached: NSAttributedString?
 
-    func rendered(for blocks: [MarkdownBlock], theme: MarkdownTheme) -> (text: Text, hasChips: Bool) {
+    func rendered(
+        for blocks: [MarkdownBlock],
+        theme: MarkdownTheme,
+        foregroundColor: Color
+    ) -> NSAttributedString {
         let fingerprint = theme.renderFingerprint
-        if let cached, blocks == self.blocks, fingerprint == themeFingerprint {
+        if let cached,
+           blocks == self.blocks,
+           fingerprint == themeFingerprint,
+           foregroundColor == self.foregroundColor
+        {
             return cached
         }
-        let rendered = MarkdownTextRunView.text(for: blocks, theme: theme)
+        let rendered = MarkdownTextRunRenderer.attributedString(
+            for: blocks,
+            theme: theme,
+            foregroundColor: foregroundColor
+        )
         self.blocks = blocks
         themeFingerprint = fingerprint
+        self.foregroundColor = foregroundColor
         cached = rendered
         return rendered
     }
