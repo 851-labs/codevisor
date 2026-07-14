@@ -90,7 +90,7 @@ struct SessionOverlayTests {
         let ws = model.addProject(folderURL: URL(fileURLWithPath: "/tmp/a"))
         let session = model.newSession(in: ws, harnessId: "claude-code")
         #expect(session.agentSessionId == nil)
-        model.setAgentSessionId("agent-123", for: session.id)
+        model.setAgentSessionId("agent-123", for: session.id, serverId: session.serverId)
         #expect(model.sessions.first { $0.id == session.id }?.agentSessionId == "agent-123")
     }
 
@@ -116,7 +116,7 @@ struct SessionOverlayTests {
     @Test("deleteAllData wipes data and re-triggers onboarding")
     func deleteAllData() {
         let environment = AppEnvironment.preview()
-        environment.configCache.store([], forHarness: "claude-code")
+        environment.configCache.store([], forHarness: "claude-code", onServer: "local")
         #expect(environment.settings.hasCompletedOnboarding)
         #expect(!environment.projectList.projects.isEmpty)
 
@@ -124,7 +124,7 @@ struct SessionOverlayTests {
 
         #expect(environment.projectList.projects.isEmpty)
         #expect(environment.projectList.sessions.isEmpty)
-        #expect(environment.configCache.options(forHarness: "claude-code").isEmpty)
+        #expect(environment.configCache.options(forHarness: "claude-code", onServer: "local").isEmpty)
         #expect(!environment.settings.hasCompletedOnboarding)
     }
 

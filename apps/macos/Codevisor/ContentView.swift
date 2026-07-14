@@ -97,8 +97,8 @@ struct RootView: View {
         .onChange(of: selection) { _, newValue in
             panelLayout.dismissDrawer(.leading)
             guard let store else { return }
-            if case let .session(sessionId) = newValue {
-                store.markOpened(sessionId)
+            if case let .session(serverId, sessionId) = newValue {
+                store.markOpened(sessionId, serverId: serverId)
             } else {
                 store.clearOpenSession()
             }
@@ -173,14 +173,17 @@ struct RootView: View {
             environment.machines.selectMachine(serverId)
             await environment.prepareSelectedMachine()
         }
-        guard let session = environment.projectList.sessions.first(where: { $0.id == sessionId }) else { return }
+        guard let session = environment.projectList.sessions.first(where: {
+            $0.serverId == serverId && $0.id == sessionId
+        }) else { return }
         preferredProjectId = session.projectId
-        selection = .session(sessionId)
+        selection = .session(serverId: serverId, id: sessionId)
     }
 
     private var mainSplit: some View {
         NavigationSplitView(columnVisibility: sidebarColumnVisibility) {
             SidebarView(selection: $selection, store: store)
+                .id(environment.machines.selectedMachineId)
                 .navigationSplitViewColumnWidth(min: 230, ideal: 270, max: 360)
                 .themedToolbarBackground(theme, surface: theme.sidebarBackground)
                 .toolbar {
@@ -205,6 +208,7 @@ struct RootView: View {
                 width: min(270, panelLayout.windowWidth - 16)
             ) {
                 SidebarView(selection: $selection, store: store, publishesSceneActions: false)
+                    .id(environment.machines.selectedMachineId)
                     .background(theme.sidebarBackground, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                     .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                     .shadow(color: .black.opacity(0.22), radius: 18, y: 6)
@@ -233,11 +237,16 @@ struct RootView: View {
     @ViewBuilder
     private func detail(_ store: SessionStore) -> some View {
         switch selection {
-        case let .session(sessionId):
-            if let session = environment.projectList.sessions.first(where: { $0.id == sessionId }),
-               let project = environment.projectList.projects.first(where: { $0.id == session.projectId }) {
+        case let .session(serverId, sessionId):
+            if serverId == environment.machines.selectedMachineId,
+               let session = environment.projectList.sessions.first(where: {
+                   $0.serverId == serverId && $0.id == sessionId
+               }),
+               let project = environment.projectList.projects.first(where: {
+                   $0.serverId == serverId && $0.id == session.projectId
+               }) {
                 SessionContainerView(session: session, project: project, store: store)
-                    .id(session.id)
+                    .id("\(session.serverId):\(session.id.uuidString)")
                     .onAppear { preferredProjectId = project.id }
             } else {
                 newChat(store, preferred: preferredProjectId)
@@ -256,12 +265,13 @@ struct RootView: View {
             preferredProjectId: preferred,
             explicitProjectId: explicit
         )
+        .id(environment.machines.selectedMachineId)
     }
 }
 
 /// Identifies the current sidebar selection.
 enum SidebarSelection: Hashable {
-    case session(UUID)
+    case session(serverId: String, id: UUID)
     case newChat(UUID?)
 }
 

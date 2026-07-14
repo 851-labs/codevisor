@@ -202,7 +202,6 @@ final class SessionController {
 
     private let configCache: ConfigOptionCache
     private let composerDefaults: ComposerDefaultsStore?
-    private let settings: AppSettingsModel?
     private let serverClient: (any CodevisorServerClienting)?
     private var hasSentFirst = false
     private var connectedHarnessId: String?
@@ -217,13 +216,11 @@ final class SessionController {
         project: Project,
         configCache: ConfigOptionCache,
         composerDefaults: ComposerDefaultsStore? = nil,
-        settings: AppSettingsModel? = nil,
         serverClient: (any CodevisorServerClienting)? = nil
     ) {
         self.project = project
         self.configCache = configCache
         self.composerDefaults = composerDefaults
-        self.settings = settings
         self.serverClient = serverClient
         if seedFromCachedServerCapabilities() {
             preparationState = .ready
@@ -591,7 +588,8 @@ final class SessionController {
     var configOptions: [SessionConfigOption] {
         if let model { return model.configOptions }
         guard let harnessId = selectedHarnessId else { return [] }
-        return (configOptionsByHarness[harnessId] ?? configCache.options(forHarness: harnessId)).map { option in
+        return (configOptionsByHarness[harnessId]
+            ?? configCache.options(forHarness: harnessId, onServer: project.serverId)).map { option in
             guard let pending = pendingConfig[option.id] else { return option }
             var updated = option
             updated.currentValue = pending
@@ -652,14 +650,15 @@ final class SessionController {
         if let model {
             await model.setConfigOption(configId: configId, value: value)
             if let harnessId = connectedHarnessId {
-                configCache.store(model.configOptions, forHarness: harnessId)
+                configCache.store(model.configOptions, forHarness: harnessId, onServer: project.serverId)
                 configOptionsByHarness[harnessId] = model.configOptions
             }
         } else {
             // Not connected yet: remember it and apply on connect.
             pendingConfig[configId] = value
             if let harnessId = selectedHarnessId {
-                var options = configOptionsByHarness[harnessId] ?? configCache.options(forHarness: harnessId)
+                var options = configOptionsByHarness[harnessId]
+                    ?? configCache.options(forHarness: harnessId, onServer: project.serverId)
                 if let index = options.firstIndex(where: { $0.id == configId }) {
                     options[index].currentValue = value
                     configOptionsByHarness[harnessId] = options
@@ -679,11 +678,11 @@ final class SessionController {
     /// reasoning, …). Called once by `SessionStore` when a draft is made.
     func applyComposerDefaults() {
         guard let composerDefaults, isDraft else { return }
-        if let harnessId = composerDefaults.lastHarnessId, !harnessId.isEmpty,
+        if let harnessId = composerDefaults.lastHarnessId(forServer: project.serverId), !harnessId.isEmpty,
            harnesses.isEmpty || harnesses.contains(where: { $0.id == harnessId }) {
             selectedHarnessId = harnessId
         }
-        wantsNewWorktree = composerDefaults.runInWorktree
+        wantsNewWorktree = composerDefaults.runInWorktree(forServer: project.serverId)
         seedRememberedConfig()
     }
 
@@ -694,9 +693,13 @@ final class SessionController {
     /// agent correct them.
     private func seedRememberedConfig() {
         guard let composerDefaults, let harnessId = selectedHarnessId else { return }
-        let remembered = composerDefaults.configSelections(forHarness: harnessId)
+        let remembered = composerDefaults.configSelections(
+            forHarness: harnessId,
+            onServer: project.serverId
+        )
         guard !remembered.isEmpty else { return }
-        var options = configOptionsByHarness[harnessId] ?? configCache.options(forHarness: harnessId)
+        var options = configOptionsByHarness[harnessId]
+            ?? configCache.options(forHarness: harnessId, onServer: project.serverId)
         guard !options.isEmpty else {
             pendingConfig.merge(remembered) { _, stored in stored }
             return
@@ -725,6 +728,7 @@ final class SessionController {
             .filter { rememberedCategories.contains($0.category ?? "") }
             .map { ($0.id, $0.currentValue) }
         composerDefaults.rememberSessionCreation(
+            serverId: project.serverId,
             harnessId: selectedHarnessId,
             configValues: Dictionary(values) { _, last in last },
             runInWorktree: wantsNewWorktree
@@ -1416,7 +1420,8 @@ final class SessionController {
             serverTransport: transport,
             sessionId: session.id.uuidString,
             modeState: modeStateByHarness[harness.id],
-            configOptions: configOptionsByHarness[harness.id] ?? configCache.options(forHarness: harness.id)
+            configOptions: configOptionsByHarness[harness.id]
+                ?? configCache.options(forHarness: harness.id, onServer: project.serverId)
         )
         model.onTurnEnded = { [weak self] in
             self?.noteTurnEndedForPlanApproval()
@@ -1447,7 +1452,7 @@ final class SessionController {
 
         await applyPendingGoal(to: model)
 
-        configCache.store(model.configOptions, forHarness: harness.id)
+        configCache.store(model.configOptions, forHarness: harness.id, onServer: project.serverId)
         configOptionsByHarness[harness.id] = model.configOptions
         return model
     }
@@ -1460,9 +1465,6 @@ final class SessionController {
                 capability.harness.enabled && capability.harness.isReady
             }
             applyHarnessCapabilities(capabilities)
-            for capability in capabilities {
-                configCache.store(capability.configOptions, forHarness: capability.harness.id)
-            }
             configCache.store(capabilities, forServer: project.serverId)
             preparationState = .ready
             return true
@@ -1489,12 +1491,11 @@ final class SessionController {
     private func applyHarnessCapabilities(_ capabilities: [ServerHarnessCapability]) {
         let available = capabilities.map(\.harness)
         let isNewChat = resumeAgentSessionId == nil
-        if let settings, isNewChat {
-            let enabled = available.filter { settings.isHarnessEnabled($0.id) }
-            harnesses = enabled.isEmpty ? available : enabled
-        } else {
-            harnesses = available
-        }
+        // Capabilities come from the project server and have already been
+        // filtered to enabled, ready harnesses. Applying the app's legacy
+        // global harness preference here leaks one machine's choice into all
+        // the others, so the server snapshot is the sole authority.
+        harnesses = available
         for capability in capabilities {
             configOptionsByHarness[capability.harness.id] = capability.configOptions
             if let modes = capability.modes {

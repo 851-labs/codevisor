@@ -522,7 +522,7 @@ struct SidebarView: View {
     }
 
     private func sessionRow(_ session: ChatSession) -> some View {
-        let isSelected = selection == .session(session.id)
+        let isSelected = selection == .session(serverId: session.serverId, id: session.id)
         return HoverableRow(isSelected: isSelected) { isHovered in
             HStack(spacing: 6) {
                 HStack(spacing: 6) {
@@ -544,7 +544,7 @@ struct SidebarView: View {
             // A zero-distance drag begins on mouse-down, unlike a tap gesture,
             // which waits for mouse-up. Child controls (the hover archive
             // button) retain gesture precedence over this row gesture.
-            .gesture(sessionActivationGesture(session.id))
+            .gesture(sessionActivationGesture(session))
             .foregroundStyle(isSelected ? Color.primary : .secondary)
         }
         .contextMenu {
@@ -560,8 +560,8 @@ struct SidebarView: View {
                     .labelStyle(.titleAndIcon)
             }
             Button {
-                store?.markUnread(session.id)
-                if selection == .session(session.id) { selection = .newChat(nil) }
+                store?.markUnread(session)
+                if selection == .session(serverId: session.serverId, id: session.id) { selection = .newChat(nil) }
             } label: {
                 Label("Mark as unread", systemImage: "message.badge")
                     .labelStyle(.titleAndIcon)
@@ -570,7 +570,7 @@ struct SidebarView: View {
     }
 
     private func chronologicalSessionRow(_ session: ChatSession, project: Project) -> some View {
-        let isSelected = selection == .session(session.id)
+        let isSelected = selection == .session(serverId: session.serverId, id: session.id)
         return HoverableRow(isSelected: isSelected) { isHovered in
             HStack(spacing: 7) {
                 HarnessIcon(harnessId: session.harnessId, fallbackSymbolName: "bubble.left.fill")
@@ -593,7 +593,7 @@ struct SidebarView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
             .foregroundStyle(isSelected ? Color.primary : .secondary)
-            .gesture(sessionActivationGesture(session.id))
+            .gesture(sessionActivationGesture(session))
         }
         .contextMenu {
             Button {
@@ -608,8 +608,8 @@ struct SidebarView: View {
                     .labelStyle(.titleAndIcon)
             }
             Button {
-                store?.markUnread(session.id)
-                if selection == .session(session.id) { selection = .newChat(nil) }
+                store?.markUnread(session)
+                if selection == .session(serverId: session.serverId, id: session.id) { selection = .newChat(nil) }
             } label: {
                 Label("Mark as unread", systemImage: "message.badge")
                     .labelStyle(.titleAndIcon)
@@ -626,10 +626,10 @@ struct SidebarView: View {
     /// Activate a chat as soon as the primary pointer goes down. Keeping this
     /// as a row gesture (rather than an overlay) preserves child button and
     /// context-menu hit testing.
-    private func sessionActivationGesture(_ sessionID: UUID) -> some Gesture {
+    private func sessionActivationGesture(_ session: ChatSession) -> some Gesture {
         DragGesture(minimumDistance: 0)
             .onChanged { _ in
-                let target = SidebarSelection.session(sessionID)
+                let target = SidebarSelection.session(serverId: session.serverId, id: session.id)
                 guard selection != target else { return }
                 selection = target
             }
@@ -641,7 +641,7 @@ struct SidebarView: View {
 
     @ViewBuilder
     private func sessionStatus(_ session: ChatSession, isHovered: Bool) -> some View {
-        if store?.isWaitingOnUser(session.id) == true {
+        if store?.isWaitingOnUser(session) == true {
             // A blocking question is actionable rather than unread or busy.
             // Keep it inline where the row's notification indicator lives.
             ActionRequiredBadge(color: notificationColor)
@@ -649,12 +649,12 @@ struct SidebarView: View {
             // Fixed-size trailing slot so swapping the timestamp for the spinner,
             // unread badge, or archive button doesn't change the row height.
             Group {
-                if store?.isRunning(session.id) == true {
+                if store?.isRunning(session) == true {
                     ProgressView().controlSize(.mini)
                 } else if isHovered {
                     Button {
                         list.archiveSession(session)
-                        if selection == .session(session.id) { selection = .newChat(nil) }
+                        if selection == .session(serverId: session.serverId, id: session.id) { selection = .newChat(nil) }
                     } label: {
                         Image(systemName: "archivebox")
                             .font(.caption2)
@@ -718,16 +718,16 @@ struct SidebarView: View {
     }
 
     private func sessionPriority(for session: ChatSession) -> SidebarSessionPriority {
-        if store?.isWaitingOnUser(session.id) == true { return .waitingForUser }
+        if store?.isWaitingOnUser(session) == true { return .waitingForUser }
         if unreadCount(for: session) != nil { return .unread }
-        if store?.isInProgress(session.id) == true { return .inProgress }
+        if store?.isInProgress(session) == true { return .inProgress }
         return .idle
     }
 
     /// The unread-turn count for a session's badge; nil when there is nothing
     /// to badge so the row falls through to the relative timestamp.
     private func unreadCount(for session: ChatSession) -> Int? {
-        guard let count = store?.unreadCount(session.id), count > 0 else { return nil }
+        guard let count = store?.unreadCount(session), count > 0 else { return nil }
         return count
     }
 

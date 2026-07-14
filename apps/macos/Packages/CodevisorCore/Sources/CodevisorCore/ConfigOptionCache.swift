@@ -2,7 +2,7 @@ import Foundation
 import ACPKit
 
 /// A persisted cache of an agent's selectable config options (model, reasoning
-/// effort, …) keyed by harness id. Enables a stale-while-revalidate flow: the
+/// effort, …) keyed by server and harness id. Enables a stale-while-revalidate flow: the
 /// composer shows the last-known options instantly, then the live session
 /// refreshes them once the agent connects.
 @MainActor
@@ -10,7 +10,7 @@ public final class ConfigOptionCache {
     private let store: any PersistenceStore
     private let key: String
     private let capabilitiesKey: String
-    private var cache: [String: [SessionConfigOption]]
+    private var cache: [String: [String: [SessionConfigOption]]]
     private var capabilitiesCache: [String: [ServerHarnessCapability]]
 
     public init(store: any PersistenceStore, key: String = "harness-config") {
@@ -18,7 +18,7 @@ public final class ConfigOptionCache {
         self.key = key
         capabilitiesKey = "\(key)-server-capabilities"
         if let data = store.loadData(forKey: key),
-           let decoded = try? JSONDecoder().decode([String: [SessionConfigOption]].self, from: data) {
+           let decoded = try? JSONDecoder().decode([String: [String: [SessionConfigOption]]].self, from: data) {
             cache = decoded
         } else {
             cache = [:]
@@ -32,13 +32,13 @@ public final class ConfigOptionCache {
     }
 
     /// The cached options for a harness, or an empty list if none are cached.
-    public func options(forHarness harnessId: String) -> [SessionConfigOption] {
-        cache[harnessId] ?? []
+    public func options(forHarness harnessId: String, onServer serverId: String) -> [SessionConfigOption] {
+        cache[serverId]?[harnessId] ?? []
     }
 
     /// Stores the latest options for a harness and persists them.
-    public func store(_ options: [SessionConfigOption], forHarness harnessId: String) {
-        cache[harnessId] = options
+    public func store(_ options: [SessionConfigOption], forHarness harnessId: String, onServer serverId: String) {
+        cache[serverId, default: [:]][harnessId] = options
         persist()
     }
 
@@ -49,7 +49,7 @@ public final class ConfigOptionCache {
     public func store(_ capabilities: [ServerHarnessCapability], forServer serverId: String) {
         capabilitiesCache[serverId] = capabilities
         for capability in capabilities {
-            cache[capability.harness.id] = capability.configOptions
+            cache[serverId, default: [:]][capability.harness.id] = capability.configOptions
         }
         persist()
     }

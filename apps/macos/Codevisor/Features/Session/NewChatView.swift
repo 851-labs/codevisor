@@ -27,6 +27,9 @@ struct NewChatView: View {
     private var selectedProject: Project? {
         projects.first { $0.id == selectedProjectId } ?? projects.first
     }
+    private var setupIdentity: String {
+        "\(environment.machines.selectedMachineId):\(preferredProjectId?.uuidString ?? "default")"
+    }
 
     /// Worktrees only make sense when the project folder is a git repository
     /// (as probed by the session's server).
@@ -103,7 +106,7 @@ struct NewChatView: View {
                 addProject(folderURL: URL(fileURLWithPath: path))
             }
         }
-        .task(id: preferredProjectId) { setUpController() }
+        .task(id: setupIdentity) { setUpController() }
         // A machine's projects can arrive after this view's initial task has
         // already returned. Retry when the active project set changes so the
         // composer does not remain hidden after the first project appears.
@@ -328,16 +331,29 @@ struct NewChatView: View {
             // The eager connection may already hold an agent session id; persist
             // it, and capture any future-created id too.
             if let agentSessionId = controller.connectedAgentSessionId {
-                environment.projectList.setAgentSessionId(agentSessionId, for: session.id)
+                environment.projectList.setAgentSessionId(
+                    agentSessionId,
+                    for: session.id,
+                    serverId: session.serverId
+                )
             }
             controller.onAgentSessionCreated = { [weak projectList = environment.projectList] agentSessionId in
-                projectList?.setAgentSessionId(agentSessionId, for: session.id)
+                projectList?.setAgentSessionId(
+                    agentSessionId,
+                    for: session.id,
+                    serverId: session.serverId
+                )
             }
             // The session record is registered before the worktree exists (the
             // page opens while setup streams progress); patch in the worktree
             // name/cwd once the server has materialized it.
             controller.onWorktreeCreated = { [weak projectList = environment.projectList] worktree in
-                projectList?.setWorktree(name: worktree.name, cwd: worktree.path, for: session.id)
+                projectList?.setWorktree(
+                    name: worktree.name,
+                    cwd: worktree.path,
+                    for: session.id,
+                    serverId: session.serverId
+                )
             }
             // If worktree setup or the agent start fails, undo the promotion:
             // delete the just-created session record (local + server), demote
@@ -349,11 +365,11 @@ struct NewChatView: View {
                 controller.serverSession = nil
                 controller.onAgentSessionCreated = nil
                 controller.onWorktreeCreated = nil
-                store.demote(controller, sessionId: session.id)
+                store.demote(controller, session: session)
                 selection = .newChat(project.id)
             }
-            store.register(controller, for: session.id)
-            selection = .session(session.id)
+            store.register(controller, for: session)
+            selection = .session(serverId: session.serverId, id: session.id)
         }
         self.controller = controller
         Task {

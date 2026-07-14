@@ -155,7 +155,7 @@ struct SessionContainerView: View {
             toggleScratchpad()
         })
         .task(id: session.id) {
-            store.markOpened(session.id)
+            store.markOpened(session.id, serverId: session.serverId)
             let controller = store.controller(for: session, project: project)
             self.controller = controller
             if !controller.isPrepared && !controller.isConnected {

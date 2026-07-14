@@ -9,26 +9,40 @@ import ACPKit
 @MainActor
 @Observable
 final class SessionStore {
-    private var controllers: [UUID: SessionController] = [:]
+    private struct SessionKey: Hashable {
+        let serverId: String
+        let sessionId: UUID
+
+        init(serverId: String, sessionId: UUID) {
+            self.serverId = serverId
+            self.sessionId = sessionId
+        }
+
+        init(_ session: ChatSession) {
+            self.init(serverId: session.serverId, sessionId: session.id)
+        }
+    }
+
+    private var controllers: [SessionKey: SessionController] = [:]
     /// Tiny viewport snapshots outlive controller eviction. Observation is
     /// intentionally disabled: scroll ticks must never invalidate the store's
     /// sidebar/session observers.
-    @ObservationIgnored private var scrollStates: [UUID: SessionScrollState] = [:]
+    @ObservationIgnored private var scrollStates: [SessionKey: SessionScrollState] = [:]
     /// Per-session todo-panel expansion, kept outside the controller cache for
     /// the same reason as transcript viewport state.
-    @ObservationIgnored private var todoExpansionStates: [UUID: Bool] = [:]
+    @ObservationIgnored private var todoExpansionStates: [SessionKey: Bool] = [:]
     /// Completion edges are cached alongside expansion so reopening a finished
     /// checklist survives navigation and controller eviction.
-    @ObservationIgnored private var todoCompletionStates: [UUID: Bool] = [:]
-    private var paneGroups: [UUID: PaneGroupModel] = [:]
-    private var scratchpads: [UUID: ScratchpadModel] = [:]
-    /// The unsent new-chat draft. A single slot — the new-chat page is one
-    /// place — so composer text/attachments survive navigating away and back
-    /// no matter which sidebar entry reopens it.
-    private var draft: SessionController?
+    @ObservationIgnored private var todoCompletionStates: [SessionKey: Bool] = [:]
+    private var paneGroups: [SessionKey: PaneGroupModel] = [:]
+    private var scratchpads: [SessionKey: ScratchpadModel] = [:]
+    /// One unsent new-chat draft per machine. A controller permanently owns
+    /// the server client it was created with, so reusing a draft after a
+    /// machine switch can send the new machine's project id to the old server.
+    private var draftsByServer: [String: SessionController] = [:]
     /// Turns that finished while their session wasn't open, keyed by session
     /// id — the sidebar's iOS-style unread badges. Cleared on open.
-    private var unreadCounts: [UUID: Int] = [:]
+    private var unreadCounts: [SessionKey: Int] = [:]
     /// Invalidates views that observe aggregate activity across the cached
     /// controllers. A turn can finish without otherwise mutating this store
     /// (most notably when its session is open), so nested controller
@@ -37,14 +51,14 @@ final class SessionStore {
     private var activityRevision = 0
     /// The session currently shown in the detail column; its finished turns
     /// never count as unread.
-    private var openSessionId: UUID?
+    private var openSessionKey: SessionKey?
     /// Whether this store's window is key. A selected chat behind Settings or
     /// another Codevisor window is not the focused chat for sound suppression.
     private var isWindowFocused = false
     /// Session ids in access order, most recent last — drives controller
     /// eviction so browsing many sessions doesn't accumulate every transcript
     /// ever opened (conversations retain full tool outputs and diffs).
-    private var accessOrder: [UUID] = []
+    private var accessOrder: [SessionKey] = []
     /// How many idle (not open, not working, no background tasks/goal)
     /// controllers stay cached before the least-recently-used are evicted.
     private static let maxIdleControllers = 12
@@ -62,8 +76,9 @@ final class SessionStore {
     /// Returns the cached controller for a session, creating + configuring it
     /// (resume id, harness, persistence callback) if needed.
     func controller(for session: ChatSession, project: Project) -> SessionController {
-        noteAccess(session.id)
-        if let existing = controllers[session.id] {
+        let key = SessionKey(session)
+        noteAccess(key)
+        if let existing = controllers[key] {
             existing.project = project
             existing.serverSession = session
             return existing
@@ -71,7 +86,6 @@ final class SessionStore {
         let controller = SessionController(
             project: project,
             configCache: environment.configCache,
-            settings: environment.settings,
             serverClient: environment.machines.client(for: session.serverId)
         )
         controller.serverSession = session
@@ -80,25 +94,29 @@ final class SessionStore {
             controller.selectedHarnessId = session.harnessId
         }
         controller.onAgentSessionCreated = { [weak projectList = environment.projectList] agentSessionId in
-            projectList?.setAgentSessionId(agentSessionId, for: session.id)
+            projectList?.setAgentSessionId(
+                agentSessionId,
+                for: session.id,
+                serverId: session.serverId
+            )
         }
-        controller.scrollState = scrollStates[session.id]
+        controller.scrollState = scrollStates[key]
         controller.onScrollStateChange = { [weak self] state in
-            self?.scrollStates[session.id] = state
+            self?.scrollStates[key] = state
         }
         controller.restoreTodoDisclosure(
-            isExpanded: todoExpansionStates[session.id] ?? true,
-            wasCompleted: todoCompletionStates[session.id] ?? false
+            isExpanded: todoExpansionStates[key] ?? true,
+            wasCompleted: todoCompletionStates[key] ?? false
         )
         controller.onTodosExpandedChange = { [weak self] isExpanded in
-            self?.todoExpansionStates[session.id] = isExpanded
+            self?.todoExpansionStates[key] = isExpanded
         }
         controller.onTodosCompletionChange = { [weak self] isCompleted in
-            self?.todoCompletionStates[session.id] = isCompleted
+            self?.todoCompletionStates[key] = isCompleted
         }
-        controller.onTurnEnded = { [weak self] in self?.noteTurnEnded(for: session.id) }
-        controller.onActionRequired = { [weak self] in self?.noteActionRequired(for: session.id) }
-        controllers[session.id] = controller
+        controller.onTurnEnded = { [weak self] in self?.noteTurnEnded(for: key) }
+        controller.onActionRequired = { [weak self] in self?.noteActionRequired(for: key) }
+        controllers[key] = controller
         return controller
     }
 
@@ -108,18 +126,17 @@ final class SessionStore {
     /// promotes it to a real session, so unsent composer state survives
     /// navigation.
     func draft(project: Project) -> SessionController {
-        if let draft, draft.serverSession == nil {
+        if let draft = draftsByServer[project.serverId], draft.serverSession == nil {
             return draft
         }
         let controller = SessionController(
             project: project,
             configCache: environment.configCache,
             composerDefaults: environment.composerDefaults,
-            settings: environment.settings,
             serverClient: environment.serverClient
         )
         controller.applyComposerDefaults()
-        draft = controller
+        draftsByServer[project.serverId] = controller
         return controller
     }
 
@@ -127,7 +144,8 @@ final class SessionStore {
     /// Mirrors `controller(for:project:)` so panes (and their terminals)
     /// survive panel close + navigation away and back.
     func paneGroup(for session: ChatSession, project: Project) -> PaneGroupModel {
-        if let existing = paneGroups[session.id] { return existing }
+        let key = SessionKey(session)
+        if let existing = paneGroups[key] { return existing }
         let machine = environment.machines.machine(for: session.serverId) ?? CodevisorMachine.local
         let group = PaneGroupModel(
             sessionId: session.id,
@@ -139,7 +157,9 @@ final class SessionStore {
                 // once setup finishes (ProjectListModel.setWorktree). Resolve
                 // the live session at pane-creation time so terminals open in
                 // the worktree, not the project folder.
-                let liveSession = projectList?.sessions.first { $0.id == session.id } ?? session
+                let liveSession = projectList?.sessions.first {
+                    $0.serverId == session.serverId && $0.id == session.id
+                } ?? session
                 return PaneContext(
                     paneId: descriptor.id,
                     sessionId: session.id,
@@ -151,7 +171,7 @@ final class SessionStore {
                 )
             }
         )
-        paneGroups[session.id] = group
+        paneGroups[key] = group
         return group
     }
 
@@ -159,9 +179,10 @@ final class SessionStore {
     /// the repository) on first use, so notes and the inspector's open state
     /// survive navigation away and back.
     func scratchpad(for session: ChatSession) -> ScratchpadModel {
-        if let existing = scratchpads[session.id] { return existing }
+        let key = SessionKey(session)
+        if let existing = scratchpads[key] { return existing }
         let model = ScratchpadModel(sessionId: session.id, repository: environment.scratchpads)
-        scratchpads[session.id] = model
+        scratchpads[key] = model
         return model
     }
 
@@ -169,8 +190,8 @@ final class SessionStore {
     /// response, connecting its agent, running pre-chat setup (worktree
     /// creation, agent start), or waiting on background work it will return to
     /// on its own — everything the sidebar spinner covers.
-    func isRunning(_ sessionId: UUID) -> Bool {
-        guard let controller = controllers[sessionId] else { return false }
+    func isRunning(_ session: ChatSession) -> Bool {
+        guard let controller = controllers[SessionKey(session)] else { return false }
         return Self.isInProgress(controller) || controller.isConnecting
     }
 
@@ -178,8 +199,8 @@ final class SessionStore {
     /// excluding the short connection pulse caused by opening a session.
     /// Sidebar ordering uses this narrower signal so selecting an idle row
     /// cannot make it jump temporarily while its transcript connects.
-    func isInProgress(_ sessionId: UUID) -> Bool {
-        guard let controller = controllers[sessionId] else { return false }
+    func isInProgress(_ session: ChatSession) -> Bool {
+        guard let controller = controllers[SessionKey(session)] else { return false }
         return Self.isInProgress(controller)
     }
 
@@ -206,60 +227,69 @@ final class SessionStore {
     /// Whether the session is blocked waiting on the user — an agent question or
     /// a plan-approval prompt. The model isn't busy, it needs a response, so the
     /// sidebar surfaces this as the attention badge instead of the spinner.
-    func isWaitingOnUser(_ sessionId: UUID) -> Bool {
-        guard let controller = controllers[sessionId] else { return false }
+    func isWaitingOnUser(_ session: ChatSession) -> Bool {
+        guard let controller = controllers[SessionKey(session)] else { return false }
+        return controller.pendingQuestion != nil || controller.pendingPlanApproval
+    }
+
+    private func isWaitingOnUser(_ key: SessionKey) -> Bool {
+        guard let controller = controllers[key] else { return false }
         return controller.pendingQuestion != nil || controller.pendingPlanApproval
     }
 
     // MARK: - Unread badges
 
     /// Finished-and-not-yet-opened turns for a session — the sidebar badge count.
-    func unreadCount(_ sessionId: UUID) -> Int {
-        unreadCounts[sessionId] ?? 0
+    func unreadCount(_ session: ChatSession) -> Int {
+        unreadCounts[SessionKey(session)] ?? 0
     }
 
     /// Manually flags a session as unread (sidebar context menu). Keeps any
     /// existing turn-finish count rather than resetting it to 1.
-    func markUnread(_ sessionId: UUID) {
-        unreadCounts[sessionId] = max(1, unreadCounts[sessionId] ?? 0)
+    func markUnread(_ session: ChatSession) {
+        let key = SessionKey(session)
+        unreadCounts[key] = max(1, unreadCounts[key] ?? 0)
     }
 
     /// Marks a session as the one on screen and clears its unread badge.
-    func markOpened(_ sessionId: UUID) {
-        openSessionId = sessionId
-        unreadCounts[sessionId] = nil
+    func markOpened(_ sessionId: UUID, serverId: String) {
+        let key = SessionKey(serverId: serverId, sessionId: sessionId)
+        openSessionKey = key
+        unreadCounts[key] = nil
         notificationDelivery.clearNotifications(for: sessionId)
     }
 
     /// Called when navigation leaves the session detail (new chat, nothing
     /// selected), so finished turns start counting as unread again.
     func clearOpenSession() {
-        openSessionId = nil
+        openSessionKey = nil
     }
 
     func setWindowFocused(_ focused: Bool) {
         isWindowFocused = focused
     }
 
-    private func noteTurnEnded(for sessionId: UUID) {
+    private func noteTurnEnded(for key: SessionKey) {
         activityRevision &+= 1
         // A turn that ends into a "waiting on background work" state isn't the
         // end of the agent's work — it will start an agent-initiated turn when
         // the task settles. Hold the unread badge (the spinner covers this via
         // `isRunning`) until that follow-up turn ends with nothing left waiting.
-        if controllers[sessionId]?.isWaitingOnBackgroundTasks == true { return }
-        let kind: ChatAttentionKind = isWaitingOnUser(sessionId) ? .actionRequired : .finished
-        deliverNotification(for: sessionId, kind: kind)
-        guard sessionId != openSessionId else { return }
-        unreadCounts[sessionId, default: 0] += 1
+        if controllers[key]?.isWaitingOnBackgroundTasks == true { return }
+        let kind: ChatAttentionKind = isWaitingOnUser(key) ? .actionRequired : .finished
+        deliverNotification(for: key, kind: kind)
+        guard key != openSessionKey else { return }
+        unreadCounts[key, default: 0] += 1
     }
 
-    private func noteActionRequired(for sessionId: UUID) {
-        deliverNotification(for: sessionId, kind: .actionRequired)
+    private func noteActionRequired(for key: SessionKey) {
+        deliverNotification(for: key, kind: .actionRequired)
     }
 
-    private func deliverNotification(for sessionId: UUID, kind: ChatAttentionKind) {
-        guard let session = environment.projectList.sessions.first(where: { $0.id == sessionId }) else { return }
+    private func deliverNotification(for key: SessionKey, kind: ChatAttentionKind) {
+        guard let session = environment.projectList.sessions.first(where: {
+            $0.serverId == key.serverId && $0.id == key.sessionId
+        }) else { return }
         notificationDelivery.deliver(
             ChatAttentionEvent(
                 sessionId: session.id,
@@ -267,62 +297,67 @@ final class SessionStore {
                 sessionTitle: session.title,
                 kind: kind
             ),
-            sessionIsOpen: sessionId == openSessionId && isWindowFocused
+            sessionIsOpen: key == openSessionKey && isWindowFocused
         )
     }
 
     /// Registers a draft controller under a newly created session id and
     /// releases the draft slot so the next new chat starts fresh.
-    func register(_ controller: SessionController, for sessionId: UUID) {
-        controller.scrollState = scrollStates[sessionId]
+    func register(_ controller: SessionController, for session: ChatSession) {
+        let key = SessionKey(session)
+        controller.scrollState = scrollStates[key]
         controller.onScrollStateChange = { [weak self] state in
-            self?.scrollStates[sessionId] = state
+            self?.scrollStates[key] = state
         }
         controller.restoreTodoDisclosure(
-            isExpanded: todoExpansionStates[sessionId] ?? true,
-            wasCompleted: todoCompletionStates[sessionId] ?? false
+            isExpanded: todoExpansionStates[key] ?? true,
+            wasCompleted: todoCompletionStates[key] ?? false
         )
         controller.onTodosExpandedChange = { [weak self] isExpanded in
-            self?.todoExpansionStates[sessionId] = isExpanded
+            self?.todoExpansionStates[key] = isExpanded
         }
         controller.onTodosCompletionChange = { [weak self] isCompleted in
-            self?.todoCompletionStates[sessionId] = isCompleted
+            self?.todoCompletionStates[key] = isCompleted
         }
-        controller.onTurnEnded = { [weak self] in self?.noteTurnEnded(for: sessionId) }
-        controller.onActionRequired = { [weak self] in self?.noteActionRequired(for: sessionId) }
-        controllers[sessionId] = controller
-        if draft === controller { draft = nil }
+        controller.onTurnEnded = { [weak self] in self?.noteTurnEnded(for: key) }
+        controller.onActionRequired = { [weak self] in self?.noteActionRequired(for: key) }
+        controllers[key] = controller
+        if draftsByServer[controller.project.serverId] === controller {
+            draftsByServer[controller.project.serverId] = nil
+        }
     }
 
     /// Reverts a failed first-send promotion: forgets the session registration
     /// (the record is being deleted) and returns the controller to the draft
     /// slot, so the reopened new-chat page picks it back up with its restored
     /// composer text and failure status.
-    func demote(_ controller: SessionController, sessionId: UUID) {
-        if controllers[sessionId] === controller { controllers[sessionId] = nil }
-        paneGroups[sessionId]?.detachAll()
-        paneGroups[sessionId] = nil
-        scratchpads[sessionId]?.flush()
-        scratchpads[sessionId] = nil
-        unreadCounts[sessionId] = nil
-        scrollStates[sessionId] = nil
-        todoExpansionStates[sessionId] = nil
-        todoCompletionStates[sessionId] = nil
-        draft = controller
+    func demote(_ controller: SessionController, session: ChatSession) {
+        let key = SessionKey(session)
+        if controllers[key] === controller { controllers[key] = nil }
+        paneGroups[key]?.detachAll()
+        paneGroups[key] = nil
+        scratchpads[key]?.flush()
+        scratchpads[key] = nil
+        unreadCounts[key] = nil
+        scrollStates[key] = nil
+        todoExpansionStates[key] = nil
+        todoCompletionStates[key] = nil
+        draftsByServer[controller.project.serverId] = controller
     }
 
-    func discard(_ sessionId: UUID) {
-        controllers[sessionId]?.model?.shutdown()
-        controllers[sessionId] = nil
-        paneGroups[sessionId]?.detachAll()
-        paneGroups[sessionId] = nil
-        scratchpads[sessionId]?.flush()
-        scratchpads[sessionId] = nil
-        unreadCounts[sessionId] = nil
-        scrollStates[sessionId] = nil
-        todoExpansionStates[sessionId] = nil
-        todoCompletionStates[sessionId] = nil
-        accessOrder.removeAll { $0 == sessionId }
+    func discard(_ session: ChatSession) {
+        let key = SessionKey(session)
+        controllers[key]?.model?.shutdown()
+        controllers[key] = nil
+        paneGroups[key]?.detachAll()
+        paneGroups[key] = nil
+        scratchpads[key]?.flush()
+        scratchpads[key] = nil
+        unreadCounts[key] = nil
+        scrollStates[key] = nil
+        todoExpansionStates[key] = nil
+        todoCompletionStates[key] = nil
+        accessOrder.removeAll { $0 == key }
     }
 
     // MARK: - Eviction
@@ -330,10 +365,15 @@ final class SessionStore {
     /// Bumps a session to most-recently-used and evicts idle controllers
     /// beyond the cache limit. Pane groups are deliberately NOT evicted:
     /// their panes hold live server PTYs that must survive navigation.
-    private func noteAccess(_ sessionId: UUID) {
-        accessOrder.removeAll { $0 == sessionId }
-        accessOrder.append(sessionId)
+    private func noteAccess(_ key: SessionKey) {
+        accessOrder.removeAll { $0 == key }
+        accessOrder.append(key)
         evictIdleControllers()
+    }
+
+    private func isRunning(_ key: SessionKey) -> Bool {
+        guard let controller = controllers[key] else { return false }
+        return Self.isInProgress(controller) || controller.isConnecting
     }
 
     /// Frees the least-recently-used cached controllers, keeping every
@@ -344,7 +384,7 @@ final class SessionStore {
     private func evictIdleControllers() {
         let idle = accessOrder.filter { id in
             guard let controller = controllers[id] else { return false }
-            return id != openSessionId
+            return id != openSessionKey
                 && !isRunning(id)
                 && !controller.isWaitingOnBackgroundTasks
                 && controller.goal?.status != .active

@@ -8,13 +8,17 @@ import Foundation
 /// adds nothing to the composer's typing path.
 @MainActor
 public final class ComposerDefaultsStore {
-    private struct Defaults: Codable {
+    private struct MachineDefaults: Codable {
         var lastHarnessId: String?
         var runInWorktree = false
         /// Config option selections keyed by harness id, then option id.
         /// Option ids and values are harness-specific, so each harness
         /// remembers its own model/reasoning picks.
         var configSelections: [String: [String: String]] = [:]
+    }
+
+    private struct Defaults: Codable {
+        var machines: [String: MachineDefaults] = [:]
     }
 
     private let store: any PersistenceStore
@@ -33,27 +37,34 @@ public final class ComposerDefaultsStore {
     }
 
     /// The harness the last session was created with.
-    public var lastHarnessId: String? { defaults.lastHarnessId }
+    public func lastHarnessId(forServer serverId: String) -> String? {
+        defaults.machines[serverId]?.lastHarnessId
+    }
 
     /// Whether the last session was created in a new worktree.
-    public var runInWorktree: Bool { defaults.runInWorktree }
+    public func runInWorktree(forServer serverId: String) -> Bool {
+        defaults.machines[serverId]?.runInWorktree ?? false
+    }
 
     /// The remembered config selections (option id → value) for a harness.
-    public func configSelections(forHarness harnessId: String) -> [String: String] {
-        defaults.configSelections[harnessId] ?? [:]
+    public func configSelections(forHarness harnessId: String, onServer serverId: String) -> [String: String] {
+        defaults.machines[serverId]?.configSelections[harnessId] ?? [:]
     }
 
     /// Records the choices a session was just created with.
     public func rememberSessionCreation(
+        serverId: String,
         harnessId: String?,
         configValues: [String: String],
         runInWorktree: Bool
     ) {
+        var machine = defaults.machines[serverId] ?? MachineDefaults()
         if let harnessId, !harnessId.isEmpty {
-            defaults.lastHarnessId = harnessId
-            defaults.configSelections[harnessId] = configValues
+            machine.lastHarnessId = harnessId
+            machine.configSelections[harnessId] = configValues
         }
-        defaults.runInWorktree = runInWorktree
+        machine.runInWorktree = runInWorktree
+        defaults.machines[serverId] = machine
         persist()
     }
 

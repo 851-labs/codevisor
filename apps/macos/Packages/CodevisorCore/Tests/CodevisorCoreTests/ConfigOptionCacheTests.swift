@@ -14,18 +14,18 @@ struct ConfigOptionCacheTests {
     @Test("Stores and retrieves options per harness")
     func roundTrip() {
         let cache = ConfigOptionCache(store: InMemoryStore())
-        #expect(cache.options(forHarness: "claude-code").isEmpty)
-        cache.store([option("opus")], forHarness: "claude-code")
-        #expect(cache.options(forHarness: "claude-code").first?.currentValue == "opus")
-        #expect(cache.options(forHarness: "codex").isEmpty)
+        #expect(cache.options(forHarness: "claude-code", onServer: "local").isEmpty)
+        cache.store([option("opus")], forHarness: "claude-code", onServer: "local")
+        #expect(cache.options(forHarness: "claude-code", onServer: "local").first?.currentValue == "opus")
+        #expect(cache.options(forHarness: "codex", onServer: "local").isEmpty)
     }
 
     @Test("Persists across instances (stale-while-revalidate seed)")
     func persists() {
         let store = InMemoryStore()
-        ConfigOptionCache(store: store).store([option("gpt-5.5")], forHarness: "codex")
+        ConfigOptionCache(store: store).store([option("gpt-5.5")], forHarness: "codex", onServer: "local")
         let reopened = ConfigOptionCache(store: store)
-        #expect(reopened.options(forHarness: "codex").first?.currentValue == "gpt-5.5")
+        #expect(reopened.options(forHarness: "codex", onServer: "local").first?.currentValue == "gpt-5.5")
     }
 
     @Test("Persists full server capabilities per machine")
@@ -51,14 +51,31 @@ struct ConfigOptionCacheTests {
 
         let reopened = ConfigOptionCache(store: store)
         #expect(reopened.capabilities(forServer: "local").first?.harness.id == "codex")
-        #expect(reopened.options(forHarness: "codex").first?.currentValue == "gpt-5.6")
+        #expect(reopened.options(forHarness: "codex", onServer: "local").first?.currentValue == "gpt-5.6")
+        #expect(reopened.options(forHarness: "codex", onServer: "remote").isEmpty)
     }
 
     @Test("Corrupted cache decodes as empty")
     func corrupted() {
         let store = InMemoryStore(storage: ["harness-config": Data("nope".utf8)])
         let cache = ConfigOptionCache(store: store)
-        #expect(cache.options(forHarness: "x").isEmpty)
+        #expect(cache.options(forHarness: "x", onServer: "local").isEmpty)
+    }
+
+    @Test("Never shares a harness's options between machines")
+    func machineIsolation() {
+        let store = InMemoryStore()
+        let cache = ConfigOptionCache(store: store)
+        cache.store([option("local-model")], forHarness: "codex", onServer: "local")
+        cache.store([option("remote-model")], forHarness: "codex", onServer: "remote-a")
+
+        #expect(cache.options(forHarness: "codex", onServer: "local").first?.currentValue == "local-model")
+        #expect(cache.options(forHarness: "codex", onServer: "remote-a").first?.currentValue == "remote-model")
+        #expect(cache.options(forHarness: "codex", onServer: "remote-b").isEmpty)
+
+        let reopened = ConfigOptionCache(store: store)
+        #expect(reopened.options(forHarness: "codex", onServer: "remote-a").first?.currentValue == "remote-model")
+        #expect(reopened.options(forHarness: "codex", onServer: "remote-b").isEmpty)
     }
 
     @Test("Speculative warm does not overwrite an existing capability snapshot")

@@ -118,7 +118,9 @@ public final class AppEnvironment {
         return await sessionImporter.fetchAll().filter { item in
             let matchesFolder = URL(fileURLWithPath: item.info.cwd).standardizedFileURL.path == folderPath
             let alreadyKnown = projectList.sessions.contains {
-                $0.harnessId == item.harnessId && $0.agentSessionId == item.info.sessionId
+                $0.serverId == machines.selectedMachineId
+                    && $0.harnessId == item.harnessId
+                    && $0.agentSessionId == item.info.sessionId
             }
             return matchesFolder && !alreadyKnown
         }

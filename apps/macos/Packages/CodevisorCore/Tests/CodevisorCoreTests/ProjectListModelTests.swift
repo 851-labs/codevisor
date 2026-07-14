@@ -23,7 +23,10 @@ struct ProjectListModelTests {
         let session = model.newSession(in: project, title: "Draft", harnessId: "codex", syncToServer: false)
         #expect(model.sessions.first?.worktreeName == nil)
 
-        model.setWorktree(name: "fearless-raven", cwd: "/tmp/worktrees/fearless-raven", for: session.id)
+        model.setWorktree(
+            name: "fearless-raven", cwd: "/tmp/worktrees/fearless-raven",
+            for: session.id, serverId: session.serverId
+        )
 
         let updated = model.sessions.first { $0.id == session.id }
         #expect(updated?.worktreeName == "fearless-raven")
@@ -33,7 +36,7 @@ struct ProjectListModelTests {
         #expect(reloaded.first { $0.id == session.id }?.worktreeName == "fearless-raven")
 
         // Unknown ids are ignored.
-        model.setWorktree(name: "other", cwd: "/tmp/x", for: UUID())
+        model.setWorktree(name: "other", cwd: "/tmp/x", for: UUID(), serverId: session.serverId)
         #expect(model.sessions.first { $0.id == session.id }?.worktreeName == "fearless-raven")
     }
 
@@ -81,7 +84,7 @@ struct ProjectListModelTests {
         let (model, _, _) = makeModel()
         let project = model.addProject(folderURL: URL(fileURLWithPath: "/tmp/offline"))
         let session = model.newSession(in: project, title: "Offline chat", harnessId: "codex", syncToServer: false)
-        model.setAgentSessionId("agent-offline", for: session.id)
+        model.setAgentSessionId("agent-offline", for: session.id, serverId: session.serverId)
 
         let fakeServer = FakeServerClient()
         model.selectServer(serverId: "local", serverClient: fakeServer)
@@ -198,6 +201,48 @@ struct ProjectListModelTests {
                 && model.sessions.contains { $0.id == remoteSession.id && $0.serverId == "remote-mac-mini" }
         }
         #expect(model.activeProjects.map(\.id) == [remoteProject.id])
+    }
+
+    @Test("Identical project and session ids stay isolated between machines")
+    func duplicateIdsStayMachineScoped() {
+        let projectId = UUID()
+        let sessionId = UUID()
+        let localProject = Project(
+            id: projectId, serverId: "local", name: "Local",
+            locations: [ProjectLocation(projectId: projectId, serverId: "local", folderPath: "/local")]
+        )
+        let remoteProject = Project(
+            id: projectId, serverId: "remote-a", name: "Remote",
+            locations: [ProjectLocation(projectId: projectId, serverId: "remote-a", folderPath: "/remote")]
+        )
+        let localSession = ChatSession(
+            id: sessionId, projectId: projectId, serverId: "local", harnessId: "codex", title: "Local chat"
+        )
+        let remoteSession = ChatSession(
+            id: sessionId, projectId: projectId, serverId: "remote-a", harnessId: "codex", title: "Remote chat"
+        )
+        let projectStore = InMemoryStore()
+        let sessionStore = InMemoryStore()
+        DefaultProjectRepository(store: projectStore).save([localProject, remoteProject])
+        DefaultSessionRepository(store: sessionStore).save([localSession, remoteSession])
+        let model = ProjectListModel(
+            projectRepository: DefaultProjectRepository(store: projectStore),
+            sessionRepository: DefaultSessionRepository(store: sessionStore)
+        )
+
+        model.archive(remoteProject)
+        model.renameSession(remoteSession, to: "Renamed remote")
+
+        #expect(model.projects.first { $0.serverId == "local" }?.isArchived == false)
+        #expect(model.projects.first { $0.serverId == "remote-a" }?.isArchived == true)
+        #expect(model.sessions.first { $0.serverId == "local" }?.title == "Local chat")
+        #expect(model.sessions.first { $0.serverId == "remote-a" }?.title == "Renamed remote")
+
+        model.removeProjectLocally(id: projectId, serverId: "remote-a")
+        #expect(model.projects.contains { $0.serverId == "local" && $0.id == projectId })
+        #expect(model.sessions.contains { $0.serverId == "local" && $0.id == sessionId })
+        #expect(!model.projects.contains { $0.serverId == "remote-a" && $0.id == projectId })
+        #expect(!model.sessions.contains { $0.serverId == "remote-a" && $0.id == sessionId })
     }
 
     @Test("Local mutations are mirrored to the configured server")

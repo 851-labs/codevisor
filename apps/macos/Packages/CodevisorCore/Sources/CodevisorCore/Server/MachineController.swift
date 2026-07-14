@@ -365,11 +365,11 @@ public final class MachineController {
         switch event.kind {
         case "project.deleted":
             if let id = UUID(uuidString: event.subjectId) {
-                projectList.removeProjectLocally(id: id)
+                projectList.removeProjectLocally(id: id, serverId: serverId)
             }
         case "session.deleted":
             if let id = UUID(uuidString: event.subjectId) {
-                projectList.removeSessionLocally(id: id)
+                projectList.removeSessionLocally(id: id, serverId: serverId)
             }
         case "project.created", "project.updated", "worktree.created",
              "session.created", "session.updated", "session.archived":
