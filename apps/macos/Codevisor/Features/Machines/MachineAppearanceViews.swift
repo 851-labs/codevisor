@@ -49,11 +49,7 @@ struct MachinePickerToolbarMenu: View {
                 // SF Symbols have different intrinsic widths. Give every
                 // machine glyph the same centered slot so the menu doesn't
                 // effectively leading-align wider symbols.
-                .frame(width: 20, height: 20)
-                // A hidden macOS menu indicator still reserves trailing
-                // space, leaving that slot two points left of the toolbar
-                // button's visual center.
-                .offset(x: 2)
+                .frame(width: 20, height: 20, alignment: .center)
         }
         .menuIndicator(.hidden)
         .help("Switch machine — \(selectedMachine.name)")
