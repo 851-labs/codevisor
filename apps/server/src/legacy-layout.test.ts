@@ -163,21 +163,46 @@ describe("Codevisor legacy file layout migration", () => {
   it("repairs Git administration pointers after moving linked worktrees", async () => {
     const home = await mkdtemp(join(tmpdir(), "codevisor-layout-git-"))
     const repository = join(home, "repository")
+    const submoduleRepository = join(home, "submodule")
     const legacyWorktree = join(home, "herdman", "project", "feature")
     const worktrees = join(home, "codevisor")
     await mkdir(repository, { recursive: true })
+    await mkdir(submoduleRepository, { recursive: true })
     await execFileAsync("git", ["init"], { cwd: repository })
+    await execFileAsync("git", ["init"], { cwd: submoduleRepository })
     await execFileAsync("git", ["config", "user.email", "tests@codevisor.dev"], {
       cwd: repository
     })
     await execFileAsync("git", ["config", "user.name", "Codevisor Tests"], { cwd: repository })
+    await execFileAsync("git", ["config", "user.email", "tests@codevisor.dev"], {
+      cwd: submoduleRepository
+    })
+    await execFileAsync("git", ["config", "user.name", "Codevisor Tests"], {
+      cwd: submoduleRepository
+    })
+    await writeFile(join(submoduleRepository, "SUBMODULE.md"), "submodule")
+    await execFileAsync("git", ["add", "SUBMODULE.md"], { cwd: submoduleRepository })
+    await execFileAsync("git", ["commit", "-m", "Initial submodule commit"], {
+      cwd: submoduleRepository
+    })
     await writeFile(join(repository, "README.md"), "test")
     await execFileAsync("git", ["add", "README.md"], { cwd: repository })
     await execFileAsync("git", ["commit", "-m", "Initial commit"], { cwd: repository })
+    await execFileAsync(
+      "git",
+      ["-c", "protocol.file.allow=always", "submodule", "add", submoduleRepository, "deps/sub"],
+      { cwd: repository }
+    )
+    await execFileAsync("git", ["commit", "-am", "Add submodule"], { cwd: repository })
     await mkdir(join(home, "herdman", "project"), { recursive: true })
     await execFileAsync("git", ["worktree", "add", "-b", "feature", legacyWorktree], {
       cwd: repository
     })
+    await execFileAsync(
+      "git",
+      ["-c", "protocol.file.allow=always", "submodule", "update", "--init"],
+      { cwd: legacyWorktree }
+    )
 
     await migrateLegacyLayout({
       databasePath: join(home, ".codevisor", "codevisor-server.sqlite"),
@@ -196,6 +221,16 @@ describe("Codevisor legacy file layout migration", () => {
     await expect(
       execFileAsync("git", ["status", "--short"], { cwd: movedWorktree })
     ).resolves.toMatchObject({ stdout: "" })
+    await expect(
+      execFileAsync("git", ["status", "--short"], { cwd: join(movedWorktree, "deps", "sub") })
+    ).resolves.toMatchObject({ stdout: "" })
+
+    // A completed submodule repair is idempotent and does not schedule another migration.
+    await migrateLegacyLayout({
+      databasePath: join(home, ".codevisor", "codevisor-server.sqlite"),
+      worktreesRoot: worktrees,
+      homeDirectory: home
+    })
   })
 
   it("repairs a worktree moved by an interrupted previous migration", async () => {

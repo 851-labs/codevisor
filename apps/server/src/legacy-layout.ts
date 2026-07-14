@@ -14,7 +14,7 @@ import {
   rmdir
 } from "node:fs/promises"
 import { homedir } from "node:os"
-import { basename, dirname, join } from "node:path"
+import { basename, dirname, join, relative, resolve, sep } from "node:path"
 import { promisify } from "node:util"
 import type { DataUpgradeProgress } from "@codevisor/api"
 
@@ -124,7 +124,56 @@ const legacyDataDirectories = (
   return [...candidates]
 }
 
-const worktreesNeedingRepair = async (root: string): Promise<ReadonlyArray<string>> => {
+interface SubmoduleWorktreeRepair {
+  readonly configPath: string
+  readonly worktreePath: string
+}
+
+const submoduleWorktreesNeedingRepair = async (
+  gitFile: string,
+  legacyWorktreesRoot: string,
+  canonicalWorktreesRoot: string
+): Promise<ReadonlyArray<SubmoduleWorktreeRepair>> => {
+  const adminDirectory = resolve(
+    dirname(gitFile),
+    (await readFile(gitFile, "utf8")).trim().replace(/^gitdir:\s*/, "")
+  )
+  const modulesDirectory = join(adminDirectory, "modules")
+  if (!(await pathExists(modulesDirectory))) return []
+
+  const repairs: SubmoduleWorktreeRepair[] = []
+  for (const entry of await readdir(modulesDirectory, { recursive: true })) {
+    if (basename(entry) !== "config") continue
+    const configPath = join(modulesDirectory, entry)
+    const { stdout } = await execFileAsync("git", [
+      "config",
+      "--file",
+      configPath,
+      "--get",
+      "core.worktree"
+    ])
+    const configuredWorktree = resolve(dirname(configPath), stdout.trim())
+    const legacyRelativePath = relative(legacyWorktreesRoot, configuredWorktree)
+    if (
+      legacyRelativePath === ".." ||
+      legacyRelativePath.startsWith(`..${sep}`) ||
+      resolve(legacyWorktreesRoot, legacyRelativePath) !== configuredWorktree
+    ) {
+      continue
+    }
+    repairs.push({
+      configPath,
+      worktreePath: resolve(canonicalWorktreesRoot, legacyRelativePath)
+    })
+  }
+  return repairs
+}
+
+const worktreesNeedingRepair = async (
+  root: string,
+  legacyWorktreesRoot: string,
+  canonicalWorktreesRoot: string
+): Promise<ReadonlyArray<string>> => {
   if (!(await pathExists(root))) return []
   const worktrees: string[] = []
 
@@ -137,15 +186,26 @@ const worktreesNeedingRepair = async (root: string): Promise<ReadonlyArray<strin
       const gitFile = join(worktreeDirectory, ".git")
       if (!(await pathExists(gitFile)) || !(await lstat(gitFile)).isFile()) continue
 
-      const adminDirectory = (await readFile(gitFile, "utf8")).trim().replace(/^gitdir:\s*/, "")
+      const adminDirectory = resolve(
+        dirname(gitFile),
+        (await readFile(gitFile, "utf8")).trim().replace(/^gitdir:\s*/, "")
+      )
       const backPointer = join(adminDirectory, "gitdir")
       if (!(await pathExists(backPointer))) continue
-      const storedGitFile = (await readFile(backPointer, "utf8")).trim()
+      const storedGitFile = resolve(
+        dirname(backPointer),
+        (await readFile(backPointer, "utf8")).trim()
+      )
       let pointsToGitFile = false
       if (await pathExists(storedGitFile)) {
         pointsToGitFile = (await realpath(storedGitFile)) === (await realpath(gitFile))
       }
-      if (!pointsToGitFile) {
+      const submoduleRepairs = await submoduleWorktreesNeedingRepair(
+        gitFile,
+        legacyWorktreesRoot,
+        canonicalWorktreesRoot
+      )
+      if (!pointsToGitFile || submoduleRepairs.length > 0) {
         worktrees.push(worktreeDirectory)
       }
     }
@@ -154,9 +214,30 @@ const worktreesNeedingRepair = async (root: string): Promise<ReadonlyArray<strin
   return worktrees
 }
 
-const repairMovedWorktrees = async (root: string): Promise<void> => {
-  for (const worktree of await worktreesNeedingRepair(root)) {
+const repairMovedWorktrees = async (
+  root: string,
+  legacyWorktreesRoot: string,
+  canonicalWorktreesRoot: string
+): Promise<void> => {
+  for (const worktree of await worktreesNeedingRepair(
+    root,
+    legacyWorktreesRoot,
+    canonicalWorktreesRoot
+  )) {
     await execFileAsync("git", ["-C", worktree, "worktree", "repair", worktree])
+    for (const repair of await submoduleWorktreesNeedingRepair(
+      join(worktree, ".git"),
+      legacyWorktreesRoot,
+      canonicalWorktreesRoot
+    )) {
+      await execFileAsync("git", [
+        "config",
+        "--file",
+        repair.configPath,
+        "core.worktree",
+        repair.worktreePath
+      ])
+    }
   }
 }
 
@@ -185,6 +266,9 @@ export const migrateLegacyLayout = async (options: LegacyLayoutMigrationOptions)
   const dataDirectory = dirname(options.databasePath)
   const legacyWorktreesRoot = join(homeDirectory, "herdman")
   const canonicalWorktreesRoot = join(homeDirectory, "codevisor")
+  const canonicalHomeDirectory = await realpath(homeDirectory)
+  const canonicalLegacyWorktreesRoot = join(canonicalHomeDirectory, "herdman")
+  const canonicalCodevisorWorktreesRoot = join(canonicalHomeDirectory, "codevisor")
   const operations: Array<() => Promise<void>> = []
   const legacyDirectories = legacyDataDirectories(options.databasePath, homeDirectory)
 
@@ -226,14 +310,30 @@ export const migrateLegacyLayout = async (options: LegacyLayoutMigrationOptions)
   if (options.worktreesRoot === canonicalWorktreesRoot && (await pathExists(legacyWorktreesRoot))) {
     operations.push(async () => {
       await moveWithoutOverwrite(legacyWorktreesRoot, options.worktreesRoot)
-      await repairMovedWorktrees(options.worktreesRoot)
+      await repairMovedWorktrees(
+        options.worktreesRoot,
+        canonicalLegacyWorktreesRoot,
+        canonicalCodevisorWorktreesRoot
+      )
     })
   } else if (
     options.worktreesRoot === canonicalWorktreesRoot &&
-    (await worktreesNeedingRepair(options.worktreesRoot)).length > 0
+    (
+      await worktreesNeedingRepair(
+        options.worktreesRoot,
+        canonicalLegacyWorktreesRoot,
+        canonicalCodevisorWorktreesRoot
+      )
+    ).length > 0
   ) {
     // A previous attempt may have moved the files before it was interrupted.
-    operations.push(() => repairMovedWorktrees(options.worktreesRoot))
+    operations.push(() =>
+      repairMovedWorktrees(
+        options.worktreesRoot,
+        canonicalLegacyWorktreesRoot,
+        canonicalCodevisorWorktreesRoot
+      )
+    )
   }
 
   if (operations.length === 0) return
