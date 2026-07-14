@@ -25,8 +25,15 @@ const worktreesDirectory =
   join(homedir(), "codevisor-development", instanceName)
 
 const preferredPort = 51_000 + (Number.parseInt(instanceHash.slice(0, 8), 16) % 10_000)
-const requestedPort = parsePort(process.env.CODEVISOR_DEV_PORT ?? process.env.HERDMAN_DEV_PORT)
-const port = requestedPort ?? (await findAvailablePort(preferredPort))
+const requestedPort = parsePort(
+  process.env.CODEVISOR_DEV_PORT ?? process.env.HERDMAN_DEV_PORT,
+  "CODEVISOR_DEV_PORT"
+)
+const port = requestedPort ?? (await findAvailablePort(preferredPort, 51_000, 10_000))
+
+const preferredWwwPort = 61_000 + (Number.parseInt(instanceHash.slice(0, 8), 16) % 4_000)
+const requestedWwwPort = parsePort(process.env.CODEVISOR_DEV_WWW_PORT, "CODEVISOR_DEV_WWW_PORT")
+const wwwPort = requestedWwwPort ?? (await findAvailablePort(preferredWwwPort, 61_000, 4_000))
 
 await mkdir(dataDirectory, { recursive: true })
 await mkdir(worktreesDirectory, { recursive: true })
@@ -34,6 +41,7 @@ await mkdir(worktreesDirectory, { recursive: true })
 console.log(`Codevisor development instance: ${worktreeName}`)
 console.log(`  app:      ${appName}`)
 console.log(`  server:   http://127.0.0.1:${port}`)
+console.log(`  www:      http://localhost:${wwwPort}`)
 console.log(`  data:     ${dataDirectory}`)
 console.log(`  worktrees:${worktreesDirectory}`)
 console.log(`  icon:     ${developmentIconColor.hex}`)
@@ -72,6 +80,7 @@ const sharedEnvironment = {
   CODEVISOR_DEV_INSTANCE_ID: instanceName,
   CODEVISOR_DEV_ICON_COLOR: developmentIconColor.hex,
   CODEVISOR_DEV_PORT: String(port),
+  CODEVISOR_DEV_WWW_PORT: String(wwwPort),
   CODEVISOR_DEV_DATA_DIR: dataDirectory,
   CODEVISOR_WORKTREES_ROOT: worktreesDirectory
 }
@@ -100,6 +109,12 @@ const server = spawn(
   { cwd: repoRoot, env: sharedEnvironment, stdio: "inherit" }
 )
 
+const www = spawn(
+  "bun",
+  ["run", "--cwd", "apps/www", "dev", "--port", String(wwwPort), "--strictPort"],
+  { cwd: repoRoot, env: sharedEnvironment, stdio: "inherit" }
+)
+
 let app
 let stopping = false
 
@@ -107,6 +122,7 @@ const stop = async (exitCode = 0) => {
   if (stopping) return
   stopping = true
   app?.kill("SIGTERM")
+  www.kill("SIGTERM")
 
   try {
     await fetch(`http://127.0.0.1:${port}/v1/shutdown`, { method: "POST" })
@@ -127,6 +143,12 @@ const serverExit = waitForExit(server).then(async (result) => {
   if (!stopping) {
     console.error(`Codevisor server exited unexpectedly (${describeExit(result)}).`)
     await stop(result.code ?? 1)
+  }
+})
+
+void waitForExit(www).then((result) => {
+  if (!stopping) {
+    console.error(`www dev server exited unexpectedly (${describeExit(result)}).`)
   }
 })
 
@@ -151,13 +173,11 @@ try {
   await stop(1)
 }
 
-function parsePort(value) {
+function parsePort(value, name) {
   if (value === undefined) return undefined
   const parsed = Number(value)
   if (!Number.isInteger(parsed) || parsed < 1_024 || parsed > 65_535) {
-    throw new Error(
-      `CODEVISOR_DEV_PORT must be an integer from 1024 through 65535; received ${value}`
-    )
+    throw new Error(`${name} must be an integer from 1024 through 65535; received ${value}`)
   }
   return parsed
 }
@@ -219,12 +239,14 @@ async function createDevelopmentAppIcon() {
   return generatedDirectory
 }
 
-async function findAvailablePort(preferred) {
-  for (let offset = 0; offset < 10_000; offset += 1) {
-    const candidate = 51_000 + ((preferred - 51_000 + offset) % 10_000)
+async function findAvailablePort(preferred, base, range) {
+  for (let offset = 0; offset < range; offset += 1) {
+    const candidate = base + ((preferred - base + offset) % range)
     if (await isPortAvailable(candidate)) return candidate
   }
-  throw new Error("No available Codevisor development port was found in 51000-60999")
+  throw new Error(
+    `No available Codevisor development port was found in ${base}-${base + range - 1}`
+  )
 }
 
 function isPortAvailable(port) {

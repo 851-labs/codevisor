@@ -12,7 +12,7 @@ export function baseOptions(): BaseLayoutProps {
     },
     links: [
       { text: "Home", url: "/" },
-      { text: "Download", url: "/download/macos" }
+      { text: "Install", url: "/#install" }
     ]
   }
 }

@@ -1,12 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router"
 
-import { CopyCommand } from "../components/copy-command"
+import { InstallCommand } from "../components/install-command"
 
 export const Route = createFileRoute("/")({
   component: Home
 })
-
-const INSTALL_CMD = "curl -fsSL https://www.codevisor.dev/install.sh | sh"
 
 function Home() {
   return (
@@ -43,21 +41,18 @@ function Nav() {
     <header className="fixed inset-x-0 top-0 z-40 border-b border-hairline bg-black/80 backdrop-blur-xl">
       <nav className="mx-auto flex h-11 max-w-5xl items-center justify-between px-6 text-xs">
         <a href="/" className="flex items-center gap-2 font-semibold tracking-tight text-text">
-          <img src="/codevisor-icon.png" alt="" className="size-4 rounded" />
+          <img src="/codevisor-icon.png" alt="" className="size-6 rounded" />
           Codevisor
         </a>
         <div className="flex items-center gap-6 text-muted">
           <a href="/docs" className="transition-colors hover:text-text">
             Docs
           </a>
-          <a href="#install" className="transition-colors hover:text-text">
-            Install
-          </a>
           <a
-            href="/download/macos"
-            className="rounded-full bg-text px-3 py-1 font-medium text-black"
+            href="#install"
+            className="rounded-full bg-text px-3 py-1 font-medium text-black transition-opacity hover:opacity-90"
           >
-            Download
+            Install
           </a>
         </div>
       </nav>
@@ -75,21 +70,16 @@ function Hero() {
         Codevisor runs Claude Code, Codex, and any ACP agent on your machines — in one native macOS
         app.
       </p>
-      <div className="mt-8 flex flex-col items-center gap-3">
-        <a
-          href="/download/macos"
-          className="rounded-full bg-text px-7 py-3 text-[15px] font-medium text-black transition-opacity hover:opacity-90"
-        >
-          Download for macOS
-        </a>
-        <p className="text-[13px] text-muted">
-          Free · Apple Silicon &amp; Intel ·{" "}
-          <a href="#install" className="underline underline-offset-4 hover:text-text">
-            other ways to install
-          </a>
-        </p>
-      </div>
+      <InstallCta />
     </section>
+  )
+}
+
+function InstallCta() {
+  return (
+    <div className="mx-auto mt-8 w-full max-w-lg">
+      <InstallCommand />
+    </div>
   )
 }
 
@@ -160,27 +150,14 @@ function TextFeatures() {
 
 function Install() {
   return (
-    <section id="install" className="mx-auto max-w-xl px-6 pt-28 pb-32 text-center sm:pt-36">
-      <h2 className="text-3xl font-semibold tracking-tight sm:text-5xl">Get Codevisor.</h2>
-      <p className="mt-4 text-lg text-muted">
-        Download the app for macOS, or run one command — it installs the app on a Mac and sets up
-        the Codevisor server on Linux.
+    <section id="install" className="px-6 pt-28 pb-32 text-center sm:pt-36">
+      <h2 className="mx-auto max-w-3xl text-5xl font-semibold tracking-tight text-balance sm:text-7xl">
+        Get Codevisor.
+      </h2>
+      <p className="mx-auto mt-6 max-w-xl text-lg text-muted">
+        One command installs the app on a Mac and sets up the Codevisor server on Linux.
       </p>
-      <div className="mt-8 flex flex-col items-center gap-4">
-        <a
-          href="/download/macos"
-          className="rounded-full bg-text px-7 py-3 text-[15px] font-medium text-black transition-opacity hover:opacity-90"
-        >
-          Download for macOS
-        </a>
-        <div className="w-full">
-          <CopyCommand command={INSTALL_CMD} />
-        </div>
-        <p className="text-[13px] text-muted">
-          Homebrew:{" "}
-          <span className="font-mono text-[12px]">brew install --cask 851-labs/tap/codevisor</span>
-        </p>
-      </div>
+      <InstallCta />
     </section>
   )
 }
@@ -189,15 +166,10 @@ function Footer() {
   return (
     <footer className="border-t border-hairline px-6 py-10">
       <div className="mx-auto flex max-w-5xl flex-col items-center justify-between gap-4 text-xs text-muted sm:flex-row">
-        <span>© {new Date().getFullYear()} 851 Labs, LLC</span>
-        <div className="flex items-center gap-5">
-          <a href="/download/macos" className="transition-colors hover:text-text">
-            Download
-          </a>
-          <a href="/install.sh" className="transition-colors hover:text-text">
-            install.sh
-          </a>
-        </div>
+        <span>© {new Date().getFullYear()} 851 Inc.</span>
+        <a href="/install.sh" className="transition-colors hover:text-text">
+          install.sh
+        </a>
       </div>
     </footer>
   )

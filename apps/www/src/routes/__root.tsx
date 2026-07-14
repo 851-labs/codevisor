@@ -27,7 +27,7 @@ export const Route = createRootRoute({
     ],
     links: [
       { rel: "stylesheet", href: appCss },
-      { rel: "icon", href: "/codevisor-icon.png", type: "image/png" }
+      { rel: "icon", href: "/favicon.png", type: "image/png" }
     ]
   }),
   component: RootComponent
