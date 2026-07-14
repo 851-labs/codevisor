@@ -6,6 +6,8 @@ import type {
 } from "./index.js"
 import type { TerminalClientFrame } from "@codevisor/api"
 import { Effect } from "effect"
+import { existsSync } from "node:fs"
+import { join } from "node:path"
 import { describe, expect, it } from "vitest"
 import { makeTerminalManager, TerminalError, TerminalManager } from "./index.js"
 
@@ -93,6 +95,37 @@ describe("@codevisor/terminal", () => {
         })
       )
     ).rejects.toBeInstanceOf(TerminalError)
+  })
+
+  it("launches shells with the bundled Ghostty terminal environment", async () => {
+    const spawner = makeSpawner()
+    const manager = makeTerminalManager({
+      env: {
+        COLORTERM: "legacy",
+        TERM: "xterm-256color",
+        TERMINFO: "/tmp/missing",
+        TERM_PROGRAM: "other"
+      },
+      spawner
+    })
+
+    await run(
+      manager.createTerminal(
+        { sessionId: "session-ghostty", cwd: "/tmp", cols: 80, rows: 24 },
+        { TERM: "vt100" }
+      )
+    )
+
+    const terminalEnv = spawner.requests[0]?.env
+    expect(terminalEnv).toMatchObject({
+      COLORTERM: "truecolor",
+      TERM: "xterm-ghostty",
+      TERM_PROGRAM: "ghostty"
+    })
+    const terminfoDirectory = terminalEnv?.TERMINFO
+    expect(terminfoDirectory).toBeTypeOf("string")
+    expect(existsSync(join(terminfoDirectory!, "78", "xterm-ghostty"))).toBe(true)
+    expect(existsSync(join(terminfoDirectory!, "67", "ghostty"))).toBe(true)
   })
 
   it("buffers early process frames and rejects input after an early exit", async () => {

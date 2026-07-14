@@ -83,6 +83,16 @@ for package_name in agent-runtime api db terminal; do
   cp -R "$repo_root/packages/$package_name/dist" "$runtime_dir/packages/$package_name/dist"
 done
 
+# Server-side shells advertise xterm-ghostty. Keep its terminfo database next
+# to @codevisor/terminal so the package can set TERMINFO without modifying the
+# host machine (including remote Codevisor servers).
+terminal_resources="$repo_root/packages/terminal/resources"
+if [[ ! -f "$terminal_resources/terminfo/78/xterm-ghostty" ]]; then
+  echo "error: bundled xterm-ghostty terminfo is missing from $terminal_resources" >&2
+  exit 1
+fi
+cp -R "$terminal_resources" "$runtime_dir/packages/terminal/resources"
+
 # The lockfile spans every workspace member, so bun's frozen install needs
 # each manifest present even though the runtime only ships the server code.
 for manifest in "$repo_root"/apps/*/package.json "$repo_root"/packages/*/package.json; do

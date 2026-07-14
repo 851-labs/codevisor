@@ -37,9 +37,12 @@ embedded terminal scale matches the rest of the app chrome.
 + `terminfo/{67,78}`). On first launch `CodevisorGhosttyApp` extracts it to
 `~/Library/Application Support/Codevisor/ghostty-resources/` and sets
 `GHOSTTY_RESOURCES_DIR=<that>/ghostty` **before `ghostty_init`** (it captures the
-dir at init). libghostty then sets `TERM=xterm-ghostty` and injects zsh/bash/etc.
-shell integration. To regenerate the tarball after a Ghostty bump:
-`cd .repos/ghostty/zig-out/share && tar czf <repo>/Codevisor/Resources/ghostty-resources.tar.gz ghostty/shell-integration terminfo`.
+dir at init). The server separately ships the compiled entries from
+`packages/terminal/resources/terminfo`; actual shell PTYs use
+`TERM=xterm-ghostty`, `TERMINFO=<bundled dir>`, and `COLORTERM=truecolor` on
+local and remote machines. When regenerating the tarball after a Ghostty bump,
+also refresh those two server-side terminfo files from the same `zig-out/share`
+directory so the renderer and advertised capabilities stay in sync.
 
 ## What's implemented
 

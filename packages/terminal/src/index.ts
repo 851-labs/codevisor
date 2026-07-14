@@ -5,6 +5,7 @@ import type {
   TerminalServerFrame
 } from "@codevisor/api"
 import { randomUUID } from "node:crypto"
+import { fileURLToPath } from "node:url"
 import { Context, Effect, Layer, Schema } from "effect"
 
 export class TerminalError extends Schema.TaggedErrorClass<TerminalError>()("TerminalError", {
@@ -39,6 +40,9 @@ export interface TerminalManagerConfig {
   readonly defaultShell?: string
   readonly env?: NodeJS.ProcessEnv
   readonly spawner?: TerminalSpawner
+  /// Override for tests or alternate packages. Production uses the Ghostty
+  /// terminfo database shipped beside this package's compiled JavaScript.
+  readonly terminfoDirectory?: string
 }
 
 /// Caller-facing side of an externally-managed terminal: the caller owns the
@@ -66,6 +70,10 @@ export interface ExternalTerminalConfig {
 /// (dev servers); cap the replay buffer so memory stays bounded. Clients that
 /// reconnect past the trim point lose the oldest scrollback only.
 const EXTERNAL_TERMINAL_MAX_FRAMES = 20_000
+const GHOSTTY_TERM = "xterm-ghostty"
+const BUNDLED_GHOSTTY_TERMINFO_DIRECTORY = fileURLToPath(
+  new URL("../resources/terminfo", import.meta.url)
+)
 
 export interface TerminalManagerService {
   readonly createTerminal: (
@@ -135,6 +143,7 @@ export const makeTerminalManager = (config: TerminalManagerConfig = {}): Termina
   /* v8 ignore next -- real node-pty spawning is covered by packaging smoke tests. */
   const spawner = config.spawner ?? nodePtySpawner
   const env = config.env ?? process.env
+  const terminfoDirectory = config.terminfoDirectory ?? BUNDLED_GHOSTTY_TERMINFO_DIRECTORY
   /* v8 ignore next -- the final fallback depends on host SHELL environment state. */
   const defaultShell = config.defaultShell ?? process.env.SHELL ?? "/bin/sh"
 
@@ -203,7 +212,17 @@ export const makeTerminalManager = (config: TerminalManagerConfig = {}): Termina
         const spawnRequest: TerminalSpawnRequest = {
           ...request,
           shell: request.shell ?? defaultShell,
-          env: { ...env, ...envOverrides }
+          // Match Ghostty's own launch environment. TERMINFO points at the
+          // database bundled with the server, so xterm-ghostty is available on
+          // local and remote Codevisor machines without a host installation.
+          env: {
+            ...env,
+            ...envOverrides,
+            COLORTERM: "truecolor",
+            TERM: GHOSTTY_TERM,
+            TERMINFO: terminfoDirectory,
+            TERM_PROGRAM: "ghostty"
+          }
         }
         const pendingFrames: Array<TerminalFramePayload> = []
         let runningTerminal: RunningTerminal | undefined
@@ -405,7 +424,7 @@ export const nodePtySpawner: TerminalSpawner = {
           cols: request.cols,
           cwd: request.cwd,
           env: request.env,
-          name: "xterm-256color",
+          name: request.env.TERM ?? GHOSTTY_TERM,
           rows: request.rows
         })
         child.onData(handlers.onOutput)
