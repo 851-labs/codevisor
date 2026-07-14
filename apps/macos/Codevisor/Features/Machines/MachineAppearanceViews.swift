@@ -17,36 +17,43 @@ struct MachinePickerToolbarMenu: View {
     var body: some View {
         Menu {
             ForEach(machines.machines) { machine in
-                Button {
-                    machines.selectMachine(machine.id)
-                } label: {
-                    HStack {
-                        Label(machine.name, systemImage: machine.resolvedAppearance.symbolName)
-                        if machine.id == machines.selectedMachineId {
-                            Image(systemName: "checkmark")
-                        }
+                Toggle(isOn: Binding(
+                    get: { machine.id == machines.selectedMachineId },
+                    set: { isOn in
+                        guard isOn else { return }
+                        machines.selectMachine(machine.id)
+                    }
+                )) {
+                    Label {
+                        Text(machine.name)
+                    } icon: {
+                        MenuSymbolIcon(systemName: machine.resolvedAppearance.symbolName)
                     }
                 }
             }
 
             Divider()
 
-            Button {
+            Button("Add Remote Machine…") {
                 showingAdd = true
-            } label: {
-                Label("Add Remote Machine…", systemImage: "plus")
             }
 
-            Button {
+            Button("Manage Machines…") {
                 SettingsRouter.shared.selectedTab = .machines
                 openSettings()
-            } label: {
-                Label("Manage Machines…", systemImage: "gearshape")
             }
         } label: {
             Image(systemName: selectedMachine.resolvedAppearance.symbolName)
                 .symbolRenderingMode(.monochrome)
                 .foregroundStyle(theme.textPrimary)
+                // SF Symbols have different intrinsic widths. Give every
+                // machine glyph the same centered slot so the menu doesn't
+                // effectively leading-align wider symbols.
+                .frame(width: 20, height: 20)
+                // A hidden macOS menu indicator still reserves trailing
+                // space, leaving that slot two points left of the toolbar
+                // button's visual center.
+                .offset(x: 2)
         }
         .menuIndicator(.hidden)
         .help("Switch machine — \(selectedMachine.name)")
@@ -71,62 +78,6 @@ struct MachinePickerToolbarMenu: View {
             Button("OK") {}
         } message: { message in
             Text(message)
-        }
-    }
-}
-
-/// Sheet for assigning an SF Symbol to one machine.
-struct MachineAppearanceSheet: View {
-    @Environment(\.dismiss) private var dismiss
-    @Environment(\.theme) private var theme
-    @State private var symbolName: String
-    @State private var choosingIcon = false
-
-    let machine: CodevisorMachine
-    let onSave: (MachineAppearance) -> Void
-
-    init(machine: CodevisorMachine, onSave: @escaping (MachineAppearance) -> Void) {
-        self.machine = machine
-        self.onSave = onSave
-        let appearance = machine.resolvedAppearance
-        _symbolName = State(initialValue: appearance.symbolName)
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            Text("Customize \(machine.name)")
-                .font(.headline)
-
-            HStack(spacing: 16) {
-                Image(systemName: symbolName)
-                    .font(.system(size: 32))
-                    .foregroundStyle(theme.textPrimary)
-                    .frame(width: 56, height: 56)
-                    .background(theme.cardBackground, in: RoundedRectangle(cornerRadius: 12))
-                    .accessibilityHidden(true)
-
-                Button("Choose Icon…") {
-                    choosingIcon = true
-                }
-                .settingsActionTint(theme)
-            }
-
-            HStack {
-                Spacer()
-                Button("Cancel") { dismiss() }
-                    .settingsActionTint(theme)
-                Button("Save") {
-                    onSave(MachineAppearance(symbolName: symbolName))
-                    dismiss()
-                }
-                .settingsActionTint(theme)
-                .keyboardShortcut(.defaultAction)
-            }
-        }
-        .padding(20)
-        .frame(width: 360)
-        .sheet(isPresented: $choosingIcon) {
-            IconPickerView(currentSymbol: symbolName) { symbolName = $0 }
         }
     }
 }

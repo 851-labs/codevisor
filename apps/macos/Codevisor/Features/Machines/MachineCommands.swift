@@ -36,7 +36,11 @@ private struct MachinePickerItems: View {
                     if isOn { machines.selectMachine(machine.id) }
                 }
             )) {
-                Label(machine.name, systemImage: machine.resolvedAppearance.symbolName)
+                Label {
+                    Text(machine.name)
+                } icon: {
+                    MenuSymbolIcon(systemName: machine.resolvedAppearance.symbolName)
+                }
             }
         }
     }

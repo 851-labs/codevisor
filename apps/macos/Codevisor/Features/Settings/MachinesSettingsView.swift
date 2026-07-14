@@ -19,7 +19,7 @@ struct MachinesSettingsView: View {
 
     @State private var showingAdd = false
     @State private var renaming: CodevisorMachine?
-    @State private var customizing: CodevisorMachine?
+    @State private var iconEditing: CodevisorMachine?
     @State private var removing: CodevisorMachine?
     @State private var tokenNotice: String?
     @State private var actionError: MachineActionError?
@@ -70,9 +70,9 @@ struct MachinesSettingsView: View {
                 }
             }
         }
-        .sheet(item: $customizing) { machine in
-            MachineAppearanceSheet(machine: machine) { appearance in
-                machines.setAppearance(appearance, for: machine.id)
+        .sheet(item: $iconEditing) { machine in
+            IconPickerView(currentSymbol: machine.resolvedAppearance.symbolName) { symbol in
+                machines.setAppearance(MachineAppearance(symbolName: symbol), for: machine.id)
             }
         }
         .confirmationDialog(
@@ -183,7 +183,7 @@ struct MachinesSettingsView: View {
             }
             if machine.isLocal {
                 Menu {
-                    Button("Customize Icon…") { customizing = machine }
+                    Button("Change icon") { iconEditing = machine }
                     Divider()
                     Button("Copy Connection Token") { copyConnectionToken() }
                 } label: {
@@ -199,7 +199,7 @@ struct MachinesSettingsView: View {
                 .accessibilityLabel("Actions for \(machine.name)")
             } else {
                 Menu {
-                    Button("Customize Icon…") { customizing = machine }
+                    Button("Change icon") { iconEditing = machine }
                     Button("Rename…") { renaming = machine }
                     Divider()
                     Button("Remove…", role: .destructive) { removing = machine }
