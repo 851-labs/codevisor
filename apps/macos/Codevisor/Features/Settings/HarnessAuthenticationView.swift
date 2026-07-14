@@ -18,6 +18,7 @@ struct HarnessAuthenticationView: View {
     @State private var apiKeyAccount: ServerHarnessAccount?
     @State private var apiKeyMethod: ServerHarnessAuthMethod?
     @State private var apiKey = ""
+    @State private var authTerminalLifecycle = AuthTerminalLifecycle()
 
     var body: some View {
         VStack(spacing: 0) {
@@ -36,10 +37,14 @@ struct HarnessAuthenticationView: View {
 
             Divider()
 
-            if let flow, flow.kind == "terminal", let terminalId = flow.terminalId {
+            if let flow, flow.kind == "terminal", let terminalKey = flow.terminalAttachKey {
                 VStack(alignment: .leading, spacing: 10) {
                     Text("Finish signing in below").font(.headline)
-                    AuthTerminalView(terminalId: terminalId, machine: environment.machines.selectedMachine)
+                    AuthTerminalView(
+                        terminalKey: terminalKey,
+                        machine: environment.machines.selectedMachine,
+                        lifecycle: authTerminalLifecycle
+                    )
                         .frame(minHeight: 280)
                         .clipShape(RoundedRectangle(cornerRadius: 8))
                     authProgress
@@ -298,8 +303,16 @@ struct HarnessAuthenticationView: View {
 
     private func cancelFlow() async {
         guard let current = flow else { return }
-        try? await environment.serverClient.cancelHarnessLogin(harnessId: harness.id, accountId: current.accountId, flowId: current.id)
+        // Detach the proxy and finish libghostty teardown before the server
+        // kills Claude's PTY. Reversing this order lets the proxy's child-exit
+        // callback race SwiftUI dismantling the same surface.
+        authTerminalLifecycle.terminate()
         flow = nil
+        try? await environment.serverClient.cancelHarnessLogin(
+            harnessId: harness.id,
+            accountId: current.accountId,
+            flowId: current.id
+        )
     }
 
     private func refreshHarness() async {
@@ -324,20 +337,19 @@ struct HarnessAuthenticationView: View {
 }
 
 private struct AuthTerminalView: NSViewRepresentable {
-    let terminalId: String
+    let terminalKey: String
     let machine: CodevisorMachine
-
-    func makeCoordinator() -> Coordinator { Coordinator() }
+    let lifecycle: AuthTerminalLifecycle
 
     func makeNSView(context: Context) -> NSView {
         let descriptor = TerminalLaunchDescriptor(
-            terminalKey: terminalId,
+            terminalKey: terminalKey,
             attachOnly: true,
             machine: machine,
             workingDirectory: FileManager.default.homeDirectoryForCurrentUser,
             command: TerminalProxyCommand.command(
                 server: machine.baseURL,
-                terminalKey: terminalId,
+                terminalKey: terminalKey,
                 cwd: FileManager.default.homeDirectoryForCurrentUser.path,
                 token: machine.token,
                 attachOnly: true
@@ -345,6 +357,7 @@ private struct AuthTerminalView: NSViewRepresentable {
         )
         let surface = TerminalRuntime.factory.makeSurface(descriptor: descriptor)
         context.coordinator.surface = surface
+        lifecycle.attach(surface)
         let container = NSView()
         let child = surface.nsView
         child.translatesAutoresizingMaskIntoConstraints = false
@@ -358,8 +371,43 @@ private struct AuthTerminalView: NSViewRepresentable {
         return container
     }
 
-    func updateNSView(_ nsView: NSView, context: Context) {}
-    static func dismantleNSView(_ nsView: NSView, coordinator: Coordinator) { coordinator.surface?.terminate() }
+    static func dismantleNSView(_ nsView: NSView, coordinator: Coordinator) {
+        guard let surface = coordinator.surface else { return }
+        surface.terminate()
+        coordinator.lifecycle?.detach(surface)
+        coordinator.surface = nil
+    }
 
-    final class Coordinator { var surface: (any TerminalSurface)? }
+    func updateNSView(_ nsView: NSView, context: Context) {}
+
+    func makeCoordinator() -> Coordinator { Coordinator(lifecycle: lifecycle) }
+
+    final class Coordinator {
+        weak var lifecycle: AuthTerminalLifecycle?
+        var surface: (any TerminalSurface)?
+
+        init(lifecycle: AuthTerminalLifecycle) {
+            self.lifecycle = lifecycle
+        }
+    }
+}
+
+@MainActor
+private final class AuthTerminalLifecycle {
+    private var surface: (any TerminalSurface)?
+
+    func attach(_ surface: any TerminalSurface) {
+        self.surface = surface
+    }
+
+    func terminate() {
+        surface?.terminate()
+        surface = nil
+    }
+
+    func detach(_ candidate: any TerminalSurface) {
+        if let surface, surface === candidate {
+            self.surface = nil
+        }
+    }
 }

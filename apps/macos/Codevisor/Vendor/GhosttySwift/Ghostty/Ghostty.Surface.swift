@@ -1,3 +1,4 @@
+import Foundation
 import GhosttyKit
 
 extension Ghostty {
@@ -24,14 +25,21 @@ extension Ghostty {
         }
 
         deinit {
-            // deinit is not guaranteed to happen on the main actor and our API
-            // calls into libghostty must happen there so we capture the surface
-            // value so we don't capture `self` and then we detach it in a task.
-            // We can't wait for the task to succeed so this will happen sometime
-            // but that's okay.
             let surface = self.surface
-            Task.detached { @MainActor in
-                ghostty_surface_free(surface)
+            // Codevisor normally releases surfaces from main-actor UI teardown.
+            // Free synchronously in that case so libghostty finishes callbacks
+            // while its unretained SurfaceView userdata is still alive. Deferring
+            // this work allowed a terminal child-exit callback to race the view's
+            // deinit when an authentication flow was cancelled.
+            if Thread.isMainThread {
+                MainActor.assumeIsolated {
+                    ghostty_surface_free(surface)
+                }
+            } else {
+                // Keep the upstream fallback for an unexpected off-main release.
+                Task.detached { @MainActor in
+                    ghostty_surface_free(surface)
+                }
             }
         }
 

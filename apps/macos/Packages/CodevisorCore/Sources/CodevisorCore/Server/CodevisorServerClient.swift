@@ -641,6 +641,11 @@ public struct ServerHarnessAuthFlow: Codable, Equatable, Sendable {
     public var verificationUrl: String?
     public var userCode: String?
     public var terminalId: String?
+    public var terminalKey: String?
+
+    /// The session key used by the terminal proxy. Older servers only sent
+    /// `terminalId`, so keep that as a compatibility fallback.
+    public var terminalAttachKey: String? { terminalKey ?? terminalId }
 }
 
 public struct ServerHarnessCapability: Codable, Equatable, Sendable {

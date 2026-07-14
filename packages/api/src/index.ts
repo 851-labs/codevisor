@@ -124,7 +124,8 @@ export const HarnessAuthFlow = Schema.Union([
     id: Schema.String,
     accountId: Schema.String,
     kind: Schema.Literal("terminal"),
-    terminalId: Schema.String
+    terminalId: Schema.String,
+    terminalKey: Schema.optional(Schema.String)
   }),
   Schema.Struct({
     id: Schema.String,

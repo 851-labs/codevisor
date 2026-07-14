@@ -631,11 +631,12 @@ export const makeHarnessAuthManager = (config: HarnessAuthManagerConfig): Harnes
   const beginClaudeLogin = async (account: HarnessAccountRecord): Promise<HarnessAuthFlow> => {
     const command = await executable("claude-code")
     const flowId = randomUUID()
+    const terminalKey = `auth:${flowId}`
     const path = profilePath(account) ?? (await environment()).HOME ?? process.cwd()
     const terminal = await run(
       config.terminal.createTerminal(
         {
-          sessionId: `auth:${flowId}`,
+          sessionId: terminalKey,
           cwd: path,
           cols: 90,
           rows: 28,
@@ -651,7 +652,8 @@ export const makeHarnessAuthManager = (config: HarnessAuthManagerConfig): Harnes
       id: flowId,
       accountId: account.id,
       kind: "terminal",
-      terminalId: terminal.terminalId
+      terminalId: terminal.terminalId,
+      terminalKey
     }
     emit({ kind: "harness.authFlow.updated", subjectId: account.harnessId, payload: flow })
     return flow

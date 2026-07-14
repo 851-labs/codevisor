@@ -4,6 +4,7 @@ import {
   CreateSessionRequest,
   CreateWorktreeRequest,
   EventEnvelope,
+  HarnessAuthFlow,
   Project,
   ServerCapabilities,
   SessionDetail,
@@ -21,6 +22,21 @@ import {
 } from "./index.js"
 
 describe("@codevisor/api", () => {
+  it("carries the session key needed to attach to an authentication terminal", () => {
+    const flow = decode(HarnessAuthFlow)({
+      id: "flow-1",
+      accountId: "account-1",
+      kind: "terminal",
+      terminalId: "terminal-1",
+      terminalKey: "auth:flow-1"
+    })
+
+    expect(flow).toMatchObject({
+      terminalId: "terminal-1",
+      terminalKey: "auth:flow-1"
+    })
+  })
+
   it("normalizes pre-rename session origins", () => {
     const legacy = decode(Project)({
       id: "project-1",
