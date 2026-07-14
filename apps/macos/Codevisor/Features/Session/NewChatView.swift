@@ -104,6 +104,13 @@ struct NewChatView: View {
             }
         }
         .task(id: preferredProjectId) { setUpController() }
+        // A machine's projects can arrive after this view's initial task has
+        // already returned. Retry when the active project set changes so the
+        // composer does not remain hidden after the first project appears.
+        .onChange(of: projects.map(\.id)) { _, _ in
+            guard controller == nil else { return }
+            setUpController()
+        }
         .focusedSceneValue(\.newChatComposerFocus, NewChatComposerFocus(
             focus: { focus.focusComposer() }
         ))
