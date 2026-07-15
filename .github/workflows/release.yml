@@ -61,6 +61,26 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
+  # Runs the full check suite (format, lint, typecheck, tests, Swift tests) on
+  # its own runner so the expensive build-macos job isn't serialized behind
+  # ~2.5 minutes of checks. publish gates on this job, so nothing ships
+  # unchecked. Needs macOS for the Swift package tests; GhosttyKit is not
+  # required (it links into the app target, not the packages).
+  checks:
+    runs-on: ${{ inputs.macos_runner || vars.CODEVISOR_MACOS_ARM_RUNNER || vars.CODEVISOR_MACOS_RUNNER || vars.HERDMAN_MACOS_ARM_RUNNER || vars.HERDMAN_MACOS_RUNNER || 'macos-26' }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Run release checks
+        run: bun run check
+
   build-server-linux:
     needs: metadata
     runs-on: ubuntu-24.04
@@ -201,8 +221,6 @@ jobs:
           echo "APP_STORE_CONNECT_API_KEY_PATH=$api_key_path" >> "$GITHUB_ENV"
       - name: Install dependencies
         run: bun install --frozen-lockfile
-      - name: Run release checks
-        run: bun run check
       - name: Download Intel macOS server runtime
         shell: bash
         env:
@@ -241,6 +259,7 @@ jobs:
   publish:
     needs:
       - metadata
+      - checks
       - build-server-linux
       - build-server-macos-x64
       - build-macos

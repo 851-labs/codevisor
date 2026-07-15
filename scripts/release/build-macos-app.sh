@@ -231,28 +231,37 @@ find "$app_path" -name "._*" -delete
 
 identity="${APPLE_CODESIGN_IDENTITY:-}"
 if [[ -n "$identity" ]]; then
-  while IFS= read -r -d '' candidate; do
-    if file -b "$candidate" | grep -q "Mach-O"; then
-      if [[ "$candidate" == "$server_resources"/*/bin/node ]]; then
-        codesign --force --options runtime --timestamp --entitlements "$node_entitlements" --sign "$identity" "$candidate"
-      else
-        codesign --force --options runtime --timestamp --sign "$identity" "$candidate"
-      fi
-    fi
-  done < <(find "$server_resources" -type f -print0)
-  codesign --force --options runtime --timestamp --sign "$identity" "$app_path"
+  sign_args=(--force --options runtime --timestamp --sign "$identity")
 else
-  while IFS= read -r -d '' candidate; do
-    if file -b "$candidate" | grep -q "Mach-O"; then
-      if [[ "$candidate" == "$server_resources"/*/bin/node ]]; then
-        codesign --force --entitlements "$node_entitlements" --sign - "$candidate"
-      else
-        codesign --force --sign - "$candidate"
-      fi
-    fi
-  done < <(find "$server_resources" -type f -print0)
-  codesign --force --sign - "$app_path"
+  sign_args=(--force --sign -)
 fi
+
+# Sign every Mach-O in the bundled server runtimes. Detection is batched
+# through one xargs/file pipeline: the runtimes hold ~21k files but only ~14
+# Mach-O binaries, and the previous per-file `file` invocation spent ~4
+# minutes on process spawns alone. Paths from `file` output are newline-split,
+# which is safe here because npm rejects package files with newlines in names.
+macho_manifest="$repo_root/dist/release/work/macho-manifest.txt"
+mkdir -p "$(dirname "$macho_manifest")"
+find "$server_resources" -type f -print0 \
+  | xargs -0 file --no-pad \
+  | grep ": Mach-O" \
+  | sed 's/: Mach-O.*//' > "$macho_manifest"
+
+# The Node executables carry JIT entitlements; everything else signs in
+# parallel batches (each --timestamp signature round-trips to Apple's
+# timestamp service, so parallelism hides the network latency).
+while IFS= read -r macho; do
+  case "$macho" in
+    "$server_resources"/*/bin/node)
+      codesign "${sign_args[@]}" --entitlements "$node_entitlements" "$macho"
+      ;;
+  esac
+done < "$macho_manifest"
+{ grep -v "/bin/node$" "$macho_manifest" || true; } | tr '\n' '\0' \
+  | xargs -0 -n 8 -P 4 codesign "${sign_args[@]}"
+
+codesign "${sign_args[@]}" "$app_path"
 
 # Exercise the signed runtime before archiving. This catches production-only
 # signing and native-addon ABI drift that the Debug app cannot expose.
