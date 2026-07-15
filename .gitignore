@@ -31,3 +31,7 @@ apps/desktop/src-tauri/target/
 apps/desktop/src-tauri/gen/
 apps/desktop/src-tauri/resources/server/*
 !apps/desktop/src-tauri/resources/server/.gitkeep
+
+# Colocated dev/test build & server state (see scripts/dev.mjs)
+tmp/
+.codevisor/

@@ -11,7 +11,7 @@
     "dev": "bun scripts/dev.mjs",
     "build": "turbo run build",
     "typecheck": "turbo run typecheck",
-    "lint": "oxlint --disable-nested-config --ignore-pattern '.repos/**' .",
+    "lint": "oxlint --disable-nested-config --ignore-pattern '.repos/**' --ignore-pattern 'tmp/**' --ignore-pattern '.codevisor/**' .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "turbo run test",

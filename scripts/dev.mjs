@@ -14,11 +14,18 @@ const worktreeHash = createHash("sha256").update(worktreeName).digest("hex")
 const developmentIconColor = colorFromHash(worktreeHash)
 const instanceName = `${worktreeName}-${instanceHash}`
 const appName = `Codevisor (${worktreeName})`
-const derivedDataPath = join(repoRoot, "DerivedData")
+// All build/server scratch is colocated under a single gitignored tmp/ dir so
+// the worktree root stays tidy and everything is removed with the worktree.
+const tmpRoot = join(repoRoot, "tmp")
+const derivedDataPath = join(tmpRoot, "DerivedData")
+// The local dev instance and a standalone "remote" server each get their own
+// codevisor data dir — no cross-instance conflicts, and a realistic two-machine
+// setup for testing remote flows and sync locally.
 const dataDirectory =
   process.env.CODEVISOR_DEV_DATA_DIR ??
   process.env.HERDMAN_DEV_DATA_DIR ??
-  join(homedir(), "Library", "Application Support", "Codevisor Development", instanceName)
+  join(tmpRoot, "codevisor")
+const remoteDataDirectory = join(tmpRoot, "codevisor-remote")
 const worktreesDirectory =
   process.env.CODEVISOR_WORKTREES_ROOT ??
   process.env.HERDMAN_WORKTREES_ROOT ??
@@ -35,13 +42,38 @@ const preferredWwwPort = 61_000 + (Number.parseInt(instanceHash.slice(0, 8), 16)
 const requestedWwwPort = parsePort(process.env.CODEVISOR_DEV_WWW_PORT, "CODEVISOR_DEV_WWW_PORT")
 const wwwPort = requestedWwwPort ?? (await findAvailablePort(preferredWwwPort, 61_000, 4_000))
 
+// The dev "remote" server: a real standalone server on this machine, isolated
+// from the local instance, so remote-machine flows can be developed offline.
+const remotePort = await findAvailablePort(port + 1, 51_000, 10_000)
+const remoteName = `Dev Remote (${worktreeName})`
+
+// One-time move of an earlier instance's state into the current data dir, so
+// relocating (Application Support → .codevisor → tmp/codevisor) never drops
+// the machines/projects you added. Checks each prior location in order.
+if (dataDirectory === join(tmpRoot, "codevisor") && !(await pathExists(dataDirectory))) {
+  for (const previous of [
+    join(repoRoot, ".codevisor"),
+    join(homedir(), "Library", "Application Support", "Codevisor Development", instanceName)
+  ]) {
+    if (await pathExists(previous)) {
+      console.log(`Moving dev state into ${dataDirectory}`)
+      await mkdir(tmpRoot, { recursive: true })
+      await cp(previous, dataDirectory, { recursive: true })
+      await rm(previous, { recursive: true, force: true })
+      break
+    }
+  }
+}
+
 await mkdir(dataDirectory, { recursive: true })
+await mkdir(remoteDataDirectory, { recursive: true })
 await mkdir(worktreesDirectory, { recursive: true })
 
 console.log(`Codevisor development instance: ${worktreeName}`)
 console.log(`  app:      ${appName}`)
 console.log(`  server:   http://127.0.0.1:${port}`)
 console.log(`  www:      http://localhost:${wwwPort}`)
+console.log(`  remote:   http://127.0.0.1:${remotePort}  (${remoteName})`)
 console.log(`  data:     ${dataDirectory}`)
 console.log(`  worktrees:${worktreesDirectory}`)
 console.log(`  icon:     ${developmentIconColor.hex}`)
@@ -82,7 +114,13 @@ const sharedEnvironment = {
   CODEVISOR_DEV_PORT: String(port),
   CODEVISOR_DEV_WWW_PORT: String(wwwPort),
   CODEVISOR_DEV_DATA_DIR: dataDirectory,
-  CODEVISOR_WORKTREES_ROOT: worktreesDirectory
+  CODEVISOR_WORKTREES_ROOT: worktreesDirectory,
+  // The dev remote's details, so the app can offer a one-click "add the test
+  // remote" in Settings → Machines (the token is filled in once it's read).
+  CODEVISOR_DEV_REMOTE_HOST: "127.0.0.1",
+  CODEVISOR_DEV_REMOTE_PORT: String(remotePort),
+  CODEVISOR_DEV_REMOTE_NAME: remoteName,
+  CODEVISOR_DEV_REMOTE_TOKEN: ""
 }
 const databasePath = join(dataDirectory, "codevisor-server.sqlite")
 const upgradeStatusPath = join(dataDirectory, "data-upgrade.json")
@@ -115,6 +153,41 @@ const www = spawn(
   { cwd: repoRoot, env: sharedEnvironment, stdio: "inherit" }
 )
 
+// A standalone "remote" server on this machine, fully isolated from the local
+// instance (its own data dir, worktrees, and managed repos) so remote-machine
+// development mirrors talking to a real second machine.
+const remoteServer = spawn(
+  "node",
+  [
+    join(repoRoot, "apps/server/dist/main.js"),
+    "serve",
+    "--host",
+    "0.0.0.0",
+    "--port",
+    String(remotePort),
+    "--db",
+    join(remoteDataDirectory, "codevisor-server.sqlite"),
+    "--auth",
+    "token",
+    "--kind",
+    "remote",
+    "--name",
+    remoteName,
+    "--upgrade-status",
+    join(remoteDataDirectory, "data-upgrade.json")
+  ],
+  {
+    cwd: repoRoot,
+    env: {
+      ...process.env,
+      CODEVISOR_DATA_DIR: remoteDataDirectory,
+      CODEVISOR_WORKTREES_ROOT: join(remoteDataDirectory, "worktrees"),
+      CODEVISOR_REPOS_ROOT: join(remoteDataDirectory, "repos")
+    },
+    stdio: "inherit"
+  }
+)
+
 let app
 let stopping = false
 
@@ -124,14 +197,21 @@ const stop = async (exitCode = 0) => {
   app?.kill("SIGTERM")
   www.kill("SIGTERM")
 
-  try {
-    await fetch(`http://127.0.0.1:${port}/v1/shutdown`, { method: "POST" })
-  } catch {
-    server.kill("SIGTERM")
+  for (const [servicePort, child] of [
+    [port, server],
+    [remotePort, remoteServer]
+  ]) {
+    try {
+      await fetch(`http://127.0.0.1:${servicePort}/v1/shutdown`, { method: "POST" })
+    } catch {
+      child.kill("SIGTERM")
+    }
   }
 
-  await Promise.race([waitForExit(server), delay(2_000)])
-  if (server.exitCode === null) server.kill("SIGTERM")
+  await Promise.race([Promise.all([waitForExit(server), waitForExit(remoteServer)]), delay(2_000)])
+  for (const child of [server, remoteServer]) {
+    if (child.exitCode === null) child.kill("SIGTERM")
+  }
   process.exitCode = exitCode
 }
 
@@ -139,12 +219,17 @@ for (const signal of ["SIGINT", "SIGTERM"]) {
   process.on(signal, () => void stop(0))
 }
 
-const serverExit = waitForExit(server).then(async (result) => {
-  if (!stopping) {
-    console.error(`Codevisor server exited unexpectedly (${describeExit(result)}).`)
-    await stop(result.code ?? 1)
-  }
-})
+const watchServerExit = (child, label) =>
+  waitForExit(child).then(async (result) => {
+    if (!stopping) {
+      console.error(`${label} exited unexpectedly (${describeExit(result)}).`)
+      await stop(result.code ?? 1)
+    }
+  })
+const serverExit = Promise.all([
+  watchServerExit(server, "Codevisor server"),
+  watchServerExit(remoteServer, "Codevisor dev remote server")
+])
 
 void waitForExit(www).then((result) => {
   if (!stopping) {
@@ -154,6 +239,8 @@ void waitForExit(www).then((result) => {
 
 try {
   await waitForHealth(port, server)
+  await waitForHealth(remotePort, remoteServer)
+  await announceDevRemote()
   const executable = join(
     derivedDataPath,
     "Build",
@@ -171,6 +258,28 @@ try {
 } catch (error) {
   console.error(error instanceof Error ? error.message : error)
   await stop(1)
+}
+
+// Print the dev remote's connection details so it can be added in the app.
+// Its token is stable, so this only needs to be done once per instance.
+async function announceDevRemote() {
+  let token = "(start the server to read it)"
+  try {
+    const response = await fetch(`http://127.0.0.1:${remotePort}/v1/auth/connection-token`)
+    if (response.ok) token = (await response.json()).token
+  } catch {
+    // Non-fatal: the address alone is enough to add the machine.
+  }
+  // Hand the token to the app for the one-click "add test remote" action.
+  sharedEnvironment.CODEVISOR_DEV_REMOTE_TOKEN = token
+  const deeplink = `codevisor-dev://add-machine?host=127.0.0.1&port=${remotePort}&token=${token}&name=${encodeURIComponent(remoteName)}`
+  console.log("")
+  console.log(`Dev remote server ready — add it in ${appName}:`)
+  console.log(`  Settings → Machines → Add Remote Machine`)
+  console.log(`  Address: 127.0.0.1:${remotePort}`)
+  console.log(`  Token:   ${token}`)
+  console.log(`  Or open: ${deeplink}`)
+  console.log("")
 }
 
 function parsePort(value, name) {
