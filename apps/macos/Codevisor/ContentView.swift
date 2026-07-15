@@ -60,9 +60,6 @@ struct RootView: View {
     @State private var preparedMachineId: String?
     @State private var quickLook = QuickLookController()
     @State private var panelLayout = AdaptivePanelLayout()
-    @State private var pendingDeeplink: MachineDeeplink?
-    @State private var deeplinkError: String?
-    @Environment(\.openSettings) private var openSettings
 
     var body: some View {
         Group {
@@ -145,43 +142,10 @@ struct RootView: View {
             }
         }
         // codevisor://add-machine deeplinks, printed by `codevisor setup` on a
-        // remote machine. Never auto-add: the token grants full agent access,
-        // so an explicit confirmation always sits between the link and the
-        // machine list.
-        .onOpenURL { url in
-            guard let deeplink = MachineDeeplink.parse(url) else { return }
-            pendingDeeplink = deeplink
-        }
-        .alert(
-            "Add Remote Machine?",
-            isPresented: Binding(
-                get: { pendingDeeplink != nil },
-                set: { if !$0 { pendingDeeplink = nil } }
-            ),
-            presenting: pendingDeeplink
-        ) { deeplink in
-            Button("Add \(deeplink.displayName)") { confirmDeeplink(deeplink) }
-            Button("Cancel", role: .cancel) { pendingDeeplink = nil }
-        } message: { deeplink in
-            Text(
-                """
-                “\(deeplink.displayName)” (\(deeplink.hostWithPort)) will be added to your \
-                machines. Codevisor will be able to run agents and read files on it.
-                """
-            )
-        }
-        .alert(
-            "Couldn't Add Machine",
-            isPresented: Binding(
-                get: { deeplinkError != nil },
-                set: { if !$0 { deeplinkError = nil } }
-            ),
-            presenting: deeplinkError
-        ) { _ in
-            Button("OK", role: .cancel) { deeplinkError = nil }
-        } message: { error in
-            Text(error)
-        }
+        // remote machine. Extracted into its own modifier: inlining the
+        // alerts here pushed this already-large chain past the Swift type
+        // checker's budget on release builds.
+        .modifier(MachineDeeplinkHandling())
         .task(id: environment.machines.selectedMachineId) {
             // Warm the harness config cache in the background so the composer
             // pickers are populated instantly.
@@ -201,24 +165,6 @@ struct RootView: View {
                 // so opening the terminal later can't re-enter its dispatch_once.
                 TerminalRuntime.prewarm()
             }
-        }
-    }
-
-    /// Adds (or, for an existing address, re-tokens and selects) the machine
-    /// from a confirmed deeplink, then lands the user on the Machines settings
-    /// tab so the new connection's status is visible.
-    private func confirmDeeplink(_ deeplink: MachineDeeplink) {
-        defer { pendingDeeplink = nil }
-        do {
-            _ = try environment.machines.addRemote(
-                host: deeplink.hostWithPort,
-                name: deeplink.name,
-                token: deeplink.token
-            )
-            SettingsRouter.shared.selectedTab = .machines
-            openSettings()
-        } catch {
-            deeplinkError = String(describing: error)
         }
     }
 
@@ -342,4 +288,81 @@ enum SidebarSelection: Hashable {
     RootView()
         .environment(AppEnvironment.preview())
         .frame(width: 1100, height: 720)
+}
+
+/// codevisor://add-machine deeplink handling: parse, confirm, add, and route
+/// to the Machines settings tab. Lives in its own modifier so RootView's
+/// modifier chain stays within the Swift type checker's budget.
+private struct MachineDeeplinkHandling: ViewModifier {
+    @Environment(AppEnvironment.self) private var environment
+    @Environment(\.openSettings) private var openSettings
+    @State private var pendingDeeplink: MachineDeeplink?
+    @State private var deeplinkError: String?
+
+    func body(content: Content) -> some View {
+        content
+            // Never auto-add: the token grants full agent access, so an
+            // explicit confirmation always sits between the link and the
+            // machine list.
+            .onOpenURL { url in
+                guard let deeplink = MachineDeeplink.parse(url) else { return }
+                pendingDeeplink = deeplink
+            }
+            .alert(
+                "Add Remote Machine?",
+                isPresented: confirmPresented,
+                presenting: pendingDeeplink
+            ) { deeplink in
+                Button("Add \(deeplink.displayName)") { confirm(deeplink) }
+                Button("Cancel", role: .cancel) { pendingDeeplink = nil }
+            } message: { deeplink in
+                Text(
+                    """
+                    “\(deeplink.displayName)” (\(deeplink.hostWithPort)) will be added to your \
+                    machines. Codevisor will be able to run agents and read files on it.
+                    """
+                )
+            }
+            .alert(
+                "Couldn't Add Machine",
+                isPresented: errorPresented,
+                presenting: deeplinkError
+            ) { _ in
+                Button("OK", role: .cancel) { deeplinkError = nil }
+            } message: { error in
+                Text(error)
+            }
+    }
+
+    private var confirmPresented: Binding<Bool> {
+        Binding(
+            get: { pendingDeeplink != nil },
+            set: { if !$0 { pendingDeeplink = nil } }
+        )
+    }
+
+    private var errorPresented: Binding<Bool> {
+        Binding(
+            get: { deeplinkError != nil },
+            set: { if !$0 { deeplinkError = nil } }
+        )
+    }
+
+    /// Adds (or, for an existing address, re-tokens and selects) the machine
+    /// from a confirmed deeplink, then lands the user on the Machines settings
+    /// tab so the new connection's status is visible.
+    private func confirm(_ deeplink: MachineDeeplink) {
+        defer { pendingDeeplink = nil }
+        do {
+            _ = try environment.machines.addRemote(
+                host: deeplink.hostWithPort,
+                name: deeplink.name,
+                token: deeplink.token
+            )
+            SettingsRouter.shared.selectedTab = .machines
+            openSettings()
+        } catch {
+            deeplinkError = String(describing: error)
+        }
+    }
 }
