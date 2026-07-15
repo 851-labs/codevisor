@@ -80,6 +80,16 @@ struct LocalCodevisorServerTests {
             completed: 100,
             total: 100
         )
+        // The upgrade finishes exactly when the server first reports healthy
+        // (the third health call: pre-launch probe, one failing wait
+        // iteration, then success). Keying the status-file write to the
+        // health sequence instead of a timer keeps the test deterministic on
+        // loaded CI machines, where a detached sleeping task can lose the
+        // race against the wait loop's final progress refresh.
+        client.onHealth = { call in
+            guard call == 3 else { return }
+            try? JSONEncoder().encode(completed).write(to: statusURL, options: .atomic)
+        }
         let server = LocalCodevisorServer(
             client: client,
             entrypoint: directory.appendingPathComponent("main.js"),
@@ -88,10 +98,6 @@ struct LocalCodevisorServerTests {
             launcher: { request in
                 #expect(request.dataUpgradeStatusURL == statusURL)
                 try JSONEncoder().encode(running).write(to: statusURL, options: .atomic)
-                Task {
-                    try? await Task.sleep(for: .milliseconds(100))
-                    try? JSONEncoder().encode(completed).write(to: statusURL, options: .atomic)
-                }
                 let process = Process()
                 process.executableURL = URL(fileURLWithPath: "/bin/sleep")
                 process.arguments = ["1"]
@@ -444,15 +450,26 @@ private final class FakeLocalServerClient: CodevisorServerClienting, @unchecked 
     private let lock = NSLock()
     private var healthResults: [Result<ServerHealth, Error>]
     private(set) var shutdownRequests = 0
+    private var healthCalls = 0
+    /// Runs on every health() call with the 1-based call number, before the
+    /// result is returned. Lets tests key side effects (like data-upgrade
+    /// status file writes) to the health sequence instead of wall-clock
+    /// timers, which lose scheduling races on loaded CI machines.
+    var onHealth: ((Int) -> Void)?
 
     init(healthResults: [Result<ServerHealth, Error>]) {
         self.healthResults = healthResults
     }
 
     func health() async throws -> ServerHealth {
-        let result = lock.withLock {
-            healthResults.isEmpty ? .success(.ready) : healthResults.removeFirst()
+        let (result, call): (Result<ServerHealth, Error>, Int) = lock.withLock {
+            healthCalls += 1
+            return (
+                healthResults.isEmpty ? .success(.ready) : healthResults.removeFirst(),
+                healthCalls
+            )
         }
+        onHealth?(call)
         switch result {
         case let .success(health):
             return health
