@@ -57,6 +57,13 @@ public final class SessionModel {
     public private(set) var modeState: SessionModeState?
     public private(set) var configOptions: [SessionConfigOption]
     public private(set) var errorMessage: String?
+    /// The most recent harness-auth failure is retained separately so a
+    /// duplicate generic failure carrying the same server message does not
+    /// erase its recovery action.
+    private var harnessAuthenticationErrorMessage: String?
+    public var errorRequiresHarnessAuthentication: Bool {
+        errorMessage != nil && harnessAuthenticationErrorMessage == errorMessage
+    }
     /// Latest context-window + cost usage reported by the agent (`usage_update`).
     public private(set) var usage: SessionUsage?
     /// Background tasks the agent is running (backgrounded shells, subagents),
@@ -329,6 +336,7 @@ public final class SessionModel {
 
         composerText = ""
         errorMessage = nil
+        harnessAuthenticationErrorMessage = nil
 
         if isSending {
             await enqueueWhileSending(trimmed, attachments: attachments)
@@ -679,7 +687,7 @@ public final class SessionModel {
                     turn.stopDetail = detail
                     turn.retryable = retryable
                     turn.isGenerating = false
-                case let .failed(message):
+                case let .failed(message), let .authenticationRequired(message):
                     turn.stopDetail = message
                     turn.isGenerating = false
                 case .userMessage, .queueUpdated, .retrying, .backgroundTasks:
@@ -903,6 +911,11 @@ public final class SessionModel {
             errorMessage = message
             finish(stopReason: nil, outcome: .failed, stopDetail: nil)
             endTurn()
+        case let .authenticationRequired(message):
+            errorMessage = message
+            harnessAuthenticationErrorMessage = message
+            finish(stopReason: nil, outcome: .failed, stopDetail: nil)
+            endTurn()
         case let .retrying(retry):
             // A transient failure is being retried — the turn is still alive.
             // Surface it on the active turn so the UI shows "Retrying… (n/of)".
@@ -1034,6 +1047,7 @@ public final class SessionModel {
         // level error banner so it can't outlive the failure it described —
         // including a stale one replayed from history on reconnect.
         errorMessage = nil
+        harnessAuthenticationErrorMessage = nil
         activeItem = .assistant(AssistantMessage(
             turn: AssistantTurn(isGenerating: true, isThinking: true, startedAt: now())
         ))

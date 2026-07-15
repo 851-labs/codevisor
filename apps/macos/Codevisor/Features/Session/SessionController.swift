@@ -280,6 +280,9 @@ final class SessionController {
         return state
     }
     var errorMessage: String? { model?.errorMessage }
+    var errorRequiresHarnessAuthentication: Bool {
+        model?.errorRequiresHarnessAuthentication == true
+    }
     var usage: SessionUsage? { model?.usage }
 
     func loadOlderHistory() async {

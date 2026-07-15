@@ -9,6 +9,7 @@ struct SessionScreen: View {
     @Environment(\.theme) private var theme
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.openSettings) private var openSettings
     @Bindable var controller: SessionController
     var paneGroup: PaneGroupModel
     @State private var isAtBottom = true
@@ -488,6 +489,14 @@ struct SessionScreen: View {
                     .buttonStyle(.bordered)
                     .controlSize(.small)
                     .help("Restart Codevisor and its server")
+            } else if controller.errorRequiresHarnessAuthentication {
+                Button("Open Harness Settings") {
+                    SettingsRouter.shared.selectedTab = .harnesses
+                    openSettings()
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .help("Open Harnesses settings to sign in")
             }
         }
         .padding(10)

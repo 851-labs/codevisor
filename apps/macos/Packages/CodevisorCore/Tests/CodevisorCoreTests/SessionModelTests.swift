@@ -117,6 +117,37 @@ struct SessionModelTests {
         #expect(assistant.turn.stopReason == .endTurn)
     }
 
+    @Test("Harness authentication failures remain distinguishable for recovery UI")
+    func harnessAuthenticationFailureIsDistinguishable() async {
+        let sessionId = UUID()
+        let client = FakeSessionServerClient(sessionId: sessionId)
+        client.echoOnPrompt = false
+        let model = SessionModel(
+            serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
+            sessionId: sessionId.uuidString
+        )
+
+        await model.send("hello")
+        client.emit(ServerEventEnvelope(
+            id: 1,
+            serverId: "local",
+            kind: "session.authRequired",
+            subjectId: sessionId.uuidString,
+            createdAt: "2026-07-15T00:00:00.000Z",
+            payload: .object(["detail": .string("Your Codex sign-in expired.")])
+        ))
+        for _ in 0..<40 {
+            await Task.yield()
+            if model.errorRequiresHarnessAuthentication { break }
+        }
+
+        #expect(model.errorMessage == "Your Codex sign-in expired.")
+        #expect(model.errorRequiresHarnessAuthentication)
+
+        await model.send("try again")
+        #expect(model.errorRequiresHarnessAuthentication == false)
+    }
+
     @Test("Paginated reconnect restores a blocking question at the stream cursor")
     func paginatedReconnectRestoresPendingQuestion() async {
         let sessionId = UUID()

@@ -32,6 +32,9 @@ public enum ServerSessionStreamEvent: Equatable, Sendable {
     /// visible reconnecting status, with progress when the harness provides it.
     case retrying(RetryStatus)
     case failed(String)
+    /// The harness rejected its credentials. Kept distinct from generic
+    /// failures so clients can offer the relevant authentication settings.
+    case authenticationRequired(String)
     /// Full replace-on-update snapshot of the agent's in-flight background
     /// tasks (backgrounded shells, subagents). Empty means none pending.
     case backgroundTasks([BackgroundTaskInfo])
@@ -388,7 +391,10 @@ public struct ServerSessionTransport: Sendable {
         case "session.error":
             return [.failed(errorMessage(from: event.payload))]
         case "session.authRequired":
-            return [.failed(event.payload["detail"]?.stringValue ?? "Sign-in expired. Sign in again in Harness Settings to continue.")]
+            return [.authenticationRequired(
+                event.payload["detail"]?.stringValue
+                    ?? "Sign-in expired. Sign in again in Harness Settings to continue."
+            )]
         default:
             return []
         }
