@@ -21,6 +21,11 @@ struct NewChatView: View {
     @State private var runInWorktree = false
     @State private var focus = TerminalFocusController()
     @State private var addProjectFlow = AddProjectFlow()
+    /// Setup state for the no-projects panel. Owned here (not by the panel)
+    /// because a clone registers its project immediately — the page must keep
+    /// showing the panel with the clone as a selected row, exactly like
+    /// onboarding, instead of flipping to the composer mid-setup.
+    @State private var projectSetup = ProjectSetupModel()
 
     private var projects: [Project] { environment.projectList.activeProjects }
     private var selectedProject: Project? {
@@ -36,6 +41,13 @@ struct NewChatView: View {
         selectedProject?.isGitRepository ?? false
     }
 
+    /// The setup panel shows while the machine has no projects, and stays up
+    /// while the user has staged-but-unconfirmed work (a completed clone
+    /// already counts as a project, but setup isn't done until confirmed).
+    private var showsProjectSetup: Bool {
+        projects.isEmpty || projectSetup.hasStagedWork
+    }
+
     var body: some View {
         VStack {
             // 2:3 spacer split sits the composer slightly above true center.
@@ -43,7 +55,17 @@ struct NewChatView: View {
             Spacer()
             VStack(spacing: 22) {
                 title
-                if let controller {
+                if showsProjectSetup {
+                    // Inline setup instead of pointing at the sidebar's "+":
+                    // onboarding's project step, adapted to the selected
+                    // machine. This is the first thing a user sees after
+                    // adding a fresh (often headless remote) machine.
+                    ProjectSetupPanel(model: projectSetup) { project in
+                        projectSetup = ProjectSetupModel()
+                        selectedProjectId = project.id
+                        selection = .newChat(project.id)
+                    }
+                } else if let controller {
                     VStack(alignment: .leading, spacing: 8) {
                         VStack(spacing: 0) {
                             ComposerCard(
@@ -103,7 +125,10 @@ struct NewChatView: View {
         // already returned. Retry when the active project set changes so the
         // composer does not remain hidden after the first project appears.
         .onChange(of: projects.map(\.id)) { _, _ in
-            guard controller == nil else { return }
+            // Not while setup is staging: a clone registers its project
+            // immediately, and eagerly connecting an agent there would be
+            // premature — the user may confirm with a different selection.
+            guard controller == nil, !showsProjectSetup else { return }
             setUpController()
         }
         .focusedSceneValue(\.newChatComposerFocus, NewChatComposerFocus(
@@ -115,13 +140,9 @@ struct NewChatView: View {
 
     @ViewBuilder
     private var title: some View {
-        if projects.isEmpty {
-            VStack(spacing: 10) {
-                Text("Add a project to start")
-                    .font(.system(size: 26, weight: .semibold))
-                Text("Use the + next to projects in the sidebar.")
-                    .foregroundStyle(.secondary)
-            }
+        if showsProjectSetup {
+            Text("Add a project to start")
+                .font(.system(size: 26, weight: .semibold))
         } else {
             // A flow layout so the sentence reflows like normal wrapping text
             // when the window narrows — each word and the inline project chip

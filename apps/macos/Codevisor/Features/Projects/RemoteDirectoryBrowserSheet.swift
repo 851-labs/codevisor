@@ -116,8 +116,31 @@ struct RemoteDirectoryBrowserSheet: View {
                 pathField = next.path
                 errorMessage = nil
             } catch {
-                errorMessage = serverErrorMessage(error)
+                errorMessage = Self.guidance(
+                    code: serverErrorCode(error),
+                    fallback: serverErrorMessage(error),
+                    machineName: machineName
+                )
             }
+        }
+    }
+
+    /// Actionable messages for the server's classified `fs/list` failures.
+    /// The fallback is the server's own error sentence (or the connection
+    /// failure message).
+    static func guidance(code: String?, fallback: String, machineName: String) -> String {
+        switch code {
+        case "not_found":
+            return "That folder doesn't exist on \(machineName). Check the path and try again."
+        case "permission_denied":
+            return "Codevisor on \(machineName) isn't allowed to read that folder. "
+                + "Pick another folder, or adjust its permissions on the machine."
+        case "not_a_directory":
+            return "That path is a file, not a folder."
+        case "invalid_path":
+            return "Enter an absolute path (starting with /), or ~ for the home folder."
+        default:
+            return fallback
         }
     }
 }

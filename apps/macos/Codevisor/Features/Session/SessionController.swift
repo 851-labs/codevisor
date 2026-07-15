@@ -1397,7 +1397,15 @@ final class SessionController {
             session.agentSessionId = resumeAgentSessionId
         }
 
-        _ = try await serverClient.upsertProject(project)
+        // Ensure the server knows the project before the session upsert — but
+        // never overwrite an existing server record: this controller's copy is
+        // a snapshot from when the draft was created, and pushing it here used
+        // to revert changes made in the meantime (archiving a project while
+        // its new-chat draft was connecting un-archived it again).
+        let remoteProjects = try await serverClient.listProjects()
+        if !remoteProjects.contains(where: { UUID(uuidString: $0.id) == project.id }) {
+            _ = try await serverClient.upsertProject(project)
+        }
         let remoteSession = try await serverClient.upsertSession(session)
         session = try remoteSession.chatSession()
         self.serverSession = session

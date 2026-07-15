@@ -181,6 +181,9 @@ struct GitCloneSheet: View {
             return "The machine is out of disk space."
         case "invalid_url":
             return "That doesn't look like a git repository URL."
+        case "already_exists":
+            return "A project folder with that name already exists on the machine. "
+                + "Add it as a folder instead, or choose a different project name."
         default:
             return fallback
         }

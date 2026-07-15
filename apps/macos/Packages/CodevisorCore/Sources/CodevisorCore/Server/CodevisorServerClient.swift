@@ -1214,7 +1214,11 @@ public final class CodevisorServerClient: CodevisorServerClienting, @unchecked S
 
     public func upsertProject(_ project: Project) async throws -> ServerProject {
         let remoteProjects = try await listProjects()
-        if remoteProjects.contains(where: { $0.id == project.id.uuidString }) {
+        // Compare as UUIDs: the server lowercases ids while Swift's
+        // uuidString is uppercase — a string comparison never matches, which
+        // sent every "update" down the create path (and archiving, whose
+        // PATCH therefore never fired, silently reverted).
+        if remoteProjects.contains(where: { UUID(uuidString: $0.id) == project.id }) {
             return try await updateProject(project)
         }
         return try await createProject(project)
@@ -1327,7 +1331,8 @@ public final class CodevisorServerClient: CodevisorServerClienting, @unchecked S
 
     public func upsertSession(_ session: ChatSession) async throws -> ServerSession {
         let remoteSessions = try await listSessions()
-        if remoteSessions.contains(where: { $0.id == session.id.uuidString }) {
+        // UUID comparison for the same case-mismatch reason as upsertProject.
+        if remoteSessions.contains(where: { UUID(uuidString: $0.id) == session.id }) {
             return try await updateSession(session)
         }
         return try await createSession(session)

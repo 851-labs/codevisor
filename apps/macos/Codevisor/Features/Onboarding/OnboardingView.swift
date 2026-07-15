@@ -48,16 +48,12 @@ struct OnboardingView: View {
     @State private var detection: HarnessDetection = .connecting
     @State private var isRescanning = false
     @State private var rescanError: String?
-    /// Folders the user has ticked, in selection order — the first one is the
-    /// project a new chat opens in after setup.
-    @State private var selectedFolders: [URL] = []
-    /// Folders added through the open panel (they aren't in `recommendations`
-    /// but should render as selectable rows alongside them).
-    @State private var customFolders: [URL] = []
+    /// The project step's selection state (suggestions, picks, clones) —
+    /// the same model the new-chat empty state uses.
+    @State private var projectSetup = ProjectSetupModel()
     @State private var showingFolderPicker = false
+    @State private var showingGitClone = false
     @State private var isFinishing = false
-    @State private var recommendations: [ProjectRecommendation] = []
-    @State private var isLoadingRecommendations = true
     @State private var showsNotInstalled = false
     @State private var authenticationHarness: ServerHarness?
     @State private var toggleError: ToggleError?
@@ -101,11 +97,19 @@ struct OnboardingView: View {
             allowsMultipleSelection: true
         ) { result in
             if case let .success(urls) = result {
-                addPickedFolders(urls)
+                projectSetup.addPickedFolders(urls)
             }
         }
         .sheet(item: $authenticationHarness) { harness in
             HarnessAuthenticationView(harness: harness) { replaceHarness($0) }
+        }
+        .sheet(isPresented: $showingGitClone) {
+            GitCloneSheet(
+                client: environment.machines.client(for: environment.machines.selectedMachineId),
+                machineName: environment.machines.selectedMachine.name
+            ) { project in
+                projectSetup.cloneCompleted(project)
+            }
         }
         .alert(
             toggleError?.title ?? "",
@@ -383,7 +387,7 @@ struct OnboardingView: View {
     /// port and misreport "No harnesses found".
     private func detectHarnesses() async {
         detection = .connecting
-        isLoadingRecommendations = true
+        projectSetup.isLoadingRecommendations = true
         if !AppPreview.isRunning {
             // Joins the root view's in-flight server start (ensureRunning
             // dedups concurrent callers) instead of racing ahead of it.
@@ -397,15 +401,15 @@ struct OnboardingView: View {
                 detection = .loaded
                 // Suggest project folders from the user's most recent harness
                 // sessions so the project step offers one-click choices.
-                recommendations = await environment.recommendedProjects()
-                isLoadingRecommendations = false
+                projectSetup.recommendations = await environment.recommendedProjects()
+                projectSetup.isLoadingRecommendations = false
                 return
             }
             if attempt < 7 {
                 try? await Task.sleep(for: .milliseconds(500))
             }
         }
-        isLoadingRecommendations = false
+        projectSetup.isLoadingRecommendations = false
         detection = .unreachable(serverFailureMessage)
     }
 
@@ -432,39 +436,6 @@ struct OnboardingView: View {
 
     // MARK: - Projects
 
-    /// A selectable folder row: either a recommendation or a custom pick.
-    private struct FolderChoice: Identifiable {
-        let url: URL
-        let title: String
-        let subtitle: String
-        var id: String { url.standardizedFileURL.path }
-    }
-
-    /// Custom picks first (most deliberate), then the suggestions.
-    private var folderChoices: [FolderChoice] {
-        let custom = customFolders.map { url in
-            FolderChoice(
-                url: url,
-                title: url.lastPathComponent.isEmpty ? url.path : url.lastPathComponent,
-                subtitle: abbreviatedPath(url)
-            )
-        }
-        let suggested = recommendations
-            .filter { recommendation in
-                !customFolders.contains {
-                    $0.standardizedFileURL.path == recommendation.folderURL.standardizedFileURL.path
-                }
-            }
-            .map { recommendation in
-                FolderChoice(
-                    url: recommendation.folderURL,
-                    title: recommendation.name,
-                    subtitle: recommendationSubtitle(recommendation)
-                )
-            }
-        return custom + suggested
-    }
-
     private var projectStep: some View {
         VStack(spacing: 20) {
             stepHeader(
@@ -472,166 +443,17 @@ struct OnboardingView: View {
                 subtitle: "Select the folders you want to work in."
             )
 
-            VStack(alignment: .leading, spacing: 8) {
-                if isLoadingRecommendations {
-                    // HIG: recommendation discovery has no measurable duration,
-                    // so show a small indeterminate activity indicator where
-                    // its results will appear. Keep the manual picker available.
-                    HStack {
-                        Spacer()
-                        ProgressView()
-                            .controlSize(.small)
-                            .help("Finding recent projects")
-                            .accessibilityLabel("Finding recent projects")
-                        Spacer()
-                    }
-                    .frame(minHeight: 64)
-                } else if !folderChoices.isEmpty {
-                    HStack(alignment: .firstTextBaseline) {
-                        Text("Suggested from your recent sessions")
-                            .font(.callout.weight(.medium))
-                            .foregroundStyle(.secondary)
-                        Spacer()
-                        if !selectedFolders.isEmpty {
-                            Text(selectionCountLabel)
-                                .font(.callout.monospacedDigit())
-                                .foregroundStyle(.tint)
-                                .contentTransition(.numericText())
-                                .animation(.snappy(duration: 0.2), value: selectedFolders.count)
-                        }
-                    }
-
-                    LazyVGrid(
-                        columns: [
-                            GridItem(.flexible(), spacing: 8),
-                            GridItem(.flexible(), spacing: 8)
-                        ],
-                        spacing: 8
-                    ) {
-                        ForEach(folderChoices) { choice in
-                            folderChoiceRow(choice)
-                        }
-                    }
-                }
-
-                addFolderButton
-                    .padding(.top, folderChoices.isEmpty ? 0 : 4)
-            }
+            // The same selection grid the new-chat empty state renders, so
+            // both surfaces look and behave identically.
+            ProjectSetupSelectionView(
+                model: projectSetup,
+                isLocalMachine: environment.machines.selectedMachine.isLocal,
+                machineName: environment.machines.selectedMachine.name,
+                onPickFolder: { showingFolderPicker = true },
+                onCloneRepository: { showingGitClone = true }
+            )
         }
         .frame(maxWidth: .infinity)
-    }
-
-    private var selectionCountLabel: String {
-        selectedFolders.count == 1 ? "1 selected" : "\(selectedFolders.count) selected"
-    }
-
-    private func folderChoiceRow(_ choice: FolderChoice) -> some View {
-        let isSelected = isSelected(choice.url)
-        return Button {
-            toggleSelection(choice.url)
-        } label: {
-            HStack(spacing: 10) {
-                Image(systemName: "folder.fill")
-                    .font(.title3)
-                    .foregroundStyle(isSelected ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
-                    .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(choice.title)
-                        .fontWeight(.medium)
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
-                    Text(choice.subtitle)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                }
-                Spacer(minLength: 4)
-                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                    .foregroundStyle(isSelected ? AnyShapeStyle(.tint) : AnyShapeStyle(.quaternary))
-                    .contentTransition(.symbolEffect(.replace))
-                    .accessibilityHidden(true)
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
-            .background(
-                RoundedRectangle(cornerRadius: 10)
-                    .fill(isSelected ? AnyShapeStyle(theme.rowSelectedBackground) : theme.cardBackground)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 10)
-                    .strokeBorder(isSelected ? AnyShapeStyle(.tint) : AnyShapeStyle(.clear), lineWidth: 1)
-            )
-            .contentShape(RoundedRectangle(cornerRadius: 10))
-        }
-        .buttonStyle(.plain)
-        .help(choice.url.standardizedFileURL.path)
-        .accessibilityLabel("\(choice.title), \(choice.subtitle)")
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
-        .animation(.snappy(duration: 0.15), value: isSelected)
-    }
-
-    private var addFolderButton: some View {
-        Button {
-            showingFolderPicker = true
-        } label: {
-            HStack(spacing: 10) {
-                Image(systemName: "plus.circle")
-                    .font(.title3)
-                    .foregroundStyle(.tint)
-                    .accessibilityHidden(true)
-                Text(folderChoices.isEmpty ? "Choose a folder…" : "Add another folder…")
-                    .fontWeight(.medium)
-                    .foregroundStyle(.primary)
-                Spacer()
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
-            .background(RoundedRectangle(cornerRadius: 10).fill(theme.cardBackground))
-            .contentShape(RoundedRectangle(cornerRadius: 10))
-        }
-        .buttonStyle(.plain)
-    }
-
-    private func isSelected(_ url: URL) -> Bool {
-        let path = url.standardizedFileURL.path
-        return selectedFolders.contains { $0.standardizedFileURL.path == path }
-    }
-
-    private func toggleSelection(_ url: URL) {
-        let path = url.standardizedFileURL.path
-        if let index = selectedFolders.firstIndex(where: { $0.standardizedFileURL.path == path }) {
-            selectedFolders.remove(at: index)
-        } else {
-            selectedFolders.append(url)
-        }
-    }
-
-    /// Folders picked in the open panel join the list pre-selected; picks that
-    /// match an existing suggestion just select that suggestion's row.
-    private func addPickedFolders(_ urls: [URL]) {
-        for url in urls {
-            let path = url.standardizedFileURL.path
-            let isRecommended = recommendations.contains {
-                $0.folderURL.standardizedFileURL.path == path
-            }
-            let isCustom = customFolders.contains { $0.standardizedFileURL.path == path }
-            if !isRecommended && !isCustom {
-                customFolders.append(url)
-            }
-            if !isSelected(url) {
-                selectedFolders.append(url)
-            }
-        }
-    }
-
-    private func recommendationSubtitle(_ recommendation: ProjectRecommendation) -> String {
-        let chats = recommendation.sessionCount == 1 ? "1 chat" : "\(recommendation.sessionCount) chats"
-        return "\(chats) · \(abbreviatedPath(recommendation.folderURL))"
-    }
-
-    private func abbreviatedPath(_ url: URL) -> String {
-        (url.standardizedFileURL.path as NSString).abbreviatingWithTildeInPath
     }
 
     // MARK: - Footer
@@ -699,7 +521,9 @@ struct OnboardingView: View {
         case .welcome: return "Get Started"
         case .harnesses: return "Continue"
         case .project:
-            return selectedFolders.count > 1 ? "Add \(selectedFolders.count) Projects" : "Open Project"
+            return projectSetup.selectedFolders.count > 1
+                ? "Add \(projectSetup.selectedFolders.count) Projects"
+                : "Open Project"
         }
     }
 
@@ -708,7 +532,7 @@ struct OnboardingView: View {
         switch step {
         case .welcome: return false
         case .harnesses: return detection == .connecting
-        case .project: return selectedFolders.isEmpty
+        case .project: return projectSetup.selectedFolders.isEmpty
         }
     }
 
@@ -735,13 +559,20 @@ struct OnboardingView: View {
     }
 
     private func finish() {
-        guard !selectedFolders.isEmpty else { return }
+        guard !projectSetup.selectedFolders.isEmpty else { return }
         isFinishing = true
         Task {
-            // Adds every selected folder as a project; existing agent chats
-            // are not imported here (importing stays an explicit action, not
-            // an onboarding default). The first selection opens a new chat.
-            let project = await environment.finishOnboarding(projectFolders: selectedFolders)
+            // Cloned projects were registered the moment the clone finished;
+            // deselecting one before finishing means "don't keep it" (the
+            // checkout stays on disk, only the project entry is removed).
+            for project in projectSetup.deselectedClonedProjects {
+                environment.projectList.removeProject(project)
+            }
+            // Adds every selected folder as a project; folders that already
+            // exist (a kept clone) are reused, not duplicated. Existing agent
+            // chats are not imported here (importing stays an explicit action,
+            // not an onboarding default). The first selection opens a new chat.
+            let project = await environment.finishOnboarding(projectFolders: projectSetup.selectedFolders)
             onComplete(project)
         }
     }
