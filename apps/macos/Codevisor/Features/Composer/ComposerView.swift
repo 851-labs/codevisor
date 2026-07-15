@@ -20,9 +20,9 @@ struct ComposerCard: View {
     /// The new-chat page hosts the harness picker in its own row below the
     /// composer; session pages keep it inline.
     var showsHarnessPicker: Bool = true
-    /// Surfaces the composer's text view so the terminal focus handoff can move
+    /// Surfaces the composer's text view so keyboard handoffs can move
     /// first-responder focus to it.
-    var onTextViewReady: ((NSView) -> Void)? = nil
+    var onTextViewReady: ((SubmittingTextView) -> Void)? = nil
 
     @Environment(\.theme) private var theme
     /// Locks the submit action while an app/server update is installing so no

@@ -9,7 +9,7 @@ import GhosttyKit
 /// new-chat page.
 @MainActor
 final class TerminalFocusController {
-    weak var composerTextView: NSView?
+    weak var composerTextView: SubmittingTextView?
     weak var paneGroup: PaneGroupModel?
     private var typeToFocusMonitor: Any?
 
@@ -46,7 +46,7 @@ final class TerminalFocusController {
     }
 
     private func handleTypeToFocus(_ event: NSEvent) -> NSEvent? {
-        guard let textView = composerTextView as? NSTextView,
+        guard let textView = composerTextView,
               textView.isEditable,
               let window = textView.window,
               event.window === window,
@@ -54,33 +54,46 @@ final class TerminalFocusController {
               window.attachedSheet == nil,
               NSApp.modalWindow == nil,
               window.firstResponder !== textView,
-              let text = Self.typeToFocusText(for: event) else {
+              Self.isTypeToFocusEvent(event) else {
             return event
         }
 
-        // Never steal input from another editor or from the terminal. AppKit
-        // represents an active text field with its NSTextView field editor.
-        if window.firstResponder is NSTextView ||
-            window.firstResponder is NSTextField ||
-            window.firstResponder is Ghostty.SurfaceView {
+        // Preserve real editing sessions and terminal input. Read-only
+        // transcript text is also an NSTextView, but ordinary typing there is
+        // exactly what should move focus into the composer. AppKit represents
+        // an active NSTextField with its editable NSTextView field editor.
+        if let currentTextView = window.firstResponder as? NSTextView,
+           currentTextView.isEditable {
+            return event
+        }
+        if let currentTextField = window.firstResponder as? NSTextField,
+           currentTextField.isEditable {
+            return event
+        }
+        if window.firstResponder is Ghostty.SurfaceView {
             return event
         }
 
         guard window.makeFirstResponder(textView) else { return event }
-        textView.insertText(text, replacementRange: textView.selectedRange())
-        return nil
+
+        // Local monitors run before NSApplication.sendEvent. Returning the
+        // original event dispatches it to the new first responder, preserving
+        // NSTextView's native key binding, undo, dead-key, and IME pipelines.
+        return event
     }
 
-    private static func typeToFocusText(for event: NSEvent) -> String? {
+    private static func isTypeToFocusEvent(_ event: NSEvent) -> Bool {
         let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-        guard modifiers.intersection([.command, .control, .option, .function]).isEmpty,
-              event.specialKey == nil,
-              let characters = event.characters,
-              !characters.isEmpty,
-              characters.rangeOfCharacter(from: .controlCharacters) == nil else {
-            return nil
+        guard modifiers.intersection([.command, .control, .function]).isEmpty,
+              event.specialKey == nil else {
+            return false
         }
-        return characters
+
+        // Keep Space available for scrolling and Full Keyboard Access button
+        // activation when the composer is not focused. Option is deliberately
+        // allowed because it produces text on many keyboard layouts; dead-key
+        // events may have no characters yet and must still reach NSTextView.
+        return event.characters != " " && event.characters != "\u{00A0}"
     }
 }
 

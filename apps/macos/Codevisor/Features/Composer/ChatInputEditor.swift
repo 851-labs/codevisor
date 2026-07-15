@@ -28,8 +28,8 @@ struct ChatInputEditor: NSViewRepresentable {
     /// image data); false falls through to the normal text paste.
     var onPasteAttachments: (([PastedAttachment]) -> Bool)? = nil
     /// Called once with the underlying text view so callers can move focus to it
-    /// (used by the terminal's ⌘J focus handoff).
-    var onTextViewReady: ((NSView) -> Void)? = nil
+    /// (used by the terminal's ⌘J and type-to-focus handoffs).
+    var onTextViewReady: ((SubmittingTextView) -> Void)? = nil
     /// Honors SwiftUI `.disabled(...)`: the text view stops accepting edits
     /// (and Return stops submitting) while a send is being accepted.
     @Environment(\.isEnabled) private var isEnabled
