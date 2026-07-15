@@ -90,6 +90,7 @@ struct LocalCodevisorServerTests {
             guard call == 3 else { return }
             try? JSONEncoder().encode(completed).write(to: statusURL, options: .atomic)
         }
+        var launchedProcess: Process?
         let server = LocalCodevisorServer(
             client: client,
             entrypoint: directory.appendingPathComponent("main.js"),
@@ -100,14 +101,20 @@ struct LocalCodevisorServerTests {
                 try JSONEncoder().encode(running).write(to: statusURL, options: .atomic)
                 let process = Process()
                 process.executableURL = URL(fileURLWithPath: "/bin/sleep")
-                process.arguments = ["1"]
+                // Far longer than the test can run: a stalled CI runner once
+                // took over a second to reach the healthy poll iteration, at
+                // which point a short-lived fake process had already exited
+                // and tripped the "server exited before ready" branch.
+                process.arguments = ["600"]
                 try process.run()
+                launchedProcess = process
                 return process
             }
         )
+        defer { launchedProcess?.terminate() }
 
         let result = Task { await server.ensureRunning() }
-        for _ in 0..<20 where server.dataUpgradeProgress == nil {
+        for _ in 0..<200 where server.dataUpgradeProgress == nil {
             try await Task.sleep(for: .milliseconds(10))
         }
         #expect(server.dataUpgradeProgress == running)
