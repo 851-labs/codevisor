@@ -19,6 +19,31 @@ export interface AgentSessionSummary {
   readonly updatedAt?: string
 }
 
+/// A title reported by the harness's own session API. Native providers merge
+/// these over the filesystem scanner's first-prompt title so older harnesses
+/// and failed title lookups retain the existing best-effort fallback.
+export interface HarnessSessionTitle {
+  readonly sessionId: string
+  readonly title?: string
+}
+
+export const preferHarnessSessionTitles = (
+  sessions: ReadonlyArray<AgentSessionSummary>,
+  harnessSessions: ReadonlyArray<HarnessSessionTitle>
+): ReadonlyArray<AgentSessionSummary> => {
+  const titles = new Map<string, string>()
+  for (const session of harnessSessions) {
+    const title = session.title?.trim()
+    if (title !== undefined && title.length > 0) {
+      titles.set(session.sessionId, title)
+    }
+  }
+  return sessions.map((session) => {
+    const title = titles.get(session.sessionId)
+    return title === undefined ? session : { ...session, title }
+  })
+}
+
 /// Filesystem seam so scanners are fully testable without real home dirs.
 export interface AgentSessionFileSystem {
   /// Directory entry names (files and directories); [] when unreadable.

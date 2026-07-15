@@ -42,6 +42,9 @@ class FakeConnection implements AcpAgentConnection {
   readonly configs: Array<readonly [string, string, string]> = []
   closeCount = 0
   failClose = false
+  readonly listSessions = Effect.succeed([
+    { cwd: "/repo", sessionId: "native-session", title: "Harness title" }
+  ])
 
   constructor(
     readonly request: AcpHarnessLaunchRequest,
@@ -351,7 +354,9 @@ describe("@codevisor/agent-runtime", () => {
 
   it("lists native agent sessions through the provider hook", async () => {
     const fixture = [{ sessionId: "abc", cwd: "/repo", title: "Hi" }]
+    const connector = makeConnector()
     const runtime = makeAgentRuntime({
+      connector,
       env: { PATH: "/bin" },
       executableExists: () => true,
       providers: {
@@ -366,8 +371,10 @@ describe("@codevisor/agent-runtime", () => {
     })
 
     await expect(run(runtime.listAgentSessions("claude-code"))).resolves.toEqual(fixture)
-    // ACP harnesses have no native store — empty, not an error.
-    await expect(run(runtime.listAgentSessions("gemini"))).resolves.toEqual([])
+    await expect(run(runtime.listAgentSessions("gemini"))).resolves.toEqual([
+      { cwd: "/repo", sessionId: "native-session", title: "Harness title" }
+    ])
+    expect(connector.connections.at(-1)?.closeCount).toBe(1)
     await expect(run(runtime.listAgentSessions("nope"))).rejects.toThrow("Unknown harness: nope")
   })
 

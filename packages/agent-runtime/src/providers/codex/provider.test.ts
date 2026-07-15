@@ -29,6 +29,9 @@ class FakeCodexClient implements CodexClient {
   closed = false
   failResume = false
   startModel = "gpt-5.2-codex"
+  listedThreads: Array<Record<string, unknown>> = []
+  threadName: string | null = null
+  threadPreview = ""
   goal:
     | {
         createdAt: number
@@ -54,6 +57,16 @@ class FakeCodexClient implements CodexClient {
           throw new Error("thread not found")
         }
         return { model: this.startModel, thread: { id: "thread-resumed" } } as T
+      case "thread/list":
+        return { data: this.listedThreads, nextCursor: null } as T
+      case "thread/read":
+        return {
+          thread: {
+            id: "thread-new",
+            name: this.threadName,
+            preview: this.threadPreview
+          }
+        } as T
       case "turn/start":
         return { turn: { id: "turn-1", status: "inProgress" } } as T
       case "turn/interrupt":
@@ -195,6 +208,49 @@ const UNIFIED_DIFF = [
 describe("CodexProvider", () => {
   afterEach(() => {
     vi.useRealTimers()
+  })
+
+  it("prefers app-server thread names while retaining scanner fallbacks", async () => {
+    const client = new FakeCodexClient()
+    client.listedThreads = [
+      { id: "one", name: "Named by Codex", preview: "First prompt one" },
+      { id: "two", name: null, preview: "" }
+    ]
+    const provider = makeCodexProvider(environment, {
+      connector: async () => client,
+      scanAgentSessions: async () => [
+        { cwd: "/one", sessionId: "one", title: "Scanner one" },
+        { cwd: "/two", sessionId: "two", title: "Scanner two" }
+      ]
+    })
+
+    await expect(provider.listAgentSessions!(definition)).resolves.toEqual([
+      { cwd: "/one", sessionId: "one", title: "Named by Codex" },
+      { cwd: "/two", sessionId: "two", title: "Scanner two" }
+    ])
+    expect(client.closed).toBe(true)
+  })
+
+  it("emits the app-server title after a completed turn", async () => {
+    const { client, created, events } = await setup()
+    client.threadName = "Harness title"
+    client.threadPreview = "First prompt"
+    const prompt = run(created!.handle.prompt("hello"))
+    await Promise.resolve()
+    client.emit("turn/started", {
+      threadId: "thread-new",
+      turn: { id: "turn-title", status: "inProgress" }
+    })
+    client.emit("turn/completed", {
+      threadId: "thread-new",
+      turn: { id: "turn-title", status: "completed" }
+    })
+    await prompt
+
+    expect(events.map((event) => event.payload)).toContainEqual({
+      sessionUpdate: "session_info_update",
+      title: "Harness title"
+    })
   })
 
   it("surfaces harness retries and marks an exhausted overload retryable", async () => {

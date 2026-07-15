@@ -1,4 +1,6 @@
 import {
+  getSessionInfo as sdkGetSessionInfo,
+  listSessions as sdkListSessions,
   query as sdkQuery,
   type Options as ClaudeOptions,
   type Query,
@@ -16,7 +18,11 @@ import { isoTimestamp } from "@codevisor/api"
 import { execFile } from "node:child_process"
 import { randomUUID } from "node:crypto"
 import { readFileSync } from "node:fs"
-import { listClaudeAgentSessions } from "../agent-sessions.js"
+import {
+  listClaudeAgentSessions,
+  preferHarnessSessionTitles,
+  type AgentSessionSummary
+} from "../agent-sessions.js"
 import { isAbsolute, resolve } from "node:path"
 import { Effect } from "effect"
 import { INLINE_IMAGE_MEDIA_TYPES, withAttachmentNotes } from "../attachments.js"
@@ -347,6 +353,9 @@ export type ClaudeQueryFn = (input: {
 export interface ClaudeProviderConfig {
   /// Injectable for tests: scripted SDK message streams instead of a real CLI.
   readonly queryFn?: ClaudeQueryFn
+  readonly getSessionInfo?: typeof sdkGetSessionInfo
+  readonly listSdkSessions?: typeof sdkListSessions
+  readonly scanAgentSessions?: () => Promise<ReadonlyArray<AgentSessionSummary>>
   readonly readFile?: (path: string) => string | undefined
   readonly checkVersion?: (claudePath: string) => Promise<string>
   /// When set (and `wrapCommand` is present), background Bash commands are
@@ -468,7 +477,9 @@ interface ClaudeSession {
   readonly q: Query
   readonly input: InputQueue
   readonly emit: RuntimeEmit
+  readonly getSessionInfo: typeof sdkGetSessionInfo
   readonly abort: AbortController
+  lastHarnessTitle: string | undefined
   turnActive: boolean
   turnId: string
   initiatedBy: "user" | "agent"
@@ -530,6 +541,9 @@ export const makeClaudeProvider = (
   config: ClaudeProviderConfig = {}
 ): AgentProvider => {
   const queryFn = config.queryFn ?? ((input) => sdkQuery(input))
+  const getSessionInfo = config.getSessionInfo ?? sdkGetSessionInfo
+  const listSdkSessions = config.listSdkSessions ?? sdkListSessions
+  const scanAgentSessions = config.scanAgentSessions ?? (() => listClaudeAgentSessions())
   const readFile =
     config.readFile ??
     ((path: string): string | undefined => {
@@ -729,10 +743,12 @@ export const makeClaudeProvider = (
       currentSpeed: "standard",
       cwd,
       emit,
+      getSessionInfo,
       initiatedBy: "user",
       input,
       interruptRequested: false,
       key: sessionKey,
+      lastHarnessTitle: undefined,
       models: [],
       openToolCalls: new Set(),
       taskToolUses: new Map(),
@@ -1064,7 +1080,21 @@ export const makeClaudeProvider = (
     id: "claude",
     // Native sessions from ~/.claude/projects — workspace suggestions and
     // "import existing chats" for users who ran the CLI before Codevisor.
-    listAgentSessions: () => listClaudeAgentSessions(),
+    listAgentSessions: async () => {
+      const fallback = await scanAgentSessions()
+      try {
+        const sessions = await listSdkSessions()
+        return preferHarnessSessionTitles(
+          fallback,
+          sessions.map((session) => {
+            const title = session.customTitle ?? session.summary
+            return { sessionId: session.sessionId, ...(title === undefined ? {} : { title }) }
+          })
+        )
+      } catch {
+        return fallback
+      }
+    },
     loadSession: (
       definition,
       agentSessionId,
@@ -2045,7 +2075,25 @@ const handleResult = (session: ClaudeSession, message: SDKMessage & { type: "res
   }
   cancelClaudePendingQuestions(session)
   settleGoalOnTurnEnd(session, message)
+  void refreshClaudeSessionTitle(session)
   finishActiveTurn(session, resolution.stopReason, resolution.stopDetail, resolution.retryable)
+}
+
+const refreshClaudeSessionTitle = async (session: ClaudeSession): Promise<void> => {
+  try {
+    const info = await session.getSessionInfo(session.sdkSessionId, { dir: session.cwd })
+    const title = (info?.customTitle ?? info?.summary)?.trim()
+    if (title === undefined || title.length === 0 || title === session.lastHarnessTitle) return
+    session.lastHarnessTitle = title
+    await session.emit({
+      kind: "session.updated",
+      payload: { sessionUpdate: "session_info_update", title },
+      subjectId: session.key
+    })
+  } catch {
+    // The first-prompt title remains authoritative when the SDK has not
+    // persisted metadata yet or an older Claude build cannot read it.
+  }
 }
 
 /// Ends the in-flight turn: settles any tool calls that never got a result,

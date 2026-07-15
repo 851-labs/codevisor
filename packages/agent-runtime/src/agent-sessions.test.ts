@@ -6,8 +6,31 @@ import {
   defaultAgentSessionFileSystem,
   listClaudeAgentSessions,
   listCodexAgentSessions,
+  preferHarnessSessionTitles,
   type AgentSessionFileSystem
 } from "./agent-sessions.js"
+
+describe("preferHarnessSessionTitles", () => {
+  it("uses non-empty harness titles and retains first-prompt fallbacks", () => {
+    const sessions = [
+      { cwd: "/a", sessionId: "a", title: "First prompt" },
+      { cwd: "/b", sessionId: "b", title: "Second prompt" },
+      { cwd: "/c", sessionId: "c" }
+    ]
+
+    expect(
+      preferHarnessSessionTitles(sessions, [
+        { sessionId: "a", title: "  Generated title  " },
+        { sessionId: "b", title: "   " },
+        { sessionId: "missing", title: "Ignored" }
+      ])
+    ).toEqual([
+      { cwd: "/a", sessionId: "a", title: "Generated title" },
+      { cwd: "/b", sessionId: "b", title: "Second prompt" },
+      { cwd: "/c", sessionId: "c" }
+    ])
+  })
+})
 
 /// A fake store: absolute path → file body (directories are implied).
 const makeFakeFs = (

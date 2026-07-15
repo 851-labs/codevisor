@@ -11,7 +11,12 @@ import type {
 import { execFileSync } from "node:child_process"
 import { randomUUID } from "node:crypto"
 import { Effect } from "effect"
-import { listCodexAgentSessions } from "../../agent-sessions.js"
+import {
+  listCodexAgentSessions,
+  preferHarnessSessionTitles,
+  type AgentSessionSummary,
+  type HarnessSessionTitle
+} from "../../agent-sessions.js"
 import { withAttachmentNotes } from "../../attachments.js"
 import {
   backgroundTerminalKey,
@@ -67,6 +72,7 @@ export interface CodexProviderConfig {
   /// Injectable for tests: scripted app-server sessions instead of a spawned
   /// codex binary.
   readonly connector?: CodexConnector
+  readonly scanAgentSessions?: () => Promise<ReadonlyArray<AgentSessionSummary>>
   /// Injectable for tests: reads a resolved Codex binary's version.
   readonly versionReader?: (command: string, env: NodeJS.ProcessEnv) => string | undefined
   /// When set, command executions mirror their streamed output
@@ -206,6 +212,7 @@ interface CodexSession {
   pendingTurnError: { message: string; retryable: boolean } | undefined
   pendingPrompt: { resolve: (value: { stopReason: string }) => void } | undefined
   interruptRequested: boolean
+  lastHarnessTitle: string | undefined
   currentModel: string
   currentEffort: string | undefined
   /// Undefined until the user picks a speed — the model's default tier applies.
@@ -252,6 +259,7 @@ export const makeCodexProvider = (
   config: CodexProviderConfig = {}
 ): AgentProvider => {
   const connector = config.connector ?? spawnCodexClient
+  const scanAgentSessions = config.scanAgentSessions ?? (() => listCodexAgentSessions())
   const versionReader = config.versionReader ?? readCodexVersion
 
   // PATH first, then fallbackPaths. When both the user CLI and Codex.app
@@ -326,6 +334,48 @@ export const makeCodexProvider = (
     return client
   }
 
+  const listHarnessSessionTitles = async (
+    definition: HarnessDefinition,
+    sessions: ReadonlyArray<AgentSessionSummary>,
+    account?: HarnessAccountContext
+  ): Promise<ReadonlyArray<HarnessSessionTitle>> => {
+    if (sessions.length === 0) return []
+    const client = await connect(definition, sessions[0]!.cwd, account)
+    const remaining = new Set(sessions.map((session) => session.sessionId))
+    const titles: HarnessSessionTitle[] = []
+    try {
+      // Archived threads live behind a separate filter upstream. Scan both
+      // buckets, newest activity first, and stop as soon as every JSONL
+      // fallback session has been matched.
+      for (const archived of [false, true]) {
+        let cursor: string | undefined
+        for (let page = 0; page < 50 && remaining.size > 0; page += 1) {
+          const response: unknown = await client.request("thread/list", {
+            archived,
+            limit: 100,
+            sortKey: "updated_at",
+            ...(cursor === undefined ? {} : { cursor })
+          })
+          if (!isRecord(response) || !Array.isArray(response.data)) break
+          for (const value of response.data) {
+            if (!isRecord(value) || typeof value.id !== "string" || !remaining.has(value.id)) {
+              continue
+            }
+            remaining.delete(value.id)
+            const title = codexThreadTitle(value)
+            titles.push({ sessionId: value.id, ...(title === undefined ? {} : { title }) })
+          }
+          const next = typeof response.nextCursor === "string" ? response.nextCursor : undefined
+          if (next === undefined || next.length === 0 || next === cursor) break
+          cursor = next
+        }
+      }
+      return titles
+    } finally {
+      client.close()
+    }
+  }
+
   const startSession = async (
     definition: HarnessDefinition,
     cwd: string,
@@ -393,6 +443,7 @@ export const makeCodexProvider = (
       itemKinds: new Map(),
       itemTitles: new Map(),
       key: resumeThreadId ?? threadId,
+      lastHarnessTitle: undefined,
       lastEmittedGoal: undefined,
       lastGoalEmitAtMs: 0,
       messagePhases: new Map(),
@@ -732,7 +783,17 @@ export const makeCodexProvider = (
       }),
     // Native sessions from ~/.codex/sessions rollouts — workspace
     // suggestions and "import existing chats" for pre-Codevisor codex users.
-    listAgentSessions: () => listCodexAgentSessions(),
+    listAgentSessions: async (definition, account) => {
+      const fallback = await scanAgentSessions()
+      try {
+        return preferHarnessSessionTitles(
+          fallback,
+          await listHarnessSessionTitles(definition, fallback, account)
+        )
+      } catch {
+        return fallback
+      }
+    },
     readiness: (definition) => {
       const installed = codexCandidates(definition).some((candidate) =>
         environment.executableExists(candidate, environment.env)
@@ -1329,6 +1390,45 @@ const codexRetryStatus = (payload: Record<string, unknown>) => {
 
 // MARK: notification mapping
 
+const codexThreadTitle = (thread: Record<string, unknown>): string | undefined => {
+  for (const value of [thread.name, thread.preview]) {
+    if (typeof value !== "string") continue
+    const title = value.trim()
+    if (title.length > 0) return title
+  }
+  return undefined
+}
+
+const emitCodexSessionTitle = async (
+  session: CodexSession,
+  title: string | undefined
+): Promise<void> => {
+  if (title === undefined || title === session.lastHarnessTitle) return
+  session.lastHarnessTitle = title
+  await session.emit({
+    kind: "session.updated",
+    payload: { sessionUpdate: "session_info_update", title },
+    subjectId: session.key
+  })
+}
+
+const refreshCodexSessionTitle = async (session: CodexSession): Promise<void> => {
+  try {
+    const response: unknown = await session.client.request("thread/read", {
+      includeTurns: false,
+      threadId: session.threadId
+    })
+    const thread = isRecord(response) && isRecord(response.thread) ? response.thread : undefined
+    await emitCodexSessionTitle(
+      session,
+      thread === undefined ? undefined : codexThreadTitle(thread)
+    )
+  } catch {
+    // Older app-servers may not expose thread names. The first-prompt title
+    // stored by Codevisor remains the fallback in that case.
+  }
+}
+
 const handleNotification = (session: CodexSession, method: string, params: unknown): void => {
   const payload = isRecord(params) ? params : {}
   // Every notification is thread-scoped. Collab subagents run as separate
@@ -1352,6 +1452,15 @@ const handleNotification = (session: CodexSession, method: string, params: unkno
   }
   const parentField = parentToolCallId === undefined ? {} : { parentToolCallId }
   switch (method) {
+    case "thread/name/updated": {
+      const title = typeof payload.threadName === "string" ? payload.threadName.trim() : undefined
+      if (title === undefined || title.length === 0) {
+        void refreshCodexSessionTitle(session)
+      } else {
+        void emitCodexSessionTitle(session, title)
+      }
+      break
+    }
     case "turn/started": {
       const turn = isRecord(payload.turn) ? payload.turn : {}
       session.activeTurnId = typeof turn.id === "string" ? turn.id : randomUUID()
@@ -1392,7 +1501,8 @@ const handleNotification = (session: CodexSession, method: string, params: unkno
       cancelPendingQuestions(session)
       // Rate-limited goal accounting flushes before the turn closes so the
       // final totals are persisted ahead of the ended event.
-      void flushPendingGoalSnapshot(session)
+      void refreshCodexSessionTitle(session)
+        .then(() => flushPendingGoalSnapshot(session))
         .then(() =>
           session.emit({
             kind: "session.updated",

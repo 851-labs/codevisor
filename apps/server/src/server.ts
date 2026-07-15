@@ -2531,11 +2531,26 @@ const materializeRuntimeEvent = async (
   event: RuntimeEvent,
   subjectId: string
 ): Promise<void> => {
+  const payload = objectPayload(event.payload)
+  const harnessTitle =
+    event.kind === "session.updated" &&
+    payload.sessionUpdate === "session_info_update" &&
+    typeof payload.title === "string"
+      ? payload.title.trim()
+      : undefined
+  if (harnessTitle !== undefined && harnessTitle.length > 0) {
+    const session = await run(db.getSessionSummary(subjectId))
+    if (session.title !== harnessTitle) {
+      const updated = await run(db.updateSession(subjectId, { title: harnessTitle }))
+      await appendAndPublish(db, fanout, "session.updated", subjectId, updated)
+    }
+    return
+  }
   // appendEvent atomically persists the session event and updates the
   // canonical semantic chat rows. There is deliberately no second legacy
   // conversation write here: a crash can no longer split the two stores.
   await appendAndPublish(db, fanout, event.kind, subjectId, {
-    ...objectPayload(event.payload),
+    ...payload,
     serverId
   })
 }

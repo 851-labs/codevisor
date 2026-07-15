@@ -7,6 +7,7 @@ import { Effect } from "effect"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import type { HarnessDefinition, ProviderEnvironment, RuntimeEvent } from "../types.js"
 import {
+  type ClaudeProviderConfig,
   extractAllStringFields,
   extractStringField,
   makeClaudeProvider,
@@ -211,9 +212,14 @@ const settle = async (): Promise<void> => {
   }
 }
 
-const makeProvider = (fake: FakeQuery, checkVersion = async () => "2.1.0") =>
+const makeProvider = (
+  fake: FakeQuery,
+  checkVersion = async () => "2.1.0",
+  getSessionInfo?: NonNullable<ClaudeProviderConfig["getSessionInfo"]>
+) =>
   makeClaudeProvider(environment, {
     checkVersion,
+    ...(getSessionInfo === undefined ? {} : { getSessionInfo }),
     queryFn: (input) => {
       fake.promptInput = input.prompt
       fake.options = input.options
@@ -230,6 +236,58 @@ const makeProvider = (fake: FakeQuery, checkVersion = async () => "2.1.0") =>
 describe("ClaudeProvider", () => {
   afterEach(() => {
     vi.useRealTimers()
+  })
+
+  it("prefers SDK session titles while retaining scanner fallbacks", async () => {
+    const provider = makeClaudeProvider(environment, {
+      listSdkSessions: async () =>
+        [
+          { customTitle: "Renamed by Claude", sessionId: "one", summary: "Generated" },
+          { sessionId: "two", summary: "" }
+        ] as never,
+      scanAgentSessions: async () => [
+        { cwd: "/one", sessionId: "one", title: "First prompt one" },
+        { cwd: "/two", sessionId: "two", title: "First prompt two" }
+      ]
+    })
+
+    await expect(provider.listAgentSessions!(definition)).resolves.toEqual([
+      { cwd: "/one", sessionId: "one", title: "Renamed by Claude" },
+      { cwd: "/two", sessionId: "two", title: "First prompt two" }
+    ])
+  })
+
+  it("emits the SDK-generated title after a completed turn", async () => {
+    const fake = new FakeQuery()
+    const provider = makeProvider(
+      fake,
+      async () => "2.1.0",
+      async () =>
+        ({
+          customTitle: "Harness title",
+          sessionId: "sdk-session-1",
+          summary: "Generated"
+        }) as never
+    )
+    const events: RuntimeEvent[] = []
+    const createPromise = run(
+      provider.createSession(definition, "/tmp", async (event) => {
+        events.push(event)
+      })
+    )
+    await settle()
+    fake.push(initMessage())
+    const created = await createPromise
+    const prompt = run(created.handle.prompt("hello"))
+    await settle()
+    fake.push(resultMessage())
+    await prompt
+    await settle()
+
+    expect(events.map((event) => event.payload)).toContainEqual({
+      sessionUpdate: "session_info_update",
+      title: "Harness title"
+    })
   })
 
   it("creates a session against the located binary and reports models/modes", async () => {

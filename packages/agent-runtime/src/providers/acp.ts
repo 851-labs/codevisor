@@ -25,6 +25,7 @@ import { pathToFileURL } from "node:url"
 import { Effect } from "effect"
 import type { BackgroundTerminalIntegration } from "../background-terminals.js"
 import { diffStatsFromTexts } from "../diff-stats.js"
+import type { AgentSessionSummary } from "../agent-sessions.js"
 import type { DiffStat } from "@codevisor/api"
 import { makeAcpTerminalHost, type AcpTerminalHost } from "./acp-terminals.js"
 import {
@@ -63,6 +64,7 @@ export interface AcpHarnessLaunchRequest {
 /// that arrive between turns — which is what keeps background/agent-initiated
 /// work from being dropped.
 export interface AcpAgentConnection {
+  readonly listSessions?: Effect.Effect<ReadonlyArray<AgentSessionSummary>, AgentRuntimeError>
   readonly createSession: (
     cwd: string,
     toolGateway?: ToolGatewayConfig
@@ -313,6 +315,26 @@ export const makeAcpProvider = (
         const sessionId = yield* connection.loadSession(agentSessionId, cwd, toolGateway)
         return { handle: handleFor(connection, sessionId, emit), sessionId }
       }),
+    listAgentSessions: async (definition, account) => {
+      try {
+        return await Effect.runPromise(
+          Effect.gen(function* () {
+            const connection = yield* connect(
+              definition,
+              process.cwd(),
+              () => Promise.resolve(),
+              account
+            )
+            const sessions = connection.listSessions ?? Effect.succeed([])
+            return yield* sessions.pipe(Effect.ensuring(connection.close.pipe(Effect.ignoreCause)))
+          })
+        )
+      } catch {
+        // Older/non-conforming adapters may not implement session/list. Keep
+        // the previous empty discovery result rather than failing imports.
+        return []
+      }
+    },
     probeAuth: (definition, account) =>
       Effect.gen(function* () {
         const connection = yield* connect(
@@ -732,6 +754,28 @@ const sdkConnection = (
               questions.answerQuestion(sessionId, questionId, answer)
             )
         }),
+    listSessions: adapterPromise("listSessions", async () => {
+      const sessions: AgentSessionSummary[] = []
+      let cursor: string | undefined
+      do {
+        const response = await connection.agent.request(
+          acp.methods.agent.session.list,
+          cursor === undefined ? {} : { cursor }
+        )
+        sessions.push(
+          ...response.sessions.map((session) => ({
+            cwd: session.cwd,
+            sessionId: session.sessionId,
+            ...(session.title == null ? {} : { title: session.title }),
+            ...(session.updatedAt == null ? {} : { updatedAt: session.updatedAt })
+          }))
+        )
+        const next = response.nextCursor ?? undefined
+        if (next === cursor) break
+        cursor = next
+      } while (cursor !== undefined)
+      return sessions
+    }),
     createSession: (cwd, toolGateway) =>
       adapterPromise("createSession", async () => {
         const response = (await connection.agent.request(acp.methods.agent.session.new, {

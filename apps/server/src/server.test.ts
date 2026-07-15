@@ -2088,6 +2088,23 @@ describe("@codevisor/server", () => {
     })
     const session = sessionResponse.body as { readonly id: string; readonly agentSessionId: string }
     expect(session.agentSessionId).toBe("agent-codex-codevisor")
+    await agents.emit(session.agentSessionId, {
+      kind: "session.updated",
+      subjectId: session.agentSessionId,
+      payload: { sessionUpdate: "session_info_update", title: "  Harness-generated title  " }
+    })
+    expect((await jsonRequest(server, `/v1/sessions/${session.id}`)).body).toMatchObject({
+      session: { title: "Harness-generated title" }
+    })
+    // A missing/blank harness title keeps the existing first-prompt fallback.
+    await agents.emit(session.agentSessionId, {
+      kind: "session.updated",
+      subjectId: session.agentSessionId,
+      payload: { sessionUpdate: "session_info_update", title: "   " }
+    })
+    expect((await jsonRequest(server, `/v1/sessions/${session.id}`)).body).toMatchObject({
+      session: { title: "Harness-generated title" }
+    })
     expect(
       (
         await jsonRequest(server, "/v1/sessions", {
