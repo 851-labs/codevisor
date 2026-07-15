@@ -265,9 +265,11 @@ struct ComposerCard: View {
                 .contentShape(Circle())
         }
         .buttonStyle(HoverIconButtonStyle())
+        .disabled(controller.isPlanModeUpdatePending)
         .help("Toggle plan mode")
         .tooltip("Toggle plan mode")
         .accessibilityLabel("Plan mode")
+        .accessibilityValue(isOn ? "On" : "Off")
         .accessibilityAddTraits(isOn ? .isSelected : [])
     }
 

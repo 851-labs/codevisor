@@ -208,6 +208,11 @@ final class SessionController {
     /// Config changes made before connecting, applied once the agent connects.
     private var pendingConfig: [String: String] = [:]
     private var pendingModeId: String?
+    /// The user's requested plan state while the harness/server transition is
+    /// in flight. Keeping this separate from the authoritative session state
+    /// makes the composer respond immediately without letting duplicate clicks
+    /// race against the same stale mode value.
+    private var pendingPlanModeOn: Bool?
     private var modeStateByHarness: [String: SessionModeState] = [:]
     private var configOptionsByHarness: [String: [SessionConfigOption]] = [:]
     private var supportsGoalsByHarness: [String: Bool] = [:]
@@ -1350,6 +1355,7 @@ final class SessionController {
     var hasPlanMode: Bool { planControl != nil }
 
     var isPlanModeOn: Bool {
+        if let pendingPlanModeOn { return pendingPlanModeOn }
         switch planControl {
         case let .sessionMode(planId, _):
             return modeState?.currentModeId == planId
@@ -1360,14 +1366,22 @@ final class SessionController {
         }
     }
 
+    var isPlanModeUpdatePending: Bool { pendingPlanModeOn != nil }
+
     func togglePlanMode() async {
+        // The button is disabled while pending too, but keep the guard here so
+        // multiple click tasks queued before SwiftUI redraws cannot submit the
+        // same transition more than once.
+        guard pendingPlanModeOn == nil, let planControl else { return }
+        let targetIsOn = !isPlanModeOn
+        pendingPlanModeOn = targetIsOn
+        defer { pendingPlanModeOn = nil }
+
         switch planControl {
         case let .sessionMode(planId, buildId):
-            await setMode(isPlanModeOn ? buildId : planId)
+            await setMode(targetIsOn ? planId : buildId)
         case let .configOption(optionId, planValue, buildValue):
-            await setConfigOption(optionId, isPlanModeOn ? buildValue : planValue)
-        case nil:
-            break
+            await setConfigOption(optionId, targetIsOn ? planValue : buildValue)
         }
     }
 
