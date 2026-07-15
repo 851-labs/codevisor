@@ -1,0 +1,56 @@
+# Keeps a warm GhosttyKit.xcframework cache on the default branch.
+#
+# GitHub Actions cache scoping means a cache saved during a tag-triggered
+# release run is only visible to that same tag ref — every new release tag
+# starts cold and would rebuild GhosttyKit from source (~20 minutes). Caches
+# saved from the default branch, however, are visible to ALL refs, so this
+# workflow builds and saves the cache from main and release runs restore it.
+#
+# The cache key is derived solely from build-ghostty.sh (which pins
+# GHOSTTY_REF), so bumping the pinned Ghostty revision automatically re-warms
+# the cache via the push paths filter below.
+name: GhosttyKit Cache
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/macos/scripts/build-ghostty.sh"
+      - ".github/workflows/ghostty-cache.yml"
+  schedule:
+    # Caches are evicted after 7 days without access; rebuild weekly as
+    # insurance for quiet stretches between releases.
+    - cron: "23 7 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ${{ vars.CODEVISOR_MACOS_ARM_RUNNER || vars.CODEVISOR_MACOS_RUNNER || 'macos-26' }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Check GhosttyKit cache
+        id: ghosttykit-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: apps/macos/Frameworks/GhosttyKit.xcframework
+          key: ghosttykit-${{ hashFiles('apps/macos/scripts/build-ghostty.sh') }}
+          lookup-only: true
+      - name: Fetch Ghostty source
+        if: steps.ghosttykit-cache.outputs.cache-hit != 'true'
+        run: apps/macos/scripts/build-ghostty.sh --fetch-only
+      - uses: DeterminateSystems/nix-installer-action@main
+        if: steps.ghosttykit-cache.outputs.cache-hit != 'true'
+        with:
+          determinate: true
+      - name: Build GhosttyKit
+        if: steps.ghosttykit-cache.outputs.cache-hit != 'true'
+        run: nix develop ./.repos/ghostty -c apps/macos/scripts/build-ghostty.sh
+      - name: Save GhosttyKit cache
+        if: steps.ghosttykit-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: apps/macos/Frameworks/GhosttyKit.xcframework
+          key: ghosttykit-${{ hashFiles('apps/macos/scripts/build-ghostty.sh') }}

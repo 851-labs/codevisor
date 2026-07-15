@@ -272,31 +272,61 @@ fi
 rm -f "$archive_path"
 ditto --norsrc -c -k --keepParent "$app_path" "$archive_path"
 
+# Notarization runs as two concurrent submissions (zip + DMG) instead of two
+# serial `submit --wait` calls: submit both, then wait on both. Apple's queue
+# time dominates here, so overlapping the waits removes minutes per release.
+notary_args=()
 if [[ -n "${APP_STORE_CONNECT_API_KEY_PATH:-}" && -n "${APP_STORE_CONNECT_API_KEY_ID:-}" && -n "${APP_STORE_CONNECT_ISSUER_ID:-}" ]]; then
-  xcrun notarytool submit "$archive_path" \
-    --key "$APP_STORE_CONNECT_API_KEY_PATH" \
-    --key-id "$APP_STORE_CONNECT_API_KEY_ID" \
-    --issuer "$APP_STORE_CONNECT_ISSUER_ID" \
-    --wait
-  xcrun stapler staple "$app_path"
-  rm -f "$archive_path"
-  ditto --norsrc -c -k --keepParent "$app_path" "$archive_path"
+  notary_args=(
+    --key "$APP_STORE_CONNECT_API_KEY_PATH"
+    --key-id "$APP_STORE_CONNECT_API_KEY_ID"
+    --issuer "$APP_STORE_CONNECT_ISSUER_ID"
+  )
 elif [[ -n "${APPLE_ID:-}" && -n "${APPLE_APP_SPECIFIC_PASSWORD:-}" && -n "${APPLE_TEAM_ID:-}" ]]; then
-  xcrun notarytool submit "$archive_path" \
-    --apple-id "$APPLE_ID" \
-    --password "$APPLE_APP_SPECIFIC_PASSWORD" \
-    --team-id "$APPLE_TEAM_ID" \
-    --wait
-  xcrun stapler staple "$app_path"
-  rm -f "$archive_path"
-  ditto --norsrc -c -k --keepParent "$app_path" "$archive_path"
+  notary_args=(
+    --apple-id "$APPLE_ID"
+    --password "$APPLE_APP_SPECIFIC_PASSWORD"
+    --team-id "$APPLE_TEAM_ID"
+  )
 fi
 
-shasum -a 256 "$archive_path" | awk '{print $1}' > "$archive_path.sha256"
+# Prints the submission id for a file handed to the notary service.
+# (Only called when notary_args is non-empty; macOS's bash 3.2 rejects
+# empty-array expansion under `set -u`.)
+submit_for_notarization() {
+  local path="$1" response id
+  response="$(xcrun notarytool submit "$path" "${notary_args[@]}" --output-format json)"
+  id="$(printf '%s' "$response" | sed -n 's/.*"id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)"
+  if [[ -z "$id" ]]; then
+    echo "error: could not parse notarization submission id for $path" >&2
+    printf '%s\n' "$response" >&2
+    return 1
+  fi
+  printf '%s' "$id"
+}
+
+wait_for_notarization() {
+  local id="$1" label="$2" response status
+  response="$(xcrun notarytool wait "$id" "${notary_args[@]}" --output-format json)" || true
+  status="$(printf '%s' "$response" | sed -n 's/.*"status"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)"
+  if [[ "$status" != "Accepted" ]]; then
+    echo "error: notarization of $label finished with status '${status:-unknown}' (submission $id)" >&2
+    xcrun notarytool log "$id" "${notary_args[@]}" >&2 || true
+    exit 1
+  fi
+  echo "Notarization accepted for $label ($id)"
+}
+
+zip_submission=""
+if [[ ${#notary_args[@]} -gt 0 ]]; then
+  zip_submission="$(submit_for_notarization "$archive_path")"
+fi
 
 # DMG for direct download from www.codevisor.dev (installs without Homebrew).
-# The app inside is already notarized and stapled; the image is signed and
-# notarized as well so Gatekeeper accepts it straight from a browser download.
+# Built from the signed (not yet stapled) app so its notarization overlaps the
+# zip's. The DMG itself is stapled for offline Gatekeeper checks; the app
+# inside shares the zip copy's signature, so its ticket resolves online and
+# the stapled zip remains the artifact used by Homebrew and the self-updater.
 dmg_path="$output_dir/Codevisor.dmg"
 dmg_root="$repo_root/dist/release/work/dmg-root"
 rm -rf "$dmg_root" "$dmg_path"
@@ -309,21 +339,16 @@ if [[ -n "${APPLE_CODESIGN_IDENTITY:-}" ]]; then
   codesign --force --sign "$APPLE_CODESIGN_IDENTITY" "$dmg_path"
 fi
 
-if [[ -n "${APP_STORE_CONNECT_API_KEY_PATH:-}" && -n "${APP_STORE_CONNECT_API_KEY_ID:-}" && -n "${APP_STORE_CONNECT_ISSUER_ID:-}" ]]; then
-  xcrun notarytool submit "$dmg_path" \
-    --key "$APP_STORE_CONNECT_API_KEY_PATH" \
-    --key-id "$APP_STORE_CONNECT_API_KEY_ID" \
-    --issuer "$APP_STORE_CONNECT_ISSUER_ID" \
-    --wait
-  xcrun stapler staple "$dmg_path"
-elif [[ -n "${APPLE_ID:-}" && -n "${APPLE_APP_SPECIFIC_PASSWORD:-}" && -n "${APPLE_TEAM_ID:-}" ]]; then
-  xcrun notarytool submit "$dmg_path" \
-    --apple-id "$APPLE_ID" \
-    --password "$APPLE_APP_SPECIFIC_PASSWORD" \
-    --team-id "$APPLE_TEAM_ID" \
-    --wait
+if [[ ${#notary_args[@]} -gt 0 ]]; then
+  dmg_submission="$(submit_for_notarization "$dmg_path")"
+  wait_for_notarization "$zip_submission" "Codevisor-macOS.zip"
+  xcrun stapler staple "$app_path"
+  rm -f "$archive_path"
+  ditto --norsrc -c -k --keepParent "$app_path" "$archive_path"
+  wait_for_notarization "$dmg_submission" "Codevisor.dmg"
   xcrun stapler staple "$dmg_path"
 fi
 
+shasum -a 256 "$archive_path" | awk '{print $1}' > "$archive_path.sha256"
 shasum -a 256 "$dmg_path" | awk '{print $1}' > "$dmg_path.sha256"
 echo "$archive_path"
