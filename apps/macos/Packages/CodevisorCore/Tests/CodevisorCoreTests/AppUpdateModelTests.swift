@@ -174,23 +174,68 @@ struct AppUpdateModelTests {
         #expect(model.isUpdating)
     }
 
-    @Test("Manifest checker reads latest.json and builds the archive URL")
-    func manifestCheckerReadsManifest() async throws {
+    @Test("Manifest checker prefers the architecture-specific archive when published")
+    func manifestCheckerPrefersArchitectureArchive() async throws {
         let base = URL(string: "https://releases.example.com/codevisor")!
         var requestedURLs: [URL] = []
         StubURLProtocol.handler = { request in
             if let url = request.url { requestedURLs.append(url) }
+            if request.httpMethod == "HEAD" {
+                return (200, Data())
+            }
             return (200, Data(#"{"version":"0.3.0"}"#.utf8))
         }
         defer { StubURLProtocol.handler = nil }
-        let checker = ManifestAppUpdateChecker(baseURL: base, urlSession: StubURLProtocol.makeSession())
+        let checker = ManifestAppUpdateChecker(
+            baseURL: base,
+            urlSession: StubURLProtocol.makeSession(),
+            architecture: "arm64"
+        )
 
         let release = try await checker.latestRelease()
 
-        #expect(requestedURLs == [URL(string: "https://releases.example.com/codevisor/latest.json")!])
+        #expect(requestedURLs == [
+            URL(string: "https://releases.example.com/codevisor/latest.json")!,
+            URL(string: "https://releases.example.com/codevisor/v0.3.0/Codevisor-macOS-arm64.zip")!
+        ])
         #expect(release?.version == "0.3.0")
-        #expect(release?.archiveURL == URL(string: "https://releases.example.com/codevisor/v0.3.0/Codevisor-macOS.zip"))
+        #expect(
+            release?.archiveURL
+                == URL(string: "https://releases.example.com/codevisor/v0.3.0/Codevisor-macOS-arm64.zip")
+        )
         #expect(release?.releasePageURL == nil)
+    }
+
+    @Test("Manifest checker falls back to the universal archive for pre-split releases")
+    func manifestCheckerFallsBackToUniversalArchive() async throws {
+        let base = URL(string: "https://releases.example.com/codevisor")!
+        StubURLProtocol.handler = { request in
+            if request.httpMethod == "HEAD" {
+                return (404, Data())
+            }
+            return (200, Data(#"{"version":"0.3.0"}"#.utf8))
+        }
+        defer { StubURLProtocol.handler = nil }
+        let checker = ManifestAppUpdateChecker(
+            baseURL: base,
+            urlSession: StubURLProtocol.makeSession(),
+            architecture: "x64"
+        )
+
+        let release = try await checker.latestRelease()
+
+        #expect(release?.version == "0.3.0")
+        #expect(
+            release?.archiveURL
+                == URL(string: "https://releases.example.com/codevisor/v0.3.0/Codevisor-macOS.zip")
+        )
+    }
+
+    @Test("Architecture archive names follow the release artifact convention")
+    func architectureArchiveNames() {
+        #expect(ManifestAppUpdateChecker.archiveName(architecture: "arm64") == "Codevisor-macOS-arm64.zip")
+        #expect(ManifestAppUpdateChecker.archiveName(architecture: "x64") == "Codevisor-macOS-x64.zip")
+        #expect(["arm64", "x64"].contains(ManifestAppUpdateChecker.currentArchitecture))
     }
 
     @Test("Manifest checker reports no release when the manifest is missing")

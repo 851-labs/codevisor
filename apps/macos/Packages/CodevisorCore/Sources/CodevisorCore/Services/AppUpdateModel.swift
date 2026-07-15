@@ -35,17 +35,40 @@ public struct DisabledUpdateChecker: AppUpdateChecking {
 /// repository is private, so the GitHub releases API is unreachable from user
 /// machines; the bucket is the one public source of release truth.
 public struct ManifestAppUpdateChecker: AppUpdateChecking {
-    /// The released macOS app archive produced by scripts/release/build-macos-app.sh.
+    /// The universal macOS app archive, shipped by every release before the
+    /// architecture split and kept as a transitional artifact afterwards so
+    /// pre-split apps can still update.
     public static let appArchiveName = "Codevisor-macOS.zip"
+
+    /// The running app's CPU architecture in release-artifact naming.
+    public static var currentArchitecture: String {
+        #if arch(x86_64)
+            "x64"
+        #else
+            "arm64"
+        #endif
+    }
+
+    /// The architecture-specific app archive published by split releases.
+    /// Half the download and installed size of the universal archive.
+    public static func archiveName(architecture: String) -> String {
+        "Codevisor-macOS-\(architecture).zip"
+    }
 
     private let baseURL: URL
     private let urlSession: URLSession
+    private let architecture: String
 
     /// - Parameter baseURL: the release prefix that contains `latest.json`
     ///   and the `v<version>/` artifact directories.
-    public init(baseURL: URL, urlSession: URLSession = .shared) {
+    public init(
+        baseURL: URL,
+        urlSession: URLSession = .shared,
+        architecture: String = Self.currentArchitecture
+    ) {
         self.baseURL = baseURL
         self.urlSession = urlSession
+        self.architecture = architecture
     }
 
     public func latestRelease() async throws -> AppUpdateRelease? {
@@ -60,12 +83,29 @@ public struct ManifestAppUpdateChecker: AppUpdateChecking {
         let manifest = try JSONDecoder().decode(ReleaseManifest.self, from: data)
         let version = manifest.version.hasPrefix("v") ? String(manifest.version.dropFirst()) : manifest.version
         guard !version.isEmpty else { return nil }
+        let versionDirectory = baseURL.appendingPathComponent("v\(version)")
         return AppUpdateRelease(
             version: version,
-            archiveURL: baseURL
-                .appendingPathComponent("v\(version)")
-                .appendingPathComponent(Self.appArchiveName)
+            archiveURL: await archiveURL(in: versionDirectory)
         )
+    }
+
+    /// Prefers the architecture-specific archive when the release publishes
+    /// one, falling back to the universal archive for releases from before
+    /// the split. Probe failures (offline mid-check) fall back too; the
+    /// universal archive remains correct on both architectures.
+    private func archiveURL(in versionDirectory: URL) async -> URL {
+        let candidate = versionDirectory
+            .appendingPathComponent(Self.archiveName(architecture: architecture))
+        var request = URLRequest(url: candidate)
+        request.httpMethod = "HEAD"
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        if let (_, response) = try? await urlSession.data(for: request),
+           let http = response as? HTTPURLResponse,
+           (200..<300).contains(http.statusCode) {
+            return candidate
+        }
+        return versionDirectory.appendingPathComponent(Self.appArchiveName)
     }
 
     private struct ReleaseManifest: Decodable {

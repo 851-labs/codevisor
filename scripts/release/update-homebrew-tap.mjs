@@ -19,10 +19,14 @@ if (version === undefined || version.length === 0) {
 
 const files = readdirSync(artifactDir)
 const appZip = files.find((file) => file === "Codevisor-macOS.zip")
+const armZip = files.find((file) => file === "Codevisor-macOS-arm64.zip")
+const intelZip = files.find((file) => file === "Codevisor-macOS-x64.zip")
 const serverArchives = files.filter((file) => /^codevisor-server-.+\.tar\.gz$/.test(file)).sort()
 
-if (appZip === undefined) {
-  throw new Error(`Codevisor-macOS.zip not found in ${artifactDir}`)
+if (appZip === undefined && (armZip === undefined || intelZip === undefined)) {
+  throw new Error(
+    `Neither Codevisor-macOS.zip nor both architecture-specific app zips found in ${artifactDir}`
+  )
 }
 if (serverArchives.length === 0) {
   throw new Error(`No codevisor-server archives found in ${artifactDir}`)
@@ -40,13 +44,27 @@ const updateRenameFile = (filename, oldName, newName) => {
   writeFileSync(path, `${JSON.stringify(renames, null, 2)}\n`)
 }
 
+// Split releases publish per-architecture app zips; the cask then selects by
+// CPU via Homebrew's arch stanza. Pre-split releases keep the single
+// universal artifact form.
+const caskArtifactStanza =
+  armZip !== undefined && intelZip !== undefined
+    ? `arch arm: "arm64", intel: "x64"
+
+  version "${version}"
+  sha256 arm:   "${sha256(armZip)}",
+         intel: "${sha256(intelZip)}"
+
+  url "${releaseUrl("Codevisor-macOS-#{arch}.zip")}"`
+    : `version "${version}"
+  sha256 "${sha256(appZip)}"
+
+  url "${releaseUrl(appZip)}"`
+
 writeFileSync(
   join(tapDir, "Casks", "codevisor.rb"),
   `cask "codevisor" do
-  version "${version}"
-  sha256 "${sha256(appZip)}"
-
-  url "${releaseUrl(appZip)}"
+  ${caskArtifactStanza}
   name "Codevisor"
   desc "ACP chat client and local Codevisor server"
   homepage "https://github.com/${repository}"

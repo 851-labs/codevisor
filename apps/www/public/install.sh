@@ -60,11 +60,23 @@ install_macos() {
 
   say "Installing Codevisor $version for macOS"
 
-  archive_url="$RELEASE_BASE/v$version/Codevisor.dmg"
+  # Prefer the architecture-specific disk image (published by split releases;
+  # half the download), then the universal image, then the zip that predates
+  # the DMG.
+  case "$(uname -m)" in
+    arm64) app_arch="arm64" ;;
+    x86_64) app_arch="x64" ;;
+    *) app_arch="" ;;
+  esac
+
   archive="$tmp_dir/Codevisor.dmg"
   kind="dmg"
-  if ! curl -fsSL -o "$archive" "$archive_url"; then
-    # Releases published before the DMG existed only have the zip.
+  if [ -n "$app_arch" ] \
+    && curl -fsSL -o "$archive" "$RELEASE_BASE/v$version/Codevisor-$app_arch.dmg"; then
+    archive_url="$RELEASE_BASE/v$version/Codevisor-$app_arch.dmg"
+  elif curl -fsSL -o "$archive" "$RELEASE_BASE/v$version/Codevisor.dmg"; then
+    archive_url="$RELEASE_BASE/v$version/Codevisor.dmg"
+  else
     archive_url="$RELEASE_BASE/v$version/Codevisor-macOS.zip"
     archive="$tmp_dir/Codevisor-macOS.zip"
     kind="zip"
