@@ -247,6 +247,7 @@ public final class SelectableTextKitView: TranscriptSelectableTextView {
             return
         }
         let selection = selectedRange()
+        updateLinkHover(at: nil)
         representedText = text
         textStorage?.setAttributedString(text)
         let location = min(selection.location, text.length)
@@ -282,6 +283,38 @@ public final class SelectableTextKitView: TranscriptSelectableTextView {
 public class TranscriptSelectableTextView: NSTextView {
     private var mouseSelectionAnchor: Int?
     private var selectionBeforeMouseDown: NSRange?
+    private var linkHoverTrackingArea: NSTrackingArea?
+    private(set) var hoveredLinkRange: NSRange?
+
+    public override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let linkHoverTrackingArea {
+            removeTrackingArea(linkHoverTrackingArea)
+        }
+        let area = NSTrackingArea(
+            rect: .zero,
+            options: [.activeInKeyWindow, .inVisibleRect, .mouseMoved, .mouseEnteredAndExited],
+            owner: self,
+            userInfo: nil
+        )
+        addTrackingArea(area)
+        linkHoverTrackingArea = area
+    }
+
+    public override func mouseMoved(with event: NSEvent) {
+        super.mouseMoved(with: event)
+        updateLinkHover(at: convert(event.locationInWindow, from: nil))
+    }
+
+    public override func mouseEntered(with event: NSEvent) {
+        super.mouseEntered(with: event)
+        updateLinkHover(at: convert(event.locationInWindow, from: nil))
+    }
+
+    public override func mouseExited(with event: NSEvent) {
+        super.mouseExited(with: event)
+        updateLinkHover(at: nil)
+    }
 
     public override func mouseDown(with event: NSEvent) {
         selectionBeforeMouseDown = selectedRange()
@@ -331,6 +364,59 @@ public class TranscriptSelectableTextView: NSTextView {
             repaintRemovedSelection(selection)
         }
         return true
+    }
+
+    /// Underlines only the link directly beneath the pointer. A temporary
+    /// layout attribute keeps the source Markdown and its measured geometry
+    /// unchanged while still repainting immediately as the pointer moves.
+    func updateLinkHover(at point: NSPoint?) {
+        let nextRange = point.flatMap(linkRange(at:))
+        guard nextRange != hoveredLinkRange else { return }
+
+        if let hoveredLinkRange {
+            layoutManager?.removeTemporaryAttribute(
+                .underlineStyle,
+                forCharacterRange: hoveredLinkRange
+            )
+        }
+        hoveredLinkRange = nextRange
+        if let nextRange {
+            layoutManager?.addTemporaryAttribute(
+                .underlineStyle,
+                value: NSUnderlineStyle.single.rawValue,
+                forCharacterRange: nextRange
+            )
+        }
+    }
+
+    private func linkRange(at viewPoint: NSPoint) -> NSRange? {
+        guard let layoutManager, let textContainer, let textStorage,
+            textStorage.length > 0, layoutManager.numberOfGlyphs > 0
+        else { return nil }
+
+        let origin = textContainerOrigin
+        let point = NSPoint(x: viewPoint.x - origin.x, y: viewPoint.y - origin.y)
+        let glyphIndex = layoutManager.glyphIndex(for: point, in: textContainer)
+        guard glyphIndex < layoutManager.numberOfGlyphs else { return nil }
+
+        // TextKit clamps points in surrounding whitespace to the nearest
+        // glyph. Require the pointer to be inside the glyph's actual bounds so
+        // a link does not remain underlined beyond its visible text.
+        let glyphRect = layoutManager.boundingRect(
+            forGlyphRange: NSRange(location: glyphIndex, length: 1),
+            in: textContainer
+        )
+        guard glyphRect.contains(point) else { return nil }
+
+        let characterIndex = layoutManager.characterIndexForGlyph(at: glyphIndex)
+        guard characterIndex < textStorage.length else { return nil }
+        var effectiveRange = NSRange()
+        guard textStorage.attribute(
+            .link,
+            at: characterIndex,
+            effectiveRange: &effectiveRange
+        ) != nil else { return nil }
+        return effectiveRange
     }
 
     private var currentMouseLocation: NSPoint {

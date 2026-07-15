@@ -227,6 +227,7 @@ final class TableTextView: TranscriptSelectableTextView {
             headers: model.headers, alignments: model.alignments, rows: model.rows,
             theme: model.theme, width: bounds.width
         )
+        updateLinkHover(at: nil)
         textStorage?.setAttributedString(string)
         builtWidth = bounds.width
     }

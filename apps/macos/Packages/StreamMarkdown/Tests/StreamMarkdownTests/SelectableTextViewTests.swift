@@ -78,6 +78,63 @@ struct SelectableTextViewTests {
         #expect(view.selectedRange() == NSRange(location: 4, length: 2))
     }
 
+    @Test("Hovering a link adds and removes an underline without changing its content")
+    func linkHoverUnderline() {
+        let text = NSMutableAttributedString(string: "Read the docs")
+        let linkRange = NSRange(location: 5, length: 8)
+        text.addAttributes(
+            [
+                .font: NSFont.preferredFont(forTextStyle: .body),
+                .link: URL(string: "https://example.com/docs")!,
+            ],
+            range: linkRange
+        )
+        let view = SelectableTextKitView()
+        view.setContent(text)
+        let height = view.contentHeight(forWidth: 320)
+        view.setFrameSize(NSSize(width: 320, height: height))
+
+        guard let layoutManager = view.layoutManager,
+            let textContainer = view.textContainer
+        else {
+            Issue.record("Missing TextKit stack")
+            return
+        }
+        layoutManager.ensureLayout(for: textContainer)
+        let linkGlyphs = layoutManager.glyphRange(
+            forCharacterRange: linkRange,
+            actualCharacterRange: nil
+        )
+        let linkRect = layoutManager.boundingRect(forGlyphRange: linkGlyphs, in: textContainer)
+        let hoverPoint = NSPoint(
+            x: linkRect.midX + view.textContainerOrigin.x,
+            y: linkRect.midY + view.textContainerOrigin.y
+        )
+
+        view.updateLinkHover(at: hoverPoint)
+
+        #expect(view.hoveredLinkRange == linkRange)
+        #expect(
+            layoutManager.temporaryAttribute(
+                .underlineStyle,
+                atCharacterIndex: linkRange.location,
+                effectiveRange: nil
+            ) as? Int == NSUnderlineStyle.single.rawValue
+        )
+        #expect(view.string == "Read the docs")
+
+        view.updateLinkHover(at: nil)
+
+        #expect(view.hoveredLinkRange == nil)
+        #expect(
+            layoutManager.temporaryAttribute(
+                .underlineStyle,
+                atCharacterIndex: linkRange.location,
+                effectiveRange: nil
+            ) == nil
+        )
+    }
+
     @Test("Selection clears for every transcript TextKit surface on focus loss")
     func sharedSelectionClearsOnResign() {
         let storage = NSTextStorage(string: "A transcript selection")
