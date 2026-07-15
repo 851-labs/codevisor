@@ -17,6 +17,7 @@ struct CodevisorApp: App {
             RootView()
                 .frame(minWidth: 480, minHeight: 600)
                 .themedRoot()
+                .modifier(DebugMetricsOverlayModifier())
                 .environment(environment)
                 // Deeplinks (codevisor://add-machine) should land in the
                 // window that's already open; without this, macOS spawns a
@@ -31,6 +32,7 @@ struct CodevisorApp: App {
             MachineCommands(machines: environment.machines)
             TerminalCommands()
             ScratchpadCommands()
+            DebugOverlayCommands()
             // Provides the Format menu (⌘B/⌘I etc.) for the scratchpad's
             // rich TextEditor; only acts on focused rich-text views, so the
             // plain-text composer is unaffected.
