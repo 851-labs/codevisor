@@ -17,6 +17,7 @@ import {
   writeFileSync
 } from "node:fs"
 import { hostname, tmpdir } from "node:os"
+import { installRuntime, planRestart, resolveInstallRoot } from "./self-update.js"
 import { Readable } from "node:stream"
 import { pipeline } from "node:stream/promises"
 import { dirname, join } from "node:path"
@@ -183,31 +184,60 @@ const makeSelfUpdater = (options: {
       createWriteStream(archivePath)
     )
 
-    await new Promise<void>((resolve, reject) => {
-      const untar = spawn("tar", ["-xzf", archivePath, "-C", runtimeDir], { stdio: "ignore" })
-      untar.once("error", reject)
-      untar.once("exit", (code) =>
-        code === 0 ? resolve() : reject(new Error(`tar exited with ${code}`))
-      )
-    })
+    const extractArchive = (destination: string): Promise<void> =>
+      new Promise<void>((resolve, reject) => {
+        const untar = spawn("tar", ["-xzf", archivePath, "-C", destination], { stdio: "ignore" })
+        untar.once("error", reject)
+        untar.once("exit", (code) =>
+          code === 0 ? resolve() : reject(new Error(`tar exited with ${code}`))
+        )
+      })
+    await extractArchive(runtimeDir)
 
-    const entrypoint = join(runtimeDir, "main.js")
-    const nodeBinary = join(runtimeDir, "bin", "node")
-    if (!existsSync(entrypoint) || !existsSync(nodeBinary)) {
+    if (!existsSync(join(runtimeDir, "main.js")) || !existsSync(join(runtimeDir, "bin", "node"))) {
       throw new Error(`Downloaded runtime at ${runtimeDir} is incomplete`)
     }
 
-    // Hand off: the replacement waits a beat for this process to release the
-    // port, then execs the new runtime with the same serve arguments.
+    // Install over the running root so systemd's ExecStart and the launcher
+    // symlinks boot the new version. Without this the staged runtime never
+    // becomes the default and every later restart resurrects the old build.
+    const installRoot = resolveInstallRoot(process.argv[1])
+    if (installRoot !== undefined) {
+      await installRuntime({ installRoot, extract: extractArchive })
+    }
+
     console.log(`Restarting into Codevisor server ${info.latestVersion}`)
+    const plan = planRestart(process.env, process.geteuid?.() ?? 0)
+    if (plan.kind === "systemd" && installRoot !== undefined) {
+      // Ask PID 1 to restart the unit. A detached handoff child would die
+      // with this unit's cgroup, and a clean exit is final under
+      // Restart=on-failure — but a restart job enqueued with --no-block
+      // survives this process: its stop half takes this server down and its
+      // start half boots the swapped install root.
+      const managerArgs = plan.userManager ? ["--user"] : []
+      spawn("systemctl", [...managerArgs, "restart", "--no-block", plan.unit], {
+        stdio: "ignore"
+      }).unref()
+      // Failsafe: if the restart job never arrives, exit anyway — the
+      // install root is already swapped, so any later start (manual or
+      // scheduled) boots the new version.
+      setTimeout(() => process.exit(0), 10_000).unref()
+      return
+    }
+
+    // Hand off: the replacement waits a beat for this process to release the
+    // port, then execs the new runtime with the same serve arguments. Runs
+    // from the swapped install root when there is one so the process and the
+    // install agree on the version; dev-style runs use the staged runtime.
+    const handoffRoot = installRoot ?? runtimeDir
     const handoff = spawn(
       "/bin/bash",
       [
         "-c",
         `sleep 1; exec -a ${SERVER_PROCESS_TITLE} "$@"`,
         "bash",
-        nodeBinary,
-        entrypoint,
+        join(handoffRoot, "bin", "node"),
+        join(handoffRoot, "main.js"),
         "serve",
         ...options.serveArgs
       ],
