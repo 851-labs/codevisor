@@ -8,6 +8,9 @@ import CodevisorCore
 struct TranscriptVirtualRow: Identifiable, Equatable {
     enum ID: Hashable {
         case message(UUID)
+        case assistantPlanning(UUID)
+        case plan(UUID)
+        case assistantResult(UUID)
         case active
         case setup
         case optimistic
@@ -19,6 +22,9 @@ struct TranscriptVirtualRow: Identifiable, Equatable {
         var layoutKey: String {
             switch self {
             case let .message(id): "message:\(id.uuidString)"
+            case let .assistantPlanning(id): "message:\(id.uuidString):planning"
+            case let .plan(id): "message:\(id.uuidString):plan"
+            case let .assistantResult(id): "message:\(id.uuidString):result"
             case .active: "special:active"
             case .setup: "special:setup"
             case .optimistic: "special:optimistic"
@@ -29,14 +35,24 @@ struct TranscriptVirtualRow: Identifiable, Equatable {
             }
         }
 
-        var messageID: UUID? {
-            guard case let .message(id) = self else { return nil }
-            return id
+        var isCacheableSettledRow: Bool {
+            switch self {
+            case .message, .assistantPlanning, .plan, .assistantResult: true
+            case .active, .setup, .optimistic, .backgroundTask, .error,
+                 .statusError, .bottomSpacer: false
+            }
+        }
+
+        var isPlanDocument: Bool {
+            if case .plan = self { true } else { false }
         }
     }
 
     enum Content: Equatable {
         case message(ConversationItem, waitingOnBackgroundTask: String?)
+        case assistantPlanning(AssistantMessage)
+        case planDocument(String)
+        case assistantResult(AssistantMessage, waitingOnBackgroundTask: String?)
         case active
         case setup([SessionSetupPhase])
         case optimistic(UserMessage, showsStartingAgent: Bool)
@@ -273,12 +289,12 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
     private var rowByKey: [String: TranscriptVirtualRow] = [:]
     private var virtualLayout = VirtualTranscriptLayout(items: [], measuredHeights: [:], spacing: rowSpacing)
     private var measuredHeights: [String: CGFloat] = [:]
-    /// Message-only height snapshots shared copy-on-write with scroll state.
+    /// Settled-row height snapshots shared copy-on-write with scroll state.
     /// Position updates can therefore publish synchronously without walking
     /// the transcript or copying these dictionaries on every trackpad frame.
-    private var messageHeightSnapshot: [UUID: SessionMeasuredRow] = [:]
+    private var settledRowHeightSnapshot: [String: SessionMeasuredRow] = [:]
     private var measurementCaches: [
-        SessionMeasurementCacheKey: [UUID: SessionMeasuredRow]
+        SessionMeasurementCacheKey: [String: SessionMeasuredRow]
     ] = [:]
     private var measurementCacheLRU: [SessionMeasurementCacheKey] = []
     private var activeMeasurementCacheKey: SessionMeasurementCacheKey?
@@ -561,21 +577,26 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
         guard oldRows.contains(where: { $0.id == .active }),
               let activeHeight = measuredHeights[TranscriptVirtualRow.ID.active.layoutKey],
               !newRows.contains(where: { $0.id == .active }) else { return }
-        let oldMessageIDs = Set(oldRows.compactMap(\.id.messageID))
-        guard let settledActive = newRows.last(where: { row in
-            guard let id = row.id.messageID else { return false }
-            return !oldMessageIDs.contains(id)
-        }), measuredHeights[settledActive.id.layoutKey] == nil else { return }
+        let oldKeys = Set(oldRows.map(\.id.layoutKey))
+        let insertedSettledRows = newRows.filter {
+            $0.id.isCacheableSettledRow && !oldKeys.contains($0.id.layoutKey)
+        }
+        // One active host can transfer its aggregate height only when it
+        // settles into one row. A plan turn intentionally becomes multiple
+        // independently measured rows, so assigning the aggregate to any one
+        // slice would poison scroll geometry.
+        guard insertedSettledRows.count == 1,
+              let settledActive = insertedSettledRows.first,
+              measuredHeights[settledActive.id.layoutKey] == nil else { return }
         measuredHeights[settledActive.id.layoutKey] = activeHeight
-        if let id = settledActive.id.messageID {
-            let measurement = SessionMeasuredRow(
-                height: activeHeight,
-                revision: settledActive.measurementRevision
-            )
-            messageHeightSnapshot[id] = measurement
-            if let activeMeasurementCacheKey {
-                measurementCaches[activeMeasurementCacheKey, default: [:]][id] = measurement
-            }
+        let measurement = SessionMeasuredRow(
+            height: activeHeight,
+            revision: settledActive.measurementRevision
+        )
+        let key = settledActive.id.layoutKey
+        settledRowHeightSnapshot[key] = measurement
+        if let activeMeasurementCacheKey {
+            measurementCaches[activeMeasurementCacheKey, default: [:]][key] = measurement
         }
     }
 
@@ -584,13 +605,14 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
         newRows: [TranscriptVirtualRow]
     ) {
         for row in newRows {
-            guard let id = row.id.messageID,
+            guard row.id.isCacheableSettledRow,
                   let previous = previousRowsByKey[row.id.layoutKey],
                   previous.measurementRevision != row.measurementRevision else { continue }
-            measuredHeights.removeValue(forKey: row.id.layoutKey)
-            messageHeightSnapshot.removeValue(forKey: id)
+            let key = row.id.layoutKey
+            measuredHeights.removeValue(forKey: key)
+            settledRowHeightSnapshot.removeValue(forKey: key)
             if let activeMeasurementCacheKey {
-                measurementCaches[activeMeasurementCacheKey]?.removeValue(forKey: id)
+                measurementCaches[activeMeasurementCacheKey]?.removeValue(forKey: key)
             }
         }
     }
@@ -628,17 +650,18 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
         })
         measuredHeights.removeAll(keepingCapacity: true)
         let cached = measurementCaches[key] ?? [:]
-        var valid: [UUID: SessionMeasuredRow] = [:]
+        var valid: [String: SessionMeasuredRow] = [:]
         valid.reserveCapacity(cached.count)
         for row in rows {
-            guard let id = row.id.messageID,
-                  let measurement = cached[id],
+            let rowKey = row.id.layoutKey
+            guard row.id.isCacheableSettledRow,
+                  let measurement = cached[rowKey],
                   measurement.revision == row.measurementRevision,
                   measurement.height > 0 else { continue }
-            valid[id] = measurement
-            measuredHeights[row.id.layoutKey] = measurement.height
+            valid[rowKey] = measurement
+            measuredHeights[rowKey] = measurement.height
         }
-        messageHeightSnapshot = valid
+        settledRowHeightSnapshot = valid
         measurementCaches[key] = valid
         for row in rows {
             if case let .bottomSpacer(height) = row.content {
@@ -915,11 +938,31 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
     private func updateMountedRows(rangeOverride: Range<Int>? = nil) {
         guard initialPositionApplied || contentView.bounds.height > 0 else { return }
         let distance = currentDistanceFromBottom()
-        let targetRange = rangeOverride ?? virtualLayout.visibleRange(
-            distanceFromBottom: distance,
-            viewportHeight: contentView.bounds.height,
-            overscanCount: Self.overscanCount
-        )
+        let targetRange: Range<Int>
+        if let rangeOverride {
+            targetRange = rangeOverride
+        } else {
+            let visibleRange = virtualLayout.visibleRange(
+                distanceFromBottom: distance,
+                viewportHeight: contentView.bounds.height,
+                overscanCount: 0
+            )
+            let overscannedRange = virtualLayout.visibleRange(
+                distanceFromBottom: distance,
+                viewportHeight: contentView.bounds.height,
+                overscanCount: Self.overscanCount
+            )
+            let planIndices = overscannedRange.filter { index in
+                guard virtualLayout.keys.indices.contains(index),
+                      let row = rowByKey[virtualLayout.keys[index]] else { return false }
+                return row.id.isPlanDocument
+            }
+            targetRange = VirtualTranscriptLayout.overscanRange(
+                visibleRange: visibleRange,
+                overscannedRange: overscannedRange,
+                stoppingAt: planIndices
+            )
+        }
         // Preserve a rendered window that already contains the target. This is
         // ChatGPT's rendered-range containment rule: height changes inside a
         // visible turn must not recycle that turn halfway through its update.
@@ -1077,14 +1120,14 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
 
     private func storeMeasuredHeight(_ height: CGFloat, for key: String) {
         measuredHeights[key] = height
-        if let row = rowByKey[key], let id = row.id.messageID {
+        if let row = rowByKey[key], row.id.isCacheableSettledRow {
             let measurement = SessionMeasuredRow(
                 height: height,
                 revision: row.measurementRevision
             )
-            messageHeightSnapshot[id] = measurement
+            settledRowHeightSnapshot[key] = measurement
             if let activeMeasurementCacheKey {
-                measurementCaches[activeMeasurementCacheKey, default: [:]][id] = measurement
+                measurementCaches[activeMeasurementCacheKey, default: [:]][key] = measurement
             }
         }
     }

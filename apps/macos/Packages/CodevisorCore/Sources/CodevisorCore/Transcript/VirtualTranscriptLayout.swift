@@ -118,6 +118,28 @@ public struct VirtualTranscriptLayout: Sendable, Equatable {
         return start..<overscannedEnd
     }
 
+    /// Stops row-count overscan at a heavy-content boundary. The boundary is
+    /// still preloaded while approaching it, but overscan never reaches
+    /// through to content on its far side. If a boundary is already visible,
+    /// only naturally visible rows are returned.
+    public static func overscanRange(
+        visibleRange: Range<Int>,
+        overscannedRange: Range<Int>,
+        stoppingAt boundaryIndices: [Int]
+    ) -> Range<Int> {
+        guard !boundaryIndices.isEmpty else { return overscannedRange }
+        if boundaryIndices.contains(where: { visibleRange.contains($0) }) {
+            return visibleRange
+        }
+        if let below = boundaryIndices.first(where: { $0 >= visibleRange.upperBound }) {
+            return visibleRange.lowerBound..<min(overscannedRange.upperBound, below + 1)
+        }
+        if let above = boundaryIndices.last(where: { $0 < visibleRange.lowerBound }) {
+            return max(overscannedRange.lowerBound, above)..<visibleRange.upperBound
+        }
+        return overscannedRange
+    }
+
     /// Recreates a previously rendered virtual window around its first key.
     /// Saved windows are advisory: missing keys fall back to the ordinary
     /// distance-based range and counts are clamped to the current transcript.

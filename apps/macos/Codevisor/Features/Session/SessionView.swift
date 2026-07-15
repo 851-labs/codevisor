@@ -222,18 +222,58 @@ struct SessionScreen: View {
                     estimatedHeight: 80
                 ))
             }
-            result.append(.init(
-                id: .message(item.id),
-                content: .message(
-                    item,
-                    waitingOnBackgroundTask: item.id == waitingAssistantID ? waitingDescription : nil
-                ),
-                estimatedHeight: Self.estimatedHeight(for: item),
-                measurementRevision: Self.measurementRevision(
+            let itemWaitingDescription = item.id == waitingAssistantID ? waitingDescription : nil
+            if case let .assistant(message) = item,
+               let planDocument = message.turn.planDocument, !planDocument.isEmpty {
+                let revision = Self.measurementRevision(
                     for: item,
-                    waitingOnBackgroundTask: item.id == waitingAssistantID ? waitingDescription : nil
+                    waitingOnBackgroundTask: itemWaitingDescription
                 )
-            ))
+                let hasPlanningRow = message.turn.hasDeferredWorkedDetails
+                    || !message.turn.workedItemsBeforePlan.isEmpty
+                if hasPlanningRow {
+                    result.append(.init(
+                        id: .assistantPlanning(message.id),
+                        content: .assistantPlanning(message),
+                        estimatedHeight: 44,
+                        measurementRevision: revision
+                    ))
+                }
+                result.append(.init(
+                    id: .plan(message.id),
+                    content: .planDocument(planDocument),
+                    estimatedHeight: Self.estimatedPlanHeight(planDocument),
+                    measurementRevision: Self.planMeasurementRevision(planDocument)
+                ))
+                let hasResultRow = !message.turn.workedItemsAfterPlan.isEmpty
+                    || message.turn.finalText != nil
+                    || message.turn.stopDetail != nil
+                    || message.turn.isGenerating
+                if hasResultRow {
+                    result.append(.init(
+                        id: .assistantResult(message.id),
+                        content: .assistantResult(
+                            message,
+                            waitingOnBackgroundTask: itemWaitingDescription
+                        ),
+                        estimatedHeight: 240,
+                        measurementRevision: revision
+                    ))
+                }
+            } else {
+                result.append(.init(
+                    id: .message(item.id),
+                    content: .message(
+                        item,
+                        waitingOnBackgroundTask: itemWaitingDescription
+                    ),
+                    estimatedHeight: Self.estimatedHeight(for: item),
+                    measurementRevision: Self.measurementRevision(
+                        for: item,
+                        waitingOnBackgroundTask: itemWaitingDescription
+                    )
+                ))
+            }
             if index == 0, case .user = item, !controller.setupPhases.isEmpty {
                 result.append(.init(
                     id: .setup,
@@ -286,6 +326,16 @@ struct SessionScreen: View {
         }
     }
 
+    private static func estimatedPlanHeight(_ markdown: String) -> CGFloat {
+        max(120, min(640, 72 + CGFloat(markdown.utf8.count / 72) * 18))
+    }
+
+    private static func planMeasurementRevision(_ markdown: String) -> Int {
+        var hasher = Hasher()
+        hasher.combine(markdown.utf8.count)
+        return hasher.finalize()
+    }
+
     /// Does not walk large Markdown payloads: counts and the model's existing
     /// monotonic/fingerprint fields are enough to guard in-memory measurements.
     private static func measurementRevision(
@@ -325,6 +375,23 @@ struct SessionScreen: View {
                 item: item,
                 isWaitingOnUser: controller.pendingQuestion != nil,
                 waitingOnBackgroundTask: waitingOnBackgroundTask
+            )
+        case let .assistantPlanning(message):
+            AssistantTurnView(
+                turn: message.turn,
+                turnID: message.id,
+                isWaitingOnUser: controller.pendingQuestion != nil,
+                presentation: .planning
+            )
+        case let .planDocument(markdown):
+            PlanDocumentView(markdown: markdown)
+        case let .assistantResult(message, waitingOnBackgroundTask):
+            AssistantTurnView(
+                turn: message.turn,
+                turnID: message.id,
+                isWaitingOnUser: controller.pendingQuestion != nil,
+                waitingOnBackgroundTask: waitingOnBackgroundTask,
+                presentation: .result
             )
         case .active:
             TranscriptActiveItemView(controller: controller)

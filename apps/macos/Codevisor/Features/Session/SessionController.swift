@@ -74,7 +74,7 @@ struct SessionScrollState {
     var distanceFromBottom: CGFloat
     /// A tiny, bounded LRU of exact settled-row measurements. Dictionary
     /// snapshots are copy-on-write, so publishing scroll state remains O(1).
-    var measurementCaches: [SessionMeasurementCacheKey: [UUID: SessionMeasuredRow]]
+    var measurementCaches: [SessionMeasurementCacheKey: [String: SessionMeasuredRow]]
     var measurementCacheLRU: [SessionMeasurementCacheKey]
     /// Exact virtual window and row geometry from the last mounted view.
     var virtualTranscript: SessionVirtualTranscriptRestoreState?

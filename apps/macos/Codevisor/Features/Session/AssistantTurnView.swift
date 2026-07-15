@@ -4,6 +4,19 @@ import CodevisorCore
 import StreamMarkdown
 import SwiftUI
 
+/// Which chronological slice of a settled assistant turn this row owns.
+/// Active turns use `.complete`; settled plan turns split into planning and
+/// result rows with `PlanDocumentView` virtualized independently between them.
+enum AssistantTurnPresentation: Equatable {
+    case complete
+    case planning
+    case result
+
+    var showsPlanning: Bool { self != .result }
+    var showsPlanDocument: Bool { self == .complete }
+    var showsResult: Bool { self != .planning }
+}
+
 /// Renders one assistant turn: reasoning text and tool-call groups collapse into
 /// a "Worked for…" disclosure, the final answer renders expanded at the bottom,
 /// and a shimmering "Thinking..." indicator shows while the agent is working.
@@ -14,6 +27,7 @@ struct AssistantTurnView: View {
     let turnID: UUID
     let isWaitingOnUser: Bool
     let waitingOnBackgroundTask: String?
+    let presentation: AssistantTurnPresentation
     private let initiallyExpanded: Bool?
     @Environment(\.transcriptDisclosure) private var disclosureStore
     @Environment(\.runningSubagentToolCallIds) private var runningSubagentToolCallIds
@@ -31,13 +45,15 @@ struct AssistantTurnView: View {
         turnID: UUID = UUID(),
         initiallyExpanded: Bool? = nil,
         isWaitingOnUser: Bool = false,
-        waitingOnBackgroundTask: String? = nil
+        waitingOnBackgroundTask: String? = nil,
+        presentation: AssistantTurnPresentation = .complete
     ) {
         self.turn = turn
         self.turnID = turnID
         self.initiallyExpanded = initiallyExpanded
         self.isWaitingOnUser = isWaitingOnUser
         self.waitingOnBackgroundTask = waitingOnBackgroundTask
+        self.presentation = presentation
         _hasAutoCollapsed = State(initialValue: turn.isGenerating && turn.finalTextIsAsserted)
     }
 
@@ -49,7 +65,11 @@ struct AssistantTurnView: View {
     /// Both worked sections: planning (above the plan card) and the
     /// implementation that follows approval (below it).
     private var sectionKeys: [TranscriptDisclosureStore.Key] {
-        [.turn(turnID), .turnImplementation(turnID)]
+        switch presentation {
+        case .complete: [.turn(turnID), .turnImplementation(turnID)]
+        case .planning: [.turn(turnID)]
+        case .result: [.turnImplementation(turnID)]
+        }
     }
 
     private func isExpanded(_ key: TranscriptDisclosureStore.Key) -> Bool {
@@ -81,11 +101,12 @@ struct AssistantTurnView: View {
         VStack(alignment: .leading, spacing: 14) {
             // Planning/exploration collapses into the first "Worked for…"
             // section, above the proposed plan.
-            if showsPlanningSection(beforePlan) {
+            if presentation.showsPlanning, showsPlanningSection(beforePlan) {
                 workedSection(items: beforePlan, key: .turn(turnID), timerLabel: turn.planBoundary == nil)
             }
 
-            if let planDocument = turn.planDocument, !planDocument.isEmpty {
+            if presentation.showsPlanDocument,
+               let planDocument = turn.planDocument, !planDocument.isEmpty {
                 PlanDocumentView(markdown: planDocument)
             }
             // The step checklist lives in the pinned TodoPanelView above the
@@ -94,13 +115,14 @@ struct AssistantTurnView: View {
             // Once the plan is approved, the implementation gets its own
             // "Worked for…" section BELOW the plan, so approved work reads in
             // order (plan → build) instead of piling up above the plan card.
-            if !afterPlan.isEmpty {
+            if presentation.showsResult, !afterPlan.isEmpty {
                 workedSection(items: afterPlan, key: .turnImplementation(turnID), timerLabel: true)
             }
 
             // A transient failure (e.g. 529 overload) is being retried — show it
             // instead of the plain "Thinking…" so the chat isn't a silent freeze.
-            if !isWaitingOnUser, turn.isGenerating, let retry = turn.retryStatus {
+            if presentation.showsResult,
+               !isWaitingOnUser, turn.isGenerating, let retry = turn.retryStatus {
                 HStack(spacing: 8) {
                     ProgressView()
                         .controlSize(.small)
@@ -109,7 +131,8 @@ struct AssistantTurnView: View {
                         .foregroundStyle(.secondary)
                 }
                 .accessibilityElement(children: .combine)
-            } else if !isWaitingOnUser, turn.showsActivityIndicator {
+            } else if presentation.showsResult,
+                      !isWaitingOnUser, turn.showsActivityIndicator {
                 ShimmeringText.thinking
             }
 
@@ -119,7 +142,8 @@ struct AssistantTurnView: View {
             // provider retro-tags it (Claude preamble before a tool call) or a
             // newer text span starts — codex tags messages up front, so its
             // candidate never demotes.
-            if let final = turn.finalText, case let .text(_, markdown) = final {
+            if presentation.showsResult,
+               let final = turn.finalText, case let .text(_, markdown) = final {
                 // Selection lives inside each native TextKit run. Keeping it
                 // there avoids a selection modifier on the segment VStack and
                 // keeps first-click geometry identical to display geometry.
@@ -154,7 +178,8 @@ struct AssistantTurnView: View {
             // here, attached to this turn — never a silent "stopped for no
             // reason". Clean completions and silently-recovered turns carry no
             // stopDetail and render nothing.
-            if !turn.isGenerating, let stopDetail = turn.stopDetail {
+            if presentation.showsResult,
+               !turn.isGenerating, let stopDetail = turn.stopDetail {
                 HStack(alignment: .top, spacing: 8) {
                     Image(systemName: "exclamationmark.triangle")
                         .font(.caption)

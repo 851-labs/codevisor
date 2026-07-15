@@ -36,6 +36,32 @@ struct VirtualTranscriptLayoutTests {
         ) == 0..<4)
     }
 
+    @Test func heavyBoundaryStopsOverscanFromMountingItsFarSide() {
+        #expect(VirtualTranscriptLayout.overscanRange(
+            visibleRange: 1..<2,
+            overscannedRange: 0..<4,
+            stoppingAt: [2]
+        ) == 1..<3)
+        #expect(VirtualTranscriptLayout.overscanRange(
+            visibleRange: 3..<4,
+            overscannedRange: 1..<5,
+            stoppingAt: [2]
+        ) == 2..<4)
+    }
+
+    @Test func visibleHeavyBoundaryDisablesAdjacentOverscan() {
+        #expect(VirtualTranscriptLayout.overscanRange(
+            visibleRange: 2..<3,
+            overscannedRange: 0..<5,
+            stoppingAt: [2]
+        ) == 2..<3)
+        #expect(VirtualTranscriptLayout.overscanRange(
+            visibleRange: 2..<3,
+            overscannedRange: 0..<5,
+            stoppingAt: []
+        ) == 0..<5)
+    }
+
     @Test func restoresRenderedWindowFromAnchorKey() {
         let layout = VirtualTranscriptLayout(items: items, measuredHeights: [:], spacing: 10)
 
