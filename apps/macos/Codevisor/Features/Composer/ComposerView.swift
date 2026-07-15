@@ -759,6 +759,7 @@ struct ModelConfigMenu: View {
 /// still connecting — it renders nothing.
 struct HarnessPickerMenu: View {
     @Bindable var controller: SessionController
+    @Environment(\.openSettings) private var openSettings
 
     var body: some View {
         if controller.canChooseHarness {
@@ -781,8 +782,6 @@ struct HarnessPickerMenu: View {
                 .buttonStyle(HoverIconButtonStyle(shape: .chip))
                 .help("Couldn't load agents. Click to try again.")
                 .accessibilityLabel("Agents unavailable. Try again")
-            } else if controller.harnesses.isEmpty {
-                PickerChip(text: "No agent installed") { EmptyView() }
             } else {
                 Menu {
                     ForEach(controller.harnesses) { harness in
@@ -803,8 +802,21 @@ struct HarnessPickerMenu: View {
                             }
                         }
                     }
+
+                    if !controller.harnesses.isEmpty {
+                        Divider()
+                    }
+
+                    Button("Manage Harnesses…") {
+                        SettingsRouter.shared.selectedTab = .harnesses
+                        openSettings()
+                    }
                 } label: {
-                    PickerChip(text: controller.selectedHarness?.name ?? "Choose agent") {
+                    PickerChip(
+                        text: controller.harnesses.isEmpty
+                            ? "No agent installed"
+                            : controller.selectedHarness?.name ?? "Choose agent"
+                    ) {
                         if let harness = controller.selectedHarness {
                             HarnessIcon(harnessId: harness.id, fallbackSymbolName: harness.symbolName)
                         }

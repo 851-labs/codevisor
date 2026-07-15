@@ -2,9 +2,9 @@ import SwiftUI
 import AppKit
 import CodevisorCore
 
-/// The Machines menu: switch the connected machine, add a remote, and jump to
-/// the Machines settings tab. Also adds "Copy Connection Token" to the app
-/// menu next to Settings.
+/// The Machines menu: switch the connected machine and jump to the Machines
+/// settings tab. Also adds "Copy Connection Token" to the app menu next to
+/// Settings.
 struct MachineCommands: Commands {
     let machines: MachineController
 
@@ -12,7 +12,6 @@ struct MachineCommands: Commands {
         CommandMenu("Machines") {
             MachinePickerItems(machines: machines)
             Divider()
-            AddRemoteMachineMenuItem()
             ManageMachinesMenuItem()
         }
 
@@ -43,15 +42,6 @@ private struct MachinePickerItems: View {
                 }
             }
         }
-    }
-}
-
-private struct AddRemoteMachineMenuItem: View {
-    @FocusedValue(\.sidebarActions) private var actions
-
-    var body: some View {
-        Button("Add Remote Machine…") { actions?.addRemoteMachine() }
-            .disabled(actions == nil)
     }
 }
 
