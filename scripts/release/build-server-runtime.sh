@@ -134,6 +134,24 @@ if [[ -n "$leftover" ]]; then
   exit 1
 fi
 
+# Strip non-runtime files from the bundled dependencies (~65MB, a quarter of
+# the runtime): TypeScript sources and declarations, sourcemaps, and docs are
+# never read by Node; better-sqlite3's deps/ and src/ plus node-gyp's
+# obj.target intermediates only matter at compile time; and the QuickJS debug
+# wasm payloads back a DEBUG variant the server never instantiates (their
+# packages stay resolvable — quickjs-emscripten requires all variant packages
+# at load time, but each loads its wasm payload with a lazy dynamic import).
+# package.json and LICENSE files stay.
+find "$runtime_dir/node_modules" -type f \
+  \( -name "*.ts" -o -name "*.mts" -o -name "*.cts" \
+  -o -name "*.map" -o -name "*.md" -o -name "*.markdown" \) \
+  ! -iname "license*" ! -iname "copying*" \
+  -delete
+rm -rf "$runtime_dir/node_modules/better-sqlite3/deps" \
+  "$runtime_dir/node_modules/better-sqlite3/src"
+find "$runtime_dir/node_modules" -type d -name "obj.target" -prune -exec rm -rf {} +
+rm -f "$runtime_dir"/node_modules/@jitl/quickjs-wasmfile-debug-*/dist/emscripten-module*
+
 mkdir -p "$runtime_dir/node_modules/@codevisor"
 for package_name in agent-runtime api db terminal; do
   rm -f "$runtime_dir/node_modules/@codevisor/$package_name"
