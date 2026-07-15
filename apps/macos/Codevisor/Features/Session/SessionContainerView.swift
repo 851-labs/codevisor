@@ -92,7 +92,12 @@ struct SessionContainerView: View {
                         .fill(.bar)
                         .frame(height: proxy.safeAreaInsets.top)
                         .offset(y: -proxy.safeAreaInsets.top)
-                        .allowsHitTesting(false)
+                        // This manually painted band replaces the hidden
+                        // toolbar background, so explicitly restore the native
+                        // window drag/zoom event path as Apple recommends.
+                        .contentShape(Rectangle())
+                        .gesture(WindowDragGesture())
+                        .allowsWindowActivationEvents()
                         .accessibilityHidden(true)
                 }
             }

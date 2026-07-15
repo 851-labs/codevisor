@@ -82,7 +82,13 @@ extension View {
                             .fill(surface)
                             .frame(height: proxy.safeAreaInsets.top)
                             .offset(y: -proxy.safeAreaInsets.top)
-                            .allowsHitTesting(false)
+                            // Hiding the system toolbar background removes its
+                            // implicit drag region on older SDK compatibility
+                            // paths. Restore that behavior with SwiftUI's
+                            // dedicated native window gesture.
+                            .contentShape(Rectangle())
+                            .gesture(WindowDragGesture())
+                            .allowsWindowActivationEvents()
                             .accessibilityHidden(true)
                     }
                 }

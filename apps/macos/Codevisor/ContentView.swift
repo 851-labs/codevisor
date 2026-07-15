@@ -26,6 +26,10 @@ struct CodevisorApp: App {
         }
         .defaultSize(width: 1280, height: 820)
         .windowResizability(.contentMinSize)
+        // Keep the native zoom target stable while responsive side panels
+        // mount and unmount as the window crosses their width thresholds.
+        // AppKit still owns saving and restoring the user's previous frame.
+        .windowIdealSize(.maximum)
         .commands {
             AppUpdateCommands(appUpdate: environment.appUpdate)
             FileCommands()
