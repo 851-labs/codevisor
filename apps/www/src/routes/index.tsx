@@ -126,8 +126,8 @@ function TextFeatures() {
       body: "Run the server on a Linux box and pair it with a token. Everything syncs live."
     },
     {
-      title: "Universal",
-      body: "One download for Apple Silicon and Intel, with native runtimes for both."
+      title: "Native",
+      body: "Purpose-built downloads for Apple Silicon and Intel Macs — no fat binaries."
     },
     {
       title: "Self-updating",

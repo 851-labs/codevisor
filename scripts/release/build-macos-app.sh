@@ -6,9 +6,13 @@ usage() {
   cat >&2 <<'EOF'
 usage: scripts/release/build-macos-app.sh <version> <output-dir>
 
-Builds Codevisor.app, bundles the local server runtime into
-Contents/Resources/server, optionally signs/notarizes the app, and writes
-Codevisor-macOS.zip for the Homebrew cask.
+Builds the universal Codevisor.app, bundles both local server runtimes into
+Contents/Resources/server, optionally signs/notarizes, and writes:
+  Codevisor-macOS-{arm64,x64}.zip   per-architecture apps (Homebrew cask,
+                                    in-app updater)
+  Codevisor-{arm64,x64}.dmg         per-architecture disk images (website)
+  Codevisor-macOS.zip               transitional universal app so pre-split
+                                    updaters can still update
 
 Optional environment:
   APPLE_CODESIGN_IDENTITY       Developer ID Application identity, or empty for ad-hoc signing.
@@ -326,38 +330,104 @@ wait_for_notarization() {
   echo "Notarization accepted for $label ($id)"
 }
 
-zip_submission=""
+# The universal zip stays published as a transitional artifact: apps from
+# before the architecture split hardcode this name in their update checker.
+# Submitted first (it is the largest upload) so Apple scans it while the
+# per-architecture variants are being packaged.
+universal_zip_submission=""
 if [[ ${#notary_args[@]} -gt 0 ]]; then
-  zip_submission="$(submit_for_notarization "$archive_path")"
+  universal_zip_submission="$(submit_for_notarization "$archive_path")"
 fi
 
-# DMG for direct download from www.codevisor.dev (installs without Homebrew).
-# Built from the signed (not yet stapled) app so its notarization overlaps the
-# zip's. The DMG itself is stapled for offline Gatekeeper checks; the app
-# inside shares the zip copy's signature, so its ticket resolves online and
-# the stapled zip remains the artifact used by Homebrew and the self-updater.
-dmg_path="$output_dir/Codevisor.dmg"
-dmg_root="$repo_root/dist/release/work/dmg-root"
-rm -rf "$dmg_root" "$dmg_path"
-mkdir -p "$dmg_root"
-ditto "$app_path" "$dmg_root/Codevisor.app"
-ln -s /Applications "$dmg_root/Applications"
-hdiutil create -volname "Codevisor" -srcfolder "$dmg_root" -fs HFS+ -format UDZO -ov "$dmg_path"
+# Builds a signed DMG for direct download from www.codevisor.dev (installs
+# without Homebrew). Built from the signed (not yet stapled) app so its
+# notarization overlaps the other submissions; the DMG itself is stapled for
+# offline Gatekeeper checks and the app inside shares the stapled zip copy's
+# signature, so its ticket resolves online.
+make_dmg() {
+  local app="$1" dmg="$2" staging="$3"
+  local dmg_root="$repo_root/dist/release/work/dmg-root-$staging"
+  rm -rf "$dmg_root" "$dmg"
+  mkdir -p "$dmg_root"
+  ditto "$app" "$dmg_root/Codevisor.app"
+  ln -s /Applications "$dmg_root/Applications"
+  hdiutil create -volname "Codevisor" -srcfolder "$dmg_root" -fs HFS+ -format UDZO -ov "$dmg"
+  if [[ -n "$identity" ]]; then
+    codesign --force --sign "$identity" "$dmg"
+  fi
+}
 
-if [[ -n "${APPLE_CODESIGN_IDENTITY:-}" ]]; then
-  codesign --force --sign "$APPLE_CODESIGN_IDENTITY" "$dmg_path"
-fi
+# Per-architecture variants, thinned from the signed universal bundle: half
+# the download and installed size because each app carries one server runtime
+# and one slice of the executable. The runtime files keep their signatures
+# (they are copied unmodified); only the outer bundle re-signs after thinning.
+split_work="$repo_root/dist/release/work/split"
+rm -rf "$split_work"
+for entry in "arm64:arm64:darwin-x64" "x86_64:x64:darwin-arm64"; do
+  lipo_arch="${entry%%:*}"
+  rest="${entry#*:}"
+  suffix="${rest%%:*}"
+  foreign_target="${rest#*:}"
+  variant_app="$split_work/$suffix/Codevisor.app"
+  mkdir -p "$split_work/$suffix"
+  ditto "$app_path" "$variant_app"
+
+  # Thin every multi-arch Mach-O outside the per-arch server runtimes (in
+  # practice the main executable; the loop stays generic for future helpers).
+  while IFS= read -r binary; do
+    archs="$(lipo -archs "$binary" 2>/dev/null || true)"
+    if [[ "$archs" == *" "* ]]; then
+      lipo -thin "$lipo_arch" "$binary" -output "$binary.thin"
+      mv "$binary.thin" "$binary"
+    fi
+  done < <(find "$variant_app" -type f -not -path "*/Resources/server/*")
+
+  rm -rf "$variant_app/Contents/Resources/server/$foreign_target"
+  if [[ ! -d "$variant_app/Contents/Resources/server" ]] \
+    || [[ -z "$(ls "$variant_app/Contents/Resources/server")" ]]; then
+    echo "error: $suffix variant lost its server runtime during thinning" >&2
+    exit 1
+  fi
+  codesign "${sign_args[@]}" "$variant_app"
+  codesign --verify --deep --strict "$variant_app"
+
+  ditto --norsrc -c -k --keepParent "$variant_app" "$output_dir/Codevisor-macOS-$suffix.zip"
+  make_dmg "$variant_app" "$output_dir/Codevisor-$suffix.dmg" "$suffix"
+done
 
 if [[ ${#notary_args[@]} -gt 0 ]]; then
-  dmg_submission="$(submit_for_notarization "$dmg_path")"
-  wait_for_notarization "$zip_submission" "Codevisor-macOS.zip"
+  arm_zip_submission="$(submit_for_notarization "$output_dir/Codevisor-macOS-arm64.zip")"
+  arm_dmg_submission="$(submit_for_notarization "$output_dir/Codevisor-arm64.dmg")"
+  x64_zip_submission="$(submit_for_notarization "$output_dir/Codevisor-macOS-x64.zip")"
+  x64_dmg_submission="$(submit_for_notarization "$output_dir/Codevisor-x64.dmg")"
+
+  wait_for_notarization "$universal_zip_submission" "Codevisor-macOS.zip"
   xcrun stapler staple "$app_path"
   rm -f "$archive_path"
   ditto --norsrc -c -k --keepParent "$app_path" "$archive_path"
-  wait_for_notarization "$dmg_submission" "Codevisor.dmg"
-  xcrun stapler staple "$dmg_path"
+
+  wait_for_notarization "$arm_zip_submission" "Codevisor-macOS-arm64.zip"
+  xcrun stapler staple "$split_work/arm64/Codevisor.app"
+  rm -f "$output_dir/Codevisor-macOS-arm64.zip"
+  ditto --norsrc -c -k --keepParent "$split_work/arm64/Codevisor.app" "$output_dir/Codevisor-macOS-arm64.zip"
+
+  wait_for_notarization "$x64_zip_submission" "Codevisor-macOS-x64.zip"
+  xcrun stapler staple "$split_work/x64/Codevisor.app"
+  rm -f "$output_dir/Codevisor-macOS-x64.zip"
+  ditto --norsrc -c -k --keepParent "$split_work/x64/Codevisor.app" "$output_dir/Codevisor-macOS-x64.zip"
+
+  wait_for_notarization "$arm_dmg_submission" "Codevisor-arm64.dmg"
+  xcrun stapler staple "$output_dir/Codevisor-arm64.dmg"
+  wait_for_notarization "$x64_dmg_submission" "Codevisor-x64.dmg"
+  xcrun stapler staple "$output_dir/Codevisor-x64.dmg"
 fi
 
-shasum -a 256 "$archive_path" | awk '{print $1}' > "$archive_path.sha256"
-shasum -a 256 "$dmg_path" | awk '{print $1}' > "$dmg_path.sha256"
+for artifact in \
+  "$archive_path" \
+  "$output_dir/Codevisor-macOS-arm64.zip" \
+  "$output_dir/Codevisor-macOS-x64.zip" \
+  "$output_dir/Codevisor-arm64.dmg" \
+  "$output_dir/Codevisor-x64.dmg"; do
+  shasum -a 256 "$artifact" | awk '{print $1}' > "$artifact.sha256"
+done
 echo "$archive_path"

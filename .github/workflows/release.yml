@@ -248,10 +248,10 @@ jobs:
         with:
           name: codevisor-macos
           path: |
-            dist/release/Codevisor-macOS.zip
-            dist/release/Codevisor-macOS.zip.sha256
-            dist/release/Codevisor.dmg
-            dist/release/Codevisor.dmg.sha256
+            dist/release/Codevisor-macOS*.zip
+            dist/release/Codevisor-macOS*.zip.sha256
+            dist/release/Codevisor-*.dmg
+            dist/release/Codevisor-*.dmg.sha256
             dist/release/codevisor-server-*.tar.gz
             dist/release/codevisor-server-*.tar.gz.sha256
           if-no-files-found: error
