@@ -9,7 +9,6 @@ struct MachinePickerToolbarMenu: View {
     @Environment(\.openSettings) private var openSettings
     @Environment(\.theme) private var theme
     @State private var showingAdd = false
-    @State private var addError: String?
 
     private var machines: MachineController { environment.machines }
     private var selectedMachine: CodevisorMachine { machines.selectedMachine }
@@ -57,23 +56,15 @@ struct MachinePickerToolbarMenu: View {
         .sheet(isPresented: $showingAdd) {
             RemoteMachineSheet { host, name, token in
                 do {
-                    try machines.addRemote(host: host, name: name, token: token)
+                    try await machines.addRemoteValidating(host: host, name: name, token: token)
+                    return nil
                 } catch {
-                    addError = ErrorReporter.userFacingMessage(for: error)
+                    if case CodevisorServerClientError.httpStatus(401, _) = error {
+                        return "That connection token was rejected by the machine."
+                    }
+                    return serverErrorMessage(error)
                 }
             }
-        }
-        .alert(
-            "Couldn't Add the Machine",
-            isPresented: Binding(
-                get: { addError != nil },
-                set: { if !$0 { addError = nil } }
-            ),
-            presenting: addError
-        ) { _ in
-            Button("OK") {}
-        } message: { message in
-            Text(message)
         }
     }
 }

@@ -20,6 +20,42 @@ struct SessionSetupTests {
         )
     }
 
+    @Test("Decodes project setup (clone) lifecycle events")
+    func decodesProjectSetupLifecycle() {
+        let projectId = "0DAA97F1-6E4A-4E7F-8B58-8DA9E3C6C1B1"
+        let started = envelope(kind: "project.setup", subjectId: projectId, payload: ["state": "started"])
+        #expect(ProjectSetupEvent.from(started, projectId: projectId.lowercased()) == .started)
+        let log = envelope(
+            kind: "project.setup",
+            subjectId: projectId,
+            payload: ["state": "log", "stream": "stderr", "line": "Receiving objects: 42%"]
+        )
+        #expect(
+            ProjectSetupEvent.from(log, projectId: projectId)
+                == .log(stream: "stderr", line: "Receiving objects: 42%")
+        )
+        let failed = envelope(
+            kind: "project.setup",
+            subjectId: projectId,
+            payload: ["state": "failed", "message": "Authentication failed", "code": "auth_failed"]
+        )
+        #expect(
+            ProjectSetupEvent.from(failed, projectId: projectId)
+                == .failed(message: "Authentication failed", code: "auth_failed", durationMs: nil)
+        )
+        let completed = envelope(
+            kind: "project.setup",
+            subjectId: projectId,
+            payload: ["state": "completed", "durationMs": 1200]
+        )
+        #expect(ProjectSetupEvent.from(completed, projectId: projectId) == .completed(durationMs: 1200))
+        // Wrong kind, wrong subject, and unknown states decode to nil.
+        #expect(ProjectSetupEvent.from(envelope(payload: ["state": "started"]), projectId: projectId) == nil)
+        #expect(ProjectSetupEvent.from(started, projectId: "other") == nil)
+        let unknown = envelope(kind: "project.setup", subjectId: projectId, payload: ["state": "nope"])
+        #expect(ProjectSetupEvent.from(unknown, projectId: projectId) == nil)
+    }
+
     @Test("Decodes worktree setup lifecycle events")
     func decodesLifecycle() {
         #expect(WorktreeSetupEvent.from(envelope(payload: ["state": "started"]), worktreeId: "wt-1") == .started)

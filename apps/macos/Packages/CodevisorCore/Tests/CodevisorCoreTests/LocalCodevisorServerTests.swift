@@ -328,6 +328,88 @@ struct LocalCodevisorServerTests {
         #expect(launches.isEmpty)
     }
 
+    @Test("Migrates legacy Application Support server data into ~/.codevisor")
+    func migratesLegacyServerData() throws {
+        let root = try makeTemporaryDirectory()
+        let legacy = root.appendingPathComponent("Application Support/Codevisor", isDirectory: true)
+        let data = root.appendingPathComponent(".codevisor/data", isDirectory: true)
+        let logs = root.appendingPathComponent(".codevisor/logs", isDirectory: true)
+        let fm = FileManager.default
+        try fm.createDirectory(
+            at: legacy.appendingPathComponent("harness-secrets/claude-code", isDirectory: true),
+            withIntermediateDirectories: true
+        )
+        try "database".write(
+            to: legacy.appendingPathComponent("codevisor-server.sqlite"),
+            atomically: true, encoding: .utf8
+        )
+        try "wal".write(
+            to: legacy.appendingPathComponent("codevisor-server.sqlite-wal"),
+            atomically: true, encoding: .utf8
+        )
+        try "log".write(
+            to: legacy.appendingPathComponent("server.log"), atomically: true, encoding: .utf8
+        )
+        try "sk".write(
+            to: legacy.appendingPathComponent("harness-secrets/claude-code/api-key"),
+            atomically: true, encoding: .utf8
+        )
+        try "keep".write(
+            to: legacy.appendingPathComponent("themes.json"), atomically: true, encoding: .utf8
+        )
+
+        LocalCodevisorServer.migrateLegacyServerData(from: legacy, toData: data, logs: logs)
+
+        #expect(
+            try String(contentsOf: data.appendingPathComponent("codevisor-server.sqlite"), encoding: .utf8)
+                == "database"
+        )
+        #expect(
+            try String(contentsOf: data.appendingPathComponent("codevisor-server.sqlite-wal"), encoding: .utf8)
+                == "wal"
+        )
+        #expect(
+            try String(contentsOf: data.appendingPathComponent("harness-secrets/claude-code/api-key"), encoding: .utf8)
+                == "sk"
+        )
+        #expect(
+            try String(contentsOf: logs.appendingPathComponent("server.log"), encoding: .utf8) == "log"
+        )
+        // Client-side files stay behind; only server state moves.
+        #expect(fm.fileExists(atPath: legacy.appendingPathComponent("themes.json").path))
+        #expect(!fm.fileExists(atPath: legacy.appendingPathComponent("codevisor-server.sqlite").path))
+    }
+
+    @Test("Skips migration when the canonical database already exists")
+    func skipsMigrationWhenDestinationExists() throws {
+        let root = try makeTemporaryDirectory()
+        let legacy = root.appendingPathComponent("Application Support/Codevisor", isDirectory: true)
+        let data = root.appendingPathComponent(".codevisor/data", isDirectory: true)
+        let logs = root.appendingPathComponent(".codevisor/logs", isDirectory: true)
+        let fm = FileManager.default
+        try fm.createDirectory(at: legacy, withIntermediateDirectories: true)
+        try fm.createDirectory(at: data, withIntermediateDirectories: true)
+        try "stale".write(
+            to: legacy.appendingPathComponent("codevisor-server.sqlite"),
+            atomically: true, encoding: .utf8
+        )
+        try "current".write(
+            to: data.appendingPathComponent("codevisor-server.sqlite"),
+            atomically: true, encoding: .utf8
+        )
+
+        LocalCodevisorServer.migrateLegacyServerData(from: legacy, toData: data, logs: logs)
+
+        #expect(
+            try String(contentsOf: data.appendingPathComponent("codevisor-server.sqlite"), encoding: .utf8)
+                == "current"
+        )
+        #expect(
+            try String(contentsOf: legacy.appendingPathComponent("codevisor-server.sqlite"), encoding: .utf8)
+                == "stale"
+        )
+    }
+
     private func makeTemporaryDirectory() throws -> URL {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("codevisor-server-tests-\(UUID().uuidString)", isDirectory: true)

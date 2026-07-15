@@ -40,6 +40,49 @@ public enum CodevisorAppVariant: Sendable {
         return environment["CODEVISOR_DEV_ICON_COLOR"] ?? "#0088ff"
     }
 
+    /// A local standalone server that `bun run dev` starts alongside the app,
+    /// so remote-machine flows can be developed offline. Present only in
+    /// development runs where the dev script provided its details.
+    public struct DevelopmentRemote: Sendable, Equatable {
+        public let host: String
+        public let port: Int
+        public let token: String
+        public let name: String
+
+        /// Value for MachineController.addRemote (which defaults the port).
+        public var hostWithPort: String { "\(host):\(port)" }
+
+        /// A codevisor-dev deeplink that adds this machine, for testing the
+        /// deeplink flow by opening it.
+        public var deeplink: String {
+            var components = URLComponents()
+            components.scheme = "codevisor-dev"
+            components.host = "add-machine"
+            components.queryItems = [
+                URLQueryItem(name: "host", value: host),
+                URLQueryItem(name: "port", value: String(port)),
+                URLQueryItem(name: "token", value: token),
+                URLQueryItem(name: "name", value: name)
+            ]
+            return components.string ?? ""
+        }
+    }
+
+    public static var developmentRemote: DevelopmentRemote? {
+        guard isDevelopment else { return nil }
+        let env = environment
+        guard let host = env["CODEVISOR_DEV_REMOTE_HOST"], !host.isEmpty,
+              let port = env["CODEVISOR_DEV_REMOTE_PORT"].flatMap(Int.init),
+              let token = env["CODEVISOR_DEV_REMOTE_TOKEN"], !token.isEmpty
+        else { return nil }
+        return DevelopmentRemote(
+            host: host,
+            port: port,
+            token: token,
+            name: env["CODEVISOR_DEV_REMOTE_NAME"] ?? "Test Remote"
+        )
+    }
+
     public static var applicationSupportDirectoryName: String {
         guard isDevelopment else { return "Codevisor" }
         guard let developmentInstanceID, !developmentInstanceID.isEmpty else {
@@ -53,17 +96,43 @@ public enum CodevisorAppVariant: Sendable {
            let override = environment["CODEVISOR_DEV_DATA_DIR"]
             ?? environment["HERDMAN_DEV_DATA_DIR"],
            !override.isEmpty {
-            let directory = URL(fileURLWithPath: override, isDirectory: true)
-            do {
-                try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
-            } catch {
-                Log.persistence.error("Failed to create data directory \(directory.path, privacy: .public): \(String(describing: error), privacy: .public)")
-            }
-            return directory
+            return createdDirectory(
+                at: URL(fileURLWithPath: override, isDirectory: true),
+                fileManager: fileManager
+            )
         }
         let base = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? fileManager.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support")
-        let directory = base.appendingPathComponent(applicationSupportDirectoryName, isDirectory: true)
+        return createdDirectory(
+            at: base.appendingPathComponent(applicationSupportDirectoryName, isDirectory: true),
+            fileManager: fileManager
+        )
+    }
+
+    /// Canonical server-state layout shared with standalone installs: the
+    /// server's database and logs live at ~/.codevisor/{data,logs} on every OS
+    /// so machine state is laid out identically everywhere (a prerequisite for
+    /// moving sessions between machines). Development builds keep their
+    /// isolated per-instance directories under Application Support instead.
+    public static func serverDataDirectoryURL(fileManager: FileManager = .default) -> URL {
+        guard !isDevelopment else { return applicationSupportURL(fileManager: fileManager) }
+        return createdDirectory(
+            at: fileManager.homeDirectoryForCurrentUser
+                .appendingPathComponent(".codevisor/data", isDirectory: true),
+            fileManager: fileManager
+        )
+    }
+
+    public static func serverLogsDirectoryURL(fileManager: FileManager = .default) -> URL {
+        guard !isDevelopment else { return applicationSupportURL(fileManager: fileManager) }
+        return createdDirectory(
+            at: fileManager.homeDirectoryForCurrentUser
+                .appendingPathComponent(".codevisor/logs", isDirectory: true),
+            fileManager: fileManager
+        )
+    }
+
+    private static func createdDirectory(at directory: URL, fileManager: FileManager) -> URL {
         do {
             try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
         } catch {

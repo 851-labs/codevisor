@@ -171,6 +171,40 @@ struct MachineControllerTests {
         }
     }
 
+    @Test("Validated add rejects a bad token and adds a reachable machine")
+    func validatedAdd() async throws {
+        let store = InMemoryStore()
+        let projectList = ProjectListModel(
+            projectRepository: DefaultProjectRepository(store: InMemoryStore()),
+            sessionRepository: DefaultSessionRepository(store: InMemoryStore())
+        )
+        // A client whose probe rejects the token: the machine must not be added.
+        let rejecting = MachineController(
+            store: store,
+            projectList: projectList,
+            clientFactory: { _ in
+                RescanCountingClient(infoError: CodevisorServerClientError.httpStatus(401, "{}"))
+            }
+        )
+        await #expect(throws: (any Error).self) {
+            try await rejecting.addRemoteValidating(host: "10.0.0.5", token: "hm_wrong")
+        }
+        #expect(rejecting.machines == [.local])
+
+        // A client that answers: the machine is added and selected.
+        let accepting = MachineController(
+            store: InMemoryStore(),
+            projectList: ProjectListModel(
+                projectRepository: DefaultProjectRepository(store: InMemoryStore()),
+                sessionRepository: DefaultSessionRepository(store: InMemoryStore())
+            ),
+            clientFactory: { _ in RescanCountingClient() }
+        )
+        let added = try await accepting.addRemoteValidating(host: "10.0.0.5", token: "hm_ok")
+        #expect(accepting.machines.contains(added))
+        #expect(accepting.selectedMachine == added)
+    }
+
     @Test("Server events keep projects and sessions in sync across clients")
     func eventSyncRefreshesAndRemoves() async throws {
         let projectId = UUID()
@@ -396,9 +430,12 @@ private final class RescanCountingClient: CodevisorServerClienting, @unchecked S
     private let lock = NSLock()
     private var _rescans = 0
     private var _failNextHealth: Bool
+    /// When set, `info()` throws it — used to exercise add-time validation.
+    let infoError: (any Error)?
 
-    init(failFirstHealth: Bool = false) {
+    init(failFirstHealth: Bool = false, infoError: (any Error)? = nil) {
         _failNextHealth = failFirstHealth
+        self.infoError = infoError
     }
 
     var rescans: Int { lock.withLock { _rescans } }
@@ -416,7 +453,8 @@ private final class RescanCountingClient: CodevisorServerClienting, @unchecked S
     }
 
     func info() async throws -> ServerInfo {
-        ServerInfo(
+        if let infoError { throw infoError }
+        return ServerInfo(
             id: "local", name: "Local", kind: "local", version: "0.1.0",
             platform: "darwin", bindHost: "127.0.0.1"
         )

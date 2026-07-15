@@ -226,6 +226,7 @@ public final class MachineController {
             registry.selectedMachineId = existing.id
             persist()
             projectList.selectServer(serverId: existing.id, serverClient: client(for: existing.id))
+            Task { await refreshStatus(for: existing.id) }
             return existing
         }
         let baseId = Self.remoteId(for: baseURL)
@@ -241,14 +242,39 @@ public final class MachineController {
         registry.selectedMachineId = machine.id
         persist()
         projectList.selectServer(serverId: machine.id, serverClient: client(for: machine.id))
+        // Probe right away so a freshly added machine shows its real status
+        // instead of waiting for the next periodic refresh.
+        Task { await refreshStatus(for: machine.id) }
         return machine
     }
 
-    /// Issues a fresh connection token from this machine's own server (the
-    /// loopback call is exempt from token auth), for pasting into another
-    /// device's Add Remote Machine sheet.
+    /// This machine's stable connection token (the loopback call is exempt
+    /// from token auth), for pasting into another device's Add Remote Machine
+    /// sheet. Stable across restarts so the copied value keeps working.
     public func issueLocalConnectionToken() async throws -> String {
-        try await client(for: CodevisorMachine.local.id).issuePairingToken().token
+        try await client(for: CodevisorMachine.local.id).connectionToken().token
+    }
+
+    /// Adds a remote machine only after confirming the host is reachable and
+    /// the token is accepted, so a wrong token surfaces as an error in the Add
+    /// dialog instead of a broken machine you have to remove and re-add.
+    @discardableResult
+    public func addRemoteValidating(
+        host input: String,
+        name: String? = nil,
+        token: String? = nil
+    ) async throws -> CodevisorMachine {
+        let baseURL = try Self.normalizedRemoteURL(from: input)
+        let probe = CodevisorMachine(
+            id: "probe",
+            name: "probe",
+            baseURL: baseURL,
+            kind: "remote",
+            token: Self.normalizedName(token)
+        )
+        // Throws on an unreachable host or a rejected token (401).
+        _ = try await clientFactory(probe).info()
+        return try addRemote(host: input, name: name, token: token)
     }
 
     /// Renames a remote machine. Blank names are ignored; the local machine
@@ -408,8 +434,15 @@ public final class MachineController {
             // than "Unreachable" — surface why instead.
             if id == CodevisorMachine.local.id, case let .unavailable(message) = localServer?.state {
                 statusByMachineId[id] = MachineStatus(isReachable: false, label: message)
+            } else if case CodevisorServerClientError.httpStatus(401, _) = error {
+                // The server answered — the token is just wrong (or the
+                // machine was paired against a different server on that host).
+                // Say so, so the user fixes the token instead of chasing a
+                // phantom network problem.
+                statusByMachineId[id] = MachineStatus(isReachable: false, label: "Invalid connection token")
             } else {
                 statusByMachineId[id] = MachineStatus(isReachable: false, label: "Unreachable")
+                Log.machines.debug("Status probe for \(id, privacy: .public) failed: \(String(describing: error), privacy: .public)")
             }
         }
     }

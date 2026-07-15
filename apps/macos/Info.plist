@@ -13,5 +13,22 @@
 		<key>NSAllowsArbitraryLoads</key>
 		<true/>
 	</dict>
+	<!--
+	  codevisor:// deeplinks (codevisor-dev:// in Debug so the dev app and
+	  the installed production app never race for the same handler). Used by
+	  `codevisor setup` on remote machines to hand the client a ready-made
+	  add-machine link.
+	-->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>$(CODEVISOR_URL_SCHEME)</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>

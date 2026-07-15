@@ -22,6 +22,17 @@ public enum CodevisorServerClientError: Error, Equatable, Sendable, LocalizedErr
     }
 }
 
+/// The machine-readable failure category from a server error body
+/// (`{"error": …, "code": …}`), when the server classified the failure —
+/// clone errors use this to pick actionable guidance.
+public func serverErrorCode(_ error: any Error) -> String? {
+    guard case let CodevisorServerClientError.httpStatus(_, body) = error,
+          let data = body.data(using: .utf8),
+          let payload = try? JSONDecoder().decode([String: String?].self, from: data)
+    else { return nil }
+    return payload["code"] ?? nil
+}
+
 /// The one message used for connection-level failures. Views compare an
 /// error string against this to pair the message with a "Restart" recovery
 /// action (HIG: offer the way out right where the error appears).
@@ -71,6 +82,10 @@ public protocol CodevisorServerClienting: Sendable {
     func info() async throws -> ServerInfo
     func updateInfo() async throws -> ServerUpdateInfo
     func issuePairingToken() async throws -> ServerPairingToken
+    /// The machine's stable connection token (unchanged across restarts and
+    /// updates until rotated). Preferred over `issuePairingToken` for showing
+    /// a token to copy, so it stays consistent.
+    func connectionToken() async throws -> ServerPairingToken
     func capabilities(cwd: String) async throws -> ServerCapabilities
     func listHarnesses() async throws -> [ServerHarness]
     /// Asks the server to re-resolve its PATH (login-shell probe) before
@@ -111,6 +126,13 @@ public protocol CodevisorServerClienting: Sendable {
     /// the server's `worktree.setup` progress events (subjectId = worktree id)
     /// while the request is still in flight.
     func createWorktree(projectId: UUID, id: String?, name: String?) async throws -> ServerWorktree
+    /// Directory listing for the remote project picker (directories only).
+    /// Nil path lists the server's home directory.
+    func listDirectory(path: String?, showHidden: Bool) async throws -> ServerFsListing
+    /// Clones a git remote into the machine's managed repos directory and
+    /// registers the checkout as a project. The client-supplied id lets the
+    /// caller follow `project.setup` progress events while the clone runs.
+    func createProjectFromGit(id: UUID, url: String, name: String?) async throws -> ServerProject
     func listSessions() async throws -> [ServerSession]
     func sessionDetail(id: UUID) async throws -> ServerSessionDetail
     /// Starts or rebinds the existing agent runtime and returns its current,
@@ -327,6 +349,22 @@ public extension CodevisorServerClienting {
     /// create path is used (no setup-progress correlation).
     func createWorktree(projectId: UUID, id: String?, name: String?) async throws -> ServerWorktree {
         try await createWorktree(projectId: projectId, name: name)
+    }
+
+    /// Default for fakes/older servers: fall back to issuing a fresh pairing
+    /// token when the stable connection-token endpoint isn't available.
+    func connectionToken() async throws -> ServerPairingToken {
+        try await issuePairingToken()
+    }
+
+    /// Defaults so fakes and older transports keep compiling; the HTTP client
+    /// overrides these with the real filesystem and clone endpoints.
+    func listDirectory(path: String?, showHidden: Bool) async throws -> ServerFsListing {
+        throw CodevisorServerClientError.invalidResponse
+    }
+
+    func createProjectFromGit(id: UUID, url: String, name: String?) async throws -> ServerProject {
+        throw CodevisorServerClientError.invalidResponse
     }
 }
 
@@ -748,6 +786,30 @@ public struct ServerProjectLocation: Decodable, Equatable, Sendable {
     public var isGitRepository: Bool?
 }
 
+public struct ServerFsEntry: Decodable, Equatable, Sendable {
+    public var name: String
+    public var path: String
+    public var isGitRepo: Bool
+
+    public init(name: String, path: String, isGitRepo: Bool) {
+        self.name = name
+        self.path = path
+        self.isGitRepo = isGitRepo
+    }
+}
+
+public struct ServerFsListing: Decodable, Equatable, Sendable {
+    public var path: String
+    public var parent: String?
+    public var entries: [ServerFsEntry]
+
+    public init(path: String, parent: String?, entries: [ServerFsEntry]) {
+        self.path = path
+        self.parent = parent
+        self.entries = entries
+    }
+}
+
 public struct ServerProject: Decodable, Equatable, Sendable {
     public var id: String
     public var name: String
@@ -756,6 +818,9 @@ public struct ServerProject: Decodable, Equatable, Sendable {
     public var origin: SessionOrigin
     public var createdAt: String
     public var locations: [ServerProjectLocation]
+    /// The git remote this project was cloned from, for projects added via
+    /// clone-from-git. Absent on older servers and directory-based projects.
+    public var repoUrl: String? = nil
 
     public func project(serverId: String = "local") throws -> Project {
         guard let uuid = UUID(uuidString: id) else {
@@ -770,10 +835,15 @@ public struct ServerProject: Decodable, Equatable, Sendable {
             origin: origin,
             createdAt: try ServerDateCoding.date(from: createdAt),
             locations: locations.map { location in
+                // Stamp the location with the client's machine id, not the
+                // server's self-reported id (always "local"). Otherwise
+                // `location(for: machineId)` misses on remote machines, so
+                // `isGitRepository` (and the folder lookup) silently fall back
+                // — which is why worktrees looked disabled on remote repos.
                 ProjectLocation(
                     id: location.id,
                     projectId: uuid,
-                    serverId: location.serverId,
+                    serverId: serverId,
                     folderPath: location.folderPath,
                     isGitRepository: location.isGitRepository
                 )
@@ -986,6 +1056,10 @@ public final class CodevisorServerClient: CodevisorServerClienting, @unchecked S
         try await send("/v1/auth/pairing-token", method: "POST", body: Optional<EmptyBody>.none)
     }
 
+    public func connectionToken() async throws -> ServerPairingToken {
+        try await get("/v1/auth/connection-token")
+    }
+
     public func capabilities(cwd: String) async throws -> ServerCapabilities {
         let encoded = cwd.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? cwd
         return try await get("/v1/capabilities?cwd=\(encoded)")
@@ -1171,6 +1245,39 @@ public final class CodevisorServerClient: CodevisorServerClienting, @unchecked S
             "/v1/projects/\(projectId.uuidString)/worktrees",
             method: "POST",
             body: CreateWorktreeBody(id: id, name: name)
+        )
+    }
+
+    public func listDirectory(path: String?, showHidden: Bool) async throws -> ServerFsListing {
+        var components = URLComponents()
+        components.path = "/v1/fs/list"
+        var query: [URLQueryItem] = []
+        if let path {
+            query.append(URLQueryItem(name: "path", value: path))
+        }
+        if showHidden {
+            query.append(URLQueryItem(name: "showHidden", value: "true"))
+        }
+        if !query.isEmpty {
+            components.queryItems = query
+        }
+        guard let requestPath = components.string else {
+            throw CodevisorServerClientError.invalidURL("fs/list")
+        }
+        return try await get(requestPath)
+    }
+
+    public func createProjectFromGit(id: UUID, url: String, name: String?) async throws -> ServerProject {
+        // Clones legitimately run for minutes on large repos; the default
+        // request timeout would abort mid-transfer. Send the id in the same
+        // (upper) case the client uses everywhere else — session creation
+        // looks the project up by that exact string, so a lowercased id here
+        // would store a project the client can never address ("not found").
+        try await send(
+            "/v1/projects/from-git",
+            method: "POST",
+            body: CreateProjectFromGitBody(id: id.uuidString, url: url, name: name),
+            timeout: 1800
         )
     }
 
@@ -1459,9 +1566,10 @@ public final class CodevisorServerClient: CodevisorServerClienting, @unchecked S
     private func send<Response: Decodable, Body: Encodable>(
         _ path: String,
         method: String,
-        body: Body?
+        body: Body?,
+        timeout: TimeInterval? = nil
     ) async throws -> Response {
-        let data = try await perform(path, method: method, body: body)
+        let data = try await perform(path, method: method, body: body, timeout: timeout)
         do {
             return try decoder.decode(Response.self, from: data)
         } catch {
@@ -1485,10 +1593,14 @@ public final class CodevisorServerClient: CodevisorServerClienting, @unchecked S
     private func perform<Body: Encodable>(
         _ path: String,
         method: String,
-        body: Body?
+        body: Body?,
+        timeout: TimeInterval? = nil
     ) async throws -> Data {
         var request = URLRequest(url: try url(for: path))
         request.httpMethod = method
+        if let timeout {
+            request.timeoutInterval = timeout
+        }
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         applyAuthorization(to: &request)
         if let body {
@@ -1736,6 +1848,12 @@ private struct HarnessLoginBody: Encodable {
 
 private struct CreateWorktreeBody: Encodable {
     var id: String?
+    var name: String?
+}
+
+private struct CreateProjectFromGitBody: Encodable {
+    var id: String
+    var url: String
     var name: String?
 }
 

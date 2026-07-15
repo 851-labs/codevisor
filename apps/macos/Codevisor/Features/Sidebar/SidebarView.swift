@@ -65,10 +65,8 @@ struct SidebarView: View {
     var store: SessionStore? = nil
     var publishesSceneActions = true
 
-    @State private var showingImporter = false
+    @State private var addProjectFlow = AddProjectFlow()
     @State private var showingRemoteMachine = false
-    @State private var showingRemoteProject = false
-    @State private var addMachineError: String?
     @State private var pendingImport: PendingSessionImport?
     // Seeded from UserDefaults (same key as `expandedProjectsRaw`) so
     // per-project disclosure survives relaunch; written back via onChange
@@ -228,13 +226,10 @@ struct SidebarView: View {
 
         }
         .background(theme.sidebarBackground)
-        .fileImporter(isPresented: $showingImporter, allowedContentTypes: [.folder]) { result in
-            if case let .success(url) = result {
-                let project = list.addProject(folderURL: url)
-                expanded.insert(project.id)
-                selection = .newChat(project.id)
-                offerSessionImport(for: project)
-            }
+        .addProjectFlow(addProjectFlow) { project in
+            expanded.insert(project.id)
+            selection = .newChat(project.id)
+            offerSessionImport(for: project)
         }
         .alert(
             "Import Existing Chats?",
@@ -275,32 +270,16 @@ struct SidebarView: View {
         .sheet(isPresented: $showingRemoteMachine) {
             RemoteMachineSheet { host, name, token in
                 do {
-                    try environment.machines.addRemote(host: host, name: name, token: token)
+                    try await environment.machines.addRemoteValidating(host: host, name: name, token: token)
                     selection = .newChat(nil)
+                    return nil
                 } catch {
                     Log.machines.error("Adding remote machine failed: \(String(describing: error), privacy: .public)")
-                    addMachineError = ErrorReporter.userFacingMessage(for: error)
+                    if case CodevisorServerClientError.httpStatus(401, _) = error {
+                        return "That connection token was rejected by the machine."
+                    }
+                    return serverErrorMessage(error)
                 }
-            }
-        }
-        .alert(
-            "Couldn't Add the Machine",
-            isPresented: Binding(
-                get: { addMachineError != nil },
-                set: { if !$0 { addMachineError = nil } }
-            ),
-            presenting: addMachineError
-        ) { _ in
-            Button("OK") {}
-        } message: { message in
-            Text(message)
-        }
-        .sheet(isPresented: $showingRemoteProject) {
-            RemoteProjectSheet { path in
-                let project = list.addProject(folderURL: URL(fileURLWithPath: path))
-                expanded.insert(project.id)
-                selection = .newChat(project.id)
-                offerSessionImport(for: project)
             }
         }
         .onChange(of: expanded) { _, newValue in
@@ -318,13 +297,9 @@ struct SidebarView: View {
         )
     }
 
-    /// Local machines pick a folder; remote machines prompt for a path.
+    /// One shared flow: pick a folder on the machine or clone a repository.
     private func startAddProject() {
-        if environment.machines.selectedMachine.isLocal {
-            showingImporter = true
-        } else {
-            showingRemoteProject = true
-        }
+        addProjectFlow.begin()
     }
 
     /// One skip entry per machine + version, so dismissing one machine's
@@ -828,34 +803,6 @@ private struct ProjectDropDelegate: DropDelegate {
     func performDrop(info: DropInfo) -> Bool {
         draggingProjectID = nil
         return true
-    }
-}
-
-// Internal: also used by NewChatView's "New project…" menu item.
-struct RemoteProjectSheet: View {
-    @Environment(\.dismiss) private var dismiss
-    @State private var path = ""
-    let onAdd: (String) -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("Add remote project")
-                .font(.headline)
-            TextField("/home/dylan/project", text: $path)
-                .textFieldStyle(.roundedBorder)
-            HStack {
-                Spacer()
-                Button("Cancel") { dismiss() }
-                Button("Add") {
-                    onAdd(path)
-                    dismiss()
-                }
-                .keyboardShortcut(.defaultAction)
-                .disabled(!path.hasPrefix("/"))
-            }
-        }
-        .padding(20)
-        .frame(width: 420)
     }
 }
 

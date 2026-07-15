@@ -94,6 +94,29 @@ public final class ProjectListModel {
         return project
     }
 
+    /// Registers a project the selected server already owns (a fresh
+    /// clone-from-git) under the server's project id, so the local list and
+    /// the server describe one project instead of merging by folder later.
+    @discardableResult
+    public func adoptServerProject(id: UUID, folderURL: URL, name: String) -> Project {
+        if let index = projects.firstIndex(where: { $0.serverId == selectedServerId && $0.id == id }) {
+            projects[index].isArchived = false
+            persistProjects()
+            return projects[index]
+        }
+        var project = Project.fromFolder(folderURL, serverId: selectedServerId)
+        project.id = id
+        project.name = name
+        project.locations = project.locations.map { location in
+            var updated = location
+            updated.projectId = id
+            return updated
+        }
+        projects.append(project)
+        persistProjects()
+        return project
+    }
+
     public func archive(_ project: Project) {
         setArchived(true, for: project)
     }

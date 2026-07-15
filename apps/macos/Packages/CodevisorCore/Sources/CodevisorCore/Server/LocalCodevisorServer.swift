@@ -162,6 +162,13 @@ public final class LocalCodevisorServer {
             return state
         }
 
+        // Relocate pre-canonical server state now that no server is serving
+        // it: any healthy-but-stale server was stopped above, and the launch
+        // below opens the database at the canonical path.
+        if databasePath == Self.defaultDatabasePath() {
+            Self.migrateLegacyServerData()
+        }
+
         do {
             var serverEnvironment = await serverEnvironmentProvider()
             // Marks this server as launched by (and living inside) the app
@@ -515,18 +522,68 @@ public final class LocalCodevisorServer {
     }
 
     public static func defaultDatabasePath() -> String {
-        applicationSupportURL().appendingPathComponent("codevisor-server.sqlite").path
+        CodevisorAppVariant.serverDataDirectoryURL()
+            .appendingPathComponent("codevisor-server.sqlite").path
     }
 
     public static func defaultLogURL() -> URL {
-        applicationSupportURL().appendingPathComponent("server.log")
+        CodevisorAppVariant.serverLogsDirectoryURL().appendingPathComponent("server.log")
     }
 
     public static func defaultDataUpgradeStatusURL() -> URL {
-        applicationSupportURL().appendingPathComponent("data-upgrade.json")
+        CodevisorAppVariant.serverDataDirectoryURL().appendingPathComponent("data-upgrade.json")
     }
 
-    private static func applicationSupportURL() -> URL {
-        CodevisorAppVariant.applicationSupportURL()
+    /// One-time move of server state from the pre-canonical Application
+    /// Support location into ~/.codevisor, the layout shared with standalone
+    /// installs. Only ever invoked right before launching a server against the
+    /// default paths — never while a server may still be serving the old
+    /// location. The database moves last so an interrupted migration resumes
+    /// on the next launch instead of stranding sidecar files.
+    static func migrateLegacyServerData(
+        from legacyDirectory: URL = CodevisorAppVariant.applicationSupportURL(),
+        toData dataDirectory: URL = CodevisorAppVariant.serverDataDirectoryURL(),
+        logs logsDirectory: URL = CodevisorAppVariant.serverLogsDirectoryURL(),
+        fileManager: FileManager = .default
+    ) {
+        guard legacyDirectory.standardizedFileURL != dataDirectory.standardizedFileURL else {
+            return
+        }
+        let databaseName = "codevisor-server.sqlite"
+        guard fileManager.fileExists(atPath: legacyDirectory.appendingPathComponent(databaseName).path),
+              !fileManager.fileExists(atPath: dataDirectory.appendingPathComponent(databaseName).path)
+        else { return }
+
+        let dataArtifacts = [
+            "codevisor-server.sqlite-shm",
+            "codevisor-server.sqlite-wal",
+            "data-upgrade.json",
+            "server-updates",
+            "harness-profiles",
+            "harness-secrets",
+            "mcp-secret-key",
+            databaseName
+        ]
+        do {
+            try fileManager.createDirectory(at: dataDirectory, withIntermediateDirectories: true)
+            try fileManager.createDirectory(at: logsDirectory, withIntermediateDirectories: true)
+            let legacyLog = legacyDirectory.appendingPathComponent("server.log")
+            let log = logsDirectory.appendingPathComponent("server.log")
+            if fileManager.fileExists(atPath: legacyLog.path),
+               !fileManager.fileExists(atPath: log.path) {
+                try fileManager.moveItem(at: legacyLog, to: log)
+            }
+            for artifact in dataArtifacts {
+                let source = legacyDirectory.appendingPathComponent(artifact)
+                let destination = dataDirectory.appendingPathComponent(artifact)
+                guard fileManager.fileExists(atPath: source.path),
+                      !fileManager.fileExists(atPath: destination.path) else { continue }
+                try fileManager.moveItem(at: source, to: destination)
+            }
+        } catch {
+            Log.server.error(
+                "Failed to migrate server data to \(dataDirectory.path, privacy: .public): \(String(describing: error), privacy: .public)"
+            )
+        }
     }
 }

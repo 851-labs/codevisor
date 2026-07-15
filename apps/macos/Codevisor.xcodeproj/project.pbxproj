@@ -290,6 +290,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Info.plist;
 				CODEVISOR_DEV_BUNDLE_IDENTIFIER = com.851labs.Codevisor.Development;
+				CODEVISOR_URL_SCHEME = "codevisor-dev";
 				CODEVISOR_DEV_DISPLAY_NAME = "Codevisor Dev";
 				CODEVISOR_DEV_PRODUCT_NAME = "Codevisor Dev";
 				INFOPLIST_KEY_CFBundleDisplayName = "$(CODEVISOR_DEV_DISPLAY_NAME)";
@@ -378,6 +379,7 @@
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Info.plist;
+				CODEVISOR_URL_SCHEME = codevisor;
 				INFOPLIST_KEY_CFBundleDisplayName = Codevisor;
 				INFOPLIST_KEY_CFBundleIconFile = AppIcon;
 				INFOPLIST_KEY_CFBundleIconName = AppIcon;

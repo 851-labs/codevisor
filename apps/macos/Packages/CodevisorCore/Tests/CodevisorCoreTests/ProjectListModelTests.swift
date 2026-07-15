@@ -16,6 +16,57 @@ struct ProjectListModelTests {
         return (model, projectStore, sessionStore)
     }
 
+    @Test("Server project locations adopt the client's machine id, not the server's")
+    func projectMappingStampsClientMachineId() throws {
+        // The server always reports its own id as "local"; the client must
+        // re-stamp the location with the machine id it's talking to, or
+        // `location(for:)` misses and isGitRepository/worktrees break on
+        // remote machines.
+        let server = ServerProject(
+            id: UUID().uuidString,
+            name: "widget",
+            isArchived: false,
+            symbolName: "folder.fill",
+            origin: .codevisor,
+            createdAt: "2026-07-03T00:00:00.000Z",
+            locations: [
+                ServerProjectLocation(
+                    id: "loc-1",
+                    projectId: "ignored",
+                    serverId: "local",
+                    folderPath: "/root/.codevisor/repos/widget",
+                    createdAt: "2026-07-03T00:00:00.000Z",
+                    isGitRepository: true
+                )
+            ]
+        )
+        let project = try server.project(serverId: "vmi3431000.tail6fc9a.ts.net-49361")
+        #expect(project.serverId == "vmi3431000.tail6fc9a.ts.net-49361")
+        #expect(project.locations.first?.serverId == "vmi3431000.tail6fc9a.ts.net-49361")
+        // The git flag now resolves, so the worktree option is available.
+        #expect(project.isGitRepository)
+    }
+
+    @Test("adoptServerProject registers a clone under the server's project id")
+    func adoptServerProjectUsesServerId() {
+        let (model, _, _) = makeModel()
+        let id = UUID()
+        let url = URL(fileURLWithPath: "/home/user/.codevisor/repos/widget")
+
+        let project = model.adoptServerProject(id: id, folderURL: url, name: "widget")
+        #expect(project.id == id)
+        #expect(project.name == "widget")
+        #expect(project.folderURL == url)
+        #expect(project.locations.allSatisfy { $0.projectId == id })
+
+        // Adopting the same project again reuses (and un-archives) the entry.
+        model.archive(project)
+        let again = model.adoptServerProject(id: id, folderURL: url, name: "widget")
+        #expect(again.id == id)
+        #expect(again.isArchived == false)
+        #expect(model.projects.filter { $0.id == id }.count == 1)
+    }
+
     @Test("setWorktree patches a draft's worktree name and cwd locally")
     func setWorktreePatchesDraft() {
         let (model, _, sessionStore) = makeModel()
