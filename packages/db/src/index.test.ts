@@ -5,7 +5,14 @@ import { mkdtempSync, rmSync } from "node:fs"
 import { homedir, tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
-import { DatabaseError, CodevisorDatabase, makeDatabase, worktreePath } from "./index.js"
+import {
+  DatabaseError,
+  CodevisorDatabase,
+  makeDatabase,
+  managedRepoPath,
+  managedReposRoot,
+  worktreePath
+} from "./index.js"
 
 const tempDirs: Array<string> = []
 
@@ -140,6 +147,83 @@ const buildV4Fixture = (filename: string): void => {
 }
 
 describe("@codevisor/db", () => {
+  it("derives managed repo paths from the canonical repos root", () => {
+    const previous = process.env["CODEVISOR_REPOS_ROOT"]
+    delete process.env["CODEVISOR_REPOS_ROOT"]
+    expect(managedReposRoot()).toBe(join(homedir(), ".codevisor", "repos"))
+    process.env["CODEVISOR_REPOS_ROOT"] = "/tmp/custom-repos"
+    expect(managedRepoPath("my-repo")).toBe("/tmp/custom-repos/my-repo")
+    if (previous === undefined) {
+      delete process.env["CODEVISOR_REPOS_ROOT"]
+    } else {
+      process.env["CODEVISOR_REPOS_ROOT"] = previous
+    }
+  })
+
+  it("round-trips the git remote a project was cloned from", async () => {
+    const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
+    const cloned = await run(
+      db.createProject({
+        folderPath: "/home/user/.codevisor/repos/widget",
+        name: "widget",
+        repoUrl: "https://github.com/acme/widget.git"
+      })
+    )
+    expect(cloned.repoUrl).toBe("https://github.com/acme/widget.git")
+    const listed = await run(db.listProjects)
+    expect(listed.find((project) => project.id === cloned.id)?.repoUrl).toBe(
+      "https://github.com/acme/widget.git"
+    )
+    // Directory projects carry no remote.
+    const plain = await run(db.createProject({ folderPath: "/tmp/plain-dir" }))
+    expect(plain.repoUrl).toBeUndefined()
+    await run(db.close)
+  })
+
+  it("persists a stable instance id across reopens", async () => {
+    const filename = tempDatabase()
+    const db = await run(makeDatabase({ filename, serverId: "local" }))
+    const first = await run(db.getOrCreateInstanceId)
+    expect(first).toMatch(/^[0-9a-f-]{36}$/)
+    expect(await run(db.getOrCreateInstanceId)).toBe(first)
+    await run(db.close)
+
+    const reopened = await run(makeDatabase({ filename, serverId: "renamed" }))
+    expect(await run(reopened.getOrCreateInstanceId)).toBe(first)
+    await run(reopened.close)
+  })
+
+  it("keeps the connection token stable across reopens and rotates on demand", async () => {
+    const filename = tempDatabase()
+    const db = await run(makeDatabase({ filename, serverId: "local" }))
+    const token = await run(db.getOrCreateConnectionToken)
+    expect(token).toMatch(/^hm_/)
+    // Stable within a run and verifiable as a bearer token.
+    expect(await run(db.getOrCreateConnectionToken)).toBe(token)
+    expect(await run(db.verifyBearerToken(token))).toBe(true)
+    await run(db.close)
+
+    // Survives a restart/update (reopen with a different serverId).
+    const reopened = await run(makeDatabase({ filename, serverId: "renamed" }))
+    expect(await run(reopened.getOrCreateConnectionToken)).toBe(token)
+
+    // Rotation issues a new token and retires the old one.
+    const rotated = await run(reopened.rotateConnectionToken)
+    expect(rotated).not.toBe(token)
+    expect(await run(reopened.getOrCreateConnectionToken)).toBe(rotated)
+    expect(await run(reopened.verifyBearerToken(rotated))).toBe(true)
+    expect(await run(reopened.verifyBearerToken(token))).toBe(false)
+    await run(reopened.close)
+  })
+
+  it("can rotate a connection token that was never issued", async () => {
+    const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
+    const token = await run(db.rotateConnectionToken)
+    expect(token).toMatch(/^hm_/)
+    expect(await run(db.verifyBearerToken(token))).toBe(true)
+    await run(db.close)
+  })
+
   it("persists harness accounts, selection, auth state, and session bindings", async () => {
     const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
     const project = await run(db.createProject({ name: "Auth", folderPath: "/tmp/auth" }))

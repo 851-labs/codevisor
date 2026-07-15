@@ -5,13 +5,16 @@ import {
   BranchDiffTotals,
   CancelRequest,
   CreateHarnessAccountRequest,
+  CreateProjectFromGitRequest,
   CreateProjectRequest,
   CreateSessionRequest,
   CreateWorktreeRequest,
   EventEnvelope,
   FileMetadata,
+  FsListResponse,
   Harness,
   HarnessAccount,
+  DiscoveryInfo,
   HarnessAuthFlow,
   HealthResponse,
   PairingTokenResponse,
@@ -59,6 +62,7 @@ export interface CodevisorOpenApi {
 
 export const endpoints = [
   "GET /v1/health",
+  "GET /v1/discovery",
   "GET /v1/info",
   "GET /v1/openapi.json",
   "GET /v1/update",
@@ -66,8 +70,11 @@ export const endpoints = [
   "POST /v1/shutdown",
   "GET /v1/capabilities",
   "POST /v1/auth/pairing-token",
+  "GET /v1/auth/connection-token",
+  "POST /v1/auth/connection-token/rotate",
   "GET /v1/projects",
   "POST /v1/projects",
+  "POST /v1/projects/from-git",
   "PATCH /v1/projects/:id",
   "DELETE /v1/projects/:id",
   "GET /v1/projects/:id/worktrees",
@@ -109,6 +116,7 @@ export const endpoints = [
   "POST /v1/sessions/:id/questions/:questionId/answer",
   "POST /v1/files",
   "GET /v1/files/:id",
+  "GET /v1/fs/list",
   "GET /v1/events",
   "GET /v1/events/socket",
   "POST /v1/terminals",
@@ -132,6 +140,7 @@ const nullable = (schema: Schema.Constraint): Schema.Constraint => Schema.NullOr
 
 const requestSchemas = (): Partial<Record<Endpoint, Schema.Constraint>> => ({
   "POST /v1/projects": CreateProjectRequest,
+  "POST /v1/projects/from-git": CreateProjectFromGitRequest,
   "PATCH /v1/projects/:id": UpdateProjectRequest,
   "POST /v1/projects/:id/worktrees": CreateWorktreeRequest,
   "PATCH /v1/harnesses/:id": UpdateHarnessRequest,
@@ -152,12 +161,17 @@ const requestSchemas = (): Partial<Record<Endpoint, Schema.Constraint>> => ({
 
 const responseSchemas = (): Partial<Record<Endpoint, Schema.Constraint>> => ({
   "GET /v1/health": HealthResponse,
+  "GET /v1/discovery": DiscoveryInfo,
   "GET /v1/info": ServerInfo,
   "GET /v1/update": UpdateInfo,
   "GET /v1/capabilities": ServerCapabilities,
   "POST /v1/auth/pairing-token": PairingTokenResponse,
+  "GET /v1/auth/connection-token": PairingTokenResponse,
+  "POST /v1/auth/connection-token/rotate": PairingTokenResponse,
   "GET /v1/projects": arrayOf(Project),
   "POST /v1/projects": Project,
+  "POST /v1/projects/from-git": Project,
+  "GET /v1/fs/list": FsListResponse,
   "PATCH /v1/projects/:id": Project,
   "GET /v1/projects/:id/worktrees": arrayOf(Worktree),
   "POST /v1/projects/:id/worktrees": Worktree,
@@ -201,9 +215,12 @@ const responseSchemas = (): Partial<Record<Endpoint, Schema.Constraint>> => ({
 
 const summaries: Partial<Record<Endpoint, string>> = {
   "GET /v1/health": "Check server health",
+  "GET /v1/discovery": "Get the tokenless discovery manifest",
   "GET /v1/info": "Get server information",
   "GET /v1/openapi.json": "Get the OpenAPI document",
   "POST /v1/auth/pairing-token": "Issue a pairing token",
+  "GET /v1/auth/connection-token": "Get the machine's stable connection token",
+  "POST /v1/auth/connection-token/rotate": "Rotate the machine's connection token",
   "GET /v1/events": "Stream global events with SSE",
   "GET /v1/events/socket": "Open the global event WebSocket",
   "GET /v1/sessions/:id/events/socket": "Open a session event WebSocket",
@@ -221,6 +238,7 @@ const noContent = new Set<Endpoint>([
 
 const created = new Set<Endpoint>([
   "POST /v1/auth/pairing-token",
+  "POST /v1/auth/connection-token/rotate",
   "POST /v1/projects",
   "POST /v1/projects/:id/worktrees",
   "POST /v1/harnesses/:id/accounts",
@@ -357,7 +375,8 @@ const makeOperation = (
         : isWebSocket
           ? "Upgrade to WebSocket. See the real-time and terminal protocol guides for replay and frame semantics."
           : undefined,
-    security: endpoint === "GET /v1/health" ? [] : [{ bearerAuth: [] }],
+    security:
+      endpoint === "GET /v1/health" || endpoint === "GET /v1/discovery" ? [] : [{ bearerAuth: [] }],
     responses: {
       [successStatus]: successResponse,
       "401": { $ref: "#/components/responses/Unauthorized" },

@@ -5,6 +5,7 @@ import { accessSync, constants } from "node:fs"
 import { Context, Effect, Layer } from "effect"
 import type { BackgroundTerminalIntegration } from "./background-terminals.js"
 import { makeAcpProvider, type AcpConnector } from "./providers/acp.js"
+import { makeVersionProber } from "./version-probe.js"
 import { makeClaudeProvider } from "./providers/claude.js"
 import { makeCodexProvider } from "./providers/codex/provider.js"
 import {
@@ -60,6 +61,8 @@ export { makeCodexProvider } from "./providers/codex/provider.js"
 export type { CodexProviderConfig } from "./providers/codex/provider.js"
 export { spawnCodexClient } from "./providers/codex/client.js"
 export type { CodexClient, CodexConnector, CodexSpawnRequest } from "./providers/codex/client.js"
+export { makeVersionProber, parseVersionOutput } from "./version-probe.js"
+export type { VersionProber, VersionProberOptions } from "./version-probe.js"
 
 export interface AgentRuntimeConfig {
   readonly env?: NodeJS.ProcessEnv
@@ -80,6 +83,10 @@ export interface AgentRuntimeConfig {
   /// pick up CLIs installed after the server started. Absent, refresh is a
   /// no-op and the environment stays fixed at `env ?? process.env`.
   readonly resolveEnv?: () => Promise<NodeJS.ProcessEnv>
+  /// Reads a detected binary's --version output for readiness enrichment;
+  /// defaults to spawning the binary with the resolved environment. Exposed
+  /// for tests.
+  readonly readVersionOutput?: (path: string, env: NodeJS.ProcessEnv) => Promise<string>
 }
 
 export interface AgentRuntimeService {
@@ -273,6 +280,23 @@ export const makeAgentRuntime = (config: AgentRuntimeConfig = {}): AgentRuntimeS
     locateExecutable
   }
   let envRefresh: Promise<void> | undefined
+  const versions = makeVersionProber(
+    config.readVersionOutput === undefined ? {} : { readVersionOutput: config.readVersionOutput }
+  )
+  /// First detect binary (or absolute fallback path) present in the current
+  /// environment — the same candidates providers scan for readiness.
+  const locateHarnessBinary = (definition: HarnessDefinition): string | undefined => {
+    for (const name of [...definition.detectBinaries, ...(definition.fallbackPaths ?? [])]) {
+      const path = locateExecutable(name, currentEnv)
+      if (path !== undefined) return path
+    }
+    return undefined
+  }
+  const locateReadyBinaries = (): ReadonlyArray<string> =>
+    harnessCatalog.flatMap((definition) => {
+      const path = locateHarnessBinary(definition)
+      return path === undefined ? [] : [path]
+    })
   const providers = new Map<ProviderId, AgentProvider>()
   const backgroundTerminals =
     config.backgroundTerminals === undefined
@@ -404,6 +428,20 @@ export const makeAgentRuntime = (config: AgentRuntimeConfig = {}): AgentRuntimeS
         } else {
           readiness = provider.readiness(definition)
         }
+        if (readiness.state === "ready") {
+          const path = locateHarnessBinary(definition)
+          if (path !== undefined) {
+            // Versions come from the refreshEnvironment probe cache: the
+            // server refreshes at boot and on every rescan, so discovery
+            // stays synchronous and spawn-free.
+            const version = versions.get(path)
+            readiness = {
+              ...readiness,
+              path,
+              ...(version === undefined ? {} : { version })
+            }
+          }
+        }
         return {
           id: definition.id,
           name: definition.name,
@@ -436,7 +474,9 @@ export const makeAgentRuntime = (config: AgentRuntimeConfig = {}): AgentRuntimeS
     refreshEnvironment: adapterPromise("refreshEnvironment", () => {
       const resolveEnv = config.resolveEnv
       if (resolveEnv === undefined) {
-        return Promise.resolve()
+        // Still settle version probes so a rescan without an env resolver
+        // (embedded runtimes, tests) reports complete readiness.
+        return versions.probe(locateReadyBinaries(), currentEnv)
       }
       // Concurrent refreshes (Settings + onboarding both rescanning) share
       // one shell probe instead of stacking login-shell invocations.
@@ -444,6 +484,9 @@ export const makeAgentRuntime = (config: AgentRuntimeConfig = {}): AgentRuntimeS
         .then((resolved) => {
           currentEnv = resolved
         })
+        // Awaited (not fire-and-forget) so the rescan response that follows
+        // a refresh carries binary versions, not a cache miss.
+        .then(() => versions.probe(locateReadyBinaries(), currentEnv))
         .finally(() => {
           envRefresh = undefined
         })

@@ -12,6 +12,7 @@
 #   CODEVISOR_INSTALL_DIR  Linux server install dir   (default: ~/.codevisor/server, /opt/codevisor as root)
 #   CODEVISOR_BIN_DIR      Linux symlink dir          (default: ~/.local/bin, /usr/local/bin as root)
 #   CODEVISOR_PORT         Linux server port          (default: 49361)
+#   CODEVISOR_DATA_DIR     Linux server data dir      (default: ~/.codevisor/data, /var/lib/codevisor/data as root)
 #   CODEVISOR_NO_SERVICE   set to 1 to skip systemd setup on Linux
 #
 # The former HERDMAN_* option names remain accepted for upgrade compatibility.
@@ -27,7 +28,14 @@ fail() { printf '\033[1;31merror:\033[0m %s\n' "$*" >&2; exit 1; }
 command -v curl >/dev/null 2>&1 || fail "curl is required"
 
 fetch() { curl -fsSL "$1"; }
-download() { curl -fSL --progress-bar -o "$2" "$1"; }
+# Progress bars only when a human is watching; CI logs stay clean.
+download() {
+  if [ -t 1 ]; then
+    curl -fSL --progress-bar -o "$2" "$1"
+  else
+    curl -fsSL -o "$2" "$1"
+  fi
+}
 
 resolve_version() {
   requested_version="${CODEVISOR_VERSION:-${HERDMAN_VERSION:-}}"
@@ -109,9 +117,13 @@ install_linux() {
   if [ "$(id -u)" = "0" ]; then
     install_dir="${CODEVISOR_INSTALL_DIR:-${HERDMAN_INSTALL_DIR:-/opt/codevisor}}"
     bin_dir="${CODEVISOR_BIN_DIR:-${HERDMAN_BIN_DIR:-/usr/local/bin}}"
+    data_dir="${CODEVISOR_DATA_DIR:-/var/lib/codevisor/data}"
+    logs_dir="/var/lib/codevisor/logs"
   else
     install_dir="${CODEVISOR_INSTALL_DIR:-${HERDMAN_INSTALL_DIR:-$HOME/.codevisor/server}}"
     bin_dir="${CODEVISOR_BIN_DIR:-${HERDMAN_BIN_DIR:-$HOME/.local/bin}}"
+    data_dir="${CODEVISOR_DATA_DIR:-$HOME/.codevisor/data}"
+    logs_dir="$HOME/.codevisor/logs"
   fi
   port="${CODEVISOR_PORT:-${HERDMAN_PORT:-49361}}"
 
@@ -138,22 +150,26 @@ install_linux() {
   tar -xzf "$archive" -C "$install_dir"
 
   mkdir -p "$bin_dir"
+  ln -sf "$install_dir/bin/codevisor" "$bin_dir/codevisor"
   ln -sf "$install_dir/bin/codevisor-server" "$bin_dir/codevisor-server"
   ln -sf "$install_dir/bin/codevisor-terminal-proxy" "$bin_dir/codevisor-terminal-proxy"
   rm -f "$bin_dir/herdman-server" "$bin_dir/herdman-terminal-proxy"
-  say "Linked codevisor-server into $bin_dir"
+  say "Linked codevisor into $bin_dir"
   case ":$PATH:" in
     *":$bin_dir:"*) ;;
     *) note "note: $bin_dir is not on your PATH" ;;
   esac
 
-  serve_cmd="$install_dir/bin/codevisor-server serve --host 0.0.0.0 --port $port --auth token"
+  # The database must live outside the OS temp directory (the pre-1.x default)
+  # so machine state survives reboots.
+  mkdir -p "$data_dir" "$logs_dir"
+  serve_cmd="$install_dir/bin/codevisor-server serve --host 0.0.0.0 --port $port --auth token --db $data_dir/codevisor-server.sqlite"
 
   no_service="${CODEVISOR_NO_SERVICE:-${HERDMAN_NO_SERVICE:-0}}"
   if [ "$no_service" = "1" ] || ! command -v systemctl >/dev/null 2>&1; then
     say "codevisor-server $version installed"
     note "Start it with:"
-    note "  $serve_cmd"
+    note "  codevisor start"
   elif [ "$(id -u)" = "0" ]; then
     say "Setting up systemd service (system)"
     systemctl disable --now herdman-server.service >/dev/null 2>&1 || true
@@ -166,6 +182,7 @@ Wants=network-online.target
 
 [Service]
 ExecStart=$serve_cmd
+StateDirectory=codevisor
 Restart=on-failure
 RestartSec=2
 
@@ -173,7 +190,10 @@ RestartSec=2
 WantedBy=multi-user.target
 UNIT
     systemctl daemon-reload
-    systemctl enable --now codevisor-server.service
+    systemctl enable codevisor-server.service
+    # Restart, not `enable --now`: upgrades must pick up the new runtime and
+    # unit file even when the old server is still running.
+    systemctl restart codevisor-server.service
     say "codevisor-server is running (systemctl status codevisor-server)"
   else
     say "Setting up systemd service (user)"
@@ -194,17 +214,26 @@ RestartSec=2
 WantedBy=default.target
 UNIT
     systemctl --user daemon-reload
-    systemctl --user enable --now codevisor-server.service
+    systemctl --user enable codevisor-server.service
+    systemctl --user restart codevisor-server.service
     say "codevisor-server is running (systemctl --user status codevisor-server)"
     note "To keep it running after you log out:"
     note "  sudo loginctl enable-linger $USER"
   fi
 
-  say "Connect from the Codevisor app"
-  note "1. Get a pairing token on this machine:"
-  note "     curl -s -X POST http://127.0.0.1:$port/v1/auth/pairing-token"
-  note "2. In Codevisor on your Mac: Machines → Add Machine, then enter"
-  note "   this machine's address (port $port) and the token."
+  # Onboarding: pick connectivity, issue a token, print the client steps and
+  # deeplink. `curl | sh` leaves stdin as the script, so prompts read /dev/tty.
+  if [ "${CODEVISOR_NO_SETUP:-0}" = "1" ]; then
+    note "Finish onboarding later with: codevisor setup"
+  elif [ -t 1 ] && [ -r /dev/tty ]; then
+    say "Finishing setup"
+    "$bin_dir/codevisor" setup --port "$port" < /dev/tty ||
+      note "Finish onboarding with: codevisor setup"
+  else
+    say "Connect from the Codevisor app"
+    note "Finish onboarding on this machine with: codevisor setup"
+    note "(It picks how clients connect and prints a connection token.)"
+  fi
 }
 
 main() {

@@ -21,16 +21,18 @@ import { execFile } from "node:child_process"
 import { randomUUID } from "node:crypto"
 import { createServer } from "node:http"
 import {
+  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
+  symlinkSync,
   utimesSync,
   writeFileSync
 } from "node:fs"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { dirname, join } from "node:path"
 import { promisify } from "node:util"
 import { WebSocket } from "ws"
 import { afterEach, describe, expect, it, vi } from "vitest"
@@ -1642,7 +1644,22 @@ describe("@codevisor/server", () => {
     })
     expect((await jsonRequest(server, "/v1/info")).body).toMatchObject({
       id: "server-a",
-      kind: "local"
+      kind: "local",
+      machineId: expect.stringMatching(/^[0-9a-f-]{36}$/),
+      arch: process.arch,
+      hostname: expect.any(String)
+    })
+    const discovery = await jsonRequest(server, "/v1/discovery")
+    expect(discovery.body).toMatchObject({
+      serverId: "server-a",
+      machineId: expect.stringMatching(/^[0-9a-f-]{36}$/),
+      kind: "local",
+      platform: process.platform,
+      hostname: expect.any(String)
+    })
+    // The machine identity is stable across requests.
+    expect((await jsonRequest(server, "/v1/discovery")).body).toMatchObject({
+      machineId: (discovery.body as { machineId: string }).machineId
     })
     expect((await jsonRequest(server, "/v1/openapi.json")).body).toMatchObject({
       openapi: "3.1.0"
@@ -1663,6 +1680,21 @@ describe("@codevisor/server", () => {
     ).toMatchObject({
       token: expect.stringMatching(/^hm_/)
     })
+
+    // The connection token is stable across calls, and rotation replaces it.
+    const firstConnection = await jsonRequest(server, "/v1/auth/connection-token")
+    expect(firstConnection.status).toBe(200)
+    const connectionToken = (firstConnection.body as { token: string }).token
+    expect(connectionToken).toMatch(/^hm_/)
+    expect(
+      ((await jsonRequest(server, "/v1/auth/connection-token")).body as { token: string }).token
+    ).toBe(connectionToken)
+    const rotation = await jsonRequest(server, "/v1/auth/connection-token/rotate", {
+      method: "POST"
+    })
+    expect(rotation.status).toBe(201)
+    expect((rotation.body as { token: string }).token).not.toBe(connectionToken)
+
     expect(defaultDatabasePath()).toContain("codevisor-server.sqlite")
 
     // Shutdown is acknowledged even when the host process installed no handler.
@@ -1756,6 +1788,8 @@ describe("@codevisor/server", () => {
     )
     runningServers.push(secured)
     expect((await jsonRequest(secured, "/v1/info")).status).toBe(401)
+    // Discovery stays reachable without a token so peers can be found.
+    expect((await jsonRequest(secured, "/v1/discovery")).status).toBe(200)
     expect(
       (
         await jsonRequest(secured, "/v1/info", {
@@ -2836,6 +2870,226 @@ describe("@codevisor/server", () => {
     const detail = await run(services.db.getSessionDetail(session.id))
     expect(detail.conversation.map((item) => item.text)).toContain("main agent text")
     expect(detail.conversation.map((item) => item.text)).not.toContain("subagent text")
+  })
+
+  it("lists directories for the remote project picker", async () => {
+    const { server } = await start()
+    const root = mkdtempSync(join(tmpdir(), "codevisor-fs-"))
+    tempDirs.push(root)
+    mkdirSync(join(root, "beta"))
+    mkdirSync(join(root, "Alpha", ".git"), { recursive: true })
+    mkdirSync(join(root, ".hidden"))
+    writeFileSync(join(root, "file.txt"), "not a directory")
+
+    const listing = await jsonRequest(server, `/v1/fs/list?path=${encodeURIComponent(root)}`)
+    expect(listing.status).toBe(200)
+    expect(listing.body).toMatchObject({
+      path: root,
+      parent: dirname(root),
+      entries: [
+        { name: "Alpha", path: join(root, "Alpha"), isGitRepo: true },
+        { name: "beta", path: join(root, "beta"), isGitRepo: false }
+      ]
+    })
+
+    const withHidden = await jsonRequest(
+      server,
+      `/v1/fs/list?path=${encodeURIComponent(root)}&showHidden=true`
+    )
+    expect((withHidden.body as { entries: Array<{ name: string }> }).entries[0]?.name).toBe(
+      ".hidden"
+    )
+
+    // Home expansion: bare "~" and "~/..." resolve against the server's home.
+    const home = await jsonRequest(server, "/v1/fs/list")
+    expect(home.status).toBe(200)
+    expect((home.body as { path: string }).path.startsWith("/")).toBe(true)
+
+    // The filesystem root has no parent.
+    const rootListing = await jsonRequest(server, "/v1/fs/list?path=/")
+    expect((rootListing.body as { parent: string | null }).parent).toBeNull()
+
+    // "~/…" paths expand under the server's home.
+    const homeChild = await jsonRequest(server, "/v1/fs/list?path=%7E%2F")
+    expect(homeChild.status).toBe(200)
+
+    const missing = await jsonRequest(
+      server,
+      `/v1/fs/list?path=${encodeURIComponent(join(root, "nope"))}`
+    )
+    expect(missing.status).toBe(404)
+    expect(missing.body).toMatchObject({ code: "not_found" })
+
+    const notDir = await jsonRequest(
+      server,
+      `/v1/fs/list?path=${encodeURIComponent(join(root, "file.txt"))}`
+    )
+    expect(notDir.status).toBe(400)
+    expect(notDir.body).toMatchObject({ code: "not_a_directory" })
+
+    const relative = await jsonRequest(server, "/v1/fs/list?path=relative/path")
+    expect(relative.status).toBe(400)
+    expect(relative.body).toMatchObject({ code: "invalid_path" })
+
+    // Symlinks: follow directory links, skip broken ones and plain files.
+    const linked = mkdtempSync(join(tmpdir(), "codevisor-fs-links-"))
+    tempDirs.push(linked)
+    symlinkSync(join(root, "beta"), join(linked, "beta-link"))
+    symlinkSync(join(root, "gone"), join(linked, "broken-link"))
+    symlinkSync(join(root, "file.txt"), join(linked, "file-link"))
+    const links = await jsonRequest(server, `/v1/fs/list?path=${encodeURIComponent(linked)}`)
+    expect((links.body as { entries: Array<{ name: string }> }).entries.map((e) => e.name)).toEqual(
+      ["beta-link"]
+    )
+
+    // Unreadable directories surface a permission error, not a crash.
+    const sealed = join(root, "sealed")
+    mkdirSync(sealed, { mode: 0o000 })
+    const denied = await jsonRequest(server, `/v1/fs/list?path=${encodeURIComponent(sealed)}`)
+    chmodSync(sealed, 0o755)
+    expect(denied.status).toBe(403)
+    expect(denied.body).toMatchObject({ code: "permission_denied" })
+  })
+
+  it("clones a git remote into the managed repos dir as a project", async () => {
+    const execFileAsync = promisify(execFile)
+    const git = (args: ReadonlyArray<string>, cwd: string) =>
+      execFileAsync("git", [...args], { cwd })
+
+    const reposRoot = mkdtempSync(join(tmpdir(), "codevisor-repos-"))
+    tempDirs.push(reposRoot)
+    process.env["CODEVISOR_REPOS_ROOT"] = reposRoot
+    try {
+      const { server, services } = await start()
+      const origin = mkdtempSync(join(tmpdir(), "codevisor-origin-"))
+      tempDirs.push(origin)
+      const originRepo = join(origin, "widget.git")
+      mkdirSync(originRepo)
+      await git(["init"], originRepo)
+      writeFileSync(join(originRepo, "README.md"), "hello")
+      await git(["add", "."], originRepo)
+      await git(["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-m", "init"], originRepo)
+
+      const url = `file://${originRepo}`
+      const created = await jsonRequest(server, "/v1/projects/from-git", {
+        body: JSON.stringify({ id: "cloned-project", url }),
+        method: "POST"
+      })
+      expect(created.status).toBe(201)
+      expect(created.body).toMatchObject({
+        id: "cloned-project",
+        name: "widget",
+        repoUrl: url,
+        locations: [{ folderPath: join(reposRoot, "widget"), isGitRepository: true }]
+      })
+      expect(existsSync(join(reposRoot, "widget", "README.md"))).toBe(true)
+
+      // Clone progress reached the event log under the client-supplied id.
+      const events = await run(services.db.listSubjectEvents("cloned-project"))
+      const states = events
+        .filter((event) => event.kind === "project.setup")
+        .map((event) => (event.payload as { state: string }).state)
+      expect(states[0]).toBe("started")
+      expect(states.at(-1)).toBe("completed")
+
+      // A second clone of the same remote under an explicit name gets its
+      // own directory and a server-generated project id.
+      const renamed = await jsonRequest(server, "/v1/projects/from-git", {
+        body: JSON.stringify({ url, name: "widget-two" }),
+        method: "POST"
+      })
+      expect(renamed.status).toBe(201)
+      expect(renamed.body).toMatchObject({
+        name: "widget-two",
+        locations: [{ folderPath: join(reposRoot, "widget-two") }]
+      })
+
+      // Same destination again: conflict, with an actionable code.
+      const duplicate = await jsonRequest(server, "/v1/projects/from-git", {
+        body: JSON.stringify({ url }),
+        method: "POST"
+      })
+      expect(duplicate.status).toBe(409)
+      expect(duplicate.body).toMatchObject({ code: "already_exists" })
+
+      // Not a git URL at all.
+      const invalid = await jsonRequest(server, "/v1/projects/from-git", {
+        body: JSON.stringify({ url: "not a url" }),
+        method: "POST"
+      })
+      expect(invalid.status).toBe(400)
+      expect(invalid.body).toMatchObject({ code: "invalid_url" })
+
+      // A URL no project name can be derived from (scp-style syntax).
+      const unnameable = await jsonRequest(server, "/v1/projects/from-git", {
+        body: JSON.stringify({ url: "git@example.com:acme/--.git" }),
+        method: "POST"
+      })
+      expect(unnameable.status).toBe(400)
+      expect((unnameable.body as { error: string }).error).toContain("name")
+
+      // A well-formed URL to a repo that does not exist: the clone fails with
+      // a classified error, publishes `failed`, and leaves no partial dir.
+      const missing = await jsonRequest(server, "/v1/projects/from-git", {
+        body: JSON.stringify({ id: "missing-project", url: `file://${origin}/gone.git` }),
+        method: "POST"
+      })
+      expect(missing.status).toBe(422)
+      expect((missing.body as { code?: string }).code).toBeDefined()
+      expect(existsSync(join(reposRoot, "gone"))).toBe(false)
+      const failedEvents = await run(services.db.listSubjectEvents("missing-project"))
+      expect(
+        failedEvents.some(
+          (event) =>
+            event.kind === "project.setup" &&
+            (event.payload as { state: string }).state === "failed"
+        )
+      ).toBe(true)
+    } finally {
+      delete process.env["CODEVISOR_REPOS_ROOT"]
+    }
+  })
+
+  it("addresses projects by id case-insensitively", async () => {
+    const { server } = await start()
+    const lowerId = "0d604f39-364b-4a17-8fd8-21bddd8c1399"
+    const upperId = lowerId.toUpperCase()
+
+    // A client that sends an uppercase UUID (Swift) has it canonicalized to
+    // lowercase, so ids stay consistent across clients.
+    const created = await jsonRequest(server, "/v1/projects", {
+      body: JSON.stringify({ folderPath: "/tmp/case-project", id: upperId }),
+      method: "POST"
+    })
+    expect(created.status).toBe(201)
+    expect((created.body as { id: string }).id).toBe(lowerId)
+
+    // Re-syncing the same project (uppercase again) is idempotent — no
+    // duplicate row, no merge into a differently-cased id.
+    const resync = await jsonRequest(server, "/v1/projects", {
+      body: JSON.stringify({ folderPath: "/tmp/case-project", id: upperId }),
+      method: "POST"
+    })
+    expect((resync.body as { id: string }).id).toBe(lowerId)
+    expect(((await jsonRequest(server, "/v1/projects")).body as Array<unknown>).length).toBe(1)
+
+    // A client that stores the id uppercase (Swift's UUID) resolves the
+    // lowercase-stored project instead of hitting a spurious "Project not
+    // found". (A later 4xx for harness/account reasons is unrelated.)
+    const session = await jsonRequest(server, "/v1/sessions", {
+      body: JSON.stringify({ projectId: upperId, harnessId: "codex" }),
+      method: "POST"
+    })
+    expect(session.status).not.toBe(404)
+    expect(JSON.stringify(session.body)).not.toContain("Project not found")
+
+    // The worktree route resolves the project by the uppercase URL id too.
+    const worktree = await jsonRequest(server, `/v1/projects/${upperId}/worktrees`, {
+      body: JSON.stringify({ name: "feature" }),
+      method: "POST"
+    })
+    expect(worktree.status).not.toBe(404)
+    expect(JSON.stringify(worktree.body)).not.toContain("Project not found")
   })
 
   it("creates worktrees and runs worktree sessions in them", async () => {

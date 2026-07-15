@@ -4,8 +4,11 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
 import {
+  CloneError,
   GitError,
   addWorktree,
+  classifyCloneFailure,
+  cloneRepository,
   gitBranchDiffTotals,
   isGitWorkTree,
   parseGitNumstat,
@@ -257,6 +260,109 @@ describe("git helper", () => {
       expect(failure).toBeInstanceOf(GitError)
       expect((failure as GitError).message).toContain("exited with code 2")
       expect(lines).toContainEqual(["stdout", "partial-stdout-line"])
+    } finally {
+      process.env["PATH"] = previousPath
+    }
+  })
+})
+
+describe("classifyCloneFailure", () => {
+  it("maps git stderr onto actionable failure codes", () => {
+    const cases: ReadonlyArray<readonly [string, string | undefined]> = [
+      ["fatal: Authentication failed for 'https://x'", "auth_failed"],
+      ["fatal: could not read Username for 'https://github.com'", "auth_failed"],
+      ["fatal: could not read Password for 'https://github.com'", "auth_failed"],
+      ["git@github.com: Permission denied (publickey).", "auth_failed"],
+      ["Host key verification failed.", "auth_failed"],
+      ["remote: Support for password authentication was removed.", "auth_failed"],
+      ["remote: Repository not found.", "repo_not_found"],
+      ["fatal: unable to access 'https://x/': Could not resolve host: x", "network"],
+      ["ssh: connect to host x port 22: Connection timed out", "network"],
+      ["ssh: connect to host x port 22: Connection refused", "network"],
+      ["fatal: write error: No space left on device", "disk_full"],
+      ["fatal: 'x' does not appear to be a git repository", "invalid_url"],
+      ["remote: is not a valid repository name", "invalid_url"],
+      ["fatal: something novel exploded", undefined]
+    ]
+    for (const [stderr, expected] of cases) {
+      expect(classifyCloneFailure(stderr), stderr).toBe(expected)
+    }
+  })
+})
+
+describe("cloneRepository", () => {
+  it("clones a local origin and streams distinct progress lines", async () => {
+    const { repo } = makeRepo()
+    const destination = join(mkdtempSync(join(tmpdir(), "codevisor-clone-")), "checkout")
+    const lines: Array<string> = []
+    await cloneRepository(`file://${repo}`, destination, (_stream, line) => {
+      lines.push(line)
+    })
+    expect(await isGitWorkTree(destination)).toBe(true)
+    expect(lines.length).toBeGreaterThan(0)
+  })
+
+  it("fails with a classified CloneError and never hangs on prompts", async () => {
+    const destination = join(mkdtempSync(join(tmpdir(), "codevisor-clone-fail-")), "checkout")
+    const failure = await cloneRepository("file:///nonexistent-origin.git", destination).then(
+      () => undefined,
+      (cause: unknown) => cause
+    )
+    expect(failure).toBeInstanceOf(CloneError)
+    expect((failure as CloneError).code).toBe("invalid_url")
+  })
+
+  it("streams stdout lines and honors a caller-provided GIT_SSH_COMMAND", async () => {
+    const fakeBin = mkdtempSync(join(tmpdir(), "codevisor-fake-git-stdout-"))
+    writeFileSync(
+      join(fakeBin, "git"),
+      '#!/bin/sh\necho "stdout line"\necho "ssh=$GIT_SSH_COMMAND"\nexit 0\n'
+    )
+    chmodSync(join(fakeBin, "git"), 0o755)
+    const previousPath = process.env["PATH"]
+    const previousSsh = process.env["GIT_SSH_COMMAND"]
+    process.env["PATH"] = fakeBin
+    process.env["GIT_SSH_COMMAND"] = "ssh -i /custom/key -oBatchMode=yes"
+    try {
+      const lines: Array<readonly [GitOutputStream, string]> = []
+      await cloneRepository("https://example.com/x.git", "/tmp/unused", (stream, line) => {
+        lines.push([stream, line])
+      })
+      expect(lines).toContainEqual(["stdout", "stdout line"])
+      expect(lines).toContainEqual(["stdout", "ssh=ssh -i /custom/key -oBatchMode=yes"])
+    } finally {
+      process.env["PATH"] = previousPath
+      if (previousSsh === undefined) {
+        delete process.env["GIT_SSH_COMMAND"]
+      } else {
+        process.env["GIT_SSH_COMMAND"] = previousSsh
+      }
+    }
+  })
+
+  it("reports the exit code when git dies silently and spawn errors when git is missing", async () => {
+    // Fake git that exits without writing anything.
+    const fakeBin = mkdtempSync(join(tmpdir(), "codevisor-fake-git-clone-"))
+    writeFileSync(join(fakeBin, "git"), "#!/bin/sh\nexit 3\n")
+    chmodSync(join(fakeBin, "git"), 0o755)
+    const previousPath = process.env["PATH"]
+    process.env["PATH"] = fakeBin
+    try {
+      const silent = await cloneRepository("https://example.com/x.git", "/tmp/unused").then(
+        () => undefined,
+        (cause: unknown) => cause
+      )
+      expect(silent).toBeInstanceOf(CloneError)
+      expect((silent as CloneError).message).toContain("exited with code 3")
+
+      // Empty PATH: the spawn itself fails.
+      process.env["PATH"] = mkdtempSync(join(tmpdir(), "codevisor-empty-path-"))
+      const spawnFailure = await cloneRepository("https://example.com/x.git", "/tmp/unused").then(
+        () => undefined,
+        (cause: unknown) => cause
+      )
+      expect(spawnFailure).toBeInstanceOf(CloneError)
+      expect((spawnFailure as CloneError).code).toBeUndefined()
     } finally {
       process.env["PATH"] = previousPath
     }

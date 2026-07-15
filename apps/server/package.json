@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "bin": {
+    "codevisor": "./dist/cli.js",
     "codevisor-server": "./dist/main.js",
     "codevisor-terminal-proxy": "./dist/terminal-proxy.js"
   },

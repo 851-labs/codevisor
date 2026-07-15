@@ -145,29 +145,39 @@ done
 # manager metadata and symlink targets.
 cp "$runtime_dir/apps/server/dist/"*.js "$runtime_dir/"
 cp "$runtime_dir/apps/server/dist/"*.d.ts "$runtime_dir/" 2>/dev/null || true
+# cli.js resolves its command implementations from ./cli/ relative to itself.
+rm -rf "$runtime_dir/cli"
+cp -R "$runtime_dir/apps/server/dist/cli" "$runtime_dir/cli"
 
-cat > "$runtime_dir/bin/codevisor-server" <<'EOF'
+# Launchers resolve symlinks before locating the runtime root: install.sh
+# links them into ~/.local/bin or /usr/local/bin, and an unresolved
+# BASH_SOURCE would look for the bundled node next to the symlink instead of
+# the runtime (breaking every invocation via PATH).
+write_launcher() {
+  local name="$1" entry="$2"
+  cat > "$runtime_dir/bin/$name" <<EOF
 #!/usr/bin/env bash
 set -euo pipefail
-root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-node_bin="${CODEVISOR_NODE:-}"
-if [[ -z "$node_bin" && -x "$root/bin/node" ]]; then
-  node_bin="$root/bin/node"
+source="\${BASH_SOURCE[0]}"
+while [ -L "\$source" ]; do
+  dir="\$(cd -P "\$(dirname "\$source")" && pwd)"
+  source="\$(readlink "\$source")"
+  [[ \$source != /* ]] && source="\$dir/\$source"
+done
+root="\$(cd -P "\$(dirname "\$source")/.." && pwd)"
+node_bin="\${CODEVISOR_NODE:-}"
+if [[ -z "\$node_bin" && -x "\$root/bin/node" ]]; then
+  node_bin="\$root/bin/node"
 fi
-exec -a codevisor-server "${node_bin:-node}" "$root/main.js" "$@"
+exec -a $name "\${node_bin:-node}" "\$root/$entry" "\$@"
 EOF
+}
 
-cat > "$runtime_dir/bin/codevisor-terminal-proxy" <<'EOF'
-#!/usr/bin/env bash
-set -euo pipefail
-root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-node_bin="${CODEVISOR_NODE:-}"
-if [[ -z "$node_bin" && -x "$root/bin/node" ]]; then
-  node_bin="$root/bin/node"
-fi
-exec -a codevisor-terminal-proxy "${node_bin:-node}" "$root/terminal-proxy.js" "$@"
-EOF
+write_launcher codevisor-server main.js
+write_launcher codevisor-terminal-proxy terminal-proxy.js
+write_launcher codevisor cli.js
 
-chmod +x "$runtime_dir/bin/codevisor-server" "$runtime_dir/bin/codevisor-terminal-proxy"
+chmod +x "$runtime_dir/bin/codevisor-server" "$runtime_dir/bin/codevisor-terminal-proxy" \
+  "$runtime_dir/bin/codevisor"
 printf "%s\n" "$version" > "$runtime_dir/VERSION"
 printf "%s\n" "$target" > "$runtime_dir/TARGET"

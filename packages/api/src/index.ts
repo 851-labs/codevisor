@@ -19,7 +19,12 @@ export type SessionOrigin = typeof SessionOrigin.Type
 
 export const HarnessReadiness = Schema.Struct({
   state: Schema.Literals(["ready", "unavailable"]),
-  detail: Schema.optional(Schema.String)
+  detail: Schema.optional(Schema.String),
+  /// Resolved binary location and version for ready harnesses. Structured on
+  /// purpose: clients show them, and future config-sync diffs "what's
+  /// installed where" across machines.
+  path: Schema.optional(Schema.String),
+  version: Schema.optional(Schema.String)
 })
 export type HarnessReadiness = typeof HarnessReadiness.Type
 
@@ -355,7 +360,11 @@ export const Project = Schema.Struct({
   symbolName: Schema.String,
   origin: SessionOrigin,
   createdAt: Schema.String,
-  locations: Schema.Array(ProjectLocation)
+  locations: Schema.Array(ProjectLocation),
+  /// The git remote this project was cloned from (projects added via
+  /// /v1/projects/from-git). Machine-independent by design: any machine can
+  /// materialize the same project by cloning the same remote.
+  repoUrl: Schema.optional(Schema.String)
 })
 export type Project = typeof Project.Type
 
@@ -366,9 +375,64 @@ export const CreateProjectRequest = Schema.Struct({
   isArchived: Schema.optional(Schema.Boolean),
   symbolName: Schema.optional(Schema.String),
   origin: Schema.optional(SessionOrigin),
-  createdAt: Schema.optional(Schema.String)
+  createdAt: Schema.optional(Schema.String),
+  repoUrl: Schema.optional(Schema.String)
 })
 export type CreateProjectRequest = typeof CreateProjectRequest.Type
+
+/// Clone a git remote into the machine's managed repos directory and register
+/// the checkout as a project. The client-supplied id lets callers follow the
+/// clone's project.setup progress events while the request is in flight (the
+/// same trick as CreateWorktreeRequest.id).
+export const CreateProjectFromGitRequest = Schema.Struct({
+  id: Schema.optional(Schema.String),
+  url: Schema.String,
+  name: Schema.optional(Schema.String)
+})
+export type CreateProjectFromGitRequest = typeof CreateProjectFromGitRequest.Type
+
+export const ProjectSetupState = Schema.Literals(["started", "log", "completed", "failed"])
+export type ProjectSetupState = typeof ProjectSetupState.Type
+
+/// Machine-readable failure category for clone errors, so clients can show
+/// actionable guidance instead of raw git stderr.
+export const ProjectSetupErrorCode = Schema.Literals([
+  "auth_failed",
+  "repo_not_found",
+  "network",
+  "disk_full",
+  "invalid_url",
+  "already_exists"
+])
+export type ProjectSetupErrorCode = typeof ProjectSetupErrorCode.Type
+
+export const ProjectSetupUpdate = Schema.Struct({
+  state: ProjectSetupState,
+  projectId: Schema.String,
+  url: Schema.String,
+  stream: Schema.optional(Schema.Literals(["stdout", "stderr"])),
+  line: Schema.optional(Schema.String),
+  message: Schema.optional(Schema.String),
+  code: Schema.optional(ProjectSetupErrorCode),
+  durationMs: Schema.optional(Schema.Number)
+})
+export type ProjectSetupUpdate = typeof ProjectSetupUpdate.Type
+
+export const FsEntry = Schema.Struct({
+  name: Schema.String,
+  path: Schema.String,
+  isGitRepo: Schema.Boolean
+})
+export type FsEntry = typeof FsEntry.Type
+
+/// A directory listing for the remote project picker: directories only, with
+/// a git badge so repos stand out.
+export const FsListResponse = Schema.Struct({
+  path: Schema.String,
+  parent: Schema.NullOr(Schema.String),
+  entries: Schema.Array(FsEntry)
+})
+export type FsListResponse = typeof FsListResponse.Type
 
 export const UpdateProjectRequest = Schema.Struct({
   name: Schema.optional(Schema.String),
@@ -667,9 +731,28 @@ export const ServerInfo = Schema.Struct({
   version: Schema.String,
   platform: Schema.String,
   bindHost: Schema.String,
-  features: Schema.optional(Schema.Array(Schema.String))
+  features: Schema.optional(Schema.Array(Schema.String)),
+  /// Stable machine identity persisted with the database; unlike `id` it
+  /// survives --serverId defaults and renames. Optional for older servers.
+  machineId: Schema.optional(Schema.String),
+  arch: Schema.optional(Schema.String),
+  hostname: Schema.optional(Schema.String)
 })
 export type ServerInfo = typeof ServerInfo.Type
+
+/// Minimal tokenless manifest served at /v1/discovery so clients can find
+/// Codevisor servers on a private network (e.g. tailnet peers) before pairing.
+/// Deliberately excludes anything sensitive — pairing still requires a token.
+export const DiscoveryInfo = Schema.Struct({
+  serverId: Schema.String,
+  machineId: Schema.String,
+  name: Schema.String,
+  kind: ServerKind,
+  version: Schema.String,
+  platform: Schema.String,
+  hostname: Schema.String
+})
+export type DiscoveryInfo = typeof DiscoveryInfo.Type
 
 export const UpdateInfo = Schema.Struct({
   currentVersion: Schema.String,
@@ -691,6 +774,7 @@ export const EventKind = Schema.Literals([
   "project.created",
   "project.updated",
   "project.deleted",
+  "project.setup",
   "worktree.created",
   "worktree.setup",
   "session.created",

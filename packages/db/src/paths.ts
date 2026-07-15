@@ -11,6 +11,15 @@ export const worktreesRoot = (): string =>
 export const worktreePath = (projectId: string, worktreeName: string): string =>
   join(worktreesRoot(), projectId, worktreeName)
 
+/// Managed git clones (projects added from a remote URL) live in the canonical
+/// ~/.codevisor layout, identically on every machine, so a project can be
+/// re-materialized anywhere by cloning the same remote. The env override
+/// exists for tests only.
+export const managedReposRoot = (): string =>
+  process.env["CODEVISOR_REPOS_ROOT"] ?? join(homedir(), ".codevisor", "repos")
+
+export const managedRepoPath = (name: string): string => join(managedReposRoot(), name)
+
 export const resolveSessionCwd = (
   folderPath: string | undefined,
   projectId: string,

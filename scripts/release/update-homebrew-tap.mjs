@@ -141,11 +141,13 @@ ${urlBlock}
 
   def install
     libexec.install Dir["*"]
+    bin.install_symlink libexec/"bin/codevisor"
     bin.install_symlink libexec/"bin/codevisor-server"
     bin.install_symlink libexec/"bin/codevisor-terminal-proxy"
   end
 
   test do
+    assert_match "codevisor", shell_output("#{bin}/codevisor --version")
     assert_match "Missing --server", shell_output("#{bin}/codevisor-terminal-proxy 2>&1", 1)
   end
 end

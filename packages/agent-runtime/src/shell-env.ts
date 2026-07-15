@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process"
-import { homedir as osHomedir } from "node:os"
+import { accessSync, constants, readdirSync } from "node:fs"
+import { homedir as osHomedir, userInfo } from "node:os"
 
 /// Login-shell PATH resolution.
 ///
@@ -25,23 +26,88 @@ export interface ShellEnvOptions {
   ) => Promise<string>
   /// Probe timeout; bounds pathological shell rc files. Default 5000ms.
   readonly timeoutMs?: number
+  /// The user's passwd-database shell, tried when $SHELL is unset (systemd
+  /// services and cron get no $SHELL). Defaults to `os.userInfo().shell`.
+  readonly userShell?: () => string | undefined
+  /// Whether an executable exists; guards probing a shell that isn't
+  /// installed (minimal containers without bash). Defaults to `accessSync`.
+  readonly executableExists?: (path: string) => boolean
+  /// Directory listing used for the nvm probe; defaults to `readdirSync`.
+  readonly listDirectory?: (path: string) => ReadonlyArray<string>
 }
 
 /// Well-known executable directories merged into every resolved PATH so
-/// detection survives a failed shell probe or an unusual shell setup.
+/// detection survives a failed shell probe or an unusual shell setup. Covers
+/// the common install locations across macOS (Homebrew) and Linux (snap, nix,
+/// npm prefix, deno) plus the version-manager shim dirs.
 export const fallbackPathDirectories = (home: string): ReadonlyArray<string> => [
   `${home}/.local/bin`,
   "/opt/homebrew/bin",
   "/usr/local/bin",
+  "/usr/local/sbin",
   "/usr/bin",
   "/bin",
   "/usr/sbin",
   "/sbin",
+  "/snap/bin",
   `${home}/.volta/bin`,
   `${home}/.asdf/shims`,
   `${home}/.bun/bin`,
-  `${home}/.cargo/bin`
+  `${home}/.cargo/bin`,
+  `${home}/.deno/bin`,
+  `${home}/.npm-global/bin`,
+  `${home}/.nix-profile/bin`,
+  "/nix/var/nix/profiles/default/bin"
 ]
+
+const listDirectoryOrEmpty = (path: string): ReadonlyArray<string> => {
+  try {
+    return readdirSync(path)
+  } catch {
+    return []
+  }
+}
+
+/// nvm keeps every Node version in its own bin dir and only rc files select
+/// one, so a failed shell probe loses npm-installed CLIs entirely. Falling
+/// back to the newest installed version matches what a fresh `nvm use node`
+/// would pick.
+export const nvmBinDirectories = (
+  home: string,
+  listDirectory: (path: string) => ReadonlyArray<string> = listDirectoryOrEmpty
+): ReadonlyArray<string> => {
+  const root = `${home}/.nvm/versions/node`
+  const versions = listDirectory(root).flatMap((name) => {
+    const match = name.match(/^v(\d+)\.(\d+)\.(\d+)$/)
+    if (match === null) return []
+    return [{ name, parts: [Number(match[1]), Number(match[2]), Number(match[3])] as const }]
+  })
+  versions.sort(
+    (a, b) => b.parts[0] - a.parts[0] || b.parts[1] - a.parts[1] || b.parts[2] - a.parts[2]
+  )
+  const newest = versions[0]
+  return newest === undefined ? [] : [`${root}/${newest.name}/bin`]
+}
+
+const executableExistsSync = (path: string): boolean => {
+  try {
+    accessSync(path, constants.X_OK)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/* v8 ignore start -- the empty/throwing branches depend on the host passwd database; both degrade to the platform default shell. */
+const userShellFromPasswd = (): string | undefined => {
+  try {
+    const shell = userInfo().shell
+    return shell === null || shell === "" ? undefined : shell
+  } catch {
+    return undefined
+  }
+}
+/* v8 ignore stop */
 
 /// Default shell runner: `execFile` with a hard timeout, resolving stdout.
 export const runShellCommand = (
@@ -87,10 +153,30 @@ const mergedPath = (groups: ReadonlyArray<ReadonlyArray<string>>): string => {
   return directories.join(":")
 }
 
+/// $SHELL when set (interactive logins), else the passwd-database shell
+/// (systemd/cron), else the platform default — skipping anything that isn't
+/// actually installed. `undefined` means no usable shell: skip the probe.
+const chooseShell = (
+  base: NodeJS.ProcessEnv,
+  platform: NodeJS.Platform,
+  userShell: () => string | undefined,
+  executableExists: (path: string) => boolean
+): string | undefined => {
+  const platformDefault = platform === "darwin" ? "/bin/zsh" : "/bin/bash"
+  const candidates = [base.SHELL, userShell(), platformDefault, "/bin/sh"]
+  for (const candidate of candidates) {
+    if (candidate !== undefined && candidate !== "" && executableExists(candidate)) {
+      return candidate
+    }
+  }
+  return undefined
+}
+
 /// Returns `base` with PATH replaced by the merged login-shell PATH:
 /// probed dirs first (user's own ordering wins), then the base PATH, then the
-/// fallback dirs. Any probe failure — spawn error, timeout, empty output, no
-/// PATH line — degrades to base + fallbacks. Windows is a passthrough.
+/// fallback dirs and the newest nvm bin. Any probe failure — spawn error,
+/// timeout, empty output, no PATH line, no usable shell — degrades to base +
+/// fallbacks. Windows is a passthrough.
 export const resolveShellEnv = async (
   options: ShellEnvOptions = {}
 ): Promise<NodeJS.ProcessEnv> => {
@@ -102,22 +188,29 @@ export const resolveShellEnv = async (
   const home = options.homedir ?? osHomedir()
   const runShell = options.runShell ?? runShellCommand
   const timeoutMs = options.timeoutMs ?? 5000
-  const shell =
-    base.SHELL !== undefined && base.SHELL !== ""
-      ? base.SHELL
-      : platform === "darwin"
-        ? "/bin/zsh"
-        : "/bin/bash"
+  const shell = chooseShell(
+    base,
+    platform,
+    options.userShell ?? userShellFromPasswd,
+    options.executableExists ?? executableExistsSync
+  )
   let probed: ReadonlyArray<string> = []
-  try {
-    // -i -l so the user's rc/profile files run — that's where PATH lives.
-    const output = await runShell(shell, ["-ilc", "/usr/bin/env"], timeoutMs)
-    probed = splitPath(pathFromEnvOutput(output))
-  } catch {
-    // Degrade to base + fallback directories below.
+  if (shell !== undefined) {
+    try {
+      // -i -l so the user's rc/profile files run — that's where PATH lives.
+      const output = await runShell(shell, ["-ilc", "/usr/bin/env"], timeoutMs)
+      probed = splitPath(pathFromEnvOutput(output))
+    } catch {
+      // Degrade to base + fallback directories below.
+    }
   }
   return {
     ...base,
-    PATH: mergedPath([probed, splitPath(base.PATH), fallbackPathDirectories(home)])
+    PATH: mergedPath([
+      probed,
+      splitPath(base.PATH),
+      fallbackPathDirectories(home),
+      nvmBinDirectories(home, options.listDirectory)
+    ])
   }
 }

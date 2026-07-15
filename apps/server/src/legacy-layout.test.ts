@@ -15,9 +15,90 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { promisify } from "node:util"
 import { describe, expect, it } from "vitest"
-import { migrateLegacyLayout } from "./legacy-layout.js"
+import { migrateLegacyLayout, migrateTmpDataDir } from "./legacy-layout.js"
 
 const execFileAsync = promisify(execFile)
+
+describe("Codevisor tmp data dir migration", () => {
+  it("relocates the database and sidecar state from the temp directory", async () => {
+    const root = await mkdtemp(join(tmpdir(), "codevisor-tmp-data-"))
+    const temporaryDirectory = join(root, "tmp")
+    const dataDirectory = join(root, ".codevisor", "data")
+    await mkdir(join(temporaryDirectory, "harness-secrets", "claude-code"), { recursive: true })
+    await writeFile(join(temporaryDirectory, "codevisor-server.sqlite"), "database")
+    await writeFile(join(temporaryDirectory, "codevisor-server.sqlite-wal"), "wal")
+    await writeFile(join(temporaryDirectory, "mcp-secret-key"), "key")
+    await writeFile(join(temporaryDirectory, "harness-secrets", "claude-code", "api-key"), "sk")
+    await writeFile(join(temporaryDirectory, "unrelated.txt"), "left behind")
+
+    await migrateTmpDataDir({
+      databasePath: join(dataDirectory, "codevisor-server.sqlite"),
+      temporaryDirectory
+    })
+
+    await expect(readFile(join(dataDirectory, "codevisor-server.sqlite"), "utf8")).resolves.toBe(
+      "database"
+    )
+    await expect(
+      readFile(join(dataDirectory, "codevisor-server.sqlite-wal"), "utf8")
+    ).resolves.toBe("wal")
+    await expect(readFile(join(dataDirectory, "mcp-secret-key"), "utf8")).resolves.toBe("key")
+    await expect(
+      readFile(join(dataDirectory, "harness-secrets", "claude-code", "api-key"), "utf8")
+    ).resolves.toBe("sk")
+    await expect(readFile(join(temporaryDirectory, "unrelated.txt"), "utf8")).resolves.toBe(
+      "left behind"
+    )
+    await expect(lstat(join(temporaryDirectory, "codevisor-server.sqlite"))).rejects.toMatchObject({
+      code: "ENOENT"
+    })
+  })
+
+  it("does nothing when the canonical database already exists", async () => {
+    const root = await mkdtemp(join(tmpdir(), "codevisor-tmp-data-existing-"))
+    const temporaryDirectory = join(root, "tmp")
+    const dataDirectory = join(root, ".codevisor", "data")
+    await mkdir(temporaryDirectory, { recursive: true })
+    await mkdir(dataDirectory, { recursive: true })
+    await writeFile(join(temporaryDirectory, "codevisor-server.sqlite"), "stale")
+    await writeFile(join(dataDirectory, "codevisor-server.sqlite"), "current")
+
+    await migrateTmpDataDir({
+      databasePath: join(dataDirectory, "codevisor-server.sqlite"),
+      temporaryDirectory
+    })
+
+    await expect(readFile(join(dataDirectory, "codevisor-server.sqlite"), "utf8")).resolves.toBe(
+      "current"
+    )
+    await expect(
+      readFile(join(temporaryDirectory, "codevisor-server.sqlite"), "utf8")
+    ).resolves.toBe("stale")
+  })
+
+  it("does nothing when there is no temp database or the paths coincide", async () => {
+    const root = await mkdtemp(join(tmpdir(), "codevisor-tmp-data-noop-"))
+    const temporaryDirectory = join(root, "tmp")
+    await mkdir(temporaryDirectory, { recursive: true })
+
+    // No temp database at all.
+    await migrateTmpDataDir({
+      databasePath: join(root, ".codevisor", "data", "codevisor-server.sqlite"),
+      temporaryDirectory
+    })
+    await expect(lstat(join(root, ".codevisor"))).rejects.toMatchObject({ code: "ENOENT" })
+
+    // Database path already inside the temp directory (legacy default).
+    await writeFile(join(temporaryDirectory, "codevisor-server.sqlite"), "database")
+    await migrateTmpDataDir({
+      databasePath: join(temporaryDirectory, "codevisor-server.sqlite"),
+      temporaryDirectory
+    })
+    await expect(
+      readFile(join(temporaryDirectory, "codevisor-server.sqlite"), "utf8")
+    ).resolves.toBe("database")
+  })
+})
 
 describe("Codevisor legacy file layout migration", () => {
   it("moves application data, renames the database, and preserves worktrees", async () => {

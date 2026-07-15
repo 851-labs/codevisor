@@ -13,7 +13,7 @@ import {
   rm,
   rmdir
 } from "node:fs/promises"
-import { homedir } from "node:os"
+import { homedir, tmpdir } from "node:os"
 import { basename, dirname, join, relative, resolve, sep } from "node:path"
 import { promisify } from "node:util"
 import type { DataUpgradeProgress } from "@codevisor/api"
@@ -106,6 +106,43 @@ const moveWithoutOverwrite = async (source: string, destination: string): Promis
     `Can't move ${source} because ${destination} already exists with different contents. ` +
       "Move or back up one of the files, then retry the update."
   )
+}
+
+export interface TmpDataDirMigrationOptions {
+  readonly databasePath: string
+  readonly temporaryDirectory?: string
+}
+
+/// Everything the server writes next to its database. Standalone installs
+/// before the canonical ~/.codevisor/data layout defaulted the database into
+/// the OS temp directory (wiped on reboot), so the first start with the new
+/// default relocates whatever survived.
+const dataDirArtifacts = [
+  "codevisor-server.sqlite",
+  "codevisor-server.sqlite-shm",
+  "codevisor-server.sqlite-wal",
+  "data-upgrade.json",
+  "server-updates",
+  "harness-profiles",
+  "harness-secrets",
+  "mcp-secret-key"
+] as const
+
+export const migrateTmpDataDir = async (options: TmpDataDirMigrationOptions): Promise<void> => {
+  /* v8 ignore next -- tests always inject a temp directory; exercising the real tmpdir() could move a developer's live database. */
+  const temporaryDirectory = options.temporaryDirectory ?? tmpdir()
+  const dataDirectory = dirname(options.databasePath)
+  const legacyDatabasePath = join(temporaryDirectory, "codevisor-server.sqlite")
+  if (resolve(legacyDatabasePath) === resolve(options.databasePath)) return
+  if (await pathExists(options.databasePath)) return
+  if (!(await pathExists(legacyDatabasePath))) return
+
+  for (const artifact of dataDirArtifacts) {
+    const source = join(temporaryDirectory, artifact)
+    if (await pathExists(source)) {
+      await moveWithoutOverwrite(source, join(dataDirectory, artifact))
+    }
+  }
 }
 
 const legacyDataDirectories = (

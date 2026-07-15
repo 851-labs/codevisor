@@ -242,6 +242,9 @@ describe("@codevisor/agent-runtime", () => {
     const runtime = makeAgentRuntime({
       env: { PATH: "/bin" },
       executableExists: (name) => ["gemini", "opencode", "codex"].includes(name),
+      // Pinned so path/version enrichment stays off regardless of what is
+      // installed on the machine running the tests (e.g. ChatGPT.app).
+      locateExecutable: () => undefined,
       // Exercises the background-terminal threading into every provider.
       backgroundTerminals: {
         registry: { register: () => ({ exit: () => {}, output: () => {}, remove: () => {} }) }
@@ -276,6 +279,36 @@ describe("@codevisor/agent-runtime", () => {
     expect(harnesses.find((harness) => harness.id === "gemini")?.installHint).toBeUndefined()
   })
 
+  it("enriches ready harnesses with the resolved path and probed version", async () => {
+    const runtime = makeAgentRuntime({
+      env: { PATH: "/opt/tools" },
+      locateExecutable: (name) => (name === "claude" ? "/opt/tools/claude" : undefined),
+      readVersionOutput: (path) =>
+        path === "/opt/tools/claude"
+          ? Promise.resolve("claude 2.1.5 (Claude Code)")
+          : Promise.reject(new Error("unexpected probe"))
+    })
+
+    // Discovery resolves the path synchronously; versions only exist once a
+    // refresh has probed them.
+    const first = await run(runtime.discoverHarnesses)
+    const claudeBefore = first.find((harness) => harness.id === "claude-code")
+    expect(claudeBefore?.readiness).toMatchObject({ state: "ready", path: "/opt/tools/claude" })
+    expect(claudeBefore?.readiness.version).toBeUndefined()
+
+    // A refresh (the client's "Detect again") awaits probes even without an
+    // env resolver, so the next discovery carries the version.
+    await run(runtime.refreshEnvironment)
+    const after = await run(runtime.discoverHarnesses)
+    expect(after.find((harness) => harness.id === "claude-code")?.readiness).toEqual({
+      state: "ready",
+      path: "/opt/tools/claude",
+      version: "2.1.5"
+    })
+    // Unavailable harnesses stay unenriched.
+    expect(after.find((harness) => harness.id === "codex")?.readiness.path).toBeUndefined()
+  })
+
   it("refreshes the environment so readiness picks up newly installed CLIs", async () => {
     let resolveCalls = 0
     const runtime = makeAgentRuntime({
@@ -283,6 +316,9 @@ describe("@codevisor/agent-runtime", () => {
       // Readiness is keyed off the live env's PATH: claude "installs" only
       // after refreshEnvironment swaps the env.
       executableExists: (name, env) => name === "claude" && env.PATH === "/after",
+      // Pinned: the refresh's version probe must not locate (and spawn) real
+      // binaries installed on the machine running the tests.
+      locateExecutable: () => undefined,
       resolveEnv: () => {
         resolveCalls += 1
         return Promise.resolve({ PATH: "/after" })

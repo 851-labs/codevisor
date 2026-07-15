@@ -35,7 +35,13 @@ import { createHash, randomBytes, randomUUID } from "node:crypto"
 import { Context, Effect, Layer, Schema } from "effect"
 import { resolveSessionCwd, worktreePath } from "./paths.js"
 
-export { resolveSessionCwd, worktreePath, worktreesRoot } from "./paths.js"
+export {
+  managedRepoPath,
+  managedReposRoot,
+  resolveSessionCwd,
+  worktreePath,
+  worktreesRoot
+} from "./paths.js"
 
 export class DatabaseError extends Schema.TaggedErrorClass<DatabaseError>()("DatabaseError", {
   operation: Schema.String,
@@ -58,6 +64,7 @@ interface ProjectRow {
   readonly symbol_name: string
   readonly origin: Project["origin"]
   readonly created_at: string
+  readonly repo_url: string | null
 }
 
 interface ProjectLocationRow {
@@ -812,6 +819,23 @@ const migrations: ReadonlyArray<Migration> = [
       update session_events
         set payload = json_set(payload, '$.origin', 'codevisor')
         where json_valid(payload) and json_extract(payload, '$.origin') = 'herdman';
+    `
+  },
+  {
+    id: 17,
+    name: "instance identity",
+    sql: `
+      create table if not exists instance_meta (
+        key text primary key,
+        value text not null
+      );
+    `
+  },
+  {
+    id: 18,
+    name: "project git remotes",
+    sql: `
+      alter table projects add column repo_url text;
     `
   }
 ]
@@ -1800,6 +1824,16 @@ export interface CodevisorDatabaseService {
   ) => Effect.Effect<SessionSummary, DatabaseError>
   readonly issuePairingToken: Effect.Effect<string, DatabaseError>
   readonly verifyBearerToken: (token: string) => Effect.Effect<boolean, DatabaseError>
+  /// A stable machine identity that survives --serverId defaults ("local") and
+  /// renames: generated once on first access and persisted with the database.
+  readonly getOrCreateInstanceId: Effect.Effect<string, DatabaseError>
+  /// The machine's stable connection token: generated once, persisted, and
+  /// returned unchanged across restarts and updates until rotated. This is
+  /// what `codevisor token` prints and `codevisor setup` hands to clients.
+  readonly getOrCreateConnectionToken: Effect.Effect<string, DatabaseError>
+  /// Replaces the connection token with a fresh one and retires the old,
+  /// forcing previously paired clients to re-pair.
+  readonly rotateConnectionToken: Effect.Effect<string, DatabaseError>
   readonly getUpdateInfo: Effect.Effect<UpdateInfo, DatabaseError>
   readonly setUpdateInfo: (update: UpdateInfo) => Effect.Effect<UpdateInfo, DatabaseError>
 }
@@ -1974,13 +2008,15 @@ const createService = (
       .get(projectId, config.serverId) as ProjectLocationRow | undefined
 
   const getProject = (id: string): Project => {
-    const row = sqlite.prepare("select * from projects where id = ?").get(id) as
+    // Case-insensitive: UUID identifiers may arrive in either case. Use the
+    // stored id (row.id) for the location lookup so it matches exactly.
+    const row = sqlite.prepare("select * from projects where id = ? collate nocase").get(id) as
       | ProjectRow
       | undefined
     if (row === undefined) {
       throw new Error(`Project not found: ${id}`)
     }
-    return projectFromRow(row, locationRowsFor(id))
+    return projectFromRow(row, locationRowsFor(row.id))
   }
 
   const getSession = (id: string): SessionSummary => {
@@ -1998,15 +2034,19 @@ const createService = (
   ) {
     return yield* attempt("createProject", () => {
       const now = isoTimestamp()
-      const projectId = request.id ?? randomUUID()
+      // UUIDs are case-insensitive identifiers. Canonicalize to lowercase on
+      // write so ids stay consistent no matter which client created them
+      // (Swift uppercases, Node lowercases) — a case-only difference must not
+      // spawn a duplicate project or merge one into a differently-cased row.
+      const projectId = (request.id ?? randomUUID()).toLowerCase()
       const createdAt = request.createdAt ?? now
 
       // Idempotency: re-creating an existing project id returns it.
-      const byId = sqlite.prepare("select id from projects where id = ?").get(projectId) as
-        | { id: string }
-        | undefined
+      const byId = sqlite
+        .prepare("select id from projects where id = ? collate nocase")
+        .get(projectId) as { id: string } | undefined
       if (byId !== undefined) {
-        return getProject(projectId)
+        return getProject(byId.id)
       }
 
       // A folder maps to exactly one project per server. If this folder is
@@ -2018,15 +2058,15 @@ const createService = (
         .prepare("select project_id from project_locations where server_id = ? and folder_path = ?")
         .get(config.serverId, request.folderPath) as { project_id: string } | undefined
       if (claimed !== undefined) {
-        if (request.id === undefined || request.id === claimed.project_id) {
+        if (request.id === undefined || claimed.project_id.toLowerCase() === projectId) {
           return getProject(claimed.project_id)
         }
         const merge = sqlite.transaction(() => {
           sqlite
             .prepare(
               `insert into projects (
-                id, name, is_archived, symbol_name, origin, created_at
-              ) values (?, ?, ?, ?, ?, ?)`
+                id, name, is_archived, symbol_name, origin, created_at, repo_url
+              ) values (?, ?, ?, ?, ?, ?, ?)`
             )
             .run(
               projectId,
@@ -2034,7 +2074,8 @@ const createService = (
               (request.isArchived ?? false) ? 1 : 0,
               request.symbolName ?? "folder.fill",
               request.origin ?? "codevisor",
-              createdAt
+              createdAt,
+              request.repoUrl ?? null
             )
           for (const table of ["project_locations", "sessions", "worktrees"]) {
             sqlite
@@ -2060,14 +2101,15 @@ const createService = (
         symbolName: request.symbolName ?? "folder.fill",
         origin: request.origin ?? "codevisor",
         createdAt,
-        locations: [location]
+        locations: [location],
+        ...(request.repoUrl === undefined ? {} : { repoUrl: request.repoUrl })
       }
       const transaction = sqlite.transaction(() => {
         sqlite
           .prepare(
             `insert into projects (
-              id, name, is_archived, symbol_name, origin, created_at
-            ) values (?, ?, ?, ?, ?, ?)`
+              id, name, is_archived, symbol_name, origin, created_at, repo_url
+            ) values (?, ?, ?, ?, ?, ?, ?)`
           )
           .run(
             project.id,
@@ -2075,7 +2117,8 @@ const createService = (
             project.isArchived ? 1 : 0,
             project.symbolName,
             project.origin,
-            project.createdAt
+            project.createdAt,
+            project.repoUrl ?? null
           )
         sqlite
           .prepare(
@@ -2147,13 +2190,15 @@ const createService = (
           symbolName: request.symbolName ?? current.symbolName
         }
         sqlite
-          .prepare("update projects set name = ?, is_archived = ?, symbol_name = ? where id = ?")
+          .prepare(
+            "update projects set name = ?, is_archived = ?, symbol_name = ? where id = ? collate nocase"
+          )
           .run(updated.name, updated.isArchived ? 1 : 0, updated.symbolName, id)
         return updated
       }),
     deleteProject: (id) =>
       attempt("deleteProject", () => {
-        const result = sqlite.prepare("delete from projects where id = ?").run(id)
+        const result = sqlite.prepare("delete from projects where id = ? collate nocase").run(id)
         if (result.changes === 0) {
           throw new Error(`Project not found: ${id}`)
         }
@@ -2888,6 +2933,64 @@ const createService = (
           .get(hashToken(token))
         return row !== undefined
       }),
+    getOrCreateInstanceId: attempt("getOrCreateInstanceId", () => {
+      const row = sqlite
+        .prepare("select value from instance_meta where key = 'machine-id'")
+        .get() as { readonly value: string } | undefined
+      if (row !== undefined) return row.value
+      const id = randomUUID()
+      sqlite.prepare("insert into instance_meta (key, value) values ('machine-id', ?)").run(id)
+      return id
+    }),
+    getOrCreateConnectionToken: attempt("getOrCreateConnectionToken", () => {
+      const row = sqlite
+        .prepare("select value from instance_meta where key = 'connection-token'")
+        .get() as { readonly value: string } | undefined
+      if (row !== undefined) return row.value
+      // Stable across restarts and updates: the plaintext lives in
+      // instance_meta so it can be shown again, and its hash goes in
+      // auth_tokens so verifyBearerToken accepts it like any pairing token.
+      const token = `hm_${randomBytes(24).toString("base64url")}`
+      const create = sqlite.transaction(() => {
+        sqlite
+          .prepare("insert into instance_meta (key, value) values ('connection-token', ?)")
+          .run(token)
+        sqlite
+          .prepare(
+            "insert into auth_tokens (id, token_hash, scope, created_at) values (?, ?, ?, ?)"
+          )
+          .run(randomUUID(), hashToken(token), "admin", isoTimestamp())
+      })
+      create()
+      return token
+    }),
+    rotateConnectionToken: attempt("rotateConnectionToken", () => {
+      const existing = sqlite
+        .prepare("select value from instance_meta where key = 'connection-token'")
+        .get() as { readonly value: string } | undefined
+      const token = `hm_${randomBytes(24).toString("base64url")}`
+      const rotate = sqlite.transaction(() => {
+        if (existing !== undefined) {
+          // Retire the old token so previously paired clients must re-pair.
+          sqlite
+            .prepare("delete from auth_tokens where token_hash = ?")
+            .run(hashToken(existing.value))
+        }
+        sqlite
+          .prepare(
+            `insert into instance_meta (key, value) values ('connection-token', ?)
+             on conflict(key) do update set value = excluded.value`
+          )
+          .run(token)
+        sqlite
+          .prepare(
+            "insert into auth_tokens (id, token_hash, scope, created_at) values (?, ?, ?, ?)"
+          )
+          .run(randomUUID(), hashToken(token), "admin", isoTimestamp())
+      })
+      rotate()
+      return token
+    }),
     getUpdateInfo: attempt("getUpdateInfo", () =>
       updateFromRow(sqlite.prepare("select * from update_state where id = 1").get() as UpdateRow)
     ),
@@ -2950,7 +3053,8 @@ const projectFromRow = (
   symbolName: row.symbol_name,
   origin: row.origin,
   createdAt: row.created_at,
-  locations: locations.map(projectLocationFromRow)
+  locations: locations.map(projectLocationFromRow),
+  ...(row.repo_url === null ? {} : { repoUrl: row.repo_url })
 })
 
 const worktreeFromRow = (row: WorktreeRow): Worktree => ({

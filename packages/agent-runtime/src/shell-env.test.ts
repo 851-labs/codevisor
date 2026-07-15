@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest"
-import { fallbackPathDirectories, resolveShellEnv, runShellCommand } from "./shell-env.js"
+import {
+  fallbackPathDirectories,
+  nvmBinDirectories,
+  resolveShellEnv,
+  runShellCommand
+} from "./shell-env.js"
 
 const envOutput = (path: string): string => `HOME=/Users/tester\nPATH=${path}\nLANG=en_US.UTF-8\n`
 
@@ -10,6 +15,7 @@ describe("resolveShellEnv", () => {
       base: { PATH: "/usr/bin:/base-only", SHELL: "/bin/fish" },
       platform: "darwin",
       homedir: "/Users/tester",
+      executableExists: () => true,
       runShell: (shell, args, timeoutMs) => {
         invocations.push([shell, args, timeoutMs])
         return Promise.resolve(envOutput("/probe-first:/usr/bin:/opt/homebrew/bin"))
@@ -60,9 +66,101 @@ describe("resolveShellEnv", () => {
       shells.push(shell)
       return Promise.resolve(envOutput("/probed"))
     }
-    await resolveShellEnv({ base: {}, platform: "darwin", homedir: "/h", runShell })
-    await resolveShellEnv({ base: { SHELL: "" }, platform: "linux", homedir: "/h", runShell })
+    const options = {
+      homedir: "/h",
+      runShell,
+      userShell: () => undefined,
+      executableExists: () => true
+    }
+    await resolveShellEnv({ base: {}, platform: "darwin" as const, ...options })
+    await resolveShellEnv({ base: { SHELL: "" }, platform: "linux" as const, ...options })
     expect(shells).toEqual(["/bin/zsh", "/bin/bash"])
+  })
+
+  it("falls back to the passwd shell when $SHELL is unset, skipping missing shells", async () => {
+    const shells: Array<string> = []
+    const runShell = (shell: string): Promise<string> => {
+      shells.push(shell)
+      return Promise.resolve(envOutput("/probed"))
+    }
+    await resolveShellEnv({
+      base: {},
+      platform: "linux",
+      homedir: "/h",
+      runShell,
+      userShell: () => "/etc/shells/fish",
+      executableExists: (path) => path === "/etc/shells/fish"
+    })
+    // $SHELL set but not installed: skip it in favor of the platform default.
+    await resolveShellEnv({
+      base: { SHELL: "/gone" },
+      platform: "linux",
+      homedir: "/h",
+      runShell,
+      userShell: () => undefined,
+      executableExists: (path) => path === "/bin/bash"
+    })
+    expect(shells).toEqual(["/etc/shells/fish", "/bin/bash"])
+  })
+
+  it("skips the probe entirely when no usable shell exists", async () => {
+    let probes = 0
+    const resolved = await resolveShellEnv({
+      base: { PATH: "/base-only" },
+      platform: "linux",
+      homedir: "/h",
+      runShell: () => {
+        probes += 1
+        return Promise.resolve(envOutput("/probed"))
+      },
+      userShell: () => undefined,
+      executableExists: () => false
+    })
+    expect(probes).toBe(0)
+    expect((resolved.PATH ?? "").split(":")[0]).toBe("/base-only")
+  })
+
+  it("includes Linux install dirs in the fallbacks and appends the newest nvm bin", async () => {
+    const fallbacks = fallbackPathDirectories("/h")
+    for (const directory of [
+      "/snap/bin",
+      "/h/.nix-profile/bin",
+      "/h/.npm-global/bin",
+      "/h/.deno/bin"
+    ]) {
+      expect(fallbacks).toContain(directory)
+    }
+    const resolved = await resolveShellEnv({
+      base: { PATH: "" },
+      platform: "linux",
+      homedir: "/h",
+      runShell: () => Promise.reject(new Error("no shell")),
+      userShell: () => undefined,
+      executableExists: () => true,
+      listDirectory: (path) =>
+        path === "/h/.nvm/versions/node"
+          ? ["v22.1.0", "v24.15.0", "v24.2.1", "junk", ".DS_Store"]
+          : []
+    })
+    expect(resolved.PATH).toContain("/h/.nvm/versions/node/v24.15.0/bin")
+    expect(resolved.PATH).not.toContain("v22.1.0")
+  })
+
+  it("uses the real existence check to skip a missing $SHELL", async () => {
+    const shells: Array<string> = []
+    await resolveShellEnv({
+      base: { SHELL: "/nonexistent-shell-for-test" },
+      platform: "linux",
+      homedir: "/h",
+      userShell: () => undefined,
+      runShell: (shell) => {
+        shells.push(shell)
+        return Promise.resolve(envOutput("/probed"))
+      }
+    })
+    // Default accessSync check rejects the missing $SHELL and accepts the
+    // platform default, which every supported host ships.
+    expect(shells).toEqual(["/bin/bash"])
   })
 
   it("passes through untouched on win32", async () => {
@@ -92,7 +190,8 @@ describe("resolveShellEnv", () => {
     const resolved = await resolveShellEnv({
       base: { PATH: "/base-only", SHELL: "/nonexistent-shell-for-test" },
       platform: "linux",
-      homedir: "/h"
+      homedir: "/h",
+      executableExists: () => true
     })
     expect((resolved.PATH ?? "").split(":")).toEqual([
       "/base-only",
@@ -131,5 +230,19 @@ describe("runShellCommand", () => {
 
   it("rejects when the command exceeds the timeout", async () => {
     await expect(runShellCommand("/bin/sh", ["-c", "sleep 5"], 50)).rejects.toThrow()
+  })
+})
+
+describe("nvmBinDirectories", () => {
+  it("returns the newest installed version's bin dir", () => {
+    expect(nvmBinDirectories("/h", () => ["v10.0.9", "v9.11.2", "v10.0.10", "notes.txt"])).toEqual([
+      "/h/.nvm/versions/node/v10.0.10/bin"
+    ])
+  })
+
+  it("returns nothing when nvm is absent or holds no versions", () => {
+    expect(nvmBinDirectories("/h", () => [])).toEqual([])
+    // Default lister tolerates a missing directory.
+    expect(nvmBinDirectories("/nonexistent-home-for-test")).toEqual([])
   })
 })

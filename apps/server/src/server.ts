@@ -21,9 +21,12 @@ import type {
   TerminalClientFrame,
   UpdateInfo,
   Worktree,
-  WorktreeSetupUpdate
+  WorktreeSetupUpdate,
+  FsListResponse,
+  ProjectSetupUpdate
 } from "@codevisor/api"
 import {
+  CreateProjectFromGitRequest as CreateProjectFromGitRequestSchema,
   CreateProjectRequest as CreateProjectRequestSchema,
   CreateMcpServerRequest as CreateMcpServerRequestSchema,
   DetectMcpAuthRequest as DetectMcpAuthRequestSchema,
@@ -48,15 +51,18 @@ import {
   decode,
   makeOpenApiDocument
 } from "@codevisor/api"
-import type { CodevisorDatabaseService } from "@codevisor/db"
+import { managedRepoPath, type CodevisorDatabaseService } from "@codevisor/db"
 import type { TerminalManagerService } from "@codevisor/terminal"
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http"
 import { existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs"
-import { tmpdir } from "node:os"
-import { dirname, join } from "node:path"
+import { readdir } from "node:fs/promises"
+import { homedir, hostname, tmpdir } from "node:os"
+import { dirname, join, resolve as resolvePath } from "node:path"
 import {
+  CloneError,
   GitError,
   addWorktree,
+  cloneRepository,
   gitBranchDiffTotals,
   isGitWorkTree,
   removeWorktree,
@@ -503,6 +509,22 @@ const handleRequest = async (
       return
     }
 
+    // Tokenless on purpose: clients probe network peers (e.g. tailnet members)
+    // with this manifest to discover Codevisor servers before pairing. Keep the
+    // payload minimal — nothing here may reveal projects, sessions, or tokens.
+    if (request.method === "GET" && url.pathname === "/v1/discovery") {
+      writeJson(response, 200, {
+        serverId: config.id,
+        machineId: await run(services.db.getOrCreateInstanceId),
+        name: config.name,
+        kind: config.kind,
+        version: config.version,
+        platform: process.platform,
+        hostname: hostname()
+      })
+      return
+    }
+
     // The gateway carries its own short-lived per-session bearer credential;
     // do not run it through the machine-pairing token verifier.
     if (url.pathname === "/mcp/gateway") {
@@ -549,7 +571,10 @@ const handleRequest = async (
         version: config.version,
         platform: process.platform,
         bindHost: config.host,
-        features: ["canonical-chat-v1", "session-event-stream-v1", "transcript-pagination-v1"]
+        features: ["canonical-chat-v1", "session-event-stream-v1", "transcript-pagination-v1"],
+        machineId: await run(services.db.getOrCreateInstanceId),
+        arch: process.arch,
+        hostname: hostname()
       })
       return
     }
@@ -602,6 +627,22 @@ const handleRequest = async (
       return
     }
 
+    if (request.method === "GET" && url.pathname === "/v1/auth/connection-token") {
+      writeJson(response, 200, {
+        token: await run(services.db.getOrCreateConnectionToken),
+        createdAt: new Date().toISOString()
+      })
+      return
+    }
+
+    if (request.method === "POST" && url.pathname === "/v1/auth/connection-token/rotate") {
+      writeJson(response, 201, {
+        token: await run(services.db.rotateConnectionToken),
+        createdAt: new Date().toISOString()
+      })
+      return
+    }
+
     if (request.method === "POST" && url.pathname === "/v1/auth/pairing-token") {
       writeJson(response, 201, {
         token: await run(services.db.issuePairingToken),
@@ -626,6 +667,9 @@ const handleRequest = async (
       return
     }
     if (await routeFiles(services, request, response, url)) {
+      return
+    }
+    if (await routeFs(request, response, url)) {
       return
     }
     if (await routeTerminals(services, request, response, url)) {
@@ -774,6 +818,68 @@ const routeProjects = async (
   if (request.method === "POST" && url.pathname === "/v1/projects") {
     const project = await run(
       services.db.createProject(await readSchema(request, CreateProjectRequestSchema))
+    )
+    await appendAndPublish(services.db, fanout, "project.created", project.id, project)
+    writeJson(response, 201, await probeProject(serverId, project))
+    return true
+  }
+
+  if (request.method === "POST" && url.pathname === "/v1/projects/from-git") {
+    const payload = await readSchema(request, CreateProjectFromGitRequestSchema)
+    const repoUrl = payload.url.trim()
+    if (!looksLikeGitUrl(repoUrl)) {
+      throw new HttpFailure(400, `Not a git URL: ${payload.url}`, "invalid_url")
+    }
+    const name = payload.name?.trim() || cloneDirectoryName(repoUrl)
+    if (name === undefined || name.length === 0) {
+      throw new HttpFailure(
+        400,
+        "Could not derive a project name from the URL; pass one explicitly",
+        "invalid_url"
+      )
+    }
+    const destination = managedRepoPath(name)
+    if (existsSync(destination)) {
+      throw new HttpFailure(
+        409,
+        `${destination} already exists on this machine; add it as a local directory instead`,
+        "already_exists"
+      )
+    }
+
+    const newProjectId = payload.id ?? randomUUID()
+    const publishSetup = makeProjectSetupPublisher(services.db, fanout, newProjectId, repoUrl)
+    const startedAt = Date.now()
+    await publishSetup({ state: "started" })
+    try {
+      mkdirSync(dirname(destination), { recursive: true })
+      await cloneRepository(repoUrl, destination, (stream, line) => {
+        void publishSetup({ state: "log", stream, line })
+      })
+      await publishSetup({ state: "completed", durationMs: Date.now() - startedAt })
+    } catch (cause) {
+      /* v8 ignore next -- cloneRepository always throws CloneError; the fallback guards mkdir failures. */
+      const code = cause instanceof CloneError ? cause.code : undefined
+      await publishSetup({
+        state: "failed",
+        message: failureMessage(cause),
+        /* v8 ignore next -- spawn-level clone failures carry no classification; exercised directly in git.test.ts. */
+        ...(code === undefined ? {} : { code }),
+        durationMs: Date.now() - startedAt
+      })
+      // Never leave a partial checkout behind: the name must be retryable.
+      /* v8 ignore next -- best-effort cleanup; a second fault still surfaces the git error. */
+      rmSync(destination, { force: true, recursive: true })
+      throw cause
+    }
+
+    const project = await run(
+      services.db.createProject({
+        id: newProjectId,
+        folderPath: destination,
+        name,
+        repoUrl
+      })
     )
     await appendAndPublish(services.db, fanout, "project.created", project.id, project)
     writeJson(response, 201, await probeProject(serverId, project))
@@ -1000,6 +1106,119 @@ type WorktreeSetupDetail = Omit<WorktreeSetupUpdate, "worktreeId" | "projectId" 
 /// land in the event log in emission order. Returned promises resolve once
 /// that update is durable; failures surface to awaited call sites without
 /// stalling later updates.
+/// Directory listing for the remote project picker. Directories only —
+/// choosing a project means choosing a folder — with a git badge so existing
+/// checkouts stand out. Requires the caller's bearer token like every other
+/// data route; the response deliberately exposes nothing but names.
+const routeFs = async (
+  request: IncomingMessage,
+  response: ServerResponse,
+  url: URL
+): Promise<boolean> => {
+  if (request.method !== "GET" || url.pathname !== "/v1/fs/list") {
+    return false
+  }
+  const requested = url.searchParams.get("path") ?? "~"
+  const showHidden = url.searchParams.get("showHidden") === "true"
+  const home = homedir()
+  const expanded =
+    requested === "~"
+      ? home
+      : requested.startsWith("~/")
+        ? join(home, requested.slice(2))
+        : requested
+  if (!expanded.startsWith("/")) {
+    throw new HttpFailure(400, `Path must be absolute: ${requested}`, "invalid_path")
+  }
+  const path = resolvePath(expanded)
+  let names: Array<import("node:fs").Dirent>
+  try {
+    names = await readdir(path, { withFileTypes: true })
+  } catch (cause) {
+    /* v8 ignore next -- readdir errno failures always carry a code. */
+    const code = (cause as NodeJS.ErrnoException).code ?? ""
+    if (code === "ENOENT") {
+      throw new HttpFailure(404, `No such directory: ${path}`, "not_found")
+    }
+    if (["EACCES", "EPERM"].includes(code)) {
+      throw new HttpFailure(403, `Permission denied: ${path}`, "permission_denied")
+    }
+    /* v8 ignore start -- the not-ENOTDIR arm covers other readdir failures (EIO etc.) falling through to the generic 500. */
+    if (code === "ENOTDIR") {
+      throw new HttpFailure(400, `Not a directory: ${path}`, "not_a_directory")
+    }
+    throw cause
+    /* v8 ignore stop */
+  }
+  const entries = names
+    .filter((entry) => {
+      if (!showHidden && entry.name.startsWith(".")) return false
+      if (entry.isDirectory()) return true
+      // Follow directory symlinks (common for workspace layouts); skip broken ones.
+      if (!entry.isSymbolicLink()) return false
+      try {
+        return statSync(join(path, entry.name)).isDirectory()
+      } catch {
+        return false
+      }
+    })
+    .map((entry) => ({
+      name: entry.name,
+      path: join(path, entry.name),
+      isGitRepo: existsSync(join(path, entry.name, ".git"))
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }))
+  const body: FsListResponse = {
+    path,
+    parent: path === "/" ? null : dirname(path),
+    entries
+  }
+  writeJson(response, 200, body)
+  return true
+}
+
+/// Serialized project.setup progress for clone-from-git, mirroring the
+/// worktree.setup pattern: clients follow the client-supplied project id on
+/// the event stream while the HTTP request is still in flight.
+const makeProjectSetupPublisher = (
+  db: CodevisorDatabaseService,
+  fanout: EventFanout,
+  projectId: string,
+  repoUrl: string
+): ((
+  detail: Partial<ProjectSetupUpdate> & { state: ProjectSetupUpdate["state"] }
+) => Promise<void>) => {
+  let chain: Promise<void> = Promise.resolve()
+  return (detail) => {
+    const update: ProjectSetupUpdate = {
+      projectId,
+      url: repoUrl,
+      ...detail
+    }
+    const next = chain.then(async () => {
+      await appendAndPublish(db, fanout, "project.setup", projectId, update)
+    })
+    /* v8 ignore next -- keeps the chain alive if the event log write fails; awaited callers still see the failure via `next`. */
+    chain = next.catch(() => undefined)
+    return next
+  }
+}
+
+/// Derives the managed checkout directory name from the remote URL
+/// ("git@github.com:acme/widget.git" → "widget").
+const cloneDirectoryName = (url: string): string | undefined => {
+  const trimmed = url.trim().replace(/\/+$/, "")
+  /* v8 ignore next -- a URL that passed looksLikeGitUrl always has at least one non-separator segment. */
+  const last = trimmed.split(/[/:]/).filter(Boolean).at(-1) ?? ""
+  const name = last.replace(/\.git$/i, "")
+  return /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(name) ? name : undefined
+}
+
+const looksLikeGitUrl = (url: string): boolean =>
+  /^(https?:\/\/|git:\/\/|ssh:\/\/)[^\s]+$/.test(url) ||
+  /^[\w.-]+@[\w.-]+:[^\s]+$/.test(url) ||
+  url.startsWith("file://")
+
 const makeWorktreeSetupPublisher = (
   db: CodevisorDatabaseService,
   fanout: EventFanout,
@@ -1370,6 +1589,9 @@ const createServerSession = async (
     services.db.createSession({
       ...payload,
       id: sessionId,
+      // Use the resolved project's canonical id (the client may have sent a
+      // different-cased UUID) so the session's foreign key matches the row.
+      projectId: project.id,
       ...(harnessAccountId === undefined ? {} : { harnessAccountId }),
       agentSessionId
     })
@@ -2200,7 +2422,13 @@ const getProjectOrFail = async (
   db: CodevisorDatabaseService,
   projectId: string
 ): Promise<Project> => {
-  const project = (await run(db.listProjects)).find((candidate) => candidate.id === projectId)
+  // Case-insensitive: UUIDs are case-insensitive identifiers, but clients can
+  // send either case (Swift uppercases, Node lowercases). A mismatch here used
+  // to read as a spurious "project not found".
+  const wanted = projectId.toLowerCase()
+  const project = (await run(db.listProjects)).find(
+    (candidate) => candidate.id.toLowerCase() === wanted
+  )
   if (project === undefined) {
     throw new HttpFailure(404, `Project not found: ${projectId}`)
   }
@@ -2417,7 +2645,18 @@ const writeFailure = (response: ServerResponse, cause: unknown): void => {
     return
   }
   if (cause instanceof HttpFailure) {
-    writeJson(response, cause.status, { error: cause.message })
+    writeJson(response, cause.status, {
+      error: cause.message,
+      ...(cause.code === undefined ? {} : { code: cause.code })
+    })
+    return
+  }
+  if (cause instanceof CloneError) {
+    writeJson(response, 422, {
+      error: cause.message,
+      /* v8 ignore next -- spawn-level clone failures carry no classification; exercised directly in git.test.ts. */
+      ...(cause.code === undefined ? {} : { code: cause.code })
+    })
     return
   }
   if (cause instanceof GitError) {
@@ -2591,7 +2830,10 @@ const isAddressInfo = (address: string | AddressInfo | null): address is Address
 class HttpFailure extends Error {
   constructor(
     readonly status: number,
-    message: string
+    message: string,
+    /// Machine-readable failure category, when the client can act on it
+    /// (e.g. clone auth_failed → "set up git credentials on the machine").
+    readonly code?: string
   ) {
     super(message)
   }
@@ -2624,4 +2866,4 @@ const serverAttempt = <A>(operation: string, runSync: () => A): Effect.Effect<A,
       })
   })
 
-export const defaultDatabasePath = (): string => join(tmpdir(), "codevisor-server.sqlite")
+export { defaultDatabasePath } from "./data-dir.js"

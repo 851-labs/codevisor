@@ -243,5 +243,123 @@ export const addWorktree = (
     })
   })
 
+/// Failure categories for clone errors, matched against git's stderr. The
+/// server maps these onto HTTP responses and project.setup events so clients
+/// can show actionable guidance instead of raw git output.
+export type CloneFailureCode =
+  | "auth_failed"
+  | "repo_not_found"
+  | "network"
+  | "disk_full"
+  | "invalid_url"
+
+export const classifyCloneFailure = (stderrText: string): CloneFailureCode | undefined => {
+  const text = stderrText.toLowerCase()
+  if (
+    text.includes("authentication failed") ||
+    text.includes("could not read username") ||
+    text.includes("could not read password") ||
+    text.includes("permission denied (publickey") ||
+    text.includes("host key verification failed") ||
+    text.includes("support for password authentication was removed")
+  ) {
+    return "auth_failed"
+  }
+  if (text.includes("repository") && text.includes("not found")) {
+    return "repo_not_found"
+  }
+  if (
+    text.includes("could not resolve host") ||
+    text.includes("unable to access") ||
+    text.includes("connection timed out") ||
+    text.includes("connection refused")
+  ) {
+    return "network"
+  }
+  if (text.includes("no space left on device")) {
+    return "disk_full"
+  }
+  if (
+    text.includes("does not appear to be a git repository") ||
+    text.includes("is not a valid repository name")
+  ) {
+    return "invalid_url"
+  }
+  return undefined
+}
+
+export class CloneError extends GitError {
+  constructor(
+    message: string,
+    readonly code: CloneFailureCode | undefined
+  ) {
+    super("clone", message)
+    this.name = "CloneError"
+  }
+}
+
+/// Clones a remote into `destination`, streaming progress lines. Credential
+/// prompts are the top failure mode on headless machines: GIT_TERMINAL_PROMPT
+/// and ssh BatchMode make an auth-challenged clone fail fast with a
+/// classifiable error instead of hanging the request forever.
+export const cloneRepository = (
+  url: string,
+  destination: string,
+  onOutput?: GitOutputListener
+): Promise<void> =>
+  new Promise((resolve, reject) => {
+    const child = spawn("git", ["clone", "--progress", url, destination], {
+      env: {
+        ...process.env,
+        GIT_TERMINAL_PROMPT: "0",
+        GIT_ASKPASS: "true",
+        GIT_SSH_COMMAND: process.env.GIT_SSH_COMMAND ?? "ssh -oBatchMode=yes"
+      }
+    })
+    const stderrLines: Array<string> = []
+    const listen = (stream: GitOutputStream) => {
+      let lastLine: string | undefined
+      return lineSplitter((raw) => {
+        const line = sanitizeGitOutputLine(raw)
+        if (line.length === 0 || line === lastLine) {
+          return
+        }
+        lastLine = line
+        if (stream === "stderr") {
+          stderrLines.push(line)
+        }
+        onOutput?.(stream, line)
+      })
+    }
+    const stdout = listen("stdout")
+    const stderr = listen("stderr")
+    child.stdout.setEncoding("utf8")
+    child.stderr.setEncoding("utf8")
+    child.stdout.on("data", stdout.push)
+    child.stderr.on("data", stderr.push)
+    const settle = (failure: CloneError | undefined): void => {
+      stdout.flush()
+      stderr.flush()
+      if (failure === undefined) {
+        resolve()
+      } else {
+        reject(failure)
+      }
+    }
+    child.once("error", (cause) => {
+      settle(new CloneError(cause.message, undefined))
+    })
+    child.once("close", (code) => {
+      if (code === 0) {
+        settle(undefined)
+        return
+      }
+      const stderrText = stderrLines.join("\n").trim()
+      const message =
+        stderrText.length > 0 ? stderrText : `git clone exited with code ${String(code)}`
+      settle(new CloneError(message, classifyCloneFailure(stderrText)))
+    })
+  })
+
 export const removeWorktree = (repoDir: string, path: string): Promise<string> =>
   git("worktree", ["worktree", "remove", path, "--force"], repoDir)
