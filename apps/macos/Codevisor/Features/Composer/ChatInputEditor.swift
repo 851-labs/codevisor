@@ -185,6 +185,22 @@ final class SubmittingTextView: NSTextView {
     /// dropzone (`AttachmentDropModifier`) and the file attaches instead.
     override var acceptableDragTypes: [NSPasteboard.PasteboardType] { [.string] }
 
+    /// `NSTextView` validates the Edit > Paste command against its own
+    /// plain-text readable types before dispatching the action. An image-only
+    /// clipboard therefore disables the menu item (and its Command-V key
+    /// equivalent), even though `paste(_:)` below knows how to attach it.
+    /// Include attachment-worthy content in that validation without teaching
+    /// the text view to insert images into its text storage.
+    override func validateUserInterfaceItem(_ item: any NSValidatedUserInterfaceItem) -> Bool {
+        if item.action == #selector(paste(_:)),
+           isEditable,
+           onPasteAttachments != nil,
+           Self.pasteboardContainsAttachments(NSPasteboard.general) {
+            return true
+        }
+        return super.validateUserInterfaceItem(item)
+    }
+
     /// Intercepts pastes carrying files or raw image data (e.g. copied
     /// screenshots) and routes them to the composer as attachments; plain text
     /// falls through to the normal paste.
@@ -213,6 +229,18 @@ final class SubmittingTextView: NSTextView {
             return [.image(data: png, suggestedName: nil)]
         }
         return []
+    }
+
+    /// Cheap validation path: menu validation runs frequently, so avoid
+    /// decoding/converting TIFF data until Paste is actually invoked.
+    private static func pasteboardContainsAttachments(_ pasteboard: NSPasteboard) -> Bool {
+        if pasteboard.canReadObject(
+            forClasses: [NSURL.self],
+            options: [.urlReadingFileURLsOnly: true]
+        ) {
+            return true
+        }
+        return pasteboard.availableType(from: [.png, .tiff]) != nil
     }
 
     override func keyDown(with event: NSEvent) {
