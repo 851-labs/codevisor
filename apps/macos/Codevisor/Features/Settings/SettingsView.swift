@@ -2,6 +2,7 @@ import SwiftUI
 import AppKit
 import CodevisorCore
 import os
+import UniformTypeIdentifiers
 import UserNotifications
 
 enum SettingsTab: String {
@@ -63,13 +64,27 @@ struct SettingsView: View {
 /// background banners and foreground sounds; subordinate switches let people
 /// tune either presentation without duplicating macOS-wide Focus controls.
 struct NotificationsSettingsView: View {
+    /// A failed custom-sound action (import/delete), pending display in an alert.
+    private struct SoundActionError: Identifiable {
+        let id = UUID()
+        let title: String
+        let message: String
+    }
+
     @Environment(AppEnvironment.self) private var environment
     @Environment(\.theme) private var theme
     @State private var authorizationStatus: UNAuthorizationStatus = .notDetermined
     @State private var soundChoices: [SystemSoundChoice] = []
     @State private var testMessage: String?
+    @State private var showingSoundImporter = false
+    /// Which sound row opened the importer, so the imported sound is
+    /// auto-assigned there; nil when importing from the Custom Sounds list.
+    @State private var soundImportTarget: ChatAttentionKind?
+    @State private var soundError: SoundActionError?
 
     private var settings: AppSettings { environment.settings.settings }
+    private var customSoundStore: CustomSoundStore { CustomSoundStore() }
+    private var customSoundChoices: [SystemSoundChoice] { soundChoices.filter(\.isCustom) }
 
     var body: some View {
         Form {
@@ -132,6 +147,24 @@ struct NotificationsSettingsView: View {
                 Text("Sounds")
             }
 
+            Section {
+                if customSoundChoices.isEmpty {
+                    Text("No custom sounds")
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(customSoundChoices) { sound in
+                        customSoundRow(sound)
+                    }
+                }
+                Button("Add Sound…") {
+                    soundImportTarget = nil
+                    showingSoundImporter = true
+                }
+                .settingsActionTint(theme)
+            } header: {
+                Text("Custom Sounds")
+            }
+
             Section("Test") {
                 HStack {
                     Button("Send Test Notification") {
@@ -148,6 +181,25 @@ struct NotificationsSettingsView: View {
             }
         }
         .settingsPaneFormStyle(theme)
+        .fileImporter(
+            isPresented: $showingSoundImporter,
+            allowedContentTypes: [.audio]
+        ) { result in
+            handleSoundImport(result)
+        }
+        .alert(
+            soundError?.title ?? "",
+            isPresented: Binding(
+                get: { soundError != nil },
+                set: { if !$0 { soundError = nil } }
+            ),
+            presenting: soundError
+        ) { _ in
+            Button("OK", role: .cancel) {}
+                .settingsActionTint(theme)
+        } message: { error in
+            Text(error.message)
+        }
         .task {
             refreshSoundChoices()
             await refreshAuthorizationStatus()
@@ -215,14 +267,24 @@ struct NotificationsSettingsView: View {
                 .foregroundStyle(theme.textPrimary)
             Spacer(minLength: 20)
             Menu {
-                ForEach(soundChoices) { sound in
-                    Button {
-                        selection.wrappedValue = sound.path
-                    } label: {
-                        if sound.path == selection.wrappedValue {
-                            Label(sound.name, systemImage: "checkmark")
-                        } else {
-                            Text(sound.name)
+                let custom = customSoundChoices
+                let system = soundChoices.filter { !$0.isCustom }
+                if custom.isEmpty {
+                    soundMenuItems(system, selection: selection)
+                    Divider()
+                    Button("Add Custom Sound…") {
+                        soundImportTarget = kind
+                        showingSoundImporter = true
+                    }
+                } else {
+                    Section("System") {
+                        soundMenuItems(system, selection: selection)
+                    }
+                    Section("Custom") {
+                        soundMenuItems(custom, selection: selection)
+                        Button("Add Custom Sound…") {
+                            soundImportTarget = kind
+                            showingSoundImporter = true
                         }
                     }
                 }
@@ -265,6 +327,94 @@ struct NotificationsSettingsView: View {
             .help("Play \(title.lowercased()) sound")
             .accessibilityLabel("Test \(title.lowercased()) sound")
         }
+    }
+
+    @ViewBuilder
+    private func soundMenuItems(_ choices: [SystemSoundChoice], selection: Binding<String>) -> some View {
+        ForEach(choices) { sound in
+            Button {
+                selection.wrappedValue = sound.path
+            } label: {
+                if sound.path == selection.wrappedValue {
+                    Label(sound.name, systemImage: "checkmark")
+                } else {
+                    Text(sound.name)
+                }
+            }
+        }
+    }
+
+    private func customSoundRow(_ sound: SystemSoundChoice) -> some View {
+        HStack {
+            Text(sound.name)
+                .foregroundStyle(theme.textPrimary)
+            Spacer()
+            Button {
+                ChatNotificationManager.shared.playSample(at: sound.path)
+            } label: {
+                Image(systemName: "play.circle")
+            }
+            .buttonStyle(.borderless)
+            .settingsActionTint(theme)
+            .help("Play \(sound.name)")
+            Button {
+                deleteCustomSound(sound)
+            } label: {
+                Image(systemName: "trash")
+            }
+            .buttonStyle(.borderless)
+            .settingsActionTint(theme)
+            .help("Remove this sound")
+        }
+    }
+
+    private func handleSoundImport(_ result: Result<URL, any Error>) {
+        let target = soundImportTarget
+        soundImportTarget = nil
+        guard case let .success(url) = result else { return }
+        do {
+            let imported = try customSoundStore.importSound(from: url)
+            refreshSoundChoices()
+            switch target {
+            case .finished:
+                environment.settings.setChatFinishedSoundPath(imported.path)
+            case .actionRequired:
+                environment.settings.setActionRequiredSoundPath(imported.path)
+            case nil:
+                break
+            }
+            // Audition the converted sound right away, so a bad pick is
+            // obvious while the user is still in Settings.
+            ChatNotificationManager.shared.playSample(at: imported.path)
+        } catch {
+            Log.attachments.error("Importing custom sound failed: \(String(describing: error), privacy: .public)")
+            soundError = SoundActionError(
+                title: "Couldn't Add the Sound",
+                message: ErrorReporter.userFacingMessage(for: error)
+            )
+        }
+    }
+
+    private func deleteCustomSound(_ sound: SystemSoundChoice) {
+        do {
+            try customSoundStore.deleteSound(at: URL(fileURLWithPath: sound.path))
+        } catch {
+            Log.attachments.error("Deleting custom sound \(sound.path, privacy: .public) failed: \(String(describing: error), privacy: .public)")
+            soundError = SoundActionError(
+                title: "Couldn't Remove the Sound",
+                message: ErrorReporter.userFacingMessage(for: error)
+            )
+            return
+        }
+        // A notification kind pointing at the deleted file falls back to the
+        // default system sound instead of silently beeping later.
+        if settings.chatFinishedSoundPath == sound.path {
+            environment.settings.setChatFinishedSoundPath(AppSettings.defaultNotificationSoundPath)
+        }
+        if settings.actionRequiredSoundPath == sound.path {
+            environment.settings.setActionRequiredSoundPath(AppSettings.defaultNotificationSoundPath)
+        }
+        refreshSoundChoices()
     }
 
     private func soundName(for path: String) -> String {

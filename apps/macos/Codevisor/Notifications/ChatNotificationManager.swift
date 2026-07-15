@@ -50,6 +50,7 @@ extension Notification.Name {
 struct SystemSoundChoice: Identifiable, Hashable {
     let path: String
     let name: String
+    var isCustom: Bool = false
     var id: String { path }
 }
 
@@ -67,7 +68,7 @@ enum SystemSoundCatalog {
             userSounds
         ].compactMap { $0 }
 
-        var paths = Set<String>()
+        var systemPaths = Set<String>()
         for directory in directories {
             guard let urls = try? manager.contentsOfDirectory(
                 at: directory,
@@ -78,19 +79,35 @@ enum SystemSoundCatalog {
                 // These are private copies prepared for UserNotifications, not
                 // additional choices the user intentionally installed.
                 guard !url.lastPathComponent.hasPrefix("Codevisor-") else { continue }
-                paths.insert(url.standardizedFileURL.path)
+                systemPaths.insert(url.standardizedFileURL.path)
             }
         }
-        paths.formUnion(selectedPaths.filter { manager.fileExists(atPath: $0) })
 
-        return paths.map { path in
-            let url = URL(fileURLWithPath: path)
-            return SystemSoundChoice(
-                path: path,
-                name: url.deletingPathExtension().lastPathComponent
-            )
+        // Sounds the user imported through Settings; they appear in every
+        // sound menu alongside the built-in macOS sounds.
+        let customDirectory = CustomSoundStore.defaultDirectory().standardizedFileURL
+        var customPaths = Set(CustomSoundStore(directory: customDirectory).availableSounds().map(\.path))
+
+        for path in selectedPaths where manager.fileExists(atPath: path) {
+            let standardized = URL(fileURLWithPath: path).standardizedFileURL.path
+            if standardized.hasPrefix(customDirectory.path + "/") {
+                customPaths.insert(path)
+            } else {
+                systemPaths.insert(path)
+            }
         }
-        .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+
+        func choices(for paths: Set<String>, isCustom: Bool) -> [SystemSoundChoice] {
+            paths.map { path in
+                SystemSoundChoice(
+                    path: path,
+                    name: URL(fileURLWithPath: path).deletingPathExtension().lastPathComponent,
+                    isCustom: isCustom
+                )
+            }
+        }
+        return (choices(for: systemPaths, isCustom: false) + choices(for: customPaths, isCustom: true))
+            .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
     }
 }
 
@@ -178,6 +195,12 @@ final class ChatNotificationManager: NSObject, ChatNotificationDelivering, UNUse
     func playPreview(kind: ChatAttentionKind) {
         guard let settings = settingsModel?.settings else { return }
         playSound(at: soundPath(for: kind, settings: settings))
+    }
+
+    /// Plays an arbitrary sound file once — Settings uses this to audition
+    /// sounds that aren't (yet) assigned to a notification kind.
+    func playSample(at path: String) {
+        playSound(at: path)
     }
 
     @discardableResult
@@ -284,10 +307,8 @@ final class ChatNotificationManager: NSObject, ChatNotificationDelivering, UNUse
             return nil
         }
         let sounds = library.appendingPathComponent("Sounds", isDirectory: true)
-        let safeBase = source.deletingPathExtension().lastPathComponent
-            .replacingOccurrences(of: "[^A-Za-z0-9_-]", with: "-", options: .regularExpression)
         let destination = sounds.appendingPathComponent(
-            "Codevisor-\(safeBase).\(source.pathExtension.lowercased())"
+            CustomSoundStore.preparedNotificationSoundName(for: source)
         )
         do {
             try FileManager.default.createDirectory(at: sounds, withIntermediateDirectories: true)
