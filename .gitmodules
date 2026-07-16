@@ -61,3 +61,6 @@
 [submodule ".repos/ccusage"]
 	path = .repos/ccusage
 	url = https://github.com/ccusage/ccusage.git
+[submodule ".repos/t3code"]
+	path = .repos/t3code
+	url = https://github.com/pingdotgg/t3code.git
