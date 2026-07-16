@@ -50,6 +50,7 @@ import {
 } from "./server.js"
 import type { HarnessAuthManager } from "./harness-auth.js"
 import type { CodevisorServerServices } from "./server.js"
+import { generatedWorktreeNames } from "./worktree-names.js"
 import { boundedMcpTimerDelay, makeMcpManager, NodeStreamableHttpTransport } from "./mcp-manager.js"
 import { Client as McpClient } from "@modelcontextprotocol/sdk/client/index.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
@@ -3299,13 +3300,13 @@ describe("@codevisor/server", () => {
       ).body as { readonly name: string; readonly branch: string }
       expect(secondWorktree.name).toBe("fix-auth-2")
       expect(secondWorktree.branch).toBe(`codevisor/${secondWorktree.name}`)
-      // Missing names get a random memorable adjective-animal pair.
+      // Missing names get a short scientist surname from the curated pool.
       const randomNamed = (
         await jsonRequest(server, "/v1/projects/git-project/worktrees", {
           method: "POST"
         })
       ).body as { readonly name: string; readonly branch: string }
-      expect(randomNamed.name).toMatch(/^[a-z]+-[a-z]+$/)
+      expect(generatedWorktreeNames).toContain(randomNamed.name)
       expect(randomNamed.branch).toBe(`codevisor/${randomNamed.name}`)
       expect(
         ((await jsonRequest(server, "/v1/projects/git-project/worktrees")).body as Array<unknown>)
@@ -3370,33 +3371,6 @@ describe("@codevisor/server", () => {
       })
       await waitFor(() => agents.prompts.some((prompt) => prompt[1] === "hello worktree"))
       expect(agents.loads).toContainEqual(["codex", session.agentSessionId, worktree.path])
-
-      // A generated-name collision retries the whole adjective-animal pair.
-      const randomSpy = vi.spyOn(Math, "random").mockReturnValue(0)
-      try {
-        const pinned = await jsonRequest(server, "/v1/projects/git-project/worktrees", {
-          method: "POST"
-        })
-        const pinnedName = (pinned.body as { readonly name: string }).name
-        expect(pinnedName).toBe("amber-badger")
-        randomSpy
-          .mockReturnValueOnce(0) // adjective
-          .mockReturnValueOnce(0) // animal -> collides with pinnedName
-          .mockReturnValue(0.5) // re-rolls the whole pair
-        const collided = await jsonRequest(server, "/v1/projects/git-project/worktrees", {
-          method: "POST"
-        })
-        expect((collided.body as { readonly name: string }).name).toBe("keen-magpie")
-
-        // If all bounded retries collide, a numeric suffix guarantees progress.
-        randomSpy.mockReturnValue(0)
-        const exhausted = await jsonRequest(server, "/v1/projects/git-project/worktrees", {
-          method: "POST"
-        })
-        expect((exhausted.body as { readonly name: string }).name).toBe("amber-badger-2")
-      } finally {
-        randomSpy.mockRestore()
-      }
 
       // Archiving a session deletes its worktree from disk once no active
       // session still relies on it. Set up a dedicated worktree shared by two

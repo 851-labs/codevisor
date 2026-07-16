@@ -77,6 +77,7 @@ import { Context, Effect, Layer, PubSub, Schema } from "effect"
 import { WebSocket, WebSocketServer } from "ws"
 import type { HarnessAuthManager } from "./harness-auth.js"
 import type { McpManager } from "./mcp-manager.js"
+import { availableGeneratedWorktreeName } from "./worktree-names.js"
 
 export class ServerError extends Schema.TaggedErrorClass<ServerError>()("ServerError", {
   operation: Schema.String,
@@ -926,7 +927,7 @@ const routeProjects = async (
     const requested = slugifyWorktreeName(payload.name)
     const name =
       requested === undefined
-        ? availableRandomWorktreeName(existing)
+        ? availableGeneratedWorktreeName(existing)
         : availableWorktreeName(requested, existing)
     const branch = `codevisor/${name}`
     const worktree = await run(services.db.createWorktree(project.id, name, branch, payload.id))
@@ -982,115 +983,6 @@ const slugifyWorktreeName = (name: string | undefined): string | undefined => {
   return slug.length > 0 ? slug : undefined
 }
 
-const worktreeAdjectives = [
-  "amber",
-  "bold",
-  "brave",
-  "breezy",
-  "bright",
-  "calm",
-  "cheeky",
-  "clever",
-  "cosmic",
-  "crafty",
-  "curious",
-  "daring",
-  "dashing",
-  "eager",
-  "electric",
-  "fearless",
-  "ferocious",
-  "fluffy",
-  "gentle",
-  "giddy",
-  "golden",
-  "graceful",
-  "happy",
-  "jolly",
-  "keen",
-  "lively",
-  "lucky",
-  "mellow",
-  "mighty",
-  "nimble",
-  "plucky",
-  "quiet",
-  "rapid",
-  "rustic",
-  "silver",
-  "sly",
-  "snazzy",
-  "spry",
-  "sturdy",
-  "sunny",
-  "swift",
-  "tidy",
-  "velvet",
-  "vivid",
-  "wandering",
-  "witty",
-  "zany",
-  "zesty"
-] as const
-
-const worktreeAnimals = [
-  "badger",
-  "beaver",
-  "bison",
-  "capybara",
-  "cheetah",
-  "condor",
-  "cougar",
-  "coyote",
-  "crane",
-  "dingo",
-  "dolphin",
-  "falcon",
-  "ferret",
-  "finch",
-  "fox",
-  "gazelle",
-  "gecko",
-  "heron",
-  "hedgehog",
-  "ibex",
-  "jackal",
-  "kestrel",
-  "lemur",
-  "lynx",
-  "magpie",
-  "manatee",
-  "marmot",
-  "mongoose",
-  "narwhal",
-  "ocelot",
-  "orca",
-  "osprey",
-  "otter",
-  "owl",
-  "panda",
-  "pelican",
-  "puffin",
-  "quokka",
-  "raccoon",
-  "raven",
-  "salamander",
-  "seal",
-  "stoat",
-  "tapir",
-  "toucan",
-  "walrus",
-  "wombat",
-  "yak"
-] as const
-
-/// A memorable default name ("ferocious-walrus").
-const randomWorktreeBase = (): string => {
-  const adjective = worktreeAdjectives[Math.floor(Math.random() * worktreeAdjectives.length)]
-  const animal = worktreeAnimals[Math.floor(Math.random() * worktreeAnimals.length)]
-  return `${adjective}-${animal}`
-}
-
 /// Keeps explicit names readable and only adds a sequence number when the
 /// requested name is already in use. The upper bound guarantees a free name:
 /// existing.size + 1 distinct candidates cannot all appear in `existing`.
@@ -1107,23 +999,6 @@ const availableWorktreeName = (base: string, existing: ReadonlySet<string>): str
     }
   }
   throw new Error("Unable to allocate a unique worktree name")
-}
-
-const randomWorktreeNameAttempts = 20
-
-/// Random defaults normally stay as a bare adjective-animal pair. After a
-/// bounded number of collisions, fall back to the readable numeric suffix.
-const availableRandomWorktreeName = (existing: ReadonlySet<string>): string => {
-  let candidate = randomWorktreeBase()
-  for (let attempt = 1; attempt <= randomWorktreeNameAttempts; attempt += 1) {
-    if (!existing.has(candidate)) {
-      return candidate
-    }
-    if (attempt < randomWorktreeNameAttempts) {
-      candidate = randomWorktreeBase()
-    }
-  }
-  return availableWorktreeName(candidate, existing)
 }
 
 type WorktreeSetupDetail = Omit<WorktreeSetupUpdate, "worktreeId" | "projectId" | "name" | "branch">
