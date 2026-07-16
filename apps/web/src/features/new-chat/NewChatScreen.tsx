@@ -124,7 +124,9 @@ export function sessionTitleFrom(prompt: string): string {
 export function NewChatScreen({ preferredProjectId }: { preferredProjectId?: string }) {
   const navigate = useNavigate()
   const { client, events } = useApi()
-  const projectsQuery = useProjects()
+  // Render the cached project snapshot immediately, but always ask the server
+  // to re-probe folder capabilities when this route is entered.
+  const projectsQuery = useProjects({ revalidateOnMount: true })
   const harnessesQuery = useHarnesses()
   const createSession = useCreateSession()
   const createWorktree = useCreateWorktree()
@@ -432,6 +434,9 @@ export function NewChatScreen({ preferredProjectId }: { preferredProjectId?: str
                 updateNewChatDraftState((current) =>
                   moveNewChatDraftToProject(current, project.id, supportsWorktrees)
                 )
+                // Selection uses the cached project immediately; the server
+                // then re-probes repository metadata in the background.
+                void projectsQuery.refetch()
               }}
             />
             ?

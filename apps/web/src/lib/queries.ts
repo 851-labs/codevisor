@@ -1089,11 +1089,15 @@ export function wireServerEvents(client: QueryClient, events: EventSocket): () =
 // Queries
 // ---------------------------------------------------------------------------
 
-export function useProjects() {
+export function useProjects({ revalidateOnMount = false }: { revalidateOnMount?: boolean } = {}) {
   const { client } = useApi()
   return useQuery({
     queryKey: queryKeys.projects,
-    queryFn: () => client.listProjects()
+    queryFn: () => client.listProjects(),
+    // New-chat opts into an unconditional background probe whenever it is
+    // entered. React Query keeps serving cached projects while this runs, so
+    // repository capabilities update without replacing the page with loading UI.
+    refetchOnMount: revalidateOnMount ? "always" : true
   })
 }
 

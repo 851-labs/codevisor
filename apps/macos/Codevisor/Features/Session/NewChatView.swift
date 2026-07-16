@@ -126,6 +126,12 @@ struct NewChatView: View {
             selectedProjectId = project.id
             selection = .newChat(project.id)
         }
+        // Stale-while-revalidate: the persisted project snapshot renders the
+        // page immediately, then the server re-probes folder capabilities in
+        // the background and publishes any changed Git status into this view.
+        .task {
+            await environment.projectList.refreshFromServer()
+        }
         .task(id: setupIdentity) { setUpController() }
         // A machine's projects can arrive after this view's initial task has
         // already returned. Retry when the active project set changes so the
@@ -171,6 +177,11 @@ struct NewChatView: View {
                             controller?.wantsNewWorktree = false
                         }
                         if let controller { Task { await controller.selectProject(project) } }
+                        // Keep the cached selection responsive, then re-probe
+                        // project metadata independently in the background.
+                        Task {
+                            await environment.projectList.refreshFromServer()
+                        }
                     }
                 )) {
                     Label {
