@@ -1059,6 +1059,35 @@ struct SessionModelTests {
         #expect(model.configOptions.first?.currentValue == "large")
     }
 
+    @Test("Fresh harness capabilities replace draft model options")
+    func refreshedCapabilitiesReplaceConfigOptions() {
+        let sessionId = UUID()
+        let client = FakeSessionServerClient(sessionId: sessionId)
+        let original = SessionConfigOption(
+            id: "model",
+            name: "Model",
+            category: "model",
+            currentValue: "old",
+            options: [SessionConfigSelectOption(value: "old", name: "Old")]
+        )
+        let refreshed = SessionConfigOption(
+            id: "model",
+            name: "Model",
+            category: "model",
+            currentValue: "new",
+            options: [SessionConfigSelectOption(value: "new", name: "New")]
+        )
+        let model = SessionModel(
+            serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
+            sessionId: sessionId.uuidString,
+            configOptions: [original]
+        )
+
+        model.replaceConfigOptions([refreshed])
+
+        #expect(model.configOptions == [refreshed])
+    }
+
     @Test("Goal lifecycle: set, pause, resume, and clear round-trip optimistically")
     func goalLifecycle() async {
         let sessionId = UUID()

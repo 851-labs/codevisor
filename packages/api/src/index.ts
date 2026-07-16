@@ -192,6 +192,73 @@ export type StartPiAuthRequest = typeof StartPiAuthRequest.Type
 export const AnswerPiAuthRequest = Schema.Struct({ value: Schema.String })
 export type AnswerPiAuthRequest = typeof AnswerPiAuthRequest.Type
 
+export const OpenCodeAuthPromptCondition = Schema.Struct({
+  key: Schema.String,
+  op: Schema.Literals(["eq", "neq"]),
+  value: Schema.String
+})
+export type OpenCodeAuthPromptCondition = typeof OpenCodeAuthPromptCondition.Type
+
+export const OpenCodeAuthPromptOption = Schema.Struct({
+  value: Schema.String,
+  label: Schema.String,
+  hint: Schema.optional(Schema.String)
+})
+export type OpenCodeAuthPromptOption = typeof OpenCodeAuthPromptOption.Type
+
+export const OpenCodeAuthPrompt = Schema.Struct({
+  type: Schema.Literals(["text", "select"]),
+  key: Schema.String,
+  message: Schema.String,
+  placeholder: Schema.optional(Schema.String),
+  options: Schema.Array(OpenCodeAuthPromptOption),
+  when: Schema.optional(OpenCodeAuthPromptCondition)
+})
+export type OpenCodeAuthPrompt = typeof OpenCodeAuthPrompt.Type
+
+export const OpenCodeAuthMethod = Schema.Struct({
+  id: Schema.String,
+  type: Schema.Literals(["api", "oauth"]),
+  label: Schema.String,
+  prompts: Schema.Array(OpenCodeAuthPrompt)
+})
+export type OpenCodeAuthMethod = typeof OpenCodeAuthMethod.Type
+
+export const OpenCodeAuthProvider = Schema.Struct({
+  id: Schema.String,
+  name: Schema.String,
+  methods: Schema.Array(OpenCodeAuthMethod),
+  credentialType: Schema.optional(Schema.Literals(["api", "oauth", "wellknown"]))
+})
+export type OpenCodeAuthProvider = typeof OpenCodeAuthProvider.Type
+
+export const OpenCodeAuthAuthorization = Schema.Struct({
+  url: Schema.String,
+  method: Schema.Literals(["auto", "code"]),
+  instructions: Schema.String
+})
+export type OpenCodeAuthAuthorization = typeof OpenCodeAuthAuthorization.Type
+
+export const OpenCodeAuthFlow = Schema.Struct({
+  id: Schema.String,
+  accountId: Schema.String,
+  providerId: Schema.String,
+  state: Schema.Literals(["running", "waiting", "complete", "error"]),
+  authorization: Schema.optional(OpenCodeAuthAuthorization),
+  error: Schema.optional(Schema.String)
+})
+export type OpenCodeAuthFlow = typeof OpenCodeAuthFlow.Type
+
+export const StartOpenCodeAuthRequest = Schema.Struct({
+  methodId: Schema.String,
+  inputs: Schema.optional(Schema.Record(Schema.String, Schema.String)),
+  apiKey: Schema.optional(Schema.String)
+})
+export type StartOpenCodeAuthRequest = typeof StartOpenCodeAuthRequest.Type
+
+export const AnswerOpenCodeAuthRequest = Schema.Struct({ code: Schema.String })
+export type AnswerOpenCodeAuthRequest = typeof AnswerOpenCodeAuthRequest.Type
+
 export const UpdateHarnessRequest = Schema.Struct({
   enabled: Schema.Boolean
 })

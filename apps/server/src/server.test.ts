@@ -1363,7 +1363,11 @@ describe("@codevisor/server", () => {
       ["POST", "/v1/harnesses/codex/accounts/account-1/login"],
       ["POST", "/v1/harnesses/codex/accounts/account-1/auth/probe"],
       ["PATCH", "/v1/harnesses/codex/accounts/account-1"],
-      ["GET", "/v1/harnesses/codex/accounts"]
+      ["GET", "/v1/harnesses/codex/accounts"],
+      ["GET", "/v1/harnesses/opencode/accounts/account-1/providers"],
+      ["POST", "/v1/harnesses/opencode/accounts/account-1/providers/openai/login"],
+      ["GET", "/v1/harnesses/opencode/auth-flows/flow-open"],
+      ["POST", "/v1/harnesses/opencode/auth-flows/flow-open/answer"]
     ]
     for (const [method, path] of unavailableRequests) {
       expect(
@@ -1440,6 +1444,39 @@ describe("@codevisor/server", () => {
       answerPiLogin: vi.fn(async () => ({ ...piFlow, state: "complete" as const })),
       cancelPiLogin: vi.fn(() => undefined),
       logoutPiProvider: vi.fn(async () => undefined),
+      openCodeProviders: vi.fn(async () => [
+        {
+          id: "openai",
+          name: "OpenAI",
+          methods: [{ id: "0", type: "oauth" as const, label: "ChatGPT", prompts: [] }],
+          credentialType: "oauth" as const
+        }
+      ]),
+      beginOpenCodeLogin: vi.fn(async () => ({
+        id: "flow-open",
+        accountId: account.id,
+        providerId: "openai",
+        state: "waiting" as const,
+        authorization: {
+          url: "https://example.test/login",
+          method: "code" as const,
+          instructions: "Sign in"
+        }
+      })),
+      openCodeLoginFlow: vi.fn(() => ({
+        id: "flow-open",
+        accountId: account.id,
+        providerId: "openai",
+        state: "waiting" as const
+      })),
+      answerOpenCodeLogin: vi.fn(async () => ({
+        id: "flow-open",
+        accountId: account.id,
+        providerId: "openai",
+        state: "complete" as const
+      })),
+      cancelOpenCodeLogin: vi.fn(() => undefined),
+      logoutOpenCodeProvider: vi.fn(async () => undefined),
       subscribe: () => () => undefined
     }
     const server = await startWithApp({ ...services, auth })
@@ -1579,6 +1616,57 @@ describe("@codevisor/server", () => {
       ).toBe(action === "login" ? 201 : 200)
     }
     expect(auth.beginLogin).toHaveBeenCalledWith("account-1", "apiKey", "sk-test-secret")
+    expect(
+      (await jsonRequest(server, "/v1/harnesses/opencode/accounts/account-1/providers")).status
+    ).toBe(200)
+    expect(
+      (
+        await jsonRequest(
+          server,
+          "/v1/harnesses/opencode/accounts/account-1/providers/openai/login",
+          {
+            method: "POST",
+            body: JSON.stringify({
+              methodId: "0",
+              inputs: { plan: "plus" }
+            })
+          }
+        )
+      ).status
+    ).toBe(201)
+    expect(auth.beginOpenCodeLogin).toHaveBeenCalledWith(
+      "account-1",
+      "openai",
+      "0",
+      { plan: "plus" },
+      undefined
+    )
+    expect((await jsonRequest(server, "/v1/harnesses/opencode/auth-flows/flow-open")).status).toBe(
+      200
+    )
+    expect(
+      (
+        await jsonRequest(server, "/v1/harnesses/opencode/auth-flows/flow-open/answer", {
+          method: "POST",
+          body: JSON.stringify({ code: "authorization-code" })
+        })
+      ).status
+    ).toBe(200)
+    expect(auth.answerOpenCodeLogin).toHaveBeenCalledWith("flow-open", "authorization-code")
+    expect(
+      (
+        await jsonRequest(server, "/v1/harnesses/opencode/accounts/account-1/providers/openai", {
+          method: "DELETE"
+        })
+      ).status
+    ).toBe(204)
+    expect(
+      (
+        await jsonRequest(server, "/v1/harnesses/opencode/auth-flows/flow-open", {
+          method: "DELETE"
+        })
+      ).status
+    ).toBe(204)
     expect(
       (
         await jsonRequest(server, "/v1/harnesses/codex/accounts/account-1/login/flow-1", {

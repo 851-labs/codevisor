@@ -12,6 +12,8 @@ import type {
   HarnessAuth,
   HarnessAuthFlow,
   HarnessAuthMethod,
+  OpenCodeAuthFlow,
+  OpenCodeAuthProvider,
   PiAuthMethod,
   PiAuthProvider,
   PiAuthProviderFlow
@@ -30,6 +32,7 @@ import { join } from "node:path"
 import { promisify } from "node:util"
 import { Effect } from "effect"
 import { makePiAuthManager } from "./pi-auth.js"
+import { makeOpenCodeAuthManager, openCodeAuthPath } from "./opencode-auth.js"
 
 const execFileAsync = promisify(execFile)
 const AUTH_CACHE_MS = 30_000
@@ -87,6 +90,18 @@ export interface HarnessAuthManager {
   readonly answerPiLogin?: (flowId: string, value: string) => Promise<PiAuthProviderFlow>
   readonly cancelPiLogin?: (flowId: string) => void
   readonly logoutPiProvider?: (providerId: string) => Promise<void>
+  readonly openCodeProviders?: (accountId: string) => Promise<ReadonlyArray<OpenCodeAuthProvider>>
+  readonly beginOpenCodeLogin?: (
+    accountId: string,
+    providerId: string,
+    methodId: string,
+    inputs?: Readonly<Record<string, string>>,
+    apiKey?: string
+  ) => Promise<OpenCodeAuthFlow>
+  readonly openCodeLoginFlow?: (flowId: string) => OpenCodeAuthFlow
+  readonly answerOpenCodeLogin?: (flowId: string, code: string) => Promise<OpenCodeAuthFlow>
+  readonly cancelOpenCodeLogin?: (flowId: string) => void
+  readonly logoutOpenCodeProvider?: (accountId: string, providerId: string) => Promise<void>
   readonly subscribe: (listener: (event: HarnessAuthEvent) => void) => () => void
 }
 
@@ -171,6 +186,12 @@ export const makeHarnessAuthManager = (config: HarnessAuthManagerConfig): Harnes
     const env: Record<string, string> = {}
     if (path !== undefined && account.harnessId === "codex") env.CODEX_HOME = path
     if (path !== undefined && account.harnessId === "claude-code") env.CLAUDE_CONFIG_DIR = path
+    if (path !== undefined && account.harnessId === "opencode") {
+      env.XDG_DATA_HOME = join(path, "data")
+      env.XDG_CONFIG_HOME = join(path, "config")
+      env.XDG_STATE_HOME = join(path, "state")
+      env.XDG_CACHE_HOME = join(path, "cache")
+    }
     const apiKey = await storedApiKey(account)
     if (apiKey !== undefined) {
       if (account.harnessId === "codex") env.OPENAI_API_KEY = apiKey
@@ -200,8 +221,26 @@ export const makeHarnessAuthManager = (config: HarnessAuthManagerConfig): Harnes
     if (account.profileKind === "managed" && account.harnessId === "claude-code") {
       for (const name of CLAUDE_AUTH_OVERRIDE_ENV_VARS) delete base[name]
     }
+    if (account.profileKind === "managed" && account.harnessId === "opencode") {
+      delete base.OPENCODE_AUTH_CONTENT
+    }
     return { ...base, ...accountContext.env }
   }
+
+  const openCodeAuth = makeOpenCodeAuthManager({
+    profile: async (accountId) => {
+      const account = await run(config.db.getHarnessAccount(accountId))
+      if (account === undefined) throw new Error(`Harness account not found: ${accountId}`)
+      if (account.harnessId !== "opencode") throw new Error("Account is not an OpenCode profile")
+      const env = await accountEnv(account)
+      return {
+        command: await executable("opencode"),
+        cwd: profilePath(account) ?? env.HOME ?? process.cwd(),
+        env,
+        authPath: openCodeAuthPath(env)
+      }
+    }
+  })
 
   const persistProbe = async (
     account: HarnessAccountRecord,
@@ -360,9 +399,18 @@ export const makeHarnessAuthManager = (config: HarnessAuthManagerConfig): Harnes
       config.db.saveHarnessAccount({
         harnessId: harness.id,
         profileKind: "default",
-        label: harness.id === "pi" ? "Pi configuration" : `Existing ${harness.name} account`,
+        label:
+          harness.id === "pi"
+            ? "Pi configuration"
+            : harness.id === "opencode"
+              ? "Existing OpenCode profile"
+              : `Existing ${harness.name} account`,
         authState: "checking",
-        canLogin: harness.id === "codex" || harness.id === "claude-code" || harness.id === "pi",
+        canLogin:
+          harness.id === "codex" ||
+          harness.id === "claude-code" ||
+          harness.id === "pi" ||
+          harness.id === "opencode",
         canLogout: false
       })
     )
@@ -419,7 +467,8 @@ export const makeHarnessAuthManager = (config: HarnessAuthManagerConfig): Harnes
       ...(active === undefined ? {} : { activeAccountId: active.id }),
       accounts,
       loginMethods: loginMethods(harnessId),
-      supportsMultipleAccounts: harnessId === "codex" || harnessId === "claude-code"
+      supportsMultipleAccounts:
+        harnessId === "codex" || harnessId === "claude-code" || harnessId === "opencode"
     }
   }
 
@@ -474,7 +523,7 @@ export const makeHarnessAuthManager = (config: HarnessAuthManagerConfig): Harnes
     )
 
   const createAccount = async (harnessId: string, label?: string): Promise<HarnessAccount> => {
-    if (harnessId !== "codex" && harnessId !== "claude-code") {
+    if (harnessId !== "codex" && harnessId !== "claude-code" && harnessId !== "opencode") {
       throw new Error("This harness does not support multiple managed accounts")
     }
     definition(harnessId)
@@ -488,7 +537,11 @@ export const makeHarnessAuthManager = (config: HarnessAuthManagerConfig): Harnes
         harnessId,
         profileKind: "managed",
         profileKey: id,
-        label: label?.trim() || `Account ${id.slice(0, 6)}`,
+        label:
+          label?.trim() ||
+          (harnessId === "opencode"
+            ? `OpenCode profile ${id.slice(0, 6)}`
+            : `Account ${id.slice(0, 6)}`),
         authState: "unauthenticated",
         canLogin: true,
         canLogout: false
@@ -892,6 +945,12 @@ export const makeHarnessAuthManager = (config: HarnessAuthManagerConfig): Harnes
     answerPiLogin: piAuth.answer,
     cancelPiLogin: piAuth.cancel,
     logoutPiProvider: piAuth.logout,
+    openCodeProviders: openCodeAuth.providers,
+    beginOpenCodeLogin: openCodeAuth.beginLogin,
+    openCodeLoginFlow: openCodeAuth.flow,
+    answerOpenCodeLogin: openCodeAuth.answer,
+    cancelOpenCodeLogin: openCodeAuth.cancel,
+    logoutOpenCodeProvider: openCodeAuth.logout,
     subscribe: (listener) => {
       listeners.add(listener)
       return () => listeners.delete(listener)

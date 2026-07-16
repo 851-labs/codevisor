@@ -37,6 +37,7 @@ import {
   CancelRequest,
   PromptRequest,
   AnswerPiAuthRequest as AnswerPiAuthRequestSchema,
+  AnswerOpenCodeAuthRequest as AnswerOpenCodeAuthRequestSchema,
   SetConfigRequest,
   SetGoalRequest,
   SetModeRequest,
@@ -45,6 +46,7 @@ import {
   TerminalCreateRequest,
   StartHarnessLoginRequest as StartHarnessLoginRequestSchema,
   StartPiAuthRequest as StartPiAuthRequestSchema,
+  StartOpenCodeAuthRequest as StartOpenCodeAuthRequestSchema,
   UpdateHarnessAccountRequest as UpdateHarnessAccountRequestSchema,
   UpdateQueuedPromptRequest,
   UpdateHarnessRequest as UpdateHarnessRequestSchema,
@@ -1168,6 +1170,89 @@ const routeHarnesses = async (
   response: ServerResponse,
   url: URL
 ): Promise<boolean> => {
+  const openCodeProviders = matchRouteParams(
+    url.pathname,
+    "/v1/harnesses/opencode/accounts/:accountId/providers"
+  )
+  if (openCodeProviders !== undefined && request.method === "GET") {
+    if (services.auth?.openCodeProviders === undefined)
+      throw new HttpFailure(501, "Harness authentication unavailable")
+    writeJson(response, 200, await services.auth.openCodeProviders(openCodeProviders.accountId!))
+    return true
+  }
+
+  const openCodeProviderLogin = matchRouteParams(
+    url.pathname,
+    "/v1/harnesses/opencode/accounts/:accountId/providers/:providerId/login"
+  )
+  if (openCodeProviderLogin !== undefined && request.method === "POST") {
+    if (services.auth?.beginOpenCodeLogin === undefined)
+      throw new HttpFailure(501, "Harness authentication unavailable")
+    const payload = await readSchema(request, StartOpenCodeAuthRequestSchema)
+    writeJson(
+      response,
+      201,
+      await services.auth.beginOpenCodeLogin(
+        openCodeProviderLogin.accountId!,
+        openCodeProviderLogin.providerId!,
+        payload.methodId,
+        payload.inputs,
+        payload.apiKey
+      )
+    )
+    return true
+  }
+
+  const openCodeProvider = matchRouteParams(
+    url.pathname,
+    "/v1/harnesses/opencode/accounts/:accountId/providers/:providerId"
+  )
+  if (openCodeProvider !== undefined && request.method === "DELETE") {
+    if (services.auth?.logoutOpenCodeProvider === undefined)
+      throw new HttpFailure(501, "Harness authentication unavailable")
+    await services.auth.logoutOpenCodeProvider(
+      openCodeProvider.accountId!,
+      openCodeProvider.providerId!
+    )
+    writeJson(response, 204, undefined)
+    return true
+  }
+
+  const openCodeFlowAnswer = matchRouteParams(
+    url.pathname,
+    "/v1/harnesses/opencode/auth-flows/:flowId/answer"
+  )
+  if (openCodeFlowAnswer !== undefined && request.method === "POST") {
+    if (services.auth?.answerOpenCodeLogin === undefined)
+      throw new HttpFailure(501, "Harness authentication unavailable")
+    const payload = await readSchema(request, AnswerOpenCodeAuthRequestSchema)
+    writeJson(
+      response,
+      200,
+      await services.auth.answerOpenCodeLogin(openCodeFlowAnswer.flowId!, payload.code)
+    )
+    return true
+  }
+
+  const openCodeFlow = matchRouteParams(url.pathname, "/v1/harnesses/opencode/auth-flows/:flowId")
+  if (openCodeFlow !== undefined) {
+    if (
+      services.auth?.openCodeLoginFlow === undefined ||
+      services.auth.cancelOpenCodeLogin === undefined
+    ) {
+      throw new HttpFailure(501, "Harness authentication unavailable")
+    }
+    if (request.method === "GET") {
+      writeJson(response, 200, services.auth.openCodeLoginFlow(openCodeFlow.flowId!))
+      return true
+    }
+    if (request.method === "DELETE") {
+      services.auth.cancelOpenCodeLogin(openCodeFlow.flowId!)
+      writeJson(response, 204, undefined)
+      return true
+    }
+  }
+
   if (url.pathname === "/v1/harnesses/pi/providers" && request.method === "GET") {
     if (services.auth?.piProviders === undefined)
       throw new HttpFailure(501, "Harness authentication unavailable")

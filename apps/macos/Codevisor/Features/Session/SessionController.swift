@@ -1767,6 +1767,10 @@ final class SessionController {
         harnesses = available
         for capability in capabilities {
             configOptionsByHarness[capability.harness.id] = capability.configOptions
+            if let model,
+               (connectedHarnessId ?? selectedHarnessId) == capability.harness.id {
+                model.replaceConfigOptions(capability.configOptions)
+            }
             if let modes = capability.modes {
                 modeStateByHarness[capability.harness.id] = modes
             }

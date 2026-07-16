@@ -323,6 +323,13 @@ public final class SessionModel {
         configOptions.filter { $0.category == category }
     }
 
+    /// Replaces the draft composer's options with a freshly inspected harness
+    /// snapshot. Authentication and profile changes can alter the models a
+    /// provider exposes before the first prompt creates a runtime session.
+    public func replaceConfigOptions(_ options: [SessionConfigOption]) {
+        configOptions = options
+    }
+
     /// Sets a config option's value and applies the agent's updated option set.
     @discardableResult
     public func setConfigOption(configId: String, value: String) async -> Bool {

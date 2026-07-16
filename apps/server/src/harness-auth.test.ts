@@ -153,3 +153,48 @@ describe("harness authentication refresh", () => {
     })
   })
 })
+
+describe("OpenCode profile authentication", () => {
+  it("creates managed profiles with isolated XDG directories", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "codevisor-opencode-profile-"))
+    directories.push(directory)
+    const db = await run(
+      makeDatabase({ filename: join(directory, "codevisor.sqlite"), serverId: "test" })
+    )
+    databases.push(db)
+    const probeHarnessAuth = vi.fn(() =>
+      Effect.succeed({
+        state: "authenticated" as const,
+        methods: [],
+        canLogout: false
+      })
+    )
+    const manager = makeHarnessAuthManager({
+      agents: { probeHarnessAuth } as unknown as AgentRuntimeService,
+      dataDir: directory,
+      db,
+      terminal: {} as TerminalManagerService,
+      resolveEnv: () =>
+        Promise.resolve({ HOME: directory, OPENCODE_AUTH_CONTENT: '{"openai":{"type":"api"}}' })
+    })
+
+    const account = await manager.createAccount("opencode", "Work")
+    const context = await manager.accountContext(account.id)
+    const profile = join(directory, "harness-profiles", "opencode", account.id)
+    expect(context).toMatchObject({
+      id: account.id,
+      profileKind: "managed",
+      profilePath: profile,
+      env: {
+        XDG_DATA_HOME: join(profile, "data"),
+        XDG_CONFIG_HOME: join(profile, "config"),
+        XDG_STATE_HOME: join(profile, "state"),
+        XDG_CACHE_HOME: join(profile, "cache")
+      }
+    })
+    expect(probeHarnessAuth).toHaveBeenCalledWith(
+      "opencode",
+      expect.objectContaining({ id: account.id, profilePath: profile })
+    )
+  })
+})

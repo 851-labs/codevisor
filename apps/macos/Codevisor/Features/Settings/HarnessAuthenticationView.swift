@@ -24,6 +24,8 @@ struct HarnessAuthenticationView: View {
     var body: some View {
         if harness.id == "pi" {
             PiProviderAuthenticationView(harness: harness, onChange: onChange)
+        } else if harness.id == "opencode" {
+            OpenCodeProviderAuthenticationView(harness: harness, onChange: onChange)
         } else {
             standardAuthentication
         }

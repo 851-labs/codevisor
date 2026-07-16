@@ -113,6 +113,12 @@ public protocol CodevisorServerClienting: Sendable {
     func answerPiAuthFlow(id: String, value: String) async throws -> ServerPiAuthFlow
     func cancelPiAuthFlow(id: String) async throws
     func removePiAuthProvider(id: String) async throws
+    func listOpenCodeAuthProviders(accountId: String) async throws -> [ServerOpenCodeAuthProvider]
+    func startOpenCodeAuth(accountId: String, providerId: String, methodId: String, inputs: [String: String]?, apiKey: String?) async throws -> ServerOpenCodeAuthFlow
+    func openCodeAuthFlow(id: String) async throws -> ServerOpenCodeAuthFlow
+    func answerOpenCodeAuthFlow(id: String, code: String) async throws -> ServerOpenCodeAuthFlow
+    func cancelOpenCodeAuthFlow(id: String) async throws
+    func removeOpenCodeAuthProvider(accountId: String, providerId: String) async throws
     func listMcpServers() async throws -> [ServerMcpServer]
     func detectMcpAuth(url: String) async throws -> ServerMcpAuthDetection
     func createMcpServer(_ request: CreateMcpServerBody) async throws -> ServerMcpServer
@@ -264,6 +270,18 @@ public extension CodevisorServerClienting {
     }
     func cancelPiAuthFlow(id: String) async throws {}
     func removePiAuthProvider(id: String) async throws {}
+    func listOpenCodeAuthProviders(accountId: String) async throws -> [ServerOpenCodeAuthProvider] { [] }
+    func startOpenCodeAuth(accountId: String, providerId: String, methodId: String, inputs: [String: String]?, apiKey: String?) async throws -> ServerOpenCodeAuthFlow {
+        throw CodevisorServerClientError.invalidResponse
+    }
+    func openCodeAuthFlow(id: String) async throws -> ServerOpenCodeAuthFlow {
+        throw CodevisorServerClientError.invalidResponse
+    }
+    func answerOpenCodeAuthFlow(id: String, code: String) async throws -> ServerOpenCodeAuthFlow {
+        throw CodevisorServerClientError.invalidResponse
+    }
+    func cancelOpenCodeAuthFlow(id: String) async throws {}
+    func removeOpenCodeAuthProvider(accountId: String, providerId: String) async throws {}
     func listMcpServers() async throws -> [ServerMcpServer] { [] }
     func detectMcpAuth(url: String) async throws -> ServerMcpAuthDetection {
         .init(authType: "none", detail: "No authorization challenge detected")
@@ -751,6 +769,58 @@ public struct ServerPiAuthFlow: Codable, Equatable, Identifiable, Sendable {
     public var state: String
     public var prompt: ServerPiAuthPrompt?
     public var event: ServerPiAuthEvent?
+    public var error: String?
+}
+
+public struct ServerOpenCodeAuthPromptCondition: Codable, Equatable, Sendable {
+    public var key: String
+    public var op: String
+    public var value: String
+}
+
+public struct ServerOpenCodeAuthPromptOption: Codable, Equatable, Identifiable, Sendable {
+    public var value: String
+    public var label: String
+    public var hint: String?
+    public var id: String { value }
+}
+
+public struct ServerOpenCodeAuthPrompt: Codable, Equatable, Identifiable, Sendable {
+    public var type: String
+    public var key: String
+    public var message: String
+    public var placeholder: String?
+    public var options: [ServerOpenCodeAuthPromptOption]
+    public var when: ServerOpenCodeAuthPromptCondition?
+    public var id: String { key }
+}
+
+public struct ServerOpenCodeAuthMethod: Codable, Equatable, Identifiable, Sendable {
+    public var id: String
+    public var type: String
+    public var label: String
+    public var prompts: [ServerOpenCodeAuthPrompt]
+}
+
+public struct ServerOpenCodeAuthProvider: Codable, Equatable, Identifiable, Sendable {
+    public var id: String
+    public var name: String
+    public var methods: [ServerOpenCodeAuthMethod]
+    public var credentialType: String?
+}
+
+public struct ServerOpenCodeAuthAuthorization: Codable, Equatable, Sendable {
+    public var url: String
+    public var method: String
+    public var instructions: String
+}
+
+public struct ServerOpenCodeAuthFlow: Codable, Equatable, Identifiable, Sendable {
+    public var id: String
+    public var accountId: String
+    public var providerId: String
+    public var state: String
+    public var authorization: ServerOpenCodeAuthAuthorization?
     public var error: String?
 }
 
@@ -1308,6 +1378,41 @@ public final class CodevisorServerClient: CodevisorServerClienting, @unchecked S
         try await sendNoResponse("/v1/harnesses/pi/providers/\(pathComponent(id))", method: "DELETE")
     }
 
+    public func listOpenCodeAuthProviders(accountId: String) async throws -> [ServerOpenCodeAuthProvider] {
+        try await get(openCodeProvidersPath(accountId))
+    }
+
+    public func startOpenCodeAuth(accountId: String, providerId: String, methodId: String, inputs: [String: String]?, apiKey: String?) async throws -> ServerOpenCodeAuthFlow {
+        try await send(
+            "\(openCodeProvidersPath(accountId))/\(pathComponent(providerId))/login",
+            method: "POST",
+            body: OpenCodeAuthStartBody(methodId: methodId, inputs: inputs, apiKey: apiKey)
+        )
+    }
+
+    public func openCodeAuthFlow(id: String) async throws -> ServerOpenCodeAuthFlow {
+        try await get("/v1/harnesses/opencode/auth-flows/\(pathComponent(id))")
+    }
+
+    public func answerOpenCodeAuthFlow(id: String, code: String) async throws -> ServerOpenCodeAuthFlow {
+        try await send(
+            "/v1/harnesses/opencode/auth-flows/\(pathComponent(id))/answer",
+            method: "POST",
+            body: OpenCodeAuthAnswerBody(code: code)
+        )
+    }
+
+    public func cancelOpenCodeAuthFlow(id: String) async throws {
+        try await sendNoResponse("/v1/harnesses/opencode/auth-flows/\(pathComponent(id))", method: "DELETE")
+    }
+
+    public func removeOpenCodeAuthProvider(accountId: String, providerId: String) async throws {
+        try await sendNoResponse(
+            "\(openCodeProvidersPath(accountId))/\(pathComponent(providerId))",
+            method: "DELETE"
+        )
+    }
+
     public func listMcpServers() async throws -> [ServerMcpServer] {
         try await get("/v1/mcps")
     }
@@ -1374,6 +1479,10 @@ public final class CodevisorServerClient: CodevisorServerClienting, @unchecked S
 
     private func harnessAccountPath(_ harnessId: String, _ accountId: String) -> String {
         "\(harnessAccountsPath(harnessId))/\(pathComponent(accountId))"
+    }
+
+    private func openCodeProvidersPath(_ accountId: String) -> String {
+        "/v1/harnesses/opencode/accounts/\(pathComponent(accountId))/providers"
     }
 
     private func pathComponent(_ value: String) -> String {
@@ -2028,6 +2137,12 @@ private struct HarnessLoginBody: Encodable {
 }
 private struct PiAuthStartBody: Encodable { var method: String }
 private struct PiAuthAnswerBody: Encodable { var value: String }
+private struct OpenCodeAuthStartBody: Encodable {
+    var methodId: String
+    var inputs: [String: String]?
+    var apiKey: String?
+}
+private struct OpenCodeAuthAnswerBody: Encodable { var code: String }
 
 private struct CreateWorktreeBody: Encodable {
     var id: String?
