@@ -20,7 +20,10 @@ import type {
 import { randomUUID } from "node:crypto"
 import { spawn } from "node:child_process"
 import type { ChildProcessWithoutNullStreams } from "node:child_process"
+import { readFile } from "node:fs/promises"
+import { homedir } from "node:os"
 import { Readable, Writable } from "node:stream"
+import { join } from "node:path"
 import { pathToFileURL } from "node:url"
 import { Effect } from "effect"
 import type { BackgroundTerminalIntegration } from "../background-terminals.js"
@@ -77,11 +80,14 @@ export interface AcpAgentConnection {
   readonly prompt: (
     sessionId: string,
     input: string | PromptInput
-  ) => Effect.Effect<{ readonly stopReason: string }, AgentRuntimeError>
+  ) => Effect.Effect<
+    { readonly stopReason: string; readonly stopDetail?: string },
+    AgentRuntimeError
+  >
   readonly cancel: (sessionId: string) => Effect.Effect<void, AgentRuntimeError>
   readonly setMode: (sessionId: string, modeId: string) => Effect.Effect<void, AgentRuntimeError>
-  /// Returns the agent's updated config options (raw ACP shape) so the caller
-  /// can broadcast them.
+  /// Returns the agent's updated config options in Codevisor's normalized
+  /// shape so the caller can broadcast them.
   readonly setConfigOption: (
     sessionId: string,
     configId: string,
@@ -245,7 +251,7 @@ export const makeAcpProvider = (
         )
         const result = yield* connection.prompt(sessionId, input)
         yield* adapterPromise("promptTurnEnd", () =>
-          emit(turnLifecycleEvent(sessionId, turnId, "ended", result.stopReason))
+          emit(turnLifecycleEvent(sessionId, turnId, "ended", result.stopReason, result.stopDetail))
         )
         return result
       }),
@@ -385,7 +391,8 @@ const turnLifecycleEvent = (
   sessionId: string,
   turnId: string,
   turnState: "started" | "ended",
-  stopReason?: string
+  stopReason?: string,
+  stopDetail?: string
 ): RuntimeEvent => ({
   kind: "session.updated",
   subjectId: sessionId,
@@ -393,7 +400,8 @@ const turnLifecycleEvent = (
     initiatedBy: "user",
     turnId,
     turnState,
-    ...(stopReason === undefined ? {} : { stopReason })
+    ...(stopReason === undefined ? {} : { stopReason }),
+    ...(stopDetail === undefined ? {} : { stopDetail })
   }
 })
 
@@ -423,6 +431,7 @@ export const makeStdioAcpConnector = (
       spawnFailure.catch(() => undefined)
       const stderr = captureStderr(child)
       const pendingQuestions = new Map<string, PendingAcpQuestion>()
+      const piStartupInfoBySession = new Map<string, string>()
       const safeEmit = (event: RuntimeEvent): void => {
         void emit(event).catch(() => undefined)
       }
@@ -436,6 +445,15 @@ export const makeStdioAcpConnector = (
             })
       const connection = createClientApp(
         (notification) => {
+          const startupInfo = piStartupInfoBySession.get(notification.sessionId)
+          if (
+            request.harnessId === "pi" &&
+            startupInfo !== undefined &&
+            isPiStartupInfoNotification(notification, startupInfo)
+          ) {
+            piStartupInfoBySession.delete(notification.sessionId)
+            return
+          }
           safeEmit(runtimeEventFromNotification(notification))
         },
         (params) => {
@@ -577,7 +595,11 @@ export const makeStdioAcpConnector = (
             ...(method.description == null ? {} : { description: method.description })
           })),
           canLogout: initialized?.agentCapabilities?.auth?.logout != null
-        }
+        },
+        request.harnessId === "pi" ? piStartupInfoBySession : undefined,
+        request.harnessId === "pi"
+          ? (sessionId) => readPiSessionError(sessionId, request.env.HOME ?? homedir())
+          : undefined
       )
     })
 })
@@ -687,13 +709,20 @@ const sdkConnection = (
   terminate: () => void = () => undefined,
   promptCapabilities: AcpPromptCapabilities = {},
   questions?: AcpQuestionControls,
-  auth: AcpAuthControls = { methods: [], canLogout: false }
+  auth: AcpAuthControls = { methods: [], canLogout: false },
+  piStartupInfoBySession?: Map<string, string>,
+  piSessionError?: (sessionId: string) => Promise<string | undefined>
 ): AcpAgentConnection => {
   connection.closed.catch(() => undefined)
 
   // Per-session model list from the ACP model-selection extension, cached so a
   // later `session/set_model` can rebuild the picker with the new current value.
   const modelStates = new Map<string, AcpModelState>()
+  // Some adapters (notably pi-acp) expose a native select option whose id is
+  // also `model`. That must go through standard ACP set_config_option; the
+  // optional session/set_model extension is only for agents without a native
+  // model option.
+  const nativeConfigIds = new Map<string, ReadonlySet<string>>()
 
   const mcpServers = (toolGateway: ToolGatewayConfig | undefined) =>
     toolGateway === undefined
@@ -782,6 +811,13 @@ const sdkConnection = (
           cwd,
           mcpServers: mcpServers(toolGateway)
         })) as NewSessionResponse
+        if (piStartupInfoBySession !== undefined) {
+          const startupInfo = extractPiStartupInfo(response)
+          if (startupInfo !== undefined) {
+            piStartupInfoBySession.set(response.sessionId, startupInfo)
+          }
+        }
+        nativeConfigIds.set(response.sessionId, acpConfigOptionIds(response))
         const modelState = extractAcpModelState(response)
         if (modelState !== undefined) {
           modelStates.set(response.sessionId, modelState)
@@ -795,6 +831,7 @@ const sdkConnection = (
           mcpServers: mcpServers(toolGateway),
           sessionId
         })
+        nativeConfigIds.set(sessionId, acpConfigOptionIds(response))
         const modelState = extractAcpModelState(response)
         if (modelState !== undefined) {
           modelStates.set(sessionId, modelState)
@@ -807,7 +844,11 @@ const sdkConnection = (
           prompt: acpPrompt(normalizePromptInput(input), promptCapabilities),
           sessionId
         })
-        return { stopReason: response.stopReason }
+        const stopDetail = await piSessionError?.(sessionId)
+        return {
+          stopReason: response.stopReason,
+          ...(stopDetail === undefined ? {} : { stopDetail })
+        }
       }),
     cancel: (sessionId) =>
       adapterPromise("cancel", async () => {
@@ -825,7 +866,7 @@ const sdkConnection = (
         // The model picker is the ACP model-selection extension, applied via
         // `session/set_model`. Grok doesn't implement `session/set_config_option`
         // at all, so routing a model change through it would 404.
-        if (configId === acpModelConfigId) {
+        if (usesAcpModelSelectionExtension(configId, nativeConfigIds.get(sessionId))) {
           return applyAcpModelSelection(connection, modelStates, sessionId, value)
         }
         const response = await connection.agent.request(acp.methods.agent.session.setConfigOption, {
@@ -833,7 +874,7 @@ const sdkConnection = (
           sessionId,
           value
         })
-        return response.configOptions
+        return normalizeAcpConfigOptions(response.configOptions ?? [])
       }),
     close: runtimeEffect("close", () => {
       connection.close(new Error(stderr()))
@@ -1023,6 +1064,97 @@ export const runtimeEventFromNotification = (
   }
 }
 
+/// pi-acp includes Pi's human-readable startup prelude in `_meta` and then
+/// republishes that exact text as an agent message. It is useful in terminals,
+/// but in a native transcript it looks like the assistant spoke before the
+/// user. Keep the exact value so only that adapter-owned message is suppressed.
+export const extractPiStartupInfo = (response: unknown): string | undefined => {
+  if (typeof response !== "object" || response === null) return undefined
+  const meta = (response as { readonly _meta?: unknown })._meta
+  if (typeof meta !== "object" || meta === null) return undefined
+  const piAcp = (meta as { readonly piAcp?: unknown }).piAcp
+  if (typeof piAcp !== "object" || piAcp === null) return undefined
+  const startupInfo = (piAcp as { readonly startupInfo?: unknown }).startupInfo
+  return typeof startupInfo === "string" && startupInfo.length > 0 ? startupInfo : undefined
+}
+
+export const isPiStartupInfoNotification = (
+  notification: acp.SessionNotification,
+  startupInfo: string
+): boolean => {
+  const update = notification.update
+  return (
+    update.sessionUpdate === "agent_message_chunk" &&
+    update.content.type === "text" &&
+    update.content.text === startupInfo
+  )
+}
+
+export const piAssistantErrorFromSessionJsonl = (contents: string): string | undefined => {
+  const lines = contents.split("\n")
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    const line = lines[index]?.trim()
+    if (!line) continue
+    try {
+      const entry = JSON.parse(line) as {
+        readonly type?: unknown
+        readonly message?: {
+          readonly role?: unknown
+          readonly stopReason?: unknown
+          readonly errorMessage?: unknown
+        }
+      }
+      if (entry.type !== "message") continue
+      if (entry.message?.role !== "assistant" || entry.message.stopReason !== "error") {
+        return undefined
+      }
+      if (typeof entry.message.errorMessage !== "string") return undefined
+      return humanReadablePiError(entry.message.errorMessage)
+    } catch {
+      return undefined
+    }
+  }
+  return undefined
+}
+
+const humanReadablePiError = (message: string): string => {
+  const jsonStart = message.indexOf("{")
+  if (jsonStart >= 0) {
+    try {
+      const parsed = JSON.parse(message.slice(jsonStart)) as {
+        readonly error?: { readonly message?: unknown }
+      }
+      if (typeof parsed.error?.message === "string" && parsed.error.message.trim().length > 0) {
+        return parsed.error.message.trim()
+      }
+    } catch {
+      // Keep the provider's original text when it is not JSON-shaped.
+    }
+  }
+  return message.trim()
+}
+
+const readPiSessionError = async (
+  sessionId: string,
+  homeDirectory: string
+): Promise<string | undefined> => {
+  try {
+    const mapContents = await readFile(
+      join(homeDirectory, ".pi", "pi-acp", "session-map.json"),
+      "utf8"
+    )
+    const map = JSON.parse(mapContents) as {
+      readonly sessions?: Record<string, { readonly sessionFile?: unknown }>
+    }
+    const sessionFile = map.sessions?.[sessionId]?.sessionFile
+    if (typeof sessionFile !== "string" || sessionFile.length === 0) return undefined
+    return piAssistantErrorFromSessionJsonl(await readFile(sessionFile, "utf8"))
+  } catch {
+    // Recovery is best-effort until pi-acp forwards message_end errors itself.
+    return undefined
+  }
+}
+
 /// ACP adapters deliver diffs only at completion; attach the added/removed
 /// line counts so clients can render the +N/−N header without re-diffing.
 const withDiffStats = (update: { readonly content?: unknown }): Record<string, unknown> => {
@@ -1126,6 +1258,24 @@ export const extractAcpModelState = (response: unknown): AcpModelState | undefin
   return { availableModels, currentModelId }
 }
 
+export const acpConfigOptionIds = (response: unknown): ReadonlySet<string> => {
+  if (typeof response !== "object" || response === null) return new Set()
+  const options = (response as { readonly configOptions?: unknown }).configOptions
+  if (!Array.isArray(options)) return new Set()
+  return new Set(
+    options.flatMap((option) => {
+      if (typeof option !== "object" || option === null) return []
+      const id = (option as { readonly id?: unknown }).id
+      return typeof id === "string" ? [id] : []
+    })
+  )
+}
+
+export const usesAcpModelSelectionExtension = (
+  configId: string,
+  nativeConfigIds: ReadonlySet<string> | undefined
+): boolean => configId === acpModelConfigId && !nativeConfigIds?.has(acpModelConfigId)
+
 /// Synthesizes the Codevisor `category: "model"` picker option from the ACP model
 /// extension so clients render a model chip — mirroring the shape claude/codex
 /// build for their native model pickers.
@@ -1186,7 +1336,7 @@ const sessionMetadata = (
   response: NewSessionResponse,
   modelState: AcpModelState | undefined
 ): AgentSessionMetadata => {
-  const configOptions = normalizeConfigOptions(response.configOptions ?? [])
+  const configOptions = normalizeAcpConfigOptions(response.configOptions ?? [])
   // Append the synthesized model picker unless the adapter already reported a
   // native `category: "model"` option — don't double up.
   const withModel =
@@ -1236,7 +1386,7 @@ export const normalizeModeState = (state: AcpSessionModeState): SessionModeState
   })
 })
 
-const normalizeConfigOptions = (
+export const normalizeAcpConfigOptions = (
   options: ReadonlyArray<AcpSessionConfigOption>
 ): ReadonlyArray<SessionConfigOption> =>
   options.flatMap((option) => {
@@ -1254,30 +1404,37 @@ const normalizeConfigOptions = (
           ? {}
           : { category: option.category }),
         currentValue: option.currentValue,
-        options: normalizeSelectOptions(option.options)
+        options: normalizeSelectOptions(option.options, option.category)
       }
     ]
   })
 
 const normalizeSelectOptions = (
-  options: ReadonlyArray<AcpSessionConfigSelectOption> | ReadonlyArray<AcpSessionConfigSelectGroup>
+  options: ReadonlyArray<AcpSessionConfigSelectOption> | ReadonlyArray<AcpSessionConfigSelectGroup>,
+  category: string | null | undefined
 ): ReadonlyArray<SessionConfigSelectOption> | ReadonlyArray<SessionConfigSelectGroup> => {
   const first = options[0]
   if (first !== undefined && "group" in first) {
     return (options as ReadonlyArray<AcpSessionConfigSelectGroup>).map((group) => ({
       group: group.group,
       name: group.name,
-      options: group.options.map(normalizeSelectOption)
+      options: group.options.map((option) => normalizeSelectOption(option, category))
     }))
   }
-  return (options as ReadonlyArray<AcpSessionConfigSelectOption>).map(normalizeSelectOption)
+  return (options as ReadonlyArray<AcpSessionConfigSelectOption>).map((option) =>
+    normalizeSelectOption(option, category)
+  )
 }
 
 const normalizeSelectOption = (
-  option: AcpSessionConfigSelectOption
+  option: AcpSessionConfigSelectOption,
+  category: string | null | undefined
 ): SessionConfigSelectOption => ({
   value: option.value,
-  name: option.name,
+  name:
+    category === "thought_level"
+      ? option.name.replace(/^(?:Thinking|Reasoning):\s*/i, "")
+      : option.name,
   ...(option.description === undefined || option.description === null
     ? {}
     : { description: option.description })

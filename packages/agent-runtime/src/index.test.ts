@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest"
 import {
   AgentRuntime,
   AgentRuntimeError,
+  acpConfigOptionIds,
   acpModelConfigId,
   acpModelConfigOption,
   acpPermissionOutcome,
@@ -14,13 +15,18 @@ import {
   acpPrompt,
   applyAcpModelSelection,
   extractAcpModelState,
+  extractPiStartupInfo,
+  isPiStartupInfoNotification,
   harnessCatalog,
   locateExecutableOnPath,
   makeAgentRuntime,
+  normalizeAcpConfigOptions,
   normalizeModeState,
   normalizePromptInput,
+  piAssistantErrorFromSessionJsonl,
   runtimeEventFromNotification,
   toEventEnvelope,
+  usesAcpModelSelectionExtension,
   withAttachmentNotes,
   type AcpAgentConnection,
   type AcpConnector,
@@ -279,6 +285,9 @@ describe("@codevisor/agent-runtime", () => {
     expect(harnesses.find((harness) => harness.id === "claude-code")?.installHint).toContain(
       "claude.ai/install.sh"
     )
+    expect(harnesses.find((harness) => harness.id === "pi")?.installHint).toBe(
+      "npm install -g @earendil-works/pi-coding-agent"
+    )
     expect(harnesses.find((harness) => harness.id === "gemini")?.installHint).toBeUndefined()
   })
 
@@ -505,6 +514,29 @@ describe("@codevisor/agent-runtime", () => {
     expect(connector.connections[3]?.loaded).toEqual([["agent-existing", "/tmp/project"]])
     expect(previousLoadedConnection.closeCount).toBe(1)
     expect(connector.connections[4]?.loaded).toEqual([["agent-existing", "/tmp/other"]])
+  })
+
+  it("launches Pi through the pinned ACP adapter", async () => {
+    const connector = makeConnector()
+    const runtime = makeAgentRuntime({
+      connector,
+      env: { PATH: "/bin" },
+      executableExists: (name) => ["npx", "pi"].includes(name),
+      locateExecutable: (name) => `/bin/${name}`
+    })
+
+    const sessionId = await run(
+      runtime.createAgentSession("pi", "/tmp/pi-project", () => undefined)
+    )
+
+    expect(sessionId).toBe("agent-pi-1")
+    expect(connector.requests[0]).toMatchObject({
+      args: ["-y", "pi-acp@0.0.31"],
+      command: "/bin/npx",
+      cwd: "/tmp/pi-project",
+      harnessId: "pi"
+    })
+    await run(runtime.closeAgentSession(sessionId))
   })
 
   it("times out hung harness inspection and closes its connection", async () => {
@@ -1010,6 +1042,87 @@ describe("@codevisor/agent-runtime", () => {
     expect(plain.payload).not.toHaveProperty("diffStats")
   })
 
+  it("recognizes pi-acp startup info without matching ordinary agent output", () => {
+    const startupInfo = "pi v0.80.9\n\nSkills\n\n- /tmp/SKILL.md\n"
+    const response = {
+      _meta: { piAcp: { startupInfo } },
+      sessionId: "pi-session-1"
+    }
+    const startupNotification = {
+      sessionId: "pi-session-1",
+      update: {
+        content: { text: startupInfo, type: "text" },
+        sessionUpdate: "agent_message_chunk"
+      }
+    } as never
+    const ordinaryNotification = {
+      sessionId: "pi-session-1",
+      update: {
+        content: { text: "Here is the answer.", type: "text" },
+        sessionUpdate: "agent_message_chunk"
+      }
+    } as never
+
+    expect(extractPiStartupInfo(response)).toBe(startupInfo)
+    expect(isPiStartupInfoNotification(startupNotification, startupInfo)).toBe(true)
+    expect(isPiStartupInfoNotification(ordinaryNotification, startupInfo)).toBe(false)
+    expect(extractPiStartupInfo({ _meta: { piAcp: { startupInfo: null } } })).toBeUndefined()
+  })
+
+  it("recovers Pi provider errors that pi-acp reports as empty turns", () => {
+    const providerError = JSON.stringify({
+      type: "message",
+      message: {
+        role: "assistant",
+        content: [],
+        stopReason: "error",
+        errorMessage: '400 {"type":"error","error":{"message":"Add extra usage and try again."}}'
+      }
+    })
+    const successfulAssistant = JSON.stringify({
+      type: "message",
+      message: { role: "assistant", content: [{ type: "text", text: "Done" }], stopReason: "stop" }
+    })
+
+    expect(piAssistantErrorFromSessionJsonl(`{"type":"session"}\n${providerError}\n`)).toBe(
+      "Add extra usage and try again."
+    )
+    expect(
+      piAssistantErrorFromSessionJsonl(`{"type":"session"}\n${successfulAssistant}\n`)
+    ).toBeUndefined()
+    expect(
+      piAssistantErrorFromSessionJsonl('{"type":"message","message":{"role":"user"}}\n')
+    ).toBeUndefined()
+  })
+
+  it("removes redundant prefixes from ACP reasoning choices only", () => {
+    const options = normalizeAcpConfigOptions([
+      {
+        category: "thought_level",
+        currentValue: "low",
+        id: "thinking_level",
+        name: "Thinking",
+        options: [
+          { name: "Thinking: off", value: "off" },
+          { name: "Thinking: low", value: "low" },
+          { name: "Reasoning: high", value: "high" }
+        ],
+        type: "select"
+      },
+      {
+        category: "model",
+        currentValue: "thinking-model",
+        id: "model",
+        name: "Model",
+        options: [{ name: "Thinking: model", value: "thinking-model" }],
+        type: "select"
+      }
+    ] as never)
+
+    expect(options[0]?.options.map((option) => option.name)).toEqual(["off", "low", "high"])
+    expect(options[1]?.options.map((option) => option.name)).toEqual(["Thinking: model"])
+  })
+
   it("maps ACP permission requests onto questions and answers back onto option ids", () => {
     const params = {
       options: [
@@ -1092,6 +1205,21 @@ describe("@codevisor/agent-runtime", () => {
 })
 
 describe("acp model-selection extension", () => {
+  it("distinguishes a native model option from the optional model extension", () => {
+    expect(
+      acpConfigOptionIds({
+        configOptions: [
+          { id: "model", type: "select" },
+          { id: "thought_level", type: "select" }
+        ]
+      })
+    ).toEqual(new Set(["model", "thought_level"]))
+    expect(acpConfigOptionIds({ models: { currentModelId: "gpt" } })).toEqual(new Set())
+    expect(usesAcpModelSelectionExtension("model", new Set(["model"]))).toBe(false)
+    expect(usesAcpModelSelectionExtension("model", new Set(["thought_level"]))).toBe(true)
+    expect(usesAcpModelSelectionExtension("thought_level", undefined)).toBe(false)
+  })
+
   type ModelSetter = Parameters<typeof applyAcpModelSelection>[0]
   const fakeConnection = (
     request: (method: string, params: unknown) => Promise<unknown>

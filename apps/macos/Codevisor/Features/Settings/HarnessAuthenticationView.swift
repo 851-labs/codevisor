@@ -20,12 +20,21 @@ struct HarnessAuthenticationView: View {
     @State private var apiKey = ""
     @State private var authTerminalLifecycle = AuthTerminalLifecycle()
 
+    @ViewBuilder
     var body: some View {
+        if harness.id == "pi" {
+            PiProviderAuthenticationView(harness: harness, onChange: onChange)
+        } else {
+            standardAuthentication
+        }
+    }
+
+    private var standardAuthentication: some View {
         VStack(spacing: 0) {
             HStack {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("\(harness.name) Accounts").font(.title2).fontWeight(.semibold)
-                    Text("Choose the account Codevisor uses for new chats.")
+                    Text(authenticationTitle).font(.title2).fontWeight(.semibold)
+                    Text(authenticationSubtitle)
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
@@ -39,7 +48,7 @@ struct HarnessAuthenticationView: View {
 
             if let flow, flow.kind == "terminal", let terminalKey = flow.terminalAttachKey {
                 VStack(alignment: .leading, spacing: 10) {
-                    Text("Finish signing in below").font(.headline)
+                    Text(terminalTitle).font(.headline)
                     AuthTerminalView(
                         terminalKey: terminalKey,
                         machine: environment.machines.selectedMachine,
@@ -59,7 +68,7 @@ struct HarnessAuthenticationView: View {
                         }
                     }
 
-                    Section("Accounts") {
+                    Section(accountSectionTitle) {
                         ForEach(accounts) { account in accountRow(account) }
                         if harness.auth?.supportsMultipleAccounts == true {
                             Button {
@@ -176,7 +185,7 @@ struct HarnessAuthenticationView: View {
             }
             .settingsActionTint(theme)
         } else {
-            Button("Sign In") {
+            Button(methods.first?.name ?? "Sign In") {
                 if let method = methods.first {
                     selectLoginMethod(method, for: account)
                 } else {
@@ -190,11 +199,33 @@ struct HarnessAuthenticationView: View {
     private var authProgress: some View {
         HStack(spacing: 8) {
             ProgressView().controlSize(.small)
-            Text("Waiting for sign-in…").foregroundStyle(.secondary)
+            Text(harness.id == "pi" ? "Waiting for Pi configuration…" : "Waiting for sign-in…")
+                .foregroundStyle(.secondary)
             Spacer()
             Button("Cancel") { Task { await cancelFlow() } }
                 .settingsActionTint(theme)
         }
+    }
+
+    private var authenticationTitle: String {
+        harness.auth?.supportsMultipleAccounts == true ? "\(harness.name) Accounts" : "\(harness.name) Setup"
+    }
+
+    private var authenticationSubtitle: String {
+        if harness.id == "pi" {
+            return "Configure the model providers Pi can use for new chats."
+        }
+        return harness.auth?.supportsMultipleAccounts == true
+            ? "Choose the account Codevisor uses for new chats."
+            : "Configure the credentials Codevisor uses for new chats."
+    }
+
+    private var terminalTitle: String {
+        harness.id == "pi" ? "Configure Pi below" : "Finish signing in below"
+    }
+
+    private var accountSectionTitle: String {
+        harness.auth?.supportsMultipleAccounts == true ? "Accounts" : "Configuration"
     }
 
     private func accountStatus(_ account: ServerHarnessAccount) -> String {

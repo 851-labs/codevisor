@@ -36,6 +36,7 @@ export * from "./diff-stats.js"
 export * from "./shell-env.js"
 export * from "./agent-sessions.js"
 export {
+  acpConfigOptionIds,
   acpModelConfigId,
   acpModelConfigOption,
   acpPermissionOutcome,
@@ -44,10 +45,15 @@ export {
   acpPrompt,
   applyAcpModelSelection,
   extractAcpModelState,
+  extractPiStartupInfo,
+  isPiStartupInfoNotification,
   makeAcpProvider,
+  normalizeAcpConfigOptions,
   normalizeModeState,
+  piAssistantErrorFromSessionJsonl,
   runtimeEventFromNotification,
-  stdioAcpConnector
+  stdioAcpConnector,
+  usesAcpModelSelectionExtension
 } from "./providers/acp.js"
 export type {
   AcpAgentConnection,
@@ -209,6 +215,18 @@ export const harnessCatalog: ReadonlyArray<HarnessDefinition> = [
     name: "Codex",
     provider: "codex",
     symbolName: "chevron.left.forwardslash.chevron.right"
+  },
+  // Pi exposes an RPC mode but not ACP directly. The pinned adapter bridges
+  // Codevisor's existing ACP provider to the user's installed `pi` binary, so
+  // Pi keeps ownership of its models, settings, extensions, and session store.
+  {
+    detectBinaries: ["pi"],
+    id: "pi",
+    installHint: "npm install -g @earendil-works/pi-coding-agent",
+    launch: { args: [], kind: "npx", packageName: "pi-acp@0.0.31" },
+    name: "Pi",
+    provider: "acp",
+    symbolName: "function"
   },
   npxHarness("gemini", "Gemini CLI", "diamond", ["gemini"], "@google/gemini-cli@0.49.0", ["--acp"]),
   executableHarness("opencode", "OpenCode", "curlybraces", ["opencode"], "opencode", ["acp"]),

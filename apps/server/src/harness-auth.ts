@@ -11,7 +11,10 @@ import type {
   HarnessAccount,
   HarnessAuth,
   HarnessAuthFlow,
-  HarnessAuthMethod
+  HarnessAuthMethod,
+  PiAuthMethod,
+  PiAuthProvider,
+  PiAuthProviderFlow
 } from "@codevisor/api"
 import type {
   HarnessAccountRecord,
@@ -26,6 +29,7 @@ import { randomUUID } from "node:crypto"
 import { join } from "node:path"
 import { promisify } from "node:util"
 import { Effect } from "effect"
+import { makePiAuthManager } from "./pi-auth.js"
 
 const execFileAsync = promisify(execFile)
 const AUTH_CACHE_MS = 30_000
@@ -51,6 +55,8 @@ export interface HarnessAuthManagerConfig {
   readonly agents: AgentRuntimeService
   readonly terminal: TerminalManagerService
   readonly preferDeviceCode?: boolean
+  /// Overrides the login-shell environment resolver in tests and embedded hosts.
+  readonly resolveEnv?: () => Promise<NodeJS.ProcessEnv>
 }
 
 export interface HarnessAuthManager {
@@ -75,6 +81,12 @@ export interface HarnessAuthManager {
   readonly accountContext: (accountId: string) => Promise<HarnessAccountContext>
   readonly activeAccountContext: (harnessId: string) => Promise<HarnessAccountContext | undefined>
   readonly markAccountExpired: (accountId: string, detail?: string) => Promise<void>
+  readonly piProviders?: () => Promise<ReadonlyArray<PiAuthProvider>>
+  readonly beginPiLogin?: (providerId: string, method: PiAuthMethod) => Promise<PiAuthProviderFlow>
+  readonly piLoginFlow?: (flowId: string) => PiAuthProviderFlow
+  readonly answerPiLogin?: (flowId: string, value: string) => Promise<PiAuthProviderFlow>
+  readonly cancelPiLogin?: (flowId: string) => void
+  readonly logoutPiProvider?: (providerId: string) => Promise<void>
   readonly subscribe: (listener: (event: HarnessAuthEvent) => void) => () => void
 }
 
@@ -87,6 +99,7 @@ interface CodexLoginEntry {
 interface TerminalLoginEntry {
   readonly accountId: string
   readonly terminalId: string
+  readonly closeOnSuccess: boolean
 }
 
 const run = <A>(effect: Effect.Effect<A, unknown>): Promise<A> => Effect.runPromise(effect)
@@ -104,11 +117,12 @@ export const makeHarnessAuthManager = (config: HarnessAuthManagerConfig): Harnes
   }
 
   const environment = (): Promise<NodeJS.ProcessEnv> => {
-    environmentPromise ??= resolveShellEnv().finally(() => {
+    environmentPromise ??= (config.resolveEnv?.() ?? resolveShellEnv()).finally(() => {
       environmentPromise = undefined
     })
     return environmentPromise
   }
+  const piAuth = makePiAuthManager({ resolveEnv: environment })
 
   const publicAccount = (record: HarnessAccountRecord): HarnessAccount => {
     const {
@@ -346,9 +360,9 @@ export const makeHarnessAuthManager = (config: HarnessAuthManagerConfig): Harnes
       config.db.saveHarnessAccount({
         harnessId: harness.id,
         profileKind: "default",
-        label: `Existing ${harness.name} account`,
+        label: harness.id === "pi" ? "Pi configuration" : `Existing ${harness.name} account`,
         authState: "checking",
-        canLogin: harness.id === "codex" || harness.id === "claude-code",
+        canLogin: harness.id === "codex" || harness.id === "claude-code" || harness.id === "pi",
         canLogout: false
       })
     )
@@ -393,6 +407,7 @@ export const makeHarnessAuthManager = (config: HarnessAuthManagerConfig): Harnes
         }
       ]
     }
+    if (harnessId === "pi") return []
     return acpLoginMethods.get(harnessId) ?? []
   }
 
@@ -599,15 +614,18 @@ export const makeHarnessAuthManager = (config: HarnessAuthManagerConfig): Harnes
     return flow
   }
 
-  const monitorClaudeLogin = (flowId: string, accountId: string): void => {
+  const monitorTerminalLogin = (flowId: string, accountId: string): void => {
     const startedAt = Date.now()
     const tick = async (): Promise<void> => {
       const entry = terminalLogins.get(flowId)
       if (entry === undefined) return
       try {
         const account = await probeAccount(accountId, true)
-        if (account.authState === "authenticated") {
+        if (account.authState === "authenticated" || account.authState === "notRequired") {
           terminalLogins.delete(flowId)
+          if (entry.closeOnSuccess) {
+            await run(config.terminal.closeTerminal(entry.terminalId)).catch(() => undefined)
+          }
           await run(config.db.setActiveHarnessAccount(account.harnessId, account.id))
           emit({
             kind: "harness.authFlow.updated",
@@ -617,7 +635,7 @@ export const makeHarnessAuthManager = (config: HarnessAuthManagerConfig): Harnes
           return
         }
       } catch {
-        // Keep polling while the interactive Claude login owns the terminal.
+        // Keep polling while the interactive harness setup owns the terminal.
       }
       if (Date.now() - startedAt >= 10 * 60_000) {
         terminalLogins.delete(flowId)
@@ -628,8 +646,12 @@ export const makeHarnessAuthManager = (config: HarnessAuthManagerConfig): Harnes
     setTimeout(() => void tick(), 1_000)
   }
 
-  const beginClaudeLogin = async (account: HarnessAccountRecord): Promise<HarnessAuthFlow> => {
-    const command = await executable("claude-code")
+  const beginTerminalLogin = async (
+    account: HarnessAccountRecord,
+    command: string,
+    args: ReadonlyArray<string>,
+    closeOnSuccess: boolean
+  ): Promise<HarnessAuthFlow> => {
     const flowId = randomUUID()
     const terminalKey = `auth:${flowId}`
     const path = profilePath(account) ?? (await environment()).HOME ?? process.cwd()
@@ -641,13 +663,17 @@ export const makeHarnessAuthManager = (config: HarnessAuthManagerConfig): Harnes
           cols: 90,
           rows: 28,
           shell: command,
-          args: ["auth", "login"]
+          args
         },
         await accountEnv(account)
       )
     )
-    terminalLogins.set(flowId, { accountId: account.id, terminalId: terminal.terminalId })
-    monitorClaudeLogin(flowId, account.id)
+    terminalLogins.set(flowId, {
+      accountId: account.id,
+      terminalId: terminal.terminalId,
+      closeOnSuccess
+    })
+    monitorTerminalLogin(flowId, account.id)
     const flow: HarnessAuthFlow = {
       id: flowId,
       accountId: account.id,
@@ -658,6 +684,9 @@ export const makeHarnessAuthManager = (config: HarnessAuthManagerConfig): Harnes
     emit({ kind: "harness.authFlow.updated", subjectId: account.harnessId, payload: flow })
     return flow
   }
+
+  const beginClaudeLogin = async (account: HarnessAccountRecord): Promise<HarnessAuthFlow> =>
+    beginTerminalLogin(account, await executable("claude-code"), ["auth", "login"], false)
 
   const runWithInput = async (
     command: string,
@@ -735,6 +764,9 @@ export const makeHarnessAuthManager = (config: HarnessAuthManagerConfig): Harnes
     if (methodId === "apiKey") return beginApiKeyLogin(account, apiKey)
     if (account.harnessId === "codex") return beginCodexLogin(account, methodId)
     if (account.harnessId === "claude-code") return beginClaudeLogin(account)
+    if (account.harnessId === "pi") {
+      throw new Error("Choose and authenticate a Pi provider in Codevisor settings")
+    }
     const methods = acpLoginMethods.get(account.harnessId) ?? []
     const selectedMethod = methodId ?? methods[0]?.id
     if (selectedMethod === undefined) {
@@ -841,6 +873,12 @@ export const makeHarnessAuthManager = (config: HarnessAuthManagerConfig): Harnes
         detail: detail ?? "Sign-in expired. Sign in again to continue."
       })
     },
+    piProviders: piAuth.providers,
+    beginPiLogin: piAuth.beginLogin,
+    piLoginFlow: piAuth.flow,
+    answerPiLogin: piAuth.answer,
+    cancelPiLogin: piAuth.cancel,
+    logoutPiProvider: piAuth.logout,
     subscribe: (listener) => {
       listeners.add(listener)
       return () => listeners.delete(listener)

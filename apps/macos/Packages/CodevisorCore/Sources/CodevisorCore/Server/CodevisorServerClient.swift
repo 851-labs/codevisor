@@ -106,6 +106,12 @@ public protocol CodevisorServerClienting: Sendable {
     func loginHarnessAccount(harnessId: String, accountId: String, methodId: String?, apiKey: String?) async throws -> ServerHarnessAuthFlow
     func cancelHarnessLogin(harnessId: String, accountId: String, flowId: String) async throws
     func logoutHarnessAccount(harnessId: String, accountId: String) async throws -> ServerHarnessAccount
+    func listPiAuthProviders() async throws -> [ServerPiAuthProvider]
+    func startPiAuth(providerId: String, method: String) async throws -> ServerPiAuthFlow
+    func piAuthFlow(id: String) async throws -> ServerPiAuthFlow
+    func answerPiAuthFlow(id: String, value: String) async throws -> ServerPiAuthFlow
+    func cancelPiAuthFlow(id: String) async throws
+    func removePiAuthProvider(id: String) async throws
     func listMcpServers() async throws -> [ServerMcpServer]
     func detectMcpAuth(url: String) async throws -> ServerMcpAuthDetection
     func createMcpServer(_ request: CreateMcpServerBody) async throws -> ServerMcpServer
@@ -239,6 +245,18 @@ public extension CodevisorServerClienting {
     func logoutHarnessAccount(harnessId: String, accountId: String) async throws -> ServerHarnessAccount {
         throw CodevisorServerClientError.invalidResponse
     }
+    func listPiAuthProviders() async throws -> [ServerPiAuthProvider] { [] }
+    func startPiAuth(providerId: String, method: String) async throws -> ServerPiAuthFlow {
+        throw CodevisorServerClientError.invalidResponse
+    }
+    func piAuthFlow(id: String) async throws -> ServerPiAuthFlow {
+        throw CodevisorServerClientError.invalidResponse
+    }
+    func answerPiAuthFlow(id: String, value: String) async throws -> ServerPiAuthFlow {
+        throw CodevisorServerClientError.invalidResponse
+    }
+    func cancelPiAuthFlow(id: String) async throws {}
+    func removePiAuthProvider(id: String) async throws {}
     func listMcpServers() async throws -> [ServerMcpServer] { [] }
     func detectMcpAuth(url: String) async throws -> ServerMcpAuthDetection {
         .init(authType: "none", detail: "No authorization challenge detected")
@@ -689,6 +707,44 @@ public struct ServerHarnessAuthFlow: Codable, Equatable, Sendable {
     /// The session key used by the terminal proxy. Older servers only sent
     /// `terminalId`, so keep that as a compatibility fallback.
     public var terminalAttachKey: String? { terminalKey ?? terminalId }
+}
+
+public struct ServerPiAuthProvider: Codable, Equatable, Identifiable, Sendable {
+    public var id: String
+    public var name: String
+    public var methods: [String]
+    public var credentialType: String?
+}
+
+public struct ServerPiAuthPromptOption: Codable, Equatable, Identifiable, Sendable {
+    public var id: String
+    public var label: String
+    public var description: String?
+}
+
+public struct ServerPiAuthPrompt: Codable, Equatable, Identifiable, Sendable {
+    public var id: String
+    public var type: String
+    public var message: String
+    public var placeholder: String?
+    public var options: [ServerPiAuthPromptOption]
+}
+
+public struct ServerPiAuthEvent: Codable, Equatable, Sendable {
+    public var type: String
+    public var message: String?
+    public var url: String?
+    public var userCode: String?
+    public var verificationUrl: String?
+}
+
+public struct ServerPiAuthFlow: Codable, Equatable, Identifiable, Sendable {
+    public var id: String
+    public var providerId: String
+    public var state: String
+    public var prompt: ServerPiAuthPrompt?
+    public var event: ServerPiAuthEvent?
+    public var error: String?
 }
 
 public struct ServerHarnessCapability: Codable, Equatable, Sendable {
@@ -1192,6 +1248,38 @@ public final class CodevisorServerClient: CodevisorServerClienting, @unchecked S
 
     public func logoutHarnessAccount(harnessId: String, accountId: String) async throws -> ServerHarnessAccount {
         try await send("\(harnessAccountPath(harnessId, accountId))/logout", method: "POST", body: Optional<EmptyBody>.none)
+    }
+
+    public func listPiAuthProviders() async throws -> [ServerPiAuthProvider] {
+        try await get("/v1/harnesses/pi/providers")
+    }
+
+    public func startPiAuth(providerId: String, method: String) async throws -> ServerPiAuthFlow {
+        try await send(
+            "/v1/harnesses/pi/providers/\(pathComponent(providerId))/login",
+            method: "POST",
+            body: PiAuthStartBody(method: method)
+        )
+    }
+
+    public func piAuthFlow(id: String) async throws -> ServerPiAuthFlow {
+        try await get("/v1/harnesses/pi/auth-flows/\(pathComponent(id))")
+    }
+
+    public func answerPiAuthFlow(id: String, value: String) async throws -> ServerPiAuthFlow {
+        try await send(
+            "/v1/harnesses/pi/auth-flows/\(pathComponent(id))/answer",
+            method: "POST",
+            body: PiAuthAnswerBody(value: value)
+        )
+    }
+
+    public func cancelPiAuthFlow(id: String) async throws {
+        try await sendNoResponse("/v1/harnesses/pi/auth-flows/\(pathComponent(id))", method: "DELETE")
+    }
+
+    public func removePiAuthProvider(id: String) async throws {
+        try await sendNoResponse("/v1/harnesses/pi/providers/\(pathComponent(id))", method: "DELETE")
     }
 
     public func listMcpServers() async throws -> [ServerMcpServer] {
@@ -1912,6 +2000,8 @@ private struct HarnessLoginBody: Encodable {
     var methodId: String?
     var apiKey: String?
 }
+private struct PiAuthStartBody: Encodable { var method: String }
+private struct PiAuthAnswerBody: Encodable { var value: String }
 
 private struct CreateWorktreeBody: Encodable {
     var id: String?

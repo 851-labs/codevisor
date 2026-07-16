@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@effect/platform-node": "4.0.0-beta.92",
+    "@earendil-works/pi-ai": "0.80.9",
     "@codevisor/agent-runtime": "workspace:*",
     "@codevisor/api": "workspace:*",
     "@codevisor/db": "workspace:*",
@@ -24,10 +25,12 @@
     "@executor-js/runtime-quickjs": "1.5.32",
     "@modelcontextprotocol/sdk": "1.29.0",
     "effect": "4.0.0-beta.92",
+    "proper-lockfile": "4.1.2",
     "ws": "8.18.3",
     "zod": "4.4.3"
   },
   "devDependencies": {
+    "@types/proper-lockfile": "4.1.4",
     "@types/ws": "8.5.13",
     "vitest": "4.1.6"
   }

@@ -140,6 +140,58 @@ export const HarnessAuthFlow = Schema.Union([
 ])
 export type HarnessAuthFlow = typeof HarnessAuthFlow.Type
 
+export const PiAuthMethod = Schema.Literals(["api_key", "oauth"])
+export type PiAuthMethod = typeof PiAuthMethod.Type
+
+export const PiAuthProvider = Schema.Struct({
+  id: Schema.String,
+  name: Schema.String,
+  methods: Schema.Array(PiAuthMethod),
+  credentialType: Schema.optional(PiAuthMethod)
+})
+export type PiAuthProvider = typeof PiAuthProvider.Type
+
+export const PiAuthPromptOption = Schema.Struct({
+  id: Schema.String,
+  label: Schema.String,
+  description: Schema.optional(Schema.String)
+})
+export type PiAuthPromptOption = typeof PiAuthPromptOption.Type
+
+export const PiAuthPrompt = Schema.Struct({
+  id: Schema.String,
+  type: Schema.Literals(["text", "secret", "select", "manual_code"]),
+  message: Schema.String,
+  placeholder: Schema.optional(Schema.String),
+  options: Schema.Array(PiAuthPromptOption)
+})
+export type PiAuthPrompt = typeof PiAuthPrompt.Type
+
+export const PiAuthEvent = Schema.Struct({
+  type: Schema.Literals(["info", "auth_url", "device_code", "progress"]),
+  message: Schema.optional(Schema.String),
+  url: Schema.optional(Schema.String),
+  userCode: Schema.optional(Schema.String),
+  verificationUrl: Schema.optional(Schema.String)
+})
+export type PiAuthEvent = typeof PiAuthEvent.Type
+
+export const PiAuthProviderFlow = Schema.Struct({
+  id: Schema.String,
+  providerId: Schema.String,
+  state: Schema.Literals(["running", "waiting", "complete", "error"]),
+  prompt: Schema.optional(PiAuthPrompt),
+  event: Schema.optional(PiAuthEvent),
+  error: Schema.optional(Schema.String)
+})
+export type PiAuthProviderFlow = typeof PiAuthProviderFlow.Type
+
+export const StartPiAuthRequest = Schema.Struct({ method: PiAuthMethod })
+export type StartPiAuthRequest = typeof StartPiAuthRequest.Type
+
+export const AnswerPiAuthRequest = Schema.Struct({ value: Schema.String })
+export type AnswerPiAuthRequest = typeof AnswerPiAuthRequest.Type
+
 export const UpdateHarnessRequest = Schema.Struct({
   enabled: Schema.Boolean
 })
