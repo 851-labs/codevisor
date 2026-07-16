@@ -96,6 +96,7 @@ struct SidebarView: View {
     private var list: ProjectListModel { environment.projectList }
     private var organization: SidebarOrganization { SidebarOrganization(rawValue: organizationRaw) ?? .chronological }
     private var order: SidebarOrder { SidebarOrder(rawValue: orderRaw) ?? .updated }
+    private var isReordering: Bool { draggingProjectID != nil || draggingSessionID != nil }
     private var notificationColor: Color { theme.isSystem ? .blue : theme.accent }
     private var developmentWorktreeColor: Color {
         guard let rgba = RGBA(hex: CodevisorAppVariant.developmentIconColorHex) else { return .blue }
@@ -342,7 +343,7 @@ struct SidebarView: View {
     private func actionRow(_ title: String, systemImage: String, action: @escaping () -> Void) -> some View {
         headerRow(title, systemImage: systemImage)
             .contentShape(Rectangle())
-            .sidebarRowHover()
+            .sidebarRowHover(isEnabled: !isReordering)
             .onTapGesture(perform: action)
     }
 
@@ -449,10 +450,17 @@ struct SidebarView: View {
     private func reorderableProjectRow(_ project: Project) -> some View {
         if order == .none {
             projectRow(project)
-                .onDrag {
-                    draggingProjectID = project.id
-                    return NSItemProvider(object: project.id.uuidString as NSString)
-                }
+                .onDrag(
+                    {
+                        draggingProjectID = project.id
+                        return NSItemProvider(object: project.id.uuidString as NSString)
+                    },
+                    preview: {
+                        projectRow(project, isDragPreview: true)
+                            .frame(width: 260)
+                    }
+                )
+                .opacity(draggingProjectID == project.id ? 0 : 1)
                 .onDrop(
                     of: [.text],
                     delegate: ProjectDropDelegate(
@@ -466,8 +474,11 @@ struct SidebarView: View {
         }
     }
 
-    private func projectRow(_ project: Project) -> some View {
-        HoverableRow { isHovered in
+    private func projectRow(_ project: Project, isDragPreview: Bool = false) -> some View {
+        HoverableRow(
+            isHoverEnabled: !isReordering,
+            isHoverForced: isDragPreview
+        ) { isHovered in
             HStack(spacing: 6) {
                 // The disclosure toggle is a real Button (not an onTapGesture):
                 // buttons resolve their hit target at mouse-down, so a click on
@@ -546,13 +557,18 @@ struct SidebarView: View {
         .padding(.vertical, 5)
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
-        .sidebarRowHover()
+        .sidebarRowHover(isEnabled: !isReordering)
         .onTapGesture(perform: toggle)
     }
 
-    private func sessionRow(_ session: ChatSession) -> some View {
-        let isSelected = selection == .session(serverId: session.serverId, id: session.id)
-        return HoverableRow(isSelected: isSelected) { isHovered in
+    private func sessionRow(_ session: ChatSession, isDragPreview: Bool = false) -> some View {
+        let isSelected = !isDragPreview
+            && selection == .session(serverId: session.serverId, id: session.id)
+        return HoverableRow(
+            isSelected: isSelected,
+            isHoverEnabled: !isReordering,
+            isHoverForced: isDragPreview
+        ) { isHovered in
             HStack(spacing: 6) {
                 HStack(spacing: 6) {
                     // Same icon slot as project rows so titles align; the row's
@@ -602,9 +618,18 @@ struct SidebarView: View {
         }
     }
 
-    private func chronologicalSessionRow(_ session: ChatSession, project: Project) -> some View {
-        let isSelected = selection == .session(serverId: session.serverId, id: session.id)
-        return HoverableRow(isSelected: isSelected) { isHovered in
+    private func chronologicalSessionRow(
+        _ session: ChatSession,
+        project: Project,
+        isDragPreview: Bool = false
+    ) -> some View {
+        let isSelected = !isDragPreview
+            && selection == .session(serverId: session.serverId, id: session.id)
+        return HoverableRow(
+            isSelected: isSelected,
+            isHoverEnabled: !isReordering,
+            isHoverForced: isDragPreview
+        ) { isHovered in
             HStack(spacing: 7) {
                 HarnessIcon(harnessId: session.harnessId, fallbackSymbolName: "bubble.left.fill")
                     .frame(width: 18)
@@ -680,7 +705,14 @@ struct SidebarView: View {
     private func reorderableSessionRow(_ session: ChatSession) -> some View {
         if order == .none {
             sessionRow(session)
-                .onDrag { sessionDragItemProvider(for: session) }
+                .onDrag(
+                    { sessionDragItemProvider(for: session) },
+                    preview: {
+                        sessionRow(session, isDragPreview: true)
+                            .frame(width: 260)
+                    }
+                )
+                .opacity(draggingSessionID == session.id ? 0 : 1)
                 .onDrop(
                     of: [.text],
                     delegate: SessionDropDelegate(
@@ -698,7 +730,14 @@ struct SidebarView: View {
     private func reorderableChronologicalSessionRow(_ session: ChatSession, project: Project) -> some View {
         if order == .none {
             chronologicalSessionRow(session, project: project)
-                .onDrag { sessionDragItemProvider(for: session) }
+                .onDrag(
+                    { sessionDragItemProvider(for: session) },
+                    preview: {
+                        chronologicalSessionRow(session, project: project, isDragPreview: true)
+                            .frame(width: 260)
+                    }
+                )
+                .opacity(draggingSessionID == session.id ? 0 : 1)
                 .onDrop(
                     of: [.text],
                     delegate: SessionDropDelegate(
@@ -937,16 +976,20 @@ struct SidebarView: View {
 /// project and session — on every pointer enter/leave.
 private struct HoverableRow<Content: View>: View {
     var isSelected = false
+    var isHoverEnabled = true
+    var isHoverForced = false
     @ViewBuilder var content: (_ isHovered: Bool) -> Content
     @Environment(\.theme) private var theme
     @State private var isHovered = false
 
     var body: some View {
-        content(isHovered)
+        let revealsHoverContent = isHoverEnabled && isHovered
+        let showsHoverBackground = isHoverForced || revealsHoverContent
+        content(revealsHoverContent)
             .background(
                 RoundedRectangle(cornerRadius: 6)
                     .fill(isSelected ? theme.rowSelectedBackground
-                        : (isHovered ? theme.rowHoverBackground : .clear))
+                        : (showsHoverBackground ? theme.rowHoverBackground : .clear))
             )
             .onHover { isHovered = $0 }
     }
@@ -955,15 +998,17 @@ private struct HoverableRow<Content: View>: View {
 /// The background-only variant for rows without hover-revealed content.
 private struct SidebarRowHoverModifier: ViewModifier {
     var isSelected = false
+    var isEnabled = true
     @Environment(\.theme) private var theme
     @State private var isHovered = false
 
     func body(content: Content) -> some View {
+        let showsHover = isEnabled && isHovered
         content
             .background(
                 RoundedRectangle(cornerRadius: 6)
                     .fill(isSelected ? theme.rowSelectedBackground
-                        : (isHovered ? theme.rowHoverBackground : .clear))
+                        : (showsHover ? theme.rowHoverBackground : .clear))
             )
             .onHover { isHovered = $0 }
     }
@@ -971,8 +1016,8 @@ private struct SidebarRowHoverModifier: ViewModifier {
 
 extension View {
     /// Sidebar row hover/selection background with row-local hover state.
-    fileprivate func sidebarRowHover(isSelected: Bool = false) -> some View {
-        modifier(SidebarRowHoverModifier(isSelected: isSelected))
+    fileprivate func sidebarRowHover(isSelected: Bool = false, isEnabled: Bool = true) -> some View {
+        modifier(SidebarRowHoverModifier(isSelected: isSelected, isEnabled: isEnabled))
     }
 }
 
