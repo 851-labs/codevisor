@@ -5,6 +5,7 @@ import Foundation
 public protocol PersistenceStore: Sendable {
     func loadData(forKey key: String) -> Data?
     func saveData(_ data: Data, forKey key: String) throws
+    func removeData(forKey key: String) throws
     /// Moves the persisted payload for `key` aside after a decode failure so
     /// the next save doesn't overwrite the evidence. Stores without durable
     /// files can rely on the default no-op.
@@ -49,6 +50,11 @@ func handleCorruptPayload(
 /// pending writes immediately, and pending writes flush before the app
 /// terminates.
 public final class FileSystemStore: PersistenceStore, @unchecked Sendable {
+    private enum PendingOperation {
+        case save(Data)
+        case remove
+    }
+
     private let directory: URL
     private let fileManager: FileManager
     /// Serial queue all disk writes run on.
@@ -56,7 +62,7 @@ public final class FileSystemStore: PersistenceStore, @unchecked Sendable {
     private let pendingLock = NSLock()
     /// Latest not-yet-flushed bytes per key — the coalescing buffer and the
     /// read-your-writes source.
-    private var pending: [String: Data] = [:]
+    private var pending: [String: PendingOperation] = [:]
     /// Keys whose failed writes were already surfaced to the user this run,
     /// so a repeatedly failing save logs every time but banners once.
     private var reportedWriteFailures: Set<String> = []
@@ -127,7 +133,12 @@ public final class FileSystemStore: PersistenceStore, @unchecked Sendable {
     }
 
     public func loadData(forKey key: String) -> Data? {
-        if let queued = pendingLock.withLock({ pending[key] }) { return queued }
+        if let queued = pendingLock.withLock({ pending[key] }) {
+            switch queued {
+            case let .save(data): return data
+            case .remove: return nil
+            }
+        }
         do {
             return try Data(contentsOf: url(forKey: key))
         } catch let error as CocoaError where error.code == .fileReadNoSuchFile {
@@ -140,9 +151,17 @@ public final class FileSystemStore: PersistenceStore, @unchecked Sendable {
     }
 
     public func saveData(_ data: Data, forKey key: String) throws {
+        enqueue(.save(data), forKey: key)
+    }
+
+    public func removeData(forKey key: String) throws {
+        enqueue(.remove, forKey: key)
+    }
+
+    private func enqueue(_ operation: PendingOperation, forKey key: String) {
         let alreadyScheduled: Bool = pendingLock.withLock {
             let scheduled = pending[key] != nil
-            pending[key] = data
+            pending[key] = operation
             return scheduled
         }
         // A write for this key is already queued; it will pick up the newer
@@ -150,14 +169,22 @@ public final class FileSystemStore: PersistenceStore, @unchecked Sendable {
         guard !alreadyScheduled else { return }
         writeQueue.async { [weak self] in
             guard let self else { return }
-            let payload: Data? = self.pendingLock.withLock {
-                let data = self.pending[key]
+            let operation: PendingOperation? = self.pendingLock.withLock {
+                let operation = self.pending[key]
                 self.pending[key] = nil
-                return data
+                return operation
             }
-            guard let payload else { return }
+            guard let operation else { return }
             do {
-                try payload.write(to: self.url(forKey: key), options: .atomic)
+                switch operation {
+                case let .save(data):
+                    try data.write(to: self.url(forKey: key), options: .atomic)
+                case .remove:
+                    let url = self.url(forKey: key)
+                    if self.fileManager.fileExists(atPath: url.path) {
+                        try self.fileManager.removeItem(at: url)
+                    }
+                }
             } catch {
                 Log.persistence.error("Failed to write \(key, privacy: .public): \(String(describing: error), privacy: .public)")
                 self.notifyWriteFailure(key: key, error: error)
@@ -225,5 +252,9 @@ public final class InMemoryStore: PersistenceStore, @unchecked Sendable {
 
     public func saveData(_ data: Data, forKey key: String) throws {
         lock.withLock { storage[key] = data }
+    }
+
+    public func removeData(forKey key: String) throws {
+        lock.withLock { storage[key] = nil }
     }
 }

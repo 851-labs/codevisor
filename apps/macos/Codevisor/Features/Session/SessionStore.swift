@@ -36,9 +36,10 @@ final class SessionStore {
     @ObservationIgnored private var todoCompletionStates: [SessionKey: Bool] = [:]
     private var paneGroups: [SessionKey: PaneGroupModel] = [:]
     private var scratchpads: [SessionKey: ScratchpadModel] = [:]
-    /// One unsent new-chat draft per machine. A controller permanently owns
-    /// the server client it was created with, so reusing a draft after a
-    /// machine switch can send the new machine's project id to the old server.
+    /// One live unsent new-chat draft per machine, mirrored to disk by
+    /// `ComposerDraftStore`. A controller permanently owns the server client
+    /// it was created with, so reusing a draft after a machine switch can send
+    /// the new machine's project id to the old server.
     private var draftsByServer: [String: SessionController] = [:]
     /// Completed activity epochs whose session wasn't open, keyed by session
     /// id — the sidebar's iOS-style unread badges. Cleared on open.
@@ -129,24 +130,40 @@ final class SessionStore {
         return controller
     }
 
-    /// Returns the retained draft controller for the new-chat page, creating
-    /// one seeded from the last-used composer defaults (harness, model,
-    /// worktree) if none exists. The draft is retained until its first send
-    /// promotes it to a real session, so unsent composer state survives
-    /// navigation.
+    /// Returns the retained draft controller for the new-chat page, restoring
+    /// its disk snapshot first or seeding it from last-used composer defaults
+    /// if none exists. The draft is retained until its first send promotes it
+    /// to a real session, so unsent composer state survives navigation and
+    /// relaunches.
     func draft(project: Project) -> SessionController {
         if let draft = draftsByServer[project.serverId], draft.serverSession == nil {
             return draft
         }
+        let persisted = environment.composerDrafts.draft(forServer: project.serverId)
+        let restoredProject = persisted.flatMap { saved in
+            environment.projectList.projects.first {
+                $0.serverId == project.serverId && $0.id == saved.projectId
+            }
+        } ?? project
         let controller = SessionController(
-            project: project,
+            project: restoredProject,
             configCache: environment.configCache,
             composerDefaults: environment.composerDefaults,
             serverClient: environment.serverClient
         )
         controller.applyComposerDefaults()
+        if let persisted { controller.restoreDraft(persisted) }
+        enableDraftPersistence(for: controller)
         draftsByServer[project.serverId] = controller
         return controller
+    }
+
+    private func enableDraftPersistence(for controller: SessionController) {
+        let serverId = controller.project.serverId
+        controller.onDraftChange = { [weak drafts = environment.composerDrafts] draft in
+            drafts?.saveDraft(draft, forServer: serverId)
+        }
+        environment.composerDrafts.saveDraft(controller.draftSnapshot(), forServer: serverId)
     }
 
     /// Returns the cached pane group for a session, creating it on first use.
@@ -387,6 +404,8 @@ final class SessionStore {
         if draftsByServer[controller.project.serverId] === controller {
             draftsByServer[controller.project.serverId] = nil
         }
+        controller.onDraftChange = nil
+        environment.composerDrafts.clearDraft(forServer: controller.project.serverId)
     }
 
     /// Reverts a failed first-send promotion: forgets the session registration
@@ -407,6 +426,7 @@ final class SessionStore {
         todoExpansionStates[key] = nil
         todoCompletionStates[key] = nil
         draftsByServer[controller.project.serverId] = controller
+        enableDraftPersistence(for: controller)
     }
 
     func discard(_ session: ChatSession) {

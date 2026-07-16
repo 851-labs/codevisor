@@ -104,14 +104,14 @@ final class SessionController {
         case failed
     }
 
-    var composerText: String = ""
-    private(set) var composerAttachments: [ComposerAttachment] = []
+    var composerText: String = "" { didSet { draftDidChange() } }
+    private(set) var composerAttachments: [ComposerAttachment] = [] { didSet { draftDidChange() } }
     /// Attachments shown with the optimistic first message while connecting.
     private(set) var pendingUserAttachments: [Attachment] = []
     private var uploadTasks: [UUID: Task<Void, Never>] = [:]
     private(set) var harnesses: [ServerHarness] = []
     private(set) var preparationState: PreparationState = .loading
-    var selectedHarnessId: String?
+    var selectedHarnessId: String? { didSet { draftDidChange() } }
     private(set) var model: SessionModel?
     private(set) var status: Status = .idle
     /// The first prompt, held while the session record/agent are being created
@@ -147,7 +147,7 @@ final class SessionController {
 
     /// The project whose folder is used as the agent cwd. Settable so the
     /// new-chat page can change projects before the first send.
-    var project: Project
+    var project: Project { didSet { draftDidChange() } }
     /// Called once, on the first send — used by the new-chat page to create and
     /// register the real session and navigate to it.
     var onFirstSend: (() -> Void)?
@@ -173,6 +173,7 @@ final class SessionController {
                 sessionCwdOverride = nil
                 worktreeName = nil
             }
+            draftDidChange()
         }
     }
     /// The worktree created for this draft on first send (server-assigned slug).
@@ -218,8 +219,10 @@ final class SessionController {
     /// Config changes made before connecting, applied once the agent connects.
     /// Keep these scoped to their harness so switching away and back does not
     /// discard that harness's model, thinking, or speed selection.
-    private var pendingConfigByHarness: [String: [String: String]] = [:]
-    private var pendingModeId: String?
+    private var pendingConfigByHarness: [String: [String: String]] = [:] { didSet { draftDidChange() } }
+    private var pendingModeId: String? { didSet { draftDidChange() } }
+    @ObservationIgnored var onDraftChange: ((ComposerDraftStore.Draft) -> Void)?
+    @ObservationIgnored private var isRestoringDraft = false
     /// Set only while a promoted new-chat draft is waiting for a successful
     /// agent connection. Failed setup rolls it back without counting a chat.
     private var pendingNewChatAnalytics = false
@@ -248,6 +251,61 @@ final class SessionController {
         if seedFromCachedServerCapabilities() {
             preparationState = .ready
         }
+    }
+
+    func draftSnapshot() -> ComposerDraftStore.Draft {
+        ComposerDraftStore.Draft(
+            projectId: project.id,
+            composerText: composerText,
+            attachments: composerAttachments.map {
+                ComposerDraftStore.DraftAttachment(
+                    id: $0.id,
+                    name: $0.name,
+                    mimeType: $0.mimeType,
+                    kind: $0.kind.rawValue,
+                    localData: $0.localData
+                )
+            },
+            selectedHarnessId: selectedHarnessId,
+            runInWorktree: wantsNewWorktree,
+            configByHarness: pendingConfigByHarness,
+            modeId: pendingModeId,
+            isGoalComposerArmed: isGoalComposerArmed,
+            isGoalEditing: isGoalEditing,
+            composerTextBeforeGoalEdit: composerTextBeforeGoalEdit
+        )
+    }
+
+    func restoreDraft(_ draft: ComposerDraftStore.Draft) {
+        isRestoringDraft = true
+        composerText = draft.composerText
+        composerAttachments = draft.attachments.map {
+            ComposerAttachment(
+                id: $0.id,
+                name: $0.name,
+                mimeType: $0.mimeType,
+                kind: Attachment.Kind(rawValue: $0.kind) ?? .file,
+                localData: $0.localData,
+                state: .uploading
+            )
+        }
+        selectedHarnessId = draft.selectedHarnessId
+        wantsNewWorktree = draft.runInWorktree
+        pendingConfigByHarness = draft.configByHarness
+        pendingModeId = draft.modeId
+        isGoalComposerArmed = draft.isGoalComposerArmed
+        isGoalEditing = draft.isGoalEditing
+        composerTextBeforeGoalEdit = draft.composerTextBeforeGoalEdit
+        isRestoringDraft = false
+
+        // Server file ids are not assumed to survive indefinitely. Re-upload
+        // the persisted local bytes and produce fresh refs for the next send.
+        for attachment in composerAttachments { startUpload(attachment) }
+    }
+
+    private func draftDidChange() {
+        guard !isRestoringDraft, isDraft, let onDraftChange else { return }
+        onDraftChange(draftSnapshot())
     }
 
     var isPrepared: Bool { preparationState == .ready }
@@ -337,17 +395,17 @@ final class SessionController {
 
     /// Goal-input mode: when armed, submitting the composer sets the text as
     /// the session goal instead of sending a prompt.
-    var isGoalComposerArmed = false
+    var isGoalComposerArmed = false { didSet { draftDidChange() } }
 
     /// The pencil-edit flow: the composer strips down to a dedicated
     /// "Edit goal" editor and the banner hides. Plain ⌖-armed goal setting
     /// keeps the normal composer look.
-    var isGoalEditing = false
+    var isGoalEditing = false { didSet { draftDidChange() } }
 
     /// Editing an existing goal temporarily replaces the visible chat draft.
     /// Keep the draft here so cancelling or finishing the edit cannot destroy
     /// text the user had already composed.
-    private var composerTextBeforeGoalEdit: String?
+    private var composerTextBeforeGoalEdit: String? { didSet { draftDidChange() } }
 
     /// A goal captured before the session connected, applied on connect.
     private var pendingGoal: String?

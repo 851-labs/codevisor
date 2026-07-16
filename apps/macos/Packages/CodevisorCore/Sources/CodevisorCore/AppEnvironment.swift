@@ -12,6 +12,7 @@ public final class AppEnvironment {
     public let projectList: ProjectListModel
     public let configCache: ConfigOptionCache
     public let composerDefaults: ComposerDefaultsStore
+    public let composerDrafts: ComposerDraftStore
     public let settings: AppSettingsModel
     public let theme: ThemeManager
     public let machines: MachineController
@@ -52,6 +53,7 @@ public final class AppEnvironment {
         sessionRepository: any SessionRepository,
         configCache: ConfigOptionCache,
         composerDefaults: ComposerDefaultsStore? = nil,
+        composerDrafts: ComposerDraftStore? = nil,
         settings: AppSettingsModel,
         machineStore: any PersistenceStore = InMemoryStore(),
         legacyCacheMigrationStore: (any PersistenceStore)? = nil,
@@ -85,6 +87,7 @@ public final class AppEnvironment {
         )
         self.configCache = configCache
         self.composerDefaults = composerDefaults ?? ComposerDefaultsStore(store: InMemoryStore())
+        self.composerDrafts = composerDrafts ?? ComposerDraftStore(store: InMemoryStore())
         self.settings = settings
         self.localServer = localServer
         self.machines = MachineController(
@@ -213,6 +216,7 @@ public final class AppEnvironment {
         projectList.removeAll()
         configCache.clear()
         composerDefaults.clear()
+        composerDrafts.clear()
         settings.reset()
         projectList.showsImportedSessions = settings.importExternalSessions
     }
@@ -285,6 +289,7 @@ public final class AppEnvironment {
             sessionRepository: DefaultSessionRepository(store: store),
             configCache: ConfigOptionCache(store: store),
             composerDefaults: ComposerDefaultsStore(store: store),
+            composerDrafts: ComposerDraftStore(store: store),
             settings: AppSettingsModel(store: store),
             machineStore: store,
             legacyCacheMigrationStore: store,
