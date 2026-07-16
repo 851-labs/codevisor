@@ -150,7 +150,9 @@ export function ChronologicalSessionRow({
             <FolderIcon className="text-muted-foreground size-4 shrink-0" />
             <span className="flex min-w-0 flex-1 flex-col">
               <span className="truncate text-sm">{session.title}</span>
-              <span className="text-muted-foreground/70 truncate text-[10px]">{project.name}</span>
+              <span className="text-muted-foreground/70 truncate text-[10px]">
+                {[project.name, session.worktreeName].filter(Boolean).join(" · ")}
+              </span>
             </span>
             <TrailingSlot session={session} order={order} onArchive={() => archive(session)} />
           </Link>

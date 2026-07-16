@@ -19,7 +19,7 @@ import {
 import { ProjectFolder } from "./ProjectFolder"
 
 function narrowOrganization(raw: string): SidebarOrganization {
-  return raw === "chronological" ? "chronological" : "byProject"
+  return raw === "byProject" ? "byProject" : "chronological"
 }
 
 function narrowOrder(raw: string): SidebarOrder {
@@ -34,7 +34,7 @@ export function Sidebar() {
   const sessionsQuery = useSessions()
   const [organizationRaw, setOrganizationRaw] = useLocalStorage(
     "codevisor-sidebar-organization",
-    "byProject"
+    "chronological"
   )
   const [orderRaw, setOrderRaw] = useLocalStorage("codevisor-sidebar-order", "updated")
   const [manualOrderRaw] = useLocalStorage("codevisor-sidebar-project-order", "")

@@ -11,7 +11,7 @@ private enum SidebarOrganization: String, CaseIterable {
     var title: String {
         switch self {
         case .byProject: return "By project"
-        case .chronological: return "Chronological"
+        case .chronological: return "By chat"
         }
     }
 }
@@ -82,7 +82,7 @@ struct SidebarView: View {
     @State private var renamingSession: ChatSession?
     @State private var renameTitle = ""
     @State private var draggingProjectID: UUID?
-    @AppStorage("sidebar.organization") private var organizationRaw = SidebarOrganization.byProject.rawValue
+    @AppStorage("sidebar.organization") private var organizationRaw = SidebarOrganization.chronological.rawValue
     @AppStorage("sidebar.order") private var orderRaw = SidebarOrder.updated.rawValue
     @AppStorage("sidebar.manualProjectOrder") private var manualProjectOrderRaw = ""
     @AppStorage("sidebar.expandedProjects") private var expandedProjectsRaw = ""
@@ -90,7 +90,7 @@ struct SidebarView: View {
     @AppStorage("update.skippedServerVersion") private var skippedServerUpdate = ""
 
     private var list: ProjectListModel { environment.projectList }
-    private var organization: SidebarOrganization { SidebarOrganization(rawValue: organizationRaw) ?? .byProject }
+    private var organization: SidebarOrganization { SidebarOrganization(rawValue: organizationRaw) ?? .chronological }
     private var order: SidebarOrder { SidebarOrder(rawValue: orderRaw) ?? .updated }
     private var notificationColor: Color { theme.isSystem ? .blue : theme.accent }
     private var developmentWorktreeColor: Color {
@@ -387,7 +387,7 @@ struct SidebarView: View {
 
     private var projectsHeader: some View {
         HStack {
-            Text("Projects")
+            Text(organization == .chronological ? "Chats" : "Projects")
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.secondary)
             Spacer()
@@ -600,7 +600,7 @@ struct SidebarView: View {
                     Text(session.title)
                         .font(.subheadline)
                         .lineLimit(1)
-                    Text(project.name)
+                    Text([project.name, session.worktreeName].compactMap { $0 }.joined(separator: " · "))
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
                         .lineLimit(1)

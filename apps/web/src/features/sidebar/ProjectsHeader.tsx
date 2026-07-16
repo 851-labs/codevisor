@@ -44,7 +44,9 @@ export function ProjectsHeader({
 
   return (
     <div className="mt-3 mb-1 flex items-center gap-1 px-2.5">
-      <span className="text-muted-foreground flex-1 text-sm font-semibold">Projects</span>
+      <span className="text-muted-foreground flex-1 text-sm font-semibold">
+        {organization === "chronological" ? "Chats" : "Projects"}
+      </span>
       <Menu>
         <Tooltip>
           <TooltipTrigger
@@ -69,7 +71,7 @@ export function ProjectsHeader({
               }}
             >
               <MenuRadioItem value="byProject">By project</MenuRadioItem>
-              <MenuRadioItem value="chronological">Chronological</MenuRadioItem>
+              <MenuRadioItem value="chronological">By chat</MenuRadioItem>
             </MenuRadioGroup>
           </MenuGroup>
           <MenuGroup>
