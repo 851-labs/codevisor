@@ -271,6 +271,11 @@ final class SessionStore {
 
     private func noteTurnEnded(for key: SessionKey) {
         activityRevision &+= 1
+        // Transcript/runtime events are session-scoped and intentionally do
+        // not invalidate the global projects snapshot. Advance the sidebar's
+        // local recency stamp at the completion edge instead of waiting for an
+        // unrelated metadata refresh to pick up the server's updated value.
+        environment.projectList.touchSession(key.sessionId, serverId: key.serverId)
         // A turn that ends into a "waiting on background work" state isn't the
         // end of the agent's work — it will start an agent-initiated turn when
         // the task settles. Hold the unread badge (the spinner covers this via

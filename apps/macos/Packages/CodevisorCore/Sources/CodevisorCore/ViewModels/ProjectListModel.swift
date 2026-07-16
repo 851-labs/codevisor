@@ -29,9 +29,16 @@ public final class ProjectListModel {
     /// race the slow first agent startup; preserving these rows prevents the
     /// selected session from disappearing until creation is acknowledged.
     private var pendingServerSessionIds: Set<ScopedSessionID> = []
-    /// Shared: `ISO8601DateFormatter()` construction is milliseconds-expensive
-    /// and the import loops used to build one per imported session.
-    private static let importTimestampFormatter = ISO8601DateFormatter()
+    /// Shared: formatter construction is milliseconds-expensive and the
+    /// import loops used to build one per imported session. Native scanners
+    /// emit JavaScript ISO strings with fractional seconds; legacy servers may
+    /// still return whole-second timestamps, so accept both forms.
+    private static let fractionalImportTimestampFormatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
+    private static let wholeSecondImportTimestampFormatter = ISO8601DateFormatter()
 
     public init(
         projectRepository: any ProjectRepository,
@@ -216,9 +223,10 @@ public final class ProjectListModel {
         return session
     }
 
-    /// Marks conversation activity (a finished assistant turn) on a session
-    /// that runs in-app, where the server never sees the transcript. Bumps the
-    /// recency stamp locally and mirrors it to the server.
+    /// Marks conversation activity after a finished in-app turn. Runtime
+    /// events are session-scoped, so they do not refresh the global sidebar
+    /// snapshot even though the server persists the transcript. Bump recency
+    /// locally at the completion edge and mirror it to the server.
     public func touchSession(_ sessionId: UUID, serverId: String) {
         guard let index = sessions.firstIndex(where: {
             $0.serverId == serverId && $0.id == sessionId
@@ -273,17 +281,19 @@ public final class ProjectListModel {
     /// machine the user has switched to meanwhile.
     public func importSessions(_ imported: [ImportedSession], serverId: String) {
         for item in imported {
-            let alreadyKnown = sessions.contains {
+            if let knownIndex = sessions.firstIndex(where: {
                 $0.serverId == serverId
                     && $0.harnessId == item.harnessId
                     && $0.agentSessionId == item.info.sessionId
+            }) {
+                reconcileImportedActivity(item, at: knownIndex)
+                continue
             }
-            if alreadyKnown { continue }
             let project = findOrCreateProject(
                 folderURL: URL(fileURLWithPath: item.info.cwd),
                 serverId: serverId
             )
-            let timestamp = Self.importTimestampFormatter.date(from: item.info.updatedAt ?? "")
+            let timestamp = Self.importTimestamp(item.info.updatedAt)
             sessions.append(ChatSession(
                 projectId: project.id,
                 serverId: serverId,
@@ -301,19 +311,21 @@ public final class ProjectListModel {
     }
 
     /// Imports sessions into a specific project (they were discovered for its
-    /// folder), skipping any already known (by harness + agent session id).
+    /// folder), merging newer activity into known harness-session records.
     /// Sessions inherit the project's server, not the currently selected one:
     /// the user may confirm a pending import after switching machines.
     public func importSessions(_ imported: [ImportedSession], into project: Project) {
-        var didImport = false
+        var didChange = false
         for item in imported {
-            let alreadyKnown = sessions.contains {
+            if let knownIndex = sessions.firstIndex(where: {
                 $0.serverId == project.serverId
                     && $0.harnessId == item.harnessId
                     && $0.agentSessionId == item.info.sessionId
+            }) {
+                didChange = reconcileImportedActivity(item, at: knownIndex) || didChange
+                continue
             }
-            if alreadyKnown { continue }
-            let timestamp = Self.importTimestampFormatter.date(from: item.info.updatedAt ?? "")
+            let timestamp = Self.importTimestamp(item.info.updatedAt)
             sessions.append(ChatSession(
                 projectId: project.id,
                 serverId: project.serverId,
@@ -324,11 +336,31 @@ public final class ProjectListModel {
                 createdAt: timestamp ?? Date(),
                 updatedAt: timestamp
             ))
-            didImport = true
+            didChange = true
         }
-        guard didImport else { return }
+        guard didChange else { return }
         persistSessions()
         syncAllToServer()
+    }
+
+    /// Native-session discovery is also our source of truth for activity that
+    /// happened outside this app. Never roll a cached/server timestamp back,
+    /// and leave user-edited metadata (especially the title) alone.
+    @discardableResult
+    private func reconcileImportedActivity(_ item: ImportedSession, at index: Int) -> Bool {
+        guard let discoveredAt = Self.importTimestamp(item.info.updatedAt) else {
+            return false
+        }
+        let cachedAt = sessions[index].updatedAt ?? sessions[index].createdAt
+        guard discoveredAt > cachedAt else { return false }
+        sessions[index].updatedAt = discoveredAt
+        return true
+    }
+
+    private static func importTimestamp(_ value: String?) -> Date? {
+        guard let value else { return nil }
+        return fractionalImportTimestampFormatter.date(from: value)
+            ?? wholeSecondImportTimestampFormatter.date(from: value)
     }
 
     public func renameSession(_ session: ChatSession, to title: String) {

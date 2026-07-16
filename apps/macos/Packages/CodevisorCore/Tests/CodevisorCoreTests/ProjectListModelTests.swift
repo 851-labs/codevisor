@@ -472,6 +472,51 @@ struct ProjectListModelTests {
         #expect(DefaultSessionRepository(store: sessionStore).load().count == 2)
     }
 
+    @Test("Re-importing a known session advances its activity without overwriting metadata")
+    func reimportAdvancesKnownSessionActivity() {
+        let (model, _, sessionStore) = makeModel()
+        model.showsImportedSessions = true
+        let oldTimestamp = "2026-06-01T00:00:00Z"
+        // Native scanners return JavaScript ISO strings with fractional
+        // seconds, so exercise the exact format used by the server endpoint.
+        let newTimestamp = "2026-06-03T00:00:00.123Z"
+
+        model.importSessions([
+            ImportedSession(
+                harnessId: "codex",
+                info: SessionInfo(sessionId: "ext-1", cwd: "/tmp/a", title: "Agent title", updatedAt: oldTimestamp)
+            )
+        ], serverId: "local")
+        let project = model.projects.first!
+        let imported = model.sessions(in: project).first!
+        model.renameSession(imported, to: "My title")
+
+        model.importSessions([
+            ImportedSession(
+                harnessId: "codex",
+                info: SessionInfo(sessionId: "ext-1", cwd: "/tmp/a", title: "Changed agent title", updatedAt: newTimestamp)
+            )
+        ], serverId: "local")
+
+        let refreshed = model.sessions(in: project).first!
+        #expect(model.sessions.count == 1)
+        #expect(refreshed.title == "My title")
+        let fractionalFormatter = ISO8601DateFormatter()
+        fractionalFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        #expect(refreshed.updatedAt == fractionalFormatter.date(from: newTimestamp))
+        let persisted = DefaultSessionRepository(store: sessionStore).load().first!
+        #expect(persisted.updatedAt == refreshed.updatedAt)
+
+        // An older scanner result must never roll server/app activity back.
+        model.importSessions([
+            ImportedSession(
+                harnessId: "codex",
+                info: SessionInfo(sessionId: "ext-1", cwd: "/tmp/a", updatedAt: oldTimestamp)
+            )
+        ], serverId: "local")
+        #expect(model.sessions(in: project).first?.updatedAt == refreshed.updatedAt)
+    }
+
     @Test("A machine switch during an in-flight refresh does not re-tag the old machine's projects")
     func refreshDroppedAfterMachineSwitch() async throws {
         let remoteProject = Project.fromFolder(
