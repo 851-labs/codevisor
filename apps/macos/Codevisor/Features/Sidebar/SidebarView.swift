@@ -17,11 +17,13 @@ private enum SidebarOrganization: String, CaseIterable {
 }
 
 private enum SidebarOrder: String, CaseIterable {
+    case none
     case updated
     case created
 
     var title: String {
         switch self {
+        case .none: return "None"
         case .updated: return "Last updated"
         case .created: return "Created"
         }
@@ -82,9 +84,11 @@ struct SidebarView: View {
     @State private var renamingSession: ChatSession?
     @State private var renameTitle = ""
     @State private var draggingProjectID: UUID?
+    @State private var draggingSessionID: UUID?
     @AppStorage("sidebar.organization") private var organizationRaw = SidebarOrganization.chronological.rawValue
     @AppStorage("sidebar.order") private var orderRaw = SidebarOrder.updated.rawValue
     @AppStorage("sidebar.manualProjectOrder") private var manualProjectOrderRaw = ""
+    @AppStorage("sidebar.manualSessionOrder") private var manualSessionOrderRaw = ""
     @AppStorage("sidebar.expandedProjects") private var expandedProjectsRaw = ""
     @AppStorage("update.skippedVersion") private var skippedUpdateVersion = ""
     @AppStorage("update.skippedServerVersion") private var skippedServerUpdate = ""
@@ -112,37 +116,29 @@ struct SidebarView: View {
             .compactMap { UUID(uuidString: String($0)) }
     }
 
+    private var sessionOrder: [UUID] {
+        manualSessionOrderRaw
+            .split(separator: "\n")
+            .compactMap { UUID(uuidString: String($0)) }
+    }
+
     private var visibleProjects: [Project] {
         let active = list.activeProjects
-        guard organization == .byProject else {
-            return sortedProjects(active)
-        }
-
-        let indexes = Dictionary(uniqueKeysWithValues: projectOrder.enumerated().map { ($0.element, $0.offset) })
-        return active.sorted { left, right in
-            let leftIndex = indexes[left.id]
-            let rightIndex = indexes[right.id]
-            switch (leftIndex, rightIndex) {
-            case let (leftIndex?, rightIndex?):
-                return leftIndex < rightIndex
-            case (_?, nil):
-                return true
-            case (nil, _?):
-                return false
-            case (nil, nil):
-                return compareProjects(left, right)
-            }
-        }
+        guard order == .none else { return sortedProjects(active) }
+        return manuallyOrdered(active, ids: projectOrder, id: \.id)
     }
 
     private var chronologicalSessions: [SidebarSessionListItem] {
-        visibleProjects
+        let sessions = visibleProjects
             .flatMap { project in
                 list.sessions(in: project).map { SidebarSessionListItem(session: $0, project: project) }
             }
-            .sorted { left, right in
+        guard order == .none else {
+            return sessions.sorted { left, right in
                 compareSessions(left.session, right.session)
             }
+        }
+        return manuallyOrdered(sessions, ids: sessionOrder, id: \.id)
     }
 
     var body: some View {
@@ -199,22 +195,10 @@ struct SidebarView: View {
                     if organization == .byProject {
                         ForEach(visibleProjects) { project in
                             projectFolder(project)
-                                .onDrag {
-                                    draggingProjectID = project.id
-                                    return NSItemProvider(object: project.id.uuidString as NSString)
-                                }
-                                .onDrop(
-                                    of: [.text],
-                                    delegate: ProjectDropDelegate(
-                                        projectID: project.id,
-                                        draggingProjectID: $draggingProjectID,
-                                        moveProject: moveProject
-                                    )
-                                )
                         }
                     } else {
                         ForEach(chronologicalSessions) { item in
-                            chronologicalSessionRow(item.session, project: item.project)
+                            reorderableChronologicalSessionRow(item.session, project: item.project)
                         }
                     }
                     if visibleProjects.isEmpty {
@@ -402,16 +386,16 @@ struct SidebarView: View {
                 }
                 Picker("Order by", selection: Binding(
                     get: { order },
-                    set: { orderRaw = $0.rawValue }
+                    set: { setOrder($0) }
                 )) {
                     ForEach(SidebarOrder.allCases, id: \.self) { option in
                         Text(option.title).tag(option)
                     }
                 }
-                if organization == .byProject {
+                if order == .none {
                     Divider()
-                    Button("Reset project order") {
-                        saveProjectOrder(sortedProjects(list.activeProjects).map(\.id))
+                    Button("Reset manual order") {
+                        resetManualOrder()
                     }
                 }
             } label: {
@@ -442,6 +426,47 @@ struct SidebarView: View {
 
     @ViewBuilder
     private func projectFolder(_ project: Project) -> some View {
+        reorderableProjectRow(project)
+
+        if expanded.contains(project.id) {
+            ForEach(orderedSessions(in: project)) { session in
+                reorderableSessionRow(session)
+                    .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
+            }
+            if orderedSessions(in: project).isEmpty {
+                Text("No sessions yet")
+                    .font(.subheadline)
+                    .foregroundStyle(.tertiary)
+                    // Lines up with the session icons (8 row padding + 8 indent).
+                    .padding(.leading, 16)
+                    .padding(.vertical, 3)
+                    .transition(.opacity)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func reorderableProjectRow(_ project: Project) -> some View {
+        if order == .none {
+            projectRow(project)
+                .onDrag {
+                    draggingProjectID = project.id
+                    return NSItemProvider(object: project.id.uuidString as NSString)
+                }
+                .onDrop(
+                    of: [.text],
+                    delegate: ProjectDropDelegate(
+                        projectID: project.id,
+                        draggingProjectID: $draggingProjectID,
+                        moveProject: moveProject
+                    )
+                )
+        } else {
+            projectRow(project)
+        }
+    }
+
+    private func projectRow(_ project: Project) -> some View {
         HoverableRow { isHovered in
             HStack(spacing: 6) {
                 // The disclosure toggle is a real Button (not an onTapGesture):
@@ -497,22 +522,6 @@ struct SidebarView: View {
                     .labelStyle(.titleAndIcon)
             }
         }
-
-        if expanded.contains(project.id) {
-            ForEach(orderedSessions(in: project)) { session in
-                sessionRow(session)
-                    .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
-            }
-            if orderedSessions(in: project).isEmpty {
-                Text("No sessions yet")
-                    .font(.subheadline)
-                    .foregroundStyle(.tertiary)
-                    // Lines up with the session icons (8 row padding + 8 indent).
-                    .padding(.leading, 16)
-                    .padding(.vertical, 3)
-                    .transition(.opacity)
-            }
-        }
     }
 
     private func disclosureRow(
@@ -564,7 +573,11 @@ struct SidebarView: View {
             // A zero-distance drag begins on mouse-down, unlike a tap gesture,
             // which waits for mouse-up. Child controls (the hover archive
             // button) retain gesture precedence over this row gesture.
-            .gesture(sessionActivationGesture(session))
+            .gesture(sessionActivationGesture(session), including: order == .none ? .none : .all)
+            .onTapGesture {
+                guard order == .none else { return }
+                activateSession(session)
+            }
             .foregroundStyle(isSelected ? Color.primary : .secondary)
         }
         .contextMenu {
@@ -613,7 +626,11 @@ struct SidebarView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
             .foregroundStyle(isSelected ? Color.primary : .secondary)
-            .gesture(sessionActivationGesture(session))
+            .gesture(sessionActivationGesture(session), including: order == .none ? .none : .all)
+            .onTapGesture {
+                guard order == .none else { return }
+                activateSession(session)
+            }
         }
         .contextMenu {
             Button {
@@ -649,14 +666,61 @@ struct SidebarView: View {
     private func sessionActivationGesture(_ session: ChatSession) -> some Gesture {
         DragGesture(minimumDistance: 0)
             .onChanged { _ in
-                let target = SidebarSelection.session(serverId: session.serverId, id: session.id)
-                guard selection != target else { return }
-                selection = target
+                activateSession(session)
             }
     }
 
+    private func activateSession(_ session: ChatSession) {
+        let target = SidebarSelection.session(serverId: session.serverId, id: session.id)
+        guard selection != target else { return }
+        selection = target
+    }
+
+    @ViewBuilder
+    private func reorderableSessionRow(_ session: ChatSession) -> some View {
+        if order == .none {
+            sessionRow(session)
+                .onDrag { sessionDragItemProvider(for: session) }
+                .onDrop(
+                    of: [.text],
+                    delegate: SessionDropDelegate(
+                        sessionID: session.id,
+                        draggingSessionID: $draggingSessionID,
+                        moveSession: moveSession
+                    )
+                )
+        } else {
+            sessionRow(session)
+        }
+    }
+
+    @ViewBuilder
+    private func reorderableChronologicalSessionRow(_ session: ChatSession, project: Project) -> some View {
+        if order == .none {
+            chronologicalSessionRow(session, project: project)
+                .onDrag { sessionDragItemProvider(for: session) }
+                .onDrop(
+                    of: [.text],
+                    delegate: SessionDropDelegate(
+                        sessionID: session.id,
+                        draggingSessionID: $draggingSessionID,
+                        moveSession: moveSession
+                    )
+                )
+        } else {
+            chronologicalSessionRow(session, project: project)
+        }
+    }
+
+    private func sessionDragItemProvider(for session: ChatSession) -> NSItemProvider {
+        draggingSessionID = session.id
+        return NSItemProvider(object: session.id.uuidString as NSString)
+    }
+
     private func orderedSessions(in project: Project) -> [ChatSession] {
-        list.sessions(in: project).sorted(by: compareSessions)
+        let sessions = list.sessions(in: project)
+        guard order == .none else { return sessions.sorted(by: compareSessions) }
+        return manuallyOrdered(sessions, ids: sessionOrder, id: \.id)
     }
 
     @ViewBuilder
@@ -753,6 +817,8 @@ struct SidebarView: View {
 
     private func timestamp(for session: ChatSession) -> Date {
         switch order {
+        case .none:
+            return session.updatedAt ?? session.createdAt
         case .updated:
             return session.updatedAt ?? session.createdAt
         case .created:
@@ -761,10 +827,45 @@ struct SidebarView: View {
     }
 
     private func projectTimestamp(for project: Project) -> Date {
-        guard order == .updated else { return project.createdAt }
-        return list.sessions(in: project)
-            .map { $0.updatedAt ?? $0.createdAt }
-            .max() ?? project.createdAt
+        switch order {
+        case .none, .created:
+            return project.createdAt
+        case .updated:
+            return list.sessions(in: project)
+                .map { $0.updatedAt ?? $0.createdAt }
+                .max() ?? project.createdAt
+        }
+    }
+
+    private func setOrder(_ newOrder: SidebarOrder) {
+        guard newOrder != order else { return }
+        if newOrder == .none {
+            seedManualOrdersIfNeeded()
+        }
+        orderRaw = newOrder.rawValue
+    }
+
+    private func seedManualOrdersIfNeeded() {
+        if projectOrder.isEmpty {
+            saveProjectOrder(sortedProjects(list.activeProjects).map(\.id))
+        }
+        if sessionOrder.isEmpty {
+            let sessions = list.activeProjects.flatMap { list.sessions(in: $0) }
+            saveSessionOrder(sessions.sorted(by: compareSessions).map(\.id))
+        }
+    }
+
+    private func resetManualOrder() {
+        if organization == .byProject {
+            saveProjectOrder(list.activeProjects.map(\.id))
+        }
+        let sessions = list.activeProjects.flatMap { list.sessions(in: $0) }
+        saveSessionOrder(sessions.sorted { left, right in
+            let leftTimestamp = left.updatedAt ?? left.createdAt
+            let rightTimestamp = right.updatedAt ?? right.createdAt
+            if leftTimestamp != rightTimestamp { return leftTimestamp > rightTimestamp }
+            return left.title.localizedCaseInsensitiveCompare(right.title) == .orderedAscending
+        }.map(\.id))
     }
 
     private func moveProject(_ sourceID: UUID, before destinationID: UUID) {
@@ -782,6 +883,50 @@ struct SidebarView: View {
 
     private func saveProjectOrder(_ ids: [UUID]) {
         manualProjectOrderRaw = ids.map(\.uuidString).joined(separator: "\n")
+    }
+
+    private func moveSession(_ sourceID: UUID, before destinationID: UUID) {
+        guard sourceID != destinationID else { return }
+        let sessions = list.activeProjects.flatMap { list.sessions(in: $0) }
+        if organization == .byProject {
+            let sourceProjectID = sessions.first { $0.id == sourceID }?.projectId
+            let destinationProjectID = sessions.first { $0.id == destinationID }?.projectId
+            guard sourceProjectID == destinationProjectID else { return }
+        }
+
+        var ids = manuallyOrdered(sessions, ids: sessionOrder, id: \.id).map(\.id)
+        guard let sourceIndex = ids.firstIndex(of: sourceID),
+              let destinationIndex = ids.firstIndex(of: destinationID)
+        else { return }
+        withAnimation(.snappy(duration: 0.22)) {
+            let moved = ids.remove(at: sourceIndex)
+            ids.insert(moved, at: destinationIndex)
+            saveSessionOrder(ids)
+        }
+    }
+
+    private func saveSessionOrder(_ ids: [UUID]) {
+        manualSessionOrderRaw = ids.map(\.uuidString).joined(separator: "\n")
+    }
+
+    /// Applies persisted ranks while keeping newly-created items in the
+    /// source's stable order at the end until the next manual move.
+    private func manuallyOrdered<Value>(
+        _ values: [Value],
+        ids: [UUID],
+        id: KeyPath<Value, UUID>
+    ) -> [Value] {
+        let ranks = Dictionary(uniqueKeysWithValues: ids.enumerated().map { ($0.element, $0.offset) })
+        return values.enumerated().sorted { left, right in
+            let leftRank = ranks[left.element[keyPath: id]]
+            let rightRank = ranks[right.element[keyPath: id]]
+            switch (leftRank, rightRank) {
+            case let (leftRank?, rightRank?): return leftRank < rightRank
+            case (_?, nil): return true
+            case (nil, _?): return false
+            case (nil, nil): return left.offset < right.offset
+            }
+        }.map(\.element)
     }
 }
 
@@ -847,6 +992,26 @@ private struct ProjectDropDelegate: DropDelegate {
 
     func performDrop(info: DropInfo) -> Bool {
         draggingProjectID = nil
+        return true
+    }
+}
+
+private struct SessionDropDelegate: DropDelegate {
+    let sessionID: UUID
+    @Binding var draggingSessionID: UUID?
+    let moveSession: (UUID, UUID) -> Void
+
+    func dropEntered(info: DropInfo) {
+        guard let draggingSessionID, draggingSessionID != sessionID else { return }
+        moveSession(draggingSessionID, sessionID)
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        DropProposal(operation: .move)
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        draggingSessionID = nil
         return true
     }
 }
