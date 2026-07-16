@@ -601,7 +601,7 @@ const randomNameIndex = (random: () => number): number =>
   Math.min(generatedWorktreeNames.length - 1, Math.floor(random() * generatedWorktreeNames.length))
 
 const randomNameAt = (random: () => number): string =>
-  generatedWorktreeNames[randomNameIndex(random)] ?? generatedWorktreeNames[0]
+  generatedWorktreeNames[randomNameIndex(random)]!
 
 const defaultRandomId = (): string => randomUUID().replaceAll("-", "").slice(0, 8)
 
@@ -622,7 +622,7 @@ export const availableGeneratedWorktreeName = (
   const startIndex = randomNameIndex(random)
   for (let offset = 0; offset < generatedWorktreeNames.length; offset += 1) {
     const index = (startIndex + offset) % generatedWorktreeNames.length
-    const candidate = generatedWorktreeNames[index] ?? generatedWorktreeNames[0]
+    const candidate = generatedWorktreeNames[index]!
     if (!existing.has(candidate)) {
       return candidate
     }

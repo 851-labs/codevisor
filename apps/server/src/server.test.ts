@@ -1352,6 +1352,12 @@ describe("@codevisor/server", () => {
     const legacyServer = await startWithApp(services)
     runningServers.push(legacyServer)
     const unavailableRequests: ReadonlyArray<readonly [string, string]> = [
+      ["GET", "/v1/harnesses/pi/providers"],
+      ["POST", "/v1/harnesses/pi/providers/openai/login"],
+      ["DELETE", "/v1/harnesses/pi/providers/openai"],
+      ["POST", "/v1/harnesses/pi/auth-flows/pi-flow-1/answer"],
+      ["GET", "/v1/harnesses/pi/auth-flows/pi-flow-1"],
+      ["DELETE", "/v1/harnesses/pi/auth-flows/pi-flow-1"],
       ["POST", "/v1/harnesses/auth/refresh"],
       ["DELETE", "/v1/harnesses/codex/accounts/account-1/login/flow-1"],
       ["POST", "/v1/harnesses/codex/accounts/account-1/login"],
@@ -1382,6 +1388,18 @@ describe("@codevisor/server", () => {
       canLogout: true
     }
     const accountList = [account]
+    const piProvider = { id: "openai", name: "OpenAI", methods: ["api_key" as const] }
+    const piFlow = {
+      id: "pi-flow-1",
+      providerId: piProvider.id,
+      state: "waiting" as const,
+      prompt: {
+        id: "api-key",
+        type: "secret" as const,
+        message: "Enter OpenAI API key",
+        options: []
+      }
+    }
     let authState: "authenticated" | "unauthenticated" = "authenticated"
     let activeContextAvailable = true
     const auth: HarnessAuthManager = {
@@ -1416,12 +1434,60 @@ describe("@codevisor/server", () => {
         activeContextAvailable ? { id: account.id, profileKind: "default" as const } : undefined
       ),
       markAccountExpired: vi.fn(async () => undefined),
+      piProviders: vi.fn(async () => [piProvider]),
+      beginPiLogin: vi.fn(async () => piFlow),
+      piLoginFlow: vi.fn(() => piFlow),
+      answerPiLogin: vi.fn(async () => ({ ...piFlow, state: "complete" as const })),
+      cancelPiLogin: vi.fn(() => undefined),
+      logoutPiProvider: vi.fn(async () => undefined),
       subscribe: () => () => undefined
     }
     const server = await startWithApp({ ...services, auth })
     runningServers.push(server)
 
     expect((await jsonRequest(server, "/v1/harnesses")).status).toBe(200)
+    expect((await jsonRequest(server, "/v1/harnesses/pi/providers")).body).toEqual([piProvider])
+    expect(
+      await jsonRequest(server, "/v1/harnesses/pi/providers/openai/login", {
+        method: "POST",
+        body: JSON.stringify({ method: "api_key" })
+      })
+    ).toMatchObject({ status: 201, body: piFlow })
+    expect(auth.beginPiLogin).toHaveBeenCalledWith("openai", "api_key")
+    expect(
+      await jsonRequest(server, "/v1/harnesses/pi/auth-flows/pi-flow-1/answer", {
+        method: "POST",
+        body: JSON.stringify({ value: "sk-test" })
+      })
+    ).toMatchObject({ status: 200, body: { state: "complete" } })
+    expect(auth.answerPiLogin).toHaveBeenCalledWith("pi-flow-1", "sk-test")
+    expect((await jsonRequest(server, "/v1/harnesses/pi/auth-flows/pi-flow-1")).body).toEqual(
+      piFlow
+    )
+    expect(
+      (
+        await jsonRequest(server, "/v1/harnesses/pi/auth-flows/pi-flow-1", {
+          method: "DELETE"
+        })
+      ).status
+    ).toBe(204)
+    expect(auth.cancelPiLogin).toHaveBeenCalledWith("pi-flow-1")
+    expect(
+      (
+        await jsonRequest(server, "/v1/harnesses/pi/providers/openai", {
+          method: "DELETE"
+        })
+      ).status
+    ).toBe(204)
+    expect(auth.logoutPiProvider).toHaveBeenCalledWith("openai")
+    for (const [method, path] of [
+      ["GET", "/v1/harnesses/pi/providers/openai/login"],
+      ["GET", "/v1/harnesses/pi/providers/openai"],
+      ["GET", "/v1/harnesses/pi/auth-flows/pi-flow-1/answer"],
+      ["POST", "/v1/harnesses/pi/auth-flows/pi-flow-1"]
+    ] as const) {
+      expect((await jsonRequest(server, path, { method })).status).toBe(404)
+    }
     expect(
       (await jsonRequest(server, "/v1/harnesses/auth/refresh", { method: "POST" })).status
     ).toBe(200)
@@ -3300,6 +3366,14 @@ describe("@codevisor/server", () => {
       ).body as { readonly name: string; readonly branch: string }
       expect(secondWorktree.name).toBe("fix-auth-2")
       expect(secondWorktree.branch).toBe(`codevisor/${secondWorktree.name}`)
+      const thirdWorktree = (
+        await jsonRequest(server, "/v1/projects/git-project/worktrees", {
+          body: JSON.stringify({ name: "fix auth" }),
+          method: "POST"
+        })
+      ).body as { readonly name: string; readonly branch: string }
+      expect(thirdWorktree.name).toBe("fix-auth-3")
+      expect(thirdWorktree.branch).toBe(`codevisor/${thirdWorktree.name}`)
       // Missing names get a short scientist surname from the curated pool.
       const randomNamed = (
         await jsonRequest(server, "/v1/projects/git-project/worktrees", {
@@ -3311,7 +3385,7 @@ describe("@codevisor/server", () => {
       expect(
         ((await jsonRequest(server, "/v1/projects/git-project/worktrees")).body as Array<unknown>)
           .length
-      ).toBe(3)
+      ).toBe(4)
 
       // A failing git operation (branch already exists) surfaces as 422 and
       // releases the reserved name for a retry.
@@ -3334,7 +3408,7 @@ describe("@codevisor/server", () => {
       expect(
         ((await jsonRequest(server, "/v1/projects/git-project/worktrees")).body as Array<unknown>)
           .length
-      ).toBe(3)
+      ).toBe(4)
 
       // Sessions created with a worktree run the agent inside the worktree.
       const sessionResponse = await jsonRequest(server, "/v1/sessions", {

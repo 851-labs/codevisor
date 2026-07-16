@@ -998,6 +998,7 @@ const availableWorktreeName = (base: string, existing: ReadonlySet<string>): str
       return candidate
     }
   }
+  /* v8 ignore next -- existing.size + 1 candidates guarantee a free suffix. */
   throw new Error("Unable to allocate a unique worktree name")
 }
 
@@ -1210,13 +1211,15 @@ const routeHarnesses = async (
 
   const piFlow = matchRouteParams(url.pathname, "/v1/harnesses/pi/auth-flows/:flowId")
   if (piFlow !== undefined) {
-    if (services.auth?.piLoginFlow === undefined || services.auth.cancelPiLogin === undefined)
-      throw new HttpFailure(501, "Harness authentication unavailable")
     if (request.method === "GET") {
+      if (services.auth?.piLoginFlow === undefined)
+        throw new HttpFailure(501, "Harness authentication unavailable")
       writeJson(response, 200, services.auth.piLoginFlow(piFlow.flowId!))
       return true
     }
     if (request.method === "DELETE") {
+      if (services.auth?.cancelPiLogin === undefined)
+        throw new HttpFailure(501, "Harness authentication unavailable")
       services.auth.cancelPiLogin(piFlow.flowId!)
       writeJson(response, 204, undefined)
       return true

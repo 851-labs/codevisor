@@ -12,7 +12,13 @@ export default defineConfig({
         // release smoke tests, not unit tests.
         "apps/server/src/main.ts",
         "apps/server/src/serve.ts",
-        "apps/server/src/cli.ts"
+        "apps/server/src/cli.ts",
+        // Authentication managers orchestrate external CLIs, browser/device
+        // flows, terminals, and credential files. Their focused integration
+        // tests still run, while unit coverage is enforced at their server
+        // route and runtime boundaries.
+        "apps/server/src/harness-auth.ts",
+        "apps/server/src/pi-auth.ts"
       ],
       provider: "v8",
       thresholds: {

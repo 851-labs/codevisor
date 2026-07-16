@@ -41,4 +41,24 @@ describe("generated worktree names", () => {
       )
     ).toBe(`${firstName}-cafebabe`)
   })
+
+  it("generates a default random ID after every base name is occupied", () => {
+    const candidate = availableGeneratedWorktreeName(new Set(generatedWorktreeNames), () => 0)
+
+    expect(candidate).toMatch(new RegExp(`^${generatedWorktreeNames[0]}-[0-9a-f]{8}$`))
+  })
+
+  it("fails after every generated base and random ID collides", () => {
+    const firstName = generatedWorktreeNames[0]
+    const existing = new Set<string>(generatedWorktreeNames)
+    existing.add(`${firstName}-deadbeef`)
+
+    expect(() =>
+      availableGeneratedWorktreeName(
+        existing,
+        () => 0,
+        () => "deadbeef"
+      )
+    ).toThrow("Unable to allocate a unique generated worktree name")
+  })
 })
