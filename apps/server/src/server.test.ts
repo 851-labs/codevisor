@@ -2378,9 +2378,9 @@ describe("@codevisor/server", () => {
     ).toEqual(expect.arrayContaining(["returned events", "Raw answer without id"]))
 
     const promptCountBeforeSlow = agents.prompts.length
-    const queueEventsBeforeSlow = (
-      await run(services.db.listSubjectEvents(session.id))
-    ).filter((event) => event.kind === "session.queue.updated").length
+    const queueEventsBeforeSlow = (await run(services.db.listSubjectEvents(session.id))).filter(
+      (event) => event.kind === "session.queue.updated"
+    ).length
     const slowResponse = (
       await jsonRequest(server, `/v1/sessions/${session.id}/prompt`, {
         body: JSON.stringify({ text: "slow prompt" }),
@@ -2389,9 +2389,7 @@ describe("@codevisor/server", () => {
     ).body as { readonly queueItemId: string }
     expect(slowResponse.queueItemId).toBeTypeOf("string")
     await waitFor(() => agents.prompts.length === promptCountBeforeSlow + 1)
-    const immediatePromptQueueEvents = (
-      await run(services.db.listSubjectEvents(session.id))
-    )
+    const immediatePromptQueueEvents = (await run(services.db.listSubjectEvents(session.id)))
       .filter((event) => event.kind === "session.queue.updated")
       .slice(queueEventsBeforeSlow)
     expect(immediatePromptQueueEvents).not.toEqual(
