@@ -25,6 +25,9 @@ public final class AppEnvironment {
     public let scratchpads: any ScratchpadRepository
     /// Overrides server-backed harness discovery (previews/tests only).
     private let harnessServiceOverride: (any HarnessServicing)?
+    /// Monotonic, per-machine invalidation tokens for consumers that keep a
+    /// harness catalog alive (most notably an already-mounted new-chat page).
+    private var harnessCatalogRevisions: [String: UInt64] = [:]
 
     public var serverClient: any CodevisorServerClienting {
         machines.selectedClient
@@ -168,6 +171,39 @@ public final class AppEnvironment {
 
     public func harnessService(for serverId: String) -> any HarnessServicing {
         harnessServiceOverride ?? ServerHarnessService(client: machines.client(for: serverId))
+    }
+
+    /// The current catalog invalidation token for a machine. Views observe
+    /// this value and refetch only the machine whose harness state changed.
+    public func harnessCatalogRevision(for serverId: String) -> UInt64 {
+        harnessCatalogRevisions[serverId, default: 0]
+    }
+
+    /// Publishes that authentication, enablement, or discovery changed the
+    /// harnesses available for new chats on a machine.
+    public func harnessCatalogDidChange(onServer serverId: String) {
+        configCache.invalidateCapabilities(forServer: serverId)
+        harnessCatalogRevisions[serverId, default: 0] &+= 1
+    }
+
+    /// Forces the server to re-probe harness authentication, then invalidates
+    /// every mounted consumer of that machine's catalog.
+    public func refreshHarnessAuthentication() async throws -> [ServerHarness] {
+        // Snapshot before awaiting so a machine switch cannot attribute the
+        // completed request to whichever machine happens to be selected later.
+        let serverId = machines.selectedMachineId
+        let refreshed = try await machines.client(for: serverId).refreshHarnessAuth()
+        harnessCatalogDidChange(onServer: serverId)
+        return refreshed
+    }
+
+    /// Re-probes only the harness whose authentication changed, then
+    /// invalidates mounted consumers of that machine's catalog.
+    public func refreshHarnessAuthentication(harnessId: String) async throws -> ServerHarness {
+        let serverId = machines.selectedMachineId
+        let refreshed = try await machines.client(for: serverId).refreshHarnessAuth(harnessId: harnessId)
+        harnessCatalogDidChange(onServer: serverId)
+        return refreshed
     }
 
     /// Deletes all Codevisor data (projects, sessions, cached config, settings)

@@ -97,6 +97,7 @@ public protocol CodevisorServerClienting: Sendable {
     func listAgentSessions(harnessId: String) async throws -> [SessionInfo]
     func setHarnessEnabled(id: String, enabled: Bool) async throws -> ServerHarness
     func refreshHarnessAuth() async throws -> [ServerHarness]
+    func refreshHarnessAuth(harnessId: String) async throws -> ServerHarness
     func listHarnessAccounts(harnessId: String) async throws -> [ServerHarnessAccount]
     func createHarnessAccount(harnessId: String, label: String?) async throws -> ServerHarnessAccount
     func renameHarnessAccount(harnessId: String, accountId: String, label: String) async throws -> ServerHarnessAccount
@@ -226,6 +227,12 @@ public extension CodevisorServerClienting {
     func listAgentSessions(harnessId: String) async throws -> [SessionInfo] { [] }
 
     func refreshHarnessAuth() async throws -> [ServerHarness] { try await listHarnesses() }
+    func refreshHarnessAuth(harnessId: String) async throws -> ServerHarness {
+        guard let harness = try await refreshHarnessAuth().first(where: { $0.id == harnessId }) else {
+            throw CodevisorServerClientError.invalidResponse
+        }
+        return harness
+    }
     func listHarnessAccounts(harnessId: String) async throws -> [ServerHarnessAccount] { [] }
     func createHarnessAccount(harnessId: String, label: String?) async throws -> ServerHarnessAccount {
         throw CodevisorServerClientError.invalidResponse
@@ -1218,6 +1225,19 @@ public final class CodevisorServerClient: CodevisorServerClienting, @unchecked S
 
     public func refreshHarnessAuth() async throws -> [ServerHarness] {
         try await send("/v1/harnesses/auth/refresh", method: "POST", body: Optional<EmptyBody>.none)
+    }
+
+    public func refreshHarnessAuth(harnessId: String) async throws -> ServerHarness {
+        let encoded = harnessId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? harnessId
+        let refreshed: [ServerHarness] = try await send(
+            "/v1/harnesses/auth/refresh?harnessId=\(encoded)",
+            method: "POST",
+            body: Optional<EmptyBody>.none
+        )
+        guard let harness = refreshed.first(where: { $0.id == harnessId }) else {
+            throw CodevisorServerClientError.invalidResponse
+        }
+        return harness
     }
 
     public func listHarnessAccounts(harnessId: String) async throws -> [ServerHarnessAccount] {

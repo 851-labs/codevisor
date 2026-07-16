@@ -336,8 +336,7 @@ struct PiProviderAuthenticationView: View {
     }
 
     private func refreshHarness() async {
-        if let refreshed = try? await environment.serverClient.refreshHarnessAuth(),
-           let updated = refreshed.first(where: { $0.id == harness.id }) {
+        if let updated = try? await environment.refreshHarnessAuthentication(harnessId: harness.id) {
             onChange(updated)
         }
     }

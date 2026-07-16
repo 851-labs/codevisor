@@ -835,8 +835,10 @@ struct HarnessesSettingsView: View {
     private func scan() async {
         isScanning = true
         defer { isScanning = false }
+        let serverId = environment.machines.selectedMachineId
         do {
-            serverHarnesses = try await environment.harnessService.rescanHarnesses()
+            serverHarnesses = try await environment.harnessService(for: serverId).rescanHarnesses()
+            environment.harnessCatalogDidChange(onServer: serverId)
             scanError = nil
         } catch {
             serverHarnesses = []
@@ -846,9 +848,12 @@ struct HarnessesSettingsView: View {
 
     private func setServerHarness(_ id: String, enabled: Bool) async {
         updateServerHarness(id, enabled: enabled)
+        let serverId = environment.machines.selectedMachineId
         do {
-            let updated = try await environment.serverClient.setHarnessEnabled(id: id, enabled: enabled)
+            let updated = try await environment.machines.client(for: serverId)
+                .setHarnessEnabled(id: id, enabled: enabled)
             replaceServerHarness(updated)
+            environment.harnessCatalogDidChange(onServer: serverId)
         } catch {
             updateServerHarness(id, enabled: !enabled)
             Log.server.error("Setting harness \(id, privacy: .public) enabled=\(enabled, privacy: .public) failed: \(String(describing: error), privacy: .public)")

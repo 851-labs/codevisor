@@ -97,6 +97,16 @@ public final class ConfigOptionCache {
         return true
     }
 
+    /// Drops the catalog snapshot for one server while retaining each
+    /// harness's last-known config choices. Authentication and enablement can
+    /// change which harnesses belong in the new-chat picker, so the catalog
+    /// must not seed a newly mounted composer after either mutation.
+    public func invalidateCapabilities(forServer serverId: String) {
+        capabilitiesCache.removeValue(forKey: serverId)
+        provisionalCapabilityServers.remove(serverId)
+        persist()
+    }
+
     /// Clears all cached config (used by "Delete all data").
     public func clear() {
         cache = [:]

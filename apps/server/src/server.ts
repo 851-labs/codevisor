@@ -1327,8 +1327,9 @@ const routeHarnesses = async (
   if (request.method === "POST" && url.pathname === "/v1/harnesses/auth/refresh") {
     if (services.auth === undefined)
       throw new HttpFailure(501, "Harness authentication unavailable")
-    await services.auth.refresh()
-    writeJson(response, 200, await discoverHarnesses(services, true))
+    const harnessId = url.searchParams.get("harnessId")?.trim() || undefined
+    await services.auth.refresh(harnessId)
+    writeJson(response, 200, await discoverHarnesses(services, harnessId === undefined, harnessId))
     return true
   }
 
@@ -2508,11 +2509,14 @@ const authorize = async (
 
 const discoverHarnesses = async (
   services: CodevisorServerServices,
-  forceAuth = false
+  forceAuth = false,
+  harnessId?: string
 ): Promise<ReadonlyArray<Harness>> => {
-  const harnesses = await run(
+  const discovered = await run(
     services.db.applyHarnessSettings(await run(services.agents.discoverHarnesses))
   )
+  const harnesses =
+    harnessId === undefined ? discovered : discovered.filter((harness) => harness.id === harnessId)
   return services.auth === undefined
     ? harnesses
     : services.auth.decorateHarnesses(harnesses, forceAuth)

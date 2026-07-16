@@ -1424,6 +1424,16 @@ describe("@codevisor/server", () => {
     expect(
       (await jsonRequest(server, "/v1/harnesses/auth/refresh", { method: "POST" })).status
     ).toBe(200)
+    const targetedRefresh = await jsonRequest(
+      server,
+      "/v1/harnesses/auth/refresh?harnessId=codex",
+      { method: "POST" }
+    )
+    expect(targetedRefresh).toMatchObject({
+      status: 200,
+      body: [{ id: "codex" }]
+    })
+    expect(auth.refresh).toHaveBeenLastCalledWith("codex")
     expect(
       (
         await jsonRequest(server, "/v1/harnesses/codex/accounts/account-1", {

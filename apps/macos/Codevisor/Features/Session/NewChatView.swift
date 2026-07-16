@@ -35,6 +35,9 @@ struct NewChatView: View {
     private var setupIdentity: String {
         "\(environment.machines.selectedMachineId):\(preferredProjectId?.uuidString ?? "default")"
     }
+    private var harnessCatalogRevision: UInt64 {
+        environment.harnessCatalogRevision(for: environment.machines.selectedMachineId)
+    }
 
     /// Worktrees only make sense when the project folder is a git repository
     /// (as probed by the session's server).
@@ -142,6 +145,13 @@ struct NewChatView: View {
             // premature — the user may confirm with a different selection.
             guard controller == nil, !showsProjectSetup else { return }
             setUpController()
+        }
+        // Settings lives in a separate window, so this page can remain mounted
+        // while sign-in changes a harness from unavailable to ready. Refetch
+        // the live capabilities snapshot when that machine's catalog changes.
+        .onChange(of: harnessCatalogRevision) { _, _ in
+            guard let controller else { return }
+            Task { await controller.refreshHarnessCapabilities() }
         }
         .focusedSceneValue(\.newChatComposerFocus, NewChatComposerFocus(
             focus: { focus.focusComposer() }

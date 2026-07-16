@@ -428,7 +428,20 @@ export const makeHarnessAuthManager = (config: HarnessAuthManagerConfig): Harnes
     await Promise.all(
       ids.map(async (id) => {
         const accounts = await run(config.db.listHarnessAccounts(id))
-        await Promise.all(accounts.map((account) => probeAccount(account.id, true)))
+        await Promise.all(
+          accounts.map(async (account) => {
+            try {
+              await probeAccount(account.id, true)
+            } catch (cause) {
+              await persistProbe(account, {
+                authState: "error",
+                canLogin: account.canLogin,
+                canLogout: false,
+                detail: cause instanceof Error ? cause.message : String(cause)
+              })
+            }
+          })
+        )
       })
     )
   }

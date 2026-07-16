@@ -118,6 +118,24 @@ struct ConfigOptionCacheTests {
         #expect(cache.capabilities(forServer: "local").first?.configOptions.first?.currentValue == "project")
     }
 
+    @Test("Invalidating one server drops its catalog but preserves config choices")
+    func invalidatesCatalogPerServer() {
+        let store = InMemoryStore()
+        let cache = ConfigOptionCache(store: store)
+        cache.store([capability(model: "local")], forServer: "local")
+        cache.store([capability(model: "remote")], forServer: "remote")
+
+        cache.invalidateCapabilities(forServer: "local")
+
+        #expect(cache.capabilities(forServer: "local").isEmpty)
+        #expect(cache.options(forHarness: "codex", onServer: "local").first?.currentValue == "local")
+        #expect(cache.capabilities(forServer: "remote").first?.configOptions.first?.currentValue == "remote")
+
+        let reopened = ConfigOptionCache(store: store)
+        #expect(reopened.capabilities(forServer: "local").isEmpty)
+        #expect(reopened.options(forHarness: "codex", onServer: "local").first?.currentValue == "local")
+    }
+
     private func capability(model: String) -> ServerHarnessCapability {
         ServerHarnessCapability(
             harness: ServerHarness(

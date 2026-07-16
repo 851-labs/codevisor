@@ -1045,6 +1045,17 @@ final class SessionController {
         _ = await prepareFromServerCapabilities(serverClient)
     }
 
+    /// Reloads the authoritative harness catalog after authentication or
+    /// enablement changes. Unlike `prepare()`, this deliberately bypasses the
+    /// stale cache because the caller is responding to an explicit mutation.
+    func refreshHarnessCapabilities() async {
+        guard let serverClient else {
+            preparationState = .failed
+            return
+        }
+        _ = await prepareFromServerCapabilities(serverClient)
+    }
+
     /// Eagerly connects the selected harness (without sending) so model and
     /// reasoning config options are available in the composer before the first
     /// message. Safe to call repeatedly.

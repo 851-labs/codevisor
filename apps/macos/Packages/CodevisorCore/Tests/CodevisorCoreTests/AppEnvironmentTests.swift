@@ -42,6 +42,20 @@ struct AppEnvironmentTests {
         #expect(all.contains { !$0.isReady })
     }
 
+    @Test("Harness catalog invalidation is isolated per machine")
+    func harnessCatalogInvalidation() {
+        let environment = AppEnvironment.preview()
+
+        #expect(environment.harnessCatalogRevision(for: "local") == 0)
+        #expect(environment.harnessCatalogRevision(for: "remote") == 0)
+
+        environment.harnessCatalogDidChange(onServer: "local")
+        environment.harnessCatalogDidChange(onServer: "local")
+
+        #expect(environment.harnessCatalogRevision(for: "local") == 2)
+        #expect(environment.harnessCatalogRevision(for: "remote") == 0)
+    }
+
     @Test("Onboarding with a project folder adds the project without importing old chats")
     func onboardingImportsProjectSessions() async {
         let environment = AppEnvironment.preview(seedProjects: [], hasOnboarded: false)

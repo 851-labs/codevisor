@@ -88,3 +88,68 @@ describe("Pi harness authentication", () => {
     expect(authenticateHarness).not.toHaveBeenCalled()
   })
 })
+
+describe("harness authentication refresh", () => {
+  it("refreshes every account when one harness probe fails", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "codevisor-auth-refresh-"))
+    directories.push(directory)
+
+    const db = await run(
+      makeDatabase({ filename: join(directory, "codevisor.sqlite"), serverId: "test" })
+    )
+    databases.push(db)
+    await Promise.all([
+      run(
+        db.saveHarnessAccount({
+          id: "pi-account",
+          harnessId: "pi",
+          profileKind: "default",
+          label: "Pi configuration",
+          authState: "checking",
+          canLogin: true,
+          canLogout: false
+        })
+      ),
+      run(
+        db.saveHarnessAccount({
+          id: "gemini-account",
+          harnessId: "gemini",
+          profileKind: "default",
+          label: "Existing Gemini CLI account",
+          authState: "checking",
+          canLogin: true,
+          canLogout: false
+        })
+      )
+    ])
+
+    const probeHarnessAuth = vi.fn((harnessId: string) =>
+      harnessId === "gemini"
+        ? Effect.fail(new Error("ACP connection closed"))
+        : Effect.succeed({
+            state: "notRequired" as const,
+            methods: [],
+            canLogout: false
+          })
+    )
+    const manager = makeHarnessAuthManager({
+      agents: { probeHarnessAuth } as unknown as AgentRuntimeService,
+      dataDir: directory,
+      db,
+      terminal: {} as TerminalManagerService,
+      resolveEnv: () => Promise.resolve({ HOME: directory })
+    })
+
+    await expect(manager.refresh()).resolves.toBeUndefined()
+
+    expect(probeHarnessAuth).toHaveBeenCalledWith("pi", expect.any(Object))
+    expect(probeHarnessAuth).toHaveBeenCalledWith("gemini", expect.any(Object))
+    await expect(run(db.getHarnessAccount("pi-account"))).resolves.toMatchObject({
+      authState: "notRequired"
+    })
+    await expect(run(db.getHarnessAccount("gemini-account"))).resolves.toMatchObject({
+      authState: "error",
+      canLogout: false
+    })
+  })
+})
