@@ -20,6 +20,7 @@ import type {
   PromptQueueItem,
   QuestionPayload,
   SessionDetail,
+  SessionGoal,
   SessionSummary,
   TranscriptItem,
   TranscriptItemDetails,
@@ -29,7 +30,7 @@ import type {
   UpdateInfo,
   Worktree
 } from "@codevisor/api"
-import { isoTimestamp } from "@codevisor/api"
+import { isoTimestamp, SessionGoal as SessionGoalSchema } from "@codevisor/api"
 import Database from "better-sqlite3"
 import { createHash, randomBytes, randomUUID } from "node:crypto"
 import { Context, Effect, Layer, Schema } from "effect"
@@ -1180,6 +1181,34 @@ const chatAssistantSummary = (
   }
 }
 
+/// Goal updates live in the durable session log rather than the transcript
+/// projection. Snapshot the newest one alongside the transcript cursor so a
+/// client that opens after the update cannot skip it by subscribing from the
+/// newer cursor.
+const sessionGoalSnapshot = (
+  sqlite: Database.Database,
+  sessionId: string
+): SessionGoal | undefined => {
+  const row = sqlite
+    .prepare(
+      `select payload from session_events
+       where session_id = ? and kind = 'session.updated'
+         and (json_type(payload, '$.goal') = 'object'
+           or json_extract(payload, '$.goalCleared') = 1)
+       order by revision desc limit 1`
+    )
+    .get(sessionId) as { readonly payload: string } | undefined
+  if (row === undefined) return undefined
+  const payload = jsonRecord(JSON.parse(row.payload))
+  if (payload?.goalCleared === true) return undefined
+  try {
+    return Schema.decodeUnknownSync(SessionGoalSchema)(payload?.goal)
+  } catch {
+    /* v8 ignore next -- only manually corrupted session events can reach this path. */
+    return undefined
+  }
+}
+
 const finishAssistantChatItem = (
   sqlite: Database.Database,
   sessionId: string,
@@ -2318,6 +2347,7 @@ const createService = (
         }
         const pendingQuestion = pendingQuestionFromRaw(state.pending_question)
         const backgroundTasks = backgroundTasksFromRaw(state.background_tasks)
+        const goal = sessionGoalSnapshot(sqlite, id)
         return {
           session,
           conversation: sqlite
@@ -2334,7 +2364,8 @@ const createService = (
           promptQueue: listPromptQueueSync(sqlite, id),
           eventCursor: Number(state.cursor),
           ...(pendingQuestion === undefined ? {} : { pendingQuestion }),
-          backgroundTasks
+          backgroundTasks,
+          ...(goal === undefined ? {} : { goal })
         }
       }),
     getTranscriptPage: (sessionId, before, limit) =>
@@ -2390,6 +2421,7 @@ const createService = (
         }
         const pendingQuestion = pendingQuestionFromRaw(state.pending_question)
         const backgroundTasks = backgroundTasksFromRaw(state.background_tasks)
+        const goal = sessionGoalSnapshot(sqlite, sessionId)
         return {
           items,
           ...(hasMore ? { nextBefore: String(cursor!) } : {}),
@@ -2397,6 +2429,7 @@ const createService = (
           eventCursor: Number(state.cursor),
           ...(pendingQuestion === undefined ? {} : { pendingQuestion }),
           backgroundTasks,
+          ...(goal === undefined ? {} : { goal }),
           usage: session.usage
         }
       }),

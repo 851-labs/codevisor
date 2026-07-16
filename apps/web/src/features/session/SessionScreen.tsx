@@ -273,6 +273,8 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
       lastMeta?.thoughts.length ?? 0,
       lastMeta?.toolCalls.length ?? 0,
       lastMeta?.entries.length ?? 0,
+      detail?.goal?.status ?? "",
+      detail?.goal?.activity ?? "",
       Object.values(lastMeta?.subagents ?? {})
         .map((bucket) => `${bucket.entries.length}.${bucket.isThinking ? 1 : 0}`)
         .join(","),
@@ -807,6 +809,7 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
             <WaitingBackgroundTaskIndicator tasks={waitingBackgroundTasks} />
           ) : null
         }
+        goalActivity={detail.goal?.status === "active" ? detail.goal.activity : undefined}
         composerHeight={composerHeight}
         streamFingerprint={streamFingerprint}
         setupPhases={setupPhases}
@@ -1070,29 +1073,16 @@ export function GoalBanner({
     goal.timeUsedSeconds > 0 ? formatElapsed(goal.timeUsedSeconds) : undefined
   ].filter((part): part is string => part != null)
   const canResume = goal.status !== "active" && goal.status !== "complete"
+  const status = goalStatusText(goal.status)
 
   return (
     <div
-      aria-label={`Goal: ${goal.objective}, ${goalStatusText(goal.status)}`}
+      aria-label={`Goal: ${goal.objective}, ${status}`}
       className="flex items-start gap-2.5 rounded-lg border border-[var(--codevisor-separator)] bg-[var(--codevisor-card-bg)] p-2.5"
     >
       <TargetIcon className="text-muted-foreground mt-[3px] size-3.5 shrink-0" />
       <div className="min-w-0 flex-1">
-        <div className="flex min-w-0 items-start gap-2">
-          <p className="line-clamp-2 text-sm font-medium">{goal.objective}</p>
-          <span
-            className={cn(
-              "mt-0.5 shrink-0 rounded-full bg-[color-mix(in_srgb,currentColor_15%,transparent)] px-1.5 py-0.5 text-[11px] font-semibold",
-              isTroubleGoalStatus(goal.status)
-                ? "text-[var(--codevisor-status-warn)]"
-                : goal.status === "active"
-                  ? "text-foreground"
-                  : "text-muted-foreground"
-            )}
-          >
-            {goalStatusText(goal.status)}
-          </span>
-        </div>
+        <p className="line-clamp-2 text-sm font-medium">{goal.objective}</p>
         {parts.length > 0 && (
           <p className="text-muted-foreground/80 mt-0.5 font-mono text-xs">{parts.join(" · ")}</p>
         )}
@@ -1162,10 +1152,6 @@ function goalStatusText(status: SessionGoal["status"]): string {
     case "complete":
       return "Complete"
   }
-}
-
-function isTroubleGoalStatus(status: SessionGoal["status"]): boolean {
-  return status === "blocked" || status === "usageLimited" || status === "budgetLimited"
 }
 
 export function formatTokenCount(count: number): string {

@@ -10,11 +10,13 @@ import type {
 } from "@agentclientprotocol/sdk"
 import type {
   CanonicalModeId,
+  GoalStatus,
   Harness,
   QuestionSpec,
   SessionConfigOption,
   SessionConfigSelectGroup,
   SessionConfigSelectOption,
+  SessionGoal,
   SessionModeState
 } from "@codevisor/api"
 import { randomUUID } from "node:crypto"
@@ -49,6 +51,7 @@ import {
   type QuestionAnswer,
   type RuntimeEmit,
   type RuntimeEvent,
+  type SetGoalUpdate,
   type ToolGatewayConfig
 } from "../types.js"
 
@@ -76,7 +79,7 @@ export interface AcpAgentConnection {
     sessionId: string,
     cwd: string,
     toolGateway?: ToolGatewayConfig
-  ) => Effect.Effect<string, AgentRuntimeError>
+  ) => Effect.Effect<AgentSessionMetadata, AgentRuntimeError>
   readonly prompt: (
     sessionId: string,
     input: string | PromptInput
@@ -93,6 +96,11 @@ export interface AcpAgentConnection {
     configId: string,
     value: string
   ) => Effect.Effect<unknown, AgentRuntimeError>
+  readonly setGoal?: (
+    sessionId: string,
+    update: SetGoalUpdate
+  ) => Effect.Effect<SessionGoal, AgentRuntimeError>
+  readonly clearGoal?: (sessionId: string) => Effect.Effect<void, AgentRuntimeError>
   /// Resolves a pending `session/request_permission` that was surfaced as a
   /// blocking question. Absent on connections without permission plumbing
   /// (fakes, older transports) — the runtime then reports unsupported.
@@ -255,7 +263,16 @@ export const makeAcpProvider = (
         )
         return result
       }),
-    cancel: connection.cancel(sessionId),
+    cancel: Effect.gen(function* () {
+      yield* connection.cancel(sessionId)
+      // Cancelling without a locally tracked prompt can otherwise leave a
+      // replayed assistant chunk generating forever (notably after a Grok
+      // goal was cleared). A terminal event is idempotent if the prompt also
+      // resolves with its own cancellation event.
+      yield* adapterPromise("cancelTurnEnd", () =>
+        emit(turnLifecycleEvent(sessionId, randomUUID(), "ended", "cancelled"))
+      )
+    }),
     setMode: (modeId) =>
       Effect.gen(function* () {
         yield* connection.setMode(sessionId, modeId)
@@ -279,6 +296,16 @@ export const makeAcpProvider = (
       : {
           answerQuestion: (questionId: string, answer: QuestionAnswer) =>
             connection.answerQuestion!(sessionId, questionId, answer)
+        }),
+    ...(connection.setGoal === undefined
+      ? {}
+      : {
+          setGoal: (update: SetGoalUpdate) => connection.setGoal!(sessionId, update)
+        }),
+    ...(connection.clearGoal === undefined
+      ? {}
+      : {
+          clearGoal: connection.clearGoal(sessionId)
         }),
     close: connection.close
   })
@@ -318,8 +345,12 @@ export const makeAcpProvider = (
     ): Effect.Effect<LoadedAgentSession, AgentRuntimeError> =>
       Effect.gen(function* () {
         const connection = yield* connect(definition, cwd, emit, account)
-        const sessionId = yield* connection.loadSession(agentSessionId, cwd, toolGateway)
-        return { handle: handleFor(connection, sessionId, emit), sessionId }
+        const metadata = yield* connection.loadSession(agentSessionId, cwd, toolGateway)
+        return {
+          handle: handleFor(connection, metadata.sessionId, emit),
+          metadata,
+          sessionId: metadata.sessionId
+        }
       }),
     listAgentSessions: async (definition, account) => {
       try {
@@ -414,8 +445,8 @@ export const makeStdioAcpConnector = (
     adapterPromise("connect", async () => {
       const child = spawn(request.command, [...request.args], {
         cwd: request.cwd,
-        // npx/npm launch the actual agent as a descendant. A separate process
-        // group lets close/timeout reliably terminate the whole ACP tree.
+        // Some CLIs spawn worker descendants. A separate process group lets
+        // close/timeout reliably terminate the whole ACP tree.
         detached: process.platform !== "win32",
         env: request.env,
         stdio: ["pipe", "pipe", "pipe"]
@@ -432,6 +463,7 @@ export const makeStdioAcpConnector = (
       const stderr = captureStderr(child)
       const pendingQuestions = new Map<string, PendingAcpQuestion>()
       const piStartupInfoBySession = new Map<string, string>()
+      const grokGoals = new Map<string, SessionGoal>()
       const safeEmit = (event: RuntimeEvent): void => {
         void emit(event).catch(() => undefined)
       }
@@ -439,61 +471,11 @@ export const makeStdioAcpConnector = (
         backgroundTerminals === undefined
           ? undefined
           : makeAcpTerminalHost({
+              commandMode: request.harnessId === "grok-build" ? "shell" : "argv",
               emit,
               env: request.env,
               integration: backgroundTerminals
             })
-      const connection = createClientApp(
-        (notification) => {
-          const startupInfo = piStartupInfoBySession.get(notification.sessionId)
-          if (
-            request.harnessId === "pi" &&
-            startupInfo !== undefined &&
-            isPiStartupInfoNotification(notification, startupInfo)
-          ) {
-            piStartupInfoBySession.delete(notification.sessionId)
-            return
-          }
-          safeEmit(runtimeEventFromNotification(notification))
-        },
-        (params) => {
-          const question = acpPermissionQuestion(params)
-          if (question === undefined) {
-            return Promise.resolve({ outcome: { outcome: "cancelled" as const } })
-          }
-          const questionId = randomUUID()
-          if (question.planDocument !== undefined) {
-            safeEmit({
-              kind: "session.output",
-              payload: { markdown: question.planDocument, sessionUpdate: "plan_document" },
-              subjectId: question.sessionId
-            })
-          }
-          safeEmit({
-            kind: "session.output",
-            payload: {
-              questionId,
-              questions: [question.spec],
-              sessionUpdate: "question"
-            },
-            subjectId: question.sessionId
-          })
-          return new Promise<AcpPermissionOutcome>((resolve) => {
-            pendingQuestions.set(questionId, {
-              optionIds: question.optionIds,
-              questions: [question.spec],
-              resolve,
-              sessionId: question.sessionId
-            })
-          })
-        },
-        terminals
-      ).connect(
-        acp.ndJsonStream(
-          Writable.toWeb(child.stdin) as WritableStream<Uint8Array>,
-          Readable.toWeb(child.stdout) as ReadableStream<Uint8Array>
-        )
-      )
       const emitQuestionResolved = (
         questionId: string,
         pending: PendingAcpQuestion,
@@ -512,6 +494,95 @@ export const makeStdioAcpConnector = (
           subjectId: pending.sessionId
         })
       }
+      const enqueueQuestion = <Response>(
+        question: GrokMappedQuestion<Response>
+      ): Promise<Response> => {
+        const questionId = randomUUID()
+        if (question.planDocument !== undefined) {
+          safeEmit({
+            kind: "session.output",
+            payload: { markdown: question.planDocument, sessionUpdate: "plan_document" },
+            subjectId: question.sessionId
+          })
+        }
+        safeEmit({
+          kind: "session.output",
+          payload: {
+            questionId,
+            questions: question.questions,
+            sessionUpdate: "question"
+          },
+          subjectId: question.sessionId
+        })
+        return new Promise<Response>((resolve) => {
+          pendingQuestions.set(questionId, {
+            cancelledResponse: question.cancelledResponse,
+            questions: question.questions,
+            resolve: (response) => resolve(response as Response),
+            responseFor: question.responseFor,
+            sessionId: question.sessionId
+          })
+        })
+      }
+      const connection = createClientApp(
+        (notification) => {
+          const startupInfo = piStartupInfoBySession.get(notification.sessionId)
+          if (
+            request.harnessId === "pi" &&
+            startupInfo !== undefined &&
+            isPiStartupInfoNotification(notification, startupInfo)
+          ) {
+            piStartupInfoBySession.delete(notification.sessionId)
+            return
+          }
+          safeEmit(runtimeEventFromNotification(notification))
+        },
+        (params) => {
+          const question = acpPermissionQuestion(params)
+          if (question === undefined) {
+            return Promise.resolve({ outcome: { outcome: "cancelled" as const } })
+          }
+          return enqueueQuestion({
+            sessionId: question.sessionId,
+            questions: [question.spec],
+            ...(question.planDocument === undefined ? {} : { planDocument: question.planDocument }),
+            cancelledResponse: { outcome: { outcome: "cancelled" as const } },
+            responseFor: (answer) => acpPermissionOutcome(question.optionIds, answer)
+          })
+        },
+        terminals,
+        request.harnessId === "grok-build"
+          ? {
+              requestPlanApproval: (params) => {
+                const question = grokPlanApprovalQuestion(params)
+                return question === undefined
+                  ? Promise.resolve({ outcome: "cancelled" as const })
+                  : enqueueQuestion(question)
+              },
+              askUserQuestion: (params) => {
+                const question = grokAskUserQuestion(params)
+                return question === undefined
+                  ? Promise.resolve({ outcome: "cancelled" as const })
+                  : enqueueQuestion(question)
+              },
+              onSessionNotification: (params) => {
+                const mapped = grokGoalNotification(params, (sessionId) => grokGoals.get(sessionId))
+                if (mapped === undefined) return
+                if (mapped.goal === undefined) {
+                  grokGoals.delete(mapped.sessionId)
+                } else {
+                  grokGoals.set(mapped.sessionId, mapped.goal)
+                }
+                safeEmit(mapped.event)
+              }
+            }
+          : undefined
+      ).connect(
+        acp.ndJsonStream(
+          Writable.toWeb(child.stdin) as WritableStream<Uint8Array>,
+          Readable.toWeb(child.stdout) as ReadableStream<Uint8Array>
+        )
+      )
       const answerQuestion = async (
         sessionId: string,
         questionId: string,
@@ -522,12 +593,11 @@ export const makeStdioAcpConnector = (
           throw new Error(`No pending question: ${questionId}`)
         }
         pendingQuestions.delete(questionId)
-        const outcome = acpPermissionOutcome(pending.optionIds, answer)
-        pending.resolve(outcome)
+        pending.resolve(pending.responseFor(answer))
         emitQuestionResolved(
           questionId,
           pending,
-          outcome.outcome.outcome === "selected" ? "answered" : "cancelled",
+          answer.outcome === "answered" ? "answered" : "cancelled",
           answer.outcome === "answered" ? answer.answers : undefined
         )
       }
@@ -537,7 +607,7 @@ export const makeStdioAcpConnector = (
         for (const [questionId, pending] of pendingQuestions) {
           if (sessionId !== undefined && pending.sessionId !== sessionId) continue
           pendingQuestions.delete(questionId)
-          pending.resolve({ outcome: { outcome: "cancelled" } })
+          pending.resolve(pending.cancelledResponse)
           emitQuestionResolved(questionId, pending, "cancelled", undefined)
         }
       }
@@ -599,7 +669,10 @@ export const makeStdioAcpConnector = (
         request.harnessId === "pi" ? piStartupInfoBySession : undefined,
         request.harnessId === "pi"
           ? (sessionId) => readPiSessionError(sessionId, request.env.HOME ?? homedir())
-          : undefined
+          : undefined,
+        request.harnessId,
+        grokGoals,
+        safeEmit
       )
     })
 })
@@ -694,6 +767,12 @@ interface AcpQuestionControls {
   readonly cancelQuestions: (sessionId: string | undefined) => void
 }
 
+interface AcpGrokControls {
+  readonly requestPlanApproval: (params: unknown) => Promise<GrokPlanApprovalResponse>
+  readonly askUserQuestion: (params: unknown) => Promise<GrokAskUserQuestionResponse>
+  readonly onSessionNotification: (params: unknown) => void
+}
+
 interface AcpAuthControls {
   readonly methods: ReadonlyArray<{
     readonly id: string
@@ -711,7 +790,10 @@ const sdkConnection = (
   questions?: AcpQuestionControls,
   auth: AcpAuthControls = { methods: [], canLogout: false },
   piStartupInfoBySession?: Map<string, string>,
-  piSessionError?: (sessionId: string) => Promise<string | undefined>
+  piSessionError?: (sessionId: string) => Promise<string | undefined>,
+  harnessId?: string,
+  grokGoals: Map<string, SessionGoal> = new Map(),
+  onGrokGoalEvent: (event: RuntimeEvent) => void = () => undefined
 ): AcpAgentConnection => {
   connection.closed.catch(() => undefined)
 
@@ -723,6 +805,7 @@ const sdkConnection = (
   // optional session/set_model extension is only for agents without a native
   // model option.
   const nativeConfigIds = new Map<string, ReadonlySet<string>>()
+  const grokGoalTurns = new Map<string, Promise<void>>()
 
   const mcpServers = (toolGateway: ToolGatewayConfig | undefined) =>
     toolGateway === undefined
@@ -735,6 +818,61 @@ const sdkConnection = (
             headers: [{ name: "Authorization", value: `Bearer ${toolGateway.bearerToken}` }]
           }
         ]
+
+  const runGrokGoalPrompt = (
+    sessionId: string,
+    prompt: string,
+    announceActivity = false
+  ): Promise<void> => {
+    const turnId = randomUUID()
+    onGrokGoalEvent(turnLifecycleEvent(sessionId, turnId, "started"))
+    if (announceActivity) {
+      onGrokGoalEvent({
+        kind: "session.output",
+        subjectId: sessionId,
+        payload: {
+          content: { text: "Starting goal", type: "text" },
+          sessionUpdate: "agent_thought_chunk"
+        }
+      })
+    }
+    const turn = connection.agent
+      .request(acp.methods.agent.session.prompt, {
+        prompt: [{ type: "text", text: prompt }],
+        sessionId
+      })
+      .then(
+        (response) => {
+          onGrokGoalEvent(turnLifecycleEvent(sessionId, turnId, "ended", response.stopReason))
+        },
+        (cause) => {
+          onGrokGoalEvent(turnLifecycleEvent(sessionId, turnId, "ended", "cancelled"))
+          throw cause
+        }
+      )
+    grokGoalTurns.set(sessionId, turn)
+    void turn
+      .catch(() => undefined)
+      .finally(() => {
+        if (grokGoalTurns.get(sessionId) === turn) grokGoalTurns.delete(sessionId)
+      })
+    return turn
+  }
+
+  const stopGrokGoalTurn = async (sessionId: string): Promise<boolean> => {
+    const activeTurn = grokGoalTurns.get(sessionId)
+    if (activeTurn === undefined) return false
+    questions?.cancelQuestions(sessionId)
+    await connection.agent.notify(acp.methods.agent.session.cancel, { sessionId })
+    await activeTurn.catch(() => undefined)
+    return true
+  }
+
+  const currentGoalOrThrow = (sessionId: string): SessionGoal => {
+    const current = grokGoals.get(sessionId)
+    if (current === undefined) throw new Error("No Grok goal is currently set")
+    return current
+  }
 
   return {
     probeAuth: (cwd) =>
@@ -822,21 +960,21 @@ const sdkConnection = (
         if (modelState !== undefined) {
           modelStates.set(response.sessionId, modelState)
         }
-        return sessionMetadata(response, modelState)
+        return sessionMetadata(response.sessionId, response, modelState, harnessId)
       }),
     loadSession: (sessionId, cwd, toolGateway) =>
       adapterPromise("loadSession", async () => {
-        const response = await connection.agent.request(acp.methods.agent.session.load, {
+        const response = (await connection.agent.request(acp.methods.agent.session.load, {
           cwd,
           mcpServers: mcpServers(toolGateway),
           sessionId
-        })
+        })) as AcpSessionMetadataResponse
         nativeConfigIds.set(sessionId, acpConfigOptionIds(response))
         const modelState = extractAcpModelState(response)
         if (modelState !== undefined) {
           modelStates.set(sessionId, modelState)
         }
-        return sessionId
+        return sessionMetadata(sessionId, response, modelState, harnessId)
       }),
     prompt: (sessionId, input) =>
       adapterPromise("prompt", async () => {
@@ -869,6 +1007,9 @@ const sdkConnection = (
         if (usesAcpModelSelectionExtension(configId, nativeConfigIds.get(sessionId))) {
           return applyAcpModelSelection(connection, modelStates, sessionId, value)
         }
+        if (configId === acpReasoningEffortConfigId) {
+          return applyAcpReasoningEffortSelection(connection, modelStates, sessionId, value)
+        }
         const response = await connection.agent.request(acp.methods.agent.session.setConfigOption, {
           configId,
           sessionId,
@@ -876,6 +1017,82 @@ const sdkConnection = (
         })
         return normalizeAcpConfigOptions(response.configOptions ?? [])
       }),
+    ...(harnessId !== "grok-build"
+      ? {}
+      : {
+          setGoal: (sessionId: string, update: SetGoalUpdate) =>
+            adapterPromise("setGoal", async () => {
+              if (update.objective !== undefined) {
+                const objective = update.objective.trim()
+                if (objective.length === 0) throw new Error("Goal objective cannot be empty")
+                if (update.status !== undefined && update.status !== "active") {
+                  throw new Error("A new Grok goal must start active")
+                }
+                if (
+                  update.tokenBudget !== undefined &&
+                  update.tokenBudget !== null &&
+                  (!Number.isSafeInteger(update.tokenBudget) || update.tokenBudget <= 0)
+                ) {
+                  throw new Error("Goal token budget must be a positive integer")
+                }
+                await stopGrokGoalTurn(sessionId)
+                const now = new Date().toISOString()
+                const goal: SessionGoal = {
+                  objective,
+                  status: "active",
+                  tokenBudget: update.tokenBudget ?? null,
+                  tokensUsed: 0,
+                  timeUsedSeconds: 0,
+                  createdAt: now,
+                  updatedAt: now
+                }
+                grokGoals.set(sessionId, goal)
+                const budget =
+                  update.tokenBudget === undefined || update.tokenBudget === null
+                    ? ""
+                    : ` --budget ${update.tokenBudget}`
+                runGrokGoalPrompt(sessionId, `/goal ${objective}${budget}`, true)
+                return goal
+              }
+
+              if (update.tokenBudget !== undefined) {
+                throw new Error("Grok can only set a token budget when starting a goal")
+              }
+              if (update.status === "paused") {
+                currentGoalOrThrow(sessionId)
+                const cancelledActiveTurn = await stopGrokGoalTurn(sessionId)
+                if (!cancelledActiveTurn) {
+                  await runGrokGoalPrompt(sessionId, "/goal pause")
+                }
+                const current = currentGoalOrThrow(sessionId)
+                const goal = {
+                  ...current,
+                  status: "paused" as const,
+                  updatedAt: new Date().toISOString()
+                }
+                grokGoals.set(sessionId, goal)
+                return goal
+              }
+              if (update.status === "active") {
+                const current = currentGoalOrThrow(sessionId)
+                const goal = {
+                  ...current,
+                  status: "active" as const,
+                  updatedAt: new Date().toISOString()
+                }
+                grokGoals.set(sessionId, goal)
+                runGrokGoalPrompt(sessionId, "/goal resume", true)
+                return goal
+              }
+              throw new Error(`Unsupported Grok goal status: ${update.status ?? "unchanged"}`)
+            }),
+          clearGoal: (sessionId: string) =>
+            adapterPromise("clearGoal", async () => {
+              await stopGrokGoalTurn(sessionId)
+              await runGrokGoalPrompt(sessionId, "/goal clear")
+              grokGoals.delete(sessionId)
+            })
+        }),
     close: runtimeEffect("close", () => {
       connection.close(new Error(stderr()))
       terminate()
@@ -890,7 +1107,8 @@ type AcpPermissionOutcome =
 const createClientApp = (
   onSessionUpdate: (notification: acp.SessionNotification) => void,
   onPermissionRequest: (params: unknown) => Promise<AcpPermissionOutcome>,
-  terminals?: AcpTerminalHost
+  terminals?: AcpTerminalHost,
+  grok?: AcpGrokControls
 ): acp.ClientApp => {
   const app = acp
     .client({ name: "Codevisor" })
@@ -903,6 +1121,29 @@ const createClientApp = (
     .onRequest(acp.methods.client.session.requestPermission, ({ params }) =>
       onPermissionRequest(params)
     )
+  if (grok !== undefined) {
+    const planApproval = ({ params }: { readonly params: unknown }) =>
+      grok.requestPlanApproval(params)
+    const askUserQuestion = ({ params }: { readonly params: unknown }) =>
+      grok.askUserQuestion(params)
+    for (const method of ["_x.ai/exit_plan_mode", "x.ai/exit_plan_mode"]) {
+      app.onRequest<unknown, GrokPlanApprovalResponse>(method, (params) => params, planApproval)
+    }
+    for (const method of ["_x.ai/ask_user_question", "x.ai/ask_user_question"]) {
+      app.onRequest<unknown, GrokAskUserQuestionResponse>(
+        method,
+        (params) => params,
+        askUserQuestion
+      )
+    }
+    for (const method of ["_x.ai/session_notification", "x.ai/session_notification"]) {
+      app.onNotification<unknown>(
+        method,
+        (params) => params,
+        ({ params }) => grok.onSessionNotification(params)
+      )
+    }
+  }
   if (terminals === undefined) {
     return app
   }
@@ -940,9 +1181,9 @@ const createClientApp = (
 interface PendingAcpQuestion {
   readonly sessionId: string
   readonly questions: ReadonlyArray<QuestionSpec>
-  /// option label (name) → ACP optionId, for mapping the answer back.
-  readonly optionIds: ReadonlyMap<string, string>
-  readonly resolve: (outcome: AcpPermissionOutcome) => void
+  readonly cancelledResponse: unknown
+  readonly responseFor: (answer: QuestionAnswer) => unknown
+  readonly resolve: (response: unknown) => void
 }
 
 /// Pure mapping from a permission request onto the question wire shape.
@@ -1024,6 +1265,278 @@ export const acpPermissionOutcome = (
     }
   }
   return { outcome: { outcome: "cancelled" } }
+}
+
+const GROK_PLAN_QUESTION_ID = "grok_exit_plan_mode"
+const GROK_IMPLEMENT_PLAN_LABEL = "Implement plan"
+const GROK_KEEP_PLANNING_LABEL = "Keep planning"
+const GROK_ABANDON_PLAN_LABEL = "Abandon plan"
+
+interface GrokMappedQuestion<Response> {
+  readonly sessionId: string
+  readonly questions: ReadonlyArray<QuestionSpec>
+  readonly planDocument?: string
+  readonly cancelledResponse: Response
+  readonly responseFor: (answer: QuestionAnswer) => Response
+}
+
+const unwrapGrokExtensionParams = (params: unknown): unknown => {
+  if (typeof params !== "object" || params === null) return params
+  const wrapper = params as Record<string, unknown>
+  return typeof wrapper.method === "string" && wrapper.params !== undefined
+    ? wrapper.params
+    : params
+}
+
+const grokGoalStatus = (status: string): GoalStatus | undefined => {
+  switch (status) {
+    case "active":
+      return "active"
+    case "user_paused":
+    case "back_off_paused":
+    case "no_progress_paused":
+    case "doom_loop_paused":
+      return "paused"
+    case "infra_paused":
+    case "blocked":
+      return "blocked"
+    case "budget_limited":
+      return "budgetLimited"
+    case "complete":
+      return "complete"
+    default:
+      return undefined
+  }
+}
+
+export interface GrokGoalNotification {
+  readonly sessionId: string
+  readonly goal: SessionGoal | undefined
+  readonly event: RuntimeEvent
+}
+
+/// Maps Grok's x.ai goal progress extension onto Codevisor's shared goal
+/// snapshot. The lookup preserves createdAt across the many progress ticks.
+export const grokGoalNotification = (
+  params: unknown,
+  currentGoal: (sessionId: string) => SessionGoal | undefined = () => undefined,
+  now = new Date().toISOString()
+): GrokGoalNotification | undefined => {
+  params = unwrapGrokExtensionParams(params)
+  if (typeof params !== "object" || params === null) return undefined
+  const notification = params as Record<string, unknown>
+  if (typeof notification.sessionId !== "string") return undefined
+  if (typeof notification.update !== "object" || notification.update === null) return undefined
+  const update = notification.update as Record<string, unknown>
+  if (update.sessionUpdate !== "goal_updated" || typeof update.status !== "string") {
+    return undefined
+  }
+  if (update.status === "cleared") {
+    return {
+      sessionId: notification.sessionId,
+      goal: undefined,
+      event: {
+        kind: "session.updated",
+        subjectId: notification.sessionId,
+        payload: { goalCleared: true }
+      }
+    }
+  }
+  const status = grokGoalStatus(update.status)
+  if (status === undefined || typeof update.objective !== "string") return undefined
+  const previous = currentGoal(notification.sessionId)
+  const tokenBudget =
+    typeof update.token_budget === "number" && Number.isFinite(update.token_budget)
+      ? update.token_budget
+      : null
+  const tokensUsed =
+    typeof update.tokens_used === "number" && Number.isFinite(update.tokens_used)
+      ? update.tokens_used
+      : 0
+  const timeUsedSeconds =
+    typeof update.elapsed_ms === "number" && Number.isFinite(update.elapsed_ms)
+      ? update.elapsed_ms / 1_000
+      : 0
+  const goal: SessionGoal = {
+    objective: update.objective,
+    status,
+    ...(update.verifying_completion === true
+      ? { activity: "verifying" as const }
+      : update.planning === true
+        ? { activity: "planning" as const }
+        : {}),
+    tokenBudget,
+    tokensUsed,
+    timeUsedSeconds,
+    createdAt: previous?.createdAt ?? now,
+    updatedAt: now
+  }
+  return {
+    sessionId: notification.sessionId,
+    goal,
+    event: {
+      kind: "session.updated",
+      subjectId: notification.sessionId,
+      payload: { goal }
+    }
+  }
+}
+
+type GrokPlanApprovalResponse =
+  | { readonly outcome: "approved" | "abandoned" }
+  | { readonly outcome: "cancelled"; readonly feedback?: string }
+
+export const grokPlanApprovalQuestion = (
+  params: unknown
+): GrokMappedQuestion<GrokPlanApprovalResponse> | undefined => {
+  params = unwrapGrokExtensionParams(params)
+  if (typeof params !== "object" || params === null) return undefined
+  const request = params as Record<string, unknown>
+  if (typeof request.sessionId !== "string") return undefined
+  const planDocument = typeof request.planContent === "string" ? request.planContent : undefined
+  const questions: ReadonlyArray<QuestionSpec> = [
+    {
+      id: GROK_PLAN_QUESTION_ID,
+      header: "Plan",
+      question: "Ready to implement this plan?",
+      options: [
+        { label: GROK_IMPLEMENT_PLAN_LABEL, description: "Start building" },
+        { label: GROK_KEEP_PLANNING_LABEL, description: "Keep refining the plan" },
+        { label: GROK_ABANDON_PLAN_LABEL, description: "Exit plan mode without implementing" }
+      ],
+      allowsOther: true
+    }
+  ]
+  return {
+    sessionId: request.sessionId,
+    questions,
+    ...(planDocument === undefined ? {} : { planDocument }),
+    cancelledResponse: { outcome: "cancelled" },
+    responseFor: (answer) => {
+      if (answer.outcome === "cancelled") return { outcome: "cancelled" }
+      const entry = answer.answers?.[GROK_PLAN_QUESTION_ID]
+      const selected = entry?.answers[0]
+      if (selected === GROK_IMPLEMENT_PLAN_LABEL) return { outcome: "approved" }
+      if (selected === GROK_ABANDON_PLAN_LABEL) return { outcome: "abandoned" }
+      const note = entry?.note?.trim()
+      const freeform =
+        selected !== undefined &&
+        ![GROK_KEEP_PLANNING_LABEL, GROK_IMPLEMENT_PLAN_LABEL, GROK_ABANDON_PLAN_LABEL].includes(
+          selected
+        )
+          ? selected.trim()
+          : ""
+      const feedback = note === undefined || note === "" ? freeform : note
+      return feedback === "" ? { outcome: "cancelled" } : { outcome: "cancelled", feedback }
+    }
+  }
+}
+
+interface GrokQuestionOption {
+  readonly label: string
+  readonly description?: string
+  readonly preview?: string
+}
+
+interface GrokQuestion {
+  readonly question: string
+  readonly options: ReadonlyArray<GrokQuestionOption>
+  readonly multiSelect: boolean
+}
+
+type GrokAskUserQuestionResponse =
+  | { readonly outcome: "cancelled" }
+  | {
+      readonly outcome: "accepted"
+      readonly answers: Readonly<Record<string, ReadonlyArray<string>>>
+      readonly annotations?: Readonly<
+        Record<string, { readonly preview?: string; readonly notes?: string }>
+      >
+    }
+
+const parseGrokQuestions = (value: unknown): ReadonlyArray<GrokQuestion> => {
+  if (!Array.isArray(value)) return []
+  return value.flatMap((entry) => {
+    if (typeof entry !== "object" || entry === null) return []
+    const question = entry as Record<string, unknown>
+    if (typeof question.question !== "string" || !Array.isArray(question.options)) return []
+    const options = question.options.flatMap((raw) => {
+      if (typeof raw !== "object" || raw === null) return []
+      const option = raw as Record<string, unknown>
+      if (typeof option.label !== "string") return []
+      return [
+        {
+          label: option.label,
+          ...(typeof option.description === "string" ? { description: option.description } : {}),
+          ...(typeof option.preview === "string" ? { preview: option.preview } : {})
+        }
+      ]
+    })
+    return [
+      {
+        question: question.question,
+        options,
+        multiSelect: question.multiSelect === true
+      }
+    ]
+  })
+}
+
+export const grokAskUserQuestion = (
+  params: unknown
+): GrokMappedQuestion<GrokAskUserQuestionResponse> | undefined => {
+  params = unwrapGrokExtensionParams(params)
+  if (typeof params !== "object" || params === null) return undefined
+  const request = params as Record<string, unknown>
+  if (typeof request.sessionId !== "string") return undefined
+  const grokQuestions = parseGrokQuestions(request.questions)
+  if (grokQuestions.length === 0) return undefined
+  const questions: ReadonlyArray<QuestionSpec> = grokQuestions.map((question) => ({
+    id: question.question,
+    question: question.question,
+    options: question.options.map((option) => ({
+      label: option.label,
+      ...(option.description === undefined ? {} : { description: option.description })
+    })),
+    ...(question.multiSelect ? { multiSelect: true } : {}),
+    allowsOther: true
+  }))
+  return {
+    sessionId: request.sessionId,
+    questions,
+    cancelledResponse: { outcome: "cancelled" },
+    responseFor: (answer) => {
+      if (answer.outcome === "cancelled") return { outcome: "cancelled" }
+      const answers: Record<string, ReadonlyArray<string>> = {}
+      const annotations: Record<string, { readonly preview?: string; readonly notes?: string }> = {}
+      for (const question of grokQuestions) {
+        const entry = answer.answers?.[question.question]
+        if (entry === undefined) continue
+        const knownLabels = new Set(question.options.map((option) => option.label))
+        const unknown = entry.answers.find((selected) => !knownLabels.has(selected))
+        const selected = entry.answers.filter((label) => knownLabels.has(label))
+        const notes = entry.note?.trim() || unknown?.trim()
+        if (selected.length === 0 && (notes === undefined || notes === "")) continue
+        answers[question.question] =
+          selected.length === 0 && notes !== undefined ? ["Other"] : selected
+        const preview =
+          question.multiSelect || selected.length !== 1
+            ? undefined
+            : question.options.find((option) => option.label === selected[0])?.preview
+        if (preview !== undefined || (notes !== undefined && notes !== "")) {
+          annotations[question.question] = {
+            ...(preview === undefined ? {} : { preview }),
+            ...(notes === undefined || notes === "" ? {} : { notes })
+          }
+        }
+      }
+      return {
+        outcome: "accepted",
+        answers,
+        ...(Object.keys(annotations).length === 0 ? {} : { annotations })
+      }
+    }
+  }
 }
 
 export const runtimeEventFromNotification = (
@@ -1202,16 +1715,127 @@ const captureStderr = (child: ChildProcessWithoutNullStreams): (() => string) =>
 /// change through `session/set_model` — NOT `session/set_config_option` (which
 /// grok doesn't implement at all). `setConfigOption` routes this id accordingly.
 export const acpModelConfigId = "model"
+export const acpReasoningEffortConfigId = "reasoning_effort"
+
+interface AcpReasoningEffortOption {
+  readonly id: string
+  readonly value: string
+  readonly name: string
+  readonly description?: string
+  readonly isDefault: boolean
+}
+
+interface AcpReasoningEffortState {
+  readonly options: ReadonlyArray<AcpReasoningEffortOption>
+  readonly currentOptionId: string
+}
 
 interface AcpModelInfo {
   readonly modelId: string
   readonly name: string
   readonly description?: string
+  readonly reasoning?: AcpReasoningEffortState
 }
 
 interface AcpModelState {
   readonly currentModelId: string
   readonly availableModels: ReadonlyArray<AcpModelInfo>
+}
+
+const canonicalReasoningEffort = (value: unknown): string | undefined => {
+  if (typeof value !== "string") return undefined
+  const normalized = value.toLowerCase()
+  if (normalized === "max") return "xhigh"
+  return ["none", "minimal", "low", "medium", "high", "xhigh"].includes(normalized)
+    ? normalized
+    : undefined
+}
+
+const reasoningEffortName = (value: string): string => {
+  switch (value) {
+    case "xhigh":
+      return "X-High"
+    default:
+      return `${value.slice(0, 1).toUpperCase()}${value.slice(1)}`
+  }
+}
+
+const reasoningEffortDisplayName = (label: unknown, value: string): string => {
+  if (typeof label !== "string" || label === "") return reasoningEffortName(value)
+  const concise = label.replace(/\s+effort$/i, "").trim()
+  return concise === "" ? label : concise
+}
+
+const legacyReasoningEfforts = (): ReadonlyArray<AcpReasoningEffortOption> =>
+  ["minimal", "low", "medium", "high", "xhigh"].map((value) => ({
+    id: value,
+    value,
+    name: reasoningEffortName(value),
+    isDefault: false
+  }))
+
+const parseReasoningEffortOptions = (
+  meta: Readonly<Record<string, unknown>>
+): ReadonlyArray<AcpReasoningEffortOption> => {
+  if (meta.supportsReasoningEffort !== true) return []
+  const raw = meta.reasoningEfforts
+  if (!Array.isArray(raw)) return legacyReasoningEfforts()
+  const parsed = raw.flatMap((entry) => {
+    if (typeof entry === "string") {
+      const value = canonicalReasoningEffort(entry)
+      return value === undefined
+        ? []
+        : [{ id: value, value, name: reasoningEffortName(value), isDefault: false }]
+    }
+    if (typeof entry !== "object" || entry === null) return []
+    const option = entry as Record<string, unknown>
+    const value = canonicalReasoningEffort(option.value)
+    if (value === undefined) return []
+    return [
+      {
+        id: typeof option.id === "string" && option.id !== "" ? option.id : value,
+        value,
+        name: reasoningEffortDisplayName(option.label, value),
+        ...(typeof option.description === "string" ? { description: option.description } : {}),
+        isDefault: option.default === true
+      }
+    ]
+  })
+  return parsed.length === 0 ? legacyReasoningEfforts() : parsed
+}
+
+const selectedGrokReasoningOptionId = (response: unknown): string | undefined => {
+  if (typeof response !== "object" || response === null) return undefined
+  const meta = (response as { readonly _meta?: unknown })._meta
+  if (typeof meta !== "object" || meta === null) return undefined
+  const sessionConfig = (meta as Record<string, unknown>)["x.ai/sessionConfig"]
+  if (typeof sessionConfig !== "object" || sessionConfig === null) return undefined
+  const options = (sessionConfig as Record<string, unknown>).options
+  if (!Array.isArray(options)) return undefined
+  const selected = options.find(
+    (entry) =>
+      typeof entry === "object" &&
+      entry !== null &&
+      (entry as Record<string, unknown>).category === "mode" &&
+      (entry as Record<string, unknown>).selected === true
+  ) as Record<string, unknown> | undefined
+  return typeof selected?.id === "string" ? selected.id : undefined
+}
+
+const reasoningStateFromMeta = (
+  meta: Readonly<Record<string, unknown>> | undefined,
+  selectedOptionId?: string
+): AcpReasoningEffortState | undefined => {
+  if (meta === undefined) return undefined
+  const options = parseReasoningEffortOptions(meta)
+  if (options.length === 0) return undefined
+  const currentEffort = canonicalReasoningEffort(meta.reasoningEffort)
+  const currentOption =
+    options.find((option) => option.id === selectedOptionId) ??
+    options.find((option) => option.value === currentEffort) ??
+    options.find((option) => option.isDefault) ??
+    options[0]
+  return currentOption === undefined ? undefined : { currentOptionId: currentOption.id, options }
 }
 
 /// Reads the optional ACP model-selection extension off a `session/new` (or
@@ -1232,6 +1856,7 @@ export const extractAcpModelState = (response: unknown): AcpModelState | undefin
   if (typeof currentModelId !== "string" || !Array.isArray(rawAvailable)) {
     return undefined
   }
+  const selectedReasoningOptionId = selectedGrokReasoningOptionId(response)
   const availableModels = rawAvailable.flatMap((entry) => {
     if (typeof entry !== "object" || entry === null) {
       return []
@@ -1240,15 +1865,27 @@ export const extractAcpModelState = (response: unknown): AcpModelState | undefin
       readonly modelId?: unknown
       readonly name?: unknown
       readonly description?: unknown
+      readonly _meta?: unknown
+      readonly meta?: unknown
     }
     if (typeof model.modelId !== "string") {
       return []
     }
+    const rawMeta = model._meta ?? model.meta
+    const meta =
+      typeof rawMeta === "object" && rawMeta !== null
+        ? (rawMeta as Readonly<Record<string, unknown>>)
+        : undefined
+    const reasoning = reasoningStateFromMeta(
+      meta,
+      model.modelId === currentModelId ? selectedReasoningOptionId : undefined
+    )
     return [
       {
         modelId: model.modelId,
         name: typeof model.name === "string" ? model.name : model.modelId,
-        ...(typeof model.description === "string" ? { description: model.description } : {})
+        ...(typeof model.description === "string" ? { description: model.description } : {}),
+        ...(reasoning === undefined ? {} : { reasoning })
       }
     ]
   })
@@ -1291,6 +1928,32 @@ export const acpModelConfigOption = (state: AcpModelState): SessionConfigOption 
   }))
 })
 
+export const acpReasoningEffortConfigOption = (
+  state: AcpModelState
+): SessionConfigOption | undefined => {
+  const current = state.availableModels.find((model) => model.modelId === state.currentModelId)
+  const reasoning = current?.reasoning
+  if (reasoning === undefined) return undefined
+  return {
+    category: "thought_level",
+    currentValue: reasoning.currentOptionId,
+    id: acpReasoningEffortConfigId,
+    name: "Reasoning",
+    options: reasoning.options.map((option) => ({
+      value: option.id,
+      name: option.name,
+      ...(option.description === undefined ? {} : { description: option.description })
+    }))
+  }
+}
+
+const acpModelConfigOptions = (state: AcpModelState): ReadonlyArray<SessionConfigOption> => {
+  const reasoning = acpReasoningEffortConfigOption(state)
+  return reasoning === undefined
+    ? [acpModelConfigOption(state)]
+    : [acpModelConfigOption(state), reasoning]
+}
+
 /// `session/set_model` answers with a Rust-style `Result` under `_meta.model`
 /// (`{ Ok: modelId }` on success, `{ Err }` on failure).
 interface AcpSetModelResult {
@@ -1329,25 +1992,116 @@ export const applyAcpModelSelection = async (
     currentModelId
   }
   modelStates.set(sessionId, state)
-  return [acpModelConfigOption(state)]
+  return acpModelConfigOptions(state)
+}
+
+/// Grok applies a per-session effort by setting the current model again with
+/// `_meta.reasoningEffort`. The picker value is the server-defined option id;
+/// the request carries its canonical value so custom ids such as `deep` map to
+/// the xAI wire value (`xhigh`) correctly.
+export const applyAcpReasoningEffortSelection = async (
+  connection: acp.ClientConnection,
+  modelStates: Map<string, AcpModelState>,
+  sessionId: string,
+  optionId: string
+): Promise<ReadonlyArray<SessionConfigOption>> => {
+  const existing = modelStates.get(sessionId)
+  const current = existing?.availableModels.find(
+    (model) => model.modelId === existing.currentModelId
+  )
+  const selected = current?.reasoning?.options.find((option) => option.id === optionId)
+  if (existing === undefined || current === undefined || selected === undefined) {
+    throw new Error(`Unknown reasoning effort option: ${optionId}`)
+  }
+  const result = (await connection.agent.request("session/set_model", {
+    _meta: { reasoningEffort: selected.value },
+    modelId: existing.currentModelId,
+    sessionId
+  })) as AcpSetModelResult
+  const outcome = result?._meta?.model
+  if (outcome?.Err !== undefined) {
+    const detail = typeof outcome.Err === "string" ? outcome.Err : JSON.stringify(outcome.Err)
+    throw new Error(`session/set_model failed: ${detail}`)
+  }
+  const reasoning: AcpReasoningEffortState = {
+    currentOptionId: selected.id,
+    options: current.reasoning!.options
+  }
+  const state: AcpModelState = {
+    currentModelId: existing.currentModelId,
+    availableModels: existing.availableModels.map((model) =>
+      model.modelId === existing.currentModelId ? { ...model, reasoning } : model
+    )
+  }
+  modelStates.set(sessionId, state)
+  return acpModelConfigOptions(state)
+}
+
+/// Grok implements `session/set_mode` for these ids but currently omits the
+/// standard ACP `modes` field from session/new and session/load responses.
+/// Advertising the known modes lets Codevisor's existing plan toggle drive
+/// the upstream plan-mode state machine.
+export const grokModeState: SessionModeState = {
+  currentModeId: "default",
+  availableModes: [
+    {
+      id: "default",
+      name: "Build",
+      description: "Work normally with the configured permissions.",
+      canonicalId: "fullAccess"
+    },
+    {
+      id: "plan",
+      name: "Plan",
+      description: "Explore and propose a plan before implementation.",
+      canonicalId: "plan"
+    },
+    {
+      id: "ask",
+      name: "Ask",
+      description: "Answer questions without making changes.",
+      canonicalId: "ask"
+    }
+  ]
+}
+
+interface AcpSessionMetadataResponse {
+  readonly configOptions?: ReadonlyArray<AcpSessionConfigOption> | null
+  readonly modes?: AcpSessionModeState | null
 }
 
 const sessionMetadata = (
-  response: NewSessionResponse,
-  modelState: AcpModelState | undefined
+  sessionId: string,
+  response: AcpSessionMetadataResponse,
+  modelState: AcpModelState | undefined,
+  harnessId?: string
 ): AgentSessionMetadata => {
   const configOptions = normalizeAcpConfigOptions(response.configOptions ?? [])
-  // Append the synthesized model picker unless the adapter already reported a
-  // native `category: "model"` option — don't double up.
-  const withModel =
-    modelState !== undefined && !configOptions.some((option) => option.category === "model")
-      ? [...configOptions, acpModelConfigOption(modelState)]
-      : configOptions
+  // Append each synthesized picker unless the adapter already reported an
+  // equivalent native option — don't double up.
+  const withModel = [...configOptions]
+  if (modelState !== undefined) {
+    if (!withModel.some((option) => option.category === "model")) {
+      withModel.push(acpModelConfigOption(modelState))
+    }
+    const reasoning = acpReasoningEffortConfigOption(modelState)
+    if (
+      reasoning !== undefined &&
+      !withModel.some((option) => option.id === acpReasoningEffortConfigId)
+    ) {
+      withModel.push(reasoning)
+    }
+  }
+  const modes =
+    response.modes === undefined || response.modes === null
+      ? harnessId === "grok-build"
+        ? grokModeState
+        : undefined
+      : normalizeModeState(response.modes)
   return {
-    sessionId: response.sessionId,
-    ...(response.modes === undefined || response.modes === null
-      ? {}
-      : { modes: normalizeModeState(response.modes) }),
+    sessionId,
+    ...(modes === undefined ? {} : { modes }),
+    ...(harnessId === "grok-build" ? { supportsGoals: true } : {}),
     configOptions: withModel
   }
 }

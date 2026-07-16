@@ -1,3 +1,4 @@
+import ACPKit
 import AppKit
 import CodevisorCore
 import StreamMarkdown
@@ -8,6 +9,7 @@ struct ConversationItemView: View {
     let item: ConversationItem
     var isWaitingOnUser = false
     var waitingOnBackgroundTask: String? = nil
+    var goalActivity: GoalActivity? = nil
 
     var body: some View {
         switch item {
@@ -18,7 +20,8 @@ struct ConversationItemView: View {
                 turn: message.turn,
                 turnID: message.id,
                 isWaitingOnUser: isWaitingOnUser,
-                waitingOnBackgroundTask: waitingOnBackgroundTask
+                waitingOnBackgroundTask: waitingOnBackgroundTask,
+                goalActivity: goalActivity
             )
         }
     }

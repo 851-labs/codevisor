@@ -76,6 +76,11 @@ export interface AcpTerminalHostConfig {
   readonly integration: BackgroundTerminalIntegration
   readonly emit: RuntimeEmit
   readonly env: NodeJS.ProcessEnv
+  /// Standard ACP treats `command` as an executable with a separate argv.
+  /// Grok currently sends a complete shell invocation in `command` with an
+  /// empty argv, so its connection opts into executing that string via a
+  /// shell instead.
+  readonly commandMode?: "argv" | "shell"
   readonly spawner?: AcpTerminalSpawner
 }
 
@@ -165,7 +170,12 @@ export const makeAcpTerminalHost = (config: AcpTerminalHostConfig): AcpTerminalH
       for (const variable of params.env ?? []) {
         env[variable.name] = variable.value
       }
-      const child = spawner(params.command, params.args ?? [], {
+      const spawnRequest = terminalSpawnRequest(
+        params.command,
+        params.args ?? [],
+        config.commandMode ?? "argv"
+      )
+      const child = spawner(spawnRequest.command, spawnRequest.args, {
         env,
         ...(typeof params.cwd === "string" ? { cwd: params.cwd } : {})
       })
@@ -267,6 +277,20 @@ const clearPromotionTimer = (entry: AcpTerminalEntry): void => {
 const firstLine = (value: string): string => value.split("\n", 1)[0] ?? value
 
 const byteLength = (value: string): number => Buffer.byteLength(value, "utf8")
+
+export const terminalSpawnRequest = (
+  command: string,
+  args: ReadonlyArray<string>,
+  mode: "argv" | "shell"
+): { readonly command: string; readonly args: ReadonlyArray<string> } =>
+  mode === "shell"
+    ? process.platform === "win32"
+      ? {
+          command: process.env.ComSpec ?? "cmd.exe",
+          args: ["/d", "/s", "/c", command]
+        }
+      : { command: "/bin/sh", args: ["-lc", command] }
+    : { command, args }
 
 /// Truncates from the BEGINNING (per ACP spec) at a character boundary.
 const truncateToByteLimit = (value: string, limit: number): string => {

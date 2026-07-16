@@ -27,6 +27,9 @@ struct AssistantTurnView: View {
     let turnID: UUID
     let isWaitingOnUser: Bool
     let waitingOnBackgroundTask: String?
+    /// Explicit goal work shown after the current response. Unlike Thinking…,
+    /// this can remain active while a final-looking answer is being verified.
+    let goalActivity: GoalActivity?
     let presentation: AssistantTurnPresentation
     private let initiallyExpanded: Bool?
     @Environment(\.transcriptDisclosure) private var disclosureStore
@@ -46,6 +49,7 @@ struct AssistantTurnView: View {
         initiallyExpanded: Bool? = nil,
         isWaitingOnUser: Bool = false,
         waitingOnBackgroundTask: String? = nil,
+        goalActivity: GoalActivity? = nil,
         presentation: AssistantTurnPresentation = .complete
     ) {
         self.turn = turn
@@ -53,6 +57,7 @@ struct AssistantTurnView: View {
         self.initiallyExpanded = initiallyExpanded
         self.isWaitingOnUser = isWaitingOnUser
         self.waitingOnBackgroundTask = waitingOnBackgroundTask
+        self.goalActivity = goalActivity
         self.presentation = presentation
         _hasAutoCollapsed = State(initialValue: turn.isGenerating && turn.finalTextIsAsserted)
     }
@@ -98,6 +103,11 @@ struct AssistantTurnView: View {
     var body: some View {
         let beforePlan = turn.workedItemsBeforePlan
         let afterPlan = turn.workedItemsAfterPlan
+        // Goal planning can begin before the assistant has said anything. In
+        // that phase the ordinary Thinking…/tool activity remains the single
+        // progress signal. The goal-specific label appears only once there is
+        // a response for it to follow in transcript order.
+        let postResponseGoalActivity = turn.finalText == nil ? nil : goalActivity
         VStack(alignment: .leading, spacing: 14) {
             // Planning/exploration collapses into the first "Worked for…"
             // section, above the proposed plan.
@@ -142,7 +152,7 @@ struct AssistantTurnView: View {
                         .foregroundStyle(.secondary)
                 }
                 .accessibilityElement(children: .combine)
-            } else if presentation.showsResult,
+            } else if postResponseGoalActivity == nil, presentation.showsResult,
                       !isWaitingOnUser, turn.showsActivityIndicator,
                       turn.contextCompactionStatus != .started {
                 ShimmeringText.thinking
@@ -184,6 +194,10 @@ struct AssistantTurnView: View {
                     MessageCopyButton(text: markdown, help: "Copy response", isRevealed: isHovered)
                         .opacity(isHovered ? 1 : 0)
                 }
+            }
+
+            if presentation.showsResult, !isWaitingOnUser, let postResponseGoalActivity {
+                ShimmeringText(text: goalActivityLabel(postResponseGoalActivity))
             }
 
             // A non-clean stop (error / limit / refusal / gave-up retry) surfaces
@@ -255,6 +269,13 @@ struct AssistantTurnView: View {
     private func retryLabel(_ retry: RetryStatus) -> String {
         guard let attempt = retry.attempt, let of = retry.of else { return retry.message }
         return "\(retry.message) \(attempt)/\(of)"
+    }
+
+    private func goalActivityLabel(_ activity: GoalActivity) -> String {
+        switch activity {
+        case .planning: "Planning…"
+        case .verifying: "Verifying…"
+        }
     }
 
     private func autoCollapse() {

@@ -369,11 +369,17 @@ export const GoalStatus = Schema.Literals([
 ])
 export type GoalStatus = typeof GoalStatus.Type
 
+/// Transient work happening inside an active goal. Unlike the lifecycle
+/// status, this may appear and disappear many times before the goal resolves.
+export const GoalActivity = Schema.Literals(["planning", "verifying"])
+export type GoalActivity = typeof GoalActivity.Type
+
 /// A persistent per-session objective (codex "goal mode"). Snapshots are
 /// idempotent full state: consumers replace, never accumulate.
 export const SessionGoal = Schema.Struct({
   objective: Schema.String,
   status: GoalStatus,
+  activity: Schema.optional(GoalActivity),
   tokenBudget: Schema.NullOr(Schema.Number),
   tokensUsed: Schema.Number,
   timeUsedSeconds: Schema.Number,
@@ -683,6 +689,8 @@ export const TranscriptPage = Schema.Struct({
    * `eventCursor` so a reconnect cannot skip the event that created it. */
   pendingQuestion: Schema.optional(QuestionPayload),
   backgroundTasks: Schema.optional(Schema.Array(BackgroundTask)),
+  /** Latest durable goal snapshot at the same revision as `eventCursor`. */
+  goal: Schema.optional(SessionGoal),
   /** Durable usage snapshot at the same revision as the transcript. */
   usage: Schema.optional(SessionUsage)
 })
@@ -713,7 +721,8 @@ export const SessionDetail = Schema.Struct({
   promptQueue: Schema.Array(PromptQueueItem),
   eventCursor: Schema.Number,
   pendingQuestion: Schema.optional(QuestionPayload),
-  backgroundTasks: Schema.optional(Schema.Array(BackgroundTask))
+  backgroundTasks: Schema.optional(Schema.Array(BackgroundTask)),
+  goal: Schema.optional(SessionGoal)
 })
 export type SessionDetail = typeof SessionDetail.Type
 

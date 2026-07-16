@@ -7,6 +7,7 @@ public struct ServerSessionSnapshot: Equatable, Sendable {
     public var eventCursor: Int
     public var pendingQuestion: QuestionRequest?
     public var backgroundTasks: [BackgroundTaskInfo]?
+    public var goal: SessionGoal?
 }
 
 public struct TranscriptHistoryPage: Equatable, Sendable {
@@ -16,6 +17,7 @@ public struct TranscriptHistoryPage: Equatable, Sendable {
     public var eventCursor: Int
     public var pendingQuestion: QuestionRequest? = nil
     public var backgroundTasks: [BackgroundTaskInfo]? = nil
+    public var goal: SessionGoal? = nil
     public var usage: SessionUsage? = nil
 }
 
@@ -182,7 +184,8 @@ public struct ServerSessionTransport: Sendable {
             promptQueue: detail.promptQueue,
             eventCursor: detail.eventCursor,
             pendingQuestion: detail.pendingQuestion,
-            backgroundTasks: detail.backgroundTasks
+            backgroundTasks: detail.backgroundTasks,
+            goal: detail.goal
         )
     }
 
@@ -205,6 +208,7 @@ public struct ServerSessionTransport: Sendable {
             eventCursor: page.eventCursor,
             pendingQuestion: page.pendingQuestion,
             backgroundTasks: page.backgroundTasks,
+            goal: page.goal,
             usage: page.usage?.sessionUsage
         )
     }

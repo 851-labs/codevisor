@@ -9,14 +9,20 @@ import {
   acpConfigOptionIds,
   acpModelConfigId,
   acpModelConfigOption,
+  acpReasoningEffortConfigOption,
   acpPermissionOutcome,
   acpPermissionQuestion,
   acpProtocolVersion,
   acpPrompt,
   applyAcpModelSelection,
+  applyAcpReasoningEffortSelection,
   extractAcpModelState,
   extractPiStartupInfo,
   isPiStartupInfoNotification,
+  grokAskUserQuestion,
+  grokGoalNotification,
+  grokModeState,
+  grokPlanApprovalQuestion,
   harnessCatalog,
   locateExecutableOnPath,
   makeAgentRuntime,
@@ -96,10 +102,13 @@ class FakeConnection implements AcpAgentConnection {
     })
   }
 
-  loadSession(sessionId: string, cwd: string): Effect.Effect<string, AgentRuntimeError> {
+  loadSession(
+    sessionId: string,
+    cwd: string
+  ): Effect.Effect<{ readonly sessionId: string; readonly configOptions: [] }, AgentRuntimeError> {
     return Effect.sync(() => {
       this.loaded.push([sessionId, cwd])
-      return sessionId
+      return { configOptions: [], sessionId }
     })
   }
 
@@ -177,6 +186,13 @@ const conversationEvent = (
 })
 
 describe("@codevisor/agent-runtime", () => {
+  it("launches directly ACP-capable harnesses from the user's installation", () => {
+    const directlyCapable = harnessCatalog.filter(
+      (harness) => harness.provider === "acp" && harness.id !== "pi"
+    )
+    expect(directlyCapable.some((harness) => harness.launch?.kind === "npx")).toBe(false)
+  })
+
   it("probes and delegates harness authentication", async () => {
     const connector = makeConnector()
     const runtime = makeAgentRuntime({
@@ -247,7 +263,7 @@ describe("@codevisor/agent-runtime", () => {
     expect(connector.connections[0]?.closeCount).toBe(1)
   })
 
-  it("discovers ready, missing-runner, and unavailable harnesses", async () => {
+  it("discovers ready local executables and unavailable harnesses", async () => {
     const runtime = makeAgentRuntime({
       env: { PATH: "/bin" },
       executableExists: (name) => ["gemini", "opencode", "codex"].includes(name),
@@ -262,10 +278,9 @@ describe("@codevisor/agent-runtime", () => {
 
     const harnesses = await run(runtime.discoverHarnesses)
     expect(harnesses.find((harness) => harness.id === "gemini")?.readiness).toEqual({
-      state: "unavailable",
-      detail: "Requires npx"
+      state: "ready"
     })
-    // Native providers need only their binary — no npx.
+    // Every catalog entry now launches the user's installed binary directly.
     expect(harnesses.find((harness) => harness.id === "codex")?.readiness).toEqual({
       state: "ready"
     })
@@ -275,7 +290,9 @@ describe("@codevisor/agent-runtime", () => {
     expect(harnesses.find((harness) => harness.id === "claude-code")?.readiness.detail).toBe(
       "CLI not found on PATH"
     )
-    expect(harnesses.find((harness) => harness.id === "factory-droid")?.launchKind).toBe("npx")
+    expect(harnesses.find((harness) => harness.id === "factory-droid")?.launchKind).toBe(
+      "executable"
+    )
     // Cursor is pulled until cursor-agent's ACP mode stabilizes upstream.
     expect(harnesses.find((harness) => harness.id === "cursor")?.readiness).toMatchObject({
       state: "unavailable",
@@ -473,7 +490,7 @@ describe("@codevisor/agent-runtime", () => {
     const runtime = makeAgentRuntime({
       connector,
       env: { PATH: "/bin" },
-      executableExists: (name) => ["gemini", "npx"].includes(name),
+      executableExists: (name) => name === "gemini",
       locateExecutable: (name) => `/bin/${name}`
     })
     const sink = (): void => undefined
@@ -505,8 +522,8 @@ describe("@codevisor/agent-runtime", () => {
     expect(reloadedElsewhere).toEqual({ configOptions: [], sessionId: "agent-existing" })
     expect(connector.requests).toHaveLength(5)
     expect(connector.requests[0]).toMatchObject({
-      args: ["-y", "@google/gemini-cli@0.49.0", "--acp"],
-      command: "/bin/npx",
+      args: ["--acp"],
+      command: "/bin/gemini",
       cwd: "/tmp/project",
       harnessId: "gemini"
     })
@@ -544,7 +561,7 @@ describe("@codevisor/agent-runtime", () => {
     const runtime = makeAgentRuntime({
       connector,
       env: { PATH: "/bin" },
-      executableExists: (name) => ["gemini", "npx"].includes(name),
+      executableExists: (name) => name === "gemini",
       harnessInspectionTimeoutMs: 10,
       locateExecutable: (name) => `/bin/${name}`
     })
@@ -563,7 +580,7 @@ describe("@codevisor/agent-runtime", () => {
     const runtime = makeAgentRuntime({
       connector,
       env: { PATH: "/bin" },
-      executableExists: (name) => ["gemini", "npx"].includes(name),
+      executableExists: (name) => name === "gemini",
       locateExecutable: (name) => `/bin/${name}`
     })
 
@@ -581,7 +598,7 @@ describe("@codevisor/agent-runtime", () => {
     const runtime = makeAgentRuntime({
       connector,
       env: { PATH: "/bin" },
-      executableExists: (name) => ["gemini", "npx"].includes(name),
+      executableExists: (name) => name === "gemini",
       locateExecutable: (name) => `/bin/${name}`
     })
     const sessionId = await run(
@@ -605,7 +622,7 @@ describe("@codevisor/agent-runtime", () => {
     const runtime = makeAgentRuntime({
       connector,
       env: { PATH: "/bin" },
-      executableExists: (name) => ["gemini", "npx", "opencode"].includes(name),
+      executableExists: (name) => ["gemini", "opencode"].includes(name),
       locateExecutable: () => undefined
     })
     const sink = (): void => undefined
@@ -613,7 +630,8 @@ describe("@codevisor/agent-runtime", () => {
     await run(runtime.createAgentSession("gemini", "/tmp/project", sink))
     await run(runtime.createAgentSession("opencode", "/tmp/project", sink))
 
-    expect(connector.requests.map((request) => request.command)).toEqual(["npx", "opencode"])
+    expect(connector.requests.map((request) => request.command)).toEqual(["gemini", "opencode"])
+    expect(connector.requests[0]?.args).toEqual(["--acp"])
     expect(connector.requests[1]?.args).toEqual(["acp"])
   })
 
@@ -813,12 +831,16 @@ describe("@codevisor/agent-runtime", () => {
     await run(runtime.setConfigOption(sessionId, "model", "gpt-5"))
 
     expect(connector.connections[0]?.cancellations).toEqual([sessionId])
-    expect(events).toHaveLength(2)
+    expect(events).toHaveLength(3)
     expect(events[0]).toMatchObject({
+      kind: "session.updated",
+      payload: { turnState: "ended", stopReason: "cancelled" }
+    })
+    expect(events[1]).toMatchObject({
       kind: "session.updated",
       payload: { modeId: "plan" }
     })
-    expect(events[1]).toMatchObject({
+    expect(events[2]).toMatchObject({
       kind: "session.updated",
       payload: { configId: "model", value: "gpt-5" }
     })
@@ -1367,6 +1389,265 @@ describe("acp model-selection extension", () => {
     await expect(applyAcpModelSelection(connection, new Map(), "s-5", "bogus")).rejects.toThrow(
       'session/set_model failed: {"code":42}'
     )
+  })
+
+  it("maps Grok model metadata into a server-defined reasoning picker", async () => {
+    const state = extractAcpModelState({
+      _meta: {
+        "x.ai/sessionConfig": {
+          options: [{ category: "mode", id: "deep", label: "Deep", selected: true }]
+        }
+      },
+      models: {
+        currentModelId: "grok-4.5",
+        availableModels: [
+          {
+            modelId: "grok-4.5",
+            name: "Grok 4.5",
+            _meta: {
+              supportsReasoningEffort: true,
+              reasoningEffort: "high",
+              reasoningEfforts: [
+                { value: "low", label: "Low Effort" },
+                {
+                  id: "deep",
+                  value: "xhigh",
+                  label: "Deep",
+                  description: "Use maximum reasoning"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    })
+    expect(state).toBeDefined()
+    expect(acpReasoningEffortConfigOption(state!)).toEqual({
+      category: "thought_level",
+      currentValue: "deep",
+      id: "reasoning_effort",
+      name: "Reasoning",
+      options: [
+        { value: "low", name: "Low" },
+        { value: "deep", name: "Deep", description: "Use maximum reasoning" }
+      ]
+    })
+
+    const calls: Array<{ readonly method: string; readonly params: unknown }> = []
+    const connection = fakeConnection(async (method, params) => {
+      calls.push({ method, params })
+      return { _meta: { model: { Ok: "grok-4.5" } } }
+    })
+    const options = await applyAcpReasoningEffortSelection(
+      connection,
+      new Map([["s-1", state!]]),
+      "s-1",
+      "low"
+    )
+    expect(calls).toEqual([
+      {
+        method: "session/set_model",
+        params: {
+          _meta: { reasoningEffort: "low" },
+          modelId: "grok-4.5",
+          sessionId: "s-1"
+        }
+      }
+    ])
+    expect(options[1]?.currentValue).toBe("low")
+  })
+
+  it("uses Grok's built-in reasoning levels when the model omits a menu", () => {
+    const state = extractAcpModelState({
+      models: {
+        currentModelId: "grok-4.5",
+        availableModels: [
+          {
+            modelId: "grok-4.5",
+            name: "Grok 4.5",
+            _meta: { supportsReasoningEffort: true, reasoningEffort: "medium" }
+          }
+        ]
+      }
+    })
+    const reasoning = acpReasoningEffortConfigOption(state!)
+    const values = reasoning?.options.flatMap((option) =>
+      "group" in option ? option.options.map((nested) => nested.value) : [option.value]
+    )
+    expect(values).toEqual(["minimal", "low", "medium", "high", "xhigh"])
+    expect(acpReasoningEffortConfigOption(state!)?.currentValue).toBe("medium")
+  })
+})
+
+describe("Grok ACP compatibility", () => {
+  it("advertises the modes Grok implements but does not report", () => {
+    expect(grokModeState.currentModeId).toBe("default")
+    expect(grokModeState.availableModes.map((mode) => [mode.id, mode.canonicalId])).toEqual([
+      ["default", "fullAccess"],
+      ["plan", "plan"],
+      ["ask", "ask"]
+    ])
+  })
+
+  it("maps Grok plan approval responses and plan markdown", () => {
+    const mapped = grokPlanApprovalQuestion({
+      sessionId: "s-1",
+      toolCallId: "tool-1",
+      planContent: "# Plan\n\nShip it."
+    })
+    expect(mapped?.planDocument).toBe("# Plan\n\nShip it.")
+    expect(mapped?.questions[0]?.options.map((option) => option.label)).toEqual([
+      "Implement plan",
+      "Keep planning",
+      "Abandon plan"
+    ])
+    expect(
+      mapped?.responseFor({
+        outcome: "answered",
+        answers: { grok_exit_plan_mode: { answers: ["Implement plan"] } }
+      })
+    ).toEqual({ outcome: "approved" })
+    expect(
+      mapped?.responseFor({
+        outcome: "answered",
+        answers: {
+          grok_exit_plan_mode: { answers: ["Keep planning"], note: "Add rollback steps" }
+        }
+      })
+    ).toEqual({ outcome: "cancelled", feedback: "Add rollback steps" })
+    expect(
+      mapped?.responseFor({
+        outcome: "answered",
+        answers: { grok_exit_plan_mode: { answers: ["Abandon plan"] } }
+      })
+    ).toEqual({ outcome: "abandoned" })
+  })
+
+  it("maps Grok's blocking questionnaire into Codevisor answers", () => {
+    const mapped = grokAskUserQuestion({
+      sessionId: "s-1",
+      toolCallId: "tool-1",
+      mode: "plan",
+      questions: [
+        {
+          question: "Which database?",
+          options: [
+            {
+              label: "SQLite",
+              description: "Keep it local",
+              preview: "schema preview"
+            },
+            { label: "Postgres", description: "Use a server" }
+          ]
+        },
+        {
+          question: "Anything else?",
+          options: [],
+          multiSelect: false
+        }
+      ]
+    })
+    expect(mapped?.questions).toEqual([
+      {
+        id: "Which database?",
+        question: "Which database?",
+        options: [
+          { label: "SQLite", description: "Keep it local" },
+          { label: "Postgres", description: "Use a server" }
+        ],
+        allowsOther: true
+      },
+      {
+        id: "Anything else?",
+        question: "Anything else?",
+        options: [],
+        allowsOther: true
+      }
+    ])
+    expect(
+      mapped?.responseFor({
+        outcome: "answered",
+        answers: {
+          "Which database?": { answers: ["SQLite"] },
+          "Anything else?": { answers: [], note: "Add backups" }
+        }
+      })
+    ).toEqual({
+      outcome: "accepted",
+      answers: {
+        "Which database?": ["SQLite"],
+        "Anything else?": ["Other"]
+      },
+      annotations: {
+        "Which database?": { preview: "schema preview" },
+        "Anything else?": { notes: "Add backups" }
+      }
+    })
+  })
+
+  it("maps Grok goal progress and preserves the goal creation time", () => {
+    const active = grokGoalNotification(
+      {
+        sessionId: "s-1",
+        update: {
+          sessionUpdate: "goal_updated",
+          objective: "Ship goal mode",
+          status: "active",
+          verifying_completion: true,
+          token_budget: 20_000,
+          tokens_used: 1_250,
+          elapsed_ms: 2_500
+        }
+      },
+      undefined,
+      "2026-07-16T12:00:00.000Z"
+    )
+    expect(active?.goal).toEqual({
+      objective: "Ship goal mode",
+      status: "active",
+      activity: "verifying",
+      tokenBudget: 20_000,
+      tokensUsed: 1_250,
+      timeUsedSeconds: 2.5,
+      createdAt: "2026-07-16T12:00:00.000Z",
+      updatedAt: "2026-07-16T12:00:00.000Z"
+    })
+    const paused = grokGoalNotification(
+      {
+        method: "x.ai/session_notification",
+        params: {
+          sessionId: "s-1",
+          update: {
+            sessionUpdate: "goal_updated",
+            objective: "Ship goal mode",
+            status: "back_off_paused",
+            tokens_used: 2_000,
+            elapsed_ms: 4_000
+          }
+        }
+      },
+      () => active?.goal,
+      "2026-07-16T12:01:00.000Z"
+    )
+    expect(paused?.goal?.status).toBe("paused")
+    expect(paused?.goal?.createdAt).toBe("2026-07-16T12:00:00.000Z")
+    expect(paused?.event.payload).toEqual({ goal: paused?.goal })
+  })
+
+  it("maps Grok goal clearing onto the shared cleared event", () => {
+    const cleared = grokGoalNotification({
+      sessionId: "s-1",
+      update: { sessionUpdate: "goal_updated", status: "cleared" }
+    })
+    expect(cleared).toEqual({
+      sessionId: "s-1",
+      goal: undefined,
+      event: {
+        kind: "session.updated",
+        subjectId: "s-1",
+        payload: { goalCleared: true }
+      }
+    })
   })
 })
 

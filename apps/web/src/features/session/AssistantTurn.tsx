@@ -1,4 +1,4 @@
-import type { ConversationItem } from "@codevisor/api"
+import type { ConversationItem, SessionGoal } from "@codevisor/api"
 import {
   ChevronRightIcon,
   CircleSlashIcon,
@@ -181,6 +181,13 @@ export function assistantTurnShowsActivityIndicator(
   return !hasFinalText && !hasRunningToolCall
 }
 
+export function assistantTurnGoalActivity(
+  responseText: string,
+  goalActivity: SessionGoal["activity"]
+): SessionGoal["activity"] {
+  return responseText === "" ? undefined : goalActivity
+}
+
 function readVerifyExpanded(): boolean {
   if (typeof window === "undefined") return false
   const params = new URLSearchParams(window.location.search)
@@ -240,6 +247,7 @@ export function AssistantTurn({
   meta,
   onRetry,
   retryPending = false,
+  goalActivity,
   runningSubagentToolCallIds = [],
   disclosureValues = {},
   setDisclosureValue = () => undefined
@@ -248,6 +256,7 @@ export function AssistantTurn({
   meta?: TurnMeta
   onRetry?: () => void
   retryPending?: boolean
+  goalActivity?: SessionGoal["activity"]
   runningSubagentToolCallIds?: readonly string[]
   disclosureValues?: TranscriptDisclosureValues
   setDisclosureValue?: (key: string, expanded: boolean) => void
@@ -274,6 +283,7 @@ export function AssistantTurn({
       ? planningItems.length > 0
       : isGenerating || hasStructuredWorkedContent || hasLegacyWorkedContent
   const responseText = finalMarkdown(item, meta)
+  const postResponseGoalActivity = assistantTurnGoalActivity(responseText, goalActivity)
   const isFinalAsserted = finalTextIsAsserted(meta)
   const showsActivityIndicator = assistantTurnShowsActivityIndicator(item, meta)
   const headerLockedOpen = assistantTurnSectionIsLockedOpen(isGenerating, hasAutoCollapsed.current)
@@ -408,6 +418,7 @@ export function AssistantTurn({
           </span>
         </div>
       ) : (
+        postResponseGoalActivity == null &&
         showsActivityIndicator && <ShimmerText>Thinking…</ShimmerText>
       )}
 
@@ -423,6 +434,10 @@ export function AssistantTurn({
             </div>
           )}
         </>
+      )}
+
+      {postResponseGoalActivity != null && (
+        <ShimmerText>{goalActivityLabel(postResponseGoalActivity)}</ShimmerText>
       )}
 
       {!isGenerating && meta?.stopDetail != null && (
@@ -454,6 +469,15 @@ export function AssistantTurn({
       )}
     </div>
   )
+}
+
+export function goalActivityLabel(activity: NonNullable<SessionGoal["activity"]>): string {
+  switch (activity) {
+    case "planning":
+      return "Planning…"
+    case "verifying":
+      return "Verifying…"
+  }
 }
 
 function WorkedSection({

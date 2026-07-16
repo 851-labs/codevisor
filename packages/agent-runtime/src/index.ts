@@ -39,14 +39,21 @@ export {
   acpConfigOptionIds,
   acpModelConfigId,
   acpModelConfigOption,
+  acpReasoningEffortConfigId,
+  acpReasoningEffortConfigOption,
   acpPermissionOutcome,
   acpPermissionQuestion,
   acpProtocolVersion,
   acpPrompt,
   applyAcpModelSelection,
+  applyAcpReasoningEffortSelection,
   extractAcpModelState,
   extractPiStartupInfo,
   isPiStartupInfoNotification,
+  grokAskUserQuestion,
+  grokGoalNotification,
+  grokModeState,
+  grokPlanApprovalQuestion,
   makeAcpProvider,
   normalizeAcpConfigOptions,
   normalizeModeState,
@@ -59,7 +66,8 @@ export type {
   AcpAgentConnection,
   AcpConnector,
   AcpHarnessLaunchRequest,
-  AcpPromptCapabilities
+  AcpPromptCapabilities,
+  GrokGoalNotification
 } from "./providers/acp.js"
 export { makeClaudeProvider } from "./providers/claude.js"
 export type { ClaudeProviderConfig, ClaudeQueryFn } from "./providers/claude.js"
@@ -228,7 +236,7 @@ export const harnessCatalog: ReadonlyArray<HarnessDefinition> = [
     provider: "acp",
     symbolName: "function"
   },
-  npxHarness("gemini", "Gemini CLI", "diamond", ["gemini"], "@google/gemini-cli@0.49.0", ["--acp"]),
+  executableHarness("gemini", "Gemini CLI", "diamond", ["gemini"], "gemini", ["--acp"]),
   executableHarness("opencode", "OpenCode", "curlybraces", ["opencode"], "opencode", ["acp"]),
   executableHarness("goose", "goose", "bird", ["goose"], "goose", ["acp"]),
   // Cursor is temporarily pulled: cursor-agent's headless/ACP mode fails with
@@ -244,37 +252,32 @@ export const harnessCatalog: ReadonlyArray<HarnessDefinition> = [
     symbolName: "cursorarrow.rays"
   },
   executableHarness("amp", "Amp", "bolt", ["amp-acp"], "amp-acp"),
-  npxHarness("auggie", "Auggie CLI", "a.square", ["auggie"], "@augmentcode/auggie@0.31.0", [
-    "--acp"
-  ]),
-  npxHarness("cline", "Cline", "terminal", ["cline"], "cline@3.0.34", ["--acp"]),
-  npxHarness(
+  executableHarness("auggie", "Auggie CLI", "a.square", ["auggie"], "auggie", ["--acp"]),
+  executableHarness("cline", "Cline", "terminal", ["cline"], "cline", ["--acp"]),
+  executableHarness(
     "github-copilot-cli",
     "GitHub Copilot",
     "ellipsis.curlybraces",
     ["copilot"],
-    "@github/copilot@1.0.65",
+    "copilot",
     ["--acp"]
   ),
-  npxHarness("qwen-code", "Qwen Code", "q.square", ["qwen"], "@qwen-code/qwen-code@0.19.3", [
+  executableHarness("qwen-code", "Qwen Code", "q.square", ["qwen"], "qwen", [
     "--acp",
     "--experimental-skills"
   ]),
   executableHarness("kimi", "Kimi CLI", "k.square", ["kimi"], "kimi", ["acp"]),
-  npxHarness(
+  executableHarness(
     "factory-droid",
     "Factory Droid",
     "wrench.and.screwdriver",
     ["droid"],
-    "droid@0.159.1",
+    "droid",
     ["exec", "--output-format", "acp-daemon"]
   ),
   executableHarness("devin", "Devin", "brain", ["devin"], "devin", ["acp"]),
-  npxHarness("grok-build", "Grok Build", "x.square", ["grok"], "@xai-official/grok@0.2.76", [
-    "agent",
-    "stdio"
-  ]),
-  npxHarness("kilo", "Kilo", "shippingbox", ["kilo"], "@kilocode/cli@7.3.54", ["acp"])
+  executableHarness("grok-build", "Grok Build", "x.square", ["grok"], "grok", ["agent", "stdio"]),
+  executableHarness("kilo", "Kilo", "shippingbox", ["kilo"], "kilo", ["acp"])
 ]
 
 interface ManagedSession {
@@ -351,22 +354,26 @@ export const makeAgentRuntime = (config: AgentRuntimeConfig = {}): AgentRuntimeS
     if (session === undefined) {
       return Promise.resolve()
     }
-    if (
-      event.kind === "session.updated" &&
-      typeof event.payload === "object" &&
-      event.payload !== null
-    ) {
+    if (typeof event.payload === "object" && event.payload !== null) {
       const payload = event.payload as Record<string, unknown>
-      if (Array.isArray(payload.configOptions)) {
+      if (event.kind === "session.updated" && Array.isArray(payload.configOptions)) {
         session.metadata = {
           ...session.metadata,
           configOptions: payload.configOptions as AgentSessionMetadata["configOptions"]
         }
       }
-      if (typeof payload.modeId === "string" && session.metadata.modes !== undefined) {
+      const modeId =
+        event.kind === "session.updated" && typeof payload.modeId === "string"
+          ? payload.modeId
+          : event.kind === "session.output" &&
+              payload.sessionUpdate === "current_mode_update" &&
+              typeof payload.currentModeId === "string"
+            ? payload.currentModeId
+            : undefined
+      if (modeId !== undefined && session.metadata.modes !== undefined) {
         session.metadata = {
           ...session.metadata,
-          modes: { ...session.metadata.modes, currentModeId: payload.modeId }
+          modes: { ...session.metadata.modes, currentModeId: modeId }
         }
       }
     }
@@ -714,24 +721,6 @@ export const toEventEnvelope = (
   createdAt: isoTimestamp(),
   payload: event.payload
 })
-
-function npxHarness(
-  id: string,
-  name: string,
-  symbolName: string,
-  detectBinaries: ReadonlyArray<string>,
-  packageName: string,
-  args: ReadonlyArray<string> = []
-): HarnessDefinition {
-  return {
-    detectBinaries,
-    id,
-    launch: { args, kind: "npx", packageName },
-    name,
-    provider: "acp",
-    symbolName
-  }
-}
 
 function executableHarness(
   id: string,

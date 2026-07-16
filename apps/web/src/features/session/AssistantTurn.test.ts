@@ -4,12 +4,27 @@ import {
   assistantTurnShowsActivityIndicator,
   assistantTurnSectionIsLockedOpen,
   assistantTurnDisclosureTransition,
+  assistantTurnGoalActivity,
+  goalActivityLabel,
   shouldCollapseSubagentDisclosure,
   subagentRendersAsSection,
   subagentDisclosureKey,
   turnDisclosureKey,
   turnImplementationDisclosureKey
 } from "./AssistantTurn"
+
+describe("goal activity", () => {
+  it("uses the same concise ephemeral language as Thinking", () => {
+    expect(goalActivityLabel("planning")).toBe("Planning…")
+    expect(goalActivityLabel("verifying")).toBe("Verifying…")
+  })
+
+  it("stays generic until there is a response for the activity to follow", () => {
+    expect(assistantTurnGoalActivity("", "planning")).toBeUndefined()
+    expect(assistantTurnGoalActivity("Done.", "planning")).toBe("planning")
+    expect(assistantTurnGoalActivity("Done.", "verifying")).toBe("verifying")
+  })
+})
 
 const generatingItem = {
   id: "turn-1",

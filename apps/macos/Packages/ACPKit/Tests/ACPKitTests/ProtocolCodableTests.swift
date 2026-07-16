@@ -80,9 +80,10 @@ struct ProtocolCodableTests {
         try roundTrip(SessionUpdate.goalUpdate(SessionGoal(
             objective: "ship goal mode",
             status: .active,
+            activity: .verifying,
             tokenBudget: 50_000,
             tokensUsed: 1_200,
-            timeUsedSeconds: 42,
+            timeUsedSeconds: 42.125,
             createdAt: "2026-07-05T00:00:00.000Z",
             updatedAt: "2026-07-05T00:01:00.000Z"
         )))
@@ -128,12 +129,13 @@ struct ProtocolCodableTests {
     func goalDecoding() throws {
         let data = Data("""
         {"sessionUpdate":"goal_update","goal":{"objective":"o","status":"budgetLimited",\
-        "tokenBudget":null,"tokensUsed":5,"timeUsedSeconds":9,"createdAt":"c","updatedAt":"u"}}
+        "tokenBudget":null,"tokensUsed":5,"timeUsedSeconds":9.25,"createdAt":"c","updatedAt":"u"}}
         """.utf8)
         let update = try ACPJSON.decoder.decode(SessionUpdate.self, from: data)
         guard case .goalUpdate(let goal) = update else { Issue.record("expected goal_update"); return }
         #expect(goal.tokenBudget == nil)
         #expect(goal.status == .budgetLimited)
+        #expect(goal.timeUsedSeconds == 9.25)
 
         let unknownStatus = Data("""
         {"sessionUpdate":"goal_update","goal":{"objective":"o","status":"someday",\

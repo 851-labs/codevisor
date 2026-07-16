@@ -65,29 +65,41 @@ public enum GoalStatus: String, Sendable, Codable, Equatable, CaseIterable {
     case complete
 }
 
+/// Transient activity within an active goal. Duration is unknown, so clients
+/// present this as indeterminate progress rather than a lifecycle state.
+public enum GoalActivity: String, Sendable, Codable, Equatable {
+    case planning
+    case verifying
+}
+
 /// A persistent per-session objective (codex "goal mode"). Snapshots are
 /// idempotent full state: consumers replace, never accumulate.
 public struct SessionGoal: Sendable, Codable, Equatable {
     public var objective: String
     public var status: GoalStatus
+    public var activity: GoalActivity?
     /// Token budget for the goal; nil when unbounded.
     public var tokenBudget: Int?
     public var tokensUsed: Int
-    public var timeUsedSeconds: Int
+    /// Fractional because Grok reports elapsed milliseconds and the server
+    /// preserves that precision when converting to seconds.
+    public var timeUsedSeconds: Double
     public var createdAt: String
     public var updatedAt: String
 
     public init(
         objective: String,
         status: GoalStatus,
+        activity: GoalActivity? = nil,
         tokenBudget: Int? = nil,
         tokensUsed: Int = 0,
-        timeUsedSeconds: Int = 0,
+        timeUsedSeconds: Double = 0,
         createdAt: String = "",
         updatedAt: String = ""
     ) {
         self.objective = objective
         self.status = status
+        self.activity = activity
         self.tokenBudget = tokenBudget
         self.tokensUsed = tokensUsed
         self.timeUsedSeconds = timeUsedSeconds

@@ -1,14 +1,13 @@
-import SwiftUI
-import CodevisorCore
 import ACPKit
+import CodevisorCore
+import SwiftUI
 
-/// Session goal banner: objective, status chip, usage, and the
-/// pause/resume/clear controls. Mounted above the composer whenever the
-/// session has a goal; hidden entirely on harnesses without goal support.
+/// Session goal banner: objective, usage, and the pause/resume/clear controls.
+/// Transient work belongs in the transcript alongside Thinking…, rather than
+/// competing with the objective as a badge. Mounted above the composer whenever
+/// the session has a goal; hidden entirely on harnesses without goal support.
 /// Goals are created/replaced through the composer's goal-mode toggle.
 struct GoalBannerView: View {
-    @Environment(\.theme) private var theme
-
     @Bindable var controller: SessionController
     let goal: SessionGoal
     var glassNamespace: Namespace.ID? = nil
@@ -21,12 +20,9 @@ struct GoalBannerView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
             VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 8) {
-                    Text(goal.objective)
-                        .font(.callout.weight(.medium))
-                        .lineLimit(2)
-                    statusChip
-                }
+                Text(goal.objective)
+                    .font(.callout.weight(.medium))
+                    .lineLimit(2)
                 usageLine
             }
             Spacer(minLength: 8)
@@ -51,15 +47,6 @@ struct GoalBannerView: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Goal: \(goal.objective), \(statusText)")
-    }
-
-    private var statusChip: some View {
-        Text(statusText)
-            .font(.caption2.weight(.semibold))
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .background(Capsule().fill(statusColor.opacity(0.15)))
-            .foregroundStyle(statusColor)
     }
 
     @ViewBuilder
@@ -119,15 +106,6 @@ struct GoalBannerView: View {
         }
     }
 
-    /// Monochrome by default; only trouble states pull a colour.
-    private var statusColor: Color {
-        switch goal.status {
-        case .active: .primary
-        case .paused, .complete: .secondary
-        case .blocked, .usageLimited, .budgetLimited: theme.statusWarn
-        }
-    }
-
     static func tokens(_ count: Int) -> String {
         let formatted: String = switch count {
         case 1_000_000...: String(format: "%.1fM", Double(count) / 1_000_000)
@@ -140,9 +118,12 @@ struct GoalBannerView: View {
     }
 
     /// Compact elapsed format matching the codex TUI: "59s", "1h 30m", "1d 2h 3m".
-    static func elapsed(_ seconds: Int) -> String {
-        if seconds < 60 { return "\(seconds)s" }
-        let minutes = seconds / 60
+    static func elapsed(_ seconds: Double) -> String {
+        // Goal runtimes arrive with millisecond precision; the compact UI
+        // intentionally displays completed whole seconds, matching Grok.
+        let wholeSeconds = max(0, Int(seconds.rounded(.down)))
+        if wholeSeconds < 60 { return "\(wholeSeconds)s" }
+        let minutes = wholeSeconds / 60
         if minutes < 60 { return "\(minutes)m" }
         let hours = minutes / 60
         if hours < 24 {

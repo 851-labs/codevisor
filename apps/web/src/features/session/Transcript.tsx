@@ -1,4 +1,4 @@
-import type { AttachmentRef, ConversationItem } from "@codevisor/api"
+import type { AttachmentRef, ConversationItem, SessionGoal } from "@codevisor/api"
 import { ArrowDownIcon, TriangleAlertIcon } from "lucide-react"
 import {
   memo,
@@ -76,6 +76,7 @@ const TranscriptItem = memo(function TranscriptItem({
   runningSubagentToolCallIds,
   onRetryTurn,
   retryPending,
+  goalActivity,
   disclosureValues,
   setDisclosureValue
 }: {
@@ -84,6 +85,7 @@ const TranscriptItem = memo(function TranscriptItem({
   runningSubagentToolCallIds: readonly string[]
   onRetryTurn?: (itemId: string) => void
   retryPending?: boolean
+  goalActivity?: SessionGoal["activity"]
   disclosureValues: TranscriptDisclosureValues
   setDisclosureValue: (key: string, expanded: boolean) => void
 }) {
@@ -95,6 +97,7 @@ const TranscriptItem = memo(function TranscriptItem({
         meta={meta}
         onRetry={onRetryTurn == null ? undefined : () => onRetryTurn(item.id)}
         retryPending={retryPending}
+        goalActivity={goalActivity}
         runningSubagentToolCallIds={runningSubagentToolCallIds}
         disclosureValues={disclosureValues}
         setDisclosureValue={setDisclosureValue}
@@ -189,6 +192,7 @@ export function Transcript({
   errorMessage,
   composerOverlay,
   waitingIndicator,
+  goalActivity,
   pendingUserMessage,
   composerHeight,
   streamFingerprint,
@@ -204,6 +208,7 @@ export function Transcript({
   errorMessage?: string
   composerOverlay: ReactNode
   waitingIndicator?: ReactNode
+  goalActivity?: SessionGoal["activity"]
   pendingUserMessage?: PendingUserMessage
   composerHeight: number
   streamFingerprint: string
@@ -369,6 +374,11 @@ export function Transcript({
               setDisclosureValue={setDisclosureValue}
               onRetryTurn={onRetryTurn}
               retryPending={retryPending}
+              goalActivity={
+                index === conversation.length - 1 && item.role === "assistant"
+                  ? goalActivity
+                  : undefined
+              }
             />
           ))}
           {waitingIndicator}
@@ -410,7 +420,8 @@ function TranscriptItemWithSetup({
   disclosureValues,
   setDisclosureValue,
   onRetryTurn,
-  retryPending
+  retryPending,
+  goalActivity
 }: {
   item: ConversationItem
   index: number
@@ -421,6 +432,7 @@ function TranscriptItemWithSetup({
   setDisclosureValue: (key: string, expanded: boolean) => void
   onRetryTurn?: (itemId: string) => void
   retryPending?: boolean
+  goalActivity?: SessionGoal["activity"]
 }) {
   const setup =
     setupPhases.length === 0 ? null : index === 0 && item.role === "assistant" ? (
@@ -441,6 +453,7 @@ function TranscriptItemWithSetup({
           setDisclosureValue={setDisclosureValue}
           onRetryTurn={onRetryTurn}
           retryPending={retryPending}
+          goalActivity={goalActivity}
         />
       </div>
       {index === 0 && item.role === "user" && setup}

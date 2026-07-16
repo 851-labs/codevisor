@@ -544,6 +544,7 @@ public final class SessionModel {
                 backgroundTasks = tasks
                 hasBackgroundTaskSnapshot = true
             }
+            goal = page.goal
             isSending = lastTurnIsGenerating
             transcriptStreamBytes = Self.transcriptByteEstimate(of: conversation)
             serverEventCursor = page.eventCursor
@@ -593,6 +594,7 @@ public final class SessionModel {
             if history.events.isEmpty {
                 setConversation(snapshot.conversation)
                 pendingQuestion = snapshot.pendingQuestion
+                goal = snapshot.goal
                 if let tasks = snapshot.backgroundTasks {
                     backgroundTasks = tasks
                     hasBackgroundTaskSnapshot = true

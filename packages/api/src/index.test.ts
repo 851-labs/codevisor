@@ -314,6 +314,7 @@ describe("@codevisor/api", () => {
     const goal = decode(SessionGoal)({
       objective: "ship goal mode",
       status: "active",
+      activity: "verifying",
       tokenBudget: null,
       tokensUsed: 1200,
       timeUsedSeconds: 42,
@@ -321,6 +322,7 @@ describe("@codevisor/api", () => {
       updatedAt: "2026-07-05T00:01:00.000Z"
     })
     expect(goal.tokenBudget).toBeNull()
+    expect(goal.activity).toBe("verifying")
 
     // The three set-request budget states survive decoding distinctly:
     // absent key = keep, null = clear, number = set.

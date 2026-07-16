@@ -455,13 +455,20 @@ struct SessionScreen: View {
                 )
             }
             // Hidden while editing: the composer IS the goal UI in that mode.
-            if controller.supportsGoals, !controller.isGoalEditing,
-               let goal = controller.goal ?? controller.draftGoal {
-                GoalBannerView(
-                    controller: controller,
-                    goal: goal,
-                    glassNamespace: composerGlassNamespace
-                )
+            if controller.supportsGoals, !controller.isGoalEditing {
+                if let model = controller.model {
+                    LiveGoalBannerView(
+                        controller: controller,
+                        model: model,
+                        glassNamespace: composerGlassNamespace
+                    )
+                } else if let goal = controller.draftGoal {
+                    GoalBannerView(
+                        controller: controller,
+                        goal: goal,
+                        glassNamespace: composerGlassNamespace
+                    )
+                }
             }
             if !controller.queuedPrompts.isEmpty {
                 PromptQueueView(
@@ -564,11 +571,14 @@ private struct TranscriptActiveItemView: View {
     var body: some View {
         let revision = controller.activeItemRevision
         let waitingOnBackgroundTask = controller.waitingBackgroundTaskDescription
+        let goal = controller.model?.goal
+        let goalActivity = goal?.status == .active ? goal?.activity : nil
         if let item = controller.activeItem {
             ConversationItemView(
                 item: item,
                 isWaitingOnUser: controller.pendingQuestion != nil,
-                waitingOnBackgroundTask: waitingOnBackgroundTask
+                waitingOnBackgroundTask: waitingOnBackgroundTask,
+                goalActivity: goalActivity
             )
                 // The active row is hosted behind the transcript's observation
                 // isolation boundary, so environment values injected by the
@@ -592,6 +602,29 @@ private struct TranscriptActiveItemView: View {
                 .onChange(of: waitingOnBackgroundTask) { _, _ in
                     invalidateRowMeasurement?()
                 }
+                .onChange(of: goalActivity) { _, _ in
+                    invalidateRowMeasurement?()
+                }
+        }
+    }
+}
+
+/// Reads SessionModel.goal directly so activity/lifecycle snapshots invalidate
+/// this small subtree. Going through SessionController.goal only observed the
+/// stable model reference and left the first goal snapshot frozen on screen.
+private struct LiveGoalBannerView: View {
+    @Bindable var controller: SessionController
+    @Bindable var model: SessionModel
+    let glassNamespace: Namespace.ID
+
+    @ViewBuilder
+    var body: some View {
+        if let goal = model.goal {
+            GoalBannerView(
+                controller: controller,
+                goal: goal,
+                glassNamespace: glassNamespace
+            )
         }
     }
 }

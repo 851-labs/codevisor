@@ -1046,6 +1046,7 @@ public struct ServerSessionDetail: Decodable, Equatable, Sendable {
     public var eventCursor: Int
     public var pendingQuestion: QuestionRequest?
     public var backgroundTasks: [BackgroundTaskInfo]?
+    public var goal: SessionGoal?
 
     public init(
         session: ServerSession,
@@ -1053,7 +1054,8 @@ public struct ServerSessionDetail: Decodable, Equatable, Sendable {
         promptQueue: [ServerPromptQueueItem] = [],
         eventCursor: Int,
         pendingQuestion: QuestionRequest? = nil,
-        backgroundTasks: [BackgroundTaskInfo]? = nil
+        backgroundTasks: [BackgroundTaskInfo]? = nil,
+        goal: SessionGoal? = nil
     ) {
         self.session = session
         self.conversation = conversation
@@ -1061,6 +1063,7 @@ public struct ServerSessionDetail: Decodable, Equatable, Sendable {
         self.eventCursor = eventCursor
         self.pendingQuestion = pendingQuestion
         self.backgroundTasks = backgroundTasks
+        self.goal = goal
     }
 
     enum CodingKeys: String, CodingKey {
@@ -1070,6 +1073,7 @@ public struct ServerSessionDetail: Decodable, Equatable, Sendable {
         case eventCursor
         case pendingQuestion
         case backgroundTasks
+        case goal
     }
 
     public init(from decoder: any Decoder) throws {
@@ -1080,6 +1084,7 @@ public struct ServerSessionDetail: Decodable, Equatable, Sendable {
         eventCursor = try container.decode(Int.self, forKey: .eventCursor)
         pendingQuestion = try container.decodeIfPresent(QuestionRequest.self, forKey: .pendingQuestion)
         backgroundTasks = try container.decodeIfPresent([BackgroundTaskInfo].self, forKey: .backgroundTasks)
+        goal = try container.decodeIfPresent(SessionGoal.self, forKey: .goal)
     }
 }
 
@@ -1116,6 +1121,7 @@ public struct ServerTranscriptPage: Decodable, Equatable, Sendable {
     public var eventCursor: Int
     public var pendingQuestion: QuestionRequest? = nil
     public var backgroundTasks: [BackgroundTaskInfo]? = nil
+    public var goal: SessionGoal? = nil
     public var usage: ServerSessionUsage? = nil
 }
 

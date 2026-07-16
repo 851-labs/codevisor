@@ -560,6 +560,31 @@ describe("@codevisor/db", () => {
     await Effect.runPromise(db.close)
   })
 
+  it("snapshots the latest goal with the transcript cursor, including transient activity", async () => {
+    const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
+    const project = await run(db.createProject({ folderPath: "/tmp/goal-snapshot" }))
+    const session = await run(db.createSession({ projectId: project.id, harnessId: "grok-build" }))
+    const goal = {
+      objective: "ship goal mode",
+      status: "active" as const,
+      activity: "verifying" as const,
+      tokenBudget: null,
+      tokensUsed: 12_000,
+      timeUsedSeconds: 42,
+      createdAt: "2026-07-16T20:00:00.000Z",
+      updatedAt: "2026-07-16T20:00:42.000Z"
+    }
+
+    await run(db.appendEvent("session.updated", session.id, { goal }))
+    expect((await run(db.getTranscriptPage(session.id, undefined, 8))).goal).toEqual(goal)
+    expect((await run(db.getSessionDetail(session.id))).goal).toEqual(goal)
+
+    await run(db.appendEvent("session.updated", session.id, { goalCleared: true }))
+    expect((await run(db.getTranscriptPage(session.id, undefined, 8))).goal).toBeUndefined()
+    expect((await run(db.getSessionDetail(session.id))).goal).toBeUndefined()
+    await Effect.runPromise(db.close)
+  })
+
   it("migrates a v4 database to projects without losing session children", async () => {
     const filename = tempDatabase()
     buildV4Fixture(filename)

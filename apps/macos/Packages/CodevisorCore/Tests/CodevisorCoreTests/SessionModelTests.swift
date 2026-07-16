@@ -1094,6 +1094,39 @@ struct SessionModelTests {
         #expect(client.goalClearCount == 1)
     }
 
+    @Test("Transcript loading restores the goal snapshot at its event cursor")
+    func transcriptLoadingRestoresGoalSnapshot() async {
+        let sessionId = UUID()
+        let client = FakeSessionServerClient(sessionId: sessionId)
+        client.initialTranscriptPage = ServerTranscriptPage(
+            items: [],
+            nextBefore: nil,
+            hasMore: false,
+            eventCursor: 12,
+            goal: SessionGoal(
+                objective: "ship goal mode",
+                status: .active,
+                activity: .verifying,
+                tokensUsed: 12_000,
+                timeUsedSeconds: 42
+            )
+        )
+        let model = SessionModel(
+            serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
+            sessionId: sessionId.uuidString
+        )
+
+        await model.loadHistory()
+
+        #expect(model.goal?.objective == "ship goal mode")
+        #expect(model.goal?.activity == .verifying)
+        for _ in 0..<20 {
+            if !client.sessionEventSinceValues.isEmpty { break }
+            await Task.yield()
+        }
+        #expect(client.sessionEventSinceValues == [12])
+    }
+
     @Test("A goal-only session still streams agent-initiated turns")
     func goalOnlySessionStreams() async {
         let sessionId = UUID()
