@@ -1,6 +1,7 @@
 import SwiftUI
 import UniformTypeIdentifiers
 import CodevisorCore
+import CodevisorTheming
 import os
 
 private enum SidebarOrganization: String, CaseIterable {
@@ -92,6 +93,18 @@ struct SidebarView: View {
     private var organization: SidebarOrganization { SidebarOrganization(rawValue: organizationRaw) ?? .byProject }
     private var order: SidebarOrder { SidebarOrder(rawValue: orderRaw) ?? .updated }
     private var notificationColor: Color { theme.isSystem ? .blue : theme.accent }
+    private var developmentWorktreeColor: Color {
+        guard let rgba = RGBA(hex: CodevisorAppVariant.developmentIconColorHex) else { return .blue }
+        return Color(rgba: rgba)
+    }
+    private var developmentWorktreeForegroundColor: Color {
+        let foregroundHex = ColorMath.pickReadableForeground(
+            bg: CodevisorAppVariant.developmentIconColorHex,
+            candidates: ["#ffffff", "#000000"]
+        ) ?? "#ffffff"
+        guard let rgba = RGBA(hex: foregroundHex) else { return .white }
+        return Color(rgba: rgba)
+    }
 
     private var projectOrder: [UUID] {
         manualProjectOrderRaw
@@ -163,10 +176,14 @@ struct SidebarView: View {
                 .padding(8)
                 .transition(.move(edge: .top).combined(with: .opacity))
             }
-            // New chat + the Projects header stay pinned; only the project
-            // list itself scrolls.
+            // Development identity + New chat + the Projects header stay
+            // pinned; only the project list itself scrolls.
             VStack(alignment: .leading, spacing: 1) {
-                actionRow("New chat", systemImage: "square.and.pencil", id: "new") {
+                if CodevisorAppVariant.isDevelopment {
+                    developmentWorktreeRow
+                }
+
+                actionRow("New chat", systemImage: "square.and.pencil") {
                     selection = .newChat(nil)
                 }
 
@@ -326,18 +343,46 @@ struct SidebarView: View {
 
     // MARK: - Header rows
 
-    private func actionRow(_ title: String, systemImage: String, id: String, action: @escaping () -> Void) -> some View {
+    private var developmentWorktreeRow: some View {
+        let worktreeName = CodevisorAppVariant.developmentWorktreeName
+        return headerRow(
+            worktreeName,
+            systemImage: "ladybug.fill",
+            foregroundColor: developmentWorktreeForegroundColor
+        )
+        .background(RoundedRectangle(cornerRadius: 6).fill(developmentWorktreeColor))
+        .accessibilityLabel("Development worktree: \(worktreeName)")
+        .help("Development worktree: \(worktreeName)")
+    }
+
+    private func actionRow(_ title: String, systemImage: String, action: @escaping () -> Void) -> some View {
+        headerRow(title, systemImage: systemImage)
+            .contentShape(Rectangle())
+            .sidebarRowHover()
+            .onTapGesture(perform: action)
+    }
+
+    /// Shared geometry for the pinned sidebar items. The development identity
+    /// row is informational, while action rows add their own hover and tap
+    /// behavior on top of this label.
+    private func headerRow(
+        _ title: String,
+        systemImage: String,
+        foregroundColor: Color? = nil
+    ) -> some View {
         HStack(spacing: 8) {
-            Image(systemName: systemImage).frame(width: 18).foregroundStyle(.secondary)
+            Image(systemName: systemImage)
+                .frame(width: 18)
+                .foregroundStyle(foregroundColor ?? Color.secondary)
             Text(title)
+                .foregroundStyle(foregroundColor ?? Color.primary)
+                .lineLimit(1)
+                .truncationMode(.middle)
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 6)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .contentShape(Rectangle())
-        .sidebarRowHover()
-        .onTapGesture(perform: action)
     }
 
     private var projectsHeader: some View {
