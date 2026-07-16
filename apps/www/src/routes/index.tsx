@@ -70,15 +70,15 @@ function Hero() {
         Codevisor runs Claude Code, Codex, and any ACP agent on your machines — in one native macOS
         app.
       </p>
-      <InstallCta />
+      <InstallCta placement="hero" />
     </section>
   )
 }
 
-function InstallCta() {
+function InstallCta({ placement }: { placement: "hero" | "footer" }) {
   return (
     <div className="mx-auto mt-8 w-full max-w-lg">
-      <InstallCommand />
+      <InstallCommand placement={placement} />
     </div>
   )
 }
@@ -157,7 +157,7 @@ function Install() {
       <p className="mx-auto mt-6 max-w-xl text-lg text-muted">
         One command installs the app on a Mac and sets up the Codevisor server on Linux.
       </p>
-      <InstallCta />
+      <InstallCta placement="footer" />
     </section>
   )
 }

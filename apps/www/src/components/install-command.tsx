@@ -1,5 +1,7 @@
 import { useState } from "react"
 
+import { captureAnalytics, type InstallPlacement } from "../lib/analytics"
+
 const TABS = [
   {
     id: "curl",
@@ -15,7 +17,7 @@ const TABS = [
 
 type TabId = (typeof TABS)[number]["id"]
 
-export function InstallCommand() {
+export function InstallCommand({ placement }: { placement: InstallPlacement }) {
   const [active, setActive] = useState<TabId>("curl")
   const [copied, setCopied] = useState(false)
 
@@ -23,6 +25,10 @@ export function InstallCommand() {
 
   const copy = () => {
     navigator.clipboard.writeText(tab.command).then(() => {
+      captureAnalytics({
+        name: "www install command copied",
+        properties: { method: tab.id, placement }
+      })
       setCopied(true)
       setTimeout(() => setCopied(false), 1600)
     })
@@ -44,6 +50,12 @@ export function InstallCommand() {
             onClick={() => {
               setActive(t.id)
               setCopied(false)
+              if (t.id !== active) {
+                captureAnalytics({
+                  name: "www install method selected",
+                  properties: { method: t.id, placement }
+                })
+              }
             }}
             className={`relative px-3 py-2.5 font-mono text-[13px] transition-colors ${
               t.id === active ? "text-text" : "text-muted hover:text-text"
