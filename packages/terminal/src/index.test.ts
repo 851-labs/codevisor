@@ -191,6 +191,26 @@ describe("@codevisor/terminal", () => {
     expect(spawner.requests[0]?.shell).toBe("/bin/sh")
   })
 
+  it("falls back when an automatically discovered shell is not executable", async () => {
+    const spawner = makeSpawner()
+    const manager = makeTerminalManager({
+      env: { SHELL: "/codevisor-test/missing-shell" },
+      userShell: () => undefined,
+      spawner
+    })
+
+    await run(
+      manager.createTerminal({
+        sessionId: "session-missing-shell",
+        cwd: "/tmp/project",
+        cols: 80,
+        rows: 24
+      })
+    )
+
+    expect(spawner.requests[0]?.shell).toBe("/bin/sh")
+  })
+
   it("buffers early process frames and rejects input after an early exit", async () => {
     const spawner = makeSpawner((_request, handlers) => {
       handlers.onOutput("booting")
