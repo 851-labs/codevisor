@@ -5,7 +5,8 @@ import UniformTypeIdentifiers
 import os
 
 /// First-launch onboarding, presented as a short paginated flow:
-/// 1. Welcome, 2. Choose your harnesses, 3. Choose your projects.
+/// 1. Welcome, 2. Choose your harnesses, 3. Choose your projects,
+/// 4. Choose analytics sharing.
 /// The project step is a multi-select over suggested folders; completing it
 /// adds every selected folder as a project and opens a new chat in the first.
 struct OnboardingView: View {
@@ -24,7 +25,7 @@ struct OnboardingView: View {
     var onComplete: (Project?) -> Void
 
     enum Step: Int, CaseIterable {
-        case welcome, harnesses, project
+        case welcome, harnesses, project, analytics
     }
 
     /// Where harness detection stands. Distinguishes "the server isn't up
@@ -57,6 +58,9 @@ struct OnboardingView: View {
     @State private var showsNotInstalled = false
     @State private var authenticationHarness: ServerHarness?
     @State private var toggleError: ToggleError?
+    /// Sharing is selected initially, but nothing is persisted or sent until
+    /// the user continues past the final onboarding step.
+    @State private var shareAnalytics = true
 
     private var installedHarnesses: [ServerHarness] { harnesses.filter(\.isReady) }
     private var notInstalledHarnesses: [ServerHarness] { harnesses.filter { !$0.isReady } }
@@ -136,6 +140,7 @@ struct OnboardingView: View {
     private var content: some View {
         switch step {
         case .welcome: welcomeStep
+        case .analytics: analyticsStep
         case .harnesses: harnessesStep
         case .project: projectStep
         }
@@ -164,17 +169,69 @@ struct OnboardingView: View {
         .frame(maxWidth: .infinity)
     }
 
+    // MARK: - Analytics
+
+    /// A compact final-step consent card. The user can turn sharing off before
+    /// Continue persists and applies the preference.
+    private var analyticsStep: some View {
+        VStack(spacing: 0) {
+            Image(systemName: "chart.line.uptrend.xyaxis")
+                .font(.system(size: 34, weight: .medium))
+                .symbolRenderingMode(.hierarchical)
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+
+            Text("Help improve Codevisor")
+                .font(.system(size: 28, weight: .bold))
+                .padding(.top, 18)
+
+            VStack(alignment: .leading, spacing: 10) {
+                Toggle("Share anonymous metrics", isOn: $shareAnalytics)
+                    .toggleStyle(.checkbox)
+                    .fontWeight(.semibold)
+
+                Text("Help improve Codevisor by sharing which features, models, and coding agents you use. Your prompts, responses, code, file and project names, paths, and terminal commands are never included.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(18)
+            .frame(maxWidth: 420, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(theme.cardBackground)
+            )
+            .padding(.top, 24)
+
+            Text("You can change this at any time in Settings → General.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.top, 16)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
     // MARK: - Step header
 
-    private func stepHeader(title: String, subtitle: String) -> some View {
-        VStack(spacing: 6) {
+    private func stepHeader(symbol: String, title: String, subtitle: String) -> some View {
+        VStack(spacing: 0) {
+            Image(systemName: symbol)
+                .font(.system(size: 34, weight: .medium))
+                .symbolRenderingMode(.hierarchical)
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+
             Text(title)
                 .font(.system(size: 28, weight: .bold))
+                .padding(.top, 18)
+
             Text(subtitle)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: 420)
+                .padding(.top, 6)
         }
         .frame(maxWidth: .infinity)
     }
@@ -184,6 +241,7 @@ struct OnboardingView: View {
     private var harnessesStep: some View {
         VStack(spacing: 20) {
             stepHeader(
+                symbol: "terminal",
                 title: "Choose your harnesses",
                 subtitle: "These are the ACP coding agents we found on your Mac. Turn on the ones you'd like to use."
             )
@@ -439,6 +497,7 @@ struct OnboardingView: View {
     private var projectStep: some View {
         VStack(spacing: 20) {
             stepHeader(
+                symbol: "folder",
                 title: "Choose your projects",
                 subtitle: "Select the folders you want to work in."
             )
@@ -520,10 +579,8 @@ struct OnboardingView: View {
         switch step {
         case .welcome: return "Get Started"
         case .harnesses: return "Continue"
-        case .project:
-            return projectSetup.selectedFolders.count > 1
-                ? "Add \(projectSetup.selectedFolders.count) Projects"
-                : "Open Project"
+        case .project: return "Continue"
+        case .analytics: return "Continue"
         }
     }
 
@@ -533,6 +590,7 @@ struct OnboardingView: View {
         case .welcome: return false
         case .harnesses: return detection == .connecting
         case .project: return projectSetup.selectedFolders.isEmpty
+        case .analytics: return false
         }
     }
 
@@ -554,6 +612,9 @@ struct OnboardingView: View {
             // onboarding remains interactive and never waits on this warm.
             Task { await environment.warmHarnessCapabilities() }
         case .project:
+            step = .analytics
+        case .analytics:
+            environment.setShareAnalytics(shareAnalytics)
             finish()
         }
     }
@@ -586,6 +647,12 @@ struct OnboardingView: View {
 
 #Preview("Harnesses") {
     OnboardingView(onComplete: { _ in }, debugInitialStep: .harnesses)
+        .environment(AppEnvironment.preview(hasOnboarded: false))
+        .frame(width: 900, height: 700)
+}
+
+#Preview("Analytics") {
+    OnboardingView(onComplete: { _ in }, debugInitialStep: .analytics)
         .environment(AppEnvironment.preview(hasOnboarded: false))
         .frame(width: 900, height: 700)
 }

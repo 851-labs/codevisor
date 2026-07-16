@@ -88,6 +88,30 @@ struct SessionModelTests {
         #expect(assistant.turn.stopDetail == nil)
     }
 
+    @Test("Prompt acceptance callback fires only after each queue item is accepted")
+    func promptAcceptanceCallback() async {
+        let sessionId = UUID()
+        let client = FakeSessionServerClient(sessionId: sessionId)
+        client.echoOnPrompt = false
+        let model = SessionModel(
+            serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
+            sessionId: sessionId.uuidString
+        )
+        var attachmentCounts: [Int] = []
+        var queuedStates: [Bool] = []
+        model.onPromptAccepted = { attachmentCount, isQueued in
+            attachmentCounts.append(attachmentCount)
+            queuedStates.append(isQueued)
+        }
+
+        await model.send("first")
+        await model.send("queued")
+
+        #expect(client.promptedTexts == ["first", "queued"])
+        #expect(attachmentCounts == [0, 0])
+        #expect(queuedStates == [false, true])
+    }
+
     @Test("A new empty session negotiates the scoped stream before its first prompt")
     func newSessionFirstPromptUsesScopedStream() async {
         let sessionId = UUID()

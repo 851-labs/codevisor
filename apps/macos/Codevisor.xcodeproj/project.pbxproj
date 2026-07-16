@@ -283,6 +283,8 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIconDev;
 				CODE_SIGN_STYLE = Automatic;
+				CODEVISOR_POSTHOG_HOST = "https://us.i.posthog.com";
+				CODEVISOR_POSTHOG_PROJECT_TOKEN = phc_Bjioc2MPX8qEqgnZdfuboi4Uu268kCE3pJSkMfSJtDwi;
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_PREVIEWS = YES;
@@ -373,6 +375,8 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
+				CODEVISOR_POSTHOG_HOST = "https://us.i.posthog.com";
+				CODEVISOR_POSTHOG_PROJECT_TOKEN = phc_Bjioc2MPX8qEqgnZdfuboi4Uu268kCE3pJSkMfSJtDwi;
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_PREVIEWS = YES;

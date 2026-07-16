@@ -13,6 +13,11 @@
 		<key>NSAllowsArbitraryLoads</key>
 		<true/>
 	</dict>
+	<!-- Public event-ingestion configuration; this token cannot read PostHog data. -->
+	<key>CodevisorPostHogProjectToken</key>
+	<string>$(CODEVISOR_POSTHOG_PROJECT_TOKEN)</string>
+	<key>CodevisorPostHogHost</key>
+	<string>$(CODEVISOR_POSTHOG_HOST)</string>
 	<!--
 	  codevisor:// deeplinks (codevisor-dev:// in Debug so the dev app and
 	  the installed production app never race for the same handler). Used by

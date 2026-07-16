@@ -214,6 +214,12 @@ final class SessionController {
     /// discard that harness's model, thinking, or speed selection.
     private var pendingConfigByHarness: [String: [String: String]] = [:]
     private var pendingModeId: String?
+    /// Set only while a promoted new-chat draft is waiting for a successful
+    /// agent connection. Failed setup rolls it back without counting a chat.
+    private var pendingNewChatAnalytics = false
+    /// Usage snapshots are cumulative for a session; retain the previous one
+    /// so turn events report coarse deltas instead of cumulative totals.
+    private var analyticsUsageBaseline: SessionUsage?
     /// The user's requested plan state while the harness/server transition is
     /// in flight. Keeping this separate from the authoritative session state
     /// makes the composer respond immediately without letting duplicate clicks
@@ -399,7 +405,10 @@ final class SessionController {
         // Navigate first, exactly like a first prompt send.
         if !hasSentFirst {
             hasSentFirst = true
-            if onFirstSend != nil { rememberComposerDefaults() }
+            if onFirstSend != nil {
+                pendingNewChatAnalytics = true
+                rememberComposerDefaults()
+            }
             onFirstSend?()
             onFirstSend = nil
         }
@@ -689,8 +698,11 @@ final class SessionController {
     }
 
     func setConfigOption(_ configId: String, _ value: String) async {
+        let optionBeforeChange = configOptions.first { $0.id == configId }
+        let previousValue = optionBeforeChange?.currentValue
+        var accepted = true
         if let model {
-            await model.setConfigOption(configId: configId, value: value)
+            accepted = await model.setConfigOption(configId: configId, value: value)
             if let harnessId = connectedHarnessId {
                 configCache.store(model.configOptions, forHarness: harnessId, onServer: project.serverId)
                 configOptionsByHarness[harnessId] = model.configOptions
@@ -706,6 +718,11 @@ final class SessionController {
                     configOptionsByHarness[harnessId] = options
                 }
             }
+        }
+        if accepted,
+           optionBeforeChange?.category == SessionConfigOption.Category.model,
+           previousValue != value {
+            captureModelSelected(modelId: value, previousModelId: previousValue)
         }
     }
 
@@ -1049,7 +1066,9 @@ final class SessionController {
     /// Selects a different harness (user action) and reconnects.
     func selectHarness(_ id: String) async {
         guard id != selectedHarnessId else { return }
+        let previousHarnessId = selectedHarnessId
         selectedHarnessId = id
+        captureHarnessSelected(harnessId: id, previousHarnessId: previousHarnessId)
         if isDraft {
             // Start the new harness from its own remembered selections rather
             // than pending edits made under the previous harness.
@@ -1122,7 +1141,10 @@ final class SessionController {
             hasSentFirst = true
             // Only a new-chat draft (which has an onFirstSend) sets the
             // defaults; a resumed session's first message shouldn't.
-            if onFirstSend != nil { rememberComposerDefaults() }
+            if onFirstSend != nil {
+                pendingNewChatAnalytics = true
+                rememberComposerDefaults()
+            }
             onFirstSend?()
             onFirstSend = nil
         }
@@ -1232,6 +1254,7 @@ final class SessionController {
     private func revertFirstSend(message: String) {
         setupPhases.removeAll()
         hasSentFirst = false
+        pendingNewChatAnalytics = false
         status = .failed(message)
         onSetupFailed?()
         onSetupFailed = nil
@@ -1499,9 +1522,13 @@ final class SessionController {
             configOptions: configOptionsByHarness[harness.id]
                 ?? configCache.options(forHarness: harness.id, onServer: project.serverId)
         )
-        model.onTurnEnded = { [weak self] in
+        model.onTurnEnded = { [weak self, weak model] in
+            if let model { self?.captureTurnEnded(model) }
             self?.noteTurnEndedForPlanApproval()
             self?.onTurnEnded?()
+        }
+        model.onPromptAccepted = { [weak self, weak model] attachmentCount, isQueued in
+            self?.captureMessageSent(model: model, attachmentCount: attachmentCount, isQueued: isQueued)
         }
         model.onActionRequired = { [weak self] in
             self?.onActionRequired?()
@@ -1515,6 +1542,7 @@ final class SessionController {
         // terminal event never reach the live UI. Older servers still fall
         // back inside loadHistory() when the transcript endpoint returns 404.
         await model.loadHistory()
+        analyticsUsageBaseline = model.usage
 
         if let pendingModeId {
             await model.setMode(pendingModeId)
@@ -1549,11 +1577,142 @@ final class SessionController {
         }
         pendingConfigByHarness[harness.id] = nil
 
+        captureChatCreatedIfNeeded(model: model, harnessId: harness.id)
         await applyPendingGoal(to: model)
 
         configCache.store(model.configOptions, forHarness: harness.id, onServer: project.serverId)
         configOptionsByHarness[harness.id] = model.configOptions
         return model
+    }
+
+    // MARK: - Analytics
+
+    private func captureChatCreatedIfNeeded(model: SessionModel, harnessId: String) {
+        guard pendingNewChatAnalytics else { return }
+        pendingNewChatAnalytics = false
+        var properties = analyticsSessionProperties(model: model)
+        properties["harness_id"] = .string(harnessId)
+        properties["uses_worktree"] = .boolean(wantsNewWorktree || serverSession?.worktreeName != nil)
+        properties["client"] = .string(project.serverId == "local" ? "local" : "remote")
+        AnalyticsClient.shared.capture(.chatCreated, properties: properties)
+    }
+
+    private func captureMessageSent(model: SessionModel?, attachmentCount: Int, isQueued: Bool) {
+        var properties = analyticsSessionProperties(model: model)
+        properties["attachment_count"] = .integer(attachmentCount)
+        properties["is_queued"] = .boolean(isQueued)
+        AnalyticsClient.shared.capture(.messageSent, properties: properties)
+    }
+
+    private func captureModelSelected(modelId: String, previousModelId: String?) {
+        var properties = analyticsSessionProperties(model: model)
+        properties["model_id"] = .string(modelId)
+        if let previousModelId {
+            properties["previous_model_id"] = .string(previousModelId)
+        }
+        AnalyticsClient.shared.capture(.modelSelected, properties: properties)
+    }
+
+    private func captureHarnessSelected(harnessId: String, previousHarnessId: String?) {
+        var properties = analyticsSessionProperties(model: model)
+        properties["harness_id"] = .string(harnessId)
+        if let previousHarnessId {
+            properties["previous_harness_id"] = .string(previousHarnessId)
+        }
+        AnalyticsClient.shared.capture(.harnessSelected, properties: properties)
+    }
+
+    private func captureTurnEnded(_ model: SessionModel) {
+        guard case let .assistant(message) = model.activeItem else { return }
+
+        let turn = message.turn
+        let currentUsage = model.usage
+        let previousUsage = analyticsUsageBaseline
+        analyticsUsageBaseline = currentUsage
+
+        var properties = analyticsSessionProperties(model: model)
+        if let stopReason = turn.stopReason?.rawValue {
+            properties["stop_reason"] = .string(stopReason)
+        }
+        if let duration = turn.duration {
+            properties["duration_ms"] = .integer(Int((duration * 1_000).rounded()))
+        }
+        properties["tool_call_count"] = .integer(turn.allToolCalls.count)
+
+        addTokenBucket(
+            key: "input_token_bucket",
+            current: currentUsage?.inputTokens,
+            previous: previousUsage?.inputTokens,
+            to: &properties
+        )
+        addTokenBucket(
+            key: "output_token_bucket",
+            current: currentUsage?.outputTokens,
+            previous: previousUsage?.outputTokens,
+            to: &properties
+        )
+        addTokenBucket(
+            key: "total_token_bucket",
+            current: currentUsage?.totalTokens,
+            previous: previousUsage?.totalTokens,
+            to: &properties
+        )
+
+        if let cost = currentUsage?.cost {
+            let previousCost = previousUsage?.cost
+            let amount = previousCost?.currency == cost.currency
+                ? max(0, cost.amount - (previousCost?.amount ?? 0))
+                : cost.amount
+            properties["cost"] = .double(amount)
+            properties["cost_currency"] = .string(cost.currency)
+            if let kind = cost.kind?.rawValue {
+                properties["cost_kind"] = .string(kind)
+            }
+        }
+
+        if model.errorMessage != nil {
+            properties["error_kind"] = .string(
+                model.errorRequiresHarnessAuthentication ? "authentication_required" : "runtime_error"
+            )
+            AnalyticsClient.shared.capture(.turnFailed, properties: properties)
+        } else {
+            AnalyticsClient.shared.capture(.turnCompleted, properties: properties)
+        }
+    }
+
+    private func analyticsSessionProperties(model: SessionModel?) -> [String: AnalyticsPropertyValue] {
+        var properties: [String: AnalyticsPropertyValue] = [:]
+        if let sessionId = serverSession?.id.uuidString {
+            properties["chat_id"] = .string(sessionId)
+        }
+        if let harnessId = connectedHarnessId ?? selectedHarnessId ?? serverSession?.harnessId,
+           !harnessId.isEmpty {
+            properties["harness_id"] = .string(harnessId)
+        }
+        let modelId = model?.configOptions.first {
+            $0.category == SessionConfigOption.Category.model
+        }?.currentValue ?? modelOption?.currentValue
+        if let modelId, !modelId.isEmpty {
+            properties["model_id"] = .string(modelId)
+        }
+        if let mode = model?.modeState?.currentModeId ?? modeState?.currentModeId,
+           !mode.isEmpty {
+            properties["mode"] = .string(mode)
+        }
+        return properties
+    }
+
+    private func addTokenBucket(
+        key: String,
+        current: UInt64?,
+        previous: UInt64?,
+        to properties: inout [String: AnalyticsPropertyValue]
+    ) {
+        guard let current else { return }
+        let delta = previous.map { current >= $0 ? current - $0 : current } ?? current
+        if let bucket = AnalyticsClient.tokenBucket(delta) {
+            properties[key] = .string(bucket)
+        }
     }
 
     @discardableResult

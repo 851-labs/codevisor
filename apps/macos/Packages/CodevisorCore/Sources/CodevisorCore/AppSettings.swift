@@ -10,6 +10,10 @@ public struct AppSettings: Sendable, Codable, Equatable {
 
     public var hasCompletedOnboarding: Bool
     public var importExternalSessions: Bool
+    /// Whether this device may send anonymous product usage and diagnostic
+    /// events. Content such as prompts, responses, code, paths, and terminal
+    /// commands must never be included in those events.
+    public var shareAnalytics: Bool
     /// Harness ids the user has explicitly turned off. A harness is "enabled"
     /// (shown in the composer picker) when its id is not in this set, so the
     /// default — an empty set — enables every installed harness.
@@ -33,6 +37,7 @@ public struct AppSettings: Sendable, Codable, Equatable {
     public init(
         hasCompletedOnboarding: Bool = false,
         importExternalSessions: Bool = false,
+        shareAnalytics: Bool = false,
         disabledHarnessIds: Set<String> = [],
         themeMode: ThemeMode = .system,
         lightThemeId: String = ThemeCatalog.systemLightID,
@@ -45,6 +50,7 @@ public struct AppSettings: Sendable, Codable, Equatable {
     ) {
         self.hasCompletedOnboarding = hasCompletedOnboarding
         self.importExternalSessions = importExternalSessions
+        self.shareAnalytics = shareAnalytics
         self.disabledHarnessIds = disabledHarnessIds
         self.themeMode = themeMode
         self.lightThemeId = lightThemeId
@@ -57,7 +63,7 @@ public struct AppSettings: Sendable, Codable, Equatable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case hasCompletedOnboarding, importExternalSessions, disabledHarnessIds
+        case hasCompletedOnboarding, importExternalSessions, shareAnalytics, disabledHarnessIds
         case themeMode, lightThemeId, darkThemeId
         case notificationsEnabled, systemNotificationsEnabled, notificationSoundsEnabled
         case chatFinishedSoundPath, actionRequiredSoundPath
@@ -67,6 +73,11 @@ public struct AppSettings: Sendable, Codable, Equatable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         hasCompletedOnboarding = try container.decodeIfPresent(Bool.self, forKey: .hasCompletedOnboarding) ?? false
         importExternalSessions = try container.decodeIfPresent(Bool.self, forKey: .importExternalSessions) ?? false
+        // Existing installations completed onboarding before this preference
+        // existed. Enable analytics for that migration cohort; fresh installs
+        // remain disabled until the final onboarding step is completed.
+        shareAnalytics = try container.decodeIfPresent(Bool.self, forKey: .shareAnalytics)
+            ?? hasCompletedOnboarding
         disabledHarnessIds = try container.decodeIfPresent(Set<String>.self, forKey: .disabledHarnessIds) ?? []
         themeMode = try container.decodeIfPresent(ThemeMode.self, forKey: .themeMode) ?? .system
         lightThemeId = try container.decodeIfPresent(String.self, forKey: .lightThemeId) ?? ThemeCatalog.systemLightID
@@ -116,6 +127,7 @@ public final class AppSettingsModel {
 
     public var hasCompletedOnboarding: Bool { settings.hasCompletedOnboarding }
     public var importExternalSessions: Bool { settings.importExternalSessions }
+    public var shareAnalytics: Bool { settings.shareAnalytics }
 
     /// Whether a harness is enabled (not turned off by the user).
     public func isHarnessEnabled(_ id: String) -> Bool {
@@ -146,6 +158,12 @@ public final class AppSettingsModel {
 
     public func setImportExternalSessions(_ value: Bool) {
         settings.importExternalSessions = value
+        persist()
+    }
+
+    /// Updates the privacy preference used as the single gate for analytics.
+    public func setShareAnalytics(_ value: Bool) {
+        settings.shareAnalytics = value
         persist()
     }
 

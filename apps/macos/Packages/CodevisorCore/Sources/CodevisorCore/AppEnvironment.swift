@@ -173,11 +173,19 @@ public final class AppEnvironment {
     /// Deletes all Codevisor data (projects, sessions, cached config, settings)
     /// and re-triggers onboarding. Does not touch the harnesses' own sessions.
     public func deleteAllData() {
+        AnalyticsClient.shared.setEnabled(false)
         projectList.removeAll()
         configCache.clear()
         composerDefaults.clear()
         settings.reset()
         projectList.showsImportedSessions = settings.importExternalSessions
+    }
+
+    /// Persists analytics consent and immediately applies it to the delivery
+    /// client. This is the only path the onboarding and Settings UI use.
+    public func setShareAnalytics(_ enabled: Bool) {
+        settings.setShareAnalytics(enabled)
+        AnalyticsClient.shared.setEnabled(enabled)
     }
 
     /// Applies the user's onboarding choice and imports if requested.

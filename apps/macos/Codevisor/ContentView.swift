@@ -8,6 +8,8 @@ struct CodevisorApp: App {
 
     init() {
         let environment = AppEnvironment.live()
+        AnalyticsClient.shared.configureFromMainBundle(enabled: environment.settings.shareAnalytics)
+        AnalyticsClient.shared.captureAppOpenedOnce()
         _environment = State(initialValue: environment)
         ChatNotificationManager.shared.configure(settings: environment.settings)
     }

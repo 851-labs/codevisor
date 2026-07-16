@@ -135,6 +135,9 @@ public final class SessionModel {
     /// separate from turn end because question tools pause an in-flight turn.
     /// Never fired while replaying transcript history.
     public var onActionRequired: (() -> Void)?
+    /// Fires only after the server accepts a new prompt queue item. Carries
+    /// counts/state only; prompt and attachment content never leave the model.
+    public var onPromptAccepted: ((_ attachmentCount: Int, _ isQueued: Bool) -> Void)?
 
     private let transport: ServerSessionTransport
     private let sessionId: String
@@ -321,14 +324,17 @@ public final class SessionModel {
     }
 
     /// Sets a config option's value and applies the agent's updated option set.
-    public func setConfigOption(configId: String, value: String) async {
+    @discardableResult
+    public func setConfigOption(configId: String, value: String) async -> Bool {
         do {
             try await transport.setConfigOption(configId: configId, value: value)
             if let index = configOptions.firstIndex(where: { $0.id == configId }) {
                 configOptions[index].currentValue = value
             }
+            return true
         } catch {
             errorMessage = serverErrorMessage(error)
+            return false
         }
     }
 
@@ -362,6 +368,7 @@ public final class SessionModel {
 
         do {
             _ = try await transport.prompt(trimmed, attachments: attachments)
+            onPromptAccepted?(attachments.count, false)
             await drain()
         } catch {
             await drain()
@@ -1011,6 +1018,7 @@ public final class SessionModel {
     private func enqueueWhileSending(_ text: String, attachments: [Attachment] = []) async {
         do {
             _ = try await transport.prompt(text, attachments: attachments)
+            onPromptAccepted?(attachments.count, true)
         } catch {
             errorMessage = serverErrorMessage(error)
         }

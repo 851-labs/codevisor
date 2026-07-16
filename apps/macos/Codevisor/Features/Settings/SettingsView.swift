@@ -491,7 +491,7 @@ extension View {
     }
 }
 
-/// General server, remote-access, and local-data settings.
+/// General server, remote-access, privacy, and local-data settings.
 struct GeneralSettingsView: View {
     @Environment(AppEnvironment.self) private var environment
     @Environment(\.theme) private var theme
@@ -532,6 +532,21 @@ struct GeneralSettingsView: View {
                 Text("Remote Access")
             }
 
+            Section {
+                Toggle(isOn: shareAnalytics) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Share Codevisor analytics")
+                        Text("Share anonymous usage and diagnostic data to help improve Codevisor. Prompts, responses, code, file paths, project names, and terminal commands are never included.")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .toggleStyle(.switch)
+            } header: {
+                Text("Privacy")
+            }
+
             Section("Data") {
                 HStack(alignment: .center, spacing: 16) {
                     VStack(alignment: .leading, spacing: 3) {
@@ -569,6 +584,13 @@ struct GeneralSettingsView: View {
             serverStatus = ServerStatusModel(client: environment.serverClient)
             await refreshServerStatus()
         }
+    }
+
+    private var shareAnalytics: Binding<Bool> {
+        Binding(
+            get: { environment.settings.shareAnalytics },
+            set: { environment.setShareAnalytics($0) }
+        )
     }
 
     @ViewBuilder
