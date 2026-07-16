@@ -3241,8 +3241,8 @@ describe("@codevisor/server", () => {
         projectId: "git-project",
         serverId: "server-a"
       })
-      // Every name carries a random four-digit suffix so names never conflict.
-      expect(worktree.name).toMatch(/^fix-auth-\d{4}$/)
+      // A custom name stays clean when it is available.
+      expect(worktree.name).toBe("fix-auth")
       expect(worktree.branch).toBe(`codevisor/${worktree.name}`)
       expect(worktree.path).toBe(join(worktreesRoot, "git-project", worktree.name))
       expect(existsSync(join(worktree.path, ".git"))).toBe(true)
@@ -3290,23 +3290,22 @@ describe("@codevisor/server", () => {
       expect(mirroredSetupHistory).toHaveLength(mirroredSetupPayloads.length)
       expect(mirroredSetupHistory.every((event) => event.kind === "worktree.setup")).toBe(true)
 
-      // The same requested name draws different digits, so it never conflicts.
+      // Repeated custom names get a readable sequence number.
       const secondWorktree = (
         await jsonRequest(server, "/v1/projects/git-project/worktrees", {
           body: JSON.stringify({ name: "fix auth" }),
           method: "POST"
         })
       ).body as { readonly name: string; readonly branch: string }
-      expect(secondWorktree.name).toMatch(/^fix-auth-\d{4}$/)
-      expect(secondWorktree.name).not.toBe(worktree.name)
+      expect(secondWorktree.name).toBe("fix-auth-2")
       expect(secondWorktree.branch).toBe(`codevisor/${secondWorktree.name}`)
-      // Missing name gets a random memorable slug like "ferocious-walrus-8392".
+      // Missing names get a random memorable adjective-animal pair.
       const randomNamed = (
         await jsonRequest(server, "/v1/projects/git-project/worktrees", {
           method: "POST"
         })
       ).body as { readonly name: string; readonly branch: string }
-      expect(randomNamed.name).toMatch(/^[a-z]+-[a-z]+-\d{4}$/)
+      expect(randomNamed.name).toMatch(/^[a-z]+-[a-z]+$/)
       expect(randomNamed.branch).toBe(`codevisor/${randomNamed.name}`)
       expect(
         ((await jsonRequest(server, "/v1/projects/git-project/worktrees")).body as Array<unknown>)
@@ -3314,15 +3313,12 @@ describe("@codevisor/server", () => {
       ).toBe(3)
 
       // A failing git operation (branch already exists) surfaces as 422 and
-      // releases the reserved name for a retry. Pin the digit draw so the
-      // pre-created branch matches the generated name.
-      await git(["branch", "codevisor/doomed-8392"], repoFolder)
-      const doomedSpy = vi.spyOn(Math, "random").mockReturnValue(0.8392)
+      // releases the reserved name for a retry.
+      await git(["branch", "codevisor/doomed"], repoFolder)
       const failed = await jsonRequest(server, "/v1/projects/git-project/worktrees", {
         body: JSON.stringify({ id: "wt-doomed", name: "doomed" }),
         method: "POST"
       })
-      doomedSpy.mockRestore()
       expect(failed.status).toBe(422)
       expect((failed.body as { readonly error: string }).error).toContain("doomed")
       // The failure is also published as a terminal worktree.setup event so
@@ -3375,26 +3371,29 @@ describe("@codevisor/server", () => {
       await waitFor(() => agents.prompts.some((prompt) => prompt[1] === "hello worktree"))
       expect(agents.loads).toContainEqual(["codex", session.agentSessionId, worktree.path])
 
-      // A digit draw that collides with an existing worktree is re-rolled.
-      // Pin the whole first draw to zeros ("amber-badger-0000"), then have the
-      // second request draw the same base and digits once before recovering.
+      // A generated-name collision retries the whole adjective-animal pair.
       const randomSpy = vi.spyOn(Math, "random").mockReturnValue(0)
       try {
         const pinned = await jsonRequest(server, "/v1/projects/git-project/worktrees", {
           method: "POST"
         })
         const pinnedName = (pinned.body as { readonly name: string }).name
+        expect(pinnedName).toBe("amber-badger")
         randomSpy
           .mockReturnValueOnce(0) // adjective
-          .mockReturnValueOnce(0) // animal
-          .mockReturnValueOnce(0) // digits -> collides with pinnedName
-          .mockReturnValue(0.8392) // re-rolled digits
+          .mockReturnValueOnce(0) // animal -> collides with pinnedName
+          .mockReturnValue(0.5) // re-rolls the whole pair
         const collided = await jsonRequest(server, "/v1/projects/git-project/worktrees", {
           method: "POST"
         })
-        expect((collided.body as { readonly name: string }).name).toBe(
-          pinnedName.replace(/\d{4}$/, "8392")
-        )
+        expect((collided.body as { readonly name: string }).name).toBe("keen-magpie")
+
+        // If all bounded retries collide, a numeric suffix guarantees progress.
+        randomSpy.mockReturnValue(0)
+        const exhausted = await jsonRequest(server, "/v1/projects/git-project/worktrees", {
+          method: "POST"
+        })
+        expect((exhausted.body as { readonly name: string }).name).toBe("amber-badger-2")
       } finally {
         randomSpy.mockRestore()
       }

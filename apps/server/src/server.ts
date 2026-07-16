@@ -924,7 +924,10 @@ const routeProjects = async (
     }
     const existing = new Set((await run(services.db.listWorktrees(project.id))).map((w) => w.name))
     const requested = slugifyWorktreeName(payload.name)
-    const name = suffixedWorktreeName(requested ?? randomWorktreeBase(), existing)
+    const name =
+      requested === undefined
+        ? availableRandomWorktreeName(existing)
+        : availableWorktreeName(requested, existing)
     const branch = `codevisor/${name}`
     const worktree = await run(services.db.createWorktree(project.id, name, branch, payload.id))
     const startedAt = Date.now()
@@ -1081,25 +1084,46 @@ const worktreeAnimals = [
   "yak"
 ] as const
 
-/// A memorable default base name ("ferocious-walrus"); uniqueness comes from
-/// the random digits appended by suffixedWorktreeName.
+/// A memorable default name ("ferocious-walrus").
 const randomWorktreeBase = (): string => {
   const adjective = worktreeAdjectives[Math.floor(Math.random() * worktreeAdjectives.length)]
   const animal = worktreeAnimals[Math.floor(Math.random() * worktreeAnimals.length)]
   return `${adjective}-${animal}`
 }
 
-/// Every worktree name ends in four random digits ("fix-auth-8392") so two
-/// requests for the same name can never conflict; on the rare collision with
-/// an existing worktree the digits are simply re-rolled.
-const suffixedWorktreeName = (base: string, existing: ReadonlySet<string>): string => {
-  for (;;) {
-    const digits = String(Math.floor(Math.random() * 10000)).padStart(4, "0")
-    const candidate = `${base}-${digits}`
+/// Keeps explicit names readable and only adds a sequence number when the
+/// requested name is already in use. The upper bound guarantees a free name:
+/// existing.size + 1 distinct candidates cannot all appear in `existing`.
+const availableWorktreeName = (base: string, existing: ReadonlySet<string>): string => {
+  if (!existing.has(base)) {
+    return base
+  }
+  for (let number = 2; number <= existing.size + 2; number += 1) {
+    const suffix = `-${number}`
+    const stem = base.slice(0, 64 - suffix.length).replace(/-+$/g, "")
+    const candidate = `${stem}${suffix}`
     if (!existing.has(candidate)) {
       return candidate
     }
   }
+  throw new Error("Unable to allocate a unique worktree name")
+}
+
+const randomWorktreeNameAttempts = 20
+
+/// Random defaults normally stay as a bare adjective-animal pair. After a
+/// bounded number of collisions, fall back to the readable numeric suffix.
+const availableRandomWorktreeName = (existing: ReadonlySet<string>): string => {
+  let candidate = randomWorktreeBase()
+  for (let attempt = 1; attempt <= randomWorktreeNameAttempts; attempt += 1) {
+    if (!existing.has(candidate)) {
+      return candidate
+    }
+    if (attempt < randomWorktreeNameAttempts) {
+      candidate = randomWorktreeBase()
+    }
+  }
+  return availableWorktreeName(candidate, existing)
 }
 
 type WorktreeSetupDetail = Omit<WorktreeSetupUpdate, "worktreeId" | "projectId" | "name" | "branch">
