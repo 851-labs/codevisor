@@ -30,6 +30,9 @@ struct QuestionPickerCard: View {
     @State private var notes: [String: String] = [:]
     @State private var notesHeight: CGFloat = 24
     @State private var highlighted = 0
+    /// Set synchronously in the key/button handler, before the async Task gets
+    /// its first main-actor turn, so Return always produces immediate feedback.
+    @State private var didStartResolving = false
     @FocusState private var isPickerFocused: Bool
 
     private var question: QuestionSpec? {
@@ -37,6 +40,10 @@ struct QuestionPickerCard: View {
     }
 
     private var isLastQuestion: Bool { questionIndex >= request.questions.count - 1 }
+
+    private var isResolving: Bool {
+        didStartResolving || controller.isResolvingQuestion
+    }
 
     /// "Other" needs its note text — everything else can submit freely
     /// (unanswered questions are allowed, codex-style).
@@ -65,6 +72,24 @@ struct QuestionPickerCard: View {
         .padding(12)
         .background(RoundedRectangle(cornerRadius: 16).fill(theme.composerBackground))
         .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Color.primary.opacity(0.14), lineWidth: 1))
+        .overlay {
+            if isResolving {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 16)
+                        .fill(theme.composerBackground.opacity(0.96))
+                    HStack(spacing: 8) {
+                        ProgressView()
+                            .controlSize(.small)
+                        Text("Submitting response…")
+                            .font(.callout.weight(.medium))
+                    }
+                    .foregroundStyle(.secondary)
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("Submitting response")
+            }
+        }
+        .disabled(isResolving)
         .focusable()
         .focused($isPickerFocused)
         .focusEffectDisabled()
@@ -80,6 +105,7 @@ struct QuestionPickerCard: View {
             selections = [:]
             notes = [:]
             highlighted = 0
+            didStartResolving = false
             isPickerFocused = true
         }
         .accessibilityElement(children: .contain)
@@ -94,7 +120,7 @@ struct QuestionPickerCard: View {
                 .font(.callout.weight(.medium))
             Spacer(minLength: 0)
             Button {
-                Task { await controller.cancelQuestion() }
+                cancel()
             } label: {
                 Image(systemName: "xmark")
                     .font(.caption)
@@ -327,7 +353,7 @@ struct QuestionPickerCard: View {
     /// rides as `note` (the providers append/merge it appropriately). An
     /// "Other" selection contributes no label — its note IS the answer.
     private func submit() {
-        guard isSubmittable else { return }
+        guard isSubmittable, !isResolving else { return }
         var answers: [String: QuestionAnswerEntry] = [:]
         for question in request.questions {
             let selected = selections[question.id, default: []]
@@ -340,10 +366,26 @@ struct QuestionPickerCard: View {
                 )
             }
         }
-        Task { await controller.answerQuestion(answers: answers) }
+        didStartResolving = true
+        Task {
+            await controller.answerQuestion(answers: answers)
+            // On success this view unmounts. On failure the pending request is
+            // still present, so reveal the intact local selections for retry.
+            didStartResolving = false
+        }
+    }
+
+    private func cancel() {
+        guard !isResolving else { return }
+        didStartResolving = true
+        Task {
+            await controller.cancelQuestion()
+            didStartResolving = false
+        }
     }
 
     private func handleKey(_ press: KeyPress) -> KeyPress.Result {
+        if isResolving { return .handled }
         // Only steer while the option list itself has focus. When the notes
         // editor (an NSTextView) is first responder, every key (spaces,
         // digits, arrows) must reach it — SwiftUI's FocusState doesn't
@@ -378,7 +420,7 @@ struct QuestionPickerCard: View {
             advanceOrSubmit()
             return .handled
         case .escape:
-            Task { await controller.cancelQuestion() }
+            cancel()
             return .handled
         default:
             if let digit = press.characters.first?.wholeNumberValue,

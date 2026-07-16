@@ -1274,6 +1274,60 @@ struct SessionModelTests {
         #expect(questionCall?.content == [.content(.text("MVP first"))])
     }
 
+    @Test("Question resolution reports progress immediately and ignores duplicate submissions")
+    func questionResolutionIsSingleFlight() async {
+        let sessionId = UUID()
+        let client = FakeSessionServerClient(sessionId: sessionId)
+        let (gate, release) = AsyncStream.makeStream(of: Void.self)
+        client.holdQuestionAnswers(until: gate)
+        let model = SessionModel(
+            serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
+            sessionId: sessionId.uuidString
+        )
+        await model.loadHistory()
+
+        client.emit(ServerEventEnvelope(
+            id: 1,
+            serverId: "local",
+            kind: "session.output",
+            subjectId: sessionId.uuidString,
+            createdAt: "2026-07-05T00:00:00.000Z",
+            payload: .object([
+                "sessionUpdate": .string("question"),
+                "questionId": .string("q-single-flight"),
+                "questions": .array([.object([
+                    "id": .string("choice"),
+                    "question": .string("Continue?"),
+                    "allowsOther": .bool(false),
+                    "options": .array([.object(["label": .string("Yes")])])
+                ])])
+            ])
+        ))
+        await settleUntil { model.pendingQuestion != nil }
+
+        let first = Task {
+            await model.answerQuestion(
+                answers: ["choice": QuestionAnswerEntry(answers: ["Yes"])]
+            )
+        }
+        await settleUntil { model.isResolvingQuestion }
+        #expect(model.pendingQuestion?.questionId == "q-single-flight")
+        await settleUntil { client.questionAnswers.count == 1 }
+        #expect(client.questionAnswers.count == 1)
+
+        await model.answerQuestion(
+            answers: ["choice": QuestionAnswerEntry(answers: ["Yes"])]
+        )
+        #expect(client.questionAnswers.count == 1)
+
+        release.yield(())
+        release.finish()
+        await first.value
+
+        #expect(model.isResolvingQuestion == false)
+        #expect(model.pendingQuestion == nil)
+    }
+
     @Test("Cancelling a question posts the dismissal; turn end clears stale questions")
     func questionCancelAndTurnEnd() async {
         let sessionId = UUID()
@@ -1805,6 +1859,7 @@ private final class FakeSessionServerClient: CodevisorServerClienting, @unchecke
     private var _goalClearCount = 0
     private var _lastBudget: Int?
     private var _questionAnswers: [(String, String, [String: QuestionAnswerEntry]?)] = []
+    private var _questionAnswerGate: AsyncStream<Void>?
 
     var detailConversation: [ServerConversationItem] = []
     var detailCursor = 0
@@ -1859,6 +1914,10 @@ private final class FakeSessionServerClient: CodevisorServerClienting, @unchecke
 
     var questionAnswers: [(String, String, [String: QuestionAnswerEntry]?)] {
         lock.withLock { _questionAnswers }
+    }
+
+    func holdQuestionAnswers(until gate: AsyncStream<Void>) {
+        lock.withLock { _questionAnswerGate = gate }
     }
 
     private var lastBudget: Int? {
@@ -2009,6 +2068,9 @@ private final class FakeSessionServerClient: CodevisorServerClienting, @unchecke
             throw CodevisorServerClientError.invalidResponse
         }
         lock.withLock { _questionAnswers.append((questionId, outcome, answers)) }
+        if let gate = lock.withLock({ _questionAnswerGate }) {
+            for await _ in gate { break }
+        }
     }
 
     func sessionEvents(id: UUID) async throws -> [ServerEventEnvelope] {

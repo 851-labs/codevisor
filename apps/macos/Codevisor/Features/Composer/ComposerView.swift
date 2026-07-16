@@ -71,7 +71,11 @@ struct ComposerCard: View {
                     // the session page opens; the send button spins instead)
                     // and while an update is installing (the app/server is
                     // about to restart).
-                    .disabled(controller.isSubmitting || isAppUpdateInProgress)
+                    .disabled(
+                        controller.isSubmitting
+                            || controller.isResolvingQuestion
+                            || isAppUpdateInProgress
+                    )
 
                     if controller.composerText.isEmpty {
                         Text(controller.isGoalComposerArmed ? "Describe the goal" : placeholder)
@@ -405,14 +409,14 @@ struct ComposerCard: View {
 
     @ViewBuilder
     private var sendButton: some View {
-        if controller.isSubmitting {
-            // The send was accepted and the session page is about to open;
-            // spin in place and keep further input out.
+        if controller.isSubmitting || controller.isResolvingQuestion {
+            // A send or question response is still being accepted; spin in
+            // place and keep further input out until its transaction settles.
             ProgressView()
                 .controlSize(.small)
                 .frame(width: 26, height: 26)
                 .background(Circle().fill(Color.secondary.opacity(0.16)))
-                .help("Sending…")
+                .help(controller.isResolvingQuestion ? "Submitting response…" : "Sending…")
         } else {
             let isEnabled = !isAppUpdateInProgress && (controller.isGoalComposerArmed
                 ? !controller.composerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -464,6 +468,7 @@ struct ComposerCard: View {
     }
 
     private func submitOrAcceptSlash() {
+        guard !controller.isResolvingQuestion else { return }
         if let command = selectedSlashCommand {
             acceptSlashCommand(command)
         } else if controller.isGoalComposerArmed {

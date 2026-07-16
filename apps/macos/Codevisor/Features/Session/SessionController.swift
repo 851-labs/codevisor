@@ -187,6 +187,10 @@ final class SessionController {
     /// has happened — the window where the new-chat composer shows a spinner
     /// and disables input.
     private(set) var isSubmitting = false
+    /// Covers the whole question-resolution transaction, including the mode
+    /// switch that precedes accepting Claude's ExitPlanMode prompt. The picker
+    /// responds immediately and duplicate answer/cancel tasks are ignored.
+    private(set) var isResolvingQuestion = false
     /// Called once the first-send worktree has been created, so the owner can
     /// patch the already-registered session record with the worktree name/cwd.
     var onWorktreeCreated: ((ServerWorktree) -> Void)?
@@ -509,6 +513,9 @@ final class SessionController {
     var pendingQuestion: QuestionRequest? { model?.pendingQuestion }
 
     func answerQuestion(answers: [String: QuestionAnswerEntry]) async {
+        guard !isResolvingQuestion else { return }
+        isResolvingQuestion = true
+        defer { isResolvingQuestion = false }
         // Codex's plan approval is a client-side prompt with no server question
         // to answer — resolve it by messaging the model, not via the server.
         if pendingPlanApproval {
@@ -527,6 +534,9 @@ final class SessionController {
     }
 
     func cancelQuestion() async {
+        guard !isResolvingQuestion else { return }
+        isResolvingQuestion = true
+        defer { isResolvingQuestion = false }
         // Dismissing codex's plan prompt just keeps planning: no message, back
         // to the composer.
         if pendingPlanApproval {

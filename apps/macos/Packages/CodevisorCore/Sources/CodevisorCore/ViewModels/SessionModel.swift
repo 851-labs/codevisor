@@ -117,6 +117,11 @@ public final class SessionModel {
     /// renders as a picker while this is set. Cleared by the paired
     /// `question_resolved` event (replay collapses the pair) and at turn end.
     public private(set) var pendingQuestion: QuestionRequest?
+    /// True from the moment an answer or dismissal is accepted locally until
+    /// the server acknowledges it. Callers use this for immediate feedback and
+    /// to prevent duplicate operations while the blocking provider request is
+    /// being released.
+    public private(set) var isResolvingQuestion = false
     /// The session's latest todo checklist across turns (codex update_plan,
     /// Claude TodoWrite, ACP plan updates). Full-snapshot replace; drives the
     /// pinned panel above the composer.
@@ -481,10 +486,13 @@ public final class SessionModel {
         }
     }
 
-    /// Submits the user's answers to the pending question. The provider's
-    /// `question_resolved` event confirms; local state clears optimistically.
+    /// Submits the user's answers to the pending question. Keep the request
+    /// mounted until the server acknowledges it so a failure preserves the
+    /// user's draft; `isResolvingQuestion` supplies the immediate UI feedback.
     public func answerQuestion(answers: [String: QuestionAnswerEntry]) async {
-        guard let question = pendingQuestion else { return }
+        guard let question = pendingQuestion, !isResolvingQuestion else { return }
+        isResolvingQuestion = true
+        defer { isResolvingQuestion = false }
         do {
             try await transport.answerQuestion(id: question.questionId, outcome: "answered", answers: answers)
             pendingQuestion = nil
@@ -496,7 +504,9 @@ public final class SessionModel {
     /// Dismisses the pending question without answering (Esc / Cancel) —
     /// the model is told the user declined to engage.
     public func cancelQuestion() async {
-        guard let question = pendingQuestion else { return }
+        guard let question = pendingQuestion, !isResolvingQuestion else { return }
+        isResolvingQuestion = true
+        defer { isResolvingQuestion = false }
         do {
             try await transport.answerQuestion(id: question.questionId, outcome: "cancelled", answers: nil)
             pendingQuestion = nil
