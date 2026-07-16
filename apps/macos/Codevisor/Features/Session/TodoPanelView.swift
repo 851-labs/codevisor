@@ -20,9 +20,12 @@ struct TodoPanelView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 0) {
             Button {
-                withAnimation(Motion.quick(reduceMotion: reduceMotion)) { isExpanded.toggle() }
+                // The measured reveal below owns the animation transaction.
+                // Toggling directly keeps sibling layout and the glass surface
+                // from interpolating independently of the clipped content.
+                isExpanded.toggle()
             } label: {
                 HStack(spacing: 6) {
                     Image(systemName: "checklist")
@@ -44,14 +47,16 @@ struct TodoPanelView: View {
                         .font(.caption2.weight(.semibold))
                         .rotationEffect(.degrees(isExpanded ? 0 : -90))
                         .foregroundStyle(.tertiary)
+                        .animation(Motion.indicator(reduceMotion: reduceMotion), value: isExpanded)
                 }
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Todos, \(completedCount) of \(plan.entries.count) done")
+            .accessibilityValue(isExpanded ? "Expanded" : "Collapsed")
             .accessibilityAddTraits(.isButton)
 
-            if isExpanded {
+            TranscriptDisclosureContentReveal(isExpanded: isExpanded) {
                 VStack(alignment: .leading, spacing: 4) {
                     ForEach(Array(plan.entries.enumerated()), id: \.offset) { _, entry in
                         HStack(alignment: .firstTextBaseline, spacing: 6) {
@@ -65,12 +70,12 @@ struct TodoPanelView: View {
                         }
                     }
                 }
+                .padding(.top, 6)
             }
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 8).fill(theme.composerBackground))
-        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(.separator, lineWidth: 1))
+        .composerGlassSurface(cornerRadius: ComposerGlassStyle.accessoryCornerRadius)
     }
 
     private func symbol(for status: PlanEntryStatus) -> String {

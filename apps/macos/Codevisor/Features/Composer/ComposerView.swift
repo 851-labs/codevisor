@@ -15,7 +15,7 @@ extension EnvironmentValues {
 /// (model/thinking level/speed), the harness picker (before connecting), any
 /// remaining config pickers, and a send button.
 struct ComposerCard: View {
-    static let cornerRadius: CGFloat = 16
+    static let cornerRadius = ComposerGlassStyle.composerCornerRadius
 
     @Bindable var controller: SessionController
     var placeholder: String = "Do anything"
@@ -27,6 +27,7 @@ struct ComposerCard: View {
     var onTextViewReady: ((SubmittingTextView) -> Void)? = nil
 
     @Environment(\.theme) private var theme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// Locks the submit action while an app/server update is installing so no
     /// new turn starts during the restart. Defaults to false (e.g. previews).
     @Environment(\.isAppUpdateInProgress) private var isAppUpdateInProgress
@@ -37,13 +38,65 @@ struct ComposerCard: View {
     @State private var isSlashMenuDismissed = false
     @State private var slashMenuContentHeight: CGFloat = 0
     @State private var isStopButtonHovered = false
-    @State private var isSendButtonHovered = false
     @State private var isGoalBackButtonHovered = false
+    /// Owned by the shared composer shell so the question state can provide
+    /// immediate submission feedback before the controller's async flag flips.
+    @State private var didStartResolvingQuestion = false
 
     /// Tallest the slash-command menu can grow before it scrolls (~6 rows).
     private static let slashMenuMaxHeight: CGFloat = 220
 
     var body: some View {
+        ZStack {
+            if let question = controller.activeQuestion {
+                QuestionPickerContent(
+                    controller: controller,
+                    request: question,
+                    didStartResolving: $didStartResolvingQuestion
+                )
+                .transition(Motion.unfold(reduceMotion: reduceMotion, anchor: .bottom))
+            } else {
+                standardContent
+                    .transition(Motion.unfold(reduceMotion: reduceMotion, anchor: .bottom))
+            }
+        }
+        .padding(12)
+        // Every composer state shares this one functional Liquid Glass layer.
+        // State-specific content must not recreate the card background.
+        .composerGlassSurface(cornerRadius: Self.cornerRadius)
+        .overlay {
+            if controller.activeQuestion != nil, isQuestionResolving {
+                ZStack {
+                    RoundedRectangle(cornerRadius: Self.cornerRadius)
+                        .fill(theme.windowBackground.opacity(0.72))
+                    HStack(spacing: 8) {
+                        ProgressView()
+                            .controlSize(.small)
+                        Text("Submitting response…")
+                            .font(.callout.weight(.medium))
+                    }
+                    .foregroundStyle(.secondary)
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("Submitting response")
+            }
+        }
+        .animation(
+            Motion.quick(reduceMotion: reduceMotion),
+            value: controller.activeQuestion?.questionId
+        )
+        .onChange(of: controller.activeQuestion?.questionId) { _, _ in
+            didStartResolvingQuestion = false
+        }
+        .onChange(of: slashQuery) { _, _ in
+            // A new query invalidates both the keyboard selection and any
+            // Escape-dismissal of the previous menu.
+            slashSelection = 0
+            isSlashMenuDismissed = false
+        }
+    }
+
+    private var standardContent: some View {
         VStack(alignment: .leading, spacing: 10) {
             // The attachment strip sits tight against the input, closer than
             // the card's usual element spacing.
@@ -149,17 +202,10 @@ struct ComposerCard: View {
             }
             .font(.callout)
         }
-        .padding(12)
-        .glassEffect(
-            .regular,
-            in: RoundedRectangle(cornerRadius: Self.cornerRadius)
-        )
-        .onChange(of: slashQuery) { _, _ in
-            // A new query invalidates both the keyboard selection and any
-            // Escape-dismissal of the previous menu.
-            slashSelection = 0
-            isSlashMenuDismissed = false
-        }
+    }
+
+    private var isQuestionResolving: Bool {
+        didStartResolvingQuestion || controller.isResolvingQuestion
     }
 
     @ViewBuilder
@@ -421,21 +467,15 @@ struct ComposerCard: View {
             let isEnabled = !isAppUpdateInProgress && (controller.isGoalComposerArmed
                 ? !controller.composerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                 : (controller.canSend || !visibleSlashMatches.isEmpty))
-            Button { submitOrAcceptSlash() } label: {
-                Image(systemName: "arrow.up")
-                    .font(.system(size: 12, weight: .bold))
-                    .frame(width: 26, height: 26)
-                    .foregroundStyle(isEnabled ? theme.windowBackground : Color.secondary.opacity(0.75))
-                    .background(
-                        Circle()
-                            .fill(isEnabled ? Color.primary.opacity(isSendButtonHovered ? 0.92 : 0.82) : Color.secondary.opacity(0.16))
-                    )
-                    .contentShape(Circle())
+            ComposerSubmitButton(
+                isEnabled: isEnabled,
+                help: isAppUpdateInProgress
+                    ? "Updating… you can send once the update finishes."
+                    : "Send (↩)",
+                accessibilityLabel: "Send"
+            ) {
+                submitOrAcceptSlash()
             }
-            .buttonStyle(.plain)
-            .disabled(!isEnabled)
-            .onHover { isSendButtonHovered = $0 }
-            .help(isAppUpdateInProgress ? "Updating… you can send once the update finishes." : "Send (↩)")
             .tooltip(isAppUpdateInProgress ? "Updating… you can send once the update finishes." : "Send (↩)")
         }
     }
@@ -512,6 +552,40 @@ struct ComposerCard: View {
             slashSelection = 0
             return true
         }
+    }
+}
+
+/// The primary action shared by every composer state. Keeping the visual
+/// treatment here makes question submission track ordinary prompt submission.
+struct ComposerSubmitButton: View {
+    @Environment(\.theme) private var theme
+    let isEnabled: Bool
+    let help: String
+    let accessibilityLabel: String
+    let action: () -> Void
+
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "arrow.up")
+                .font(.system(size: 12, weight: .bold))
+                .frame(width: 26, height: 26)
+                .foregroundStyle(isEnabled ? theme.windowBackground : Color.secondary.opacity(0.75))
+                .background(
+                    Circle().fill(
+                        isEnabled
+                            ? Color.primary.opacity(isHovered ? 0.92 : 0.82)
+                            : Color.secondary.opacity(0.16)
+                    )
+                )
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!isEnabled)
+        .onHover { isHovered = $0 }
+        .help(help)
+        .accessibilityLabel(accessibilityLabel)
     }
 }
 

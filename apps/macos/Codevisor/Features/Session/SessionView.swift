@@ -115,12 +115,17 @@ struct SessionScreen: View {
                 controller.scrollState = state
             },
             onBottomStateChange: { atBottom in
-                guard isAtBottom != atBottom else { return }
-                Task { @MainActor in isAtBottom = atBottom }
+                // AppKit can publish a transient edge and its corrected final
+                // edge during one layout pass. Defer the SwiftUI mutation, but
+                // preserve every callback in order so the final geometry wins.
+                DispatchQueue.main.async {
+                    if isAtBottom != atBottom { isAtBottom = atBottom }
+                }
             },
             onFollowStateChange: { follows in
-                guard autoFollow != follows else { return }
-                Task { @MainActor in autoFollow = follows }
+                DispatchQueue.main.async {
+                    if autoFollow != follows { autoFollow = follows }
+                }
             },
             onNearTop: {
                 Task { @MainActor in requestOlderHistoryLoad() }
@@ -426,49 +431,43 @@ struct SessionScreen: View {
     }
 
     private var composerOverlay: some View {
-        VStack(spacing: 8) {
-            if let todos = controller.todos, !todos.entries.isEmpty {
-                TodoPanelView(plan: todos, isExpanded: $controller.isTodosExpanded)
-                    .transition(Motion.unfold(reduceMotion: reduceMotion))
-            }
-            // Hidden while editing: the composer IS the goal UI in that mode.
-            if controller.supportsGoals, !controller.isGoalEditing,
-               let goal = controller.goal ?? controller.draftGoal {
-                GoalBannerView(controller: controller, goal: goal)
-                    .transition(Motion.unfold(reduceMotion: reduceMotion))
-            }
-            if !controller.queuedPrompts.isEmpty {
-                PromptQueueView(controller: controller, isExpanded: $isQueueExpanded)
-                    .transition(Motion.unfold(reduceMotion: reduceMotion))
-            }
-            // A blocking agent question replaces the composer with the picker
-            // until it's answered or dismissed (codex CLI behavior). Both plan
-            // approvals ride the same picker: Claude's ExitPlanMode question
-            // from the runtime, and codex's client-side post-turn prompt.
-            Group {
-                if let question = controller.activeQuestion {
-                    QuestionPickerCard(controller: controller, request: question)
-                        .transition(Motion.unfold(reduceMotion: reduceMotion, anchor: .bottom))
-                } else {
-                    ComposerCard(
-                        controller: controller,
-                        placeholder: "Ask for follow-up changes",
-                        onTextViewReady: { textView in
-                            focus.composerTextView = textView
-                            // Sidebar selection mounts a fresh session screen. Wait
-                            // until its text view is attached, then move keyboard
-                            // focus out of the sidebar and into the composer.
-                            DispatchQueue.main.async { focus.focusComposer() }
-                        }
-                    )
+        GlassEffectContainer(spacing: ComposerGlassStyle.clusterSpacing) {
+            VStack(spacing: ComposerGlassStyle.clusterSpacing) {
+                if let todos = controller.todos, !todos.entries.isEmpty {
+                    TodoPanelView(plan: todos, isExpanded: $controller.isTodosExpanded)
+                        .transition(Motion.unfold(reduceMotion: reduceMotion))
                 }
-            }
-            // Every card that replaces the composer floats over the transcript,
-            // so keep the transcript mask in sync with whichever variant is live.
-            .onGeometryChange(for: CGSize.self) { geometry in
-                geometry.size
-            } action: { size in
-                composerMaskSize = size
+                // Hidden while editing: the composer IS the goal UI in that mode.
+                if controller.supportsGoals, !controller.isGoalEditing,
+                   let goal = controller.goal ?? controller.draftGoal {
+                    GoalBannerView(controller: controller, goal: goal)
+                        .transition(Motion.unfold(reduceMotion: reduceMotion))
+                }
+                if !controller.queuedPrompts.isEmpty {
+                    PromptQueueView(controller: controller, isExpanded: $isQueueExpanded)
+                        .transition(Motion.unfold(reduceMotion: reduceMotion))
+                }
+                // ComposerCard owns all of its states, including blocking agent
+                // questions and plan approvals, so they share one glass surface
+                // and can animate between content states without replacing it.
+                ComposerCard(
+                    controller: controller,
+                    placeholder: "Ask for follow-up changes",
+                    onTextViewReady: { textView in
+                        focus.composerTextView = textView
+                        // Sidebar selection mounts a fresh session screen. Wait
+                        // until its text view is attached, then move keyboard
+                        // focus out of the sidebar and into the composer.
+                        DispatchQueue.main.async { focus.focusComposer() }
+                    }
+                )
+                // Keep the transcript mask in sync as the shared composer changes
+                // size between its ordinary and question content.
+                .onGeometryChange(for: CGSize.self) { geometry in
+                    geometry.size
+                } action: { size in
+                    composerMaskSize = size
+                }
             }
         }
         .padding(.horizontal, 24)
@@ -558,7 +557,6 @@ private struct TranscriptActiveItemView: View {
 }
 
 private struct PromptQueueView: View {
-    @Environment(\.theme) private var theme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Bindable var controller: SessionController
     @Binding var isExpanded: Bool
@@ -599,14 +597,7 @@ private struct PromptQueueView: View {
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 10)
-                .fill(theme.composerBackground.opacity(0.96))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 10)
-                .strokeBorder(.separator, lineWidth: 1)
-        )
+        .composerGlassSurface(cornerRadius: ComposerGlassStyle.accessoryCornerRadius)
     }
 
     @ViewBuilder

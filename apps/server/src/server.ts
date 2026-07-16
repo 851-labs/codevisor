@@ -1898,7 +1898,6 @@ const routeSessionActions = async (
         )
       )
     }
-    await publishPromptQueue(services.db, fanout, promptSessionId)
     writeJson(response, 202, result)
     void drainPromptQueue(services, fanout, routeState, config.id, promptSessionId).finally(() => {
       if (actionKey !== undefined) {
@@ -2074,6 +2073,11 @@ const drainPromptQueue = async (
   sessionId: string
 ): Promise<void> => {
   if (routeState.activePromptSessions.has(sessionId)) {
+    // This item really is waiting behind an in-flight prompt, so expose it to
+    // clients as queued. The first prompt takes the owner path below and is
+    // claimed before any queue snapshot is published; otherwise every normal
+    // send briefly flashes as a one-item queue before execution starts.
+    await publishPromptQueue(services.db, fanout, sessionId)
     return
   }
   routeState.activePromptSessions.add(sessionId)

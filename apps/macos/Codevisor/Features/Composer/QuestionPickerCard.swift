@@ -3,9 +3,9 @@ import AppKit
 import CodevisorCore
 import ACPKit
 
-/// The composer's question mode: when the agent asks a multiple-choice
-/// question the input card becomes this picker — modeled on codex CLI's
-/// bottom pane.
+/// The question-mode content hosted by `ComposerCard`. This view intentionally
+/// owns no background, border, padding, or transition: those belong to the
+/// shared composer shell so every state receives the same Liquid Glass style.
 ///
 /// Selection model: exactly one of the options (including "Other") for
 /// single-select questions; multi-select questions toggle. The notes editor
@@ -15,10 +15,13 @@ import ACPKit
 ///
 /// Multiple questions show one at a time with progress; answers accumulate
 /// locally and submit once after the last question (codex behavior).
-struct QuestionPickerCard: View {
+struct QuestionPickerContent: View {
     @Environment(\.theme) private var theme
     @Bindable var controller: SessionController
     let request: QuestionRequest
+    /// Set synchronously in the key/button handler, before the async Task gets
+    /// its first main-actor turn, so Return always produces immediate feedback.
+    @Binding var didStartResolving: Bool
 
     /// Sentinel stored in `selections` when the "Other" row is chosen.
     private static let otherToken = "__other__"
@@ -30,9 +33,6 @@ struct QuestionPickerCard: View {
     @State private var notes: [String: String] = [:]
     @State private var notesHeight: CGFloat = 24
     @State private var highlighted = 0
-    /// Set synchronously in the key/button handler, before the async Task gets
-    /// its first main-actor turn, so Return always produces immediate feedback.
-    @State private var didStartResolving = false
     @FocusState private var isPickerFocused: Bool
 
     private var question: QuestionSpec? {
@@ -67,26 +67,6 @@ struct QuestionPickerCard: View {
                 optionList(question)
                 notesEditor(question)
                 footer(question)
-            }
-        }
-        .padding(12)
-        .background(RoundedRectangle(cornerRadius: 16).fill(theme.composerBackground))
-        .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Color.primary.opacity(0.14), lineWidth: 1))
-        .overlay {
-            if isResolving {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 16)
-                        .fill(theme.composerBackground.opacity(0.96))
-                    HStack(spacing: 8) {
-                        ProgressView()
-                            .controlSize(.small)
-                        Text("Submitting response…")
-                            .font(.callout.weight(.medium))
-                    }
-                    .foregroundStyle(.secondary)
-                }
-                .accessibilityElement(children: .combine)
-                .accessibilityLabel("Submitting response")
             }
         }
         .disabled(isResolving)
@@ -262,20 +242,15 @@ struct QuestionPickerCard: View {
                         moveQuestion(1)
                     }
                 } else {
-                    // Submit mirrors the composer's send button.
-                    Button { submit() } label: {
-                        Image(systemName: "arrow.up")
-                            .font(.system(size: 12, weight: .bold))
-                            .frame(width: 28, height: 28)
-                            .foregroundStyle(isSubmittable ? theme.windowBackground : Color.secondary.opacity(0.75))
-                            .background(
-                                Circle().fill(isSubmittable ? Color.primary.opacity(0.82) : Color.secondary.opacity(0.16))
-                            )
-                            .contentShape(Circle())
+                    ComposerSubmitButton(
+                        isEnabled: isSubmittable,
+                        help: isSubmittable
+                            ? "Submit answers (↩)"
+                            : "\"Other\" needs an answer below",
+                        accessibilityLabel: "Submit answers"
+                    ) {
+                        submit()
                     }
-                    .buttonStyle(.plain)
-                    .disabled(!isSubmittable)
-                    .help(isSubmittable ? "Submit answers (↩)" : "\"Other\" needs an answer below")
                 }
             }
         }
@@ -289,7 +264,7 @@ struct QuestionPickerCard: View {
         Button(action: action) {
             Image(systemName: systemImage)
                 .font(.system(size: 12, weight: .semibold))
-                .frame(width: 28, height: 28)
+                .frame(width: 26, height: 26)
                 .foregroundStyle(Color.primary)
                 .background(Circle().fill(Color.secondary.opacity(0.16)))
                 .contentShape(Circle())
