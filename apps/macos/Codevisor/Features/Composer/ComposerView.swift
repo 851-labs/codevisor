@@ -15,6 +15,8 @@ extension EnvironmentValues {
 /// (model/thinking level/speed), the harness picker (before connecting), any
 /// remaining config pickers, and a send button.
 struct ComposerCard: View {
+    static let cornerRadius: CGFloat = 16
+
     @Bindable var controller: SessionController
     var placeholder: String = "Do anything"
     /// The new-chat page hosts the harness picker in its own row below the
@@ -146,13 +148,9 @@ struct ComposerCard: View {
             .font(.callout)
         }
         .padding(12)
-        .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(theme.composerBackground)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 16)
-                .strokeBorder(.separator, lineWidth: 1)
+        .glassEffect(
+            .regular,
+            in: RoundedRectangle(cornerRadius: Self.cornerRadius)
         )
         .onChange(of: slashQuery) { _, _ in
             // A new query invalidates both the keyboard selection and any

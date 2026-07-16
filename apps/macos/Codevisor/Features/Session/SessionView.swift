@@ -6,6 +6,8 @@ import ACPKit
 /// over the bottom of the history (no divider), and enough bottom inset that the
 /// last message can scroll clear of the composer.
 struct SessionScreen: View {
+    private static let composerBottomMargin: CGFloat = 16
+
     @Environment(\.theme) private var theme
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -131,7 +133,7 @@ struct SessionScreen: View {
         .mask {
             ComposerTranscriptMask(
                 composerSize: composerMaskSize,
-                bottomInset: 16
+                bottomInset: Self.composerBottomMargin
             )
         }
         .overlay(alignment: .bottom) {
@@ -468,7 +470,7 @@ struct SessionScreen: View {
         }
         .padding(.horizontal, 24)
         .frame(maxWidth: 880)
-        .padding(.bottom, 16)
+        .padding(.bottom, Self.composerBottomMargin)
         .padding(.top, 24)
         .frame(maxWidth: .infinity)
         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { composerHeight = $0 }
@@ -664,9 +666,8 @@ private struct PromptQueueView: View {
     }
 }
 
-/// Removes transcript pixels beneath the lower half of the floating composer.
-/// The transparent hole reveals the chat panel's existing backing surface, so
-/// no sampled or theme-derived fill color can drift from the surrounding page.
+/// Removes transcript pixels beneath the floating composer and its bottom
+/// margin so the full card sits over the chat panel's backing surface.
 private struct ComposerTranscriptMask: View {
     let composerSize: CGSize
     let bottomInset: CGFloat
@@ -678,13 +679,18 @@ private struct ComposerTranscriptMask: View {
 
             if composerSize.width > 0, composerSize.height > 0 {
                 let holeWidth = min(composerSize.width, size.width)
-                let holeHeight = min(composerSize.height / 2 + bottomInset, size.height)
-                visibleArea.addRect(CGRect(
+                let holeHeight = min(composerSize.height + bottomInset, size.height)
+                let holeRect = CGRect(
                     x: (size.width - holeWidth) / 2,
                     y: size.height - holeHeight,
                     width: holeWidth,
                     height: holeHeight
-                ))
+                )
+                let holeShape = UnevenRoundedRectangle(
+                    topLeadingRadius: ComposerCard.cornerRadius,
+                    topTrailingRadius: ComposerCard.cornerRadius
+                )
+                visibleArea.addPath(holeShape.path(in: holeRect))
             }
 
             context.fill(
