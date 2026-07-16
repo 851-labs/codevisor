@@ -21,6 +21,7 @@ struct NewChatView: View {
     @State private var runInWorktree = false
     @State private var focus = TerminalFocusController()
     @State private var addProjectFlow = AddProjectFlow()
+    @Namespace private var composerGlassNamespace
     /// Setup state for the no-projects panel. Owned here (not by the panel)
     /// because a clone registers its project immediately — the page must keep
     /// showing the panel with the clone as a selected row, exactly like
@@ -67,39 +68,44 @@ struct NewChatView: View {
                     }
                 } else if let controller {
                     VStack(alignment: .leading, spacing: 8) {
-                        VStack(spacing: 0) {
-                            ComposerCard(
-                                controller: controller,
-                                placeholder: "Do anything",
-                                showsHarnessPicker: false,
-                                onTextViewReady: { textView in
-                                    focus.composerTextView = textView
-                                    // The text view isn't attached to a window yet during
-                                    // makeNSView; focus once it is.
-                                    DispatchQueue.main.async { focus.focusComposer() }
-                                }
-                            )
-                            .zIndex(1)
-                            // The accessory strip: tucked under the card's
-                            // rounded bottom so the two read as one control.
-                            HStack(spacing: 14) {
-                                HarnessPickerMenu(controller: controller)
-                                runLocationPicker(controller)
-                            }
-                            .font(.callout)
-                            .padding(.horizontal, 14)
-                            .padding(.top, 16 + 9)
-                            .padding(.bottom, 9)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(
-                                UnevenRoundedRectangle(
-                                    bottomLeadingRadius: 16,
-                                    bottomTrailingRadius: 16,
-                                    style: .continuous
+                        GlassEffectContainer(spacing: ComposerGlassStyle.clusterSpacing) {
+                            VStack(alignment: .leading, spacing: ComposerGlassStyle.clusterSpacing) {
+                                ComposerCard(
+                                    controller: controller,
+                                    placeholder: "Do anything",
+                                    showsHarnessPicker: false,
+                                    onTextViewReady: { textView in
+                                        focus.composerTextView = textView
+                                        // The text view isn't attached to a window yet during
+                                        // makeNSView; focus once it is.
+                                        DispatchQueue.main.async { focus.focusComposer() }
+                                    },
+                                    glassNamespace: composerGlassNamespace
                                 )
-                                .fill(theme.cardQuietBackground)
-                            )
-                            .padding(.top, -16)
+                                HStack(spacing: 4) {
+                                    if controller.canChooseHarness {
+                                        HarnessPickerMenu(controller: controller)
+                                        Divider()
+                                            .frame(height: 14)
+                                            .accessibilityHidden(true)
+                                    }
+                                    workspacePicker
+                                    Divider()
+                                        .frame(height: 14)
+                                        .accessibilityHidden(true)
+                                    runLocationPicker(controller)
+                                }
+                                .font(.callout)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .contentShape(Capsule())
+                                .glassEffect(.regular.interactive(), in: Capsule())
+                                .glassEffectID(
+                                    ComposerGlassElement.newChatConfiguration.rawValue,
+                                    in: composerGlassNamespace
+                                )
+                                .glassEffectTransition(.matchedGeometry)
+                            }
                         }
                         statusLabel(controller)
                     }
@@ -136,7 +142,7 @@ struct NewChatView: View {
         ))
     }
 
-    // MARK: - Title with project dropdown
+    // MARK: - Title
 
     @ViewBuilder
     private var title: some View {
@@ -144,22 +150,12 @@ struct NewChatView: View {
             Text("Add a project to start")
                 .font(.system(size: 26, weight: .semibold))
         } else {
-            // A flow layout so the sentence reflows like normal wrapping text
-            // when the window narrows — each word and the inline project chip
-            // are separate tokens that wrap onto new lines, rather than the two
-            // Text runs collapsing into stacked columns around the picker.
-            FlowLayout(spacing: 7, lineSpacing: 6, alignment: .center) {
-                ForEach(Array("What should we build in".split(separator: " ").enumerated()), id: \.offset) { item in
-                    Text(item.element)
-                }
-                projectMenu
-                Text("?")
-            }
-            .font(.system(size: 26, weight: .semibold))
+            Text("What should we build?")
+                .font(.system(size: 26, weight: .semibold))
         }
     }
 
-    private var projectMenu: some View {
+    private var workspacePicker: some View {
         Menu {
             ForEach(projects) { project in
                 // Toggle for the native selected checkmark; MenuSymbolIcon
@@ -196,18 +192,20 @@ struct NewChatView: View {
                 }
             }
         } label: {
-            Text(selectedProject?.name ?? "project")
-                .foregroundStyle(.primary)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 2)
-                .background(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(.quaternary.opacity(0.6))
+            PickerChip(text: selectedProject?.name ?? "Workspace") {
+                Image(
+                    systemName: selectedProject.map {
+                        FilledSymbol.preferred($0.symbolName)
+                    } ?? "folder.fill"
                 )
+                .font(.system(size: 12))
+            }
         }
         .menuStyle(.button)
-        .buttonStyle(.plain)
+        .buttonStyle(HoverIconButtonStyle(shape: .chip))
+        .menuIndicator(.hidden)
         .fixedSize()
+        .help("Choose workspace")
     }
 
     /// "Project directory" vs "New worktree" for where the chat runs. Worktree

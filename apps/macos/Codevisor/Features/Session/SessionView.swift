@@ -23,6 +23,7 @@ struct SessionScreen: View {
     @State private var scrollCommand = TranscriptScrollCommand()
     @State private var historyLoadTask: Task<Void, Never>?
     @State private var composerMaskSize: CGSize = .zero
+    @Namespace private var composerGlassNamespace
 
     var body: some View {
         VStack(spacing: 0) {
@@ -144,15 +145,27 @@ struct SessionScreen: View {
                 bottomInset: Self.composerBottomMargin
             )
         }
-        .overlay(alignment: .bottom) {
-            if !isAtBottom {
-                scrollToBottomButton
-                    .padding(.bottom, composerHeight - 10)
-                    .transition(Motion.pop(reduceMotion: reduceMotion))
+        .overlay(alignment: .bottom) { bottomChromeOverlay }
+        .animation(Motion.quick(reduceMotion: reduceMotion), value: isAtBottom)
+    }
+
+    /// One container and namespace coordinate every Liquid Glass shape in the
+    /// bottom functional layer, including the system-styled scroll button.
+    private var bottomChromeOverlay: some View {
+        GlassEffectContainer(spacing: ComposerGlassStyle.clusterSpacing) {
+            ZStack(alignment: .bottom) {
+                if !isAtBottom {
+                    scrollToBottomButton
+                        .padding(.bottom, composerHeight - 10)
+                        .glassEffectID(
+                            ComposerGlassElement.scrollToBottom.rawValue,
+                            in: composerGlassNamespace
+                        )
+                        .glassEffectTransition(.matchedGeometry)
+                }
+                composerOverlay
             }
         }
-        .overlay(alignment: .bottom) { composerOverlay }
-        .animation(Motion.quick(reduceMotion: reduceMotion), value: isAtBottom)
     }
 
     /// Toggles the pane group's content and moves keyboard focus to match
@@ -431,43 +444,51 @@ struct SessionScreen: View {
     }
 
     private var composerOverlay: some View {
-        GlassEffectContainer(spacing: ComposerGlassStyle.clusterSpacing) {
-            VStack(spacing: ComposerGlassStyle.clusterSpacing) {
-                if let todos = controller.todos, !todos.entries.isEmpty {
-                    TodoPanelView(plan: todos, isExpanded: $controller.isTodosExpanded)
-                        .transition(Motion.unfold(reduceMotion: reduceMotion))
-                }
-                // Hidden while editing: the composer IS the goal UI in that mode.
-                if controller.supportsGoals, !controller.isGoalEditing,
-                   let goal = controller.goal ?? controller.draftGoal {
-                    GoalBannerView(controller: controller, goal: goal)
-                        .transition(Motion.unfold(reduceMotion: reduceMotion))
-                }
-                if !controller.queuedPrompts.isEmpty {
-                    PromptQueueView(controller: controller, isExpanded: $isQueueExpanded)
-                        .transition(Motion.unfold(reduceMotion: reduceMotion))
-                }
-                // ComposerCard owns all of its states, including blocking agent
-                // questions and plan approvals, so they share one glass surface
-                // and can animate between content states without replacing it.
-                ComposerCard(
-                    controller: controller,
-                    placeholder: "Ask for follow-up changes",
-                    onTextViewReady: { textView in
-                        focus.composerTextView = textView
-                        // Sidebar selection mounts a fresh session screen. Wait
-                        // until its text view is attached, then move keyboard
-                        // focus out of the sidebar and into the composer.
-                        DispatchQueue.main.async { focus.focusComposer() }
-                    }
+        VStack(spacing: ComposerGlassStyle.clusterSpacing) {
+            if let todos = controller.todos, !todos.entries.isEmpty {
+                TodoPanelView(
+                    plan: todos,
+                    isExpanded: $controller.isTodosExpanded,
+                    glassNamespace: composerGlassNamespace
                 )
-                // Keep the transcript mask in sync as the shared composer changes
-                // size between its ordinary and question content.
-                .onGeometryChange(for: CGSize.self) { geometry in
-                    geometry.size
-                } action: { size in
-                    composerMaskSize = size
-                }
+            }
+            // Hidden while editing: the composer IS the goal UI in that mode.
+            if controller.supportsGoals, !controller.isGoalEditing,
+               let goal = controller.goal ?? controller.draftGoal {
+                GoalBannerView(
+                    controller: controller,
+                    goal: goal,
+                    glassNamespace: composerGlassNamespace
+                )
+            }
+            if !controller.queuedPrompts.isEmpty {
+                PromptQueueView(
+                    controller: controller,
+                    isExpanded: $isQueueExpanded,
+                    glassNamespace: composerGlassNamespace
+                )
+            }
+            // ComposerCard owns all of its states, including blocking agent
+            // questions and plan approvals, so they share one stable glass
+            // identity while the content and surface geometry change.
+            ComposerCard(
+                controller: controller,
+                placeholder: "Ask for follow-up changes",
+                onTextViewReady: { textView in
+                    focus.composerTextView = textView
+                    // Sidebar selection mounts a fresh session screen. Wait
+                    // until its text view is attached, then move keyboard
+                    // focus out of the sidebar and into the composer.
+                    DispatchQueue.main.async { focus.focusComposer() }
+                },
+                glassNamespace: composerGlassNamespace
+            )
+            // Keep the transcript mask in sync as the shared composer changes
+            // size between its ordinary and question content.
+            .onGeometryChange(for: CGSize.self) { geometry in
+                geometry.size
+            } action: { size in
+                composerMaskSize = size
             }
         }
         .padding(.horizontal, 24)
@@ -476,8 +497,25 @@ struct SessionScreen: View {
         .padding(.top, 24)
         .frame(maxWidth: .infinity)
         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { composerHeight = $0 }
+        .animation(Motion.quick(reduceMotion: reduceMotion), value: visibleComposerGlassElements)
         .animation(Motion.quick(reduceMotion: reduceMotion), value: controller.queuedPrompts.map(\.id))
         .animation(Motion.quick(reduceMotion: reduceMotion), value: isQueueExpanded)
+    }
+
+    private var visibleComposerGlassElements: [ComposerGlassElement] {
+        var elements: [ComposerGlassElement] = []
+        if let todos = controller.todos, !todos.entries.isEmpty {
+            elements.append(.todos)
+        }
+        if controller.supportsGoals, !controller.isGoalEditing,
+           (controller.goal ?? controller.draftGoal) != nil {
+            elements.append(.goal)
+        }
+        if !controller.queuedPrompts.isEmpty {
+            elements.append(.queue)
+        }
+        elements.append(.composer)
+        return elements
     }
 
     private func errorBanner(_ message: String) -> some View {
@@ -560,6 +598,7 @@ private struct PromptQueueView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Bindable var controller: SessionController
     @Binding var isExpanded: Bool
+    let glassNamespace: Namespace.ID
     @State private var editingQueueId: String?
     @State private var editingQueueText = ""
 
@@ -597,7 +636,11 @@ private struct PromptQueueView: View {
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .composerGlassSurface(cornerRadius: ComposerGlassStyle.accessoryCornerRadius)
+        .composerGlassSurface(
+            cornerRadius: ComposerGlassStyle.accessoryCornerRadius,
+            id: .queue,
+            in: glassNamespace
+        )
     }
 
     @ViewBuilder

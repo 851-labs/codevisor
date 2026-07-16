@@ -7,8 +7,11 @@ import ACPKit
 /// session has a goal; hidden entirely on harnesses without goal support.
 /// Goals are created/replaced through the composer's goal-mode toggle.
 struct GoalBannerView: View {
+    @Environment(\.theme) private var theme
+
     @Bindable var controller: SessionController
     let goal: SessionGoal
+    var glassNamespace: Namespace.ID? = nil
 
     @State private var isClearConfirmationPresented = false
 
@@ -31,7 +34,11 @@ struct GoalBannerView: View {
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .composerGlassSurface(cornerRadius: ComposerGlassStyle.accessoryCornerRadius)
+        .composerGlassSurface(
+            cornerRadius: ComposerGlassStyle.accessoryCornerRadius,
+            id: .goal,
+            in: glassNamespace
+        )
         .confirmationDialog(
             "Clear this goal?",
             isPresented: $isClearConfirmationPresented

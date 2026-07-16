@@ -25,6 +25,9 @@ struct ComposerCard: View {
     /// Surfaces the composer's text view so keyboard handoffs can move
     /// first-responder focus to it.
     var onTextViewReady: ((SubmittingTextView) -> Void)? = nil
+    /// Supplied by the session's shared GlassEffectContainer. Standalone
+    /// composers (new chat and previews) don't need coordinated identities.
+    var glassNamespace: Namespace.ID? = nil
 
     @Environment(\.theme) private var theme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -63,7 +66,11 @@ struct ComposerCard: View {
         .padding(12)
         // Every composer state shares this one functional Liquid Glass layer.
         // State-specific content must not recreate the card background.
-        .composerGlassSurface(cornerRadius: Self.cornerRadius)
+        .composerGlassSurface(
+            cornerRadius: Self.cornerRadius,
+            id: .composer,
+            in: glassNamespace
+        )
         .overlay {
             if controller.activeQuestion != nil, isQuestionResolving {
                 ZStack {

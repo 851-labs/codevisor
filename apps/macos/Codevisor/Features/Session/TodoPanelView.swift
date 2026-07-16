@@ -8,6 +8,7 @@ import ACPKit
 struct TodoPanelView: View {
     let plan: Plan
     @Binding var isExpanded: Bool
+    var glassNamespace: Namespace.ID? = nil
     @Environment(\.theme) private var theme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -75,7 +76,11 @@ struct TodoPanelView: View {
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .composerGlassSurface(cornerRadius: ComposerGlassStyle.accessoryCornerRadius)
+        .composerGlassSurface(
+            cornerRadius: ComposerGlassStyle.accessoryCornerRadius,
+            id: .todos,
+            in: glassNamespace
+        )
     }
 
     private func symbol(for status: PlanEntryStatus) -> String {
