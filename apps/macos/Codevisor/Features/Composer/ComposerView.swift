@@ -30,7 +30,9 @@ struct ComposerCard: View {
     /// Locks the submit action while an app/server update is installing so no
     /// new turn starts during the restart. Defaults to false (e.g. previews).
     @Environment(\.isAppUpdateInProgress) private var isAppUpdateInProgress
-    @State private var editorHeight: CGFloat = 24
+    // Match ChatInputEditor's first TextKit measurement so switching sessions
+    // never shows the shorter pre-measurement card for a frame.
+    @State private var editorHeight: CGFloat = ChatInputEditor.singleLineHeight
     @State private var slashSelection = 0
     @State private var isSlashMenuDismissed = false
     @State private var slashMenuContentHeight: CGFloat = 0

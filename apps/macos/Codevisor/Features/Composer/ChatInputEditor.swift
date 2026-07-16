@@ -18,9 +18,20 @@ enum PastedAttachment {
 /// A multiline text editor where **Return submits** and **Shift+Return inserts a
 /// newline**. Grows with its content between `minHeight` and `maxHeight`.
 struct ChatInputEditor: NSViewRepresentable {
+    private static let verticalTextInset: CGFloat = 6
+
+    /// Starting at the same height TextKit will report prevents a newly
+    /// mounted composer from growing one frame later. Derive it from the
+    /// preferred body font so accessibility text sizing stays in sync too.
+    static var singleLineHeight: CGFloat {
+        NSLayoutManager().defaultLineHeight(
+            for: NSFont.preferredFont(forTextStyle: .body)
+        ) + verticalTextInset * 2
+    }
+
     @Binding var text: String
     @Binding var calculatedHeight: CGFloat
-    var minHeight: CGFloat = 24
+    var minHeight: CGFloat = Self.singleLineHeight
     var maxHeight: CGFloat = 240
     var onSubmit: () -> Void
     var onKeyCommand: ((ComposerKeyCommand) -> Bool)? = nil
@@ -46,7 +57,7 @@ struct ChatInputEditor: NSViewRepresentable {
         textView.isRichText = false
         textView.allowsUndo = true
         textView.drawsBackground = false
-        textView.textContainerInset = NSSize(width: 0, height: 6)
+        textView.textContainerInset = NSSize(width: 0, height: Self.verticalTextInset)
         textView.isVerticallyResizable = true
         textView.isHorizontallyResizable = false
         textView.textContainer?.widthTracksTextView = true
