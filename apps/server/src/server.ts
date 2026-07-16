@@ -935,8 +935,8 @@ const routeProjects = async (
     await publishSetup({ state: "started" })
     try {
       mkdirSync(dirname(worktree.path), { recursive: true })
-      // Prefer the last-fetched remote main over the local checkout's HEAD so
-      // new worktrees are not pinned to a stale or drifted local main.
+      // Refresh and prefer remote main over the local checkout's HEAD so new
+      // worktrees are not pinned to a stale or drifted local main.
       const startPoint = await worktreeStartPoint(location.folderPath)
       await addWorktree(
         location.folderPath,

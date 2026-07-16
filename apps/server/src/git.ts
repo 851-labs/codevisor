@@ -92,11 +92,22 @@ const lineSplitter = (
   }
 }
 
-/// Returns the ref new worktrees should be cut from: the remote-tracking
-/// `origin/main` when it exists (so worktrees start from the last-fetched
-/// remote state even when the local checkout is behind or has drifted),
-/// otherwise undefined so `git worktree add` falls back to HEAD.
+/// Refreshes and returns the ref new worktrees should be cut from. Fetching is
+/// best-effort so worktree creation still works offline: a cached `origin/main`
+/// is preferred when it exists, otherwise `git worktree add` falls back to HEAD.
 export const worktreeStartPoint = async (repoDir: string): Promise<string | undefined> => {
+  await git(
+    "fetch",
+    [
+      "fetch",
+      "--no-tags",
+      "--no-recurse-submodules",
+      "origin",
+      "+refs/heads/main:refs/remotes/origin/main"
+    ],
+    repoDir
+  ).catch(() => undefined)
+
   try {
     await git(
       "rev-parse",
