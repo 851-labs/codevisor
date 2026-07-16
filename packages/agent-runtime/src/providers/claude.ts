@@ -4,11 +4,13 @@ import {
   query as sdkQuery,
   type Options as ClaudeOptions,
   type Query,
+  type SDKControlGetUsageResponse,
   type SDKMessage,
   type SDKUserMessage
 } from "@anthropic-ai/claude-agent-sdk"
 import type {
   DiffStat,
+  HarnessUsageLimits,
   QuestionSpec,
   SessionConfigOption,
   SessionGoal,
@@ -500,6 +502,10 @@ interface ClaudeSession {
   /// a transient failure that arrived as plain text rather than a structured
   /// error. Shown in the answer slot (red) if all retries are exhausted.
   lastErrorText: string | undefined
+  /// Context occupancy from the latest top-level assistant request. Claude's
+  /// result usage is cumulative; the per-message input + cache buckets are the
+  /// authoritative current-context count.
+  latestContextUsage: { model: string | undefined; used: number } | undefined
   currentMessageId: string | undefined
   /// True once top-level text has streamed for `currentMessageId`. A tool_use
   /// block starting afterwards in the same message proves that text was
@@ -534,6 +540,61 @@ interface ClaudeSession {
   /// CLI's `/goal` slash command (the SDK has no goal API yet), so Codevisor
   /// tracks the last state it set — the CLI gives no structured feedback.
   currentGoal: SessionGoal | undefined
+}
+
+const claudeLimitWindow = (
+  value: unknown,
+  id: string,
+  label: string,
+  durationMinutes?: number
+): HarnessUsageLimits["windows"][number] | undefined => {
+  if (!isRecord(value) || typeof value.utilization !== "number") return undefined
+  return {
+    id,
+    label,
+    usedPercent: Math.max(0, Math.min(100, value.utilization)),
+    ...(durationMinutes === undefined ? {} : { durationMinutes }),
+    ...(typeof value.resets_at === "string" ? { resetsAt: value.resets_at } : {})
+  }
+}
+
+export const claudeUsageLimitsFrom = (response: SDKControlGetUsageResponse): HarnessUsageLimits => {
+  const limits = response.rate_limits
+  const modelScoped = limits?.model_scoped ?? []
+  const windows = [
+    claudeLimitWindow(limits?.five_hour, "five-hour", "5-hour limit", 300),
+    claudeLimitWindow(limits?.seven_day, "seven-day", "Weekly limit", 10_080),
+    claudeLimitWindow(limits?.seven_day_oauth_apps, "oauth-apps", "Weekly OAuth apps", 10_080),
+    ...(modelScoped.length > 0
+      ? []
+      : [
+          claudeLimitWindow(limits?.seven_day_opus, "opus", "Weekly Opus", 10_080),
+          claudeLimitWindow(limits?.seven_day_sonnet, "sonnet", "Weekly Sonnet", 10_080)
+        ]),
+    claudeLimitWindow(limits?.extra_usage, "extra-usage", "Extra usage")
+  ].filter((window): window is NonNullable<typeof window> => window !== undefined)
+  for (const [index, model] of modelScoped.entries()) {
+    const window = claudeLimitWindow(
+      model,
+      `model-${index}`,
+      `Weekly ${model.display_name}`,
+      10_080
+    )
+    if (window !== undefined) windows.push(window)
+  }
+  return {
+    fetchedAt: isoTimestamp(),
+    harnessId: "claude-code",
+    ...(response.subscription_type === null ? {} : { plan: response.subscription_type }),
+    state: response.rate_limits_available && windows.length > 0 ? "available" : "unavailable",
+    windows,
+    ...(response.rate_limits_available && windows.length > 0
+      ? {}
+      : {
+          detail:
+            "Claude plan limits are unavailable for API-key, third-party, or insufficient-scope sessions."
+        })
+  }
 }
 
 export const makeClaudeProvider = (
@@ -733,6 +794,7 @@ export const makeClaudeProvider = (
       transientRetries: 0,
       lastAssistantError: undefined,
       lastErrorText: undefined,
+      latestContextUsage: undefined,
       accumulators: new Map(),
       backgroundShellKeys: new Map(),
       backgroundTasks: new Map(),
@@ -1118,6 +1180,44 @@ export const makeClaudeProvider = (
           sessionId: session.key
         }
       }),
+    readUsageLimits: (definition, cwd, account) =>
+      adapterPromise("readUsageLimits", async () => {
+        const session = await startSession(
+          definition,
+          cwd,
+          () => Promise.resolve(),
+          undefined,
+          account
+        )
+        let timeout: ReturnType<typeof setTimeout> | undefined
+        try {
+          const usage = await Promise.race([
+            session.q.usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET(),
+            new Promise<never>(
+              (_, reject) =>
+                (timeout = setTimeout(
+                  () => reject(new Error("Claude usage request timed out")),
+                  10_000
+                ))
+            )
+          ])
+          return claudeUsageLimitsFrom(usage)
+        } catch (error) {
+          return {
+            detail:
+              error instanceof Error
+                ? error.message
+                : "Claude account usage limits are unavailable.",
+            fetchedAt: isoTimestamp(),
+            harnessId: "claude-code",
+            state: "unavailable" as const,
+            windows: []
+          }
+        } finally {
+          if (timeout !== undefined) clearTimeout(timeout)
+          session.abort.abort()
+        }
+      }),
     readiness: (definition) => {
       const installed = definition.detectBinaries.some((binary) =>
         environment.executableExists(binary, environment.env)
@@ -1143,6 +1243,8 @@ const handleMessage = (
     case "assistant": {
       const parentId = message.parent_tool_use_id ?? undefined
       if (parentId === undefined) {
+        const contextUsage = claudeContextUsageFromAssistant(message.message)
+        if (contextUsage !== undefined) session.latestContextUsage = contextUsage
         // Remember the SDK's per-message error (overloaded/rate_limit/… or
         // max_output_tokens) so a following error `result` can be classified
         // transient vs permanent, and a truncation can be recovered.
@@ -2034,6 +2136,48 @@ const logTurnEnd = (
 }
 
 const handleResult = (session: ClaudeSession, message: SDKMessage & { type: "result" }): void => {
+  const raw = message as unknown as Record<string, unknown>
+  const usage = isRecord(raw.usage) ? raw.usage : {}
+  const token = (key: string): number | undefined =>
+    typeof usage[key] === "number" && Number.isFinite(usage[key])
+      ? (usage[key] as number)
+      : undefined
+  const inputTokens = token("input_tokens")
+  const cachedInputTokens =
+    (token("cache_creation_input_tokens") ?? 0) + (token("cache_read_input_tokens") ?? 0)
+  const outputTokens = token("output_tokens")
+  const totalTokens =
+    inputTokens === undefined && outputTokens === undefined && cachedInputTokens === 0
+      ? undefined
+      : (inputTokens ?? 0) + cachedInputTokens + (outputTokens ?? 0)
+  const costAmount =
+    typeof raw.total_cost_usd === "number" && Number.isFinite(raw.total_cost_usd)
+      ? raw.total_cost_usd
+      : undefined
+  const contextUsed = session.latestContextUsage?.used
+  const contextSize = claudeContextWindowFrom(
+    raw.modelUsage,
+    session.latestContextUsage?.model,
+    session.currentModel
+  )
+  if (totalTokens !== undefined || costAmount !== undefined || contextUsed !== undefined) {
+    void session.emit({
+      kind: "session.updated",
+      payload: {
+        sessionUpdate: "usage_update",
+        ...(contextUsed === undefined ? {} : { used: contextUsed }),
+        ...(contextSize === undefined ? {} : { size: contextSize }),
+        ...(inputTokens === undefined ? {} : { inputTokens }),
+        ...(cachedInputTokens === 0 ? {} : { cachedInputTokens }),
+        ...(outputTokens === undefined ? {} : { outputTokens }),
+        ...(totalTokens === undefined ? {} : { totalTokens }),
+        ...(costAmount === undefined
+          ? {}
+          : { cost: { amount: costAmount, currency: "USD", kind: "reported" } })
+      },
+      subjectId: session.key
+    })
+  }
   const resolution = classifyResult(session, message)
   const authFailure =
     session.lastAssistantError === "authentication_failed" ||
@@ -2077,6 +2221,55 @@ const handleResult = (session: ClaudeSession, message: SDKMessage & { type: "res
   settleGoalOnTurnEnd(session, message)
   void refreshClaudeSessionTitle(session)
   finishActiveTurn(session, resolution.stopReason, resolution.stopDetail, resolution.retryable)
+}
+
+const claudeContextUsageFromAssistant = (
+  value: unknown
+): { model: string | undefined; used: number } | undefined => {
+  if (!isRecord(value)) return undefined
+  const usage = value.usage
+  if (!isRecord(usage)) return undefined
+  const token = (key: string): number | undefined => {
+    const candidate = usage[key]
+    return typeof candidate === "number" && Number.isFinite(candidate) && candidate >= 0
+      ? candidate
+      : undefined
+  }
+  const input = token("input_tokens")
+  const cacheCreation = token("cache_creation_input_tokens")
+  const cacheRead = token("cache_read_input_tokens")
+  if (input === undefined && cacheCreation === undefined && cacheRead === undefined)
+    return undefined
+  return {
+    model: typeof value.model === "string" ? value.model : undefined,
+    used: (input ?? 0) + (cacheCreation ?? 0) + (cacheRead ?? 0)
+  }
+}
+
+const claudeContextWindowFrom = (
+  value: unknown,
+  latestModel: string | undefined,
+  configuredModel: string
+): number | undefined => {
+  if (!isRecord(value)) return undefined
+  const contextWindow = (entry: unknown): number | undefined => {
+    if (!isRecord(entry)) return undefined
+    const candidate = entry.contextWindow
+    return typeof candidate === "number" && Number.isFinite(candidate) && candidate > 0
+      ? candidate
+      : undefined
+  }
+  for (const model of [latestModel, configuredModel]) {
+    if (model === undefined || model === "") continue
+    const matched = contextWindow(value[model])
+    if (matched !== undefined) return matched
+  }
+  const available = new Set(
+    Object.values(value)
+      .map(contextWindow)
+      .filter((size) => size !== undefined)
+  )
+  return available.size === 1 ? available.values().next().value : undefined
 }
 
 const refreshClaudeSessionTitle = async (session: ClaudeSession): Promise<void> => {

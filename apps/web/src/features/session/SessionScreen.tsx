@@ -30,6 +30,7 @@ import {
   usePromptSession,
   useSessionDetail,
   useSessionBranchDiff,
+  useSessionUsageLimits,
   useClearSessionGoal,
   useSetSessionConfig,
   useSetSessionGoal,
@@ -189,6 +190,8 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
   const [composerSendRevision, setComposerSendRevision] = useState(0)
   const [mountedTerminalPaneIds, setMountedTerminalPaneIds] = useState<string[]>([])
   const [isAttachmentDropTargeted, setIsAttachmentDropTargeted] = useState(false)
+  const [usageLimitsEnabled, setUsageLimitsEnabled] = useState(false)
+  const usageLimitsQuery = useSessionUsageLimits(sessionId, usageLimitsEnabled)
   const [composerRef, composerHeight] = useElementHeight()
   const composerAttachments = useComposerAttachments(`session:${sessionId}`)
   const terminalVisible = paneState.isVisible
@@ -529,8 +532,14 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
   const usage = detail.liveUsage ?? {
     used: detail.session.usage?.used,
     size: detail.session.usage?.size,
+    inputTokens: detail.session.usage?.inputTokens,
+    cachedInputTokens: detail.session.usage?.cachedInputTokens,
+    outputTokens: detail.session.usage?.outputTokens,
+    reasoningOutputTokens: detail.session.usage?.reasoningOutputTokens,
+    totalTokens: detail.session.usage?.totalTokens,
     costAmount: detail.session.usage?.costAmount,
-    costCurrency: detail.session.usage?.costCurrency
+    costCurrency: detail.session.usage?.costCurrency,
+    costKind: detail.session.usage?.costKind
   }
   const waitingBackgroundTasks = isRunning
     ? []
@@ -690,6 +699,12 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
             commands={detail.availableCommands ?? []}
             attachments={isGoalComposerArmed ? [] : composerAttachments.attachments}
             usage={usage}
+            usageLimits={usageLimitsQuery.data}
+            isLoadingUsageLimits={usageLimitsQuery.isPending && usageLimitsEnabled}
+            usageLimitsError={
+              usageLimitsQuery.error instanceof Error ? usageLimitsQuery.error.message : undefined
+            }
+            onRequestUsageLimits={() => setUsageLimitsEnabled(true)}
             canSend={
               isGoalComposerArmed
                 ? composerText.trim() !== "" && !setGoal.isPending

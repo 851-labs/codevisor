@@ -1,4 +1,4 @@
-import type { SessionConfigOption } from "@codevisor/api"
+import type { HarnessUsageLimits, SessionConfigOption } from "@codevisor/api"
 import { createFileRoute } from "@tanstack/react-router"
 import { Code2Icon, FolderIcon, GitBranchIcon, ListTodoIcon, TargetIcon } from "lucide-react"
 import { useState } from "react"
@@ -111,8 +111,27 @@ const selectedQuestionOption = { approach: ["Match macOS"] }
 const usageFixture = {
   used: 116_000,
   size: 128_000,
+  inputTokens: 245_000,
+  cachedInputTokens: 181_000,
+  outputTokens: 18_400,
+  reasoningOutputTokens: 6_200,
+  totalTokens: 269_600,
   costAmount: 0.12345,
-  costCurrency: "USD"
+  costCurrency: "USD",
+  costKind: "reported" as const
+}
+
+const usageLimitsFixture: HarnessUsageLimits = {
+  state: "available",
+  harnessId: "codex",
+  accountLabel: "Personal",
+  plan: "plus",
+  windows: [
+    { id: "five-hour", label: "5 hour", usedPercent: 37 },
+    { id: "weekly", label: "Weekly", usedPercent: 64, resetsAt: "2026-07-20T19:00:00Z" }
+  ],
+  credits: { hasCredits: true, unlimited: false, balance: "$12.40" },
+  fetchedAt: "2026-07-15T22:00:00Z"
 }
 
 function ToolbarChips({
@@ -241,7 +260,6 @@ function ChatComposerFixtureRoute() {
               value=""
               onValueChange={() => undefined}
               attachments={attachments}
-              usage={{ used: 62_000, size: 128_000, costAmount: 1.42, costCurrency: "USD" }}
               canSend
               chips={<ToolbarChips />}
               onSend={() => undefined}
@@ -264,6 +282,7 @@ function ChatComposerFixtureRoute() {
               value="Summarize the usage metrics once this finishes."
               onValueChange={() => undefined}
               usage={usageFixture}
+              usageLimits={usageLimitsFixture}
               canSend
               chips={<ToolbarChips />}
               onSend={() => undefined}
@@ -272,7 +291,7 @@ function ChatComposerFixtureRoute() {
           </ComposerFixture>
           <ComposerFixture title="Usage popover">
             <div className="relative flex h-28 items-start px-2 pt-8">
-              <UsageRingButton usage={usageFixture} forcePopover />
+              <UsageRingButton usage={usageFixture} limits={usageLimitsFixture} forcePopover />
             </div>
           </ComposerFixture>
         </div>
@@ -292,7 +311,8 @@ function ChatComposerFixtureRoute() {
               { name: "plan", description: "Draft a plan before editing" }
             ]}
             attachments={attachments}
-            usage={{ used: 62_000, size: 128_000, costAmount: 1.42, costCurrency: "USD" }}
+            usage={usageFixture}
+            usageLimits={usageLimitsFixture}
             canSend
             chips={<ToolbarChips />}
             onSend={() => undefined}

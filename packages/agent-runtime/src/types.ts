@@ -2,6 +2,7 @@ import type {
   EventKind,
   GoalStatus,
   Harness,
+  HarnessUsageLimits,
   QuestionAnswerEntry,
   SessionConfigOption,
   SessionGoal,
@@ -213,6 +214,11 @@ export interface AgentProvider {
     definition: HarnessDefinition,
     account?: HarnessAccountContext
   ) => Promise<ReadonlyArray<import("./agent-sessions.js").AgentSessionSummary>>
+  readonly readUsageLimits?: (
+    definition: HarnessDefinition,
+    cwd: string,
+    account?: HarnessAccountContext
+  ) => Effect.Effect<HarnessUsageLimits, AgentRuntimeError>
   readonly probeAuth?: (
     definition: HarnessDefinition,
     account?: HarnessAccountContext

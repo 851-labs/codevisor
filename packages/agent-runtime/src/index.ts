@@ -1,4 +1,4 @@
-import type { EventEnvelope, Harness, SessionGoal } from "@codevisor/api"
+import type { EventEnvelope, Harness, HarnessUsageLimits, SessionGoal } from "@codevisor/api"
 import { isoTimestamp } from "@codevisor/api"
 import type { AgentSessionSummary } from "./agent-sessions.js"
 import { accessSync, constants } from "node:fs"
@@ -103,6 +103,11 @@ export interface AgentRuntimeService {
     harnessId: string,
     account?: HarnessAccountContext
   ) => Effect.Effect<ReadonlyArray<AgentSessionSummary>, AgentRuntimeError>
+  readonly readHarnessUsageLimits: (
+    harnessId: string,
+    cwd: string,
+    account?: HarnessAccountContext
+  ) => Effect.Effect<HarnessUsageLimits, AgentRuntimeError>
   readonly createAgentSession: (
     harnessId: string,
     cwd: string,
@@ -470,6 +475,20 @@ export const makeAgentRuntime = (config: AgentRuntimeConfig = {}): AgentRuntimeS
         }
         const list = provider.listAgentSessions
         return list === undefined ? [] : await list(definition, account)
+      }),
+    readHarnessUsageLimits: (harnessId, cwd, account) =>
+      Effect.gen(function* () {
+        const { definition, provider } = yield* definitionFor(harnessId)
+        if (provider.readUsageLimits === undefined) {
+          return {
+            detail: "This harness does not expose account usage limits.",
+            fetchedAt: isoTimestamp(),
+            harnessId,
+            state: "unavailable" as const,
+            windows: []
+          }
+        }
+        return yield* provider.readUsageLimits(definition, cwd, account)
       }),
     refreshEnvironment: adapterPromise("refreshEnvironment", () => {
       const resolveEnv = config.resolveEnv

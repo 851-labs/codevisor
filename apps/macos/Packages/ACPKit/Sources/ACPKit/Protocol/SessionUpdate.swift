@@ -2,14 +2,20 @@ import Foundation
 
 /// Cumulative cost information for a session (from a `usage_update`).
 public struct SessionCost: Sendable, Codable, Equatable {
+    public enum Kind: String, Sendable, Codable, Equatable {
+        case reported
+        case estimated
+    }
     /// Total cumulative cost for the session.
     public var amount: Double
     /// ISO 4217 currency code (e.g. "USD").
     public var currency: String
+    public var kind: Kind?
 
-    public init(amount: Double, currency: String) {
+    public init(amount: Double, currency: String, kind: Kind? = nil) {
         self.amount = amount
         self.currency = currency
+        self.kind = kind
     }
 }
 
@@ -19,12 +25,31 @@ public struct SessionUsage: Sendable, Codable, Equatable {
     public var used: UInt64?
     /// Total context-window size in tokens.
     public var size: UInt64?
+    public var inputTokens: UInt64?
+    public var cachedInputTokens: UInt64?
+    public var outputTokens: UInt64?
+    public var reasoningOutputTokens: UInt64?
+    public var totalTokens: UInt64?
     /// Cumulative session cost, if the agent reports it.
     public var cost: SessionCost?
 
-    public init(used: UInt64? = nil, size: UInt64? = nil, cost: SessionCost? = nil) {
+    public init(
+        used: UInt64? = nil,
+        size: UInt64? = nil,
+        inputTokens: UInt64? = nil,
+        cachedInputTokens: UInt64? = nil,
+        outputTokens: UInt64? = nil,
+        reasoningOutputTokens: UInt64? = nil,
+        totalTokens: UInt64? = nil,
+        cost: SessionCost? = nil
+    ) {
         self.used = used
         self.size = size
+        self.inputTokens = inputTokens
+        self.cachedInputTokens = cachedInputTokens
+        self.outputTokens = outputTokens
+        self.reasoningOutputTokens = reasoningOutputTokens
+        self.totalTokens = totalTokens
         self.cost = cost
     }
 }
@@ -228,7 +253,8 @@ public enum SessionUpdate: Sendable, Codable, Equatable {
     private enum Keys: String, CodingKey {
         case sessionUpdate, messageId, parentToolCallId, phase, content, entries, availableCommands
         case currentModeId, configOptions
-        case used, size, cost, goal, markdown
+        case used, size, inputTokens, cachedInputTokens, outputTokens, reasoningOutputTokens, totalTokens
+        case cost, goal, markdown
         case questionId, message, questions, autoResolutionMs, outcome, answers
     }
 
@@ -277,6 +303,11 @@ public enum SessionUpdate: Sendable, Codable, Equatable {
             self = .usageUpdate(SessionUsage(
                 used: try container.decodeIfPresent(UInt64.self, forKey: .used),
                 size: try container.decodeIfPresent(UInt64.self, forKey: .size),
+                inputTokens: try container.decodeIfPresent(UInt64.self, forKey: .inputTokens),
+                cachedInputTokens: try container.decodeIfPresent(UInt64.self, forKey: .cachedInputTokens),
+                outputTokens: try container.decodeIfPresent(UInt64.self, forKey: .outputTokens),
+                reasoningOutputTokens: try container.decodeIfPresent(UInt64.self, forKey: .reasoningOutputTokens),
+                totalTokens: try container.decodeIfPresent(UInt64.self, forKey: .totalTokens),
                 cost: try container.decodeIfPresent(SessionCost.self, forKey: .cost)
             ))
         case "goal_update":
@@ -368,6 +399,11 @@ public enum SessionUpdate: Sendable, Codable, Equatable {
             try container.encode("usage_update", forKey: .sessionUpdate)
             try container.encodeIfPresent(usage.used, forKey: .used)
             try container.encodeIfPresent(usage.size, forKey: .size)
+            try container.encodeIfPresent(usage.inputTokens, forKey: .inputTokens)
+            try container.encodeIfPresent(usage.cachedInputTokens, forKey: .cachedInputTokens)
+            try container.encodeIfPresent(usage.outputTokens, forKey: .outputTokens)
+            try container.encodeIfPresent(usage.reasoningOutputTokens, forKey: .reasoningOutputTokens)
+            try container.encodeIfPresent(usage.totalTokens, forKey: .totalTokens)
             try container.encodeIfPresent(usage.cost, forKey: .cost)
         case let .goalUpdate(goal):
             try container.encode("goal_update", forKey: .sessionUpdate)

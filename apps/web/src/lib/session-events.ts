@@ -71,8 +71,14 @@ export interface CommandInfo {
 export interface UsageInfo {
   used?: number
   size?: number
+  inputTokens?: number
+  cachedInputTokens?: number
+  outputTokens?: number
+  reasoningOutputTokens?: number
+  totalTokens?: number
   costAmount?: number
   costCurrency?: string
+  costKind?: "reported" | "estimated"
 }
 
 export interface RetryStatusInfo {
@@ -364,8 +370,14 @@ function usageFrom(payload: Record<string, unknown>): UsageInfo {
   return {
     used: numberOrUndefined(payload.used),
     size: numberOrUndefined(payload.size),
+    inputTokens: numberOrUndefined(payload.inputTokens),
+    cachedInputTokens: numberOrUndefined(payload.cachedInputTokens),
+    outputTokens: numberOrUndefined(payload.outputTokens),
+    reasoningOutputTokens: numberOrUndefined(payload.reasoningOutputTokens),
+    totalTokens: numberOrUndefined(payload.totalTokens),
     costAmount: cost != null ? numberOrUndefined(cost.amount) : undefined,
-    costCurrency: cost != null ? stringOrUndefined(cost.currency) : undefined
+    costCurrency: cost != null ? stringOrUndefined(cost.currency) : undefined,
+    costKind: cost?.kind === "reported" || cost?.kind === "estimated" ? cost.kind : undefined
   }
 }
 

@@ -1,6 +1,7 @@
 import type {
   AttachmentRef,
   ConversationItem,
+  HarnessUsageLimits,
   PromptQueueItem,
   SessionConfigOption,
   SessionGoal
@@ -101,8 +102,27 @@ const speedOption: SessionConfigOption = {
 const usageFixture = {
   used: 116_000,
   size: 128_000,
+  inputTokens: 245_000,
+  cachedInputTokens: 181_000,
+  outputTokens: 18_400,
+  reasoningOutputTokens: 6_200,
+  totalTokens: 269_600,
   costAmount: 0.12345,
-  costCurrency: "USD"
+  costCurrency: "USD",
+  costKind: "reported" as const
+}
+
+const usageLimitsFixture: HarnessUsageLimits = {
+  state: "available",
+  harnessId: "codex",
+  accountLabel: "Personal",
+  plan: "plus",
+  windows: [
+    { id: "five-hour", label: "5 hour", usedPercent: 37 },
+    { id: "weekly", label: "Weekly", usedPercent: 64, resetsAt: "2026-07-20T19:00:00Z" }
+  ],
+  credits: { hasCredits: true, unlimited: false, balance: "$12.40" },
+  fetchedAt: "2026-07-15T22:00:00Z"
 }
 
 const composerAttachments: ComposerAttachmentItem[] = [
@@ -830,7 +850,8 @@ function ComposerStates() {
             { name: "plan", description: "Draft a plan before editing" }
           ]}
           attachments={composerAttachments}
-          usage={{ used: 62_000, size: 128_000, costAmount: 1.42, costCurrency: "USD" }}
+          usage={usageFixture}
+          usageLimits={usageLimitsFixture}
           canSend
           chips={toolbarChips({})}
           onSend={() => undefined}
@@ -901,7 +922,7 @@ function ComposerStates() {
       </StateBlock>
       <StateBlock title="Usage popover">
         <div className="relative h-28 px-2 pt-8">
-          <UsageRingButton usage={usageFixture} forcePopover />
+          <UsageRingButton usage={usageFixture} limits={usageLimitsFixture} forcePopover />
         </div>
       </StateBlock>
     </SurfaceGrid>

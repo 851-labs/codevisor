@@ -419,6 +419,36 @@ describe("@codevisor/db", () => {
     await Effect.runPromise(db.close)
   })
 
+  it("persists detailed session usage into summaries and transcript snapshots", async () => {
+    const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
+    const project = await run(db.createProject({ folderPath: "/tmp/session-usage" }))
+    const session = await run(db.createSession({ projectId: project.id, harnessId: "claude-code" }))
+
+    await run(
+      db.appendEvent("session.updated", session.id, {
+        sessionUpdate: "usage_update",
+        inputTokens: 1_200,
+        cachedInputTokens: 800,
+        outputTokens: 300,
+        totalTokens: 2_300,
+        cost: { amount: 0.42, currency: "USD", kind: "reported" }
+      })
+    )
+
+    const usage = {
+      inputTokens: 1_200,
+      cachedInputTokens: 800,
+      outputTokens: 300,
+      totalTokens: 2_300,
+      costAmount: 0.42,
+      costCurrency: "USD",
+      costKind: "reported"
+    }
+    expect((await run(db.getSessionSummary(session.id))).usage).toMatchObject(usage)
+    expect((await run(db.getTranscriptPage(session.id, undefined, 8))).usage).toMatchObject(usage)
+    await Effect.runPromise(db.close)
+  })
+
   it("snapshots a pending question with the session cursor and clears it terminally", async () => {
     const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
     const project = await run(db.createProject({ folderPath: "/tmp/pending-question" }))

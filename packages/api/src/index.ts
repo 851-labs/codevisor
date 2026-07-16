@@ -484,12 +484,53 @@ export const WorktreeSetupUpdate = Schema.Struct({
 export type WorktreeSetupUpdate = typeof WorktreeSetupUpdate.Type
 
 export const SessionUsage = Schema.Struct({
+  /** Tokens currently occupying the model's context window. */
   used: Schema.optional(Schema.Number),
+  /** Total model context-window size. */
   size: Schema.optional(Schema.Number),
+  /** Cumulative token accounting for the whole harness session. */
+  inputTokens: Schema.optional(Schema.Number),
+  cachedInputTokens: Schema.optional(Schema.Number),
+  outputTokens: Schema.optional(Schema.Number),
+  reasoningOutputTokens: Schema.optional(Schema.Number),
+  totalTokens: Schema.optional(Schema.Number),
   costAmount: Schema.optional(Schema.Number),
-  costCurrency: Schema.optional(Schema.String)
+  costCurrency: Schema.optional(Schema.String),
+  /** Whether the harness reported the amount or Codevisor estimated it. */
+  costKind: Schema.optional(Schema.Literals(["reported", "estimated"]))
 })
 export type SessionUsage = typeof SessionUsage.Type
+
+export const HarnessUsageWindow = Schema.Struct({
+  id: Schema.String,
+  label: Schema.String,
+  usedPercent: Schema.Number,
+  durationMinutes: Schema.optional(Schema.Number),
+  resetsAt: Schema.optional(Schema.String)
+})
+export type HarnessUsageWindow = typeof HarnessUsageWindow.Type
+
+export const HarnessUsageCredits = Schema.Struct({
+  hasCredits: Schema.Boolean,
+  unlimited: Schema.Boolean,
+  balance: Schema.optional(Schema.String)
+})
+export type HarnessUsageCredits = typeof HarnessUsageCredits.Type
+
+/** Account-level subscription limits for the harness account bound to a session. */
+export const HarnessUsageLimits = Schema.Struct({
+  state: Schema.Literals(["available", "unavailable"]),
+  harnessId: Schema.String,
+  accountId: Schema.optional(Schema.String),
+  accountLabel: Schema.optional(Schema.String),
+  accountEmail: Schema.optional(Schema.String),
+  plan: Schema.optional(Schema.String),
+  windows: Schema.Array(HarnessUsageWindow),
+  credits: Schema.optional(HarnessUsageCredits),
+  detail: Schema.optional(Schema.String),
+  fetchedAt: Schema.String
+})
+export type HarnessUsageLimits = typeof HarnessUsageLimits.Type
 
 export const BranchDiffTotals = Schema.Struct({
   added: Schema.Number,
@@ -589,7 +630,9 @@ export const TranscriptPage = Schema.Struct({
   /** Current blocking question, snapshotted at the same revision as
    * `eventCursor` so a reconnect cannot skip the event that created it. */
   pendingQuestion: Schema.optional(QuestionPayload),
-  backgroundTasks: Schema.optional(Schema.Array(BackgroundTask))
+  backgroundTasks: Schema.optional(Schema.Array(BackgroundTask)),
+  /** Durable usage snapshot at the same revision as the transcript. */
+  usage: Schema.optional(SessionUsage)
 })
 export type TranscriptPage = typeof TranscriptPage.Type
 

@@ -123,7 +123,13 @@ struct ComposerCard: View {
                     // While the agent runs, stop takes the send slot; a draft
                     // in the composer brings send back with stop beside it.
                     HStack(spacing: 4) {
-                        UsageRingButton(usage: controller.usage)
+                        UsageRingButton(
+                            usage: controller.usage,
+                            limits: controller.usageLimits,
+                            isLoadingLimits: controller.isLoadingUsageLimits,
+                            limitsError: controller.usageLimitsError,
+                            onRequestLimits: { await controller.loadUsageLimits() }
+                        )
                         if controller.isSending, !hasComposerDraft {
                             stopButton
                         } else {

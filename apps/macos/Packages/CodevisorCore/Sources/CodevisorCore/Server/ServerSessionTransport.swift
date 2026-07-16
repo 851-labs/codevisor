@@ -16,6 +16,7 @@ public struct TranscriptHistoryPage: Equatable, Sendable {
     public var eventCursor: Int
     public var pendingQuestion: QuestionRequest? = nil
     public var backgroundTasks: [BackgroundTaskInfo]? = nil
+    public var usage: SessionUsage? = nil
 }
 
 public enum ServerSessionStreamEvent: Equatable, Sendable {
@@ -185,6 +186,10 @@ public struct ServerSessionTransport: Sendable {
         )
     }
 
+    public func usageLimits() async throws -> ServerHarnessUsageLimits {
+        try await client.sessionUsageLimits(id: sessionId)
+    }
+
     public func promptQueue() async throws -> [ServerPromptQueueItem] {
         try await client.promptQueue(id: sessionId)
     }
@@ -199,7 +204,8 @@ public struct ServerSessionTransport: Sendable {
             hasMore: page.hasMore,
             eventCursor: page.eventCursor,
             pendingQuestion: page.pendingQuestion,
-            backgroundTasks: page.backgroundTasks
+            backgroundTasks: page.backgroundTasks,
+            usage: page.usage?.sessionUsage
         )
     }
 

@@ -27,6 +27,7 @@ import {
   type LightboxItem,
   VisualThumb
 } from "../attachments/AttachmentPreview"
+import type { HarnessUsageLimits } from "@codevisor/api"
 import { cn } from "../../lib/cn"
 import type { UsageInfo } from "../../lib/session-events"
 import { type SlashCommand, slashMatchesFor, slashQueryFrom } from "./slash-commands"
@@ -45,6 +46,10 @@ export function Composer({
   commands = [],
   attachments = [],
   usage,
+  usageLimits,
+  isLoadingUsageLimits = false,
+  usageLimitsError,
+  onRequestUsageLimits,
   canSend,
   isSending = false,
   isCancelling = false,
@@ -65,6 +70,10 @@ export function Composer({
   commands?: readonly SlashCommand[]
   attachments?: readonly ComposerAttachmentItem[]
   usage?: UsageInfo
+  usageLimits?: HarnessUsageLimits
+  isLoadingUsageLimits?: boolean
+  usageLimitsError?: string
+  onRequestUsageLimits?: () => void
   canSend?: boolean
   isSending?: boolean
   isCancelling?: boolean
@@ -330,7 +339,13 @@ export function Composer({
             )}
             {chips}
             <span className="flex-1" />
-            <UsageRingButton usage={usage} />
+            <UsageRingButton
+              usage={usage}
+              limits={usageLimits}
+              isLoadingLimits={isLoadingUsageLimits}
+              limitsError={usageLimitsError}
+              onRequestLimits={onRequestUsageLimits}
+            />
             {isSending &&
               onStop != null &&
               (isCancelling ? (

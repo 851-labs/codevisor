@@ -99,8 +99,14 @@ interface SessionRow {
   readonly updated_at: string | null
   readonly usage_used: number | null
   readonly usage_size: number | null
+  readonly input_tokens: number | null
+  readonly cached_input_tokens: number | null
+  readonly output_tokens: number | null
+  readonly reasoning_output_tokens: number | null
+  readonly total_tokens: number | null
   readonly cost_amount: number | null
   readonly cost_currency: string | null
+  readonly cost_kind: "reported" | "estimated" | null
   readonly pending_question: string | null
   readonly background_tasks: string
 }
@@ -837,6 +843,18 @@ const migrations: ReadonlyArray<Migration> = [
     sql: `
       alter table projects add column repo_url text;
     `
+  },
+  {
+    id: 19,
+    name: "detailed durable session usage",
+    sql: `
+      alter table sessions add column input_tokens integer;
+      alter table sessions add column cached_input_tokens integer;
+      alter table sessions add column output_tokens integer;
+      alter table sessions add column reasoning_output_tokens integer;
+      alter table sessions add column total_tokens integer;
+      alter table sessions add column cost_kind text check(cost_kind in ('reported', 'estimated'));
+    `
   }
 ]
 
@@ -1340,6 +1358,42 @@ const projectChatEvent = (sqlite: Database.Database, event: SessionEventRow): vo
     sqlite
       .prepare("update sessions set background_tasks = ? where id = ?")
       .run(JSON.stringify(payload.backgroundTasks), sessionId)
+  }
+  if (
+    (event.kind === "session.updated" || event.kind === "session.output") &&
+    update === "usage_update"
+  ) {
+    const cost = jsonRecord(payload.cost)
+    const finite = (value: unknown): number | null =>
+      typeof value === "number" && Number.isFinite(value) ? value : null
+    const costKind = cost?.kind === "reported" || cost?.kind === "estimated" ? cost.kind : null
+    sqlite
+      .prepare(
+        `update sessions set
+           usage_used = coalesce(?, usage_used), usage_size = coalesce(?, usage_size),
+           input_tokens = coalesce(?, input_tokens),
+           cached_input_tokens = coalesce(?, cached_input_tokens),
+           output_tokens = coalesce(?, output_tokens),
+           reasoning_output_tokens = coalesce(?, reasoning_output_tokens),
+           total_tokens = coalesce(?, total_tokens),
+           cost_amount = coalesce(?, cost_amount),
+           cost_currency = coalesce(?, cost_currency),
+           cost_kind = coalesce(?, cost_kind)
+         where id = ?`
+      )
+      .run(
+        finite(payload.used),
+        finite(payload.size),
+        finite(payload.inputTokens),
+        finite(payload.cachedInputTokens),
+        finite(payload.outputTokens),
+        finite(payload.reasoningOutputTokens),
+        finite(payload.totalTokens),
+        finite(cost?.amount),
+        typeof cost?.currency === "string" ? cost.currency : null,
+        costKind,
+        sessionId
+      )
   }
 }
 
@@ -2284,7 +2338,7 @@ const createService = (
       }),
     getTranscriptPage: (sessionId, before, limit) =>
       attempt("getTranscriptPage", () => {
-        getSession(sessionId)
+        const session = getSession(sessionId)
         const bounded = Math.max(1, Math.min(64, Math.trunc(limit)))
         const rows = sqlite
           .prepare(
@@ -2341,7 +2395,8 @@ const createService = (
           hasMore,
           eventCursor: Number(state.cursor),
           ...(pendingQuestion === undefined ? {} : { pendingQuestion }),
-          backgroundTasks
+          backgroundTasks,
+          usage: session.usage
         }
       }),
     getTranscriptItemDetails: (sessionId, itemId) =>
@@ -3086,8 +3141,16 @@ const sessionFromRow = (row: SessionRow, folderPath: string | undefined): Sessio
     usage: {
       ...(row.usage_used === null ? {} : { used: row.usage_used }),
       ...(row.usage_size === null ? {} : { size: row.usage_size }),
+      ...(row.input_tokens === null ? {} : { inputTokens: row.input_tokens }),
+      ...(row.cached_input_tokens === null ? {} : { cachedInputTokens: row.cached_input_tokens }),
+      ...(row.output_tokens === null ? {} : { outputTokens: row.output_tokens }),
+      ...(row.reasoning_output_tokens === null
+        ? {}
+        : { reasoningOutputTokens: row.reasoning_output_tokens }),
+      ...(row.total_tokens === null ? {} : { totalTokens: row.total_tokens }),
       ...(row.cost_amount === null ? {} : { costAmount: row.cost_amount }),
-      ...(row.cost_currency === null ? {} : { costCurrency: row.cost_currency })
+      ...(row.cost_currency === null ? {} : { costCurrency: row.cost_currency }),
+      ...(row.cost_kind === null ? {} : { costKind: row.cost_kind })
     }
   }
 }

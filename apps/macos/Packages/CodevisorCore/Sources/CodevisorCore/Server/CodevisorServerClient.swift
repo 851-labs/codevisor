@@ -135,6 +135,7 @@ public protocol CodevisorServerClienting: Sendable {
     func createProjectFromGit(id: UUID, url: String, name: String?) async throws -> ServerProject
     func listSessions() async throws -> [ServerSession]
     func sessionDetail(id: UUID) async throws -> ServerSessionDetail
+    func sessionUsageLimits(id: UUID) async throws -> ServerHarnessUsageLimits
     /// Starts or rebinds the existing agent runtime and returns its current,
     /// session-specific picker metadata. Nil means the server predates this
     /// endpoint and callers should keep the capability-cache fallback.
@@ -284,6 +285,10 @@ public extension CodevisorServerClienting {
     func sessionEvents(id: UUID) async throws -> [ServerEventEnvelope] { [] }
 
     func transcriptPage(id: UUID, before: String?, limit: Int) async throws -> ServerTranscriptPage {
+        throw CodevisorServerClientError.httpStatus(404, "")
+    }
+
+    func sessionUsageLimits(id: UUID) async throws -> ServerHarnessUsageLimits {
         throw CodevisorServerClientError.httpStatus(404, "")
     }
 
@@ -865,8 +870,60 @@ public struct ServerWorktree: Decodable, Equatable, Sendable {
 public struct ServerSessionUsage: Decodable, Equatable, Sendable {
     public var used: Double?
     public var size: Double?
+    public var inputTokens: Double?
+    public var cachedInputTokens: Double?
+    public var outputTokens: Double?
+    public var reasoningOutputTokens: Double?
+    public var totalTokens: Double?
     public var costAmount: Double?
     public var costCurrency: String?
+    public var costKind: String?
+
+    public var sessionUsage: SessionUsage {
+        SessionUsage(
+            used: used.map(UInt64.init),
+            size: size.map(UInt64.init),
+            inputTokens: inputTokens.map(UInt64.init),
+            cachedInputTokens: cachedInputTokens.map(UInt64.init),
+            outputTokens: outputTokens.map(UInt64.init),
+            reasoningOutputTokens: reasoningOutputTokens.map(UInt64.init),
+            totalTokens: totalTokens.map(UInt64.init),
+            cost: costAmount.map {
+                SessionCost(
+                    amount: $0,
+                    currency: costCurrency ?? "USD",
+                    kind: costKind.flatMap(SessionCost.Kind.init(rawValue:))
+                )
+            }
+        )
+    }
+}
+
+public struct ServerHarnessUsageWindow: Decodable, Equatable, Sendable, Identifiable {
+    public var id: String
+    public var label: String
+    public var usedPercent: Double
+    public var durationMinutes: Double?
+    public var resetsAt: String?
+}
+
+public struct ServerHarnessUsageCredits: Decodable, Equatable, Sendable {
+    public var hasCredits: Bool
+    public var unlimited: Bool
+    public var balance: String?
+}
+
+public struct ServerHarnessUsageLimits: Decodable, Equatable, Sendable {
+    public var state: String
+    public var harnessId: String
+    public var accountId: String?
+    public var accountLabel: String?
+    public var accountEmail: String?
+    public var plan: String?
+    public var windows: [ServerHarnessUsageWindow]
+    public var credits: ServerHarnessUsageCredits?
+    public var detail: String?
+    public var fetchedAt: String
 }
 
 public struct ServerSession: Decodable, Equatable, Sendable {
@@ -1003,6 +1060,7 @@ public struct ServerTranscriptPage: Decodable, Equatable, Sendable {
     public var eventCursor: Int
     public var pendingQuestion: QuestionRequest? = nil
     public var backgroundTasks: [BackgroundTaskInfo]? = nil
+    public var usage: ServerSessionUsage? = nil
 }
 
 public struct ServerTranscriptItemDetails: Decodable, Equatable, Sendable {
@@ -1291,6 +1349,10 @@ public final class CodevisorServerClient: CodevisorServerClienting, @unchecked S
 
     public func sessionDetail(id: UUID) async throws -> ServerSessionDetail {
         try await get("/v1/sessions/\(id.uuidString)")
+    }
+
+    public func sessionUsageLimits(id: UUID) async throws -> ServerHarnessUsageLimits {
+        try await get("/v1/sessions/\(id.uuidString)/usage-limits")
     }
 
     public func connectSession(id: UUID) async throws -> ServerSessionRuntimeMetadata? {

@@ -12,6 +12,7 @@ import type {
   EventEnvelope,
   AttachmentRef,
   GoalStatus,
+  HarnessUsageLimits,
   QuestionAnswerEntry,
   SessionConfigOption,
   SessionDetail,
@@ -53,6 +54,7 @@ export const queryKeys = {
   sessions: ["sessions"] as const,
   session: (id: string) => ["session", id] as const,
   sessionBranchDiff: (id: string) => ["session-branch-diff", id] as const,
+  sessionUsageLimits: (id: string) => ["session-usage-limits", id] as const,
   harnesses: ["harnesses"] as const,
   capabilities: (cwd: string) => ["capabilities", cwd] as const
 }
@@ -1128,6 +1130,16 @@ export function useSessionBranchDiff(id: string | undefined) {
     queryFn: () => client.sessionBranchDiff(id ?? ""),
     enabled: id != null && id !== "",
     refetchInterval: 30_000
+  })
+}
+
+export function useSessionUsageLimits(id: string | undefined, enabled = true) {
+  const { client } = useApi()
+  return useQuery<HarnessUsageLimits>({
+    queryKey: queryKeys.sessionUsageLimits(id ?? ""),
+    queryFn: () => client.sessionUsageLimits(id ?? ""),
+    enabled: enabled && id != null && id !== "",
+    refetchInterval: 60_000
   })
 }
 

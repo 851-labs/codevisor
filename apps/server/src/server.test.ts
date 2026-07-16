@@ -128,6 +128,13 @@ const makeAgents = (): AgentRuntimeService & {
           ? [{ sessionId: "native-1", cwd: "/repo/native", title: "Old codex chat" }]
           : []
       ),
+    readHarnessUsageLimits: (harnessId) =>
+      Effect.succeed({
+        fetchedAt: "2026-01-01T00:00:00.000Z",
+        harnessId,
+        state: "unavailable" as const,
+        windows: []
+      }),
     createAgentSession: (harnessId, cwd, sink) =>
       Effect.promise(
         () =>

@@ -4,6 +4,7 @@ import {
   abbreviateUsageValue,
   formatUsageCost,
   formatUsageTokens,
+  shouldShowCreditsBalance,
   usageAccessibilityLabel,
   usageContextPercent,
   usageFraction
@@ -28,6 +29,13 @@ describe("usage ring formatting", () => {
     expect(formatUsageCost(1.42, "USD")).toContain("1.42")
   })
 
+  it("hides zero credit balances", () => {
+    expect(shouldShowCreditsBalance("0")).toBe(false)
+    expect(shouldShowCreditsBalance("0.00")).toBe(false)
+    expect(shouldShowCreditsBalance("$0.00")).toBe(false)
+    expect(shouldShowCreditsBalance("12.50")).toBe(true)
+  })
+
   it("builds the accessibility label from the same metrics as macOS", () => {
     expect(
       usageAccessibilityLabel({
@@ -45,6 +53,7 @@ describe("usage ring formatting", () => {
         costCurrency: "USD"
       })
     ).toContain("62.0K / 128.0K tokens")
+    expect(usageAccessibilityLabel({ used: 62_000 })).not.toContain("percent")
   })
 
   it("clamps context usage like UsageRingButton.fraction", () => {

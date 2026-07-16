@@ -12,6 +12,7 @@ import type {
   EventEnvelope,
   Harness,
   HarnessCapability,
+  HarnessUsageLimits,
   Project,
   ProjectLocation,
   PromptAcceptedResponse,
@@ -1506,6 +1507,43 @@ const routeSessions = async (
       200,
       directory == null ? null : ((await gitBranchDiffTotals(directory)) ?? null)
     )
+    return true
+  }
+
+  const usageLimitsSessionId = matchRoute(url.pathname, "/v1/sessions/:id/usage-limits")
+  if (usageLimitsSessionId !== undefined && request.method === "GET") {
+    const session = await findSession(services.db, usageLimitsSessionId)
+    if (session === undefined) throw new HttpFailure(404, "Session not found")
+    const project = await getProjectOrFail(services.db, session.projectId)
+    const cwd =
+      session.cwd ??
+      project.locations.find((location) => location.serverId === session.serverId)?.folderPath
+    if (cwd === undefined) {
+      const unavailable: HarnessUsageLimits = {
+        detail: "This session has no local workspace from which to query its harness.",
+        fetchedAt: new Date().toISOString(),
+        harnessId: session.harnessId,
+        state: "unavailable",
+        windows: []
+      }
+      writeJson(response, 200, unavailable)
+      return true
+    }
+    const accountContext =
+      session.harnessAccountId === undefined
+        ? await services.auth?.activeAccountContext(session.harnessId)
+        : await services.auth?.accountContext(session.harnessAccountId)
+    const limits = await run(
+      services.agents.readHarnessUsageLimits(session.harnessId, cwd, accountContext)
+    )
+    const accountId = session.harnessAccountId ?? accountContext?.id
+    const accounts = await services.auth?.accounts(session.harnessId)
+    const account = accounts?.find((candidate) => candidate.id === accountId)
+    writeJson(response, 200, {
+      ...limits,
+      ...(accountId === undefined ? {} : { accountId }),
+      ...(account === undefined ? {} : { accountEmail: account.email, accountLabel: account.label })
+    })
     return true
   }
 

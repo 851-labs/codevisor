@@ -55,3 +55,9 @@
 [submodule ".repos/modelcontextprotocol"]
 	path = .repos/modelcontextprotocol
 	url = https://github.com/modelcontextprotocol/modelcontextprotocol.git
+[submodule ".repos/usage4claude"]
+	path = .repos/usage4claude
+	url = https://github.com/f-is-h/usage4claude.git
+[submodule ".repos/ccusage"]
+	path = .repos/ccusage
+	url = https://github.com/ccusage/ccusage.git

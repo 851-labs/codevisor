@@ -16,6 +16,8 @@ import {
   type FileMetadata as FileMetadataType,
   type GoalStatus,
   Harness,
+  HarnessUsageLimits,
+  type HarnessUsageLimits as HarnessUsageLimitsType,
   HealthResponse,
   PairingTokenResponse,
   PromptAcceptedResponse,
@@ -72,6 +74,7 @@ const decodeSession = decode(SessionSummary)
 const decodeSessions = decode(Schema.Array(SessionSummary))
 const decodeSessionDetail = decode(SessionDetail)
 const decodeBranchDiffTotals = decode(Schema.NullOr(BranchDiffTotals))
+const decodeHarnessUsageLimits = decode(HarnessUsageLimits)
 const decodeGoal = decode(SessionGoal)
 const decodeEvents = decode(Schema.Array(EventEnvelope))
 const decodeFileMetadata = decode(FileMetadata)
@@ -150,6 +153,10 @@ export class CodevisorClient {
 
   sessionBranchDiff(id: string): Promise<BranchDiffTotalsType | null> {
     return this.get(`/v1/sessions/${encodeURIComponent(id)}/branch-diff`, decodeBranchDiffTotals)
+  }
+
+  sessionUsageLimits(id: string): Promise<HarnessUsageLimitsType> {
+    return this.get(`/v1/sessions/${encodeURIComponent(id)}/usage-limits`, decodeHarnessUsageLimits)
   }
 
   sessionEvents(id: string): Promise<readonly EventEnvelope[]> {

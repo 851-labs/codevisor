@@ -67,7 +67,7 @@ struct SessionConfigTests {
 
     @Test("usage_update session update decodes cost + context tokens")
     func usageUpdate() throws {
-        let json = #"{"sessionUpdate":"usage_update","used":12345,"size":200000,"cost":{"amount":0.0123,"currency":"USD"}}"#
+        let json = #"{"sessionUpdate":"usage_update","used":12345,"size":200000,"inputTokens":9000,"cachedInputTokens":2000,"outputTokens":1345,"totalTokens":12345,"cost":{"amount":0.0123,"currency":"USD","kind":"reported"}}"#
         let update = try ACPJSON.decoder.decode(SessionUpdate.self, from: Data(json.utf8))
         guard case let .usageUpdate(usage) = update else {
             Issue.record("expected usageUpdate, got \(update)")
@@ -75,7 +75,11 @@ struct SessionConfigTests {
         }
         #expect(usage.used == 12345)
         #expect(usage.size == 200_000)
-        #expect(usage.cost == SessionCost(amount: 0.0123, currency: "USD"))
+        #expect(usage.inputTokens == 9_000)
+        #expect(usage.cachedInputTokens == 2_000)
+        #expect(usage.outputTokens == 1_345)
+        #expect(usage.totalTokens == 12_345)
+        #expect(usage.cost == SessionCost(amount: 0.0123, currency: "USD", kind: .reported))
         // Round-trips.
         let data = try ACPJSON.encoder.encode(update)
         #expect(try ACPJSON.decoder.decode(SessionUpdate.self, from: data) == update)

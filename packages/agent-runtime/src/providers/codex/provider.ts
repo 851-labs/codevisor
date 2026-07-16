@@ -2,12 +2,14 @@ import type {
   CanonicalModeId,
   DiffStat,
   GoalStatus,
+  HarnessUsageLimits,
   QuestionAnswerEntry,
   QuestionSpec,
   SessionConfigOption,
   SessionGoal,
   SessionModeState
 } from "@codevisor/api"
+import { isoTimestamp } from "@codevisor/api"
 import { execFileSync } from "node:child_process"
 import { randomUUID } from "node:crypto"
 import { Effect } from "effect"
@@ -83,6 +85,70 @@ export interface CodexProviderConfig {
   readonly backgroundTerminals?: BackgroundTerminalIntegration
   /// Injectable for tests: the best-effort process-tree kill.
   readonly killCommandProcesses?: CodexCommandKiller
+}
+
+const usageWindowLabel = (durationMinutes: number | undefined, fallback: string): string => {
+  if (durationMinutes === 300) return "5-hour limit"
+  if (durationMinutes === 10_080) return "Weekly limit"
+  if (durationMinutes !== undefined && durationMinutes % 1_440 === 0) {
+    return `${durationMinutes / 1_440}-day limit`
+  }
+  if (durationMinutes !== undefined && durationMinutes % 60 === 0) {
+    return `${durationMinutes / 60}-hour limit`
+  }
+  return fallback
+}
+
+const codexUsageWindow = (
+  value: unknown,
+  id: string,
+  fallbackLabel: string
+): HarnessUsageLimits["windows"][number] | undefined => {
+  if (!isRecord(value) || typeof value.usedPercent !== "number") return undefined
+  const durationMinutes =
+    typeof value.windowDurationMins === "number" ? value.windowDurationMins : undefined
+  const resetSeconds = typeof value.resetsAt === "number" ? value.resetsAt : undefined
+  return {
+    id,
+    label: usageWindowLabel(durationMinutes, fallbackLabel),
+    usedPercent: Math.max(0, Math.min(100, value.usedPercent)),
+    ...(durationMinutes === undefined ? {} : { durationMinutes }),
+    ...(resetSeconds === undefined ? {} : { resetsAt: new Date(resetSeconds * 1000).toISOString() })
+  }
+}
+
+export const codexUsageLimitsFrom = (response: unknown): HarnessUsageLimits => {
+  const root = isRecord(response) ? response : {}
+  const limits = isRecord(root.rateLimits) ? root.rateLimits : root
+  const primary = codexUsageWindow(limits.primary, "primary", "Primary limit")
+  const secondary = codexUsageWindow(limits.secondary, "secondary", "Secondary limit")
+  const credits = isRecord(limits.credits) ? limits.credits : undefined
+  const windows = [primary, secondary].filter(
+    (window): window is NonNullable<typeof window> => window !== undefined
+  )
+  return {
+    fetchedAt: isoTimestamp(),
+    harnessId: "codex",
+    ...(typeof limits.planType === "string" ? { plan: limits.planType } : {}),
+    state: windows.length > 0 ? "available" : "unavailable",
+    windows,
+    ...(credits === undefined
+      ? {}
+      : {
+          credits: {
+            hasCredits: credits.hasCredits === true,
+            unlimited: credits.unlimited === true,
+            ...(typeof credits.balance === "string"
+              ? { balance: credits.balance }
+              : typeof credits.balance === "number"
+                ? { balance: String(credits.balance) }
+                : {})
+          }
+        }),
+    ...(windows.length > 0
+      ? {}
+      : { detail: "Codex did not return subscription usage limits for this account." })
+  }
 }
 
 interface CodexModel {
@@ -794,6 +860,26 @@ export const makeCodexProvider = (
         return fallback
       }
     },
+    readUsageLimits: (definition, cwd, account) =>
+      adapterPromise("readUsageLimits", async () => {
+        const client = await connect(definition, cwd, account)
+        try {
+          return codexUsageLimitsFrom(await client.request("account/rateLimits/read", {}))
+        } catch (error) {
+          return {
+            detail:
+              error instanceof Error
+                ? error.message
+                : "Codex account usage limits are unavailable.",
+            fetchedAt: isoTimestamp(),
+            harnessId: "codex",
+            state: "unavailable" as const,
+            windows: []
+          }
+        } finally {
+          client.close()
+        }
+      }),
     readiness: (definition) => {
       const installed = codexCandidates(definition).some((candidate) =>
         environment.executableExists(candidate, environment.env)
@@ -1452,6 +1538,40 @@ const handleNotification = (session: CodexSession, method: string, params: unkno
   }
   const parentField = parentToolCallId === undefined ? {} : { parentToolCallId }
   switch (method) {
+    case "thread/tokenUsage/updated": {
+      const tokenUsage = isRecord(payload.tokenUsage) ? payload.tokenUsage : {}
+      const total = isRecord(tokenUsage.total) ? tokenUsage.total : {}
+      const last = isRecord(tokenUsage.last) ? tokenUsage.last : {}
+      const number = (value: unknown): number | undefined =>
+        typeof value === "number" && Number.isFinite(value) ? value : undefined
+      void session.emit({
+        kind: "session.updated",
+        payload: {
+          sessionUpdate: "usage_update",
+          ...(number(last.totalTokens) === undefined ? {} : { used: number(last.totalTokens) }),
+          ...(number(tokenUsage.modelContextWindow) === undefined
+            ? {}
+            : { size: number(tokenUsage.modelContextWindow) }),
+          ...(number(total.inputTokens) === undefined
+            ? {}
+            : { inputTokens: number(total.inputTokens) }),
+          ...(number(total.cachedInputTokens) === undefined
+            ? {}
+            : { cachedInputTokens: number(total.cachedInputTokens) }),
+          ...(number(total.outputTokens) === undefined
+            ? {}
+            : { outputTokens: number(total.outputTokens) }),
+          ...(number(total.reasoningOutputTokens) === undefined
+            ? {}
+            : { reasoningOutputTokens: number(total.reasoningOutputTokens) }),
+          ...(number(total.totalTokens) === undefined
+            ? {}
+            : { totalTokens: number(total.totalTokens) })
+        },
+        subjectId: session.key
+      })
+      break
+    }
     case "thread/name/updated": {
       const title = typeof payload.threadName === "string" ? payload.threadName.trim() : undefined
       if (title === undefined || title.length === 0) {

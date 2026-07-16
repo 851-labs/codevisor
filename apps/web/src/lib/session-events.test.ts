@@ -457,13 +457,27 @@ describe("sessionStreamEvents", () => {
           sessionUpdate: "usage_update",
           used: 1200,
           size: 200000,
-          cost: { amount: 0.42, currency: "USD" }
+          inputTokens: 900,
+          cachedInputTokens: 200,
+          outputTokens: 100,
+          totalTokens: 1200,
+          cost: { amount: 0.42, currency: "USD", kind: "reported" }
         })
       )
     ).toEqual([
       {
         type: "usageChanged",
-        usage: { used: 1200, size: 200000, costAmount: 0.42, costCurrency: "USD" }
+        usage: {
+          used: 1200,
+          size: 200000,
+          inputTokens: 900,
+          cachedInputTokens: 200,
+          outputTokens: 100,
+          totalTokens: 1200,
+          costAmount: 0.42,
+          costCurrency: "USD",
+          costKind: "reported"
+        }
       }
     ])
     expect(

@@ -1,6 +1,5 @@
 import SwiftUI
 import AppKit
-import ACPKit
 import CodevisorCore
 
 /// The tabs the session inspector can show. Add cases here as new panels
@@ -28,8 +27,8 @@ enum SessionInspectorTab: String, CaseIterable, Identifiable {
 }
 
 /// The session inspector: a segmented control (SF Symbols-inspector style)
-/// switching between panels — session info (usage/cost) and the notes
-/// scratchpad. The selected tab is remembered app-wide, not per session,
+/// switching between the reserved info panel and the notes scratchpad. The
+/// selected tab is remembered app-wide, not per session,
 /// matching how system inspectors behave.
 struct SessionInspectorView: View {
     let controller: SessionController?
@@ -54,7 +53,7 @@ struct SessionInspectorView: View {
 
             switch selectedTab.wrappedValue {
             case .info:
-                SessionInfoPanel(usage: controller?.usage)
+                EmptyView()
             case .notes:
                 ScratchpadNotesView(model: scratchpad)
             }
@@ -127,58 +126,12 @@ private struct InspectorTabPicker: NSViewRepresentable {
     }
 }
 
-/// The Info panel: the session's reported token usage and cost. Values come
-/// from the agent's `usage_update` (same source as the composer's usage
-/// ring); until one arrives there is nothing to show.
-struct SessionInfoPanel: View {
-    var usage: SessionUsage?
-
-    var body: some View {
-        if let usage, usage.used != nil || usage.cost != nil {
-            Form {
-                if let cost = usage.cost {
-                    LabeledContent("Cost", value: UsageFormatting.formatCost(cost))
-                }
-                if let used = usage.used {
-                    LabeledContent("Tokens", value: UsageFormatting.formatTokens(used, size: usage.size))
-                    if let size = usage.size, size > 0 {
-                        LabeledContent(
-                            "Context",
-                            value: String(format: "%.0f%% used", min(Double(used) / Double(size), 1) * 100)
-                        )
-                    }
-                }
-            }
-            .formStyle(.grouped)
-            .scrollContentBackground(.hidden)
-        } else {
-            ContentUnavailableView(
-                "No Usage Yet",
-                systemImage: "chart.pie",
-                description: Text("Token usage and cost appear once the agent reports them.")
-            )
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
-    }
-}
-
 #Preview("Inspector") {
     SessionInspectorView(
         controller: nil,
         scratchpad: ScratchpadModel(
             sessionId: UUID(),
             repository: DefaultScratchpadRepository(store: InMemoryStore())
-        )
-    )
-    .frame(width: 300, height: 480)
-}
-
-#Preview("Info panel with usage") {
-    SessionInfoPanel(
-        usage: SessionUsage(
-            used: 18_432,
-            size: 200_000,
-            cost: SessionCost(amount: 0.0142, currency: "USD")
         )
     )
     .frame(width: 300, height: 480)

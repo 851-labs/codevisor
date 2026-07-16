@@ -284,6 +284,13 @@ final class SessionController {
         model?.errorRequiresHarnessAuthentication == true
     }
     var usage: SessionUsage? { model?.usage }
+    var usageLimits: ServerHarnessUsageLimits? { model?.usageLimits }
+    var isLoadingUsageLimits: Bool { model?.isLoadingUsageLimits == true }
+    var usageLimitsError: String? { model?.usageLimitsError }
+
+    func loadUsageLimits(force: Bool = false) async {
+        await model?.loadUsageLimits(force: force)
+    }
 
     func loadOlderHistory() async {
         await model?.loadOlderHistory()

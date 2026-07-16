@@ -66,6 +66,9 @@ public final class SessionModel {
     }
     /// Latest context-window + cost usage reported by the agent (`usage_update`).
     public private(set) var usage: SessionUsage?
+    public private(set) var usageLimits: ServerHarnessUsageLimits?
+    public private(set) var isLoadingUsageLimits = false
+    public private(set) var usageLimitsError: String?
     /// Background tasks the agent is running (backgrounded shells, subagents),
     /// replaced wholesale on every server snapshot. Non-empty after a turn ends
     /// means the agent will come back on its own once the work settles.
@@ -513,6 +516,9 @@ public final class SessionModel {
             olderHistoryCursor = page.nextBefore
             hasOlderHistory = page.hasMore
             setConversation(page.conversation)
+            if let persistedUsage = page.usage {
+                usage = persistedUsage
+            }
             pendingQuestion = page.pendingQuestion
             if let tasks = page.backgroundTasks {
                 backgroundTasks = tasks
@@ -541,6 +547,18 @@ public final class SessionModel {
         }
 
         await loadLegacyHistory()
+    }
+
+    public func loadUsageLimits(force: Bool = false) async {
+        if isLoadingUsageLimits || (!force && usageLimits != nil) { return }
+        isLoadingUsageLimits = true
+        usageLimitsError = nil
+        defer { isLoadingUsageLimits = false }
+        do {
+            usageLimits = try await transport.usageLimits()
+        } catch {
+            usageLimitsError = serverErrorMessage(error)
+        }
     }
 
     private func loadLegacyHistory() async {
