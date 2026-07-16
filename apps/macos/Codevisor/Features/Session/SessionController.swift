@@ -210,7 +210,9 @@ final class SessionController {
     private var hasSentFirst = false
     private var connectedHarnessId: String?
     /// Config changes made before connecting, applied once the agent connects.
-    private var pendingConfig: [String: String] = [:]
+    /// Keep these scoped to their harness so switching away and back does not
+    /// discard that harness's model, thinking, or speed selection.
+    private var pendingConfigByHarness: [String: [String: String]] = [:]
     private var pendingModeId: String?
     /// The user's requested plan state while the harness/server transition is
     /// in flight. Keeping this separate from the authoritative session state
@@ -627,6 +629,7 @@ final class SessionController {
     var configOptions: [SessionConfigOption] {
         if let model { return model.configOptions }
         guard let harnessId = selectedHarnessId else { return [] }
+        let pendingConfig = pendingConfigByHarness[harnessId] ?? [:]
         return (configOptionsByHarness[harnessId]
             ?? configCache.options(forHarness: harnessId, onServer: project.serverId)).map { option in
             guard let pending = pendingConfig[option.id] else { return option }
@@ -694,8 +697,8 @@ final class SessionController {
             }
         } else {
             // Not connected yet: remember it and apply on connect.
-            pendingConfig[configId] = value
             if let harnessId = selectedHarnessId {
+                pendingConfigByHarness[harnessId, default: [:]][configId] = value
                 var options = configOptionsByHarness[harnessId]
                     ?? configCache.options(forHarness: harnessId, onServer: project.serverId)
                 if let index = options.firstIndex(where: { $0.id == configId }) {
@@ -740,14 +743,23 @@ final class SessionController {
         var options = configOptionsByHarness[harnessId]
             ?? configCache.options(forHarness: harnessId, onServer: project.serverId)
         guard !options.isEmpty else {
-            pendingConfig.merge(remembered) { _, stored in stored }
+            pendingConfigByHarness[harnessId, default: [:]].merge(remembered) { current, _ in current }
             return
         }
         for (configId, value) in remembered {
-            guard let index = options.firstIndex(where: { $0.id == configId }),
-                  options[index].options.contains(where: { $0.value == value }) else { continue }
-            pendingConfig[configId] = value
-            options[index].currentValue = value
+            // A speed option can be absent until its remembered model is
+            // restored. Keep it queued and validate it against the live agent
+            // after the model change makes the option available.
+            guard let index = options.firstIndex(where: { $0.id == configId }) else {
+                if configId == "speed" {
+                    pendingConfigByHarness[harnessId, default: [:]][configId] = value
+                }
+                continue
+            }
+            guard options[index].options.contains(where: { $0.value == value }) else { continue }
+            let selectedValue = pendingConfigByHarness[harnessId]?[configId] ?? value
+            pendingConfigByHarness[harnessId, default: [:]][configId] = selectedValue
+            options[index].currentValue = selectedValue
         }
         configOptionsByHarness[harnessId] = options
     }
@@ -1041,7 +1053,6 @@ final class SessionController {
         if isDraft {
             // Start the new harness from its own remembered selections rather
             // than pending edits made under the previous harness.
-            pendingConfig.removeAll()
             seedRememberedConfig()
         }
         if var serverSession {
@@ -1510,10 +1521,33 @@ final class SessionController {
         }
         pendingModeId = nil
 
-        for (configId, value) in pendingConfig {
+        // Model changes can replace the model-specific thinking and speed
+        // options. Apply dependent selections afterward so a remembered fast
+        // tier is available by the time it is restored.
+        let pendingConfig = pendingConfigByHarness[harness.id] ?? [:]
+        let optionCategories = Dictionary(
+            uniqueKeysWithValues: model.configOptions.map { ($0.id, $0.category ?? "") }
+        )
+        let categoryOrder = [
+            SessionConfigOption.Category.model: 0,
+            SessionConfigOption.Category.thoughtLevel: 1,
+            SessionConfigOption.Category.speed: 2
+        ]
+        let orderedPendingConfig = pendingConfig.sorted { left, right in
+            func priority(_ configId: String) -> Int {
+                if configId == "model" { return 0 }
+                if configId == "speed" { return 2 }
+                return categoryOrder[optionCategories[configId] ?? ""] ?? 99
+            }
+            let leftPriority = priority(left.key)
+            let rightPriority = priority(right.key)
+            if leftPriority == rightPriority { return left.key < right.key }
+            return leftPriority < rightPriority
+        }
+        for (configId, value) in orderedPendingConfig {
             await model.setConfigOption(configId: configId, value: value)
         }
-        pendingConfig.removeAll()
+        pendingConfigByHarness[harness.id] = nil
 
         await applyPendingGoal(to: model)
 
