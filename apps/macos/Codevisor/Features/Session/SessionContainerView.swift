@@ -137,11 +137,15 @@ struct SessionContainerView: View {
                     }
                 }
                 // Toolbar content inside the inspector lands in the
-                // inspector's section of the window toolbar; the spacer pins
-                // the toggle to the window's trailing edge.
+                // inspector's section of the window toolbar. Use the native
+                // toolbar spacer (not a view-layout Spacer) so the toggle stays
+                // at the window's trailing edge without forcing the title and
+                // button into overflow.
                 .toolbar {
-                    Spacer()
-                    scratchpadToggleButton
+                    ToolbarSpacer(.flexible)
+                    ToolbarItem(placement: .primaryAction) {
+                        scratchpadToggleButton
+                    }
                 }
         }
         .overlay {
