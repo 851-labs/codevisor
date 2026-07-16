@@ -607,6 +607,13 @@ struct OnboardingView: View {
             step = .harnesses
         case .harnesses:
             step = .project
+            // The catalog is already loaded, so make the first new-chat picker
+            // available immediately. The capability warm below replaces this
+            // provisional seed with model/mode metadata when it finishes.
+            environment.configCache.seedHarnesses(
+                harnesses,
+                forServer: environment.machines.selectedMachineId
+            )
             // Capability inspection starts agents to discover models/modes and
             // can take a few seconds. Hide that latency behind project choice;
             // onboarding remains interactive and never waits on this warm.

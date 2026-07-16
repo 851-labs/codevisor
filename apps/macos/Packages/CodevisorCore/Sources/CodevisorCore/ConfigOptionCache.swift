@@ -12,6 +12,10 @@ public final class ConfigOptionCache {
     private let capabilitiesKey: String
     private var cache: [String: [String: [SessionConfigOption]]]
     private var capabilitiesCache: [String: [ServerHarnessCapability]]
+    /// In-memory catalog-only seeds used to make the first composer render
+    /// immediately. They are intentionally not persisted and may be replaced
+    /// by the speculative onboarding warm.
+    private var provisionalCapabilityServers: Set<String> = []
 
     public init(store: any PersistenceStore, key: String = "harness-config") {
         self.store = store
@@ -46,7 +50,34 @@ public final class ConfigOptionCache {
         capabilitiesCache[serverId] ?? []
     }
 
+    /// Seeds the picker from a harness catalog that is already on screen. The
+    /// expensive model/mode inspection can then fill in the rest in the
+    /// background without making new chat wait on an empty cache.
+    public func seedHarnesses(_ harnesses: [ServerHarness], forServer serverId: String) {
+        guard capabilitiesCache[serverId] == nil || provisionalCapabilityServers.contains(serverId) else {
+            return
+        }
+        let capabilities = harnesses
+            .filter { $0.enabled && $0.isReady }
+            .map {
+                ServerHarnessCapability(
+                    harness: $0,
+                    modes: nil,
+                    configOptions: [],
+                    supportsGoals: nil
+                )
+            }
+        guard !capabilities.isEmpty else { return }
+        capabilitiesCache[serverId] = capabilities
+        provisionalCapabilityServers.insert(serverId)
+    }
+
+    public func needsCapabilityWarm(forServer serverId: String) -> Bool {
+        capabilitiesCache[serverId] == nil || provisionalCapabilityServers.contains(serverId)
+    }
+
     public func store(_ capabilities: [ServerHarnessCapability], forServer serverId: String) {
+        provisionalCapabilityServers.remove(serverId)
         capabilitiesCache[serverId] = capabilities
         for capability in capabilities {
             cache[serverId, default: [:]][capability.harness.id] = capability.configOptions
@@ -59,7 +90,9 @@ public final class ConfigOptionCache {
     /// if it wins the race, a generic onboarding warm must not overwrite it.
     @discardableResult
     public func storeIfEmpty(_ capabilities: [ServerHarnessCapability], forServer serverId: String) -> Bool {
-        guard capabilitiesCache[serverId] == nil else { return false }
+        guard capabilitiesCache[serverId] == nil || provisionalCapabilityServers.contains(serverId) else {
+            return false
+        }
         store(capabilities, forServer: serverId)
         return true
     }
@@ -68,6 +101,7 @@ public final class ConfigOptionCache {
     public func clear() {
         cache = [:]
         capabilitiesCache = [:]
+        provisionalCapabilityServers = []
         persist()
     }
 

@@ -90,6 +90,34 @@ struct ConfigOptionCacheTests {
         #expect(cache.capabilities(forServer: "local").first?.configOptions.first?.currentValue == "project")
     }
 
+    @Test("Catalog seed renders immediately and is replaced by the capability warm")
+    func provisionalCatalogSeed() {
+        let cache = ConfigOptionCache(store: InMemoryStore())
+        let catalogHarness = capability(model: "unused").harness
+
+        cache.seedHarnesses([catalogHarness], forServer: "local")
+
+        #expect(cache.capabilities(forServer: "local").map(\.harness.id) == ["codex"])
+        #expect(cache.capabilities(forServer: "local").first?.configOptions.isEmpty == true)
+        #expect(cache.needsCapabilityWarm(forServer: "local"))
+
+        #expect(cache.storeIfEmpty([capability(model: "warm")], forServer: "local"))
+        #expect(!cache.needsCapabilityWarm(forServer: "local"))
+        #expect(cache.capabilities(forServer: "local").first?.configOptions.first?.currentValue == "warm")
+    }
+
+    @Test("Catalog seed cannot replace a newer project-specific snapshot")
+    func provisionalCatalogSeedPreservesNewerSnapshot() {
+        let cache = ConfigOptionCache(store: InMemoryStore())
+        let projectSpecific = capability(model: "project")
+        cache.store([projectSpecific], forServer: "local")
+
+        cache.seedHarnesses([projectSpecific.harness], forServer: "local")
+
+        #expect(!cache.needsCapabilityWarm(forServer: "local"))
+        #expect(cache.capabilities(forServer: "local").first?.configOptions.first?.currentValue == "project")
+    }
+
     private func capability(model: String) -> ServerHarnessCapability {
         ServerHarnessCapability(
             harness: ServerHarness(

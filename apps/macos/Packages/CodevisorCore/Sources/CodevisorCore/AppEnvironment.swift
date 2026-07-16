@@ -147,7 +147,7 @@ public final class AppEnvironment {
     /// onboarding flow. The composer still refreshes against its real cwd.
     public func warmHarnessCapabilities() async {
         let serverId = machines.selectedMachineId
-        guard configCache.capabilities(forServer: serverId).isEmpty else { return }
+        guard configCache.needsCapabilityWarm(forServer: serverId) else { return }
         let client = machines.client(for: serverId)
         do {
             let response = try await client.capabilities(
