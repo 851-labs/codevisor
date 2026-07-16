@@ -378,6 +378,54 @@ describe("@codevisor/agent-runtime", () => {
     await expect(run(runtime.listAgentSessions("nope"))).rejects.toThrow("Unknown harness: nope")
   })
 
+  it("reads provider usage limits and reports unsupported harnesses", async () => {
+    const account = {
+      id: "account-1",
+      profileKind: "managed" as const,
+      env: { TEST_PROFILE: "account-1" }
+    }
+    const runtime = makeAgentRuntime({
+      providers: {
+        claude: {
+          id: "claude",
+          readiness: () => ({ state: "ready" }),
+          createSession: () => Effect.die("unused"),
+          loadSession: () => Effect.die("unused"),
+          readUsageLimits: (definition, cwd, receivedAccount) =>
+            Effect.succeed({
+              accountId: receivedAccount?.id,
+              fetchedAt: "2026-07-15T00:00:00.000Z",
+              harnessId: definition.id,
+              state: "available" as const,
+              windows: [{ id: "five-hour", label: cwd, usedPercent: 25 }]
+            })
+        }
+      }
+    })
+
+    await expect(
+      run(runtime.readHarnessUsageLimits("claude-code", "/tmp/project", account))
+    ).resolves.toEqual({
+      accountId: "account-1",
+      fetchedAt: "2026-07-15T00:00:00.000Z",
+      harnessId: "claude-code",
+      state: "available",
+      windows: [{ id: "five-hour", label: "/tmp/project", usedPercent: 25 }]
+    })
+    await expect(
+      run(runtime.readHarnessUsageLimits("gemini", "/tmp/project"))
+    ).resolves.toMatchObject({
+      detail: "This harness does not expose account usage limits.",
+      harnessId: "gemini",
+      state: "unavailable",
+      windows: []
+    })
+    await expect(run(runtime.readHarnessUsageLimits("nope", "/tmp/project"))).rejects.toThrow(
+      "Unknown harness: nope"
+    )
+    await expect(run(runtime.listAgentSessions("claude-code"))).resolves.toEqual([])
+  })
+
   it("propagates resolveEnv failures as runtime errors and recovers", async () => {
     let attempts = 0
     const runtime = makeAgentRuntime({

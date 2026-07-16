@@ -430,8 +430,17 @@ describe("@codevisor/db", () => {
         inputTokens: 1_200,
         cachedInputTokens: 800,
         outputTokens: 300,
+        reasoningOutputTokens: 100,
         totalTokens: 2_300,
         cost: { amount: 0.42, currency: "USD", kind: "reported" }
+      })
+    )
+
+    // Malformed optional fields must not erase the last valid projection.
+    await run(
+      db.appendEvent("session.output", session.id, {
+        sessionUpdate: "usage_update",
+        cost: { amount: "unknown", currency: 42, kind: "unknown" }
       })
     )
 
@@ -439,6 +448,7 @@ describe("@codevisor/db", () => {
       inputTokens: 1_200,
       cachedInputTokens: 800,
       outputTokens: 300,
+      reasoningOutputTokens: 100,
       totalTokens: 2_300,
       costAmount: 0.42,
       costCurrency: "USD",

@@ -2103,6 +2103,15 @@ describe("@codevisor/server", () => {
     expect((await jsonRequest(server, `/v1/sessions/${session.id}`)).body).toMatchObject({
       session: { title: "Harness-generated title" }
     })
+    // Repeating the current harness title is an idempotent no-op.
+    await agents.emit(session.agentSessionId, {
+      kind: "session.updated",
+      subjectId: session.agentSessionId,
+      payload: {
+        sessionUpdate: "session_info_update",
+        title: "Harness-generated title"
+      }
+    })
     // A missing/blank harness title keeps the existing first-prompt fallback.
     await agents.emit(session.agentSessionId, {
       kind: "session.updated",
@@ -3892,6 +3901,120 @@ describe("@codevisor/server", () => {
     projectedServerId = "server-without-location"
     expect(await jsonRequest(server, `/v1/sessions/${session.id}/branch-diff`)).toEqual({
       body: null,
+      status: 200
+    })
+  })
+
+  it("reports session harness usage limits with workspace and account context", async () => {
+    const { services } = await makeServices("server-a")
+    const project = await run(services.db.createProject({ folderPath: "/tmp" }))
+    const session = await run(
+      services.db.createSession({ projectId: project.id, harnessId: "codex" })
+    )
+    const { cwd: _cwd, ...withoutCwd } = session
+    let projectedSession = session
+    const readHarnessUsageLimits = vi.fn((harnessId: string, cwd: string) =>
+      Effect.succeed({
+        fetchedAt: "2026-07-15T00:00:00.000Z",
+        harnessId,
+        state: "available" as const,
+        windows: [{ id: "five-hour", label: cwd, usedPercent: 25 }]
+      })
+    )
+    const routeServices = {
+      ...services,
+      agents: { ...services.agents, readHarnessUsageLimits },
+      db: {
+        ...services.db,
+        getSessionSummary: (id: string) =>
+          id === session.id ? Effect.succeed(projectedSession) : services.db.getSessionSummary(id)
+      }
+    }
+    const server = await startWithApp(routeServices)
+    runningServers.push(server)
+
+    expect(await jsonRequest(server, `/v1/sessions/${session.id}/usage-limits`)).toMatchObject({
+      body: {
+        harnessId: "codex",
+        state: "available",
+        windows: [{ label: "/tmp" }]
+      },
+      status: 200
+    })
+    expect((await jsonRequest(server, "/v1/sessions/missing/usage-limits")).status).toBe(404)
+
+    const accounts = [
+      {
+        id: "other-account",
+        harnessId: "codex",
+        profileKind: "default" as const,
+        label: "Other",
+        authState: "authenticated" as const,
+        isActive: false,
+        canLogin: true,
+        canLogout: true
+      },
+      {
+        id: "active-account",
+        harnessId: "codex",
+        profileKind: "default" as const,
+        label: "Active",
+        email: "active@example.com",
+        authState: "authenticated" as const,
+        isActive: true,
+        canLogin: true,
+        canLogout: true
+      }
+    ]
+    const auth = {
+      accounts: vi.fn(async () => accounts),
+      accountContext: vi.fn(async (id: string) => ({ id, profileKind: "default" as const })),
+      activeAccountContext: vi.fn(async () => ({
+        id: "active-account",
+        profileKind: "default" as const
+      })),
+      subscribe: () => () => undefined
+    } as unknown as HarnessAuthManager
+    const authenticatedServer = await startWithApp({ ...routeServices, auth })
+    runningServers.push(authenticatedServer)
+
+    projectedSession = { ...withoutCwd, serverId: "server-a" }
+    expect(
+      await jsonRequest(authenticatedServer, `/v1/sessions/${session.id}/usage-limits`)
+    ).toMatchObject({
+      body: {
+        accountEmail: "active@example.com",
+        accountId: "active-account",
+        accountLabel: "Active",
+        state: "available"
+      },
+      status: 200
+    })
+    expect(auth.activeAccountContext).toHaveBeenCalledWith("codex")
+
+    projectedSession = {
+      ...withoutCwd,
+      harnessAccountId: "explicit-account",
+      serverId: "server-a"
+    }
+    expect(
+      await jsonRequest(authenticatedServer, `/v1/sessions/${session.id}/usage-limits`)
+    ).toMatchObject({
+      body: { accountId: "explicit-account", state: "available" },
+      status: 200
+    })
+    expect(auth.accountContext).toHaveBeenCalledWith("explicit-account")
+
+    projectedSession = { ...withoutCwd, serverId: "remote-server" }
+    expect(
+      await jsonRequest(authenticatedServer, `/v1/sessions/${session.id}/usage-limits`)
+    ).toMatchObject({
+      body: {
+        detail: "This session has no local workspace from which to query its harness.",
+        harnessId: "codex",
+        state: "unavailable",
+        windows: []
+      },
       status: 200
     })
   })
