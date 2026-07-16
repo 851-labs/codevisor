@@ -128,6 +128,69 @@ describe("@codevisor/terminal", () => {
     expect(existsSync(join(terminfoDirectory!, "67", "ghostty"))).toBe(true)
   })
 
+  it("prefers an executable SHELL from the manager environment", async () => {
+    const spawner = makeSpawner()
+    const manager = makeTerminalManager({
+      env: { SHELL: "/bin/zsh" },
+      executableExists: () => true,
+      userShell: () => "/bin/bash",
+      spawner
+    })
+
+    await run(
+      manager.createTerminal({
+        sessionId: "session-env-shell",
+        cwd: "/tmp/project",
+        cols: 80,
+        rows: 24
+      })
+    )
+
+    expect(spawner.requests[0]?.shell).toBe("/bin/zsh")
+  })
+
+  it("uses the passwd shell when a service environment has no SHELL", async () => {
+    const spawner = makeSpawner()
+    const manager = makeTerminalManager({
+      env: {},
+      executableExists: (path) => path === "/usr/bin/fish",
+      userShell: () => "/usr/bin/fish",
+      spawner
+    })
+
+    await run(
+      manager.createTerminal({
+        sessionId: "session-passwd-shell",
+        cwd: "/tmp/project",
+        cols: 80,
+        rows: 24
+      })
+    )
+
+    expect(spawner.requests[0]?.shell).toBe("/usr/bin/fish")
+  })
+
+  it("skips unusable discovered shells and falls back to /bin/sh", async () => {
+    const spawner = makeSpawner()
+    const manager = makeTerminalManager({
+      env: { SHELL: "/missing/env-shell" },
+      executableExists: () => false,
+      userShell: () => "/missing/passwd-shell",
+      spawner
+    })
+
+    await run(
+      manager.createTerminal({
+        sessionId: "session-fallback-shell",
+        cwd: "/tmp/project",
+        cols: 80,
+        rows: 24
+      })
+    )
+
+    expect(spawner.requests[0]?.shell).toBe("/bin/sh")
+  })
+
   it("buffers early process frames and rejects input after an early exit", async () => {
     const spawner = makeSpawner((_request, handlers) => {
       handlers.onOutput("booting")

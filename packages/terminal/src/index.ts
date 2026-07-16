@@ -5,6 +5,8 @@ import type {
   TerminalServerFrame
 } from "@codevisor/api"
 import { randomUUID } from "node:crypto"
+import { accessSync, constants } from "node:fs"
+import { userInfo } from "node:os"
 import { fileURLToPath } from "node:url"
 import { Context, Effect, Layer, Schema } from "effect"
 
@@ -40,6 +42,12 @@ export interface TerminalManagerConfig {
   readonly defaultShell?: string
   readonly env?: NodeJS.ProcessEnv
   readonly spawner?: TerminalSpawner
+  /// The effective user's passwd-database shell. Injectable so service-style
+  /// environments with no SHELL can be covered without depending on the test
+  /// runner's account.
+  readonly userShell?: () => string | undefined
+  /// Executability check for automatically discovered shell candidates.
+  readonly executableExists?: (path: string) => boolean
   /// Override for tests or alternate packages. Production uses the Ghostty
   /// terminfo database shipped beside this package's compiled JavaScript.
   readonly terminfoDirectory?: string
@@ -74,6 +82,39 @@ const GHOSTTY_TERM = "xterm-ghostty"
 const BUNDLED_GHOSTTY_TERMINFO_DIRECTORY = fileURLToPath(
   new URL("../resources/terminfo", import.meta.url)
 )
+
+const executableExists = (path: string): boolean => {
+  try {
+    accessSync(path, constants.X_OK)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/* v8 ignore start -- the failure branches depend on the host account database. */
+const userShellFromPasswd = (): string | undefined => {
+  try {
+    const shell = userInfo().shell
+    return shell === null || shell === "" ? undefined : shell
+  } catch {
+    return undefined
+  }
+}
+/* v8 ignore stop */
+
+const resolveDefaultShell = (config: TerminalManagerConfig, env: NodeJS.ProcessEnv): string => {
+  if (config.defaultShell !== undefined) return config.defaultShell
+
+  const canExecute = config.executableExists ?? executableExists
+  const candidates = [env.SHELL, (config.userShell ?? userShellFromPasswd)()]
+  for (const candidate of candidates) {
+    if (candidate !== undefined && candidate !== "" && canExecute(candidate)) {
+      return candidate
+    }
+  }
+  return "/bin/sh"
+}
 
 export interface TerminalManagerService {
   readonly createTerminal: (
@@ -144,8 +185,7 @@ export const makeTerminalManager = (config: TerminalManagerConfig = {}): Termina
   const spawner = config.spawner ?? nodePtySpawner
   const env = config.env ?? process.env
   const terminfoDirectory = config.terminfoDirectory ?? BUNDLED_GHOSTTY_TERMINFO_DIRECTORY
-  /* v8 ignore next -- the final fallback depends on host SHELL environment state. */
-  const defaultShell = config.defaultShell ?? process.env.SHELL ?? "/bin/sh"
+  const defaultShell = resolveDefaultShell(config, env)
 
   const pushFrame = (
     terminal: RunningTerminal,
