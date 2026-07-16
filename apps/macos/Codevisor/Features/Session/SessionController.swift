@@ -330,6 +330,11 @@ final class SessionController {
     /// keeps the normal composer look.
     var isGoalEditing = false
 
+    /// Editing an existing goal temporarily replaces the visible chat draft.
+    /// Keep the draft here so cancelling or finishing the edit cannot destroy
+    /// text the user had already composed.
+    private var composerTextBeforeGoalEdit: String?
+
     /// A goal captured before the session connected, applied on connect.
     private var pendingGoal: String?
 
@@ -341,17 +346,22 @@ final class SessionController {
         }
     }
 
-    /// Leaves goal mode, dropping the goal draft text (the banner returns).
+    /// Leaves goal mode without mutating an ordinary composer draft. Editing
+    /// an existing goal restores the chat draft that the edit displaced.
     func exitGoalComposer() {
         isGoalComposerArmed = false
         isGoalEditing = false
-        composerText = ""
+        if let composerTextBeforeGoalEdit {
+            composerText = composerTextBeforeGoalEdit
+            self.composerTextBeforeGoalEdit = nil
+        }
     }
 
     /// Loads the current goal into the composer in edit mode — submitting
     /// replaces the objective.
     func editGoal() {
         guard let objective = (goal ?? draftGoal)?.objective else { return }
+        composerTextBeforeGoalEdit = composerText
         composerText = objective
         isGoalComposerArmed = true
         isGoalEditing = true
@@ -364,15 +374,18 @@ final class SessionController {
     func submitGoalFromComposer() async {
         let objective = composerText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !objective.isEmpty, !isConnecting, !isSubmitting else { return }
-        isGoalComposerArmed = false
-        isGoalEditing = false
 
         if let model {
-            composerText = ""
-            await model.setGoal(objective: objective)
+            guard await model.setGoal(objective: objective) else { return }
+            isGoalComposerArmed = false
+            isGoalEditing = false
+            composerText = composerTextBeforeGoalEdit ?? ""
+            composerTextBeforeGoalEdit = nil
             return
         }
 
+        isGoalComposerArmed = false
+        isGoalEditing = false
         pendingGoal = objective
         isSubmitting = true
         let needsWorktree = wantsNewWorktree && sessionCwdOverride == nil
@@ -458,8 +471,9 @@ final class SessionController {
     /// The draft clears only after the live goal is set (no banner gap).
     private func applyPendingGoal(to model: SessionModel) async {
         guard let pendingGoal else { return }
-        await model.setGoal(objective: pendingGoal)
-        self.pendingGoal = nil
+        if await model.setGoal(objective: pendingGoal) {
+            self.pendingGoal = nil
+        }
     }
 
     func pauseGoal() async { await model?.pauseGoal() }

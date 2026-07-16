@@ -448,11 +448,12 @@ public final class SessionModel {
     ///
     /// Starts the event consumer first: a goal-only session (no prompt sent
     /// yet) still streams agent-initiated turns as the goal auto-continues.
+    @discardableResult
     public func setGoal(
         objective: String? = nil,
         status: GoalStatus? = nil,
         tokenBudget: TokenBudgetUpdate = .keep
-    ) async {
+    ) async -> Bool {
         await startConsumer()
         do {
             goal = try await transport.setGoal(
@@ -460,8 +461,10 @@ public final class SessionModel {
                 status: status,
                 tokenBudget: tokenBudget
             )
+            return true
         } catch {
             errorMessage = serverErrorMessage(error)
+            return false
         }
     }
 

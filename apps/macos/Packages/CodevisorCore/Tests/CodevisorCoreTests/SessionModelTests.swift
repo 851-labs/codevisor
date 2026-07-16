@@ -1044,7 +1044,11 @@ struct SessionModelTests {
             sessionId: sessionId.uuidString
         )
 
-        await model.setGoal(objective: "ship goal mode", tokenBudget: .set(50_000))
+        let didSetGoal = await model.setGoal(
+            objective: "ship goal mode",
+            tokenBudget: .set(50_000)
+        )
+        #expect(didSetGoal)
         #expect(model.goal?.objective == "ship goal mode")
         #expect(model.goal?.status == .active)
         #expect(model.goal?.tokenBudget == 50_000)
@@ -1110,7 +1114,8 @@ struct SessionModelTests {
             serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
             sessionId: sessionId.uuidString
         )
-        await model.setGoal(objective: "goal fails")
+        let didSetGoal = await model.setGoal(objective: "goal fails")
+        #expect(!didSetGoal)
         #expect(model.goal == nil)
         #expect(model.errorMessage != nil)
     }

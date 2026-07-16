@@ -290,9 +290,7 @@ export function NewChatScreen({ preferredProjectId }: { preferredProjectId?: str
 
   const exitGoalComposer = () => {
     setIsGoalComposerArmed(false)
-    setText("")
     setError(undefined)
-    composerAttachments.clearAttachments()
   }
 
   const toggleGoalComposer = () => {
@@ -302,7 +300,6 @@ export function NewChatScreen({ preferredProjectId }: { preferredProjectId?: str
     }
     setIsGoalComposerArmed(true)
     setError(undefined)
-    composerAttachments.clearAttachments()
   }
 
   const send = async () => {

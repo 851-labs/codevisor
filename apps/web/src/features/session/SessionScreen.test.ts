@@ -2,12 +2,33 @@ import { describe, expect, it } from "vitest"
 
 import {
   answersImplementPlan,
+  composerTextAfterLeavingGoalMode,
+  composerTextAfterSubmittingGoal,
   formatElapsed,
   formatTokenCount,
   retryPromptForTurn,
   sessionTurnIsRunning,
   waitingBackgroundTaskLabel
 } from "./SessionScreen"
+
+describe("goal composer draft preservation", () => {
+  it("keeps the current text when ordinary goal mode is toggled off", () => {
+    expect(composerTextAfterLeavingGoalMode("Do not lose this draft", undefined)).toBe(
+      "Do not lose this draft"
+    )
+  })
+
+  it("restores the displaced chat draft after editing an existing goal", () => {
+    expect(composerTextAfterLeavingGoalMode("Updated goal", "Unsent follow-up")).toBe(
+      "Unsent follow-up"
+    )
+    expect(composerTextAfterSubmittingGoal("Unsent follow-up")).toBe("Unsent follow-up")
+  })
+
+  it("clears only goal text that was intentionally submitted", () => {
+    expect(composerTextAfterSubmittingGoal(undefined)).toBe("")
+  })
+})
 
 describe("session running state", () => {
   it("includes an optimistic generating turn before the server lifecycle event", () => {

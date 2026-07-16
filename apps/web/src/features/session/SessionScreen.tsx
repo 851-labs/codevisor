@@ -16,7 +16,7 @@ import {
   TriangleAlertIcon,
   XIcon
 } from "lucide-react"
-import { type DragEvent, type ReactNode, useEffect, useMemo, useState } from "react"
+import { type DragEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react"
 
 import { ShimmerText } from "../../components/ShimmerText"
 import { Spinner } from "../../components/ui/spinner"
@@ -92,6 +92,17 @@ export function sessionTurnIsRunning(
   conversation: readonly { isGenerating: boolean }[]
 ): boolean {
   return serverIsRunning || conversation.some((item) => item.isGenerating)
+}
+
+export function composerTextAfterLeavingGoalMode(
+  currentText: string,
+  textBeforeGoalEdit: string | undefined
+) {
+  return textBeforeGoalEdit ?? currentText
+}
+
+export function composerTextAfterSubmittingGoal(textBeforeGoalEdit: string | undefined) {
+  return textBeforeGoalEdit ?? ""
 }
 
 export function retryPromptForTurn(
@@ -183,6 +194,7 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
   const [paneState, setPaneState] = useState(() => loadTerminalPaneState(sessionId))
   const [isGoalComposerArmed, setIsGoalComposerArmed] = useState(false)
   const [isGoalEditing, setIsGoalEditing] = useState(false)
+  const composerTextBeforeGoalEdit = useRef<string | undefined>(undefined)
   const [isTodosExpanded, setIsTodosExpanded] = useTodoExpansionState(sessionId, todosAreCompleted)
   const [isQueueExpanded, setIsQueueExpanded] = useState(true)
   const [dismissedPlanApprovalKey, setDismissedPlanApprovalKey] =
@@ -288,9 +300,17 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
   const exitGoalComposer = () => {
     setIsGoalComposerArmed(false)
     setIsGoalEditing(false)
-    setComposerText("")
+    const nextText = composerTextAfterLeavingGoalMode(
+      composerText,
+      composerTextBeforeGoalEdit.current
+    )
+    if (nextText !== composerText) {
+      setComposerText(nextText)
+    }
+    if (composerTextBeforeGoalEdit.current !== undefined) {
+      composerTextBeforeGoalEdit.current = undefined
+    }
     setComposerError(undefined)
-    composerAttachments.clearAttachments()
   }
 
   const toggleGoalComposer = () => {
@@ -301,16 +321,15 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
     setIsGoalComposerArmed(true)
     setIsGoalEditing(false)
     setComposerError(undefined)
-    composerAttachments.clearAttachments()
   }
 
   const editGoal = () => {
     if (detail?.goal == null) return
+    composerTextBeforeGoalEdit.current = composerText
     setComposerText(detail.goal.objective)
     setIsGoalComposerArmed(true)
     setIsGoalEditing(true)
     setComposerError(undefined)
-    composerAttachments.clearAttachments()
   }
 
   const submitGoal = async () => {
@@ -319,7 +338,8 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
     setComposerError(undefined)
     try {
       await setGoal.mutateAsync({ id: sessionId, objective })
-      setComposerText("")
+      setComposerText(composerTextAfterSubmittingGoal(composerTextBeforeGoalEdit.current))
+      composerTextBeforeGoalEdit.current = undefined
       setIsGoalComposerArmed(false)
       setIsGoalEditing(false)
     } catch (goalError) {
