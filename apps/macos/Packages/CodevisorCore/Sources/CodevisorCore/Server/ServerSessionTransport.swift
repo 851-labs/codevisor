@@ -21,6 +21,17 @@ public struct TranscriptHistoryPage: Equatable, Sendable {
     public var usage: SessionUsage? = nil
 }
 
+public enum SessionTurnInitiator: String, Equatable, Sendable {
+    case user
+    case agent
+}
+
+public enum SessionRuntimeState: String, Equatable, Sendable {
+    case running
+    case idle
+    case requiresAction = "requires_action"
+}
+
 public enum ServerSessionStreamEvent: Equatable, Sendable {
     case update(SessionUpdate)
     /// A persisted user message. Carried outside `SessionUpdate` because the
@@ -30,7 +41,12 @@ public enum ServerSessionStreamEvent: Equatable, Sendable {
     /// A turn ended. `stopDetail` is a short human-readable reason present only
     /// when the ending was abnormal (error / limit / refusal / gave-up
     /// truncation); the client renders it as a per-turn line.
-    case finished(StopReason, stopDetail: String?, retryable: Bool = false)
+    case finished(
+        StopReason,
+        stopDetail: String?,
+        retryable: Bool = false,
+        initiatedBy: SessionTurnInitiator = .user
+    )
     /// A transient failure is being retried; the turn stays alive. Drives the
     /// visible reconnecting status, with progress when the harness provides it.
     case retrying(RetryStatus)
@@ -41,6 +57,9 @@ public enum ServerSessionStreamEvent: Equatable, Sendable {
     /// Full replace-on-update snapshot of the agent's in-flight background
     /// tasks (backgrounded shells, subagents). Empty means none pending.
     case backgroundTasks([BackgroundTaskInfo])
+    /// Claude's main turn-loop state. `idle` is paired with the background-task
+    /// snapshot; detached terminal processes do not prevent quiescence.
+    case runtimeState(SessionRuntimeState)
 }
 
 /// One in-flight background task owned by the agent process, from the
@@ -391,11 +410,17 @@ public struct ServerSessionTransport: Sendable {
                 return [.finished(
                     stopReason,
                     stopDetail: event.payload["stopDetail"]?.stringValue,
-                    retryable: event.payload["retryable"]?.boolValue == true
+                    retryable: event.payload["retryable"]?.boolValue == true,
+                    initiatedBy: event.payload["initiatedBy"]?.stringValue
+                        .flatMap(SessionTurnInitiator.init(rawValue:)) ?? .user
                 )]
             }
             if let tasks = backgroundTasks(from: event.payload) {
                 return [.backgroundTasks(tasks)]
+            }
+            if let state = event.payload["runtimeState"]?.stringValue
+                .flatMap(SessionRuntimeState.init(rawValue:)) {
+                return [.runtimeState(state)]
             }
             return metadataUpdates(from: event.payload).map(ServerSessionStreamEvent.update)
         case "session.error":

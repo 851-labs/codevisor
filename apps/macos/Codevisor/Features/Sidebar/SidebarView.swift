@@ -33,6 +33,7 @@ private enum SidebarOrder: String, CaseIterable {
 /// State groups used ahead of recency when the sidebar is ordered by last
 /// updated. Lower values appear first.
 private enum SidebarSessionPriority: Int {
+    case errored
     case waitingForUser
     case unread
     case inProgress
@@ -764,7 +765,10 @@ struct SidebarView: View {
 
     @ViewBuilder
     private func sessionStatus(_ session: ChatSession, isHovered: Bool) -> some View {
-        if store?.isWaitingOnUser(session) == true {
+        if store?.hasUnreadError(session) == true {
+            ErrorUnreadBadge(color: theme.statusError)
+                .frame(width: 24, height: 14, alignment: .trailing)
+        } else if store?.isWaitingOnUser(session) == true {
             // A blocking question is actionable rather than unread or busy.
             // Keep it inline where the row's notification indicator lives.
             ActionRequiredBadge(color: notificationColor)
@@ -841,6 +845,7 @@ struct SidebarView: View {
     }
 
     private func sessionPriority(for session: ChatSession) -> SidebarSessionPriority {
+        if store?.hasUnreadError(session) == true { return .errored }
         if store?.isWaitingOnUser(session) == true { return .waitingForUser }
         if unreadCount(for: session) != nil { return .unread }
         if store?.isInProgress(session) == true { return .inProgress }
@@ -1069,6 +1074,19 @@ private struct UnreadBadge: View {
         Circle()
             .fill(color)
             .frame(width: 8, height: 8)
+    }
+}
+
+/// Higher-priority unread marker for an activity epoch that ended abnormally.
+private struct ErrorUnreadBadge: View {
+    let color: Color
+
+    var body: some View {
+        Circle()
+            .fill(color)
+            .frame(width: 8, height: 8)
+            .accessibilityLabel("Unread chat error")
+            .help("This chat ended with an error")
     }
 }
 

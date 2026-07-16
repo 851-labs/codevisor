@@ -40,9 +40,16 @@ final class SessionStore {
     /// the server client it was created with, so reusing a draft after a
     /// machine switch can send the new machine's project id to the old server.
     private var draftsByServer: [String: SessionController] = [:]
-    /// Turns that finished while their session wasn't open, keyed by session
+    /// Completed activity epochs whose session wasn't open, keyed by session
     /// id — the sidebar's iOS-style unread badges. Cleared on open.
     private var unreadCounts: [SessionKey: Int] = [:]
+    /// Unread sessions whose completed activity epoch ended abnormally. Kept
+    /// beside the count so controller eviction cannot erase the red indicator.
+    private var unreadErrors: Set<SessionKey> = []
+    /// One deferred attention outcome per user-created activity epoch. Agent
+    /// follow-ups merge into it; only stable quiescence consumes it, preventing
+    /// one alert per Claude background-task notification.
+    private var pendingAttentionErrors: [SessionKey: Bool] = [:]
     /// Invalidates views that observe aggregate activity across the cached
     /// controllers. A turn can finish without otherwise mutating this store
     /// (most notably when its session is open), so nested controller
@@ -115,6 +122,8 @@ final class SessionStore {
             self?.todoCompletionStates[key] = isCompleted
         }
         controller.onTurnEnded = { [weak self] in self?.noteTurnEnded(for: key) }
+        controller.onRuntimeStateChanged = { [weak self] in self?.noteRuntimeStateChanged(for: key) }
+        controller.onGoalChanged = { [weak self] in self?.noteGoalChanged(for: key) }
         controller.onActionRequired = { [weak self] in self?.noteActionRequired(for: key) }
         controllers[key] = controller
         return controller
@@ -244,6 +253,10 @@ final class SessionStore {
         unreadCounts[SessionKey(session)] ?? 0
     }
 
+    func hasUnreadError(_ session: ChatSession) -> Bool {
+        unreadErrors.contains(SessionKey(session))
+    }
+
     /// Manually flags a session as unread (sidebar context menu). Keeps any
     /// existing turn-finish count rather than resetting it to 1.
     func markUnread(_ session: ChatSession) {
@@ -256,6 +269,7 @@ final class SessionStore {
         let key = SessionKey(serverId: serverId, sessionId: sessionId)
         openSessionKey = key
         unreadCounts[key] = nil
+        unreadErrors.remove(key)
         notificationDelivery.clearNotifications(for: sessionId)
     }
 
@@ -276,15 +290,56 @@ final class SessionStore {
         // local recency stamp at the completion edge instead of waiting for an
         // unrelated metadata refresh to pick up the server's updated value.
         environment.projectList.touchSession(key.sessionId, serverId: key.serverId)
-        // A turn that ends into a "waiting on background work" state isn't the
-        // end of the agent's work — it will start an agent-initiated turn when
-        // the task settles. Hold the unread badge (the spinner covers this via
-        // `isRunning`) until that follow-up turn ends with nothing left waiting.
-        if controllers[key]?.isWaitingOnBackgroundTasks == true { return }
+        guard let controller = controllers[key] else { return }
+
+        let failed = controller.lastTurnEndedWithError || goalNeedsErrorAttention(controller.goal)
+        if controller.lastTurnInitiator == .user {
+            // A human turn starts (or refreshes) the one attention epoch that
+            // all of its autonomous continuations belong to.
+            pendingAttentionErrors[key] = (pendingAttentionErrors[key] ?? false) || failed
+        } else if pendingAttentionErrors[key] != nil {
+            pendingAttentionErrors[key] = (pendingAttentionErrors[key] ?? false) || failed
+        } else if failed {
+            // A late autonomous failure is still important even when its
+            // originating completion was already presented.
+            pendingAttentionErrors[key] = true
+        } else {
+            // Ordinary autonomous/task-notification completions never create a
+            // fresh unread badge or another sound by themselves.
+            return
+        }
+        deliverPendingAttentionIfQuiescent(for: key)
+    }
+
+    private func noteRuntimeStateChanged(for key: SessionKey) {
+        deliverPendingAttentionIfQuiescent(for: key)
+    }
+
+    private func noteGoalChanged(for key: SessionKey) {
+        deliverPendingAttentionIfQuiescent(for: key)
+    }
+
+    private func deliverPendingAttentionIfQuiescent(for key: SessionKey) {
+        guard var failed = pendingAttentionErrors[key], let controller = controllers[key] else { return }
+        // Active goals can contain many individually-ended turns. The epoch is
+        // intentionally held until the goal reaches a terminal status.
+        guard controller.goal?.status != .active else { return }
+        // Subagents/poll-and-resume tasks keep the epoch open. Terminal-backed
+        // work (for example a dev server) is excluded by the controller.
+        guard !controller.isWaitingOnBackgroundTasks, controller.isRuntimeIdle else { return }
+
+        failed = failed || goalNeedsErrorAttention(controller.goal)
+        pendingAttentionErrors[key] = nil
         let kind: ChatAttentionKind = isWaitingOnUser(key) ? .actionRequired : .finished
         deliverNotification(for: key, kind: kind)
         guard key != openSessionKey else { return }
         unreadCounts[key, default: 0] += 1
+        if failed { unreadErrors.insert(key) }
+    }
+
+    private func goalNeedsErrorAttention(_ goal: SessionGoal?) -> Bool {
+        guard let status = goal?.status else { return false }
+        return status == .blocked || status == .usageLimited || status == .budgetLimited
     }
 
     private func noteActionRequired(for key: SessionKey) {
@@ -325,6 +380,8 @@ final class SessionStore {
             self?.todoCompletionStates[key] = isCompleted
         }
         controller.onTurnEnded = { [weak self] in self?.noteTurnEnded(for: key) }
+        controller.onRuntimeStateChanged = { [weak self] in self?.noteRuntimeStateChanged(for: key) }
+        controller.onGoalChanged = { [weak self] in self?.noteGoalChanged(for: key) }
         controller.onActionRequired = { [weak self] in self?.noteActionRequired(for: key) }
         controllers[key] = controller
         if draftsByServer[controller.project.serverId] === controller {
@@ -344,6 +401,8 @@ final class SessionStore {
         scratchpads[key]?.flush()
         scratchpads[key] = nil
         unreadCounts[key] = nil
+        unreadErrors.remove(key)
+        pendingAttentionErrors[key] = nil
         scrollStates[key] = nil
         todoExpansionStates[key] = nil
         todoCompletionStates[key] = nil
@@ -359,6 +418,8 @@ final class SessionStore {
         scratchpads[key]?.flush()
         scratchpads[key] = nil
         unreadCounts[key] = nil
+        unreadErrors.remove(key)
+        pendingAttentionErrors[key] = nil
         scrollStates[key] = nil
         todoExpansionStates[key] = nil
         todoCompletionStates[key] = nil

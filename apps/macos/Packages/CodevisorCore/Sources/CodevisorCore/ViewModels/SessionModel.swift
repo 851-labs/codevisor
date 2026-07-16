@@ -101,6 +101,11 @@ public final class SessionModel {
         !isSending && !waitingBackgroundTasks.isEmpty
     }
 
+    /// Claude's main-loop state. It is deliberately separate from background
+    /// tasks: the SDK may be idle while a detached terminal process continues.
+    public private(set) var runtimeState: SessionRuntimeState = .idle
+    public var isRuntimeIdle: Bool { runtimeState == .idle }
+
     /// Tool-call ids of subagents still running as background tasks, keyed by
     /// the `.agent` tool call that spawned them (the provider stamps the task's
     /// `toolUseId` with the spawning call id). A subagent's turn can end while
@@ -127,10 +132,23 @@ public final class SessionModel {
     /// pinned panel above the composer.
     public private(set) var sessionPlan: Plan?
 
+    /// Metadata for the most recent live turn-end callback. Sidebar attention
+    /// uses this to fold autonomous follow-ups into the user-created activity
+    /// epoch and to retain an unread failure after the controller is idle.
+    public private(set) var lastTurnInitiator: SessionTurnInitiator = .user
+    public private(set) var lastTurnEndedWithError = false
+
     /// Called each time a live turn ends (completed, cancelled, or failed) —
     /// the "chat finished" signal for surfaces outside this screen, like the
     /// sidebar's unread badge. Never fired by history replay.
     public var onTurnEnded: (() -> Void)?
+    /// Fires for every SDK runtime-state edge, including repeated idle barriers.
+    /// Consumers combine idle with the background-task level before declaring
+    /// the overall activity epoch complete.
+    public var onRuntimeStateChanged: (() -> Void)?
+    /// Fires when a live goal snapshot changes. A terminal goal status is an
+    /// attention barrier even when it arrives after the final turn-end event.
+    public var onGoalChanged: (() -> Void)?
     /// Fired when a live agent question first blocks on the user. This is
     /// separate from turn end because question tools pause an in-flight turn.
     /// Never fired while replaying transcript history.
@@ -381,6 +399,8 @@ public final class SessionModel {
             await drain()
             errorMessage = serverErrorMessage(error)
             finish(stopReason: nil, outcome: .failed)
+            lastTurnInitiator = .user
+            lastTurnEndedWithError = true
             endTurn()
         }
     }
@@ -434,6 +454,8 @@ public final class SessionModel {
         isFlushScheduled = false
         await loadHistory()
         if wasSending, !isSending {
+            lastTurnInitiator = .user
+            lastTurnEndedWithError = errorMessage != nil
             onTurnEnded?()
         }
     }
@@ -475,6 +497,7 @@ public final class SessionModel {
                 status: status,
                 tokenBudget: tokenBudget
             )
+            onGoalChanged?()
             return true
         } catch {
             errorMessage = serverErrorMessage(error)
@@ -498,6 +521,7 @@ public final class SessionModel {
         do {
             try await transport.clearGoal()
             goal = nil
+            onGoalChanged?()
         } catch {
             errorMessage = serverErrorMessage(error)
         }
@@ -729,7 +753,7 @@ public final class SessionModel {
                 switch event {
                 case let .update(update):
                     TranscriptReducer.apply(update, to: &turn)
-                case let .finished(reason, detail, retryable):
+                case let .finished(reason, detail, retryable, _):
                     turn.stopReason = reason
                     turn.stopDetail = detail
                     turn.retryable = retryable
@@ -737,7 +761,7 @@ public final class SessionModel {
                 case let .failed(message), let .authenticationRequired(message):
                     turn.stopDetail = message
                     turn.isGenerating = false
-                case .userMessage, .queueUpdated, .retrying, .backgroundTasks:
+                case .userMessage, .queueUpdated, .retrying, .backgroundTasks, .runtimeState:
                     break
                 }
             }
@@ -850,8 +874,10 @@ public final class SessionModel {
             self.usage = usage
         case let .goalUpdate(goal):
             self.goal = goal
+            if !isReplayingHistory { onGoalChanged?() }
         case .goalCleared:
             goal = nil
+            if !isReplayingHistory { onGoalChanged?() }
         case let .question(request):
             let isNewQuestion = pendingQuestion?.questionId != request.questionId
             pendingQuestion = request
@@ -946,22 +972,29 @@ public final class SessionModel {
         case let .userMessage(text, attachments):
             appliedUpdateCount += 1
             appendRemoteUserIfNeeded(text: text, attachments: attachments)
-        case let .finished(stopReason, stopDetail, retryable):
+        case let .finished(stopReason, stopDetail, retryable, initiatedBy):
             finish(
                 stopReason: stopReason,
                 outcome: stopReason == .cancelled ? .cancelled : .completed,
                 stopDetail: stopDetail,
                 retryable: retryable
             )
+            lastTurnInitiator = initiatedBy
+            lastTurnEndedWithError = stopDetail != nil
+                || (stopReason != .endTurn && stopReason != .cancelled)
             endTurn()
         case let .failed(message):
             errorMessage = message
             finish(stopReason: nil, outcome: .failed, stopDetail: nil)
+            lastTurnInitiator = .user
+            lastTurnEndedWithError = true
             endTurn()
         case let .authenticationRequired(message):
             errorMessage = message
             harnessAuthenticationErrorMessage = message
             finish(stopReason: nil, outcome: .failed, stopDetail: nil)
+            lastTurnInitiator = .user
+            lastTurnEndedWithError = true
             endTurn()
         case let .retrying(retry):
             // A transient failure is being retried — the turn is still alive.
@@ -977,6 +1010,9 @@ public final class SessionModel {
         case let .backgroundTasks(tasks):
             backgroundTasks = tasks
             hasBackgroundTaskSnapshot = true
+        case let .runtimeState(state):
+            runtimeState = state
+            onRuntimeStateChanged?()
         }
     }
 

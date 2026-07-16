@@ -734,6 +734,67 @@ describe("ClaudeProvider", () => {
     })
   })
 
+  it("forwards Claude's runtime state as the quiescence barrier", async () => {
+    const fake = new FakeQuery()
+    const provider = makeProvider(fake)
+    const events: Array<RuntimeEvent> = []
+    const createPromise = run(
+      provider.createSession(definition, "/tmp", async (event) => {
+        events.push(event)
+      })
+    )
+    await settle()
+    fake.push(initMessage())
+    await createPromise
+
+    fake.push(systemMessage("session_state_changed", { state: "running" }))
+    fake.push(systemMessage("session_state_changed", { state: "idle" }))
+    await settle()
+
+    const states = events
+      .map((event) => event.payload as Record<string, unknown>)
+      .filter((payload) => payload.runtimeState !== undefined)
+    expect(states).toEqual([{ runtimeState: "running" }, { runtimeState: "idle" }])
+  })
+
+  it("does not end a user turn when a task-notification result interleaves", async () => {
+    const fake = new FakeQuery()
+    const provider = makeProvider(fake)
+    const events: Array<RuntimeEvent> = []
+    const createPromise = run(
+      provider.createSession(definition, "/tmp", async (event) => {
+        events.push(event)
+      })
+    )
+    await settle()
+    fake.push(initMessage())
+    const created = await createPromise
+
+    let promptResolved = false
+    const prompt = run(created.handle.prompt("wait for everything")).then((result) => {
+      promptResolved = true
+      return result
+    })
+    await settle()
+    fake.push({ ...resultMessage(), origin: { kind: "task-notification" } } as never)
+    await settle()
+    expect(promptResolved).toBe(false)
+    expect(
+      events.filter(
+        (event) => (event.payload as Record<string, unknown>).turnState === "ended"
+      )
+    ).toHaveLength(0)
+
+    fake.push(resultMessage())
+    await prompt
+    expect(promptResolved).toBe(true)
+    expect(
+      events.filter(
+        (event) => (event.payload as Record<string, unknown>).turnState === "ended"
+      )
+    ).toHaveLength(1)
+  })
+
   it("renders plan tools as plan updates, never as tool calls", async () => {
     const fake = new FakeQuery()
     const provider = makeProvider(fake)
@@ -1230,8 +1291,9 @@ describe("ClaudeProvider", () => {
     const created = await createPromise
 
     // The /goal turn's successful result marks the goal complete — the SDK
-    // stream has no goal-state messages to relay.
+    // stream has no goal-state snapshots to relay.
     await run(created.handle.setGoal!({ objective: "count to ten" }))
+    fake.push(streamEvent({ message: { id: "msg-goal" }, type: "message_start" }))
     fake.push(resultMessage())
     await settle()
     const completed = events.findLast((event) => {
@@ -1239,6 +1301,11 @@ describe("ClaudeProvider", () => {
       return payload.goal !== undefined
     })?.payload as Record<string, unknown>
     expect(completed.goal).toMatchObject({ objective: "count to ten", status: "complete" })
+    const goalTurn = events.findLast((event) => {
+      const payload = event.payload as Record<string, unknown>
+      return payload.turnState === "ended"
+    })?.payload
+    expect(goalTurn).toMatchObject({ initiatedBy: "user", turnState: "ended" })
 
     // A new goal interrupted mid-run pauses instead (resumable).
     await run(created.handle.setGoal!({ objective: "count to twenty" }))
@@ -1250,6 +1317,37 @@ describe("ClaudeProvider", () => {
       return payload.goal !== undefined
     })?.payload as Record<string, unknown>
     expect(paused.goal).toMatchObject({ objective: "count to twenty", status: "paused" })
+  })
+
+  it("does not settle a goal from a task-notification result", async () => {
+    const fake = new FakeQuery()
+    const provider = makeProvider(fake)
+    const events: Array<RuntimeEvent> = []
+    const createPromise = run(
+      provider.createSession(definition, "/tmp", async (event) => {
+        events.push(event)
+      })
+    )
+    await settle()
+    fake.push(initMessage())
+    const created = await createPromise
+
+    await run(created.handle.setGoal!({ objective: "ship everything" }))
+    fake.push({ ...resultMessage(), origin: { kind: "task-notification" } } as never)
+    await settle()
+    const afterTask = events.findLast((event) => {
+      const payload = event.payload as Record<string, unknown>
+      return payload.goal !== undefined
+    })?.payload as { goal: { status: string } }
+    expect(afterTask.goal.status).toBe("active")
+
+    fake.push(resultMessage())
+    await settle()
+    const afterGoal = events.findLast((event) => {
+      const payload = event.payload as Record<string, unknown>
+      return payload.goal !== undefined
+    })?.payload as { goal: { status: string } }
+    expect(afterGoal.goal.status).toBe("complete")
   })
 
   it("blocks AskUserQuestion on the human's answer and folds it into updatedInput", async () => {
@@ -2359,9 +2457,23 @@ describe("ClaudeProvider", () => {
       }
     ])
 
+    // The SDK's full level snapshot is authoritative, but carries less detail;
+    // reconciliation must preserve Codevisor's terminal classification.
+    fake.push(
+      systemMessage("background_tasks_changed", {
+        tasks: [{ description: "npm run dev", task_id: "bg-9", task_type: "shell" }]
+      })
+    )
+    await settle()
+    expect(snapshots.at(-1)?.[0]).toMatchObject({
+      id: "bg-9",
+      terminalKey: `${sessionKey}:bg:tool-bash-9`,
+      toolUseId: "tool-bash-9"
+    })
+
     // Task completion clears the tool-use → key mapping, so a task reusing
     // the tool use id later gets no stale terminal key.
-    fake.push(systemMessage("task_updated", { patch: { status: "completed" }, task_id: "bg-9" }))
+    fake.push(systemMessage("background_tasks_changed", { tasks: [] }))
     fake.push(
       systemMessage("task_started", {
         description: "npm run dev (again)",

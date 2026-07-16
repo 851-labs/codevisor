@@ -486,6 +486,10 @@ interface ClaudeSession {
   turnId: string
   initiatedBy: "user" | "agent"
   pendingPrompt: Deferred<{ stopReason: string }> | undefined
+  /// Slash commands injected on the user's behalf (currently `/goal`) do not
+  /// have a blocking `pendingPrompt`, but their turns still belong to the
+  /// user's attention epoch rather than to autonomous background activity.
+  pendingUserCommands: number
   interruptRequested: boolean
   /// Silent output-token-truncation continuations in the current turn (capped by
   /// MAX_TRUNCATION_CONTINUATIONS). Reset when a new turn starts.
@@ -530,6 +534,9 @@ interface ClaudeSession {
   /// Cross-turn: background tasks legitimately outlive the turn that spawned
   /// them, so this is never cleared at turn end.
   readonly backgroundTasks: Map<string, BackgroundTaskEntry>
+  /// SDK housekeeping tasks marked `skip_transcript` are absent from the UI
+  /// even when the authoritative level snapshot includes their ids.
+  readonly hiddenBackgroundTaskIds: Set<string>
   /// tool_use id → server terminal key, recorded when the PreToolUse hook
   /// rewrites a background Bash command; consumed by `task_started` to stamp
   /// the task with its attachable terminal.
@@ -798,6 +805,7 @@ export const makeClaudeProvider = (
       accumulators: new Map(),
       backgroundShellKeys: new Map(),
       backgroundTasks: new Map(),
+      hiddenBackgroundTaskIds: new Set(),
       currentEffort: "default",
       currentMessageId: undefined,
       currentMessageTextStreamed: false,
@@ -816,6 +824,7 @@ export const makeClaudeProvider = (
       taskToolUses: new Map(),
       tasks: new Map(),
       pendingPrompt: undefined,
+      pendingUserCommands: 0,
       currentGoal: undefined,
       pendingQuestions: new Map(),
       q,
@@ -1263,7 +1272,7 @@ const handleMessage = (
             session.lastErrorText = apiError
           }
         }
-        void ensureTurnStarted(session, session.pendingPrompt === undefined ? "agent" : "user")
+        void ensureObservedTurnStarted(session)
       }
       const content = message.message.content
       if (!Array.isArray(content)) break
@@ -1419,7 +1428,11 @@ const handleSystemMessage = (
     }
     case "task_started": {
       // Ambient/housekeeping tasks should not make the chat look busy.
-      if (message.skip_transcript === true) break
+      if (message.skip_transcript === true) {
+        session.hiddenBackgroundTaskIds.add(message.task_id)
+        if (removeBackgroundTask(session, message.task_id)) emitBackgroundTasks(session)
+        break
+      }
       const terminalKey =
         message.tool_use_id === undefined
           ? undefined
@@ -1458,9 +1471,12 @@ const handleSystemMessage = (
       break
     }
     case "task_updated": {
+      const status = message.patch.status
+      if (status === "completed" || status === "failed" || status === "killed") {
+        session.hiddenBackgroundTaskIds.delete(message.task_id)
+      }
       const entry = session.backgroundTasks.get(message.task_id)
       if (entry === undefined) break
-      const status = message.patch.status
       if (status === "completed" || status === "failed" || status === "killed") {
         removeBackgroundTask(session, message.task_id)
       } else {
@@ -1471,9 +1487,25 @@ const handleSystemMessage = (
       break
     }
     case "task_notification": {
+      session.hiddenBackgroundTaskIds.delete(message.task_id)
       if (removeBackgroundTask(session, message.task_id)) {
         emitBackgroundTasks(session)
       }
+      break
+    }
+    case "background_tasks_changed": {
+      replaceBackgroundTasks(session, message.tasks)
+      break
+    }
+    case "session_state_changed": {
+      // This is a turn-loop barrier, not proof that detached work has exited:
+      // Claude can be idle while a background process continues. Clients pair
+      // it with the normalized task snapshot and exclude terminal-backed work.
+      void session.emit({
+        kind: "session.updated",
+        payload: { runtimeState: message.state },
+        subjectId: session.key
+      })
       break
     }
     default:
@@ -1487,6 +1519,35 @@ const emitBackgroundTasks = (session: ClaudeSession): void => {
     payload: { backgroundTasks: [...session.backgroundTasks.values()] },
     subjectId: session.key
   })
+}
+
+/// Reconciles the SDK's authoritative full task set while preserving richer
+/// edge metadata such as tool-use attribution and Codevisor's terminal key.
+/// The level signal prevents a missed task edge from wedging the busy state.
+const replaceBackgroundTasks = (
+  session: ClaudeSession,
+  tasks: ReadonlyArray<{ task_id: string; task_type: string; description: string }>
+): void => {
+  const next = new Map<string, BackgroundTaskEntry>()
+  for (const task of tasks) {
+    if (session.hiddenBackgroundTaskIds.has(task.task_id)) continue
+    const existing = session.backgroundTasks.get(task.task_id)
+    next.set(task.task_id, {
+      description: task.description,
+      id: task.task_id,
+      status: existing?.status ?? "running",
+      taskType: existing?.taskType ?? task.task_type,
+      ...(existing?.toolUseId === undefined ? {} : { toolUseId: existing.toolUseId }),
+      ...(existing?.terminalKey === undefined ? {} : { terminalKey: existing.terminalKey })
+    })
+  }
+  for (const [id, existing] of session.backgroundTasks) {
+    if (next.has(id) || existing.toolUseId === undefined) continue
+    session.backgroundShellKeys.delete(existing.toolUseId)
+  }
+  session.backgroundTasks.clear()
+  for (const [id, task] of next) session.backgroundTasks.set(id, task)
+  emitBackgroundTasks(session)
 }
 
 const removeBackgroundTask = (session: ClaudeSession, taskId: string): boolean => {
@@ -1767,6 +1828,7 @@ const settleGoalOnTurnEnd = (
 /// the CLI, which executes it exactly like typing it interactively (goal mode
 /// has no SDK API yet). The CLI's reply narrates the outcome in the chat.
 const pushGoalCommand = (session: ClaudeSession, command: string): void => {
+  session.pendingUserCommands += 1
   session.input.push({
     message: { content: [{ text: command, type: "text" }], role: "user" },
     parent_tool_use_id: null,
@@ -1830,7 +1892,7 @@ const handleStreamEvent = (
       if (parentId === undefined) {
         session.currentMessageId = innerId
         session.currentMessageTextStreamed = false
-        void ensureTurnStarted(session, session.pendingPrompt === undefined ? "agent" : "user")
+        void ensureObservedTurnStarted(session)
       } else if (innerId !== undefined && innerId !== "") {
         session.subagentMessageIds.set(parentId, innerId)
       }
@@ -1872,7 +1934,7 @@ const handleStreamEvent = (
           titledPath: undefined,
           toolName
         })
-        void ensureTurnStarted(session, session.pendingPrompt === undefined ? "agent" : "user")
+        void ensureObservedTurnStarted(session)
         // Plan tools never open a tool call: they surface as plan updates
         // once the authoritative input arrives on the assistant message.
         if (HIDDEN_TOOLS.has(toolName)) break
@@ -2153,6 +2215,7 @@ const logTurnEnd = (
 }
 
 const handleResult = (session: ClaudeSession, message: SDKMessage & { type: "result" }): void => {
+  const isTaskNotification = message.origin?.kind === "task-notification"
   const raw = message as unknown as Record<string, unknown>
   const usage = isRecord(raw.usage) ? raw.usage : {}
   const token = (key: string): number | undefined =>
@@ -2195,6 +2258,19 @@ const handleResult = (session: ClaudeSession, message: SDKMessage & { type: "res
       subjectId: session.key
     })
   }
+
+  // Claude emits independent results for model follow-ups caused by background
+  // task notifications. If one interleaves with the user's live turn, it must
+  // not finish that turn, clear its questions, or settle its goal. When the
+  // follow-up produced visible top-level output after the user turn, our stream
+  // handlers opened an agent-initiated display turn; allow only that turn to
+  // close below.
+  if (isTaskNotification && (!session.turnActive || session.initiatedBy === "user")) return
+  // A slash-command response can contain no assistant content. Still open its
+  // observed turn so the queued user initiator is consumed and the terminal
+  // event cannot be mistaken for unrelated autonomous activity.
+  if (!session.turnActive) void ensureObservedTurnStarted(session)
+
   const resolution = classifyResult(session, message)
   const authFailure =
     session.lastAssistantError === "authentication_failed" ||
@@ -2235,7 +2311,7 @@ const handleResult = (session: ClaudeSession, message: SDKMessage & { type: "res
     })
   }
   cancelClaudePendingQuestions(session)
-  settleGoalOnTurnEnd(session, message)
+  if (!isTaskNotification) settleGoalOnTurnEnd(session, message)
   void refreshClaudeSessionTitle(session)
   finishActiveTurn(session, resolution.stopReason, resolution.stopDetail, resolution.retryable)
 }
@@ -2377,6 +2453,19 @@ const ensureTurnStarted = (
     payload: { initiatedBy, turnId: session.turnId, turnState: "started" },
     subjectId: session.key
   })
+}
+
+/// Starts a turn discovered from Claude's output. Unlike `prompt()`, slash
+/// commands do not hold a deferred prompt, so consume their explicit user
+/// marker here before falling back to an autonomous agent continuation.
+const ensureObservedTurnStarted = (session: ClaudeSession): Promise<void> => {
+  if (session.turnActive) return Promise.resolve()
+  const hasQueuedUserCommand = session.pendingUserCommands > 0
+  if (hasQueuedUserCommand) session.pendingUserCommands -= 1
+  return ensureTurnStarted(
+    session,
+    session.pendingPrompt !== undefined || hasQueuedUserCommand ? "user" : "agent"
+  )
 }
 
 // MARK: diff stats

@@ -260,7 +260,8 @@ struct SessionModelTests {
             payload: .object([
                 "stopReason": .string("end_turn"),
                 "stopDetail": .string("The Claude API was overloaded."),
-                "retryable": .bool(true)
+                "retryable": .bool(true),
+                "initiatedBy": .string("agent")
             ])
         ))
         await settleUntil { model.isSending == false }
@@ -272,6 +273,8 @@ struct SessionModelTests {
         #expect(message.turn.stopDetail == "The Claude API was overloaded.")
         #expect(message.turn.retryable)
         #expect(message.turn.isGenerating == false)
+        #expect(model.lastTurnInitiator == .agent)
+        #expect(model.lastTurnEndedWithError)
     }
 
     @Test("A transient retry surfaces on the active turn and clears on new content")
@@ -640,8 +643,31 @@ struct SessionModelTests {
         #expect(model.isWaitingOnBackgroundTasks == false)
         #expect(model.hasBackgroundTaskSnapshot == false)
 
+        var runtimeEdges = 0
+        model.onRuntimeStateChanged = { runtimeEdges += 1 }
+        client.emit(ServerEventEnvelope(
+            id: 2,
+            serverId: "local",
+            kind: "session.updated",
+            subjectId: sessionId.uuidString,
+            createdAt: "2026-06-30T00:00:01.000Z",
+            payload: .object(["runtimeState": .string("running")])
+        ))
+        await settleUntil { model.runtimeState == .running }
+        #expect(model.isRuntimeIdle == false)
         client.emit(ServerEventEnvelope(
             id: 3,
+            serverId: "local",
+            kind: "session.updated",
+            subjectId: sessionId.uuidString,
+            createdAt: "2026-06-30T00:00:01.500Z",
+            payload: .object(["runtimeState": .string("idle")])
+        ))
+        await settleUntil { model.isRuntimeIdle }
+        #expect(runtimeEdges == 2)
+
+        client.emit(ServerEventEnvelope(
+            id: 4,
             serverId: "local",
             kind: "session.updated",
             subjectId: sessionId.uuidString,
@@ -667,7 +693,7 @@ struct SessionModelTests {
         // A task with an attachable terminal renders as a terminal tab, not
         // the waiting indicator: it is running, not being waited on.
         client.emit(ServerEventEnvelope(
-            id: 4,
+            id: 5,
             serverId: "local",
             kind: "session.updated",
             subjectId: sessionId.uuidString,
@@ -699,7 +725,7 @@ struct SessionModelTests {
 
         // The empty replace-on-update snapshot clears the indicator.
         client.emit(ServerEventEnvelope(
-            id: 5,
+            id: 6,
             serverId: "local",
             kind: "session.updated",
             subjectId: sessionId.uuidString,
@@ -1215,6 +1241,8 @@ struct SessionModelTests {
             sessionId: sessionId.uuidString
         )
         await model.loadHistory()
+        var goalEdges = 0
+        model.onGoalChanged = { goalEdges += 1 }
 
         client.emit(ServerEventEnvelope(
             id: 1,
@@ -1281,6 +1309,7 @@ struct SessionModelTests {
             if model.goal == nil { break }
         }
         #expect(model.goal == nil)
+        #expect(goalEdges == 3)
     }
 
     @Test("Agent questions set pending state; answers post and resolution renders a card")

@@ -199,6 +199,12 @@ final class SessionController {
     /// Called each time a live turn ends — forwarded from the connected
     /// `SessionModel` so the session store can badge unopened chats.
     var onTurnEnded: (() -> Void)?
+    /// Called for Claude runtime-state barriers so deferred attention can be
+    /// released only after the overall activity epoch becomes quiescent.
+    var onRuntimeStateChanged: (() -> Void)?
+    /// Called when goal state changes so terminal goal outcomes can release a
+    /// deferred unread/notification epoch.
+    var onGoalChanged: (() -> Void)?
     /// Called when a live question pauses the agent for user input.
     var onActionRequired: (() -> Void)?
     /// The agent session id currently connected (resumed or newly created).
@@ -833,6 +839,9 @@ final class SessionController {
     /// True when the turn ended but the agent still owns background work — the
     /// chat isn't stuck; the agent will come back on its own.
     var isWaitingOnBackgroundTasks: Bool { model?.isWaitingOnBackgroundTasks ?? false }
+    var isRuntimeIdle: Bool { model?.isRuntimeIdle ?? true }
+    var lastTurnInitiator: SessionTurnInitiator { model?.lastTurnInitiator ?? .user }
+    var lastTurnEndedWithError: Bool { model?.lastTurnEndedWithError ?? false }
 
     var waitingBackgroundTaskDescription: String? {
         guard isWaitingOnBackgroundTasks else { return nil }
@@ -1537,6 +1546,12 @@ final class SessionController {
             if let model { self?.captureTurnEnded(model) }
             self?.noteTurnEndedForPlanApproval()
             self?.onTurnEnded?()
+        }
+        model.onRuntimeStateChanged = { [weak self] in
+            self?.onRuntimeStateChanged?()
+        }
+        model.onGoalChanged = { [weak self] in
+            self?.onGoalChanged?()
         }
         model.onPromptAccepted = { [weak self, weak model] attachmentCount, isQueued in
             self?.captureMessageSent(model: model, attachmentCount: attachmentCount, isQueued: isQueued)
