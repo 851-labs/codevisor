@@ -86,6 +86,19 @@ export const AgentChunkPayload = Schema.Struct({
 })
 export type AgentChunkPayload = typeof AgentChunkPayload.Type
 
+/** Context-compaction lifecycle normalized across native harnesses. Codex
+ *  exposes a contextCompaction item lifecycle; Claude exposes compacting and
+ *  compact-result status messages. ACP agents can emit the same extension if
+ *  the protocol grows an equivalent signal. */
+export const ContextCompactionStatus = Schema.Literals(["started", "completed", "failed"])
+export type ContextCompactionStatus = typeof ContextCompactionStatus.Type
+
+export const ContextCompactionPayload = Schema.Struct({
+  sessionUpdate: Schema.Literals(["context_compaction"]),
+  status: ContextCompactionStatus
+})
+export type ContextCompactionPayload = typeof ContextCompactionPayload.Type
+
 /** One in-flight background task (backgrounded shell, subagent, etc.) owned by
  *  the agent process. `toolUseId` links the task back to the tool call that
  *  spawned it, when known. `terminalKey` is set when the task's process output

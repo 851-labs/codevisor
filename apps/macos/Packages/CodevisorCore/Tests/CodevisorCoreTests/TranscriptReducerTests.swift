@@ -179,6 +179,20 @@ struct TranscriptReducerTests {
         #expect(turn.entries.count == 1)
     }
 
+    @Test("Context compaction replaces thinking and records completion")
+    func contextCompaction() {
+        var turn = AssistantTurn(isGenerating: true, isThinking: true)
+        TranscriptReducer.apply(.contextCompaction(.started), to: &turn)
+        #expect(turn.contextCompactionStatus == .started)
+        #expect(turn.isThinking == false)
+
+        TranscriptReducer.apply(.contextCompaction(.completed), to: &turn)
+        #expect(turn.contextCompactionStatus == .completed)
+
+        TranscriptReducer.apply(.contextCompaction(.failed), to: &turn)
+        #expect(turn.contextCompactionStatus == nil)
+    }
+
     @Test("Empty text chunks are ignored")
     func emptyText() {
         let turn = reduce([.agentMessageChunk(.text(""))])

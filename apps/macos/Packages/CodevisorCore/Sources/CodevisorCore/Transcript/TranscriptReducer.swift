@@ -73,6 +73,10 @@ public enum TranscriptReducer {
             // approval renders below the plan card, not folded in above it.
             turn.planBoundary = turn.entries.count
 
+        case let .contextCompaction(status):
+            turn.isThinking = false
+            turn.contextCompactionStatus = status == .failed ? nil : status
+
         case let .questionResolved(resolution):
             // An answered question renders as a normal tool-call row, inline in
             // the arrival position it resolved. `upsertTool` dedupes by id, so

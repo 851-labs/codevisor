@@ -272,6 +272,40 @@ describe("ClaudeProvider", () => {
     vi.useRealTimers()
   })
 
+  it("normalizes Claude context-compaction status messages", async () => {
+    const fake = new FakeQuery()
+    const provider = makeProvider(fake)
+    const events: RuntimeEvent[] = []
+    const createPromise = run(
+      provider.createSession(definition, "/tmp", async (event) => {
+        events.push(event)
+      })
+    )
+    await settle()
+    fake.push(initMessage())
+    await createPromise
+
+    fake.push(systemMessage("status", { status: "compacting" }))
+    // A result wins even if a CLI version leaves the old status populated.
+    fake.push(systemMessage("status", { compact_result: "success", status: "compacting" }))
+    fake.push(
+      systemMessage("status", {
+        compact_error: "summary failed",
+        compact_result: "failed",
+        status: null
+      })
+    )
+    await settle()
+
+    expect(events.map((event) => event.payload)).toEqual(
+      expect.arrayContaining([
+        { sessionUpdate: "context_compaction", status: "started" },
+        { sessionUpdate: "context_compaction", status: "completed" },
+        { sessionUpdate: "context_compaction", status: "failed" }
+      ])
+    )
+  })
+
   it("prefers SDK session titles while retaining scanner fallbacks", async () => {
     const provider = makeClaudeProvider(environment, {
       listSdkSessions: async () =>

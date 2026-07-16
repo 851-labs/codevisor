@@ -233,6 +233,27 @@ describe("CodexProvider", () => {
     vi.useRealTimers()
   })
 
+  it("normalizes Codex context-compaction item lifecycle", async () => {
+    const { client, events } = await setup()
+    client.emit("item/started", {
+      item: { id: "compact-1", type: "contextCompaction" },
+      threadId: "thread-new",
+      turnId: "turn-1"
+    })
+    client.emit("item/completed", {
+      item: { id: "compact-1", type: "contextCompaction" },
+      threadId: "thread-new",
+      turnId: "turn-1"
+    })
+
+    expect(events.map((event) => event.payload)).toEqual(
+      expect.arrayContaining([
+        { sessionUpdate: "context_compaction", status: "started" },
+        { sessionUpdate: "context_compaction", status: "completed" }
+      ])
+    )
+  })
+
   it("prefers app-server thread names while retaining scanner fallbacks", async () => {
     const client = new FakeCodexClient()
     client.listedThreads = [

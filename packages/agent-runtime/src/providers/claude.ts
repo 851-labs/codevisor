@@ -1400,6 +1400,23 @@ const handleSystemMessage = (
   message: Extract<SDKMessage, { type: "system" }>
 ): void => {
   switch (message.subtype) {
+    case "status": {
+      const status =
+        message.compact_result === "success"
+          ? "completed"
+          : message.compact_result === "failed"
+            ? "failed"
+            : message.status === "compacting"
+              ? "started"
+              : undefined
+      if (status === undefined) break
+      void session.emit({
+        kind: "session.output",
+        payload: { sessionUpdate: "context_compaction", status },
+        subjectId: session.key
+      })
+      break
+    }
     case "task_started": {
       // Ambient/housekeeping tasks should not make the chat look busy.
       if (message.skip_transcript === true) break

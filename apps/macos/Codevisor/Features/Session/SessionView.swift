@@ -272,6 +272,7 @@ struct SessionScreen: View {
                 let hasResultRow = !message.turn.workedItemsAfterPlan.isEmpty
                     || message.turn.finalText != nil
                     || message.turn.stopDetail != nil
+                    || message.turn.contextCompactionStatus != nil
                     || message.turn.isGenerating
                 if hasResultRow {
                     result.append(.init(
@@ -383,6 +384,7 @@ struct SessionScreen: View {
             hasher.combine(turn.isGenerating)
             hasher.combine(turn.detailRevision)
             hasher.combine(turn.hasDeferredWorkedDetails)
+            hasher.combine(turn.contextCompactionStatus?.rawValue)
             hasher.combine(turn.planDocument?.utf8.count ?? 0)
             hasher.combine(turn.stopDetail?.utf8.count ?? 0)
             hasher.combine(turn.subagentActivityFingerprint)

@@ -1674,6 +1674,22 @@ const handleNotification = (session: CodexSession, method: string, params: unkno
     case "item/started":
     case "item/completed": {
       const item = isRecord(payload.item) ? payload.item : {}
+      if (item.type === "contextCompaction") {
+        // A collab subagent's context belongs to its nested thread, not the
+        // main chat's status line. Main-thread compaction is a canonical v2
+        // item with matching started/completed ids.
+        if (parentToolCallId === undefined) {
+          void session.emit({
+            kind: "session.output",
+            payload: {
+              sessionUpdate: "context_compaction",
+              status: method === "item/started" ? "started" : "completed"
+            },
+            subjectId: session.key
+          })
+        }
+        break
+      }
       // Codex (as of 0.142) emits no reasoning text deltas — the reasoning
       // item's lifecycle is the only thinking signal, so an empty thought
       // chunk drives the client's ephemeral "Thinking…" state through the

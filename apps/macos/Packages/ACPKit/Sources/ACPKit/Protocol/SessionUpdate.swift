@@ -222,6 +222,14 @@ public enum MessagePhase: String, Sendable, Codable, Equatable {
     case final
 }
 
+/// Context-compaction lifecycle normalized by Codevisor's native Claude and
+/// Codex providers. ACP agents may emit the same extension when supported.
+public enum ContextCompactionStatus: String, Sendable, Codable, Equatable {
+    case started
+    case completed
+    case failed
+}
+
 /// A streaming update emitted by the agent during a prompt turn.
 ///
 /// Discriminated by the `sessionUpdate` field. For `tool_call` and
@@ -239,6 +247,7 @@ public enum SessionUpdate: Sendable, Codable, Equatable {
     case currentModeUpdate(currentModeId: String)
     case configOptionUpdate([SessionConfigOption])
     case usageUpdate(SessionUsage)
+    case contextCompaction(ContextCompactionStatus)
     case goalUpdate(SessionGoal)
     case goalCleared
     /// A free-form markdown plan the agent proposes before implementing
@@ -254,7 +263,7 @@ public enum SessionUpdate: Sendable, Codable, Equatable {
         case sessionUpdate, messageId, parentToolCallId, phase, content, entries, availableCommands
         case currentModeId, configOptions
         case used, size, inputTokens, cachedInputTokens, outputTokens, reasoningOutputTokens, totalTokens
-        case cost, goal, markdown
+        case cost, status, goal, markdown
         case questionId, message, questions, autoResolutionMs, outcome, answers
     }
 
@@ -310,6 +319,10 @@ public enum SessionUpdate: Sendable, Codable, Equatable {
                 totalTokens: try container.decodeIfPresent(UInt64.self, forKey: .totalTokens),
                 cost: try container.decodeIfPresent(SessionCost.self, forKey: .cost)
             ))
+        case "context_compaction":
+            self = .contextCompaction(
+                try container.decode(ContextCompactionStatus.self, forKey: .status)
+            )
         case "goal_update":
             self = .goalUpdate(try container.decode(SessionGoal.self, forKey: .goal))
         case "goal_cleared":
@@ -405,6 +418,9 @@ public enum SessionUpdate: Sendable, Codable, Equatable {
             try container.encodeIfPresent(usage.reasoningOutputTokens, forKey: .reasoningOutputTokens)
             try container.encodeIfPresent(usage.totalTokens, forKey: .totalTokens)
             try container.encodeIfPresent(usage.cost, forKey: .cost)
+        case let .contextCompaction(status):
+            try container.encode("context_compaction", forKey: .sessionUpdate)
+            try container.encode(status, forKey: .status)
         case let .goalUpdate(goal):
             try container.encode("goal_update", forKey: .sessionUpdate)
             try container.encode(goal, forKey: .goal)

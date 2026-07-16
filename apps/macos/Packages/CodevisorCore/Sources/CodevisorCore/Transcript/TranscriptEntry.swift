@@ -67,6 +67,10 @@ public struct AssistantTurn: Sendable, Equatable {
     /// Set while a transient failure is being retried; drives the visible
     /// "Retrying…" status. Cleared once new content streams or the turn ends.
     public var retryStatus: RetryStatus?
+    /// Latest context-compaction lifecycle for this turn. Completed remains
+    /// visible alongside subsequent work; failed clears without replacing the
+    /// provider's normal error/retry presentation.
+    public var contextCompactionStatus: ContextCompactionStatus?
     public var plan: Plan?
     /// A proposed plan document (markdown) from plan mode — distinct from the
     /// step checklist in `plan`. Replaced wholesale per update.
@@ -105,6 +109,7 @@ public struct AssistantTurn: Sendable, Equatable {
         stopDetail: String? = nil,
         retryable: Bool = false,
         retryStatus: RetryStatus? = nil,
+        contextCompactionStatus: ContextCompactionStatus? = nil,
         plan: Plan? = nil,
         planDocument: String? = nil,
         planBoundary: Int? = nil,
@@ -124,6 +129,7 @@ public struct AssistantTurn: Sendable, Equatable {
         self.stopDetail = stopDetail
         self.retryable = retryable
         self.retryStatus = retryStatus
+        self.contextCompactionStatus = contextCompactionStatus
         self.plan = plan
         self.planDocument = planDocument
         self.planBoundary = planBoundary

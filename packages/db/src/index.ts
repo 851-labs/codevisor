@@ -894,9 +894,9 @@ const payloadText = (payload: JsonRecord): string | undefined => {
   return content?.type === "text" && typeof content.text === "string" ? content.text : undefined
 }
 
-/** Whether replaying this non-answer update can produce something inside the
- * collapsible Worked section. Transport/config updates and empty thought
- * chunks must not create a disclosure with an empty body. */
+/** Whether replaying this non-answer update can produce visible assistant-turn
+ * detail. Transport/config updates and empty thought chunks must not create an
+ * otherwise empty assistant item. */
 const hasRenderableWorkedDetail = (payload: JsonRecord): boolean => {
   const update = typeof payload.sessionUpdate === "string" ? payload.sessionUpdate : undefined
   switch (update) {
@@ -904,6 +904,7 @@ const hasRenderableWorkedDetail = (payload: JsonRecord): boolean => {
     case "tool_call_update":
     case "question":
     case "question_resolved":
+    case "context_compaction":
       return true
     case "agent_thought_chunk":
       return (payloadText(payload)?.trim().length ?? 0) > 0
