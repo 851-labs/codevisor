@@ -953,18 +953,19 @@ describe("@codevisor/agent-runtime", () => {
   it("registers custom providers and drops events for unknown sessions", async () => {
     const events: Array<RuntimeEvent> = []
     let capturedEmit: RuntimeEmit | undefined
+    const handle = {
+      cancel: Effect.void,
+      close: Effect.void,
+      prompt: () => Effect.succeed({ stopReason: "end_turn" }),
+      setConfigOption: () => Effect.void,
+      setMode: () => Effect.void
+    }
     const custom = {
       createSession: (_definition: unknown, _cwd: unknown, emit: RuntimeEmit) =>
         Effect.sync(() => {
           capturedEmit = emit
           return {
-            handle: {
-              cancel: Effect.void,
-              close: Effect.void,
-              prompt: () => Effect.succeed({ stopReason: "end_turn" }),
-              setConfigOption: () => Effect.void,
-              setMode: () => Effect.void
-            },
+            handle,
             metadata: {
               configOptions: [],
               modes: {
@@ -979,7 +980,8 @@ describe("@codevisor/agent-runtime", () => {
           }
         }),
       id: "claude" as const,
-      loadSession: () => Effect.die("unused"),
+      loadSession: (_definition: unknown, agentSessionId: string) =>
+        Effect.succeed({ handle, sessionId: agentSessionId }),
       readiness: () => ({ state: "ready" }) as const
     }
     const runtime = makeAgentRuntime({
@@ -997,6 +999,23 @@ describe("@codevisor/agent-runtime", () => {
     // Events for sessions the runtime doesn't know are dropped, not crashed on.
     await capturedEmit?.({ kind: "session.output", payload: {}, subjectId: "unknown-session" })
     await capturedEmit?.({ kind: "session.output", payload: { ok: true }, subjectId: "custom-1" })
+    await capturedEmit?.({ kind: "session.output", payload: "raw", subjectId: "custom-1" })
+    await capturedEmit?.({ kind: "session.output", payload: null, subjectId: "custom-1" })
+    await capturedEmit?.({
+      kind: "session.updated",
+      payload: { modeId: 42 },
+      subjectId: "custom-1"
+    })
+    await capturedEmit?.({
+      kind: "session.output",
+      payload: { currentModeId: 42, sessionUpdate: "current_mode_update" },
+      subjectId: "custom-1"
+    })
+    await capturedEmit?.({
+      kind: "session.output",
+      payload: { currentModeId: "default", sessionUpdate: "current_mode_update" },
+      subjectId: "custom-1"
+    })
     await capturedEmit?.({
       kind: "session.updated",
       payload: { modeId: "plan" },
@@ -1006,8 +1025,24 @@ describe("@codevisor/agent-runtime", () => {
       runtime.loadAgentSession("claude-code", "custom-1", "/tmp/project", () => undefined)
     )
     expect(reloaded.modes?.currentModeId).toBe("plan")
+    await expect(
+      run(runtime.loadAgentSession("claude-code", "custom-2", "/tmp/project", () => undefined))
+    ).resolves.toEqual({ configOptions: [], sessionId: "custom-2" })
     expect(events).toEqual([
       { kind: "session.output", payload: { ok: true }, subjectId: "custom-1" },
+      { kind: "session.output", payload: "raw", subjectId: "custom-1" },
+      { kind: "session.output", payload: null, subjectId: "custom-1" },
+      { kind: "session.updated", payload: { modeId: 42 }, subjectId: "custom-1" },
+      {
+        kind: "session.output",
+        payload: { currentModeId: 42, sessionUpdate: "current_mode_update" },
+        subjectId: "custom-1"
+      },
+      {
+        kind: "session.output",
+        payload: { currentModeId: "default", sessionUpdate: "current_mode_update" },
+        subjectId: "custom-1"
+      },
       { kind: "session.updated", payload: { modeId: "plan" }, subjectId: "custom-1" }
     ])
   })
