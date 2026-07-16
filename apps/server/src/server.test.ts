@@ -2121,6 +2121,21 @@ describe("@codevisor/server", () => {
     expect((await jsonRequest(server, `/v1/sessions/${session.id}`)).body).toMatchObject({
       session: { title: "Harness-generated title" }
     })
+    await jsonRequest(server, `/v1/sessions/${session.id}`, {
+      body: JSON.stringify({ title: "User-provided title" }),
+      method: "PATCH"
+    })
+    await agents.emit(session.agentSessionId, {
+      kind: "session.updated",
+      subjectId: session.agentSessionId,
+      payload: {
+        sessionUpdate: "session_info_update",
+        title: "Later harness-generated title"
+      }
+    })
+    expect((await jsonRequest(server, `/v1/sessions/${session.id}`)).body).toMatchObject({
+      session: { title: "User-provided title" }
+    })
     expect(
       (
         await jsonRequest(server, "/v1/sessions", {

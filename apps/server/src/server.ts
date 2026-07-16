@@ -2639,9 +2639,8 @@ const materializeRuntimeEvent = async (
       ? payload.title.trim()
       : undefined
   if (harnessTitle !== undefined && harnessTitle.length > 0) {
-    const session = await run(db.getSessionSummary(subjectId))
-    if (session.title !== harnessTitle) {
-      const updated = await run(db.updateSession(subjectId, { title: harnessTitle }))
+    const updated = await run(db.updateSessionTitleFromHarness(subjectId, harnessTitle))
+    if (updated !== undefined) {
       await appendAndPublish(db, fanout, "session.updated", subjectId, updated)
     }
     return

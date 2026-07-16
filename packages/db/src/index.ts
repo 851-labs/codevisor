@@ -93,6 +93,7 @@ interface SessionRow {
   readonly harness_account_id: string | null
   readonly agent_session_id: string | null
   readonly title: string
+  readonly title_is_user_set: number
   readonly origin: SessionSummary["origin"]
   readonly is_archived: number
   readonly worktree_name: string | null
@@ -855,6 +856,18 @@ const migrations: ReadonlyArray<Migration> = [
       alter table sessions add column reasoning_output_tokens integer;
       alter table sessions add column total_tokens integer;
       alter table sessions add column cost_kind text check(cost_kind in ('reported', 'estimated'));
+    `
+  },
+  {
+    id: 20,
+    name: "user-set session titles",
+    sql: `
+      alter table sessions add column title_is_user_set integer not null default 0
+        check(title_is_user_set in (0, 1));
+
+      -- Older databases did not retain title provenance. Protect every
+      -- existing title rather than risk replacing a user-authored one.
+      update sessions set title_is_user_set = 1;
     `
   }
 ]
@@ -1782,6 +1795,10 @@ export interface CodevisorDatabaseService {
     id: string,
     request: UpdateSessionRequest
   ) => Effect.Effect<SessionSummary, DatabaseError>
+  readonly updateSessionTitleFromHarness: (
+    id: string,
+    title: string
+  ) => Effect.Effect<SessionSummary | undefined, DatabaseError>
   readonly archiveSession: (id: string) => Effect.Effect<SessionSummary, DatabaseError>
   readonly deleteSession: (id: string) => Effect.Effect<void, DatabaseError>
   readonly appendConversationItem: (
@@ -2458,16 +2475,43 @@ const createService = (
         const current = getSession(id)
         sqlite
           .prepare(
-            "update sessions set title = ?, is_archived = ?, agent_session_id = ?, worktree_name = ?, updated_at = ? where id = ?"
+            `update sessions set
+              title = ?,
+              title_is_user_set = case
+                when ? is not null and ? <> title then 1
+                else title_is_user_set
+              end,
+              is_archived = ?, agent_session_id = ?, worktree_name = ?, updated_at = ?
+             where id = ?`
           )
           .run(
             request.title ?? current.title,
+            request.title ?? null,
+            request.title ?? null,
             (request.isArchived ?? current.isArchived) ? 1 : 0,
             request.agentSessionId ?? current.agentSessionId ?? null,
             request.worktreeName ?? current.worktreeName ?? null,
             request.updatedAt ?? current.updatedAt ?? null,
             id
           )
+        return getSession(id)
+      }),
+    // This condition lives in the UPDATE itself so a user rename and a
+    // harness title arriving concurrently cannot pass a stale read/check.
+    updateSessionTitleFromHarness: (id, title) =>
+      attempt("updateSessionTitleFromHarness", () => {
+        const result = sqlite
+          .prepare(
+            `update sessions set title = ?
+             where id = ? and title_is_user_set = 0 and title <> ?`
+          )
+          .run(title, id, title)
+        if (result.changes === 0) {
+          // Preserve updateSession's missing-id behavior while returning no
+          // value for protected and idempotent title updates.
+          getSession(id)
+          return undefined
+        }
         return getSession(id)
       }),
     archiveSession: (id) =>

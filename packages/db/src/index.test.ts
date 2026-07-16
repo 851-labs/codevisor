@@ -621,6 +621,13 @@ describe("@codevisor/db", () => {
 
     const sqlite = new Database(filename)
     expect(
+      (
+        sqlite.prepare("select title_is_user_set from sessions where id = 'sess-1'").get() as {
+          title_is_user_set: number
+        }
+      ).title_is_user_set
+    ).toBe(1)
+    expect(
       JSON.parse(
         (
           sqlite.prepare("select payload from events where subject_id = 'sess-1'").get() as {
@@ -794,6 +801,13 @@ describe("@codevisor/db", () => {
       isArchived: true,
       title: "Renamed session"
     })
+    expect(
+      await run(db.updateSessionTitleFromHarness(firstSession.id, "Harness replacement"))
+    ).toBeUndefined()
+    expect((await run(db.getSessionSummary(firstSession.id))).title).toBe("Renamed session")
+    expect(
+      await run(db.updateSessionTitleFromHarness(secondSession.id, "Harness title"))
+    ).toMatchObject({ title: "Harness title" })
 
     await run(db.appendConversationItem(firstSession.id, "user", "user-1", "hello", false))
     await run(
