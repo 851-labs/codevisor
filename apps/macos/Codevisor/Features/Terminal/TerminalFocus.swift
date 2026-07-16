@@ -10,6 +10,10 @@ import GhosttyKit
 @MainActor
 final class TerminalFocusController {
     weak var composerTextView: SubmittingTextView?
+    /// The chat history's scroll view. Clicks anywhere inside it park keyboard
+    /// focus on it (blurring a focused terminal) so typing can hand off to the
+    /// composer.
+    weak var transcriptView: NSView?
     weak var paneGroup: PaneGroupModel?
     private var typeToFocusMonitor: Any?
 
@@ -30,12 +34,21 @@ final class TerminalFocusController {
     }
 
     /// Makes ordinary typing anywhere in the session move focus into the
-    /// composer without dropping the first character. The monitor is scoped
+    /// composer without dropping the first character, and makes a click
+    /// anywhere in the chat history move keyboard focus onto the history (so
+    /// a focused terminal stops receiving keystrokes). The monitor is scoped
     /// to the active session screen and removed when that screen disappears.
     func startTypeToFocus() {
         guard typeToFocusMonitor == nil else { return }
-        typeToFocusMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            self?.handleTypeToFocus(event) ?? event
+        typeToFocusMonitor = NSEvent.addLocalMonitorForEvents(
+            matching: [.keyDown, .leftMouseDown]
+        ) { [weak self] event in
+            guard let self else { return event }
+            switch event.type {
+            case .keyDown: return self.handleTypeToFocus(event)
+            case .leftMouseDown: return self.handleTranscriptClick(event)
+            default: return event
+            }
         }
     }
 
@@ -79,6 +92,53 @@ final class TerminalFocusController {
         // Local monitors run before NSApplication.sendEvent. Returning the
         // original event dispatches it to the new first responder, preserving
         // NSTextView's native key binding, undo, dead-key, and IME pipelines.
+        return event
+    }
+
+    /// Pane-style focus for the chat history: a click that lands in it and
+    /// that no view claims focus from — whitespace, a disclosure trigger, a
+    /// row's inert chrome — parks keyboard focus on the history, exactly like
+    /// a click in the terminal focuses the terminal. SwiftUI rows consume
+    /// such clicks without ever touching the AppKit first responder, so
+    /// without this a focused terminal keeps eating keystrokes after the user
+    /// has clicked into the chat.
+    ///
+    /// The decision is deliberately made AFTER the click dispatches, never
+    /// before: the transcript's selectable text views (and the composer's
+    /// editor) claim first responder themselves as part of handling their
+    /// mouseDown, and preempting that fights their native selection/caret
+    /// behavior. If the first responder changed at all as a result of the
+    /// click, the click "spent" its focus and is left alone.
+    private func handleTranscriptClick(_ event: NSEvent) -> NSEvent? {
+        guard let transcriptView,
+              let window = transcriptView.window,
+              event.window === window,
+              window.attachedSheet == nil,
+              NSApp.modalWindow == nil,
+              let transcriptSuperview = transcriptView.superview else {
+            return event
+        }
+        // Geometry check scoped to the transcript's own subtree (hitTest takes
+        // superview coordinates). Overlays that float inside the transcript's
+        // frame — the composer card, scroll-to-bottom — are excluded by the
+        // focus-change check below, not by geometry.
+        let point = transcriptSuperview.convert(event.locationInWindow, from: nil)
+        guard transcriptView.hitTest(point) != nil else { return event }
+
+        let responderBeforeClick = window.firstResponder
+        if let currentView = responderBeforeClick as? NSView,
+           currentView.isDescendant(of: transcriptView) {
+            return event // Focus already parked in the history.
+        }
+
+        DispatchQueue.main.async { [weak self] in
+            guard let self, let transcriptView = self.transcriptView,
+                  transcriptView.window === window,
+                  // Someone claimed focus from this click (text selection,
+                  // the composer, a menu): leave it alone.
+                  window.firstResponder === responderBeforeClick else { return }
+            window.makeFirstResponder(transcriptView)
+        }
         return event
     }
 

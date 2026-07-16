@@ -124,6 +124,9 @@ struct SessionScreen: View {
             },
             onNearTop: {
                 Task { @MainActor in requestOlderHistoryLoad() }
+            },
+            onScrollViewReady: { scrollView in
+                focus.transcriptView = scrollView
             }
         )
         .onChange(of: controller.userSendSignal) { _, _ in

@@ -651,14 +651,25 @@ extension Ghostty {
                   window == event.window else { return event }
 
             // The clicked location in this window should be this view.
-            guard
-                let location = window.contentView?.convert(event.locationInWindow, from: nil)
-            else {
+            // CODEVISOR-PATCH: NSView.hitTest(_:) takes a point in the
+            // receiver's SUPERVIEW coordinate space; upstream passed a
+            // contentView-local point. In upstream Ghostty the surface fills
+            // the window so the misattribution is invisible, but with other
+            // panes sharing the window (the chat transcript) it attributed
+            // their clicks to this surface and yanked focus back to the
+            // terminal, consuming the click. Require the click to be inside
+            // this view, then hit-test in the documented coordinate space.
+            guard bounds.contains(convert(event.locationInWindow, from: nil)) else {
                 return event
             }
             // We should use window to perform hitTest here,
             // because there could be some other overlays on top, like search bar
-            guard window.contentView?.hitTest(location) == self else { return event }
+            guard let contentView = window.contentView,
+                  let frameView = contentView.superview,
+                  contentView.hitTest(
+                    frameView.convert(event.locationInWindow, from: nil)
+                  ) === self
+            else { return event }
 
             // We always assume that we're resetting our mouse suppression
             // unless we see the specific scenario below to set it.

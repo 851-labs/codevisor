@@ -99,9 +99,14 @@ struct NativeTranscriptView: NSViewRepresentable {
     let onBottomStateChange: @MainActor (Bool) -> Void
     let onFollowStateChange: @MainActor (Bool) -> Void
     let onNearTop: @MainActor () -> Void
+    /// Called once with the underlying scroll view so the session's focus
+    /// controller can park keyboard focus on the chat history when it is
+    /// clicked (mirrors the composer's `onTextViewReady`).
+    var onScrollViewReady: (@MainActor (NSView) -> Void)? = nil
 
     func makeNSView(context: Context) -> VirtualizedTranscriptScrollView {
         let view = VirtualizedTranscriptScrollView()
+        onScrollViewReady?(view)
         view.configure(
             rows: rows,
             initialState: initialState,
@@ -355,11 +360,21 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
     private var onFollowStateChange: ((Bool) -> Void)?
     private var onNearTop: (() -> Void)?
 
+    /// The chat history itself can hold keyboard focus: a click anywhere in
+    /// it (routed here by TerminalFocusController's mouse monitor) blurs a
+    /// focused terminal, the scroll keys in `keyDown(with:)` keep working,
+    /// and ordinary typing is handed off to the composer by the same
+    /// controller's type-to-focus monitor.
+    override var acceptsFirstResponder: Bool { true }
+
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         drawsBackground = false
         backgroundColor = .clear
         borderType = .noBorder
+        // Focus parks here invisibly (like the Codex/ChatGPT chat history);
+        // a ring around the whole transcript would read as a text field.
+        focusRingType = .none
         hasHorizontalScroller = false
         hasVerticalScroller = true
         autohidesScrollers = true
