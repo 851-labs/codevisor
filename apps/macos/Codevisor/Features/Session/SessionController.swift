@@ -65,6 +65,17 @@ struct SessionVirtualTranscriptRestoreState: Equatable {
     var renderedWindow: SessionRenderedTranscriptWindow?
 }
 
+/// User intent for how the transcript should react to future content. This is
+/// deliberately independent from viewport geometry: restoring or remeasuring
+/// rows can move the viewport a few points without meaning that the user chose
+/// to stop following the latest turn.
+enum SessionTranscriptFollowMode: Equatable {
+    case staticPosition
+    case followingLatest
+
+    var followsLatest: Bool { self == .followingLatest }
+}
+
 /// Where the transcript was scrolled when the user last looked at a session,
 /// kept on the cached controller so navigating away and back reopens the
 /// transcript at the same place instead of pinned to the bottom.
@@ -78,8 +89,8 @@ struct SessionScrollState {
     var measurementCacheLRU: [SessionMeasurementCacheKey]
     /// Exact virtual window and row geometry from the last mounted view.
     var virtualTranscript: SessionVirtualTranscriptRestoreState?
-    /// Follow state is derived from the canonical coordinate instead of being
-    /// persisted as a second value that can disagree with it.
+    /// Follow intent is persisted separately from the viewport coordinate.
+    var followMode: SessionTranscriptFollowMode
     var isAtBottom: Bool { distanceFromBottom <= 2 }
 }
 

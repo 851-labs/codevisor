@@ -522,11 +522,9 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
             initialPositionConfigured = true
             pendingInitialState = initialState
             lastStableScrollState = initialState
+            followsLatest = initialState?.followMode.followsLatest ?? newFollowsLatest
             if let initialState, !initialState.isAtBottom {
                 lockedRestoreDistance = initialState.distanceFromBottom
-                followsLatest = false
-            } else {
-                followsLatest = newFollowsLatest
             }
             if let initialState {
                 measurementCaches = initialState.measurementCaches
@@ -791,6 +789,9 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
     private func applyPendingInitialPositionIfPossible() {
         guard !initialPositionApplied, contentView.bounds.height > 0 else { return }
 
+        let shouldPublishInitialPosition = lastStableScrollState == nil
+            || (pendingInitialState?.isAtBottom == true && followsLatest)
+
         let restoredRange = pendingInitialState?.virtualTranscript?.renderedWindow.flatMap {
             virtualLayout.renderedRange(anchorKey: $0.anchorKey, count: $0.count)
         }
@@ -810,12 +811,10 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
                 return
             }
             setDistanceFromBottom(state.distanceFromBottom)
-            followsLatest = false
             publishBottomState(currentDistanceFromBottom() <= Self.atBottomThreshold)
         } else {
             lockedRestoreDistance = nil
             setDistanceFromBottom(0)
-            followsLatest = true
         }
 
         initialPositionApplied = true
@@ -823,7 +822,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
         updateMountedRows(rangeOverride: restoredRange)
         // A saved target is already the authoritative persisted state. Do not
         // replace it with a clamped/intermediate first-layout coordinate.
-        if lastStableScrollState == nil || followsLatest {
+        if shouldPublishInitialPosition {
             emitViewportSnapshot()
         }
     }
@@ -880,11 +879,12 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
         publishBottomState(atBottom)
         let isRecentUserMovement = isHandlingUserInput || isLiveScrolling
             || ProcessInfo.processInfo.systemUptime <= userInputDeadline
-        // Moving away from the end is authoritative intent. Layout-driven
-        // position changes are wrapped in `isApplyingPosition`; requiring a
-        // wheel callback here let an asynchronously-delivered bounds change
-        // leave follow enabled long enough to snap the viewport back down.
-        if !isApplyingPosition, distance > previousDistance + 0.5, followsLatest {
+        // Only recent user movement can change follow intent. The short intent
+        // window still catches AppKit bounds notifications delivered after the
+        // wheel/key callback, while remount and remeasurement geometry cannot
+        // silently turn follow off.
+        if !isApplyingPosition, isRecentUserMovement,
+           distance > previousDistance + 0.5, followsLatest {
             followsLatest = false
             onFollowStateChange?(false)
         } else if !isApplyingPosition, isRecentUserMovement, atBottom, !followsLatest {
@@ -1180,7 +1180,8 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
             distanceFromBottom: distance,
             measurementCaches: measurementCaches,
             measurementCacheLRU: measurementCacheLRU,
-            virtualTranscript: currentVirtualRestoreState()
+            virtualTranscript: currentVirtualRestoreState(),
+            followMode: followsLatest ? .followingLatest : .staticPosition
         )
         lastStableScrollState = state
         onViewportChange?(state)

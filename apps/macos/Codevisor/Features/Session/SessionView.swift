@@ -65,7 +65,7 @@ struct SessionScreen: View {
             }
         }
         .onAppear {
-            autoFollow = controller.scrollState?.isAtBottom ?? true
+            autoFollow = controller.scrollState?.followMode.followsLatest ?? true
             isAtBottom = controller.scrollState?.isAtBottom ?? true
             focus.paneGroup = paneGroup
             // ⌘J from inside a focused terminal routes here (the menu command
