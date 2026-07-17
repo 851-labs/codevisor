@@ -89,3 +89,6 @@
 	path = .repos/zed
 	url = https://github.com/zed-industries/zed.git
 	shallow = true
+[submodule ".repos/Window-in-Picture"]
+	path = .repos/Window-in-Picture
+	url = https://github.com/851-labs/Window-in-Picture.git

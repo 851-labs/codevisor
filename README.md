@@ -1,0 +1,72 @@
+<div align="center">
+  <a href="https://www.codevisor.dev">
+    <img src="apps/www/public/codevisor-icon.png" alt="Codevisor logo" width="180">
+  </a>
+  <h1><b>Codevisor</b></h1>
+  <p>Every coding agent. One app.</p>
+</div>
+
+<div align="center">
+  <a href="https://github.com/851-labs/codevisor/releases/latest">
+    <img src="https://img.shields.io/badge/macOS-26.0%2B-blue?logo=apple&logoColor=white&style=flat" alt="macOS 26.0+">
+  </a>
+  <img src="https://img.shields.io/badge/Swift-f05138?logo=swift&logoColor=white&style=flat" alt="Swift">
+  <a href="https://github.com/851-labs/codevisor/releases/latest">
+    <img src="https://img.shields.io/github/v/release/851-labs/codevisor?label=Release&style=flat" alt="Latest release">
+  </a>
+  <a href="https://github.com/851-labs/homebrew-tap">
+    <img src="https://img.shields.io/badge/Homebrew-851--labs%2Ftap-fbb040?logo=homebrew&logoColor=white&style=flat" alt="Homebrew tap">
+  </a>
+  <br>
+  <a href="https://www.codevisor.dev/download/macos">
+    <img src="https://img.shields.io/badge/Download-macOS-black?logo=apple&logoColor=white&style=flat" alt="Download Codevisor for macOS">
+  </a>
+  <a href="https://github.com/851-labs/codevisor/releases/latest">
+    <img src="https://img.shields.io/github/downloads/851-labs/codevisor/total?label=downloads&style=flat" alt="Total downloads">
+  </a>
+  <a href="https://www.codevisor.dev/docs">
+    <img src="https://img.shields.io/badge/Docs-codevisor.dev-4b32c3?style=flat" alt="Codevisor documentation">
+  </a>
+  <a href="LICENSE">
+    <img src="https://img.shields.io/badge/License-AGPL--3.0-blue?style=flat" alt="AGPL-3.0 license">
+  </a>
+</div>
+
+Codevisor runs Claude Code, Codex, and any ACP-compatible coding agent on your machines in one native macOS app. Chats stay local, projects keep their history together, and every conversation has a real terminal built in.
+
+## Installation
+
+### Install Script
+
+The installer sets up the macOS app or a Codevisor server on Linux:
+
+```sh
+curl -fsSL https://www.codevisor.dev/install.sh | sh
+```
+
+### Homebrew
+
+```sh
+brew install --cask 851-labs/tap/codevisor
+```
+
+### Direct Download
+
+Download the [latest release](https://www.codevisor.dev/download/macos), open the disk image, and drag Codevisor to your Applications folder.
+
+[![Download macOS](https://img.shields.io/badge/Download-macOS-black?logo=apple&logoColor=white&style=for-the-badge)](https://www.codevisor.dev/download/macos)
+
+## Tech Stack
+
+- [Swift](https://www.swift.org/) and [SwiftUI](https://developer.apple.com/documentation/swiftui) — native macOS app
+- [TypeScript](https://www.typescriptlang.org/) and [Effect](https://effect.website/) — local and remote server
+- [Agent Client Protocol](https://agentclientprotocol.com/) — coding agent interoperability
+- [GhosttyKit](https://github.com/ghostty-org/ghostty) — embedded terminal
+
+## License
+
+This project is released under the GNU Affero General Public License v3.0. See [LICENSE](LICENSE) for details.
+
+## Support
+
+If you like this project, please consider giving it a star.
