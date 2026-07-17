@@ -56,7 +56,11 @@ private struct ShimmerBand: View {
         // A bright glint with a soft, center-peaked core: brightest at the
         // middle and easing out through a gradient to the edges, so it reads as
         // a defined highlight (not a hard bar, not a broad wash) sweeping across.
-        let band = max(width * 0.33, 90)
+        // Keep the glint proportional to the rendered label. A fixed minimum
+        // made short status text (for example, "Compacting context...") light
+        // up almost all at once while longer tool-call titles showed the
+        // intended tighter sweep.
+        let band = max(width * 0.33, 1)
         LinearGradient(
             stops: [
                 .init(color: .clear, location: 0),
