@@ -95,3 +95,6 @@
 [submodule ".repos/homebrew-tap"]
 	path = .repos/homebrew-tap
 	url = https://github.com/851-labs/homebrew-tap.git
+[submodule ".repos/herdr"]
+	path = .repos/herdr
+	url = https://github.com/ogulcancelik/herdr.git

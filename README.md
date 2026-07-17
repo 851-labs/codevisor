@@ -28,9 +28,17 @@
   </a>
 </div>
 
-Codevisor runs Claude Code, Codex, and any ACP-compatible coding agent on your machines in one native macOS app. Chats stay local, projects keep their history together, and every conversation has a real terminal built in.
+---
 
 ![Codevisor showing active coding-agent chats across several projects with a detailed response in the main workspace.](docs/images/codevisor-workspace.png)
+
+**Run Claude Code, Codex, and any ACP-compatible coding agent on your machines in one native macOS app.**
+
+- **chats stay local** — your conversations stay on your machines.
+- **projects keep the thread** — every conversation about a codebase lives together.
+- **a real terminal, built in** — every chat has one underneath it, right where the work happens.
+
+---
 
 ## Installation
 
