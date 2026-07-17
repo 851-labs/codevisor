@@ -29,6 +29,24 @@ struct WorkedItemsTests {
         if case let .toolGroup(_, calls) = result[3] { #expect(calls.count == 1) } else { Issue.record("expected group") }
     }
 
+    @Test("Context compaction breaks tool groups at its arrival position")
+    func compactionOrder() {
+        let result = turn([
+            tool("before", .read),
+            .contextCompaction(id: "compact-1", status: .completed),
+            tool("after", .execute)
+        ]).workedItems
+
+        #expect(result.count == 3)
+        if case let .toolGroup(_, calls) = result[0] {
+            #expect(calls.map(\.toolCallId) == ["before"])
+        } else { Issue.record("expected leading tool group") }
+        #expect(result[1] == .contextCompaction(id: "compact-1", status: .completed))
+        if case let .toolGroup(_, calls) = result[2] {
+            #expect(calls.map(\.toolCallId) == ["after"])
+        } else { Issue.record("expected trailing tool group") }
+    }
+
     @Test("WorkedItem identities are unique")
     func ids() {
         let items = turn([.text(id: "x", markdown: "a"), tool("g", .read)]).workedItems
@@ -167,6 +185,10 @@ struct WorkedItemsTests {
         // A later tool group trails again.
         TranscriptReducer.apply(.toolCall(ToolCall(toolCallId: "c", title: "Run")), to: &turn)
         #expect(turn.isTrailingToolGroup(lastToolCallId: "c"))
+        // Compaction is visible work after the group, so it ends the group's
+        // streaming auto-expansion just like a following text span does.
+        TranscriptReducer.apply(.contextCompaction(id: "compact-1", status: .started), to: &turn)
+        #expect(!turn.isTrailingToolGroup(lastToolCallId: "c"))
         #expect(!turn.isTrailingToolGroup(lastToolCallId: "missing"))
     }
 

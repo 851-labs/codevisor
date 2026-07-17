@@ -510,6 +510,10 @@ interface ClaudeSession {
   /// result usage is cumulative; the per-message input + cache buckets are the
   /// authoritative current-context count.
   latestContextUsage: { model: string | undefined; used: number } | undefined
+  /// Stable identity for the latest context-compaction lifecycle. Claude's
+  /// status messages do not provide one, so the provider assigns it when
+  /// compaction starts and reuses it for the matching result.
+  activeContextCompactionId: string | undefined
   currentMessageId: string | undefined
   /// True once top-level text has streamed for `currentMessageId`. A tool_use
   /// block starting afterwards in the same message proves that text was
@@ -802,6 +806,7 @@ export const makeClaudeProvider = (
       lastAssistantError: undefined,
       lastErrorText: undefined,
       latestContextUsage: undefined,
+      activeContextCompactionId: undefined,
       accumulators: new Map(),
       backgroundShellKeys: new Map(),
       backgroundTasks: new Map(),
@@ -1419,11 +1424,20 @@ const handleSystemMessage = (
               ? "started"
               : undefined
       if (status === undefined) break
+      if (status === "started" || session.activeContextCompactionId === undefined) {
+        session.activeContextCompactionId = randomUUID()
+      }
+      const compactionId = session.activeContextCompactionId
       void session.emit({
         kind: "session.output",
-        payload: { sessionUpdate: "context_compaction", status },
+        payload: {
+          sessionUpdate: "context_compaction",
+          compactionId,
+          status
+        },
         subjectId: session.key
       })
+      if (status !== "started") session.activeContextCompactionId = undefined
       break
     }
     case "task_started": {

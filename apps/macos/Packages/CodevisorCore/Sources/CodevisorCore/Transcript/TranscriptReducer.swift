@@ -73,9 +73,9 @@ public enum TranscriptReducer {
             // approval renders below the plan card, not folded in above it.
             turn.planBoundary = turn.entries.count
 
-        case let .contextCompaction(status):
+        case let .contextCompaction(id, status):
             turn.isThinking = false
-            turn.contextCompactionStatus = status == .failed ? nil : status
+            applyContextCompaction(id: id, status: status, entries: &turn.entries)
 
         case let .questionResolved(resolution):
             // An answered question renders as a normal tool-call row, inline in
@@ -146,6 +146,59 @@ public enum TranscriptReducer {
             if case let .tool(call) = $0 { return call.toolCallId == toolCallId }
             return false
         }
+    }
+
+    /// Inserts compaction where it starts and updates that same entry when the
+    /// lifecycle settles. Older persisted events may not carry an id; for
+    /// those, completion/failure targets the latest compaction deterministically.
+    private static func applyContextCompaction(
+        id: String?,
+        status: ContextCompactionStatus,
+        entries: inout [TranscriptEntry]
+    ) {
+        let matchingIndex: Int? = if let id {
+            entries.firstIndex {
+                if case let .contextCompaction(existingId, _) = $0 { return existingId == id }
+                return false
+            }
+        } else {
+            entries.lastIndex {
+                if case .contextCompaction = $0 { return true }
+                return false
+            }
+        }
+
+        switch status {
+        case .started:
+            if let matchingIndex, let id {
+                entries[matchingIndex] = .contextCompaction(id: id, status: .started)
+            } else {
+                entries.append(.contextCompaction(
+                    id: id ?? nextLegacyCompactionId(in: entries),
+                    status: .started
+                ))
+            }
+        case .completed:
+            if let matchingIndex, case let .contextCompaction(existingId, _) = entries[matchingIndex] {
+                entries[matchingIndex] = .contextCompaction(id: existingId, status: .completed)
+            } else if let id {
+                // A client can attach between lifecycle notifications. Preserve
+                // the only position it observed instead of dropping completion.
+                entries.append(.contextCompaction(id: id, status: .completed))
+            }
+        case .failed:
+            if let matchingIndex { entries.remove(at: matchingIndex) }
+        }
+    }
+
+    private static func nextLegacyCompactionId(in entries: [TranscriptEntry]) -> String {
+        let ids = Set(entries.compactMap { entry -> String? in
+            if case let .contextCompaction(id, _) = entry { return id }
+            return nil
+        })
+        var offset = ids.count
+        while ids.contains("legacy-\(offset)") { offset += 1 }
+        return "legacy-\(offset)"
     }
 
     private static func upsertTool(_ call: ToolCall, entries: inout [TranscriptEntry]) {

@@ -1,11 +1,12 @@
 import Foundation
 import ACPKit
 
-/// A presentation item within the "Worked for…" section: a block of reasoning
-/// text, or a group of consecutive tool calls summarized as one row.
+/// A presentation item within the "Worked for…" section: reasoning text, a
+/// group of consecutive tool calls, or an inline lifecycle event.
 public enum WorkedItem: Identifiable, Sendable, Equatable {
     case text(id: String, markdown: String)
     case toolGroup(id: String, calls: [ToolCall])
+    case contextCompaction(id: String, status: ContextCompactionStatus)
     /// A subagent spawn rendered as its own collapsible section with a nested
     /// transcript (`AssistantTurn.subagentItems(_:)`), never folded into a
     /// tool-group summary.
@@ -15,6 +16,7 @@ public enum WorkedItem: Identifiable, Sendable, Equatable {
         switch self {
         case let .text(id, _): return "wtext:\(id)"
         case let .toolGroup(id, _): return "wgroup:\(id)"
+        case let .contextCompaction(id, _): return "wcompaction:\(id)"
         case let .subagent(id, _): return "wagent:\(id)"
         }
     }
@@ -84,6 +86,9 @@ public extension AssistantTurn {
                 items.append(.subagent(id: call.toolCallId, call: call))
             case let .tool(call):
                 group.append(call)
+            case let .contextCompaction(id, status):
+                flush()
+                items.append(.contextCompaction(id: id, status: status))
             }
         }
         flush()
@@ -100,10 +105,14 @@ public extension AssistantTurn {
             return false
         }) else { return false }
         return !entries[entries.index(after: index)...].contains { entry in
-            if case let .text(_, markdown) = entry {
-                return !markdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            switch entry {
+            case let .text(_, markdown):
+                !markdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            case .contextCompaction:
+                true
+            case .tool:
+                false
             }
-            return false
         }
     }
 }

@@ -1682,6 +1682,7 @@ const handleNotification = (session: CodexSession, method: string, params: unkno
             kind: "session.output",
             payload: {
               sessionUpdate: "context_compaction",
+              ...(typeof item.id === "string" ? { compactionId: item.id } : {}),
               status: method === "item/started" ? "started" : "completed"
             },
             subjectId: session.key

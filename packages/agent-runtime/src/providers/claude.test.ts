@@ -288,6 +288,7 @@ describe("ClaudeProvider", () => {
     fake.push(systemMessage("status", { status: "compacting" }))
     // A result wins even if a CLI version leaves the old status populated.
     fake.push(systemMessage("status", { compact_result: "success", status: "compacting" }))
+    fake.push(systemMessage("status", { status: "compacting" }))
     fake.push(
       systemMessage("status", {
         compact_error: "summary failed",
@@ -297,13 +298,26 @@ describe("ClaudeProvider", () => {
     )
     await settle()
 
-    expect(events.map((event) => event.payload)).toEqual(
-      expect.arrayContaining([
-        { sessionUpdate: "context_compaction", status: "started" },
-        { sessionUpdate: "context_compaction", status: "completed" },
-        { sessionUpdate: "context_compaction", status: "failed" }
-      ])
-    )
+    const compactions = events
+      .map((event) => event.payload as Record<string, unknown>)
+      .filter((payload) => payload.sessionUpdate === "context_compaction")
+    expect(compactions).toEqual([
+      expect.objectContaining({ sessionUpdate: "context_compaction", status: "started" }),
+      expect.objectContaining({ sessionUpdate: "context_compaction", status: "completed" }),
+      expect.objectContaining({ sessionUpdate: "context_compaction", status: "started" }),
+      expect.objectContaining({ sessionUpdate: "context_compaction", status: "failed" })
+    ])
+    const firstCompactionId = compactions[0]?.compactionId
+    const secondCompactionId = compactions[2]?.compactionId
+    expect(firstCompactionId).toEqual(expect.any(String))
+    expect(secondCompactionId).toEqual(expect.any(String))
+    expect(secondCompactionId).not.toBe(firstCompactionId)
+    expect(compactions.map((payload) => payload.compactionId)).toEqual([
+      firstCompactionId,
+      firstCompactionId,
+      secondCompactionId,
+      secondCompactionId
+    ])
   })
 
   it("prefers SDK session titles while retaining scanner fallbacks", async () => {

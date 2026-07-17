@@ -259,7 +259,7 @@ public enum SessionUpdate: Sendable, Codable, Equatable {
     case currentModeUpdate(currentModeId: String)
     case configOptionUpdate([SessionConfigOption])
     case usageUpdate(SessionUsage)
-    case contextCompaction(ContextCompactionStatus)
+    case contextCompaction(id: String?, status: ContextCompactionStatus)
     case goalUpdate(SessionGoal)
     case goalCleared
     /// A free-form markdown plan the agent proposes before implementing
@@ -275,7 +275,7 @@ public enum SessionUpdate: Sendable, Codable, Equatable {
         case sessionUpdate, messageId, parentToolCallId, phase, content, entries, availableCommands
         case currentModeId, configOptions
         case used, size, inputTokens, cachedInputTokens, outputTokens, reasoningOutputTokens, totalTokens
-        case cost, status, goal, markdown
+        case cost, compactionId, status, goal, markdown
         case questionId, message, questions, autoResolutionMs, outcome, answers
     }
 
@@ -333,7 +333,8 @@ public enum SessionUpdate: Sendable, Codable, Equatable {
             ))
         case "context_compaction":
             self = .contextCompaction(
-                try container.decode(ContextCompactionStatus.self, forKey: .status)
+                id: try container.decodeIfPresent(String.self, forKey: .compactionId),
+                status: try container.decode(ContextCompactionStatus.self, forKey: .status)
             )
         case "goal_update":
             self = .goalUpdate(try container.decode(SessionGoal.self, forKey: .goal))
@@ -430,8 +431,9 @@ public enum SessionUpdate: Sendable, Codable, Equatable {
             try container.encodeIfPresent(usage.reasoningOutputTokens, forKey: .reasoningOutputTokens)
             try container.encodeIfPresent(usage.totalTokens, forKey: .totalTokens)
             try container.encodeIfPresent(usage.cost, forKey: .cost)
-        case let .contextCompaction(status):
+        case let .contextCompaction(id, status):
             try container.encode("context_compaction", forKey: .sessionUpdate)
+            try container.encodeIfPresent(id, forKey: .compactionId)
             try container.encode(status, forKey: .status)
         case let .goalUpdate(goal):
             try container.encode("goal_update", forKey: .sessionUpdate)

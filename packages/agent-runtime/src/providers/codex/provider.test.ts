@@ -248,8 +248,8 @@ describe("CodexProvider", () => {
 
     expect(events.map((event) => event.payload)).toEqual(
       expect.arrayContaining([
-        { sessionUpdate: "context_compaction", status: "started" },
-        { sessionUpdate: "context_compaction", status: "completed" }
+        { compactionId: "compact-1", sessionUpdate: "context_compaction", status: "started" },
+        { compactionId: "compact-1", sessionUpdate: "context_compaction", status: "completed" }
       ])
     )
   })

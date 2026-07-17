@@ -90,9 +90,9 @@ struct ProtocolCodableTests {
         // Null budget (unbounded goal) survives the trip as nil.
         try roundTrip(SessionUpdate.goalUpdate(SessionGoal(objective: "unbounded", status: .paused)))
         try roundTrip(SessionUpdate.goalCleared)
-        try roundTrip(SessionUpdate.contextCompaction(.started))
-        try roundTrip(SessionUpdate.contextCompaction(.completed))
-        try roundTrip(SessionUpdate.contextCompaction(.failed))
+        try roundTrip(SessionUpdate.contextCompaction(id: "compact-1", status: .started))
+        try roundTrip(SessionUpdate.contextCompaction(id: "compact-1", status: .completed))
+        try roundTrip(SessionUpdate.contextCompaction(id: nil, status: .failed))
         try roundTrip(SessionUpdate.planDocument(markdown: "# The Plan\n\n1. Do it"))
         try roundTrip(SessionUpdate.question(QuestionRequest(
             questionId: "q-1",

@@ -179,17 +179,48 @@ struct TranscriptReducerTests {
         #expect(turn.entries.count == 1)
     }
 
-    @Test("Context compaction replaces thinking and records completion")
+    @Test("Context compaction updates in place and preserves arrival order")
     func contextCompaction() {
         var turn = AssistantTurn(isGenerating: true, isThinking: true)
-        TranscriptReducer.apply(.contextCompaction(.started), to: &turn)
+        TranscriptReducer.apply(
+            .toolCall(ToolCall(toolCallId: "before", title: "Before")),
+            to: &turn
+        )
+        TranscriptReducer.apply(.contextCompaction(id: "compact-1", status: .started), to: &turn)
         #expect(turn.contextCompactionStatus == .started)
         #expect(turn.isThinking == false)
+        TranscriptReducer.apply(
+            .toolCall(ToolCall(toolCallId: "after", title: "After")),
+            to: &turn
+        )
 
-        TranscriptReducer.apply(.contextCompaction(.completed), to: &turn)
+        TranscriptReducer.apply(.contextCompaction(id: "compact-1", status: .completed), to: &turn)
+        #expect(turn.contextCompactionStatus == .completed)
+        #expect(turn.entries.count == 3)
+        guard case let .contextCompaction(id, status) = turn.entries[1] else {
+            Issue.record("expected compaction between tool calls")
+            return
+        }
+        #expect(id == "compact-1")
+        #expect(status == .completed)
+    }
+
+    @Test("Failed and legacy compactions settle the matching ordered entry")
+    func failedAndLegacyContextCompaction() {
+        var turn = AssistantTurn(isGenerating: true)
+        TranscriptReducer.apply(.contextCompaction(id: nil, status: .started), to: &turn)
+        TranscriptReducer.apply(.contextCompaction(id: nil, status: .completed), to: &turn)
+        #expect(turn.entries.count == 1)
         #expect(turn.contextCompactionStatus == .completed)
 
-        TranscriptReducer.apply(.contextCompaction(.failed), to: &turn)
+        TranscriptReducer.apply(.contextCompaction(id: "compact-2", status: .started), to: &turn)
+        #expect(turn.entries.count == 2)
+        TranscriptReducer.apply(.contextCompaction(id: "compact-2", status: .failed), to: &turn)
+        #expect(turn.entries.count == 1)
+        #expect(turn.contextCompactionStatus == .completed)
+
+        TranscriptReducer.apply(.contextCompaction(id: nil, status: .failed), to: &turn)
+        #expect(turn.entries.isEmpty)
         #expect(turn.contextCompactionStatus == nil)
     }
 

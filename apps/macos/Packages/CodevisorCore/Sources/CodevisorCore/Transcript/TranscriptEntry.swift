@@ -1,17 +1,19 @@
 import Foundation
 import ACPKit
 
-/// A single ordered element of an assistant turn: either a streamed text span
-/// or a tool call. Preserving the order of these entries is what lets the UI
-/// render text → tool → tool → text → tool → text exactly as it streamed.
+/// A single ordered element of an assistant turn. Preserving the order of
+/// these entries is what lets the UI render text, tools, and lifecycle events
+/// exactly where they occurred.
 public enum TranscriptEntry: Identifiable, Sendable, Equatable {
     case text(id: String, markdown: String)
     case tool(ToolCall)
+    case contextCompaction(id: String, status: ContextCompactionStatus)
 
     public var id: String {
         switch self {
         case let .text(id, _): return "text:\(id)"
         case let .tool(call): return "tool:\(call.toolCallId)"
+        case let .contextCompaction(id, _): return "compaction:\(id)"
         }
     }
 
@@ -67,10 +69,6 @@ public struct AssistantTurn: Sendable, Equatable {
     /// Set while a transient failure is being retried; drives the visible
     /// "Retrying…" status. Cleared once new content streams or the turn ends.
     public var retryStatus: RetryStatus?
-    /// Latest context-compaction lifecycle for this turn. Completed remains
-    /// visible alongside subsequent work; failed clears without replacing the
-    /// provider's normal error/retry presentation.
-    public var contextCompactionStatus: ContextCompactionStatus?
     public var plan: Plan?
     /// A proposed plan document (markdown) from plan mode — distinct from the
     /// step checklist in `plan`. Replaced wholesale per update.
@@ -109,7 +107,6 @@ public struct AssistantTurn: Sendable, Equatable {
         stopDetail: String? = nil,
         retryable: Bool = false,
         retryStatus: RetryStatus? = nil,
-        contextCompactionStatus: ContextCompactionStatus? = nil,
         plan: Plan? = nil,
         planDocument: String? = nil,
         planBoundary: Int? = nil,
@@ -129,7 +126,6 @@ public struct AssistantTurn: Sendable, Equatable {
         self.stopDetail = stopDetail
         self.retryable = retryable
         self.retryStatus = retryStatus
-        self.contextCompactionStatus = contextCompactionStatus
         self.plan = plan
         self.planDocument = planDocument
         self.planBoundary = planBoundary
@@ -145,6 +141,16 @@ public struct AssistantTurn: Sendable, Equatable {
 }
 
 public extension AssistantTurn {
+    /// Latest ordered context-compaction lifecycle, used only to coordinate
+    /// the turn-level activity indicator. The event itself renders from
+    /// `entries` at its actual arrival position.
+    var contextCompactionStatus: ContextCompactionStatus? {
+        for entry in entries.reversed() {
+            if case let .contextCompaction(_, status) = entry { return status }
+        }
+        return nil
+    }
+
     /// The last assistant text message, rendered expanded at the bottom as the final answer.
     ///
     /// ACP agents may interleave tool calls after chunks for the final message.

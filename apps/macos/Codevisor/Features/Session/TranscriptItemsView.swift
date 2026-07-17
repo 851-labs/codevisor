@@ -40,6 +40,15 @@ struct TranscriptItemsView: View {
                     autoExpanded: depth == 0 && isTurnActive
                         && (calls.last.map { turn.isTrailingToolGroup(lastToolCallId: $0.toolCallId) } ?? false)
                 )
+            case let .contextCompaction(_, status):
+                switch status {
+                case .started:
+                    ShimmeringText.compactingContext
+                case .completed:
+                    AgentStatusText.contextCompacted
+                case .failed:
+                    EmptyView()
+                }
             case let .subagent(_, call):
                 if depth + 1 < Self.maxNestingDepth {
                     SubagentSectionView(call: call, turn: turn, isTurnActive: isTurnActive, depth: depth + 1)

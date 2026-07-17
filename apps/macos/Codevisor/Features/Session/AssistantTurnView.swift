@@ -129,17 +129,6 @@ struct AssistantTurnView: View {
                 workedSection(items: afterPlan, key: .turnImplementation(turnID), timerLabel: true)
             }
 
-            if presentation.showsResult {
-                switch turn.contextCompactionStatus {
-                case .started:
-                    ShimmeringText.compactingContext
-                case .completed:
-                    AgentStatusText.contextCompacted
-                case .failed, nil:
-                    EmptyView()
-                }
-            }
-
             // A transient failure (e.g. 529 overload) is being retried — show it
             // instead of the plain "Thinking…" so the chat isn't a silent freeze.
             if presentation.showsResult,

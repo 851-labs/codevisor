@@ -275,7 +275,6 @@ struct SessionScreen: View {
                 let hasResultRow = !message.turn.workedItemsAfterPlan.isEmpty
                     || message.turn.finalText != nil
                     || message.turn.stopDetail != nil
-                    || message.turn.contextCompactionStatus != nil
                     || message.turn.isGenerating
                 if hasResultRow {
                     result.append(.init(

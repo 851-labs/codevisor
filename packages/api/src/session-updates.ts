@@ -95,6 +95,7 @@ export type ContextCompactionStatus = typeof ContextCompactionStatus.Type
 
 export const ContextCompactionPayload = Schema.Struct({
   sessionUpdate: Schema.Literals(["context_compaction"]),
+  compactionId: Schema.optional(Schema.String),
   status: ContextCompactionStatus
 })
 export type ContextCompactionPayload = typeof ContextCompactionPayload.Type
