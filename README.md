@@ -3,7 +3,7 @@
     <img src="apps/www/public/codevisor-icon.png" alt="Codevisor logo" width="128">
   </a>
   <h1><b>Codevisor</b></h1>
-  <p>Every coding agent. One app.</p>
+  <p>The fastest native app for agentic engineering</p>
 </div>
 
 <div align="center">
