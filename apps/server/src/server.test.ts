@@ -1366,7 +1366,9 @@ describe("@codevisor/server", () => {
       ["GET", "/v1/harnesses/codex/accounts"],
       ["GET", "/v1/harnesses/opencode/accounts/account-1/providers"],
       ["POST", "/v1/harnesses/opencode/accounts/account-1/providers/openai/login"],
+      ["DELETE", "/v1/harnesses/opencode/accounts/account-1/providers/openai"],
       ["GET", "/v1/harnesses/opencode/auth-flows/flow-open"],
+      ["DELETE", "/v1/harnesses/opencode/auth-flows/flow-open"],
       ["POST", "/v1/harnesses/opencode/auth-flows/flow-open/answer"]
     ]
     for (const [method, path] of unavailableRequests) {
@@ -1521,7 +1523,8 @@ describe("@codevisor/server", () => {
       ["GET", "/v1/harnesses/pi/providers/openai/login"],
       ["GET", "/v1/harnesses/pi/providers/openai"],
       ["GET", "/v1/harnesses/pi/auth-flows/pi-flow-1/answer"],
-      ["POST", "/v1/harnesses/pi/auth-flows/pi-flow-1"]
+      ["POST", "/v1/harnesses/pi/auth-flows/pi-flow-1"],
+      ["POST", "/v1/harnesses/opencode/auth-flows/flow-open"]
     ] as const) {
       expect((await jsonRequest(server, path, { method })).status).toBe(404)
     }

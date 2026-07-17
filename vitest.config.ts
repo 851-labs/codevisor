@@ -18,7 +18,8 @@ export default defineConfig({
         // tests still run, while unit coverage is enforced at their server
         // route and runtime boundaries.
         "apps/server/src/harness-auth.ts",
-        "apps/server/src/pi-auth.ts"
+        "apps/server/src/pi-auth.ts",
+        "apps/server/src/opencode-auth.ts"
       ],
       provider: "v8",
       thresholds: {

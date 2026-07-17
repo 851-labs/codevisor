@@ -780,18 +780,14 @@ describe("ClaudeProvider", () => {
     await settle()
     expect(promptResolved).toBe(false)
     expect(
-      events.filter(
-        (event) => (event.payload as Record<string, unknown>).turnState === "ended"
-      )
+      events.filter((event) => (event.payload as Record<string, unknown>).turnState === "ended")
     ).toHaveLength(0)
 
     fake.push(resultMessage())
     await prompt
     expect(promptResolved).toBe(true)
     expect(
-      events.filter(
-        (event) => (event.payload as Record<string, unknown>).turnState === "ended"
-      )
+      events.filter((event) => (event.payload as Record<string, unknown>).turnState === "ended")
     ).toHaveLength(1)
   })
 
