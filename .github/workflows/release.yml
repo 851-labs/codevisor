@@ -24,6 +24,7 @@ on:
 permissions:
   actions: read
   contents: write
+  models: read
 
 env:
   BUN_VERSION: "1.3.13"
@@ -271,6 +272,11 @@ jobs:
       TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
       - uses: actions/download-artifact@v8
         with:
           path: dist/release
@@ -278,17 +284,39 @@ jobs:
       - name: Publish GitHub release assets
         shell: bash
         run: |
+          notes_file="$RUNNER_TEMP/release-notes.md"
+          current_body="$RUNNER_TEMP/current-release-body.md"
+          release_exists=false
+          refresh_notes=true
+
           if gh release view "$TAG" >/dev/null 2>&1; then
+            release_exists=true
+            gh release view "$TAG" --json body --jq .body > "$current_body"
+            if grep -Fq "codevisor-release-notes:v1 summary=model" "$current_body"; then
+              refresh_notes=false
+            fi
+          fi
+
+          if [[ "$refresh_notes" == "true" ]]; then
+            node scripts/release/generate-release-notes.mjs \
+              --tag "$TAG" \
+              --target "$GITHUB_SHA" \
+              --discover-previous \
+              --repository "$REPOSITORY" \
+              --output "$notes_file"
+          fi
+
+          if [[ "$release_exists" == "true" ]]; then
             gh release upload "$TAG" dist/release/*.zip dist/release/*.tar.gz dist/release/*.dmg --clobber
+            if [[ "$refresh_notes" == "true" ]]; then
+              gh release edit "$TAG" --notes-file "$notes_file"
+            fi
           else
             gh release create "$TAG" dist/release/*.zip dist/release/*.tar.gz dist/release/*.dmg \
               --target "$GITHUB_SHA" \
               --title "$TAG" \
-              --generate-notes
+              --notes-file "$notes_file"
           fi
-      - uses: actions/setup-node@v6
-        with:
-          node-version: ${{ env.NODE_VERSION }}
       - name: Upload R2 release assets
         shell: bash
         env:

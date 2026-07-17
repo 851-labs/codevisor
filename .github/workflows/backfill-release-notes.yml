@@ -1,0 +1,76 @@
+name: Backfill Release Notes
+
+on:
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: "Update GitHub Release bodies. Leave disabled to generate previews only."
+        required: true
+        default: false
+        type: boolean
+      force:
+        description: "Regenerate releases that already have model-written v1 notes."
+        required: true
+        default: false
+        type: boolean
+      start_tag:
+        description: "Optional published tag to resume from, for example v0.1.40."
+        required: false
+        type: string
+      max_releases:
+        description: "Optional maximum number of releases to process in this run."
+        required: false
+        type: number
+
+permissions:
+  contents: write
+  models: read
+
+concurrency:
+  group: backfill-release-notes
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: "24.x"
+  REPOSITORY: ${{ github.repository }}
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Generate release notes
+        shell: bash
+        env:
+          APPLY: ${{ inputs.apply }}
+          FORCE: ${{ inputs.force }}
+          START_TAG: ${{ inputs.start_tag }}
+          MAX_RELEASES: ${{ inputs.max_releases }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          args=(--repository "$REPOSITORY" --output-dir dist/release-notes-backfill)
+          if [[ "$APPLY" == "true" ]]; then
+            args+=(--apply)
+          fi
+          if [[ "$FORCE" == "true" ]]; then
+            args+=(--force)
+          fi
+          if [[ -n "$START_TAG" ]]; then
+            args+=(--start-tag "$START_TAG")
+          fi
+          if [[ -n "$MAX_RELEASES" && "$MAX_RELEASES" != "0" ]]; then
+            args+=(--max-releases "$MAX_RELEASES")
+          fi
+          node scripts/release/backfill-release-notes.mjs "${args[@]}"
+      - name: Upload release-note previews
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-note-${{ inputs.apply && 'apply' || 'preview' }}-${{ github.run_id }}
+          path: dist/release-notes-backfill
+          if-no-files-found: warn
