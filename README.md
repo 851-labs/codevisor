@@ -30,7 +30,7 @@
 
 ---
 
-![Codevisor showing active coding-agent chats across several projects with a detailed response in the main workspace.](docs/images/codevisor-workspace.png)
+![Codevisor showing active coding-agent chats across several projects with a detailed response in the main workspace.](docs/images/codevisor-workspace-2026-07-17.png)
 
 **Run Claude Code, Codex, and any ACP-compatible coding agent on your machines in one native macOS app.**
 
@@ -43,15 +43,12 @@
 ## Installation
 
 ```bash
-# Install script
+# Install script: macOS app or Codevisor Server on Linux
 curl -fsSL https://www.codevisor.dev/install.sh | sh
 
 # Homebrew
 brew install --cask 851-labs/tap/codevisor
 ```
-
-> [!NOTE]
-> The install script installs the Codevisor app on macOS or Codevisor Server on Linux.
 
 ### Direct Download
 
