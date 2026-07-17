@@ -42,6 +42,8 @@ export interface TerminalManagerConfig {
   readonly defaultShell?: string
   readonly env?: NodeJS.ProcessEnv
   readonly spawner?: TerminalSpawner
+  /// Host platform used to select a terminal name. Injectable for tests.
+  readonly platform?: NodeJS.Platform
   /// The effective user's passwd-database shell. Injectable so service-style
   /// environments with no SHELL can be covered without depending on the test
   /// runner's account.
@@ -79,6 +81,7 @@ export interface ExternalTerminalConfig {
 /// reconnect past the trim point lose the oldest scrollback only.
 const EXTERNAL_TERMINAL_MAX_FRAMES = 20_000
 const GHOSTTY_TERM = "xterm-ghostty"
+const PORTABLE_TERM = "xterm-256color"
 const BUNDLED_GHOSTTY_TERMINFO_DIRECTORY = fileURLToPath(
   new URL("../resources/terminfo", import.meta.url)
 )
@@ -115,6 +118,9 @@ const resolveDefaultShell = (config: TerminalManagerConfig, env: NodeJS.ProcessE
   }
   return "/bin/sh"
 }
+
+const resolveTerminalName = (platform: NodeJS.Platform): string =>
+  platform === "darwin" ? GHOSTTY_TERM : PORTABLE_TERM
 
 export interface TerminalManagerService {
   readonly createTerminal: (
@@ -186,6 +192,7 @@ export const makeTerminalManager = (config: TerminalManagerConfig = {}): Termina
   const env = config.env ?? process.env
   const terminfoDirectory = config.terminfoDirectory ?? BUNDLED_GHOSTTY_TERMINFO_DIRECTORY
   const defaultShell = resolveDefaultShell(config, env)
+  const terminalName = resolveTerminalName(config.platform ?? process.platform)
 
   const pushFrame = (
     terminal: RunningTerminal,
@@ -249,20 +256,27 @@ export const makeTerminalManager = (config: TerminalManagerConfig = {}): Termina
         }
 
         const terminalId = randomUUID()
+        const terminalEnvironment: NodeJS.ProcessEnv = {
+          ...env,
+          ...envOverrides,
+          COLORTERM: "truecolor",
+          TERM: terminalName,
+          TERM_PROGRAM: "ghostty"
+        }
+        if (terminalName === GHOSTTY_TERM) {
+          terminalEnvironment.TERMINFO = terminfoDirectory
+        } else {
+          // An inherited Ghostty-only TERMINFO masks the host's standard
+          // xterm-256color database for shells such as Zsh.
+          delete terminalEnvironment.TERMINFO
+        }
         const spawnRequest: TerminalSpawnRequest = {
           ...request,
           shell: request.shell ?? defaultShell,
-          // Match Ghostty's own launch environment. TERMINFO points at the
-          // database bundled with the server, so xterm-ghostty is available on
-          // local and remote Codevisor machines without a host installation.
-          env: {
-            ...env,
-            ...envOverrides,
-            COLORTERM: "truecolor",
-            TERM: GHOSTTY_TERM,
-            TERMINFO: terminfoDirectory,
-            TERM_PROGRAM: "ghostty"
-          }
+          // Match Ghostty's launch environment on macOS. Linux uses the
+          // broadly recognized xterm-256color name so stock distro profiles
+          // enable colors without requiring Ghostty-specific TERM handling.
+          env: terminalEnvironment
         }
         const pendingFrames: Array<TerminalFramePayload> = []
         let runningTerminal: RunningTerminal | undefined
@@ -464,7 +478,7 @@ export const nodePtySpawner: TerminalSpawner = {
           cols: request.cols,
           cwd: request.cwd,
           env: request.env,
-          name: request.env.TERM ?? GHOSTTY_TERM,
+          name: request.env.TERM ?? PORTABLE_TERM,
           rows: request.rows
         })
         child.onData(handlers.onOutput)

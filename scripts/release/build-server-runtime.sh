@@ -83,12 +83,28 @@ for package_name in agent-runtime api db terminal; do
   cp -R "$repo_root/packages/$package_name/dist" "$runtime_dir/packages/$package_name/dist"
 done
 
-# Server-side shells advertise xterm-ghostty. Keep its terminfo database next
-# to @codevisor/terminal so the package can set TERMINFO without modifying the
-# host machine (including remote Codevisor servers).
+# Keep Ghostty's terminfo database next to @codevisor/terminal in both macOS
+# and Linux lookup layouts. Linux PTYs advertise the portable xterm-256color
+# baseline, but the Ghostty entry remains available to macOS and explicit
+# shell configuration without modifying the host terminfo database.
 terminal_resources="$repo_root/packages/terminal/resources"
-if [[ ! -f "$terminal_resources/terminfo/78/xterm-ghostty" ]]; then
-  echo "error: bundled xterm-ghostty terminfo is missing from $terminal_resources" >&2
+for entry in \
+  terminfo/78/xterm-ghostty \
+  terminfo/67/ghostty \
+  terminfo/x/xterm-ghostty \
+  terminfo/g/ghostty; do
+  if [[ ! -f "$terminal_resources/$entry" ]]; then
+    echo "error: bundled terminfo entry is missing: $terminal_resources/$entry" >&2
+    exit 1
+  fi
+done
+if ! cmp -s \
+  "$terminal_resources/terminfo/78/xterm-ghostty" \
+  "$terminal_resources/terminfo/x/xterm-ghostty" \
+  || ! cmp -s \
+    "$terminal_resources/terminfo/67/ghostty" \
+    "$terminal_resources/terminfo/g/ghostty"; then
+  echo "error: macOS and Linux terminfo entries are out of sync" >&2
   exit 1
 fi
 cp -R "$terminal_resources" "$runtime_dir/packages/terminal/resources"

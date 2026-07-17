@@ -6,7 +6,7 @@ import type {
 } from "./index.js"
 import type { TerminalClientFrame } from "@codevisor/api"
 import { Effect } from "effect"
-import { existsSync } from "node:fs"
+import { existsSync, readFileSync } from "node:fs"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
 import { makeTerminalManager, TerminalError, TerminalManager } from "./index.js"
@@ -97,7 +97,7 @@ describe("@codevisor/terminal", () => {
     ).rejects.toBeInstanceOf(TerminalError)
   })
 
-  it("launches shells with the bundled Ghostty terminal environment", async () => {
+  it("launches macOS shells with the bundled Ghostty terminal environment", async () => {
     const spawner = makeSpawner()
     const manager = makeTerminalManager({
       env: {
@@ -106,6 +106,7 @@ describe("@codevisor/terminal", () => {
         TERMINFO: "/tmp/missing",
         TERM_PROGRAM: "other"
       },
+      platform: "darwin",
       spawner
     })
 
@@ -124,8 +125,44 @@ describe("@codevisor/terminal", () => {
     })
     const terminfoDirectory = terminalEnv?.TERMINFO
     expect(terminfoDirectory).toBeTypeOf("string")
+    // Darwin's ncurses uses hexadecimal bucket names while Linux ncurses uses
+    // the terminal name's first character. Ship both so the same server
+    // package works on every supported host without distro-specific probing.
     expect(existsSync(join(terminfoDirectory!, "78", "xterm-ghostty"))).toBe(true)
     expect(existsSync(join(terminfoDirectory!, "67", "ghostty"))).toBe(true)
+    expect(existsSync(join(terminfoDirectory!, "x", "xterm-ghostty"))).toBe(true)
+    expect(existsSync(join(terminfoDirectory!, "g", "ghostty"))).toBe(true)
+    expect(readFileSync(join(terminfoDirectory!, "x", "xterm-ghostty"))).toEqual(
+      readFileSync(join(terminfoDirectory!, "78", "xterm-ghostty"))
+    )
+    expect(readFileSync(join(terminfoDirectory!, "g", "ghostty"))).toEqual(
+      readFileSync(join(terminfoDirectory!, "67", "ghostty"))
+    )
+  })
+
+  it("uses the portable 256-color terminal name for Linux profiles", async () => {
+    const spawner = makeSpawner()
+    const manager = makeTerminalManager({
+      env: { TERM: "xterm-ghostty" },
+      platform: "linux",
+      spawner
+    })
+
+    await run(
+      manager.createTerminal({
+        sessionId: "session-linux-term",
+        cwd: "/tmp/project",
+        cols: 80,
+        rows: 24
+      })
+    )
+
+    expect(spawner.requests[0]?.env).toMatchObject({
+      COLORTERM: "truecolor",
+      TERM: "xterm-256color",
+      TERM_PROGRAM: "ghostty"
+    })
+    expect(spawner.requests[0]?.env.TERMINFO).toBeUndefined()
   })
 
   it("prefers an executable SHELL from the manager environment", async () => {

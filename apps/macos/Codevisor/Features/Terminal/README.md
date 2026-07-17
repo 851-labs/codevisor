@@ -38,11 +38,15 @@ embedded terminal scale matches the rest of the app chrome.
 `~/Library/Application Support/Codevisor/ghostty-resources/` and sets
 `GHOSTTY_RESOURCES_DIR=<that>/ghostty` **before `ghostty_init`** (it captures the
 dir at init). The server separately ships the compiled entries from
-`packages/terminal/resources/terminfo`; actual shell PTYs use
-`TERM=xterm-ghostty`, `TERMINFO=<bundled dir>`, and `COLORTERM=truecolor` on
-local and remote machines. When regenerating the tarball after a Ghostty bump,
-also refresh those two server-side terminfo files from the same `zig-out/share`
-directory so the renderer and advertised capabilities stay in sync.
+`packages/terminal/resources/terminfo` in both macOS's hexadecimal (`67/`,
+`78/`) and Linux's first-character (`g/`, `x/`) lookup layouts; actual shell
+PTYs use `TERM=xterm-ghostty` on macOS and `TERM=xterm-256color` on Linux,
+alongside `COLORTERM=truecolor`. Only macOS receives
+`TERMINFO=<bundled dir>`; Linux uses its system `xterm-256color` entry so the
+Ghostty-only directory cannot mask standard entries in Zsh. When regenerating
+the tarball after a Ghostty bump, also refresh the two canonical server-side
+terminfo files from the same `zig-out/share` directory and copy them into the
+Linux buckets so the renderer and advertised capabilities stay in sync.
 
 ## What's implemented
 
