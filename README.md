@@ -36,7 +36,7 @@
 
 - **lightweight and fast** — no electron bloat, no webviews, pure Swift.
 - **remote machines** — connect your Mac Mini, VPS, or any remote server.
-- **a real terminal** — embedded [Ghostty](https://github.com/ghostty-org/ghostty), with all the bells and whistles.
+- **a real terminal** — embedded [Ghostty](https://github.com/ghostty-org/ghostty) with all the bells and whistles.
 
 ---
 
