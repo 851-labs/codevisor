@@ -29,9 +29,6 @@
   <a href="https://discord.gg/WzX6BpfaRH">
     <img src="https://img.shields.io/badge/Discord-5865F2?logo=discord&logoColor=white&style=flat" alt="Join the Codevisor Discord">
   </a>
-  <a href="https://www.codevisor.dev/docs">
-    <img src="https://img.shields.io/badge/Docs-codevisor.dev-4b32c3?style=flat" alt="Codevisor documentation">
-  </a>
   <a href="LICENSE">
     <img src="https://img.shields.io/badge/License-AGPL--3.0-blue?style=flat" alt="AGPL-3.0 license">
   </a>
