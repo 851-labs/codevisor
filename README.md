@@ -23,6 +23,9 @@
   <a href="https://github.com/851-labs/codevisor/releases/latest">
     <img src="https://img.shields.io/github/downloads/851-labs/codevisor/total?label=downloads&style=flat" alt="Total downloads">
   </a>
+  <a href="https://github.com/851-labs/codevisor/stargazers">
+    <img src="https://img.shields.io/github/stars/851-labs/codevisor?style=flat" alt="GitHub stars">
+  </a>
   <a href="https://www.codevisor.dev/docs">
     <img src="https://img.shields.io/badge/Docs-codevisor.dev-4b32c3?style=flat" alt="Codevisor documentation">
   </a>
