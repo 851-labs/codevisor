@@ -4,6 +4,13 @@ import CodevisorCore
 /// Hosts a session: resolves its cached `SessionController` from the store and
 /// shows the session screen.
 struct SessionContainerView: View {
+    /// The title is drawn in the top-bar overlay instead of as an `NSToolbar`
+    /// item. In compact windows it starts after the traffic lights, machine
+    /// picker, and leading-sidebar toggle; a docked sidebar owns that chrome.
+    private static let compactToolbarTitleLeadingInset: CGFloat = 188
+    private static let dockedToolbarTitleLeadingInset: CGFloat = 12
+    private static let toolbarTitleTrailingInset: CGFloat = 60
+
     /// Inspector width limits, shared by the column-width modifier and the
     /// persistence clamp below.
     private static let inspectorMinWidth: CGFloat = 220
@@ -45,34 +52,12 @@ struct SessionContainerView: View {
             }
         }
         // The window keeps the plain title (Window menu, Mission Control), but
-        // the toolbar's default title item is replaced with a custom leading
-        // title + branch-diff pair — a toolbar item added next to the default
-        // title would land in the middle of the top bar, not at the end of the
-        // session name.
+        // its default toolbar title is removed. The visible title is rendered
+        // by `sessionToolbarTitleOverlay` below: `NSToolbar` animates custom
+        // items toward its overflow menu while resizing, whereas the overlay
+        // behaves like an ordinary constrained row and truncates directly.
         .navigationTitle(session.title)
         .toolbar(removing: .title)
-        .toolbar {
-            // The inspector toggle lives in the inspector content's toolbar
-            // (below): the system pins it at the window's trailing edge and
-            // keeps it in the main bar while the inspector is closed, so no
-            // separate main-toolbar item is needed here.
-            ToolbarItem(placement: .navigation) {
-                HStack(spacing: 8) {
-                    Text(session.title)
-                        .font(.headline)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                    if let diffDirectory {
-                        BranchDiffBadge(directory: diffDirectory)
-                    }
-                }
-                // Matches the system toolbar title's leading inset (measured
-                // against the default title this item replaces).
-                .padding(.leading, 12)
-            }
-            // It's a title, not a control: no glass capsule behind it.
-            .sharedBackgroundVisibility(.hidden)
-        }
         // Removing the default title item (above) also drops the toolbar's
         // backing on macOS 26, leaving the top bar fully transparent over
         // scrolled chat content. Restoring it with
@@ -102,11 +87,14 @@ struct SessionContainerView: View {
                 }
             }
         }
-        // Applied AFTER the toolbar and the manual band so both belong to the
-        // chat column only: the inspector then presents as its own full-height
-        // trailing column with its own toolbar section (divider through the
-        // top bar), instead of sliding underneath a band painted across the
-        // whole window.
+        .overlay(alignment: .topLeading) {
+            sessionToolbarTitleOverlay
+        }
+        // Applied AFTER the toolbar, manual band, and title so they all belong
+        // to the chat column only. The title therefore follows the exact
+        // primary-column width, including inspector divider drags, while the
+        // inspector presents as its own full-height trailing column with its
+        // own toolbar section (divider through the top bar).
         .inspector(isPresented: Binding(
             get: { panelLayout.docksInspector && scratchpad.isVisible },
             set: { visible in
@@ -185,6 +173,38 @@ struct SessionContainerView: View {
             Image(systemName: "sidebar.trailing")
         }
         .help("Toggle Scratchpad (⌥⌘I)")
+    }
+
+    private var sessionToolbarTitleOverlay: some View {
+        GeometryReader { proxy in
+            HStack(spacing: 8) {
+                Text(session.title)
+                    .font(.headline)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                if let diffDirectory {
+                    BranchDiffBadge(directory: diffDirectory)
+                }
+            }
+            .padding(.leading, toolbarTitleLeadingInset)
+            .padding(.trailing, Self.toolbarTitleTrailingInset)
+            .frame(
+                width: proxy.size.width,
+                height: proxy.safeAreaInsets.top,
+                alignment: .leading
+            )
+            .offset(y: -proxy.safeAreaInsets.top)
+        }
+        // Preserve the background overlay's native window-drag path and avoid
+        // duplicating the window title in the accessibility hierarchy.
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+
+    private var toolbarTitleLeadingInset: CGFloat {
+        panelLayout.docksSidebar
+            ? Self.dockedToolbarTitleLeadingInset
+            : Self.compactToolbarTitleLeadingInset
     }
 
     private var compactInspectorWidth: CGFloat {
