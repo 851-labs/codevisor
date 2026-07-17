@@ -56,13 +56,6 @@ Download the [latest release](https://www.codevisor.dev/download/macos), open th
 
 [![Download macOS](https://img.shields.io/badge/Download-macOS-black?logo=apple&logoColor=white&style=for-the-badge)](https://www.codevisor.dev/download/macos)
 
-## Tech Stack
-
-- [Swift](https://www.swift.org/) and [SwiftUI](https://developer.apple.com/documentation/swiftui) — native macOS app
-- [TypeScript](https://www.typescriptlang.org/) and [Effect](https://effect.website/) — local and remote server
-- [Agent Client Protocol](https://agentclientprotocol.com/) — coding agent interoperability
-- [GhosttyKit](https://github.com/ghostty-org/ghostty) — embedded terminal
-
 ## License
 
 This project is released under the GNU Affero General Public License v3.0. See [LICENSE](LICENSE) for details.
