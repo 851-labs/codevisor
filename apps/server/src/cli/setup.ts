@@ -3,7 +3,13 @@
 /// connection token, and print the exact steps plus a codevisor:// deeplink.
 /// Logic lives behind the same injectable seam as the other CLI commands; the
 /// real prompt implementations are wired in cli.ts.
-import { resolvePort, startCommand, type CliDeps, type CommandOptions } from "./support.js"
+import {
+  DEFAULT_PORT,
+  resolvePort,
+  startCommand,
+  type CliDeps,
+  type CommandOptions
+} from "./support.js"
 
 export interface SelectChoice<A> {
   readonly title: string
@@ -160,13 +166,13 @@ export const setupCommand = async (
   }
 
   const name = deps.hostname
+  const host = port === DEFAULT_PORT ? connection.host : `${connection.host}:${port}`
   deps.log("")
   deps.log("This machine is ready for Codevisor.")
   deps.log("")
-  deps.log(`  Machine   ${name}`)
-  deps.log(`  Address   ${connection.host}`)
-  deps.log(`  Port      ${port}`)
-  deps.log(`  Token     ${token}`)
+  deps.log(`  Name               ${name}`)
+  deps.log(`  Host               ${host}`)
+  deps.log(`  Connection token   ${token}`)
   deps.log("")
   if (connection.firewallNote) {
     deps.log(`Firewall: allow inbound TCP ${port} on this machine`)
@@ -175,7 +181,7 @@ export const setupCommand = async (
   }
   deps.log("Connect from Codevisor on your Mac:")
   deps.log("  1. Open Settings → Machines → Add Remote Machine")
-  deps.log(`  2. Enter the address ${connection.host}:${port} and the token above`)
+  deps.log("  2. Enter the Name, Host, and Connection token shown above")
   deps.log("")
   deps.log("Or open this link on your Mac to add the machine automatically:")
   deps.log(`  ${addMachineDeeplink({ host: connection.host, port, token, name })}`)

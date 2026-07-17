@@ -189,8 +189,14 @@ describe("codevisor setup", () => {
     expect(await setupCommand(world.deps)).toBe(0)
     expect(world.selectChoices[0]?.[0]?.title).toBe("Tailscale (recommended)")
     const output = world.logs.join("\n")
-    expect(output).toContain("Address   box.tail.net")
-    expect(output).toContain("Token     hm_setup")
+    expect(output).toContain("Name               build-box")
+    expect(output).toContain("Host               box.tail.net")
+    expect(output).not.toContain(`Host               box.tail.net:${DEFAULT_PORT}`)
+    expect(output).toContain("Connection token   hm_setup")
+    expect(output).not.toContain("  Machine   ")
+    expect(output).not.toContain("  Address   ")
+    expect(output).not.toContain("  Port      ")
+    expect(output).not.toContain("  Token     ")
     expect(output).toContain(
       "codevisor://add-machine?host=box.tail.net&port=49361&token=hm_setup&name=build-box"
     )
@@ -209,7 +215,7 @@ describe("codevisor setup", () => {
     expect(await setupCommand(world.deps)).toBe(0)
     const output = world.logs.join("\n")
     expect(output).toContain("Tip: Tailscale is the recommended way")
-    expect(output).toContain("Address   203.0.113.7")
+    expect(output).toContain("Host               203.0.113.7")
     expect(output).toContain(`Firewall: allow inbound TCP ${DEFAULT_PORT}`)
     // Without tailscale, the recommended choice is absent.
     expect(world.selectChoices[0]?.some((choice) => choice.title.includes("Tailscale"))).toBe(false)
@@ -222,7 +228,7 @@ describe("codevisor setup", () => {
       textEntries: [" 198.51.100.4 "]
     })
     expect(await setupCommand(world.deps)).toBe(0)
-    expect(world.logs.join("\n")).toContain("Address   198.51.100.4")
+    expect(world.logs.join("\n")).toContain("Host               198.51.100.4")
 
     const abandoned = makeWorld({
       http: { [health]: [ok] },
@@ -240,7 +246,19 @@ describe("codevisor setup", () => {
       textEntries: ["10.8.0.5"]
     })
     expect(await setupCommand(world.deps)).toBe(0)
-    expect(world.logs.join("\n")).toContain("Address   10.8.0.5")
+    expect(world.logs.join("\n")).toContain("Host               10.8.0.5")
+
+    const customPort = 40000
+    const nonDefaultPort = makeWorld({
+      http: {
+        [`GET http://127.0.0.1:${customPort}/v1/health`]: [ok],
+        [`GET http://127.0.0.1:${customPort}/v1/auth/connection-token`]: [tokenResponse]
+      },
+      selections: ["custom"],
+      textEntries: ["10.8.0.5"]
+    })
+    expect(await setupCommand(nonDefaultPort.deps, { port: customPort })).toBe(0)
+    expect(nonDefaultPort.logs.join("\n")).toContain(`Host               10.8.0.5:${customPort}`)
 
     const empty = makeWorld({
       http: { [health]: [ok] },
