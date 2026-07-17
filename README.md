@@ -7,16 +7,6 @@
 </div>
 
 <div align="center">
-  <a href="https://www.codevisor.dev/download/macos">
-    <img src="https://img.shields.io/badge/Download-macOS-black?logo=apple&logoColor=white&style=flat" alt="Download Codevisor for macOS">
-  </a>
-  <a href="https://github.com/851-labs/homebrew-tap">
-    <img src="https://img.shields.io/badge/Homebrew-851--labs%2Ftap-fbb040?logo=homebrew&logoColor=white&style=flat" alt="Homebrew tap">
-  </a>
-  <a href="https://github.com/851-labs/codevisor/releases/latest">
-    <img src="https://img.shields.io/github/v/release/851-labs/codevisor?label=Release&style=flat" alt="Latest release">
-  </a>
-  <br>
   <a href="https://github.com/851-labs/codevisor/stargazers">
     <img src="https://img.shields.io/github/stars/851-labs/codevisor?style=flat" alt="GitHub stars">
   </a>
@@ -25,6 +15,16 @@
   </a>
   <a href="LICENSE">
     <img src="https://img.shields.io/badge/License-AGPL--3.0-blue?style=flat" alt="AGPL-3.0 license">
+  </a>
+  <br>
+  <a href="https://www.codevisor.dev/download/macos">
+    <img src="https://img.shields.io/badge/Download-macOS-black?logo=apple&logoColor=white&style=flat" alt="Download Codevisor for macOS">
+  </a>
+  <a href="https://github.com/851-labs/homebrew-tap">
+    <img src="https://img.shields.io/badge/Homebrew-851--labs%2Ftap-fbb040?logo=homebrew&logoColor=white&style=flat" alt="Homebrew tap">
+  </a>
+  <a href="https://github.com/851-labs/codevisor/releases/latest">
+    <img src="https://img.shields.io/github/v/release/851-labs/codevisor?label=Release&style=flat" alt="Latest release">
   </a>
 </div>
 
