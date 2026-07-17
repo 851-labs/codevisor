@@ -112,6 +112,110 @@ struct SessionModelTests {
         #expect(queuedStates == [false, true])
     }
 
+    @Test("Claimed queue items announce their transcript promotion")
+    func queuedPromptPromotionCallback() async {
+        let sessionId = UUID()
+        let queueItemId = UUID()
+        let deletedQueueItemId = UUID()
+        let unrelatedMessageId = UUID()
+        let client = FakeSessionServerClient(sessionId: sessionId)
+        client.echoOnPrompt = false
+        let model = SessionModel(
+            serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
+            sessionId: sessionId.uuidString
+        )
+        var promotionCount = 0
+        model.onQueuedPromptPromoted = { promotionCount += 1 }
+
+        await model.send("first")
+        client.emit(ServerEventEnvelope(
+            id: 1,
+            serverId: "local",
+            kind: "session.queue.updated",
+            subjectId: sessionId.uuidString,
+            createdAt: "2026-07-16T00:00:00.000Z",
+            payload: .object([
+                "queue": .array([.object([
+                    "id": .string(queueItemId.uuidString),
+                    "sessionId": .string(sessionId.uuidString),
+                    "text": .string("queued follow-up"),
+                    "createdAt": .string("2026-07-16T00:00:00.000Z"),
+                    "updatedAt": .string("2026-07-16T00:00:00.000Z")
+                ])])
+            ])
+        ))
+        await settleUntil { model.queuedPrompts.count == 1 }
+
+        // Claiming removes the item from the visible queue immediately before
+        // the server materializes that same id as a user transcript message.
+        client.emit(ServerEventEnvelope(
+            id: 2,
+            serverId: "local",
+            kind: "session.queue.updated",
+            subjectId: sessionId.uuidString,
+            createdAt: "2026-07-16T00:00:01.000Z",
+            payload: .object(["queue": .array([])])
+        ))
+        client.emit(ServerEventEnvelope(
+            id: 3,
+            serverId: "local",
+            kind: "session.output",
+            subjectId: sessionId.uuidString,
+            createdAt: "2026-07-16T00:00:01.001Z",
+            payload: .object([
+                "role": .string("user"),
+                "messageId": .string(queueItemId.uuidString),
+                "text": .string("queued follow-up")
+            ])
+        ))
+        await settleUntil { userMessages(model).count == 2 }
+
+        #expect(promotionCount == 1)
+        #expect(userMessages(model).last?.id == queueItemId)
+
+        // Explicit deletion creates the same queue diff, but a later remote
+        // row has a different id and therefore must not look like a promotion.
+        client.emit(ServerEventEnvelope(
+            id: 4,
+            serverId: "local",
+            kind: "session.queue.updated",
+            subjectId: sessionId.uuidString,
+            createdAt: "2026-07-16T00:00:02.000Z",
+            payload: .object([
+                "queue": .array([.object([
+                    "id": .string(deletedQueueItemId.uuidString),
+                    "sessionId": .string(sessionId.uuidString),
+                    "text": .string("delete me"),
+                    "createdAt": .string("2026-07-16T00:00:02.000Z"),
+                    "updatedAt": .string("2026-07-16T00:00:02.000Z")
+                ])])
+            ])
+        ))
+        await settleUntil { model.queuedPrompts.count == 1 }
+        client.emit(ServerEventEnvelope(
+            id: 5,
+            serverId: "local",
+            kind: "session.queue.updated",
+            subjectId: sessionId.uuidString,
+            createdAt: "2026-07-16T00:00:03.000Z",
+            payload: .object(["queue": .array([])])
+        ))
+        client.emit(ServerEventEnvelope(
+            id: 6,
+            serverId: "local",
+            kind: "session.output",
+            subjectId: sessionId.uuidString,
+            createdAt: "2026-07-16T00:00:03.001Z",
+            payload: .object([
+                "role": .string("user"),
+                "messageId": .string(unrelatedMessageId.uuidString),
+                "text": .string("remote message")
+            ])
+        ))
+        await settleUntil { userMessages(model).count == 3 }
+        #expect(promotionCount == 1)
+    }
+
     @Test("A new empty session negotiates the scoped stream before its first prompt")
     func newSessionFirstPromptUsesScopedStream() async {
         let sessionId = UUID()

@@ -155,6 +155,12 @@ final class SessionController {
     /// Bumped on every user send; the session screen observes it to re-pin
     /// the transcript to the bottom (sending means "show me the newest").
     private(set) var userSendSignal = 0
+    /// A fresh, monotonic request for the transcript to animate the next user
+    /// row out of the bottom chrome. Direct sends trigger it immediately;
+    /// queued sends trigger it only when the server promotes them into the
+    /// transcript, not when they first enter the queue.
+    private(set) var userSendAnimationSignal = 0
+    private(set) var userSendAnimationRequestedAt: TimeInterval = 0
 
     /// The project whose folder is used as the agent cwd. Settable so the
     /// new-chat page can change projects before the first send.
@@ -1199,6 +1205,7 @@ final class SessionController {
     func send() async {
         let text = composerText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty || !composerAttachments.isEmpty, !isConnecting, !isSubmitting else { return }
+        let shouldAnimateTranscriptSend = !isSending
         // Ask at the first moment notifications become useful instead of at
         // launch: the user just started work that may finish while they are in
         // another app. The task is intentionally nonblocking for the send.
@@ -1214,6 +1221,14 @@ final class SessionController {
         guard let attachments = await collectAttachmentsForSend() else {
             isSubmitting = false
             return
+        }
+
+        // Request the motion only once all attachments have settled and the
+        // send is certain to proceed. The row is inserted immediately after
+        // this point, which lets the transcript reject stale requests after a
+        // remount without losing slow attachment sends.
+        if shouldAnimateTranscriptSend {
+            requestUserSendAnimation()
         }
 
         let needsWorktree = wantsNewWorktree && sessionCwdOverride == nil
@@ -1315,6 +1330,11 @@ final class SessionController {
                 status = .failed(message)
             }
         }
+    }
+
+    private func requestUserSendAnimation() {
+        userSendAnimationSignal &+= 1
+        userSendAnimationRequestedAt = ProcessInfo.processInfo.systemUptime
     }
 
     /// Re-submits the user prompt that owns an exhausted retryable assistant
@@ -1624,6 +1644,9 @@ final class SessionController {
         }
         model.onPromptAccepted = { [weak self, weak model] attachmentCount, isQueued in
             self?.captureMessageSent(model: model, attachmentCount: attachmentCount, isQueued: isQueued)
+        }
+        model.onQueuedPromptPromoted = { [weak self] in
+            self?.requestUserSendAnimation()
         }
         model.onActionRequired = { [weak self] in
             self?.onActionRequired?()

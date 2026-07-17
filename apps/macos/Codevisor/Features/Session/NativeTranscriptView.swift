@@ -1,6 +1,7 @@
 import AppKit
-import SwiftUI
 import CodevisorCore
+import QuartzCore
+import SwiftUI
 
 /// Stable rows consumed by the native transcript virtualizer. Message rows
 /// carry immutable settled snapshots; the active row reads the controller from
@@ -67,6 +68,18 @@ struct TranscriptVirtualRow: Identifiable, Equatable {
     /// Cheap content fingerprint used to reject a stale measured height.
     let measurementRevision: Int
 
+    var isUserMessage: Bool {
+        switch content {
+        case let .message(item, waitingOnBackgroundTask: _):
+            if case .user = item { return true }
+            return false
+        case .optimistic:
+            return true
+        default:
+            return false
+        }
+    }
+
     init(
         id: ID,
         content: Content,
@@ -94,6 +107,9 @@ struct NativeTranscriptView: NSViewRepresentable {
     let hasOlderHistory: Bool
     let layoutFingerprint: Int
     let scrollCommand: TranscriptScrollCommand
+    let sendAnimationSignal: Int
+    let sendAnimationRequestedAt: TimeInterval
+    let reduceMotion: Bool
     let rowContent: @MainActor (TranscriptVirtualRow) -> AnyView
     let onViewportChange: @MainActor (SessionScrollState) -> Void
     let onBottomStateChange: @MainActor (Bool) -> Void
@@ -114,6 +130,9 @@ struct NativeTranscriptView: NSViewRepresentable {
             hasOlderHistory: hasOlderHistory,
             layoutFingerprint: layoutFingerprint,
             scrollCommand: scrollCommand,
+            sendAnimationSignal: sendAnimationSignal,
+            sendAnimationRequestedAt: sendAnimationRequestedAt,
+            reduceMotion: reduceMotion,
             rowContent: rowContent,
             onViewportChange: onViewportChange,
             onBottomStateChange: onBottomStateChange,
@@ -131,6 +150,9 @@ struct NativeTranscriptView: NSViewRepresentable {
             hasOlderHistory: hasOlderHistory,
             layoutFingerprint: layoutFingerprint,
             scrollCommand: scrollCommand,
+            sendAnimationSignal: sendAnimationSignal,
+            sendAnimationRequestedAt: sendAnimationRequestedAt,
+            reduceMotion: reduceMotion,
             rowContent: rowContent,
             onViewportChange: onViewportChange,
             onBottomStateChange: onBottomStateChange,
@@ -251,6 +273,7 @@ private final class TranscriptRowHost: NSView {
     }
 
     func prepareForMountedRow() {
+        layer?.removeAnimation(forKey: "codevisor.user-send")
         contentController.resetReportedHeight()
     }
 
@@ -288,6 +311,8 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
     private static let overscanCount = 2
     private static let atBottomThreshold: CGFloat = 2
     private static let maxMeasurementCacheCount = 3
+    private static let sendAnimationRequestLifetime: TimeInterval = 1.25
+    private static let sendAnimationDuration: CFTimeInterval = 0.46
 
     private let transcriptDocumentView = FlippedTranscriptDocumentView()
     private var rows: [TranscriptVirtualRow] = []
@@ -332,6 +357,10 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
     private var followsLatest = true
     private var hasOlderHistory = false
     private var scrollCommand = TranscriptScrollCommand()
+    private var sendAnimationSignal = 0
+    private var pendingSendAnimationDeadline: TimeInterval?
+    private var pendingSendAnimationRowKey: String?
+    private var reduceMotion = false
     /// Geometry changes and their compensating scroll are one transaction.
     /// The depth (rather than a Bool) keeps nested position restorations from
     /// briefly looking like user input to the bounds-change observer.
@@ -466,6 +495,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
             applyPendingInitialPositionIfPossible()
             updateMountedRows()
         }
+        startPendingSendAnimationIfPossible()
     }
 
     override func scrollWheel(with event: NSEvent) {
@@ -502,6 +532,9 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
         hasOlderHistory newHasOlderHistory: Bool,
         layoutFingerprint newLayoutFingerprint: Int,
         scrollCommand newScrollCommand: TranscriptScrollCommand,
+        sendAnimationSignal newSendAnimationSignal: Int,
+        sendAnimationRequestedAt: TimeInterval,
+        reduceMotion newReduceMotion: Bool,
         rowContent newRowContent: @escaping (TranscriptVirtualRow) -> AnyView,
         onViewportChange: @escaping (SessionScrollState) -> Void,
         onBottomStateChange: @escaping (Bool) -> Void,
@@ -514,6 +547,27 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
         self.onFollowStateChange = onFollowStateChange
         self.onNearTop = onNearTop
         hasOlderHistory = newHasOlderHistory
+        reduceMotion = newReduceMotion
+
+        let now = ProcessInfo.processInfo.systemUptime
+        let sendAnimationIsFresh = newSendAnimationSignal > 0
+            && now - sendAnimationRequestedAt <= Self.sendAnimationRequestLifetime
+        let isInitialConfiguration = !initialPositionConfigured
+        if newSendAnimationSignal != sendAnimationSignal {
+            sendAnimationSignal = newSendAnimationSignal
+            pendingSendAnimationRowKey = nil
+            pendingSendAnimationDeadline = sendAnimationIsFresh
+                ? sendAnimationRequestedAt + Self.sendAnimationRequestLifetime
+                : nil
+        }
+
+        let previousRowKeys = Set(rows.map(\.id.layoutKey))
+        let insertedUserRowKey = newRows.last { row in
+            !previousRowKeys.contains(row.id.layoutKey) && row.isUserMessage
+        }?.id.layoutKey
+        let initialOptimisticRowKey = isInitialConfiguration && sendAnimationIsFresh
+            ? newRows.last { $0.id == .optimistic }?.id.layoutKey
+            : nil
 
         let layoutFingerprintChanged = layoutFingerprint != newLayoutFingerprint
         layoutFingerprint = newLayoutFingerprint
@@ -575,8 +629,75 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
             scrollToBottom()
         }
 
+        if pendingSendAnimationDeadline != nil,
+           let animationKey = insertedUserRowKey ?? initialOptimisticRowKey {
+            pendingSendAnimationRowKey = animationKey
+        }
+
         applyPendingInitialPositionIfPossible()
+        startPendingSendAnimationIfPossible()
         checkForHistoryPrefetch()
+    }
+
+    /// Recreates the reference app's shared-element handoff without moving the
+    /// virtual row's authoritative frame: its presentation layer starts at the
+    /// bottom chrome's top edge, then eases into the row's final transcript
+    /// slot. That origin naturally follows the queue panel while it is visible.
+    /// Keeping layout geometry final throughout the flight means streaming and
+    /// scroll compensation cannot fight the animation.
+    private func startPendingSendAnimationIfPossible() {
+        guard !reduceMotion else {
+            pendingSendAnimationDeadline = nil
+            pendingSendAnimationRowKey = nil
+            return
+        }
+        guard let deadline = pendingSendAnimationDeadline,
+              let rowKey = pendingSendAnimationRowKey else { return }
+        guard ProcessInfo.processInfo.systemUptime <= deadline else {
+            pendingSendAnimationDeadline = nil
+            pendingSendAnimationRowKey = nil
+            return
+        }
+        // makeNSView is configured before SwiftUI gives the scroll view its
+        // first non-zero bounds. Keep the request alive until layout mounts
+        // the optimistic row instead of dropping first-send animations.
+        guard let host = mountedHosts[rowKey] else { return }
+        pendingSendAnimationDeadline = nil
+        pendingSendAnimationRowKey = nil
+
+        let bottomSpacerHeight = rows.last { $0.id == .bottomSpacer }.flatMap { row -> CGFloat? in
+            guard case let .bottomSpacer(height) = row.content else { return nil }
+            return height
+        } ?? 0
+        // The spacer includes 24 pt of transcript breathing room in addition
+        // to the measured bottom overlay. Its inverse lands the bubble just
+        // above the queue/accessory stack (or the composer when it is alone).
+        let sourceY = contentView.bounds.maxY - bottomSpacerHeight + 48
+        let travel = sourceY - host.frame.minY
+        guard travel > 1 else { return }
+
+        host.wantsLayer = true
+        guard let layer = host.layer else { return }
+        layer.removeAnimation(forKey: "codevisor.user-send")
+
+        let movement = CABasicAnimation(keyPath: "transform.translation.y")
+        movement.fromValue = travel
+        movement.toValue = 0
+        movement.duration = Self.sendAnimationDuration
+        movement.timingFunction = CAMediaTimingFunction(controlPoints: 0.22, 1, 0.36, 1)
+
+        let fade = CABasicAnimation(keyPath: "opacity")
+        fade.fromValue = 0
+        fade.toValue = 1
+        fade.duration = 0.12
+        fade.timingFunction = CAMediaTimingFunction(name: .easeOut)
+
+        let group = CAAnimationGroup()
+        group.animations = [movement, fade]
+        group.duration = Self.sendAnimationDuration
+        group.fillMode = .backwards
+        group.isRemovedOnCompletion = true
+        layer.add(group, forKey: "codevisor.user-send")
     }
 
     func persistViewport() {

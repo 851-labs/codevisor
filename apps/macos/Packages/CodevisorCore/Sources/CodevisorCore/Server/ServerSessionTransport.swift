@@ -36,7 +36,7 @@ public enum ServerSessionStreamEvent: Equatable, Sendable {
     case update(SessionUpdate)
     /// A persisted user message. Carried outside `SessionUpdate` because the
     /// ACP update type cannot carry attachments.
-    case userMessage(text: String, attachments: [Attachment])
+    case userMessage(id: String?, text: String, attachments: [Attachment])
     case queueUpdated([ServerPromptQueueItem])
     /// A turn ended. `stopDetail` is a short human-readable reason present only
     /// when the ending was abnormal (error / limit / refusal / gave-up
@@ -472,7 +472,11 @@ public struct ServerSessionTransport: Sendable {
         case "user":
             let attachments = attachments(from: payload)
             guard !text.isEmpty || !attachments.isEmpty else { return [] }
-            return [.userMessage(text: text, attachments: attachments)]
+            return [.userMessage(
+                id: payload["messageId"]?.stringValue,
+                text: text,
+                attachments: attachments
+            )]
         default:
             return []
         }

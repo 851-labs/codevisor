@@ -156,6 +156,10 @@ public final class SessionModel {
     /// Fires only after the server accepts a new prompt queue item. Carries
     /// counts/state only; prompt and attachment content never leave the model.
     public var onPromptAccepted: ((_ attachmentCount: Int, _ isQueued: Bool) -> Void)?
+    /// Fires when a queued prompt is claimed by the server and materializes as
+    /// a user transcript row. The stable server message id distinguishes this
+    /// handoff from queue edits/deletions and unrelated remote messages.
+    public var onQueuedPromptPromoted: (() -> Void)?
 
     private let transport: ServerSessionTransport
     private let sessionId: String
@@ -177,6 +181,10 @@ public final class SessionModel {
     /// observable: buffering must not invalidate views — only applying does.
     @ObservationIgnored private var pendingEvents: [ServerSessionStreamEvent] = []
     @ObservationIgnored private var isFlushScheduled = false
+    /// Queue claims are published just before their user-message event. Keep
+    /// removed ids briefly so the second event can identify a real promotion;
+    /// explicit deletions never produce a matching user-message id.
+    @ObservationIgnored private var pendingQueuePromotionIDs: [String: TimeInterval] = [:]
     /// Approximate transcript text size, seeded from history and increased by
     /// live assistant chunks. It drives adaptive stream pacing without
     /// inspecting the full transcript during every flush.
@@ -969,9 +977,11 @@ public final class SessionModel {
         switch event {
         case let .update(update):
             apply(update)
-        case let .userMessage(text, attachments):
+        case let .userMessage(id, text, attachments):
             appliedUpdateCount += 1
-            appendRemoteUserIfNeeded(text: text, attachments: attachments)
+            let promotedFromQueue = consumeQueuePromotion(id: id)
+            appendRemoteUserIfNeeded(id: id, text: text, attachments: attachments)
+            if promotedFromQueue { onQueuedPromptPromoted?() }
         case let .finished(stopReason, stopDetail, retryable, initiatedBy):
             finish(
                 stopReason: stopReason,
@@ -1006,6 +1016,7 @@ public final class SessionModel {
             activeItem = .assistant(message)
             if !isSending { isSending = true }
         case let .queueUpdated(queue):
+            rememberRemovedQueueItems(in: queue)
             queuedPrompts = queue
         case let .backgroundTasks(tasks):
             backgroundTasks = tasks
@@ -1069,7 +1080,11 @@ public final class SessionModel {
         }
     }
 
-    private func appendRemoteUserIfNeeded(text: String, attachments: [Attachment] = []) {
+    private func appendRemoteUserIfNeeded(
+        id: String? = nil,
+        text: String,
+        attachments: [Attachment] = []
+    ) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty || !attachments.isEmpty else { return }
         if case var .user(user) = settledConversation.last,
@@ -1085,9 +1100,39 @@ public final class SessionModel {
             return
         }
         settleActiveItem()
-        appendSettled(.user(UserMessage(text: text, attachments: attachments)))
+        appendSettled(.user(UserMessage(
+            id: id.flatMap(UUID.init(uuidString:)) ?? UUID(),
+            text: text,
+            attachments: attachments
+        )))
         startActiveBubble()
         if !isSending { isSending = true }
+    }
+
+    private func rememberRemovedQueueItems(in updatedQueue: [ServerPromptQueueItem]) {
+        let now = ProcessInfo.processInfo.systemUptime
+        pendingQueuePromotionIDs = pendingQueuePromotionIDs.filter { $0.value > now }
+        let updatedIDs = Set(updatedQueue.map(\.id))
+        for item in queuedPrompts where !updatedIDs.contains(item.id) {
+            pendingQueuePromotionIDs[item.id] = now + 5
+        }
+        // A pathological sequence of remote deletes should not leave an
+        // unbounded side table while no further queue events arrive.
+        if pendingQueuePromotionIDs.count > 32 {
+            let newest = pendingQueuePromotionIDs
+                .sorted { $0.value > $1.value }
+                .prefix(32)
+                .map { ($0.key, $0.value) }
+            pendingQueuePromotionIDs = Dictionary(uniqueKeysWithValues: newest)
+        }
+    }
+
+    private func consumeQueuePromotion(id: String?) -> Bool {
+        guard let id else { return false }
+        let now = ProcessInfo.processInfo.systemUptime
+        guard let deadline = pendingQueuePromotionIDs.removeValue(forKey: id),
+              deadline > now else { return false }
+        return true
     }
 
     private func ensureAssistantTurn() {

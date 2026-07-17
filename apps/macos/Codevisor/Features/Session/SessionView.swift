@@ -98,6 +98,9 @@ struct SessionScreen: View {
             hasOlderHistory: controller.hasOlderHistory,
             layoutFingerprint: dynamicTypeSize.hashValue,
             scrollCommand: scrollCommand,
+            sendAnimationSignal: controller.userSendAnimationSignal,
+            sendAnimationRequestedAt: controller.userSendAnimationRequestedAt,
+            reduceMotion: reduceMotion,
             rowContent: { row in
                 AnyView(
                     virtualRowContent(row)
