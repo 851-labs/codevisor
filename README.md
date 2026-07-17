@@ -30,7 +30,7 @@
 
 ---
 
-![Codevisor showing active coding-agent chats across several projects with a detailed response in the main workspace.](docs/images/codevisor-workspace-2026-07-17.png)
+![Codevisor showing active coding-agent chats across several projects with a detailed response in the main workspace.](docs/images/codevisor-workspace-2026-07-17-v2.png)
 
 **Run Claude Code, Codex, and any ACP-compatible coding agent on your machines in one native macOS app.**
 
