@@ -306,7 +306,7 @@ struct ComposerCard: View {
         .buttonStyle(HoverIconButtonStyle(shape: .chip))
         .menuIndicator(.hidden)
         .fixedSize()
-        .help(option.name)
+        .tooltip(option.name)
     }
 
     /// Plan-mode toggle: on, the agent plans before making changes; off, it
@@ -329,7 +329,6 @@ struct ComposerCard: View {
         }
         .buttonStyle(HoverIconButtonStyle())
         .disabled(controller.isPlanModeUpdatePending)
-        .help("Toggle plan mode")
         .tooltip("Toggle plan mode")
         .accessibilityLabel("Plan mode")
         .accessibilityValue(isOn ? "On" : "Off")
@@ -351,8 +350,9 @@ struct ComposerCard: View {
         }
         .buttonStyle(.plain)
         .onHover { isGoalBackButtonHovered = $0 }
-        .help("Back — keep the current goal (esc)")
         .tooltip("Back — keep the current goal (esc)")
+        .accessibilityLabel("Back")
+        .accessibilityHint("Keep the current goal. Keyboard shortcut: Escape")
     }
 
     /// Goal-mode toggle: when armed, submitting the composer sets the text
@@ -372,7 +372,6 @@ struct ComposerCard: View {
                 .contentShape(Circle())
         }
         .buttonStyle(HoverIconButtonStyle())
-        .help("Toggle goal mode")
         .tooltip("Toggle goal mode")
         .accessibilityLabel("Goal mode")
         .accessibilityAddTraits(isArmed ? .isSelected : [])
@@ -395,7 +394,6 @@ struct ComposerCard: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(HoverIconButtonStyle())
-        .help("Attach files")
         .tooltip("Attach files")
         .accessibilityLabel("Attach files")
     }
@@ -435,7 +433,7 @@ struct ComposerCard: View {
                 ProgressView()
                     .controlSize(.small)
                     .frame(width: 26, height: 26)
-                    .help("Stopping…")
+                    .tooltip("Stopping…")
             } else {
                 Button { Task { await controller.stop() } } label: {
                     Image(systemName: "stop.fill")
@@ -454,8 +452,8 @@ struct ComposerCard: View {
                 .buttonStyle(.plain)
                 .foregroundStyle(isStopButtonHovered ? .primary : .secondary)
                 .onHover { isStopButtonHovered = $0 }
-                .help("Stop")
                 .tooltip("Stop")
+                .accessibilityLabel("Stop")
             }
         }
     }
@@ -469,7 +467,7 @@ struct ComposerCard: View {
                 .controlSize(.small)
                 .frame(width: 26, height: 26)
                 .background(Circle().fill(Color.secondary.opacity(0.16)))
-                .help(controller.isResolvingQuestion ? "Submitting response…" : "Sending…")
+                .tooltip(controller.isResolvingQuestion ? "Submitting response…" : "Sending…")
         } else {
             let isEnabled = !isAppUpdateInProgress && (controller.isGoalComposerArmed
                 ? !controller.composerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -591,7 +589,7 @@ struct ComposerSubmitButton: View {
         .buttonStyle(.plain)
         .disabled(!isEnabled)
         .onHover { isHovered = $0 }
-        .help(help)
+        .tooltip(help)
         .accessibilityLabel(accessibilityLabel)
     }
 }
@@ -652,7 +650,7 @@ private struct ComposerAttachmentThumb: View {
                         }
                         .contentShape(RoundedRectangle(cornerRadius: 8))
                         .onTapGesture { preview() }
-                        .help(attachment.name)
+                        .tooltip(attachment.name)
                 } else {
                     AttachmentFileChip(name: attachment.name) { preview() }
                 }
@@ -725,7 +723,7 @@ private struct ComposerAttachmentThumb: View {
                     .contentShape(RoundedRectangle(cornerRadius: 8))
             }
             .buttonStyle(.plain)
-            .help("Upload failed: \(reason). Click to retry.")
+            .tooltip("Upload failed: \(reason). Click to retry.")
         case .uploaded:
             EmptyView()
         }
@@ -747,7 +745,7 @@ private struct ComposerAttachmentThumb: View {
                 .contentShape(Circle())
         }
         .buttonStyle(.plain)
-        .help("Remove attachment")
+        .tooltip("Remove attachment")
         .accessibilityLabel("Remove \(attachment.name)")
     }
 }
@@ -794,7 +792,7 @@ struct ModelConfigMenu: View {
             .buttonStyle(HoverIconButtonStyle(shape: .chip))
             .menuIndicator(.hidden)
             .fixedSize()
-            .help("Model, thinking level, and speed")
+            .tooltip("Model, thinking level, and speed")
             .accessibilityLabel("Model settings")
         }
     }
@@ -815,7 +813,7 @@ struct ModelConfigMenu: View {
                 )) {
                     Text(value.name)
                 }
-                .help(value.description ?? "")
+                .tooltip(value.description ?? "")
             }
         }
     }
@@ -861,7 +859,7 @@ struct HarnessPickerMenu: View {
                 ProgressView()
                     .controlSize(.small)
                     .frame(minWidth: 96)
-                    .help("Checking available agents")
+                    .tooltip("Checking available agents")
                     .accessibilityLabel("Checking available agents")
             } else if controller.preparationState == .failed {
                 Button {
@@ -872,7 +870,7 @@ struct HarnessPickerMenu: View {
                     }
                 }
                 .buttonStyle(HoverIconButtonStyle(shape: .chip))
-                .help("Couldn't load agents. Click to try again.")
+                .tooltip("Couldn't load agents. Click to try again.")
                 .accessibilityLabel("Agents unavailable. Try again")
             } else {
                 Menu {

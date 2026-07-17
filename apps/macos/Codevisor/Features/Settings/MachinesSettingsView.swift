@@ -272,7 +272,8 @@ struct MachinesSettingsView: View {
             }
             .buttonStyle(.plain)
             .foregroundStyle(.secondary)
-            .help("Copy \(label)")
+            .tooltip("Copy \(label)")
+            .accessibilityLabel("Copy \(label)")
         }
     }
 
@@ -346,7 +347,7 @@ struct MachinesSettingsView: View {
                 .settingsActionTint(theme)
                 .menuIndicator(.hidden)
                 .fixedSize()
-                .help("Machine actions")
+                .tooltip("Machine actions")
                 .accessibilityLabel("Actions for \(machine.name)")
             } else {
                 Menu {
@@ -363,7 +364,7 @@ struct MachinesSettingsView: View {
                 .settingsActionTint(theme)
                 .menuIndicator(.hidden)
                 .fixedSize()
-                .help("Machine actions")
+                .tooltip("Machine actions")
                 .accessibilityLabel("Actions for \(machine.name)")
             }
         }

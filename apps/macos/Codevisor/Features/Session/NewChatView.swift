@@ -226,7 +226,7 @@ struct NewChatView: View {
         .buttonStyle(HoverIconButtonStyle(shape: .chip))
         .menuIndicator(.hidden)
         .fixedSize()
-        .help("Choose workspace")
+        .tooltip("Choose workspace")
     }
 
     /// "Project directory" vs "New worktree" for where the chat runs. Worktree
@@ -279,7 +279,7 @@ struct NewChatView: View {
         .buttonStyle(HoverIconButtonStyle(shape: .chip))
         .menuIndicator(.hidden)
         .fixedSize()
-        .help(
+        .tooltip(
             worktreeAvailable
                 ? "Where this chat's commands run"
                 : "Worktrees need the project folder to be a git repository"
@@ -302,7 +302,7 @@ struct NewChatView: View {
                     Button("Restart") { AppRelauncher.relaunch() }
                         .buttonStyle(.bordered)
                         .controlSize(.small)
-                        .help("Restart Codevisor and its server")
+                        .tooltip("Restart Codevisor and its server")
                 }
             }
             .padding(10)

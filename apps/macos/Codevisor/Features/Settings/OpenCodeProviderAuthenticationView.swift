@@ -132,7 +132,7 @@ struct OpenCodeProviderAuthenticationView: View {
                 } label: {
                     Image(systemName: "plus")
                 }
-                .help("Add Profile")
+                .tooltip("Add Profile")
                 .accessibilityLabel("Add Profile")
 
                 Button {
@@ -141,7 +141,7 @@ struct OpenCodeProviderAuthenticationView: View {
                     Image(systemName: "minus")
                 }
                 .disabled(selectedAccount?.profileKind != "managed" || isWorking)
-                .help("Remove Profile")
+                .tooltip("Remove Profile")
                 .accessibilityLabel("Remove Profile")
 
                 Spacer()
@@ -218,7 +218,7 @@ struct OpenCodeProviderAuthenticationView: View {
                         Image(systemName: "plus")
                     }
                     .disabled(isProviderContentLoading || providers.isEmpty || isWorking)
-                    .help("Add Provider")
+                    .tooltip("Add Provider")
                     .accessibilityLabel("Add Provider")
 
                     Button {
@@ -227,7 +227,7 @@ struct OpenCodeProviderAuthenticationView: View {
                         Image(systemName: "minus")
                     }
                     .disabled(selectedConfiguredProvider == nil || isWorking)
-                    .help("Remove Credential")
+                    .tooltip("Remove Credential")
                     .accessibilityLabel("Remove Credential")
 
                     Spacer()

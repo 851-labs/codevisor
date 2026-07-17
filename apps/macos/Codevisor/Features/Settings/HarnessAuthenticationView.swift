@@ -171,6 +171,7 @@ struct HarnessAuthenticationView: View {
                 }
                 .menuStyle(.borderlessButton)
                 .settingsActionTint(theme)
+                .tooltip("More account actions")
                 .accessibilityLabel("More account actions")
             }
         }

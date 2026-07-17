@@ -46,7 +46,7 @@ struct MachinePickerToolbarMenu: View {
                 .frame(width: 20, height: 20, alignment: .center)
         }
         .menuIndicator(.hidden)
-        .help("Switch machine — \(selectedMachine.name)")
+        .tooltip("Switch machine — \(selectedMachine.name)")
         .accessibilityLabel("Machine: \(selectedMachine.name)")
     }
 }

@@ -29,7 +29,8 @@ struct RemoteDirectoryBrowserSheet: View {
                 }
                 .buttonStyle(.bordered)
                 .disabled(listing?.parent == nil || isLoading)
-                .help("Parent folder")
+                .tooltip("Parent folder")
+                .accessibilityLabel("Parent folder")
 
                 TextField("/home/user/projects", text: $pathField)
                     .textFieldStyle(.roundedBorder)

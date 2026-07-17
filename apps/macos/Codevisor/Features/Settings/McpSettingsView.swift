@@ -129,7 +129,7 @@ struct McpSettingsView: View {
                     .labelStyle(.iconOnly)
                     .buttonStyle(.borderless)
                     .settingsActionTint(theme)
-                    .help("Add MCP Server")
+                    .tooltip("Add MCP Server")
                 }
             }
             .listRowBackground(theme.isSystem ? nil : theme.cardQuietBackground)
@@ -180,7 +180,7 @@ struct McpSettingsView: View {
             .buttonStyle(.borderless)
             .settingsActionTint(theme)
             .menuIndicator(.hidden)
-            .help("More Actions")
+            .tooltip("More Actions")
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("\(server.name), \(statusText(server)), \(server.enabled ? "enabled" : "disabled")")
@@ -511,7 +511,7 @@ private struct McpKeyValueEditor: View {
                 .buttonStyle(.borderless)
                 .settingsActionTint(theme)
                 .accessibilityLabel(addLabel)
-                .help(addLabel)
+                .tooltip(addLabel)
 
                 Divider()
                     .overlay(theme.isSystem ? Color.clear : theme.separator)
@@ -530,7 +530,7 @@ private struct McpKeyValueEditor: View {
                 .settingsActionTint(theme)
                 .disabled(selection == nil)
                 .accessibilityLabel("Remove selected \(nameHeading.lowercased())")
-                .help("Remove Selected")
+                .tooltip("Remove Selected")
 
                 Spacer()
             }

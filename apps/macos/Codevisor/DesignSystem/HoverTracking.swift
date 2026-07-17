@@ -21,7 +21,7 @@ extension EnvironmentValues {
 extension View {
     /// AppKit-backed hover tracking that fires across the view's ENTIRE
     /// bounds, including fully transparent regions. SwiftUI's `.onHover`
-    /// (like `.help`, see Tooltip.swift) doesn't reliably fire over
+    /// doesn't reliably fire over
     /// transparent areas on macOS 26; an `NSTrackingArea` is geometric, so
     /// covered/clear pixels still count.
     func hoverTracking(_ isHovered: Binding<Bool>) -> some View {

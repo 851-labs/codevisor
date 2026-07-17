@@ -52,7 +52,7 @@ struct InstallCommandChip: View {
                     .contentTransition(.symbolEffect(.replace))
             }
             .buttonStyle(.plain)
-            .help("Copy install command")
+            .tooltip("Copy install command")
             .accessibilityLabel(copied ? "Copied" : "Copy install command")
         }
         .padding(.horizontal, 8)

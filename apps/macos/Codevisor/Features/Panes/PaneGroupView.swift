@@ -245,7 +245,8 @@ struct PaneGroupBar: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help("New terminal")
+        .tooltip("New terminal")
+        .accessibilityLabel("New terminal")
     }
 
     private var toggleButton: some View {
@@ -259,7 +260,9 @@ struct PaneGroupBar: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help("Toggle bottom panel (⌘J)")
+        .tooltip("Toggle bottom panel (⌘J)")
+        .accessibilityLabel("Toggle bottom panel")
+        .accessibilityHint("Keyboard shortcut: Command-J")
     }
 
     // MARK: - Resize
@@ -378,7 +381,7 @@ private struct PaneTab: View {
             Image(systemName: isAgentOwned ? "server.rack" : "terminal")
                 .font(.system(size: 9.5, weight: .semibold))
                 .foregroundStyle(isSelected ? AnyShapeStyle(theme.accent) : AnyShapeStyle(.secondary))
-                .help(isAgentOwned ? "Agent background process" : "Terminal")
+                .tooltip(isAgentOwned ? "Agent background process" : "Terminal")
             fadingName
             if showsClose {
                 closeButton
@@ -444,7 +447,8 @@ private struct PaneTab: View {
         }
         .buttonStyle(.plain)
         .onHover { isCloseHovered = $0 }
-        .help("Close terminal")
+        .tooltip("Close terminal")
+        .accessibilityLabel("Close terminal")
     }
 }
 

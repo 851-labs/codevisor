@@ -338,7 +338,7 @@ struct SidebarView: View {
         )
         .background(RoundedRectangle(cornerRadius: 6).fill(developmentWorktreeColor))
         .accessibilityLabel("Development worktree: \(worktreeName)")
-        .help("Development worktree: \(worktreeName)")
+        .tooltip("Development worktree: \(worktreeName)")
     }
 
     private func actionRow(_ title: String, systemImage: String, action: @escaping () -> Void) -> some View {
@@ -407,7 +407,8 @@ struct SidebarView: View {
             }
             .menuStyle(.button)
             .buttonStyle(.plain)
-            .help("Organize projects")
+            .tooltip("Organize projects")
+            .accessibilityLabel("Organize projects")
 
             Button {
                 startAddProject()
@@ -417,7 +418,8 @@ struct SidebarView: View {
                     .foregroundStyle(.secondary)
             }
             .buttonStyle(.plain)
-            .help("Add a project folder")
+            .tooltip("Add a project folder")
+            .accessibilityLabel("Add a project folder")
         }
         .padding(.horizontal, 10)
         .padding(.top, 12)
@@ -519,13 +521,14 @@ struct SidebarView: View {
                     }
                     .buttonStyle(.plain)
                     .foregroundStyle(.secondary)
-                    .help("New chat in \(project.name)")
+                    .tooltip("New chat in \(project.name)")
+                    .accessibilityLabel("New chat in \(project.name)")
                 }
             }
             .padding(.horizontal, 8)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .help(project.folderURL.path)
+        .tooltip(project.folderURL.path)
         .contextMenu {
             Button("New chat here") { selection = .newChat(project.id) }
             Button("Change icon") { iconEditing = project }
@@ -788,7 +791,8 @@ struct SidebarView: View {
                     }
                     .buttonStyle(.plain)
                     .foregroundStyle(.secondary)
-                    .help("Archive chat")
+                    .tooltip("Archive chat")
+                    .accessibilityLabel("Archive \(session.title)")
                 } else if unreadCount(for: session) != nil {
                     UnreadBadge(color: notificationColor)
                 } else {
@@ -1112,7 +1116,7 @@ private struct ErrorUnreadBadge: View {
             .fill(color)
             .frame(width: 8, height: 8)
             .accessibilityLabel("Unread chat error")
-            .help("This chat ended with an error")
+            .tooltip("This chat ended with an error")
     }
 }
 
@@ -1130,7 +1134,7 @@ private struct ActionRequiredBadge: View {
             .background(color.opacity(0.14), in: Capsule())
             .fixedSize()
             .accessibilityLabel("Action required")
-            .help("This chat needs your response")
+            .tooltip("This chat needs your response")
     }
 }
 

@@ -142,6 +142,7 @@ struct PiProviderAuthenticationView: View {
             }
             .menuStyle(.borderlessButton)
             .settingsActionTint(theme)
+            .tooltip("More actions for \(provider.name)")
             .accessibilityLabel("More actions for \(provider.name)")
         }
         .padding(.vertical, 4)
