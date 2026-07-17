@@ -73,3 +73,19 @@
 [submodule ".repos/grok-build"]
 	path = .repos/grok-build
 	url = https://github.com/xai-org/grok-build.git
+[submodule ".repos/vscode"]
+	path = .repos/vscode
+	url = https://github.com/microsoft/vscode.git
+	shallow = true
+[submodule ".repos/CodeEdit"]
+	path = .repos/CodeEdit
+	url = https://github.com/CodeEditApp/CodeEdit.git
+	shallow = true
+[submodule ".repos/dockview"]
+	path = .repos/dockview
+	url = https://github.com/mathuo/dockview.git
+	shallow = true
+[submodule ".repos/zed"]
+	path = .repos/zed
+	url = https://github.com/zed-industries/zed.git
+	shallow = true
