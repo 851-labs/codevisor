@@ -473,7 +473,7 @@ describe("CodexProvider", () => {
     await promptPromise
     const turnStart = client.requests.find((request) => request.method === "turn/start")
     expect(turnStart?.params).toMatchObject({
-      approvalPolicy: "on-request",
+      approvalPolicy: "never",
       collaborationMode: {
         mode: "plan",
         settings: {
@@ -482,7 +482,7 @@ describe("CodexProvider", () => {
           reasoning_effort: "medium"
         }
       },
-      sandboxPolicy: { networkAccess: false, type: "readOnly" }
+      sandboxPolicy: { type: "dangerFullAccess" }
     })
     // After leaving Plan mode, the reset collaboration mode ("default") rides
     // the next turn — codex's collaboration is sticky, so omitting it would

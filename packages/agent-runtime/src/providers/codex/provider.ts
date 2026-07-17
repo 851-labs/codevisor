@@ -183,13 +183,13 @@ interface CodexMode {
 
 const CODEX_MODES: ReadonlyArray<CodexMode> = [
   {
-    approvalPolicy: "on-request",
+    approvalPolicy: "never",
     canonicalId: "plan",
     collaboration: "plan",
-    description: "Plans first: proposes an implementation plan before coding.",
+    description: "Plans first with full system access and no command approvals.",
     id: "plan",
     name: "Plan",
-    sandboxPolicy: { networkAccess: false, type: "readOnly" }
+    sandboxPolicy: { type: "dangerFullAccess" }
   },
   {
     approvalPolicy: "on-request",
@@ -926,9 +926,8 @@ const numericVersionComponents = (version: string): ReadonlyArray<number> => {
   return base.split(".").map((part) => Number.parseInt(part, 10) || 0)
 }
 
-/// Routes codex's server→client requests: questions and MCP elicitations
-/// block on the human's answer; approvals stay auto-accepted (still the seam
-/// for a permission UI).
+/// Routes codex's server→client requests: questions, MCP elicitations, and
+/// approvals block on the human's answer.
 const serverRequestResponse = (
   session: CodexSession,
   method: string,
@@ -942,8 +941,8 @@ const serverRequestResponse = (
     case "item/commandExecution/requestApproval":
     case "item/fileChange/requestApproval":
     case "item/permissions/requestApproval":
-      // Approvals only arrive in modes with approvalPolicy on-request (Ask /
-      // Read-only / Plan) — the full-access default never asks.
+      // Approvals only arrive in modes with approvalPolicy on-request (Agent /
+      // Read-only). Full-access and Plan modes never ask.
       return holdApprovalRequest(session, method, isRecord(params) ? params : {})
     default:
       return Promise.reject(new Error(`Unsupported approval request: ${method}`))
