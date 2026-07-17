@@ -61,6 +61,18 @@ private struct TooltipModifier: ViewModifier {
                 }
                 if isHovered { schedulePresentation() }
             }
+            // A native menu takes over mouse tracking before the pointer can
+            // leave its trigger, so the trigger's tracking area may never send
+            // mouseExited. Observe the menu after it has begun opening: this
+            // leaves its click untouched while clearing our stale hover state.
+            .onReceive(
+                NotificationCenter.default.publisher(
+                    for: NSMenu.didBeginTrackingNotification
+                )
+            ) { _ in
+                isHovered = false
+                dismiss()
+            }
             .onDisappear {
                 presentationTask?.cancel()
             }
