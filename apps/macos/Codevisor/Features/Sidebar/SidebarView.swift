@@ -140,7 +140,7 @@ struct SidebarView: View {
                 compareSessions(left.session, right.session)
             }
         }
-        return manuallyOrdered(sessions, ids: sessionOrder, id: \.id)
+        return manuallyOrderedSessions(sessions, session: \.session)
     }
 
     var body: some View {
@@ -760,7 +760,7 @@ struct SidebarView: View {
     private func orderedSessions(in project: Project) -> [ChatSession] {
         let sessions = list.sessions(in: project)
         guard order == .none else { return sessions.sorted(by: compareSessions) }
-        return manuallyOrdered(sessions, ids: sessionOrder, id: \.id)
+        return manuallyOrderedSessions(sessions, session: \.self)
     }
 
     @ViewBuilder
@@ -938,7 +938,7 @@ struct SidebarView: View {
             guard sourceProjectID == destinationProjectID else { return }
         }
 
-        var ids = manuallyOrdered(sessions, ids: sessionOrder, id: \.id).map(\.id)
+        var ids = manuallyOrderedSessions(sessions, session: \.self).map(\.id)
         guard let sourceIndex = ids.firstIndex(of: sourceID),
               let destinationIndex = ids.firstIndex(of: destinationID)
         else { return }
@@ -953,7 +953,33 @@ struct SidebarView: View {
         manualSessionOrderRaw = ids.map(\.uuidString).joined(separator: "\n")
     }
 
-    /// Applies persisted ranks while keeping newly-created items in the
+    /// Applies persisted session ranks while placing chats that do not have a
+    /// saved rank yet at the top. New chats are ordered newest-first until the
+    /// next manual move persists their positions.
+    private func manuallyOrderedSessions<Value>(
+        _ values: [Value],
+        session: KeyPath<Value, ChatSession>
+    ) -> [Value] {
+        let ranks = Dictionary(uniqueKeysWithValues: sessionOrder.enumerated().map { ($0.element, $0.offset) })
+        return values.enumerated().sorted { left, right in
+            let leftSession = left.element[keyPath: session]
+            let rightSession = right.element[keyPath: session]
+            let leftRank = ranks[leftSession.id]
+            let rightRank = ranks[rightSession.id]
+            switch (leftRank, rightRank) {
+            case let (leftRank?, rightRank?): return leftRank < rightRank
+            case (_?, nil): return false
+            case (nil, _?): return true
+            case (nil, nil):
+                if leftSession.createdAt != rightSession.createdAt {
+                    return leftSession.createdAt > rightSession.createdAt
+                }
+                return left.offset < right.offset
+            }
+        }.map(\.element)
+    }
+
+    /// Applies persisted ranks while keeping newly-created projects in the
     /// source's stable order at the end until the next manual move.
     private func manuallyOrdered<Value>(
         _ values: [Value],
