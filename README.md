@@ -2,7 +2,7 @@
   <a href="https://www.codevisor.dev">
     <img src="apps/www/public/codevisor-icon.png" alt="Codevisor logo" width="128">
   </a>
-  <h3><b>Codevisor</b></h3>
+  <h1><b>Codevisor</b></h1>
   <p>Every coding agent. One app.</p>
 </div>
 
