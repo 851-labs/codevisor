@@ -283,7 +283,7 @@ jobs:
           else
             gh release create "$TAG" dist/release/*.zip dist/release/*.tar.gz dist/release/*.dmg \
               --target "$GITHUB_SHA" \
-              --title "Codevisor $VERSION" \
+              --title "$TAG" \
               --generate-notes
           fi
       - uses: actions/setup-node@v6
