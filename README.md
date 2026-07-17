@@ -32,7 +32,7 @@
 
 ![Codevisor showing active coding-agent chats across several projects with a detailed response in the main workspace.](docs/images/codevisor-workspace-2026-07-17-v2.png)
 
-**Run Claude Code, Codex, and any ACP-compatible coding agent on your machines in one native macOS app.**
+**Run Claude Code, Codex, Pi, and any ACP-compatible coding agent on your machines in one native macOS app.**
 
 - **lightweight and fast** — no electron bloat, no webviews, pure Swift.
 - **remote machines** — connect your Mac Mini, VPS, or any remote server.
