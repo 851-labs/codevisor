@@ -10,7 +10,6 @@
   <a href="https://github.com/851-labs/codevisor/releases/latest">
     <img src="https://img.shields.io/badge/macOS-26.0%2B-blue?logo=apple&logoColor=white&style=flat" alt="macOS 26.0+">
   </a>
-  <img src="https://img.shields.io/badge/Swift-f05138?logo=swift&logoColor=white&style=flat" alt="Swift">
   <a href="https://github.com/851-labs/codevisor/releases/latest">
     <img src="https://img.shields.io/github/v/release/851-labs/codevisor?label=Release&style=flat" alt="Latest release">
   </a>
