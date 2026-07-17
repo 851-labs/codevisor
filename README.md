@@ -34,8 +34,8 @@
 
 **Run Claude Code, Codex, and any ACP-compatible coding agent on your machines in one native macOS app.**
 
-- **chats stay local** — your conversations stay on your machines.
-- **projects keep the thread** — every conversation about a codebase lives together.
+- **lightweight and fast** — no electron bloat, no webviews, pure Swift.
+- **remote machines** — connect your Mac Mini, VPS, or any remote server.
 - **a real terminal, built in** — every chat has one underneath it, right where the work happens.
 
 ---
