@@ -109,6 +109,37 @@ public enum CodevisorAppVariant: Sendable {
         )
     }
 
+    /// One-time rescue for the HerdMan → Codevisor rename: the app updates in
+    /// place (the bundle id stayed `com.851labs.HerdMan`) but the Application
+    /// Support folder name changed, orphaning every file-backed preference in
+    /// the old folder. Copies legacy files that don't exist at the new
+    /// location yet; never overwrites, and leaves the old folder as a backup.
+    public static func migrateLegacyApplicationSupportIfNeeded(fileManager: FileManager = .default) {
+        guard !isDevelopment else { return }
+        let base = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? fileManager.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support")
+        migrateLegacyApplicationSupport(
+            from: base.appendingPathComponent("HerdMan", isDirectory: true),
+            to: applicationSupportURL(fileManager: fileManager),
+            fileManager: fileManager
+        )
+    }
+
+    static func migrateLegacyApplicationSupport(from legacy: URL, to destination: URL, fileManager: FileManager) {
+        guard fileManager.fileExists(atPath: legacy.path) else { return }
+        let contents = (try? fileManager.contentsOfDirectory(at: legacy, includingPropertiesForKeys: nil)) ?? []
+        for source in contents where source.pathExtension == "json" {
+            let target = destination.appendingPathComponent(source.lastPathComponent)
+            guard !fileManager.fileExists(atPath: target.path) else { continue }
+            do {
+                try fileManager.copyItem(at: source, to: target)
+                Log.persistence.log("Migrated legacy HerdMan file \(source.lastPathComponent, privacy: .public)")
+            } catch {
+                Log.persistence.error("Failed to migrate legacy HerdMan file \(source.lastPathComponent, privacy: .public): \(String(describing: error), privacy: .public)")
+            }
+        }
+    }
+
     /// Canonical server-state layout shared with standalone installs: the
     /// server's database and logs live at ~/.codevisor/{data,logs} on every OS
     /// so machine state is laid out identically everywhere (a prerequisite for

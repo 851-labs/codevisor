@@ -21,6 +21,24 @@ public final class ComposerDefaultsStore {
         var machines: [String: MachineDefaults] = [:]
     }
 
+    /// The flat pre-machine-scoping payload ("Scope remote state by machine"
+    /// restructured it). Decoded as a fallback so updating the app migrates
+    /// the user's remembered choices instead of resetting them. All fields
+    /// are optional so any partial legacy file still loads.
+    private struct LegacyDefaults: Decodable {
+        var lastHarnessId: String?
+        var runInWorktree: Bool?
+        var configSelections: [String: [String: String]]?
+
+        var isEmpty: Bool {
+            lastHarnessId == nil && runInWorktree == nil && configSelections == nil
+        }
+    }
+
+    /// The only machine that existed before defaults were machine-scoped, so
+    /// all legacy data belongs to it. Matches MachineController's local id.
+    private static let legacyServerId = "local"
+
     private let store: any PersistenceStore
     private let key: String
     private var defaults: Defaults
@@ -28,11 +46,28 @@ public final class ComposerDefaultsStore {
     public init(store: any PersistenceStore, key: String = "composer-defaults") {
         self.store = store
         self.key = key
-        if let data = store.loadData(forKey: key),
-           let decoded = try? JSONDecoder().decode(Defaults.self, from: data) {
-            defaults = decoded
-        } else {
+        guard let data = store.loadData(forKey: key) else {
             defaults = Defaults()
+            return
+        }
+        let decoder = JSONDecoder()
+        do {
+            defaults = try decoder.decode(Defaults.self, from: data)
+        } catch {
+            if let legacy = try? decoder.decode(LegacyDefaults.self, from: data), !legacy.isEmpty {
+                defaults = Defaults(machines: [
+                    Self.legacyServerId: MachineDefaults(
+                        lastHarnessId: legacy.lastHarnessId,
+                        runInWorktree: legacy.runInWorktree ?? false,
+                        configSelections: legacy.configSelections ?? [:]
+                    )
+                ])
+                // Rewrite in the current schema so the fallback runs once.
+                persist()
+            } else {
+                defaults = Defaults()
+                handleCorruptPayload(store: store, key: key, data: data, error: error)
+            }
         }
     }
 

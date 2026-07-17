@@ -281,6 +281,7 @@ public final class AppEnvironment {
     )!
 
     public static func live() -> AppEnvironment {
+        CodevisorAppVariant.migrateLegacyApplicationSupportIfNeeded()
         let store = FileSystemStore(directory: CodevisorAppVariant.applicationSupportURL())
         let serverClient = CodevisorServerClient(config: .localDefault)
         let localServer = LocalCodevisorServer(client: serverClient)
