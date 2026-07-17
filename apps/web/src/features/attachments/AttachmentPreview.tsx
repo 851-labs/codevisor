@@ -6,7 +6,9 @@ import {
   LoaderCircleIcon,
   MinusIcon,
   PaperclipIcon,
+  PlayIcon,
   PlusIcon,
+  VideoIcon,
   XIcon
 } from "lucide-react"
 import {
@@ -38,21 +40,33 @@ export function isPdfAttachment(attachment: Pick<AttachmentPreviewInfo, "mimeTyp
   return attachment.mimeType === "application/pdf" || attachment.name.toLowerCase().endsWith(".pdf")
 }
 
+const VIDEO_FILE_EXTENSION = /\.(?:m4v|mkv|mov|mp4|mpeg|mpg|ogv|webm)$/i
+
+export function isVideoAttachment(attachment: Pick<AttachmentPreviewInfo, "mimeType" | "name">) {
+  return (
+    attachment.mimeType.toLowerCase().startsWith("video/") ||
+    VIDEO_FILE_EXTENSION.test(attachment.name)
+  )
+}
+
 export function hasVisualAttachmentPreview(attachment: AttachmentPreviewInfo) {
-  return attachment.kind === "image" || isPdfAttachment(attachment)
+  return attachment.kind === "image" || isPdfAttachment(attachment) || isVideoAttachment(attachment)
 }
 
 export function AttachmentLightbox({ item, onClose }: { item: LightboxItem; onClose: () => void }) {
   const { client } = useApi()
   const [objectUrl, setObjectUrl] = useState<string | undefined>(item.url)
   const [loadFailed, setLoadFailed] = useState(false)
+  const [previewFailed, setPreviewFailed] = useState(false)
   const [zoom, setZoom] = useState(1)
+  const isVideo = isVideoAttachment(item)
 
   useEffect(() => {
     let revokedUrl: string | undefined
     let cancelled = false
     setZoom(1)
     setLoadFailed(false)
+    setPreviewFailed(false)
     setObjectUrl(item.url)
 
     if (item.url == null && item.fileId != null) {
@@ -123,12 +137,23 @@ export function AttachmentLightbox({ item, onClose }: { item: LightboxItem; onCl
         </LightboxButton>
       </div>
       <div className="codevisor-scrollbar min-h-0 flex-1 overflow-auto">
-        {objectUrl != null ? (
+        {objectUrl != null && !previewFailed ? (
           <div
             className="flex min-h-full min-w-full items-center justify-center p-12"
             style={lightboxCanvasSize(clampedZoom)}
           >
-            {isPdfAttachment(item) ? (
+            {isVideo ? (
+              <video
+                src={objectUrl}
+                aria-label={item.name}
+                className="max-h-[calc(100vh-6rem)] max-w-[calc(100vw-6rem)] shrink-0 rounded-lg bg-black"
+                controls
+                autoPlay
+                playsInline
+                onError={() => setPreviewFailed(true)}
+                onClick={(event) => event.stopPropagation()}
+              />
+            ) : isPdfAttachment(item) ? (
               <iframe
                 src={objectUrl}
                 title={item.name}
@@ -147,10 +172,14 @@ export function AttachmentLightbox({ item, onClose }: { item: LightboxItem; onCl
               />
             )}
           </div>
-        ) : loadFailed ? (
+        ) : loadFailed || previewFailed ? (
           <div className="flex min-h-full flex-col items-center justify-center gap-2 text-white/70">
-            <ImageIcon className="size-9" />
-            <p>This attachment is no longer available.</p>
+            {previewFailed ? <VideoIcon className="size-9" /> : <ImageIcon className="size-9" />}
+            <p>
+              {previewFailed
+                ? "This video format can't be previewed."
+                : "This attachment is no longer available."}
+            </p>
           </div>
         ) : (
           <div className="flex min-h-full items-center justify-center">
@@ -158,18 +187,20 @@ export function AttachmentLightbox({ item, onClose }: { item: LightboxItem; onCl
           </div>
         )}
       </div>
-      <div
-        className="absolute bottom-5 left-1/2 flex -translate-x-1/2 items-center gap-1 rounded-full bg-white/14 px-3 py-1.5 text-sm shadow-lg ring-1 ring-white/15 backdrop-blur"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <LightboxButton label="Zoom out" onClick={() => setZoom((value) => value - 0.25)}>
-          <MinusIcon className="size-4" />
-        </LightboxButton>
-        <span className="min-w-12 text-center font-mono">{Math.round(clampedZoom * 100)}%</span>
-        <LightboxButton label="Zoom in" onClick={() => setZoom((value) => value + 0.25)}>
-          <PlusIcon className="size-4" />
-        </LightboxButton>
-      </div>
+      {!isVideo && (
+        <div
+          className="absolute bottom-5 left-1/2 flex -translate-x-1/2 items-center gap-1 rounded-full bg-white/14 px-3 py-1.5 text-sm shadow-lg ring-1 ring-white/15 backdrop-blur"
+          onClick={(event) => event.stopPropagation()}
+        >
+          <LightboxButton label="Zoom out" onClick={() => setZoom((value) => value - 0.25)}>
+            <MinusIcon className="size-4" />
+          </LightboxButton>
+          <span className="min-w-12 text-center font-mono">{Math.round(clampedZoom * 100)}%</span>
+          <LightboxButton label="Zoom in" onClick={() => setZoom((value) => value + 0.25)}>
+            <PlusIcon className="size-4" />
+          </LightboxButton>
+        </div>
+      )}
     </div>
   )
 }
@@ -230,6 +261,7 @@ export function RemoteAttachmentThumb({ attachment }: { attachment: AttachmentRe
         <VisualThumb
           name={attachment.name}
           isPdf={isPdfAttachment(attachment)}
+          isVideo={isVideoAttachment(attachment)}
           imageUrl={objectUrl}
           onClick={open}
         />
@@ -246,6 +278,7 @@ export function RemoteAttachmentThumb({ attachment }: { attachment: AttachmentRe
 export function VisualThumb({
   name,
   isPdf,
+  isVideo = false,
   imageUrl,
   onClick,
   overlay,
@@ -253,6 +286,7 @@ export function VisualThumb({
 }: {
   name: string
   isPdf: boolean
+  isVideo?: boolean
   imageUrl?: string
   onClick?: () => void
   overlay?: ReactNode
@@ -263,6 +297,9 @@ export function VisualThumb({
     event.preventDefault()
     onClick?.()
   }
+  const [videoFailed, setVideoFailed] = useState(false)
+
+  useEffect(() => setVideoFailed(false), [imageUrl])
 
   return (
     <div
@@ -278,7 +315,27 @@ export function VisualThumb({
       )}
     >
       {imageUrl != null ? (
-        isPdf ? (
+        isVideo && !videoFailed ? (
+          <video
+            src={imageUrl}
+            aria-hidden="true"
+            className="pointer-events-none size-full object-cover"
+            preload="auto"
+            muted
+            playsInline
+            onError={() => setVideoFailed(true)}
+            onLoadedMetadata={(event) => {
+              const duration = event.currentTarget.duration
+              event.currentTarget.currentTime = Number.isFinite(duration)
+                ? Math.min(0.1, duration / 2)
+                : 0.1
+            }}
+          />
+        ) : isVideo ? (
+          <div className="flex size-full items-center justify-center">
+            <VideoIcon className="text-muted-foreground size-5" />
+          </div>
+        ) : isPdf ? (
           <object
             data={imageUrl}
             type="application/pdf"
@@ -296,6 +353,13 @@ export function VisualThumb({
         <div className="flex size-full items-center justify-center">
           <ImageIcon className="text-muted-foreground size-5" />
         </div>
+      )}
+      {isVideo && (
+        <span className="pointer-events-none absolute inset-0 flex items-center justify-center">
+          <span className="flex size-6 items-center justify-center rounded-full bg-black/60 text-white ring-1 ring-white/30">
+            <PlayIcon className="ml-0.5 size-3 fill-current" />
+          </span>
+        </span>
       )}
       {isPdf && <PdfBadge />}
       {overlay}

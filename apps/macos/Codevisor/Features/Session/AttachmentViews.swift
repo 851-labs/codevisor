@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import AVFoundation
 import UniformTypeIdentifiers
 import CodevisorCore
 
@@ -23,21 +24,31 @@ final class AttachmentImageStore {
         cache.object(forKey: fileId as NSString)
     }
 
-    func image(for fileId: String) async -> NSImage? {
-        if let cached = cachedImage(for: fileId) { return cached }
-        guard !failed.contains(fileId) else { return nil }
+    func image(for attachment: Attachment) async -> NSImage? {
+        if let cached = cachedImage(for: attachment.fileId) { return cached }
+        guard !failed.contains(attachment.fileId) else { return nil }
         do {
-            let data = try await fetch(fileId)
-            guard let image = NSImage(data: data) else {
-                failed.insert(fileId)
+            let data = try await fetch(attachment.fileId)
+            let name = attachment.name
+            let mimeType = attachment.mimeType
+            let isVideo = attachment.isVideo
+            guard let image = await Task.detached(priority: .userInitiated, operation: {
+                await attachmentPreviewImage(
+                    data: data,
+                    name: name,
+                    mimeType: mimeType,
+                    isVideo: isVideo
+                )
+            }).value else {
+                failed.insert(attachment.fileId)
                 return nil
             }
-            cache.setObject(image, forKey: fileId as NSString)
+            cache.setObject(image, forKey: attachment.fileId as NSString)
             return image
         } catch {
             // Missing files (deleted DB, cross-server session) render as a
             // placeholder rather than erroring the transcript.
-            failed.insert(fileId)
+            failed.insert(attachment.fileId)
             return nil
         }
     }
@@ -84,7 +95,57 @@ extension Attachment {
         mimeType == "application/pdf" || name.lowercased().hasSuffix(".pdf")
     }
 
-    var hasVisualPreview: Bool { kind == .image || isPDF }
+    var isVideo: Bool { attachmentIsVideo(name: name, mimeType: mimeType) }
+
+    var hasVisualPreview: Bool { kind == .image || isPDF || isVideo }
+}
+
+func attachmentIsVideo(name: String, mimeType: String) -> Bool {
+    if mimeType.lowercased().hasPrefix("video/") { return true }
+    let pathExtension = (name as NSString).pathExtension
+    guard !pathExtension.isEmpty, let type = UTType(filenameExtension: pathExtension) else {
+        return false
+    }
+    return type.conforms(to: .movie)
+}
+
+/// Decodes images/PDFs directly and asks AVFoundation for an early frame of a
+/// video. AVFoundation needs a file URL, so video bytes are materialized only
+/// for the duration of thumbnail generation.
+nonisolated func attachmentPreviewImage(
+    data: Data,
+    name: String,
+    mimeType: String,
+    isVideo: Bool
+) async -> NSImage? {
+    guard isVideo else { return NSImage(data: data) }
+
+    let directory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("Codevisor-Video-Thumbnails", isDirectory: true)
+        .appendingPathComponent(UUID().uuidString, isDirectory: true)
+    do {
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let pathExtension = (name as NSString).pathExtension.isEmpty
+            ? (UTType(mimeType: mimeType)?.preferredFilenameExtension ?? "mp4")
+            : (name as NSString).pathExtension
+        let file = directory.appendingPathComponent("preview.\(pathExtension)")
+        try data.write(to: file, options: .atomic)
+
+        let generator = AVAssetImageGenerator(asset: AVURLAsset(url: file))
+        generator.appliesPreferredTrackTransform = true
+        generator.maximumSize = NSSize(width: 240, height: 240)
+        let time = CMTime(seconds: 0.1, preferredTimescale: 600)
+        var frame = try? await generator.image(at: time)
+        if frame == nil {
+            frame = try? await generator.image(at: .zero)
+        }
+        guard let frame else { return nil }
+        return NSImage(cgImage: frame.image, size: .zero)
+    } catch {
+        return nil
+    }
 }
 
 /// The "PDF" tag shown over document previews so they read differently from
@@ -102,8 +163,9 @@ struct PDFBadge: View {
     }
 }
 
-/// A small rounded thumbnail for an image or PDF attachment in the transcript,
-/// or a file chip for other types. Every attachment opens with Quick Look.
+/// A small rounded thumbnail for an image, PDF, or video attachment in the
+/// transcript, or a file chip for other types. Every attachment opens with
+/// Quick Look.
 struct AttachmentThumbnailView: View {
     @Environment(\.theme) private var theme
     @Environment(\.quickLook) private var quickLook
@@ -122,6 +184,11 @@ struct AttachmentThumbnailView: View {
                             PDFBadge()
                         }
                     }
+                    .overlay {
+                        if attachment.isVideo {
+                            VideoPlayBadge()
+                        }
+                    }
             } else {
                 AttachmentFileChip(name: attachment.name) {
                     preview()
@@ -131,7 +198,7 @@ struct AttachmentThumbnailView: View {
         .task(id: attachment.fileId) {
             guard attachment.hasVisualPreview, !didLoad else { return }
             didLoad = true
-            image = await attachmentImages?.image(for: attachment.fileId)
+            image = await attachmentImages?.image(for: attachment)
         }
     }
 
@@ -146,7 +213,7 @@ struct AttachmentThumbnailView: View {
             } else {
                 RoundedRectangle(cornerRadius: 8)
                     .fill(theme.bubbleBackground)
-                Image(systemName: "photo")
+                Image(systemName: attachment.isVideo ? "video" : "photo")
                     .foregroundStyle(.tertiary)
             }
         }
@@ -174,6 +241,18 @@ struct AttachmentThumbnailView: View {
             ),
             attachmentStore: attachmentImages
         )
+    }
+}
+
+struct VideoPlayBadge: View {
+    var body: some View {
+        Image(systemName: "play.fill")
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(.white)
+            .frame(width: 24, height: 24)
+            .background(Circle().fill(.black.opacity(0.6)))
+            .overlay(Circle().strokeBorder(.white.opacity(0.3), lineWidth: 1))
+            .allowsHitTesting(false)
     }
 }
 

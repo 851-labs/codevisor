@@ -631,26 +631,40 @@ private struct ComposerAttachmentThumb: View {
     var body: some View {
         ZStack(alignment: .topTrailing) {
             Group {
-                if attachment.hasVisualPreview, let image = thumbnail {
+                if attachment.hasVisualPreview {
                     // A tap gesture rather than a Button: buttons add their own
                     // hover/press highlight over the artwork.
-                    Image(nsImage: image)
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
-                        .frame(width: 56, height: 56)
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 8)
-                                .strokeBorder(.separator, lineWidth: 1)
-                        )
-                        .overlay(alignment: .bottomLeading) {
-                            if attachment.isPDF {
-                                PDFBadge()
-                            }
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(theme.bubbleBackground)
+                        if let image = thumbnail {
+                            Image(nsImage: image)
+                                .resizable()
+                                .aspectRatio(contentMode: .fill)
+                        } else {
+                            Image(systemName: attachment.isVideo ? "video" : "photo")
+                                .foregroundStyle(.tertiary)
                         }
-                        .contentShape(RoundedRectangle(cornerRadius: 8))
-                        .onTapGesture { preview() }
-                        .tooltip(attachment.name)
+                    }
+                    .frame(width: 56, height: 56)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .strokeBorder(.separator, lineWidth: 1)
+                    )
+                    .overlay(alignment: .bottomLeading) {
+                        if attachment.isPDF {
+                            PDFBadge()
+                        }
+                    }
+                    .overlay {
+                        if attachment.isVideo {
+                            VideoPlayBadge()
+                        }
+                    }
+                    .contentShape(RoundedRectangle(cornerRadius: 8))
+                    .onTapGesture { preview() }
+                    .tooltip(attachment.name)
                 } else {
                     AttachmentFileChip(name: attachment.name) { preview() }
                 }
@@ -676,10 +690,18 @@ private struct ComposerAttachmentThumb: View {
         .task(id: attachment.id) {
             guard attachment.hasVisualPreview, thumbnail == nil else { return }
             let data = attachment.localData
+            let name = attachment.name
+            let mimeType = attachment.mimeType
+            let isVideo = attachment.isVideo
             // Decode off the main thread — a pasted screenshot can be many
             // megabytes and the thumb is 56 pt.
             thumbnail = await Task.detached(priority: .userInitiated) {
-                NSImage(data: data)
+                await attachmentPreviewImage(
+                    data: data,
+                    name: name,
+                    mimeType: mimeType,
+                    isVideo: isVideo
+                )
             }.value
         }
         .accessibilityElement(children: .combine)

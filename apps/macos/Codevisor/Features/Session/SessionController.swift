@@ -27,8 +27,10 @@ struct ComposerAttachment: Identifiable, Equatable {
         mimeType == "application/pdf" || name.lowercased().hasSuffix(".pdf")
     }
 
-    /// Images and PDFs render as visual previews; everything else is a chip.
-    var hasVisualPreview: Bool { isImage || isPDF }
+    var isVideo: Bool { attachmentIsVideo(name: name, mimeType: mimeType) }
+
+    /// Images, PDFs, and videos render as visual previews; everything else is a chip.
+    var hasVisualPreview: Bool { isImage || isPDF || isVideo }
 }
 
 /// One measured settled-row height. The revision prevents a stale height from

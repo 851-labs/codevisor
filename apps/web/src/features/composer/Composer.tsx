@@ -24,6 +24,7 @@ import {
   FileChip,
   hasVisualAttachmentPreview,
   isPdfAttachment,
+  isVideoAttachment,
   type LightboxItem,
   VisualThumb
 } from "../attachments/AttachmentPreview"
@@ -443,6 +444,7 @@ function ComposerAttachmentThumb({
   const [lightboxItem, setLightboxItem] = useState<LightboxItem>()
   const visual = hasVisualAttachmentPreview(attachment) && attachment.previewUrl != null
   const isPdf = isPdfAttachment(attachment)
+  const isVideo = isVideoAttachment(attachment)
   const stateOverlay =
     attachment.state === "uploading" ? (
       <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-black/25">
@@ -479,6 +481,7 @@ function ComposerAttachmentThumb({
           <VisualThumb
             name={attachment.name}
             isPdf={isPdf}
+            isVideo={isVideo}
             imageUrl={attachment.previewUrl}
             overlay={stateOverlay}
             onClick={() =>

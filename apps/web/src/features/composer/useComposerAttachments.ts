@@ -133,8 +133,9 @@ function messageFrom(error: unknown): string {
 function hasLocalPreview(file: File): boolean {
   return (
     file.type.startsWith("image/") ||
+    file.type.startsWith("video/") ||
     file.type === "application/pdf" ||
-    file.name.toLowerCase().endsWith(".pdf")
+    /\.(?:m4v|mkv|mov|mp4|mpeg|mpg|ogv|pdf|webm)$/i.test(file.name)
   )
 }
 
