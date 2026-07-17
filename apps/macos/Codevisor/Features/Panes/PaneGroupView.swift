@@ -1,6 +1,7 @@
-//  The session bottom pane group's chrome: the always-visible tab bar (whose
-//  top edge doubles as the drag-to-resize handle) and the selected pane's
-//  content. Tabs behave like Chrome's: equal widths that shrink together as
+//  The session bottom pane group's chrome: the tab bar (whose top edge
+//  doubles as the drag-to-resize handle) and the selected pane's content;
+//  both mount only while the panel is open (⌘J / View ▸ Toggle Bottom
+//  Panel). Tabs behave like Chrome's: equal widths that shrink together as
 //  tabs are added (down to a minimum, then the strip scrolls), names fade out
 //  instead of truncating, drag the tab itself to reorder, and the selected
 //  tab visually connects to the pane below by cutting through the bar's
@@ -11,8 +12,8 @@ import AppKit
 import CodevisorCore
 
 /// The tab bar: pane tabs + "new terminal" button on the left, the bottom
-/// panel toggle on the right. Always visible; when the group is collapsed it
-/// sits at the bottom of the session screen and tab clicks re-expand it.
+/// panel toggle on the right. Mounted only while the group is open (⌘J /
+/// View ▸ Toggle Bottom Panel); its top edge doubles as the resize handle.
 struct PaneGroupBar: View {
     @Environment(\.theme) private var theme
     var group: PaneGroupModel
@@ -51,38 +52,19 @@ struct PaneGroupBar: View {
         .frame(height: Self.barHeight)
         .frame(maxWidth: .infinity)
         // The bottom border draws directly behind the tabs so the selected
-        // tab (whose fill is the exact same solid color) covers it —
-        // Chrome-style "the tab opens into the pane". Window background sits
-        // behind both. Always in the layout (fading via opacity) so it moves
-        // with the bar during the open/close animation instead of popping in
-        // at the bar's final position.
+        // tab (filled with the opaque pane surface) covers it — the tab
+        // genuinely opens into the pane below. The tinted header surface sits
+        // behind both.
         .background(alignment: .bottom) {
             Rectangle()
-                .fill(connectedTabColor)
+                .fill(theme.separator)
                 .frame(height: 1)
-                .opacity(group.state.isVisible ? 1 : 0)
         }
-        .background(theme.windowBackground)
+        .background(theme.paneHeaderBackground)
         .overlay(alignment: .top) { Divider() }
         // Only the bar's top edge is the resize handle (and shows the resize
         // cursor); the rest of the bar keeps the default cursor.
         .overlay(alignment: .top) { resizeHandle }
-    }
-
-    /// The solid color shared by the bar's bottom border and the selected
-    /// tab: the (usually translucent) separator flattened over the window
-    /// background, so the tab and border match perfectly with no transparency.
-    private var connectedTabColor: Color {
-        guard
-            let top = NSColor(theme.separator).usingColorSpace(.sRGB),
-            let bottom = NSColor(theme.windowBackground).usingColorSpace(.sRGB)
-        else { return theme.separator }
-        let alpha = top.alphaComponent
-        return Color(
-            red: Double(top.redComponent * alpha + bottom.redComponent * (1 - alpha)),
-            green: Double(top.greenComponent * alpha + bottom.greenComponent * (1 - alpha)),
-            blue: Double(top.blueComponent * alpha + bottom.blueComponent * (1 - alpha))
-        )
     }
 
     // MARK: - Tabs
@@ -135,12 +117,7 @@ struct PaneGroupBar: View {
                     withAnimation(.snappy(duration: 0.2)) { frozenTabWidth = nil }
                 }
 
-                // Always in the layout (fading via opacity) so it rides the
-                // bar's open/close animation instead of appearing detached at
-                // the final position.
                 addPaneButton
-                    .opacity(group.state.isVisible ? 1 : 0)
-                    .allowsHitTesting(group.state.isVisible)
 
                 Spacer(minLength: 0)
             }
@@ -151,26 +128,19 @@ struct PaneGroupBar: View {
     }
 
     private func tabRow(tabWidth: CGFloat, slotWidth: CGFloat) -> some View {
-        // While the group is collapsed no tab reads as selected: every tab
-        // shows only its hover affordance, and clicking one opens the panel
-        // to that tab (select() expands the group). ⌘J/the toggle button
-        // reopen to state.selectedPaneId, which is still tracked underneath.
-        let showsSelection = group.state.isVisible
-        return HStack(spacing: Self.tabSpacing) {
+        HStack(spacing: Self.tabSpacing) {
             ForEach(group.state.panes) { pane in
                         PaneTab(
                             name: pane.name,
                             isAgentOwned: pane.attachOnly,
-                            isSelected: showsSelection && pane.id == group.state.selectedPaneId,
+                            isSelected: pane.id == group.state.selectedPaneId,
                             isDragging: draggingPaneId == pane.id,
                             width: tabWidth,
-                            // No ✕ while the panel is collapsed; when open,
-                            // narrow tabs drop the ✕ on non-selected tabs so
+                            // Narrow tabs drop the ✕ on non-selected tabs so
                             // the name keeps as much room as possible.
-                            showsClose: showsSelection
-                                && (pane.id == group.state.selectedPaneId
-                                    || tabWidth >= Self.closeButtonMinWidth),
-                            selectedFill: connectedTabColor,
+                            showsClose: pane.id == group.state.selectedPaneId
+                                || tabWidth >= Self.closeButtonMinWidth,
+                            selectedFill: theme.paneBackground,
                             onSelect: {
                                 group.select(id: pane.id)
                                 group.focusSelectedPane()
@@ -284,7 +254,7 @@ struct PaneGroupBar: View {
         } label: {
             Image(systemName: "rectangle.bottomthird.inset.filled")
                 .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(group.state.isVisible ? AnyShapeStyle(Color.white) : AnyShapeStyle(.secondary))
+                .foregroundStyle(Color.white)
                 .frame(width: 24, height: 20)
                 .contentShape(Rectangle())
         }
@@ -295,24 +265,20 @@ struct PaneGroupBar: View {
     // MARK: - Resize
 
     /// A thin strip on the bar's top edge: the only place that shows the
-    /// resize cursor and accepts the resize drag (drag up = taller). Only
-    /// active while the panel is open.
-    @ViewBuilder
+    /// resize cursor and accepts the resize drag (drag up = taller).
     private var resizeHandle: some View {
-        if group.state.isVisible {
-            Color.clear
-                .frame(height: 6)
-                .frame(maxWidth: .infinity)
-                .contentShape(Rectangle())
-                .onHover { hovering in
-                    if hovering {
-                        NSCursor.resizeUpDown.push()
-                    } else {
-                        NSCursor.pop()
-                    }
+        Color.clear
+            .frame(height: 6)
+            .frame(maxWidth: .infinity)
+            .contentShape(Rectangle())
+            .onHover { hovering in
+                if hovering {
+                    NSCursor.resizeUpDown.push()
+                } else {
+                    NSCursor.pop()
                 }
-                .gesture(resizeGesture)
-        }
+            }
+            .gesture(resizeGesture)
     }
 
     private var resizeGesture: some Gesture {
@@ -374,8 +340,10 @@ private struct TabSlotWidthModifier: ViewModifier {
 
 /// One tab: pane name (fading out as space shrinks, never truncating) plus a
 /// close button on hover/selection. The tab shape hugs the bar's bottom (with
-/// clearance below the resize strip); the selected tab's solid fill matches
-/// the bottom border so it reads as connected to the pane.
+/// clearance below the resize strip); the selected tab is filled with the
+/// pane's own surface and paints over the bar's bottom border, so it opens
+/// directly into the pane below. Hover shows the same silhouette as a quiet
+/// tint, so tabs never change shape on click.
 private struct PaneTab: View {
     @Environment(\.theme) private var theme
     let name: String
@@ -394,20 +362,22 @@ private struct PaneTab: View {
 
     /// The tab content's horizontal inset.
     private static let contentPadding: CGFloat = 8
-    /// The hover pill: an all-corners rounded rect, vertically centered and
-    /// clearly distinct from the selected tab shape (Chrome-style). Centered
-    /// in the 32pt bar, its top inset is 5pt.
-    private static let hoverShapeHeight: CGFloat = 22
-    /// The selected tab shape: bottom-anchored, its top edge aligned with the
-    /// hover pill's top edge (32 - (32 - 22) / 2) — generous air above the
-    /// text row while still opening into the pane below.
-    private static let selectedShapeHeight: CGFloat = 27
+    /// The single tab silhouette every state shares: bottom-anchored and
+    /// top-rounded, tall enough for generous air above the text row while
+    /// still opening into the pane below. Hover and selection differ only in
+    /// fill, so nothing changes shape on click.
+    private static let tabShapeHeight: CGFloat = 27
+
+    /// The shared silhouette (see `tabShapeHeight`).
+    private static var tabShape: UnevenRoundedRectangle {
+        UnevenRoundedRectangle(topLeadingRadius: 6, topTrailingRadius: 6, style: .continuous)
+    }
 
     var body: some View {
         HStack(spacing: 4) {
             Image(systemName: isAgentOwned ? "server.rack" : "terminal")
-                .font(.system(size: 8, weight: .semibold))
-                .foregroundStyle(isSelected ? .primary : .secondary)
+                .font(.system(size: 9.5, weight: .semibold))
+                .foregroundStyle(isSelected ? AnyShapeStyle(theme.accent) : AnyShapeStyle(.secondary))
                 .help(isAgentOwned ? "Agent background process" : "Terminal")
             fadingName
             if showsClose {
@@ -418,18 +388,15 @@ private struct PaneTab: View {
         .frame(width: width, height: 32)
         .background(alignment: .bottom) {
             if isSelected {
-                // Solid; identical to the bar's bottom border so the tab
-                // joins it.
-                UnevenRoundedRectangle(topLeadingRadius: 6, topTrailingRadius: 6, style: .continuous)
+                // Solid pane surface: covers the bar's bottom border so the
+                // tab genuinely opens into the pane below it.
+                Self.tabShape
                     .fill(selectedFill)
-                    .frame(height: Self.selectedShapeHeight)
-            }
-        }
-        .background {
-            if !isSelected && isHovered {
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .frame(height: Self.tabShapeHeight)
+            } else if isHovered {
+                Self.tabShape
                     .fill(Color.primary.opacity(0.06))
-                    .frame(height: Self.hoverShapeHeight)
+                    .frame(height: Self.tabShapeHeight)
             }
         }
         .shadow(color: .black.opacity(isDragging ? 0.25 : 0), radius: 3, y: 1)

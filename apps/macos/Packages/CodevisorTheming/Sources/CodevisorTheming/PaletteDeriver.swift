@@ -32,6 +32,10 @@ public struct DerivedPalette: Equatable, Sendable {
     public let popoverBorder: RGBA
     public let composerBackground: RGBA
     public let bubbleBackground: RGBA
+    /// The pane-group header (tab strip) surface: the pane content color
+    /// nudged toward the foreground, so a selected tab filled with the pane
+    /// surface reads as a cutout opening into the pane below.
+    public let paneHeaderBackground: RGBA
 
     // Text hierarchy
     public let textPrimary: RGBA
@@ -158,6 +162,7 @@ public enum PaletteDeriver {
             popoverBorder: fg.mixed(with: sidebarBg, weight: 0.18),
             composerBackground: editorBg,
             bubbleBackground: fg.mixed(with: sidebarBg, weight: 0.08),
+            paneHeaderBackground: fg.mixed(with: editorBg, weight: 0.06),
             textPrimary: fg,
             textSecondary: textSecondary,
             textTertiary: fg.mixed(with: sidebarBg, weight: 0.45),

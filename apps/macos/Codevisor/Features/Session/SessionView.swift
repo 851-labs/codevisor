@@ -29,15 +29,17 @@ struct SessionScreen: View {
         VStack(spacing: 0) {
             chatArea
 
-            // The pane-group tab bar sits directly under the chat and stays
-            // visible even when the panel content is collapsed; when open it
-            // doubles as the panel's resize handle.
-            PaneGroupBar(group: paneGroup, onToggle: { togglePanes() })
-
+            // The pane group (tab bar + selected pane) mounts only while the
+            // panel is open — no collapsed bar under the chat. ⌘J and
+            // View ▸ Toggle Bottom Panel bring it back; the bar's top edge is
+            // the resize handle.
             if paneGroup.state.isVisible {
-                PaneGroupContent(group: paneGroup)
-                    .frame(height: paneGroup.state.height)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                VStack(spacing: 0) {
+                    PaneGroupBar(group: paneGroup, onToggle: { togglePanes() })
+                    PaneGroupContent(group: paneGroup)
+                        .frame(height: paneGroup.state.height)
+                }
+                .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
         .animation(Motion.panel(reduceMotion: reduceMotion), value: paneGroup.state.isVisible)

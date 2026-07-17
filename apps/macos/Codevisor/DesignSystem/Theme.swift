@@ -65,6 +65,20 @@ struct Theme: Equatable {
         palette.map { Color(rgba: $0.terminal.background) } ?? Color(nsColor: .textBackgroundColor)
     }
 
+    /// The shared pane content surface. Today every pane is a terminal, so it
+    /// aliases the terminal surface; as more pane types arrive (chat, diffs,
+    /// extensions) they adopt this token so a selected pane tab — filled with
+    /// exactly this color — fuses with whatever pane it opens into.
+    var paneBackground: Color { terminalBackground }
+
+    /// The pane-group header (tab strip) surface: the content surface nudged
+    /// toward the foreground so the selected tab reads as a cutout into the
+    /// pane below.
+    var paneHeaderBackground: Color {
+        palette.map { Color(rgba: $0.paneHeaderBackground) }
+            ?? Color(nsColor: .underPageBackgroundColor)
+    }
+
     /// Popover/sheet surface when themed; system popovers keep their material.
     var popoverBackground: Color {
         palette.map { Color(rgba: $0.popoverBackground) } ?? Color(nsColor: .windowBackgroundColor)

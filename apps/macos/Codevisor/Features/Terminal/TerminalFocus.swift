@@ -193,7 +193,7 @@ private struct TerminalToggleMenuItem: View {
     @FocusedValue(\.terminalToggle) private var action
 
     var body: some View {
-        Button("Toggle terminal") { action?.toggle() }
+        Button("Toggle Bottom Panel") { action?.toggle() }
             .keyboardShortcut("j", modifiers: .command)
             .disabled(action == nil)
     }
