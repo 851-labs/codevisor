@@ -7,11 +7,13 @@ import os
 private enum SidebarOrganization: String, CaseIterable {
     case byProject
     case chronological
+    case compact
 
     var title: String {
         switch self {
         case .byProject: return "By project"
         case .chronological: return "By chat"
+        case .compact: return "Nous"
         }
     }
 }
@@ -175,7 +177,7 @@ struct SidebarView: View {
                 .transition(.move(edge: .top).combined(with: .opacity))
             }
             // Development identity + New chat + the Projects header stay
-            // pinned; only the project list itself scrolls.
+            // pinned; only the project/chat list itself scrolls.
             VStack(alignment: .leading, spacing: 1) {
                 if CodevisorAppVariant.isDevelopment {
                     developmentWorktreeRow
@@ -209,7 +211,7 @@ struct SidebarView: View {
                             .foregroundStyle(.tertiary)
                             .padding(.horizontal, 10)
                             .padding(.vertical, 4)
-                    } else if organization == .chronological && chronologicalSessions.isEmpty {
+                    } else if organization != .byProject && chronologicalSessions.isEmpty {
                         Text("No sessions yet")
                             .font(.caption)
                             .foregroundStyle(.tertiary)
@@ -373,7 +375,7 @@ struct SidebarView: View {
 
     private var projectsHeader: some View {
         HStack {
-            Text(organization == .chronological ? "Chats" : "Projects")
+            Text(organization == .byProject ? "Projects" : "Agents")
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.secondary)
             Spacer()
@@ -577,7 +579,7 @@ struct SidebarView: View {
                 HStack(spacing: 6) {
                     // Same icon slot as project rows so titles align; the row's
                     // dimmer foreground tints the icon along with the text.
-                    HarnessIcon(harnessId: session.harnessId, fallbackSymbolName: "bubble.left.fill")
+                    sessionLeadingIcon(session)
                         .frame(width: 18)
                     Text(session.title).lineLimit(1)
                     Spacer(minLength: 6)
@@ -629,13 +631,14 @@ struct SidebarView: View {
     ) -> some View {
         let isSelected = !isDragPreview
             && selection == .session(serverId: session.serverId, id: session.id)
+        let activatesOnMouseDown = organization == .compact || order != .none
         return HoverableRow(
             isSelected: isSelected,
             isHoverEnabled: !isReordering,
             isHoverForced: isDragPreview
         ) { isHovered in
             HStack(spacing: 7) {
-                HarnessIcon(harnessId: session.harnessId, fallbackSymbolName: "bubble.left.fill")
+                sessionLeadingIcon(session)
                     .frame(width: 18)
                     .foregroundStyle(.secondary)
                 VStack(alignment: .leading, spacing: 1) {
@@ -647,7 +650,7 @@ struct SidebarView: View {
                         .foregroundStyle(.tertiary)
                         .lineLimit(1)
                 }
-                Spacer(minLength: 6)
+                .frame(maxWidth: .infinity, alignment: .leading)
                 sessionStatus(session, isHovered: isHovered)
             }
             .padding(.horizontal, 8)
@@ -655,9 +658,12 @@ struct SidebarView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
             .foregroundStyle(isSelected ? Color.primary : .secondary)
-            .gesture(sessionActivationGesture(session), including: order == .none ? .none : .all)
+            .gesture(
+                sessionActivationGesture(session),
+                including: activatesOnMouseDown ? .all : .none
+            )
             .onTapGesture {
-                guard order == .none else { return }
+                guard !activatesOnMouseDown else { return }
                 activateSession(session)
             }
         }
@@ -767,21 +773,30 @@ struct SidebarView: View {
     }
 
     @ViewBuilder
-    private func sessionStatus(_ session: ChatSession, isHovered: Bool) -> some View {
+    private func sessionLeadingIcon(_ session: ChatSession) -> some View {
         if store?.hasUnreadError(session) == true {
             ErrorUnreadBadge(color: theme.statusError)
-                .frame(width: 24, height: 14, alignment: .trailing)
         } else if store?.isWaitingOnUser(session) == true {
-            // A blocking question is actionable rather than unread or busy.
-            // Keep it inline where the row's notification indicator lives.
-            ActionRequiredBadge(color: notificationColor)
+            ActionRequiredIndicator(color: theme.statusError)
+        } else if store?.isRunning(session) == true {
+            AgentActivityIndicator()
+        } else if unreadCount(for: session) != nil {
+            UnreadBadge(color: notificationColor)
         } else {
-            // Fixed-size trailing slot so swapping the timestamp for the spinner,
-            // unread badge, or archive button doesn't change the row height.
+            HarnessIcon(harnessId: session.harnessId, fallbackSymbolName: "bubble.left.fill")
+        }
+    }
+
+    @ViewBuilder
+    private func sessionStatus(_ session: ChatSession, isHovered: Bool) -> some View {
+        if store?.hasUnreadError(session) == true {
+            EmptyView()
+        } else if organization != .compact || isHovered {
+            // Fixed-size trailing slot so swapping the timestamp for the archive
+            // button doesn't change the row height. Compact rows omit the slot
+            // entirely when no control is visible.
             Group {
-                if store?.isRunning(session) == true {
-                    ProgressView().controlSize(.mini)
-                } else if isHovered {
+                if isHovered {
                     Button {
                         list.archiveSession(session)
                         if selection == .session(serverId: session.serverId, id: session.id) { selection = .newChat(nil) }
@@ -793,8 +808,6 @@ struct SidebarView: View {
                     .foregroundStyle(.secondary)
                     .tooltip("Archive chat")
                     .accessibilityLabel("Archive \(session.title)")
-                } else if unreadCount(for: session) != nil {
-                    UnreadBadge(color: notificationColor)
                 } else {
                     Text(RelativeTime.short(from: timestamp(for: session)))
                         .font(.caption2)
@@ -1004,6 +1017,32 @@ struct SidebarView: View {
     }
 }
 
+/// Herdr-inspired working glyph: its ten braille frames advance at roughly
+/// eight steps per second in the harness icon's 13-point slot and foreground.
+private struct AgentActivityIndicator: View {
+    private static let frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 0.125, paused: reduceMotion)) { context in
+            let frame = reduceMotion ? Self.frames[0] : Self.frame(at: context.date)
+            Text(frame)
+                .font(.system(size: 13, design: .monospaced))
+                .contentTransition(.identity)
+        }
+        .frame(width: 13, height: 13)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Working")
+        .help("Chat is working")
+    }
+
+    private static func frame(at date: Date) -> String {
+        let tick = Int(date.timeIntervalSinceReferenceDate * 8)
+        return frames[tick % frames.count]
+    }
+}
+
 /// Row chrome (hover highlight + selected background) with ROW-LOCAL hover
 /// state, exposed to the content so rows can reveal hover-only controls.
 /// Hover must not live on the sidebar itself: a single shared "which id is
@@ -1103,7 +1142,8 @@ private struct UnreadBadge: View {
     var body: some View {
         Circle()
             .fill(color)
-            .frame(width: 8, height: 8)
+            .frame(width: 10, height: 10)
+            .accessibilityLabel("Unread chat")
     }
 }
 
@@ -1120,19 +1160,17 @@ private struct ErrorUnreadBadge: View {
     }
 }
 
-/// Inline attention status for a chat blocked on a question or plan approval.
-private struct ActionRequiredBadge: View {
+/// Attention marker for a chat blocked on a question or plan approval.
+private struct ActionRequiredIndicator: View {
     let color: Color
 
     var body: some View {
-        Text("Action required")
-            .font(.caption2.weight(.semibold))
-            .foregroundStyle(color)
-            .lineLimit(1)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .background(color.opacity(0.14), in: Capsule())
-            .fixedSize()
+        Circle()
+            .fill(color.opacity(0.18))
+            .overlay {
+                Circle().stroke(color, lineWidth: 1.25)
+            }
+            .frame(width: 10, height: 10)
             .accessibilityLabel("Action required")
             .tooltip("This chat needs your response")
     }
