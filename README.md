@@ -8,9 +8,6 @@
 
 <div align="center">
   <a href="https://github.com/851-labs/codevisor/releases/latest">
-    <img src="https://img.shields.io/badge/macOS-26.0%2B-blue?logo=apple&logoColor=white&style=flat" alt="macOS 26.0+">
-  </a>
-  <a href="https://github.com/851-labs/codevisor/releases/latest">
     <img src="https://img.shields.io/github/v/release/851-labs/codevisor?label=Release&style=flat" alt="Latest release">
   </a>
   <a href="https://github.com/851-labs/homebrew-tap">
