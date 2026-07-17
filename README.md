@@ -32,20 +32,16 @@ Codevisor runs Claude Code, Codex, and any ACP-compatible coding agent on your m
 
 ## Installation
 
-### Install Script
-
 ```bash
+# Install script
 curl -fsSL https://www.codevisor.dev/install.sh | sh
+
+# Homebrew
+brew install --cask 851-labs/tap/codevisor
 ```
 
 > [!NOTE]
 > The install script installs the Codevisor app on macOS or Codevisor Server on Linux.
-
-### Homebrew
-
-```sh
-brew install --cask 851-labs/tap/codevisor
-```
 
 ### Direct Download
 
