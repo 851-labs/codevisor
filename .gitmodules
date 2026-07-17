@@ -92,3 +92,6 @@
 [submodule ".repos/Window-in-Picture"]
 	path = .repos/Window-in-Picture
 	url = https://github.com/851-labs/Window-in-Picture.git
+[submodule ".repos/homebrew-tap"]
+	path = .repos/homebrew-tap
+	url = https://github.com/851-labs/homebrew-tap.git
