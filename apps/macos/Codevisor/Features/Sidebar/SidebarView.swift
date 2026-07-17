@@ -631,7 +631,9 @@ struct SidebarView: View {
     ) -> some View {
         let isSelected = !isDragPreview
             && selection == .session(serverId: session.serverId, id: session.id)
-        let activatesOnMouseDown = organization == .compact || order != .none
+        // Manual-order Nous rows attach this gesture alongside their native
+        // drag source so activation does not prevent drag-to-reorder.
+        let activatesOnMouseDown = order != .none
         return HoverableRow(
             isSelected: isSelected,
             isHoverEnabled: !isReordering,
@@ -746,6 +748,10 @@ struct SidebarView: View {
                         chronologicalSessionRow(session, project: project, isDragPreview: true)
                             .frame(width: 260)
                     }
+                )
+                .simultaneousGesture(
+                    sessionActivationGesture(session),
+                    including: organization == .compact ? .all : .none
                 )
                 .opacity(draggingSessionID == session.id ? 0 : 1)
                 .onDrop(
