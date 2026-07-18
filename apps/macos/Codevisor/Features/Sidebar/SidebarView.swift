@@ -1024,7 +1024,7 @@ struct SidebarView: View {
 }
 
 /// Herdr-inspired working glyph: its ten braille frames advance at roughly
-/// eight steps per second in the harness icon's 13-point slot and foreground.
+/// eight steps per second in the harness icon's slot and foreground.
 private struct AgentActivityIndicator: View {
     private static let frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
 
@@ -1034,10 +1034,10 @@ private struct AgentActivityIndicator: View {
         TimelineView(.animation(minimumInterval: 0.125, paused: reduceMotion)) { context in
             let frame = reduceMotion ? Self.frames[0] : Self.frame(at: context.date)
             Text(frame)
-                .font(.system(size: 13, design: .monospaced))
+                .font(.system(size: 14, design: .monospaced))
                 .contentTransition(.identity)
         }
-        .frame(width: 13, height: 13)
+        .frame(width: 14, height: 14)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Working")
         .help("Chat is working")
