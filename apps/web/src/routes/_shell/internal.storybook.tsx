@@ -1,11 +1,11 @@
 import type {
   AttachmentRef,
   ConversationItem,
-  HarnessUsageLimits,
   PromptQueueItem,
   SessionConfigOption,
   SessionGoal
 } from "@codevisor/api"
+// import type { HarnessUsageLimits } from "@codevisor/api"
 import { createFileRoute } from "@tanstack/react-router"
 import {
   ArrowUpIcon,
@@ -29,7 +29,7 @@ import { ChipMenu } from "../../features/composer/ChipMenu"
 import { Composer } from "../../features/composer/Composer"
 import { ModelConfigMenu } from "../../features/composer/ModelConfigMenu"
 import { QuestionPickerCard } from "../../features/composer/QuestionPickerCard"
-import { UsageRingButton } from "../../features/composer/UsageRingButton"
+// import { UsageRingButton } from "../../features/composer/UsageRingButton"
 import {
   type ComposerAttachmentItem,
   useComposerAttachments
@@ -99,6 +99,7 @@ const speedOption: SessionConfigOption = {
   ]
 }
 
+/* Fixtures for the temporarily disabled usage gauge and popover.
 const usageFixture = {
   used: 116_000,
   size: 128_000,
@@ -124,6 +125,7 @@ const usageLimitsFixture: HarnessUsageLimits = {
   credits: { hasCredits: true, unlimited: false, balance: "$12.40" },
   fetchedAt: "2026-07-15T22:00:00Z"
 }
+*/
 
 const composerAttachments: ComposerAttachmentItem[] = [
   {
@@ -842,6 +844,10 @@ function ComposerStates() {
   return (
     <SurfaceGrid>
       <StateBlock title="Normal with slash menu and attachments">
+        {/* Usage gauge props are temporarily disabled:
+        usage={usageFixture}
+        usageLimits={usageLimitsFixture}
+        */}
         <Composer
           value={slashText}
           onValueChange={setSlashText}
@@ -850,8 +856,6 @@ function ComposerStates() {
             { name: "plan", description: "Draft a plan before editing" }
           ]}
           attachments={composerAttachments}
-          usage={usageFixture}
-          usageLimits={usageLimitsFixture}
           canSend
           chips={toolbarChips({})}
           onSend={() => undefined}
@@ -920,11 +924,13 @@ function ComposerStates() {
           onCancel={() => undefined}
         />
       </StateBlock>
+      {/* Usage popover fixture is temporarily disabled.
       <StateBlock title="Usage popover">
         <div className="relative h-28 px-2 pt-8">
           <UsageRingButton usage={usageFixture} limits={usageLimitsFixture} forcePopover />
         </div>
       </StateBlock>
+      */}
     </SurfaceGrid>
   )
 }

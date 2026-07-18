@@ -66,9 +66,11 @@ public final class SessionModel {
     }
     /// Latest context-window + cost usage reported by the agent (`usage_update`).
     public private(set) var usage: SessionUsage?
+    /* Usage-limit state only feeds the temporarily disabled usage popover.
     public private(set) var usageLimits: ServerHarnessUsageLimits?
     public private(set) var isLoadingUsageLimits = false
     public private(set) var usageLimitsError: String?
+    */
     /// Background tasks the agent is running (backgrounded shells, subagents),
     /// replaced wholesale on every server snapshot. Non-empty after a turn ends
     /// means the agent will come back on its own once the work settles.
@@ -609,6 +611,7 @@ public final class SessionModel {
         await loadLegacyHistory()
     }
 
+    /* Usage-limit loading only feeds the temporarily disabled usage popover.
     public func loadUsageLimits(force: Bool = false) async {
         if isLoadingUsageLimits || (!force && usageLimits != nil) { return }
         isLoadingUsageLimits = true
@@ -620,6 +623,7 @@ public final class SessionModel {
             usageLimitsError = serverErrorMessage(error)
         }
     }
+    */
 
     private func loadLegacyHistory() async {
         do {

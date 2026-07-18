@@ -1,4 +1,5 @@
-import type { HarnessUsageLimits, SessionConfigOption } from "@codevisor/api"
+import type { SessionConfigOption } from "@codevisor/api"
+// import type { HarnessUsageLimits } from "@codevisor/api"
 import { createFileRoute } from "@tanstack/react-router"
 import { Code2Icon, FolderIcon, GitBranchIcon, ListTodoIcon, TargetIcon } from "lucide-react"
 import { useState } from "react"
@@ -7,7 +8,7 @@ import { ChipMenu } from "../../features/composer/ChipMenu"
 import { Composer } from "../../features/composer/Composer"
 import { ModelConfigMenu } from "../../features/composer/ModelConfigMenu"
 import { QuestionPickerCard } from "../../features/composer/QuestionPickerCard"
-import { UsageRingButton } from "../../features/composer/UsageRingButton"
+// import { UsageRingButton } from "../../features/composer/UsageRingButton"
 import type { ComposerAttachmentItem } from "../../features/composer/useComposerAttachments"
 import { ComposerStatusLabel } from "../../features/session/SessionScreen"
 import type { QuestionRequestInfo } from "../../lib/session-events"
@@ -108,6 +109,7 @@ const questionRequest: QuestionRequestInfo = {
 
 const selectedQuestionOption = { approach: ["Match macOS"] }
 
+/* Fixtures for the temporarily disabled usage gauge and popover.
 const usageFixture = {
   used: 116_000,
   size: 128_000,
@@ -133,6 +135,7 @@ const usageLimitsFixture: HarnessUsageLimits = {
   credits: { hasCredits: true, unlimited: false, balance: "$12.40" },
   fetchedAt: "2026-07-15T22:00:00Z"
 }
+*/
 
 function ToolbarChips({
   goalArmed = false,
@@ -247,9 +250,11 @@ function ChatComposerFixtureRoute() {
   const attachmentsOnly =
     typeof window !== "undefined" &&
     new URLSearchParams(window.location.search).get("attachmentsOnly") === "1"
+  /* Standalone verification route for the temporarily disabled usage UI.
   const usageOnly =
     typeof window !== "undefined" &&
     new URLSearchParams(window.location.search).get("usageOnly") === "1"
+  */
 
   if (attachmentsOnly) {
     return (
@@ -273,6 +278,7 @@ function ChatComposerFixtureRoute() {
     )
   }
 
+  /* Standalone usage gauge/popover verification is temporarily disabled.
   if (usageOnly) {
     return (
       <div className="bg-background h-full overflow-auto">
@@ -298,11 +304,16 @@ function ChatComposerFixtureRoute() {
       </div>
     )
   }
+  */
 
   return (
     <div className="bg-background h-full overflow-auto">
       <div className="mx-auto grid w-full max-w-[1180px] grid-cols-2 gap-4 px-6 pt-8 pb-8">
         <ComposerFixture title="Normal composer with attachments">
+          {/* Usage gauge props are temporarily disabled:
+          usage={usageFixture}
+          usageLimits={usageLimitsFixture}
+          */}
           <Composer
             value={normalText}
             onValueChange={setNormalText}
@@ -311,8 +322,6 @@ function ChatComposerFixtureRoute() {
               { name: "plan", description: "Draft a plan before editing" }
             ]}
             attachments={attachments}
-            usage={usageFixture}
-            usageLimits={usageLimitsFixture}
             canSend
             chips={<ToolbarChips />}
             onSend={() => undefined}

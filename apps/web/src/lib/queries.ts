@@ -12,7 +12,7 @@ import type {
   EventEnvelope,
   AttachmentRef,
   GoalStatus,
-  HarnessUsageLimits,
+  // HarnessUsageLimits,
   QuestionAnswerEntry,
   SessionConfigOption,
   SessionDetail,
@@ -54,7 +54,7 @@ export const queryKeys = {
   sessions: ["sessions"] as const,
   session: (id: string) => ["session", id] as const,
   sessionBranchDiff: (id: string) => ["session-branch-diff", id] as const,
-  sessionUsageLimits: (id: string) => ["session-usage-limits", id] as const,
+  // sessionUsageLimits: (id: string) => ["session-usage-limits", id] as const,
   harnesses: ["harnesses"] as const,
   capabilities: (cwd: string) => ["capabilities", cwd] as const
 }
@@ -1137,6 +1137,7 @@ export function useSessionBranchDiff(id: string | undefined) {
   })
 }
 
+/* Query hook for the temporarily disabled usage gauge and popover.
 export function useSessionUsageLimits(id: string | undefined, enabled = true) {
   const { client } = useApi()
   return useQuery<HarnessUsageLimits>({
@@ -1146,6 +1147,7 @@ export function useSessionUsageLimits(id: string | undefined, enabled = true) {
     refetchInterval: 60_000
   })
 }
+*/
 
 export function useHarnesses() {
   const { client } = useApi()

@@ -1,3 +1,4 @@
+/* Usage gauge and popover are temporarily disabled.
 import type { HarnessUsageLimits } from "@codevisor/api"
 import type { UsageInfo } from "../../lib/session-events"
 import { useEffect, useRef, useState } from "react"
@@ -298,3 +299,6 @@ function formatReset(value: string | undefined): string | undefined {
     minute: "2-digit"
   }).format(date)}`
 }
+*/
+
+export {}

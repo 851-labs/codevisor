@@ -378,6 +378,7 @@ final class SessionController {
     var errorRequiresHarnessAuthentication: Bool {
         model?.errorRequiresHarnessAuthentication == true
     }
+    /* Usage state only feeds the temporarily disabled usage gauge and popover.
     var usage: SessionUsage? { model?.usage }
     var usageLimits: ServerHarnessUsageLimits? { model?.usageLimits }
     var isLoadingUsageLimits: Bool { model?.isLoadingUsageLimits == true }
@@ -386,6 +387,7 @@ final class SessionController {
     func loadUsageLimits(force: Bool = false) async {
         await model?.loadUsageLimits(force: force)
     }
+    */
 
     func loadOlderHistory() async {
         await model?.loadOlderHistory()

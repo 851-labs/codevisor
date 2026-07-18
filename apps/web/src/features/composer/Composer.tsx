@@ -28,12 +28,12 @@ import {
   type LightboxItem,
   VisualThumb
 } from "../attachments/AttachmentPreview"
-import type { HarnessUsageLimits } from "@codevisor/api"
 import { cn } from "../../lib/cn"
-import type { UsageInfo } from "../../lib/session-events"
 import { type SlashCommand, slashMatchesFor, slashQueryFrom } from "./slash-commands"
 import type { ComposerAttachmentItem } from "./useComposerAttachments"
-import { UsageRingButton } from "./UsageRingButton"
+// import type { HarnessUsageLimits } from "@codevisor/api"
+// import type { UsageInfo } from "../../lib/session-events"
+// import { UsageRingButton } from "./UsageRingButton"
 
 // The chat composer card: a multiline autosize input (Return sends,
 // Shift+Return adds a newline) with an inline toolbar holding caller-supplied
@@ -46,11 +46,11 @@ export function Composer({
   chips,
   commands = [],
   attachments = [],
-  usage,
-  usageLimits,
-  isLoadingUsageLimits = false,
-  usageLimitsError,
-  onRequestUsageLimits,
+  // usage,
+  // usageLimits,
+  // isLoadingUsageLimits = false,
+  // usageLimitsError,
+  // onRequestUsageLimits,
   canSend,
   isSending = false,
   isCancelling = false,
@@ -70,11 +70,11 @@ export function Composer({
   chips?: ReactNode
   commands?: readonly SlashCommand[]
   attachments?: readonly ComposerAttachmentItem[]
-  usage?: UsageInfo
-  usageLimits?: HarnessUsageLimits
-  isLoadingUsageLimits?: boolean
-  usageLimitsError?: string
-  onRequestUsageLimits?: () => void
+  // usage?: UsageInfo
+  // usageLimits?: HarnessUsageLimits
+  // isLoadingUsageLimits?: boolean
+  // usageLimitsError?: string
+  // onRequestUsageLimits?: () => void
   canSend?: boolean
   isSending?: boolean
   isCancelling?: boolean
@@ -340,6 +340,7 @@ export function Composer({
             )}
             {chips}
             <span className="flex-1" />
+            {/* Usage gauge and popover are temporarily disabled.
             <UsageRingButton
               usage={usage}
               limits={usageLimits}
@@ -347,6 +348,7 @@ export function Composer({
               limitsError={usageLimitsError}
               onRequestLimits={onRequestUsageLimits}
             />
+            */}
             {isSending &&
               onStop != null &&
               (isCancelling ? (

@@ -30,7 +30,7 @@ import {
   usePromptSession,
   useSessionDetail,
   useSessionBranchDiff,
-  useSessionUsageLimits,
+  // useSessionUsageLimits,
   useClearSessionGoal,
   useSetSessionConfig,
   useSetSessionGoal,
@@ -202,8 +202,10 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
   const [composerSendRevision, setComposerSendRevision] = useState(0)
   const [mountedTerminalPaneIds, setMountedTerminalPaneIds] = useState<string[]>([])
   const [isAttachmentDropTargeted, setIsAttachmentDropTargeted] = useState(false)
+  /* Usage-limit fetching only feeds the temporarily disabled usage popover.
   const [usageLimitsEnabled, setUsageLimitsEnabled] = useState(false)
   const usageLimitsQuery = useSessionUsageLimits(sessionId, usageLimitsEnabled)
+  */
   const [composerRef, composerHeight] = useElementHeight()
   const composerAttachments = useComposerAttachments(`session:${sessionId}`)
   const terminalVisible = paneState.isVisible
@@ -551,6 +553,7 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
   }
 
   const activeQuestion = detail.pendingQuestion ?? planApprovalRequest
+  /* Usage aggregation only feeds the temporarily disabled composer gauge.
   const usage = detail.liveUsage ?? {
     used: detail.session.usage?.used,
     size: detail.session.usage?.size,
@@ -563,6 +566,7 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
     costCurrency: detail.session.usage?.costCurrency,
     costKind: detail.session.usage?.costKind
   }
+  */
   const waitingBackgroundTasks = isRunning
     ? []
     : (detail.backgroundTasks ?? []).filter((task) => task.terminalKey == null)
@@ -712,6 +716,15 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
             }}
           />
         ) : (
+          /* Usage gauge and popover props are temporarily disabled:
+          usage={usage}
+          usageLimits={usageLimitsQuery.data}
+          isLoadingUsageLimits={usageLimitsQuery.isPending && usageLimitsEnabled}
+          usageLimitsError={
+            usageLimitsQuery.error instanceof Error ? usageLimitsQuery.error.message : undefined
+          }
+          onRequestUsageLimits={() => setUsageLimitsEnabled(true)}
+          */
           <Composer
             value={composerText}
             onValueChange={setComposerText}
@@ -720,13 +733,6 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
             focusOnTyping
             commands={detail.availableCommands ?? []}
             attachments={isGoalComposerArmed ? [] : composerAttachments.attachments}
-            usage={usage}
-            usageLimits={usageLimitsQuery.data}
-            isLoadingUsageLimits={usageLimitsQuery.isPending && usageLimitsEnabled}
-            usageLimitsError={
-              usageLimitsQuery.error instanceof Error ? usageLimitsQuery.error.message : undefined
-            }
-            onRequestUsageLimits={() => setUsageLimitsEnabled(true)}
             canSend={
               isGoalComposerArmed
                 ? composerText.trim() !== "" && !setGoal.isPending

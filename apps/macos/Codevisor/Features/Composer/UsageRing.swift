@@ -2,6 +2,7 @@
 //  session's context window fills, with a hover popover showing cost + token
 //  metrics. Successor of the removed status bar's usage text.
 
+/* Usage gauge and popover are temporarily disabled.
 import SwiftUI
 import ACPKit
 import CodevisorCore
@@ -255,3 +256,4 @@ struct UsageRingButton: View {
         return String(format: "%.0f percent context used", min(Double(used) / Double(size), 1) * 100)
     }
 }
+*/

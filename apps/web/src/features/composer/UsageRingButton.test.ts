@@ -1,3 +1,4 @@
+/* Tests for the temporarily disabled usage gauge and popover.
 import { describe, expect, it } from "vitest"
 
 import {
@@ -63,3 +64,6 @@ describe("usage ring formatting", () => {
     expect(usageContextPercent({ used: 62_000, size: 128_000 })).toBe(48)
   })
 })
+*/
+
+export {}
