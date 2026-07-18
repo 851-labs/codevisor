@@ -203,12 +203,64 @@ struct PaneGroupStateTests {
     func repository() {
         let repo = DefaultPaneGroupRepository(store: InMemoryStore())
         let otherSession = UUID()
-        #expect(repo.load(sessionId: sessionId) == nil)
+        #expect(repo.load(sessionId: sessionId, placement: .bottom) == nil)
         var state = PaneGroupState.initial(sessionId: sessionId)
         state.addTerminalPane(sessionId: sessionId)
-        repo.save(state, sessionId: sessionId)
-        repo.save(.initial(sessionId: otherSession), sessionId: otherSession)
-        #expect(repo.load(sessionId: sessionId) == state)
-        #expect(repo.load(sessionId: otherSession)?.panes.count == 1)
+        repo.save(state, sessionId: sessionId, placement: .bottom)
+        repo.save(.initial(sessionId: otherSession), sessionId: otherSession, placement: .bottom)
+        #expect(repo.load(sessionId: sessionId, placement: .bottom) == state)
+        #expect(repo.load(sessionId: otherSession, placement: .bottom)?.panes.count == 1)
+    }
+
+    @Test("Repository stores the center group separately from the bottom panel")
+    func repositoryPlacements() {
+        let repo = DefaultPaneGroupRepository(store: InMemoryStore())
+        let bottom = PaneGroupState.initial(sessionId: sessionId)
+        let center = PaneGroupState.centerInitial(sessionId: sessionId)
+        repo.save(bottom, sessionId: sessionId, placement: .bottom)
+        #expect(repo.load(sessionId: sessionId, placement: .center) == nil)
+        repo.save(center, sessionId: sessionId, placement: .center)
+        #expect(repo.load(sessionId: sessionId, placement: .bottom) == bottom)
+        #expect(repo.load(sessionId: sessionId, placement: .center) == center)
+    }
+
+    @Test("Center initial state is a visible, selected, non-closable chat pane")
+    func centerInitial() {
+        let state = PaneGroupState.centerInitial(sessionId: sessionId)
+        #expect(state.panes.count == 1)
+        #expect(state.panes[0].kind == .chat)
+        #expect(!state.panes[0].isClosable)
+        #expect(state.selectedPaneId == state.panes[0].id)
+        #expect(state.isVisible)
+    }
+
+    @Test("The chat pane cannot be closed")
+    func chatPaneNotClosable() {
+        var state = PaneGroupState.centerInitial(sessionId: sessionId)
+        let chatId = state.panes[0].id
+        #expect(state.closePane(id: chatId) == nil)
+        #expect(state.panes.count == 1)
+        #expect(state.selectedPaneId == chatId)
+    }
+
+    @Test("insertPane places a transferred pane at a clamped index and selects it")
+    func insertPane() {
+        var state = PaneGroupState.centerInitial(sessionId: sessionId)
+        let transferred = PaneDescriptorState(
+            id: UUID(), kind: .terminal, name: "Terminal 1", terminalKey: "k"
+        )
+        state.insertPane(transferred, at: 99)
+        #expect(state.panes.map(\.name) == ["Chat", "Terminal 1"])
+        #expect(state.selectedPaneId == transferred.id)
+
+        let leading = PaneDescriptorState(
+            id: UUID(), kind: .terminal, name: "Terminal 2", terminalKey: "k2"
+        )
+        state.insertPane(leading, at: -1)
+        #expect(state.panes.first?.id == leading.id)
+
+        // Re-inserting an already-present pane is a no-op.
+        state.insertPane(transferred, at: 0)
+        #expect(state.panes.count == 3)
     }
 }

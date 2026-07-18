@@ -6,11 +6,21 @@ public enum SessionFocusTarget: Sendable, Equatable {
     case terminal
 }
 
-/// The kinds of pane a session's bottom pane group can host. Terminal is the
-/// first; future kinds (logs, preview, ...) add a case here plus a factory
-/// branch in the app layer.
+/// The kinds of pane a session's pane groups can host. Future kinds (diff
+/// viewers, previews, extensions, ...) add a case here plus a factory branch
+/// in the app layer.
 public enum PaneKind: String, Codable, Sendable {
     case terminal
+    /// The session's chat itself: transcript + composer. Lives in the center
+    /// group; exactly one per session, not closable.
+    case chat
+}
+
+/// Which of a session's pane groups a state belongs to: the center group
+/// hosting the chat (always visible, fills the page) or the ⌘J bottom panel.
+public enum PaneGroupPlacement: String, Sendable {
+    case center
+    case bottom
 }
 
 /// The persisted identity of one pane in a session's pane group. Pure data —
@@ -29,6 +39,10 @@ public struct PaneDescriptorState: Identifiable, Codable, Sendable, Equatable {
     /// terminal the server already registered (never spawns a shell), and the
     /// proxy's teardown must not kill the agent's process.
     public let attachOnly: Bool
+
+    /// Whether the user can close (or move between groups) this pane. The
+    /// chat pane is the session itself: no ✕, no drag-out.
+    public var isClosable: Bool { kind != .chat }
 
     public init(id: UUID, kind: PaneKind, name: String, terminalKey: String, attachOnly: Bool = false) {
         self.id = id
@@ -94,9 +108,9 @@ public struct PaneGroupState: Codable, Sendable, Equatable {
         )
     }
 
-    /// The state a session starts with: one terminal pane whose key is the
-    /// bare session UUID (migration: reattaches shells created before the
-    /// pane-group era, since the server never reaps PTYs).
+    /// The state a session's bottom panel starts with: one terminal pane
+    /// whose key is the bare session UUID (migration: reattaches shells
+    /// created before the pane-group era, since the server never reaps PTYs).
     public static func initial(sessionId: UUID) -> PaneGroupState {
         let pane = PaneDescriptorState(
             id: UUID(),
@@ -105,6 +119,18 @@ public struct PaneGroupState: Codable, Sendable, Equatable {
             terminalKey: sessionId.uuidString
         )
         return PaneGroupState(panes: [pane], selectedPaneId: pane.id)
+    }
+
+    /// The state a session's center group starts with: the chat pane, always
+    /// visible (the center group has no collapsed state — it IS the page).
+    public static func centerInitial(sessionId: UUID) -> PaneGroupState {
+        let chat = PaneDescriptorState(
+            id: UUID(),
+            kind: .chat,
+            name: "Chat",
+            terminalKey: sessionId.uuidString
+        )
+        return PaneGroupState(panes: [chat], selectedPaneId: chat.id, isVisible: true)
     }
 
     public var selectedPane: PaneDescriptorState? {
@@ -166,11 +192,22 @@ public struct PaneGroupState: Codable, Sendable, Equatable {
         return pane
     }
 
-    /// Removes a pane. If it was selected, selection moves to its right
+    /// Inserts an existing pane (a cross-group transfer) at `index` (clamped),
+    /// selects it, and opens the group.
+    public mutating func insertPane(_ pane: PaneDescriptorState, at index: Int) {
+        guard !panes.contains(where: { $0.id == pane.id }) else { return }
+        panes.insert(pane, at: min(max(index, 0), panes.count))
+        selectedPaneId = pane.id
+        isVisible = true
+    }
+
+    /// Removes a pane (no-op for non-closable panes — the chat pane cannot
+    /// leave its group). If it was selected, selection moves to its right
     /// neighbor (or the new last pane). Closing the last pane hides the group.
     @discardableResult
     public mutating func closePane(id: UUID) -> PaneDescriptorState? {
-        guard let index = panes.firstIndex(where: { $0.id == id }) else { return nil }
+        guard let index = panes.firstIndex(where: { $0.id == id }),
+              panes[index].isClosable else { return nil }
         let removed = panes.remove(at: index)
         if panes.isEmpty {
             selectedPaneId = nil

@@ -1,16 +1,20 @@
 import Foundation
 
-/// Persists and retrieves each session's pane-group state (tabs, selection,
-/// visibility, height). Pane identity MUST survive app restarts: the codevisor
-/// server keeps one live PTY per pane key with no reaping, so stable keys are
-/// what let terminals reattach instead of orphaning shells.
+/// Persists and retrieves each session's pane-group states (tabs, selection,
+/// visibility, height), one per placement (center group + bottom panel). Pane
+/// identity MUST survive app restarts: the codevisor server keeps one live PTY
+/// per pane key with no reaping, so stable keys are what let terminals
+/// reattach instead of orphaning shells.
 public protocol PaneGroupRepository: Sendable {
-    func load(sessionId: UUID) -> PaneGroupState?
-    func save(_ state: PaneGroupState, sessionId: UUID)
+    func load(sessionId: UUID, placement: PaneGroupPlacement) -> PaneGroupState?
+    func save(_ state: PaneGroupState, sessionId: UUID, placement: PaneGroupPlacement)
 }
 
 /// File/in-memory backed pane-group repository. All sessions' states live
-/// under a single "paneGroups" key as a `[sessionUUID: state]` map.
+/// under a single "paneGroups" key as a `[storageKey: state]` map, where the
+/// bottom panel keeps the legacy bare-UUID key (states persisted before the
+/// center group existed load unchanged) and the center group appends a
+/// ":center" suffix.
 ///
 /// The decoded map is cached in memory: saves fire on every tab
 /// select/toggle/height drag, and re-reading + re-decoding every session's
@@ -25,18 +29,25 @@ public final class DefaultPaneGroupRepository: PaneGroupRepository, @unchecked S
         self.store = store
     }
 
-    public func load(sessionId: UUID) -> PaneGroupState? {
-        loadAll()[sessionId.uuidString]
+    public func load(sessionId: UUID, placement: PaneGroupPlacement) -> PaneGroupState? {
+        loadAll()[Self.storageKey(sessionId: sessionId, placement: placement)]
     }
 
-    public func save(_ state: PaneGroupState, sessionId: UUID) {
+    public func save(_ state: PaneGroupState, sessionId: UUID, placement: PaneGroupPlacement) {
         var all = loadAll()
-        all[sessionId.uuidString] = state
+        all[Self.storageKey(sessionId: sessionId, placement: placement)] = state
         lock.withLock { cache = all }
         do {
             try store.saveData(JSONEncoder().encode(all), forKey: key)
         } catch {
             Log.persistence.error("Failed to save \(self.key, privacy: .public): \(String(describing: error), privacy: .public)")
+        }
+    }
+
+    private static func storageKey(sessionId: UUID, placement: PaneGroupPlacement) -> String {
+        switch placement {
+        case .bottom: sessionId.uuidString
+        case .center: "\(sessionId.uuidString):center"
         }
     }
 
