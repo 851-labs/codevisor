@@ -324,7 +324,7 @@ struct NotificationsSettingsView: View {
                 .contentShape(Circle())
             }
             .buttonStyle(.plain)
-            .tooltip("Play \(title.lowercased()) sound")
+            .help("Play \(title.lowercased()) sound")
             .accessibilityLabel("Test \(title.lowercased()) sound")
         }
     }
@@ -356,7 +356,7 @@ struct NotificationsSettingsView: View {
             }
             .buttonStyle(.borderless)
             .settingsActionTint(theme)
-            .tooltip("Play \(sound.name)")
+            .help("Play \(sound.name)")
             .accessibilityLabel("Play \(sound.name)")
             Button {
                 deleteCustomSound(sound)
@@ -365,7 +365,7 @@ struct NotificationsSettingsView: View {
             }
             .buttonStyle(.borderless)
             .settingsActionTint(theme)
-            .tooltip("Remove this sound")
+            .help("Remove this sound")
             .accessibilityLabel("Remove \(sound.name)")
         }
     }

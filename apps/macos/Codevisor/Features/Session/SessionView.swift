@@ -270,7 +270,7 @@ struct SessionScreen: View {
         .buttonStyle(.glass)
         .buttonBorderShape(.circle)
         .controlSize(.large)
-        .tooltip("Scroll to bottom")
+        .help("Scroll to bottom")
         .accessibilityLabel("Scroll to bottom")
     }
 
@@ -621,7 +621,7 @@ struct SessionScreen: View {
                 Button("Restart") { AppRelauncher.relaunch() }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
-                    .tooltip("Restart Codevisor and its server")
+                    .help("Restart Codevisor and its server")
             } else if controller.errorRequiresHarnessAuthentication {
                 Button("Open Harness Settings") {
                     SettingsRouter.shared.selectedTab = .harnesses
@@ -629,7 +629,7 @@ struct SessionScreen: View {
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
-                .tooltip("Open Harnesses settings to sign in")
+                .help("Open Harnesses settings to sign in")
             }
         }
         .padding(10)
@@ -775,7 +775,7 @@ private struct PromptQueueView: View {
                     Image(systemName: "checkmark")
                 }
                 .buttonStyle(.plain)
-                .tooltip("Save")
+                .help("Save")
                 .accessibilityLabel("Save queued message")
                 Button {
                     editingQueueId = nil
@@ -783,7 +783,7 @@ private struct PromptQueueView: View {
                     Image(systemName: "xmark")
                 }
                 .buttonStyle(.plain)
-                .tooltip("Cancel")
+                .help("Cancel")
                 .accessibilityLabel("Cancel editing queued message")
             }
             .font(.caption)
@@ -803,7 +803,7 @@ private struct PromptQueueView: View {
                     Image(systemName: "pencil")
                 }
                 .buttonStyle(.plain)
-                .tooltip("Edit queued message")
+                .help("Edit queued message")
                 .accessibilityLabel("Edit queued message")
                 Button {
                     Task { await controller.deleteQueuedPrompt(id: item.id) }
@@ -811,7 +811,7 @@ private struct PromptQueueView: View {
                     Image(systemName: "trash")
                 }
                 .buttonStyle(.plain)
-                .tooltip("Remove queued message")
+                .help("Remove queued message")
                 .accessibilityLabel("Remove queued message")
             }
             .font(.caption)

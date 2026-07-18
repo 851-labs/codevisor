@@ -57,7 +57,7 @@ private struct ErrorBannerView: View {
             }
             .buttonStyle(.plain)
             .opacity(isHovered ? 1 : 0.5)
-            .tooltip("Dismiss")
+            .help("Dismiss")
             .accessibilityLabel("Dismiss")
         }
         .padding(12)

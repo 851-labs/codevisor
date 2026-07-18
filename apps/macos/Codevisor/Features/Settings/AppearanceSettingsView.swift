@@ -75,7 +75,7 @@ struct AppearanceSettingsView: View {
                             }
                             .buttonStyle(.borderless)
                             .settingsActionTint(theme)
-                            .tooltip("Remove this theme")
+                            .help("Remove this theme")
                             .accessibilityLabel("Remove \(descriptor.displayName)")
                         }
                     }

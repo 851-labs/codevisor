@@ -30,10 +30,8 @@ struct UpdateBannerView: View {
                     .buttonStyle(.borderedProminent)
                     .controlSize(.small)
                     .disabled(hasRunningChats)
-                    .tooltip(
-                        hasRunningChats ? Self.runningChatsHint : "",
-                        accessibilityHint: hasRunningChats ? Self.runningChatsHint : nil
-                    )
+                    .help(hasRunningChats ? Self.runningChatsHint : "")
+                    .accessibilityHint(hasRunningChats ? Self.runningChatsHint : "")
                 }
             }
 
@@ -96,10 +94,8 @@ struct ServerUpdateBannerView: View {
                     .buttonStyle(.borderedProminent)
                     .controlSize(.small)
                     .disabled(hasRunningChats)
-                    .tooltip(
-                        hasRunningChats ? Self.runningChatsHint : "",
-                        accessibilityHint: hasRunningChats ? Self.runningChatsHint : nil
-                    )
+                    .help(hasRunningChats ? Self.runningChatsHint : "")
+                    .accessibilityHint(hasRunningChats ? Self.runningChatsHint : "")
                 }
             }
 

@@ -196,7 +196,7 @@ struct HeaderIconButton: View {
         }
         .buttonStyle(.plain)
         .headerGlassCircle()
-        .tooltip(help)
+        .help(help)
         .accessibilityLabel(help)
     }
 }

@@ -664,7 +664,7 @@ struct PaneGroupBar: View {
         }
         .buttonStyle(.plain)
         .glassEffect(.regular.interactive(), in: Circle())
-        .tooltip("New terminal")
+        .help("New terminal")
         .accessibilityLabel("New terminal")
     }
 
@@ -680,7 +680,7 @@ struct PaneGroupBar: View {
         }
         .buttonStyle(.plain)
         .glassEffect(.regular.interactive(), in: Circle())
-        .tooltip("Toggle bottom panel (⌘J)")
+        .help("Toggle bottom panel (⌘J)")
         .accessibilityLabel("Toggle bottom panel")
         .accessibilityHint("Keyboard shortcut: Command-J")
     }
@@ -926,7 +926,7 @@ private struct PaneTab: View {
                     .font(.system(size: 12, weight: .medium))
                     // Same ink as the label in both states.
                     .foregroundStyle(isSelected ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
-                    .tooltip(iconHelp)
+                    .help(iconHelp)
             }
             Text(name)
                 .font(.system(size: 11.5))
@@ -959,7 +959,7 @@ private struct PaneTab: View {
         }
         .buttonStyle(.plain)
         .onHover { isCloseHovered = $0 }
-        .tooltip("Close terminal")
+        .help("Close terminal")
         .accessibilityLabel("Close terminal")
     }
 }

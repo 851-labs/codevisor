@@ -227,7 +227,7 @@ struct AttachmentThumbnailView: View {
         .onTapGesture {
             preview()
         }
-        .tooltip(attachment.name)
+        .help(attachment.name)
         .accessibilityLabel("Attachment \(attachment.name)")
         .accessibilityAddTraits(.isButton)
     }
@@ -282,7 +282,7 @@ struct AttachmentFileChip: View {
         )
         .contentShape(RoundedRectangle(cornerRadius: 8))
         .onTapGesture { onTap?() }
-        .tooltip(name)
+        .help(name)
     }
 }
 

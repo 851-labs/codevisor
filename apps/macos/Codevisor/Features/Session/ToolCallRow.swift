@@ -270,7 +270,7 @@ struct ToolSourceLinkView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .tooltip(link.uri)
+            .help(link.uri)
         } else {
             Text(label)
                 .font(.caption)

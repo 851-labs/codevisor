@@ -29,7 +29,7 @@ struct MessageCopyButton: View {
         }
         .buttonStyle(HoverIconButtonStyle(shape: .roundedRectangle))
         .foregroundStyle(.secondary)
-        .tooltip(help)
+        .help(help)
         .accessibilityLabel(help)
         .onChange(of: isRevealed) { _, revealed in
             if !revealed { didCopy = false }

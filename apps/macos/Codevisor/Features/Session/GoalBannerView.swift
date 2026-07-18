@@ -92,7 +92,7 @@ struct GoalBannerView: View {
         }
         .buttonStyle(.plain)
         .foregroundStyle(.secondary)
-        .tooltip(help)
+        .help(help)
         .accessibilityLabel(help)
     }
 

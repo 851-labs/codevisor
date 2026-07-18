@@ -172,7 +172,7 @@ struct ProjectSetupSelectionView: View {
                     Spacer()
                     ProgressView()
                         .controlSize(.small)
-                        .tooltip("Finding recent projects")
+                        .help("Finding recent projects")
                         .accessibilityLabel("Finding recent projects")
                     Spacer()
                 }
@@ -239,7 +239,7 @@ struct ProjectSetupSelectionView: View {
             .contentShape(RoundedRectangle(cornerRadius: 10))
         }
         .buttonStyle(.plain)
-        .tooltip(choice.url.standardizedFileURL.path)
+        .help(choice.url.standardizedFileURL.path)
         .accessibilityLabel("\(choice.title), \(choice.subtitle)")
         .accessibilityAddTraits(isSelected ? .isSelected : [])
         .animation(.snappy(duration: 0.15), value: isSelected)

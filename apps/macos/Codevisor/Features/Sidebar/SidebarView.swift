@@ -340,7 +340,7 @@ struct SidebarView: View {
         )
         .background(RoundedRectangle(cornerRadius: 6).fill(developmentWorktreeColor))
         .accessibilityLabel("Development worktree: \(worktreeName)")
-        .tooltip("Development worktree: \(worktreeName)")
+        .help("Development worktree: \(worktreeName)")
     }
 
     private func actionRow(_ title: String, systemImage: String, action: @escaping () -> Void) -> some View {
@@ -409,7 +409,7 @@ struct SidebarView: View {
             }
             .menuStyle(.button)
             .buttonStyle(.plain)
-            .tooltip("Organize projects")
+            .help("Organize projects")
             .accessibilityLabel("Organize projects")
 
             Button {
@@ -420,7 +420,7 @@ struct SidebarView: View {
                     .foregroundStyle(.secondary)
             }
             .buttonStyle(.plain)
-            .tooltip("Add a project folder")
+            .help("Add a project folder")
             .accessibilityLabel("Add a project folder")
         }
         .padding(.horizontal, 10)
@@ -523,14 +523,14 @@ struct SidebarView: View {
                     }
                     .buttonStyle(.plain)
                     .foregroundStyle(.secondary)
-                    .tooltip("New chat in \(project.name)")
+                    .help("New chat in \(project.name)")
                     .accessibilityLabel("New chat in \(project.name)")
                 }
             }
             .padding(.horizontal, 8)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .tooltip(project.folderURL.path)
+        .help(project.folderURL.path)
         .contextMenu {
             Button("New chat here") { selection = .newChat(project.id) }
             Button("Change icon") { iconEditing = project }
@@ -812,7 +812,7 @@ struct SidebarView: View {
                     }
                     .buttonStyle(.plain)
                     .foregroundStyle(.secondary)
-                    .tooltip("Archive chat")
+                    .help("Archive chat")
                     .accessibilityLabel("Archive \(session.title)")
                 } else {
                     Text(RelativeTime.short(from: timestamp(for: session)))
@@ -1162,7 +1162,7 @@ private struct ErrorUnreadBadge: View {
             .fill(color)
             .frame(width: 8, height: 8)
             .accessibilityLabel("Unread chat error")
-            .tooltip("This chat ended with an error")
+            .help("This chat ended with an error")
     }
 }
 
@@ -1178,7 +1178,7 @@ private struct ActionRequiredIndicator: View {
             }
             .frame(width: 10, height: 10)
             .accessibilityLabel("Action required")
-            .tooltip("This chat needs your response")
+            .help("This chat needs your response")
     }
 }
 

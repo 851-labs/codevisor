@@ -92,7 +92,7 @@ struct IconPickerView: View {
                 )
         }
         .buttonStyle(.plain)
-        .tooltip(symbol)
+        .help(symbol)
         .accessibilityLabel(symbol.replacingOccurrences(of: ".", with: " "))
     }
 }
