@@ -5,14 +5,14 @@ import CodevisorTheming
 import os
 
 private enum SidebarOrganization: String, CaseIterable {
-    case byProject
     case chronological
+    case byWorkspace
     case compact
 
     var title: String {
         switch self {
-        case .byProject: return "By project"
         case .chronological: return "By chat"
+        case .byWorkspace: return "By workspace"
         case .compact: return "Nous"
         }
     }
@@ -47,6 +47,18 @@ private struct SidebarSessionListItem: Identifiable {
     let project: Project
 
     var id: UUID { session.id }
+}
+
+/// A workspace row in "by workspace" mode. The primary session/project are
+/// resolved from the live session list so status and activation reuse the
+/// session machinery (the single-chat era: opening a workspace opens its
+/// primary chat).
+private struct SidebarWorkspaceListItem: Identifiable {
+    let workspace: Workspace
+    let primarySession: ChatSession?
+    let project: Project?
+
+    var id: UUID { workspace.id }
 }
 
 /// Existing harness sessions found in a just-added project folder, pending
@@ -86,6 +98,11 @@ struct SidebarView: View {
     @State private var iconEditing: Project?
     @State private var renamingSession: ChatSession?
     @State private var renameTitle = ""
+    @State private var renamingWorkspace: Workspace?
+    @State private var workspaceRenameTitle = ""
+    /// Bumped after workspace mutations (backfill sweep, renames) so the
+    /// non-observable repository is re-read.
+    @State private var workspaceRevision = 0
     @State private var draggingProjectID: UUID?
     @State private var draggingSessionID: UUID?
     @AppStorage("sidebar.organization") private var organizationRaw = SidebarOrganization.chronological.rawValue
@@ -145,6 +162,58 @@ struct SidebarView: View {
         return manuallyOrderedSessions(sessions, session: \.session)
     }
 
+    /// "By workspace": every workspace on the selected machine, ordered like
+    /// the chronological chat list (via each workspace's primary chat), with
+    /// session-less workspaces last by creation date.
+    private var workspaceItems: [SidebarWorkspaceListItem] {
+        _ = workspaceRevision
+        let serverId = environment.machines.selectedMachineId
+        let sessionItems = chronologicalSessions
+        let sessionRank = Dictionary(
+            uniqueKeysWithValues: sessionItems.enumerated().map { ($0.element.session.id, $0.offset) }
+        )
+        let sessionsById = Dictionary(uniqueKeysWithValues: sessionItems.map { ($0.session.id, $0) })
+        let workspaces = environment.workspaces.loadAll().filter { $0.serverId == serverId }
+        return workspaces
+            .map { workspace -> (item: SidebarWorkspaceListItem, rank: Int, created: Date) in
+                let primary = workspace.chatSessionIds.lazy.compactMap { sessionsById[$0] }.first
+                return (
+                    SidebarWorkspaceListItem(
+                        workspace: workspace,
+                        primarySession: primary?.session,
+                        project: primary?.project
+                    ),
+                    primary.flatMap { sessionRank[$0.session.id] } ?? Int.max,
+                    workspace.createdAt
+                )
+            }
+            .sorted {
+                if $0.rank != $1.rank { return $0.rank < $1.rank }
+                return $0.created > $1.created
+            }
+            .map(\.item)
+    }
+
+    /// Existing chats gain owning workspaces lazily; entering by-workspace
+    /// mode sweeps the visible sessions so the list is complete. Idempotent
+    /// and cheap after the first pass (indexed lookups).
+    private func backfillWorkspaces() {
+        guard organization == .byWorkspace else { return }
+        for item in chronologicalSessions {
+            _ = environment.workspaces.ensureWorkspace(
+                for: WorkspaceSessionSeed(
+                    sessionId: item.session.id,
+                    title: item.session.title,
+                    serverId: item.session.serverId,
+                    projectId: item.project.id,
+                    rootDirectory: item.session.cwd ?? item.project.folderURL.path
+                ),
+                legacyGroups: environment.paneGroups
+            )
+        }
+        workspaceRevision += 1
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             if let release = environment.appUpdate.availableRelease,
@@ -196,9 +265,9 @@ struct SidebarView: View {
                 // A plain VStack: lazy row materialization re-measures the
                 // content mid-bounce, which reads as random overscroll snaps.
                 VStack(alignment: .leading, spacing: 1) {
-                    if organization == .byProject {
-                        ForEach(visibleProjects) { project in
-                            projectFolder(project)
+                    if organization == .byWorkspace {
+                        ForEach(workspaceItems) { item in
+                            workspaceRow(item)
                         }
                     } else {
                         ForEach(chronologicalSessions) { item in
@@ -211,7 +280,13 @@ struct SidebarView: View {
                             .foregroundStyle(.tertiary)
                             .padding(.horizontal, 10)
                             .padding(.vertical, 4)
-                    } else if organization != .byProject && chronologicalSessions.isEmpty {
+                    } else if organization == .byWorkspace && workspaceItems.isEmpty {
+                        Text("No workspaces yet")
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 4)
+                    } else if organization != .byWorkspace && chronologicalSessions.isEmpty {
                         Text("No sessions yet")
                             .font(.caption)
                             .foregroundStyle(.tertiary)
@@ -266,6 +341,36 @@ struct SidebarView: View {
                 list.renameSession(session, to: trimmed)
             }
             Button("Cancel", role: .cancel) {}
+        }
+        .alert(
+            "Rename Workspace",
+            isPresented: Binding(
+                get: { renamingWorkspace != nil },
+                set: { if !$0 { renamingWorkspace = nil } }
+            ),
+            presenting: renamingWorkspace
+        ) { workspace in
+            TextField("Name", text: $workspaceRenameTitle)
+            Button("Rename") {
+                let trimmed = workspaceRenameTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmed.isEmpty else { return }
+                // An explicit rename pins the name (stops tracking the
+                // primary chat's title).
+                var renamed = workspace
+                renamed.name = trimmed
+                renamed.hasCustomName = true
+                environment.workspaces.save(renamed)
+                workspaceRevision += 1
+            }
+            Button("Cancel", role: .cancel) {}
+        }
+        // Entering by-workspace mode (or sessions changing while in it)
+        // sweeps the visible chats so every one has an owning workspace.
+        .onChange(of: organizationRaw, initial: true) { _, _ in
+            backfillWorkspaces()
+        }
+        .onChange(of: chronologicalSessions.map(\.id)) { _, _ in
+            backfillWorkspaces()
         }
         .sheet(item: $iconEditing) { project in
             IconPickerView(currentSymbol: project.symbolName) { symbol in
@@ -375,7 +480,12 @@ struct SidebarView: View {
 
     private var projectsHeader: some View {
         HStack {
-            Text(organization == .byProject ? "Projects" : "Agents")
+            Text({
+                switch organization {
+                case .byWorkspace: "Workspaces"
+                case .chronological, .compact: "Agents"
+                }
+            }())
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.secondary)
             Spacer()
@@ -622,6 +732,72 @@ struct SidebarView: View {
                     .labelStyle(.titleAndIcon)
             }
         }
+    }
+
+    /// One workspace in "by workspace" mode. Single-chat era: activation
+    /// opens the primary chat (which IS the workspace); status/spinners come
+    /// from that session.
+    private func workspaceRow(_ item: SidebarWorkspaceListItem) -> some View {
+        // Selected when ANY of its chats is routed — focus-follow moves the
+        // selection between sibling chats, and the workspace row must not
+        // flicker off when it lands on a non-primary one.
+        let isSelected: Bool = {
+            guard case let .session(serverId, sessionId) = selection,
+                  serverId == item.workspace.serverId else { return false }
+            return environment.workspaces.workspaceId(forSession: sessionId) == item.workspace.id
+        }()
+        return HoverableRow(
+            isSelected: isSelected,
+            isHoverEnabled: !isReordering,
+            isHoverForced: false
+        ) { isHovered in
+            HStack(spacing: 7) {
+                Image(systemName: "square.grid.2x2")
+                    .frame(width: 18)
+                    .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(item.workspace.name)
+                        .font(.subheadline)
+                        .lineLimit(1)
+                    Text(workspaceSubtitle(item))
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                if let session = item.primarySession {
+                    sessionStatus(session, isHovered: isHovered)
+                }
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+            .foregroundStyle(isSelected ? Color.primary : .secondary)
+            .onTapGesture {
+                guard let session = item.primarySession else { return }
+                activateSession(session)
+            }
+        }
+        .contextMenu {
+            Button {
+                workspaceRenameTitle = item.workspace.name
+                renamingWorkspace = item.workspace
+            } label: {
+                Label("Rename", systemImage: "pencil")
+                    .labelStyle(.titleAndIcon)
+            }
+        }
+    }
+
+    private func workspaceSubtitle(_ item: SidebarWorkspaceListItem) -> String {
+        var parts: [String] = []
+        if let project = item.project { parts.append(project.name) }
+        if let root = item.workspace.rootDirectory {
+            let component = URL(fileURLWithPath: root).lastPathComponent
+            if parts.last != component { parts.append(component) }
+        }
+        return parts.isEmpty ? "Workspace" : parts.joined(separator: " · ")
     }
 
     private func chronologicalSessionRow(
@@ -923,9 +1099,6 @@ struct SidebarView: View {
     }
 
     private func resetManualOrder() {
-        if organization == .byProject {
-            saveProjectOrder(list.activeProjects.map(\.id))
-        }
         let sessions = list.activeProjects.flatMap { list.sessions(in: $0) }
         saveSessionOrder(sessions.sorted { left, right in
             let leftTimestamp = left.updatedAt ?? left.createdAt
@@ -955,12 +1128,6 @@ struct SidebarView: View {
     private func moveSession(_ sourceID: UUID, before destinationID: UUID) {
         guard sourceID != destinationID else { return }
         let sessions = list.activeProjects.flatMap { list.sessions(in: $0) }
-        if organization == .byProject {
-            let sourceProjectID = sessions.first { $0.id == sourceID }?.projectId
-            let destinationProjectID = sessions.first { $0.id == destinationID }?.projectId
-            guard sourceProjectID == destinationProjectID else { return }
-        }
-
         var ids = manuallyOrderedSessions(sessions, session: \.self).map(\.id)
         guard let sourceIndex = ids.firstIndex(of: sourceID),
               let destinationIndex = ids.firstIndex(of: destinationID)

@@ -1,34 +1,36 @@
 //  The chat pane: the session's transcript + composer as a center-group tab.
 //
-//  Deliberately a shell. The chat content is owned and rendered by
-//  SessionScreen (it needs SessionController, focus plumbing, and streaming
-//  state that panes must never see), and it stays mounted across tab switches
-//  so the transcript's scroll/streaming machinery is never torn down. This
-//  object only gives the chat a seat at the pane-group table: identity,
-//  selection, and focus routing.
+//  The pane renders real content (ChatScreen) through the ordinary pane view
+//  path. The content itself arrives via `contentProvider`, wired by the
+//  session screen on mount — the chat needs the screen's SessionController
+//  and focus coordinator, which panes must never own. Everything that must
+//  survive tab switches (composer text, scroll position, follow mode) lives
+//  on SessionController, so unmount/remount is cheap and lossless.
 
 import Foundation
 import SwiftUI
 import CodevisorCore
 
 @MainActor
+@Observable
 final class ChatPane: Pane {
     let id: UUID
     let kind: PaneKind = .chat
-    var onGroupCommand: ((PaneGroupCommand) -> Void)?
+    @ObservationIgnored var onGroupCommand: ((PaneGroupCommand) -> Void)?
     /// Unused: the chat's focus lives with the composer, outside the pane.
-    var onFocusChanged: ((Bool) -> Void)?
+    @ObservationIgnored var onFocusChanged: ((Bool) -> Void)?
     /// Wired by the group to the session screen's composer focus.
-    var onFocus: (() -> Void)?
+    @ObservationIgnored var onFocus: (() -> Void)?
+    /// The chat content factory, wired by the session screen (observable so
+    /// the pane host re-renders when the screen mounts and provides it).
+    var contentProvider: (() -> AnyView)?
 
     init(id: UUID) {
         self.id = id
     }
 
-    /// Never rendered: SessionScreen shows the chat content itself (kept
-    /// alive across tab switches) instead of going through the pane view.
     func makeView() -> AnyView {
-        AnyView(EmptyView())
+        contentProvider?() ?? AnyView(EmptyView())
     }
 
     func focus() {

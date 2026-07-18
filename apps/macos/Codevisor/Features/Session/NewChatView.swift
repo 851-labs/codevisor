@@ -15,6 +15,19 @@ struct NewChatView: View {
     /// "New chat here"); nil for the generic new-chat entry. An explicit
     /// project moves a retained draft; an implicit one follows the draft.
     var explicitProjectId: UUID?
+    /// In-pane draft mode: the id of the DRAFT CHAT PANE hosting this
+    /// composer (inside a workspace). The created session binds to the pane
+    /// via `onCreatedInPane` instead of navigating, and the composer uses a
+    /// per-pane draft controller rather than the per-server page draft.
+    var paneDraftId: UUID? = nil
+    var onCreatedInPane: ((ChatSession) -> Void)? = nil
+    /// The pane's session ALREADY EXISTS (created eagerly so the sidebar
+    /// lists it before the first message): first send fills in its details
+    /// (title, harness, worktree/cwd) instead of creating a new record.
+    var preCreatedSession: ChatSession? = nil
+    /// Fired when a failed first-send setup deletes the session, so the
+    /// hosting pane can drop its (now dangling) session reference.
+    var onSetupFailedInPane: (() -> Void)? = nil
 
     @State private var controller: SessionController?
     @State private var selectedProjectId: UUID?
@@ -53,6 +66,16 @@ struct NewChatView: View {
     }
 
     var body: some View {
+        if paneDraftId == nil {
+            // Page mode only: an embedded draft pane must not override the
+            // workspace window's title.
+            content.navigationTitle("New chat")
+        } else {
+            content
+        }
+    }
+
+    private var content: some View {
         VStack {
             // 2:3 spacer split sits the composer slightly above true center.
             Spacer()
@@ -92,10 +115,14 @@ struct NewChatView: View {
                                             .frame(height: 14)
                                             .accessibilityHidden(true)
                                     }
-                                    workspacePicker
-                                    Divider()
-                                        .frame(height: 14)
-                                        .accessibilityHidden(true)
+                                    // In-pane drafts belong to their
+                                    // workspace's project — no picker.
+                                    if paneDraftId == nil {
+                                        workspacePicker
+                                        Divider()
+                                            .frame(height: 14)
+                                            .accessibilityHidden(true)
+                                    }
                                     runLocationPicker(controller)
                                 }
                                 .font(.callout)
@@ -123,7 +150,6 @@ struct NewChatView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .attachmentDropTarget(controller)
-        .navigationTitle("New chat")
         // Same add-project flow as the sidebar's +.
         .addProjectFlow(addProjectFlow) { project in
             selectedProjectId = project.id
@@ -229,9 +255,10 @@ struct NewChatView: View {
         .help("Choose workspace")
     }
 
-    /// "Project directory" vs "New worktree" for where the chat runs. Worktree
-    /// is only offered for git projects; the worktree itself is created on the
-    /// first send.
+    /// "Workspace directory" vs "New worktree" for where the chat runs (the
+    /// chosen directory becomes the workspace's root). Worktree is only
+    /// offered for git projects; the worktree itself is created on the first
+    /// send.
     @ViewBuilder
     private func runLocationPicker(_ controller: SessionController) -> some View {
         Menu {
@@ -246,7 +273,7 @@ struct NewChatView: View {
                 }
             )) {
                 Label {
-                    Text("Project directory")
+                    Text("Workspace directory")
                 } icon: {
                     MenuSymbolIcon(systemName: "folder.fill")
                 }
@@ -270,7 +297,7 @@ struct NewChatView: View {
             }
             .disabled(!worktreeAvailable)
         } label: {
-            PickerChip(text: runInWorktree ? "New worktree" : "Project directory") {
+            PickerChip(text: runInWorktree ? "New worktree" : "Workspace directory") {
                 Image(systemName: runInWorktree ? "arrow.triangle.branch" : "folder.fill")
                     .font(.system(size: 12))
             }
@@ -319,7 +346,8 @@ struct NewChatView: View {
     private func setUpController() {
         selectedProjectId = preferredProjectId ?? projects.first?.id
         guard let project = selectedProject else { return }
-        let controller = store.draft(project: project)
+        let controller = paneDraftId.map { store.paneDraft(paneId: $0, project: project) }
+            ?? store.draft(project: project)
         if controller.project.id != project.id {
             let draftProjectExists = projects.contains { $0.id == controller.project.id }
             if explicitProjectId == project.id || !draftProjectExists {
@@ -339,14 +367,28 @@ struct NewChatView: View {
         controller.onFirstSend = { [weak controller] in
             guard let controller, let project = selectedProject else { return }
             let title = Self.title(from: controller.composerText)
-            let session = environment.projectList.newSession(
-                in: project,
-                title: title,
-                harnessId: controller.selectedHarnessId,
-                worktreeName: controller.worktreeName,
-                cwd: controller.sessionCwdOverride,
-                syncToServer: false
-            )
+            let session: ChatSession
+            if let preCreatedSession,
+               let updated = environment.projectList.updateSessionForFirstSend(
+                   preCreatedSession,
+                   title: title,
+                   harnessId: controller.selectedHarnessId,
+                   worktreeName: controller.worktreeName,
+                   cwd: controller.sessionCwdOverride
+               ) {
+                // The record already exists (eager creation put it in the
+                // sidebar); first send fills in what's now known.
+                session = updated
+            } else {
+                session = environment.projectList.newSession(
+                    in: project,
+                    title: title,
+                    harnessId: controller.selectedHarnessId,
+                    worktreeName: controller.worktreeName,
+                    cwd: controller.sessionCwdOverride,
+                    syncToServer: false
+                )
+            }
             controller.serverSession = session
             // The eager connection may already hold an agent session id; persist
             // it, and capture any future-created id too.
@@ -385,11 +427,26 @@ struct NewChatView: View {
                 controller.serverSession = nil
                 controller.onAgentSessionCreated = nil
                 controller.onWorktreeCreated = nil
-                store.demote(controller, session: session)
-                selection = .newChat(project.id)
+                if let paneDraftId {
+                    // The pane stays a draft; its composer (with the failed
+                    // send's status) returns to the pane's draft slot, and
+                    // the pane drops its reference to the deleted session.
+                    store.demoteToPaneDraft(controller, session: session, paneId: paneDraftId)
+                    onSetupFailedInPane?()
+                } else {
+                    store.demote(controller, session: session)
+                    selection = .newChat(project.id)
+                }
             }
             store.register(controller, for: session)
-            selection = .session(serverId: session.serverId, id: session.id)
+            if let paneDraftId, let onCreatedInPane {
+                // In-pane draft: bind the pane to its new session in place —
+                // no navigation, the workspace stays exactly where it is.
+                store.removePaneDraft(paneId: paneDraftId)
+                onCreatedInPane(session)
+            } else {
+                selection = .session(serverId: session.serverId, id: session.id)
+            }
         }
         self.controller = controller
         Task {

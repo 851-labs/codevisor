@@ -281,9 +281,16 @@ final class CodevisorGhosttyApp {
         } else {
             let isDark = systemIsDark
                 ?? (NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua)
-            let background = isDark ? "1E1E1E" : "FFFFFF"
+            // System theme: the terminal doesn't paint a background at all —
+            // a near-zero opacity surface composites straight onto the
+            // window's backdrop, so terminal panes sit on the SAME live
+            // surface as the chat (including desktop wallpaper tinting,
+            // which no fixed color can reproduce). The color still seeds
+            // the ~1% blend, so keep it on-role.
+            let background = Self.systemWindowBackgroundHex(isDark: isDark)
             let foreground = isDark ? "FFFFFF" : "000000"
             contents += "background = \(background)\n"
+            contents += "background-opacity = 0.01\n"
             contents += "foreground = \(foreground)\n"
             contents += "cursor-color = \(foreground)\n"
         }
@@ -295,6 +302,26 @@ final class CodevisorGhosttyApp {
             Log.terminal.error("ghostty override config write failed: \(String(describing: error), privacy: .public)")
             return nil
         }
+    }
+
+    /// The system window-background color for an appearance, as a Ghostty
+    /// hex value — the same surface the chat page sits on (see
+    /// `Theme.windowBackground`).
+    private static func systemWindowBackgroundHex(isDark: Bool) -> String {
+        var hex = isDark ? "1E1E1E" : "FFFFFF"
+        let appearance = NSAppearance(named: isDark ? .darkAqua : .aqua)
+            ?? NSApp.effectiveAppearance
+        appearance.performAsCurrentDrawingAppearance {
+            if let rgb = NSColor.windowBackgroundColor.usingColorSpace(.sRGB) {
+                hex = String(
+                    format: "%02X%02X%02X",
+                    Int(round(rgb.redComponent * 255)),
+                    Int(round(rgb.greenComponent * 255)),
+                    Int(round(rgb.blueComponent * 255))
+                )
+            }
+        }
+        return hex
     }
 
     // MARK: - Userdata resolution (upstream Ghostty.App L461-477)

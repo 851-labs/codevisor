@@ -24,15 +24,17 @@ struct PaneGroupBar: View {
     /// pane groups; nil disables cross-group drags (previews, single-group
     /// hosts).
     var dragCoordinator: PaneTabDragCoordinator?
-    /// The display name for the chat tab: the session's live title (the
-    /// persisted descriptor name is just a fallback — titles change as the
-    /// session is renamed/auto-titled).
-    var chatTabTitle: String?
+    /// Resolves a chat pane's display title: the referenced session's LIVE
+    /// title (the persisted descriptor name is just a fallback — titles
+    /// change as sessions are renamed/auto-titled; drafts show "New Chat").
+    var chatTitle: ((PaneDescriptorState) -> String)?
     /// Whether the tabs show their ⌘N shortcut hints (native window tab
     /// bars show them on the bar the shortcuts currently target).
     var showsShortcutHints = false
     /// Bottom panel only: the ⌘J toggle action behind the trailing button.
     var onToggle: (() -> Void)?
+    /// Center groups: the + also offers a New Chat draft pane.
+    var allowsNewChatTab = false
 
     @State private var dragStartHeight: CGFloat?
     // Tab reordering: the tab itself follows the pointer horizontally while
@@ -57,6 +59,9 @@ struct PaneGroupBar: View {
     /// local event monitor gated by this frame handles them instead).
     @State private var stripFrame: CGRect = .zero
     @State private var stripMaxScroll: CGFloat = 0
+    /// The bar's last measured frame (re-pushed to the drop coordinator at
+    /// drag start — see the self-healing registration below).
+    @State private var measuredBarFrame: CGRect = .zero
     @State private var scrollMonitor: Any?
     /// Identity ledger for spotting freshly inserted tabs DURING body
     /// evaluation (plain class — reads are legal mid-body and don't
@@ -65,11 +70,26 @@ struct PaneGroupBar: View {
     /// Bumped (inside withAnimation) to release a new tab's expansion.
     @State private var appearanceTick = 0
 
-    /// Bar heights by placement: the TOP bar's tabs are window chrome
-    /// (36pt track in a 40pt row); the default tab bar (bottom panel) is
-    /// more compact — 28pt track in a 32pt row.
-    var barHeight: CGFloat { isBottomPanel ? 32 : 40 }
-    private var trackHeight: CGFloat { isBottomPanel ? 28 : 36 }
+    /// Where this bar lives — same sizing everywhere (the compact 28pt
+    /// track), differing only in furniture:
+    /// - bottomPanel: the ⌘J panel's bar (toggle + resize handle).
+    /// - groupHeader: a center group's bar (no toggle/resize — the group is
+    ///   always open).
+    enum PaneBarChrome {
+        case bottomPanel
+        case groupHeader
+    }
+
+    /// Defaults from placement; center leaves pass .groupHeader explicitly.
+    var chrome: PaneBarChrome?
+
+    private var effectiveChrome: PaneBarChrome {
+        chrome ?? (group.placement == .bottom ? .bottomPanel : .groupHeader)
+    }
+
+    /// One bar sizing everywhere: a flat 28pt band (Finder's tab bar), the
+    /// selected capsule 24pt within it.
+    var barHeight: CGFloat { 28 }
     /// Minimum usable tab width. Below this the strip stops shrinking tabs
     /// and switches to scrolling with edge stacking (NSTabBar model).
     private static let minTabWidth: CGFloat = 100
@@ -86,7 +106,7 @@ struct PaneGroupBar: View {
     /// width redistribution, snap-backs) so the strip moves as one system.
     static let tabMotion: Animation = .snappy(duration: 0.18)
 
-    private var isBottomPanel: Bool { group.placement == .bottom }
+    private var isBottomPanel: Bool { effectiveChrome == .bottomPanel }
 
     var body: some View {
         HStack(spacing: 8) {
@@ -95,44 +115,21 @@ struct PaneGroupBar: View {
                 toggleButton
             }
         }
-        // Center bar: the track's LEADING indent (header padding 10 + 8
-        // here = 18) matches its trailing gap to the + button (10 here +
-        // header spacing 8 = 18), so the strip reads evenly inset between
-        // its neighbors. The bottom bar keeps its symmetric inset.
-        .padding(.leading, isBottomPanel ? 10 : 8)
-        .padding(.trailing, 10)
+        .padding(.horizontal, 10)
         .frame(height: barHeight)
-        // Breathing room between the panel's top edge (divider/resize
-        // handle) and the tab row.
-        .padding(.top, isBottomPanel ? 6 : 0)
+        // Margin between the track and its neighbors (the toolbar/divider
+        // above, the pane content below) — the track floats in the band
+        // (Terminal.app's window tab bar), on the normal page color.
+        .padding(.vertical, 6)
         .frame(maxWidth: .infinity)
-        // Bottom panel chrome only. The center bar lives inside the window's
-        // top bar (its host draws the band surface and boundary line), so it
-        // paints no surface of its own — its tabs sit directly on the
-        // toolbar band. The bottom bar paints the pane surface itself, with
-        // no boundary line below, so the tabs read as part of the terminal
-        // section they control.
-        .background {
-            if isBottomPanel {
-                theme.paneBackground
-            }
-        }
-        // The window hides its titlebar and the header rows are ordinary
-        // content (see WindowChrome.swift), but the strip can sit inside the
-        // residual titlebar region at the window's top edge. This backing
-        // NSView opts the strip's rect out of AppKit's remaining window-move
-        // paths so drags stay tab drags.
-        .background(WindowDragBlocker())
-        // Only the bottom bar separates from the chat above with a divider,
-        // and only its top edge is the resize handle (showing the resize
-        // cursor); the rest of the bar keeps the default cursor.
+        // ONE line between panes: split branches draw the separator between
+        // their children, so group-header bars add none of their own (two
+        // hairlines a pixel apart read as a thick smudge). Only the bottom
+        // panel keeps a top divider — nothing else draws its boundary, and
+        // that edge doubles as the resize handle.
         .overlay(alignment: .top) {
             if isBottomPanel {
                 Divider()
-            }
-        }
-        .overlay(alignment: .top) {
-            if isBottomPanel {
                 resizeHandle
             }
         }
@@ -140,7 +137,18 @@ struct PaneGroupBar: View {
         .onGeometryChange(for: CGRect.self) { proxy in
             proxy.frame(in: .global)
         } action: { frame in
-            dragCoordinator?.updateBarFrame(frame, for: group.placement)
+            measuredBarFrame = frame
+            if let ref = group.dropRef {
+                dragCoordinator?.updateBarFrame(frame, for: ref)
+            }
+        }
+        // Self-healing registration: onGeometryChange only fires on frame
+        // CHANGES, so a registration lost to a dissolve/unmount race would
+        // never return — re-push at every drag start.
+        .onChange(of: dragCoordinator?.active?.paneId) { _, active in
+            if active != nil, measuredBarFrame != .zero, let ref = group.dropRef {
+                dragCoordinator?.updateBarFrame(measuredBarFrame, for: ref)
+            }
         }
         .onAppear {
             guard scrollMonitor == nil else { return }
@@ -153,9 +161,11 @@ struct PaneGroupBar: View {
                 NSEvent.removeMonitor(scrollMonitor)
             }
             scrollMonitor = nil
-            // The bottom bar unmounts when the panel closes; a stale frame
-            // must not keep catching drops.
-            dragCoordinator?.clearGeometry(for: group.placement)
+            // Bars unmount (the panel closes; a leaf dissolves); a stale
+            // frame must not keep catching drops.
+            if let ref = group.dropRef {
+                dragCoordinator?.clearGeometry(for: ref)
+            }
         }
     }
 
@@ -188,10 +198,9 @@ struct PaneGroupBar: View {
 
     private var tabsArea: some View {
         GeometryReader { geometry in
-            // The bottom bar hosts its own +; the center bar's + lives with
-            // the window's other trailing icon buttons (host header), so its
-            // strip gets the full width.
-            let reserved: CGFloat = isBottomPanel ? 26 + 4 : 0
+            // Every bar hosts its own + at its trailing end — with splits,
+            // each group's + adds to THAT group.
+            let reserved: CGFloat = addButtonDiameter + 4
             let available = max(geometry.size.width - reserved, Self.minTabWidth)
             let count = max(group.state.panes.count, 1)
             // Native tab bars divide the whole strip into equal segments
@@ -217,21 +226,11 @@ struct PaneGroupBar: View {
                 selected: selectedIndex
             )
 
-            // Single-tab progressive disclosure (Safari model), TOP BAR
-            // ONLY: the tab dressing collapses to a plain title while the +
-            // stays put in the chrome; the strip materializes on tab #2 — or
-            // the moment a cross-group drag starts, as a live drop hint.
-            // The bottom panel always shows its tab bar.
-            let isCollapsed = !isBottomPanel
-                && group.state.panes.count == 1
-                && dragCoordinator?.active == nil
-
             // The strip (and its track) is FIXED width — closing tabs with
             // frozen widths just slides the remainder left, leaving empty
             // track until the pointer exits and widths relax to refill.
             HStack(spacing: 4) {
                 stripContent(
-                    isCollapsed: isCollapsed,
                     slots: slots,
                     tabWidth: tabWidth,
                     slotWidth: slotWidth,
@@ -242,18 +241,31 @@ struct PaneGroupBar: View {
                         guard !hovering, frozenTabWidth != nil else { return }
                         withAnimation(Self.tabMotion) { frozenTabWidth = nil }
                     }
-                    // The recessed track holding all tabs (native window tab
-                    // bars): a slightly darkened well the tab capsules sit
-                    // inside with even breathing room on every side. Fades
-                    // away with the tabs in single-tab (collapsed) mode.
+                    // The track holding all tabs (Terminal.app's window tab
+                    // bar): in dark mode a LIGHTER well — native tracks
+                    // render ~59,59,59 over the ~33 page, i.e. a ~12% white
+                    // lift (which also preserves the backdrop's wallpaper
+                    // tint); light mode keeps the subtle darkening. The +
+                    // stays outside it.
                     .background(
                         Capsule()
-                            .fill(Color.black.opacity(
-                                isCollapsed ? 0 : (colorScheme == .dark ? 0.22 : 0.06)
-                            ))
-                            .frame(height: trackHeight)
+                            .fill(colorScheme == .dark
+                                ? Color.white.opacity(0.12)
+                                : Color.black.opacity(0.06))
+                            .frame(height: barHeight)
                     )
-                    .animation(Self.tabMotion, value: isCollapsed)
+                    // Drop-target ring: the track lights up while a dragged
+                    // tab would insert into THIS bar (the caret shows where).
+                    .overlay {
+                        if let dragCoordinator,
+                           let ref = group.dropRef,
+                           dragCoordinator.insertionCaret(for: ref) != nil {
+                            Capsule()
+                                .strokeBorder(theme.accent.opacity(0.5))
+                                .frame(height: barHeight)
+                                .allowsHitTesting(false)
+                        }
+                    }
                     // Cross-group drop math needs the strip's leading edge
                     // and slot metrics; the scroll monitor needs the frame
                     // and range.
@@ -262,17 +274,17 @@ struct PaneGroupBar: View {
                     } action: { frame in
                         stripFrame = frame
                         stripMaxScroll = maxScroll
-                        dragCoordinator?.updateStrip(
-                            minX: frame.minX,
-                            slotWidth: slotWidth,
-                            paneCount: group.state.panes.count,
-                            for: group.placement
-                        )
+                        if let ref = group.dropRef {
+                            dragCoordinator?.updateStrip(
+                                minX: frame.minX,
+                                slotWidth: slotWidth,
+                                paneCount: group.state.panes.count,
+                                for: ref
+                            )
+                        }
                     }
 
-                if isBottomPanel {
-                    addPaneButton
-                }
+                addPaneButton
 
                 Spacer(minLength: 0)
             }
@@ -289,6 +301,20 @@ struct PaneGroupBar: View {
             .onChange(of: group.state.panes.map(\.id)) { _, _ in
                 guard draggingPaneId == nil else { return }
                 scrollSelectionIntoView(count: count, slotWidth: slotWidth, available: available)
+            }
+            // Pane-count changes usually don't move the strip's FRAME, so
+            // the geometry callback above won't re-fire — refresh the drop
+            // coordinator's slot metrics explicitly or its insertion math
+            // works against a stale count.
+            .onChange(of: group.state.panes.count) { _, paneCount in
+                if let ref = group.dropRef {
+                    dragCoordinator?.updateStrip(
+                        minX: stripFrame.minX,
+                        slotWidth: slotWidth,
+                        paneCount: paneCount,
+                        for: ref
+                    )
+                }
             }
             .onChange(of: draggingPaneId) { _, dragging in
                 guard dragging == nil else { return }
@@ -330,48 +356,19 @@ struct PaneGroupBar: View {
         .frame(height: barHeight)
     }
 
-    /// Single-tab progressive disclosure (Safari model): with one tab and no
-    /// cross-group drag in flight, the tab dressing collapses to a plain
-    /// title while the + stays put in the chrome. The strip re-materializes
-    /// the moment tab #2 exists — or the moment a tear-out drag starts
-    /// anywhere, so the track doubles as a live drop hint.
-    @ViewBuilder
+    /// The clipped viewport around the tab strip. Always visible — even a
+    /// single tab renders as a tab (closing the last real pane spawns the
+    /// "New tab" placeholder, so the strip never empties).
     private func stripContent(
-        isCollapsed: Bool,
         slots: [(x: CGFloat, width: CGFloat)],
         tabWidth: CGFloat,
         slotWidth: CGFloat,
         available: CGFloat
     ) -> some View {
-        ZStack {
-            if isCollapsed, let pane = group.state.panes.first {
-                collapsedTitle(for: pane, slotWidth: slotWidth)
-                    .transition(.opacity)
-            } else {
-                stripBody(slots: slots, tabWidth: tabWidth, slotWidth: slotWidth)
-                    .frame(width: available, height: barHeight, alignment: .topLeading)
-                    .clipped()
-                    .transition(.opacity)
-            }
-        }
-        .frame(width: available, height: barHeight)
-    }
-
-    /// The lone tab rendered as a quiet title (top bar only — the bottom
-    /// panel always shows its tab bar). The inert title area doubles as
-    /// window-drag space; the only possible single tab here is the
-    /// unclosable chat.
-    private func collapsedTitle(for pane: PaneDescriptorState, slotWidth: CGFloat) -> some View {
-        ZStack(alignment: .leading) {
-            // Drag regions claim drags geometrically, so the whole title
-            // area moves the window even under the (inert) text.
-            WindowDragGap()
-            // Shared page-title style; this strip sits 18 from the
-            // column's leading edge (header 10 + bar 8), so the
-            // remainder lands the title at WindowChrome.pageTitleIndent.
-            HeaderPageTitle(text: pane.kind == .chat ? (chatTabTitle ?? pane.name) : pane.name)
-                .padding(.horizontal, WindowChrome.pageTitleIndent - 18)
-        }
+        stripBody(slots: slots, tabWidth: tabWidth, slotWidth: slotWidth)
+            .frame(width: available, height: barHeight, alignment: .topLeading)
+            .clipped()
+            .frame(width: available, height: barHeight)
     }
 
     private func stripBody(
@@ -392,7 +389,7 @@ struct PaneGroupBar: View {
                         let isAppearing = appearanceLedger.seeded
                             && !appearanceLedger.knownIds.contains(pane.id)
                         PaneTab(
-                            name: pane.kind == .chat ? (chatTabTitle ?? pane.name) : pane.name,
+                            name: pane.kind == .chat ? (chatTitle?(pane) ?? pane.name) : pane.name,
                             kind: pane.kind,
                             isAgentOwned: pane.attachOnly,
                             isSelected: pane.id == group.state.selectedPaneId,
@@ -401,17 +398,17 @@ struct PaneGroupBar: View {
                             // The chat pane has no ✕ (not closable); closable
                             // tabs reveal theirs on hover, in the glyph's
                             // place (Safari behavior).
-                            canClose: pane.isClosable,
+                            // State-driven: terminals and draft chats close
+                            // freely; an established chat needs another
+                            // established chat to remain (the workspace's
+                            // primary chat anchors the window).
+                            canClose: group.canClose(id: pane.id),
                             // Hairline between adjacent tabs, hidden around
                             // the selected capsule (native tab bars).
                             showsTrailingSeparator: index < panes.count - 1
                                 && pane.id != group.state.selectedPaneId
                                 && panes[index + 1].id != group.state.selectedPaneId
                                 && draggingPaneId == nil,
-                            // Top-bar tabs live in the chrome layer (glass
-                            // selection); header tabs live in the content
-                            // layer (quiet fill).
-                            style: isBottomPanel ? .header : .toolbar,
                             // ⌘N hint, shown while this bar is the
                             // shortcuts' target (⌘1-9 reach the first nine).
                             shortcutHint: showsShortcutHints && index < 9
@@ -561,17 +558,22 @@ struct PaneGroupBar: View {
 
                 // Tear-out: once the pointer escapes the bar vertically, the
                 // drag belongs to the cross-group coordinator (ghost tab +
-                // drop caret) until it comes back.
+                // drop caret/region preview) until it comes back.
                 if let dragCoordinator,
+                   let ref = group.dropRef,
                    let descriptor = group.state.panes.first(where: { $0.id == paneId }),
-                   descriptor.isClosable,
-                   dragCoordinator.escapesSourceBar(value.location, source: group.placement) {
+                   dragCoordinator.escapesSourceBar(value.location, source: ref) {
                     isCrossDragging = true
                     dragCoordinator.dragUpdated(
                         paneId: paneId,
-                        source: group.placement,
-                        name: descriptor.name,
+                        source: ref,
+                        name: descriptor.kind == .chat
+                            ? (chatTitle?(descriptor) ?? descriptor.name)
+                            : descriptor.name,
+                        kind: descriptor.kind,
                         isAgentOwned: descriptor.attachOnly,
+                        sourcePaneCount: group.state.panes.count,
+                        allowsBottomDrop: descriptor.kind == .terminal,
                         location: value.location
                     )
                     return
@@ -628,44 +630,81 @@ struct PaneGroupBar: View {
         return group.state.panes[neighbor].id
     }
 
-    /// The insertion caret shown while a tab from the other group hovers over
+    /// The insertion caret shown while a tab from another group hovers over
     /// this bar, at the slot where a drop would land it.
     @ViewBuilder
     private var dropIndicator: some View {
         if let dragCoordinator,
-           let drag = dragCoordinator.active,
-           drag.target == group.placement,
-           drag.source != group.placement,
-           let bar = dragCoordinator.barGeometry(for: group.placement) {
-            RoundedRectangle(cornerRadius: 1)
+           let ref = group.dropRef,
+           let index = dragCoordinator.insertionCaret(for: ref),
+           let bar = dragCoordinator.barGeometry(for: ref) {
+            // Capsule-height caret at the slot boundary the drop would land
+            // in, clamped inside the strip, sliding between slots.
+            let stripStart = bar.stripMinX - bar.barFrame.minX
+            let stripWidth = bar.slotWidth * CGFloat(max(bar.paneCount, 1))
+            let x = min(
+                max(stripStart + CGFloat(index) * bar.slotWidth - 1.5, stripStart),
+                stripStart + stripWidth - 1.5
+            )
+            RoundedRectangle(cornerRadius: 1.5)
                 .fill(theme.accent)
-                .frame(width: 2, height: 16)
-                .offset(
-                    x: bar.stripMinX - bar.barFrame.minX
-                        + CGFloat(drag.insertionIndex) * bar.slotWidth - 1,
-                    y: (barHeight - 16) / 2
-                )
+                .frame(width: 3, height: barHeight - 4)
+                // The overlay's origin is the PADDED bar box; the track
+                // starts 6 below (the bar's vertical margin), so center
+                // the caret against the track: 6 + (28 − 24)/2.
+                .offset(x: x, y: 8)
+                .animation(.snappy(duration: 0.15), value: index)
                 .allowsHitTesting(false)
         }
     }
 
+    /// This group's own + — every group has one (with splits, each segment
+    /// adds to ITS group). Center groups open a "New tab" placeholder
+    /// (Chrome's model: the page picks what the tab becomes, converting it
+    /// IN PLACE — several can be open at once); the bottom panel adds
+    /// terminals directly, since terminals are all it hosts.
+    @ViewBuilder
     private var addPaneButton: some View {
-        Button {
-            frozenTabWidth = nil
-            group.addTerminalPane()
-            // Defer until SwiftUI has mounted the new pane's view.
-            DispatchQueue.main.async { group.focusSelectedPane() }
-        } label: {
-            Image(systemName: "plus")
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(theme.textPrimary)
-                .frame(width: 26, height: 26)
-                .contentShape(Circle())
+        if allowsNewChatTab {
+            Button {
+                frozenTabWidth = nil
+                group.addNewTabPane()
+            } label: {
+                addPaneGlyph
+            }
+            .buttonStyle(.plain)
+            .glassEffect(.regular.interactive(), in: Circle())
+            .tooltip("New tab (⌘T)")
+            .accessibilityLabel("New tab")
+        } else {
+            Button {
+                addTerminalTab()
+            } label: {
+                addPaneGlyph
+            }
+            .buttonStyle(.plain)
+            .glassEffect(.regular.interactive(), in: Circle())
+            .tooltip("New terminal")
+            .accessibilityLabel("New terminal")
         }
-        .buttonStyle(.plain)
-        .glassEffect(.regular.interactive(), in: Circle())
-        .help("New terminal")
-        .accessibilityLabel("New terminal")
+    }
+
+    /// The compact 26pt + that fits the 28pt track.
+    private var addButtonDiameter: CGFloat { 26 }
+
+    private var addPaneGlyph: some View {
+        Image(systemName: "plus")
+            .font(.system(size: 12, weight: .medium))
+            .foregroundStyle(theme.textPrimary)
+            .frame(width: addButtonDiameter, height: addButtonDiameter)
+            .contentShape(Circle())
+    }
+
+    private func addTerminalTab() {
+        frozenTabWidth = nil
+        group.addTerminalPane()
+        // Defer until SwiftUI has mounted the new pane's view.
+        DispatchQueue.main.async { group.focusSelectedPane() }
     }
 
     private var toggleButton: some View {
@@ -721,43 +760,6 @@ struct PaneGroupBar: View {
 }
 
 
-/// An invisible backing view that opts the tab strip's rect out of AppKit's
-/// window-move paths, so drags on tabs are only ever tab drags. Two hooks,
-/// covering both mechanisms a hidden-titlebar window still has:
-///
-/// - `mouseDownCanMoveWindow == false`: the classic move-by-background /
-///   titlebar-region probe, consulted for content under a transparent
-///   titlebar.
-/// - `_opaqueRectForWindowMoveWhenInTitlebar`: the region mechanism that is
-///   independent of both `mouseDownCanMoveWindow` and `NSWindow.isMovable`
-///   (measured). The same private-but-stable hook Zed ships in production
-///   (gpui_macos/window.rs) to mark app-owned titlebar content; it also opts
-///   out of the titlebar double-click disambiguation delay.
-private struct WindowDragBlocker: NSViewRepresentable {
-    final class BlockerView: NSView {
-        override var mouseDownCanMoveWindow: Bool { false }
-
-        /// Overrides AppKit's private region probe; matching the selector is
-        /// enough for the runtime to dispatch here.
-        @objc(_opaqueRectForWindowMoveWhenInTitlebar)
-        private func opaqueRectForWindowMoveWhenInTitlebar() -> NSRect {
-            bounds
-        }
-    }
-
-    func makeNSView(context: Context) -> NSView { BlockerView() }
-    func updateNSView(_ nsView: NSView, context: Context) {}
-}
-
-/// Where a tab bar lives, which sets the selected tab's material per the
-/// Liquid Glass guidance: chrome-layer (toolbar) selections are glass
-/// capsules beside the window's other glass controls; content-layer (pane
-/// header) selections are quiet opaque fills.
-enum PaneTabStyle {
-    case toolbar
-    case header
-}
-
 /// One tab: an equal-width segment with its content (glyph + name) centered,
 /// native-tab-bar style (Terminal, Safari). The selected tab is a stroked
 /// capsule inset within its slot; unselected neighbors are divided by
@@ -782,7 +784,6 @@ private struct PaneTab: View {
     let width: CGFloat
     let canClose: Bool
     let showsTrailingSeparator: Bool
-    let style: PaneTabStyle
     /// "⌘N", shown at the trailing edge while this bar is the target of the
     /// tab shortcuts (native window tab bars).
     let shortcutHint: String?
@@ -813,24 +814,22 @@ private struct PaneTab: View {
     }
 
     /// The tab content's horizontal inset within its capsule.
-    private var contentPadding: CGFloat { style == .header ? 8 : 10 }
-    /// The capsule's inset within the tab's slot — used on ALL sides against
-    /// the track (horizontal within the slot, vertical via
-    /// `trackHeight - capsuleHeight`), so the breathing room reads even.
-    private var capsuleInset: CGFloat { style == .header ? 3 : 4 }
-    /// The recessed track's height, centered in the bar: taller for the top
-    /// bar's chrome tabs, compact for the default (bottom panel) bar.
-    private var trackHeight: CGFloat { style == .header ? 28 : 36 }
-    /// The capsule's visual height: the track minus an even inset on both
-    /// sides. The remaining bar height stays part of the hit target.
-    private var capsuleHeight: CGFloat { trackHeight - 2 * capsuleInset }
+    private var contentPadding: CGFloat { 8 }
+    /// The capsule's inset within the tab's slot — used on ALL sides
+    /// (horizontal within the slot, vertical against the bar), so the
+    /// breathing room reads even.
+    private var capsuleInset: CGFloat { 2 }
     /// The full bar row this tab's hit target spans.
-    private var barHeight: CGFloat { style == .header ? 32 : 40 }
+    private var barHeight: CGFloat { 28 }
+    /// The selected capsule's visual height: the bar minus an even inset on
+    /// both sides. The remaining bar height stays part of the hit target.
+    private var capsuleHeight: CGFloat { barHeight - 2 * capsuleInset }
 
     private var iconName: String {
         switch kind {
         case .chat: "text.bubble"
         case .terminal: isAgentOwned ? "server.rack" : "terminal"
+        case .newTab: "square.dashed"
         }
     }
 
@@ -838,21 +837,17 @@ private struct PaneTab: View {
         switch kind {
         case .chat: "Chat"
         case .terminal: isAgentOwned ? "Agent background process" : "Terminal"
+        case .newTab: "New tab"
         }
-    }
-
-    /// System-theme toolbar tabs select with Liquid Glass; themed palettes
-    /// (opaque surfaces everywhere) and content-layer headers use the quiet
-    /// selected fill instead.
-    private var usesGlassSelection: Bool {
-        style == .toolbar && theme.isSystem
     }
 
     var body: some View {
         capsuleContent
             .background {
                 Group {
-                    if isSelected && usesGlassSelection {
+                    if isSelected && theme.isSystem {
+                        // The native selected-tab material (macOS 26 window
+                        // tab bars): a Liquid Glass capsule in the track.
                         Color.clear
                             .glassEffect(.regular, in: Capsule())
                             // The glass system's DEFAULT transition is a
@@ -862,6 +857,8 @@ private struct PaneTab: View {
                             .glassEffectTransition(.identity)
                             .overlay(Capsule().strokeBorder(theme.border))
                     } else if isSelected {
+                        // Themed palettes: opaque surfaces everywhere, so
+                        // the quiet selected fill.
                         Capsule()
                             .fill(theme.rowSelectedBackground)
                             .overlay(Capsule().strokeBorder(theme.border))
@@ -959,8 +956,8 @@ private struct PaneTab: View {
         }
         .buttonStyle(.plain)
         .onHover { isCloseHovered = $0 }
-        .help("Close terminal")
-        .accessibilityLabel("Close terminal")
+        .help("Close tab")
+        .accessibilityLabel("Close tab")
     }
 }
 

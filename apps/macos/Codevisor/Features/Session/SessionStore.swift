@@ -34,14 +34,27 @@ final class SessionStore {
     /// Completion edges are cached alongside expansion so reopening a finished
     /// checklist survives navigation and controller eviction.
     @ObservationIgnored private var todoCompletionStates: [SessionKey: Bool] = [:]
-    private var paneGroups: [SessionKey: PaneGroupModel] = [:]
-    private var centerPaneGroups: [SessionKey: PaneGroupModel] = [:]
+    /// Bottom-panel models by WORKSPACE (the panel belongs to the
+    /// workspace, and its chats share one detail container — a per-session
+    /// key would mint duplicate models over the same persisted group).
+    private var bottomGroups: [UUID: PaneGroupModel] = [:]
+    /// Center-tree leaf groups, keyed by (workspace, leaf group) — the ONE
+    /// model per leaf that both the top bar and the split view share.
+    private struct CenterLeafKey: Hashable {
+        let workspaceId: UUID
+        let groupId: UUID
+    }
+    private var centerLeafGroups: [CenterLeafKey: PaneGroupModel] = [:]
     private var scratchpads: [SessionKey: ScratchpadModel] = [:]
     /// One live unsent new-chat draft per machine, mirrored to disk by
     /// `ComposerDraftStore`. A controller permanently owns the server client
     /// it was created with, so reusing a draft after a machine switch can send
     /// the new machine's project id to the old server.
     private var draftsByServer: [String: SessionController] = [:]
+    /// One draft controller per DRAFT CHAT PANE (the in-workspace new-chat
+    /// composer), keyed by pane id. Promoted to the session cache on first
+    /// send; discarded when the pane closes unsent.
+    private var paneDrafts: [UUID: SessionController] = [:]
     /// Completed activity epochs whose session wasn't open, keyed by session
     /// id — the sidebar's iOS-style unread badges. Cleared on open.
     private var unreadCounts: [SessionKey: Int] = [:]
@@ -67,7 +80,12 @@ final class SessionStore {
     /// Session ids in access order, most recent last — drives controller
     /// eviction so browsing many sessions doesn't accumulate every transcript
     /// ever opened (conversations retain full tool outputs and diffs).
-    private var accessOrder: [SessionKey] = []
+    /// OBSERVATION-IGNORED, deliberately: `controller(for:)` bumps this
+    /// during view bodies (each chat pane resolves its controller there), and
+    /// an observed write per body evaluation makes two chat panes invalidate
+    /// each other forever — a main-thread render loop (beachball). No view
+    /// reads it; it's pure LRU bookkeeping.
+    @ObservationIgnored private var accessOrder: [SessionKey] = []
     /// How many idle (not open, not working, no background tasks/goal)
     /// controllers stay cached before the least-recently-used are evicted.
     private static let maxIdleControllers = 12
@@ -88,8 +106,15 @@ final class SessionStore {
         let key = SessionKey(session)
         noteAccess(key)
         if let existing = controllers[key] {
-            existing.project = project
-            existing.serverSession = session
+            // Only write on change: this runs during view bodies (chat panes
+            // resolve their controllers there), and unconditional writes to
+            // observed properties re-invalidate the views that read them.
+            if existing.project != project {
+                existing.project = project
+            }
+            if existing.serverSession != session {
+                existing.serverSession = session
+            }
             return existing
         }
         let controller = SessionController(
@@ -159,6 +184,44 @@ final class SessionStore {
         return controller
     }
 
+    /// The cached controller for a session WITHOUT creating one — a pure
+    /// read, safe in view bodies (deciding whether an unstarted chat still
+    /// shows its new-chat composer must not mint controllers).
+    func activeController(for session: ChatSession) -> SessionController? {
+        controllers[SessionKey(session)]
+    }
+
+    /// The draft controller behind an in-workspace draft chat pane (created
+    /// on first use). Unlike the per-server page draft, pane drafts are not
+    /// mirrored to disk — the pane itself persists in the workspace tree and
+    /// reopens with a fresh composer.
+    func paneDraft(paneId: UUID, project: Project) -> SessionController {
+        if let existing = paneDrafts[paneId] { return existing }
+        let controller = SessionController(
+            project: project,
+            configCache: environment.configCache,
+            composerDefaults: environment.composerDefaults,
+            serverClient: environment.serverClient
+        )
+        controller.applyComposerDefaults()
+        paneDrafts[paneId] = controller
+        return controller
+    }
+
+    /// First send bound the pane's session; the controller now lives in the
+    /// session cache.
+    func removePaneDraft(paneId: UUID) {
+        paneDrafts[paneId] = nil
+    }
+
+    /// Setup failure undid a pane draft's promotion: the controller returns
+    /// to the pane's draft slot (composer state intact) and leaves the
+    /// session cache.
+    func demoteToPaneDraft(_ controller: SessionController, session: ChatSession, paneId: UUID) {
+        controllers[SessionKey(session)] = nil
+        paneDrafts[paneId] = controller
+    }
+
     private func enableDraftPersistence(for controller: SessionController) {
         let serverId = controller.project.serverId
         controller.onDraftChange = { [weak drafts = environment.composerDrafts] draft in
@@ -167,37 +230,93 @@ final class SessionStore {
         environment.composerDrafts.saveDraft(controller.draftSnapshot(), forServer: serverId)
     }
 
-    /// Returns the cached bottom-panel pane group for a session, creating it
-    /// on first use. Mirrors `controller(for:project:)` so panes (and their
-    /// terminals) survive panel close + navigation away and back.
+    /// Returns the cached bottom-panel pane group for a session's WORKSPACE,
+    /// creating it on first use. Mirrors `controller(for:project:)` so panes
+    /// (and their terminals) survive panel close + navigation away and back.
     func paneGroup(for session: ChatSession, project: Project) -> PaneGroupModel {
-        let key = SessionKey(session)
-        if let existing = paneGroups[key] { return existing }
+        let workspaceId = workspace(for: session, project: project).id
+        if let existing = bottomGroups[workspaceId] { return existing }
         let group = makePaneGroup(for: session, project: project, placement: .bottom)
-        paneGroups[key] = group
+        bottomGroups[workspaceId] = group
         return group
     }
 
-    /// Returns the cached center pane group for a session (the group hosting
-    /// the chat pane plus any center terminals), creating it on first use.
+    /// The center group hosting this session's chat: THE SAME model instance
+    /// the split view renders for that leaf (one model per leaf, ever —
+    /// duplicate instances would clobber each other's saves).
     func centerPaneGroup(for session: ChatSession, project: Project) -> PaneGroupModel {
-        let key = SessionKey(session)
-        if let existing = centerPaneGroups[key] { return existing }
-        let group = makePaneGroup(for: session, project: project, placement: .center)
-        centerPaneGroups[key] = group
+        let workspace = workspace(for: session, project: project)
+        guard let leafId = workspace.centerTree.groupId(containingChat: session.id)
+            ?? workspace.centerTree.allGroups.first?.id else {
+            // Unreachable (a workspace always has a leaf); satisfies the
+            // optional without a second cache.
+            return makePaneGroup(for: session, project: project, placement: .center)
+        }
+        return centerGroup(leafId: leafId, workspace: workspace, session: session, project: project)
+    }
+
+    /// The workspace owning this session's chat, created (backfilled from
+    /// the session + any pre-workspace pane state) on first access.
+    func workspace(for session: ChatSession, project: Project) -> Workspace {
+        environment.workspaces.ensureWorkspace(
+            for: WorkspaceSessionSeed(
+                sessionId: session.id,
+                title: session.title,
+                serverId: session.serverId,
+                projectId: project.id,
+                rootDirectory: session.cwd ?? project.folderURL.path
+            ),
+            legacyGroups: environment.paneGroups
+        )
+    }
+
+    /// Persists a divider drag: the workspace's center tree with updated
+    /// fractions (same topology).
+    func saveCenterTree(_ tree: SplitNode, workspaceId: UUID) {
+        guard var workspace = environment.workspaces.workspace(id: workspaceId) else { return }
+        workspace.centerTree = tree
+        environment.workspaces.save(workspace)
+    }
+
+    /// A specific center-tree LEAF's group model (split groups beyond the
+    /// primary). Cached per (workspace, leaf) so panes survive navigation.
+    func centerGroup(
+        leafId: UUID,
+        workspace: Workspace,
+        session: ChatSession,
+        project: Project
+    ) -> PaneGroupModel {
+        let key = CenterLeafKey(workspaceId: workspace.id, groupId: leafId)
+        if let existing = centerLeafGroups[key] { return existing }
+        let group = makePaneGroup(for: session, project: project, placement: .center, leafId: leafId)
+        centerLeafGroups[key] = group
         return group
     }
 
     private func makePaneGroup(
         for session: ChatSession,
         project: Project,
-        placement: PaneGroupPlacement
+        placement: PaneGroupPlacement,
+        leafId: UUID? = nil
     ) -> PaneGroupModel {
         let machine = environment.machines.machine(for: session.serverId) ?? CodevisorMachine.local
-        return PaneGroupModel(
+        // Pane layout persists in the session's workspace (the pre-workspace
+        // per-session states migrate in on first access). Center groups pin
+        // to a specific tree leaf: the given one, else the leaf hosting this
+        // session's chat.
+        let workspace = workspace(for: session, project: project)
+        let resolvedLeafId = placement == .center
+            ? (leafId ?? workspace.centerTree.groupId(containingChat: session.id))
+            : nil
+        let repository = WorkspacePaneGroupRepository(
+            workspaceId: workspace.id,
+            groupId: resolvedLeafId,
+            repository: environment.workspaces
+        )
+        let model = PaneGroupModel(
             sessionId: session.id,
             placement: placement,
-            repository: environment.paneGroups,
+            repository: repository,
             makeContext: { [weak projectList = environment.projectList] descriptor in
                 // Panes are built lazily, so this cached closure can outlive
                 // the snapshot passed in above: a fresh worktree session
@@ -219,6 +338,17 @@ final class SessionStore {
                 )
             }
         )
+        // Identity for cross-group drops (bar targets, content zones).
+        model.dropRef = placement == .bottom
+            ? .bottom
+            : resolvedLeafId.map { .centerLeaf($0) }
+        return model
+    }
+
+    /// Drops a dissolved leaf's cached model (its panes have already moved
+    /// elsewhere — nothing to detach).
+    func evictCenterLeaf(workspaceId: UUID, leafId: UUID) {
+        centerLeafGroups[CenterLeafKey(workspaceId: workspaceId, groupId: leafId)] = nil
     }
 
     /// Returns the cached scratchpad for a session, creating it (seeded from
@@ -435,10 +565,8 @@ final class SessionStore {
     func demote(_ controller: SessionController, session: ChatSession) {
         let key = SessionKey(session)
         if controllers[key] === controller { controllers[key] = nil }
-        paneGroups[key]?.detachAll()
-        paneGroups[key] = nil
-        centerPaneGroups[key]?.detachAll()
-        centerPaneGroups[key] = nil
+        detachBottomGroup(for: session)
+        detachCenterLeaves(for: session)
         scratchpads[key]?.flush()
         scratchpads[key] = nil
         unreadCounts[key] = nil
@@ -451,14 +579,29 @@ final class SessionStore {
         enableDraftPersistence(for: controller)
     }
 
+    /// Detaches and evicts the session's workspace bottom-panel model.
+    private func detachBottomGroup(for session: ChatSession) {
+        guard let workspaceId = environment.workspaces.workspaceId(forSession: session.id) else { return }
+        bottomGroups[workspaceId]?.detachAll()
+        bottomGroups[workspaceId] = nil
+    }
+
+    /// Detaches and evicts every cached center-leaf group of the session's
+    /// workspace (backing shells survive on the server).
+    private func detachCenterLeaves(for session: ChatSession) {
+        guard let workspaceId = environment.workspaces.workspaceId(forSession: session.id) else { return }
+        for (key, model) in centerLeafGroups where key.workspaceId == workspaceId {
+            model.detachAll()
+            centerLeafGroups[key] = nil
+        }
+    }
+
     func discard(_ session: ChatSession) {
         let key = SessionKey(session)
         controllers[key]?.model?.shutdown()
         controllers[key] = nil
-        paneGroups[key]?.detachAll()
-        paneGroups[key] = nil
-        centerPaneGroups[key]?.detachAll()
-        centerPaneGroups[key] = nil
+        detachBottomGroup(for: session)
+        detachCenterLeaves(for: session)
         scratchpads[key]?.flush()
         scratchpads[key] = nil
         unreadCounts[key] = nil

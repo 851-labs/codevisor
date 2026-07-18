@@ -60,9 +60,13 @@ struct Theme: Equatable {
             ?? Color(nsColor: .controlBackgroundColor)
     }
 
-    /// The terminal panel surface behind the terminal view.
+    /// The terminal panel surface behind the terminal view. System theme:
+    /// CLEAR — the Ghostty surface runs near-zero background opacity and
+    /// composites onto the window's live backdrop (wallpaper tinting and
+    /// all), so nothing may paint between the surface and the window.
+    /// Custom palettes keep their own opaque terminal surface.
     var terminalBackground: Color {
-        palette.map { Color(rgba: $0.terminal.background) } ?? Color(nsColor: .textBackgroundColor)
+        palette.map { Color(rgba: $0.terminal.background) } ?? .clear
     }
 
     /// The shared pane content surface. Today every pane is a terminal, so it

@@ -1,9 +1,9 @@
 import SwiftUI
 import CodevisorCore
 
-/// Hosts a session: resolves its cached `SessionController` from the store and
-/// shows the session screen under the app-owned header row (the pane tab
-/// strip; see WindowChrome.swift for why the app owns its top bar).
+/// Hosts a session: resolves its cached `SessionController` from the store
+/// and shows the session screen below the native toolbar (which carries the
+/// editable workspace name, the diff badge, and the inspector toggle).
 struct SessionContainerView: View {
     /// Inspector width limits, shared by the column-width modifier and the
     /// persistence clamp below.
@@ -13,6 +13,11 @@ struct SessionContainerView: View {
     let session: ChatSession
     let project: Project
     let store: SessionStore
+    /// Fired when the user's focus lands in a DIFFERENT chat of this
+    /// workspace (composer/transcript click, chat tab) — the sidebar
+    /// selection follows, keeping the by-chat list in sync with focus.
+    /// Non-chat focus (terminals) fires nothing: the last chat stays.
+    var onFocusedChatChanged: ((UUID) -> Void)? = nil
 
     @Environment(AppEnvironment.self) private var environment
     @Environment(\.theme) private var theme
@@ -21,6 +26,10 @@ struct SessionContainerView: View {
     /// Cross-group tab dragging, shared by the header pane strip and the
     /// session screen's bottom panel.
     @State private var paneDragCoordinator = PaneTabDragCoordinator()
+    /// The session's focus coordinator (composer ⇄ terminals). Owned here so
+    /// every center leaf's chat content — any group can host chats — wires
+    /// against the same instance.
+    @State private var sessionFocus = TerminalFocusController()
     /// Last user-chosen inspector width, persisted across the detail
     /// subtree's `.id(session.id)` resets and app relaunches.
     @AppStorage("inspector.width") private var inspectorWidth: Double = 300
@@ -35,31 +44,25 @@ struct SessionContainerView: View {
         store.scratchpad(for: session)
     }
 
-    /// This container's frame in window coordinates (content + inspector).
-    @State private var containerFrame: CGRect = .zero
+    /// The workspace's LIVE center tree (the repository isn't observable):
+    /// seeded per session, updated by divider drags so the layout re-renders
+    /// with what was just persisted.
+    @State private var liveCenterTree: SplitNode?
+
+    /// The ACTIVE center group (the one the user last acted in): keyboard
+    /// tab commands (⌘T/⌘W/⌘1-9/⌘⌥←→) route here and its bar shows the
+    /// ⌘-hints. Defaults to the primary (chat) leaf.
+    @State private var activeLeafId: UUID?
 
     private var inspectorVisible: Bool {
         panelLayout.docksInspector && scratchpad.isVisible
     }
 
-    /// The header row's live trailing edge in window coordinates (the
-    /// inspector divider while open, the window edge while closed).
-    @State private var headerMaxX: CGFloat = 0
-
-    /// Trailing gap keeping the + clear of the fixed corner toggle — derived
-    /// CONTINUOUSLY from the header's actual trailing edge, so during the
-    /// inspector's open/close animation the + holds its ground until the
-    /// moving divider genuinely reaches it, then gets pushed along by it
-    /// (never teleporting under the toggle).
-    private var trailingToggleGap: CGFloat {
-        max(0, headerMaxX - containerFrame.maxX + WindowChrome.headerButtonDiameter)
-    }
-
     var body: some View {
         // The inspector is an APP-OWNED trailing column (not the system
         // `.inspector`, whose open animation only fires on the first
-        // presentation per mount) — the same ownership move as the top bar,
-        // so open and close both animate with our one chrome curve.
+        // presentation per mount), so open and close both animate with our
+        // one chrome curve.
         HStack(spacing: 0) {
             contentColumn
             if inspectorVisible {
@@ -68,16 +71,29 @@ struct SessionContainerView: View {
             }
         }
         .animation(.snappy(duration: 0.25), value: inspectorVisible)
-        // The header rows ARE the top bar: extend to the true window top.
-        // The inspector column's background reaches the top as well.
-        .ignoresSafeArea(edges: .top)
-        // The window title still names the window (Window menu, Mission
-        // Control) even though no titlebar renders it.
-        .navigationTitle(session.title)
-        .onGeometryChange(for: CGRect.self) { proxy in
-            proxy.frame(in: .global)
-        } action: { frame in
-            containerFrame = frame
+        // The NATIVE toolbar names the workspace — editable inline, like a
+        // document title. Edits pin the name (it stops tracking the primary
+        // chat's title).
+        .navigationTitle(workspaceName)
+        .toolbar {
+            if let diffDirectory {
+                // A passive counter, not a control: keep it OFF the shared
+                // glass platter (otherwise it claims a dead slot in the
+                // toggle's capsule — visibly so while the diff is empty).
+                ToolbarItem {
+                    BranchDiffBadge(directory: diffDirectory)
+                }
+                .sharedBackgroundVisibility(.hidden)
+            }
+            ToolbarItem {
+                Button {
+                    toggleScratchpad()
+                } label: {
+                    Image(systemName: "sidebar.trailing")
+                }
+                .tooltip("Toggle Scratchpad (⌥⌘I)")
+                .accessibilityLabel("Toggle Scratchpad")
+            }
         }
         .overlay {
             AdaptiveDrawerLayer(
@@ -91,24 +107,64 @@ struct SessionContainerView: View {
                     .shadow(color: .black.opacity(0.22), radius: 18, y: 6)
             }
         }
-        // The scratchpad toggle: window-level chrome, fixed in the
-        // top-trailing corner whether the inspector is open or closed — only
-        // the inspector background moves beneath it. Anchored to the
-        // TRAILING edge (which never moves when the LEFT sidebar animates —
-        // a leading offset from measured width would drift mid-animation).
-        .overlay(alignment: .topTrailing) {
-            scratchpadToggleButton
-                .frame(height: WindowChrome.headerHeight)
-                .padding(.trailing, 10)
-                .ignoresSafeArea(edges: .top)
-        }
         .focusedSceneValue(\.scratchpadToggle, ScratchpadToggleAction(sessionId: session.id) {
             toggleScratchpad()
         })
         .task(id: session.id) {
+            // Lifecycle hooks (draft cleanup, dissolution) attach to the
+            // primary leaf up front; other leaves get them on first access.
+            // The ROUTED chat's leaf starts as the ACTIVE group, with the
+            // chat's TAB selected in it (the sidebar picked this chat — it
+            // must be the one facing the user, not whichever tab its group
+            // last showed).
+            if let primaryLeaf = store.workspace(for: session, project: project)
+                .centerTree.groupId(containingChat: session.id) {
+                let model = configuredCenterModel(leafId: primaryLeaf)
+                if let chatPane = model.state.panes.first(where: {
+                    $0.kind == .chat && $0.chatSessionId == session.id
+                }), model.state.selectedPaneId != chatPane.id {
+                    model.select(id: chatPane.id)
+                }
+                // Unconditional: with workspace-keyed identity this task
+                // re-runs for every routed-chat change WITHOUT a remount,
+                // and the newly routed chat's group takes over.
+                activateLeaf(primaryLeaf)
+                // The routed chat's composer takes keyboard focus — now if
+                // it's already registered, else the moment its (possibly
+                // later-laid-out) pane registers it.
+                sessionFocus.requestComposerFocus(forChat: session.id)
+            }
+            // Cross-group drops: bar inserts, content joins, and splits.
+            paneDragCoordinator.onResolve = { paneId, source, resolution in
+                resolvePaneDrop(paneId: paneId, source: source, resolution: resolution)
+            }
+            // ⌘W's window-close guard: repo truth on whether tabs remain.
+            sessionFocus.hasOtherCenterTabs = { [store] in
+                store.workspace(for: session, project: project)
+                    .centerTree.allGroups.flatMap(\.state.panes).count > 1
+            }
+            // Upward focus feedback: clicking into any chat's composer
+            // makes its group the active one (terminals do the same through
+            // their surface responder callbacks) — and the sidebar's chat
+            // selection follows the focused chat.
+            sessionFocus.onChatComposerFocused = { chatId in
+                if let leaf = store.workspace(for: session, project: project)
+                    .centerTree.groupId(containingChat: chatId),
+                   leaf != activeLeafId {
+                    activateLeaf(leaf)
+                }
+                if chatId != session.id {
+                    onFocusedChatChanged?(chatId)
+                }
+            }
             store.markOpened(session.id, serverId: session.serverId)
             let controller = store.controller(for: session, project: project)
             self.controller = controller
+            // UNSTARTED chats (eagerly created records with no first message
+            // yet) must not connect here: connecting launches an agent with
+            // the DEFAULT harness, silently making the choice their new-chat
+            // composer still offers. Their first send owns the connection.
+            guard session.agentSessionId != nil || controller.isConnected else { return }
             if !controller.isPrepared && !controller.isConnected {
                 await controller.prepare()
             }
@@ -120,66 +176,402 @@ struct SessionContainerView: View {
         }
     }
 
+    /// The session content: every pane group renders its own tab bar (the
+    /// Finder model — tabs are a content band below the native toolbar).
+    /// The EXPLICIT page fill matters: the bare NavigationSplitView detail
+    /// surface is the NSWindow background, which desktop tinting shifts a
+    /// few shades — the terminal's opaque surface can't follow that, so
+    /// both sides paint the same resolved color instead.
     private var contentColumn: some View {
-        VStack(spacing: 0) {
-            // The app-owned header row: the pane tab strip IS the title (the
-            // chat tab shows the session title), plus the branch badge and
-            // scratchpad toggle. Ordinary content hosting, so tab clicks,
-            // reorders, and tear-out drags behave like any other view.
-            DetailHeaderBar {
-                PaneGroupBar(
-                    group: store.centerPaneGroup(for: session, project: project),
+        Group {
+            if let controller {
+                let workspace = store.workspace(for: session, project: project)
+                SessionScreen(
+                    controller: controller,
+                    paneGroup: store.paneGroup(for: session, project: project),
+                    centerGroup: store.centerPaneGroup(for: session, project: project),
                     dragCoordinator: paneDragCoordinator,
-                    chatTabTitle: session.title,
-                    // The center group is the tab shortcuts' default target:
-                    // they route here unless a bottom terminal holds focus.
-                    showsShortcutHints: !store.paneGroup(for: session, project: project).hasFocusedPane
-                )
-                // Spacing-0 group: an empty diff badge must not claim a
-                // spacing slot of its own (it would widen the track-to-+
-                // gap past the bar's 18pt leading indent) — the freed width
-                // belongs to the tab strip.
-                HStack(spacing: 0) {
-                    if let diffDirectory {
-                        BranchDiffBadge(directory: diffDirectory)
+                    focus: sessionFocus,
+                    centerTree: liveCenterTree ?? workspace.centerTree,
+                    primaryLeafId: workspace.centerTree.groupId(containingChat: session.id),
+                    activeLeafId: activeLeafId,
+                    centerLeafModel: { leafId in configuredCenterModel(leafId: leafId) },
+                    chatTitleLookup: chatPaneTitle,
+                    onCenterTreeChanged: { tree in
+                        liveCenterTree = tree
+                        store.saveCenterTree(tree, workspaceId: workspace.id)
+                    },
+                    // Divider mid-drag: render-only re-layout.
+                    onCenterTreeLiveChanged: { tree in
+                        liveCenterTree = tree
                     }
-                    newTerminalButton
-                }
-                // The fixed corner toggle's footprint, held clear only while
-                // the header's trailing edge actually reaches the corner
-                // (see trailingToggleGap).
-                Color.clear
-                    .frame(width: trailingToggleGap)
+                )
+            } else {
+                ProgressView()
+                    .controlSize(.small)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            .onGeometryChange(for: CGFloat.self) { proxy in
-                proxy.frame(in: .global).maxX
-            } action: { maxX in
-                headerMaxX = maxX
-            }
+        }
+        // System theme: NO fill — the window's live tinted backdrop is the
+        // one surface behind chat, tab band, and (transparent) terminal
+        // alike. Custom palettes paint their own page color.
+        .background(theme.isSystem ? Color.clear : theme.windowBackground)
+    }
 
-            Group {
-                if let controller {
-                    SessionScreen(
-                        controller: controller,
-                        paneGroup: store.paneGroup(for: session, project: project),
-                        centerGroup: store.centerPaneGroup(for: session, project: project),
-                        dragCoordinator: paneDragCoordinator
-                    )
-                } else {
-                    ProgressView()
-                        .controlSize(.small)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                }
+    /// The workspace's name as an editable window title: edits save through
+    /// the repository with `hasCustomName` pinned (the automatic name stops
+    /// tracking the primary chat's title).
+    private var workspaceName: Binding<String> {
+        Binding(
+            get: { store.workspace(for: session, project: project).name },
+            set: { newValue in
+                let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmed.isEmpty else { return }
+                var workspace = store.workspace(for: session, project: project)
+                guard workspace.name != trimmed else { return }
+                workspace.name = trimmed
+                workspace.hasCustomName = true
+                environment.workspaces.save(workspace)
             }
+        )
+    }
+
+    /// The group model behind a drop ref.
+    private func groupModel(for ref: PaneGroupRef) -> PaneGroupModel {
+        switch ref {
+        case .bottom:
+            return store.paneGroup(for: session, project: project)
+        case let .centerLeaf(leafId):
+            return configuredCenterModel(leafId: leafId)
         }
     }
 
-    /// The app-owned inspector column: hairline divider, resizable width,
-    /// content below the top-bar band (the fixed corner toggle floats there)
-    /// with the column surface reaching the true window top.
+    /// A center leaf's model with the container's lifecycle hooks attached
+    /// (idempotent — models are cached).
+    private func configuredCenterModel(leafId: UUID) -> PaneGroupModel {
+        let model = store.centerGroup(
+            leafId: leafId,
+            workspace: store.workspace(for: session, project: project),
+            session: session,
+            project: project
+        )
+        // Acting in a group makes it the ACTIVE one: keyboard tab commands
+        // follow the user (routed via the focus controller's centerGroup).
+        model.onActivated = { [weak model] in
+            guard activeLeafId != leafId else { return }
+            activeLeafId = leafId
+            if let model {
+                sessionFocus.centerGroup = model
+            }
+        }
+        // Selecting a chat tab focuses ITS composer — keyed and deferred,
+        // since switching tabs remounts the chat and the composer registers
+        // a tick later. ONLY chat panes: any other selected kind (New Tab
+        // placeholder) must not steal focus into some arbitrary composer.
+        // ⌘J relays to the session screen's toggle.
+        model.requestComposerFocus = { [weak model] in
+            guard let selected = model?.state.selectedPane, selected.kind == .chat else { return }
+            if let chatId = selected.chatSessionId {
+                sessionFocus.requestComposerFocus(forChat: chatId)
+            } else {
+                sessionFocus.focusComposer()
+            }
+        }
+        model.requestToggle = {
+            sessionFocus.requestPanelToggle?()
+        }
+        model.onPaneClosed = { descriptor in
+            if descriptor.kind == .chat {
+                if let closedSessionId = descriptor.chatSessionId {
+                    // Closing an established chat's tab ARCHIVES its
+                    // session (recoverable from the archived list); the
+                    // session itself always survives.
+                    if let closed = environment.projectList.sessions.first(where: {
+                        $0.serverId == session.serverId && $0.id == closedSessionId
+                    }) {
+                        environment.projectList.archiveSession(closed)
+                    }
+                    // The ROUTED chat left: hand the route to the
+                    // workspace's first surviving chat, so the sidebar
+                    // never points at an archived session (focus may land
+                    // on a terminal, which reports nothing).
+                    if closedSessionId == session.id,
+                       let survivor = store.workspace(for: session, project: project)
+                        .centerTree.allGroups
+                        .flatMap(\.state.panes)
+                        .first(where: { $0.kind == .chat && $0.chatSessionId != nil })?
+                        .chatSessionId {
+                        onFocusedChatChanged?(survivor)
+                    }
+                } else {
+                    // A draft closed unsent: discard its composer state.
+                    store.removePaneDraft(paneId: descriptor.id)
+                }
+            }
+            // Closing a group's last tab dissolves the group.
+            dissolveIfEmpty(leafId: leafId)
+        }
+        // Keep-one-chat anchor: an established chat may close only while
+        // another established chat remains SOMEWHERE in the workspace (the
+        // anchor keeps the workspace routable). Group state can't see other
+        // groups, so the rule lives here, against repository truth.
+        model.establishedChatClosePolicy = { descriptor in
+            store.workspace(for: session, project: project).centerTree.allGroups
+                .flatMap(\.state.panes)
+                .contains {
+                    $0.kind == .chat && $0.chatSessionId != nil && $0.id != descriptor.id
+                }
+        }
+        // A lone New Tab placeholder's close dissolves its group — possible
+        // whenever the workspace has other groups.
+        model.canDissolve = {
+            store.workspace(for: session, project: project).centerTree.allGroups.count > 1
+        }
+        // Any center group can host chats (established or draft) and the
+        // New Tab placeholder. Weak model: the closure is held BY the model.
+        // Re-wired UNCONDITIONALLY (safe: @ObservationIgnored): the models
+        // are cached across containers, and this closure captures THIS
+        // container's focus controller — a stale capture makes every chat
+        // pane register its composer with a dead controller, orphaning the
+        // new container's focus intents.
+        model.chatContent = { [weak model] descriptor in
+            if descriptor.kind == .newTab {
+                return AnyView(NewTabPageView(
+                    paneId: descriptor.id,
+                    group: model,
+                    onNewChat: { [weak model] in
+                        createChat(convertingPlaceholder: descriptor.id, in: model)
+                    }
+                ))
+            }
+            return AnyView(chatPaneContent(
+                descriptor: descriptor, group: model, focus: sessionFocus
+            ))
+        }
+        return model
+    }
+
+    /// "New Chat" from a New tab page: creates the SESSION eagerly — a real
+    /// chat from birth (sidebar row, archive-on-close, focus-follow), not a
+    /// deferred draft — running in the workspace's directory with the
+    /// default harness, then converts the placeholder in place.
+    private func createChat(convertingPlaceholder paneId: UUID, in model: PaneGroupModel?) {
+        guard let model else { return }
+        let workspace = store.workspace(for: session, project: project)
+        let created = environment.projectList.newSession(
+            in: project,
+            title: "New Chat",
+            cwd: workspace.rootDirectory
+        )
+        model.convertNewTabPane(
+            id: paneId, to: .chat,
+            chatSessionId: created.id, name: created.title
+        )
+        // The pane's composer takes focus once it mounts; the responder
+        // observer then walks the sidebar selection over to the new chat.
+        sessionFocus.requestComposerFocus(forChat: created.id)
+    }
+
+    /// Removes an emptied center leaf from the tree: siblings absorb its
+    /// share, single-child splits collapse (VS Code's rule). The workspace's
+    /// LAST group can't dissolve — Chrome's rule instead: its empty state
+    /// becomes a "New tab" placeholder tab, so the strip never empties.
+    private func dissolveIfEmpty(leafId: UUID) {
+        let workspace = store.workspace(for: session, project: project)
+        let model = store.centerGroup(
+            leafId: leafId, workspace: workspace, session: session, project: project
+        )
+        guard model.state.panes.isEmpty else { return }
+        // Repo truth, never the render cache — group states in
+        // liveCenterTree go stale as models persist.
+        if let pruned = workspace.centerTree.removingGroup(id: leafId) {
+            liveCenterTree = pruned
+            store.saveCenterTree(pruned, workspaceId: workspace.id)
+            paneDragCoordinator.clearGeometry(for: .centerLeaf(leafId))
+            paneDragCoordinator.clearContentFrame(leafId: leafId)
+            store.evictCenterLeaf(workspaceId: workspace.id, leafId: leafId)
+            // A dissolved active group hands the keyboard back to the
+            // primary (chat) leaf.
+            if activeLeafId == leafId {
+                activateLeaf(pruned.groupId(containingChat: session.id) ?? pruned.allGroups.first?.id)
+            }
+        } else {
+            model.addNewTabPane()
+        }
+    }
+
+    /// Makes a leaf the active group (keyboard routing + hints).
+    private func activateLeaf(_ leafId: UUID?) {
+        activeLeafId = leafId
+        if let leafId {
+            sessionFocus.centerGroup = configuredCenterModel(leafId: leafId)
+        }
+    }
+
+    /// Performs a resolved cross-group drop: extracts the LIVE pane from its
+    /// source (the terminal keeps its PTY), then inserts it into the target
+    /// bar slot, appends it to a group (content-center join), or splits a
+    /// leaf with it. A center leaf left empty dissolves out of the tree
+    /// (its siblings absorb the space — VS Code's rule).
+    private func resolvePaneDrop(
+        paneId: UUID,
+        source: PaneGroupRef,
+        resolution: PaneDropResolution
+    ) {
+        let workspace = store.workspace(for: session, project: project)
+        let sourceModel = groupModel(for: source)
+        guard let (descriptor, livePane) = sourceModel.extractPane(id: paneId) else { return }
+
+        let destination: PaneGroupModel
+        switch resolution {
+        case let .bar(ref, index):
+            destination = groupModel(for: ref)
+            destination.adoptPane(descriptor, live: livePane, at: index)
+        case let .join(ref):
+            destination = groupModel(for: ref)
+            destination.adoptPane(descriptor, live: livePane, at: Int.max)
+        case let .split(leafId, edge):
+            let newGroupId = UUID()
+            // Re-read the tree AFTER the extraction: the extract just
+            // persisted the source group's new state into the workspace, and
+            // splitting a pre-extract snapshot would resurrect the moved
+            // pane in its old group.
+            let tree = store.workspace(for: session, project: project).centerTree.splitting(
+                groupId: leafId,
+                edge: edge,
+                newGroupId: newGroupId,
+                // The group is born empty; adoptPane below inserts the pane
+                // and registers its live object in one path.
+                newGroupState: PaneGroupState(isVisible: true)
+            )
+            liveCenterTree = tree
+            store.saveCenterTree(tree, workspaceId: workspace.id)
+            destination = groupModel(for: .centerLeaf(newGroupId))
+            destination.adoptPane(descriptor, live: livePane, at: 0)
+        }
+
+        // Dissolve an emptied source leaf (never the chat's — the chat can't
+        // leave its group, so its leaf can't empty).
+        if case let .centerLeaf(sourceLeafId) = source {
+            dissolveIfEmpty(leafId: sourceLeafId)
+        }
+
+        // The drop was a multi-step operation (extract → mutate tree →
+        // adopt → dissolve), and the render cache picked up intermediate
+        // snapshots along the way — end on repository truth, always.
+        liveCenterTree = store.workspace(for: session, project: project).centerTree
+
+        DispatchQueue.main.async { destination.focusSelectedPane() }
+    }
+
+    /// Whether an established chat hasn't truly begun: no agent session ever
+    /// created AND no live controller doing so right now. Such chats render
+    /// the new-chat composer (harness choice included) even though their
+    /// session record exists — eager creation is a sidebar affordance, not a
+    /// started conversation. `activeController` is a pure read (body-safe).
+    private func isUnstarted(_ chatSession: ChatSession) -> Bool {
+        guard chatSession.agentSessionId == nil else { return false }
+        guard let live = store.activeController(for: chatSession) else { return true }
+        return !(live.isConnected || live.isConnecting || live.isSending)
+    }
+
+    /// A chat pane's display title: its referenced session's LIVE title
+    /// (auto-titles and renames flow through); drafts show their own name.
+    private func chatPaneTitle(_ descriptor: PaneDescriptorState) -> String {
+        guard let id = descriptor.chatSessionId else { return descriptor.name }
+        return environment.projectList.sessions.first {
+            $0.serverId == session.serverId && $0.id == id
+        }?.title ?? descriptor.name
+    }
+
+    /// A chat pane's content: the referenced session's chat, or (for a
+    /// draft) the in-pane new-chat composer that creates the session and
+    /// binds it to the pane on first send. Multi-chat workspaces resolve
+    /// each pane's controller independently.
+    @ViewBuilder
+    private func chatPaneContent(
+        descriptor: PaneDescriptorState,
+        group: PaneGroupModel?,
+        focus: TerminalFocusController
+    ) -> some View {
+        if let chatSessionId = descriptor.chatSessionId {
+            if let chatSession = environment.projectList.sessions.first(where: {
+                $0.serverId == session.serverId && $0.id == chatSessionId
+            }), let chatProject = environment.projectList.projects.first(where: {
+                $0.serverId == session.serverId && $0.id == chatSession.projectId
+            }) {
+                if isUnstarted(chatSession) {
+                    // An eagerly created chat that hasn't had its first
+                    // message: still the new-chat composer (harness choice
+                    // and all) — the session record just already exists for
+                    // the sidebar. First send fills it in.
+                    NewChatView(
+                        store: store,
+                        selection: .constant(nil),
+                        preferredProjectId: chatProject.id,
+                        explicitProjectId: chatProject.id,
+                        paneDraftId: descriptor.id,
+                        onCreatedInPane: { created in
+                            (group ?? store.centerPaneGroup(for: session, project: project))
+                                .assignChatSession(
+                                    paneId: descriptor.id,
+                                    sessionId: created.id,
+                                    name: created.title
+                                )
+                        },
+                        preCreatedSession: chatSession,
+                        // Setup failure DELETES the session record — the
+                        // pane must drop its reference too (a bound pane
+                        // over a deleted session is the "no longer exists"
+                        // dead end).
+                        onSetupFailedInPane: { [weak group] in
+                            group?.unbindChatPane(paneId: descriptor.id)
+                        }
+                    )
+                } else {
+                    ChatScreen(
+                        controller: store.controller(for: chatSession, project: chatProject),
+                        focus: focus
+                    )
+                }
+            } else {
+                // The referenced session was deleted (e.g. from another
+                // device). Offer a fresh start in place instead of a
+                // dead end.
+                VStack(spacing: 12) {
+                    Text("This chat no longer exists")
+                        .foregroundStyle(.secondary)
+                    Button("Reset Tab") {
+                        group?.resetChatPaneToPlaceholder(id: descriptor.id)
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        } else {
+            NewChatView(
+                store: store,
+                selection: .constant(nil),
+                preferredProjectId: project.id,
+                explicitProjectId: project.id,
+                paneDraftId: descriptor.id,
+                onCreatedInPane: { created in
+                    // Bind through the pane's OWNING group (the draft may
+                    // live in any split leaf, not just the primary).
+                    (group ?? store.centerPaneGroup(for: session, project: project))
+                        .assignChatSession(
+                            paneId: descriptor.id,
+                            sessionId: created.id,
+                            name: created.title
+                        )
+                }
+            )
+        }
+    }
+
+    /// The app-owned inspector column: hairline divider, resizable width.
+    /// Sits below the native toolbar like the rest of the content.
     private var inspectorColumn: some View {
         SessionInspectorView(controller: controller, scratchpad: scratchpad)
-            .padding(.top, WindowChrome.headerHeight)
             .frame(width: currentInspectorWidth)
             .frame(maxHeight: .infinity, alignment: .top)
             .background(theme.sidebarBackground)
@@ -235,23 +627,6 @@ struct SessionContainerView: View {
         )
     }
 
-    /// The center group's "new terminal" +, clustered with the window's
-    /// other trailing icon buttons (native toolbars group their actions at
-    /// the trailing edge — Safari, Xcode) instead of floating after the tabs.
-    private var newTerminalButton: some View {
-        HeaderIconButton(systemImage: "plus", help: "New Terminal (⌘T)") {
-            let group = store.centerPaneGroup(for: session, project: project)
-            group.addTerminalPane()
-            // Defer until SwiftUI has mounted the new pane's view.
-            DispatchQueue.main.async { group.focusSelectedPane() }
-        }
-    }
-
-    private var scratchpadToggleButton: some View {
-        HeaderIconButton(systemImage: "sidebar.trailing", help: "Toggle Scratchpad (⌥⌘I)") {
-            toggleScratchpad()
-        }
-    }
 
     private var compactInspectorWidth: CGFloat {
         min(

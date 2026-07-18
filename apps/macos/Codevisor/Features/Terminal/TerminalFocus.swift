@@ -3,26 +3,103 @@ import AppKit
 import CodevisorCore
 import GhosttyKit
 
+/// Reports the hosting NSWindow to a callback (fires on mount and window
+/// moves). Zero-sized; used by the session screen to anchor its focus
+/// controller's key-command guard to the right window.
+struct HostWindowCapture: NSViewRepresentable {
+    var onWindow: (NSWindow?) -> Void
+
+    final class CaptureView: NSView {
+        var onWindow: ((NSWindow?) -> Void)?
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            onWindow?(window)
+        }
+    }
+
+    func makeNSView(context: Context) -> CaptureView {
+        let view = CaptureView()
+        view.onWindow = onWindow
+        return view
+    }
+
+    func updateNSView(_ nsView: CaptureView, context: Context) {
+        nsView.onWindow = onWindow
+    }
+}
+
 /// Moves AppKit first-responder focus between the composer's text view and the
 /// session's pane group (its selected pane). Holds weak references so it never
 /// keeps views alive. Owned by the session screen and (composer-only) the
 /// new-chat page.
 @MainActor
 final class TerminalFocusController {
+
     weak var composerTextView: SubmittingTextView?
+    /// The window hosting the session screen, captured by the screen itself.
+    /// The tab-command guard anchors here — NOT to the composer's window:
+    /// the composer unmounts whenever a non-chat tab (terminal, New tab
+    /// page) is selected, and ⌘T must keep working then (falling through
+    /// would reach the Format menu's Fonts panel). Also the anchor for the
+    /// ONE first-responder observer (the upward focus-feedback path).
+    weak var hostWindow: NSWindow? {
+        didSet { observeFirstResponder() }
+    }
+
+    /// The single upward feedback path for composer focus: the user clicked
+    /// (or tabbed) into some chat's composer — the container activates that
+    /// chat's group, keeping "active group" true to where the keyboard is.
+    /// (Terminal surfaces report the same through their own responder
+    /// overrides.)
+    var onChatComposerFocused: ((UUID) -> Void)?
+
+    private var responderObservation: NSKeyValueObservation?
+
+    private func observeFirstResponder() {
+        responderObservation = hostWindow?.observe(
+            \.firstResponder, options: [.new]
+        ) { [weak self] window, _ in
+            let responder = window.firstResponder
+            Task { @MainActor [weak self] in
+                self?.firstResponderChanged(responder)
+            }
+        }
+    }
+
+    private func firstResponderChanged(_ responder: NSResponder?) {
+        guard let view = responder as? NSView else { return }
+        for (chatId, box) in chatComposers {
+            if let composer = box.view, view === composer || view.isDescendant(of: composer) {
+                onChatComposerFocused?(chatId)
+                return
+            }
+        }
+        for (chatId, box) in chatTranscripts {
+            if let transcript = box.view, view === transcript || view.isDescendant(of: transcript) {
+                onChatComposerFocused?(chatId)
+                return
+            }
+        }
+    }
     /// The chat history's scroll view. Clicks anywhere inside it park keyboard
     /// focus on it (blurring a focused terminal) so typing can hand off to the
     /// composer.
     weak var transcriptView: NSView?
     weak var paneGroup: PaneGroupModel?
+    /// The session screen's panel toggle (it owns the open/close + focus
+    /// handoff); group models across all split leaves relay ⌘J here.
+    var requestPanelToggle: (() -> Void)?
     /// The session's center pane group: tab commands (⌘T/⌘W/⌘1-9/⌘⌥←→)
     /// pressed while the chat has focus act on it, mirroring how a focused
     /// terminal routes the same shortcuts to its own group.
     weak var centerGroup: PaneGroupModel?
-    /// False while a center-group terminal tab covers the chat: the hidden
-    /// composer/transcript must not steal keystrokes or clicks meant for the
-    /// terminal on top of them.
-    var chatContentActive = true
+    /// Whether the workspace has center tabs beyond the selected one (any
+    /// group). Wired by the container against repository truth. ⌘W is
+    /// CLAIMED while this is true even when the selected tab can't close
+    /// (the anchoring chat) — falling through to Close Window with tabs
+    /// still open is catastrophic; the window only becomes ⌘W's target
+    /// once the workspace is down to its last tab.
+    var hasOtherCenterTabs: (() -> Bool)?
     private var typeToFocusMonitor: Any?
 
     func apply(_ target: SessionFocusTarget) {
@@ -32,7 +109,77 @@ final class TerminalFocusController {
         }
     }
 
+    /// Composer text views by CHAT SESSION, so multi-chat workspaces can
+    /// focus the right one (the single `composerTextView` is whichever
+    /// registered last — arbitrary with several chats mounted).
+    private final class WeakTextView {
+        weak var view: SubmittingTextView?
+        init(_ view: SubmittingTextView) { self.view = view }
+    }
+
+    private var chatComposers: [UUID: WeakTextView] = [:]
+    /// Chat transcript (history) views by session — the click-to-blur zones:
+    /// a click in ANY chat's transcript parks focus there, taking the
+    /// keyboard away from a focused terminal.
+    private final class WeakNSView {
+        weak var view: NSView?
+        init(_ view: NSView) { self.view = view }
+    }
+
+    private var chatTranscripts: [UUID: WeakNSView] = [:]
+    /// A chat whose composer should take focus as soon as it CAN — the
+    /// target pane may not have laid out yet (fresh workspace open, or a
+    /// tab switch that remounts the chat), so the intent parks here and
+    /// applies on registration.
+    private var pendingComposerFocus: UUID?
+
+    func registerComposer(_ view: SubmittingTextView, forChat sessionId: UUID) {
+        chatComposers[sessionId] = WeakTextView(view)
+        if pendingComposerFocus == sessionId {
+            pendingComposerFocus = nil
+            focusWhenWindowed(view)
+        }
+    }
+
+    func registerTranscript(_ view: NSView, forChat sessionId: UUID) {
+        chatTranscripts[sessionId] = WeakNSView(view)
+    }
+
+    /// Focuses a specific chat's composer — immediately when possible,
+    /// otherwise the moment it registers (see `pendingComposerFocus`).
+    func requestComposerFocus(forChat sessionId: UUID) {
+        if let view = chatComposers[sessionId]?.view {
+            focusWhenWindowed(view)
+        } else {
+            pendingComposerFocus = sessionId
+        }
+    }
+
+    /// Text views register from makeNSView, BEFORE they are attached to a
+    /// window — and makeFirstResponder needs the window. Retry briefly
+    /// until attachment (the same trick the terminal's Ghostty.moveFocus
+    /// uses); a view that never lands in a window just times out.
+    private func focusWhenWindowed(_ view: SubmittingTextView, attempts: Int = 20) {
+        if let window = view.window {
+            window.makeFirstResponder(view)
+            return
+        }
+        guard attempts > 0 else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self, weak view] in
+            guard let self, let view else { return }
+            self.focusWhenWindowed(view, attempts: attempts - 1)
+        }
+    }
+
+    /// Focuses the ACTIVE group's selected chat's composer when there is
+    /// one; otherwise the last-registered composer (drafts, single-chat
+    /// screens, the new-chat page).
     func focusComposer() {
+        if let chatId = centerGroup?.state.selectedPane?.chatSessionId,
+           let view = chatComposers[chatId]?.view {
+            view.window?.makeFirstResponder(view)
+            return
+        }
         guard let view = composerTextView else { return }
         view.window?.makeFirstResponder(view)
     }
@@ -68,7 +215,7 @@ final class TerminalFocusController {
     /// (GhosttyTerminalSurfaceAdapter), whose matching this mirrors.
     private func handleTabCommand(_ event: NSEvent) -> Bool {
         guard let centerGroup,
-              let window = composerTextView?.window,
+              let window = hostWindow ?? composerTextView?.window,
               event.window === window,
               window.isKeyWindow,
               window.attachedSheet == nil,
@@ -97,12 +244,16 @@ final class TerminalFocusController {
                 return true
             }
             if chars == "w" {
-                // Claim ⌘W only when it can close a tab; the chat tab is not
-                // closable, so the window's normal Close applies then.
-                guard let selected = centerGroup.state.selectedPane,
-                      selected.isClosable else { return false }
-                centerGroup.handleCommand(.closeTab)
-                return true
+                if let selected = centerGroup.state.selectedPane,
+                   centerGroup.canClose(id: selected.id) {
+                    centerGroup.handleCommand(.closeTab)
+                    return true
+                }
+                // The selected tab can't close (the anchoring chat) — but
+                // while OTHER tabs are open anywhere in the workspace, ⌘W
+                // must not fall through to Close Window; it just no-ops.
+                // Only on the last tab does ⌘W become the window's.
+                return hasOtherCenterTabs?() ?? false
             }
             if chars.count == 1, let digit = Int(chars), (1...9).contains(digit) {
                 centerGroup.handleCommand(.selectTab(digit - 1))
@@ -119,8 +270,10 @@ final class TerminalFocusController {
     }
 
     private func handleTypeToFocus(_ event: NSEvent) -> NSEvent? {
-        guard chatContentActive,
-              let textView = composerTextView,
+        // The chat unmounts while a terminal tab covers it, so a stale
+        // composer reference (or one detached from the window) naturally
+        // opts out here — no explicit visibility flag needed.
+        guard let textView = composerTextView,
               textView.isEditable,
               let window = textView.window,
               event.window === window,
@@ -171,35 +324,49 @@ final class TerminalFocusController {
     /// behavior. If the first responder changed at all as a result of the
     /// click, the click "spent" its focus and is left alone.
     private func handleTranscriptClick(_ event: NSEvent) -> NSEvent? {
-        guard chatContentActive,
-              let transcriptView,
-              let window = transcriptView.window,
-              event.window === window,
-              window.attachedSheet == nil,
-              NSApp.modalWindow == nil,
-              let transcriptSuperview = transcriptView.superview else {
+        // Every registered chat transcript is a click-into-the-chat zone
+        // (multi-chat workspaces have several); the single slot is the
+        // fallback for screens that never register keyed (the new-chat
+        // page). A click that lands in a zone moves focus to THAT chat's
+        // composer — the pane's one input — unless the click itself claimed
+        // focus (text selection in the history keeps it).
+        var zones: [(chatId: UUID?, view: NSView)] = chatTranscripts.compactMap { id, box in
+            box.view.map { (id, $0) }
+        }
+        if let transcriptView, !zones.contains(where: { $0.view === transcriptView }) {
+            zones.append((nil, transcriptView))
+        }
+        for zone in zones {
+            guard let window = zone.view.window,
+                  event.window === window,
+                  window.attachedSheet == nil,
+                  NSApp.modalWindow == nil,
+                  let zoneSuperview = zone.view.superview else { continue }
+            // Geometry check scoped to the zone's own subtree (hitTest
+            // takes superview coordinates). Overlays floating inside its
+            // frame — the composer card, scroll-to-bottom — are excluded
+            // by the focus-change check below, not by geometry.
+            let point = zoneSuperview.convert(event.locationInWindow, from: nil)
+            guard zone.view.hitTest(point) != nil else { continue }
+
+            let responderBeforeClick = window.firstResponder
+            if let composer = zone.chatId.flatMap({ chatComposers[$0]?.view }),
+               responderBeforeClick === composer {
+                return event // Already writing in this chat.
+            }
+
+            DispatchQueue.main.async { [weak self] in
+                guard let self,
+                      // Someone claimed focus from this click (text
+                      // selection, a menu, a control): leave it alone.
+                      window.firstResponder === responderBeforeClick else { return }
+                if let chatId = zone.chatId {
+                    self.requestComposerFocus(forChat: chatId)
+                } else {
+                    self.focusComposer()
+                }
+            }
             return event
-        }
-        // Geometry check scoped to the transcript's own subtree (hitTest takes
-        // superview coordinates). Overlays that float inside the transcript's
-        // frame — the composer card, scroll-to-bottom — are excluded by the
-        // focus-change check below, not by geometry.
-        let point = transcriptSuperview.convert(event.locationInWindow, from: nil)
-        guard transcriptView.hitTest(point) != nil else { return event }
-
-        let responderBeforeClick = window.firstResponder
-        if let currentView = responderBeforeClick as? NSView,
-           currentView.isDescendant(of: transcriptView) {
-            return event // Focus already parked in the history.
-        }
-
-        DispatchQueue.main.async { [weak self] in
-            guard let self, let transcriptView = self.transcriptView,
-                  transcriptView.window === window,
-                  // Someone claimed focus from this click (text selection,
-                  // the composer, a menu): leave it alone.
-                  window.firstResponder === responderBeforeClick else { return }
-            window.makeFirstResponder(transcriptView)
         }
         return event
     }
