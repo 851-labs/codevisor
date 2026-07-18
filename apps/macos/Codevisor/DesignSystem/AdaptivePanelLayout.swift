@@ -21,6 +21,17 @@ final class AdaptivePanelLayout {
     private(set) var docksInspector = true
     private(set) var activeDrawer: AdaptiveDrawer?
 
+    /// The sidebar column's TARGET trailing edge in window coordinates (its
+    /// width when visible, 0 when hidden). Mutated inside `withAnimation`,
+    /// and every dependent — the column's own frame width, the chrome
+    /// cluster's offset, the detail header's reserve — derives from it via
+    /// ANIMATABLE modifiers, so SwiftUI interpolates them per frame in one
+    /// transaction and they move in true lockstep (the native
+    /// tracking-separator model). Measured geometry can't do this:
+    /// onGeometryChange doesn't stream during implicit animations (layout
+    /// models jump to end values; only rendering interpolates).
+    var sidebarEdge: CGFloat = 0
+
     func updateWindowWidth(_ width: CGFloat) {
         guard width.isFinite, width > 0, abs(width - windowWidth) > 0.5 else { return }
         windowWidth = width
@@ -73,11 +84,17 @@ struct AdaptiveDrawerLayer<DrawerContent: View>: View {
                 drawerContent()
                     .frame(width: width)
                     .padding(8)
+                    // Float BELOW the window's top bar (native transient
+                    // panels leave the toolbar row clear).
+                    .padding(.top, WindowChrome.headerHeight)
                     .transition(.move(edge: edge).combined(with: .opacity))
             }
         }
         .allowsHitTesting(isPresented)
         .onExitCommand { panelLayout.dismissDrawer() }
         .animation(Motion.quick(reduceMotion: reduceMotion), value: isPresented)
+        // Anchor the layer to the true window top so the header clearance
+        // above is measured from the real top edge, not the safe-area line.
+        .ignoresSafeArea(edges: .top)
     }
 }

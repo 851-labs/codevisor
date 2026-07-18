@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 import CodevisorCore
 import QuickLook
 
@@ -32,6 +33,11 @@ struct CodevisorApp: App {
         // mount and unmount as the window crosses their width thresholds.
         // AppKit still owns saving and restoring the user's previous frame.
         .windowIdealSize(.maximum)
+        // The app owns its top bar (see WindowChrome.swift): only the traffic
+        // lights remain system chrome. The pane tab strip is a drag-driven
+        // control that AppKit's titlebar/toolbar machinery fights when hosted
+        // in the native bar.
+        .windowStyle(.hiddenTitleBar)
         .commands {
             AppUpdateCommands(appUpdate: environment.appUpdate)
             FileCommands()
@@ -68,6 +74,14 @@ struct RootView: View {
     @State private var preparedMachineId: String?
     @State private var quickLook = QuickLookController()
     @State private var panelLayout = AdaptivePanelLayout()
+
+    /// App-owned sidebar column sizing (the split is our own HStack — see
+    /// mainSplit — so open/close animate with the one chrome curve).
+    private static let sidebarMinWidth: CGFloat = 230
+    private static let sidebarMaxWidth: CGFloat = 360
+    @AppStorage("sidebar.width") private var sidebarWidth: Double = 270
+    @State private var liveSidebarWidth: CGFloat?
+    @State private var sidebarDragStartWidth: CGFloat?
 
     var body: some View {
         Group {
@@ -197,18 +211,13 @@ struct RootView: View {
         selection = .session(serverId: serverId, id: sessionId)
     }
 
+    /// The top-level split is an APP-OWNED HStack (the same ownership move as
+    /// the top bar and the inspector — NavigationSplitView's expand animation
+    /// was unreliable), so sidebar open/close both animate with the one
+    /// chrome curve, and the chrome cluster/headers track its live geometry.
     private var mainSplit: some View {
-        NavigationSplitView(columnVisibility: sidebarColumnVisibility) {
-            SidebarView(selection: $selection, store: store)
-                .id(environment.machines.selectedMachineId)
-                .navigationSplitViewColumnWidth(min: 230, ideal: 270, max: 360)
-                .themedToolbarBackground(theme, surface: theme.sidebarBackground)
-                .toolbar {
-                    ToolbarItem {
-                        MachinePickerToolbarMenu()
-                    }
-                }
-        } detail: {
+        HStack(spacing: 0) {
+            sidebarColumn
             Group {
                 if let store {
                     detail(store)
@@ -216,8 +225,25 @@ struct RootView: View {
                     ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
-            .themedToolbarBackground(theme, surface: theme.windowBackground)
+            .frame(maxWidth: .infinity)
         }
+        // ONE animated value drives the whole chrome: the column width, the
+        // cluster offset, and the header reserve all derive from
+        // `panelLayout.sidebarEdge`, so a single withAnimation change moves
+        // them in perfect lockstep. Live resize drags update un-animated.
+        .onChange(of: sidebarTargetEdge) { _, edge in
+            if liveSidebarWidth != nil {
+                panelLayout.sidebarEdge = edge
+            } else {
+                withAnimation(.snappy(duration: 0.25)) {
+                    panelLayout.sidebarEdge = edge
+                }
+            }
+        }
+        .onAppear { panelLayout.sidebarEdge = sidebarTargetEdge }
+        // Keeps the system traffic lights centered in the app-owned header
+        // band (zero-sized; see WindowChrome.swift).
+        .background(TrafficLightAligner().frame(width: 0, height: 0))
         .overlay {
             AdaptiveDrawerLayer(
                 isPresented: !panelLayout.docksSidebar && panelLayout.activeDrawer == .leading,
@@ -231,24 +257,110 @@ struct RootView: View {
                     .shadow(color: .black.opacity(0.22), radius: 18, y: 6)
             }
         }
+        // The ONE sidebar toggle, fixed beside the traffic lights above both
+        // columns — collapsing slides only the sidebar background beneath it
+        // (native model; never re-created mid-animation).
+        .overlay(alignment: .topLeading) {
+            SidebarToggleControl()
+                .ignoresSafeArea(edges: .top)
+        }
     }
 
-    /// At compact widths the system sidebar remains collapsed and its normal
-    /// toggle opens our transient drawer instead. Automatic collapse doesn't
-    /// touch the persisted `sidebarCollapsed` preference.
-    private var sidebarColumnVisibility: Binding<NavigationSplitViewVisibility> {
-        Binding(
-            get: {
-                panelLayout.docksSidebar && !sidebarCollapsed ? .all : .detailOnly
-            },
-            set: { visibility in
-                if panelLayout.docksSidebar {
-                    sidebarCollapsed = visibility == .detailOnly
-                } else if visibility != .detailOnly {
-                    panelLayout.toggleDrawer(.leading)
+    /// At compact widths the sidebar column stays hidden and the toggle opens
+    /// the transient drawer instead; the persisted `sidebarCollapsed`
+    /// preference is untouched by responsive collapses.
+    private var sidebarVisible: Bool {
+        panelLayout.docksSidebar && !sidebarCollapsed
+    }
+
+    private var currentSidebarWidth: CGFloat {
+        liveSidebarWidth ?? min(
+            max(CGFloat(sidebarWidth), Self.sidebarMinWidth),
+            Self.sidebarMaxWidth
+        )
+    }
+
+    /// Where the sidebar's trailing edge should be: its width when visible,
+    /// zero when hidden. Fed into `panelLayout.sidebarEdge` (animated).
+    private var sidebarTargetEdge: CGFloat {
+        sidebarVisible ? currentSidebarWidth : 0
+    }
+
+    /// The app-owned sidebar column: native sidebar material (system theme)
+    /// or the palette surface, hairline divider, resizable width, header
+    /// band reaching the true window top.
+    ///
+    /// Collapse is a WIDTH animation on an always-mounted column (the native
+    /// NSSplitView model — content pinned to the trailing edge, clipped at
+    /// the moving divider). This keeps the header's live edge geometry
+    /// streaming every animation frame, which is what lets the chrome
+    /// cluster ride the divider and the detail title move in perfect
+    /// lockstep — no flags, no second animation to fight.
+    private var sidebarColumn: some View {
+        VStack(spacing: 0) {
+            SidebarHeaderBar()
+            SidebarView(selection: $selection, store: store)
+                .id(environment.machines.selectedMachineId)
+        }
+        .frame(width: currentSidebarWidth)
+        .background {
+            if theme.isSystem {
+                SidebarMaterial()
+            } else {
+                Rectangle().fill(theme.sidebarBackground)
+            }
+        }
+        // The column/content boundary hairline, with the resize grip
+        // straddling it.
+        .overlay(alignment: .trailing) {
+            theme.separator
+                .frame(width: 1)
+                .frame(maxHeight: .infinity)
+        }
+        .overlay(alignment: .trailing) { sidebarResizeHandle }
+        // The collapsing outer frame: content stays full-width, pinned
+        // trailing (riding the divider), clipped as the column narrows. The
+        // width IS the animated edge value everything else derives from.
+        .frame(width: max(0, panelLayout.sidebarEdge), alignment: .trailing)
+        .clipped()
+        // Clipped-away content must not keep catching clicks/drags.
+        .allowsHitTesting(sidebarVisible)
+        // The header row IS the top bar: extend to the true window top,
+        // under the overlaid traffic lights.
+        .ignoresSafeArea(edges: .top)
+    }
+
+    /// The divider's resize grip, mirroring the inspector's.
+    private var sidebarResizeHandle: some View {
+        Color.clear
+            .frame(width: 8)
+            .frame(maxHeight: .infinity)
+            .contentShape(Rectangle())
+            .onHover { hovering in
+                if hovering {
+                    NSCursor.resizeLeftRight.push()
+                } else {
+                    NSCursor.pop()
                 }
             }
-        )
+            .gesture(
+                DragGesture(minimumDistance: 1, coordinateSpace: .global)
+                    .onChanged { value in
+                        let start = sidebarDragStartWidth ?? currentSidebarWidth
+                        sidebarDragStartWidth = start
+                        liveSidebarWidth = min(
+                            max(start + value.translation.width, Self.sidebarMinWidth),
+                            Self.sidebarMaxWidth
+                        )
+                    }
+                    .onEnded { _ in
+                        if let liveSidebarWidth {
+                            sidebarWidth = Double(liveSidebarWidth)
+                        }
+                        liveSidebarWidth = nil
+                        sidebarDragStartWidth = nil
+                    }
+            )
     }
 
     @ViewBuilder
@@ -276,12 +388,24 @@ struct RootView: View {
     }
 
     private func newChat(_ store: SessionStore, preferred: UUID?, explicit: UUID? = nil) -> some View {
-        NewChatView(
-            store: store,
-            selection: $selection,
-            preferredProjectId: preferred,
-            explicitProjectId: explicit
-        )
+        VStack(spacing: 0) {
+            DetailHeaderBar {
+                // Shared page-title style; the header pads 10, so 20 more
+                // lands the title at WindowChrome.pageTitleIndent — the same
+                // x as the session page's title.
+                HeaderPageTitle(text: "New chat")
+                    .padding(.leading, WindowChrome.pageTitleIndent - 10)
+                WindowDragGap()
+            }
+            NewChatView(
+                store: store,
+                selection: $selection,
+                preferredProjectId: preferred,
+                explicitProjectId: explicit
+            )
+        }
+        // The header row IS the top bar (aligned with the sidebar header).
+        .ignoresSafeArea(edges: .top)
         .id(environment.machines.selectedMachineId)
     }
 }

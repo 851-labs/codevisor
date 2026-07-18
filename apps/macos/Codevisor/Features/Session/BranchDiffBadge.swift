@@ -15,14 +15,23 @@ struct BranchDiffBadge: View {
 
     @State private var totals: LineDiff.Totals?
 
+    private var hasDiff: Bool {
+        guard let totals else { return false }
+        return totals.added > 0 || totals.removed > 0
+    }
+
     var body: some View {
         HStack(spacing: 0) {
             // A `+0 −0` badge on a clean branch is noise — show the counter
             // only once there is an actual diff.
-            if let totals, totals.added > 0 || totals.removed > 0 {
+            if let totals, hasDiff {
                 DiffCounter(totals: totals)
             }
         }
+        // Hosted in a spacing-0 group beside the + button, so an empty badge
+        // contributes NOTHING to the header layout; when showing, it brings
+        // its own gap.
+        .padding(.trailing, hasDiff ? 8 : 0)
         .task(id: directory) {
             // Initial compute plus a slow heartbeat: commits made in a git
             // worktree land in the external gitdir and emit no FSEvents under

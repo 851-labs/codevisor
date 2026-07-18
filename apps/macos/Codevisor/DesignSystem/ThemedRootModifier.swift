@@ -77,20 +77,30 @@ extension View {
             self
                 .toolbarBackground(.hidden, for: .windowToolbar)
                 .overlay {
+                    // Laid out INSIDE the top safe area (ignoresSafeArea,
+                    // pinned to the true window top) — never `.offset` out of
+                    // bounds. WindowDragGesture registers its drag region at
+                    // the LAYOUT position, so an offset band leaves an
+                    // invisible window-drag strip over the content below the
+                    // toolbar (it swallowed the center pane bar's tab clicks).
                     GeometryReader { proxy in
-                        Rectangle()
-                            .fill(surface)
-                            .frame(height: proxy.safeAreaInsets.top)
-                            .offset(y: -proxy.safeAreaInsets.top)
-                            // Hiding the system toolbar background removes its
-                            // implicit drag region on older SDK compatibility
-                            // paths. Restore that behavior with SwiftUI's
-                            // dedicated native window gesture.
-                            .contentShape(Rectangle())
-                            .gesture(WindowDragGesture())
-                            .allowsWindowActivationEvents()
-                            .accessibilityHidden(true)
+                        VStack(spacing: 0) {
+                            Rectangle()
+                                .fill(surface)
+                                .frame(height: proxy.safeAreaInsets.top)
+                                // Hiding the system toolbar background removes
+                                // its implicit drag region on older SDK
+                                // compatibility paths. Restore that behavior
+                                // with SwiftUI's dedicated native window
+                                // gesture.
+                                .contentShape(Rectangle())
+                                .gesture(WindowDragGesture())
+                                .allowsWindowActivationEvents()
+                            Spacer(minLength: 0)
+                        }
+                        .ignoresSafeArea(edges: .top)
                     }
+                    .accessibilityHidden(true)
                 }
         }
     }
