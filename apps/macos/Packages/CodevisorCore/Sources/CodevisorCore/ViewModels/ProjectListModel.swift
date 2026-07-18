@@ -5,7 +5,7 @@ import Observation
 @MainActor
 @Observable
 public final class ProjectListModel {
-    private struct ScopedSessionID: Hashable {
+    private struct ScopedSessionID: Hashable, Codable {
         let serverId: String
         let id: UUID
     }
@@ -28,7 +28,34 @@ public final class ProjectListModel {
     /// observed in an authoritative server snapshot. A metadata refresh can
     /// race the slow first agent startup; preserving these rows prevents the
     /// selected session from disappearing until creation is acknowledged.
-    private var pendingServerSessionIds: Set<ScopedSessionID> = []
+    /// PERSISTED (piggybacking the metadata store): losing the marker to a
+    /// relaunch while the sync hadn't landed (offline remote, app quit mid-
+    /// flight) let the next refresh silently discard a real local session.
+    private var pendingServerSessionIds: Set<ScopedSessionID> = [] {
+        didSet {
+            guard pendingServerSessionIds != oldValue else { return }
+            persistPendingServerSessions()
+        }
+    }
+
+    private static let pendingServerSessionsKey = "pending-server-sessions-v1"
+
+    private func persistPendingServerSessions() {
+        guard let legacyMigrationStore else { return }
+        do {
+            let data = try JSONEncoder().encode(Array(pendingServerSessionIds))
+            try legacyMigrationStore.saveData(data, forKey: Self.pendingServerSessionsKey)
+        } catch {
+            Log.sync.error("Failed to persist pending session markers: \(String(describing: error), privacy: .public)")
+        }
+    }
+
+    private func loadPendingServerSessions() {
+        guard let legacyMigrationStore,
+              let data = legacyMigrationStore.loadData(forKey: Self.pendingServerSessionsKey),
+              let ids = try? JSONDecoder().decode([ScopedSessionID].self, from: data) else { return }
+        pendingServerSessionIds = Set(ids)
+    }
     /// Shared: formatter construction is milliseconds-expensive and the
     /// import loops used to build one per imported session. Native scanners
     /// emit JavaScript ISO strings with fractional seconds; legacy servers may
@@ -53,6 +80,16 @@ public final class ProjectListModel {
         self.serverClient = serverClient
         self.legacyMigrationStore = legacyMigrationStore
         load()
+        loadPendingServerSessions()
+        // Unconfirmed local sessions survive relaunches AND retry their
+        // sync (the fire-and-forget upsert may have died with the app).
+        for pending in pendingServerSessionIds {
+            if let session = sessions.first(where: {
+                $0.serverId == pending.serverId && $0.id == pending.id
+            }) {
+                syncSession(session)
+            }
+        }
         refreshFromServerIfConfigured()
     }
 
@@ -363,6 +400,40 @@ public final class ProjectListModel {
             ?? wholeSecondImportTimestampFormatter.date(from: value)
     }
 
+    /// Fills in an eagerly created session's first-send details. Workspace
+    /// "New Chat" tabs register their session at CREATION (so the sidebar
+    /// shows them immediately) but keep the new-chat composer until the
+    /// first message — which is when the title, chosen harness, and
+    /// worktree/cwd become known. A manual rename before the first message
+    /// wins over the prompt-derived title.
+    @discardableResult
+    public func updateSessionForFirstSend(
+        _ session: ChatSession,
+        title: String,
+        harnessId: String?,
+        worktreeName: String?,
+        cwd: String?
+    ) -> ChatSession? {
+        guard let index = sessions.firstIndex(where: {
+            $0.serverId == session.serverId && $0.id == session.id
+        }) else { return nil }
+        if sessions[index].title == "New Chat" {
+            sessions[index].title = title
+        }
+        if let harnessId {
+            sessions[index].harnessId = harnessId
+        }
+        if let worktreeName {
+            sessions[index].worktreeName = worktreeName
+        }
+        if let cwd {
+            sessions[index].cwd = cwd
+        }
+        persistSessions()
+        syncSession(sessions[index])
+        return sessions[index]
+    }
+
     public func renameSession(_ session: ChatSession, to title: String) {
         guard let index = sessions.firstIndex(where: {
             $0.serverId == session.serverId && $0.id == session.id
@@ -589,7 +660,11 @@ public final class ProjectListModel {
     }
 
     private func syncSession(_ session: ChatSession) {
-        guard let serverClient, !session.harnessId.isEmpty,
+        // No harness gate: eagerly created chats (workspace "New Chat"
+        // tabs) have no harness until their first send, and MUST still
+        // reach the server — an unsynced row is dropped by the next
+        // authoritative refresh once its pending marker is gone.
+        guard let serverClient,
               session.serverId == selectedServerId else { return }
         let project = projects.first { $0.serverId == session.serverId && $0.id == session.projectId }
         Task {
