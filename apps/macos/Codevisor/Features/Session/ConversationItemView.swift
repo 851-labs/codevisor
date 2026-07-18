@@ -63,7 +63,9 @@ struct UserMessageView: View {
         }
         // Whole-row hover target, full width and height: AppKit tracking
         // (not .onHover) so the transparent regions count too.
-        .hoverTracking($isHovered)
+        // User prompts are immutable once sent, so their copy affordance stays
+        // available even while the assistant response is streaming.
+        .hoverTracking($isHovered, respectsSuspension: false)
     }
 }
 

@@ -5,8 +5,9 @@ import AppKit
 /// stream is being followed: following means real scrolling every frame, and
 /// every scroll tick makes AppKit rebuild the structural regions of EVERY
 /// row's NSTrackingArea — profiled at ~15-20% of the main thread on long
-/// chats. Hover affordances (copy buttons, row highlights) are dormant while
-/// text is actively streaming anyway.
+/// chats. Most hover affordances (assistant copy buttons, row highlights) are
+/// dormant while text is actively streaming anyway. Callers can opt out for
+/// controls that must remain available during a stream.
 private struct HoverTrackingSuspendedKey: EnvironmentKey {
     static let defaultValue = false
 }
@@ -24,24 +25,31 @@ extension View {
     /// doesn't reliably fire over
     /// transparent areas on macOS 26; an `NSTrackingArea` is geometric, so
     /// covered/clear pixels still count.
-    func hoverTracking(_ isHovered: Binding<Bool>) -> some View {
-        background(HoverTrackingView(isHovered: isHovered))
+    func hoverTracking(
+        _ isHovered: Binding<Bool>,
+        respectsSuspension: Bool = true
+    ) -> some View {
+        background(HoverTrackingView(
+            isHovered: isHovered,
+            respectsSuspension: respectsSuspension
+        ))
     }
 }
 
 private struct HoverTrackingView: NSViewRepresentable {
     @Binding var isHovered: Bool
+    let respectsSuspension: Bool
 
     func makeNSView(context: Context) -> TrackingNSView {
         let view = TrackingNSView()
         view.onChange = { isHovered = $0 }
-        view.isSuspended = context.environment.hoverTrackingSuspended
+        view.isSuspended = respectsSuspension && context.environment.hoverTrackingSuspended
         return view
     }
 
     func updateNSView(_ view: TrackingNSView, context: Context) {
         view.onChange = { isHovered = $0 }
-        view.isSuspended = context.environment.hoverTrackingSuspended
+        view.isSuspended = respectsSuspension && context.environment.hoverTrackingSuspended
     }
 
     final class TrackingNSView: NSView {
