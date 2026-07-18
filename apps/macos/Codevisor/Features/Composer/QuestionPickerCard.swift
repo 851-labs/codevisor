@@ -109,7 +109,7 @@ struct QuestionPickerContent: View {
             }
             .buttonStyle(.plain)
             .foregroundStyle(.secondary)
-            .tooltip("Dismiss without answering (Esc)")
+            .help("Dismiss without answering (Esc)")
             .accessibilityLabel("Dismiss without answering")
             .accessibilityHint("Keyboard shortcut: Escape")
         }
@@ -272,7 +272,7 @@ struct QuestionPickerContent: View {
                 .contentShape(Circle())
         }
         .buttonStyle(.plain)
-        .tooltip(help)
+        .help(help)
         .accessibilityLabel(help)
     }
 
