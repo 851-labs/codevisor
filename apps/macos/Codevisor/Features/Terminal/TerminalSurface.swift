@@ -154,6 +154,9 @@ protocol TerminalSurface: AnyObject {
     /// Invoked for pane-group keyboard shortcuts (⌘⌥←/→, ⌘T) captured while
     /// this surface has keyboard focus.
     var onPaneCommand: ((PaneGroupCommand) -> Void)? { get set }
+    /// Invoked when this surface gains/loses keyboard focus (first
+    /// responder). Drives the pane bars' ⌘N shortcut hints.
+    var onFocusChanged: ((Bool) -> Void)? { get set }
 }
 
 /// Creates terminal surfaces.

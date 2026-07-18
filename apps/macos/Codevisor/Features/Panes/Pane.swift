@@ -53,6 +53,11 @@ protocol Pane: AnyObject {
     /// shortcuts up to the group.
     var onGroupCommand: ((PaneGroupCommand) -> Void)? { get set }
 
+    /// Set by the pane group: reports keyboard focus entering/leaving the
+    /// pane's content (drives the group bar's ⌘N shortcut hints). Panes
+    /// whose content doesn't track focus (the chat) never call it.
+    var onFocusChanged: ((Bool) -> Void)? { get set }
+
     /// The pane's content view. Called when the pane is selected; the pane
     /// should cache expensive backing state (the terminal caches its NSView)
     /// so re-selection restores rather than rebuilds.

@@ -2,15 +2,9 @@ import SwiftUI
 import CodevisorCore
 
 /// Hosts a session: resolves its cached `SessionController` from the store and
-/// shows the session screen.
+/// shows the session screen under the app-owned header row (the pane tab
+/// strip; see WindowChrome.swift for why the app owns its top bar).
 struct SessionContainerView: View {
-    /// The title is drawn in the top-bar overlay instead of as an `NSToolbar`
-    /// item. In compact windows it starts after the traffic lights, machine
-    /// picker, and leading-sidebar toggle; a docked sidebar owns that chrome.
-    private static let compactToolbarTitleLeadingInset: CGFloat = 188
-    private static let dockedToolbarTitleLeadingInset: CGFloat = 12
-    private static let toolbarTitleTrailingInset: CGFloat = 60
-
     /// Inspector width limits, shared by the column-width modifier and the
     /// persistence clamp below.
     private static let inspectorMinWidth: CGFloat = 220
@@ -24,15 +18,15 @@ struct SessionContainerView: View {
     @Environment(\.theme) private var theme
     @Environment(AdaptivePanelLayout.self) private var panelLayout
     @State private var controller: SessionController?
-    /// Last user-chosen inspector width. The system only tracks a drag for
-    /// the current presentation — the detail subtree's `.id(session.id)`
-    /// reset (and app relaunches) would snap back to the hardcoded ideal, so
-    /// the measured width is persisted and fed back as `ideal`.
+    /// Cross-group tab dragging, shared by the header pane strip and the
+    /// session screen's bottom panel.
+    @State private var paneDragCoordinator = PaneTabDragCoordinator()
+    /// Last user-chosen inspector width, persisted across the detail
+    /// subtree's `.id(session.id)` resets and app relaunches.
     @AppStorage("inspector.width") private var inspectorWidth: Double = 300
-    /// Debounce for width persistence. Writing on every geometry tick would
-    /// change `ideal` mid-presentation, which cancels the inspector's
-    /// open animation (it snaps) and records transient mid-animation widths.
-    @State private var inspectorWidthSave: Task<Void, Never>?
+    /// The width mid-resize-drag (nil when idle), and the drag's anchor.
+    @State private var liveInspectorWidth: CGFloat?
+    @State private var inspectorDragStartWidth: CGFloat?
 
     /// The session's cached scratchpad (cheap dictionary lookup). Holds the
     /// inspector's per-session open state, so it survives the `.id(session.id)`
@@ -41,100 +35,49 @@ struct SessionContainerView: View {
         store.scratchpad(for: session)
     }
 
+    /// This container's frame in window coordinates (content + inspector).
+    @State private var containerFrame: CGRect = .zero
+
+    private var inspectorVisible: Bool {
+        panelLayout.docksInspector && scratchpad.isVisible
+    }
+
+    /// The header row's live trailing edge in window coordinates (the
+    /// inspector divider while open, the window edge while closed).
+    @State private var headerMaxX: CGFloat = 0
+
+    /// Trailing gap keeping the + clear of the fixed corner toggle — derived
+    /// CONTINUOUSLY from the header's actual trailing edge, so during the
+    /// inspector's open/close animation the + holds its ground until the
+    /// moving divider genuinely reaches it, then gets pushed along by it
+    /// (never teleporting under the toggle).
+    private var trailingToggleGap: CGFloat {
+        max(0, headerMaxX - containerFrame.maxX + WindowChrome.headerButtonDiameter)
+    }
+
     var body: some View {
-        Group {
-            if let controller {
-                SessionScreen(controller: controller, paneGroup: store.paneGroup(for: session, project: project))
-            } else {
-                ProgressView()
-                    .controlSize(.small)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // The inspector is an APP-OWNED trailing column (not the system
+        // `.inspector`, whose open animation only fires on the first
+        // presentation per mount) — the same ownership move as the top bar,
+        // so open and close both animate with our one chrome curve.
+        HStack(spacing: 0) {
+            contentColumn
+            if inspectorVisible {
+                inspectorColumn
+                    .transition(.move(edge: .trailing))
             }
         }
-        // The window keeps the plain title (Window menu, Mission Control), but
-        // its default toolbar title is removed. The visible title is rendered
-        // by `sessionToolbarTitleOverlay` below: `NSToolbar` animates custom
-        // items toward its overflow menu while resizing, whereas the overlay
-        // behaves like an ordinary constrained row and truncates directly.
+        .animation(.snappy(duration: 0.25), value: inspectorVisible)
+        // The header rows ARE the top bar: extend to the true window top.
+        // The inspector column's background reaches the top as well.
+        .ignoresSafeArea(edges: .top)
+        // The window title still names the window (Window menu, Mission
+        // Control) even though no titlebar renders it.
         .navigationTitle(session.title)
-        .toolbar(removing: .title)
-        // Removing the default title item (above) also drops the toolbar's
-        // backing on macOS 26, leaving the top bar fully transparent over
-        // scrolled chat content. Restoring it with
-        // `.toolbarBackgroundVisibility(.visible)` only takes effect when the
-        // binary is linked against the macOS 27 SDK — release builds come from
-        // the macOS 26 SDK (macos-26 CI runners), where the top bar stayed
-        // transparent except for the hover glass. Paint the band manually
-        // instead (same overlay pattern as `themedToolbarBackground`) with the
-        // system bar material so it renders identically under both SDKs.
-        // Custom themes keep it hidden because ThemedRoot's
-        // `themedToolbarBackground` paints its own opaque band instead.
-        .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
-        .overlay {
-            if theme.isSystem {
-                GeometryReader { proxy in
-                    Rectangle()
-                        .fill(.bar)
-                        .frame(height: proxy.safeAreaInsets.top)
-                        .offset(y: -proxy.safeAreaInsets.top)
-                        // This manually painted band replaces the hidden
-                        // toolbar background, so explicitly restore the native
-                        // window drag/zoom event path as Apple recommends.
-                        .contentShape(Rectangle())
-                        .gesture(WindowDragGesture())
-                        .allowsWindowActivationEvents()
-                        .accessibilityHidden(true)
-                }
-            }
-        }
-        .overlay(alignment: .topLeading) {
-            sessionToolbarTitleOverlay
-        }
-        // Applied AFTER the toolbar, manual band, and title so they all belong
-        // to the chat column only. The title therefore follows the exact
-        // primary-column width, including inspector divider drags, while the
-        // inspector presents as its own full-height trailing column with its
-        // own toolbar section (divider through the top bar).
-        .inspector(isPresented: Binding(
-            get: { panelLayout.docksInspector && scratchpad.isVisible },
-            set: { visible in
-                guard panelLayout.docksInspector else { return }
-                scratchpad.setVisible(visible)
-            }
-        )) {
-            SessionInspectorView(controller: controller, scratchpad: scratchpad)
-                .inspectorColumnWidth(
-                    min: Self.inspectorMinWidth,
-                    ideal: CGFloat(inspectorWidth),
-                    max: Self.inspectorMaxWidth
-                )
-                // Track divider drags by measuring the content: the width is
-                // written back to `inspectorWidth` so the next presentation's
-                // `ideal` reopens the inspector at the same size. Persisted
-                // only after the size settles (see `inspectorWidthSave`).
-                .onGeometryChange(for: CGFloat.self) { proxy in
-                    proxy.size.width
-                } action: { width in
-                    let clamped = min(max(width, Self.inspectorMinWidth), Self.inspectorMaxWidth)
-                    guard abs(clamped - CGFloat(inspectorWidth)) > 0.5 else { return }
-                    inspectorWidthSave?.cancel()
-                    inspectorWidthSave = Task {
-                        try? await Task.sleep(for: .milliseconds(400))
-                        guard !Task.isCancelled else { return }
-                        inspectorWidth = Double(clamped)
-                    }
-                }
-                // Toolbar content inside the inspector lands in the
-                // inspector's section of the window toolbar. Use the native
-                // toolbar spacer (not a view-layout Spacer) so the toggle stays
-                // at the window's trailing edge without forcing the title and
-                // button into overflow.
-                .toolbar {
-                    ToolbarSpacer(.flexible)
-                    ToolbarItem(placement: .primaryAction) {
-                        scratchpadToggleButton
-                    }
-                }
+        .onGeometryChange(for: CGRect.self) { proxy in
+            proxy.frame(in: .global)
+        } action: { frame in
+            containerFrame = frame
         }
         .overlay {
             AdaptiveDrawerLayer(
@@ -147,6 +90,17 @@ struct SessionContainerView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                     .shadow(color: .black.opacity(0.22), radius: 18, y: 6)
             }
+        }
+        // The scratchpad toggle: window-level chrome, fixed in the
+        // top-trailing corner whether the inspector is open or closed — only
+        // the inspector background moves beneath it. Anchored to the
+        // TRAILING edge (which never moves when the LEFT sidebar animates —
+        // a leading offset from measured width would drift mid-animation).
+        .overlay(alignment: .topTrailing) {
+            scratchpadToggleButton
+                .frame(height: WindowChrome.headerHeight)
+                .padding(.trailing, 10)
+                .ignoresSafeArea(edges: .top)
         }
         .focusedSceneValue(\.scratchpadToggle, ScratchpadToggleAction(sessionId: session.id) {
             toggleScratchpad()
@@ -166,47 +120,137 @@ struct SessionContainerView: View {
         }
     }
 
-    private var scratchpadToggleButton: some View {
-        Button {
-            toggleScratchpad()
-        } label: {
-            Image(systemName: "sidebar.trailing")
-        }
-        .tooltip("Toggle Scratchpad (⌥⌘I)")
-        .accessibilityLabel("Toggle Scratchpad")
-        .accessibilityHint("Keyboard shortcut: Option-Command-I")
-    }
+    private var contentColumn: some View {
+        VStack(spacing: 0) {
+            // The app-owned header row: the pane tab strip IS the title (the
+            // chat tab shows the session title), plus the branch badge and
+            // scratchpad toggle. Ordinary content hosting, so tab clicks,
+            // reorders, and tear-out drags behave like any other view.
+            DetailHeaderBar {
+                PaneGroupBar(
+                    group: store.centerPaneGroup(for: session, project: project),
+                    dragCoordinator: paneDragCoordinator,
+                    chatTabTitle: session.title,
+                    // The center group is the tab shortcuts' default target:
+                    // they route here unless a bottom terminal holds focus.
+                    showsShortcutHints: !store.paneGroup(for: session, project: project).hasFocusedPane
+                )
+                // Spacing-0 group: an empty diff badge must not claim a
+                // spacing slot of its own (it would widen the track-to-+
+                // gap past the bar's 18pt leading indent) — the freed width
+                // belongs to the tab strip.
+                HStack(spacing: 0) {
+                    if let diffDirectory {
+                        BranchDiffBadge(directory: diffDirectory)
+                    }
+                    newTerminalButton
+                }
+                // The fixed corner toggle's footprint, held clear only while
+                // the header's trailing edge actually reaches the corner
+                // (see trailingToggleGap).
+                Color.clear
+                    .frame(width: trailingToggleGap)
+            }
+            .onGeometryChange(for: CGFloat.self) { proxy in
+                proxy.frame(in: .global).maxX
+            } action: { maxX in
+                headerMaxX = maxX
+            }
 
-    private var sessionToolbarTitleOverlay: some View {
-        GeometryReader { proxy in
-            HStack(spacing: 8) {
-                Text(session.title)
-                    .font(.headline)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                if let diffDirectory {
-                    BranchDiffBadge(directory: diffDirectory)
+            Group {
+                if let controller {
+                    SessionScreen(
+                        controller: controller,
+                        paneGroup: store.paneGroup(for: session, project: project),
+                        centerGroup: store.centerPaneGroup(for: session, project: project),
+                        dragCoordinator: paneDragCoordinator
+                    )
+                } else {
+                    ProgressView()
+                        .controlSize(.small)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
-            .padding(.leading, toolbarTitleLeadingInset)
-            .padding(.trailing, Self.toolbarTitleTrailingInset)
-            .frame(
-                width: proxy.size.width,
-                height: proxy.safeAreaInsets.top,
-                alignment: .leading
-            )
-            .offset(y: -proxy.safeAreaInsets.top)
         }
-        // Preserve the background overlay's native window-drag path and avoid
-        // duplicating the window title in the accessibility hierarchy.
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
     }
 
-    private var toolbarTitleLeadingInset: CGFloat {
-        panelLayout.docksSidebar
-            ? Self.dockedToolbarTitleLeadingInset
-            : Self.compactToolbarTitleLeadingInset
+    /// The app-owned inspector column: hairline divider, resizable width,
+    /// content below the top-bar band (the fixed corner toggle floats there)
+    /// with the column surface reaching the true window top.
+    private var inspectorColumn: some View {
+        SessionInspectorView(controller: controller, scratchpad: scratchpad)
+            .padding(.top, WindowChrome.headerHeight)
+            .frame(width: currentInspectorWidth)
+            .frame(maxHeight: .infinity, alignment: .top)
+            .background(theme.sidebarBackground)
+            // The column/content boundary hairline, with the resize grip
+            // straddling it.
+            .overlay(alignment: .leading) {
+                theme.separator
+                    .frame(width: 1)
+                    .frame(maxHeight: .infinity)
+            }
+            .overlay(alignment: .leading) { inspectorResizeHandle }
+    }
+
+    /// The divider's resize grip: an 8pt strip showing the horizontal-resize
+    /// cursor; drags adjust and persist the width (clamped like the native
+    /// inspector column).
+    private var inspectorResizeHandle: some View {
+        Color.clear
+            .frame(width: 8)
+            .frame(maxHeight: .infinity)
+            .contentShape(Rectangle())
+            .onHover { hovering in
+                if hovering {
+                    NSCursor.resizeLeftRight.push()
+                } else {
+                    NSCursor.pop()
+                }
+            }
+            .gesture(
+                DragGesture(minimumDistance: 1, coordinateSpace: .global)
+                    .onChanged { value in
+                        let start = inspectorDragStartWidth ?? currentInspectorWidth
+                        inspectorDragStartWidth = start
+                        liveInspectorWidth = min(
+                            max(start - value.translation.width, Self.inspectorMinWidth),
+                            Self.inspectorMaxWidth
+                        )
+                    }
+                    .onEnded { _ in
+                        if let liveInspectorWidth {
+                            inspectorWidth = Double(liveInspectorWidth)
+                        }
+                        liveInspectorWidth = nil
+                        inspectorDragStartWidth = nil
+                    }
+            )
+    }
+
+    private var currentInspectorWidth: CGFloat {
+        liveInspectorWidth ?? min(
+            max(CGFloat(inspectorWidth), Self.inspectorMinWidth),
+            Self.inspectorMaxWidth
+        )
+    }
+
+    /// The center group's "new terminal" +, clustered with the window's
+    /// other trailing icon buttons (native toolbars group their actions at
+    /// the trailing edge — Safari, Xcode) instead of floating after the tabs.
+    private var newTerminalButton: some View {
+        HeaderIconButton(systemImage: "plus", help: "New Terminal (⌘T)") {
+            let group = store.centerPaneGroup(for: session, project: project)
+            group.addTerminalPane()
+            // Defer until SwiftUI has mounted the new pane's view.
+            DispatchQueue.main.async { group.focusSelectedPane() }
+        }
+    }
+
+    private var scratchpadToggleButton: some View {
+        HeaderIconButton(systemImage: "sidebar.trailing", help: "Toggle Scratchpad (⌥⌘I)") {
+            toggleScratchpad()
+        }
     }
 
     private var compactInspectorWidth: CGFloat {
@@ -217,6 +261,9 @@ struct SessionContainerView: View {
     }
 
     private func toggleScratchpad() {
+        // NOTE: no withAnimation here — the system `.inspector` presentation
+        // manages its own motion, and a custom transaction makes it stall
+        // then snap open. (The transient drawer animates internally.)
         if panelLayout.docksInspector {
             scratchpad.toggle()
         } else {

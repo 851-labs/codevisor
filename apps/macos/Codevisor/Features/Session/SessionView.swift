@@ -13,7 +13,15 @@ struct SessionScreen: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.openSettings) private var openSettings
     @Bindable var controller: SessionController
+    /// The ⌘J bottom panel's pane group.
     var paneGroup: PaneGroupModel
+    /// The center pane group: the chat pane plus any terminals opened (or
+    /// dropped) beside it. Always visible — it IS the page content. Its tab
+    /// strip is hosted by the container in the window's top bar.
+    var centerGroup: PaneGroupModel
+    /// Cross-group tab dragging between the top-bar strip and the bottom
+    /// panel; owned by the container (which hosts the top-bar strip).
+    var dragCoordinator: PaneTabDragCoordinator
     @State private var isAtBottom = true
     @State private var autoFollow = true
     @State private var composerHeight: CGFloat = 96
@@ -27,21 +35,32 @@ struct SessionScreen: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            chatArea
+            centerContent
 
-            // The pane group (tab bar + selected pane) mounts only while the
-            // panel is open — no collapsed bar under the chat. ⌘J and
-            // View ▸ Toggle Bottom Panel bring it back; the bar's top edge is
-            // the resize handle.
+            // The bottom panel (tab bar + selected pane) mounts only while
+            // open. ⌘J and View ▸ Toggle Bottom Panel bring it back; the
+            // bar's top edge is the resize handle.
             if paneGroup.state.isVisible {
                 VStack(spacing: 0) {
-                    PaneGroupBar(group: paneGroup, onToggle: { togglePanes() })
+                    PaneGroupBar(
+                        group: paneGroup,
+                        dragCoordinator: dragCoordinator,
+                        // The bottom bar is the shortcuts' target while one
+                        // of its terminals holds keyboard focus.
+                        showsShortcutHints: paneGroup.hasFocusedPane,
+                        onToggle: { togglePanes() }
+                    )
                     PaneGroupContent(group: paneGroup)
                         .frame(height: paneGroup.state.height)
                 }
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
+        // The floating tab that follows the pointer while a tab is dragged
+        // between the two bars (each bar clips its own tabs, so the traveling
+        // tab is drawn up here above everything — extending into the top bar,
+        // where the center strip lives).
+        .overlay { dragGhostOverlay.ignoresSafeArea(edges: .top) }
         .animation(Motion.panel(reduceMotion: reduceMotion), value: paneGroup.state.isVisible)
         .focusedSceneValue(\.terminalToggle, TerminalToggleAction(sessionId: paneGroup.sessionId) {
             togglePanes()
@@ -70,11 +89,26 @@ struct SessionScreen: View {
             autoFollow = controller.scrollState?.followMode.followsLatest ?? true
             isAtBottom = controller.scrollState?.isAtBottom ?? true
             focus.paneGroup = paneGroup
+            // Tab commands pressed while the chat has focus act on the
+            // center group.
+            focus.centerGroup = centerGroup
             // ⌘J from inside a focused terminal routes here (the menu command
             // doesn't fire reliably while an AppKit view is first responder).
             paneGroup.requestToggle = { togglePanes() }
-            // ⌘W closing the last tab collapses the group; focus returns here.
+            centerGroup.requestToggle = { togglePanes() }
+            // ⌘W closing the last tab collapses the group; focus returns
+            // here. Also the chat pane's focus target.
             paneGroup.requestComposerFocus = { focus.focusComposer() }
+            centerGroup.requestComposerFocus = { focus.focusComposer() }
+            // Dropping a tab on the other bar moves the pane (and its live
+            // terminal surface) between the session's groups.
+            dragCoordinator.onTransfer = { paneId, source, destination, index in
+                let sourceGroup = source == .bottom ? paneGroup : centerGroup
+                let destinationGroup = destination == .bottom ? paneGroup : centerGroup
+                guard let (descriptor, livePane) = sourceGroup.extractPane(id: paneId) else { return }
+                destinationGroup.adoptPane(descriptor, live: livePane, at: index)
+                DispatchQueue.main.async { destinationGroup.focusSelectedPane() }
+            }
             focus.startTypeToFocus()
             if attachmentImages == nil {
                 attachmentImages = AttachmentImageStore { [weak controller] fileId in
@@ -90,6 +124,49 @@ struct SessionScreen: View {
         }
         .environment(\.attachmentImages, attachmentImages)
         .attachmentDropTarget(controller)
+    }
+
+    /// Whether the center group is showing the chat pane (vs a terminal tab).
+    private var centerShowsChat: Bool {
+        guard let selected = centerGroup.state.selectedPane else { return true }
+        return selected.kind == .chat
+    }
+
+    /// The center group's content. The chat stays mounted across tab switches
+    /// (hidden, not torn down — its transcript scroll/streaming machinery and
+    /// composer state must survive), while terminal tabs overlay it through
+    /// the ordinary pane content host.
+    private var centerContent: some View {
+        ZStack {
+            chatArea
+                .opacity(centerShowsChat ? 1 : 0)
+                .allowsHitTesting(centerShowsChat)
+                .accessibilityHidden(!centerShowsChat)
+            if !centerShowsChat {
+                PaneGroupContent(group: centerGroup)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // The focus monitors must not steal keystrokes/clicks for the hidden
+        // chat while a terminal tab is on top of it.
+        .onChange(of: centerShowsChat, initial: true) { _, showsChat in
+            focus.chatContentActive = showsChat
+        }
+    }
+
+    /// See `PaneTabDragGhost`: the tab replica riding the pointer during a
+    /// cross-group drag.
+    private var dragGhostOverlay: some View {
+        GeometryReader { proxy in
+            if let drag = dragCoordinator.active {
+                PaneTabDragGhost(name: drag.name, isAgentOwned: drag.isAgentOwned)
+                    .position(
+                        x: drag.location.x - proxy.frame(in: .global).minX,
+                        y: drag.location.y - proxy.frame(in: .global).minY
+                    )
+            }
+        }
+        .allowsHitTesting(false)
     }
 
     private var chatArea: some View {
@@ -789,23 +866,31 @@ private struct ComposerTranscriptMask: View {
 #Preview("Conversation") {
     SessionScreen(
         controller: .preview(model: .preview()),
-        paneGroup: previewPaneGroup()
+        paneGroup: previewPaneGroup(placement: .bottom),
+        centerGroup: previewPaneGroup(placement: .center),
+        dragCoordinator: PaneTabDragCoordinator()
     )
     .frame(width: 900, height: 680)
 }
 
 #Preview("With terminal") {
-    let group = previewPaneGroup()
+    let group = previewPaneGroup(placement: .bottom)
     group.toggle()
-    return SessionScreen(controller: .preview(model: .preview()), paneGroup: group)
-        .frame(width: 900, height: 680)
+    return SessionScreen(
+        controller: .preview(model: .preview()),
+        paneGroup: group,
+        centerGroup: previewPaneGroup(placement: .center),
+        dragCoordinator: PaneTabDragCoordinator()
+    )
+    .frame(width: 900, height: 680)
 }
 
-private func previewPaneGroup() -> PaneGroupModel {
+private func previewPaneGroup(placement: PaneGroupPlacement) -> PaneGroupModel {
     let project = Project.fromFolder(URL(fileURLWithPath: "/tmp/shepherd"))
     let session = ChatSession(projectId: project.id, title: "Preview")
     return PaneGroupModel(
         sessionId: session.id,
+        placement: placement,
         repository: DefaultPaneGroupRepository(store: InMemoryStore()),
         makeContext: { descriptor in
             PaneContext(

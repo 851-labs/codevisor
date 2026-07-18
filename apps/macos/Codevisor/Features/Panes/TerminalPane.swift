@@ -19,6 +19,10 @@ final class TerminalPane: Pane, Identifiable {
     /// Set by the pane group; forwarded from the surface's keyboard shortcuts.
     @ObservationIgnored var onGroupCommand: ((PaneGroupCommand) -> Void)?
 
+    /// Set by the pane group; forwarded from the surface's first-responder
+    /// transitions.
+    @ObservationIgnored var onFocusChanged: ((Bool) -> Void)?
+
     @ObservationIgnored private var _surface: (any TerminalSurface)?
 
     /// Bumped whenever the surface is replaced (Restart Terminal). Observed by
@@ -42,6 +46,7 @@ final class TerminalPane: Pane, Identifiable {
         let surface = TerminalRuntime.factory.makeSurface(descriptor: descriptor)
         surface.onRestartRequest = { [weak self] in self?.restart() }
         surface.onPaneCommand = { [weak self] command in self?.onGroupCommand?(command) }
+        surface.onFocusChanged = { [weak self] focused in self?.onFocusChanged?(focused) }
         _surface = surface
         return surface
     }

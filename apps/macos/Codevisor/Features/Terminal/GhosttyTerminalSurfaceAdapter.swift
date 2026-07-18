@@ -19,6 +19,25 @@ private final class CodevisorGhosttySurfaceView: Ghostty.SurfaceView {
     var onRestartRequest: (() -> Void)?
     /// Set by the adapter; fired for pane-group shortcuts while focused.
     var onPaneCommand: ((PaneGroupCommand) -> Void)?
+    /// Set by the adapter; fired when this surface gains/loses keyboard
+    /// focus (first responder).
+    var onFocusChanged: ((Bool) -> Void)?
+
+    override func becomeFirstResponder() -> Bool {
+        let accepted = super.becomeFirstResponder()
+        if accepted {
+            onFocusChanged?(true)
+        }
+        return accepted
+    }
+
+    override func resignFirstResponder() -> Bool {
+        let accepted = super.resignFirstResponder()
+        if accepted {
+            onFocusChanged?(false)
+        }
+        return accepted
+    }
 
     override func setFrameSize(_ newSize: NSSize) {
         super.setFrameSize(newSize)
@@ -131,6 +150,11 @@ final class GhosttyTerminalSurface: TerminalSurface {
     var onPaneCommand: ((PaneGroupCommand) -> Void)? {
         get { surfaceView?.onPaneCommand }
         set { surfaceView?.onPaneCommand = newValue }
+    }
+
+    var onFocusChanged: ((Bool) -> Void)? {
+        get { surfaceView?.onFocusChanged }
+        set { surfaceView?.onFocusChanged = newValue }
     }
 
     init(descriptor: TerminalLaunchDescriptor) {

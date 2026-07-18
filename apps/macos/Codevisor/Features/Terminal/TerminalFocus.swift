@@ -15,6 +15,14 @@ final class TerminalFocusController {
     /// composer.
     weak var transcriptView: NSView?
     weak var paneGroup: PaneGroupModel?
+    /// The session's center pane group: tab commands (⌘T/⌘W/⌘1-9/⌘⌥←→)
+    /// pressed while the chat has focus act on it, mirroring how a focused
+    /// terminal routes the same shortcuts to its own group.
+    weak var centerGroup: PaneGroupModel?
+    /// False while a center-group terminal tab covers the chat: the hidden
+    /// composer/transcript must not steal keystrokes or clicks meant for the
+    /// terminal on top of them.
+    var chatContentActive = true
     private var typeToFocusMonitor: Any?
 
     func apply(_ target: SessionFocusTarget) {
@@ -45,11 +53,63 @@ final class TerminalFocusController {
         ) { [weak self] event in
             guard let self else { return event }
             switch event.type {
-            case .keyDown: return self.handleTypeToFocus(event)
+            case .keyDown:
+                if self.handleTabCommand(event) { return nil }
+                return self.handleTypeToFocus(event)
             case .leftMouseDown: return self.handleTranscriptClick(event)
             default: return event
             }
         }
+    }
+
+    /// Tab commands while the chat (or anything that isn't a terminal) holds
+    /// focus, acting on the center group — the same shortcuts a focused
+    /// terminal routes to its own group via its key-equivalent handler
+    /// (GhosttyTerminalSurfaceAdapter), whose matching this mirrors.
+    private func handleTabCommand(_ event: NSEvent) -> Bool {
+        guard let centerGroup,
+              let window = composerTextView?.window,
+              event.window === window,
+              window.isKeyWindow,
+              window.attachedSheet == nil,
+              NSApp.modalWindow == nil,
+              // Focused terminals (either group) route their own commands.
+              !(window.firstResponder is Ghostty.SurfaceView)
+        else { return false }
+        // Arrow keys carry implicit .function/.numericPad flags — strip them
+        // or the exact-modifier comparisons below never match.
+        let mods = event.modifierFlags
+            .intersection(.deviceIndependentFlagsMask)
+            .subtracting([.function, .numericPad])
+        if mods == [.command, .option] {
+            if event.specialKey == .leftArrow {
+                centerGroup.handleCommand(.previousTab)
+                return true
+            }
+            if event.specialKey == .rightArrow {
+                centerGroup.handleCommand(.nextTab)
+                return true
+            }
+        }
+        if mods == .command, let chars = event.charactersIgnoringModifiers?.lowercased() {
+            if chars == "t" {
+                centerGroup.handleCommand(.newTab)
+                return true
+            }
+            if chars == "w" {
+                // Claim ⌘W only when it can close a tab; the chat tab is not
+                // closable, so the window's normal Close applies then.
+                guard let selected = centerGroup.state.selectedPane,
+                      selected.isClosable else { return false }
+                centerGroup.handleCommand(.closeTab)
+                return true
+            }
+            if chars.count == 1, let digit = Int(chars), (1...9).contains(digit) {
+                centerGroup.handleCommand(.selectTab(digit - 1))
+                return true
+            }
+        }
+        return false
     }
 
     func stopTypeToFocus() {
@@ -59,7 +119,8 @@ final class TerminalFocusController {
     }
 
     private func handleTypeToFocus(_ event: NSEvent) -> NSEvent? {
-        guard let textView = composerTextView,
+        guard chatContentActive,
+              let textView = composerTextView,
               textView.isEditable,
               let window = textView.window,
               event.window === window,
@@ -110,7 +171,8 @@ final class TerminalFocusController {
     /// behavior. If the first responder changed at all as a result of the
     /// click, the click "spent" its focus and is left alone.
     private func handleTranscriptClick(_ event: NSEvent) -> NSEvent? {
-        guard let transcriptView,
+        guard chatContentActive,
+              let transcriptView,
               let window = transcriptView.window,
               event.window === window,
               window.attachedSheet == nil,

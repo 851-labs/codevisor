@@ -12,8 +12,15 @@ import CodevisorCore
 @Observable
 final class PaneGroupModel: Identifiable {
     let sessionId: UUID
+    /// Which of the session's groups this is: the center group hosting the
+    /// chat, or the ⌘J bottom panel.
+    let placement: PaneGroupPlacement
     private(set) var state: PaneGroupState
+    /// Whether keyboard focus is inside one of this group's panes (a focused
+    /// terminal surface). Drives the bar's ⌘N shortcut hints.
+    private(set) var hasFocusedPane = false
 
+    @ObservationIgnored private var focusedPaneIds: Set<UUID> = []
     @ObservationIgnored private var live: [UUID: any Pane] = [:]
     @ObservationIgnored private let repository: any PaneGroupRepository
     @ObservationIgnored private let makeContext: (PaneDescriptorState) -> PaneContext
@@ -21,27 +28,33 @@ final class PaneGroupModel: Identifiable {
     /// handoff (the screen owns the composer/terminal focus controller).
     @ObservationIgnored var requestToggle: (() -> Void)?
     /// Set by the session screen: moves keyboard focus to the composer (used
-    /// when closing the last tab collapses the group).
+    /// when closing the last tab collapses the group, and as the chat pane's
+    /// focus target).
     @ObservationIgnored var requestComposerFocus: (() -> Void)?
     /// Debounces height persistence during drags (state itself updates live).
     @ObservationIgnored private var pendingHeightSave: Task<Void, Never>?
 
     init(
         sessionId: UUID,
+        placement: PaneGroupPlacement = .bottom,
         repository: any PaneGroupRepository,
         makeContext: @escaping (PaneDescriptorState) -> PaneContext
     ) {
         self.sessionId = sessionId
+        self.placement = placement
         self.repository = repository
         self.makeContext = makeContext
-        if let stored = repository.load(sessionId: sessionId) {
+        if let stored = repository.load(sessionId: sessionId, placement: placement) {
             self.state = stored
         } else {
             // Persist immediately so pane 1's legacy terminal key is pinned
             // before any surface attaches.
-            let initial = PaneGroupState.initial(sessionId: sessionId)
+            let initial: PaneGroupState = switch placement {
+            case .bottom: .initial(sessionId: sessionId)
+            case .center: .centerInitial(sessionId: sessionId)
+            }
             self.state = initial
-            repository.save(initial, sessionId: sessionId)
+            repository.save(initial, sessionId: sessionId, placement: placement)
         }
     }
 
@@ -55,10 +68,29 @@ final class PaneGroupModel: Identifiable {
         switch descriptor.kind {
         case .terminal:
             pane = TerminalPane(context: makeContext(descriptor))
+        case .chat:
+            let chat = ChatPane(id: descriptor.id)
+            chat.onFocus = { [weak self] in self?.requestComposerFocus?() }
+            pane = chat
         }
         pane.onGroupCommand = { [weak self] command in self?.handleCommand(command) }
+        pane.onFocusChanged = { [weak self] focused in
+            self?.paneFocusChanged(id: descriptor.id, focused: focused)
+        }
         live[descriptor.id] = pane
         return pane
+    }
+
+    private func paneFocusChanged(id: UUID, focused: Bool) {
+        if focused {
+            focusedPaneIds.insert(id)
+        } else {
+            focusedPaneIds.remove(id)
+        }
+        let hasFocus = !focusedPaneIds.isEmpty
+        if hasFocusedPane != hasFocus {
+            hasFocusedPane = hasFocus
+        }
     }
 
     /// Keyboard shortcuts forwarded from a focused pane: ⌘⌥←/→ navigate
@@ -84,9 +116,9 @@ final class PaneGroupModel: Identifiable {
         case .togglePanel:
             requestToggle?()
         case .closeTab:
-            guard let selected = state.selectedPaneId else { return }
+            guard let selected = state.selectedPane, selected.isClosable else { return }
             let wasLastTab = state.panes.count == 1
-            closePane(id: selected)
+            closePane(id: selected.id)
             if wasLastTab {
                 // The group collapsed with the tab; hand focus back.
                 requestComposerFocus?()
@@ -145,9 +177,11 @@ final class PaneGroupModel: Identifiable {
     }
 
     /// Closes a tab: fires the pane's willDelete hook (kills its backing
-    /// resources) and moves selection per the state rules.
+    /// resources) and moves selection per the state rules. No-op for
+    /// non-closable panes (the chat).
     func closePane(id: UUID) {
-        guard let descriptor = state.panes.first(where: { $0.id == id }) else { return }
+        guard let descriptor = state.panes.first(where: { $0.id == id }),
+              descriptor.isClosable else { return }
         // Instantiate if needed: a never-shown pane may still own a server
         // shell from a previous app run that willDelete must clean up.
         let closing = pane(for: descriptor)
@@ -205,6 +239,49 @@ final class PaneGroupModel: Identifiable {
         persist()
     }
 
+    // MARK: - Cross-group transfer
+
+    /// Removes a pane for adoption by another group, WITHOUT firing willDelete
+    /// (its backing shell keeps running — the pane is moving, not dying).
+    /// Returns the descriptor plus the live pane (nil if never instantiated).
+    /// Non-closable panes (the chat) never leave their group.
+    func extractPane(id: UUID) -> (descriptor: PaneDescriptorState, live: (any Pane)?)? {
+        guard let descriptor = state.panes.first(where: { $0.id == id }),
+              descriptor.isClosable else { return nil }
+        let livePane = live.removeValue(forKey: id)
+        paneFocusChanged(id: id, focused: false)
+        state.closePane(id: id)
+        persist()
+        if state.isVisible, let selected = selectedPane {
+            selected.visibilityChanged(true)
+        }
+        return (descriptor, livePane)
+    }
+
+    /// Adopts a pane extracted from another group at `index` (clamped),
+    /// selecting it. The live pane object carries over so its content (the
+    /// terminal's cached surface) survives the move without reattaching.
+    func adoptPane(
+        _ descriptor: PaneDescriptorState,
+        live livePane: (any Pane)?,
+        at index: Int
+    ) {
+        let previous = state.isVisible ? selectedPane : nil
+        state.insertPane(descriptor, at: index)
+        persist()
+        if let livePane {
+            livePane.onGroupCommand = { [weak self] command in self?.handleCommand(command) }
+            livePane.onFocusChanged = { [weak self] focused in
+                self?.paneFocusChanged(id: descriptor.id, focused: focused)
+            }
+            live[descriptor.id] = livePane
+        }
+        if let previous, previous.id != descriptor.id {
+            previous.visibilityChanged(false)
+        }
+        selectedPane?.visibilityChanged(true)
+    }
+
     func setHeight(_ height: CGFloat, isFinal: Bool = false) {
         state.setHeight(height)
         if isFinal {
@@ -232,6 +309,6 @@ final class PaneGroupModel: Identifiable {
     }
 
     private func persist() {
-        repository.save(state, sessionId: sessionId)
+        repository.save(state, sessionId: sessionId, placement: placement)
     }
 }

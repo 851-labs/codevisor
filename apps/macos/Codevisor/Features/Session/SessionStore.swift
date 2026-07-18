@@ -35,6 +35,7 @@ final class SessionStore {
     /// checklist survives navigation and controller eviction.
     @ObservationIgnored private var todoCompletionStates: [SessionKey: Bool] = [:]
     private var paneGroups: [SessionKey: PaneGroupModel] = [:]
+    private var centerPaneGroups: [SessionKey: PaneGroupModel] = [:]
     private var scratchpads: [SessionKey: ScratchpadModel] = [:]
     /// One live unsent new-chat draft per machine, mirrored to disk by
     /// `ComposerDraftStore`. A controller permanently owns the server client
@@ -166,15 +167,36 @@ final class SessionStore {
         environment.composerDrafts.saveDraft(controller.draftSnapshot(), forServer: serverId)
     }
 
-    /// Returns the cached pane group for a session, creating it on first use.
-    /// Mirrors `controller(for:project:)` so panes (and their terminals)
-    /// survive panel close + navigation away and back.
+    /// Returns the cached bottom-panel pane group for a session, creating it
+    /// on first use. Mirrors `controller(for:project:)` so panes (and their
+    /// terminals) survive panel close + navigation away and back.
     func paneGroup(for session: ChatSession, project: Project) -> PaneGroupModel {
         let key = SessionKey(session)
         if let existing = paneGroups[key] { return existing }
+        let group = makePaneGroup(for: session, project: project, placement: .bottom)
+        paneGroups[key] = group
+        return group
+    }
+
+    /// Returns the cached center pane group for a session (the group hosting
+    /// the chat pane plus any center terminals), creating it on first use.
+    func centerPaneGroup(for session: ChatSession, project: Project) -> PaneGroupModel {
+        let key = SessionKey(session)
+        if let existing = centerPaneGroups[key] { return existing }
+        let group = makePaneGroup(for: session, project: project, placement: .center)
+        centerPaneGroups[key] = group
+        return group
+    }
+
+    private func makePaneGroup(
+        for session: ChatSession,
+        project: Project,
+        placement: PaneGroupPlacement
+    ) -> PaneGroupModel {
         let machine = environment.machines.machine(for: session.serverId) ?? CodevisorMachine.local
-        let group = PaneGroupModel(
+        return PaneGroupModel(
             sessionId: session.id,
+            placement: placement,
             repository: environment.paneGroups,
             makeContext: { [weak projectList = environment.projectList] descriptor in
                 // Panes are built lazily, so this cached closure can outlive
@@ -197,8 +219,6 @@ final class SessionStore {
                 )
             }
         )
-        paneGroups[key] = group
-        return group
     }
 
     /// Returns the cached scratchpad for a session, creating it (seeded from
@@ -417,6 +437,8 @@ final class SessionStore {
         if controllers[key] === controller { controllers[key] = nil }
         paneGroups[key]?.detachAll()
         paneGroups[key] = nil
+        centerPaneGroups[key]?.detachAll()
+        centerPaneGroups[key] = nil
         scratchpads[key]?.flush()
         scratchpads[key] = nil
         unreadCounts[key] = nil
@@ -435,6 +457,8 @@ final class SessionStore {
         controllers[key] = nil
         paneGroups[key]?.detachAll()
         paneGroups[key] = nil
+        centerPaneGroups[key]?.detachAll()
+        centerPaneGroups[key] = nil
         scratchpads[key]?.flush()
         scratchpads[key] = nil
         unreadCounts[key] = nil
