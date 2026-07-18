@@ -204,10 +204,14 @@ private struct SplitBranchView: View {
     @State private var liveFractions: [Double]?
     @State private var dragStartFractions: [Double]?
 
-    /// The smallest a child may shrink, in points.
+    /// The smallest a child may shrink along this branch's axis, in points.
     /// Shared with the drop coordinator (which hides split previews whose
     /// halves would fall below it).
-    private static let minChildLength = PaneTabDragCoordinator.minChildLength
+    private var minChildLength: CGFloat {
+        orientation == .horizontal
+            ? PaneTabDragCoordinator.minChildWidth
+            : PaneTabDragCoordinator.minChildHeight
+    }
 
     private var fractions: [Double] { liveFractions ?? children.map(\.fraction) }
 
@@ -222,7 +226,7 @@ private struct SplitBranchView: View {
             let current = SplitNode.flooredFractions(
                 fractions,
                 minFraction: contentLength > 0
-                    ? Double(Self.minChildLength / contentLength) : 0
+                    ? Double(minChildLength / contentLength) : 0
             )
 
             layout(isHorizontal: isHorizontal) {
@@ -261,12 +265,37 @@ private struct SplitBranchView: View {
                     .clipped()
 
                     if index < children.count - 1 {
-                        divider(
-                            afterIndex: index,
-                            isHorizontal: isHorizontal,
-                            contentLength: contentLength
-                        )
+                        // Visual hairline only — the GRIP lives in the
+                        // branch-level overlay below, where its 13pt strip
+                        // is REAL layout. As a subview overhanging this 1pt
+                        // separator it would show the resize cursor
+                        // (tracking rects are window-level) while clicks in
+                        // the overhang hit-tested into the neighboring pane.
+                        theme.separator
+                            .frame(
+                                width: isHorizontal ? 1 : nil,
+                                height: isHorizontal ? nil : 1
+                            )
                     }
+                }
+            }
+            .overlay(alignment: .topLeading) {
+                ForEach(0..<max(children.count - 1, 0), id: \.self) { index in
+                    let cumulative = current[0...index].reduce(0, +)
+                    let gripCenter = contentLength * CGFloat(cumulative) + CGFloat(index) + 0.5
+                    grip(
+                        afterIndex: index,
+                        isHorizontal: isHorizontal,
+                        contentLength: contentLength
+                    )
+                    .frame(
+                        width: isHorizontal ? 13 : geometry.size.width,
+                        height: isHorizontal ? geometry.size.height : 13
+                    )
+                    .offset(
+                        x: isHorizontal ? gripCenter - 6.5 : 0,
+                        y: isHorizontal ? 0 : gripCenter - 6.5
+                    )
                 }
             }
         }
@@ -284,60 +313,46 @@ private struct SplitBranchView: View {
         }
     }
 
-    /// The hairline between children, with an invisible 13pt grip straddling
-    /// it. The resize cursor comes from an AppKit CURSOR RECT (not SwiftUI
-    /// hover push/pop): terminal panes constantly re-assert their I-beam
-    /// through AppKit's cursor machinery, and only a competing cursor rect
-    /// reliably wins at the boundary.
-    private func divider(
+    /// The invisible 13pt grip straddling a divider, hosted at branch level
+    /// (its strip is real layout there, so hit-testing matches the cursor's
+    /// tracking rect: wherever the resize cursor shows, the grab works).
+    private func grip(
         afterIndex index: Int,
         isHorizontal: Bool,
         contentLength: CGFloat
     ) -> some View {
-        theme.separator
-            .frame(
-                width: isHorizontal ? 1 : nil,
-                height: isHorizontal ? nil : 1
-            )
-            .overlay {
-                SplitDividerGrip(
-                    isHorizontal: isHorizontal,
-                    onChanged: { translation in
-                        let start = dragStartFractions ?? children.map(\.fraction)
-                        dragStartFractions = start
-                        guard contentLength > 0 else { return }
-                        let minFraction = Double(Self.minChildLength / contentLength)
-                        var delta = Double(translation / contentLength)
-                        // Clamp so neither neighbor collapses below the
-                        // minimum.
-                        delta = max(delta, minFraction - start[index])
-                        delta = min(delta, start[index + 1] - minFraction)
-                        var updated = start
-                        updated[index] = start[index] + delta
-                        updated[index + 1] = start[index + 1] - delta
-                        liveFractions = updated
-                        replaceLiveNode(.split(
-                            orientation: orientation,
-                            children: zip(children, updated).map {
-                                SplitChild(fraction: $1, node: $0.node)
-                            }
-                        ))
-                    },
-                    onEnded: {
-                        if let liveFractions {
-                            let updated = zip(children, liveFractions).map {
-                                SplitChild(fraction: $1, node: $0.node)
-                            }
-                            replaceNode(.split(orientation: orientation, children: updated))
-                        }
-                        liveFractions = nil
-                        dragStartFractions = nil
+        SplitDividerGrip(
+            isHorizontal: isHorizontal,
+            onChanged: { translation in
+                let start = dragStartFractions ?? children.map(\.fraction)
+                dragStartFractions = start
+                guard contentLength > 0 else { return }
+                let minFraction = Double(minChildLength / contentLength)
+                var delta = Double(translation / contentLength)
+                // Clamp so neither neighbor collapses below the minimum.
+                delta = max(delta, minFraction - start[index])
+                delta = min(delta, start[index + 1] - minFraction)
+                var updated = start
+                updated[index] = start[index] + delta
+                updated[index + 1] = start[index + 1] - delta
+                liveFractions = updated
+                replaceLiveNode(.split(
+                    orientation: orientation,
+                    children: zip(children, updated).map {
+                        SplitChild(fraction: $1, node: $0.node)
                     }
-                )
-                .frame(
-                    width: isHorizontal ? 13 : nil,
-                    height: isHorizontal ? nil : 13
-                )
+                ))
+            },
+            onEnded: {
+                if let liveFractions {
+                    let updated = zip(children, liveFractions).map {
+                        SplitChild(fraction: $1, node: $0.node)
+                    }
+                    replaceNode(.split(orientation: orientation, children: updated))
+                }
+                liveFractions = nil
+                dragStartFractions = nil
             }
+        )
     }
 }

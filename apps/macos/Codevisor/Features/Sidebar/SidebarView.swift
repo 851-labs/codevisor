@@ -177,11 +177,23 @@ struct SidebarView: View {
         return workspaces
             .map { workspace -> (item: SidebarWorkspaceListItem, rank: Int, created: Date) in
                 let primary = workspace.chatSessionIds.lazy.compactMap { sessionsById[$0] }.first
+                // A CHAT-LESS workspace (every chat closed/archived) stays
+                // openable through any session still routed to it by the
+                // grow-only session index — archived ones included.
+                let routingSession = primary?.session ?? list.sessions.first(where: {
+                    $0.serverId == serverId
+                        && environment.workspaces.workspaceId(forSession: $0.id) == workspace.id
+                })
+                let routingProject = primary?.project ?? routingSession.flatMap { fallback in
+                    list.projects.first {
+                        $0.serverId == serverId && $0.id == fallback.projectId
+                    }
+                }
                 return (
                     SidebarWorkspaceListItem(
                         workspace: workspace,
-                        primarySession: primary?.session,
-                        project: primary?.project
+                        primarySession: routingSession,
+                        project: routingProject
                     ),
                     primary.flatMap { sessionRank[$0.session.id] } ?? Int.max,
                     workspace.createdAt

@@ -133,6 +133,13 @@ struct SessionContainerView: View {
                 // it's already registered, else the moment its (possibly
                 // later-laid-out) pane registers it.
                 sessionFocus.requestComposerFocus(forChat: session.id)
+            } else if let firstLeaf = store.workspace(for: session, project: project)
+                .centerTree.allGroups.first?.id {
+                // A CHAT-LESS workspace (every chat closed/archived; routed
+                // here through the grow-only session index): the first
+                // group takes over as the keyboard target.
+                _ = configuredCenterModel(leafId: firstLeaf)
+                activateLeaf(firstLeaf)
             }
             // Cross-group drops: bar inserts, content joins, and splits.
             paneDragCoordinator.onResolve = { paneId, source, resolution in
@@ -310,17 +317,6 @@ struct SessionContainerView: View {
             }
             // Closing a group's last tab dissolves the group.
             dissolveIfEmpty(leafId: leafId)
-        }
-        // Keep-one-chat anchor: an established chat may close only while
-        // another established chat remains SOMEWHERE in the workspace (the
-        // anchor keeps the workspace routable). Group state can't see other
-        // groups, so the rule lives here, against repository truth.
-        model.establishedChatClosePolicy = { descriptor in
-            store.workspace(for: session, project: project).centerTree.allGroups
-                .flatMap(\.state.panes)
-                .contains {
-                    $0.kind == .chat && $0.chatSessionId != nil && $0.id != descriptor.id
-                }
         }
         // A lone New Tab placeholder's close dissolves its group — possible
         // whenever the workspace has other groups.

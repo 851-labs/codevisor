@@ -41,11 +41,6 @@ final class PaneGroupModel: Identifiable {
     /// layer cleans up per-pane resources (draft controllers) and archives
     /// closed established chats' sessions.
     @ObservationIgnored var onPaneClosed: ((PaneDescriptorState) -> Void)?
-    /// Workspace-wide close rule for ESTABLISHED chat panes (group state
-    /// can't see other groups): the container answers "may this chat leave?"
-    /// — false for the workspace's last chat, which anchors its routing.
-    /// Nil (previews, bottom panel) falls back to the group-local rules.
-    @ObservationIgnored var establishedChatClosePolicy: ((PaneDescriptorState) -> Bool)?
     /// Whether this group may dissolve out of the workspace (i.e. other
     /// groups exist). Gates closing a LONE New Tab placeholder — its close
     /// IS a dissolve, and in the workspace's last group it would just
@@ -320,14 +315,13 @@ final class PaneGroupModel: Identifiable {
     }
 
     /// Whether a tab may close: the group-local state rules plus the
-    /// container's workspace-wide policies (chat anchor; lone-placeholder
-    /// dissolve).
+    /// container's workspace-wide policy (lone-placeholder dissolve). Chats
+    /// close like any tab — closing archives the session; a workspace with
+    /// no chats left just shows its New Tab placeholder.
     func canClose(id: UUID) -> Bool {
         guard state.canClosePane(id: id),
               let descriptor = state.panes.first(where: { $0.id == id }) else { return false }
         switch descriptor.kind {
-        case .chat where descriptor.chatSessionId != nil:
-            return establishedChatClosePolicy?(descriptor) ?? true
         case .newTab where state.panes.count == 1:
             // A lone placeholder IS its group's empty state: closing it
             // dissolves the group — allowed only while other groups exist.

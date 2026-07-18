@@ -18,33 +18,54 @@ struct NewTabPageView: View {
     var onNewChat: (() -> Void)? = nil
 
     var body: some View {
-        VStack(spacing: 24) {
-            Text("New tab")
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(theme.textSecondary)
-            HStack(spacing: 14) {
-                NewTabOptionCard(
-                    title: "New Chat",
-                    subtitle: "Start another chat in this workspace",
-                    systemImage: "text.bubble"
-                ) {
-                    if let onNewChat {
-                        onNewChat()
-                    } else {
-                        group?.convertNewTabPane(id: paneId, to: .chat)
+        // Scrolls when the pane is too short for the (possibly stacked)
+        // cards — fixed-height content would otherwise fight the group's
+        // layout and squeeze the tab bar. Centered while it fits.
+        GeometryReader { geometry in
+            ScrollView {
+                VStack(spacing: 24) {
+                    Text("New tab")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(theme.textSecondary)
+                    // Side by side while the pane is wide enough; a narrow
+                    // split column stacks the cards instead of clipping.
+                    ViewThatFits(in: .horizontal) {
+                        HStack(spacing: 14) {
+                            optionCards
+                        }
+                        VStack(spacing: 14) {
+                            optionCards
+                        }
                     }
                 }
-                NewTabOptionCard(
-                    title: "New Terminal",
-                    subtitle: "Open a shell in the workspace directory",
-                    systemImage: "terminal"
-                ) {
-                    group?.convertNewTabPane(id: paneId, to: .terminal)
-                }
+                .padding(20)
+                .frame(maxWidth: .infinity)
+                .frame(minHeight: geometry.size.height)
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(theme.paneBackground)
+    }
+
+    @ViewBuilder
+    private var optionCards: some View {
+        NewTabOptionCard(
+            title: "New Chat",
+            subtitle: "Start another chat in this workspace",
+            systemImage: "text.bubble"
+        ) {
+            if let onNewChat {
+                onNewChat()
+            } else {
+                group?.convertNewTabPane(id: paneId, to: .chat)
+            }
+        }
+        NewTabOptionCard(
+            title: "New Terminal",
+            subtitle: "Open a shell in the workspace directory",
+            systemImage: "terminal"
+        ) {
+            group?.convertNewTabPane(id: paneId, to: .terminal)
+        }
     }
 }
 

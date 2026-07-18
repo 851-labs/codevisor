@@ -74,10 +74,11 @@ final class PaneTabDragCoordinator {
 
     /// How far beyond a bar's frame the pointer still counts as "over" it.
     private static let dropSlop: CGFloat = 12
-    /// The smallest a split child may be (shared with the branch view's
-    /// divider clamps): edges whose split would produce panes below this
-    /// aren't offered at all.
-    static let minChildLength: CGFloat = 160
+    /// The smallest a split child may be, per axis (shared with the branch
+    /// view's divider clamps): edges whose split would produce panes below
+    /// these aren't offered at all.
+    static let minChildWidth: CGFloat = 320
+    static let minChildHeight: CGFloat = 280
 
     private(set) var active: ActiveDrag?
     /// ⇧ held during the drag: content drops JOIN the hovered group instead
@@ -270,8 +271,8 @@ final class PaneTabDragCoordinator {
     /// no split at all).
     private func nearestEdge(in frame: CGRect, location: CGPoint) -> SplitEdge? {
         guard frame.width > 0, frame.height > 0 else { return nil }
-        let fitsHorizontal = (frame.width - 1) / 2 >= Self.minChildLength
-        let fitsVertical = (frame.height - 1) / 2 >= Self.minChildLength
+        let fitsHorizontal = (frame.width - 1) / 2 >= Self.minChildWidth
+        let fitsVertical = (frame.height - 1) / 2 >= Self.minChildHeight
         let u = Double((location.x - frame.minX) / frame.width)
         let v = Double((location.y - frame.minY) / frame.height)
         var candidates: [(SplitEdge, Double)] = []

@@ -11,8 +11,8 @@ public enum SessionFocusTarget: Sendable, Equatable {
 /// in the app layer.
 public enum PaneKind: String, Codable, Sendable {
     case terminal
-    /// The session's chat itself: transcript + composer. Lives in the center
-    /// group; exactly one per session, not closable.
+    /// A chat session's transcript + composer. Lives in center groups;
+    /// closing its tab archives the session.
     case chat
     /// The Chrome-style placeholder spawned when a group's last real pane
     /// closes: the empty state IS a tab (the strip never lies about what's
@@ -49,10 +49,10 @@ public struct PaneDescriptorState: Identifiable, Codable, Sendable, Equatable {
     /// deletes it.
     public var chatSessionId: UUID?
 
-    /// Every pane moves between groups alike — tabs are tabs (the rules
-    /// with real stakes are the CLOSE rules: the workspace's chat anchor,
-    /// the lone-placeholder dissolve — see `canClosePane` + the model's
-    /// policies). A move is never a close, so nothing gates it.
+    /// Every pane moves between groups alike — tabs are tabs (the only
+    /// rule with real stakes is the CLOSE rule: a lone placeholder only
+    /// closes when its group can dissolve — see `canClosePane` + the
+    /// model's policy). A move is never a close, so nothing gates it.
     public var isMovable: Bool { true }
 
     public init(
