@@ -457,6 +457,11 @@ struct ChatScreen: View {
                         focus.registerComposer(textView, forChat: chatId)
                     }
                 },
+                // The question picker DOES take focus on mount (unlike the
+                // composer registration above): its mount is an event — a
+                // blocking question arrived and replaced the composer.
+                focus: focus,
+                focusChatId: controller.serverSession?.id,
                 glassNamespace: composerGlassNamespace
             )
             // Keep the transcript mask in sync as the shared composer changes

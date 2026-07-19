@@ -25,6 +25,12 @@ struct ComposerCard: View {
     /// Surfaces the composer's text view so keyboard handoffs can move
     /// first-responder focus to it.
     var onTextViewReady: ((SubmittingTextView) -> Void)? = nil
+    /// The session's AppKit focus controller and this chat's id: the
+    /// question picker registers its key anchor under them so it takes
+    /// first responder through the same reliable path as the composer text
+    /// view. Nil (previews, standalone composers) degrades to a local grab.
+    var focus: TerminalFocusController? = nil
+    var focusChatId: UUID? = nil
     /// Supplied by the session's shared GlassEffectContainer. Standalone
     /// composers (new chat and previews) don't need coordinated identities.
     var glassNamespace: Namespace.ID? = nil
@@ -55,7 +61,9 @@ struct ComposerCard: View {
                 QuestionPickerContent(
                     controller: controller,
                     request: question,
-                    didStartResolving: $didStartResolvingQuestion
+                    didStartResolving: $didStartResolvingQuestion,
+                    focus: focus,
+                    chatId: focusChatId
                 )
                 .transition(Motion.unfold(reduceMotion: reduceMotion, anchor: .bottom))
             } else {

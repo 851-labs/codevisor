@@ -164,6 +164,8 @@ struct NewChatView: View {
                                             DispatchQueue.main.async { focus.focusComposer() }
                                         }
                                     },
+                                    focus: paneFocus ?? focus,
+                                    focusChatId: preCreatedSession?.id,
                                     glassNamespace: composerGlassNamespace
                                 )
                                 HStack(spacing: 4) {

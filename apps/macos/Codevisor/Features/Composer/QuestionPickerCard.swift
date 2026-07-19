@@ -22,6 +22,13 @@ struct QuestionPickerContent: View {
     /// Set synchronously in the key/button handler, before the async Task gets
     /// its first main-actor turn, so Return always produces immediate feedback.
     @Binding var didStartResolving: Bool
+    /// The session's AppKit focus controller and this chat's id: the key
+    /// anchor registers here so the picker takes first responder through the
+    /// same reliable `makeFirstResponder`-with-retry path as the composer
+    /// text view. Nil (previews, standalone composers) falls back to a
+    /// best-effort local grab.
+    var focus: TerminalFocusController? = nil
+    var chatId: UUID? = nil
 
     /// Sentinel stored in `selections` when the "Other" row is chosen.
     private static let otherToken = "__other__"
@@ -33,7 +40,18 @@ struct QuestionPickerContent: View {
     @State private var notes: [String: String] = [:]
     @State private var notesHeight: CGFloat = 24
     @State private var highlighted = 0
-    @FocusState private var isPickerFocused: Bool
+    /// Weak handles to the picker's AppKit focus targets: the key anchor
+    /// (option list) and the notes editor's text view, so explicit moves —
+    /// question navigation, Escape out of the notes editor, option clicks,
+    /// Return on "Other" — can place first responder directly. A class box
+    /// because the views report themselves from AppKit callbacks, not view
+    /// updates.
+    @State private var anchor = AnchorBox()
+
+    final class AnchorBox {
+        weak var view: QuestionPickerKeyView?
+        weak var notesEditor: SubmittingTextView?
+    }
 
     private var question: QuestionSpec? {
         request.questions.indices.contains(questionIndex) ? request.questions[questionIndex] : nil
@@ -70,14 +88,30 @@ struct QuestionPickerContent: View {
             }
         }
         .disabled(isResolving)
-        .focusable()
-        .focused($isPickerFocused)
-        .focusEffectDisabled()
-        .onKeyPress(phases: .down) { press in
-            handleKey(press)
-        }
+        // AppKit keyboard anchor instead of SwiftUI focus: `@FocusState`
+        // assignments are dropped during the composer card's animated state
+        // swap (see QuestionPickerFocusAnchor), which left the picker deaf
+        // to arrows/Escape until a click handed it focus.
+        .background(
+            QuestionPickerFocusAnchor(
+                onAttach: { view in
+                    anchor.view = view
+                    if let focus, let chatId {
+                        focus.registerQuestionPicker(view, forChat: chatId)
+                    } else {
+                        // Standalone composer (previews): best-effort grab.
+                        view.window?.makeFirstResponder(view)
+                    }
+                },
+                onKey: { handleKey($0) },
+                onDetach: { view in
+                    if let focus, let chatId {
+                        focus.unregisterQuestionPicker(view, forChat: chatId)
+                    }
+                }
+            )
+        )
         .onAppear {
-            isPickerFocused = true
             highlighted = 0
         }
         .onChange(of: request.questionId) { _, _ in
@@ -86,7 +120,7 @@ struct QuestionPickerContent: View {
             notes = [:]
             highlighted = 0
             didStartResolving = false
-            isPickerFocused = true
+            focusPicker()
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Agent question")
@@ -149,32 +183,53 @@ struct QuestionPickerContent: View {
         return Button {
             highlighted = index
             activate(question, index: index)
+            // Mouse interaction makes the picker the keyboard target too,
+            // so a follow-up Return/arrow works no matter where focus was.
+            // Choosing "Other" goes straight to its answer field instead.
+            if index >= question.options.count,
+               selections[question.id, default: []].contains(Self.otherToken) {
+                focusNotes()
+            } else {
+                focusPicker()
+            }
         } label: {
+            // Same selection language as the slash-command menu in this
+            // card: the keyboard highlight is an accent pill with white
+            // content; a committed selection that ISN'T highlighted keeps a
+            // quiet themed fill (multi-select stays legible at a glance)
+            // with an accent checkmark.
             HStack(spacing: 10) {
                 Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
                     .font(.caption)
                     .foregroundStyle(
-                        isHighlighted ? AnyShapeStyle(theme.windowBackground) :
-                            isSelected ? AnyShapeStyle(Color.primary) : AnyShapeStyle(.tertiary)
+                        isHighlighted ? AnyShapeStyle(.white)
+                            : isSelected ? AnyShapeStyle(theme.accent) : AnyShapeStyle(.tertiary)
                     )
                 Text(label)
                     .fontWeight(.medium)
                 if let description, !description.isEmpty {
                     Text(description)
                         .lineLimit(1)
-                        .foregroundStyle(isHighlighted ? AnyShapeStyle(theme.windowBackground.opacity(0.85)) : AnyShapeStyle(.secondary))
+                        .foregroundStyle(isHighlighted ? AnyShapeStyle(.white.opacity(0.85)) : AnyShapeStyle(.secondary))
                 }
                 Spacer(minLength: 0)
                 if index < 9 {
                     Text("\(index + 1)")
                         .font(.caption2.monospacedDigit())
-                        .foregroundStyle(isHighlighted ? AnyShapeStyle(theme.windowBackground.opacity(0.6)) : AnyShapeStyle(.quaternary))
+                        .foregroundStyle(isHighlighted ? AnyShapeStyle(.white.opacity(0.7)) : AnyShapeStyle(.quaternary))
                 }
             }
-            .foregroundStyle(isHighlighted ? theme.windowBackground : Color.primary)
+            .foregroundStyle(isHighlighted ? Color.white : Color.primary)
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
-            .background(RoundedRectangle(cornerRadius: 6).fill(isHighlighted ? AnyShapeStyle(Color.primary) : AnyShapeStyle(Color.clear)))
+            .background(
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(
+                        isHighlighted ? AnyShapeStyle(theme.accent)
+                            : isSelected ? AnyShapeStyle(theme.rowSelectedBackground)
+                            : AnyShapeStyle(Color.clear)
+                    )
+            )
             .contentShape(RoundedRectangle(cornerRadius: 6))
         }
         .buttonStyle(.plain)
@@ -197,10 +252,13 @@ struct QuestionPickerContent: View {
                     // Escape hops focus back to the option list; a second
                     // Escape there dismisses the question.
                     if command == .dismissSelection {
-                        isPickerFocused = true
+                        focusPicker()
                         return true
                     }
                     return false
+                },
+                onTextViewReady: { textView in
+                    anchor.notesEditor = textView
                 }
             )
             .frame(height: notesHeight)
@@ -213,11 +271,13 @@ struct QuestionPickerContent: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 2)
-        .background(RoundedRectangle(cornerRadius: 8).fill(theme.windowBackground.opacity(0.55)))
+        // Themed input-field chrome: quiet card fill on the glass, themed
+        // border — accented while "Other" makes this field the answer.
+        .background(RoundedRectangle(cornerRadius: 8).fill(theme.cardQuietBackground))
         .overlay(
             RoundedRectangle(cornerRadius: 8)
                 .strokeBorder(
-                    isOtherSelected ? Color.primary.opacity(0.35) : Color(nsColor: .separatorColor),
+                    isOtherSelected ? theme.accent : theme.border,
                     lineWidth: 1
                 )
         )
@@ -316,7 +376,21 @@ struct QuestionPickerContent: View {
         guard request.questions.indices.contains(next) else { return }
         questionIndex = next
         highlighted = 0
-        isPickerFocused = true
+        focusPicker()
+    }
+
+    /// Puts AppKit first responder on the option list's key anchor — the
+    /// picker's one focus writer besides the session focus controller.
+    private func focusPicker() {
+        guard let view = anchor.view else { return }
+        view.window?.makeFirstResponder(view)
+    }
+
+    /// Puts first responder in the notes editor — "Other" makes it the
+    /// answer field, so selecting Other hands the keyboard straight there.
+    private func focusNotes() {
+        guard let view = anchor.notesEditor else { return }
+        view.window?.makeFirstResponder(view)
     }
 
     private func advanceOrSubmit() {
@@ -362,32 +436,31 @@ struct QuestionPickerContent: View {
         }
     }
 
-    private func handleKey(_ press: KeyPress) -> KeyPress.Result {
-        if isResolving { return .handled }
-        // Only steer while the option list itself has focus. When the notes
-        // editor (an NSTextView) is first responder, every key (spaces,
-        // digits, arrows) must reach it — SwiftUI's FocusState doesn't
-        // reliably clear for AppKit first responders, so check directly.
-        // The editor's own keyDown handles Escape back out.
-        if NSApp.keyWindow?.firstResponder is NSTextView { return .ignored }
-        guard let question else { return .ignored }
-        switch press.key {
-        case .upArrow:
+    /// Keys arrive through the anchor's first-responder status, so the
+    /// responder chain already arbitrates: while the notes editor (an
+    /// NSTextView) holds the keyboard, nothing lands here — no manual
+    /// first-responder checks needed. The editor's own keyDown handles
+    /// Escape back out.
+    private func handleKey(_ key: QuestionPickerKey) -> Bool {
+        if isResolving { return true }
+        guard let question else { return false }
+        switch key {
+        case .up:
             highlighted = max(0, highlighted - 1)
-            return .handled
-        case .downArrow:
+            return true
+        case .down:
             highlighted = min(rowCount(question) - 1, highlighted + 1)
-            return .handled
-        case .leftArrow:
+            return true
+        case .left:
             moveQuestion(-1)
-            return .handled
-        case .rightArrow:
+            return true
+        case .right:
             moveQuestion(1)
-            return .handled
+            return true
         case .space:
             activate(question, index: highlighted)
-            return .handled
-        case .return:
+            return true
+        case .enter:
             // Return commits and advances; it must not toggle the highlighted
             // row (that silently drops a selection made by click/space/digit).
             // Single-select picks the highlighted row; multi-select keeps its
@@ -395,19 +468,26 @@ struct QuestionPickerContent: View {
             if question.multiSelect != true {
                 selectHighlighted(question, index: highlighted)
             }
+            // "Other" makes the notes editor the answer field: while its
+            // note is still empty, Return hands focus there instead of
+            // advancing past an unanswered question. Once a note exists,
+            // Return advances as usual.
+            let selected = selections[question.id, default: []]
+            let note = (notes[question.id] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            if selected.contains(Self.otherToken), note.isEmpty {
+                focusNotes()
+                return true
+            }
             advanceOrSubmit()
-            return .handled
+            return true
         case .escape:
             cancel()
-            return .handled
-        default:
-            if let digit = press.characters.first?.wholeNumberValue,
-               digit >= 1, digit <= rowCount(question) {
-                highlighted = digit - 1
-                activate(question, index: digit - 1)
-                return .handled
-            }
-            return .ignored
+            return true
+        case .digit(let digit):
+            guard digit >= 1, digit <= rowCount(question) else { return false }
+            highlighted = digit - 1
+            activate(question, index: digit - 1)
+            return true
         }
     }
 }

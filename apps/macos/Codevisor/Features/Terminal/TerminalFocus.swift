@@ -74,6 +74,14 @@ final class TerminalFocusController {
                 return
             }
         }
+        // A chat's question picker is its composer-area surface while a
+        // blocking question is up — focusing it activates the chat too.
+        for (chatId, box) in chatQuestionPickers {
+            if let picker = box.view, view === picker {
+                onChatComposerFocused?(chatId)
+                return
+            }
+        }
         for (chatId, box) in chatTranscripts {
             if let transcript = box.view, view === transcript || view.isDescendant(of: transcript) {
                 onChatComposerFocused?(chatId)
@@ -127,6 +135,12 @@ final class TerminalFocusController {
     }
 
     private var chatTranscripts: [UUID: WeakNSView] = [:]
+    /// Question-picker key anchors by chat. While a chat shows a blocking
+    /// agent question its composer is UNMOUNTED and the picker replaces it
+    /// as the chat's one keyboard surface — so every composer-focus route
+    /// (open sequence, pane/tab clicks, transcript clicks, type-to-focus)
+    /// prefers a registered picker over the (dead) composer slot.
+    private var chatQuestionPickers: [UUID: WeakNSView] = [:]
     /// A chat whose composer should take focus as soon as it CAN — the
     /// target pane may not have laid out yet (fresh workspace open, or a
     /// tab switch that remounts the chat), so the intent parks here and
@@ -145,42 +159,136 @@ final class TerminalFocusController {
         chatTranscripts[sessionId] = WeakNSView(view)
     }
 
-    /// Focuses a specific chat's composer — immediately when possible,
+    /// Registers a question picker's key anchor and gives it the keyboard
+    /// through the same makeFirstResponder-with-retry path the composer
+    /// uses (a lone SwiftUI FocusState write is dropped during the composer
+    /// card's animated swap). Unlike composer registration — which never
+    /// takes focus, because N panes mount in arbitrary order — a picker
+    /// mounting means a question just arrived (or a parked intent targets
+    /// this chat), so it grabs focus. Politely: it inherits focus its own
+    /// chat's composer held (that composer is mid-teardown) or that nobody
+    /// held, but never steals from a terminal or another chat's editor.
+    func registerQuestionPicker(_ view: NSView, forChat sessionId: UUID) {
+        chatQuestionPickers[sessionId] = WeakNSView(view)
+        if pendingComposerFocus == sessionId {
+            pendingComposerFocus = nil
+            focusWhenWindowed(view)
+            return
+        }
+        // A parked intent for ANOTHER chat outranks this mount's grab.
+        guard pendingComposerFocus == nil else { return }
+        focusWhenWindowed(view) { [weak self] window in
+            self?.questionPickerMayTakeFocus(in: window, forChat: sessionId) ?? false
+        }
+    }
+
+    /// The picker is leaving its window (question resolved/dismissed, or
+    /// the whole chat unmounting). If the picker area held the keyboard,
+    /// hand it to the composer that replaces it — parking the intent until
+    /// the (remounting) composer registers.
+    func unregisterQuestionPicker(_ view: NSView, forChat sessionId: UUID) {
+        guard chatQuestionPickers[sessionId]?.view === view else { return }
+        chatQuestionPickers[sessionId] = nil
+        guard let window = view.window else { return }
+        let responder = window.firstResponder
+        let pickerHeldFocus = responder === view
+            // Teardown ordering may already have dropped focus to the
+            // window — nobody owns it, the returning composer may claim it.
+            || responder === window
+            || isQuestionPickerNotesEditor(responder)
+        if pickerHeldFocus {
+            requestComposerFocus(forChat: sessionId)
+        }
+    }
+
+    /// The picker's notes editor is a SubmittingTextView too; recognize it
+    /// as "inside the picker" by exclusion — editable, but registered as no
+    /// chat's composer.
+    private func isQuestionPickerNotesEditor(_ responder: NSResponder?) -> Bool {
+        guard let textView = responder as? SubmittingTextView else { return false }
+        if textView === composerTextView { return false }
+        return !chatComposers.values.contains { $0.view === textView }
+    }
+
+    /// Whether a newly mounted picker may take the keyboard: yes when its
+    /// own chat's composer holds it (the picker replaces that composer) or
+    /// when nobody meaningful does; no while the user is typing elsewhere —
+    /// a terminal, another chat's composer/picker, any editable field.
+    private func questionPickerMayTakeFocus(in window: NSWindow, forChat sessionId: UUID) -> Bool {
+        guard window.attachedSheet == nil, NSApp.modalWindow == nil else { return false }
+        guard let responder = window.firstResponder, responder !== window else { return true }
+        if responder is Ghostty.SurfaceView { return false }
+        if let anchor = responder as? NSView,
+           chatQuestionPickers.contains(where: { $0.key != sessionId && $0.value.view === anchor }) {
+            return false
+        }
+        if let textView = responder as? NSTextView, textView.isEditable {
+            return textView === chatComposers[sessionId]?.view
+        }
+        if let field = responder as? NSTextField, field.isEditable { return false }
+        return true
+    }
+
+    /// The chat's composer-area keyboard surface: its question picker while
+    /// a blocking question is up (the composer is unmounted then), else its
+    /// composer text view.
+    private func composerAreaView(forChat sessionId: UUID) -> NSView? {
+        if let picker = chatQuestionPickers[sessionId]?.view { return picker }
+        return chatComposers[sessionId]?.view
+    }
+
+    /// The unkeyed picker fallback, mirroring the single-slot
+    /// `composerTextView`: only unambiguous when exactly one picker is live.
+    private var fallbackQuestionPicker: NSView? {
+        let live = chatQuestionPickers.values.compactMap(\.view)
+        return live.count == 1 ? live[0] : nil
+    }
+
+    /// Focuses a specific chat's composer area — immediately when possible,
     /// otherwise the moment it registers (see `pendingComposerFocus`).
     func requestComposerFocus(forChat sessionId: UUID) {
-        if let view = chatComposers[sessionId]?.view {
+        if let view = composerAreaView(forChat: sessionId) {
             focusWhenWindowed(view)
         } else {
             pendingComposerFocus = sessionId
         }
     }
 
-    /// Text views register from makeNSView, BEFORE they are attached to a
+    /// Views register from makeNSView, BEFORE they are attached to a
     /// window — and makeFirstResponder needs the window. Retry briefly
     /// until attachment (the same trick the terminal's Ghostty.moveFocus
-    /// uses); a view that never lands in a window just times out.
-    private func focusWhenWindowed(_ view: SubmittingTextView, attempts: Int = 20) {
+    /// uses); a view that never lands in a window just times out. An
+    /// optional gate is re-evaluated at grab time (not schedule time) so
+    /// polite grabs judge the settled responder.
+    private func focusWhenWindowed(
+        _ view: NSView,
+        attempts: Int = 20,
+        given shouldFocus: ((NSWindow) -> Bool)? = nil
+    ) {
         if let window = view.window {
-            window.makeFirstResponder(view)
+            if shouldFocus?(window) ?? true {
+                window.makeFirstResponder(view)
+            }
             return
         }
         guard attempts > 0 else { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self, weak view] in
             guard let self, let view else { return }
-            self.focusWhenWindowed(view, attempts: attempts - 1)
+            self.focusWhenWindowed(view, attempts: attempts - 1, given: shouldFocus)
         }
     }
 
-    /// Focuses the ACTIVE group's selected chat's composer when there is
-    /// one; otherwise the last-registered composer (drafts, single-chat
-    /// screens, the new-chat page).
+    /// Focuses the ACTIVE group's selected chat's composer area when there
+    /// is one; otherwise the last-registered composer (drafts, single-chat
+    /// screens, the new-chat page) or, with the composer slot dead behind a
+    /// question, the live picker.
     func focusComposer() {
         if let chatId = centerGroup?.state.selectedPane?.chatSessionId,
-           let view = chatComposers[chatId]?.view {
+           let view = composerAreaView(forChat: chatId) {
             view.window?.makeFirstResponder(view)
             return
         }
-        guard let view = composerTextView else { return }
+        guard let view = (composerTextView as NSView?) ?? fallbackQuestionPicker else { return }
         view.window?.makeFirstResponder(view)
     }
 
@@ -271,16 +379,15 @@ final class TerminalFocusController {
 
     private func handleTypeToFocus(_ event: NSEvent) -> NSEvent? {
         // The chat unmounts while a terminal tab covers it, so a stale
-        // composer reference (or one detached from the window) naturally
+        // target reference (or one detached from the window) naturally
         // opts out here — no explicit visibility flag needed.
-        guard let textView = composerTextView,
-              textView.isEditable,
-              let window = textView.window,
+        guard let target = typeToFocusTarget(),
+              let window = target.window,
               event.window === window,
               window.isKeyWindow,
               window.attachedSheet == nil,
               NSApp.modalWindow == nil,
-              window.firstResponder !== textView,
+              window.firstResponder !== target,
               Self.isTypeToFocusEvent(event) else {
             return event
         }
@@ -300,13 +407,35 @@ final class TerminalFocusController {
         if window.firstResponder is Ghostty.SurfaceView {
             return event
         }
+        // A focused question picker owns its keys (digits select options,
+        // space toggles) — never pull them away to another chat's composer.
+        if let responder = window.firstResponder as? NSView,
+           chatQuestionPickers.values.contains(where: { $0.view === responder }) {
+            return event
+        }
 
-        guard window.makeFirstResponder(textView) else { return event }
+        guard window.makeFirstResponder(target) else { return event }
 
         // Local monitors run before NSApplication.sendEvent. Returning the
         // original event dispatches it to the new first responder, preserving
         // NSTextView's native key binding, undo, dead-key, and IME pipelines.
         return event
+    }
+
+    /// The composer-area typing target: the selected chat's picker anchor
+    /// while a question is up (the composer is unmounted then — stray
+    /// typing self-heals focus onto the picker, so digits land as option
+    /// picks even if the mount-time grab ever races the swap), otherwise
+    /// the editable composer text view.
+    private func typeToFocusTarget() -> NSView? {
+        if let chatId = centerGroup?.state.selectedPane?.chatSessionId,
+           let picker = chatQuestionPickers[chatId]?.view {
+            return picker
+        }
+        if let textView = composerTextView, textView.isEditable {
+            return textView
+        }
+        return fallbackQuestionPicker
     }
 
     /// Pane-style focus for the chat history: a click that lands in it and
