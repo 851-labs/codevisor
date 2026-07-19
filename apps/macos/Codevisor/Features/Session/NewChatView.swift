@@ -49,10 +49,13 @@ struct NewChatView: View {
     /// clicks and the container's open sequence can focus it exactly like
     /// a started chat's composer.
     var paneFocus: TerminalFocusController? = nil
+    /// The hosting workspace (pane mode): scopes the run-context picker to
+    /// the workspace's existing worktrees. Nil on the standalone page, which
+    /// offers only the project root and a new worktree.
+    var hostWorkspaceId: UUID? = nil
 
     @State private var controller: SessionController?
     @State private var selectedProjectId: UUID?
-    @State private var runInWorktree = false
     @State private var focus = TerminalFocusController()
     @State private var addProjectFlow = AddProjectFlow()
     @Namespace private var composerGlassNamespace
@@ -77,6 +80,31 @@ struct NewChatView: View {
     /// (as probed by the session's server).
     private var worktreeAvailable: Bool {
         selectedProject?.isGitRepository ?? false
+    }
+
+    /// The run locations the picker offers: the project root plus the host
+    /// workspace's existing worktrees (none on the standalone page, where no
+    /// workspace exists yet).
+    private var workspaceContexts: [WorkspaceRunContext] {
+        guard let project = selectedProject else { return [] }
+        if let hostWorkspaceId,
+           let workspace = environment.workspaces.workspace(id: hostWorkspaceId) {
+            return WorkspaceRunContexts.contexts(
+                workspace: workspace,
+                project: project,
+                sessions: environment.projectList.sessions.filter {
+                    $0.serverId == project.serverId
+                }
+            )
+        }
+        return [
+            WorkspaceRunContext(
+                kind: .projectRoot,
+                name: project.name,
+                path: project.folderURL.path,
+                worktreeName: nil
+            )
+        ]
     }
 
     /// The setup panel shows while the machine has no projects, and stays up
@@ -247,11 +275,10 @@ struct NewChatView: View {
                     set: { isOn in
                         guard isOn else { return }
                         selectedProjectId = project.id
-                        // Worktree choice doesn't carry across projects that can't support it.
-                        if !(project.isGitRepository) {
-                            runInWorktree = false
-                            controller?.wantsNewWorktree = false
-                        }
+                        // Worktree choice doesn't carry across projects: an
+                        // existing worktree belongs to the old project, and
+                        // non-git projects can't host new ones.
+                        controller?.setRunContext(.projectRoot)
                         if let controller { Task { await controller.selectProject(project) } }
                         // Keep the cached selection responsive, then re-probe
                         // project metadata independently in the background.
@@ -295,50 +322,60 @@ struct NewChatView: View {
         .help("Choose workspace")
     }
 
-    /// "Workspace directory" vs "New worktree" for where the chat runs (the
-    /// chosen directory becomes the workspace's root). Worktree is only
-    /// offered for git projects; the worktree itself is created on the first
-    /// send.
+    /// Where the chat runs: the project root (named), an existing workspace
+    /// worktree (named), or a new worktree created on first send. The chat's
+    /// directory is its own — the workspace root never moves.
     @ViewBuilder
     private func runLocationPicker(_ controller: SessionController) -> some View {
         Menu {
-            Toggle(isOn: Binding(
-                get: { !runInWorktree },
-                set: { isOn in
-                    guard isOn, runInWorktree else { return }
-                    runInWorktree = false
-                    controller.wantsNewWorktree = false
-                    // Re-establish the eager connection in the project folder.
-                    Task { await controller.reconnect() }
-                }
-            )) {
-                Label {
-                    Text("Workspace directory")
-                } icon: {
-                    MenuSymbolIcon(systemName: "folder.fill")
-                }
-            }
-            Toggle(isOn: Binding(
-                get: { runInWorktree },
-                set: { isOn in
-                    guard isOn, !runInWorktree else { return }
-                    runInWorktree = true
-                    controller.wantsNewWorktree = true
-                    // Drop any eager connection pinned to the project folder; the
-                    // agent reconnects in the worktree on first send.
-                    Task { await controller.reconnect() }
-                }
-            )) {
-                Label {
-                    Text("New worktree")
-                } icon: {
-                    MenuSymbolIcon(systemName: "arrow.triangle.branch")
+            ForEach(workspaceContexts) { context in
+                Toggle(isOn: Binding(
+                    get: { isSelected(context, in: controller) },
+                    set: { isOn in
+                        guard isOn, !isSelected(context, in: controller) else { return }
+                        if let name = context.worktreeName {
+                            controller.setRunContext(
+                                .existingWorktree(name: name, path: context.path)
+                            )
+                        } else {
+                            controller.setRunContext(.projectRoot)
+                        }
+                        // Move any eager connection to the picked directory.
+                        Task { await controller.reconnect() }
+                    }
+                )) {
+                    Label {
+                        Text(context.name)
+                        Text(context.displayPath)
+                    } icon: {
+                        MenuSymbolIcon(systemName: context.symbolName)
+                    }
                 }
             }
-            .disabled(!worktreeAvailable)
+            // Hidden (not disabled) for non-git projects: they have no
+            // worktree concept at all, so the option can never apply.
+            if worktreeAvailable {
+                Divider()
+                Toggle(isOn: Binding(
+                    get: { controller.runContext == .newWorktree },
+                    set: { isOn in
+                        guard isOn, controller.runContext != .newWorktree else { return }
+                        controller.setRunContext(.newWorktree)
+                        // Drop any eager connection pinned to a directory; the
+                        // agent reconnects in the worktree on first send.
+                        Task { await controller.reconnect() }
+                    }
+                )) {
+                    Label {
+                        Text("New worktree")
+                    } icon: {
+                        MenuSymbolIcon(systemName: "arrow.triangle.branch")
+                    }
+                }
+            }
         } label: {
-            PickerChip(text: runInWorktree ? "New worktree" : "Workspace directory") {
-                Image(systemName: runInWorktree ? "arrow.triangle.branch" : "folder.fill")
+            PickerChip(text: runContextChipTitle(controller)) {
+                Image(systemName: runContextChipSymbol(controller))
                     .font(.system(size: 12))
             }
         }
@@ -346,11 +383,40 @@ struct NewChatView: View {
         .buttonStyle(HoverIconButtonStyle(shape: .chip))
         .menuIndicator(.hidden)
         .fixedSize()
-        .help(
-            worktreeAvailable
-                ? "Where this chat's commands run"
-                : "Worktrees need the project folder to be a git repository"
-        )
+        .help("Where this chat's commands run")
+        .accessibilityLabel("Run location")
+        .accessibilityValue(runContextChipTitle(controller))
+    }
+
+    private func isSelected(
+        _ context: WorkspaceRunContext, in controller: SessionController
+    ) -> Bool {
+        switch controller.runContext {
+        case .projectRoot:
+            context.worktreeName == nil
+        case let .existingWorktree(name, _):
+            context.worktreeName == name
+        case .newWorktree:
+            false
+        }
+    }
+
+    private func runContextChipTitle(_ controller: SessionController) -> String {
+        switch controller.runContext {
+        case .projectRoot:
+            selectedProject?.name ?? "Project"
+        case let .existingWorktree(name, _):
+            name
+        case .newWorktree:
+            "New worktree"
+        }
+    }
+
+    private func runContextChipSymbol(_ controller: SessionController) -> String {
+        switch controller.runContext {
+        case .projectRoot: "folder.fill"
+        case .existingWorktree, .newWorktree: "arrow.triangle.branch"
+        }
     }
 
     /// Inline error for a failed session start. This page has no transcript
@@ -392,7 +458,12 @@ struct NewChatView: View {
             environment.workspaces.workspaceId(forSession: $0.id)
         }
         let controller = paneDraftId.map {
-            store.paneDraft(paneId: $0, project: project, workspaceId: workspaceId)
+            store.paneDraft(
+                paneId: $0,
+                project: project,
+                workspaceId: workspaceId,
+                preCreatedSession: preCreatedSession
+            )
         } ?? store.draft(project: project)
         if controller.project.id != project.id {
             let draftProjectExists = projects.contains { $0.id == controller.project.id }
@@ -406,10 +477,17 @@ struct NewChatView: View {
                 selectedProjectId = controller.project.id
             }
         }
-        // Restore the draft's worktree choice (remembered defaults or an
-        // earlier visit), clamped to projects that can support it.
-        if !worktreeAvailable { controller.wantsNewWorktree = false }
-        runInWorktree = controller.wantsNewWorktree
+        // Clamp the draft's restored run context: non-git projects can't run
+        // worktrees at all, and a stale existing-worktree choice (worktree
+        // removed, or a draft carried across workspaces) falls back to the
+        // project root rather than pointing at a directory this workspace
+        // doesn't own.
+        if !worktreeAvailable {
+            controller.setRunContext(.projectRoot)
+        } else if case let .existingWorktree(name, _) = controller.runContext,
+                  !workspaceContexts.contains(where: { $0.worktreeName == name }) {
+            controller.setRunContext(.projectRoot)
+        }
         controller.onFirstSend = { [weak controller] in
             guard let controller, let project = selectedProject else { return }
             let title = Self.title(from: controller.composerText)

@@ -53,6 +53,11 @@ final class PaneGroupModel: Identifiable {
     /// new tab, adopted drop) — the container tracks the workspace's ACTIVE
     /// group with it, which is where keyboard tab commands route.
     @ObservationIgnored var onActivated: (() -> Void)?
+    /// The directory a context-free spawn (⌘T, bar "+") inherits: the
+    /// focused pane's chat/terminal context, falling back to the workspace
+    /// root. Wired by the container; nil (previews) leaves spawns on the
+    /// anchor session's cwd resolution.
+    @ObservationIgnored var defaultSpawnCwd: (() -> String?)?
     /// Debounces height persistence during drags (state itself updates live).
     @ObservationIgnored private var pendingHeightSave: Task<Void, Never>?
 
@@ -208,11 +213,14 @@ final class PaneGroupModel: Identifiable {
     // MARK: - Operations
 
     /// Adds a terminal tab, selects it, opens the group, and returns the live
-    /// pane (so callers can focus it).
+    /// pane (so callers can focus it). The shell opens in the focused pane's
+    /// context (cwd follows focus).
     @discardableResult
     func addTerminalPane() -> any Pane {
         let previouslySelected = selectedPane
-        let descriptor = state.addTerminalPane(sessionId: sessionId)
+        let descriptor = state.addTerminalPane(
+            sessionId: sessionId, cwdOverride: defaultSpawnCwd?()
+        )
         persist()
         onActivated?()
         previouslySelected?.visibilityChanged(false)
@@ -257,10 +265,11 @@ final class PaneGroupModel: Identifiable {
 
     /// Adds the "New tab" placeholder — spawned by the container when this
     /// group's last real pane closes and the group is the workspace's last.
+    /// Carries the focused pane's context so the page preselects it.
     @discardableResult
     func addNewTabPane() -> any Pane {
         let previouslySelected = selectedPane
-        let descriptor = state.addNewTabPane()
+        let descriptor = state.addNewTabPane(inheritedCwd: defaultSpawnCwd?())
         persist()
         onActivated?()
         previouslySelected?.visibilityChanged(false)

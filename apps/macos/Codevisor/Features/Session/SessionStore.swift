@@ -192,62 +192,20 @@ final class SessionStore {
     /// (the workspace's routing anchor, visible in the sidebar immediately)
     /// plus the workspace itself, named and iconed at birth. The chat opens
     /// UNSTARTED — its in-workspace composer owns the harness at first send.
-    /// When the workspace was created INTO a fresh worktree, that worktree
-    /// (already materialized by the caller) becomes the session cwd and —
-    /// through the ensure seed — the workspace root, so every terminal and
-    /// chat runs there. `startingTab` picks which tab faces the user.
-    func createWorkspaceSession(
-        in project: Project,
-        name: String,
-        startingTab: WorkspaceStartingTab = .chat,
-        worktree: ServerWorktree? = nil
-    ) -> ChatSession {
-        var session = environment.projectList.newSession(in: project, title: "New Chat")
-        if let worktree {
-            environment.projectList.setWorktree(
-                name: worktree.name,
-                cwd: worktree.path,
-                for: session.id,
-                serverId: session.serverId
-            )
-            session.worktreeName = worktree.name
-            session.cwd = worktree.path
-        }
+    /// Creates a workspace around a fresh eager chat session. The workspace
+    /// root is always the project folder (worktrees are per-chat contexts
+    /// chosen in the composer, never the workspace's own directory).
+    func createWorkspaceSession(in project: Project, name: String) -> ChatSession {
+        let session = environment.projectList.newSession(in: project, title: "New Chat")
         var created = workspace(for: session, project: project)
-        // The user named it — the name never tracks chat titles.
+        // The user (or the generator) named it — the name never tracks
+        // chat titles.
         created.name = name
         created.hasCustomName = true
         created.symbolName = project.symbolName
         environment.workspaces.save(created)
-        if startingTab != .chat,
-           let leafId = created.centerTree.groupId(containingChat: session.id) {
-            let model = centerGroup(
-                leafId: leafId, workspace: created, session: session, project: project
-            )
-            switch startingTab {
-            case .terminal:
-                model.addTerminalPane()
-            case .newTab:
-                model.addNewTabPane()
-            case .chat:
-                break
-            }
-            // The container's open sequence must not force the chat tab
-            // back over this choice (that behavior is for SIDEBAR clicks —
-            // "show me that chat").
-            startingTabOverrides.insert(session.id)
-        }
         return session
     }
-
-    /// One-shot: whether this session's workspace was just created with a
-    /// non-chat starting tab (consume instead of selecting the chat).
-    @ObservationIgnored private var startingTabOverrides: Set<UUID> = []
-
-    func consumeStartingTabOverride(for sessionId: UUID) -> Bool {
-        startingTabOverrides.remove(sessionId) != nil
-    }
-
 
     /// The cached controller for a session WITHOUT creating one — a pure
     /// read, safe in view bodies (deciding whether an unstarted chat still
@@ -260,7 +218,12 @@ final class SessionStore {
     /// on first use), mirrored to disk per PANE — an unsent in-workspace
     /// composer (text, attachments, settings) survives relaunches and app
     /// updates just like the per-server page draft does.
-    func paneDraft(paneId: UUID, project: Project, workspaceId: UUID? = nil) -> SessionController {
+    func paneDraft(
+        paneId: UUID,
+        project: Project,
+        workspaceId: UUID? = nil,
+        preCreatedSession: ChatSession? = nil
+    ) -> SessionController {
         if let existing = paneDrafts[paneId] { return existing }
         let controller = SessionController(
             project: project,
@@ -272,11 +235,19 @@ final class SessionStore {
         // harness/model before falling back to the machine's.
         controller.defaultsWorkspaceId = workspaceId
         controller.applyComposerDefaults()
-        // In-workspace chats run in the WORKSPACE DIRECTORY by default —
-        // the workspace already made the worktree decision at its door
-        // (its root may itself be a worktree). The remembered worktree
-        // preference is a new-workspace concern, not a new-chat one.
+        // In-workspace chats run at the project root by default; a NEW
+        // worktree is an explicit per-chat choice, never a remembered one.
         controller.wantsNewWorktree = false
+        // A session created eagerly INTO a worktree (the New tab page's
+        // directory pick) seeds the composer with that context — otherwise
+        // the picker would show the project root and the first send would
+        // wipe the recorded worktree. Seed BEFORE the draft restore: a
+        // persisted draft carries the user's later choice and must win.
+        if let preCreatedSession,
+           let name = preCreatedSession.worktreeName,
+           let cwd = preCreatedSession.cwd {
+            controller.setRunContext(.existingWorktree(name: name, path: cwd))
+        }
         if let persisted = environment.composerDrafts.paneDraft(forPane: paneId) {
             controller.restoreDraft(persisted)
         }

@@ -13,7 +13,6 @@ public final class AppEnvironment {
     public let configCache: ConfigOptionCache
     public let composerDefaults: ComposerDefaultsStore
     public let composerDrafts: ComposerDraftStore
-    public let newWorkspaceDefaults: NewWorkspaceDefaultsStore
     public let settings: AppSettingsModel
     public let theme: ThemeManager
     public let machines: MachineController
@@ -56,7 +55,6 @@ public final class AppEnvironment {
         configCache: ConfigOptionCache,
         composerDefaults: ComposerDefaultsStore? = nil,
         composerDrafts: ComposerDraftStore? = nil,
-        newWorkspaceDefaults: NewWorkspaceDefaultsStore? = nil,
         settings: AppSettingsModel,
         machineStore: any PersistenceStore = InMemoryStore(),
         legacyCacheMigrationStore: (any PersistenceStore)? = nil,
@@ -93,7 +91,6 @@ public final class AppEnvironment {
         self.configCache = configCache
         self.composerDefaults = composerDefaults ?? ComposerDefaultsStore(store: InMemoryStore())
         self.composerDrafts = composerDrafts ?? ComposerDraftStore(store: InMemoryStore())
-        self.newWorkspaceDefaults = newWorkspaceDefaults ?? NewWorkspaceDefaultsStore(store: InMemoryStore())
         self.settings = settings
         self.localServer = localServer
         self.machines = MachineController(
@@ -223,7 +220,6 @@ public final class AppEnvironment {
         configCache.clear()
         composerDefaults.clear()
         composerDrafts.clear()
-        newWorkspaceDefaults.clear()
         settings.reset()
         projectList.showsImportedSessions = settings.importExternalSessions
     }
@@ -298,7 +294,6 @@ public final class AppEnvironment {
             configCache: ConfigOptionCache(store: store),
             composerDefaults: ComposerDefaultsStore(store: store),
             composerDrafts: ComposerDraftStore(store: store),
-            newWorkspaceDefaults: NewWorkspaceDefaultsStore(store: store),
             settings: AppSettingsModel(store: store),
             machineStore: store,
             legacyCacheMigrationStore: store,

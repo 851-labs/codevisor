@@ -199,6 +199,58 @@ final class SessionController {
     private(set) var worktreeName: String?
     /// The created worktree's path; overrides the project folder as the agent cwd.
     private(set) var sessionCwdOverride: String?
+
+    /// Where the draft runs, as the composer's context picker sees it: the
+    /// project root, an EXISTING worktree (no creation on send), or a new
+    /// worktree materialized on first send.
+    enum RunContextSelection: Equatable {
+        case projectRoot
+        case existingWorktree(name: String, path: String)
+        case newWorktree
+    }
+
+    /// Derived from the worktree fields — `wantsNewWorktree` wins because a
+    /// reverted first send can leave a live worktree behind while the mode
+    /// stays on (retry reuses it).
+    var runContext: RunContextSelection {
+        if wantsNewWorktree { return .newWorktree }
+        if let path = sessionCwdOverride, let name = worktreeName {
+            return .existingWorktree(name: name, path: path)
+        }
+        return .projectRoot
+    }
+
+    /// The one mutation door for the picker: keeps the invariant that an
+    /// existing-worktree selection carries name+path with worktree mode OFF
+    /// (so `send()` never creates a worktree for it).
+    ///
+    /// Eagerly-created sessions carry a server-resolved `cwd` that OUTRANKS
+    /// `sessionCwdOverride` in `sessionCwdURL`, so the choice is also patched
+    /// onto `serverSession` — the same move `createWorktree` makes when a new
+    /// worktree materializes. The next connect upserts it; the server resolves
+    /// the authoritative cwd from the worktree name.
+    func setRunContext(_ context: RunContextSelection) {
+        switch context {
+        case .projectRoot:
+            // didSet clears the override and name.
+            wantsNewWorktree = false
+            serverSession?.worktreeName = nil
+            serverSession?.cwd = nil
+        case .newWorktree:
+            wantsNewWorktree = true
+            serverSession?.worktreeName = nil
+            serverSession?.cwd = nil
+        case let .existingWorktree(name, path):
+            // Order matters: setting `wantsNewWorktree` LAST would wipe the
+            // fields via its didSet.
+            wantsNewWorktree = false
+            sessionCwdOverride = path
+            worktreeName = name
+            serverSession?.worktreeName = name
+            serverSession?.cwd = path
+            draftDidChange()
+        }
+    }
     /// Pre-chat setup steps (worktree creation, agent start) shown on the
     /// session page as "Worked for…"-style expandable sections with a live
     /// timer, streamed logs, and any failure message.
@@ -287,6 +339,10 @@ final class SessionController {
             },
             selectedHarnessId: selectedHarnessId,
             runInWorktree: wantsNewWorktree,
+            // Persist an existing-worktree choice; a NEW-worktree draft has
+            // nothing durable to point at until first send.
+            worktreeName: wantsNewWorktree ? nil : worktreeName,
+            worktreeCwd: wantsNewWorktree ? nil : sessionCwdOverride,
             configByHarness: pendingConfigByHarness,
             modeId: pendingModeId,
             isGoalComposerArmed: isGoalComposerArmed,
@@ -310,6 +366,9 @@ final class SessionController {
         }
         selectedHarnessId = draft.selectedHarnessId
         wantsNewWorktree = draft.runInWorktree
+        if !draft.runInWorktree, let name = draft.worktreeName, let cwd = draft.worktreeCwd {
+            setRunContext(.existingWorktree(name: name, path: cwd))
+        }
         pendingConfigByHarness = draft.configByHarness
         pendingModeId = draft.modeId
         isGoalComposerArmed = draft.isGoalComposerArmed

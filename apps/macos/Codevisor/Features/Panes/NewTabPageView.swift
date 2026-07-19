@@ -6,40 +6,37 @@
 import SwiftUI
 import CodevisorCore
 
-/// A directory the New tab page can open the new pane in: the workspace
-/// root (default) or a worktree created by one of the workspace's chats.
-struct NewTabDirectory: Identifiable, Equatable {
-    let id: String
-    let title: String
-    /// Nil = the workspace's own directory (session cwd resolution).
-    let path: String?
-    /// Set for worktree options (rides onto a created chat's session).
-    let worktreeName: String?
-
-    static let workspaceRoot = NewTabDirectory(
-        id: "workspace-root", title: "Workspace directory", path: nil, worktreeName: nil
-    )
-}
-
 struct NewTabPageView: View {
     @Environment(\.theme) private var theme
     /// The placeholder pane this page belongs to.
     let paneId: UUID
     /// The owning group; conversion happens through it.
     let group: PaneGroupModel?
-    /// Directories the new pane can open in: the workspace root plus the
+    /// Run locations the new pane can open in: the project root plus the
     /// worktrees of the workspace's (unarchived) chats. The picker only
     /// shows when there is an actual choice.
-    var directories: [NewTabDirectory] = [.workspaceRoot]
+    var contexts: [WorkspaceRunContext] = []
+    /// The directory this placeholder was spawned FROM (the focused pane's
+    /// context at ⌘T time). Preselects the matching context so a tab opened
+    /// beside a worktree chat defaults into that worktree.
+    var inheritedPath: String? = nil
     /// Creates the chat SESSION eagerly and converts the placeholder into
     /// an established chat pane (wired by the container, which owns session
     /// creation). Nil (previews) falls back to a draft conversion.
-    var onNewChat: ((NewTabDirectory) -> Void)? = nil
+    var onNewChat: ((WorkspaceRunContext) -> Void)? = nil
 
-    @State private var selectedDirectoryId = NewTabDirectory.workspaceRoot.id
+    @State private var selectedContextId: String?
 
-    private var selectedDirectory: NewTabDirectory {
-        directories.first { $0.id == selectedDirectoryId } ?? .workspaceRoot
+    private var selectedContext: WorkspaceRunContext? {
+        if let selectedContextId,
+           let picked = contexts.first(where: { $0.id == selectedContextId }) {
+            return picked
+        }
+        if let inheritedPath,
+           let inherited = contexts.first(where: { $0.path == inheritedPath }) {
+            return inherited
+        }
+        return contexts.first
     }
 
     var body: some View {
@@ -62,8 +59,8 @@ struct NewTabPageView: View {
                             optionCards
                         }
                     }
-                    if directories.count > 1 {
-                        directoryPicker
+                    if contexts.count > 1 {
+                        contextPicker
                     }
                 }
                 .padding(20)
@@ -75,34 +72,31 @@ struct NewTabPageView: View {
     }
 
     /// Where the new tab opens — the same menu idiom as the composer's
-    /// pickers: native checkmarks, a chip label.
-    private var directoryPicker: some View {
+    /// pickers: native checkmarks, a chip label showing the context NAME
+    /// (project or worktree), with the ~-abbreviated path as a menu-row
+    /// subtitle.
+    private var contextPicker: some View {
         Menu {
-            ForEach(directories) { directory in
+            ForEach(contexts) { context in
                 Toggle(isOn: Binding(
-                    get: { directory.id == selectedDirectory.id },
+                    get: { context.id == selectedContext?.id },
                     set: { isOn in
                         guard isOn else { return }
-                        selectedDirectoryId = directory.id
+                        selectedContextId = context.id
                     }
                 )) {
                     Label {
-                        Text(directory.title)
+                        Text(context.name)
+                        Text(context.displayPath)
                     } icon: {
-                        MenuSymbolIcon(
-                            systemName: directory.path == nil
-                                ? "folder.fill" : "arrow.triangle.branch"
-                        )
+                        MenuSymbolIcon(systemName: context.symbolName)
                     }
                 }
             }
         } label: {
-            PickerChip(text: selectedDirectory.title) {
-                Image(
-                    systemName: selectedDirectory.path == nil
-                        ? "folder.fill" : "arrow.triangle.branch"
-                )
-                .font(.system(size: 12))
+            PickerChip(text: selectedContext?.name ?? "") {
+                Image(systemName: selectedContext?.symbolName ?? "folder.fill")
+                    .font(.system(size: 12))
             }
         }
         .menuStyle(.button)
@@ -110,6 +104,7 @@ struct NewTabPageView: View {
         .menuIndicator(.hidden)
         .fixedSize()
         .accessibilityLabel("Directory for the new tab")
+        .accessibilityValue(selectedContext?.name ?? "")
     }
 
     @ViewBuilder
@@ -119,21 +114,29 @@ struct NewTabPageView: View {
             subtitle: "Start another chat in this workspace",
             systemImage: "text.bubble"
         ) {
-            if let onNewChat {
-                onNewChat(selectedDirectory)
+            if let onNewChat, let selectedContext {
+                onNewChat(selectedContext)
             } else {
                 group?.convertNewTabPane(id: paneId, to: .chat)
             }
         }
         NewTabOptionCard(
             title: "New Terminal",
-            subtitle: "Open a shell in the workspace directory",
+            subtitle: terminalSubtitle,
             systemImage: "terminal"
         ) {
             group?.convertNewTabPane(
-                id: paneId, to: .terminal, cwd: selectedDirectory.path
+                id: paneId, to: .terminal, cwd: selectedContext?.path
             )
         }
+    }
+
+    /// Names the actual destination, not a generic "workspace directory".
+    private var terminalSubtitle: String {
+        if let selectedContext {
+            return "Open a shell in \(selectedContext.name)"
+        }
+        return "Open a shell in this workspace"
     }
 }
 
@@ -184,7 +187,21 @@ private struct NewTabOptionCard: View {
 
 #if DEBUG
 #Preview {
-    NewTabPageView(paneId: UUID(), group: nil)
-        .frame(width: 700, height: 480)
+    NewTabPageView(
+        paneId: UUID(),
+        group: nil,
+        contexts: [
+            WorkspaceRunContext(
+                kind: .projectRoot, name: "molina",
+                path: "/Users/preview/dev/molina", worktreeName: nil
+            ),
+            WorkspaceRunContext(
+                kind: .worktree, name: "ada-lovelace",
+                path: "/Users/preview/codevisor/molina/ada-lovelace",
+                worktreeName: "ada-lovelace"
+            ),
+        ]
+    )
+    .frame(width: 700, height: 480)
 }
 #endif

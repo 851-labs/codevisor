@@ -53,9 +53,10 @@ public struct PaneDescriptorState: Identifiable, Codable, Sendable, Equatable {
     /// pruning must be owner-scoped — chat B's empty snapshot must never
     /// tear down chat A's dev server.
     public var ownerChatSessionId: UUID?
-    /// Terminal panes only: an explicit working directory (a chat's
-    /// worktree picked on the New tab page). Nil follows the session's cwd
-    /// (workspace root).
+    /// Terminal panes: an explicit working directory (the focused pane's
+    /// context at spawn time, or a worktree picked on the New tab page).
+    /// New Tab placeholders: the spawning context's directory, preselected
+    /// by the page's picker. Nil follows the anchor session's cwd.
     public var cwdOverride: String?
 
     /// Every pane moves between groups alike — tabs are tabs (the only
@@ -195,15 +196,21 @@ public struct PaneGroupState: Codable, Sendable, Equatable {
     }
 
     /// Appends a new terminal pane named "Terminal N" (N = highest existing
-    /// numeric suffix + 1), selects it, and opens the group.
+    /// numeric suffix + 1), selects it, and opens the group. `cwdOverride`
+    /// pins the shell to the spawning context's directory (cwd follows
+    /// focus); nil falls back to the anchor session's cwd resolution.
     @discardableResult
-    public mutating func addTerminalPane(sessionId: UUID) -> PaneDescriptorState {
+    public mutating func addTerminalPane(
+        sessionId: UUID,
+        cwdOverride: String? = nil
+    ) -> PaneDescriptorState {
         let paneId = UUID()
         let pane = PaneDescriptorState(
             id: paneId,
             kind: .terminal,
             name: Self.nextTerminalName(existing: panes.map(\.name)),
-            terminalKey: "\(sessionId.uuidString):\(paneId.uuidString)"
+            terminalKey: "\(sessionId.uuidString):\(paneId.uuidString)",
+            cwdOverride: cwdOverride
         )
         panes.append(pane)
         selectedPaneId = pane.id
@@ -264,14 +271,17 @@ public struct PaneGroupState: Codable, Sendable, Equatable {
     /// Appends the Chrome-style "New tab" placeholder and selects it —
     /// spawned when a group's last real pane closes, so the strip always
     /// shows at least one tab. Its page offers what to create.
+    /// `inheritedCwd` (stored in `cwdOverride`) is the spawning context's
+    /// directory; the page preselects it in its directory picker.
     @discardableResult
-    public mutating func addNewTabPane() -> PaneDescriptorState {
+    public mutating func addNewTabPane(inheritedCwd: String? = nil) -> PaneDescriptorState {
         let paneId = UUID()
         let pane = PaneDescriptorState(
             id: paneId,
             kind: .newTab,
             name: "New tab",
-            terminalKey: paneId.uuidString
+            terminalKey: paneId.uuidString,
+            cwdOverride: inheritedCwd
         )
         panes.append(pane)
         selectedPaneId = pane.id

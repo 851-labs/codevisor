@@ -64,6 +64,30 @@ struct PaneGroupStateTests {
         #expect(added.terminalKey == "\(sessionId.uuidString):\(added.id.uuidString)")
     }
 
+    @Test("Adding a terminal pane records the spawn context's cwd override")
+    func addPaneInheritsCwd() {
+        var state = PaneGroupState.initial(sessionId: sessionId)
+        let inherited = state.addTerminalPane(
+            sessionId: sessionId, cwdOverride: "/tmp/worktree"
+        )
+        #expect(inherited.cwdOverride == "/tmp/worktree")
+        // Default stays nil: the anchor session's cwd resolution.
+        #expect(state.addTerminalPane(sessionId: sessionId).cwdOverride == nil)
+    }
+
+    @Test("A New Tab placeholder stores the spawning context for its page's preselect")
+    func newTabPaneInheritsCwd() {
+        var state = PaneGroupState.centerInitial(sessionId: sessionId)
+        let placeholder = state.addNewTabPane(inheritedCwd: "/tmp/worktree")
+        #expect(placeholder.cwdOverride == "/tmp/worktree")
+        #expect(placeholder.kind == .newTab)
+        // Converting to a terminal uses the EXPLICIT pick, not the inherited hint.
+        let converted = state.convertNewTabPane(
+            id: placeholder.id, to: .terminal, sessionId: sessionId, cwd: "/tmp/other"
+        )
+        #expect(converted?.cwdOverride == "/tmp/other")
+    }
+
     @Test("Naming is max numeric suffix + 1, including after close and re-add")
     func naming() {
         #expect(PaneGroupState.nextTerminalName(existing: []) == "Terminal 1")
