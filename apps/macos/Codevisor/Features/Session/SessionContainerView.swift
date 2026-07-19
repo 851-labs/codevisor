@@ -231,6 +231,13 @@ struct SessionContainerView: View {
         // one surface behind chat, tab band, and (transparent) terminal
         // alike. Custom palettes paint their own page color.
         .background(theme.isSystem ? Color.clear : theme.windowBackground)
+        // The hairline under the top bar: drawn by the CENTER panel's top
+        // edge (the inspector and sidebar stay seamless under the toolbar).
+        .overlay(alignment: .top) {
+            theme.separator
+                .frame(height: 1)
+                .frame(maxWidth: .infinity)
+        }
     }
 
     /// The workspace's name as an editable window title: edits save through
@@ -578,14 +585,12 @@ struct SessionContainerView: View {
         SessionInspectorView(controller: controller, scratchpad: scratchpad)
             .frame(width: currentInspectorWidth)
             .frame(maxHeight: .infinity, alignment: .top)
+            // Extends under the toolbar (ShapeStyle backgrounds ignore safe
+            // area) — intentional: the toolbar tints over the panel exactly
+            // like it does over the native left sidebar. NO hairline on the
+            // boundary for the same reason: the left sidebar separates by
+            // background alone.
             .background(theme.sidebarBackground)
-            // The column/content boundary hairline, with the resize grip
-            // straddling it.
-            .overlay(alignment: .leading) {
-                theme.separator
-                    .frame(width: 1)
-                    .frame(maxHeight: .infinity)
-            }
             .overlay(alignment: .leading) { inspectorResizeHandle }
     }
 
