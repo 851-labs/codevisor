@@ -55,6 +55,15 @@ struct ChatInputEditor: NSViewRepresentable {
         textView.string = text
         textView.font = .preferredFont(forTextStyle: .body)
         textView.isRichText = false
+        // No automatic formatting in a prompt box: smart quotes/dashes and
+        // autocorrect mangle code and identifiers, and these apply even in
+        // plain-text views (they follow the system defaults otherwise).
+        textView.isAutomaticQuoteSubstitutionEnabled = false
+        textView.isAutomaticDashSubstitutionEnabled = false
+        textView.isAutomaticTextReplacementEnabled = false
+        textView.isAutomaticSpellingCorrectionEnabled = false
+        textView.isAutomaticLinkDetectionEnabled = false
+        textView.isAutomaticDataDetectionEnabled = false
         textView.allowsUndo = true
         textView.drawsBackground = false
         textView.textContainerInset = NSSize(width: 0, height: Self.verticalTextInset)
@@ -196,6 +205,38 @@ final class SubmittingTextView: NSTextView {
     /// dropzone (`AttachmentDropModifier`) and the file attaches instead.
     override var acceptableDragTypes: [NSPasteboard.PasteboardType] { [.string] }
 
+    /// The app-level Format menu (⌘B/⌘I, alignment, …) exists for the
+    /// scratchpad's rich editor. The composer is plain text, but NSTextView
+    /// still honors alignment (a paragraph attribute) and font-manager trait
+    /// changes (which restyle the WHOLE box in plain-text mode) — so every
+    /// formatting action is refused here: the menu items disable while the
+    /// composer has focus, and the actions are no-ops if invoked anyway.
+    private static let blockedFormatActions: Set<Selector> = [
+        #selector(NSText.alignLeft(_:)),
+        #selector(NSText.alignCenter(_:)),
+        #selector(NSText.alignRight(_:)),
+        #selector(NSTextView.alignJustified(_:)),
+        #selector(NSText.underline(_:)),
+        #selector(NSTextView.outline(_:)),
+        #selector(NSTextView.raiseBaseline(_:)),
+        #selector(NSTextView.lowerBaseline(_:)),
+        NSSelectorFromString("superscript:"),
+        NSSelectorFromString("subscript:"),
+        NSSelectorFromString("unscript:"),
+        #selector(NSTextView.changeFont(_:)),
+        NSSelectorFromString("changeAttributes:")
+    ]
+
+    override func alignLeft(_ sender: Any?) {}
+    override func alignCenter(_ sender: Any?) {}
+    override func alignRight(_ sender: Any?) {}
+    override func alignJustified(_ sender: Any?) {}
+    override func underline(_ sender: Any?) {}
+    override func outline(_ sender: Any?) {}
+    override func raiseBaseline(_ sender: Any?) {}
+    override func lowerBaseline(_ sender: Any?) {}
+    override func changeFont(_ sender: Any?) {}
+
     /// `NSTextView` validates the Edit > Paste command against its own
     /// plain-text readable types before dispatching the action. An image-only
     /// clipboard therefore disables the menu item (and its Command-V key
@@ -203,6 +244,9 @@ final class SubmittingTextView: NSTextView {
     /// Include attachment-worthy content in that validation without teaching
     /// the text view to insert images into its text storage.
     override func validateUserInterfaceItem(_ item: any NSValidatedUserInterfaceItem) -> Bool {
+        if let action = item.action, Self.blockedFormatActions.contains(action) {
+            return false
+        }
         if item.action == #selector(paste(_:)),
            isEditable,
            onPasteAttachments != nil,
