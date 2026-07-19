@@ -68,6 +68,14 @@ private struct PendingSessionImport: Identifiable {
     var id: UUID { project.id }
 }
 
+/// A chat archive that would leave its owning workspace without any active
+/// chats. The user chooses whether the workspace should follow the chat into
+/// the archive or remain available for its terminals and layout.
+private struct PendingLastChatArchive {
+    let session: ChatSession
+    let workspace: Workspace
+}
+
 /// The sidebar: a New Chat action, an organization control, and the selected
 /// machine's workspaces or agent sessions.
 ///
@@ -98,6 +106,7 @@ struct SidebarView: View {
     @State private var renamingWorkspace: Workspace?
     @State private var workspaceRenameTitle = ""
     @State private var workspaceIconEditing: Workspace?
+    @State private var pendingLastChatArchive: PendingLastChatArchive?
     /// Bumped after workspace mutations (backfill sweep, renames) so the
     /// non-observable repository is re-read.
     @State private var workspaceRevision = 0
@@ -369,6 +378,24 @@ struct SidebarView: View {
                 workspaceRevision += 1
             }
             Button("Cancel", role: .cancel) {}
+        }
+        .alert(
+            "Archive workspace too?",
+            isPresented: Binding(
+                get: { pendingLastChatArchive != nil },
+                set: { if !$0 { pendingLastChatArchive = nil } }
+            ),
+            presenting: pendingLastChatArchive
+        ) { pending in
+            Button("Archive Workspace") {
+                archiveWorkspace(pending.workspace)
+            }
+            Button("Archive Chat Only") {
+                archiveChat(pending.session)
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: { pending in
+            Text("This is the last active chat in “\(pending.workspace.name)”.")
         }
         // Entering by-workspace mode (or sessions changing while in it)
         // sweeps the visible chats so every one has an owning workspace.
@@ -727,7 +754,7 @@ struct SidebarView: View {
                 Label("Rename", systemImage: "pencil")
                     .labelStyle(.titleAndIcon)
             }
-            Button { list.archiveSession(session) } label: {
+            Button { requestArchiveChat(session) } label: {
                 Label("Archive", systemImage: "archivebox")
                     .labelStyle(.titleAndIcon)
             }
@@ -817,19 +844,23 @@ struct SidebarView: View {
     /// live chats archive with it, and the row leaves the list. Layout is
     /// kept — restoring any of its chats revives the whole workspace.
     private func archiveWorkspace(_ item: SidebarWorkspaceListItem) {
-        var archived = item.workspace
+        archiveWorkspace(item.workspace)
+    }
+
+    private func archiveWorkspace(_ workspace: Workspace) {
+        var archived = workspace
         archived.isArchived = true
         environment.workspaces.save(archived)
-        for chatId in item.workspace.chatSessionIds {
+        for chatId in workspace.chatSessionIds {
             if let session = list.sessions.first(where: {
-                $0.serverId == item.workspace.serverId && $0.id == chatId && !$0.isArchived
+                $0.serverId == workspace.serverId && $0.id == chatId && !$0.isArchived
             }) {
                 list.archiveSession(session)
             }
         }
         if case let .session(serverId, sessionId) = selection,
-           serverId == item.workspace.serverId,
-           environment.workspaces.workspaceId(forSession: sessionId) == item.workspace.id {
+           serverId == workspace.serverId,
+           environment.workspaces.workspaceId(forSession: sessionId) == workspace.id {
             selection = .newChat(nil)
         }
         workspaceRevision += 1
@@ -910,7 +941,7 @@ struct SidebarView: View {
                 Label("Rename", systemImage: "pencil")
                     .labelStyle(.titleAndIcon)
             }
-            Button { list.archiveSession(session) } label: {
+            Button { requestArchiveChat(session) } label: {
                 Label("Archive", systemImage: "archivebox")
                     .labelStyle(.titleAndIcon)
             }
@@ -1050,8 +1081,7 @@ struct SidebarView: View {
                         if let onArchive {
                             onArchive()
                         } else {
-                            list.archiveSession(session)
-                            if selection == .session(serverId: session.serverId, id: session.id) { selection = .newChat(nil) }
+                            requestArchiveChat(session)
                         }
                     } label: {
                         Image(systemName: "archivebox")
@@ -1068,6 +1098,36 @@ struct SidebarView: View {
                 }
             }
             .frame(width: 24, height: 14, alignment: .trailing)
+        }
+    }
+
+    /// Archives immediately unless this is the workspace's final active chat,
+    /// in which case the alert lets the user archive the workspace as well.
+    private func requestArchiveChat(_ session: ChatSession) {
+        guard let workspaceId = environment.workspaces.workspaceId(forSession: session.id),
+              let workspace = environment.workspaces.workspace(id: workspaceId),
+              !workspace.isArchived else {
+            archiveChat(session)
+            return
+        }
+
+        let activeChats = list.sessions.filter {
+            $0.serverId == workspace.serverId
+                && !$0.isArchived
+                && environment.workspaces.workspaceId(forSession: $0.id) == workspace.id
+        }
+        guard activeChats.count == 1, activeChats[0].id == session.id else {
+            archiveChat(session)
+            return
+        }
+
+        pendingLastChatArchive = PendingLastChatArchive(session: session, workspace: workspace)
+    }
+
+    private func archiveChat(_ session: ChatSession) {
+        list.archiveSession(session)
+        if selection == .session(serverId: session.serverId, id: session.id) {
+            selection = .newChat(nil)
         }
     }
 
