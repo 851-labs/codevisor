@@ -683,6 +683,12 @@ export const makeCodexProvider = (
       }
     }),
     close: adapterPromise("close", async () => {
+      // Deliberate closes skip the client's onClose handlers (no spurious
+      // session.error), so the in-flight cleanup that handler performed
+      // happens here instead.
+      session.pendingPrompt?.resolve({ stopReason: "cancelled" })
+      session.pendingPrompt = undefined
+      cancelPendingQuestions(session)
       closeCommandTerminals(session)
       session.client.close()
     }),

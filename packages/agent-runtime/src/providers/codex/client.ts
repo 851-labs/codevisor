@@ -159,6 +159,20 @@ const wireCodexClient = (child: ChildProcessWithoutNullStreams): CodexClient => 
 
   return {
     close: () => {
+      // EXPECTED teardown (session close, agent replacement after a cwd
+      // change, short-lived listing/usage clients): the child's exit must
+      // not masquerade as a crash — without this, every routine close
+      // published a "codex app-server exited" session error that clients
+      // flash before the replacement connects. Pending requests still
+      // reject so awaiting callers unwind.
+      if (!closed) {
+        closed = true
+        const error = new Error("codex client closed")
+        for (const entry of pending.values()) {
+          entry.reject(error)
+        }
+        pending.clear()
+      }
       child.stdin.end()
       child.kill()
     },

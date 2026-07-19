@@ -2016,6 +2016,18 @@ describe("CodexProvider", () => {
     expect(turnEnded?.payload).toMatchObject({ turnState: "ended" })
   })
 
+  it("closing a session is silent: pending prompt cancels, no session.error", async () => {
+    const { client, created, events } = await setup()
+    const prompt = run(created!.handle.prompt("hello"))
+    client.emit("turn/started", { threadId: "thread-new", turn: { id: "turn-close" } })
+    // Deliberate teardown (agent replacement, session close) — must not
+    // masquerade as a crash.
+    await run(created!.handle.close)
+    await expect(prompt).resolves.toMatchObject({ stopReason: "cancelled" })
+    expect(client.closed).toBe(true)
+    expect(events.every((event) => event.kind !== "session.error")).toBe(true)
+  })
+
   it("labels goal auto-continuation turns as agent-initiated", async () => {
     const { client, events } = await setup({ resume: "thread-resumed" })
     // Resume flow: codex replays a goal snapshot then may start a turn itself.
