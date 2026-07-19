@@ -79,7 +79,7 @@ enum WorkspaceNameGenerator {
         "weinberg", "weiss", "weller", "werner", "whipple", "wieland", "wien", "wigner",
         "wilkins", "wilkinson", "willstatter", "wilson", "windaus", "wittig", "wohler", "woodward",
         "wu", "yalow", "yang", "young", "yukawa", "zeeman", "zernike", "zewail",
-        "ziegler", "zsigmondy", "zur-hausen", "zuse", "-",
+        "ziegler", "zsigmondy", "zur-hausen", "zuse",
     ]
 
     /// A random name not already taken by an existing workspace.
