@@ -170,6 +170,16 @@ public protocol CodevisorServerClienting: Sendable {
     /// session-specific picker metadata. Nil means the server predates this
     /// endpoint and callers should keep the capability-cache fallback.
     func connectSession(id: UUID) async throws -> ServerSessionRuntimeMetadata?
+    /// One-round-trip chat open: ensures the project and session records
+    /// exist server-side (never overwriting an existing project) and returns
+    /// the refreshed session together with its first transcript page. Nil
+    /// means the server predates this endpoint and callers should fall back
+    /// to the discrete listProjects/upsert/transcript calls.
+    func openSession(
+        _ session: ChatSession,
+        project: Project?,
+        transcriptLimit: Int
+    ) async throws -> ServerSessionOpenResponse?
     func transcriptPage(id: UUID, before: String?, limit: Int) async throws -> ServerTranscriptPage
     func transcriptItemDetails(id: UUID, itemId: String) async throws -> ServerTranscriptItemDetails
     func promptQueue(id: UUID) async throws -> [ServerPromptQueueItem]
@@ -217,6 +227,14 @@ public protocol CodevisorServerClienting: Sendable {
 
 public extension CodevisorServerClienting {
     func connectSession(id: UUID) async throws -> ServerSessionRuntimeMetadata? { nil }
+
+    /// Default for fakes/older transports: no combined open — callers use
+    /// the discrete calls. The HTTP client overrides with the real endpoint.
+    func openSession(
+        _ session: ChatSession,
+        project: Project?,
+        transcriptLimit: Int
+    ) async throws -> ServerSessionOpenResponse? { nil }
 
     func shellEventStream() -> AsyncThrowingStream<ServerEventEnvelope, any Error> {
         // Test doubles and old transports preserve their existing behavior.
@@ -1247,6 +1265,14 @@ public struct ServerTranscriptPage: Decodable, Equatable, Sendable {
     public var usage: ServerSessionUsage? = nil
 }
 
+/// Response of the combined `POST /v1/sessions/:id/open`: the authoritative
+/// session record plus the first transcript page, fetched in one round-trip
+/// so a chat can paint its history without waiting on discrete calls.
+public struct ServerSessionOpenResponse: Decodable, Sendable {
+    public var session: ServerSession
+    public var transcript: ServerTranscriptPage
+}
+
 public struct ServerTranscriptItemDetails: Decodable, Equatable, Sendable {
     public var itemId: String
     public var revision: Int
@@ -1631,6 +1657,28 @@ public final class CodevisorServerClient: CodevisorServerClienting, @unchecked S
                 body: Optional<EmptyBody>.none
             )
         } catch CodevisorServerClientError.httpStatus(404, _) {
+            return nil
+        }
+    }
+
+    public func openSession(
+        _ session: ChatSession,
+        project: Project?,
+        transcriptLimit: Int
+    ) async throws -> ServerSessionOpenResponse? {
+        do {
+            return try await send(
+                "/v1/sessions/\(session.id.uuidString)/open",
+                method: "POST",
+                body: OpenSessionBody(
+                    session: session,
+                    project: project,
+                    transcriptLimit: transcriptLimit
+                )
+            )
+        } catch CodevisorServerClientError.httpStatus(404, _) {
+            // Additive protocol compatibility: an older server routes nothing
+            // at /open — the caller repeats the work as discrete calls.
             return nil
         }
     }
@@ -2255,4 +2303,22 @@ private struct UpdateSessionBody: Encodable {
 
 private struct TouchSessionBody: Encodable {
     var updatedAt: String
+}
+
+/// Mirrors the legacy discrete open sequence in one payload: `session` is
+/// the create-if-missing snapshot, `update` carries the same fields the
+/// discrete PATCH used to apply to an existing record, and `project` is
+/// created only when the server doesn't know it yet.
+private struct OpenSessionBody: Encodable {
+    var project: CreateProjectBody?
+    var session: CreateSessionBody
+    var update: UpdateSessionBody
+    var transcriptLimit: Int
+
+    init(session: ChatSession, project: Project?, transcriptLimit: Int) {
+        self.project = project.map(CreateProjectBody.init(project:))
+        self.session = CreateSessionBody(session: session)
+        self.update = UpdateSessionBody(session: session)
+        self.transcriptLimit = transcriptLimit
+    }
 }

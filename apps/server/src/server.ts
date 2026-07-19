@@ -9,6 +9,7 @@ import { randomUUID } from "node:crypto"
 import type {
   AttachmentRef,
   CreateSessionRequest,
+  UpdateSessionRequest,
   EventEnvelope,
   Harness,
   HarnessCapability,
@@ -34,6 +35,7 @@ import {
   CreateHarnessAccountRequest as CreateHarnessAccountRequestSchema,
   CreateSessionRequest as CreateSessionRequestSchema,
   CreateWorktreeRequest as CreateWorktreeRequestSchema,
+  OpenSessionRequest as OpenSessionRequestSchema,
   CancelRequest,
   PromptRequest,
   AnswerPiAuthRequest as AnswerPiAuthRequestSchema,
@@ -1584,30 +1586,14 @@ const routeSessions = async (
 
   if (request.method === "POST" && url.pathname === "/v1/sessions") {
     const payload = await readSchema(request, CreateSessionRequestSchema)
-    if (payload.id !== undefined) {
-      const existing = await findSession(services.db, payload.id)
-      if (existing !== undefined) {
-        writeJson(response, 200, existing)
-        return true
-      }
-      const pending = routeState.pendingSessionCreates.get(payload.id)
-      if (pending !== undefined) {
-        writeJson(response, 200, await pending)
-        return true
-      }
-    }
-    const project = await getProjectOrFail(services.db, payload.projectId)
-    const create = createServerSession(services, fanout, config.id, payload, project)
-    if (payload.id !== undefined) {
-      routeState.pendingSessionCreates.set(payload.id, create)
-    }
-    const session = await create.finally(() => {
-      if (payload.id !== undefined) {
-        routeState.pendingSessionCreates.delete(payload.id)
-      }
-    })
-    await appendAndPublish(services.db, fanout, "session.created", session.id, session)
-    writeJson(response, 201, session)
+    const { session, created } = await createSessionIfMissing(
+      services,
+      fanout,
+      routeState,
+      config,
+      payload
+    )
+    writeJson(response, created ? 201 : 200, session)
     return true
   }
 
@@ -1672,18 +1658,7 @@ const routeSessions = async (
 
   if (sessionId !== undefined && request.method === "PATCH") {
     const payload = await readSchema(request, UpdateSessionRequestSchema)
-    const session = await run(services.db.updateSession(sessionId, payload))
-    if (session.isArchived) {
-      await archiveSessionRuntime(services, session)
-      await removeArchivedSessionWorktree(services, config.id, session)
-    }
-    await appendAndPublish(
-      services.db,
-      fanout,
-      session.isArchived ? "session.archived" : "session.updated",
-      session.id,
-      session
-    )
+    const session = await applySessionUpdate(services, fanout, config, sessionId, payload)
     writeJson(response, 200, session)
     return true
   }
@@ -1751,6 +1726,67 @@ const createServerSession = async (
       agentSessionId
     })
   )
+}
+
+/// Create-or-return for sessions: the existing-row and in-flight-create
+/// checks (concurrent POSTs for the same client-supplied id must not spawn
+/// two agent sessions) shared by POST /v1/sessions and the combined
+/// /open route.
+const createSessionIfMissing = async (
+  services: CodevisorServerServices,
+  fanout: EventFanout,
+  routeState: RouteState,
+  config: CodevisorServerConfig,
+  payload: CreateSessionRequest
+): Promise<{ readonly session: SessionSummary; readonly created: boolean }> => {
+  if (payload.id !== undefined) {
+    const existing = await findSession(services.db, payload.id)
+    if (existing !== undefined) {
+      return { session: existing, created: false }
+    }
+    const pending = routeState.pendingSessionCreates.get(payload.id)
+    if (pending !== undefined) {
+      return { session: await pending, created: false }
+    }
+  }
+  const project = await getProjectOrFail(services.db, payload.projectId)
+  const create = createServerSession(services, fanout, config.id, payload, project)
+  if (payload.id !== undefined) {
+    routeState.pendingSessionCreates.set(payload.id, create)
+  }
+  const session = await create.finally(() => {
+    if (payload.id !== undefined) {
+      routeState.pendingSessionCreates.delete(payload.id)
+    }
+  })
+  await appendAndPublish(services.db, fanout, "session.created", session.id, session)
+  return { session, created: true }
+}
+
+/// The full PATCH side-effect set — archive teardown and the
+/// updated/archived event fanout — shared by PATCH /v1/sessions/:id and the
+/// combined /open route so opening a chat behaves exactly like the discrete
+/// update it replaced.
+const applySessionUpdate = async (
+  services: CodevisorServerServices,
+  fanout: EventFanout,
+  config: CodevisorServerConfig,
+  sessionId: string,
+  payload: UpdateSessionRequest
+): Promise<SessionSummary> => {
+  const session = await run(services.db.updateSession(sessionId, payload))
+  if (session.isArchived) {
+    await archiveSessionRuntime(services, session)
+    await removeArchivedSessionWorktree(services, config.id, session)
+  }
+  await appendAndPublish(
+    services.db,
+    fanout,
+    session.isArchived ? "session.archived" : "session.updated",
+    session.id,
+    session
+  )
+  return session
 }
 
 /// The standing per-session sink: every runtime event — in-turn or
@@ -1892,6 +1928,56 @@ const routeSessionActions = async (
   if (connectSessionId !== undefined && request.method === "POST") {
     const metadata = await ensureAgentSessionFor(services, fanout, config.id, connectSessionId)
     writeJson(response, 200, metadata)
+    return true
+  }
+
+  // One-round-trip chat open: ensure the project and session records exist
+  // and return the first transcript page together, replacing the client's
+  // listProjects → createProject → listSessions → create/update → transcript
+  // waterfall. Deliberately does NOT touch the agent runtime — clients call
+  // /connect in parallel so the transcript can paint while the agent process
+  // is still spawning. Older clients keep using the discrete routes; newer
+  // clients fall back to them when this route 404s on an older server.
+  const openSessionId = matchRoute(url.pathname, "/v1/sessions/:id/open")
+  if (openSessionId !== undefined && request.method === "POST") {
+    const payload = await readSchema(request, OpenSessionRequestSchema)
+    if (
+      payload.session.id !== undefined &&
+      payload.session.id.toLowerCase() !== openSessionId.toLowerCase()
+    ) {
+      throw new HttpFailure(400, "Session id in body does not match the path")
+    }
+    const limit = payload.transcriptLimit ?? 32
+    if (!Number.isSafeInteger(limit) || limit < 1) {
+      throw new HttpFailure(400, "Invalid transcript page limit")
+    }
+    // Project: create-if-missing. An existing record is never updated from
+    // the open snapshot — it may predate changes made elsewhere (archiving),
+    // and opening a chat must not revert them.
+    if (payload.project?.id !== undefined) {
+      const wanted = payload.project.id.toLowerCase()
+      const exists = (await run(services.db.listProjects)).some(
+        (candidate) => candidate.id.toLowerCase() === wanted
+      )
+      if (!exists) {
+        const project = await run(services.db.createProject(payload.project))
+        await appendAndPublish(services.db, fanout, "project.created", project.id, project)
+      }
+    }
+    const existing = await findSession(services.db, openSessionId)
+    const session =
+      existing === undefined
+        ? (
+            await createSessionIfMissing(services, fanout, routeState, config, {
+              ...payload.session,
+              id: openSessionId
+            })
+          ).session
+        : payload.update === undefined
+          ? existing
+          : await applySessionUpdate(services, fanout, config, openSessionId, payload.update)
+    const transcript = await run(services.db.getTranscriptPage(openSessionId, undefined, limit))
+    writeJson(response, 200, { session, transcript })
     return true
   }
 

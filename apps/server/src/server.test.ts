@@ -3021,6 +3021,89 @@ describe("@codevisor/server", () => {
     expect(agents.creations).toEqual([["codex", workspaceFolder]])
   })
 
+  it("opens a session in one round-trip, creating project and session only when missing", async () => {
+    const { agents, server } = await start()
+    const projectRoot = mkdtempSync(join(tmpdir(), "codevisor-server-open-"))
+    tempDirs.push(projectRoot)
+    const workspaceFolder = join(projectRoot, "workspace")
+    mkdirSync(workspaceFolder)
+
+    // First open: nothing exists server-side — both records are created and
+    // the first transcript page comes back, all in one request.
+    const opened = await jsonRequest(server, "/v1/sessions/open-session-1/open", {
+      body: JSON.stringify({
+        project: { folderPath: workspaceFolder, id: "open-project-1" },
+        session: {
+          harnessId: "codex",
+          id: "open-session-1",
+          projectId: "open-project-1",
+          title: "Open flow"
+        },
+        transcriptLimit: 8
+      }),
+      method: "POST"
+    })
+    expect(opened.status).toBe(200)
+    expect(opened.body).toMatchObject({
+      session: { id: "open-session-1", projectId: "open-project-1", title: "Open flow" },
+      transcript: { hasMore: false, items: [] }
+    })
+    expect(agents.creations).toEqual([["codex", workspaceFolder]])
+
+    // Archive the project, then re-open with the original (now stale)
+    // snapshot: the existing project must NOT be reverted to unarchived, the
+    // session must not be re-created, and the update payload applies.
+    await jsonRequest(server, "/v1/projects/open-project-1", {
+      body: JSON.stringify({ isArchived: true }),
+      method: "PATCH"
+    })
+    const reopened = await jsonRequest(server, "/v1/sessions/open-session-1/open", {
+      body: JSON.stringify({
+        project: { folderPath: workspaceFolder, id: "open-project-1" },
+        session: {
+          harnessId: "codex",
+          id: "open-session-1",
+          projectId: "open-project-1",
+          title: "Open flow"
+        },
+        update: { title: "Renamed on open" }
+      }),
+      method: "POST"
+    })
+    expect(reopened.status).toBe(200)
+    expect(reopened.body).toMatchObject({ session: { title: "Renamed on open" } })
+    expect(agents.creations).toHaveLength(1)
+    const projects = (await jsonRequest(server, "/v1/projects")).body as ReadonlyArray<{
+      readonly id: string
+      readonly isArchived: boolean
+    }>
+    expect(projects.find((candidate) => candidate.id === "open-project-1")?.isArchived).toBe(true)
+
+    // A body/path session-id mismatch is rejected before any writes.
+    expect(
+      (
+        await jsonRequest(server, "/v1/sessions/other-id/open", {
+          body: JSON.stringify({
+            session: { harnessId: "codex", id: "open-session-1", projectId: "open-project-1" }
+          }),
+          method: "POST"
+        })
+      ).status
+    ).toBe(400)
+
+    // An open naming an unknown project with no project payload still 404s.
+    expect(
+      (
+        await jsonRequest(server, "/v1/sessions/orphan-session/open", {
+          body: JSON.stringify({
+            session: { harnessId: "codex", id: "orphan-session", projectId: "missing-project" }
+          }),
+          method: "POST"
+        })
+      ).status
+    ).toBe(404)
+  })
+
   it("serves pane workspaces with idempotent PUTs and change events", async () => {
     const { server, services } = await start()
     const workspaceRoot = mkdtempSync(join(tmpdir(), "codevisor-server-workspaces-"))

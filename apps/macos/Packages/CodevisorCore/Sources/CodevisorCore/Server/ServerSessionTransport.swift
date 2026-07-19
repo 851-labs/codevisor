@@ -228,8 +228,14 @@ public struct ServerSessionTransport: Sendable {
     /// Lightweight reverse-paginated history. Historical worked details are
     /// represented by a deferred item id and fetched only on expansion.
     public func transcriptPage(before: String? = nil, limit: Int = 32) async throws -> TranscriptHistoryPage {
-        let page = try await client.transcriptPage(id: sessionId, before: before, limit: limit)
-        return TranscriptHistoryPage(
+        historyPage(from: try await client.transcriptPage(id: sessionId, before: before, limit: limit))
+    }
+
+    /// Converts an already-fetched raw page — the combined open call returns
+    /// one alongside the session record — into the transport's history
+    /// representation without another round-trip.
+    public func historyPage(from page: ServerTranscriptPage) -> TranscriptHistoryPage {
+        TranscriptHistoryPage(
             conversation: page.items.map(Self.conversationItem(from:)),
             nextBefore: page.nextBefore,
             hasMore: page.hasMore,

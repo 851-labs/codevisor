@@ -11,7 +11,9 @@ public final class SessionModel {
     /// made of giant markdown answers. Older rows arrive in larger reverse
     /// pages as the user approaches the top; the server also enforces a text
     /// budget so neither value can accidentally request megabytes of layout.
-    private static let initialTranscriptPageSize = 8
+    /// Public so the controller can request the same first-page size through
+    /// the combined open call and hand the result to `loadHistory(preloaded:)`.
+    public static let initialTranscriptPageSize = 8
     private static let olderTranscriptPageSize = 16
     /// Conversation items no longer receiving stream updates. Transcript
     /// containers should iterate THIS (plus a dedicated child view for
@@ -358,6 +360,22 @@ public final class SessionModel {
         configOptions = options
     }
 
+    /// Applies capability metadata from a runtime connect that finished after
+    /// history was already painted. The model is constructed from cached
+    /// capabilities so the transcript can render before the agent process is
+    /// up; a resumed thread's live runtime can expose a different current
+    /// model, effort list, or mode set than the cache, so the authoritative
+    /// snapshot replaces it here. Later `configOptionUpdate` /
+    /// `currentModeUpdate` stream events still win — they arrive after this
+    /// and overwrite as usual.
+    public func applyRuntimeMetadata(
+        modeState: SessionModeState?,
+        configOptions: [SessionConfigOption]
+    ) {
+        if let modeState { self.modeState = modeState }
+        if !configOptions.isEmpty { self.configOptions = configOptions }
+    }
+
     /// Sets a config option's value and applies the agent's updated option set.
     @discardableResult
     public func setConfigOption(configId: String, value: String) async -> Bool {
@@ -577,10 +595,18 @@ public final class SessionModel {
     // MARK: - History
 
     /// Loads the server's conversation snapshot and begins live streaming from
-    /// its event cursor.
-    public func loadHistory() async {
+    /// its event cursor. A `preloaded` page (fetched by the combined open
+    /// call) skips the transcript round-trip entirely; the consumer still
+    /// resumes from the page's own event cursor, so nothing between the
+    /// page's snapshot and "now" is skipped.
+    public func loadHistory(preloaded: TranscriptHistoryPage? = nil) async {
         do {
-            let page = try await transport.transcriptPage(limit: Self.initialTranscriptPageSize)
+            let page: TranscriptHistoryPage
+            if let preloaded {
+                page = preloaded
+            } else {
+                page = try await transport.transcriptPage(limit: Self.initialTranscriptPageSize)
+            }
             usesPaginatedHistory = true
             olderHistoryCursor = page.nextBefore
             hasOlderHistory = page.hasMore

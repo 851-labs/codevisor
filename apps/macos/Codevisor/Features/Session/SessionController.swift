@@ -1635,17 +1635,30 @@ final class SessionController {
             session.agentSessionId = resumeAgentSessionId
         }
 
-        // Ensure the server knows the project before the session upsert — but
-        // never overwrite an existing server record: this controller's copy is
-        // a snapshot from when the draft was created, and pushing it here used
-        // to revert changes made in the meantime (archiving a project while
-        // its new-chat draft was connecting un-archived it again).
-        let remoteProjects = try await serverClient.listProjects()
-        if !remoteProjects.contains(where: { UUID(uuidString: $0.id) == project.id }) {
-            _ = try await serverClient.upsertProject(project)
+        // One round-trip replaces the discrete listProjects → upsertProject →
+        // listSessions → create/update → transcript sequence: the server
+        // ensures both records exist (creating the project only when missing —
+        // this controller's copy is a snapshot from when the draft was
+        // created, and pushing it used to revert changes made in the
+        // meantime, e.g. un-archiving) and returns the first transcript page
+        // for an instant paint. Older servers lack the endpoint (nil) and
+        // keep the discrete path; loadHistory then fetches the page itself.
+        var preloadedTranscript: ServerTranscriptPage?
+        if let opened = try await serverClient.openSession(
+            session,
+            project: project,
+            transcriptLimit: SessionModel.initialTranscriptPageSize
+        ) {
+            session = try opened.session.chatSession()
+            preloadedTranscript = opened.transcript
+        } else {
+            let remoteProjects = try await serverClient.listProjects()
+            if !remoteProjects.contains(where: { UUID(uuidString: $0.id) == project.id }) {
+                _ = try await serverClient.upsertProject(project)
+            }
+            let remoteSession = try await serverClient.upsertSession(session)
+            session = try remoteSession.chatSession()
         }
-        let remoteSession = try await serverClient.upsertSession(session)
-        session = try remoteSession.chatSession()
         self.serverSession = session
 
         connectedHarnessId = harness.id
@@ -1654,21 +1667,17 @@ final class SessionController {
             onAgentSessionCreated?(agentSessionId)
         }
 
-        // Capability discovery describes a fresh harness session. A resumed
-        // thread can have a different current model and model-specific effort
-        // list, so let the loaded runtime replace the generic/cache snapshot.
-        if session.agentSessionId?.isEmpty == false,
-           let metadata = try await serverClient.connectSession(id: session.id) {
-            if !metadata.configOptions.isEmpty {
-                configOptionsByHarness[harness.id] = metadata.configOptions
-            }
-            if let modes = metadata.modes {
-                modeStateByHarness[harness.id] = modes
-            }
-            if let supportsGoals = metadata.supportsGoals {
-                supportsGoalsByHarness[harness.id] = supportsGoals
-            }
-        }
+        // Start the runtime connect without blocking on it: for a resumed
+        // thread this can cold-spawn the agent process server-side, which
+        // takes multiple seconds on the first open after a server start. The
+        // transcript reads straight from the server database and needs no
+        // agent, so history loads — and paints — in parallel. The metadata is
+        // awaited below, before anything runtime-dependent runs.
+        let sessionId = session.id
+        let runtimeConnect: Task<ServerSessionRuntimeMetadata?, Error>? =
+            session.agentSessionId?.isEmpty == false
+                ? Task { try await serverClient.connectSession(id: sessionId) }
+                : nil
 
         let transport = ServerSessionTransport(client: serverClient, sessionId: session.id)
         let model = SessionModel(
@@ -1706,8 +1715,52 @@ final class SessionController {
         // stream, which means the answer is persisted but its chunks and
         // terminal event never reach the live UI. Older servers still fall
         // back inside loadHistory() when the transcript endpoint returns 404.
-        await model.loadHistory()
+        await model.loadHistory(preloaded: preloadedTranscript.map(transport.historyPage(from:)))
         analyticsUsageBaseline = model.usage
+
+        // Publish the model as soon as history is loaded so the transcript
+        // paints while the agent is still spawning — but only on the eager
+        // open path. The send path keeps `model` unset until the runtime is
+        // up: its optimistic pending row renders only while the settled
+        // conversation is empty, and a resumed thread's history appearing
+        // early would hide the just-sent message for the whole spawn.
+        if pendingUserText == nil, self.model == nil {
+            self.model = model
+        }
+
+        // Capability discovery describes a fresh harness session. A resumed
+        // thread can have a different current model and model-specific effort
+        // list, so let the loaded runtime replace the generic/cache snapshot.
+        // (Stream events that arrive after this still overwrite as usual.)
+        do {
+            if let runtimeConnect,
+               let metadata = try await withTaskCancellationHandler(
+                   operation: { try await runtimeConnect.value },
+                   onCancel: { runtimeConnect.cancel() }
+               ) {
+                if !metadata.configOptions.isEmpty {
+                    configOptionsByHarness[harness.id] = metadata.configOptions
+                }
+                if let modes = metadata.modes {
+                    modeStateByHarness[harness.id] = modes
+                }
+                if let supportsGoals = metadata.supportsGoals {
+                    supportsGoalsByHarness[harness.id] = supportsGoals
+                }
+                model.applyRuntimeMetadata(
+                    modeState: metadata.modes,
+                    configOptions: metadata.configOptions
+                )
+            }
+        } catch {
+            // The transcript may already have painted, but the runtime never
+            // came up. Return to the fully disconnected state so the caller's
+            // failure handling (status banner, remount retry, reconnect)
+            // starts from scratch instead of finding a half-connected model.
+            if self.model === model { self.model = nil }
+            model.shutdown()
+            throw error
+        }
 
         if let pendingModeId {
             await model.setMode(pendingModeId)
