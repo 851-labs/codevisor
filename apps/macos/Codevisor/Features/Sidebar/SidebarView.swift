@@ -172,7 +172,9 @@ struct SidebarView: View {
             uniqueKeysWithValues: sessionItems.enumerated().map { ($0.element.session.id, $0.offset) }
         )
         let sessionsById = Dictionary(uniqueKeysWithValues: sessionItems.map { ($0.session.id, $0) })
-        let workspaces = environment.workspaces.loadAll().filter { $0.serverId == serverId }
+        let workspaces = environment.workspaces.loadAll().filter {
+            $0.serverId == serverId && !$0.isArchived
+        }
         return workspaces
             .map { workspace -> (item: SidebarWorkspaceListItem, rank: Int, created: Date) in
                 let primary = workspace.chatSessionIds.lazy.compactMap { sessionsById[$0] }.first
@@ -789,7 +791,11 @@ struct SidebarView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 if let session = item.primarySession {
-                    sessionStatus(session, isHovered: isHovered)
+                    sessionStatus(
+                        session,
+                        isHovered: isHovered,
+                        onArchive: { archiveWorkspace(item) }
+                    )
                 }
             }
             .padding(.horizontal, 8)
@@ -816,7 +822,35 @@ struct SidebarView: View {
                 Label("Change Icon", systemImage: "app.grid")
                     .labelStyle(.titleAndIcon)
             }
+            Button {
+                archiveWorkspace(item)
+            } label: {
+                Label("Archive", systemImage: "archivebox")
+                    .labelStyle(.titleAndIcon)
+            }
         }
+    }
+
+    /// Archives the WORKSPACE (not just a chat): the record is flagged, its
+    /// live chats archive with it, and the row leaves the list. Layout is
+    /// kept — restoring any of its chats revives the whole workspace.
+    private func archiveWorkspace(_ item: SidebarWorkspaceListItem) {
+        var archived = item.workspace
+        archived.isArchived = true
+        environment.workspaces.save(archived)
+        for chatId in item.workspace.chatSessionIds {
+            if let session = list.sessions.first(where: {
+                $0.serverId == item.workspace.serverId && $0.id == chatId && !$0.isArchived
+            }) {
+                list.archiveSession(session)
+            }
+        }
+        if case let .session(serverId, sessionId) = selection,
+           serverId == item.workspace.serverId,
+           environment.workspaces.workspaceId(forSession: sessionId) == item.workspace.id {
+            selection = .newChat(nil)
+        }
+        workspaceRevision += 1
     }
 
     /// The workspace's own icon; a workspace born before icons existed
@@ -925,6 +959,15 @@ struct SidebarView: View {
     }
 
     private func activateSession(_ session: ChatSession) {
+        // Restoring/opening a chat whose workspace was archived revives the
+        // workspace — layout intact.
+        if let workspaceId = environment.workspaces.workspaceId(forSession: session.id),
+           var workspace = environment.workspaces.workspace(id: workspaceId),
+           workspace.isArchived {
+            workspace.isArchived = false
+            environment.workspaces.save(workspace)
+            workspaceRevision += 1
+        }
         let target = SidebarSelection.session(serverId: session.serverId, id: session.id)
         guard selection != target else { return }
         selection = target
@@ -1008,7 +1051,11 @@ struct SidebarView: View {
     }
 
     @ViewBuilder
-    private func sessionStatus(_ session: ChatSession, isHovered: Bool) -> some View {
+    private func sessionStatus(
+        _ session: ChatSession,
+        isHovered: Bool,
+        onArchive: (() -> Void)? = nil
+    ) -> some View {
         if store?.hasUnreadError(session) == true {
             EmptyView()
         } else if organization == .byWorkspace || isHovered {
@@ -1018,8 +1065,12 @@ struct SidebarView: View {
             Group {
                 if isHovered {
                     Button {
-                        list.archiveSession(session)
-                        if selection == .session(serverId: session.serverId, id: session.id) { selection = .newChat(nil) }
+                        if let onArchive {
+                            onArchive()
+                        } else {
+                            list.archiveSession(session)
+                            if selection == .session(serverId: session.serverId, id: session.id) { selection = .newChat(nil) }
+                        }
                     } label: {
                         Image(systemName: "archivebox")
                             .font(.caption2)

@@ -227,6 +227,23 @@ struct WorkspaceRepositoryTests {
         #expect(repository.workspaceId(forSession: seed.sessionId) == first.id)
     }
 
+    @Test("isArchived round-trips and pre-field payloads decode as active")
+    func isArchivedCodable() throws {
+        let repository = DefaultWorkspaceRepository(store: InMemoryStore())
+        var workspace = repository.ensureWorkspace(for: seed(), legacyGroups: nil)
+        // Payloads written before the field existed must load as active.
+        var withoutField = try JSONSerialization.jsonObject(
+            with: JSONEncoder().encode(workspace)
+        ) as! [String: Any]
+        withoutField.removeValue(forKey: "isArchived")
+        let legacyData = try JSONSerialization.data(withJSONObject: withoutField)
+        let decoded = try JSONDecoder().decode(Workspace.self, from: legacyData)
+        #expect(decoded.isArchived == false)
+        workspace.isArchived = true
+        repository.save(workspace)
+        #expect(repository.workspace(id: workspace.id)?.isArchived == true)
+    }
+
     @Test("symbolName round-trips and old payloads decode without it")
     func symbolNameCodable() throws {
         let repository = DefaultWorkspaceRepository(store: InMemoryStore())

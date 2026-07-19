@@ -29,6 +29,31 @@ public struct Workspace: Codable, Sendable, Equatable, Identifiable {
     /// The ⌘J bottom panel.
     public var bottomGroup: PaneGroupState
     public var createdAt: Date
+    /// Archived workspaces leave the sidebar (their chats archive with
+    /// them) but keep their layout — opening an archived chat revives the
+    /// workspace intact. Decoded leniently: payloads written before this
+    /// field existed load as not archived.
+    public var isArchived: Bool
+
+    private enum CodingKeys: String, CodingKey {
+        case id, name, hasCustomName, rootDirectory, symbolName, serverId
+        case projectId, centerTree, bottomGroup, createdAt, isArchived
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        hasCustomName = try container.decode(Bool.self, forKey: .hasCustomName)
+        rootDirectory = try container.decodeIfPresent(String.self, forKey: .rootDirectory)
+        symbolName = try container.decodeIfPresent(String.self, forKey: .symbolName)
+        serverId = try container.decode(String.self, forKey: .serverId)
+        projectId = try container.decode(UUID.self, forKey: .projectId)
+        centerTree = try container.decode(SplitNode.self, forKey: .centerTree)
+        bottomGroup = try container.decode(PaneGroupState.self, forKey: .bottomGroup)
+        createdAt = try container.decode(Date.self, forKey: .createdAt)
+        isArchived = try container.decodeIfPresent(Bool.self, forKey: .isArchived) ?? false
+    }
 
     public init(
         id: UUID = UUID(),
@@ -40,7 +65,8 @@ public struct Workspace: Codable, Sendable, Equatable, Identifiable {
         projectId: UUID,
         centerTree: SplitNode,
         bottomGroup: PaneGroupState,
-        createdAt: Date = Date()
+        createdAt: Date = Date(),
+        isArchived: Bool = false
     ) {
         self.id = id
         self.name = name
@@ -52,6 +78,7 @@ public struct Workspace: Codable, Sendable, Equatable, Identifiable {
         self.centerTree = centerTree
         self.bottomGroup = bottomGroup
         self.createdAt = createdAt
+        self.isArchived = isArchived
     }
 
     /// Session ids of every chat pane in the workspace, reading order.
