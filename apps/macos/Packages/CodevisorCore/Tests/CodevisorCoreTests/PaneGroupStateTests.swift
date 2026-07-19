@@ -174,6 +174,50 @@ struct PaneGroupStateTests {
         """.utf8)
         let decoded = try JSONDecoder().decode(PaneDescriptorState.self, from: legacy)
         #expect(decoded.attachOnly == false)
+        // Pre-owner-scoping agent tabs decode ownerless (any syncer adopts).
+        #expect(decoded.ownerChatSessionId == nil)
+    }
+
+    @Test("New tab conversion to terminal carries a picked directory")
+    func newTabConversionCwd() throws {
+        var state = PaneGroupState.initial(sessionId: sessionId)
+        let placeholder = state.addNewTabPane()
+        let converted = state.convertNewTabPane(
+            id: placeholder.id,
+            to: .terminal,
+            sessionId: sessionId,
+            cwd: "/tmp/worktrees/rayleigh"
+        )
+        #expect(converted?.cwdOverride == "/tmp/worktrees/rayleigh")
+        // And it survives persistence (terminals reopen where they were).
+        let decoded = try JSONDecoder().decode(
+            PaneGroupState.self, from: JSONEncoder().encode(state)
+        )
+        #expect(
+            decoded.panes.first { $0.id == converted?.id }?.cwdOverride
+                == "/tmp/worktrees/rayleigh"
+        )
+        // Panes persisted before directory picking decode with no override.
+        let legacy = Data("""
+        {"id":"\(UUID().uuidString)","kind":"terminal","name":"T","terminalKey":"k"}
+        """.utf8)
+        #expect(try JSONDecoder().decode(PaneDescriptorState.self, from: legacy).cwdOverride == nil)
+    }
+
+    @Test("Agent terminal panes carry their owning chat and round-trip it")
+    func agentTerminalOwner() throws {
+        var state = PaneGroupState.initial(sessionId: sessionId)
+        let owner = UUID()
+        let pane = state.ensureAgentTerminalPane(
+            name: "bun run dev",
+            terminalKey: "\(sessionId.uuidString):bg:tool-2",
+            ownerChatSessionId: owner
+        )
+        #expect(pane.ownerChatSessionId == owner)
+        let decoded = try JSONDecoder().decode(
+            PaneGroupState.self, from: JSONEncoder().encode(state)
+        )
+        #expect(decoded.panes.first { $0.id == pane.id }?.ownerChatSessionId == owner)
     }
 
     @Test("Codable round-trip preserves panes, selection, visibility, and height")

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import {
+  PromptRequest,
   CreateProjectRequest,
   CreateSessionRequest,
   CreateWorktreeRequest,
@@ -195,6 +196,16 @@ describe("@codevisor/api", () => {
       name: "fix-auth",
       sessionId: "session-1"
     })
+  })
+
+  it("decodes prompt requests with and without a client message id", () => {
+    expect(
+      decode(PromptRequest)({
+        messageId: "0f6b2c8e-8a34-4b9d-9f2e-1a7c5d3e9b01",
+        text: "run pwd"
+      }).messageId
+    ).toBe("0f6b2c8e-8a34-4b9d-9f2e-1a7c5d3e9b01")
+    expect(decode(PromptRequest)({ text: "run pwd" }).messageId).toBeUndefined()
   })
 
   it("decodes worktree setup updates", () => {

@@ -48,6 +48,15 @@ public struct PaneDescriptorState: Identifiable, Codable, Sendable, Equatable {
     /// REFERENCE — the server owns the session; closing the pane never
     /// deletes it.
     public var chatSessionId: UUID?
+    /// Agent-owned terminals only: the CHAT whose background task streams
+    /// here. The workspace's shared panel hosts every chat's task tabs, so
+    /// pruning must be owner-scoped — chat B's empty snapshot must never
+    /// tear down chat A's dev server.
+    public var ownerChatSessionId: UUID?
+    /// Terminal panes only: an explicit working directory (a chat's
+    /// worktree picked on the New tab page). Nil follows the session's cwd
+    /// (workspace root).
+    public var cwdOverride: String?
 
     /// Every pane moves between groups alike — tabs are tabs (the only
     /// rule with real stakes is the CLOSE rule: a lone placeholder only
@@ -61,7 +70,9 @@ public struct PaneDescriptorState: Identifiable, Codable, Sendable, Equatable {
         name: String,
         terminalKey: String,
         attachOnly: Bool = false,
-        chatSessionId: UUID? = nil
+        chatSessionId: UUID? = nil,
+        ownerChatSessionId: UUID? = nil,
+        cwdOverride: String? = nil
     ) {
         self.id = id
         self.kind = kind
@@ -69,6 +80,8 @@ public struct PaneDescriptorState: Identifiable, Codable, Sendable, Equatable {
         self.terminalKey = terminalKey
         self.attachOnly = attachOnly
         self.chatSessionId = chatSessionId
+        self.ownerChatSessionId = ownerChatSessionId
+        self.cwdOverride = cwdOverride
     }
 
     public init(from decoder: Decoder) throws {
@@ -82,7 +95,12 @@ public struct PaneDescriptorState: Identifiable, Codable, Sendable, Equatable {
             attachOnly: try container.decodeIfPresent(Bool.self, forKey: .attachOnly) ?? false,
             // Chat panes persisted before workspaces existed learn their
             // session id in the workspace backfill.
-            chatSessionId: try container.decodeIfPresent(UUID.self, forKey: .chatSessionId)
+            chatSessionId: try container.decodeIfPresent(UUID.self, forKey: .chatSessionId),
+            // Agent tabs persisted before owner scoping have no owner; any
+            // syncer may manage them.
+            ownerChatSessionId: try container.decodeIfPresent(UUID.self, forKey: .ownerChatSessionId),
+            // Panes persisted before directory picking follow the session.
+            cwdOverride: try container.decodeIfPresent(String.self, forKey: .cwdOverride)
         )
     }
 }
@@ -199,7 +217,11 @@ public struct PaneGroupState: Codable, Sendable, Equatable {
     /// bar IS the notification. Returns the existing pane when one is already
     /// attached to that terminal.
     @discardableResult
-    public mutating func ensureAgentTerminalPane(name: String, terminalKey: String) -> PaneDescriptorState {
+    public mutating func ensureAgentTerminalPane(
+        name: String,
+        terminalKey: String,
+        ownerChatSessionId: UUID? = nil
+    ) -> PaneDescriptorState {
         if let existing = panes.first(where: { $0.terminalKey == terminalKey }) {
             return existing
         }
@@ -208,7 +230,8 @@ public struct PaneGroupState: Codable, Sendable, Equatable {
             kind: .terminal,
             name: name,
             terminalKey: terminalKey,
-            attachOnly: true
+            attachOnly: true,
+            ownerChatSessionId: ownerChatSessionId
         )
         panes.append(pane)
         if selectedPaneId == nil {
@@ -267,7 +290,8 @@ public struct PaneGroupState: Codable, Sendable, Equatable {
         to kind: PaneKind,
         sessionId: UUID,
         chatSessionId: UUID? = nil,
-        name: String? = nil
+        name: String? = nil,
+        cwd: String? = nil
     ) -> PaneDescriptorState? {
         guard let index = panes.firstIndex(where: { $0.id == id }),
               panes[index].kind == .newTab else { return nil }
@@ -279,7 +303,8 @@ public struct PaneGroupState: Codable, Sendable, Equatable {
                 id: paneId,
                 kind: .terminal,
                 name: Self.nextTerminalName(existing: panes.map(\.name)),
-                terminalKey: "\(sessionId.uuidString):\(paneId.uuidString)"
+                terminalKey: "\(sessionId.uuidString):\(paneId.uuidString)",
+                cwdOverride: cwd
             )
         case .chat:
             pane = PaneDescriptorState(

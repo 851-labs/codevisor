@@ -249,18 +249,6 @@ final class SessionStore {
     }
 
 
-    /// The founding chat's worktree completes the workspace's identity: the
-    /// root follows it, so every later terminal/chat runs in the worktree.
-    /// Applies ONLY while that chat is the workspace's sole chat — an
-    /// established workspace is never re-rooted under running work.
-    func adoptFoundingWorktreeRoot(_ path: String, forSession sessionId: UUID) {
-        guard let workspaceId = environment.workspaces.workspaceId(forSession: sessionId),
-              var workspace = environment.workspaces.workspace(id: workspaceId),
-              workspace.chatSessionIds == [sessionId] else { return }
-        workspace.rootDirectory = path
-        environment.workspaces.save(workspace)
-    }
-
     /// The cached controller for a session WITHOUT creating one — a pure
     /// read, safe in view bodies (deciding whether an unstarted chat still
     /// shows its new-chat composer must not mint controllers).
@@ -433,7 +421,8 @@ final class SessionStore {
                     attachOnly: descriptor.attachOnly,
                     machine: machine,
                     session: liveSession,
-                    project: project
+                    project: project,
+                    cwdOverride: descriptor.cwdOverride
                 )
             }
         )

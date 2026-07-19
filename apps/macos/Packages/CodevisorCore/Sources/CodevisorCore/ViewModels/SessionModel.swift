@@ -393,7 +393,8 @@ public final class SessionModel {
         }
 
         settleActiveItem()
-        appendSettled(.user(UserMessage(text: trimmed, attachments: attachments)))
+        let message = UserMessage(text: trimmed, attachments: attachments)
+        appendSettled(.user(message))
         startActiveBubble()
         isSending = true
 
@@ -402,7 +403,14 @@ public final class SessionModel {
         await startConsumer()
 
         do {
-            _ = try await transport.prompt(trimmed, attachments: attachments)
+            // The optimistic message's id rides along; the server adopts it,
+            // so the user echo reconciles by IDENTITY (content matching is
+            // only the fallback for older servers).
+            _ = try await transport.prompt(
+                trimmed,
+                attachments: attachments,
+                messageId: message.id.uuidString.lowercased()
+            )
             onPromptAccepted?(attachments.count, false)
             await drain()
         } catch {
@@ -1091,12 +1099,30 @@ public final class SessionModel {
     ) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty || !attachments.isEmpty else { return }
-        if case var .user(user) = settledConversation.last,
-           case let .assistant(assistant) = activeItem,
-           user.text == trimmed,
-           assistant.turn.isGenerating {
-            // Same-client echo of the optimistic message: stamp attachments
-            // the optimistic append may not have carried.
+        // IDENTITY first: the prompt carried the optimistic message's id and
+        // the server echoed it back — this IS that message, wherever it sits
+        // and whatever the agent did in between. Stamp attachments the
+        // optimistic append may not have carried.
+        if let echoId = id.flatMap(UUID.init(uuidString:)),
+           let index = settledConversation.lastIndex(where: { item in
+               if case let .user(user) = item { return user.id == echoId }
+               return false
+           }) {
+            if case var .user(user) = settledConversation[index],
+               user.attachments.isEmpty, !attachments.isEmpty {
+                user.attachments = attachments
+                settledConversation[index] = .user(user)
+            }
+            return
+        }
+        // CONTENT fallback (older servers that don't echo the client id).
+        // Deliberately NOT conditioned on a live generating assistant: an
+        // agent restart between the local append and the echo (e.g. the
+        // harness dying on its first spawn and reconnecting) tears the
+        // active bubble down, and requiring it duplicated the user message.
+        // A conversation whose newest entry is an identical user message
+        // only happens for that echo.
+        if case var .user(user) = settledConversation.last, user.text == trimmed {
             if user.attachments.isEmpty, !attachments.isEmpty {
                 user.attachments = attachments
                 settledConversation[settledConversation.count - 1] = .user(user)

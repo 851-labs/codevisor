@@ -6,16 +6,41 @@
 import SwiftUI
 import CodevisorCore
 
+/// A directory the New tab page can open the new pane in: the workspace
+/// root (default) or a worktree created by one of the workspace's chats.
+struct NewTabDirectory: Identifiable, Equatable {
+    let id: String
+    let title: String
+    /// Nil = the workspace's own directory (session cwd resolution).
+    let path: String?
+    /// Set for worktree options (rides onto a created chat's session).
+    let worktreeName: String?
+
+    static let workspaceRoot = NewTabDirectory(
+        id: "workspace-root", title: "Workspace directory", path: nil, worktreeName: nil
+    )
+}
+
 struct NewTabPageView: View {
     @Environment(\.theme) private var theme
     /// The placeholder pane this page belongs to.
     let paneId: UUID
     /// The owning group; conversion happens through it.
     let group: PaneGroupModel?
+    /// Directories the new pane can open in: the workspace root plus the
+    /// worktrees of the workspace's (unarchived) chats. The picker only
+    /// shows when there is an actual choice.
+    var directories: [NewTabDirectory] = [.workspaceRoot]
     /// Creates the chat SESSION eagerly and converts the placeholder into
     /// an established chat pane (wired by the container, which owns session
     /// creation). Nil (previews) falls back to a draft conversion.
-    var onNewChat: (() -> Void)? = nil
+    var onNewChat: ((NewTabDirectory) -> Void)? = nil
+
+    @State private var selectedDirectoryId = NewTabDirectory.workspaceRoot.id
+
+    private var selectedDirectory: NewTabDirectory {
+        directories.first { $0.id == selectedDirectoryId } ?? .workspaceRoot
+    }
 
     var body: some View {
         // Scrolls when the pane is too short for the (possibly stacked)
@@ -37,6 +62,9 @@ struct NewTabPageView: View {
                             optionCards
                         }
                     }
+                    if directories.count > 1 {
+                        directoryPicker
+                    }
                 }
                 .padding(20)
                 .frame(maxWidth: .infinity)
@@ -44,6 +72,44 @@ struct NewTabPageView: View {
             }
         }
         .background(theme.paneBackground)
+    }
+
+    /// Where the new tab opens — the same menu idiom as the composer's
+    /// pickers: native checkmarks, a chip label.
+    private var directoryPicker: some View {
+        Menu {
+            ForEach(directories) { directory in
+                Toggle(isOn: Binding(
+                    get: { directory.id == selectedDirectory.id },
+                    set: { isOn in
+                        guard isOn else { return }
+                        selectedDirectoryId = directory.id
+                    }
+                )) {
+                    Label {
+                        Text(directory.title)
+                    } icon: {
+                        MenuSymbolIcon(
+                            systemName: directory.path == nil
+                                ? "folder.fill" : "arrow.triangle.branch"
+                        )
+                    }
+                }
+            }
+        } label: {
+            PickerChip(text: selectedDirectory.title) {
+                Image(
+                    systemName: selectedDirectory.path == nil
+                        ? "folder.fill" : "arrow.triangle.branch"
+                )
+                .font(.system(size: 12))
+            }
+        }
+        .menuStyle(.button)
+        .buttonStyle(HoverIconButtonStyle(shape: .chip))
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .accessibilityLabel("Directory for the new tab")
     }
 
     @ViewBuilder
@@ -54,7 +120,7 @@ struct NewTabPageView: View {
             systemImage: "text.bubble"
         ) {
             if let onNewChat {
-                onNewChat()
+                onNewChat(selectedDirectory)
             } else {
                 group?.convertNewTabPane(id: paneId, to: .chat)
             }
@@ -64,7 +130,9 @@ struct NewTabPageView: View {
             subtitle: "Open a shell in the workspace directory",
             systemImage: "terminal"
         ) {
-            group?.convertNewTabPane(id: paneId, to: .terminal)
+            group?.convertNewTabPane(
+                id: paneId, to: .terminal, cwd: selectedDirectory.path
+            )
         }
     }
 }

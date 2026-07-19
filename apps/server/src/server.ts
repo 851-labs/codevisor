@@ -1973,7 +1973,12 @@ const routeSessionActions = async (
       routeState.pendingPromptActions.add(actionKey)
     }
     const queueItem = await run(
-      services.db.createPromptQueueItem(promptSessionId, payload.text, attachments)
+      services.db.createPromptQueueItem(
+        promptSessionId,
+        payload.text,
+        attachments,
+        payload.messageId
+      )
     )
     const result: PromptAcceptedResponse = {
       accepted: true,

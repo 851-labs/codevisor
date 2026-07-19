@@ -36,7 +36,8 @@ final class TerminalPane: Pane, Identifiable {
             project: context.project,
             machine: context.machine,
             terminalKey: context.terminalKey,
-            attachOnly: context.attachOnly
+            attachOnly: context.attachOnly,
+            cwdOverride: context.cwdOverride
         )
     }
 

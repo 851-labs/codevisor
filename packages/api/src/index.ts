@@ -863,7 +863,12 @@ export type UpdateSessionRequest = typeof UpdateSessionRequest.Type
 export const PromptRequest = Schema.Struct({
   text: Schema.String,
   clientActionId: Schema.optional(Schema.String),
-  attachments: Schema.optional(Schema.Array(AttachmentRef))
+  attachments: Schema.optional(Schema.Array(AttachmentRef)),
+  /// The client's id for its optimistic user message. It becomes the queue
+  /// item id — and therefore the `messageId` on the user echo event — so
+  /// clients can reconcile the echo with the optimistic append by IDENTITY
+  /// instead of content matching.
+  messageId: Schema.optional(Schema.String)
 })
 export type PromptRequest = typeof PromptRequest.Type
 

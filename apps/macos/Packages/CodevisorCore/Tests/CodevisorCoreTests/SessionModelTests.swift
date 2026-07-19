@@ -13,6 +13,85 @@ struct SessionModelTests {
         SessionModel.eventFlushInterval = .zero
     }
 
+    @Test("The prompt carries the optimistic message id; the echo reconciles by identity")
+    func echoReconcilesByIdentity() async {
+        let sessionId = UUID()
+        let client = FakeSessionServerClient(sessionId: sessionId)
+        client.echoOnPrompt = false
+        let model = SessionModel(
+            serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
+            sessionId: sessionId.uuidString
+        )
+        await model.send("run pwd")
+        let optimisticId = userMessages(model).first!.id
+        // The wire carried the optimistic id.
+        #expect(client.promptedMessageIds == [optimisticId.uuidString.lowercased()])
+        // The echo comes back with that id — EVEN with different text (the
+        // server may normalize whitespace), identity wins and nothing dups.
+        client.emit(ServerEventEnvelope(
+            id: 1,
+            serverId: "local",
+            kind: "session.output",
+            subjectId: sessionId.uuidString,
+            createdAt: "2026-07-18T00:00:00.000Z",
+            payload: .object([
+                "role": .string("user"),
+                "messageId": .string(optimisticId.uuidString.lowercased()),
+                "text": .string("run  pwd")
+            ])
+        ))
+        client.emit(ServerEventEnvelope(
+            id: 2,
+            serverId: "local",
+            kind: "session.updated",
+            subjectId: sessionId.uuidString,
+            createdAt: "2026-07-18T00:00:01.000Z",
+            payload: .object(["stopReason": .string("end_turn")])
+        ))
+        await settleUntil { !model.isSending }
+        #expect(userMessages(model).count == 1)
+        #expect(userMessages(model).first?.text == "run pwd")
+    }
+
+    @Test("A user echo after an agent restart never duplicates the message")
+    func echoAfterAgentRestartDedupes() async {
+        let sessionId = UUID()
+        let client = FakeSessionServerClient(sessionId: sessionId)
+        client.echoOnPrompt = false
+        let model = SessionModel(
+            serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
+            sessionId: sessionId.uuidString
+        )
+        await model.send("run pwd")
+        // The harness dies right after the prompt (e.g. codex app-server
+        // exiting on its first spawn) — the active bubble is torn down…
+        client.emit(ServerEventEnvelope(
+            id: 1,
+            serverId: "local",
+            kind: "session.error",
+            subjectId: sessionId.uuidString,
+            createdAt: "2026-07-18T00:00:00.000Z",
+            payload: .object(["message": .string("codex app-server exited")])
+        ))
+        // …and the reconnected stream then delivers the server's echo of
+        // the message. It must stamp onto the optimistic append, not
+        // duplicate it.
+        client.emit(ServerEventEnvelope(
+            id: 2,
+            serverId: "local",
+            kind: "session.output",
+            subjectId: sessionId.uuidString,
+            createdAt: "2026-07-18T00:00:01.000Z",
+            payload: .object([
+                "role": .string("user"),
+                "messageId": .string(UUID().uuidString),
+                "text": .string("run pwd")
+            ])
+        ))
+        await settleUntil { model.errorMessage != nil }
+        #expect(userMessages(model).count == 1)
+    }
+
     @Test("Blank prompts are ignored")
     func blankIgnored() async {
         let sessionId = UUID()
@@ -2074,6 +2153,7 @@ private final class FakeSessionServerClient: CodevisorServerClienting, @unchecke
 
     private var _promptedTexts: [String] = []
     private var _promptedAttachments: [[ServerAttachmentRef]] = []
+    private var _promptedMessageIds: [String?] = []
     private var _cancelCount = 0
     private var _configUpdates: [(String, String)] = []
     private var _eventSinceValues: [Int] = []
@@ -2106,6 +2186,10 @@ private final class FakeSessionServerClient: CodevisorServerClienting, @unchecke
 
     var promptedAttachments: [[ServerAttachmentRef]] {
         lock.withLock { _promptedAttachments }
+    }
+
+    var promptedMessageIds: [String?] {
+        lock.withLock { _promptedMessageIds }
     }
 
     var cancelCount: Int {
@@ -2208,6 +2292,11 @@ private final class FakeSessionServerClient: CodevisorServerClienting, @unchecke
     func promptSession(id: UUID, text: String, attachments: [ServerAttachmentRef]) async throws -> ServerPromptAccepted {
         lock.withLock { _promptedAttachments.append(attachments) }
         return try await promptSession(id: id, text: text)
+    }
+
+    func promptSession(id: UUID, text: String, attachments: [ServerAttachmentRef], messageId: String?) async throws -> ServerPromptAccepted {
+        lock.withLock { _promptedMessageIds.append(messageId) }
+        return try await promptSession(id: id, text: text, attachments: attachments)
     }
 
     func promptSession(id: UUID, text: String) async throws -> ServerPromptAccepted {

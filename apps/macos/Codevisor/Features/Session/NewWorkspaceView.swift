@@ -132,24 +132,42 @@ struct NewWorkspaceView: View {
                         .frame(maxHeight: .infinity)
                     VStack(spacing: 22) {
                         title
-                        form
-                            .disabled(creation.isCreating)
-                        Button(action: create) {
-                            Text(ctaTitle)
-                                .frame(minWidth: 160)
+                        if let phase = creation.phases.first {
+                            // Progress takes the FORM's place: a terminal-
+                            // styled live tail of the worktree's git/hook
+                            // output, expanding with the pinned error on
+                            // failure. (The chat transcript keeps its own
+                            // SessionSetupView — this is page-only chrome.)
+                            WorktreeCreationTail(
+                                phase: phase,
+                                worktreeName: WorkspaceNameGenerator.slug(from: trimmedName)
+                            )
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .transition(.opacity)
+                        } else {
+                            form
+                                .transition(.opacity)
                         }
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.large)
-                        .keyboardShortcut(.defaultAction)
-                        .disabled(trimmedName.isEmpty || selectedProject == nil || creation.isCreating)
-                        if !creation.phases.isEmpty {
-                            // The chat's worktree setup card: live-streamed
-                            // git/hook output, expandable logs, and the
-                            // failure message when creation goes wrong.
-                            SessionSetupView(phases: creation.phases)
-                                .frame(maxWidth: .infinity, alignment: .leading)
+                        VStack(spacing: 10) {
+                            Button(action: create) {
+                                Text(ctaTitle)
+                                    .frame(minWidth: 160)
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .controlSize(.large)
+                            .keyboardShortcut(.defaultAction)
+                            .disabled(trimmedName.isEmpty || selectedProject == nil || creation.isCreating)
+                            if creation.hasFailure {
+                                // Back to the form (different name, worktree
+                                // off, …) without retrying blind.
+                                Button("Edit Settings") { creation.reset() }
+                                    .buttonStyle(.plain)
+                                    .foregroundStyle(.secondary)
+                            }
                         }
                     }
+                    .animation(.snappy(duration: 0.25), value: creation.phases.isEmpty)
+                    .animation(.snappy(duration: 0.25), value: creation.isCreating)
                     .frame(maxWidth: 400)
                     .padding(.horizontal, 24)
                     Spacer(minLength: 24)

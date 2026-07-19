@@ -110,6 +110,16 @@ struct SessionContainerView: View {
         .focusedSceneValue(\.scratchpadToggle, ScratchpadToggleAction(sessionId: session.id) {
             toggleScratchpad()
         })
+        // Background tasks that stream through a server-owned terminal get a
+        // tab in the bottom panel — a dev server is something running, not
+        // something a chat is waiting on. Synced at the WORKSPACE level
+        // across EVERY chat's controller (the panel is shared), with prunes
+        // scoped to each task's owning chat, so switching chats never tears
+        // down a sibling's tab. Reading the fingerprint in body keeps the
+        // observation live for all cached controllers.
+        .onChange(of: backgroundTaskFingerprint, initial: true) { _, _ in
+            syncWorkspaceBackgroundTerminals()
+        }
         .task(id: session.id) {
             // Lifecycle hooks (draft cleanup, dissolution) attach to the
             // primary leaf up front; other leaves get them on first access.
@@ -212,6 +222,7 @@ struct SessionContainerView: View {
                     activeLeafId: activeLeafId,
                     centerLeafModel: { leafId in configuredCenterModel(leafId: leafId) },
                     chatTitleLookup: chatPaneTitle,
+                    paneWorktreeLookup: paneWorktreeBadge,
                     onCenterTreeChanged: { tree in
                         liveCenterTree = tree
                         store.saveCenterTree(tree, workspaceId: workspace.id)
@@ -350,8 +361,13 @@ struct SessionContainerView: View {
                 return AnyView(NewTabPageView(
                     paneId: descriptor.id,
                     group: model,
-                    onNewChat: { [weak model] in
-                        createChat(convertingPlaceholder: descriptor.id, in: model)
+                    directories: newTabDirectories(),
+                    onNewChat: { [weak model] directory in
+                        createChat(
+                            convertingPlaceholder: descriptor.id,
+                            in: model,
+                            directory: directory
+                        )
                     }
                 ))
             }
@@ -362,17 +378,48 @@ struct SessionContainerView: View {
         return model
     }
 
+    /// The directories a New tab can open in: the workspace root plus the
+    /// worktrees created by the workspace's chats (archived chats excluded
+    /// — their worktrees aren't part of the working set).
+    private func newTabDirectories() -> [NewTabDirectory] {
+        let workspace = store.workspace(for: session, project: project)
+        var options: [NewTabDirectory] = [.workspaceRoot]
+        var seen: Set<String> = []
+        for chatId in workspace.chatSessionIds {
+            guard let chat = environment.projectList.sessions.first(where: {
+                $0.serverId == session.serverId && $0.id == chatId
+            }), !chat.isArchived,
+            let worktreeName = chat.worktreeName,
+            let cwd = chat.cwd,
+            cwd != workspace.rootDirectory,
+            seen.insert(worktreeName).inserted else { continue }
+            options.append(NewTabDirectory(
+                id: "worktree-\(worktreeName)",
+                title: worktreeName,
+                path: cwd,
+                worktreeName: worktreeName
+            ))
+        }
+        return options
+    }
+
     /// "New Chat" from a New tab page: creates the SESSION eagerly — a real
     /// chat from birth (sidebar row, archive-on-close, focus-follow), not a
-    /// deferred draft — running in the workspace's directory with the
-    /// default harness, then converts the placeholder in place.
-    private func createChat(convertingPlaceholder paneId: UUID, in model: PaneGroupModel?) {
+    /// deferred draft — running in the picked directory (workspace root by
+    /// default, or a sibling chat's worktree) with the default harness,
+    /// then converts the placeholder in place.
+    private func createChat(
+        convertingPlaceholder paneId: UUID,
+        in model: PaneGroupModel?,
+        directory: NewTabDirectory = .workspaceRoot
+    ) {
         guard let model else { return }
         let workspace = store.workspace(for: session, project: project)
         let created = environment.projectList.newSession(
             in: project,
             title: "New Chat",
-            cwd: workspace.rootDirectory
+            worktreeName: directory.worktreeName,
+            cwd: directory.path ?? workspace.rootDirectory
         )
         model.convertNewTabPane(
             id: paneId, to: .chat,
@@ -488,6 +535,28 @@ struct SessionContainerView: View {
 
     /// A chat pane's display title: its referenced session's LIVE title
     /// (auto-titles and renames flow through); drafts show their own name.
+    /// The tab strip's diverged-directory badge: the worktree (or folder)
+    /// name when the pane runs somewhere other than the workspace root.
+    /// Chats resolve through their session; terminals through the pane's
+    /// own directory override (the New tab page's picker).
+    private func paneWorktreeBadge(_ descriptor: PaneDescriptorState) -> String? {
+        let workspace = store.workspace(for: session, project: project)
+        switch descriptor.kind {
+        case .chat:
+            guard let id = descriptor.chatSessionId,
+                  let chat = environment.projectList.sessions.first(where: {
+                      $0.serverId == session.serverId && $0.id == id
+                  }),
+                  let cwd = chat.cwd, cwd != workspace.rootDirectory else { return nil }
+            return chat.worktreeName ?? URL(fileURLWithPath: cwd).lastPathComponent
+        case .terminal:
+            guard let cwd = descriptor.cwdOverride, cwd != workspace.rootDirectory else { return nil }
+            return URL(fileURLWithPath: cwd).lastPathComponent
+        case .newTab:
+            return nil
+        }
+    }
+
     private func chatPaneTitle(_ descriptor: PaneDescriptorState) -> String {
         guard let id = descriptor.chatSessionId else { return descriptor.name }
         return environment.projectList.sessions.first {
@@ -643,6 +712,44 @@ struct SessionContainerView: View {
             max(CGFloat(inspectorWidth), Self.inspectorMinWidth),
             min(Self.inspectorMaxWidth, panelLayout.windowWidth - 16)
         )
+    }
+
+    /// Every chat in the workspace with a live cached controller, routed
+    /// session included. Controllers are never MINTED here (pure reads) —
+    /// a chat whose controller isn't cached contributes nothing, and its
+    /// persisted tabs survive untouched until it reconnects.
+    private var workspaceChatControllers: [(chatId: UUID, controller: SessionController)] {
+        let workspace = store.workspace(for: session, project: project)
+        return workspace.chatSessionIds.compactMap { chatId in
+            guard let chat = environment.projectList.sessions.first(where: {
+                $0.serverId == session.serverId && $0.id == chatId
+            }), let controller = store.activeController(for: chat) else { return nil }
+            return (chatId, controller)
+        }
+    }
+
+    /// Equatable digest of every chat's background-task state; onChange over
+    /// this re-syncs when any task starts/ends or a snapshot arrives.
+    private var backgroundTaskFingerprint: [String] {
+        workspaceChatControllers.flatMap { chatId, controller -> [String] in
+            let tasks = controller.backgroundTasks.compactMap { task in
+                task.terminalKey.map { "\(chatId.uuidString)|\($0)|\(task.description)" }
+            }
+            return tasks + ["\(chatId.uuidString)|snapshot:\(controller.hasBackgroundTaskSnapshot)"]
+        }
+    }
+
+    private func syncWorkspaceBackgroundTerminals() {
+        let panel = store.paneGroup(for: session, project: project)
+        for (chatId, controller) in workspaceChatControllers {
+            panel.syncAgentTerminals(
+                controller.backgroundTasks.compactMap { task in
+                    task.terminalKey.map { (terminalKey: $0, name: task.description) }
+                },
+                owner: chatId,
+                pruneEnded: controller.hasBackgroundTaskSnapshot
+            )
+        }
     }
 
     private func toggleScratchpad() {

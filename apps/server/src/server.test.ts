@@ -2071,6 +2071,50 @@ describe("@codevisor/server", () => {
     })
   })
 
+  it("adopts a client-supplied messageId as the queue item and echo id", async () => {
+    const { services } = await makeServices("server-prompt-message-id")
+    const server = await run(
+      startCodevisorServer(
+        services,
+        defaultServerConfig({ id: "server-prompt-message-id", port: 0 })
+      )
+    )
+    runningServers.push(server)
+    const folder = join(mkdtempSync(join(tmpdir(), "codevisor-prompt-id-")), "repo")
+    mkdirSync(folder, { recursive: true })
+    const project = (
+      await jsonRequest(server, "/v1/projects", {
+        body: JSON.stringify({ folderPath: folder }),
+        method: "POST"
+      })
+    ).body as { readonly id: string }
+    const session = (
+      await jsonRequest(server, "/v1/sessions", {
+        body: JSON.stringify({ projectId: project.id, harnessId: "codex", title: "Identity" }),
+        method: "POST"
+      })
+    ).body as { readonly id: string }
+
+    const messageId = "0f6b2c8e-8a34-4b9d-9f2e-1a7c5d3e9b01"
+    const accepted = await jsonRequest(server, `/v1/sessions/${session.id}/prompt`, {
+      body: JSON.stringify({ text: "run pwd", messageId }),
+      method: "POST"
+    })
+    expect(accepted.status).toBe(202)
+    expect((accepted.body as { queueItemId?: string }).queueItemId).toBe(messageId)
+
+    // The user echo event carries the client's id back, so clients can
+    // reconcile their optimistic message by identity.
+    await waitFor(async () =>
+      (await run(services.db.listSubjectEvents(session.id))).some(
+        (event) =>
+          event.kind === "session.output" &&
+          (event.payload as { messageId?: string }).messageId === messageId &&
+          (event.payload as { role?: string }).role === "user"
+      )
+    )
+  })
+
   it("applies the CORS allowlist to browser origins", async () => {
     const { services } = await makeServices("server-cors")
     const server = await run(

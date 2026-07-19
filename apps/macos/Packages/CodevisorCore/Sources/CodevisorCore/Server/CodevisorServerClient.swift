@@ -163,6 +163,10 @@ public protocol CodevisorServerClienting: Sendable {
     func deleteSession(id: UUID) async throws
     func promptSession(id: UUID, text: String) async throws -> ServerPromptAccepted
     func promptSession(id: UUID, text: String, attachments: [ServerAttachmentRef]) async throws -> ServerPromptAccepted
+    /// `messageId` is the CLIENT's id for its optimistic user message; the
+    /// server adopts it as the queue item id, so the user echo comes back
+    /// with the same id and reconciles by identity.
+    func promptSession(id: UUID, text: String, attachments: [ServerAttachmentRef], messageId: String?) async throws -> ServerPromptAccepted
     func uploadFile(name: String, mimeType: String, data: Data) async throws -> ServerFileMetadata
     func fileData(id: String) async throws -> Data
     func updateQueuedPrompt(sessionId: UUID, queueItemId: String, text: String) async throws -> ServerPromptQueueItem
@@ -311,6 +315,12 @@ public extension CodevisorServerClienting {
     /// text-only prompt path is used.
     func promptSession(id: UUID, text: String, attachments: [ServerAttachmentRef]) async throws -> ServerPromptAccepted {
         try await promptSession(id: id, text: text)
+    }
+
+    /// Default for fakes/older transports: the message id is advisory (it
+    /// only sharpens echo reconciliation), so dropping it is safe.
+    func promptSession(id: UUID, text: String, attachments: [ServerAttachmentRef], messageId: String?) async throws -> ServerPromptAccepted {
+        try await promptSession(id: id, text: text, attachments: attachments)
     }
 
     /// Defaults so fakes and older transports keep compiling; the HTTP client
@@ -1650,10 +1660,18 @@ public final class CodevisorServerClient: CodevisorServerClienting, @unchecked S
     }
 
     public func promptSession(id: UUID, text: String, attachments: [ServerAttachmentRef]) async throws -> ServerPromptAccepted {
+        try await promptSession(id: id, text: text, attachments: attachments, messageId: nil)
+    }
+
+    public func promptSession(id: UUID, text: String, attachments: [ServerAttachmentRef], messageId: String?) async throws -> ServerPromptAccepted {
         try await send(
             "/v1/sessions/\(id.uuidString)/prompt",
             method: "POST",
-            body: PromptBody(text: text, attachments: attachments.isEmpty ? nil : attachments)
+            body: PromptBody(
+                text: text,
+                attachments: attachments.isEmpty ? nil : attachments,
+                messageId: messageId
+            )
         )
     }
 
@@ -2001,6 +2019,8 @@ private struct PromptBody: Encodable {
     var text: String
     var clientActionId = UUID().uuidString
     var attachments: [ServerAttachmentRef]?
+    /// The optimistic user message's id (see the protocol's doc).
+    var messageId: String?
 }
 
 private struct UpdateQueuedPromptBody: Encodable {
@@ -2159,11 +2179,17 @@ private struct UpdateSessionBody: Encodable {
     var agentSessionId: String?
     var isArchived: Bool
     var title: String
+    /// Sessions created EAGERLY (before their worktree exists) get the
+    /// worktree onto the server record through this PATCH — POST
+    /// /v1/sessions is create-or-return, so a later create can't. The
+    /// server keeps its current value when nil (no clobbering).
+    var worktreeName: String?
 
     init(session: ChatSession) {
         agentSessionId = session.agentSessionId
         isArchived = session.isArchived
         title = session.title
+        worktreeName = session.worktreeName
     }
 }
 

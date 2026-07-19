@@ -276,11 +276,12 @@ final class PaneGroupModel: Identifiable {
         id: UUID,
         to kind: PaneKind,
         chatSessionId: UUID? = nil,
-        name: String? = nil
+        name: String? = nil,
+        cwd: String? = nil
     ) {
         guard let converted = state.convertNewTabPane(
             id: id, to: kind, sessionId: sessionId,
-            chatSessionId: chatSessionId, name: name
+            chatSessionId: chatSessionId, name: name, cwd: cwd
         ) else { return }
         // The placeholder's live host dies with the descriptor.
         live[id] = nil
@@ -292,22 +293,47 @@ final class PaneGroupModel: Identifiable {
     /// Syncs the agent's background-task snapshot into tabs: ensures a pane
     /// exists per task terminal, never stealing selection or opening the
     /// group — the tab appearing in the always-visible bar is the affordance.
-    /// A tab lives exactly as long as its task: when a task leaves the
-    /// snapshot (the agent killed it, or it finished), its tab goes with it.
-    /// `pruneEnded` is false until the first snapshot arrives — an empty task
-    /// list before replay means "unknown", not "everything ended".
-    func syncAgentTerminals(_ tasks: [(terminalKey: String, name: String)], pruneEnded: Bool) {
-        var added = false
-        for task in tasks where !state.panes.contains(where: { $0.terminalKey == task.terminalKey }) {
-            state.ensureAgentTerminalPane(name: task.name, terminalKey: task.terminalKey)
-            added = true
+    /// A tab lives exactly as long as its task: when a task leaves ITS
+    /// OWNING CHAT's snapshot (the agent killed it, or it finished), its tab
+    /// goes with it. The workspace panel hosts every chat's task tabs, so
+    /// each chat syncs only its own: `owner` scopes both adds and prunes —
+    /// chat B's empty snapshot must never tear down chat A's dev server.
+    /// `pruneEnded` is false until the owner's first snapshot arrives — an
+    /// empty task list before replay means "unknown", not "everything
+    /// ended". Tabs persisted before owner scoping (nil owner) are adopted
+    /// by the first owner whose live tasks match; a remaining nil-owned
+    /// tab is left alone (it still attaches; closing it is manual).
+    func syncAgentTerminals(
+        _ tasks: [(terminalKey: String, name: String)],
+        owner: UUID,
+        pruneEnded: Bool
+    ) {
+        var changed = false
+        for task in tasks {
+            if let index = state.panes.firstIndex(where: { $0.terminalKey == task.terminalKey }) {
+                // Legacy tab for a live task: adopt it.
+                if state.panes[index].attachOnly, state.panes[index].ownerChatSessionId == nil {
+                    state.panes[index].ownerChatSessionId = owner
+                    changed = true
+                }
+                continue
+            }
+            state.ensureAgentTerminalPane(
+                name: task.name,
+                terminalKey: task.terminalKey,
+                ownerChatSessionId: owner
+            )
+            changed = true
         }
-        if added {
+        if changed {
             persist()
         }
         guard pruneEnded else { return }
         let liveKeys = Set(tasks.map(\.terminalKey))
-        for pane in state.panes where pane.attachOnly && !liveKeys.contains(pane.terminalKey) {
+        for pane in state.panes
+        where pane.attachOnly
+            && pane.ownerChatSessionId == owner
+            && !liveKeys.contains(pane.terminalKey) {
             // closePane also deletes the server-side terminal (a no-op when
             // the kill already removed it).
             closePane(id: pane.id)

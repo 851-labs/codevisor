@@ -1871,7 +1871,8 @@ export interface CodevisorDatabaseService {
   readonly createPromptQueueItem: (
     sessionId: string,
     text: string,
-    attachments?: ReadonlyArray<AttachmentRef>
+    attachments?: ReadonlyArray<AttachmentRef>,
+    id?: string
   ) => Effect.Effect<PromptQueueItem, DatabaseError>
   readonly createFile: (
     name: string,
@@ -2705,12 +2706,14 @@ const createService = (
               .all(subjectId, since)
               .map((row) => eventFromRow(row as EventRow))
       }),
-    createPromptQueueItem: (sessionId, text, attachments) =>
+    createPromptQueueItem: (sessionId, text, attachments, id) =>
       attempt("createPromptQueueItem", () => {
         getSession(sessionId)
         const now = isoTimestamp()
         const item: PromptQueueItem = {
-          id: randomUUID(),
+          // A client-supplied id makes the eventual user-echo messageId the
+          // client's own optimistic-message id (identity reconciliation).
+          id: id ?? randomUUID(),
           sessionId,
           text,
           createdAt: now,

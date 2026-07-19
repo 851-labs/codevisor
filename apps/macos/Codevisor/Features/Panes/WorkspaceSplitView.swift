@@ -13,6 +13,7 @@ struct WorkspaceSplitView: View {
     let node: SplitNode
     let groupModel: (UUID) -> PaneGroupModel
     let chatTitle: (PaneDescriptorState) -> String
+    let paneWorktree: (PaneDescriptorState) -> String?
     /// Content drop zones (join/split) register here.
     var dragCoordinator: PaneTabDragCoordinator? = nil
     /// Whether a leaf's bar shows the ⌘-shortcut hints (the primary group
@@ -29,6 +30,7 @@ struct WorkspaceSplitView: View {
             node: node,
             groupModel: groupModel,
             chatTitle: chatTitle,
+            paneWorktree: paneWorktree,
             dragCoordinator: dragCoordinator,
             showsShortcutHints: showsShortcutHints,
             replaceNode: onTreeChanged,
@@ -41,6 +43,7 @@ private struct SplitNodeView: View {
     let node: SplitNode
     let groupModel: (UUID) -> PaneGroupModel
     let chatTitle: (PaneDescriptorState) -> String
+    let paneWorktree: (PaneDescriptorState) -> String?
     let dragCoordinator: PaneTabDragCoordinator?
     let showsShortcutHints: (UUID) -> Bool
     /// Replaces THIS node in its parent (recursion rebuilds the tree upward).
@@ -55,6 +58,7 @@ private struct SplitNodeView: View {
                 leafId: id,
                 groupModel: groupModel,
                 chatTitle: chatTitle,
+                paneWorktree: paneWorktree,
                 dragCoordinator: dragCoordinator,
                 showsShortcutHints: showsShortcutHints
             )
@@ -64,6 +68,7 @@ private struct SplitNodeView: View {
                 children: children,
                 groupModel: groupModel,
                 chatTitle: chatTitle,
+                paneWorktree: paneWorktree,
                 dragCoordinator: dragCoordinator,
                 showsShortcutHints: showsShortcutHints,
                 replaceNode: replaceNode,
@@ -78,6 +83,7 @@ private struct SplitLeafView: View {
     let leafId: UUID
     let groupModel: (UUID) -> PaneGroupModel
     let chatTitle: (PaneDescriptorState) -> String
+    let paneWorktree: (PaneDescriptorState) -> String?
     let dragCoordinator: PaneTabDragCoordinator?
     let showsShortcutHints: (UUID) -> Bool
 
@@ -88,6 +94,7 @@ private struct SplitLeafView: View {
                 group: model,
                 dragCoordinator: dragCoordinator,
                 chatTitle: chatTitle,
+                paneWorktree: paneWorktree,
                 showsShortcutHints: showsShortcutHints(leafId),
                 allowsNewChatTab: true,
                 chrome: .groupHeader
@@ -193,6 +200,7 @@ private struct SplitBranchView: View {
     let children: [SplitChild]
     let groupModel: (UUID) -> PaneGroupModel
     let chatTitle: (PaneDescriptorState) -> String
+    let paneWorktree: (PaneDescriptorState) -> String?
     let dragCoordinator: PaneTabDragCoordinator?
     let showsShortcutHints: (UUID) -> Bool
     let replaceNode: (SplitNode) -> Void
@@ -236,6 +244,7 @@ private struct SplitBranchView: View {
                         node: children[index].node,
                         groupModel: groupModel,
                         chatTitle: chatTitle,
+                        paneWorktree: paneWorktree,
                         dragCoordinator: dragCoordinator,
                         showsShortcutHints: showsShortcutHints,
                         replaceNode: { newChild in

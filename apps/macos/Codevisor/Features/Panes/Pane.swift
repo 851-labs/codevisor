@@ -27,6 +27,9 @@ struct PaneContext {
     /// Source data for working-directory resolution.
     let session: ChatSession
     let project: Project
+    /// Explicit per-pane working directory (see
+    /// `PaneDescriptorState.cwdOverride`); wins over the session's cwd.
+    var cwdOverride: String? = nil
 }
 
 /// Group-level commands a focused pane can emit from keyboard shortcuts

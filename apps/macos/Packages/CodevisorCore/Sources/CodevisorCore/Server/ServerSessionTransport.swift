@@ -133,8 +133,17 @@ public struct ServerSessionTransport: Sendable {
         self.sessionId = sessionId
     }
 
-    public func prompt(_ text: String, attachments: [Attachment] = []) async throws -> ServerPromptAccepted {
-        try await client.promptSession(id: sessionId, text: text, attachments: attachments.map(\.serverRef))
+    public func prompt(
+        _ text: String,
+        attachments: [Attachment] = [],
+        messageId: String? = nil
+    ) async throws -> ServerPromptAccepted {
+        try await client.promptSession(
+            id: sessionId,
+            text: text,
+            attachments: attachments.map(\.serverRef),
+            messageId: messageId
+        )
     }
 
     public func uploadFile(name: String, mimeType: String, data: Data) async throws -> ServerFileMetadata {

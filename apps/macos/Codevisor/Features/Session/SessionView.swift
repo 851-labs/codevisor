@@ -30,6 +30,9 @@ struct SessionScreen: View {
     var activeLeafId: UUID? = nil
     var centerLeafModel: ((UUID) -> PaneGroupModel)? = nil
     var chatTitleLookup: ((PaneDescriptorState) -> String)? = nil
+    /// Diverged-directory badge for tabs (worktree name when a pane runs
+    /// outside the workspace root); nil lookup = no badges.
+    var paneWorktreeLookup: ((PaneDescriptorState) -> String?)? = nil
     var onCenterTreeChanged: ((SplitNode) -> Void)? = nil
     /// Streamed on every frame of a divider drag (render only) so the
     /// container's top-bar segments track the moving content divider.
@@ -48,6 +51,7 @@ struct SessionScreen: View {
                     PaneGroupBar(
                         group: paneGroup,
                         dragCoordinator: dragCoordinator,
+                        paneWorktree: paneWorktreeLookup,
                         // The bottom bar is the shortcuts' target while one
                         // of its terminals holds keyboard focus.
                         showsShortcutHints: paneGroup.hasFocusedPane,
@@ -77,18 +81,9 @@ struct SessionScreen: View {
         .focusedSceneValue(\.terminalToggle, TerminalToggleAction(sessionId: paneGroup.sessionId) {
             togglePanes()
         })
-        // Background tasks that stream through a server-owned terminal get a
-        // tab in the bottom group — a dev server is something running, not
-        // something the chat is waiting on. The tab lives exactly as long as
-        // the task: agent kills and completions remove it.
-        .onChange(of: controller.backgroundTasks, initial: true) { _, tasks in
-            paneGroup.syncAgentTerminals(
-                tasks.compactMap { task in
-                    task.terminalKey.map { (terminalKey: $0, name: task.description) }
-                },
-                pruneEnded: controller.hasBackgroundTaskSnapshot
-            )
-        }
+        // (Background-task terminal tabs are synced by the WORKSPACE
+        // container across every chat's controller — a per-chat sync here
+        // would prune sibling chats' tabs on chat switches.)
         .onChange(of: controller.todos, initial: true) { _, todos in
             guard controller.observeTodoCompletion(todos), controller.isTodosExpanded else {
                 return
@@ -141,6 +136,7 @@ struct SessionScreen: View {
                     node: centerTree,
                     groupModel: centerLeafModel,
                     chatTitle: chatTitleLookup ?? { $0.name },
+                    paneWorktree: paneWorktreeLookup ?? { _ in nil },
                     dragCoordinator: dragCoordinator,
                     showsShortcutHints: { leafId in
                         // The ACTIVE group is the tab shortcuts' target
