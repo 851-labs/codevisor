@@ -82,7 +82,10 @@ struct RootView: View {
             } else {
                 OnboardingView { project in
                     preferredProjectId = project?.id
-                    selection = .newChat(project?.id)
+                    // Land on the new-workspace page (picker) rather than the
+                    // quick-create fast path — the user should name/configure
+                    // their first workspace, not get a random one auto-made.
+                    selection = .newChat(nil)
                 }
             }
         }
@@ -295,9 +298,9 @@ struct RootView: View {
                let project = environment.projectList.projects.first(where: {
                    $0.serverId == environment.machines.selectedMachineId && $0.id == projectId
                }) {
-                // The project is already chosen ("New workspace here",
-                // onboarding): skip the picker — create the workspace and
-                // land inside it on the eager chat composer.
+                // The project is already chosen ("New workspace here"):
+                // skip the picker — create the workspace and land inside
+                // it on the eager chat composer.
                 QuickWorkspaceCreationView(
                     project: project,
                     store: store,
