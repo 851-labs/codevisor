@@ -33,6 +33,77 @@ struct ScratchpadRepositoryTests {
         #expect(String(repository.load(sessionId: second)!.text.characters) == "two")
     }
 
+    @Test("Remote notes apply only when newer, and never re-upload")
+    @MainActor
+    func remoteApplyIsLastWriteWins() {
+        let repository = DefaultScratchpadRepository(store: InMemoryStore())
+        let workspaceId = UUID()
+        let model = ScratchpadModel(sessionId: workspaceId, repository: repository)
+        var uploads: [String] = []
+        model.onContentSaved = { state in uploads.append(String(state.text.characters)) }
+
+        model.text = AttributedString("local edit")
+        model.flush()
+        #expect(uploads == ["local edit"])
+        let localStamp = model.updatedAt
+        #expect(localStamp != nil)
+
+        // An OLDER remote copy is ignored.
+        model.applyRemote(
+            text: AttributedString("stale server copy"),
+            updatedAt: localStamp!.addingTimeInterval(-60)
+        )
+        #expect(String(model.text.characters) == "local edit")
+
+        // A NEWER one wins — applied, persisted, NOT re-uploaded.
+        model.applyRemote(
+            text: AttributedString("newer server copy"),
+            updatedAt: localStamp!.addingTimeInterval(60)
+        )
+        #expect(String(model.text.characters) == "newer server copy")
+        #expect(uploads == ["local edit"])
+        #expect(
+            repository.load(sessionId: workspaceId).map { String($0.text.characters) }
+                == "newer server copy"
+        )
+        // Visibility toggles never upload on their own.
+        model.setVisible(true)
+        #expect(uploads == ["local edit"])
+    }
+
+    @Test("A legacy per-chat record seeds a re-keyed model and moves to the new key")
+    @MainActor
+    func legacyAdoption() {
+        let repository = DefaultScratchpadRepository(store: InMemoryStore())
+        let chatId = UUID()
+        let workspaceId = UUID()
+        repository.save(
+            ScratchpadState(text: AttributedString("notes from the chat era"), isVisible: true),
+            sessionId: chatId
+        )
+        // Workspace-keyed model with the chat as its legacy fallback.
+        let model = ScratchpadModel(
+            sessionId: workspaceId, legacyId: chatId, repository: repository
+        )
+        #expect(String(model.text.characters) == "notes from the chat era")
+        #expect(model.isVisible == true)
+        // Adopted content persists under the WORKSPACE key immediately.
+        #expect(
+            repository.load(sessionId: workspaceId).map { String($0.text.characters) }
+                == "notes from the chat era"
+        )
+        // A workspace record, once present, wins over the legacy one.
+        repository.save(
+            ScratchpadState(text: AttributedString("workspace notes"), isVisible: false),
+            sessionId: workspaceId
+        )
+        let again = ScratchpadModel(
+            sessionId: workspaceId, legacyId: chatId, repository: repository
+        )
+        #expect(String(again.text.characters) == "workspace notes")
+        #expect(again.isVisible == false)
+    }
+
     @Test("Corrupted data decodes as nil")
     func corruptedData() {
         let sessionId = UUID()

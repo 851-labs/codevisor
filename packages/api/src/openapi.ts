@@ -53,8 +53,10 @@ import {
   UpdateProjectRequest,
   UpdateQueuedPromptRequest,
   UpdateSessionRequest,
+  UpsertWorkspaceNotesRequest,
   UpsertWorkspaceRequest,
   Workspace,
+  WorkspaceNotes,
   Worktree
 } from "./index.js"
 
@@ -93,6 +95,8 @@ export const endpoints = [
   "GET /v1/workspaces",
   "PUT /v1/workspaces/:id",
   "DELETE /v1/workspaces/:id",
+  "GET /v1/workspaces/:id/notes",
+  "PUT /v1/workspaces/:id/notes",
   "GET /v1/harnesses",
   "POST /v1/harnesses/rescan",
   "POST /v1/harnesses/auth/refresh",
@@ -171,6 +175,7 @@ const requestSchemas = (): Partial<Record<Endpoint, Schema.Constraint>> => ({
   "PATCH /v1/projects/:id": UpdateProjectRequest,
   "POST /v1/projects/:id/worktrees": CreateWorktreeRequest,
   "PUT /v1/workspaces/:id": UpsertWorkspaceRequest,
+  "PUT /v1/workspaces/:id/notes": UpsertWorkspaceNotesRequest,
   "PATCH /v1/harnesses/:id": UpdateHarnessRequest,
   "POST /v1/harnesses/:id/accounts": CreateHarnessAccountRequest,
   "PATCH /v1/harnesses/:id/accounts/:accountId": UpdateHarnessAccountRequest,
@@ -210,6 +215,8 @@ const responseSchemas = (): Partial<Record<Endpoint, Schema.Constraint>> => ({
   "POST /v1/projects/:id/worktrees": Worktree,
   "GET /v1/workspaces": arrayOf(Workspace),
   "PUT /v1/workspaces/:id": Workspace,
+  "GET /v1/workspaces/:id/notes": WorkspaceNotes,
+  "PUT /v1/workspaces/:id/notes": WorkspaceNotes,
   "GET /v1/harnesses": arrayOf(Harness),
   "POST /v1/harnesses/rescan": arrayOf(Harness),
   "POST /v1/harnesses/auth/refresh": arrayOf(Harness),

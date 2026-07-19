@@ -13,8 +13,10 @@ import {
   SetGoalRequest,
   TerminalClientFrame,
   TranscriptItemDetails,
+  UpsertWorkspaceNotesRequest,
   UpsertWorkspaceRequest,
   Workspace,
+  WorkspaceNotes,
   Worktree,
   WorktreeSetupUpdate,
   decode,
@@ -168,6 +170,42 @@ describe("@codevisor/api", () => {
       symbolName: "hammer"
     })
     expect(() => decode(UpsertWorkspaceRequest)({ name: "Missing project" })).toThrow()
+  })
+
+  it("decodes workspace notes and their upsert requests", () => {
+    const notes = decode(WorkspaceNotes)({
+      workspaceId: "workspace-1",
+      content: '{"runs":[{"text":"hello"}]}',
+      format: "attributed-string-v1",
+      updatedAt: "2026-07-10T00:00:00.000Z"
+    })
+    expect(notes.content).toBe('{"runs":[{"text":"hello"}]}')
+    expect(notes.format).toBe("attributed-string-v1")
+
+    // The format and edit stamp are optional; the server fills both in.
+    const sparse = decode(UpsertWorkspaceNotesRequest)({ content: "{}" })
+    expect(sparse.format).toBeUndefined()
+    expect(sparse.updatedAt).toBeUndefined()
+    expect(
+      decode(UpsertWorkspaceNotesRequest)({
+        content: "{}",
+        format: "markdown-v1",
+        updatedAt: "2026-07-10T00:00:00.000Z"
+      })
+    ).toMatchObject({ format: "markdown-v1", updatedAt: "2026-07-10T00:00:00.000Z" })
+    expect(() => decode(UpsertWorkspaceNotesRequest)({ format: "markdown-v1" })).toThrow()
+
+    // The notes change event is part of the envelope's kind vocabulary.
+    expect(
+      decode(EventEnvelope)({
+        id: 1,
+        serverId: "local",
+        kind: "workspace.notes.updated",
+        subjectId: "workspace-1",
+        createdAt: "2026-07-10T00:00:00.000Z",
+        payload: encode(WorkspaceNotes)(notes)
+      }).kind
+    ).toBe("workspace.notes.updated")
   })
 
   it("decodes worktrees and worktree creation requests", () => {

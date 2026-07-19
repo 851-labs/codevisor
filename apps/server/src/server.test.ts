@@ -3159,6 +3159,97 @@ describe("@codevisor/server", () => {
     expect((await jsonRequest(server, "/v1/workspaces", { method: "POST" })).status).toBe(404)
   })
 
+  it("serves workspace notes with last-write-wins PUTs and change events", async () => {
+    const { server, services } = await start()
+    const workspaceRoot = mkdtempSync(join(tmpdir(), "codevisor-server-workspace-notes-"))
+    tempDirs.push(workspaceRoot)
+    const projectFolder = join(workspaceRoot, "project")
+    mkdirSync(projectFolder)
+    const project = (
+      await jsonRequest(server, "/v1/projects", {
+        body: JSON.stringify({ folderPath: projectFolder }),
+        method: "POST"
+      })
+    ).body as { readonly id: string }
+    expect(
+      (
+        await jsonRequest(server, "/v1/workspaces/workspace-1", {
+          body: JSON.stringify({ projectId: project.id, name: "Main", hasCustomName: false }),
+          method: "PUT"
+        })
+      ).status
+    ).toBe(200)
+
+    // Clients read this 404 as "no notes yet", not as a failure.
+    const empty = await jsonRequest(server, "/v1/workspaces/workspace-1/notes")
+    expect(empty.status).toBe(404)
+    expect(empty.body).toEqual({ error: "Workspace notes not found: workspace-1" })
+
+    // A PUT saves the scratchpad and fans out the full record so connected
+    // clients can live-apply the change without a refetch.
+    const replayBeforePut = await run(services.db.listEvents(0))
+    const livePut = readSseEvents(server, 1, replayBeforePut.at(-1)?.id ?? 0)
+    const saved = await jsonRequest(server, "/v1/workspaces/workspace-1/notes", {
+      body: JSON.stringify({
+        content: '{"runs":[{"text":"hello"}]}',
+        updatedAt: "2026-07-10T00:00:00.000Z"
+      }),
+      method: "PUT"
+    })
+    expect(saved).toEqual({
+      status: 200,
+      body: {
+        workspaceId: "workspace-1",
+        content: '{"runs":[{"text":"hello"}]}',
+        format: "attributed-string-v1",
+        updatedAt: "2026-07-10T00:00:00.000Z"
+      }
+    })
+    expect(await livePut).toEqual([
+      expect.objectContaining({
+        kind: "workspace.notes.updated",
+        subjectId: "workspace-1",
+        payload: expect.objectContaining({
+          content: '{"runs":[{"text":"hello"}]}',
+          updatedAt: "2026-07-10T00:00:00.000Z"
+        })
+      })
+    ])
+    expect(await jsonRequest(server, "/v1/workspaces/workspace-1/notes")).toEqual(saved)
+
+    // The newest write replaces the row outright — last write wins.
+    const replaced = await jsonRequest(server, "/v1/workspaces/workspace-1/notes", {
+      body: JSON.stringify({
+        content: '{"runs":[{"text":"replaced"}]}',
+        format: "markdown-v1",
+        updatedAt: "2026-07-11T00:00:00.000Z"
+      }),
+      method: "PUT"
+    })
+    expect(replaced.body).toMatchObject({
+      content: '{"runs":[{"text":"replaced"}]}',
+      format: "markdown-v1",
+      updatedAt: "2026-07-11T00:00:00.000Z"
+    })
+    expect((await jsonRequest(server, "/v1/workspaces/workspace-1/notes")).body).toEqual(
+      replaced.body
+    )
+
+    // Missing workspaces surface like the other workspace routes' database
+    // errors.
+    const missing = await jsonRequest(server, "/v1/workspaces/missing/notes", {
+      body: JSON.stringify({ content: "{}" }),
+      method: "PUT"
+    })
+    expect(missing.status).toBe(500)
+    expect(missing.body).toMatchObject({ error: expect.stringContaining("missing") })
+
+    // Unmatched notes methods fall through to the 404 handler.
+    expect(
+      (await jsonRequest(server, "/v1/workspaces/workspace-1/notes", { method: "POST" })).status
+    ).toBe(404)
+  })
+
   it("persists and fans out agent-initiated events with no prompt in flight", async () => {
     const { agents, server, services } = await start()
     const workspaceRoot = mkdtempSync(join(tmpdir(), "codevisor-server-background-"))

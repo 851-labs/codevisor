@@ -12,11 +12,20 @@ public struct ScratchpadState: Codable, Sendable, Equatable {
     /// Whether the inspector is open for this session. Per-session (not
     /// app-global) so switching chats restores each one's own pane state.
     public var isVisible: Bool
+    /// When the TEXT was last edited locally — the last-write-wins stamp
+    /// for server sync. Nil on records written before sync existed.
+    public var updatedAt: Date?
 
-    public init(version: Int = 1, text: AttributedString = AttributedString(), isVisible: Bool = false) {
+    public init(
+        version: Int = 1,
+        text: AttributedString = AttributedString(),
+        isVisible: Bool = false,
+        updatedAt: Date? = nil
+    ) {
         self.version = version
         self.text = text
         self.isVisible = isVisible
+        self.updatedAt = updatedAt
     }
 }
 

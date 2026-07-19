@@ -599,6 +599,27 @@ export const UpsertWorkspaceRequest = Schema.Struct({
 })
 export type UpsertWorkspaceRequest = typeof UpsertWorkspaceRequest.Type
 
+/// A workspace's scratchpad. The content is an opaque client-encoded blob
+/// (`format` names the encoding) that the server stores and fans out verbatim;
+/// writes are row-level last-write-wins with no merging.
+export const WorkspaceNotes = Schema.Struct({
+  workspaceId: Schema.String,
+  content: Schema.String,
+  format: Schema.String,
+  updatedAt: Schema.String
+})
+export type WorkspaceNotes = typeof WorkspaceNotes.Type
+
+export const UpsertWorkspaceNotesRequest = Schema.Struct({
+  content: Schema.String,
+  /// Omitted formats default server-side to "attributed-string-v1".
+  format: Schema.optional(Schema.String),
+  /// Clients send their local edit stamp so last-write-wins keeps fidelity;
+  /// omitted stamps are generated server-side.
+  updatedAt: Schema.optional(Schema.String)
+})
+export type UpsertWorkspaceNotesRequest = typeof UpsertWorkspaceNotesRequest.Type
+
 export const Worktree = Schema.Struct({
   id: Schema.String,
   projectId: Schema.String,
@@ -993,6 +1014,7 @@ export const EventKind = Schema.Literals([
   "worktree.setup",
   "workspace.updated",
   "workspace.deleted",
+  "workspace.notes.updated",
   "session.created",
   "session.updated",
   "session.archived",

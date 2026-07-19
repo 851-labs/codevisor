@@ -134,6 +134,10 @@ public protocol CodevisorServerClienting: Sendable {
     func updateProject(_ project: Project) async throws -> ServerProject
     func deleteProject(id: UUID) async throws
     func listWorktrees(projectId: UUID) async throws -> [ServerWorktree]
+    /// A workspace's synced scratchpad notes; nil when none exist yet.
+    func workspaceNotes(workspaceId: UUID) async throws -> ServerWorkspaceNotes?
+    /// Uploads a workspace's notes (last-write-wins by `updatedAt`).
+    func saveWorkspaceNotes(workspaceId: UUID, content: String, updatedAt: Date) async throws
     func createWorktree(projectId: UUID, name: String?) async throws -> ServerWorktree
     /// Creates a worktree with a client-supplied id so the caller can follow
     /// the server's `worktree.setup` progress events (subjectId = worktree id)
@@ -398,6 +402,10 @@ public extension CodevisorServerClienting {
     /// Defaults so fakes and older transports keep compiling; the HTTP client
     /// overrides these with the real worktree endpoints.
     func listWorktrees(projectId: UUID) async throws -> [ServerWorktree] { [] }
+
+    /// Notes sync is best-effort; fakes/older servers act notes-less.
+    func workspaceNotes(workspaceId: UUID) async throws -> ServerWorkspaceNotes? { nil }
+    func saveWorkspaceNotes(workspaceId: UUID, content: String, updatedAt: Date) async throws {}
 
     func createWorktree(projectId: UUID, name: String?) async throws -> ServerWorktree {
         throw CodevisorServerClientError.invalidResponse
@@ -997,6 +1005,20 @@ public struct ServerProject: Decodable, Equatable, Sendable {
                 )
             }
         )
+    }
+}
+
+/// A workspace's synced scratchpad record. `content` is an opaque encoded
+/// rich-text document (AttributedString Codable JSON, format-tagged).
+public struct ServerWorkspaceNotes: Decodable, Equatable, Sendable {
+    public var workspaceId: String
+    public var content: String
+    public var format: String
+    public var updatedAt: String
+
+    /// The LWW stamp as a date (nil if the server sent an unparseable one).
+    public var updatedAtDate: Date? {
+        try? ServerDateCoding.date(from: updatedAt)
     }
 }
 
@@ -1675,6 +1697,25 @@ public final class CodevisorServerClient: CodevisorServerClienting, @unchecked S
         )
     }
 
+    public func workspaceNotes(workspaceId: UUID) async throws -> ServerWorkspaceNotes? {
+        do {
+            return try await get("/v1/workspaces/\(workspaceId.uuidString)/notes")
+        } catch CodevisorServerClientError.httpStatus(404, _) {
+            return nil
+        }
+    }
+
+    public func saveWorkspaceNotes(workspaceId: UUID, content: String, updatedAt: Date) async throws {
+        try await sendNoResponse(
+            "/v1/workspaces/\(workspaceId.uuidString)/notes",
+            method: "PUT",
+            body: WorkspaceNotesBody(
+                content: content,
+                updatedAt: ServerDateCoding.string(from: updatedAt)
+            )
+        )
+    }
+
     public func uploadFile(name: String, mimeType: String, data: Data) async throws -> ServerFileMetadata {
         // Conservative encoding: percent-encode everything non-alphanumeric so
         // names with `&`, `+`, or `=` survive the query round-trip.
@@ -2014,6 +2055,12 @@ private enum ServerDateCoding {
 }
 
 private struct EmptyBody: Encodable {}
+
+private struct WorkspaceNotesBody: Encodable {
+    var content: String
+    var format = "attributed-string-v1"
+    var updatedAt: String
+}
 
 private struct PromptBody: Encodable {
     var text: String

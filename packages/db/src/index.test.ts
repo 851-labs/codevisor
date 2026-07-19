@@ -654,6 +654,10 @@ describe("@codevisor/db", () => {
     expect(workspaceColumns).toContain("project_id")
     expect(workspaceColumns).not.toContain("folder_path")
     expect(sqlite.prepare("select count(*) as count from workspaces").get()).toEqual({ count: 0 })
+    // Migration 22 adds the workspace scratchpad table alongside them.
+    expect(sqlite.prepare("select count(*) as count from workspace_notes").get()).toEqual({
+      count: 0
+    })
     expect(
       (sqlite.pragma("table_info(sessions)") as ReadonlyArray<{ readonly name: string }>).map(
         (column) => column.name
@@ -1010,6 +1014,73 @@ describe("@codevisor/db", () => {
     await run(db.deleteProject(project.id))
     expect(await run(db.listWorkspaces)).toEqual([])
     await expect(run(db.getSessionSummary(session.id))).rejects.toBeInstanceOf(DatabaseError)
+    await Effect.runPromise(db.close)
+  })
+
+  it("stores workspace notes with row-level last-write-wins", async () => {
+    const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "machine-a" }))
+    const project = await run(db.createProject({ folderPath: "/tmp/workspace-notes" }))
+    const workspace = await run(
+      db.upsertWorkspace({
+        id: "workspace-1",
+        projectId: project.id,
+        name: "Main",
+        hasCustomName: false
+      })
+    )
+
+    // No scratchpad exists until the first save.
+    expect(await run(db.getWorkspaceNotes(workspace.id))).toBeUndefined()
+
+    // The first save creates the row, keeping the client's own edit stamp so
+    // last-write-wins comparisons stay faithful to the editing device.
+    const created = await run(
+      db.saveWorkspaceNotes({
+        workspaceId: workspace.id,
+        content: '{"runs":[{"text":"hello"}]}',
+        updatedAt: "2026-07-10T00:00:00.000Z"
+      })
+    )
+    expect(created).toEqual({
+      workspaceId: workspace.id,
+      content: '{"runs":[{"text":"hello"}]}',
+      format: "attributed-string-v1",
+      updatedAt: "2026-07-10T00:00:00.000Z"
+    })
+
+    // A later save replaces the whole row — no merging — and an omitted stamp
+    // is generated server-side.
+    const replaced = await run(
+      db.saveWorkspaceNotes({
+        workspaceId: workspace.id,
+        content: '{"runs":[{"text":"replaced"}]}',
+        format: "markdown-v1"
+      })
+    )
+    expect(replaced).toMatchObject({
+      workspaceId: workspace.id,
+      content: '{"runs":[{"text":"replaced"}]}',
+      format: "markdown-v1"
+    })
+    expect(replaced.updatedAt).not.toBe("2026-07-10T00:00:00.000Z")
+    expect(Date.parse(replaced.updatedAt)).not.toBeNaN()
+    expect(await run(db.getWorkspaceNotes(workspace.id))).toEqual(replaced)
+
+    // Notes cannot exist without their workspace.
+    await expect(
+      run(db.saveWorkspaceNotes({ workspaceId: "missing", content: "{}" }))
+    ).rejects.toBeInstanceOf(DatabaseError)
+
+    // Deleting the workspace cascades its notes away; a project delete does
+    // the same through the workspace cascade.
+    const scratch = await run(
+      db.upsertWorkspace({ projectId: project.id, name: "Scratch", hasCustomName: false })
+    )
+    await run(db.saveWorkspaceNotes({ workspaceId: scratch.id, content: "{}" }))
+    await run(db.deleteWorkspace(scratch.id))
+    expect(await run(db.getWorkspaceNotes(scratch.id))).toBeUndefined()
+    await run(db.deleteProject(project.id))
+    expect(await run(db.getWorkspaceNotes(workspace.id))).toBeUndefined()
     await Effect.runPromise(db.close)
   })
 
