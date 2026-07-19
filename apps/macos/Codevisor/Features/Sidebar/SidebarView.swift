@@ -10,8 +10,8 @@ private enum SidebarOrganization: String, CaseIterable {
 
     var title: String {
         switch self {
-        case .compact: return "By chat"
-        case .byWorkspace: return "By workspace"
+        case .compact: return "Agents"
+        case .byWorkspace: return "Workspaces"
         }
     }
 }
@@ -68,9 +68,8 @@ private struct PendingSessionImport: Identifiable {
     var id: UUID { project.id }
 }
 
-/// The sidebar: a New Chat action, a Projects section (with a + to add a
-/// project) listing project folders and their sessions, and an archived
-/// section.
+/// The sidebar: a New Chat action, an organization control, and the selected
+/// machine's workspaces or agent sessions.
 ///
 /// Built on `ScrollView` + `LazyVStack` (not `List`), because the sidebar-styled
 /// `List` outline coordinator crashes on the current macOS SDK.
@@ -287,20 +286,14 @@ struct SidebarView: View {
                             reorderableChronologicalSessionRow(item.session, project: item.project)
                         }
                     }
-                    if visibleProjects.isEmpty {
-                        Text("Add a project with +")
-                            .font(.caption)
-                            .foregroundStyle(.tertiary)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 4)
-                    } else if organization == .byWorkspace && workspaceItems.isEmpty {
+                    if organization == .byWorkspace && workspaceItems.isEmpty {
                         Text("No workspaces yet")
                             .font(.caption)
                             .foregroundStyle(.tertiary)
                             .padding(.horizontal, 10)
                             .padding(.vertical, 4)
                     } else if organization != .byWorkspace && chronologicalSessions.isEmpty {
-                        Text("No sessions yet")
+                        Text("No agents yet")
                             .font(.caption)
                             .foregroundStyle(.tertiary)
                             .padding(.horizontal, 10)
@@ -544,19 +537,8 @@ struct SidebarView: View {
             }
             .menuStyle(.button)
             .buttonStyle(.plain)
-            .help("Organize projects")
-            .accessibilityLabel("Organize projects")
-
-            Button {
-                startAddProject()
-            } label: {
-                Image(systemName: "folder.badge.plus")
-                    .font(.callout.weight(.semibold))
-                    .foregroundStyle(.secondary)
-            }
-            .buttonStyle(.plain)
-            .help("Add a project folder")
-            .accessibilityLabel("Add a project folder")
+            .help("Organize sidebar")
+            .accessibilityLabel("Organize sidebar")
         }
         .padding(.horizontal, 10)
         .padding(.top, 12)
