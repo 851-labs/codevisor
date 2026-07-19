@@ -227,6 +227,19 @@ struct WorkspaceRepositoryTests {
         #expect(repository.workspaceId(forSession: seed.sessionId) == first.id)
     }
 
+    @Test("symbolName round-trips and old payloads decode without it")
+    func symbolNameCodable() throws {
+        let repository = DefaultWorkspaceRepository(store: InMemoryStore())
+        var workspace = repository.ensureWorkspace(for: seed(), legacyGroups: nil)
+        // Pre-icon payloads must keep decoding (synthesized optional).
+        let legacyData = try JSONEncoder().encode(workspace)
+        #expect(try JSONDecoder().decode(Workspace.self, from: legacyData).symbolName == nil)
+        workspace.symbolName = "hammer"
+        repository.save(workspace)
+        let reloaded = repository.workspace(id: workspace.id)
+        #expect(reloaded?.symbolName == "hammer")
+    }
+
     @Test("Backfill adopts the workspace's identity from the session")
     func backfillIdentity() {
         let repository = DefaultWorkspaceRepository(store: InMemoryStore())

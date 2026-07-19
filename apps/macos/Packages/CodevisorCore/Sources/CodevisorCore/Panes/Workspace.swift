@@ -17,6 +17,10 @@ public struct Workspace: Codable, Sendable, Equatable, Identifiable {
     /// chat/terminal in the workspace runs at or under this root. Nil when
     /// the backing session hasn't resolved its directory yet.
     public var rootDirectory: String?
+    /// The workspace's SF Symbol, seeded from its project's icon at
+    /// creation; the user can change it later. Nil (pre-icon workspaces)
+    /// falls back to the project's icon in the UI.
+    public var symbolName: String?
     /// The machine the workspace's sessions and shells live on.
     public let serverId: String
     public let projectId: UUID
@@ -31,6 +35,7 @@ public struct Workspace: Codable, Sendable, Equatable, Identifiable {
         name: String,
         hasCustomName: Bool = false,
         rootDirectory: String?,
+        symbolName: String? = nil,
         serverId: String,
         projectId: UUID,
         centerTree: SplitNode,
@@ -41,6 +46,7 @@ public struct Workspace: Codable, Sendable, Equatable, Identifiable {
         self.name = name
         self.hasCustomName = hasCustomName
         self.rootDirectory = rootDirectory
+        self.symbolName = symbolName
         self.serverId = serverId
         self.projectId = projectId
         self.centerTree = centerTree

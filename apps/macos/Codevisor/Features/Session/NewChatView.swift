@@ -346,8 +346,14 @@ struct NewChatView: View {
     private func setUpController() {
         selectedProjectId = preferredProjectId ?? projects.first?.id
         guard let project = selectedProject else { return }
-        let controller = paneDraftId.map { store.paneDraft(paneId: $0, project: project) }
-            ?? store.draft(project: project)
+        // The pane's workspace scopes composer memory: the eager chat knows
+        // its workspace through the pre-created session.
+        let workspaceId = preCreatedSession.flatMap {
+            environment.workspaces.workspaceId(forSession: $0.id)
+        }
+        let controller = paneDraftId.map {
+            store.paneDraft(paneId: $0, project: project, workspaceId: workspaceId)
+        } ?? store.draft(project: project)
         if controller.project.id != project.id {
             let draftProjectExists = projects.contains { $0.id == controller.project.id }
             if explicitProjectId == project.id || !draftProjectExists {
@@ -409,13 +415,17 @@ struct NewChatView: View {
             // The session record is registered before the worktree exists (the
             // page opens while setup streams progress); patch in the worktree
             // name/cwd once the server has materialized it.
-            controller.onWorktreeCreated = { [weak projectList = environment.projectList] worktree in
+            controller.onWorktreeCreated = { [weak projectList = environment.projectList, weak store] worktree in
                 projectList?.setWorktree(
                     name: worktree.name,
                     cwd: worktree.path,
                     for: session.id,
                     serverId: session.serverId
                 )
+                // The founding chat's worktree becomes the WORKSPACE's root
+                // (persona 1: workspace = worktree) — later terminals and
+                // chats run in it.
+                store?.adoptFoundingWorktreeRoot(worktree.path, forSession: session.id)
             }
             // If worktree setup or the agent start fails, undo the promotion:
             // delete the just-created session record (local + server), demote

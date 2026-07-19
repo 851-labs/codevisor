@@ -100,6 +100,7 @@ struct SidebarView: View {
     @State private var renameTitle = ""
     @State private var renamingWorkspace: Workspace?
     @State private var workspaceRenameTitle = ""
+    @State private var workspaceIconEditing: Workspace?
     /// Bumped after workspace mutations (backfill sweep, renames) so the
     /// non-observable repository is re-read.
     @State private var workspaceRevision = 0
@@ -264,7 +265,7 @@ struct SidebarView: View {
                     developmentWorktreeRow
                 }
 
-                actionRow("New chat", systemImage: "square.and.pencil") {
+                actionRow("New workspace", systemImage: "plus.square.on.square") {
                     selection = .newChat(nil)
                 }
 
@@ -387,6 +388,18 @@ struct SidebarView: View {
         .sheet(item: $iconEditing) { project in
             IconPickerView(currentSymbol: project.symbolName) { symbol in
                 list.setIcon(symbol, for: project)
+            }
+        }
+        .sheet(item: $workspaceIconEditing) { workspace in
+            IconPickerView(
+                currentSymbol: workspace.symbolName ?? list.projects.first {
+                    $0.id == workspace.projectId
+                }?.symbolName ?? "square.grid.2x2"
+            ) { symbol in
+                var updated = workspace
+                updated.symbolName = symbol
+                environment.workspaces.save(updated)
+                workspaceRevision += 1
             }
         }
         .sheet(isPresented: $showingRemoteMachine) {
@@ -645,8 +658,8 @@ struct SidebarView: View {
                     }
                     .buttonStyle(.plain)
                     .foregroundStyle(.secondary)
-                    .help("New chat in \(project.name)")
-                    .accessibilityLabel("New chat in \(project.name)")
+                    .help("New workspace in \(project.name)")
+                    .accessibilityLabel("New workspace in \(project.name)")
                 }
             }
             .padding(.horizontal, 8)
@@ -654,7 +667,7 @@ struct SidebarView: View {
         }
         .help(project.folderURL.path)
         .contextMenu {
-            Button("New chat here") { selection = .newChat(project.id) }
+            Button("New workspace here") { selection = .newChat(project.id) }
             Button("Change icon") { iconEditing = project }
             Button { list.archive(project) } label: {
                 Label("Archive", systemImage: "archivebox")
@@ -764,7 +777,7 @@ struct SidebarView: View {
             isHoverForced: false
         ) { isHovered in
             HStack(spacing: 7) {
-                Image(systemName: "square.grid.2x2")
+                Image(systemName: workspaceSymbol(item))
                     .frame(width: 18)
                     .foregroundStyle(.secondary)
                 VStack(alignment: .leading, spacing: 1) {
@@ -799,7 +812,25 @@ struct SidebarView: View {
                 Label("Rename", systemImage: "pencil")
                     .labelStyle(.titleAndIcon)
             }
+            Button {
+                workspaceIconEditing = item.workspace
+            } label: {
+                Label("Change Icon", systemImage: "app.grid")
+                    .labelStyle(.titleAndIcon)
+            }
         }
+    }
+
+    /// The workspace's own icon; a workspace born before icons existed
+    /// falls back to its project's, then to a generic glyph.
+    private func workspaceSymbol(_ item: SidebarWorkspaceListItem) -> String {
+        if let symbol = item.workspace.symbolName {
+            return FilledSymbol.preferred(symbol)
+        }
+        if let project = item.project {
+            return FilledSymbol.preferred(project.symbolName)
+        }
+        return "square.grid.2x2"
     }
 
     private func workspaceSubtitle(_ item: SidebarWorkspaceListItem) -> String {

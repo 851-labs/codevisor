@@ -288,24 +288,36 @@ struct RootView: View {
                 .id("\(session.serverId):\((environment.workspaces.workspaceId(forSession: session.id) ?? session.id).uuidString)")
                 .onAppear { preferredProjectId = project.id }
             } else {
-                newChat(store, preferred: preferredProjectId)
+                newWorkspace(store)
             }
         case let .newChat(projectId):
-            newChat(store, preferred: projectId ?? preferredProjectId, explicit: projectId)
+            if let projectId,
+               let project = environment.projectList.projects.first(where: {
+                   $0.serverId == environment.machines.selectedMachineId && $0.id == projectId
+               }) {
+                // The project is already chosen ("New workspace here",
+                // onboarding): skip the picker — create the workspace and
+                // land inside it on the eager chat composer.
+                QuickWorkspaceCreationView(
+                    project: project,
+                    store: store,
+                    selection: $selection
+                )
+            } else {
+                newWorkspace(store)
+            }
         case .none:
-            newChat(store, preferred: preferredProjectId)
+            newWorkspace(store)
         }
     }
 
-    private func newChat(_ store: SessionStore, preferred: UUID?, explicit: UUID? = nil) -> some View {
-        NewChatView(
-            store: store,
-            selection: $selection,
-            preferredProjectId: preferred,
-            explicitProjectId: explicit
-        )
-        .navigationTitle("New chat")
-        .id(environment.machines.selectedMachineId)
+    /// The workspace creation page: a project/directory picker. Everything
+    /// conversational (harness, worktree, first message) happens INSIDE the
+    /// created workspace via its eager chat composer.
+    private func newWorkspace(_ store: SessionStore) -> some View {
+        NewWorkspaceView(store: store, selection: $selection)
+            .navigationTitle("New workspace")
+            .id(environment.machines.selectedMachineId)
     }
 }
 

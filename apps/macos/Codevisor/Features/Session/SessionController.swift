@@ -809,6 +809,19 @@ final class SessionController {
            previousValue != value {
             captureModelSelected(modelId: value, previousModelId: previousValue)
         }
+        // "Last used" means the last time the user SET these — a mid-chat
+        // model/reasoning/speed switch updates what the next new chat (in
+        // this workspace, and app-wide) starts from. Draft tweaks are
+        // captured at first send instead, so abandoned drafts don't clobber
+        // the remembered defaults.
+        if accepted, !isDraft {
+            composerDefaults?.rememberConfigSelections(
+                serverId: project.serverId,
+                workspaceId: defaultsWorkspaceId,
+                harnessId: connectedHarnessId ?? selectedHarnessId,
+                configValues: rememberedConfigValues
+            )
+        }
     }
 
     // MARK: - Remembered composer defaults
@@ -817,12 +830,19 @@ final class SessionController {
     /// remembered defaults apply and harness switches re-seed them.
     private var isDraft: Bool { serverSession == nil && !hasSentFirst }
 
+    /// The workspace this chat lives in, for workspace-scoped composer
+    /// memory (a new chat in a workspace repeats what was last used THERE;
+    /// the machine level is the fallback for fresh workspaces).
+    @ObservationIgnored var defaultsWorkspaceId: UUID?
+
     /// Seeds a new-chat draft with the choices the last session was created
     /// with: the harness and that harness's config selections (model,
     /// reasoning, …). Called once by `SessionStore` when a draft is made.
     func applyComposerDefaults() {
         guard let composerDefaults, isDraft else { return }
-        if let harnessId = composerDefaults.lastHarnessId(forServer: project.serverId), !harnessId.isEmpty,
+        if let harnessId = composerDefaults.lastHarnessId(
+               forWorkspace: defaultsWorkspaceId, orServer: project.serverId
+           ), !harnessId.isEmpty,
            harnesses.isEmpty || harnesses.contains(where: { $0.id == harnessId }) {
             selectedHarnessId = harnessId
         }
@@ -839,7 +859,8 @@ final class SessionController {
         guard let composerDefaults, let harnessId = selectedHarnessId else { return }
         let remembered = composerDefaults.configSelections(
             forHarness: harnessId,
-            onServer: project.serverId
+            workspace: defaultsWorkspaceId,
+            orServer: project.serverId
         )
         guard !remembered.isEmpty else { return }
         var options = configOptionsByHarness[harnessId]
@@ -882,10 +903,26 @@ final class SessionController {
             .map { ($0.id, $0.currentValue) }
         composerDefaults.rememberSessionCreation(
             serverId: project.serverId,
+            workspaceId: defaultsWorkspaceId,
             harnessId: selectedHarnessId,
             configValues: Dictionary(values) { _, last in last },
             runInWorktree: wantsNewWorktree
         )
+    }
+
+    /// Remembered config categories (model, reasoning, speed, model config)
+    /// as currently selected — what composer memory captures.
+    private var rememberedConfigValues: [String: String] {
+        let rememberedCategories = [
+            SessionConfigOption.Category.model,
+            SessionConfigOption.Category.thoughtLevel,
+            SessionConfigOption.Category.speed,
+            SessionConfigOption.Category.modelConfig
+        ]
+        let values = configOptions
+            .filter { rememberedCategories.contains($0.category ?? "") }
+            .map { ($0.id, $0.currentValue) }
+        return Dictionary(values) { _, last in last }
     }
 
     var selectedHarness: ServerHarness? {

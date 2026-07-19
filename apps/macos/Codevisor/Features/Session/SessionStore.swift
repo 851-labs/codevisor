@@ -124,6 +124,10 @@ final class SessionStore {
         )
         controller.serverSession = session
         controller.resumeAgentSessionId = session.agentSessionId
+        // Mid-session settings changes are remembered per WORKSPACE (plus
+        // the machine-level fallback), so new chats repeat what was last
+        // used here.
+        controller.defaultsWorkspaceId = environment.workspaces.workspaceId(forSession: session.id)
         if !session.harnessId.isEmpty {
             controller.selectedHarnessId = session.harnessId
         }
@@ -184,6 +188,79 @@ final class SessionStore {
         return controller
     }
 
+    /// Creates a NEW WORKSPACE in a project: an eagerly created chat session
+    /// (the workspace's routing anchor, visible in the sidebar immediately)
+    /// plus the workspace itself, named and iconed at birth. The chat opens
+    /// UNSTARTED — its in-workspace composer owns the harness at first send.
+    /// When the workspace was created INTO a fresh worktree, that worktree
+    /// (already materialized by the caller) becomes the session cwd and —
+    /// through the ensure seed — the workspace root, so every terminal and
+    /// chat runs there. `startingTab` picks which tab faces the user.
+    func createWorkspaceSession(
+        in project: Project,
+        name: String,
+        startingTab: WorkspaceStartingTab = .chat,
+        worktree: ServerWorktree? = nil
+    ) -> ChatSession {
+        var session = environment.projectList.newSession(in: project, title: "New Chat")
+        if let worktree {
+            environment.projectList.setWorktree(
+                name: worktree.name,
+                cwd: worktree.path,
+                for: session.id,
+                serverId: session.serverId
+            )
+            session.worktreeName = worktree.name
+            session.cwd = worktree.path
+        }
+        var created = workspace(for: session, project: project)
+        // The user named it — the name never tracks chat titles.
+        created.name = name
+        created.hasCustomName = true
+        created.symbolName = project.symbolName
+        environment.workspaces.save(created)
+        if startingTab != .chat,
+           let leafId = created.centerTree.groupId(containingChat: session.id) {
+            let model = centerGroup(
+                leafId: leafId, workspace: created, session: session, project: project
+            )
+            switch startingTab {
+            case .terminal:
+                model.addTerminalPane()
+            case .newTab:
+                model.addNewTabPane()
+            case .chat:
+                break
+            }
+            // The container's open sequence must not force the chat tab
+            // back over this choice (that behavior is for SIDEBAR clicks —
+            // "show me that chat").
+            startingTabOverrides.insert(session.id)
+        }
+        return session
+    }
+
+    /// One-shot: whether this session's workspace was just created with a
+    /// non-chat starting tab (consume instead of selecting the chat).
+    @ObservationIgnored private var startingTabOverrides: Set<UUID> = []
+
+    func consumeStartingTabOverride(for sessionId: UUID) -> Bool {
+        startingTabOverrides.remove(sessionId) != nil
+    }
+
+
+    /// The founding chat's worktree completes the workspace's identity: the
+    /// root follows it, so every later terminal/chat runs in the worktree.
+    /// Applies ONLY while that chat is the workspace's sole chat — an
+    /// established workspace is never re-rooted under running work.
+    func adoptFoundingWorktreeRoot(_ path: String, forSession sessionId: UUID) {
+        guard let workspaceId = environment.workspaces.workspaceId(forSession: sessionId),
+              var workspace = environment.workspaces.workspace(id: workspaceId),
+              workspace.chatSessionIds == [sessionId] else { return }
+        workspace.rootDirectory = path
+        environment.workspaces.save(workspace)
+    }
+
     /// The cached controller for a session WITHOUT creating one — a pure
     /// read, safe in view bodies (deciding whether an unstarted chat still
     /// shows its new-chat composer must not mint controllers).
@@ -192,10 +269,10 @@ final class SessionStore {
     }
 
     /// The draft controller behind an in-workspace draft chat pane (created
-    /// on first use). Unlike the per-server page draft, pane drafts are not
-    /// mirrored to disk — the pane itself persists in the workspace tree and
-    /// reopens with a fresh composer.
-    func paneDraft(paneId: UUID, project: Project) -> SessionController {
+    /// on first use), mirrored to disk per PANE — an unsent in-workspace
+    /// composer (text, attachments, settings) survives relaunches and app
+    /// updates just like the per-server page draft does.
+    func paneDraft(paneId: UUID, project: Project, workspaceId: UUID? = nil) -> SessionController {
         if let existing = paneDrafts[paneId] { return existing }
         let controller = SessionController(
             project: project,
@@ -203,15 +280,29 @@ final class SessionStore {
             composerDefaults: environment.composerDefaults,
             serverClient: environment.serverClient
         )
+        // Workspace scope FIRST: seeding reads the workspace's own last-used
+        // harness/model before falling back to the machine's.
+        controller.defaultsWorkspaceId = workspaceId
         controller.applyComposerDefaults()
+        // In-workspace chats run in the WORKSPACE DIRECTORY by default —
+        // the workspace already made the worktree decision at its door
+        // (its root may itself be a worktree). The remembered worktree
+        // preference is a new-workspace concern, not a new-chat one.
+        controller.wantsNewWorktree = false
+        if let persisted = environment.composerDrafts.paneDraft(forPane: paneId) {
+            controller.restoreDraft(persisted)
+        }
+        enablePaneDraftPersistence(for: controller, paneId: paneId)
         paneDrafts[paneId] = controller
         return controller
     }
 
     /// First send bound the pane's session; the controller now lives in the
-    /// session cache.
+    /// session cache and the pane's disk draft is spent.
     func removePaneDraft(paneId: UUID) {
+        paneDrafts[paneId]?.onDraftChange = nil
         paneDrafts[paneId] = nil
+        environment.composerDrafts.clearPaneDraft(forPane: paneId)
     }
 
     /// Setup failure undid a pane draft's promotion: the controller returns
@@ -220,6 +311,14 @@ final class SessionStore {
     func demoteToPaneDraft(_ controller: SessionController, session: ChatSession, paneId: UUID) {
         controllers[SessionKey(session)] = nil
         paneDrafts[paneId] = controller
+        enablePaneDraftPersistence(for: controller, paneId: paneId)
+    }
+
+    private func enablePaneDraftPersistence(for controller: SessionController, paneId: UUID) {
+        controller.onDraftChange = { [weak drafts = environment.composerDrafts] draft in
+            drafts?.savePaneDraft(draft, forPane: paneId)
+        }
+        environment.composerDrafts.savePaneDraft(controller.draftSnapshot(), forPane: paneId)
     }
 
     private func enableDraftPersistence(for controller: SessionController) {

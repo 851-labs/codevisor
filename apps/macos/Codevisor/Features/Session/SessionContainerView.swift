@@ -120,19 +120,27 @@ struct SessionContainerView: View {
             if let primaryLeaf = store.workspace(for: session, project: project)
                 .centerTree.groupId(containingChat: session.id) {
                 let model = configuredCenterModel(leafId: primaryLeaf)
-                if let chatPane = model.state.panes.first(where: {
-                    $0.kind == .chat && $0.chatSessionId == session.id
-                }), model.state.selectedPaneId != chatPane.id {
-                    model.select(id: chatPane.id)
+                if store.consumeStartingTabOverride(for: session.id) {
+                    // Just-created workspace with a non-chat starting tab:
+                    // honor it (terminal focuses; the New Tab page is
+                    // click-driven and grabs nothing).
+                    activateLeaf(primaryLeaf)
+                    model.focusSelectedPane()
+                } else {
+                    if let chatPane = model.state.panes.first(where: {
+                        $0.kind == .chat && $0.chatSessionId == session.id
+                    }), model.state.selectedPaneId != chatPane.id {
+                        model.select(id: chatPane.id)
+                    }
+                    // Unconditional: with workspace-keyed identity this task
+                    // re-runs for every routed-chat change WITHOUT a remount,
+                    // and the newly routed chat's group takes over.
+                    activateLeaf(primaryLeaf)
+                    // The routed chat's composer takes keyboard focus — now
+                    // if it's already registered, else the moment its
+                    // (possibly later-laid-out) pane registers it.
+                    sessionFocus.requestComposerFocus(forChat: session.id)
                 }
-                // Unconditional: with workspace-keyed identity this task
-                // re-runs for every routed-chat change WITHOUT a remount,
-                // and the newly routed chat's group takes over.
-                activateLeaf(primaryLeaf)
-                // The routed chat's composer takes keyboard focus — now if
-                // it's already registered, else the moment its (possibly
-                // later-laid-out) pane registers it.
-                sessionFocus.requestComposerFocus(forChat: session.id)
             } else if let firstLeaf = store.workspace(for: session, project: project)
                 .centerTree.allGroups.first?.id {
                 // A CHAT-LESS workspace (every chat closed/archived; routed

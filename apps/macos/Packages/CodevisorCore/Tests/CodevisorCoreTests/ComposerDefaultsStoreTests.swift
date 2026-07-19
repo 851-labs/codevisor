@@ -56,6 +56,81 @@ struct ComposerDefaultsStoreTests {
         #expect(defaults.runInWorktree(forServer: "local") == false)
     }
 
+    @Test("Workspace-scoped selections win over the machine fallback")
+    func workspaceScopedSelections() {
+        let defaults = ComposerDefaultsStore(store: InMemoryStore())
+        let workspace = UUID()
+        defaults.rememberSessionCreation(
+            serverId: "local", harnessId: "claude-code", configValues: ["model": "opus"], runInWorktree: false
+        )
+        // A fresh workspace falls back to the machine's last-used.
+        #expect(defaults.lastHarnessId(forWorkspace: workspace, orServer: "local") == "claude-code")
+        #expect(defaults.configSelections(
+            forHarness: "claude-code", workspace: workspace, orServer: "local"
+        ) == ["model": "opus"])
+        // A session created IN the workspace scopes future chats there.
+        defaults.rememberSessionCreation(
+            serverId: "local",
+            workspaceId: workspace,
+            harnessId: "codex",
+            configValues: ["model": "gpt-5.5"],
+            runInWorktree: false
+        )
+        #expect(defaults.lastHarnessId(forWorkspace: workspace, orServer: "local") == "codex")
+        #expect(defaults.configSelections(
+            forHarness: "codex", workspace: workspace, orServer: "local"
+        ) == ["model": "gpt-5.5"])
+        // Another workspace still sees the app-wide last-used.
+        #expect(defaults.configSelections(
+            forHarness: "codex", workspace: UUID(), orServer: "local"
+        ) == ["model": "gpt-5.5"])
+    }
+
+    @Test("Mid-session config changes update both scopes and persist")
+    func midSessionChanges() {
+        let store = InMemoryStore()
+        let defaults = ComposerDefaultsStore(store: store)
+        let workspace = UUID()
+        defaults.rememberConfigSelections(
+            serverId: "local",
+            workspaceId: workspace,
+            harnessId: "claude-code",
+            configValues: ["model": "opus", "speed": "fast"]
+        )
+        #expect(defaults.lastHarnessId(forServer: "local") == "claude-code")
+        #expect(defaults.configSelections(forHarness: "claude-code", onServer: "local") == [
+            "model": "opus", "speed": "fast"
+        ])
+        #expect(defaults.configSelections(
+            forHarness: "claude-code", workspace: workspace, orServer: "local"
+        ) == ["model": "opus", "speed": "fast"])
+        // Empty updates are ignored (a harness with no remembered categories).
+        defaults.rememberConfigSelections(
+            serverId: "local", workspaceId: workspace, harnessId: "claude-code", configValues: [:]
+        )
+        #expect(defaults.configSelections(forHarness: "claude-code", onServer: "local") == [
+            "model": "opus", "speed": "fast"
+        ])
+        // And the whole payload round-trips.
+        let reloaded = ComposerDefaultsStore(store: store)
+        #expect(reloaded.configSelections(
+            forHarness: "claude-code", workspace: workspace, orServer: "local"
+        ) == ["model": "opus", "speed": "fast"])
+    }
+
+    @Test("Payloads written before workspace scoping still load")
+    func preWorkspacePayloadLoads() throws {
+        let store = InMemoryStore()
+        // The exact shape the previous schema wrote: machines only.
+        let legacy = "{\"machines\":{\"local\":{\"lastHarnessId\":\"claude-code\",\"runInWorktree\":true,\"configSelections\":{\"claude-code\":{\"model\":\"opus\"}}}}}"
+        try store.saveData(Data(legacy.utf8), forKey: "composer-defaults")
+        let defaults = ComposerDefaultsStore(store: store)
+        #expect(defaults.lastHarnessId(forServer: "local") == "claude-code")
+        #expect(defaults.runInWorktree(forServer: "local") == true)
+        #expect(defaults.configSelections(forHarness: "claude-code", onServer: "local") == ["model": "opus"])
+        #expect(defaults.lastHarnessId(forWorkspace: UUID(), orServer: "local") == "claude-code")
+    }
+
     @Test("Persists across instances")
     func persists() {
         let store = InMemoryStore()
@@ -150,7 +225,7 @@ struct ComposerDefaultsStoreTests {
         let data = try #require(store.loadData(forKey: "composer-defaults"))
         let object = try JSONSerialization.jsonObject(with: data)
         let canonical = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
-        #expect(String(decoding: canonical, as: UTF8.self) == #"{"machines":{"local":{"configSelections":{"claude-code":{"model":"opus","thought_level":"high"}},"lastHarnessId":"claude-code","runInWorktree":true}}}"#)
+        #expect(String(decoding: canonical, as: UTF8.self) == #"{"machines":{"local":{"configSelections":{"claude-code":{"model":"opus","thought_level":"high"}},"lastHarnessId":"claude-code","runInWorktree":true}},"workspaces":{}}"#)
     }
 
     @Test("Never shares composer choices between machines")
