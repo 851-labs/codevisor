@@ -91,7 +91,7 @@ struct SessionContainerView: View {
                 } label: {
                     Image(systemName: "sidebar.trailing")
                 }
-                .tooltip("Toggle Scratchpad (⌥⌘I)")
+                .help("Toggle Scratchpad (⌥⌘I)")
                 .accessibilityLabel("Toggle Scratchpad")
             }
         }

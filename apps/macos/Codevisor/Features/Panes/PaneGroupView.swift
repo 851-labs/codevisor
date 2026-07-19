@@ -674,7 +674,7 @@ struct PaneGroupBar: View {
             }
             .buttonStyle(.plain)
             .glassEffect(.regular.interactive(), in: Circle())
-            .tooltip("New tab (⌘T)")
+            .help("New tab (⌘T)")
             .accessibilityLabel("New tab")
         } else {
             Button {
@@ -684,7 +684,7 @@ struct PaneGroupBar: View {
             }
             .buttonStyle(.plain)
             .glassEffect(.regular.interactive(), in: Circle())
-            .tooltip("New terminal")
+            .help("New terminal")
             .accessibilityLabel("New terminal")
         }
     }
