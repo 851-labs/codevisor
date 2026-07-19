@@ -1151,7 +1151,10 @@ public struct ServerSession: Decodable, Equatable, Sendable {
             serverId: scopedServerId ?? serverId,
             harnessId: harnessId,
             harnessAccountId: harnessAccountId,
-            agentSessionId: agentSessionId,
+            // The server stores "" for a deferred (not-yet-created) agent;
+            // the app's "no agent yet" checks all use nil — normalize at
+            // the boundary so both spellings mean the same thing.
+            agentSessionId: agentSessionId.flatMap { $0.isEmpty ? nil : $0 },
             title: title,
             origin: origin,
             isArchived: isArchived,
@@ -2242,6 +2245,12 @@ private struct CreateSessionBody: Encodable {
     var worktreeName: String?
     var createdAt: String
     var updatedAt: String?
+    /// True for sessions that don't have an agent yet: without it the server
+    /// spawns the agent AT CREATE with the cwd derived at that moment, which
+    /// pins eagerly-created chats to the project root — a worktree chosen in
+    /// the composer afterwards could never move it. Deferred agents are
+    /// created lazily on the first prompt, from the CURRENT worktree name.
+    var deferAgentSession: Bool?
 
     init(session: ChatSession) {
         id = session.id.uuidString
@@ -2255,6 +2264,7 @@ private struct CreateSessionBody: Encodable {
         worktreeName = session.worktreeName
         createdAt = ServerDateCoding.string(from: session.createdAt)
         updatedAt = session.updatedAt.map(ServerDateCoding.string)
+        deferAgentSession = session.agentSessionId == nil ? true : nil
     }
 }
 
@@ -2292,12 +2302,20 @@ private struct UpdateSessionBody: Encodable {
     /// /v1/sessions is create-or-return, so a later create can't. The
     /// server keeps its current value when nil (no clobbering).
     var worktreeName: String?
+    /// Same eager-session gap for the harness: the record is created with
+    /// harnessId "" before the composer's choice, and the deferred agent
+    /// must start under the harness/account picked at first send. Empty
+    /// maps to nil so an unset choice never clobbers the server's value.
+    var harnessId: String?
+    var harnessAccountId: String?
 
     init(session: ChatSession) {
         agentSessionId = session.agentSessionId
         isArchived = session.isArchived
         title = session.title
         worktreeName = session.worktreeName
+        harnessId = session.harnessId.isEmpty ? nil : session.harnessId
+        harnessAccountId = session.harnessAccountId
     }
 }
 

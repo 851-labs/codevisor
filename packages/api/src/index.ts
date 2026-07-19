@@ -875,6 +875,11 @@ export const UpdateSessionRequest = Schema.Struct({
   isArchived: Schema.optional(Schema.Boolean),
   title: Schema.optional(Schema.String),
   worktreeName: Schema.optional(Schema.String),
+  /// Sessions created EAGERLY (before the composer chose a harness) carry
+  /// harnessId "" — the first send patches the real choice here so the
+  /// deferred agent starts under the right harness/account.
+  harnessId: Schema.optional(Schema.String),
+  harnessAccountId: Schema.optional(Schema.String),
   /// Explicit activity stamp, sent only when a turn finishes; plain metadata
   /// updates must omit it so recency ordering ignores opens/renames.
   updatedAt: Schema.optional(Schema.String)

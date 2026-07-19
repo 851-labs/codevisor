@@ -2656,7 +2656,8 @@ const createService = (
                 when ? is not null and ? <> title then 1
                 else title_is_user_set
               end,
-              is_archived = ?, agent_session_id = ?, worktree_name = ?, updated_at = ?
+              is_archived = ?, agent_session_id = ?, worktree_name = ?,
+              harness_id = ?, harness_account_id = ?, updated_at = ?
              where id = ?`
           )
           .run(
@@ -2666,6 +2667,8 @@ const createService = (
             (request.isArchived ?? current.isArchived) ? 1 : 0,
             request.agentSessionId ?? current.agentSessionId ?? null,
             request.worktreeName ?? current.worktreeName ?? null,
+            request.harnessId ?? current.harnessId,
+            request.harnessAccountId ?? current.harnessAccountId ?? null,
             request.updatedAt ?? current.updatedAt ?? null,
             id
           )
