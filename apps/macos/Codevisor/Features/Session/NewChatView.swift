@@ -1,10 +1,26 @@
 import SwiftUI
+import AppKit
 import UniformTypeIdentifiers
 import CodevisorCore
 
 /// The new-chat page: a centered "What should we build in <project>?" title with
 /// an inline project dropdown, and the composer. The session is created only
 /// when the user sends.
+/// Surfaces the backing NSView of the new-chat pane's background so it can
+/// register as a whitespace-click zone with the workspace's focus
+/// controller (`handleTranscriptClick` needs an AppKit view for geometry).
+private struct PaneClickZoneCapture: NSViewRepresentable {
+    let onReady: (NSView) -> Void
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        DispatchQueue.main.async { onReady(view) }
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {}
+}
+
 struct NewChatView: View {
     @Environment(AppEnvironment.self) private var environment
     @Environment(\.theme) private var theme
@@ -28,6 +44,11 @@ struct NewChatView: View {
     /// Fired when a failed first-send setup deletes the session, so the
     /// hosting pane can drop its (now dangling) session reference.
     var onSetupFailedInPane: (() -> Void)? = nil
+    /// The WORKSPACE's shared focus controller (pane mode only). The
+    /// composer registers under the pre-created chat's id so pane/tab
+    /// clicks and the container's open sequence can focus it exactly like
+    /// a started chat's composer.
+    var paneFocus: TerminalFocusController? = nil
 
     @State private var controller: SessionController?
     @State private var selectedProjectId: UUID?
@@ -102,9 +123,18 @@ struct NewChatView: View {
                                     showsHarnessPicker: false,
                                     onTextViewReady: { textView in
                                         focus.composerTextView = textView
-                                        // The text view isn't attached to a window yet during
-                                        // makeNSView; focus once it is.
-                                        DispatchQueue.main.async { focus.focusComposer() }
+                                        if let paneFocus, let chatId = preCreatedSession?.id {
+                                            // REGISTRATION ONLY, like ChatScreen:
+                                            // the container's keyed focus request
+                                            // (open sequence, pane/tab clicks)
+                                            // applies the moment this lands.
+                                            paneFocus.registerComposer(textView, forChat: chatId)
+                                        } else {
+                                            // Standalone page: the text view isn't
+                                            // attached to a window yet during
+                                            // makeNSView; focus once it is.
+                                            DispatchQueue.main.async { focus.focusComposer() }
+                                        }
                                     },
                                     glassNamespace: composerGlassNamespace
                                 )
@@ -149,6 +179,16 @@ struct NewChatView: View {
             Spacer()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // The whole pane is a click-to-focus zone, exactly like a started
+        // chat's transcript: whitespace clicks land in the composer (the
+        // pane's one input) unless the click claimed focus itself.
+        .background {
+            if let paneFocus, let chatId = preCreatedSession?.id {
+                PaneClickZoneCapture { view in
+                    paneFocus.registerTranscript(view, forChat: chatId)
+                }
+            }
+        }
         .attachmentDropTarget(controller)
         // Same add-project flow as the sidebar's +.
         .addProjectFlow(addProjectFlow) { project in

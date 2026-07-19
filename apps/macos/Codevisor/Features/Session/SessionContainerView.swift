@@ -537,7 +537,8 @@ struct SessionContainerView: View {
                         // dead end).
                         onSetupFailedInPane: { [weak group] in
                             group?.unbindChatPane(paneId: descriptor.id)
-                        }
+                        },
+                        paneFocus: focus
                     )
                 } else {
                     ChatScreen(
