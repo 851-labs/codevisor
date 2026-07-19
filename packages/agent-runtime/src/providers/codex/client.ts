@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process"
-import type { ChildProcessWithoutNullStreams } from "node:child_process"
+import { childStdioEndpoint, makeNdjsonTransport } from "../stdio-transport.js"
+import type { NdjsonTransport } from "../stdio-transport.js"
 
 /// Minimal JSON-RPC 2.0 client over newline-delimited JSON, the codex
 /// app-server's stdio transport (the `jsonrpc` header is omitted on the wire).
@@ -7,9 +8,17 @@ export interface CodexClient {
   request: <T>(method: string, params?: unknown) => Promise<T>
   notify: (method: string, params?: unknown) => void
   onNotification: (handler: (method: string, params: unknown) => void) => void
-  /// Server→client requests (approvals). The handler's resolved value is sent
-  /// back as the JSON-RPC result.
-  onRequest: (handler: (method: string, params: unknown) => Promise<unknown>) => void
+  /// Server→client requests (approvals, user-input questions). The handler's
+  /// resolved value is sent back as the JSON-RPC result. The signal aborts
+  /// when the connection dies with the request still unsettled: these
+  /// requests block on HUMAN answers, so they routinely outlive the process
+  /// (codex crashes mid-question, the session closes mid-approval) — the
+  /// handler uses the signal to retract the ask instead of holding it
+  /// forever, and whatever it eventually settles with is discarded rather
+  /// than written to a dead pipe.
+  onRequest: (
+    handler: (method: string, params: unknown, signal: AbortSignal) => Promise<unknown>
+  ) => void
   onClose: (handler: (error: Error) => void) => void
   close: () => void
   /// OS pid of the spawned codex app-server process, when this client wraps a
@@ -31,7 +40,7 @@ interface Pending {
   readonly reject: (error: Error) => void
 }
 
-/* v8 ignore start -- the stdio transport is exercised against a live codex binary; tests inject a fake client. */
+/* v8 ignore start -- spawning is exercised against a live codex binary; tests drive wireCodexClient over fake endpoints. */
 export const spawnCodexClient: CodexConnector = async (request) => {
   // apply_patch_streaming_events unlocks item/fileChange/patchUpdated — the
   // realtime patch stream while the model generates an edit.
@@ -58,44 +67,58 @@ export const spawnCodexClient: CodexConnector = async (request) => {
     child.once("spawn", () => resolve())
     child.once("error", reject)
   })
-  const client = wireCodexClient(child)
+  const transport = makeNdjsonTransport(childStdioEndpoint(child), {
+    exitMessage: "codex app-server exited"
+  })
+  const client = wireCodexClient(transport)
   return child.pid === undefined ? client : { ...client, pid: child.pid }
 }
+/* v8 ignore stop */
 
-const wireCodexClient = (child: ChildProcessWithoutNullStreams): CodexClient => {
+export const wireCodexClient = (transport: NdjsonTransport): CodexClient => {
   let nextId = 1
   const pending = new Map<number, Pending>()
+  /// In-flight server→client requests, tracked symmetrically with `pending`:
+  /// their handlers settle on human timescales (a person answering a
+  /// question), so connection death must abort them — and gate their late
+  /// replies — exactly as it rejects outstanding outbound requests.
+  const inbound = new Map<number, AbortController>()
   let notificationHandler: ((method: string, params: unknown) => void) | undefined
-  let requestHandler: ((method: string, params: unknown) => Promise<unknown>) | undefined
+  let requestHandler:
+    | ((method: string, params: unknown, signal: AbortSignal) => Promise<unknown>)
+    | undefined
   const closeHandlers: Array<(error: Error) => void> = []
-  let stderrTail = ""
   let closed = false
 
-  child.stderr.setEncoding("utf8")
-  child.stderr.on("data", (chunk: string) => {
-    stderrTail = `${stderrTail}${chunk}`.slice(-8192)
-  })
-
-  const failAll = (error: Error): void => {
+  /// The single teardown path: rejects outbound requests, aborts inbound
+  /// obligations, and (for failures only) notifies close handlers.
+  /// `notifyClose` is false for EXPECTED teardown (session close, agent
+  /// replacement after a cwd change, short-lived listing/usage clients) so
+  /// routine closes never masquerade as crashes — without this, every
+  /// routine close published a "codex app-server exited" session error that
+  /// clients flash before the replacement connects.
+  const settle = (error: Error, notifyClose: boolean): void => {
     if (closed) return
     closed = true
     for (const entry of pending.values()) {
       entry.reject(error)
     }
     pending.clear()
-    for (const handler of closeHandlers) {
-      handler(error)
+    // Abort BEFORE notifying close handlers: abort listeners retract the
+    // asks (dismiss question UIs) so the coarser close-time cancellation
+    // that follows finds nothing left to do.
+    for (const controller of inbound.values()) {
+      controller.abort(error)
+    }
+    inbound.clear()
+    if (notifyClose) {
+      for (const handler of closeHandlers) {
+        handler(error)
+      }
     }
   }
 
-  child.once("exit", () => {
-    failAll(new Error(stderrTail.length > 0 ? stderrTail : "codex app-server exited"))
-  })
-  child.once("error", (error) => failAll(error))
-
-  const send = (payload: Record<string, unknown>): void => {
-    child.stdin.write(`${JSON.stringify(payload)}\n`)
-  }
+  transport.onFailure((error) => settle(error, true))
 
   const handleLine = (line: string): void => {
     if (line.trim().length === 0) return
@@ -122,16 +145,27 @@ const wireCodexClient = (child: ChildProcessWithoutNullStreams): CodexClient => 
     const method = message.method
     if (typeof method !== "string") return
     if (typeof id === "number") {
-      // Server→client request (approvals).
+      // Server→client request (approvals, user-input questions).
       const handler = requestHandler
       if (handler === undefined) {
-        send({ error: { code: -32601, message: `No handler for ${method}` }, id })
+        transport.send({ error: { code: -32601, message: `No handler for ${method}` }, id })
         return
       }
-      handler(method, message.params)
-        .then((result) => send({ id, result }))
+      const controller = new AbortController()
+      inbound.set(id, controller)
+      const respond = (payload: Record<string, unknown>): void => {
+        // A reply is only meaningful while its request is still live: after
+        // an abort (the connection died first) the settled value is
+        // discarded here — the transport's own write gate is the backstop,
+        // not the primary defense.
+        if (inbound.get(id) !== controller) return
+        inbound.delete(id)
+        transport.send(payload)
+      }
+      handler(method, message.params, controller.signal)
+        .then((result) => respond({ id, result }))
         .catch((error: unknown) =>
-          send({
+          respond({
             error: {
               code: -32000,
               message: error instanceof Error ? error.message : String(error)
@@ -143,41 +177,15 @@ const wireCodexClient = (child: ChildProcessWithoutNullStreams): CodexClient => 
     }
     notificationHandler?.(method, message.params)
   }
-
-  let buffer = ""
-  child.stdout.setEncoding("utf8")
-  child.stdout.on("data", (chunk: string) => {
-    buffer += chunk
-    while (true) {
-      const newline = buffer.indexOf("\n")
-      if (newline === -1) break
-      const line = buffer.slice(0, newline)
-      buffer = buffer.slice(newline + 1)
-      handleLine(line)
-    }
-  })
+  transport.onLine(handleLine)
 
   return {
     close: () => {
-      // EXPECTED teardown (session close, agent replacement after a cwd
-      // change, short-lived listing/usage clients): the child's exit must
-      // not masquerade as a crash — without this, every routine close
-      // published a "codex app-server exited" session error that clients
-      // flash before the replacement connects. Pending requests still
-      // reject so awaiting callers unwind.
-      if (!closed) {
-        closed = true
-        const error = new Error("codex client closed")
-        for (const entry of pending.values()) {
-          entry.reject(error)
-        }
-        pending.clear()
-      }
-      child.stdin.end()
-      child.kill()
+      settle(new Error("codex client closed"), false)
+      transport.close()
     },
     notify: (method, params) => {
-      send(params === undefined ? { method } : { method, params })
+      transport.send(params === undefined ? { method } : { method, params })
     },
     onClose: (handler) => {
       closeHandlers.push(handler)
@@ -197,9 +205,9 @@ const wireCodexClient = (child: ChildProcessWithoutNullStreams): CodexClient => 
           return
         }
         pending.set(id, { reject, resolve: resolve as (value: unknown) => void })
-        send(params === undefined ? { id, method } : { id, method, params })
+        transport.send(params === undefined ? { id, method } : { id, method, params })
       })
-    }
+    },
+    ...(transport.pid === undefined ? {} : { pid: transport.pid })
   }
 }
-/* v8 ignore stop */

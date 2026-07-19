@@ -567,7 +567,9 @@ export const makeCodexProvider = (
     client.onNotification((method, params) => {
       handleNotification(session, method, params)
     })
-    client.onRequest((method, params) => serverRequestResponse(session, method, params))
+    client.onRequest((method, params, signal) =>
+      serverRequestResponse(session, method, params, signal)
+    )
     client.onClose((error) => {
       session.pendingPrompt?.resolve({ stopReason: "cancelled" })
       session.pendingPrompt = undefined
@@ -933,26 +935,53 @@ const numericVersionComponents = (version: string): ReadonlyArray<number> => {
 }
 
 /// Routes codex's server→client requests: questions, MCP elicitations, and
-/// approvals block on the human's answer.
+/// approvals block on the human's answer. The signal aborts when the codex
+/// connection dies with the ask still open — the process that would receive
+/// the answer is gone, so the ask is retracted instead of held forever.
 const serverRequestResponse = (
   session: CodexSession,
   method: string,
-  params: unknown
+  params: unknown,
+  signal: AbortSignal
 ): Promise<unknown> => {
   switch (method) {
     case "item/tool/requestUserInput":
-      return holdQuestionRequest(session, isRecord(params) ? params : {})
+      return holdQuestionRequest(session, isRecord(params) ? params : {}, signal)
     case "mcpServer/elicitation/request":
-      return holdElicitationRequest(session, isRecord(params) ? params : {})
+      return holdElicitationRequest(session, isRecord(params) ? params : {}, signal)
     case "item/commandExecution/requestApproval":
     case "item/fileChange/requestApproval":
     case "item/permissions/requestApproval":
       // Approvals only arrive in modes with approvalPolicy on-request (Agent /
       // Read-only). Full-access and Plan modes never ask.
-      return holdApprovalRequest(session, method, isRecord(params) ? params : {})
+      return holdApprovalRequest(session, method, isRecord(params) ? params : {}, signal)
     default:
       return Promise.reject(new Error(`Unsupported approval request: ${method}`))
   }
+}
+
+/// Connection death retracts a held ask: settle the JSON-RPC promise via
+/// the source-specific dismissal and emit the resolution so clients drop
+/// the picker. Idempotent with the other cancellation paths (turn
+/// interrupt/completion, session close) — whichever runs first removes the
+/// map entry, and the rest find nothing to do.
+const dismissQuestionOnAbort = (
+  session: CodexSession,
+  questionId: string,
+  signal: AbortSignal
+): void => {
+  signal.addEventListener(
+    "abort",
+    () => {
+      const pending = session.pendingQuestions.get(questionId)
+      if (pending === undefined) return
+      session.pendingQuestions.delete(questionId)
+      if (pending.timer !== undefined) clearTimeout(pending.timer)
+      dismissPendingQuestion(pending, "Question cancelled: codex connection closed")
+      void emitQuestionResolved(session, questionId, "cancelled", pending.questions, undefined)
+    },
+    { once: true }
+  )
 }
 
 /// Surfaces a codex approval request as a blocking question: Allow/Deny (plus
@@ -961,7 +990,8 @@ const serverRequestResponse = (
 const holdApprovalRequest = (
   session: CodexSession,
   method: string,
-  params: Record<string, unknown>
+  params: Record<string, unknown>,
+  signal: AbortSignal
 ): Promise<unknown> => {
   const itemId = typeof params.itemId === "string" ? params.itemId : undefined
   const detail = itemId === undefined ? undefined : session.itemTitles.get(itemId)
@@ -1013,6 +1043,7 @@ const holdApprovalRequest = (
       },
       timer: undefined
     })
+    dismissQuestionOnAbort(session, questionId, signal)
   })
 }
 
@@ -1024,7 +1055,8 @@ const holdApprovalRequest = (
 /// answers to let the turn continue).
 const holdQuestionRequest = (
   session: CodexSession,
-  params: Record<string, unknown>
+  params: Record<string, unknown>,
+  signal: AbortSignal
 ): Promise<unknown> => {
   const questionId = typeof params.itemId === "string" ? params.itemId : randomUUID()
   const questions = questionSpecsFrom(params.questions)
@@ -1076,6 +1108,7 @@ const holdQuestionRequest = (
       }),
       timer
     })
+    dismissQuestionOnAbort(session, questionId, signal)
   })
 }
 
@@ -1086,7 +1119,8 @@ const holdQuestionRequest = (
 /// URL-mode elicitations are declined — there is no browser hand-off UX yet.
 const holdElicitationRequest = (
   session: CodexSession,
-  params: Record<string, unknown>
+  params: Record<string, unknown>,
+  signal: AbortSignal
 ): Promise<unknown> => {
   const schema = isRecord(params.requestedSchema) ? params.requestedSchema : undefined
   const fields = schema !== undefined ? elicitationFields(schema) : []
@@ -1127,6 +1161,7 @@ const holdElicitationRequest = (
       },
       timer: undefined
     })
+    dismissQuestionOnAbort(session, questionId, signal)
   })
 }
 

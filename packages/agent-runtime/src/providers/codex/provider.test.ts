@@ -48,7 +48,9 @@ class FakeCodexClient implements CodexClient {
   readonly requests: Array<{ method: string; params: unknown }> = []
   readonly notifications: Array<{ method: string; params: unknown }> = []
   private notificationHandler: ((method: string, params: unknown) => void) | undefined
-  private requestHandler: ((method: string, params: unknown) => Promise<unknown>) | undefined
+  private requestHandler:
+    | ((method: string, params: unknown, signal: AbortSignal) => Promise<unknown>)
+    | undefined
   closed = false
   failResume = false
   startModel = "gpt-5.2-codex"
@@ -170,7 +172,9 @@ class FakeCodexClient implements CodexClient {
     this.notificationHandler = handler
   }
 
-  onRequest(handler: (method: string, params: unknown) => Promise<unknown>): void {
+  onRequest(
+    handler: (method: string, params: unknown, signal: AbortSignal) => Promise<unknown>
+  ): void {
     this.requestHandler = handler
   }
 
@@ -184,9 +188,9 @@ class FakeCodexClient implements CodexClient {
     this.notificationHandler?.(method, params)
   }
 
-  async serverRequest(method: string, params: unknown): Promise<unknown> {
+  async serverRequest(method: string, params: unknown, signal?: AbortSignal): Promise<unknown> {
     if (this.requestHandler === undefined) throw new Error("no request handler")
-    return this.requestHandler(method, params)
+    return this.requestHandler(method, params, signal ?? new AbortController().signal)
   }
 }
 
@@ -1616,6 +1620,37 @@ describe("CodexProvider", () => {
       questionId: "item-q2",
       sessionUpdate: "question_resolved"
     })
+  })
+
+  it("retracts a held question when the codex connection dies (abort signal)", async () => {
+    const { client, created, events } = await setup()
+    const controller = new AbortController()
+    const request = client.serverRequest(
+      "item/tool/requestUserInput",
+      {
+        itemId: "item-q-dead",
+        questions: [{ id: "q", isOther: true, options: [{ label: "A" }], question: "Pick" }],
+        threadId: "thread-new",
+        turnId: "turn-1"
+      },
+      controller.signal
+    )
+    await Promise.resolve()
+    // The process died with the question still on screen: the ask is
+    // retracted so the picker dismisses instead of collecting an answer
+    // no one will ever receive.
+    controller.abort(new Error("codex app-server exited"))
+    await expect(request).rejects.toThrow("codex connection closed")
+    expect(events.at(-1)?.payload).toMatchObject({
+      outcome: "cancelled",
+      questionId: "item-q-dead",
+      sessionUpdate: "question_resolved"
+    })
+    // The retraction already emptied the pending map: answering afterwards
+    // fails, and close-time cancellation finds nothing left to do.
+    await expect(
+      run(created!.handle.answerQuestion!("item-q-dead", { outcome: "answered" }))
+    ).rejects.toThrow("No pending question")
   })
 
   it("auto-resolves timed questions with empty answers, codex-TUI style", async () => {
