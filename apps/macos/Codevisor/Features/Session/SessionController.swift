@@ -1195,6 +1195,12 @@ final class SessionController {
             model = try await connect(harness)
             status = .idle
         } catch {
+            // The eager connect rides the chat view's `.task`; a mid-flight
+            // cancellation (pane re-hosted, controller replaced during
+            // workspace restore) is lifecycle noise, not a failure — the
+            // remount reconnects. Leave `.connecting` for the retry to
+            // replace rather than flashing a false "cancelled" error.
+            guard !isTaskCancellation(error) else { return }
             status = .failed(serverErrorMessage(error))
         }
     }

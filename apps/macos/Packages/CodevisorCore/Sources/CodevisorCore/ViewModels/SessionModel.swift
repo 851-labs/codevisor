@@ -612,7 +612,13 @@ public final class SessionModel {
             // Additive protocol compatibility: older remote servers keep using
             // the legacy path until they are updated.
         } catch {
-            errorMessage = serverErrorMessage(error)
+            // A cancelled load is the view going away (pane re-hosted, tab
+            // switched), not a failure — the remounted view reloads history
+            // itself. Surfacing it painted "cancelled" errors into every chat
+            // whenever the workspace layout churned during a reload.
+            if !isTaskCancellation(error) {
+                errorMessage = serverErrorMessage(error)
+            }
             return
         }
 
@@ -682,7 +688,9 @@ public final class SessionModel {
             await startConsumer()
         } catch {
             isReplayingHistory = false
-            errorMessage = serverErrorMessage(error)
+            if !isTaskCancellation(error) {
+                errorMessage = serverErrorMessage(error)
+            }
         }
     }
 
@@ -748,7 +756,9 @@ public final class SessionModel {
             olderHistoryCursor = page.nextBefore
             hasOlderHistory = page.hasMore
         } catch {
-            errorMessage = serverErrorMessage(error)
+            if !isTaskCancellation(error) {
+                errorMessage = serverErrorMessage(error)
+            }
         }
     }
 
@@ -802,7 +812,9 @@ public final class SessionModel {
             }
             return true
         } catch {
-            errorMessage = serverErrorMessage(error)
+            if !isTaskCancellation(error) {
+                errorMessage = serverErrorMessage(error)
+            }
             return false
         }
     }

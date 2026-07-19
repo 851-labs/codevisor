@@ -38,6 +38,19 @@ public func serverErrorCode(_ error: any Error) -> String? {
 /// action (HIG: offer the way out right where the error appears).
 public let serverUnreachableErrorMessage = "Can't connect to the Codevisor server."
 
+/// True when an error only says "the surrounding task was cancelled" —
+/// Swift task cancellation or the URLSession request it tore down. These are
+/// lifecycle noise (a pane was re-hosted, a view disappeared mid-load), not
+/// failures: callers should return silently instead of surfacing them, since
+/// whatever remounts the view reloads from scratch anyway. Without this
+/// filter, every workspace-layout churn painted "cancelled" error rows into
+/// otherwise healthy chats.
+public func isTaskCancellation(_ error: any Error) -> Bool {
+    if error is CancellationError { return true }
+    if let urlError = error as? URLError, urlError.code == .cancelled { return true }
+    return false
+}
+
 /// A human-readable message for errors surfaced in the UI (HIG: say what
 /// happened and what to do next, in plain language — never a raw NSError
 /// dump). HTTP failures carry a JSON `{"error": "..."}` body from the
