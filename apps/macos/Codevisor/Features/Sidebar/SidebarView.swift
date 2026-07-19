@@ -5,15 +5,13 @@ import CodevisorTheming
 import os
 
 private enum SidebarOrganization: String, CaseIterable {
-    case chronological
-    case byWorkspace
     case compact
+    case byWorkspace
 
     var title: String {
         switch self {
-        case .chronological: return "By chat"
+        case .compact: return "By chat"
         case .byWorkspace: return "By workspace"
-        case .compact: return "Nous"
         }
     }
 }
@@ -106,7 +104,7 @@ struct SidebarView: View {
     @State private var workspaceRevision = 0
     @State private var draggingProjectID: UUID?
     @State private var draggingSessionID: UUID?
-    @AppStorage("sidebar.organization") private var organizationRaw = SidebarOrganization.chronological.rawValue
+    @AppStorage("sidebar.organization") private var organizationRaw = SidebarOrganization.compact.rawValue
     @AppStorage("sidebar.order") private var orderRaw = SidebarOrder.updated.rawValue
     @AppStorage("sidebar.manualProjectOrder") private var manualProjectOrderRaw = ""
     @AppStorage("sidebar.manualSessionOrder") private var manualSessionOrderRaw = ""
@@ -115,7 +113,7 @@ struct SidebarView: View {
     @AppStorage("update.skippedServerVersion") private var skippedServerUpdate = ""
 
     private var list: ProjectListModel { environment.projectList }
-    private var organization: SidebarOrganization { SidebarOrganization(rawValue: organizationRaw) ?? .chronological }
+    private var organization: SidebarOrganization { SidebarOrganization(rawValue: organizationRaw) ?? .compact }
     private var order: SidebarOrder { SidebarOrder(rawValue: orderRaw) ?? .updated }
     private var isReordering: Bool { draggingProjectID != nil || draggingSessionID != nil }
     private var notificationColor: Color { theme.isSystem ? .blue : theme.accent }
@@ -508,7 +506,7 @@ struct SidebarView: View {
             Text({
                 switch organization {
                 case .byWorkspace: "Workspaces"
-                case .chronological, .compact: "Agents"
+                case .compact: "Agents"
                 }
             }())
                 .font(.subheadline.weight(.semibold))
@@ -850,7 +848,7 @@ struct SidebarView: View {
     ) -> some View {
         let isSelected = !isDragPreview
             && selection == .session(serverId: session.serverId, id: session.id)
-        // Manual-order Nous rows attach this gesture alongside their native
+        // Manual-order chat rows attach this gesture alongside their native
         // drag source so activation does not prevent drag-to-reorder.
         let activatesOnMouseDown = order != .none
         return HoverableRow(
@@ -968,10 +966,7 @@ struct SidebarView: View {
                             .frame(width: 260)
                     }
                 )
-                .simultaneousGesture(
-                    sessionActivationGesture(session),
-                    including: organization == .compact ? .all : .none
-                )
+                .simultaneousGesture(sessionActivationGesture(session))
                 .opacity(draggingSessionID == session.id ? 0 : 1)
                 .onDrop(
                     of: [.text],
@@ -1016,7 +1011,7 @@ struct SidebarView: View {
     private func sessionStatus(_ session: ChatSession, isHovered: Bool) -> some View {
         if store?.hasUnreadError(session) == true {
             EmptyView()
-        } else if organization != .compact || isHovered {
+        } else if organization == .byWorkspace || isHovered {
             // Fixed-size trailing slot so swapping the timestamp for the archive
             // button doesn't change the row height. Compact rows omit the slot
             // entirely when no control is visible.
