@@ -28,6 +28,8 @@ import type {
   UpdateProjectRequest,
   UpdateSessionRequest,
   UpdateInfo,
+  UpsertWorkspaceRequest,
+  Workspace,
   Worktree
 } from "@codevisor/api"
 import { isoTimestamp, SessionGoal as SessionGoalSchema } from "@codevisor/api"
@@ -85,6 +87,19 @@ interface WorktreeRow {
   readonly created_at: string
 }
 
+interface WorkspaceRow {
+  readonly id: string
+  readonly server_id: string
+  readonly project_id: string
+  readonly name: string
+  readonly has_custom_name: number
+  readonly symbol_name: string | null
+  readonly root_directory: string | null
+  readonly is_archived: number
+  readonly created_at: string
+  readonly updated_at: string | null
+}
+
 interface SessionRow {
   readonly id: string
   readonly project_id: string
@@ -97,6 +112,7 @@ interface SessionRow {
   readonly origin: SessionSummary["origin"]
   readonly is_archived: number
   readonly worktree_name: string | null
+  readonly workspace_id: string | null
   readonly created_at: string
   readonly updated_at: string | null
   readonly usage_used: number | null
@@ -868,6 +884,30 @@ const migrations: ReadonlyArray<Migration> = [
       -- Older databases did not retain title provenance. Protect every
       -- existing title rather than risk replacing a user-authored one.
       update sessions set title_is_user_set = 1;
+    `
+  },
+  {
+    id: 21,
+    name: "pane workspaces",
+    // Note: an unrelated table also named `workspaces` (the pre-migration-5
+    // spelling of projects) was dropped by migration 5, so the name is free
+    // on every database that reaches this point.
+    sql: `
+      create table if not exists workspaces (
+        id text primary key,
+        server_id text not null,
+        project_id text not null references projects(id) on delete cascade,
+        name text not null,
+        has_custom_name integer not null default 0 check(has_custom_name in (0, 1)),
+        symbol_name text,
+        root_directory text,
+        is_archived integer not null default 0 check(is_archived in (0, 1)),
+        created_at text not null,
+        updated_at text
+      );
+
+      alter table sessions add column workspace_id text references workspaces(id);
+      create index if not exists sessions_workspace_id on sessions(workspace_id);
     `
   }
 ]
@@ -1776,6 +1816,15 @@ export interface CodevisorDatabaseService {
     projectId: string
   ) => Effect.Effect<ReadonlyArray<Worktree>, DatabaseError>
   readonly deleteWorktree: (id: string) => Effect.Effect<void, DatabaseError>
+  readonly listWorkspaces: Effect.Effect<ReadonlyArray<Workspace>, DatabaseError>
+  readonly upsertWorkspace: (
+    request: UpsertWorkspaceRequest
+  ) => Effect.Effect<Workspace, DatabaseError>
+  readonly deleteWorkspace: (id: string) => Effect.Effect<void, DatabaseError>
+  readonly setSessionWorkspace: (
+    sessionId: string,
+    workspaceId: string | null
+  ) => Effect.Effect<void, DatabaseError>
   readonly createSession: (
     request: CreateSessionRequest
   ) => Effect.Effect<SessionSummary, DatabaseError>
@@ -2250,8 +2299,8 @@ const createService = (
         .prepare(
           `insert into sessions (
             id, project_id, server_id, harness_id, harness_account_id, agent_session_id,
-            title, origin, is_archived, worktree_name, created_at, updated_at
-          ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+            title, origin, is_archived, worktree_name, workspace_id, created_at, updated_at
+          ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
         )
         .run(
           id,
@@ -2264,6 +2313,7 @@ const createService = (
           request.origin ?? "codevisor",
           (request.isArchived ?? false) ? 1 : 0,
           request.worktreeName ?? null,
+          request.workspaceId ?? null,
           request.createdAt ?? now,
           request.updatedAt ?? null
         )
@@ -2336,6 +2386,65 @@ const createService = (
     deleteWorktree: (id) =>
       attempt("deleteWorktree", () => {
         sqlite.prepare("delete from worktrees where id = ?").run(id)
+      }),
+    listWorkspaces: attempt("listWorkspaces", () =>
+      (
+        sqlite
+          .prepare("select * from workspaces order by created_at desc")
+          .all() as ReadonlyArray<WorkspaceRow>
+      ).map(workspaceFromRow)
+    ),
+    upsertWorkspace: (request) =>
+      attempt("upsertWorkspace", () => {
+        getProject(request.projectId)
+        const now = isoTimestamp()
+        const id = request.id ?? randomUUID()
+        sqlite
+          .prepare(
+            `insert into workspaces (
+               id, server_id, project_id, name, has_custom_name, symbol_name,
+               root_directory, is_archived, created_at, updated_at
+             ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, null)
+             on conflict(id) do update set
+               project_id = excluded.project_id,
+               name = excluded.name,
+               has_custom_name = excluded.has_custom_name,
+               symbol_name = excluded.symbol_name,
+               root_directory = excluded.root_directory,
+               is_archived = excluded.is_archived,
+               updated_at = ?`
+          )
+          .run(
+            id,
+            config.serverId,
+            request.projectId,
+            request.name,
+            request.hasCustomName ? 1 : 0,
+            request.symbolName ?? null,
+            request.rootDirectory ?? null,
+            (request.isArchived ?? false) ? 1 : 0,
+            request.createdAt ?? now,
+            now
+          )
+        return workspaceFromRow(
+          sqlite.prepare("select * from workspaces where id = ?").get(id) as WorkspaceRow
+        )
+      }),
+    deleteWorkspace: (id) =>
+      attempt("deleteWorkspace", () => {
+        const result = sqlite.prepare("delete from workspaces where id = ?").run(id)
+        if (result.changes === 0) {
+          throw new Error(`Workspace not found: ${id}`)
+        }
+      }),
+    setSessionWorkspace: (sessionId, workspaceId) =>
+      attempt("setSessionWorkspace", () => {
+        const result = sqlite
+          .prepare("update sessions set workspace_id = ? where id = ?")
+          .run(workspaceId, sessionId)
+        if (result.changes === 0) {
+          throw new Error(`Session not found: ${sessionId}`)
+        }
       }),
     createSession,
     listSessions: attempt("listSessions", () =>
@@ -3200,6 +3309,19 @@ const worktreeFromRow = (row: WorktreeRow): Worktree => ({
   createdAt: row.created_at
 })
 
+const workspaceFromRow = (row: WorkspaceRow): Workspace => ({
+  id: row.id,
+  serverId: row.server_id,
+  projectId: row.project_id,
+  name: row.name,
+  hasCustomName: row.has_custom_name === 1,
+  ...(row.symbol_name === null ? {} : { symbolName: row.symbol_name }),
+  ...(row.root_directory === null ? {} : { rootDirectory: row.root_directory }),
+  isArchived: row.is_archived === 1,
+  createdAt: row.created_at,
+  ...(row.updated_at === null ? {} : { updatedAt: row.updated_at })
+})
+
 const sessionFromRow = (row: SessionRow, folderPath: string | undefined): SessionSummary => {
   const cwd = resolveSessionCwd(folderPath, row.project_id, row.worktree_name ?? undefined)
   return {
@@ -3213,6 +3335,7 @@ const sessionFromRow = (row: SessionRow, folderPath: string | undefined): Sessio
     origin: row.origin,
     isArchived: row.is_archived === 1,
     ...(row.worktree_name === null ? {} : { worktreeName: row.worktree_name }),
+    ...(row.workspace_id === null ? {} : { workspaceId: row.workspace_id }),
     ...(cwd === undefined ? {} : { cwd }),
     createdAt: row.created_at,
     ...(row.updated_at === null ? {} : { updatedAt: row.updated_at }),

@@ -53,6 +53,8 @@ import {
   UpdateProjectRequest,
   UpdateQueuedPromptRequest,
   UpdateSessionRequest,
+  UpsertWorkspaceRequest,
+  Workspace,
   Worktree
 } from "./index.js"
 
@@ -88,6 +90,9 @@ export const endpoints = [
   "DELETE /v1/projects/:id",
   "GET /v1/projects/:id/worktrees",
   "POST /v1/projects/:id/worktrees",
+  "GET /v1/workspaces",
+  "PUT /v1/workspaces/:id",
+  "DELETE /v1/workspaces/:id",
   "GET /v1/harnesses",
   "POST /v1/harnesses/rescan",
   "POST /v1/harnesses/auth/refresh",
@@ -165,6 +170,7 @@ const requestSchemas = (): Partial<Record<Endpoint, Schema.Constraint>> => ({
   "POST /v1/projects/from-git": CreateProjectFromGitRequest,
   "PATCH /v1/projects/:id": UpdateProjectRequest,
   "POST /v1/projects/:id/worktrees": CreateWorktreeRequest,
+  "PUT /v1/workspaces/:id": UpsertWorkspaceRequest,
   "PATCH /v1/harnesses/:id": UpdateHarnessRequest,
   "POST /v1/harnesses/:id/accounts": CreateHarnessAccountRequest,
   "PATCH /v1/harnesses/:id/accounts/:accountId": UpdateHarnessAccountRequest,
@@ -202,6 +208,8 @@ const responseSchemas = (): Partial<Record<Endpoint, Schema.Constraint>> => ({
   "PATCH /v1/projects/:id": Project,
   "GET /v1/projects/:id/worktrees": arrayOf(Worktree),
   "POST /v1/projects/:id/worktrees": Worktree,
+  "GET /v1/workspaces": arrayOf(Workspace),
+  "PUT /v1/workspaces/:id": Workspace,
   "GET /v1/harnesses": arrayOf(Harness),
   "POST /v1/harnesses/rescan": arrayOf(Harness),
   "POST /v1/harnesses/auth/refresh": arrayOf(Harness),
@@ -265,6 +273,7 @@ const summaries: Partial<Record<Endpoint, string>> = {
 
 const noContent = new Set<Endpoint>([
   "DELETE /v1/projects/:id",
+  "DELETE /v1/workspaces/:id",
   "DELETE /v1/harnesses/:id/accounts/:accountId",
   "DELETE /v1/harnesses/:id/accounts/:accountId/login/:flowId",
   "DELETE /v1/sessions/:id",
@@ -304,6 +313,7 @@ const websocketEndpoints = new Set<Endpoint>([
 const tagFor = (path: string): string => {
   if (path.includes("/auth/")) return "Authentication"
   if (path.includes("/projects")) return "Projects"
+  if (path.includes("/workspaces")) return "Workspaces"
   if (path.includes("/harnesses")) return "Harnesses"
   if (path.includes("/sessions")) return "Sessions"
   if (path.includes("/files")) return "Files"
@@ -485,6 +495,7 @@ export const makeOpenApiDocument = (version: string): CodevisorOpenApi => {
       "Authentication",
       "Updates",
       "Projects",
+      "Workspaces",
       "Harnesses",
       "Sessions",
       "Files",

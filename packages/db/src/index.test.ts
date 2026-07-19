@@ -645,11 +645,20 @@ describe("@codevisor/db", () => {
         ).payload
       )
     ).toMatchObject({ origin: "codevisor" })
+    // Migration 5 dropped the legacy project-shaped `workspaces` table;
+    // migration 21 reuses the freed name for empty pane workspaces, and adds
+    // the sessions binding column.
+    const workspaceColumns = (
+      sqlite.pragma("table_info(workspaces)") as ReadonlyArray<{ readonly name: string }>
+    ).map((column) => column.name)
+    expect(workspaceColumns).toContain("project_id")
+    expect(workspaceColumns).not.toContain("folder_path")
+    expect(sqlite.prepare("select count(*) as count from workspaces").get()).toEqual({ count: 0 })
     expect(
-      sqlite
-        .prepare("select name from sqlite_master where type = 'table' and name = 'workspaces'")
-        .get()
-    ).toBeUndefined()
+      (sqlite.pragma("table_info(sessions)") as ReadonlyArray<{ readonly name: string }>).map(
+        (column) => column.name
+      )
+    ).toContain("workspace_id")
     expect(sqlite.pragma("foreign_key_check")).toEqual([])
     sqlite.close()
 
@@ -920,6 +929,125 @@ describe("@codevisor/db", () => {
     await expect(run(db.getSessionDetail(clientSession.id))).rejects.toBeInstanceOf(DatabaseError)
     await expect(run(db.deleteProject("missing"))).rejects.toBeInstanceOf(DatabaseError)
 
+    await Effect.runPromise(db.close)
+  })
+
+  it("persists, lists, updates, and deletes pane workspaces", async () => {
+    const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "machine-a" }))
+    const project = await run(db.createProject({ folderPath: "/tmp/pane-workspaces" }))
+
+    const created = await run(
+      db.upsertWorkspace({
+        id: "workspace-1",
+        projectId: project.id,
+        name: "Main",
+        hasCustomName: false,
+        createdAt: "2026-07-01T00:00:00.000Z"
+      })
+    )
+    expect(created).toEqual({
+      id: "workspace-1",
+      serverId: "machine-a",
+      projectId: project.id,
+      name: "Main",
+      hasCustomName: false,
+      isArchived: false,
+      createdAt: "2026-07-01T00:00:00.000Z"
+    })
+
+    // Omitted ids and creation dates are generated server-side.
+    const generated = await run(
+      db.upsertWorkspace({ projectId: project.id, name: "Scratch", hasCustomName: false })
+    )
+    expect(generated.id).toMatch(/^[0-9a-f-]{36}$/)
+    expect(Date.parse(generated.createdAt)).not.toBeNaN()
+
+    // Re-upserting the same id updates in place, stamps updated_at, and keeps
+    // the original creation date.
+    const updated = await run(
+      db.upsertWorkspace({
+        id: "workspace-1",
+        projectId: project.id,
+        name: "Renamed",
+        hasCustomName: true,
+        symbolName: "hammer",
+        rootDirectory: "/tmp/pane-workspaces/worktree",
+        isArchived: true,
+        createdAt: "2026-07-02T00:00:00.000Z"
+      })
+    )
+    expect(updated).toMatchObject({
+      id: "workspace-1",
+      name: "Renamed",
+      hasCustomName: true,
+      symbolName: "hammer",
+      rootDirectory: "/tmp/pane-workspaces/worktree",
+      isArchived: true,
+      createdAt: "2026-07-01T00:00:00.000Z"
+    })
+    expect(updated.updatedAt).toBeDefined()
+    expect(created.updatedAt).toBeUndefined()
+
+    // Newest first.
+    expect((await run(db.listWorkspaces)).map((workspace) => workspace.id)).toEqual([
+      generated.id,
+      "workspace-1"
+    ])
+
+    // A workspace cannot exist without its project.
+    await expect(
+      run(db.upsertWorkspace({ projectId: "missing", name: "Nope", hasCustomName: false }))
+    ).rejects.toBeInstanceOf(DatabaseError)
+
+    await run(db.deleteWorkspace(generated.id))
+    expect((await run(db.listWorkspaces)).map((workspace) => workspace.id)).toEqual(["workspace-1"])
+    await expect(run(db.deleteWorkspace("missing"))).rejects.toBeInstanceOf(DatabaseError)
+
+    // Deleting a project cascades its workspaces (and their sessions) away.
+    const session = await run(
+      db.createSession({ projectId: project.id, harnessId: "codex", workspaceId: "workspace-1" })
+    )
+    await run(db.deleteProject(project.id))
+    expect(await run(db.listWorkspaces)).toEqual([])
+    await expect(run(db.getSessionSummary(session.id))).rejects.toBeInstanceOf(DatabaseError)
+    await Effect.runPromise(db.close)
+  })
+
+  it("binds sessions to pane workspaces at creation and afterwards", async () => {
+    const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
+    const project = await run(db.createProject({ folderPath: "/tmp/workspace-sessions" }))
+    const workspace = await run(
+      db.upsertWorkspace({
+        id: "workspace-1",
+        projectId: project.id,
+        name: "Main",
+        hasCustomName: false
+      })
+    )
+
+    const attached = await run(
+      db.createSession({ projectId: project.id, harnessId: "codex", workspaceId: workspace.id })
+    )
+    expect(attached.workspaceId).toBe(workspace.id)
+    expect(
+      (await run(db.listSessions)).find((session) => session.id === attached.id)?.workspaceId
+    ).toBe(workspace.id)
+
+    const detached = await run(db.createSession({ projectId: project.id, harnessId: "codex" }))
+    expect(detached.workspaceId).toBeUndefined()
+
+    await run(db.setSessionWorkspace(detached.id, workspace.id))
+    expect((await run(db.getSessionSummary(detached.id))).workspaceId).toBe(workspace.id)
+    await run(db.setSessionWorkspace(detached.id, null))
+    expect((await run(db.getSessionSummary(detached.id))).workspaceId).toBeUndefined()
+
+    await expect(run(db.setSessionWorkspace("missing", workspace.id))).rejects.toBeInstanceOf(
+      DatabaseError
+    )
+    // A session cannot point at a workspace that does not exist.
+    await expect(
+      run(db.setSessionWorkspace(detached.id, "missing-workspace"))
+    ).rejects.toBeInstanceOf(DatabaseError)
     await Effect.runPromise(db.close)
   })
 

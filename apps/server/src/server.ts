@@ -53,6 +53,7 @@ import {
   UpdateMcpServerRequest as UpdateMcpServerRequestSchema,
   UpdateProjectRequest as UpdateProjectRequestSchema,
   UpdateSessionRequest as UpdateSessionRequestSchema,
+  UpsertWorkspaceRequest as UpsertWorkspaceRequestSchema,
   decode,
   makeOpenApiDocument
 } from "@codevisor/api"
@@ -503,7 +504,7 @@ const handleRequest = async (
       // carry the grant); auth is intentionally skipped — preflights never
       // carry credentials, and the actual request is still authorized.
       response.writeHead(204, {
-        "Access-Control-Allow-Methods": "GET, POST, PATCH, DELETE, OPTIONS",
+        "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
         "Access-Control-Allow-Headers": "Authorization, Content-Type",
         "Access-Control-Max-Age": "86400"
       })
@@ -658,6 +659,9 @@ const handleRequest = async (
     }
 
     if (await routeProjects(services, config.id, fanout, request, response, url)) {
+      return
+    }
+    if (await routeWorkspaces(services, fanout, request, response, url)) {
       return
     }
     if (await routeHarnesses(services, request, response, url)) {
@@ -969,6 +973,48 @@ const routeProjects = async (
     }
     await appendAndPublish(services.db, fanout, "worktree.created", worktree.id, worktree)
     writeJson(response, 201, worktree)
+    return true
+  }
+
+  return false
+}
+
+/// Pane workspaces are client-authored identity records, so writes are
+/// idempotent PUTs keyed by the client's workspace id. Creates and updates
+/// share one `workspace.updated` event to keep client mirroring simple.
+const routeWorkspaces = async (
+  services: CodevisorServerServices,
+  fanout: EventFanout,
+  request: IncomingMessage,
+  response: ServerResponse,
+  url: URL
+): Promise<boolean> => {
+  if (request.method === "GET" && url.pathname === "/v1/workspaces") {
+    writeJson(response, 200, await run(services.db.listWorkspaces))
+    return true
+  }
+
+  const workspaceId = matchRoute(url.pathname, "/v1/workspaces/:id")
+  if (workspaceId !== undefined && request.method === "PUT") {
+    const payload = await readSchema(request, UpsertWorkspaceRequestSchema)
+    if (payload.id !== undefined && payload.id !== workspaceId) {
+      throw new HttpFailure(
+        400,
+        `Workspace id in the body (${payload.id}) does not match the path (${workspaceId})`
+      )
+    }
+    const workspace = await run(services.db.upsertWorkspace({ ...payload, id: workspaceId }))
+    await appendAndPublish(services.db, fanout, "workspace.updated", workspace.id, workspace)
+    writeJson(response, 200, workspace)
+    return true
+  }
+
+  if (workspaceId !== undefined && request.method === "DELETE") {
+    await run(services.db.deleteWorkspace(workspaceId))
+    await appendAndPublish(services.db, fanout, "workspace.deleted", workspaceId, {
+      id: workspaceId
+    })
+    writeJson(response, 204, undefined)
     return true
   }
 

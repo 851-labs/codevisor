@@ -12,6 +12,8 @@ import {
   SetGoalRequest,
   TerminalClientFrame,
   TranscriptItemDetails,
+  UpsertWorkspaceRequest,
+  Workspace,
   Worktree,
   WorktreeSetupUpdate,
   decode,
@@ -121,6 +123,7 @@ describe("@codevisor/api", () => {
         isArchived: false,
         deferAgentSession: true,
         worktreeName: "fix-auth",
+        workspaceId: "workspace-1",
         createdAt: "2026-06-30T00:00:00.000Z",
         updatedAt: "2026-06-30T00:01:00.000Z"
       })
@@ -129,8 +132,41 @@ describe("@codevisor/api", () => {
       deferAgentSession: true,
       id: "session-1",
       title: "Synced",
-      worktreeName: "fix-auth"
+      worktreeName: "fix-auth",
+      workspaceId: "workspace-1"
     })
+  })
+
+  it("decodes pane workspaces and upsert requests", () => {
+    const workspace = decode(Workspace)({
+      id: "workspace-1",
+      serverId: "local",
+      projectId: "project-1",
+      name: "Main",
+      hasCustomName: false,
+      isArchived: false,
+      createdAt: "2026-07-01T00:00:00.000Z"
+    })
+    expect(workspace.symbolName).toBeUndefined()
+    expect(workspace.rootDirectory).toBeUndefined()
+
+    expect(
+      decode(UpsertWorkspaceRequest)({
+        id: "workspace-1",
+        projectId: "project-1",
+        name: "Renamed",
+        hasCustomName: true,
+        symbolName: "hammer",
+        rootDirectory: "/Users/me/src/Codevisor",
+        isArchived: false,
+        createdAt: "2026-07-01T00:00:00.000Z"
+      })
+    ).toMatchObject({
+      hasCustomName: true,
+      rootDirectory: "/Users/me/src/Codevisor",
+      symbolName: "hammer"
+    })
+    expect(() => decode(UpsertWorkspaceRequest)({ name: "Missing project" })).toThrow()
   })
 
   it("decodes worktrees and worktree creation requests", () => {

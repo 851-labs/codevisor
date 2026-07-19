@@ -566,6 +566,39 @@ export const UpdateProjectRequest = Schema.Struct({
 })
 export type UpdateProjectRequest = typeof UpdateProjectRequest.Type
 
+/// A pane workspace: the server-owned identity of one working surface inside
+/// a project. It names the surface, points at the directory it works in (a
+/// worktree path or the project folder), and owns sessions. Pane layout
+/// (split trees) deliberately stays client-side.
+export const Workspace = Schema.Struct({
+  id: Schema.String,
+  serverId: Schema.String,
+  projectId: Schema.String,
+  name: Schema.String,
+  hasCustomName: Schema.Boolean,
+  symbolName: Schema.optional(Schema.String),
+  rootDirectory: Schema.optional(Schema.String),
+  isArchived: Schema.Boolean,
+  createdAt: Schema.String,
+  updatedAt: Schema.optional(Schema.String)
+})
+export type Workspace = typeof Workspace.Type
+
+export const UpsertWorkspaceRequest = Schema.Struct({
+  /// Optional because the route path carries the id; when both are present
+  /// they must match.
+  id: Schema.optional(Schema.String),
+  projectId: Schema.String,
+  name: Schema.String,
+  hasCustomName: Schema.Boolean,
+  symbolName: Schema.optional(Schema.String),
+  rootDirectory: Schema.optional(Schema.String),
+  isArchived: Schema.optional(Schema.Boolean),
+  /// Client backfills preserve the original creation date.
+  createdAt: Schema.optional(Schema.String)
+})
+export type UpsertWorkspaceRequest = typeof UpsertWorkspaceRequest.Type
+
 export const Worktree = Schema.Struct({
   id: Schema.String,
   projectId: Schema.String,
@@ -674,6 +707,9 @@ export const SessionSummary = Schema.Struct({
   origin: SessionOrigin,
   isArchived: Schema.Boolean,
   worktreeName: Schema.optional(Schema.String),
+  /// The pane workspace this session belongs to, when a client has assigned
+  /// one. Optional for sessions created before workspaces existed.
+  workspaceId: Schema.optional(Schema.String),
   cwd: Schema.optional(Schema.String),
   createdAt: Schema.String,
   updatedAt: Schema.optional(Schema.String),
@@ -806,6 +842,8 @@ export const CreateSessionRequest = Schema.Struct({
   origin: Schema.optional(SessionOrigin),
   isArchived: Schema.optional(Schema.Boolean),
   worktreeName: Schema.optional(Schema.String),
+  /// Create the session already belonging to a pane workspace.
+  workspaceId: Schema.optional(Schema.String),
   createdAt: Schema.optional(Schema.String),
   updatedAt: Schema.optional(Schema.String)
 })
@@ -948,6 +986,8 @@ export const EventKind = Schema.Literals([
   "project.setup",
   "worktree.created",
   "worktree.setup",
+  "workspace.updated",
+  "workspace.deleted",
   "session.created",
   "session.updated",
   "session.archived",
