@@ -11,6 +11,9 @@ import CodevisorCore
 
 struct WorkspaceSplitView: View {
     let node: SplitNode
+    /// The most recently active center leaf. This remains resolved while
+    /// focus temporarily moves to the bottom panel or another window.
+    let activeLeafId: UUID?
     let groupModel: (UUID) -> PaneGroupModel
     let chatTitle: (PaneDescriptorState) -> String
     let paneWorktree: (PaneDescriptorState) -> String?
@@ -28,6 +31,8 @@ struct WorkspaceSplitView: View {
     var body: some View {
         SplitNodeView(
             node: node,
+            activeLeafId: activeLeafId,
+            dimsInactiveLeaves: node.allGroups.count > 1,
             groupModel: groupModel,
             chatTitle: chatTitle,
             paneWorktree: paneWorktree,
@@ -41,6 +46,8 @@ struct WorkspaceSplitView: View {
 
 private struct SplitNodeView: View {
     let node: SplitNode
+    let activeLeafId: UUID?
+    let dimsInactiveLeaves: Bool
     let groupModel: (UUID) -> PaneGroupModel
     let chatTitle: (PaneDescriptorState) -> String
     let paneWorktree: (PaneDescriptorState) -> String?
@@ -56,6 +63,7 @@ private struct SplitNodeView: View {
         case let .group(id, _):
             SplitLeafView(
                 leafId: id,
+                isInactive: dimsInactiveLeaves && activeLeafId != nil && id != activeLeafId,
                 groupModel: groupModel,
                 chatTitle: chatTitle,
                 paneWorktree: paneWorktree,
@@ -66,6 +74,8 @@ private struct SplitNodeView: View {
             SplitBranchView(
                 orientation: orientation,
                 children: children,
+                activeLeafId: activeLeafId,
+                dimsInactiveLeaves: dimsInactiveLeaves,
                 groupModel: groupModel,
                 chatTitle: chatTitle,
                 paneWorktree: paneWorktree,
@@ -81,11 +91,14 @@ private struct SplitNodeView: View {
 /// One tabbed group: its compact bar over its selected pane's content.
 private struct SplitLeafView: View {
     let leafId: UUID
+    let isInactive: Bool
     let groupModel: (UUID) -> PaneGroupModel
     let chatTitle: (PaneDescriptorState) -> String
     let paneWorktree: (PaneDescriptorState) -> String?
     let dragCoordinator: PaneTabDragCoordinator?
     let showsShortcutHints: (UUID) -> Bool
+
+    @Environment(\.theme) private var theme
 
     var body: some View {
         let model = groupModel(leafId)
@@ -97,6 +110,7 @@ private struct SplitLeafView: View {
                 paneWorktree: paneWorktree,
                 showsShortcutHints: showsShortcutHints(leafId),
                 allowsNewChatTab: true,
+                dimsForInactiveSplit: isInactive,
                 chrome: .groupHeader
             )
             // The Color.clear backstop is load-bearing: if the selected
@@ -109,9 +123,23 @@ private struct SplitLeafView: View {
                 PaneGroupContent(group: model)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // This sits below paneDropZone's preview overlay, keeping split
+            // targets bright while the underlying inactive content is dim.
+            .overlay {
+                inactiveSplitTint
+            }
             // Join (⇧) / split drops land on this content.
             .paneDropZone(dragCoordinator, leafId: leafId)
         }
+    }
+
+    private var inactiveSplitTint: some View {
+        Rectangle()
+            .fill(theme.windowBackground)
+            .opacity(isInactive ? 0.3 : 0)
+            .allowsHitTesting(false)
+            // Active-group changes should read as focus changes, not motion.
+            .transaction { $0.animation = nil }
     }
 }
 
@@ -198,6 +226,8 @@ private struct SplitDividerGrip: NSViewRepresentable {
 private struct SplitBranchView: View {
     let orientation: SplitOrientation
     let children: [SplitChild]
+    let activeLeafId: UUID?
+    let dimsInactiveLeaves: Bool
     let groupModel: (UUID) -> PaneGroupModel
     let chatTitle: (PaneDescriptorState) -> String
     let paneWorktree: (PaneDescriptorState) -> String?
@@ -242,6 +272,8 @@ private struct SplitBranchView: View {
                     let length = contentLength * CGFloat(current[index])
                     SplitNodeView(
                         node: children[index].node,
+                        activeLeafId: activeLeafId,
+                        dimsInactiveLeaves: dimsInactiveLeaves,
                         groupModel: groupModel,
                         chatTitle: chatTitle,
                         paneWorktree: paneWorktree,

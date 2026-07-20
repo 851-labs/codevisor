@@ -134,6 +134,7 @@ struct SessionScreen: View {
             if let centerTree, let centerLeafModel {
                 WorkspaceSplitView(
                     node: centerTree,
+                    activeLeafId: activeLeafId ?? primaryLeafId,
                     groupModel: centerLeafModel,
                     chatTitle: chatTitleLookup ?? { $0.name },
                     paneWorktree: paneWorktreeLookup ?? { _ in nil },

@@ -40,6 +40,9 @@ struct PaneGroupBar: View {
     var onToggle: (() -> Void)?
     /// Center groups: the + also offers a New Chat draft pane.
     var allowsNewChatTab = false
+    /// Center split leaves tint their whole inactive group, including this
+    /// bar. Kept here so drag indicators can be layered above the tint.
+    var dimsForInactiveSplit = false
 
     @State private var dragStartHeight: CGFloat?
     // Tab reordering: the tab itself follows the pointer horizontally while
@@ -132,6 +135,13 @@ struct PaneGroupBar: View {
         // hairlines a pixel apart read as a thick smudge). Only the bottom
         // panel keeps a top divider — nothing else draws its boundary, and
         // that edge doubles as the resize handle.
+        .overlay {
+            Rectangle()
+                .fill(theme.windowBackground)
+                .opacity(dimsForInactiveSplit ? 0.3 : 0)
+                .allowsHitTesting(false)
+                .transaction { $0.animation = nil }
+        }
         .overlay(alignment: .top) {
             if isBottomPanel {
                 Divider()
