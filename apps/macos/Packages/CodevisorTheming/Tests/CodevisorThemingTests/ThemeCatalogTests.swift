@@ -28,7 +28,7 @@ struct ThemeCatalogTests {
     func catalogOrdering() {
         let (catalog, _) = makeCatalog()
         let themes = catalog.availableThemes
-        #expect(themes.count == 28)  // 2 system + 10 pierre + 16 shiki
+        #expect(themes.count == 46)  // 2 system + 10 pierre + 34 shiki
         #expect(themes[0].id == ThemeCatalog.systemLightID)
         #expect(themes[1].id == ThemeCatalog.systemDarkID)
         let groups = themes.map(\.group)

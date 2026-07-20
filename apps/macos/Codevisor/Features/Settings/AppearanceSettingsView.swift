@@ -122,24 +122,16 @@ struct AppearanceSettingsView: View {
     private func themePicker(label: String, scheme: ThemeDescriptor.SchemeType) -> some View {
         LabeledContent(label) {
             Menu {
-                let groups = ThemeDescriptor.Group.allCases
-                ForEach(groups, id: \.self) { group in
-                    let themes = manager.availableThemes.filter {
-                        $0.group == group && $0.type == scheme
-                    }
-                    if !themes.isEmpty {
-                        Section(group.displayName) {
-                            ForEach(themes) { descriptor in
-                                Button {
-                                    manager.setThemeId(descriptor.id, for: scheme)
-                                } label: {
-                                    if descriptor.id == manager.themeId(for: scheme) {
-                                        Label(descriptor.displayName, systemImage: "checkmark")
-                                    } else {
-                                        Text(descriptor.displayName)
-                                    }
-                                }
-                            }
+                // One flat list in catalog order (system, pierre, shiki,
+                // custom) — no group headers or dividers.
+                ForEach(manager.availableThemes.filter { $0.type == scheme }) { descriptor in
+                    Button {
+                        manager.setThemeId(descriptor.id, for: scheme)
+                    } label: {
+                        if descriptor.id == manager.themeId(for: scheme) {
+                            Label(descriptor.displayName, systemImage: "checkmark")
+                        } else {
+                            Text(descriptor.displayName)
                         }
                     }
                 }
