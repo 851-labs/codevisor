@@ -1257,9 +1257,15 @@ final class SessionController {
             // The eager connect rides the chat view's `.task`; a mid-flight
             // cancellation (pane re-hosted, controller replaced during
             // workspace restore) is lifecycle noise, not a failure — the
-            // remount reconnects. Leave `.connecting` for the retry to
-            // replace rather than flashing a false "cancelled" error.
-            guard !isTaskCancellation(error) else { return }
+            // remount reconnects. Reset to `.idle` so the remount's
+            // `connectIfNeeded()` passes the `!isConnecting` guard and
+            // actually retries — leaving `.connecting` would wedge the
+            // controller forever (and `SessionStore` would never evict it,
+            // since `.connecting` counts as running).
+            guard !isTaskCancellation(error) else {
+                if case .connecting = status { status = .idle }
+                return
+            }
             status = .failed(serverErrorMessage(error))
         }
     }
