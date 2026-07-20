@@ -54,6 +54,9 @@ public final class SessionModel {
     public private(set) var isSending = false
     public private(set) var isCancelling = false
     public private(set) var queuedPrompts: [ServerPromptQueueItem] = []
+    /// Set while the server holds this session's prompts during a harness
+    /// update ("Waiting for Codex to finish updating…"); nil once released.
+    public private(set) var updateGateHarnessName: String?
     public var composerText: String = ""
     public private(set) var availableCommands: [AvailableCommand] = []
     public private(set) var modeState: SessionModeState?
@@ -817,7 +820,8 @@ public final class SessionModel {
                 case let .failed(message), let .authenticationRequired(message):
                     turn.stopDetail = message
                     turn.isGenerating = false
-                case .userMessage, .queueUpdated, .retrying, .backgroundTasks, .runtimeState:
+                case .userMessage, .queueUpdated, .retrying, .backgroundTasks, .runtimeState,
+                     .updateGate:
                     break
                 }
             }
@@ -1068,6 +1072,8 @@ public final class SessionModel {
         case let .queueUpdated(queue):
             rememberRemovedQueueItems(in: queue)
             queuedPrompts = queue
+        case let .updateGate(waiting, harnessName):
+            updateGateHarnessName = waiting ? harnessName : nil
         case let .backgroundTasks(tasks):
             backgroundTasks = tasks
             hasBackgroundTaskSnapshot = true

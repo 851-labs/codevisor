@@ -31,6 +31,7 @@ import {
   normalizePromptInput,
   piAssistantErrorFromSessionJsonl,
   runtimeEventFromNotification,
+  testAcpConnection,
   toEventEnvelope,
   usesAcpModelSelectionExtension,
   withAttachmentNotes,
@@ -54,6 +55,11 @@ class FakeConnection implements AcpAgentConnection {
   readonly configs: Array<readonly [string, string, string]> = []
   closeCount = 0
   failClose = false
+  agentInfo?: {
+    readonly name?: string
+    readonly version?: string
+    readonly protocolVersion?: number
+  }
   readonly listSessions = Effect.succeed([
     { cwd: "/repo", sessionId: "native-session", title: "Harness title" }
   ])
@@ -376,6 +382,145 @@ describe("@codevisor/agent-runtime", () => {
   it("treats refreshEnvironment as a no-op without a resolveEnv", async () => {
     const runtime = makeAgentRuntime({ env: { PATH: "/fixed" } })
     await expect(run(runtime.refreshEnvironment)).resolves.toBeUndefined()
+  })
+
+  it("merges injected extra harnesses and tags them as custom", async () => {
+    const runtime = makeAgentRuntime({
+      env: { PATH: "/bin" },
+      executableExists: (name) => name === "my-agent",
+      locateExecutable: () => undefined,
+      extraHarnesses: [
+        {
+          detectBinaries: ["my-agent"],
+          id: "my-agent",
+          launch: { args: ["acp"], command: "my-agent", kind: "executable" },
+          name: "My Agent",
+          provider: "acp",
+          symbolName: "terminal"
+        }
+      ]
+    })
+
+    // The effective catalog is builtins + the extra entry, and is exposed on
+    // the service for consumers (harness auth, lifecycle).
+    expect(runtime.catalog).toHaveLength(harnessCatalog.length + 1)
+    expect(runtime.catalog.find((definition) => definition.id === "my-agent")?.name).toBe(
+      "My Agent"
+    )
+
+    const harnesses = await run(runtime.discoverHarnesses)
+    const custom = harnesses.find((harness) => harness.id === "my-agent")
+    expect(custom).toMatchObject({
+      name: "My Agent",
+      launchKind: "executable",
+      source: "custom",
+      readiness: { state: "ready" }
+    })
+    // Builtins keep their registry source.
+    expect(harnesses.find((harness) => harness.id === "codex")?.source).toBe("registry")
+  })
+
+  it("drops extra harnesses whose id collides with a builtin", async () => {
+    const runtime = makeAgentRuntime({
+      env: { PATH: "/bin" },
+      executableExists: () => false,
+      locateExecutable: () => undefined,
+      extraHarnesses: [
+        {
+          detectBinaries: ["fake-codex"],
+          id: "codex",
+          launch: { args: [], command: "fake-codex", kind: "executable" },
+          name: "Fake Codex",
+          provider: "acp",
+          symbolName: "terminal"
+        }
+      ]
+    })
+
+    expect(runtime.catalog).toHaveLength(harnessCatalog.length)
+    const harnesses = await run(runtime.discoverHarnesses)
+    const codex = harnesses.find((harness) => harness.id === "codex")
+    expect(codex?.name).toBe("Codex")
+    expect(codex?.source).toBe("registry")
+  })
+
+  it("keeps the builtin catalog identity when no extras are injected", () => {
+    const runtime = makeAgentRuntime({ env: { PATH: "/bin" } })
+    expect(runtime.catalog).toBe(harnessCatalog)
+  })
+
+  it("swaps custom entries live via setExtraHarnesses", async () => {
+    const runtime = makeAgentRuntime({
+      env: { PATH: "/bin" },
+      executableExists: () => false,
+      locateExecutable: () => undefined
+    })
+    expect(runtime.catalog).toBe(harnessCatalog)
+
+    runtime.setExtraHarnesses([
+      {
+        detectBinaries: ["late-agent"],
+        id: "late-agent",
+        launch: { args: ["acp"], command: "late-agent", kind: "executable" },
+        name: "Late Agent",
+        provider: "acp",
+        symbolName: "terminal"
+      }
+    ])
+    expect(runtime.catalog).toHaveLength(harnessCatalog.length + 1)
+    const harnesses = await run(runtime.discoverHarnesses)
+    expect(harnesses.find((harness) => harness.id === "late-agent")?.source).toBe("custom")
+
+    runtime.setExtraHarnesses([])
+    expect(runtime.catalog).toBe(harnessCatalog)
+  })
+
+  it("tests an ACP connection through the injected connector", async () => {
+    const connector = makeConnector()
+    const result = await testAcpConnection(
+      { args: ["acp"], command: "my-agent", env: { EXTRA: "1" } },
+      { connector, env: { PATH: "/bin" } }
+    )
+    expect(result).toEqual({ ok: true })
+    expect(connector.requests[0]).toMatchObject({
+      args: ["acp"],
+      command: "my-agent",
+      env: { EXTRA: "1", PATH: "/bin" },
+      harnessId: "custom-harness-test"
+    })
+    // The probe tears its process down.
+    expect(connector.connections[0]?.closeCount).toBe(1)
+  })
+
+  it("reports handshake identity and surfaces failures without throwing", async () => {
+    const connector = makeConnector()
+    const identified = {
+      ...connector,
+      connect: (request: AcpHarnessLaunchRequest, emit: RuntimeEmit) =>
+        Effect.map(connector.connect(request, emit), (connection) => {
+          ;(connection as FakeConnection).agentInfo = {
+            name: "My Agent",
+            protocolVersion: 1
+          }
+          return connection
+        })
+    }
+    await expect(
+      testAcpConnection({ args: [], command: "my-agent" }, { connector: identified, env: {} })
+    ).resolves.toEqual({ agentName: "My Agent", ok: true, protocolVersion: 1 })
+
+    const failing = {
+      connect: () =>
+        Effect.fail(
+          new AgentRuntimeError({ message: "spawn my-agent ENOENT", operation: "connect" })
+        )
+    }
+    const failure = await testAcpConnection(
+      { args: [], command: "my-agent" },
+      { connector: failing, env: {} }
+    )
+    expect(failure.ok).toBe(false)
+    expect(failure.error).toContain("ENOENT")
   })
 
   it("lists native agent sessions through the provider hook", async () => {

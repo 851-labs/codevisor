@@ -37,7 +37,9 @@ public struct ServerHarnessService: HarnessServicing {
 
     public func readyHarnesses() async -> [ServerHarness] {
         do {
-            return try await allHarnesses().filter { $0.enabled && $0.isReady }
+            // Plain list on purpose: the picker path skips lifecycle
+            // decoration (update checks, install methods) to stay snappy.
+            return try await client.listHarnesses().filter { $0.enabled && $0.isReady }
         } catch {
             // Best-effort by contract: an unreachable server reads as "none
             // ready", but the failure must stay diagnosable.
@@ -49,7 +51,7 @@ public struct ServerHarnessService: HarnessServicing {
     }
 
     public func allHarnesses() async throws -> [ServerHarness] {
-        try await client.listHarnesses()
+        try await client.listHarnessesWithLifecycle()
     }
 
     public func rescanHarnesses() async throws -> [ServerHarness] {

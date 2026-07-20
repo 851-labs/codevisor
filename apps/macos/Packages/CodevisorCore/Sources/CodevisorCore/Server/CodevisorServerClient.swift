@@ -101,6 +101,10 @@ public protocol CodevisorServerClienting: Sendable {
     func connectionToken() async throws -> ServerPairingToken
     func capabilities(cwd: String) async throws -> ServerCapabilities
     func listHarnesses() async throws -> [ServerHarness]
+    /// The list with lifecycle decoration (update knowledge, install
+    /// methods) — for Settings and update banners. The plain `listHarnesses`
+    /// stays as light as possible for the composer's picker.
+    func listHarnessesWithLifecycle() async throws -> [ServerHarness]
     /// Asks the server to re-resolve its PATH (login-shell probe) before
     /// re-detecting, so CLIs installed after server start are found.
     func rescanHarnesses() async throws -> [ServerHarness]
@@ -109,6 +113,32 @@ public protocol CodevisorServerClienting: Sendable {
     /// "import existing chats".
     func listAgentSessions(harnessId: String) async throws -> [SessionInfo]
     func setHarnessEnabled(id: String, enabled: Bool) async throws -> ServerHarness
+    /// User-defined custom ACP harnesses (BYO): persisted server-side in a
+    /// user-editable file and merged into the harness catalog.
+    func listCustomHarnesses() async throws -> [ServerCustomHarnessSpec]
+    /// Whole-list replace; returns the refreshed full harness list.
+    func replaceCustomHarnesses(_ specs: [ServerCustomHarnessSpec]) async throws -> [ServerHarness]
+    /// One-shot ACP initialize handshake for a (possibly unsaved) spec.
+    func testCustomHarness(_ spec: ServerCustomHarnessSpec) async throws -> ServerCustomHarnessTestResult
+    /// Starts a one-click install (202-ack; progress arrives via
+    /// harness.lifecycle.updated events). Returns the output terminal id.
+    func installHarness(id: String, methodId: String?) async throws -> ServerHarnessOperationStarted
+    /// Starts a one-click update via the harness's origin-matched flow.
+    /// Returns `queued: true` when chats are mid-turn — the update runs when
+    /// they finish.
+    func updateHarness(id: String) async throws -> ServerHarnessOperationStarted
+    /// Dual-install: the bundled desktop app's version/update state (nil
+    /// when the harness has no bundled app). Computed server-side on demand.
+    func bundledAppInfo(harnessId: String) async throws -> ServerHarnessBundledApp?
+    /// Runs the verified bundle swap for the bundled desktop app.
+    func updateBundledApp(harnessId: String) async throws
+    /// "Update Now" on a queued update — skips the idle wait.
+    func applyPendingHarnessUpdate(id: String) async throws
+    /// Disarms a queued update entirely.
+    func cancelPendingHarnessUpdate(id: String) async throws
+    /// Forces a latest-version check for all harnesses, returning the
+    /// refreshed decorated list.
+    func checkHarnessUpdates() async throws -> [ServerHarness]
     func refreshHarnessAuth() async throws -> [ServerHarness]
     func refreshHarnessAuth(harnessId: String) async throws -> ServerHarness
     func listHarnessAccounts(harnessId: String) async throws -> [ServerHarnessAccount]
@@ -267,9 +297,42 @@ public extension CodevisorServerClienting {
         try await listHarnesses()
     }
 
+    /// Default for fakes/older servers: the plain list (no lifecycle fields).
+    func listHarnessesWithLifecycle() async throws -> [ServerHarness] {
+        try await listHarnesses()
+    }
+
     /// Default for fakes/older transports: no native store to scan. The HTTP
     /// client overrides this with the real endpoint.
     func listAgentSessions(harnessId: String) async throws -> [SessionInfo] { [] }
+
+    /// Defaults for fakes/older servers without custom-harness support.
+    func listCustomHarnesses() async throws -> [ServerCustomHarnessSpec] { [] }
+    func replaceCustomHarnesses(_ specs: [ServerCustomHarnessSpec]) async throws -> [ServerHarness] {
+        throw CodevisorServerClientError.invalidResponse
+    }
+    func testCustomHarness(_ spec: ServerCustomHarnessSpec) async throws -> ServerCustomHarnessTestResult {
+        throw CodevisorServerClientError.invalidResponse
+    }
+
+    /// Defaults for fakes/older servers without lifecycle support.
+    func installHarness(id: String, methodId: String?) async throws -> ServerHarnessOperationStarted {
+        throw CodevisorServerClientError.invalidResponse
+    }
+    func updateHarness(id: String) async throws -> ServerHarnessOperationStarted {
+        throw CodevisorServerClientError.invalidResponse
+    }
+    func applyPendingHarnessUpdate(id: String) async throws {
+        throw CodevisorServerClientError.invalidResponse
+    }
+    func cancelPendingHarnessUpdate(id: String) async throws {
+        throw CodevisorServerClientError.invalidResponse
+    }
+    func bundledAppInfo(harnessId: String) async throws -> ServerHarnessBundledApp? { nil }
+    func updateBundledApp(harnessId: String) async throws {
+        throw CodevisorServerClientError.invalidResponse
+    }
+    func checkHarnessUpdates() async throws -> [ServerHarness] { try await listHarnesses() }
 
     func refreshHarnessAuth() async throws -> [ServerHarness] { try await listHarnesses() }
     func refreshHarnessAuth(harnessId: String) async throws -> ServerHarness {
@@ -561,10 +624,185 @@ public struct ServerPairingToken: Decodable, Equatable, Sendable {
 public struct ServerHarnessReadiness: Codable, Equatable, Sendable {
     public var state: String
     public var detail: String?
+    /// Resolved binary location and probed version for ready harnesses.
+    public var path: String?
+    public var version: String?
 
-    public init(state: String, detail: String? = nil) {
+    public init(state: String, detail: String? = nil, path: String? = nil, version: String? = nil) {
         self.state = state
         self.detail = detail
+        self.path = path
+        self.version = version
+    }
+}
+
+/// One way the server can install a harness CLI on its machine, mirroring
+/// `HarnessInstallMethod` in @codevisor/api.
+public struct ServerHarnessInstallMethod: Codable, Equatable, Sendable {
+    public var id: String
+    public var kind: String
+    public var label: String
+    /// The exact shell command that would run — shown verbatim before install.
+    public var command: String
+    public var available: Bool
+    public var recommended: Bool
+
+    public init(
+        id: String,
+        kind: String,
+        label: String,
+        command: String,
+        available: Bool,
+        recommended: Bool
+    ) {
+        self.id = id
+        self.kind = kind
+        self.label = label
+        self.command = command
+        self.available = available
+        self.recommended = recommended
+    }
+}
+
+/// Latest-version knowledge for an installed harness, mirroring
+/// `HarnessUpdateInfo` in @codevisor/api.
+public struct ServerHarnessUpdateInfo: Codable, Equatable, Sendable {
+    public var installedVersion: String?
+    public var latestVersion: String?
+    public var updateAvailable: Bool
+    public var source: String?
+    public var installOrigin: String?
+    public var channel: String?
+    public var checkedAt: String?
+
+    public init(
+        installedVersion: String? = nil,
+        latestVersion: String? = nil,
+        updateAvailable: Bool,
+        source: String? = nil,
+        installOrigin: String? = nil,
+        channel: String? = nil,
+        checkedAt: String? = nil
+    ) {
+        self.installedVersion = installedVersion
+        self.latestVersion = latestVersion
+        self.updateAvailable = updateAvailable
+        self.source = source
+        self.installOrigin = installOrigin
+        self.channel = channel
+        self.checkedAt = checkedAt
+    }
+}
+
+/// Live install/update state for one harness, mirroring
+/// `HarnessLifecycleState` in @codevisor/api. `phase` is one of
+/// idle/installing/updating/pendingUpdate/failed.
+public struct ServerHarnessLifecycleState: Codable, Equatable, Sendable {
+    public var phase: String
+    public var targetVersion: String?
+    public var methodId: String?
+    /// Background terminal streaming the operation's output ("Show Output").
+    public var terminalId: String?
+    public var error: String?
+    public var startedAt: String?
+
+    public init(
+        phase: String,
+        targetVersion: String? = nil,
+        methodId: String? = nil,
+        terminalId: String? = nil,
+        error: String? = nil,
+        startedAt: String? = nil
+    ) {
+        self.phase = phase
+        self.targetVersion = targetVersion
+        self.methodId = methodId
+        self.terminalId = terminalId
+        self.error = error
+        self.startedAt = startedAt
+    }
+}
+
+/// A user-defined custom ACP harness spec, mirroring `CustomHarnessSpec` in
+/// @codevisor/api. Launched server-side as `command args…` with `env` merged
+/// into the spawn environment.
+public struct ServerCustomHarnessSpec: Codable, Equatable, Identifiable, Sendable {
+    public var id: String
+    public var name: String
+    public var command: String
+    public var args: [String]?
+    public var env: [String: String]?
+
+    public init(
+        id: String,
+        name: String,
+        command: String,
+        args: [String]? = nil,
+        env: [String: String]? = nil
+    ) {
+        self.id = id
+        self.name = name
+        self.command = command
+        self.args = args
+        self.env = env
+    }
+}
+
+/// Result of the ACP initialize handshake probe ("Test Connection"),
+/// mirroring `CustomHarnessTestResult` in @codevisor/api.
+public struct ServerCustomHarnessTestResult: Codable, Equatable, Sendable {
+    public var ok: Bool
+    public var agentName: String?
+    public var protocolVersion: Int?
+    public var error: String?
+
+    public init(ok: Bool, agentName: String? = nil, protocolVersion: Int? = nil, error: String? = nil) {
+        self.ok = ok
+        self.agentName = agentName
+        self.protocolVersion = protocolVersion
+        self.error = error
+    }
+}
+
+/// Wire wrapper for the custom-harness list routes.
+struct ServerCustomHarnessListEnvelope: Codable, Equatable, Sendable {
+    var harnesses: [ServerCustomHarnessSpec]
+}
+
+/// Dual-install: a desktop app bundling a copy of the harness CLI, with its
+/// own Sparkle-fed update state. Mirrors `HarnessBundledApp` in @codevisor/api.
+public struct ServerHarnessBundledApp: Codable, Equatable, Sendable {
+    public var appName: String
+    public var bundlePath: String
+    public var installedVersion: String?
+    public var latestVersion: String?
+    public var updateAvailable: Bool
+
+    public init(
+        appName: String,
+        bundlePath: String,
+        installedVersion: String? = nil,
+        latestVersion: String? = nil,
+        updateAvailable: Bool
+    ) {
+        self.appName = appName
+        self.bundlePath = bundlePath
+        self.installedVersion = installedVersion
+        self.latestVersion = latestVersion
+        self.updateAvailable = updateAvailable
+    }
+}
+
+/// 202 ack for install/update starts.
+public struct ServerHarnessOperationStarted: Codable, Equatable, Sendable {
+    public var accepted: Bool
+    public var terminalId: String?
+    public var queued: Bool?
+
+    public init(accepted: Bool, terminalId: String? = nil, queued: Bool? = nil) {
+        self.accepted = accepted
+        self.terminalId = terminalId
+        self.queued = queued
     }
 }
 
@@ -581,6 +819,13 @@ public struct ServerHarness: Codable, Equatable, Sendable {
     /// Copyable shell command that installs the harness CLI; present only for
     /// harnesses with a well-known installer.
     public var installHint: String?
+    /// Ways the server can install this harness on its machine. Absent on
+    /// servers that predate lifecycle management.
+    public var installMethods: [ServerHarnessInstallMethod]?
+    /// Latest-version knowledge from the server's periodic update check.
+    public var updateInfo: ServerHarnessUpdateInfo?
+    /// Live install/update operation state.
+    public var lifecycle: ServerHarnessLifecycleState?
 
     public init(
         id: String,
@@ -592,7 +837,10 @@ public struct ServerHarness: Codable, Equatable, Sendable {
         readiness: ServerHarnessReadiness,
         installHint: String? = nil,
         desiredEnabled: Bool? = nil,
-        auth: ServerHarnessAuth? = nil
+        auth: ServerHarnessAuth? = nil,
+        installMethods: [ServerHarnessInstallMethod]? = nil,
+        updateInfo: ServerHarnessUpdateInfo? = nil,
+        lifecycle: ServerHarnessLifecycleState? = nil
     ) {
         self.id = id
         self.name = name
@@ -604,6 +852,9 @@ public struct ServerHarness: Codable, Equatable, Sendable {
         self.readiness = readiness
         self.installHint = installHint
         self.auth = auth
+        self.installMethods = installMethods
+        self.updateInfo = updateInfo
+        self.lifecycle = lifecycle
     }
 }
 
@@ -1344,6 +1595,10 @@ public final class CodevisorServerClient: CodevisorServerClienting, @unchecked S
         try await get("/v1/harnesses")
     }
 
+    public func listHarnessesWithLifecycle() async throws -> [ServerHarness] {
+        try await get("/v1/harnesses?include=lifecycle")
+    }
+
     public func rescanHarnesses() async throws -> [ServerHarness] {
         do {
             return try await send(
@@ -1369,6 +1624,88 @@ public final class CodevisorServerClient: CodevisorServerClienting, @unchecked S
             method: "PATCH",
             body: UpdateHarnessBody(enabled: enabled)
         )
+    }
+
+    public func listCustomHarnesses() async throws -> [ServerCustomHarnessSpec] {
+        let envelope: ServerCustomHarnessListEnvelope = try await get("/v1/harnesses/custom")
+        return envelope.harnesses
+    }
+
+    public func replaceCustomHarnesses(_ specs: [ServerCustomHarnessSpec]) async throws -> [ServerHarness] {
+        try await send(
+            "/v1/harnesses/custom",
+            method: "PUT",
+            body: ServerCustomHarnessListEnvelope(harnesses: specs)
+        )
+    }
+
+    public func testCustomHarness(_ spec: ServerCustomHarnessSpec) async throws -> ServerCustomHarnessTestResult {
+        try await send("/v1/harnesses/custom/test", method: "POST", body: spec)
+    }
+
+    public func installHarness(id: String, methodId: String?) async throws -> ServerHarnessOperationStarted {
+        struct InstallBody: Encodable { var methodId: String? }
+        let encoded = id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? id
+        return try await send(
+            "/v1/harnesses/\(encoded)/install",
+            method: "POST",
+            body: InstallBody(methodId: methodId)
+        )
+    }
+
+    public func updateHarness(id: String) async throws -> ServerHarnessOperationStarted {
+        let encoded = id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? id
+        return try await send(
+            "/v1/harnesses/\(encoded)/update",
+            method: "POST",
+            body: Optional<EmptyBody>.none
+        )
+    }
+
+    public func bundledAppInfo(harnessId: String) async throws -> ServerHarnessBundledApp? {
+        let encoded = harnessId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? harnessId
+        do {
+            return try await get("/v1/harnesses/\(encoded)/bundled-app")
+        } catch CodevisorServerClientError.httpStatus(404, _) {
+            return nil
+        }
+    }
+
+    public func updateBundledApp(harnessId: String) async throws {
+        let encoded = harnessId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? harnessId
+        let _: ServerHarnessOperationStarted = try await send(
+            "/v1/harnesses/\(encoded)/bundled-app/update",
+            method: "POST",
+            body: Optional<EmptyBody>.none
+        )
+    }
+
+    public func applyPendingHarnessUpdate(id: String) async throws {
+        let encoded = id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? id
+        let _: ServerHarnessOperationStarted = try await send(
+            "/v1/harnesses/\(encoded)/update/pending/apply",
+            method: "POST",
+            body: Optional<EmptyBody>.none
+        )
+    }
+
+    public func cancelPendingHarnessUpdate(id: String) async throws {
+        let encoded = id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? id
+        try await sendNoResponse("/v1/harnesses/\(encoded)/update/pending", method: "DELETE")
+    }
+
+    public func checkHarnessUpdates() async throws -> [ServerHarness] {
+        do {
+            return try await send(
+                "/v1/harnesses/check-updates",
+                method: "POST",
+                body: Optional<EmptyBody>.none
+            )
+        } catch CodevisorServerClientError.httpStatus(404, _), CodevisorServerClientError.httpStatus(501, _) {
+            // Older servers predate update checks; the plain list is the best
+            // they can do.
+            return try await listHarnesses()
+        }
     }
 
     public func refreshHarnessAuth() async throws -> [ServerHarness] {

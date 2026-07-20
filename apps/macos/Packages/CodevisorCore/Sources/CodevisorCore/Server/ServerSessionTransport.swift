@@ -50,6 +50,10 @@ public enum ServerSessionStreamEvent: Equatable, Sendable {
     /// A transient failure is being retried; the turn stays alive. Drives the
     /// visible reconnecting status, with progress when the harness provides it.
     case retrying(RetryStatus)
+    /// The server is holding this session's prompts while its harness
+    /// updates; `waiting: false` releases the marker. Replaceable: the
+    /// latest event wins.
+    case updateGate(waiting: Bool, harnessName: String)
     case failed(String)
     /// The harness rejected its credentials. Kept distinct from generic
     /// failures so clients can offer the relevant authentication settings.
@@ -421,6 +425,13 @@ public struct ServerSessionTransport: Sendable {
         switch event.kind {
         case "session.queue.updated":
             return [.queueUpdated(promptQueue(from: event.payload))]
+        case "session.updateGate.updated":
+            return [.updateGate(
+                waiting: event.payload["state"]?.stringValue == "waiting",
+                harnessName: event.payload["harnessName"]?.stringValue
+                    ?? event.payload["harnessId"]?.stringValue
+                    ?? "the agent"
+            )]
         case "session.output":
             return outputEvents(from: event.payload)
         case "session.updated":

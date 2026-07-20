@@ -509,6 +509,10 @@ final class SessionController {
         await model?.loadTranscriptDetails(itemId: itemId) ?? false
     }
 
+    /// The harness this chat is (or will be) running on: the connected
+    /// agent's harness once a session exists, the picker selection before.
+    var activeHarnessId: String? { connectedHarnessId ?? selectedHarnessId }
+
     // MARK: - Goals
 
     /// The session's persistent goal, when the harness supports goal mode.
@@ -1055,6 +1059,10 @@ final class SessionController {
     var isRuntimeIdle: Bool { model?.isRuntimeIdle ?? true }
     var lastTurnInitiator: SessionTurnInitiator { model?.lastTurnInitiator ?? .user }
     var lastTurnEndedWithError: Bool { model?.lastTurnEndedWithError ?? false }
+
+    /// Harness name while the server holds this chat's prompts during an
+    /// update — drives the ephemeral "Waiting for X to finish updating…" row.
+    var waitingHarnessUpdateName: String? { model?.updateGateHarnessName }
 
     var waitingBackgroundTaskDescription: String? {
         guard isWaitingOnBackgroundTasks else { return nil }

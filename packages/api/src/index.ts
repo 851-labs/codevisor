@@ -74,6 +74,84 @@ export const HarnessAuth = Schema.Struct({
 })
 export type HarnessAuth = typeof HarnessAuth.Type
 
+/// One way Codevisor can install a harness CLI on the server's machine,
+/// resolved against what's actually available there (brew/npm present, OS).
+export const HarnessInstallMethod = Schema.Struct({
+  /// Stable method id, currently the kind ("brew" | "npm" | "curl").
+  id: Schema.String,
+  kind: Schema.Literals(["brew", "npm", "curl"]),
+  /// Human label for pickers, e.g. "Homebrew".
+  label: Schema.String,
+  /// The exact shell command that would run — shown verbatim in the confirm
+  /// UI before anything executes.
+  command: Schema.String,
+  /// Whether the method's prerequisite tooling exists on the machine.
+  available: Schema.Boolean,
+  /// The resolved preference winner (brew > curl > npm among available).
+  recommended: Schema.Boolean
+})
+export type HarnessInstallMethod = typeof HarnessInstallMethod.Type
+
+/// Latest-version knowledge for an installed harness, checked against the
+/// version channel matching its detected install origin.
+export const HarnessUpdateInfo = Schema.Struct({
+  installedVersion: Schema.optional(Schema.String),
+  latestVersion: Schema.optional(Schema.String),
+  updateAvailable: Schema.Boolean,
+  /// Which channel produced latestVersion: "npm" | "brew" | "github" | "sparkle".
+  source: Schema.optional(Schema.String),
+  /// Detected install origin of the binary (npm/brew/curl/appBundle/…).
+  installOrigin: Schema.optional(Schema.String),
+  channel: Schema.optional(Schema.String),
+  checkedAt: Schema.optional(Schema.String)
+})
+export type HarnessUpdateInfo = typeof HarnessUpdateInfo.Type
+
+/// Live install/update state machine for one harness.
+export const HarnessLifecycleState = Schema.Struct({
+  phase: Schema.Literals(["idle", "installing", "updating", "pendingUpdate", "failed"]),
+  targetVersion: Schema.optional(Schema.String),
+  /// Install method the current/last operation used.
+  methodId: Schema.optional(Schema.String),
+  /// Background terminal streaming the operation's output ("Show Output").
+  terminalId: Schema.optional(Schema.String),
+  error: Schema.optional(Schema.String),
+  startedAt: Schema.optional(Schema.String)
+})
+export type HarnessLifecycleState = typeof HarnessLifecycleState.Type
+
+/// A user-defined custom ACP harness (BYO): launched as `command args…` with
+/// `env` merged into the launch environment. Persisted in the user-editable
+/// harnesses file and merged into the catalog with source "custom".
+/// Dual-install: a desktop app that bundles a copy of the harness CLI while
+/// the primary install is the user's own (brew/npm/…). The app updates via
+/// its own Sparkle feed; this is the detail sheet's on-demand snapshot.
+export const HarnessBundledApp = Schema.Struct({
+  appName: Schema.String,
+  bundlePath: Schema.String,
+  installedVersion: Schema.optional(Schema.String),
+  latestVersion: Schema.optional(Schema.String),
+  updateAvailable: Schema.Boolean
+})
+export type HarnessBundledApp = typeof HarnessBundledApp.Type
+
+export const CustomHarnessSpec = Schema.Struct({
+  id: Schema.String,
+  name: Schema.String,
+  command: Schema.String,
+  args: Schema.optional(Schema.Array(Schema.String)),
+  env: Schema.optional(Schema.Record(Schema.String, Schema.String))
+})
+export type CustomHarnessSpec = typeof CustomHarnessSpec.Type
+
+export const CustomHarnessTestResult = Schema.Struct({
+  ok: Schema.Boolean,
+  agentName: Schema.optional(Schema.String),
+  protocolVersion: Schema.optional(Schema.Number),
+  error: Schema.optional(Schema.String)
+})
+export type CustomHarnessTestResult = typeof CustomHarnessTestResult.Type
+
 export const Harness = Schema.Struct({
   id: Schema.String,
   name: Schema.String,
@@ -91,7 +169,14 @@ export const Harness = Schema.Struct({
   auth: Schema.optional(HarnessAuth),
   /// Copyable shell command that installs the harness CLI; present only for
   /// harnesses with a well-known installer.
-  installHint: Schema.optional(Schema.String)
+  installHint: Schema.optional(Schema.String),
+  /// Ways Codevisor can install this harness on the server's machine.
+  /// Optional while talking to servers that predate lifecycle management.
+  installMethods: Schema.optional(Schema.Array(HarnessInstallMethod)),
+  /// Latest-version knowledge from the periodic update check.
+  updateInfo: Schema.optional(HarnessUpdateInfo),
+  /// Live install/update operation state.
+  lifecycle: Schema.optional(HarnessLifecycleState)
 })
 export type Harness = typeof Harness.Type
 
@@ -1064,6 +1149,13 @@ export const EventKind = Schema.Literals([
   "harness.auth.updated",
   "harness.account.updated",
   "harness.authFlow.updated",
+  /// Install/update lifecycle for one harness (subjectId = harness id).
+  /// Payload: { harnessId, lifecycle: HarnessLifecycleState, updateInfo? }.
+  "harness.lifecycle.updated",
+  /// A session's prompts are held while its harness updates (subjectId =
+  /// session id). Payload: { state: "waiting" | "released", harnessId,
+  /// harnessName }. Replaceable: the latest event wins.
+  "session.updateGate.updated",
   "terminal.output",
   "terminal.exit",
   "update.changed"

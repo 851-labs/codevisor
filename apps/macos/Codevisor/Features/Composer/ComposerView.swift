@@ -914,7 +914,14 @@ struct HarnessPickerMenu: View {
                             }
                         )) {
                             Label {
-                                Text(harness.name)
+                                // Text-level dot: macOS menus drop SF Symbol
+                                // decorations, so the update marker rides in
+                                // the title string.
+                                Text(
+                                    harness.updateInfo?.updateAvailable == true
+                                        ? "\(harness.name) •"
+                                        : harness.name
+                                )
                             } icon: {
                                 HarnessIcon(
                                     harnessId: harness.id,

@@ -95,6 +95,24 @@ struct OnboardingView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .animation(.smooth(duration: 0.3), value: step)
         .task { await detectHarnesses() }
+        .onChange(of: environment.harnessCatalogRevision(for: environment.machines.selectedMachineId)) { _, _ in
+            // Install progress events invalidate the catalog — refetch so the
+            // row flips from Installing… to installed without "Detect again".
+            Task { await refreshHarnessList() }
+        }
+        .onChange(of: harnesses) { previous, current in
+            // Continue the user's intent: an install started here that just
+            // finished and needs sign-in opens the auth sheet directly.
+            guard authenticationHarness == nil, step == .harnesses else { return }
+            for harness in current where harness.isReady {
+                let before = previous.first { $0.id == harness.id }
+                guard before?.lifecycle?.phase == "installing", before?.isReady != true,
+                      harness.auth != nil, !canUse(harness)
+                else { continue }
+                authenticationHarness = harness
+                break
+            }
+        }
         .fileImporter(
             isPresented: $showingFolderPicker,
             allowedContentTypes: [.folder],
@@ -443,6 +461,15 @@ struct OnboardingView: View {
     /// short retry tail. Onboarding shows on first launch — exactly when the
     /// server is cold-starting — so querying immediately used to hit a closed
     /// port and misreport "No harnesses found".
+    /// Light refetch (no PATH re-resolve) when a lifecycle event invalidated
+    /// the catalog — flips rows through Installing… → installed live.
+    private func refreshHarnessList() async {
+        guard detection == .loaded else { return }
+        if let loaded = try? await environment.harnessService.allHarnesses() {
+            harnesses = loaded
+        }
+    }
+
     private func detectHarnesses() async {
         detection = .connecting
         projectSetup.isLoadingRecommendations = true

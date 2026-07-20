@@ -125,6 +125,13 @@ export interface AcpAgentConnection {
   readonly authenticate: (methodId: string) => Effect.Effect<void, AgentRuntimeError>
   readonly logout: Effect.Effect<void, AgentRuntimeError>
   readonly close: Effect.Effect<void, AgentRuntimeError>
+  /// What the agent reported during the ACP initialize handshake. Absent on
+  /// connections whose transport predates the field (fakes, older adapters).
+  readonly agentInfo?: {
+    readonly name?: string
+    readonly version?: string
+    readonly protocolVersion?: number
+  }
 }
 
 export interface AcpConnector {
@@ -239,7 +246,11 @@ export const makeAcpProvider = (
           args: launch.args,
           command: launch.command,
           cwd,
-          env: { ...environment.env, ...account?.env },
+          env: {
+            ...environment.env,
+            ...(definition.launch?.kind === "executable" ? definition.launch.env : undefined),
+            ...account?.env
+          },
           harnessId: definition.id
         },
         emit
@@ -648,7 +659,7 @@ export const makeStdioAcpConnector = (
         terminate()
         throw error
       }
-      return sdkConnection(
+      const established = sdkConnection(
         connection,
         stderr,
         () => {
@@ -674,8 +685,80 @@ export const makeStdioAcpConnector = (
         grokGoals,
         safeEmit
       )
+      // Newer ACP agents report identity in the initialize response; read it
+      // defensively so older protocol versions stay decodable.
+      const reportedInfo = (
+        initialized as { agentInfo?: { name?: string; version?: string } } | undefined
+      )?.agentInfo
+      return {
+        ...established,
+        agentInfo: {
+          ...(reportedInfo?.name === undefined ? {} : { name: reportedInfo.name }),
+          ...(reportedInfo?.version === undefined ? {} : { version: reportedInfo.version }),
+          ...(typeof initialized?.protocolVersion === "number"
+            ? { protocolVersion: initialized.protocolVersion }
+            : {})
+        }
+      }
     })
 })
+
+/// Result of a one-shot ACP handshake probe — the "Test Connection" action
+/// for user-defined custom harnesses.
+export interface AcpConnectionTestResult {
+  readonly ok: boolean
+  readonly agentName?: string
+  readonly protocolVersion?: number
+  readonly error?: string
+}
+
+/// Spawns `command args…` and performs the ACP initialize handshake, then
+/// tears the process down. Never throws: failures (binary missing, not an
+/// ACP agent, handshake timeout) come back as `{ ok: false, error }` so the
+/// raw cause is showable to the harness developer.
+export const testAcpConnection = async (
+  launch: {
+    readonly command: string
+    readonly args: ReadonlyArray<string>
+    readonly env?: Readonly<Record<string, string>>
+  },
+  options: {
+    readonly env: NodeJS.ProcessEnv
+    readonly cwd?: string
+    readonly timeoutMs?: number
+    /// Injected in tests; defaults to the stdio connector.
+    readonly connector?: AcpConnector
+  }
+): Promise<AcpConnectionTestResult> => {
+  const connector =
+    options.connector ?? makeStdioAcpConnector(undefined, options.timeoutMs ?? 10_000)
+  try {
+    const connection = await Effect.runPromise(
+      connector.connect(
+        {
+          args: launch.args,
+          command: launch.command,
+          cwd: options.cwd ?? homedir(),
+          env: { ...options.env, ...launch.env },
+          harnessId: "custom-harness-test"
+        },
+        () => Promise.resolve()
+      )
+    )
+    const info = connection.agentInfo
+    await Effect.runPromise(connection.close).catch(() => undefined)
+    return {
+      ok: true,
+      ...(info?.name === undefined ? {} : { agentName: info.name }),
+      ...(info?.protocolVersion === undefined ? {} : { protocolVersion: info.protocolVersion })
+    }
+  } catch (cause) {
+    return {
+      ok: false,
+      error: cause instanceof Error ? cause.message : String(cause)
+    }
+  }
+}
 
 const promiseWithTimeout = <A>(
   promise: Promise<A>,

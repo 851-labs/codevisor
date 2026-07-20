@@ -707,6 +707,9 @@ struct HarnessesSettingsView: View {
     @State private var toggleError: ToggleError?
     @State private var showsNotInstalled = false
     @State private var authenticationHarness: ServerHarness?
+    @State private var detailHarness: ServerHarness?
+    @State private var showsCustomEditor = false
+    @State private var editingCustomHarnessId: String?
 
     private var serverInstalled: [ServerHarness] { serverHarnesses.filter(\.isReady) }
     private var serverNotInstalled: [ServerHarness] { serverHarnesses.filter { !$0.isReady } }
@@ -731,17 +734,22 @@ struct HarnessesSettingsView: View {
                         serverInstalledRow(harness)
                     }
                 }
-                Button {
-                    Task { await scan() }
-                } label: {
-                    Label("Refresh", systemImage: "arrow.clockwise")
+                HStack(spacing: 10) {
+                    Button {
+                        Task { await scan() }
+                    } label: {
+                        Label("Refresh", systemImage: "arrow.clockwise")
+                    }
+                    .settingsActionTint(theme)
+                    .disabled(isScanning)
+                    Button("Add Custom Harness…") {
+                        editingCustomHarnessId = nil
+                        showsCustomEditor = true
+                    }
+                    .settingsActionTint(theme)
                 }
-                .settingsActionTint(theme)
-                .disabled(isScanning)
             } header: {
                 Text("Installed")
-            } footer: {
-                Text("Enabled harnesses appear in the chat composer's harness picker.")
             }
 
             if !serverNotInstalled.isEmpty {
@@ -759,8 +767,35 @@ struct HarnessesSettingsView: View {
         }
         .settingsPaneFormStyle(theme)
         .task { await scan() }
+        .onChange(of: environment.harnessCatalogRevision(for: environment.machines.selectedMachineId)) { _, _ in
+            // A lifecycle event (update detected, install finished) or another
+            // pane changed the catalog — refetch the light list, no PATH scan.
+            Task { await refreshList() }
+        }
+        .onChange(of: serverHarnesses) { previous, current in
+            // Continue the user's intent: an install they just started that
+            // finished and needs sign-in opens the auth sheet directly.
+            guard authenticationHarness == nil else { return }
+            for harness in current where harness.isReady {
+                let before = previous.first { $0.id == harness.id }
+                guard before?.lifecycle?.phase == "installing", before?.isReady != true,
+                      harness.auth != nil, !canUse(harness)
+                else { continue }
+                authenticationHarness = harness
+                break
+            }
+        }
         .sheet(item: $authenticationHarness) { harness in
             HarnessAuthenticationView(harness: harness) { replaceServerHarness($0) }
+        }
+        .sheet(item: $detailHarness) { harness in
+            HarnessDetailSheet(harness: harness)
+        }
+        .sheet(isPresented: $showsCustomEditor) {
+            CustomHarnessEditorSheet(editingId: editingCustomHarnessId) { harnesses in
+                serverHarnesses = harnesses
+                environment.harnessCatalogDidChange(onServer: environment.machines.selectedMachineId)
+            }
         }
         .alert(
             toggleError?.title ?? "",
@@ -785,19 +820,28 @@ struct HarnessesSettingsView: View {
                     .frame(width: 20)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(harness.name)
-                    Text(authStatus(harness))
+                    Text(rowSubtitle(harness))
                         .font(.callout)
                         .foregroundStyle(.secondary)
                 }
             }
             Spacer()
             if harness.auth != nil && !canUse(harness) {
+                // Sign-in is the row's one call to action — the update offer
+                // waits until the harness is usable.
                 Button("Sign In…") { authenticationHarness = harness }
                     .settingsActionTint(theme)
             } else {
-                if harness.auth != nil {
-                    Button("Manage…") { authenticationHarness = harness }
-                        .settingsActionTint(theme)
+                if harness.lifecycle?.phase == "updating" {
+                    ProgressView()
+                        .controlSize(.small)
+                        .help("Updating \(harness.name)…")
+                } else if harness.updateInfo?.updateAvailable == true {
+                    Button(harness.lifecycle?.phase == "failed" ? "Try Again" : "Update") {
+                        Task { await updateHarness(harness) }
+                    }
+                    .settingsActionTint(theme)
+                    .help(updateHelp(harness))
                 }
                 Toggle("Enable \(harness.name)", isOn: Binding(
                     get: { harness.enabled },
@@ -807,12 +851,76 @@ struct HarnessesSettingsView: View {
                 .toggleStyle(.switch)
                 .controlSize(.small)
             }
+            rowMenu(harness)
         }
         .frame(maxWidth: .infinity, alignment: .trailing)
     }
 
+    /// The row's secondary actions, collapsed behind one quiet control so
+    /// rows stay scannable: Get Info, Manage Accounts, Edit (custom).
+    private func rowMenu(_ harness: ServerHarness) -> some View {
+        Menu {
+            if harness.source == "custom" {
+                Button("Edit…") {
+                    editingCustomHarnessId = harness.id
+                    showsCustomEditor = true
+                }
+            } else {
+                Button("Get Info…") { detailHarness = harness }
+            }
+            if harness.auth != nil {
+                Button("Manage Accounts…") { authenticationHarness = harness }
+            }
+        } label: {
+            Image(systemName: "ellipsis.circle")
+                .foregroundStyle(.secondary)
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("\(harness.name) options")
+        .accessibilityLabel("\(harness.name) options")
+    }
+
     private func canUse(_ harness: ServerHarness) -> Bool {
         harness.auth?.state == "authenticated" || harness.auth?.state == "notRequired"
+    }
+
+    /// Auth status, replaced by live update progress/failure when relevant.
+    /// A plain "update available" never rides here — the Update button IS
+    /// that signal.
+    private func rowSubtitle(_ harness: ServerHarness) -> String {
+        if harness.lifecycle?.phase == "updating" {
+            let target = harness.lifecycle?.targetVersion
+            return target.map { "Updating to \($0)…" } ?? "Updating…"
+        }
+        if harness.lifecycle?.phase == "failed" {
+            let reason = harness.lifecycle?.error?
+                .split(whereSeparator: \.isNewline).first.map(String.init)
+            return reason.map { "Update failed: \($0)" } ?? "Update failed"
+        }
+        return authStatus(harness)
+    }
+
+    private func updateHelp(_ harness: ServerHarness) -> String {
+        guard let update = harness.updateInfo, let latest = update.latestVersion else {
+            return "Update \(harness.name)"
+        }
+        let installed = update.installedVersion.map { "\($0) → " } ?? ""
+        return "Update \(harness.name) (\(installed)\(latest))"
+    }
+
+    private func updateHarness(_ harness: ServerHarness) async {
+        let serverId = environment.machines.selectedMachineId
+        do {
+            _ = try await environment.machines.client(for: serverId).updateHarness(id: harness.id)
+            environment.harnessCatalogDidChange(onServer: serverId)
+        } catch {
+            toggleError = ToggleError(
+                title: "Couldn't update \(harness.name)",
+                message: error.localizedDescription
+            )
+        }
     }
 
     private func authStatus(_ harness: ServerHarness) -> String {
@@ -828,8 +936,32 @@ struct HarnessesSettingsView: View {
         }
     }
 
+    @ViewBuilder
     private func serverNotInstalledRow(_ harness: ServerHarness) -> some View {
-        HarnessInstallHintRow(harness: harness)
+        if harness.source == "custom" {
+            // A custom entry whose command wasn't found — keep it editable so
+            // a typo'd path is fixable right here.
+            HStack(spacing: 10) {
+                HarnessInstallHintRow(harness: harness)
+                Button("Edit…") {
+                    editingCustomHarnessId = harness.id
+                    showsCustomEditor = true
+                }
+                .settingsActionTint(theme)
+            }
+        } else {
+            HarnessInstallHintRow(harness: harness)
+        }
+    }
+
+    /// Light refetch of the current list (no PATH re-resolve) — used when a
+    /// server event invalidated the catalog. Errors keep the current list.
+    private func refreshList() async {
+        let serverId = environment.machines.selectedMachineId
+        guard let refreshed = try? await environment.harnessService(for: serverId).allHarnesses()
+        else { return }
+        serverHarnesses = refreshed
+        scanError = nil
     }
 
     /// Refresh = rescan: the server re-resolves its PATH first, so a CLI

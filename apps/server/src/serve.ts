@@ -1,6 +1,7 @@
 import {
   makeAgentRuntime,
   resolveShellEnv,
+  testAcpConnection,
   type BackgroundTerminalIntegration
 } from "@codevisor/agent-runtime"
 import type { DataUpgradeProgress, UpdateInfo } from "@codevisor/api"
@@ -23,7 +24,15 @@ import { pipeline } from "node:stream/promises"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { startBackgroundTerminalHost, wrapBackgroundCommand } from "./background-terminal-host.js"
-import { canonicalDatabasePaths, defaultDatabasePath } from "./data-dir.js"
+import { canonicalDatabasePaths, codevisorRoot, defaultDatabasePath } from "./data-dir.js"
+import {
+  customHarnessDefinition,
+  loadCustomHarnesses,
+  saveCustomHarnesses,
+  type CustomHarnessStore
+} from "./custom-harnesses.js"
+import { isNewerVersion } from "./harness-update-sources.js"
+import { makeHarnessLifecycleManager } from "./harness-lifecycle.js"
 import { defaultServerConfig, startCodevisorServer, type CodevisorServerUpdater } from "./server.js"
 import { makeHarnessAuthManager } from "./harness-auth.js"
 import { makeMcpManager } from "./mcp-manager.js"
@@ -86,21 +95,6 @@ const releaseTarget = (): string | undefined => {
     process.platform === "darwin" ? "darwin" : process.platform === "linux" ? "linux" : undefined
   const arch = process.arch === "arm64" ? "arm64" : process.arch === "x64" ? "x64" : undefined
   return platform !== undefined && arch !== undefined ? `${platform}-${arch}` : undefined
-}
-
-const isNewerVersion = (candidate: string, current: string): boolean => {
-  const parse = (version: string): ReadonlyArray<number> =>
-    (version.replace(/^v/, "").split("-")[0] ?? "").split(".").map((part) => Number(part) || 0)
-  const left = parse(candidate)
-  const right = parse(current)
-  for (let index = 0; index < Math.max(left.length, right.length); index += 1) {
-    const a = left[index] ?? 0
-    const b = right[index] ?? 0
-    if (a !== b) {
-      return a > b
-    }
-  }
-  return false
 }
 
 /// Self-updater for standalone server installs: checks the release manifest
@@ -385,8 +379,18 @@ export const runServe = (args: Record<string, string>): Promise<void> => {
           })
     const terminal = makeTerminalManager()
     const backgroundTerminals = yield* Effect.promise(() => backgroundTerminalIntegration(terminal))
+    // User-defined custom ACP harnesses (~/.codevisor/harnesses.json) merge
+    // into the catalog before anything consumes it. Bad entries are skipped
+    // with a warning — a hand-edited file must never block server boot.
+    const customHarnesses = yield* Effect.promise(() => loadCustomHarnesses(codevisorRoot()))
+    for (const warning of customHarnesses.warnings) {
+      console.error(`Custom harnesses: ${warning}`)
+    }
     const agents = makeAgentRuntime({
       ...(backgroundTerminals === undefined ? {} : { backgroundTerminals }),
+      ...(customHarnesses.definitions.length === 0
+        ? {}
+        : { extraHarnesses: customHarnesses.definitions }),
       resolveEnv: () => resolveShellEnv()
     })
     const auth = makeHarnessAuthManager({
@@ -397,6 +401,38 @@ export const runServe = (args: Record<string, string>): Promise<void> => {
       preferDeviceCode: (kind ?? (host === "127.0.0.1" ? "local" : "remote")) === "remote"
     })
     const mcp = makeMcpManager({ db, dataDir: dirname(databasePath) })
+    /// Custom-harness persistence + handshake probe for the /v1/harnesses/
+    /// custom routes. The file stays the source of truth; replace() swaps the
+    /// runtime catalog live so no restart is needed.
+    const customHarnessStore: CustomHarnessStore = {
+      list: async () => (await loadCustomHarnesses(codevisorRoot())).specs,
+      replace: async (specs) => {
+        await saveCustomHarnesses(codevisorRoot(), specs)
+        agents.setExtraHarnesses(specs.map(customHarnessDefinition))
+        await Effect.runPromise(agents.refreshEnvironment)
+      },
+      test: async (spec) =>
+        testAcpConnection(
+          {
+            args: spec.args === undefined ? [] : [...spec.args],
+            command: spec.command,
+            ...(spec.env === undefined ? {} : { env: spec.env })
+          },
+          { env: await resolveShellEnv() }
+        )
+    }
+    const lifecycle = makeHarnessLifecycleManager({
+      agents,
+      db,
+      resolveEnv: () => resolveShellEnv(),
+      terminal
+    })
+    // Periodic harness update detection — jittered start, 6h cadence. The
+    // stop handle is intentionally dropped: checks live for the process.
+    lifecycle.startPeriodicChecks()
+    // Interrupted updates become failures; still-armed ones re-run once the
+    // server settles. Fire-and-forget so boot never waits on it.
+    void lifecycle.reconcileOnStartup().catch(() => undefined)
     // Self-heal PATH at boot, fire-and-forget: CLI-/brew-launched servers
     // inherit whatever PATH the parent had, and a slow login-shell probe must
     // not delay the health endpoint the launching app is waiting on.
@@ -405,7 +441,9 @@ export const runServe = (args: Record<string, string>): Promise<void> => {
       {
         agents,
         auth,
+        customHarnesses: customHarnessStore,
         db,
+        lifecycle,
         mcp,
         terminal
       },

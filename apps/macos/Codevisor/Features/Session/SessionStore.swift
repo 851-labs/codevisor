@@ -482,6 +482,18 @@ final class SessionStore {
         }
     }
 
+    /// Whether any chat bound to `harnessId` on a machine is mid-turn — gates
+    /// the immediate harness update offer (updating a busy harness waits for
+    /// the when-idle flow instead).
+    func hasActiveSessions(forHarness harnessId: String, onServer serverId: String) -> Bool {
+        _ = activityRevision
+        return controllers.values.contains { controller in
+            controller.serverSession?.serverId == serverId
+                && (controller.activeHarnessId ?? controller.serverSession?.harnessId) == harnessId
+                && Self.isActivelyWorking(controller)
+        }
+    }
+
     private static func isActivelyWorking(_ controller: SessionController) -> Bool {
         controller.isSending
             || controller.setupPhases.contains(where: \.isRunning)

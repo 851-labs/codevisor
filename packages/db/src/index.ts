@@ -25,6 +25,7 @@ import type {
   TranscriptItem,
   TranscriptItemDetails,
   TranscriptPage,
+  HarnessUpdateInfo,
   UpdateProjectRequest,
   UpdateSessionRequest,
   UpdateInfo,
@@ -340,6 +341,46 @@ interface UpdateRow {
   readonly channel: string
   readonly checked_at: string | null
   readonly migration_state: UpdateInfo["migrationState"]
+}
+
+/// One harness's persisted latest-version knowledge (see migration 23).
+export interface HarnessUpdateStateRecord {
+  readonly harnessId: string
+  readonly info: HarnessUpdateInfo
+}
+
+/// A user-armed update waiting for the harness's chats to settle, or one
+/// currently executing (see migration 24). Durable so a server restart can
+/// reconcile interrupted updates instead of leaving prompts gated.
+export interface HarnessPendingUpdateRecord {
+  readonly harnessId: string
+  readonly state: "pending" | "running"
+  readonly targetVersion?: string
+  readonly requestedAt: string
+  readonly startedAt?: string
+  /// Force-release deadline while running; startup reconcile clears rows
+  /// past it.
+  readonly timeoutAt?: string
+}
+
+interface HarnessPendingUpdateRow {
+  readonly harness_id: string
+  readonly state: "pending" | "running"
+  readonly target_version: string | null
+  readonly requested_at: string
+  readonly started_at: string | null
+  readonly timeout_at: string | null
+}
+
+interface HarnessUpdateStateRow {
+  readonly harness_id: string
+  readonly installed_version: string | null
+  readonly latest_version: string | null
+  readonly update_available: number
+  readonly source: string | null
+  readonly install_origin: string | null
+  readonly channel: string | null
+  readonly checked_at: string | null
 }
 
 interface Migration {
@@ -928,6 +969,36 @@ const migrations: ReadonlyArray<Migration> = [
         content text not null,
         format text not null default 'attributed-string-v1',
         updated_at text not null
+      );
+    `
+  },
+  {
+    id: 23,
+    name: "harness update state",
+    sql: `
+      create table if not exists harness_update_state (
+        harness_id text primary key,
+        installed_version text,
+        latest_version text,
+        update_available integer not null default 0 check(update_available in (0, 1)),
+        source text,
+        install_origin text,
+        channel text,
+        checked_at text
+      );
+    `
+  },
+  {
+    id: 24,
+    name: "harness pending updates",
+    sql: `
+      create table if not exists harness_pending_updates (
+        harness_id text primary key,
+        state text not null check(state in ('pending', 'running')),
+        target_version text,
+        requested_at text not null,
+        started_at text,
+        timeout_at text
       );
     `
   }
@@ -2016,6 +2087,24 @@ export interface CodevisorDatabaseService {
   readonly rotateConnectionToken: Effect.Effect<string, DatabaseError>
   readonly getUpdateInfo: Effect.Effect<UpdateInfo, DatabaseError>
   readonly setUpdateInfo: (update: UpdateInfo) => Effect.Effect<UpdateInfo, DatabaseError>
+  /// Persisted latest-version knowledge per harness (the periodic update
+  /// check's output — survives restarts so clients see last-known state).
+  readonly listHarnessUpdateStates: Effect.Effect<
+    ReadonlyArray<HarnessUpdateStateRecord>,
+    DatabaseError
+  >
+  readonly setHarnessUpdateState: (
+    record: HarnessUpdateStateRecord
+  ) => Effect.Effect<HarnessUpdateStateRecord, DatabaseError>
+  /// Durable pending/running update per harness (the when-idle gate's truth).
+  readonly listHarnessPendingUpdates: Effect.Effect<
+    ReadonlyArray<HarnessPendingUpdateRecord>,
+    DatabaseError
+  >
+  readonly setHarnessPendingUpdate: (
+    record: HarnessPendingUpdateRecord
+  ) => Effect.Effect<HarnessPendingUpdateRecord, DatabaseError>
+  readonly clearHarnessPendingUpdate: (harnessId: string) => Effect.Effect<void, DatabaseError>
 }
 
 export class CodevisorDatabase extends Context.Service<
@@ -3307,6 +3396,75 @@ const createService = (
       rotate()
       return token
     }),
+    listHarnessPendingUpdates: attempt("listHarnessPendingUpdates", () =>
+      (
+        sqlite
+          .prepare("select * from harness_pending_updates")
+          .all() as Array<HarnessPendingUpdateRow>
+      ).map(harnessPendingUpdateFromRow)
+    ),
+    setHarnessPendingUpdate: (record) =>
+      attempt("setHarnessPendingUpdate", () => {
+        sqlite
+          .prepare(
+            `insert into harness_pending_updates (
+              harness_id, state, target_version, requested_at, started_at, timeout_at
+            ) values (?, ?, ?, ?, ?, ?)
+            on conflict(harness_id) do update set
+              state = excluded.state,
+              target_version = excluded.target_version,
+              requested_at = excluded.requested_at,
+              started_at = excluded.started_at,
+              timeout_at = excluded.timeout_at`
+          )
+          .run(
+            record.harnessId,
+            record.state,
+            record.targetVersion ?? null,
+            record.requestedAt,
+            record.startedAt ?? null,
+            record.timeoutAt ?? null
+          )
+        return record
+      }),
+    clearHarnessPendingUpdate: (harnessId) =>
+      attempt("clearHarnessPendingUpdate", () => {
+        sqlite.prepare("delete from harness_pending_updates where harness_id = ?").run(harnessId)
+      }),
+    listHarnessUpdateStates: attempt("listHarnessUpdateStates", () =>
+      (
+        sqlite.prepare("select * from harness_update_state").all() as Array<HarnessUpdateStateRow>
+      ).map(harnessUpdateStateFromRow)
+    ),
+    setHarnessUpdateState: (record) =>
+      attempt("setHarnessUpdateState", () => {
+        sqlite
+          .prepare(
+            `insert into harness_update_state (
+              harness_id, installed_version, latest_version, update_available,
+              source, install_origin, channel, checked_at
+            ) values (?, ?, ?, ?, ?, ?, ?, ?)
+            on conflict(harness_id) do update set
+              installed_version = excluded.installed_version,
+              latest_version = excluded.latest_version,
+              update_available = excluded.update_available,
+              source = excluded.source,
+              install_origin = excluded.install_origin,
+              channel = excluded.channel,
+              checked_at = excluded.checked_at`
+          )
+          .run(
+            record.harnessId,
+            record.info.installedVersion ?? null,
+            record.info.latestVersion ?? null,
+            record.info.updateAvailable ? 1 : 0,
+            record.info.source ?? null,
+            record.info.installOrigin ?? null,
+            record.info.channel ?? null,
+            record.info.checkedAt ?? null
+          )
+        return record
+      }),
     getUpdateInfo: attempt("getUpdateInfo", () =>
       updateFromRow(sqlite.prepare("select * from update_state where id = 1").get() as UpdateRow)
     ),
@@ -3565,6 +3723,28 @@ const sessionEventFromRow = (row: SessionEventRow): EventEnvelope => ({
   subjectId: row.session_id,
   createdAt: row.created_at,
   payload: JSON.parse(row.payload) as unknown
+})
+
+const harnessPendingUpdateFromRow = (row: HarnessPendingUpdateRow): HarnessPendingUpdateRecord => ({
+  harnessId: row.harness_id,
+  requestedAt: row.requested_at,
+  state: row.state,
+  ...(row.target_version === null ? {} : { targetVersion: row.target_version }),
+  ...(row.started_at === null ? {} : { startedAt: row.started_at }),
+  ...(row.timeout_at === null ? {} : { timeoutAt: row.timeout_at })
+})
+
+const harnessUpdateStateFromRow = (row: HarnessUpdateStateRow): HarnessUpdateStateRecord => ({
+  harnessId: row.harness_id,
+  info: {
+    updateAvailable: row.update_available === 1,
+    ...(row.installed_version === null ? {} : { installedVersion: row.installed_version }),
+    ...(row.latest_version === null ? {} : { latestVersion: row.latest_version }),
+    ...(row.source === null ? {} : { source: row.source }),
+    ...(row.install_origin === null ? {} : { installOrigin: row.install_origin }),
+    ...(row.channel === null ? {} : { channel: row.channel }),
+    ...(row.checked_at === null ? {} : { checkedAt: row.checked_at })
+  }
 })
 
 const updateFromRow = (row: UpdateRow): UpdateInfo => ({

@@ -89,7 +89,66 @@ export type HarnessLaunch =
       readonly kind: "executable"
       readonly command: string
       readonly args: ReadonlyArray<string>
+      /// Extra environment merged over the resolved shell env when spawning
+      /// the adapter (user-defined custom harnesses). Account env still wins.
+      readonly env?: Readonly<Record<string, string>>
     }
+
+/// How an installed harness binary got onto the machine, detected from its
+/// resolved path (brew prefix, node_modules, .app bundle, …). Update behavior
+/// is keyed off this so we never fight the installer that owns the binary.
+export type InstallOrigin = "npm" | "brew" | "curl" | "appBundle" | "standalone" | "unknown"
+
+/// One way to install a harness CLI. `kind` doubles as the method id in the
+/// API. Exactly one of the payload fields applies per kind.
+export interface HarnessInstallMethodSpec {
+  readonly kind: "brew" | "npm" | "curl"
+  /// brew formula (or cask when `cask` is true), e.g. "block-goose-cli".
+  readonly formula?: string
+  readonly cask?: boolean
+  /// npm package installed globally, e.g. "@openai/codex".
+  readonly packageName?: string
+  /// curl: the vendor's full install command, shown verbatim to the user
+  /// before running (e.g. `curl -fsSL https://claude.ai/install.sh | bash`).
+  readonly command?: string
+}
+
+/// Where to learn the latest available version for one install origin.
+export type UpdateCheckSpec =
+  | { readonly kind: "npm"; readonly packageName: string; readonly distTag?: string }
+  | { readonly kind: "brew"; readonly formula: string }
+  | { readonly kind: "github"; readonly repo: string }
+  | {
+      readonly kind: "sparkle"
+      readonly appcastUrl: string
+      readonly appcastUrlX64?: string
+    }
+
+/// How to apply an update for one install origin.
+export type UpdateApplySpec =
+  /// Run the harness's own updater (`codex update`, `opencode upgrade`, …).
+  | {
+      readonly kind: "selfUpdate"
+      readonly args: ReadonlyArray<string>
+      readonly env?: Readonly<Record<string, string>>
+    }
+  /// No native updater: rerun the install method matching the detected origin
+  /// (npm reinstall at @latest, brew upgrade, curl script).
+  | { readonly kind: "reinstall" }
+  /// macOS app-bundled CLI (ChatGPT.app codex): replace the whole app bundle
+  /// from its Sparkle feed. Server-side, darwin-only. The bundle path is
+  /// derived from the detected binary (`<bundle>/Contents/Resources/<cli>`)
+  /// unless pinned here.
+  | { readonly kind: "appBundleSwap"; readonly bundlePath?: string }
+
+/// Check + apply for one detected install origin; `when: "any"` is the
+/// fallback row. Matching per-origin keeps version channels isolated (an
+/// app-bundled alpha is never compared against the npm stable line).
+export interface HarnessUpdateSource {
+  readonly when: InstallOrigin | "any"
+  readonly check: UpdateCheckSpec
+  readonly apply: UpdateApplySpec
+}
 
 export interface HarnessDefinition {
   readonly id: string
@@ -110,7 +169,14 @@ export interface HarnessDefinition {
   readonly disabledReason?: string
   /// Copyable shell command that installs the harness CLI; surfaced next to
   /// "not installed" rows so users can install without leaving the app.
+  /// Derived UI fallback — `installMethods` is the structured source.
   readonly installHint?: string
+  /// Ways Codevisor can install this CLI, in vendor-preference order. Absent
+  /// for harnesses we can't install (bundled-only, custom entries).
+  readonly installMethods?: ReadonlyArray<HarnessInstallMethodSpec>
+  /// Update sources keyed by detected install origin. Absent = no update
+  /// support (custom entries, harnesses without a version channel).
+  readonly update?: { readonly sources: ReadonlyArray<HarnessUpdateSource> }
 }
 
 export interface ProviderEnvironment {

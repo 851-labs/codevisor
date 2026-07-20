@@ -2116,6 +2116,63 @@ describe("@codevisor/db", () => {
     await Effect.runPromise(db.close)
   })
 
+  it("round-trips harness update state and pending updates", async () => {
+    const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
+
+    // Latest-version knowledge: empty → upsert (sparse and full) → list.
+    expect(await run(db.listHarnessUpdateStates)).toEqual([])
+    const sparse = await run(
+      db.setHarnessUpdateState({ harnessId: "codex", info: { updateAvailable: false } })
+    )
+    expect(sparse.info.updateAvailable).toBe(false)
+    expect(await run(db.listHarnessUpdateStates)).toEqual([
+      { harnessId: "codex", info: { updateAvailable: false } }
+    ])
+    const full = {
+      harnessId: "codex",
+      info: {
+        updateAvailable: true,
+        installedVersion: "0.144.6",
+        latestVersion: "0.145.0",
+        source: "brew",
+        installOrigin: "brew",
+        channel: "stable",
+        checkedAt: "2026-07-20T00:00:00.000Z"
+      }
+    }
+    await run(db.setHarnessUpdateState(full))
+    expect(await run(db.listHarnessUpdateStates)).toEqual([full])
+
+    // Pending updates: empty → armed (sparse) → running (full) → cleared.
+    expect(await run(db.listHarnessPendingUpdates)).toEqual([])
+    await run(
+      db.setHarnessPendingUpdate({
+        harnessId: "codex",
+        state: "pending",
+        requestedAt: "2026-07-20T00:01:00.000Z"
+      })
+    )
+    expect(await run(db.listHarnessPendingUpdates)).toEqual([
+      { harnessId: "codex", state: "pending", requestedAt: "2026-07-20T00:01:00.000Z" }
+    ])
+    const running = {
+      harnessId: "codex",
+      state: "running" as const,
+      targetVersion: "0.145.0",
+      requestedAt: "2026-07-20T00:01:00.000Z",
+      startedAt: "2026-07-20T00:02:00.000Z",
+      timeoutAt: "2026-07-20T00:12:00.000Z"
+    }
+    expect(await run(db.setHarnessPendingUpdate(running))).toEqual(running)
+    expect(await run(db.listHarnessPendingUpdates)).toEqual([running])
+    await run(db.clearHarnessPendingUpdate("codex"))
+    expect(await run(db.listHarnessPendingUpdates)).toEqual([])
+    // Clearing an absent row is a no-op, not an error.
+    await run(db.clearHarnessPendingUpdate("codex"))
+
+    await Effect.runPromise(db.close)
+  })
+
   it("constructs the Effect service layer", async () => {
     const info = await Effect.runPromise(
       Effect.gen(function* () {

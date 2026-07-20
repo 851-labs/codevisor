@@ -123,6 +123,12 @@ extension ShimmeringText {
     static func waitingOnBackgroundTask(_ description: String) -> ShimmeringText {
         ShimmeringText(text: "Waiting on \(description)...")
     }
+
+    /// The user's prompt is held server-side while the harness updates and
+    /// dispatches automatically once the update finishes.
+    static func waitingOnHarnessUpdate(_ harnessName: String) -> ShimmeringText {
+        ShimmeringText(text: "Waiting for \(harnessName) to finish updating...")
+    }
 }
 
 struct AgentStatusText: View {

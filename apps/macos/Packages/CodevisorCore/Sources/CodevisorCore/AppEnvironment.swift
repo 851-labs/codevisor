@@ -30,6 +30,7 @@ public final class AppEnvironment {
     /// Monotonic, per-machine invalidation tokens for consumers that keep a
     /// harness catalog alive (most notably an already-mounted new-chat page).
     private var harnessCatalogRevisions: [String: UInt64] = [:]
+    private var harnessLifecycleByServer: [String: [ServerHarness]] = [:]
 
     public var serverClient: any CodevisorServerClienting {
         machines.selectedClient
@@ -100,6 +101,9 @@ public final class AppEnvironment {
             clientFactory: machineClientFactory
         )
         projectList.showsImportedSessions = settings.importExternalSessions
+        machines.onHarnessLifecycleChanged = { [weak self] serverId in
+            self?.harnessCatalogDidChange(onServer: serverId)
+        }
     }
 
     /// Refetches sessions from all harnesses and merges them in.
@@ -221,6 +225,19 @@ public final class AppEnvironment {
     /// this value and refetch only the machine whose harness state changed.
     public func harnessCatalogRevision(for serverId: String) -> UInt64 {
         harnessCatalogRevisions[serverId, default: 0]
+    }
+
+    /// Lifecycle-decorated harnesses (update knowledge, install methods) per
+    /// machine, fetched separately from the picker's plain list so the
+    /// composer stays snappy. Update banners read this; composer surfaces
+    /// refresh it via `refreshHarnessLifecycle`.
+    public func harnessLifecycle(for serverId: String) -> [ServerHarness] {
+        harnessLifecycleByServer[serverId] ?? []
+    }
+
+    public func refreshHarnessLifecycle(for serverId: String) async {
+        guard let harnesses = try? await harnessService(for: serverId).allHarnesses() else { return }
+        harnessLifecycleByServer[serverId] = harnesses
     }
 
     /// Publishes that authentication, enablement, or discovery changed the

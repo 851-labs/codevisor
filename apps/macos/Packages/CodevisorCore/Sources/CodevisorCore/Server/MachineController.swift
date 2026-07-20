@@ -137,6 +137,10 @@ public final class MachineController {
     private let updatePollAttempts: Int
     @ObservationIgnored private var eventSyncTask: Task<Void, Never>?
     @ObservationIgnored private var pendingRefreshTask: Task<Void, Never>?
+    /// Invoked when a `harness.lifecycle.updated` event arrives for a machine
+    /// — the AppEnvironment bridges it to its harness-catalog revision so
+    /// mounted pickers and settings panes refetch.
+    @ObservationIgnored public var onHarnessLifecycleChanged: ((String) -> Void)?
 
     public init(
         store: any PersistenceStore,
@@ -400,6 +404,10 @@ public final class MachineController {
         case "project.created", "project.updated", "worktree.created",
              "session.created", "session.updated", "session.archived":
             scheduleProjectRefresh()
+        case "harness.lifecycle.updated":
+            // Update detection / install progress changed a harness — bump
+            // the catalog revision so mounted pickers and settings refetch.
+            onHarnessLifecycleChanged?(serverId)
         default:
             // Prompt/queue/error events are handled by the session transports.
             break

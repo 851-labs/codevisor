@@ -286,6 +286,15 @@ struct ChatScreen: View {
                 estimatedHeight: 32
             ))
         }
+        if let updatingHarnessName = controller.waitingHarnessUpdateName {
+            // The user's prompt is queued server-side while the harness
+            // updates — an honest, ephemeral marker that clears on release.
+            result.append(.init(
+                id: .updateGate,
+                content: .updateGate(updatingHarnessName),
+                estimatedHeight: 32
+            ))
+        }
         if let error = controller.errorMessage {
             result.append(.init(id: .error, content: .error(error), estimatedHeight: 56))
         }
@@ -397,6 +406,14 @@ struct ChatScreen: View {
                     .font(.callout)
                     .foregroundStyle(.secondary)
                 ShimmeringText.waitingOnBackgroundTask(description)
+                Spacer(minLength: 0)
+            }
+        case let .updateGate(harnessName):
+            HStack(spacing: 8) {
+                Image(systemName: "arrow.down.circle")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                ShimmeringText.waitingOnHarnessUpdate(harnessName)
                 Spacer(minLength: 0)
             }
         case let .error(message):

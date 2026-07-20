@@ -60,10 +60,12 @@ export {
   piAssistantErrorFromSessionJsonl,
   runtimeEventFromNotification,
   stdioAcpConnector,
+  testAcpConnection,
   usesAcpModelSelectionExtension
 } from "./providers/acp.js"
 export type {
   AcpAgentConnection,
+  AcpConnectionTestResult,
   AcpConnector,
   AcpHarnessLaunchRequest,
   AcpPromptCapabilities,
@@ -101,9 +103,23 @@ export interface AgentRuntimeConfig {
   /// defaults to spawning the binary with the resolved environment. Exposed
   /// for tests.
   readonly readVersionOutput?: (path: string, env: NodeJS.ProcessEnv) => Promise<string>
+  /// Additional harness definitions merged after the builtin catalog —
+  /// user-defined custom ACP harnesses. Entries whose id collides with a
+  /// builtin are dropped (the builtin wins); callers validate ids upstream.
+  readonly extraHarnesses?: ReadonlyArray<HarnessDefinition>
 }
 
 export interface AgentRuntimeService {
+  /// The effective harness catalog: builtins plus the current user-defined
+  /// custom entries. A live view — read it lazily, don't capture it, so
+  /// `setExtraHarnesses` swaps are observed. Consumers (harness auth,
+  /// lifecycle) read definitions from here instead of the static
+  /// `harnessCatalog` export so custom entries behave uniformly.
+  readonly catalog: ReadonlyArray<HarnessDefinition>
+  /// Replaces the injected custom entries (the custom-harness PUT route).
+  /// Colliding ids are dropped exactly like the constructor path. Existing
+  /// sessions on removed harnesses keep running; new lookups fail.
+  readonly setExtraHarnesses: (definitions: ReadonlyArray<HarnessDefinition>) => void
   readonly discoverHarnesses: Effect.Effect<ReadonlyArray<Harness>, AgentRuntimeError>
   /// Re-resolves the environment via the configured `resolveEnv` (no-op
   /// without one). Subsequent readiness checks and session launches see the
@@ -200,9 +216,28 @@ export const harnessCatalog: ReadonlyArray<HarnessDefinition> = [
     detectBinaries: ["claude"],
     id: "claude-code",
     installHint: "curl -fsSL https://claude.ai/install.sh | bash",
+    installMethods: [
+      { command: "curl -fsSL https://claude.ai/install.sh | bash", kind: "curl" },
+      { kind: "npm", packageName: "@anthropic-ai/claude-code" }
+    ],
     name: "Claude Code",
     provider: "claude",
-    symbolName: "sparkle"
+    symbolName: "sparkle",
+    update: {
+      sources: [
+        {
+          // `claude update` is install-method aware (native/npm), but brew
+          // installs refuse to self-update unless this env opt-in is set.
+          apply: {
+            args: ["update"],
+            env: { CLAUDE_CODE_PACKAGE_MANAGER_AUTO_UPDATE: "1" },
+            kind: "selfUpdate"
+          },
+          check: { kind: "npm", packageName: "@anthropic-ai/claude-code" },
+          when: "any"
+        }
+      ]
+    }
   },
   // Codex is driven directly through `codex app-server` (JSONL JSON-RPC) —
   // no npx adapter, no Node requirement.
@@ -220,9 +255,41 @@ export const harnessCatalog: ReadonlyArray<HarnessDefinition> = [
     ],
     id: "codex",
     installHint: "npm install -g @openai/codex",
+    installMethods: [
+      { cask: true, formula: "codex", kind: "brew" },
+      { kind: "npm", packageName: "@openai/codex" }
+    ],
     name: "Codex",
     provider: "codex",
-    symbolName: "chevron.left.forwardslash.chevron.right"
+    symbolName: "chevron.left.forwardslash.chevron.right",
+    update: {
+      sources: [
+        {
+          // App-bundled codex: `codex update` refuses (InstallMethod::Other),
+          // so Codevisor updates the whole app bundle from its Sparkle feed.
+          // The app ships its own (often pre-release) channel — never compare
+          // it against the npm/brew stable line.
+          apply: { kind: "appBundleSwap" },
+          check: {
+            appcastUrl: "https://persistent.oaistatic.com/codex-app-prod/appcast.xml",
+            appcastUrlX64: "https://persistent.oaistatic.com/codex-app-prod/appcast-x64.xml",
+            kind: "sparkle"
+          },
+          when: "appBundle"
+        },
+        {
+          apply: { args: ["update"], kind: "selfUpdate" },
+          check: { formula: "codex", kind: "brew" },
+          when: "brew"
+        },
+        {
+          // `codex update` detects npm/pnpm/bun/standalone itself.
+          apply: { args: ["update"], kind: "selfUpdate" },
+          check: { kind: "npm", packageName: "@openai/codex" },
+          when: "any"
+        }
+      ]
+    }
   },
   // Pi exposes an RPC mode but not ACP directly. The pinned adapter bridges
   // Codevisor's existing ACP provider to the user's installed `pi` binary, so
@@ -231,14 +298,78 @@ export const harnessCatalog: ReadonlyArray<HarnessDefinition> = [
     detectBinaries: ["pi"],
     id: "pi",
     installHint: "npm install -g @earendil-works/pi-coding-agent",
+    installMethods: [{ kind: "npm", packageName: "@earendil-works/pi-coding-agent" }],
     launch: { args: [], kind: "npx", packageName: "pi-acp@0.0.31" },
     name: "Pi",
     provider: "acp",
-    symbolName: "function"
+    symbolName: "function",
+    update: {
+      sources: [
+        {
+          apply: { kind: "reinstall" },
+          check: { kind: "npm", packageName: "@earendil-works/pi-coding-agent" },
+          when: "any"
+        }
+      ]
+    }
   },
-  executableHarness("gemini", "Gemini CLI", "diamond", ["gemini"], "gemini", ["--acp"]),
-  executableHarness("opencode", "OpenCode", "curlybraces", ["opencode"], "opencode", ["acp"]),
-  executableHarness("goose", "goose", "bird", ["goose"], "goose", ["acp"]),
+  executableHarness("gemini", "Gemini CLI", "diamond", ["gemini"], "gemini", ["--acp"], {
+    installMethods: [
+      { kind: "npm", packageName: "@google/gemini-cli" },
+      { formula: "gemini-cli", kind: "brew" }
+    ],
+    update: {
+      // Gemini CLI has no self-update command (explicitly "not planned"
+      // upstream) — reinstall via the detected origin.
+      sources: [
+        {
+          apply: { kind: "reinstall" },
+          check: { formula: "gemini-cli", kind: "brew" },
+          when: "brew"
+        },
+        {
+          apply: { kind: "reinstall" },
+          check: { kind: "npm", packageName: "@google/gemini-cli" },
+          when: "any"
+        }
+      ]
+    }
+  }),
+  executableHarness("opencode", "OpenCode", "curlybraces", ["opencode"], "opencode", ["acp"], {
+    installMethods: [
+      { command: "curl -fsSL https://opencode.ai/install | bash", kind: "curl" },
+      { kind: "npm", packageName: "opencode-ai" }
+    ],
+    update: {
+      // `opencode upgrade` detects curl/npm/pnpm/bun/brew itself.
+      sources: [
+        {
+          apply: { args: ["upgrade"], kind: "selfUpdate" },
+          check: { kind: "npm", packageName: "opencode-ai" },
+          when: "any"
+        }
+      ]
+    }
+  }),
+  executableHarness("goose", "goose", "bird", ["goose"], "goose", ["acp"], {
+    installMethods: [{ formula: "block-goose-cli", kind: "brew" }],
+    update: {
+      sources: [
+        {
+          // `goose update` blindly replaces the binary in place — on a brew
+          // install that clobbers the Cellar copy, so delegate to brew.
+          apply: { kind: "reinstall" },
+          check: { formula: "block-goose-cli", kind: "brew" },
+          when: "brew"
+        },
+        {
+          apply: { args: ["update"], kind: "selfUpdate" },
+          check: { kind: "github", repo: "block/goose" },
+          when: "any"
+        }
+      ]
+    }
+  }),
   // Cursor is temporarily pulled: cursor-agent's headless/ACP mode fails with
   // connection errors to Cursor's backend even where interactive mode works
   // (their ACP path ignores the network.useHttp1ForAgent workaround).
@@ -251,21 +382,79 @@ export const harnessCatalog: ReadonlyArray<HarnessDefinition> = [
     provider: "acp",
     symbolName: "cursorarrow.rays"
   },
+  // Amp's harness runs through the separate `amp-acp` adapter binary, not the
+  // `amp` CLI itself — no verified install/update channel for the adapter yet.
   executableHarness("amp", "Amp", "bolt", ["amp-acp"], "amp-acp"),
-  executableHarness("auggie", "Auggie CLI", "a.square", ["auggie"], "auggie", ["--acp"]),
-  executableHarness("cline", "Cline", "terminal", ["cline"], "cline", ["--acp"]),
+  executableHarness("auggie", "Auggie CLI", "a.square", ["auggie"], "auggie", ["--acp"], {
+    installMethods: [{ kind: "npm", packageName: "@augmentcode/auggie" }],
+    update: {
+      // No self-update command; auggie's own background auto-updater covers
+      // most installs, reinstall covers the rest.
+      sources: [
+        {
+          apply: { kind: "reinstall" },
+          check: { kind: "npm", packageName: "@augmentcode/auggie" },
+          when: "any"
+        }
+      ]
+    }
+  }),
+  executableHarness("cline", "Cline", "terminal", ["cline"], "cline", ["--acp"], {
+    installMethods: [{ kind: "npm", packageName: "cline" }],
+    update: {
+      // `cline update` detects npm/pnpm/yarn/bun itself (npm-only distro).
+      sources: [
+        {
+          apply: { args: ["update"], kind: "selfUpdate" },
+          check: { kind: "npm", packageName: "cline" },
+          when: "any"
+        }
+      ]
+    }
+  }),
   executableHarness(
     "github-copilot-cli",
     "GitHub Copilot",
     "ellipsis.curlybraces",
     ["copilot"],
     "copilot",
-    ["--acp"]
+    ["--acp"],
+    {
+      installMethods: [{ kind: "npm", packageName: "@github/copilot" }],
+      update: {
+        // `copilot update` exists but is closed source; failures surface
+        // gracefully as a failed lifecycle state.
+        sources: [
+          {
+            apply: { args: ["update"], kind: "selfUpdate" },
+            check: { kind: "npm", packageName: "@github/copilot" },
+            when: "any"
+          }
+        ]
+      }
+    }
   ),
-  executableHarness("qwen-code", "Qwen Code", "q.square", ["qwen"], "qwen", [
-    "--acp",
-    "--experimental-skills"
-  ]),
+  executableHarness(
+    "qwen-code",
+    "Qwen Code",
+    "q.square",
+    ["qwen"],
+    "qwen",
+    ["--acp", "--experimental-skills"],
+    {
+      installMethods: [{ kind: "npm", packageName: "@qwen-code/qwen-code" }],
+      update: {
+        // No self-update command — reinstall via npm.
+        sources: [
+          {
+            apply: { kind: "reinstall" },
+            check: { kind: "npm", packageName: "@qwen-code/qwen-code" },
+            when: "any"
+          }
+        ]
+      }
+    }
+  ),
   executableHarness("kimi", "Kimi CLI", "k.square", ["kimi"], "kimi", ["acp"]),
   executableHarness(
     "factory-droid",
@@ -273,11 +462,43 @@ export const harnessCatalog: ReadonlyArray<HarnessDefinition> = [
     "wrench.and.screwdriver",
     ["droid"],
     "droid",
-    ["exec", "--output-format", "acp-daemon"]
+    ["exec", "--output-format", "acp-daemon"],
+    {
+      installMethods: [{ command: "curl -fsSL https://app.factory.ai/cli | sh", kind: "curl" }],
+      update: {
+        sources: [
+          // Droid's npm builds have auto-update disabled at build time
+          // (deliberately pinned) — reinstall is the vendor-blessed path.
+          {
+            apply: { kind: "reinstall" },
+            check: { kind: "npm", packageName: "droid" },
+            when: "npm"
+          },
+          {
+            // Standalone/curl installs self-update via `droid update`.
+            apply: { args: ["update"], kind: "selfUpdate" },
+            check: { kind: "npm", packageName: "droid" },
+            when: "any"
+          }
+        ]
+      }
+    }
   ),
   executableHarness("devin", "Devin", "brain", ["devin"], "devin", ["acp"]),
   executableHarness("grok-build", "Grok Build", "x.square", ["grok"], "grok", ["agent", "stdio"]),
-  executableHarness("kilo", "Kilo", "shippingbox", ["kilo"], "kilo", ["acp"])
+  executableHarness("kilo", "Kilo", "shippingbox", ["kilo"], "kilo", ["acp"], {
+    installMethods: [{ kind: "npm", packageName: "@kilocode/cli" }],
+    update: {
+      // `kilo upgrade` detects curl/npm/yarn/pnpm/bun/brew itself.
+      sources: [
+        {
+          apply: { args: ["upgrade"], kind: "selfUpdate" },
+          check: { kind: "npm", packageName: "@kilocode/cli" },
+          when: "any"
+        }
+      ]
+    }
+  })
 ]
 
 interface ManagedSession {
@@ -291,6 +512,18 @@ interface ManagedSession {
 }
 
 export const makeAgentRuntime = (config: AgentRuntimeConfig = {}): AgentRuntimeService => {
+  // Effective catalog: builtins first, then injected user-defined entries.
+  // A colliding extra id is dropped so a custom entry can never shadow (or
+  // break) a builtin harness. Both are `let`s: setExtraHarnesses swaps them
+  // live (the custom-harness PUT route), so every internal consumer reads
+  // them lazily rather than capturing.
+  const withoutBuiltinCollisions = (
+    definitions: ReadonlyArray<HarnessDefinition>
+  ): ReadonlyArray<HarnessDefinition> =>
+    definitions.filter((extra) => !harnessCatalog.some((builtin) => builtin.id === extra.id))
+  let extraHarnesses = withoutBuiltinCollisions(config.extraHarnesses ?? [])
+  let catalog: ReadonlyArray<HarnessDefinition> =
+    extraHarnesses.length === 0 ? harnessCatalog : [...harnessCatalog, ...extraHarnesses]
   let currentEnv = config.env ?? process.env
   const locateExecutable = config.locateExecutable ?? locateExecutableOnPath
   const executableExists =
@@ -319,7 +552,7 @@ export const makeAgentRuntime = (config: AgentRuntimeConfig = {}): AgentRuntimeS
     return undefined
   }
   const locateReadyBinaries = (): ReadonlyArray<string> =>
-    harnessCatalog.flatMap((definition) => {
+    catalog.flatMap((definition) => {
       const path = locateHarnessBinary(definition)
       return path === undefined ? [] : [path]
     })
@@ -395,7 +628,7 @@ export const makeAgentRuntime = (config: AgentRuntimeConfig = {}): AgentRuntimeS
     AgentRuntimeError
   > =>
     runtimeEffect("resolveHarness", () => {
-      const definition = harnessCatalog.find((candidate) => candidate.id === harnessId)
+      const definition = catalog.find((candidate) => candidate.id === harnessId)
       if (definition === undefined) {
         throw new Error(`Unknown harness: ${harnessId}`)
       }
@@ -445,8 +678,16 @@ export const makeAgentRuntime = (config: AgentRuntimeConfig = {}): AgentRuntimeS
     })
 
   return {
+    get catalog() {
+      return catalog
+    },
+    setExtraHarnesses: (definitions) => {
+      extraHarnesses = withoutBuiltinCollisions(definitions)
+      catalog =
+        extraHarnesses.length === 0 ? harnessCatalog : [...harnessCatalog, ...extraHarnesses]
+    },
     discoverHarnesses: Effect.sync(() =>
-      harnessCatalog.map((definition) => {
+      catalog.map((definition) => {
         const provider = providers.get(definition.provider)
         let readiness: Harness["readiness"]
         if (definition.disabledReason !== undefined) {
@@ -476,7 +717,7 @@ export const makeAgentRuntime = (config: AgentRuntimeConfig = {}): AgentRuntimeS
           id: definition.id,
           name: definition.name,
           symbolName: definition.symbolName,
-          source: "registry",
+          source: extraHarnesses.includes(definition) ? "custom" : "registry",
           launchKind:
             definition.launch?.kind === "npx" ? ("npx" as const) : ("executable" as const),
           enabled: true,
@@ -487,7 +728,7 @@ export const makeAgentRuntime = (config: AgentRuntimeConfig = {}): AgentRuntimeS
     ),
     listAgentSessions: (harnessId, account) =>
       adapterPromise("listAgentSessions", async () => {
-        const definition = harnessCatalog.find((candidate) => candidate.id === harnessId)
+        const definition = catalog.find((candidate) => candidate.id === harnessId)
         if (definition === undefined) {
           throw new Error(`Unknown harness: ${harnessId}`)
         }
@@ -728,7 +969,12 @@ function executableHarness(
   symbolName: string,
   detectBinaries: ReadonlyArray<string>,
   command: string,
-  args: ReadonlyArray<string> = []
+  args: ReadonlyArray<string> = [],
+  /// Lifecycle metadata (installMethods/update) and other optional
+  /// definition fields that don't fit the positional shorthand.
+  extra: Partial<
+    Pick<HarnessDefinition, "installMethods" | "update" | "installHint" | "fallbackPaths">
+  > = {}
 ): HarnessDefinition {
   return {
     detectBinaries,
@@ -736,7 +982,8 @@ function executableHarness(
     launch: { args, command, kind: "executable" },
     name,
     provider: "acp",
-    symbolName
+    symbolName,
+    ...extra
   }
 }
 

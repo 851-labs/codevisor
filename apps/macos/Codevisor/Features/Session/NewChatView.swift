@@ -209,6 +209,24 @@ struct NewChatView: View {
             Spacer()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // Pinned to the pane's top edge as an overlay: appearing or
+        // dismissing the update notice never shifts the composer's layout.
+        .overlay(alignment: .top) {
+            if let controller {
+                HarnessUpdateBannerView(
+                    controller: controller,
+                    hasRunningChats: controller.activeHarnessId.map { harnessId in
+                        store.hasActiveSessions(
+                            forHarness: harnessId,
+                            onServer: environment.machines.selectedMachineId
+                        )
+                    } ?? false
+                )
+                .frame(maxWidth: 720)
+                .padding(.horizontal, 16)
+                .padding(.top, 12)
+            }
+        }
         // The whole pane is a click-to-focus zone, exactly like a started
         // chat's transcript: whitespace clicks land in the composer (the
         // pane's one input) unless the click claimed focus itself.
@@ -248,6 +266,13 @@ struct NewChatView: View {
         .onChange(of: harnessCatalogRevision) { _, _ in
             guard let controller else { return }
             Task { await controller.refreshHarnessCapabilities() }
+        }
+        // Update knowledge is fetched separately from the picker's plain
+        // list so the composer stays snappy; the update banner reads this.
+        .task(id: harnessCatalogRevision) {
+            await environment.refreshHarnessLifecycle(
+                for: environment.machines.selectedMachineId
+            )
         }
         .focusedSceneValue(\.newChatComposerFocus, NewChatComposerFocus(
             focus: { focus.focusComposer() }

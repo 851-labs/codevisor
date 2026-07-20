@@ -19,7 +19,12 @@ export default defineConfig({
         // route and runtime boundaries.
         "apps/server/src/harness-auth.ts",
         "apps/server/src/pi-auth.ts",
-        "apps/server/src/opencode-auth.ts"
+        "apps/server/src/opencode-auth.ts",
+        // Same category: the lifecycle manager orchestrates installers,
+        // updaters, terminals, timers, and update feeds. Its focused tests
+        // (harness-lifecycle.test.ts) cover the state machine and gating;
+        // route-level coverage is enforced in server.ts.
+        "apps/server/src/harness-lifecycle.ts"
       ],
       provider: "v8",
       thresholds: {

@@ -82,6 +82,8 @@ import type { AddressInfo } from "node:net"
 import { Context, Effect, Layer, PubSub, Schema } from "effect"
 import { WebSocket, WebSocketServer } from "ws"
 import type { HarnessAuthManager } from "./harness-auth.js"
+import type { HarnessLifecycleManager } from "./harness-lifecycle.js"
+import { parseCustomHarnessDocument, type CustomHarnessStore } from "./custom-harnesses.js"
 import type { McpManager } from "./mcp-manager.js"
 import { availableGeneratedWorktreeName } from "./worktree-names.js"
 
@@ -128,6 +130,12 @@ export interface CodevisorServerServices {
   readonly terminal: TerminalManagerService
   readonly auth?: HarnessAuthManager
   readonly mcp?: McpManager
+  /// User-defined custom ACP harness persistence + handshake probe. Absent on
+  /// hosts that don't support it (embedded runtimes, tests) — routes 501.
+  readonly customHarnesses?: CustomHarnessStore
+  /// Harness install/update lifecycle (update detection, later install/
+  /// update execution). Absent on hosts that don't support it.
+  readonly lifecycle?: HarnessLifecycleManager
 }
 
 export interface RunningCodevisorServer {
@@ -147,6 +155,9 @@ interface RouteState {
   readonly pendingSessionCreates: Map<string, Promise<SessionSummary>>
   readonly pendingPromptActions: Set<string>
   readonly activePromptSessions: Set<string>
+  /// Sessions whose prompt dispatch is held by a harness update gate, keyed
+  /// to the harness they wait on. Cleared (and re-drained) on gate release.
+  readonly gatedSessions: Map<string, string>
 }
 
 export class CodevisorServer extends Context.Service<CodevisorServer, CodevisorServerServices>()(
@@ -291,6 +302,7 @@ export const makeCodevisorServerApp = (
 ): CodevisorServerApp => {
   const routeState: RouteState = {
     activePromptSessions: new Set(),
+    gatedSessions: new Map(),
     pendingPromptActions: new Set(),
     pendingSessionCreates: new Map()
   }
@@ -299,6 +311,30 @@ export const makeCodevisorServerApp = (
     void appendAndPublish(services.db, fanout, event.kind, event.subjectId, event.payload).catch(
       () => undefined
     )
+  })
+  /* v8 ignore next -- the lifecycle manager invokes this thin event-forwarding callback. */
+  const unsubscribeLifecycle = services.lifecycle?.subscribe((event) => {
+    void appendAndPublish(services.db, fanout, event.kind, event.subjectId, event.payload).catch(
+      () => undefined
+    )
+  })
+  // Gate release → tell every held session and re-drain its durable queue.
+  const unsubscribeGate = services.lifecycle?.onGateReleased((harnessId) => {
+    const catalogName = services.agents.catalog.find(
+      (definition) => definition.id === harnessId
+    )?.name
+    /* v8 ignore next -- defensive: releases for uncataloged harnesses fall back to the id. */
+    const harnessName = catalogName ?? harnessId
+    for (const [sessionId, gatedHarnessId] of [...routeState.gatedSessions]) {
+      if (gatedHarnessId !== harnessId) continue
+      routeState.gatedSessions.delete(sessionId)
+      void appendAndPublish(services.db, fanout, "session.updateGate.updated", sessionId, {
+        harnessId,
+        harnessName,
+        state: "released"
+      }).catch(swallowError)
+      void drainPromptQueue(services, fanout, routeState, config.id, sessionId).catch(swallowError)
+    }
   })
   const app = {
     handleRequest: (request: IncomingMessage, response: ServerResponse): void => {
@@ -309,6 +345,8 @@ export const makeCodevisorServerApp = (
     },
     close: serverAttempt("closeApp", () => {
       unsubscribeAuth?.()
+      unsubscribeLifecycle?.()
+      unsubscribeGate?.()
       webSocketServer.close()
       void services.mcp?.close()
     })
@@ -1389,12 +1427,19 @@ const routeHarnesses = async (
       throw new HttpFailure(501, "Harness authentication unavailable")
     const harnessId = url.searchParams.get("harnessId")?.trim() || undefined
     await services.auth.refresh(harnessId)
-    writeJson(response, 200, await discoverHarnesses(services, harnessId === undefined, harnessId))
+    // Settings consumes this — keep lifecycle fields so a sign-in doesn't
+    // wipe the row's update state.
+    writeJson(
+      response,
+      200,
+      await discoverHarnesses(services, harnessId === undefined, harnessId, true)
+    )
     return true
   }
 
   if (request.method === "GET" && url.pathname === "/v1/harnesses") {
-    writeJson(response, 200, await discoverHarnesses(services))
+    const includeLifecycle = url.searchParams.get("include") === "lifecycle"
+    writeJson(response, 200, await discoverHarnesses(services, false, undefined, includeLifecycle))
     return true
   }
 
@@ -1402,7 +1447,138 @@ const routeHarnesses = async (
   // so a CLI installed after server start is found without a restart.
   if (request.method === "POST" && url.pathname === "/v1/harnesses/rescan") {
     await run(services.agents.refreshEnvironment)
-    writeJson(response, 200, await discoverHarnesses(services, true))
+    writeJson(response, 200, await discoverHarnesses(services, true, undefined, true))
+    return true
+  }
+
+  // Forced latest-version check for every installed harness, then the
+  // refreshed list (blocking rescan pattern — checks are cheap fetches).
+  if (request.method === "POST" && url.pathname === "/v1/harnesses/check-updates") {
+    if (services.lifecycle === undefined)
+      throw new HttpFailure(501, "Harness update checks unavailable")
+    await services.lifecycle.checkForUpdates(true)
+    writeJson(response, 200, await discoverHarnesses(services, false, undefined, true))
+    return true
+  }
+
+  // One-click install: 202-ack, work runs in the background, progress via
+  // harness.lifecycle.updated events + the attachable output terminal.
+  const installHarnessId = matchRoute(url.pathname, "/v1/harnesses/:id/install")
+  if (installHarnessId !== undefined && request.method === "POST") {
+    if (services.lifecycle === undefined) throw new HttpFailure(501, "Harness install unavailable")
+    const body = (await readJson(request)) as { readonly methodId?: string }
+    const methodId = typeof body.methodId === "string" ? body.methodId : undefined
+    try {
+      const { terminalId } = await services.lifecycle.beginInstall(installHarnessId, methodId)
+      writeJson(response, 202, { accepted: true, terminalId })
+    } catch (cause) {
+      throw conflictFrom(cause)
+    }
+    return true
+  }
+
+  // Dual-install: the bundled desktop app's version/update state, computed
+  // on demand (detail sheet), and its explicit update action.
+  const bundledAppHarnessId = matchRoute(url.pathname, "/v1/harnesses/:id/bundled-app")
+  if (bundledAppHarnessId !== undefined && request.method === "GET") {
+    if (services.lifecycle === undefined)
+      throw new HttpFailure(501, "Harness update checks unavailable")
+    const info = await services.lifecycle.bundledAppInfo(bundledAppHarnessId).catch(swallowError)
+    if (info === undefined) throw new HttpFailure(404, "No bundled desktop app")
+    writeJson(response, 200, info)
+    return true
+  }
+  const bundledAppUpdateHarnessId = matchRoute(url.pathname, "/v1/harnesses/:id/bundled-app/update")
+  if (bundledAppUpdateHarnessId !== undefined && request.method === "POST") {
+    if (services.lifecycle === undefined)
+      throw new HttpFailure(501, "Harness update checks unavailable")
+    try {
+      await services.lifecycle.beginBundledAppUpdate(bundledAppUpdateHarnessId)
+      writeJson(response, 202, { accepted: true })
+    } catch (cause) {
+      throw conflictFrom(cause)
+    }
+    return true
+  }
+
+  // Pending-update controls: "Update Now" skips the idle wait; DELETE
+  // disarms a queued update entirely.
+  const pendingApplyHarnessId = matchRoute(url.pathname, "/v1/harnesses/:id/update/pending/apply")
+  if (pendingApplyHarnessId !== undefined && request.method === "POST") {
+    if (services.lifecycle === undefined) throw new HttpFailure(501, "Harness update unavailable")
+    try {
+      await services.lifecycle.forcePendingUpdate(pendingApplyHarnessId)
+      writeJson(response, 202, { accepted: true })
+    } catch (cause) {
+      throw conflictFrom(cause)
+    }
+    return true
+  }
+  const pendingCancelHarnessId = matchRoute(url.pathname, "/v1/harnesses/:id/update/pending")
+  if (pendingCancelHarnessId !== undefined && request.method === "DELETE") {
+    if (services.lifecycle === undefined) throw new HttpFailure(501, "Harness update unavailable")
+    try {
+      await services.lifecycle.cancelPendingUpdate(pendingCancelHarnessId)
+      writeJson(response, 204, undefined)
+    } catch (cause) {
+      throw conflictFrom(cause)
+    }
+    return true
+  }
+
+  // One-click update for CLI harnesses (origin-matched vendor flow).
+  const updateHarnessId = matchRoute(url.pathname, "/v1/harnesses/:id/update")
+  if (updateHarnessId !== undefined && request.method === "POST") {
+    if (services.lifecycle === undefined) throw new HttpFailure(501, "Harness update unavailable")
+    try {
+      const outcome = await services.lifecycle.beginUpdate(updateHarnessId)
+      writeJson(response, 202, { accepted: true, ...outcome })
+    } catch (cause) {
+      throw conflictFrom(cause)
+    }
+    return true
+  }
+
+  // User-defined custom ACP harnesses (~/.codevisor/harnesses.json).
+  if (
+    url.pathname === "/v1/harnesses/custom" &&
+    (request.method === "GET" || request.method === "PUT")
+  ) {
+    if (services.customHarnesses === undefined)
+      throw new HttpFailure(501, "Custom harnesses unavailable")
+    if (request.method === "GET") {
+      writeJson(response, 200, { harnesses: await services.customHarnesses.list() })
+      return true
+    }
+    // Whole-list replace: the file is the source of truth and stays
+    // hand-editable, so the API rewrites it rather than patching entries.
+    {
+      const body = await readJson(request)
+      const parsed = parseCustomHarnessDocument(body, "request body")
+      if (parsed.warnings.length > 0) {
+        // Reject instead of skipping: the API must never persist entries the
+        // next boot would drop.
+        throw new HttpFailure(400, parsed.warnings.join("; "))
+      }
+      await services.customHarnesses.replace(parsed.specs)
+      writeJson(response, 200, await discoverHarnesses(services, true, undefined, true))
+      return true
+    }
+  }
+
+  // One-shot ACP initialize handshake for a (possibly unsaved) custom spec —
+  // the "Test Connection" action. Blocking with the store's own timeout.
+  if (request.method === "POST" && url.pathname === "/v1/harnesses/custom/test") {
+    if (services.customHarnesses === undefined)
+      throw new HttpFailure(501, "Custom harnesses unavailable")
+    const body = await readJson(request)
+    const parsed = parseCustomHarnessDocument([body], "request body")
+    const spec = parsed.specs[0]
+    if (spec === undefined) {
+      /* v8 ignore next -- the single-entry wrapper always yields a warning when the spec is invalid. */
+      throw new HttpFailure(400, parsed.warnings.join("; ") || "Invalid custom harness spec")
+    }
+    writeJson(response, 200, await services.customHarnesses.test(spec))
     return true
   }
 
@@ -2273,6 +2449,33 @@ const publishPromptQueue = async (
   return queue
 }
 
+/// Lifecycle route failures surface as conflicts with the manager's reason.
+const conflictFrom = (cause: unknown): HttpFailure =>
+  new HttpFailure(409, cause instanceof Error ? cause.message : String(cause))
+
+/* v8 ignore next 3 -- defensive: shared swallow for fire-and-forget event/drain failures. */
+const swallowError = (): undefined => {
+  return undefined
+}
+
+/// The session's harness id + display name when its harness update gate is
+/// closed; undefined when dispatch may proceed. Failures resolve open — a
+/// lookup error must never wedge prompt dispatch.
+const sessionUpdateGate = async (
+  services: CodevisorServerServices,
+  sessionId: string
+): Promise<{ readonly harnessId: string; readonly harnessName: string } | undefined> => {
+  const lifecycle = services.lifecycle
+  if (lifecycle === undefined) return undefined
+  const session = await run(services.db.getSessionSummary(sessionId)).catch(swallowError)
+  if (session === undefined || !lifecycle.isGated(session.harnessId)) return undefined
+  const catalogName = services.agents.catalog.find(
+    (definition) => definition.id === session.harnessId
+  )?.name
+  /* v8 ignore next -- defensive: sessions on uncataloged harnesses fall back to the id. */
+  return { harnessId: session.harnessId, harnessName: catalogName ?? session.harnessId }
+}
+
 const drainPromptQueue = async (
   services: CodevisorServerServices,
   fanout: EventFanout,
@@ -2288,9 +2491,58 @@ const drainPromptQueue = async (
     await publishPromptQueue(services.db, fanout, sessionId)
     return
   }
+  // Harness-update gate: the prompt is already durable in prompt_queue_items
+  // and the client has its 202 — holding is simply not claiming. The gate
+  // release listener re-drains every held session.
+  const gate = await sessionUpdateGate(services, sessionId)
+  if (gate !== undefined) {
+    const firstHold = !routeState.gatedSessions.has(sessionId)
+    routeState.gatedSessions.set(sessionId, gate.harnessId)
+    await publishPromptQueue(services.db, fanout, sessionId)
+    if (firstHold) {
+      await appendAndPublish(services.db, fanout, "session.updateGate.updated", sessionId, {
+        harnessId: gate.harnessId,
+        harnessName: gate.harnessName,
+        state: "waiting"
+      }).catch(swallowError)
+    }
+    return
+  }
   routeState.activePromptSessions.add(sessionId)
+  // Turn accounting for update-when-idle: the lifecycle manager runs armed
+  // updates when a harness's last in-flight turn ends.
+  const busyHarnessId = await run(services.db.getSessionSummary(sessionId))
+    .then((session) => session.harnessId)
+    .catch(swallowError)
+  /* v8 ignore next -- defensive: unknown sessions simply skip turn accounting. */
+  if (busyHarnessId !== undefined) services.lifecycle?.notifyTurnStarted(busyHarnessId)
   try {
     while (true) {
+      // A gate that closed mid-drain (Update Now) holds the *next* item —
+      // registering the session so the release re-drains what remains.
+      /* v8 ignore start -- timing-dependent: requires the gate to close between
+         two queue claims. The hold/release semantics are covered by the
+         pre-drain gate path and the lifecycle manager's gating tests. */
+      if (
+        services.lifecycle !== undefined &&
+        busyHarnessId !== undefined &&
+        services.lifecycle.isGated(busyHarnessId)
+      ) {
+        const firstHold = !routeState.gatedSessions.has(sessionId)
+        routeState.gatedSessions.set(sessionId, busyHarnessId)
+        if (firstHold) {
+          const harnessName =
+            services.agents.catalog.find((definition) => definition.id === busyHarnessId)?.name ??
+            busyHarnessId
+          await appendAndPublish(services.db, fanout, "session.updateGate.updated", sessionId, {
+            harnessId: busyHarnessId,
+            harnessName,
+            state: "waiting"
+          }).catch(() => undefined)
+        }
+        return
+      }
+      /* v8 ignore stop */
       const item = await run(services.db.claimPromptQueueItem(sessionId))
       if (item === undefined) {
         await publishPromptQueue(services.db, fanout, sessionId)
@@ -2310,6 +2562,8 @@ const drainPromptQueue = async (
     }
   } finally {
     routeState.activePromptSessions.delete(sessionId)
+    /* v8 ignore next -- defensive: unknown sessions simply skip turn accounting. */
+    if (busyHarnessId !== undefined) services.lifecycle?.notifyTurnEnded(busyHarnessId)
   }
 }
 
@@ -2659,13 +2913,21 @@ const authorize = async (
 const discoverHarnesses = async (
   services: CodevisorServerServices,
   forceAuth = false,
-  harnessId?: string
+  harnessId?: string,
+  /// Lifecycle decoration (update knowledge, install methods) rides only on
+  /// requests that render it — Settings, rescans, update checks. The plain
+  /// list stays as light as possible for the composer's harness picker.
+  includeLifecycle = false
 ): Promise<ReadonlyArray<Harness>> => {
   const discovered = await run(
     services.db.applyHarnessSettings(await run(services.agents.discoverHarnesses))
   )
-  const harnesses =
+  const filtered =
     harnessId === undefined ? discovered : discovered.filter((harness) => harness.id === harnessId)
+  const harnesses =
+    includeLifecycle && services.lifecycle !== undefined
+      ? await services.lifecycle.decorateHarnesses(filtered)
+      : filtered
   return services.auth === undefined
     ? harnesses
     : services.auth.decorateHarnesses(harnesses, forceAuth)

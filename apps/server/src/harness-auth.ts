@@ -4,7 +4,8 @@ import {
   resolveShellEnv,
   spawnCodexClient,
   type AgentRuntimeService,
-  type HarnessAccountContext
+  type HarnessAccountContext,
+  type HarnessDefinition
 } from "@codevisor/agent-runtime"
 import type {
   Harness,
@@ -60,6 +61,10 @@ export interface HarnessAuthManagerConfig {
   readonly preferDeviceCode?: boolean
   /// Overrides the login-shell environment resolver in tests and embedded hosts.
   readonly resolveEnv?: () => Promise<NodeJS.ProcessEnv>
+  /// The effective harness catalog (builtins + user-defined entries).
+  /// Defaults to `agents.catalog`, falling back to the builtin catalog for
+  /// hosts/tests that stub the runtime.
+  readonly catalog?: ReadonlyArray<HarnessDefinition>
 }
 
 export interface HarnessAuthManager {
@@ -120,6 +125,10 @@ interface TerminalLoginEntry {
 const run = <A>(effect: Effect.Effect<A, unknown>): Promise<A> => Effect.runPromise(effect)
 
 export const makeHarnessAuthManager = (config: HarnessAuthManagerConfig): HarnessAuthManager => {
+  /// Read lazily on every use: the runtime's catalog is a live view that
+  /// changes when custom harnesses are added/removed at runtime.
+  const catalogNow = (): ReadonlyArray<HarnessDefinition> =>
+    config.catalog ?? config.agents.catalog ?? harnessCatalog
   const listeners = new Set<(event: HarnessAuthEvent) => void>()
   const probes = new Map<string, Promise<HarnessAccount>>()
   const codexLogins = new Map<string, CodexLoginEntry>()
@@ -150,7 +159,7 @@ export const makeHarnessAuthManager = (config: HarnessAuthManagerConfig): Harnes
   }
 
   const definition = (harnessId: string) => {
-    const value = harnessCatalog.find((candidate) => candidate.id === harnessId)
+    const value = catalogNow().find((candidate) => candidate.id === harnessId)
     if (value === undefined) throw new Error(`Unknown harness: ${harnessId}`)
     return value
   }
@@ -473,7 +482,7 @@ export const makeHarnessAuthManager = (config: HarnessAuthManagerConfig): Harnes
   }
 
   const refresh = async (harnessId?: string): Promise<void> => {
-    const ids = harnessId === undefined ? harnessCatalog.map((entry) => entry.id) : [harnessId]
+    const ids = harnessId === undefined ? catalogNow().map((entry) => entry.id) : [harnessId]
     await Promise.all(
       ids.map(async (id) => {
         const accounts = await run(config.db.listHarnessAccounts(id))
