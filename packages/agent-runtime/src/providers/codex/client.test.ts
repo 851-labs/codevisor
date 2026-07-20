@@ -60,9 +60,7 @@ const makeFakeChild = (): FakeChild => {
 }
 
 const makeClient = (child: FakeChild) =>
-  wireCodexClient(
-    makeNdjsonTransport(child.endpoint, { exitMessage: "codex app-server exited" })
-  )
+  wireCodexClient(makeNdjsonTransport(child.endpoint, { exitMessage: "codex app-server exited" }))
 
 describe("codex client over the ndjson transport", () => {
   it("round-trips an outbound request", async () => {

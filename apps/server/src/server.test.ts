@@ -3050,6 +3050,15 @@ describe("@codevisor/server", () => {
     })
     expect(agents.creations).toEqual([["codex", workspaceFolder]])
 
+    const unchanged = await jsonRequest(server, "/v1/sessions/open-session-1/open", {
+      body: JSON.stringify({
+        session: { harnessId: "codex", projectId: "open-project-1" }
+      }),
+      method: "POST"
+    })
+    expect(unchanged.status).toBe(200)
+    expect(unchanged.body).toMatchObject({ session: { title: "Open flow" } })
+
     // Archive the project, then re-open with the original (now stale)
     // snapshot: the existing project must NOT be reverted to unarchived, the
     // session must not be re-created, and the update payload applies.
@@ -3085,6 +3094,19 @@ describe("@codevisor/server", () => {
         await jsonRequest(server, "/v1/sessions/other-id/open", {
           body: JSON.stringify({
             session: { harnessId: "codex", id: "open-session-1", projectId: "open-project-1" }
+          }),
+          method: "POST"
+        })
+      ).status
+    ).toBe(400)
+
+    // Invalid transcript limits are rejected before any writes.
+    expect(
+      (
+        await jsonRequest(server, "/v1/sessions/open-session-1/open", {
+          body: JSON.stringify({
+            session: { harnessId: "codex", projectId: "open-project-1" },
+            transcriptLimit: 0
           }),
           method: "POST"
         })
