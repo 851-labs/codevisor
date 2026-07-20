@@ -91,7 +91,7 @@ struct UsageRingButton: View {
         .padding(14)
         .frame(width: 280)
         .fixedSize(horizontal: false, vertical: true)
-        .background(theme.popoverBackground)
+        .themedSurface(.popover)
         .onHover { hovering in
             handleHover(hovering, requestLimits: false)
         }

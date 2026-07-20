@@ -102,7 +102,7 @@ struct SessionContainerView: View {
                 width: compactInspectorWidth
             ) {
                 SessionInspectorView(controller: controller, scratchpad: scratchpad)
-                    .background(theme.sidebarBackground, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .themedSurface(.sidebar, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                     .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                     .shadow(color: .black.opacity(0.22), radius: 18, y: 6)
             }
@@ -672,12 +672,12 @@ struct SessionContainerView: View {
         SessionInspectorView(controller: controller, scratchpad: scratchpad)
             .frame(width: currentInspectorWidth)
             .frame(maxHeight: .infinity, alignment: .top)
-            // Extends under the toolbar (ShapeStyle backgrounds ignore safe
+            // Extends under the toolbar (the themed surface ignores the safe
             // area) — intentional: the toolbar tints over the panel exactly
             // like it does over the native left sidebar. NO hairline on the
             // boundary for the same reason: the left sidebar separates by
             // background alone.
-            .background(theme.sidebarBackground)
+            .themedSurface(.sidebar)
             .overlay(alignment: .leading) { inspectorResizeHandle }
     }
 

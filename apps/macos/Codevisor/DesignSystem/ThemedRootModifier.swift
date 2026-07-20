@@ -57,24 +57,46 @@ struct ThemedRoot: ViewModifier {
     }
 }
 
+/// Which surface a themed toolbar band belongs to.
+enum ThemedToolbarRole {
+    /// The sidebar column: the band renders the same glass as the sidebar
+    /// body (material + theme tint), so rows scrolled beneath it blur
+    /// exactly like a native translucent toolbar. Opaque under Reduce
+    /// Transparency.
+    case sidebar
+    /// A content column: the band stays the opaque window (editor)
+    /// surface — content surfaces are never glass.
+    case content
+}
+
 extension View {
     func themedRoot() -> some View {
         modifier(ThemedRoot())
     }
 
-    /// Paints this view's slice of the title bar with an opaque theme surface
-    /// when a theme is active. `.toolbarBackground(_:for: .windowToolbar)`
-    /// can't do this — it always tints the toolbar across the WHOLE window —
-    /// so the toolbar's own backing is hidden and an opaque band the height
-    /// of the top safe area is drawn above this view's content instead. The
-    /// band sits over scrolled content (no bleed-through) while the toolbar
-    /// controls render above it. System themes keep the native toolbar.
-    @ViewBuilder
-    func themedToolbarBackground<S: ShapeStyle>(_ theme: Theme, surface: S) -> some View {
+    /// Paints this view's slice of the title bar with a theme surface when a
+    /// theme is active. `.toolbarBackground(_:for: .windowToolbar)` can't do
+    /// this — it always tints the toolbar across the WHOLE window — so the
+    /// toolbar's own backing is hidden and a band the height of the top safe
+    /// area is drawn above this view's content instead. The band sits over
+    /// scrolled content while the toolbar controls render above it. System
+    /// themes keep the native toolbar.
+    func themedToolbarBackground(_ theme: Theme, role: ThemedToolbarRole) -> some View {
+        modifier(ThemedToolbarBackgroundModifier(role: role))
+    }
+}
+
+struct ThemedToolbarBackgroundModifier: ViewModifier {
+    @Environment(\.theme) private var theme
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
+    let role: ThemedToolbarRole
+
+    func body(content: Content) -> some View {
         if theme.isSystem {
-            self
+            content
         } else {
-            self
+            content
                 .toolbarBackground(.hidden, for: .windowToolbar)
                 .overlay {
                     // Laid out INSIDE the top safe area (ignoresSafeArea,
@@ -85,8 +107,7 @@ extension View {
                     // toolbar (it swallowed the center pane bar's tab clicks).
                     GeometryReader { proxy in
                         VStack(spacing: 0) {
-                            Rectangle()
-                                .fill(surface)
+                            bandFill
                                 .frame(height: proxy.safeAreaInsets.top)
                                 // Hiding the system toolbar background removes
                                 // its implicit drag region on older SDK
@@ -102,6 +123,21 @@ extension View {
                     }
                     .accessibilityHidden(true)
                 }
+        }
+    }
+
+    @ViewBuilder
+    private var bandFill: some View {
+        switch role {
+        case .sidebar where !reduceTransparency:
+            ZStack {
+                Rectangle().fill(.regularMaterial)
+                Rectangle().fill((theme.sidebarTint ?? .clear).opacity(theme.chromeTintAlpha))
+            }
+        case .sidebar:
+            Rectangle().fill(theme.sidebarTint ?? .clear)
+        case .content:
+            Rectangle().fill(theme.windowBackground)
         }
     }
 }

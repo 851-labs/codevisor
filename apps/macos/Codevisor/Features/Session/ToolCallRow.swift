@@ -168,6 +168,7 @@ struct ToolCallContentCard: View {
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: 8).fill(theme.cardBackground))
+        .themedCardShadow(theme)
     }
 
     @ViewBuilder

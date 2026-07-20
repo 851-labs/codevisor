@@ -52,6 +52,7 @@ struct UpdateBannerView: View {
             RoundedRectangle(cornerRadius: 8)
                 .fill(theme.cardBackground)
         )
+        .themedCardShadow(theme)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Codevisor \(release.version) is available")
     }
@@ -112,6 +113,7 @@ struct ServerUpdateBannerView: View {
             RoundedRectangle(cornerRadius: 8)
                 .fill(theme.cardBackground)
         )
+        .themedCardShadow(theme)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Server update \(update.latestVersion) is available for \(machine.name)")
     }

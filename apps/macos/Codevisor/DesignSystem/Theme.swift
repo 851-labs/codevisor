@@ -88,6 +88,21 @@ struct Theme: Equatable {
         palette.map { Color(rgba: $0.popoverBackground) } ?? Color(nsColor: .windowBackgroundColor)
     }
 
+    // MARK: - Glass (see ThemedSurface.swift)
+
+    /// Tint of themed chrome glass over material: strong enough that the theme
+    /// clearly reads, thin enough that the backdrop (vibrancy, desktop
+    /// tinting) survives. Light themes need more ink to not look washed out.
+    var chromeTintAlpha: Double {
+        (palette?.isDark ?? true) ? 0.65 : 0.75
+    }
+
+    /// The sidebar palette color, for glass tinting; nil when system.
+    var sidebarTint: Color? { palette.map { Color(rgba: $0.sidebarBackground) } }
+
+    /// The popover palette color, for glass tinting; nil when system.
+    var popoverTint: Color? { palette.map { Color(rgba: $0.popoverBackground) } }
+
     /// The user message bubble.
     var bubbleBackground: Color {
         palette.map { Color(rgba: $0.bubbleBackground) } ?? Color.primary.opacity(0.08)

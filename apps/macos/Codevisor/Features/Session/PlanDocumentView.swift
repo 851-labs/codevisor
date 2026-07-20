@@ -23,6 +23,7 @@ struct PlanDocumentView: View {
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: 8).fill(theme.cardBackground))
+        .themedCardShadow(theme)
         .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(.separator, lineWidth: 1))
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Proposed plan")

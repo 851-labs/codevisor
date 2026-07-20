@@ -764,15 +764,11 @@ private struct McpServerEditorSheet: View {
                     .disabled(!isValid || isSaving)
             }
             .padding()
-            .background {
-                if !theme.isSystem { theme.popoverBackground }
-            }
+            .themedSurface(.sheet)
         }
         .frame(width: 560, height: 570)
         .scrollContentBackground(theme.isSystem ? .automatic : .hidden)
-        .background {
-            if !theme.isSystem { theme.popoverBackground }
-        }
+        .themedSurface(.sheet)
         .task(id: location) { await detectAuthorization() }
     }
 
@@ -1225,15 +1221,11 @@ private struct McpServerDetailSheet: View {
                     .keyboardShortcut(.defaultAction)
             }
             .padding()
-            .background {
-                if !theme.isSystem { theme.popoverBackground }
-            }
+            .themedSurface(.sheet)
         }
         .frame(width: 540, height: 470)
         .scrollContentBackground(theme.isSystem ? .automatic : .hidden)
-        .background {
-            if !theme.isSystem { theme.popoverBackground }
-        }
+        .themedSurface(.sheet)
         .task { await loadTools() }
         .confirmationDialog(
             "Remove \(server.name)?",

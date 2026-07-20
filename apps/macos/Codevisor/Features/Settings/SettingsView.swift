@@ -56,7 +56,7 @@ struct SettingsView: View {
         // surface (painted by ThemedRoot) shows through, and paint the tab
         // strip opaquely on-theme; system themes keep the native look.
         .scrollContentBackground(theme.isSystem ? .automatic : .hidden)
-        .themedToolbarBackground(theme, surface: theme.windowBackground)
+        .themedToolbarBackground(theme, role: .content)
     }
 }
 

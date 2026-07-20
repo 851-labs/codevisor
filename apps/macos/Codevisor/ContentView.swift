@@ -210,7 +210,7 @@ struct RootView: View {
             SidebarView(selection: $selection, store: store)
                 .id(environment.machines.selectedMachineId)
                 .navigationSplitViewColumnWidth(min: 230, ideal: 270, max: 360)
-                .themedToolbarBackground(theme, surface: theme.sidebarBackground)
+                .themedToolbarBackground(theme, role: .sidebar)
                 .toolbar {
                     ToolbarItem {
                         MachinePickerToolbarMenu()
@@ -224,7 +224,7 @@ struct RootView: View {
                     ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
-            .themedToolbarBackground(theme, surface: theme.windowBackground)
+            .themedToolbarBackground(theme, role: .content)
         }
         .overlay {
             AdaptiveDrawerLayer(
@@ -234,7 +234,7 @@ struct RootView: View {
             ) {
                 SidebarView(selection: $selection, store: store, publishesSceneActions: false)
                     .id(environment.machines.selectedMachineId)
-                    .background(theme.sidebarBackground, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .themedSurface(.sidebar, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                     .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                     .shadow(color: .black.opacity(0.22), radius: 18, y: 6)
             }

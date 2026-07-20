@@ -320,7 +320,7 @@ struct SidebarView: View {
             .scrollBounceBehavior(.basedOnSize)
 
         }
-        .background(theme.sidebarBackground)
+        .themedSurface(.sidebar)
         .addProjectFlow(addProjectFlow) { project in
             expanded.insert(project.id)
             selection = .newChat(project.id)
