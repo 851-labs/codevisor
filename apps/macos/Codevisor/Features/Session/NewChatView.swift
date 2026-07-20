@@ -555,16 +555,21 @@ struct NewChatView: View {
             // page opens while setup streams progress); patch in the worktree
             // name/cwd once the server has materialized it.
             controller.onWorktreeCreated = { [weak projectList = environment.projectList] worktree in
-                // CHAT-scoped: this agent runs in its own worktree. The
-                // workspace root NEVER follows a chat's worktree — persona 1
-                // (workspace = worktree) makes that choice at the workspace's
-                // door, where the root is fixed at creation.
+                // The chat moves into the worktree while the workspace keeps
+                // its project-root anchor. Only its automatic display name
+                // follows the new worktree.
                 projectList?.setWorktree(
                     name: worktree.name,
                     cwd: worktree.path,
                     for: session.id,
                     serverId: session.serverId
                 )
+                if let hostWorkspaceId {
+                    environment.workspaces.setAutomaticName(
+                        worktree.name,
+                        forWorkspace: hostWorkspaceId
+                    )
+                }
             }
             // If worktree setup or the agent start fails, undo the promotion:
             // delete the just-created session record (local + server), demote

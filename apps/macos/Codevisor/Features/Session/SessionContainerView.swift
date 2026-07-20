@@ -251,8 +251,8 @@ struct SessionContainerView: View {
     }
 
     /// The workspace's name as an editable window title: edits save through
-    /// the repository with `hasCustomName` pinned (the automatic name stops
-    /// tracking the primary chat's title).
+    /// the repository with `hasCustomName` pinned so later worktree creation
+    /// does not replace it.
     private var workspaceName: Binding<String> {
         Binding(
             get: { store.workspace(for: session, project: project).name },
@@ -260,7 +260,7 @@ struct SessionContainerView: View {
                 let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !trimmed.isEmpty else { return }
                 var workspace = store.workspace(for: session, project: project)
-                guard workspace.name != trimmed else { return }
+                guard workspace.name != trimmed || !workspace.hasCustomName else { return }
                 workspace.name = trimmed
                 workspace.hasCustomName = true
                 environment.workspaces.save(workspace)

@@ -204,12 +204,12 @@ struct SplitTreeTests {
 struct WorkspaceRepositoryTests {
     private func seed(
         sessionId: UUID = UUID(),
-        title: String = "Fix the tabs",
+        initialName: String = "Example Project",
         root: String? = "/tmp/checkout"
     ) -> WorkspaceSessionSeed {
         WorkspaceSessionSeed(
             sessionId: sessionId,
-            title: title,
+            initialName: initialName,
             serverId: "local",
             projectId: UUID(),
             rootDirectory: root
@@ -257,12 +257,12 @@ struct WorkspaceRepositoryTests {
         #expect(reloaded?.symbolName == "hammer")
     }
 
-    @Test("Backfill adopts the workspace's identity from the session")
+    @Test("Backfill adopts the workspace's initial project identity")
     func backfillIdentity() {
         let repository = DefaultWorkspaceRepository(store: InMemoryStore())
         let seed = seed()
         let workspace = repository.ensureWorkspace(for: seed, legacyGroups: nil)
-        #expect(workspace.name == "Fix the tabs")
+        #expect(workspace.name == "Example Project")
         #expect(!workspace.hasCustomName)
         #expect(workspace.rootDirectory == "/tmp/checkout")
         #expect(workspace.chatSessionIds == [seed.sessionId])
@@ -297,26 +297,31 @@ struct WorkspaceRepositoryTests {
         #expect(workspace.bottomGroup.panes.count == 2)
     }
 
-    @Test("Automatic names track the session title until renamed")
-    func nameTracking() {
+    @Test("Automatic names follow new worktrees but explicit names stay pinned")
+    func automaticNameUpdates() {
         let repository = DefaultWorkspaceRepository(store: InMemoryStore())
         let sessionId = UUID()
-        _ = repository.ensureWorkspace(for: seed(sessionId: sessionId, title: "New chat"), legacyGroups: nil)
-        let retitled = repository.ensureWorkspace(
-            for: seed(sessionId: sessionId, title: "Build the parser"),
+        let created = repository.ensureWorkspace(
+            for: seed(sessionId: sessionId, initialName: "Example Project"),
             legacyGroups: nil
         )
-        #expect(retitled.name == "Build the parser")
+        // Merely rendering a chat with another suggested initial name does not
+        // change an established workspace identity.
+        let ensured = repository.ensureWorkspace(
+            for: seed(sessionId: sessionId, initialName: "Another Project"),
+            legacyGroups: nil
+        )
+        #expect(ensured.name == "Example Project")
 
-        var pinned = retitled
+        repository.setAutomaticName("rowland", forWorkspace: created.id)
+        #expect(repository.workspace(id: created.id)?.name == "rowland")
+
+        var pinned = repository.workspace(id: created.id)!
         pinned.name = "My workspace"
         pinned.hasCustomName = true
         repository.save(pinned)
-        let after = repository.ensureWorkspace(
-            for: seed(sessionId: sessionId, title: "Another title"),
-            legacyGroups: nil
-        )
-        #expect(after.name == "My workspace")
+        repository.setAutomaticName("newton", forWorkspace: created.id)
+        #expect(repository.workspace(id: created.id)?.name == "My workspace")
     }
 
     @Test("Workspace-backed group repository round-trips both placements")

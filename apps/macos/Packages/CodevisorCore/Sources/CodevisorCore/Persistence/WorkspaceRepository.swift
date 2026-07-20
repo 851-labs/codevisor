@@ -16,6 +16,9 @@ public protocol WorkspaceRepository: Sendable {
     /// The workspace owning the chat pane for this session, if any.
     func workspaceId(forSession sessionId: UUID) -> UUID?
     func save(_ workspace: Workspace)
+    /// Replaces an automatic workspace name, preserving names explicitly set
+    /// by the user.
+    func setAutomaticName(_ name: String, forWorkspace workspaceId: UUID)
     func delete(id: UUID)
     /// Returns the workspace owning this session's chat, creating it from
     /// the seed (and any legacy per-session pane-group states) on first call.
@@ -30,7 +33,10 @@ public protocol WorkspaceRepository: Sendable {
 /// types.
 public struct WorkspaceSessionSeed: Sendable {
     public let sessionId: UUID
-    public let title: String
+    /// The name to use if this seed creates a workspace. Existing automatic
+    /// names only change at explicit context transitions (for example, when a
+    /// new worktree finishes creation), not whenever a chat is rendered.
+    public let initialName: String
     public let serverId: String
     public let projectId: UUID
     /// The session's working directory (worktree or project folder).
@@ -38,13 +44,13 @@ public struct WorkspaceSessionSeed: Sendable {
 
     public init(
         sessionId: UUID,
-        title: String,
+        initialName: String,
         serverId: String,
         projectId: UUID,
         rootDirectory: String?
     ) {
         self.sessionId = sessionId
-        self.title = title
+        self.initialName = initialName
         self.serverId = serverId
         self.projectId = projectId
         self.rootDirectory = rootDirectory
@@ -102,6 +108,16 @@ public final class DefaultWorkspaceRepository: WorkspaceRepository, @unchecked S
         persist(payload)
     }
 
+    public func setAutomaticName(_ name: String, forWorkspace workspaceId: UUID) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty,
+              var workspace = workspace(id: workspaceId),
+              !workspace.hasCustomName,
+              workspace.name != trimmed else { return }
+        workspace.name = trimmed
+        save(workspace)
+    }
+
     public func delete(id: UUID) {
         var payload = payload()
         payload.workspaces.removeAll { $0.id == id }
@@ -109,18 +125,15 @@ public final class DefaultWorkspaceRepository: WorkspaceRepository, @unchecked S
         persist(payload)
     }
 
-    /// While the workspace keeps its automatic name it tracks the session's
-    /// title; a nil root fills in once the session's directory resolves.
+    /// A nil root fills in once the session's directory resolves. Automatic
+    /// names deliberately do not follow chat titles: project/worktree context
+    /// owns the workspace name.
     public func ensureWorkspace(
         for seed: WorkspaceSessionSeed,
         legacyGroups: (any PaneGroupRepository)?
     ) -> Workspace {
         if let id = workspaceId(forSession: seed.sessionId), var existing = workspace(id: id) {
             var changed = false
-            if !existing.hasCustomName, !seed.title.isEmpty, existing.name != seed.title {
-                existing.name = seed.title
-                changed = true
-            }
             if existing.rootDirectory == nil, let root = seed.rootDirectory {
                 existing.rootDirectory = root
                 changed = true
@@ -142,7 +155,7 @@ public final class DefaultWorkspaceRepository: WorkspaceRepository, @unchecked S
             ?? .initial(sessionId: seed.sessionId)
 
         let workspace = Workspace(
-            name: seed.title.isEmpty ? "Workspace" : seed.title,
+            name: seed.initialName.isEmpty ? "Workspace" : seed.initialName,
             rootDirectory: seed.rootDirectory,
             serverId: seed.serverId,
             projectId: seed.projectId,

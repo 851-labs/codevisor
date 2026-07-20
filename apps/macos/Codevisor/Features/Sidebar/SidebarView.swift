@@ -215,7 +215,7 @@ struct SidebarView: View {
             _ = environment.workspaces.ensureWorkspace(
                 for: WorkspaceSessionSeed(
                     sessionId: item.session.id,
-                    title: item.session.title,
+                    initialName: item.session.worktreeName ?? item.project.name,
                     serverId: item.session.serverId,
                     projectId: item.project.id,
                     rootDirectory: item.session.cwd ?? item.project.folderURL.path
@@ -360,8 +360,8 @@ struct SidebarView: View {
             Button("Rename") {
                 let trimmed = workspaceRenameTitle.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !trimmed.isEmpty else { return }
-                // An explicit rename pins the name (stops tracking the
-                // primary chat's title).
+                // An explicit rename pins the name so worktree creation does
+                // not replace it.
                 var renamed = workspace
                 renamed.name = trimmed
                 renamed.hasCustomName = true

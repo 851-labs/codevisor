@@ -135,7 +135,7 @@ struct AppEnvironmentTests {
         var workspace = environment.workspaces.ensureWorkspace(
             for: WorkspaceSessionSeed(
                 sessionId: first.id,
-                title: first.title,
+                initialName: project.name,
                 serverId: first.serverId,
                 projectId: first.projectId,
                 rootDirectory: project.folderURL.path
@@ -165,7 +165,7 @@ struct AppEnvironmentTests {
         let workspace = environment.workspaces.ensureWorkspace(
             for: WorkspaceSessionSeed(
                 sessionId: session.id,
-                title: session.title,
+                initialName: project.name,
                 serverId: session.serverId,
                 projectId: session.projectId,
                 rootDirectory: project.folderURL.path

@@ -9,8 +9,8 @@ import Foundation
 
 public struct Workspace: Codable, Sendable, Equatable, Identifiable {
     public let id: UUID
-    /// Display name. While `hasCustomName` is false it tracks the primary
-    /// chat's session title; an explicit rename pins it.
+    /// Display name. Automatic names begin with the project name and may
+    /// follow a newly-created worktree; an explicit rename pins the name.
     public var name: String
     public var hasCustomName: Bool
     /// The workspace's anchor directory (project checkout or worktree). Every

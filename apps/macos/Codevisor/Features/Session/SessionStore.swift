@@ -184,20 +184,14 @@ final class SessionStore {
         return controller
     }
 
-    /// Creates a NEW WORKSPACE in a project: an eagerly created chat session
-    /// (the workspace's routing anchor, visible in the sidebar immediately)
-    /// plus the workspace itself, named and iconed at birth. The chat opens
-    /// UNSTARTED — its in-workspace composer owns the harness at first send.
     /// Creates a workspace around a fresh eager chat session. The workspace
-    /// root is always the project folder (worktrees are per-chat contexts
-    /// chosen in the composer, never the workspace's own directory).
-    func createWorkspaceSession(in project: Project, name: String) -> ChatSession {
+    /// begins with the project's name and directory. Worktrees are per-chat
+    /// contexts chosen later in the composer.
+    func createWorkspaceSession(in project: Project) -> ChatSession {
         let session = environment.projectList.newSession(in: project, title: "New Chat")
         var created = workspace(for: session, project: project)
-        // The user (or the generator) named it — the name never tracks
-        // chat titles.
-        created.name = name
-        created.hasCustomName = true
+        created.name = project.name
+        created.hasCustomName = false
         created.symbolName = project.symbolName
         environment.workspaces.save(created)
         return session
@@ -308,7 +302,7 @@ final class SessionStore {
         environment.workspaces.ensureWorkspace(
             for: WorkspaceSessionSeed(
                 sessionId: session.id,
-                title: session.title,
+                initialName: session.worktreeName ?? project.name,
                 serverId: session.serverId,
                 projectId: project.id,
                 rootDirectory: session.cwd ?? project.folderURL.path

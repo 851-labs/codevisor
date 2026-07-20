@@ -2,12 +2,11 @@ import SwiftUI
 import CodevisorCore
 
 /// The one-click workspace path (project card click, sidebar "New workspace
-/// here"): creates a workspace immediately with a generated name — rooted at
+/// here"): creates a workspace immediately with the project name — rooted at
 /// the project folder, opening on its eager chat's composer — and routes
 /// into it. Creation is local and synchronous; nothing to watch, nothing to
 /// configure. Worktrees are chosen later, in the composer.
 struct QuickWorkspaceCreationView: View {
-    @Environment(AppEnvironment.self) private var environment
     let project: Project
     let store: SessionStore
     @Binding var selection: SidebarSelection?
@@ -21,13 +20,7 @@ struct QuickWorkspaceCreationView: View {
             .task(id: project.id) {
                 guard !created else { return }
                 created = true
-                let taken = Set(
-                    environment.workspaces.loadAll().map { $0.name.lowercased() }
-                )
-                let session = store.createWorkspaceSession(
-                    in: project,
-                    name: WorkspaceNameGenerator.next(excluding: taken)
-                )
+                let session = store.createWorkspaceSession(in: project)
                 selection = .session(serverId: session.serverId, id: session.id)
             }
     }
