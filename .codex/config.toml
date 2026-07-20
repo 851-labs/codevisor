@@ -1,0 +1,3 @@
+[mcp_servers.posthog]
+url = "https://mcp.posthog.com/mcp"
+bearer_token_env_var = "POSTHOG_PERSONAL_API_KEY"
