@@ -30,10 +30,19 @@ struct PaletteDeriverTests {
         // descriptionForeground clears 4.5:1 on this surface → kept.
         #expect(palette.textSecondary == RGBA(hex: "#a6adc8"))
         #expect(palette.accent == RGBA(hex: "#89b4fa"))
-        // Dark-surface status constants.
-        #expect(palette.statusOK == RGBA(hex: "#34d399"))
-        #expect(palette.statusError == RGBA(hex: "#fb7185"))
+        // The theme's ANSI green/red clear 3:1 on every status surface → they
+        // ARE the status tints; no yellow is authored → warn keeps the
+        // dark-surface constant.
+        #expect(palette.statusOK == RGBA(hex: "#a6e3a1"))
+        #expect(palette.statusError == RGBA(hex: "#f38ba8"))
         #expect(palette.statusWarn == RGBA(hex: "#f59e0b"))
+        // No authored hover/selection, but focusBorder is an authored accent →
+        // the row fills are accent-tinted washes, not gray mixes.
+        let sidebarBg = try #require(RGBA(hex: "#181825"))
+        let accent = try #require(RGBA(hex: "#89b4fa"))
+        #expect(palette.rowHoverBackground == accent.withAlpha(0.14).compositedOver(sidebarBg))
+        #expect(
+            palette.rowSelectedBackground == accent.withAlpha(0.28).compositedOver(sidebarBg))
         // Diff bases come from the theme (ANSI green/red here, no git
         // decorations) and row backgrounds are opaque editor-bg mixes.
         #expect(palette.diffAddedFg == RGBA(hex: "#a6e3a1"))
@@ -144,6 +153,128 @@ struct PaletteDeriverTests {
         #expect(palette.terminal.ansi[2] == RGBA(hex: "#a6e3a1"))
         #expect(palette.terminal.ansi[1] == RGBA(hex: "#f38ba8"))
         #expect(palette.terminal.ansi[0] == nil)
+    }
+
+    @Test("Authored row fills win and are composited opaque")
+    func authoredRowFills() throws {
+        // dracula-style: semi-transparent hover, opaque selection.
+        let theme = VSCodeTheme(
+            type: "dark",
+            colors: [
+                "editor.background": "#282A36",
+                "sideBar.background": "#21222C",
+                "list.hoverBackground": "#44475A75",
+                "list.activeSelectionBackground": "#44475A",
+            ],
+            fg: "#F8F8F2"
+        )
+        let palette = try #require(PaletteDeriver.derive(from: theme))
+        let sidebarBg = try #require(RGBA(hex: "#21222C"))
+        let hover = try #require(RGBA(hex: "#44475A75"))
+        #expect(palette.rowHoverBackground == hover.compositedOver(sidebarBg))
+        #expect(palette.rowHoverBackground.a == 1)
+        #expect(palette.rowSelectedBackground == RGBA(hex: "#44475A"))
+    }
+
+    @Test("Accent chain: focusBorder wins, low-contrast falls through, transparent skipped")
+    func accentChain() throws {
+        let direct = try #require(
+            PaletteDeriver.derive(
+                from: VSCodeTheme(
+                    type: "dark",
+                    colors: [
+                        "focusBorder": "#009fff",
+                        "textLink.foreground": "#ff0000",
+                    ],
+                    fg: "#fafafa", bg: "#171717")))
+        #expect(direct.accent == RGBA(hex: "#009fff"))
+
+        // one-dark-pro style: gray focusBorder (~1.4:1) is not an accent —
+        // fall through to the link blue. The focus RING still honors the
+        // authored focusBorder (via the normalizer), so ring != accent here.
+        let grayBorder = try #require(
+            PaletteDeriver.derive(
+                from: VSCodeTheme(
+                    type: "dark",
+                    colors: [
+                        "focusBorder": "#3e4452",
+                        "textLink.foreground": "#61afef",
+                    ],
+                    fg: "#abb2bf", bg: "#282c34")))
+        #expect(grayBorder.accent == RGBA(hex: "#61afef"))
+        #expect(grayBorder.focusRing == RGBA(hex: "#3e4452"))
+
+        let transparentBorder = try #require(
+            PaletteDeriver.derive(
+                from: VSCodeTheme(
+                    type: "dark",
+                    colors: [
+                        "focusBorder": "#ffffff00",
+                        "button.background": "#5294e2",
+                    ],
+                    fg: "#e0e0e0", bg: "#101010")))
+        #expect(transparentBorder.accent == RGBA(hex: "#5294e2"))
+    }
+
+    @Test("No authored accent keeps the legacy gray row mixes")
+    func legacyRowFills() throws {
+        let theme = VSCodeTheme(type: "dark", fg: "#e0e0e0", bg: "#101010")
+        let palette = try #require(PaletteDeriver.derive(from: theme))
+        let fg = try #require(RGBA(hex: "#e0e0e0"))
+        let bg = try #require(RGBA(hex: "#101010"))
+        #expect(palette.rowHoverBackground == fg.mixed(with: bg, weight: 0.08))
+        #expect(palette.rowSelectedBackground == fg.mixed(with: bg, weight: 0.14))
+        #expect(palette.accent == fg)
+    }
+
+    @Test("Authored elevated surfaces win when genuinely distinct and legible")
+    func elevatedSurfaces() throws {
+        // tokyo-night style: widget DARKER than the sidebar — designer intent.
+        let authored = try #require(
+            PaletteDeriver.derive(
+                from: VSCodeTheme(
+                    type: "dark",
+                    colors: [
+                        "sideBar.background": "#16161e",
+                        "editorWidget.background": "#1a1b26",
+                        "menu.background": "#1f2335",
+                    ],
+                    fg: "#c0caf5", bg: "#1a1b26")))
+        #expect(authored.cardBackground == RGBA(hex: "#1a1b26"))
+        #expect(authored.popoverBackground == RGBA(hex: "#1f2335"))
+        // Hover always moves off the authored card base.
+        let fg = try #require(RGBA(hex: "#c0caf5"))
+        let card = try #require(RGBA(hex: "#1a1b26"))
+        #expect(authored.cardHoverBackground == fg.mixed(with: card, weight: 0.06))
+
+        // A widget equal to the sidebar adds no elevation → derived nudge.
+        let flat = try #require(
+            PaletteDeriver.derive(
+                from: VSCodeTheme(
+                    type: "dark",
+                    colors: [
+                        "sideBar.background": "#101010",
+                        "editorWidget.background": "#101010",
+                        "menu.background": "#101010",
+                    ],
+                    fg: "#e0e0e0", bg: "#101010")))
+        let flatFg = try #require(RGBA(hex: "#e0e0e0"))
+        let flatBg = try #require(RGBA(hex: "#101010"))
+        #expect(flat.cardBackground == flatFg.mixed(with: flatBg, weight: 0.06))
+        #expect(flat.popoverBackground == flatFg.mixed(with: flatBg, weight: 0.07))
+    }
+
+    @Test("Status tints fall back to constants when theme signals miss the floor")
+    func statusFloor() throws {
+        // solarized-light style: ansiGreen #859900 is ~2.98:1 on #FDF6E3 —
+        // just under the floor → the light constant wins.
+        let theme = VSCodeTheme(
+            type: "light",
+            colors: ["terminal.ansiGreen": "#859900"],
+            fg: "#586e75", bg: "#FDF6E3"
+        )
+        let palette = try #require(PaletteDeriver.derive(from: theme))
+        #expect(palette.statusOK == RGBA(hex: "#047857"))
     }
 
     @Test("VSCodeTheme type inference")

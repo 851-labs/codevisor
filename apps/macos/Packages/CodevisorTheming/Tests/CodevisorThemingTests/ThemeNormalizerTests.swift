@@ -127,12 +127,60 @@ struct ThemeNormalizerTests {
         #expect(ThemeNormalizer.normalize(healthy).colors?["list.hoverBackground"] == "#202020")
     }
 
+    @Test("Selection repair drops unusable selections, keeps authored washes")
+    func selectionRepair() {
+        // Exactly the surface → invisible → dropped.
+        let sameSurface = VSCodeTheme(
+            type: "dark",
+            colors: ["list.activeSelectionBackground": "#101010"],
+            fg: "#e0e0e0", bg: "#101010"
+        )
+        #expect(
+            ThemeNormalizer.normalize(sameSurface).colors?["list.activeSelectionBackground"]
+                == nil)
+
+        // Fully transparent → invisible → dropped.
+        let transparent = VSCodeTheme(
+            type: "dark",
+            colors: ["list.activeSelectionBackground": "#ffffff00"],
+            fg: "#e0e0e0", bg: "#101010"
+        )
+        #expect(
+            ThemeNormalizer.normalize(transparent).colors?["list.activeSelectionBackground"]
+                == nil)
+
+        // Semi-transparent near-white over a dark surface composites next to
+        // the TEXT, not the surface → would erase the row label → dropped.
+        let erasing = VSCodeTheme(
+            type: "dark",
+            colors: ["list.activeSelectionBackground": "#f0f0f0e0"],
+            fg: "#ffffff", bg: "#101010"
+        )
+        #expect(
+            ThemeNormalizer.normalize(erasing).colors?["list.activeSelectionBackground"] == nil)
+
+        // pierre-style subtle alpha wash: kept, with its ORIGINAL alpha-bearing
+        // string (consumers composite themselves).
+        let pierre = VSCodeTheme(
+            type: "dark",
+            colors: [
+                "sideBar.background": "#171717",
+                "list.activeSelectionBackground": "#19283c99",
+            ],
+            fg: "#fafafa", bg: "#0a0a0a"
+        )
+        #expect(
+            ThemeNormalizer.normalize(pierre).colors?["list.activeSelectionBackground"]
+                == "#19283c99")
+    }
+
     @Test("Idempotency")
     func idempotency() {
         let theme = VSCodeTheme(
             name: "t", type: "dark",
             colors: [
                 "list.hoverBackground": "#181818",
+                "list.activeSelectionBackground": "#2a2a2a80",
                 "terminal.ansiGreen": "#00ff00",
                 "focusBorder": "#3366ff",
             ],

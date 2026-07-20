@@ -17,6 +17,9 @@ import Foundation
 /// What it repairs:
 ///   - drops list.hoverBackground when it exactly equals the sidebar surface
 ///     or would land on top of the row text (hoverWouldEraseText).
+///   - drops list.activeSelectionBackground under the same rules, measured on
+///     its composite over the sidebar surface (selection colors are routinely
+///     semi-transparent), plus when it is fully transparent.
 ///
 /// The function is pure and idempotent: normalize(normalize(t)) == normalize(t).
 public enum ThemeNormalizer {
@@ -103,6 +106,27 @@ public enum ThemeNormalizer {
                     hover: hover, bg: sidebarBackground, fg: sidebarForeground)
         {
             colors.removeValue(forKey: "list.hoverBackground")
+        }
+
+        // Selection repair: the same rules as hover, but selection colors are
+        // routinely semi-transparent (`#44475A75`, `#19283c99`), so measure the
+        // color as it will actually render — composited over the sidebar
+        // surface. A passing selection keeps its ORIGINAL alpha-bearing string
+        // (consumers composite again), which also keeps the repair idempotent.
+        // Deliberately NOT a luminance-closeness test: dark-theme selections
+        // legitimately sit within a few luminance points of the surface, and a
+        // ΔL floor would drop pierre's own authored selection.
+        if let selection = originalColors["list.activeSelectionBackground"] {
+            let effective =
+                ColorMath.compositeOverBg(selection, over: sidebarBackground) ?? selection
+            if ColorMath.isFullyTransparent(selection)
+                || matchesSurface(selection, sidebarBackground)
+                || matchesSurface(effective, sidebarBackground)
+                || ColorMath.hoverWouldEraseText(
+                    hover: effective, bg: sidebarBackground, fg: sidebarForeground)
+            {
+                colors.removeValue(forKey: "list.activeSelectionBackground")
+            }
         }
 
         var result = theme

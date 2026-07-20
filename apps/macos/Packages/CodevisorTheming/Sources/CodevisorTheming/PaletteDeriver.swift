@@ -13,12 +13,14 @@ public struct TerminalPalette: Equatable, Sendable {
     public let ansi: [RGBA?]
 }
 
-/// The opinionated app palette derived from a VSCode/Shiki theme: the most
-/// legible foreground, derived muted text, foreground-mix surfaces, and
-/// luminance-picked status tints. A Swift port of the web app's
-/// `deriveChromeTokens.ts` + `codevisorChromeMapping.ts` (themselves adapted
-/// from pierre's diffshub app). All colors are concrete sRGB values; only
-/// `border` and the diff backgrounds carry alpha.
+/// The opinionated app palette derived from a VSCode/Shiki theme. Authored
+/// theme keys win wherever the theme provides a usable one (accent, row
+/// hover/selection, elevated widget/menu surfaces, status tints — each behind
+/// a legibility guard); derivation (fg-mix surfaces, derived muted text,
+/// luminance-picked status constants) is the fallback, not the rule. Ported
+/// from the web app's `deriveChromeTokens.ts` + `codevisorChromeMapping.ts`
+/// (themselves adapted from pierre's diffshub app). All colors are concrete
+/// sRGB values; only `border` and the diff backgrounds carry alpha.
 public struct DerivedPalette: Equatable, Sendable {
     public let isDark: Bool
 
@@ -122,12 +124,90 @@ public enum PaletteDeriver {
             resolved["list.focusOutline"].flatMap { RGBA(css: $0) }?.compositedOver(sidebarBg)
             ?? fg
 
-        // Status tints are luminance-picked constants (same values as the
-        // web mapping) rather than theme greens/reds, so they stay legible on
-        // any surface.
-        let statusOK = constant(isDark ? "#34d399" : "#047857")
-        let statusWarn = constant(isDark ? "#f59e0b" : "#b45309")
-        let statusError = constant(isDark ? "#fb7185" : "#be123c")
+        // Accent: the first authored accent-ish key that is visible and clears
+        // the readable floor on the sidebar surface. `list.focusOutline` (the
+        // normalized focus ring) is the last authored candidate; when nothing
+        // authored qualifies the accent stays the focus-ring value, which is
+        // the pre-existing behavior. Only an AUTHORED accent may tint the
+        // hover/selection fallbacks below — the fg-fallback focus ring would
+        // just reproduce a gray mix at a different weight.
+        let authoredAccent = contrastingThemeColor(
+            resolved,
+            keys: ["focusBorder", "textLink.foreground", "button.background", "list.focusOutline"],
+            over: [sidebarBg],
+            minRatio: ColorMath.minReadableRatio
+        )
+        let accent = authoredAccent ?? focusRing
+
+        // Row fills: the theme's authored hover/selection when present (the
+        // normalizer already dropped unusable ones; selection is re-checked on
+        // its composite), else an accent-tinted wash — pierre's look — else
+        // the legacy gray fg-mix.
+        let rowHover =
+            themeColor(resolved, keys: ["list.hoverBackground"], over: sidebarBg)
+            ?? authoredAccent.flatMap {
+                accentRowFill($0, alpha: isDark ? 0.14 : 0.10, text: fg, base: sidebarBg)
+            }
+            ?? fg.mixed(with: sidebarBg, weight: 0.08)
+        let rowSelected =
+            themeColor(resolved, keys: ["list.activeSelectionBackground"], over: sidebarBg)
+                .flatMap { usableRowFill($0, text: fg, base: sidebarBg) ? $0 : nil }
+            ?? authoredAccent.flatMap {
+                accentRowFill($0, alpha: isDark ? 0.28 : 0.22, text: fg, base: sidebarBg)
+            }
+            ?? fg.mixed(with: sidebarBg, weight: 0.14)
+
+        // Elevated surfaces: the theme's authored widget/menu surface when it
+        // is a genuinely different surface that keeps the fg legible, else the
+        // derived fg-nudge. Some dark themes author widgets DARKER than the
+        // sidebar (dracula, tokyo-night) — designer intent, honored.
+        let authoredCard = authoredElevatedSurface(
+            resolved, keys: ["editorWidget.background"], sidebarBg: sidebarBg, fg: fg)
+        let cardBackground = authoredCard ?? fg.mixed(with: sidebarBg, weight: 0.06)
+        // Hover must always move off the card base, so when the authored
+        // surface wins the hover is derived FROM it rather than from the
+        // sidebar.
+        let cardHoverBackground =
+            authoredCard.map { fg.mixed(with: $0, weight: 0.06) }
+            ?? fg.mixed(with: sidebarBg, weight: 0.12)
+        let popoverBackground =
+            authoredElevatedSurface(
+                resolved,
+                keys: ["menu.background", "editorWidget.background", "dropdown.background"],
+                sidebarBg: sidebarBg, fg: fg
+            ) ?? fg.mixed(with: sidebarBg, weight: 0.07)
+
+        // Status tints: the theme's own signal colors when they clear the
+        // readable floor on EVERY surface they render on, else the
+        // luminance-picked constants (same values as the web mapping).
+        let statusSurfaces = [sidebarBg, editorBg, cardBackground]
+        let statusOK =
+            contrastingThemeColor(
+                resolved,
+                keys: [
+                    "terminal.ansiGreen", "terminal.ansiBrightGreen",
+                    "gitDecoration.addedResourceForeground",
+                ],
+                over: statusSurfaces, minRatio: ColorMath.minReadableRatio
+            ) ?? constant(isDark ? "#34d399" : "#047857")
+        let statusWarn =
+            contrastingThemeColor(
+                resolved,
+                keys: [
+                    "terminal.ansiYellow", "terminal.ansiBrightYellow",
+                    "editorWarning.foreground",
+                ],
+                over: statusSurfaces, minRatio: ColorMath.minReadableRatio
+            ) ?? constant(isDark ? "#f59e0b" : "#b45309")
+        let statusError =
+            contrastingThemeColor(
+                resolved,
+                keys: [
+                    "terminal.ansiRed", "terminal.ansiBrightRed",
+                    "editorError.foreground",
+                ],
+                over: statusSurfaces, minRatio: ColorMath.minReadableRatio
+            ) ?? constant(isDark ? "#fb7185" : "#be123c")
 
         // Diff colors follow pierre's diffs package instead: bases from the
         // theme's git decorations (else its ANSI green/red, else pierre's
@@ -155,10 +235,10 @@ public enum PaletteDeriver {
             isDark: isDark,
             windowBackground: editorBg,
             sidebarBackground: sidebarBg,
-            cardBackground: fg.mixed(with: sidebarBg, weight: 0.06),
-            cardHoverBackground: fg.mixed(with: sidebarBg, weight: 0.12),
+            cardBackground: cardBackground,
+            cardHoverBackground: cardHoverBackground,
             cardBorder: fg.mixed(with: sidebarBg, weight: 0.12),
-            popoverBackground: fg.mixed(with: sidebarBg, weight: 0.07),
+            popoverBackground: popoverBackground,
             popoverBorder: fg.mixed(with: sidebarBg, weight: 0.18),
             composerBackground: editorBg,
             bubbleBackground: fg.mixed(with: sidebarBg, weight: 0.08),
@@ -166,9 +246,9 @@ public enum PaletteDeriver {
             textPrimary: fg,
             textSecondary: textSecondary,
             textTertiary: fg.mixed(with: sidebarBg, weight: 0.45),
-            rowHoverBackground: fg.mixed(with: sidebarBg, weight: 0.08),
-            rowSelectedBackground: fg.mixed(with: sidebarBg, weight: 0.14),
-            accent: focusRing,
+            rowHoverBackground: rowHover,
+            rowSelectedBackground: rowSelected,
+            accent: accent,
             focusRing: focusRing,
             border: fg.withAlpha(0.2),
             borderOpaque: borderOpaque,
@@ -183,6 +263,72 @@ public enum PaletteDeriver {
             diffLineNumberFg: editorFg.mixed(with: editorBg, weight: 0.65),
             terminal: terminalPalette(resolved: resolved, editorBg: editorBg, editorFg: editorFg)
         )
+    }
+
+    // First candidate among `keys` that is visible (not fully transparent) and,
+    // composited over the FIRST surface, clears `minRatio` against every listed
+    // surface; nil when none does. Used for colors that must read as signal on
+    // all the surfaces they render on (accent, status).
+    private static func contrastingThemeColor(
+        _ colors: [String: String], keys: [String],
+        over surfaces: [RGBA], minRatio: Double
+    ) -> RGBA? {
+        guard let base = surfaces.first else { return nil }
+        for key in keys {
+            guard
+                let hex = colors[key],
+                !ColorMath.isFullyTransparent(hex),
+                let color = RGBA(css: hex)
+            else { continue }
+            let composited = color.compositedOver(base)
+            let clearsAll = surfaces.allSatisfy {
+                ColorMath.contrastRatio($0.relativeLuminance, composited.relativeLuminance)
+                    >= minRatio
+            }
+            if clearsAll { return composited }
+        }
+        return nil
+    }
+
+    // A row fill is usable when the row text still reads on it (>= the primary
+    // floor) and it isn't literally the base surface (an identical fill would
+    // be invisible). Deliberately NOT a luminance-closeness test: subtle
+    // authored washes on dark themes sit within a few luminance points of the
+    // surface and are exactly the look we want to preserve.
+    private static func usableRowFill(_ fill: RGBA, text: RGBA, base: RGBA) -> Bool {
+        guard fill != base else { return false }
+        return ColorMath.contrastRatio(fill.relativeLuminance, text.relativeLuminance)
+            >= ColorMath.minReadableRatio
+    }
+
+    // The accent at `alpha` composited over the base surface, when that fill
+    // is usable for a row; nil otherwise so the caller falls through.
+    private static func accentRowFill(
+        _ accent: RGBA, alpha: Double, text: RGBA, base: RGBA
+    ) -> RGBA? {
+        let fill = accent.withAlpha(alpha).compositedOver(base)
+        return usableRowFill(fill, text: text, base: base) ? fill : nil
+    }
+
+    // First authored elevated-surface candidate that is a genuinely different
+    // surface from the sidebar (exact-value compare on the composite — a ΔL
+    // floor would reject every dark theme's elevation, since dark luminances
+    // compress) and keeps the fg legible on it. Nil → derived fg-nudge.
+    private static func authoredElevatedSurface(
+        _ colors: [String: String], keys: [String], sidebarBg: RGBA, fg: RGBA
+    ) -> RGBA? {
+        for key in keys {
+            guard let hex = colors[key], let color = RGBA(css: hex) else { continue }
+            let composited = color.compositedOver(sidebarBg)
+            guard composited != sidebarBg else { continue }
+            guard
+                ColorMath.contrastRatio(
+                    composited.relativeLuminance, fg.relativeLuminance)
+                    >= ColorMath.minReadableRatio
+            else { continue }
+            return composited
+        }
+        return nil
     }
 
     // First parseable color among `keys`, composited over the surface it will
