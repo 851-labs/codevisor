@@ -1410,6 +1410,50 @@ describe("@codevisor/db", () => {
     await run(migrated.close)
   })
 
+  it("exposes the streaming final span's messageId until the item completes", async () => {
+    const filename = tempDatabase()
+    const db = await run(makeDatabase({ filename, serverId: "local" }))
+    const project = await run(db.createProject({ folderPath: "/tmp/streaming-message-id" }))
+    const session = await run(db.createSession({ projectId: project.id, harnessId: "claude-code" }))
+
+    await run(
+      db.appendEvent("session.updated", session.id, { turnId: "turn-1", turnState: "started" })
+    )
+    await run(
+      db.appendEvent("session.output", session.id, {
+        sessionUpdate: "agent_message_chunk",
+        content: { type: "text", text: "first half" },
+        messageId: "msg-1"
+      })
+    )
+    // A mid-stream restore adopts the live span identity, so the streaming
+    // snapshot must carry the provider message id of its final span.
+    expect((await run(db.getTranscriptPage(session.id, undefined, 8))).items.at(-1)).toMatchObject({
+      isGenerating: true,
+      text: "first half",
+      messageId: "msg-1"
+    })
+
+    // A final span without provider identity has no id to hand back.
+    await run(
+      db.appendEvent("session.output", session.id, {
+        sessionUpdate: "agent_message_chunk",
+        text: "anonymous tail"
+      })
+    )
+    expect(
+      (await run(db.getTranscriptPage(session.id, undefined, 8))).items.at(-1)?.messageId
+    ).toBeUndefined()
+
+    // Completed items render from accumulated parts with no live
+    // continuation, so they never carry a messageId.
+    await run(db.appendEvent("session.updated", session.id, { turnState: "ended" }))
+    const completed = (await run(db.getTranscriptPage(session.id, undefined, 8))).items.at(-1)
+    expect(completed?.isGenerating).toBe(false)
+    expect(completed?.messageId).toBeUndefined()
+    await run(db.close)
+  })
+
   it("projects alternate event shapes, plans, tools, and failed turns", async () => {
     const filename = tempDatabase()
     const db = await run(makeDatabase({ filename, serverId: "local" }))

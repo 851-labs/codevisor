@@ -584,6 +584,84 @@ struct SessionModelTests {
         #expect(user.attachments == [attachment])
     }
 
+    @Test("Mid-stream restore adopts the live span identity so resumed deltas merge")
+    func midStreamRestoreMergesResumedDeltas() async {
+        let sessionId = UUID()
+        let assistantId = UUID()
+        let client = FakeSessionServerClient(sessionId: sessionId)
+        client.initialTranscriptPage = ServerTranscriptPage(
+            items: [ServerTranscriptItem(
+                id: assistantId.uuidString,
+                sessionId: sessionId.uuidString,
+                sequence: 0,
+                role: .assistant,
+                text: "First half",
+                createdAt: "2026-07-18T00:00:00.000Z",
+                updatedAt: "2026-07-18T00:00:01.000Z",
+                isGenerating: true,
+                hasDetails: false,
+                turnId: "turn-1",
+                startedAt: "2026-07-18T00:00:00.000Z",
+                endedAt: nil,
+                stopReason: nil,
+                stopDetail: nil,
+                planDocument: nil,
+                attachments: nil,
+                messageId: "msg-1",
+                revision: 2
+            )],
+            nextBefore: nil,
+            hasMore: false,
+            eventCursor: 2
+        )
+        let model = SessionModel(
+            serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
+            sessionId: sessionId.uuidString
+        )
+
+        await model.loadHistory()
+        for _ in 0..<200 {
+            if !client.sessionEventSinceValues.isEmpty { break }
+            await Task.yield()
+        }
+
+        // The stream resumes the same provider message after the reopen.
+        client.emit(ServerEventEnvelope(
+            id: 3,
+            serverId: "local",
+            kind: "session.output",
+            subjectId: sessionId.uuidString,
+            createdAt: "2026-07-18T00:00:02.000Z",
+            payload: .object([
+                "sessionUpdate": .string("agent_message_chunk"),
+                "messageId": .string("msg-1"),
+                "content": .object(["type": .string("text"), "text": .string(" second half")])
+            ])
+        ))
+
+        await settleUntil {
+            if case let .assistant(message) = model.conversation.last,
+               case let .text(_, markdown) = message.turn.finalText {
+                return markdown == "First half second half"
+            }
+            return false
+        }
+        guard case let .assistant(message) = model.conversation.last else {
+            Issue.record("expected assistant")
+            return
+        }
+        // One merged span: the restored half must not survive as a separate
+        // entry that would demote it into "Worked for".
+        guard case let .text(id, markdown) = message.turn.finalText else {
+            Issue.record("expected final text")
+            return
+        }
+        #expect(id == "acp:msg-1")
+        #expect(markdown == "First half second half")
+        #expect(message.turn.entries.count == 1)
+        #expect(message.turn.workedEntries.isEmpty)
+    }
+
     @Test("Paginated history opens from the newest page and hydrates details on demand")
     func paginatedHistoryAndDeferredDetails() async {
         let sessionId = UUID()

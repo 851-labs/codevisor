@@ -798,6 +798,11 @@ export const TranscriptItem = Schema.Struct({
   retryable: Schema.optional(Schema.Boolean),
   planDocument: Schema.optional(Schema.String),
   attachments: Schema.optional(Schema.Array(AttachmentRef)),
+  /** Provider message id of the still-streaming final text span. Present only
+   * while an assistant item is generating, so a client restoring mid-stream
+   * can give the snapshot text the same identity live deltas use and merge
+   * them into one span instead of splitting the message in two. */
+  messageId: Schema.optional(Schema.String),
   revision: Schema.Number
 })
 export type TranscriptItem = typeof TranscriptItem.Type

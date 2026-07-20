@@ -1202,7 +1202,7 @@ const chatAssistantSummary = (
   sqlite: Database.Database,
   sessionId: string,
   itemId: string
-): { text: string; planDocument?: string } => {
+): { text: string; planDocument?: string; messageId?: string } => {
   const rows = sqlite
     .prepare(
       `select payload from session_events
@@ -1210,7 +1210,7 @@ const chatAssistantSummary = (
        order by revision asc`
     )
     .all(sessionId, itemId) as ReadonlyArray<{ payload: string }>
-  const spans: Array<{ chunks: Array<string>; phase?: string }> = []
+  const spans: Array<{ chunks: Array<string>; phase?: string; messageId?: string }> = []
   const indexById = new Map<string, number>()
   let anonymous = 0
   let planDocument: string | undefined
@@ -1240,7 +1240,8 @@ const chatAssistantSummary = (
     if (index === undefined) {
       index = spans.length
       indexById.set(messageId, index)
-      spans.push({ chunks: [] })
+      // Anonymous spans have no provider identity to hand back to clients.
+      spans.push(typeof payload.messageId === "string" ? { chunks: [], messageId } : { chunks: [] })
     }
     const span = spans[index]
     /* v8 ignore next -- index is created from spans.length immediately before lookup. */
@@ -1251,7 +1252,8 @@ const chatAssistantSummary = (
   const final = [...spans].reverse().find((span) => span.phase !== "commentary")
   return {
     text: final?.chunks.join("") ?? "",
-    ...(planDocument === undefined ? {} : { planDocument })
+    ...(planDocument === undefined ? {} : { planDocument }),
+    ...(final?.messageId === undefined ? {} : { messageId: final.messageId })
   }
 }
 
@@ -2598,7 +2600,8 @@ const createService = (
           return {
             ...item,
             text: summary.text,
-            ...(summary.planDocument === undefined ? {} : { planDocument: summary.planDocument })
+            ...(summary.planDocument === undefined ? {} : { planDocument: summary.planDocument }),
+            ...(summary.messageId === undefined ? {} : { messageId: summary.messageId })
           }
         })
         const cursor = pageRows.at(-1)?.position

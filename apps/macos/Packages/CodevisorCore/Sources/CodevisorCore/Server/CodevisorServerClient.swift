@@ -1254,6 +1254,10 @@ public struct ServerTranscriptItem: Decodable, Equatable, Sendable {
     public var retryable: Bool?
     public var planDocument: String?
     public var attachments: [ServerAttachmentRef]?
+    /// Provider message id of the still-streaming final text span. Present
+    /// only while the item is generating so a mid-stream restore can share
+    /// identity with the live deltas that continue the same span.
+    public var messageId: String?
     public var revision: Int
 }
 

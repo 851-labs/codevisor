@@ -378,7 +378,13 @@ public struct ServerSessionTransport: Sendable {
                 attachments: (item.attachments ?? []).map(\.attachment)
             ))
         case .assistant:
-            let textId = "summary:\(item.id)"
+            // A still-streaming item carries the provider message id of its
+            // final text span. Adopting the live-delta identity (`acp:<id>`)
+            // lets TranscriptReducer.appendText merge resumed chunks into
+            // this entry instead of appending a second span — which would
+            // demote the restored half into "Worked for". Completed items
+            // have no live continuation, so the synthetic summary id is fine.
+            let textId = item.messageId.map { "acp:\($0)" } ?? "summary:\(item.id)"
             let entries: [TranscriptEntry] = item.text.isEmpty ? [] : [.text(id: textId, markdown: item.text)]
             let turn = AssistantTurn(
                 entries: entries,
