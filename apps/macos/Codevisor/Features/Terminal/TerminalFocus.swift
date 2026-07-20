@@ -428,9 +428,20 @@ final class TerminalFocusController {
     /// picks even if the mount-time grab ever races the swap), otherwise
     /// the editable composer text view.
     private func typeToFocusTarget() -> NSView? {
-        if let chatId = centerGroup?.state.selectedPane?.chatSessionId,
-           let picker = chatQuestionPickers[chatId]?.view {
-            return picker
+        if let selectedPane = centerGroup?.state.selectedPane {
+            // A terminal or New Tab page must never route typing into some
+            // other, merely mounted chat. An unkeyed chat is the legacy/draft
+            // case and still uses the single-slot fallback below.
+            guard selectedPane.kind == .chat else { return nil }
+            if let chatId = selectedPane.chatSessionId {
+                if let picker = chatQuestionPickers[chatId]?.view {
+                    return picker
+                }
+                if let textView = chatComposers[chatId]?.view, textView.isEditable {
+                    return textView
+                }
+                return nil
+            }
         }
         if let textView = composerTextView, textView.isEditable {
             return textView
@@ -456,9 +467,9 @@ final class TerminalFocusController {
         // Every registered chat transcript is a click-into-the-chat zone
         // (multi-chat workspaces have several); the single slot is the
         // fallback for screens that never register keyed (the new-chat
-        // page). A click that lands in a zone moves focus to THAT chat's
-        // composer — the pane's one input — unless the click itself claimed
-        // focus (text selection in the history keeps it).
+        // page). A click that lands in a zone parks focus on THAT transcript
+        // unless the click itself claimed focus. Printable typing then hands
+        // off to the keyed composer through handleTypeToFocus.
         var zones: [(chatId: UUID?, view: NSView)] = chatTranscripts.compactMap { id, box in
             box.view.map { (id, $0) }
         }
@@ -476,7 +487,7 @@ final class TerminalFocusController {
             // frame — the composer card, scroll-to-bottom — are excluded
             // by the focus-change check below, not by geometry.
             let point = zoneSuperview.convert(event.locationInWindow, from: nil)
-            guard zone.view.hitTest(point) != nil else { continue }
+            guard let hitView = zone.view.hitTest(point) else { continue }
 
             let responderBeforeClick = window.firstResponder
             if let composer = zone.chatId.flatMap({ chatComposers[$0]?.view }),
@@ -484,16 +495,25 @@ final class TerminalFocusController {
                 return event // Already writing in this chat.
             }
 
-            DispatchQueue.main.async { [weak self] in
-                guard let self,
-                      // Someone claimed focus from this click (text
-                      // selection, a menu, a control): leave it alone.
-                      window.firstResponder === responderBeforeClick else { return }
-                if let chatId = zone.chatId {
-                    self.requestComposerFocus(forChat: chatId)
-                } else {
-                    self.focusComposer()
+            DispatchQueue.main.async {
+                // Someone claimed focus from this click (text selection, a
+                // menu, a control): leave it alone.
+                guard window.firstResponder === responderBeforeClick else { return }
+
+                // Clicking or dragging again in an already-focused text view
+                // leaves the same first responder in place. Treat the hit
+                // view as the evidence in that case; moving focus to the
+                // transcript would end native selection tracking and clear
+                // TranscriptSelectableTextView's selected range.
+                if let responderView = responderBeforeClick as? NSView,
+                   hitView === responderView || hitView.isDescendant(of: responderView) {
+                    return
                 }
+
+                // Inert history chrome and whitespace do not claim AppKit
+                // focus themselves. Park focus on the transcript so its chat
+                // becomes active without implying composer focus.
+                window.makeFirstResponder(zone.view)
             }
             return event
         }
