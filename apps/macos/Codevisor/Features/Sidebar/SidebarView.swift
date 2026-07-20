@@ -68,14 +68,6 @@ private struct PendingSessionImport: Identifiable {
     var id: UUID { project.id }
 }
 
-/// A chat archive that would leave its owning workspace without any active
-/// chats. The user chooses whether the workspace should follow the chat into
-/// the archive or remain available for its terminals and layout.
-private struct PendingLastChatArchive {
-    let session: ChatSession
-    let workspace: Workspace
-}
-
 /// The sidebar: a New Chat action, an organization control, and the selected
 /// machine's workspaces or agent sessions.
 ///
@@ -106,7 +98,6 @@ struct SidebarView: View {
     @State private var renamingWorkspace: Workspace?
     @State private var workspaceRenameTitle = ""
     @State private var workspaceIconEditing: Workspace?
-    @State private var pendingLastChatArchive: PendingLastChatArchive?
     /// Bumped after workspace mutations (backfill sweep, renames) so the
     /// non-observable repository is re-read.
     @State private var workspaceRevision = 0
@@ -186,9 +177,9 @@ struct SidebarView: View {
         return workspaces
             .map { workspace -> (item: SidebarWorkspaceListItem, rank: Int, created: Date) in
                 let primary = workspace.chatSessionIds.lazy.compactMap { sessionsById[$0] }.first
-                // A CHAT-LESS workspace (every chat closed/archived) stays
-                // openable through any session still routed to it by the
-                // grow-only session index — archived ones included.
+                // A legacy or draft CHAT-LESS workspace stays openable
+                // through any session still routed to it by the grow-only
+                // session index — archived ones included.
                 let routingSession = primary?.session ?? list.sessions.first(where: {
                     $0.serverId == serverId
                         && environment.workspaces.workspaceId(forSession: $0.id) == workspace.id
@@ -378,24 +369,6 @@ struct SidebarView: View {
                 workspaceRevision += 1
             }
             Button("Cancel", role: .cancel) {}
-        }
-        .alert(
-            "Archive workspace too?",
-            isPresented: Binding(
-                get: { pendingLastChatArchive != nil },
-                set: { if !$0 { pendingLastChatArchive = nil } }
-            ),
-            presenting: pendingLastChatArchive
-        ) { pending in
-            Button("Archive Workspace") {
-                archiveWorkspace(pending.workspace)
-            }
-            Button("Archive Chat Only") {
-                archiveChat(pending.session)
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: { pending in
-            Text("This is the last active chat in “\(pending.workspace.name)”.")
         }
         // Entering by-workspace mode (or sessions changing while in it)
         // sweeps the visible chats so every one has an owning workspace.
@@ -754,7 +727,7 @@ struct SidebarView: View {
                 Label("Rename", systemImage: "pencil")
                     .labelStyle(.titleAndIcon)
             }
-            Button { requestArchiveChat(session) } label: {
+            Button { archiveChat(session) } label: {
                 Label("Archive", systemImage: "archivebox")
                     .labelStyle(.titleAndIcon)
             }
@@ -848,16 +821,7 @@ struct SidebarView: View {
     }
 
     private func archiveWorkspace(_ workspace: Workspace) {
-        var archived = workspace
-        archived.isArchived = true
-        environment.workspaces.save(archived)
-        for chatId in workspace.chatSessionIds {
-            if let session = list.sessions.first(where: {
-                $0.serverId == workspace.serverId && $0.id == chatId && !$0.isArchived
-            }) {
-                list.archiveSession(session)
-            }
-        }
+        environment.archiveWorkspace(workspace)
         if case let .session(serverId, sessionId) = selection,
            serverId == workspace.serverId,
            environment.workspaces.workspaceId(forSession: sessionId) == workspace.id {
@@ -941,7 +905,7 @@ struct SidebarView: View {
                 Label("Rename", systemImage: "pencil")
                     .labelStyle(.titleAndIcon)
             }
-            Button { requestArchiveChat(session) } label: {
+            Button { archiveChat(session) } label: {
                 Label("Archive", systemImage: "archivebox")
                     .labelStyle(.titleAndIcon)
             }
@@ -1081,7 +1045,7 @@ struct SidebarView: View {
                         if let onArchive {
                             onArchive()
                         } else {
-                            requestArchiveChat(session)
+                            archiveChat(session)
                         }
                     } label: {
                         Image(systemName: "archivebox")
@@ -1101,33 +1065,13 @@ struct SidebarView: View {
         }
     }
 
-    /// Archives immediately unless this is the workspace's final active chat,
-    /// in which case the alert lets the user archive the workspace as well.
-    private func requestArchiveChat(_ session: ChatSession) {
-        guard let workspaceId = environment.workspaces.workspaceId(forSession: session.id),
-              let workspace = environment.workspaces.workspace(id: workspaceId),
-              !workspace.isArchived else {
-            archiveChat(session)
-            return
-        }
-
-        let activeChats = list.sessions.filter {
-            $0.serverId == workspace.serverId
-                && !$0.isArchived
-                && environment.workspaces.workspaceId(forSession: $0.id) == workspace.id
-        }
-        guard activeChats.count == 1, activeChats[0].id == session.id else {
-            archiveChat(session)
-            return
-        }
-
-        pendingLastChatArchive = PendingLastChatArchive(session: session, workspace: workspace)
-    }
-
     private func archiveChat(_ session: ChatSession) {
-        list.archiveSession(session)
+        let archivedWorkspace = environment.archiveSession(session)
         if selection == .session(serverId: session.serverId, id: session.id) {
             selection = .newChat(nil)
+        }
+        if archivedWorkspace {
+            workspaceRevision += 1
         }
     }
 

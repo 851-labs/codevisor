@@ -286,6 +286,9 @@ struct RootView: View {
                     // container just re-routes).
                     onFocusedChatChanged: { chatId in
                         selection = .session(serverId: serverId, id: chatId)
+                    },
+                    onWorkspaceArchived: {
+                        selection = .newChat(nil)
                     }
                 )
                 .id("\(session.serverId):\((environment.workspaces.workspaceId(forSession: session.id) ?? session.id).uuidString)")

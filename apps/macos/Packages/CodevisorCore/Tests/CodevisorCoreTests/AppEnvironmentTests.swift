@@ -123,4 +123,60 @@ struct AppEnvironmentTests {
         #expect(recommendations.isEmpty)
     }
 
+    @Test("Archiving the final active chat archives its workspace")
+    func archivingFinalChatArchivesWorkspace() {
+        let project = Project.fromFolder(URL(fileURLWithPath: "/tmp/archive-workspace"))
+        let first = ChatSession(projectId: project.id, harnessId: "codex", title: "First")
+        let second = ChatSession(projectId: project.id, harnessId: "codex", title: "Second")
+        let environment = AppEnvironment.preview(
+            seedProjects: [project],
+            seedSessions: [first, second]
+        )
+        var workspace = environment.workspaces.ensureWorkspace(
+            for: WorkspaceSessionSeed(
+                sessionId: first.id,
+                title: first.title,
+                serverId: first.serverId,
+                projectId: first.projectId,
+                rootDirectory: project.folderURL.path
+            ),
+            legacyGroups: nil
+        )
+        let groupId = workspace.centerTree.allGroups[0].id
+        workspace.centerTree = workspace.centerTree.updatingGroup(id: groupId) { group in
+            var group = group
+            group.addChatPane(sessionId: second.id, name: second.title)
+            return group
+        }
+        environment.workspaces.save(workspace)
+
+        #expect(!environment.archiveSession(first))
+        #expect(environment.workspaces.workspace(id: workspace.id)?.isArchived == false)
+        #expect(environment.archiveSession(second))
+        #expect(environment.workspaces.workspace(id: workspace.id)?.isArchived == true)
+        #expect(environment.projectList.sessions.allSatisfy { $0.isArchived })
+    }
+
+    @Test("Archiving a workspace archives each of its active chats")
+    func archivingWorkspaceArchivesChats() {
+        let project = Project.fromFolder(URL(fileURLWithPath: "/tmp/archive-workspace"))
+        let session = ChatSession(projectId: project.id, harnessId: "codex", title: "Chat")
+        let environment = AppEnvironment.preview(seedProjects: [project], seedSessions: [session])
+        let workspace = environment.workspaces.ensureWorkspace(
+            for: WorkspaceSessionSeed(
+                sessionId: session.id,
+                title: session.title,
+                serverId: session.serverId,
+                projectId: session.projectId,
+                rootDirectory: project.folderURL.path
+            ),
+            legacyGroups: nil
+        )
+
+        environment.archiveWorkspace(workspace)
+
+        #expect(environment.workspaces.workspace(id: workspace.id)?.isArchived == true)
+        #expect(environment.projectList.sessions.first?.isArchived == true)
+    }
+
 }

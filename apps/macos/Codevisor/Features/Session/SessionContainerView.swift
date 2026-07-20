@@ -18,6 +18,8 @@ struct SessionContainerView: View {
     /// selection follows, keeping the by-chat list in sync with focus.
     /// Non-chat focus (terminals) fires nothing: the last chat stays.
     var onFocusedChatChanged: ((UUID) -> Void)? = nil
+    /// Fired when closing the final active chat archives the workspace.
+    var onWorkspaceArchived: (() -> Void)? = nil
 
     @Environment(AppEnvironment.self) private var environment
     @Environment(\.theme) private var theme
@@ -145,9 +147,9 @@ struct SessionContainerView: View {
                 sessionFocus.requestComposerFocus(forChat: session.id)
             } else if let firstLeaf = store.workspace(for: session, project: project)
                 .centerTree.allGroups.first?.id {
-                // A CHAT-LESS workspace (every chat closed/archived; routed
-                // here through the grow-only session index): the first
-                // group takes over as the keyboard target.
+                // A legacy or draft CHAT-LESS workspace routed here through
+                // the grow-only session index uses its first group as the
+                // keyboard target.
                 _ = configuredCenterModel(leafId: firstLeaf)
                 activateLeaf(firstLeaf)
             }
@@ -322,7 +324,10 @@ struct SessionContainerView: View {
                     if let closed = environment.projectList.sessions.first(where: {
                         $0.serverId == session.serverId && $0.id == closedSessionId
                     }) {
-                        environment.projectList.archiveSession(closed)
+                        let archivedWorkspace = environment.archiveSession(closed)
+                        if archivedWorkspace {
+                            onWorkspaceArchived?()
+                        }
                     }
                     // The ROUTED chat left: hand the route to the
                     // workspace's first surviving chat, so the sidebar
@@ -332,7 +337,15 @@ struct SessionContainerView: View {
                        let survivor = store.workspace(for: session, project: project)
                         .centerTree.allGroups
                         .flatMap(\.state.panes)
-                        .first(where: { $0.kind == .chat && $0.chatSessionId != nil })?
+                        .first(where: { descriptor in
+                            guard descriptor.kind == .chat,
+                                  let candidateId = descriptor.chatSessionId else { return false }
+                            return environment.projectList.sessions.contains {
+                                $0.serverId == session.serverId
+                                    && $0.id == candidateId
+                                    && !$0.isArchived
+                            }
+                        })?
                         .chatSessionId {
                         onFocusedChatChanged?(survivor)
                     }

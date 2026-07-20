@@ -143,6 +143,44 @@ public final class AppEnvironment {
         projectList.showsImportedSessions = true
     }
 
+    /// Archives a chat and, when it was the workspace's final active chat,
+    /// archives the workspace with it. Returns true when the workspace was
+    /// archived so callers can leave its now-hidden route.
+    @discardableResult
+    public func archiveSession(_ session: ChatSession) -> Bool {
+        projectList.archiveSession(session)
+
+        guard let workspaceId = workspaces.workspaceId(forSession: session.id),
+              var workspace = workspaces.workspace(id: workspaceId),
+              !workspace.isArchived else { return false }
+
+        let hasActiveChat = projectList.sessions.contains { candidate in
+            candidate.serverId == workspace.serverId
+                && !candidate.isArchived
+                && workspaces.workspaceId(forSession: candidate.id) == workspace.id
+        }
+        guard !hasActiveChat else { return false }
+
+        workspace.isArchived = true
+        workspaces.save(workspace)
+        return true
+    }
+
+    /// Archives a workspace and every active chat that belongs to it while
+    /// retaining its pane layout for a later restore.
+    public func archiveWorkspace(_ workspace: Workspace) {
+        var archived = workspace
+        archived.isArchived = true
+        workspaces.save(archived)
+
+        for session in projectList.sessions where
+            session.serverId == workspace.serverId
+                && !session.isArchived
+                && workspaces.workspaceId(forSession: session.id) == workspace.id {
+            projectList.archiveSession(session)
+        }
+    }
+
     /// Starts the selected machine if it is local, then refreshes cached server
     /// state. Remote machines are never auto-started.
     public func prepareSelectedMachine() async {
