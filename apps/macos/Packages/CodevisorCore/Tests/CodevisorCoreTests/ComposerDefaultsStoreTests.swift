@@ -9,153 +9,251 @@ struct ComposerDefaultsStoreTests {
     func startsEmpty() {
         let defaults = ComposerDefaultsStore(store: InMemoryStore())
         #expect(defaults.lastHarnessId(forServer: "local") == nil)
-        #expect(defaults.runInWorktree(forServer: "local") == false)
+        #expect(defaults.runLocation(forServer: "local") == nil)
         #expect(defaults.configSelections(forHarness: "claude-code", onServer: "local").isEmpty)
     }
 
-    @Test("Remembers the choices a session was created with")
-    func remembersCreationChoices() {
-        let defaults = ComposerDefaultsStore(store: InMemoryStore())
-        defaults.rememberSessionCreation(
-            serverId: "local",
-            harnessId: "claude-code",
-            configValues: ["model": "opus", "thought_level": "high"],
-            runInWorktree: true
-        )
+    @Test("An explicit harness selection is remembered immediately")
+    func remembersHarnessImmediately() {
+        let store = InMemoryStore()
+        let defaults = ComposerDefaultsStore(store: store)
+
+        defaults.rememberHarnessSelection(serverId: "local", harnessId: "claude-code")
+
         #expect(defaults.lastHarnessId(forServer: "local") == "claude-code")
-        #expect(defaults.runInWorktree(forServer: "local") == true)
-        #expect(defaults.configSelections(forHarness: "claude-code", onServer: "local") == [
-            "model": "opus", "thought_level": "high"
-        ])
+        #expect(ComposerDefaultsStore(store: store).lastHarnessId(forServer: "local") == "claude-code")
     }
 
-    @Test("Keeps per-harness selections independent")
+    @Test("An explicit run-location selection is remembered immediately")
+    func remembersRunLocationImmediately() {
+        let store = InMemoryStore()
+        let defaults = ComposerDefaultsStore(store: store)
+
+        defaults.rememberRunLocationSelection(
+            serverId: "local", runLocation: .newWorktree
+        )
+
+        #expect(defaults.runLocation(forServer: "local") == .newWorktree)
+        #expect(ComposerDefaultsStore(store: store).runLocation(forServer: "local") == .newWorktree)
+
+        defaults.rememberRunLocationSelection(
+            serverId: "local", runLocation: .projectDirectory
+        )
+        #expect(defaults.runLocation(forServer: "local") == .projectDirectory)
+    }
+
+    @Test("Keeps every harness configuration independent")
     func perHarnessSelections() {
         let defaults = ComposerDefaultsStore(store: InMemoryStore())
-        defaults.rememberSessionCreation(
-            serverId: "local", harnessId: "claude-code", configValues: ["model": "opus"], runInWorktree: false
-        )
-        defaults.rememberSessionCreation(
-            serverId: "local", harnessId: "codex", configValues: ["model": "gpt-5.5"], runInWorktree: false
-        )
-        #expect(defaults.lastHarnessId(forServer: "local") == "codex")
-        #expect(defaults.configSelections(forHarness: "claude-code", onServer: "local") == ["model": "opus"])
-        #expect(defaults.configSelections(forHarness: "codex", onServer: "local") == ["model": "gpt-5.5"])
-    }
-
-    @Test("A nil or empty harness id keeps the previous harness defaults")
-    func nilHarnessKeepsPrevious() {
-        let defaults = ComposerDefaultsStore(store: InMemoryStore())
-        defaults.rememberSessionCreation(
-            serverId: "local", harnessId: "claude-code", configValues: ["model": "opus"], runInWorktree: true
-        )
-        defaults.rememberSessionCreation(serverId: "local", harnessId: nil, configValues: [:], runInWorktree: false)
-        #expect(defaults.lastHarnessId(forServer: "local") == "claude-code")
-        #expect(defaults.configSelections(forHarness: "claude-code", onServer: "local") == ["model": "opus"])
-        // The worktree choice still updates — it isn't harness-scoped.
-        #expect(defaults.runInWorktree(forServer: "local") == false)
-    }
-
-    @Test("Workspace-scoped selections win over the machine fallback")
-    func workspaceScopedSelections() {
-        let defaults = ComposerDefaultsStore(store: InMemoryStore())
-        let workspace = UUID()
-        defaults.rememberSessionCreation(
-            serverId: "local", harnessId: "claude-code", configValues: ["model": "opus"], runInWorktree: false
-        )
-        // A fresh workspace falls back to the machine's last-used.
-        #expect(defaults.lastHarnessId(forWorkspace: workspace, orServer: "local") == "claude-code")
-        #expect(defaults.configSelections(
-            forHarness: "claude-code", workspace: workspace, orServer: "local"
-        ) == ["model": "opus"])
-        // A session created IN the workspace scopes future chats there.
-        defaults.rememberSessionCreation(
-            serverId: "local",
-            workspaceId: workspace,
-            harnessId: "codex",
-            configValues: ["model": "gpt-5.5"],
-            runInWorktree: false
-        )
-        #expect(defaults.lastHarnessId(forWorkspace: workspace, orServer: "local") == "codex")
-        #expect(defaults.configSelections(
-            forHarness: "codex", workspace: workspace, orServer: "local"
-        ) == ["model": "gpt-5.5"])
-        // Another workspace still sees the app-wide last-used.
-        #expect(defaults.configSelections(
-            forHarness: "codex", workspace: UUID(), orServer: "local"
-        ) == ["model": "gpt-5.5"])
-    }
-
-    @Test("Mid-session config changes update both scopes and persist")
-    func midSessionChanges() {
-        let store = InMemoryStore()
-        let defaults = ComposerDefaultsStore(store: store)
-        let workspace = UUID()
         defaults.rememberConfigSelections(
             serverId: "local",
-            workspaceId: workspace,
             harnessId: "claude-code",
-            configValues: ["model": "opus", "speed": "fast"]
+            configValues: ["model": "opus", "effort": "high", "speed": "fast"]
         )
-        #expect(defaults.lastHarnessId(forServer: "local") == "claude-code")
-        #expect(defaults.configSelections(forHarness: "claude-code", onServer: "local") == [
-            "model": "opus", "speed": "fast"
-        ])
-        #expect(defaults.configSelections(
-            forHarness: "claude-code", workspace: workspace, orServer: "local"
-        ) == ["model": "opus", "speed": "fast"])
-        // Empty updates are ignored (a harness with no remembered categories).
         defaults.rememberConfigSelections(
-            serverId: "local", workspaceId: workspace, harnessId: "claude-code", configValues: [:]
+            serverId: "local",
+            harnessId: "codex",
+            configValues: ["model": "gpt-5.6", "effort": "xhigh", "speed": "standard"]
         )
+
+        #expect(defaults.configSelections(forHarness: "claude-code", onServer: "local") == [
+            "model": "opus", "effort": "high", "speed": "fast"
+        ])
+        #expect(defaults.configSelections(forHarness: "codex", onServer: "local") == [
+            "model": "gpt-5.6", "effort": "xhigh", "speed": "standard"
+        ])
+    }
+
+    @Test("Partial option updates retain temporarily unavailable values")
+    func mergesConfigSelections() {
+        let defaults = ComposerDefaultsStore(store: InMemoryStore())
+        defaults.rememberConfigSelections(
+            serverId: "local",
+            harnessId: "codex",
+            configValues: ["model": "gpt-5.6", "effort": "high", "speed": "fast"]
+        )
+        // A model without a speed picker reports only its currently available
+        // values. The prior speed preference should still be there if the user
+        // switches back to a fast-capable model later.
+        defaults.rememberConfigSelections(
+            serverId: "local",
+            harnessId: "codex",
+            configValues: ["model": "gpt-5.5", "effort": "medium"]
+        )
+
+        #expect(defaults.configSelections(forHarness: "codex", onServer: "local") == [
+            "model": "gpt-5.5", "effort": "medium", "speed": "fast"
+        ])
+    }
+
+    @Test("Invalid empty selections do not erase existing defaults")
+    func ignoresEmptySelections() {
+        let defaults = ComposerDefaultsStore(store: InMemoryStore())
+        defaults.rememberHarnessSelection(serverId: "local", harnessId: "claude-code")
+        defaults.rememberConfigSelections(
+            serverId: "local", harnessId: "claude-code", configValues: ["model": "opus"]
+        )
+
+        defaults.rememberHarnessSelection(serverId: "local", harnessId: nil)
+        defaults.rememberHarnessSelection(serverId: "local", harnessId: "")
+        defaults.rememberConfigSelections(
+            serverId: "local", harnessId: "claude-code", configValues: [:]
+        )
+
+        #expect(defaults.lastHarnessId(forServer: "local") == "claude-code")
+        #expect(defaults.runLocation(forServer: "local") == nil)
+        #expect(defaults.configSelections(forHarness: "claude-code", onServer: "local") == [
+            "model": "opus"
+        ])
+    }
+
+    @Test("Migrates scoped V2 data without losing any harness configuration")
+    func migratesScopedV2() throws {
+        let legacy = #"{"machines":{"local":{"lastHarnessId":"claude-code","runInWorktree":true,"configSelections":{"claude-code":{"model":"opus","effort":"high","speed":"fast"},"codex":{"model":"gpt-5.6","effort":"xhigh","speed":"standard"}}},"remote-a":{"lastHarnessId":"codex","runInWorktree":false,"configSelections":{"codex":{"model":"remote-model","effort":"medium"}}}},"workspaces":{"00000000-0000-0000-0000-000000000001":{"lastHarnessId":"codex","configSelections":{"codex":{"model":"older-workspace-model","speed":"fast"}}}}}"#
+        let legacyData = Data(legacy.utf8)
+        let store = InMemoryStore(storage: ["composer-defaults": legacyData])
+
+        let defaults = ComposerDefaultsStore(store: store)
+
+        #expect(defaults.lastHarnessId(forServer: "local") == "claude-code")
+        #expect(defaults.runLocation(forServer: "local") == .newWorktree)
+        #expect(defaults.configSelections(forHarness: "claude-code", onServer: "local") == [
+            "model": "opus", "effort": "high", "speed": "fast"
+        ])
+        #expect(defaults.configSelections(forHarness: "codex", onServer: "local") == [
+            "model": "gpt-5.6", "effort": "xhigh", "speed": "standard"
+        ])
+        #expect(defaults.configSelections(forHarness: "codex", onServer: "remote-a") == [
+            "model": "remote-model", "effort": "medium"
+        ])
+        #expect(defaults.runLocation(forServer: "remote-a") == .projectDirectory)
+        #expect(store.loadData(forKey: "composer-defaults-pre-v3-backup") == legacyData)
+
+        let migrated = try #require(store.loadData(forKey: "composer-defaults"))
+        let object = try #require(JSONSerialization.jsonObject(with: migrated) as? [String: Any])
+        #expect(object["version"] as? Int == 3)
+        #expect(object["workspaces"] == nil)
+        let machines = try #require(object["machines"] as? [String: Any])
+        let local = try #require(machines["local"] as? [String: Any])
+        #expect(local["lastRunLocation"] as? String == "newWorktree")
+        #expect(local["runInWorktree"] == nil)
+    }
+
+    @Test("A V2 migration is idempotent and keeps its original backup")
+    func migrationIsIdempotent() {
+        let legacy = #"{"machines":{"local":{"lastHarnessId":"codex","runInWorktree":false,"configSelections":{"codex":{"model":"gpt-5.6"}}}},"workspaces":{}}"#
+        let legacyData = Data(legacy.utf8)
+        let store = InMemoryStore(storage: ["composer-defaults": legacyData])
+
+        _ = ComposerDefaultsStore(store: store)
+        let migrated = store.loadData(forKey: "composer-defaults")
+        _ = ComposerDefaultsStore(store: store)
+
+        #expect(store.loadData(forKey: "composer-defaults") == migrated)
+        #expect(store.loadData(forKey: "composer-defaults-pre-v3-backup") == legacyData)
+    }
+
+    @Test("Recovers run location for users who already passed through early V3")
+    func recoversRunLocationFromV3Backup() {
+        let current = #"{"machines":{"local":{"lastHarnessId":"codex","configSelections":{"codex":{"model":"newer-model"}}},"remote-a":{"lastHarnessId":"claude-code","lastRunLocation":"projectDirectory","configSelections":{}}},"version":3}"#
+        let backup = #"{"machines":{"local":{"lastHarnessId":"claude-code","runInWorktree":true,"configSelections":{"claude-code":{"model":"older-model"}}},"remote-a":{"lastHarnessId":"codex","runInWorktree":true,"configSelections":{}}},"workspaces":{}}"#
+        let store = InMemoryStore(storage: [
+            "composer-defaults": Data(current.utf8),
+            "composer-defaults-pre-v3-backup": Data(backup.utf8)
+        ])
+
+        let defaults = ComposerDefaultsStore(store: store)
+
+        // Only the missing location is recovered. Newer V3 choices win, and
+        // an explicitly stored V3 location is never replaced by the backup.
+        #expect(defaults.runLocation(forServer: "local") == .newWorktree)
+        #expect(defaults.lastHarnessId(forServer: "local") == "codex")
+        #expect(defaults.configSelections(forHarness: "codex", onServer: "local") == [
+            "model": "newer-model"
+        ])
+        #expect(defaults.runLocation(forServer: "remote-a") == .projectDirectory)
+    }
+
+    @Test("Migrates the pre-workspace machines-only format")
+    func migratesMachinesOnlyFormat() {
+        let legacy = #"{"machines":{"local":{"lastHarnessId":"claude-code","runInWorktree":true,"configSelections":{"claude-code":{"model":"opus","speed":"fast"}}}}}"#
+        let store = InMemoryStore(storage: ["composer-defaults": Data(legacy.utf8)])
+
+        let defaults = ComposerDefaultsStore(store: store)
+
+        #expect(defaults.lastHarnessId(forServer: "local") == "claude-code")
+        #expect(defaults.runLocation(forServer: "local") == .newWorktree)
         #expect(defaults.configSelections(forHarness: "claude-code", onServer: "local") == [
             "model": "opus", "speed": "fast"
         ])
-        // And the whole payload round-trips.
-        let reloaded = ComposerDefaultsStore(store: store)
-        #expect(reloaded.configSelections(
-            forHarness: "claude-code", workspace: workspace, orServer: "local"
-        ) == ["model": "opus", "speed": "fast"])
     }
 
-    @Test("Payloads written before workspace scoping still load")
-    func preWorkspacePayloadLoads() throws {
-        let store = InMemoryStore()
-        // The exact shape the previous schema wrote: machines only.
-        let legacy = "{\"machines\":{\"local\":{\"lastHarnessId\":\"claude-code\",\"runInWorktree\":true,\"configSelections\":{\"claude-code\":{\"model\":\"opus\"}}}}}"
-        try store.saveData(Data(legacy.utf8), forKey: "composer-defaults")
+    @Test("Migrates the flat pre-machine format to the local machine")
+    func migratesFlatFormat() {
+        let legacy = #"{"lastHarnessId":"claude-code","runInWorktree":true,"configSelections":{"claude-code":{"model":"opus","effort":"high","speed":"fast"},"codex":{"model":"gpt-5.6"}}}"#
+        let store = InMemoryStore(storage: ["composer-defaults": Data(legacy.utf8)])
+
         let defaults = ComposerDefaultsStore(store: store)
+
         #expect(defaults.lastHarnessId(forServer: "local") == "claude-code")
-        #expect(defaults.runInWorktree(forServer: "local") == true)
-        #expect(defaults.configSelections(forHarness: "claude-code", onServer: "local") == ["model": "opus"])
-        #expect(defaults.lastHarnessId(forWorkspace: UUID(), orServer: "local") == "claude-code")
+        #expect(defaults.runLocation(forServer: "local") == .newWorktree)
+        #expect(defaults.configSelections(forHarness: "claude-code", onServer: "local") == [
+            "model": "opus", "effort": "high", "speed": "fast"
+        ])
+        #expect(defaults.configSelections(forHarness: "codex", onServer: "local") == [
+            "model": "gpt-5.6"
+        ])
     }
 
-    @Test("Persists across instances")
-    func persists() {
-        let store = InMemoryStore()
-        ComposerDefaultsStore(store: store).rememberSessionCreation(
-            serverId: "local", harnessId: "codex", configValues: ["model": "gpt-5.5"], runInWorktree: true
-        )
-        let reopened = ComposerDefaultsStore(store: store)
-        #expect(reopened.lastHarnessId(forServer: "local") == "codex")
-        #expect(reopened.runInWorktree(forServer: "local") == true)
-        #expect(reopened.configSelections(forHarness: "codex", onServer: "local") == ["model": "gpt-5.5"])
+    @Test("Migrates a partial flat payload that only remembered run location")
+    func migratesPartialFlatPayload() throws {
+        let legacy = #"{"runInWorktree":true}"#
+        let store = InMemoryStore(storage: ["composer-defaults": Data(legacy.utf8)])
+
+        let defaults = ComposerDefaultsStore(store: store)
+
+        #expect(defaults.lastHarnessId(forServer: "local") == nil)
+        #expect(defaults.runLocation(forServer: "local") == .newWorktree)
+        let migrated = try #require(store.loadData(forKey: "composer-defaults"))
+        let object = try #require(JSONSerialization.jsonObject(with: migrated) as? [String: Any])
+        #expect(object["version"] as? Int == 3)
     }
 
-    @Test("Clear resets everything")
-    func clears() {
+    @Test("Persists the V3 format across instances without creating a migration backup")
+    func persistsCurrentFormat() {
         let store = InMemoryStore()
         let defaults = ComposerDefaultsStore(store: store)
-        defaults.rememberSessionCreation(
-            serverId: "local", harnessId: "codex", configValues: ["model": "gpt-5.5"], runInWorktree: true
+        defaults.rememberHarnessSelection(serverId: "local", harnessId: "codex")
+        defaults.rememberRunLocationSelection(serverId: "local", runLocation: .newWorktree)
+        defaults.rememberConfigSelections(
+            serverId: "local",
+            harnessId: "codex",
+            configValues: ["model": "gpt-5.6", "effort": "xhigh", "speed": "fast"]
         )
-        defaults.clear()
-        #expect(defaults.lastHarnessId(forServer: "local") == nil)
-        #expect(defaults.runInWorktree(forServer: "local") == false)
-        #expect(defaults.configSelections(forHarness: "codex", onServer: "local").isEmpty)
+
         let reopened = ComposerDefaultsStore(store: store)
-        #expect(reopened.lastHarnessId(forServer: "local") == nil)
+
+        #expect(reopened.lastHarnessId(forServer: "local") == "codex")
+        #expect(reopened.runLocation(forServer: "local") == .newWorktree)
+        #expect(reopened.configSelections(forHarness: "codex", onServer: "local") == [
+            "model": "gpt-5.6", "effort": "xhigh", "speed": "fast"
+        ])
+        #expect(store.loadData(forKey: "composer-defaults-pre-v3-backup") == nil)
+    }
+
+    @Test("Clear resets active defaults and removes the migration backup")
+    func clears() {
+        let legacy = #"{"machines":{"local":{"lastHarnessId":"codex","configSelections":{"codex":{"model":"gpt-5.6"}}}},"workspaces":{}}"#
+        let store = InMemoryStore(storage: ["composer-defaults": Data(legacy.utf8)])
+        let defaults = ComposerDefaultsStore(store: store)
+        #expect(store.loadData(forKey: "composer-defaults-pre-v3-backup") != nil)
+
+        defaults.clear()
+
+        #expect(defaults.lastHarnessId(forServer: "local") == nil)
+        #expect(defaults.runLocation(forServer: "local") == nil)
+        #expect(defaults.configSelections(forHarness: "codex", onServer: "local").isEmpty)
+        #expect(store.loadData(forKey: "composer-defaults-pre-v3-backup") == nil)
     }
 
     @Test("Corrupted data decodes as empty and is quarantined, not overwritten")
@@ -168,84 +266,52 @@ struct ComposerDefaultsStoreTests {
 
         let defaults = ComposerDefaultsStore(store: FileSystemStore(directory: directory))
         #expect(defaults.lastHarnessId(forServer: "local") == nil)
-        #expect(defaults.runInWorktree(forServer: "local") == false)
 
-        // The unreadable payload was renamed to a .corrupt-<timestamp> backup
-        // so the next save can't destroy the only copy.
         let contents = try FileManager.default.contentsOfDirectory(atPath: directory.path)
         #expect(!contents.contains("composer-defaults.json"))
         #expect(contents.contains { $0.hasPrefix("composer-defaults.json.corrupt-") })
     }
 
-    @Test("Migrates the pre-machine-scoping flat format to the local machine")
-    func migratesLegacyFlatFormat() {
-        let legacy = #"{"lastHarnessId":"claude-code","runInWorktree":true,"configSelections":{"claude-code":{"model":"opus","thought_level":"high","speed":"fast"}}}"#
-        let store = InMemoryStore(storage: ["composer-defaults": Data(legacy.utf8)])
-        let defaults = ComposerDefaultsStore(store: store)
-        #expect(defaults.lastHarnessId(forServer: "local") == "claude-code")
-        #expect(defaults.runInWorktree(forServer: "local") == true)
-        #expect(defaults.configSelections(forHarness: "claude-code", onServer: "local") == [
-            "model": "opus", "thought_level": "high", "speed": "fast"
-        ])
-        // The migration rewrites the file in the current, machine-scoped schema.
-        let persisted = String(decoding: store.loadData(forKey: "composer-defaults") ?? Data(), as: UTF8.self)
-        #expect(persisted.contains("\"machines\""))
-    }
-
-    @Test("Migrates a partial legacy payload with no remembered harness")
-    func migratesPartialLegacyPayload() {
-        let legacy = #"{"runInWorktree":true,"configSelections":{}}"#
-        let store = InMemoryStore(storage: ["composer-defaults": Data(legacy.utf8)])
-        let defaults = ComposerDefaultsStore(store: store)
-        #expect(defaults.lastHarnessId(forServer: "local") == nil)
-        #expect(defaults.runInWorktree(forServer: "local") == true)
-    }
-
-    /// ⚠️ Schema tripwire. If this test fails, you changed the persisted
-    /// composer-defaults wire format. Shipping that as-is means every user's
-    /// remembered model/thinking/speed choices fail to decode and silently
-    /// reset on app update. Before updating the golden string below you must:
-    /// 1. Keep a decode fallback for the CURRENT format in
-    ///    `ComposerDefaultsStore.init` (see `LegacyDefaults` for the pattern)
-    ///    that migrates old files into the new schema.
-    /// 2. Add a migration test above (like `migratesLegacyFlatFormat`) proving
-    ///    a file in the old format still loads with its data intact.
-    /// Only skip the migration if the user has explicitly confirmed that
-    /// losing everyone's remembered composer choices is intended.
+    /// Schema tripwire: changing this string requires a decoder fixture for
+    /// this exact V3 shape before the golden value is updated.
     @Test("Persisted wire format is stable — schema changes require a migration")
     func wireFormatIsStable() throws {
         let store = InMemoryStore()
         let defaults = ComposerDefaultsStore(store: store)
-        defaults.rememberSessionCreation(
+        defaults.rememberHarnessSelection(serverId: "local", harnessId: "claude-code")
+        defaults.rememberRunLocationSelection(serverId: "local", runLocation: .newWorktree)
+        defaults.rememberConfigSelections(
             serverId: "local",
             harnessId: "claude-code",
-            configValues: ["model": "opus", "thought_level": "high"],
-            runInWorktree: true
+            configValues: ["model": "opus", "effort": "high"]
         )
         let data = try #require(store.loadData(forKey: "composer-defaults"))
         let object = try JSONSerialization.jsonObject(with: data)
         let canonical = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
-        #expect(String(decoding: canonical, as: UTF8.self) == #"{"machines":{"local":{"configSelections":{"claude-code":{"model":"opus","thought_level":"high"}},"lastHarnessId":"claude-code","runInWorktree":true}},"workspaces":{}}"#)
+        #expect(String(decoding: canonical, as: UTF8.self) == #"{"machines":{"local":{"configSelections":{"claude-code":{"effort":"high","model":"opus"}},"lastHarnessId":"claude-code","lastRunLocation":"newWorktree"}},"version":3}"#)
     }
 
     @Test("Never shares composer choices between machines")
     func machineIsolation() {
-        let store = InMemoryStore()
-        let defaults = ComposerDefaultsStore(store: store)
-        defaults.rememberSessionCreation(
-            serverId: "remote-a", harnessId: "codex",
-            configValues: ["model": "model-a"], runInWorktree: true
+        let defaults = ComposerDefaultsStore(store: InMemoryStore())
+        defaults.rememberHarnessSelection(serverId: "remote-a", harnessId: "codex")
+        defaults.rememberRunLocationSelection(serverId: "remote-a", runLocation: .newWorktree)
+        defaults.rememberConfigSelections(
+            serverId: "remote-a", harnessId: "codex", configValues: ["model": "model-a"]
         )
-        defaults.rememberSessionCreation(
-            serverId: "remote-b", harnessId: "claude-code",
-            configValues: ["model": "model-b"], runInWorktree: false
+        defaults.rememberHarnessSelection(serverId: "remote-b", harnessId: "claude-code")
+        defaults.rememberRunLocationSelection(serverId: "remote-b", runLocation: .projectDirectory)
+        defaults.rememberConfigSelections(
+            serverId: "remote-b", harnessId: "claude-code", configValues: ["model": "model-b"]
         )
 
         #expect(defaults.lastHarnessId(forServer: "remote-a") == "codex")
         #expect(defaults.lastHarnessId(forServer: "remote-b") == "claude-code")
-        #expect(defaults.configSelections(forHarness: "codex", onServer: "remote-a") == ["model": "model-a"])
+        #expect(defaults.runLocation(forServer: "remote-a") == .newWorktree)
+        #expect(defaults.runLocation(forServer: "remote-b") == .projectDirectory)
+        #expect(defaults.configSelections(forHarness: "codex", onServer: "remote-a") == [
+            "model": "model-a"
+        ])
         #expect(defaults.configSelections(forHarness: "codex", onServer: "remote-b").isEmpty)
-        #expect(defaults.runInWorktree(forServer: "remote-a"))
-        #expect(!defaults.runInWorktree(forServer: "remote-b"))
     }
 }

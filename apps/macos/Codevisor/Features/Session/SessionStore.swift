@@ -124,10 +124,6 @@ final class SessionStore {
         )
         controller.serverSession = session
         controller.resumeAgentSessionId = session.agentSessionId
-        // Mid-session settings changes are remembered per WORKSPACE (plus
-        // the machine-level fallback), so new chats repeat what was last
-        // used here.
-        controller.defaultsWorkspaceId = environment.workspaces.workspaceId(forSession: session.id)
         if !session.harnessId.isEmpty {
             controller.selectedHarnessId = session.harnessId
         }
@@ -221,7 +217,6 @@ final class SessionStore {
     func paneDraft(
         paneId: UUID,
         project: Project,
-        workspaceId: UUID? = nil,
         preCreatedSession: ChatSession? = nil
     ) -> SessionController {
         if let existing = paneDrafts[paneId] { return existing }
@@ -231,13 +226,7 @@ final class SessionStore {
             composerDefaults: environment.composerDefaults,
             serverClient: environment.serverClient
         )
-        // Workspace scope FIRST: seeding reads the workspace's own last-used
-        // harness/model before falling back to the machine's.
-        controller.defaultsWorkspaceId = workspaceId
         controller.applyComposerDefaults()
-        // In-workspace chats run at the project root by default; a NEW
-        // worktree is an explicit per-chat choice, never a remembered one.
-        controller.wantsNewWorktree = false
         // A session created eagerly INTO a worktree (the New tab page's
         // directory pick) seeds the composer with that context — otherwise
         // the picker would show the project root and the first send would

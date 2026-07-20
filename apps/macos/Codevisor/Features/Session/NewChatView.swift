@@ -336,11 +336,11 @@ struct NewChatView: View {
                     set: { isOn in
                         guard isOn, !isSelected(context, in: controller) else { return }
                         if let name = context.worktreeName {
-                            controller.setRunContext(
+                            controller.selectRunContext(
                                 .existingWorktree(name: name, path: context.path)
                             )
                         } else {
-                            controller.setRunContext(.projectRoot)
+                            controller.selectRunContext(.projectRoot)
                         }
                         // Move any eager connection to the picked directory.
                         Task { await controller.reconnect() }
@@ -362,7 +362,7 @@ struct NewChatView: View {
                     get: { controller.runContext == .newWorktree },
                     set: { isOn in
                         guard isOn, controller.runContext != .newWorktree else { return }
-                        controller.setRunContext(.newWorktree)
+                        controller.selectRunContext(.newWorktree)
                         // Drop any eager connection pinned to a directory; the
                         // agent reconnects in the worktree on first send.
                         Task { await controller.reconnect() }
@@ -454,16 +454,10 @@ struct NewChatView: View {
     private func setUpController() {
         selectedProjectId = preferredProjectId ?? projects.first?.id
         guard let project = selectedProject else { return }
-        // The pane's workspace scopes composer memory: the eager chat knows
-        // its workspace through the pre-created session.
-        let workspaceId = preCreatedSession.flatMap {
-            environment.workspaces.workspaceId(forSession: $0.id)
-        }
         let controller = paneDraftId.map {
             store.paneDraft(
                 paneId: $0,
                 project: project,
-                workspaceId: workspaceId,
                 preCreatedSession: preCreatedSession
             )
         } ?? store.draft(project: project)
@@ -484,7 +478,7 @@ struct NewChatView: View {
         // removed, or a draft carried across workspaces) falls back to the
         // project root rather than pointing at a directory this workspace
         // doesn't own.
-        if !worktreeAvailable {
+        if selectedProject?.isGitRepository == false {
             controller.setRunContext(.projectRoot)
         } else if case let .existingWorktree(name, _) = controller.runContext,
                   !workspaceContexts.contains(where: { $0.worktreeName == name }) {

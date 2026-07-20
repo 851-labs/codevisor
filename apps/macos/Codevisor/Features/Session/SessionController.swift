@@ -251,6 +251,29 @@ final class SessionController {
             draftDidChange()
         }
     }
+
+    /// Applies an explicit picker choice and immediately makes the portable
+    /// project-directory/new-worktree part the default for future composers.
+    /// Existing worktrees remain specific to this draft and are never stored
+    /// as a machine-wide path.
+    func selectRunContext(_ context: RunContextSelection) {
+        setRunContext(context)
+        let remembered: ComposerDefaultsStore.RunLocation?
+        switch context {
+        case .projectRoot:
+            remembered = .projectDirectory
+        case .newWorktree:
+            remembered = .newWorktree
+        case .existingWorktree:
+            remembered = nil
+        }
+        if let remembered {
+            composerDefaults?.rememberRunLocationSelection(
+                serverId: project.serverId,
+                runLocation: remembered
+            )
+        }
+    }
     /// Pre-chat setup steps (worktree creation, agent start) shown on the
     /// session page as "Worked for…"-style expandable sections with a live
     /// timer, streamed logs, and any failure message.
@@ -375,6 +398,35 @@ final class SessionController {
         isGoalEditing = draft.isGoalEditing
         composerTextBeforeGoalEdit = draft.composerTextBeforeGoalEdit
         isRestoringDraft = false
+
+        // Drafts written by an older app may contain explicit selections that
+        // predate immediate defaults persistence. Promote all per-harness
+        // config first, then make the draft's selected harness the global
+        // winner. This preserves an unsent user's choices across the update.
+        if let composerDefaults {
+            for (harnessId, configValues) in draft.configByHarness {
+                composerDefaults.rememberConfigSelections(
+                    serverId: project.serverId,
+                    harnessId: harnessId,
+                    configValues: configValues
+                )
+            }
+            composerDefaults.rememberHarnessSelection(
+                serverId: project.serverId,
+                harnessId: draft.selectedHarnessId
+            )
+            if draft.runInWorktree {
+                composerDefaults.rememberRunLocationSelection(
+                    serverId: project.serverId,
+                    runLocation: .newWorktree
+                )
+            } else if draft.worktreeName == nil {
+                composerDefaults.rememberRunLocationSelection(
+                    serverId: project.serverId,
+                    runLocation: .projectDirectory
+                )
+            }
+        }
 
         // Server file ids are not assumed to survive indefinitely. Re-upload
         // the persisted local bytes and produce fresh refs for the next send.
@@ -551,7 +603,6 @@ final class SessionController {
             hasSentFirst = true
             if onFirstSend != nil {
                 pendingNewChatAnalytics = true
-                rememberComposerDefaults()
             }
             onFirstSend?()
             onFirstSend = nil
@@ -800,6 +851,16 @@ final class SessionController {
         SessionConfigOption.Category.speed
     ]
 
+    /// Config categories that follow the user between composers. Modes remain
+    /// local to a chat; run location is remembered separately from harness
+    /// configuration.
+    private static let rememberedConfigCategories: Set<String> = [
+        SessionConfigOption.Category.model,
+        SessionConfigOption.Category.thoughtLevel,
+        SessionConfigOption.Category.speed,
+        SessionConfigOption.Category.modelConfig
+    ]
+
     /// The model choice shown in the combined model dropdown.
     var modelOption: SessionConfigOption? {
         configOptions.first { $0.category == SessionConfigOption.Category.model && !$0.options.isEmpty }
@@ -868,17 +929,21 @@ final class SessionController {
            previousValue != value {
             captureModelSelected(modelId: value, previousModelId: previousValue)
         }
-        // "Last used" means the last time the user SET these — a mid-chat
-        // model/reasoning/speed switch updates what the next new chat (in
-        // this workspace, and app-wide) starts from. Draft tweaks are
-        // captured at first send instead, so abandoned drafts don't clobber
-        // the remembered defaults.
-        if accepted, !isDraft {
+        // Explicit picker actions become the next composer's defaults
+        // immediately, including in an unsent draft. Persist the resulting
+        // authoritative option set so model-dependent effort/speed resets are
+        // remembered too.
+        if accepted,
+           Self.rememberedConfigCategories.contains(optionBeforeChange?.category ?? ""),
+           let harnessId = connectedHarnessId ?? selectedHarnessId {
             composerDefaults?.rememberConfigSelections(
                 serverId: project.serverId,
-                workspaceId: defaultsWorkspaceId,
-                harnessId: connectedHarnessId ?? selectedHarnessId,
+                harnessId: harnessId,
                 configValues: rememberedConfigValues
+            )
+            composerDefaults?.rememberHarnessSelection(
+                serverId: project.serverId,
+                harnessId: harnessId
             )
         }
     }
@@ -886,26 +951,29 @@ final class SessionController {
     // MARK: - Remembered composer defaults
 
     /// True until the first send creates the real session — the window where
-    /// remembered defaults apply and harness switches re-seed them.
+    /// remembered defaults are seeded into pending config.
     private var isDraft: Bool { serverSession == nil && !hasSentFirst }
 
-    /// The workspace this chat lives in, for workspace-scoped composer
-    /// memory (a new chat in a workspace repeats what was last used THERE;
-    /// the machine level is the fallback for fresh workspaces).
-    @ObservationIgnored var defaultsWorkspaceId: UUID?
-
-    /// Seeds a new-chat draft with the choices the last session was created
-    /// with: the harness and that harness's config selections (model,
-    /// reasoning, …). Called once by `SessionStore` when a draft is made.
+    /// Seeds a new-chat draft from the last explicit selections on this
+    /// machine. Called once by `SessionStore` when a draft is made.
     func applyComposerDefaults() {
         guard let composerDefaults, isDraft else { return }
-        if let harnessId = composerDefaults.lastHarnessId(
-               forWorkspace: defaultsWorkspaceId, orServer: project.serverId
-           ), !harnessId.isEmpty,
+        if let harnessId = composerDefaults.lastHarnessId(forServer: project.serverId),
+           !harnessId.isEmpty,
            harnesses.isEmpty || harnesses.contains(where: { $0.id == harnessId }) {
             selectedHarnessId = harnessId
         }
-        wantsNewWorktree = composerDefaults.runInWorktree(forServer: project.serverId)
+        switch composerDefaults.runLocation(forServer: project.serverId) {
+        // Preserve the preference while repository capability is still being
+        // probed. A confirmed non-git project is clamped by NewChatView; nil
+        // must not silently turn a remembered worktree choice back off.
+        case .newWorktree where project.isGitRepository != false:
+            setRunContext(.newWorktree)
+        case .projectDirectory:
+            setRunContext(.projectRoot)
+        case .newWorktree, nil:
+            break
+        }
         seedRememberedConfig()
     }
 
@@ -918,8 +986,7 @@ final class SessionController {
         guard let composerDefaults, let harnessId = selectedHarnessId else { return }
         let remembered = composerDefaults.configSelections(
             forHarness: harnessId,
-            workspace: defaultsWorkspaceId,
-            orServer: project.serverId
+            onServer: project.serverId
         )
         guard !remembered.isEmpty else { return }
         var options = configOptionsByHarness[harnessId]
@@ -946,40 +1013,11 @@ final class SessionController {
         configOptionsByHarness[harnessId] = options
     }
 
-    /// Records the choices this draft is being created with so the next new
-    /// chat starts from the same setup. Mode is deliberately excluded —
-    /// approval modes shouldn't silently stick across sessions.
-    private func rememberComposerDefaults() {
-        guard let composerDefaults else { return }
-        let rememberedCategories: Set<String> = [
-            SessionConfigOption.Category.model,
-            SessionConfigOption.Category.thoughtLevel,
-            SessionConfigOption.Category.speed,
-            SessionConfigOption.Category.modelConfig
-        ]
-        let values = configOptions
-            .filter { rememberedCategories.contains($0.category ?? "") }
-            .map { ($0.id, $0.currentValue) }
-        composerDefaults.rememberSessionCreation(
-            serverId: project.serverId,
-            workspaceId: defaultsWorkspaceId,
-            harnessId: selectedHarnessId,
-            configValues: Dictionary(values) { _, last in last },
-            runInWorktree: wantsNewWorktree
-        )
-    }
-
     /// Remembered config categories (model, reasoning, speed, model config)
     /// as currently selected — what composer memory captures.
     private var rememberedConfigValues: [String: String] {
-        let rememberedCategories = [
-            SessionConfigOption.Category.model,
-            SessionConfigOption.Category.thoughtLevel,
-            SessionConfigOption.Category.speed,
-            SessionConfigOption.Category.modelConfig
-        ]
         let values = configOptions
-            .filter { rememberedCategories.contains($0.category ?? "") }
+            .filter { Self.rememberedConfigCategories.contains($0.category ?? "") }
             .map { ($0.id, $0.currentValue) }
         return Dictionary(values) { _, last in last }
     }
@@ -1281,6 +1319,10 @@ final class SessionController {
             // than pending edits made under the previous harness.
             seedRememberedConfig()
         }
+        composerDefaults?.rememberHarnessSelection(
+            serverId: project.serverId,
+            harnessId: id
+        )
         if var serverSession {
             serverSession.harnessId = id
             self.serverSession = serverSession
@@ -1355,11 +1397,8 @@ final class SessionController {
         // and shows the optimistic message plus live setup progress.
         if !hasSentFirst {
             hasSentFirst = true
-            // Only a new-chat draft (which has an onFirstSend) sets the
-            // defaults; a resumed session's first message shouldn't.
             if onFirstSend != nil {
                 pendingNewChatAnalytics = true
-                rememberComposerDefaults()
             }
             onFirstSend?()
             onFirstSend = nil
