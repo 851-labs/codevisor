@@ -131,10 +131,11 @@ struct PaneGroupBar: View {
         .padding(.vertical, 6)
         .frame(maxWidth: .infinity)
         // ONE line between panes: split branches draw the separator between
-        // their children, so group-header bars add none of their own (two
-        // hairlines a pixel apart read as a thick smudge). Only the bottom
+        // their children, so group-header bars add no top line of their own
+        // (two hairlines a pixel apart read as a thick smudge). The bottom
         // panel keeps a top divider — nothing else draws its boundary, and
-        // that edge doubles as the resize handle.
+        // that edge doubles as the resize handle. Every bar gets a bottom
+        // divider separating its tabs from the selected pane content.
         .overlay {
             Rectangle()
                 .fill(theme.windowBackground)
@@ -147,6 +148,9 @@ struct PaneGroupBar: View {
                 Divider()
                 resizeHandle
             }
+        }
+        .overlay(alignment: .bottom) {
+            Divider()
         }
         .overlay(alignment: .topLeading) { dropIndicator }
         .onGeometryChange(for: CGRect.self) { proxy in
