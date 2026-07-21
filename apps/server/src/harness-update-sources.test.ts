@@ -3,6 +3,7 @@ import {
   checkBrewLatest,
   checkGithubLatest,
   checkNpmLatest,
+  detectBrewPackage,
   detectInstallOrigin,
   isNewerVersion,
   type FetchLike
@@ -188,5 +189,36 @@ describe("detectInstallOrigin", () => {
         }
       })
     ).toBe("brew")
+  })
+})
+
+describe("detectBrewPackage", () => {
+  it("preserves exact formula and cask channels from resolved symlinks", () => {
+    expect(
+      detectBrewPackage("/opt/homebrew/bin/claude", {
+        realpath: () => "/opt/homebrew/Caskroom/claude-code@latest/2.1.216/claude"
+      })
+    ).toEqual({ cask: true, formula: "claude-code@latest" })
+    expect(
+      detectBrewPackage("/opt/homebrew/bin/claude", {
+        realpath: () => "/opt/homebrew/Caskroom/claude-code/2.1.206/claude"
+      })
+    ).toEqual({ cask: true, formula: "claude-code" })
+    expect(
+      detectBrewPackage("/usr/local/bin/tool", {
+        realpath: () => "/usr/local/Cellar/tool@2/2.4.0/bin/tool"
+      })
+    ).toEqual({ cask: false, formula: "tool@2" })
+  })
+
+  it("returns undefined when Homebrew does not own the binary", () => {
+    expect(
+      detectBrewPackage("/Users/dev/.local/bin/claude", { realpath: (path) => path })
+    ).toBeUndefined()
+    expect(
+      detectBrewPackage("/opt/homebrew/bin/claude", {
+        realpath: () => "/opt/homebrew/Caskroom/claude;echo-owned/1/claude"
+      })
+    ).toBeUndefined()
   })
 })

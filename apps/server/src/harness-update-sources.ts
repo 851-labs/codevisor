@@ -11,6 +11,11 @@ export interface LatestVersionResult {
   readonly channel?: string
 }
 
+export interface BrewPackage {
+  readonly formula: string
+  readonly cask: boolean
+}
+
 const none: LatestVersionResult = {}
 
 export type FetchLike = (
@@ -161,4 +166,26 @@ export const detectInstallOrigin = (
   }
   if (real.startsWith("/usr/local/bin/") || real.startsWith("/usr/bin/")) return "standalone"
   return "unknown"
+}
+
+/// Identifies the exact Homebrew owner of a resolved binary. The token comes
+/// from the Cellar/Caskroom path rather than the harness catalog so versioned
+/// channels such as `claude-code@latest` are preserved during updates.
+export const detectBrewPackage = (
+  binaryPath: string,
+  options: { readonly realpath?: (path: string) => string } = {}
+): BrewPackage | undefined => {
+  const resolve = options.realpath ?? ((path: string) => realpathSync(path))
+  let real: string
+  try {
+    real = resolve(binaryPath)
+  } catch {
+    real = binaryPath
+  }
+  const match = real.match(/\/(Cellar|Caskroom)\/([A-Za-z0-9@+_.-]+)\//)
+  const location = match?.[1]
+  const formula = match?.[2]
+  return location === undefined || formula === undefined
+    ? undefined
+    : { cask: location === "Caskroom", formula }
 }

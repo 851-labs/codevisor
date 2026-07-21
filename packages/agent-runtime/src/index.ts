@@ -217,6 +217,7 @@ export const harnessCatalog: ReadonlyArray<HarnessDefinition> = [
     id: "claude-code",
     installHint: "curl -fsSL https://claude.ai/install.sh | bash",
     installMethods: [
+      { cask: true, formula: "claude-code@latest", kind: "brew" },
       { command: "curl -fsSL https://claude.ai/install.sh | bash", kind: "curl" },
       { kind: "npm", packageName: "@anthropic-ai/claude-code" }
     ],
@@ -226,13 +227,24 @@ export const harnessCatalog: ReadonlyArray<HarnessDefinition> = [
     update: {
       sources: [
         {
-          // `claude update` is install-method aware (native/npm), but brew
-          // installs refuse to self-update unless this env opt-in is set.
-          apply: {
-            args: ["update"],
-            env: { CLAUDE_CODE_PACKAGE_MANAGER_AUTO_UPDATE: "1" },
-            kind: "selfUpdate"
-          },
+          // Homebrew-owned binaries deliberately refuse `claude update` and
+          // exit successfully after printing the manual brew command. Infer
+          // the exact owning cask so stable and @latest stay on their channel.
+          apply: { kind: "reinstall" },
+          check: { kind: "brew" },
+          when: "brew"
+        },
+        {
+          // npm owns this binary, so update it directly through npm rather
+          // than depending on Claude's package-manager diagnostics.
+          apply: { kind: "reinstall" },
+          check: { kind: "npm", packageName: "@anthropic-ai/claude-code" },
+          when: "npm"
+        },
+        {
+          // Native/curl installs are owned by Claude's native updater. This
+          // also remains the safe fallback for standalone/unknown layouts.
+          apply: { args: ["update"], kind: "selfUpdate" },
           check: { kind: "npm", packageName: "@anthropic-ai/claude-code" },
           when: "any"
         }

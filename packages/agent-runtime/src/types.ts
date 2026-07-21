@@ -116,7 +116,12 @@ export interface HarnessInstallMethodSpec {
 /// Where to learn the latest available version for one install origin.
 export type UpdateCheckSpec =
   | { readonly kind: "npm"; readonly packageName: string; readonly distTag?: string }
-  | { readonly kind: "brew"; readonly formula: string }
+  | {
+      readonly kind: "brew"
+      /// Omit to infer the owning formula/cask from the resolved binary's
+      /// Cellar/Caskroom path. This preserves channels such as `@latest`.
+      readonly formula?: string
+    }
   | { readonly kind: "github"; readonly repo: string }
   | {
       readonly kind: "sparkle"

@@ -1,4 +1,8 @@
-import type { AgentRuntimeService, HarnessDefinition } from "@codevisor/agent-runtime"
+import {
+  harnessCatalog,
+  type AgentRuntimeService,
+  type HarnessDefinition
+} from "@codevisor/agent-runtime"
 import type { Harness } from "@codevisor/api"
 import { makeDatabase, type CodevisorDatabaseService } from "@codevisor/db"
 import type { TerminalManagerService } from "@codevisor/terminal"
@@ -517,6 +521,137 @@ describe("harness lifecycle install/update execution", () => {
 
     await lifecycle.beginUpdate("fake-cli")
     expect(spawns[0]?.command).toBe("brew upgrade fake-cli")
+  })
+
+  it("checks and updates Homebrew Claude through its owning cask", async () => {
+    const db = await makeDb()
+    const definition = harnessCatalog.find((candidate) => candidate.id === "claude-code")
+    expect(definition).toBeDefined()
+    if (definition === undefined) return
+
+    const binary = "/opt/homebrew/Caskroom/claude-code@latest/2.1.215/claude"
+    const installed = harness("claude-code", "/opt/homebrew/bin/claude", "2.1.215")
+    const agents = {
+      catalog: [definition],
+      discoverHarnesses: Effect.succeed([installed]),
+      refreshEnvironment: Effect.void
+    } as unknown as AgentRuntimeService
+    const requests: string[] = []
+    const fetchImpl: FetchLike = async (url) => {
+      requests.push(url)
+      return url.includes("/api/cask/claude-code%40latest.json")
+        ? jsonResponse({ version: "2.1.216" })
+        : jsonResponse({}, 404)
+    }
+    const bin = makeBinDir(["brew"])
+    const { terminal } = fakeTerminal()
+    const { processes, spawnShell, spawns } = fakeSpawner()
+    const lifecycle = makeHarnessLifecycleManager({
+      agents,
+      db,
+      fetchImpl,
+      realpath: () => binary,
+      resolveEnv: async () => ({ PATH: bin }),
+      spawnShell,
+      terminal
+    })
+
+    const outcomes = await lifecycle.checkForUpdates(true)
+    expect(outcomes[0]?.info).toMatchObject({
+      installOrigin: "brew",
+      latestVersion: "2.1.216",
+      source: "brew",
+      updateAvailable: true
+    })
+    expect(requests.some((url) => url.includes("registry.npmjs.org"))).toBe(false)
+
+    await lifecycle.beginUpdate("claude-code")
+    expect(spawns[0]?.command).toBe("brew upgrade --cask claude-code@latest")
+    processes[0]?.emitExit(0)
+    await flush()
+  })
+
+  it("checks and updates npm-owned Claude through npm", async () => {
+    const db = await makeDb()
+    const definition = harnessCatalog.find((candidate) => candidate.id === "claude-code")
+    expect(definition).toBeDefined()
+    if (definition === undefined) return
+
+    const binary = "/opt/homebrew/lib/node_modules/@anthropic-ai/claude-code/cli.js"
+    const installed = harness("claude-code", "/opt/homebrew/bin/claude", "2.1.215")
+    const agents = {
+      catalog: [definition],
+      discoverHarnesses: Effect.succeed([installed]),
+      refreshEnvironment: Effect.void
+    } as unknown as AgentRuntimeService
+    const requests: string[] = []
+    const fetchImpl: FetchLike = async (url) => {
+      requests.push(url)
+      return url.includes("registry.npmjs.org/@anthropic-ai/claude-code")
+        ? jsonResponse({ "dist-tags": { latest: "2.1.216" } })
+        : jsonResponse({}, 404)
+    }
+    const bin = makeBinDir(["npm"])
+    const { terminal } = fakeTerminal()
+    const { processes, spawnShell, spawns } = fakeSpawner()
+    const lifecycle = makeHarnessLifecycleManager({
+      agents,
+      db,
+      fetchImpl,
+      realpath: () => binary,
+      resolveEnv: async () => ({ PATH: bin }),
+      spawnShell,
+      terminal
+    })
+
+    const outcomes = await lifecycle.checkForUpdates(true)
+    expect(outcomes[0]?.info).toMatchObject({
+      installOrigin: "npm",
+      latestVersion: "2.1.216",
+      source: "npm",
+      updateAvailable: true
+    })
+    expect(requests.some((url) => url.includes("formulae.brew.sh"))).toBe(false)
+
+    await lifecycle.beginUpdate("claude-code")
+    expect(spawns[0]?.command).toBe("npm install -g @anthropic-ai/claude-code@latest")
+    processes[0]?.emitExit(0)
+    await flush()
+  })
+
+  it("updates native Claude through Claude's self-updater", async () => {
+    const db = await makeDb()
+    const definition = harnessCatalog.find((candidate) => candidate.id === "claude-code")
+    expect(definition).toBeDefined()
+    if (definition === undefined) return
+
+    const binary = "/Users/dev/.local/share/claude/versions/2.1.215"
+    const installed = harness("claude-code", "/Users/dev/.local/bin/claude", "2.1.215")
+    const agents = {
+      catalog: [definition],
+      discoverHarnesses: Effect.succeed([installed]),
+      refreshEnvironment: Effect.void
+    } as unknown as AgentRuntimeService
+    const { terminal } = fakeTerminal()
+    const { processes, spawnShell, spawns } = fakeSpawner()
+    const lifecycle = makeHarnessLifecycleManager({
+      agents,
+      db,
+      fetchImpl: async () => jsonResponse({ "dist-tags": { latest: "2.1.216" } }),
+      home: "/Users/dev",
+      realpath: () => binary,
+      resolveEnv: async () => ({ PATH: "" }),
+      spawnShell,
+      terminal
+    })
+
+    const outcomes = await lifecycle.checkForUpdates(true)
+    expect(outcomes[0]?.info).toMatchObject({ installOrigin: "curl", source: "npm" })
+
+    await lifecycle.beginUpdate("claude-code")
+    expect(spawns[0]?.command).toBe("/Users/dev/.local/bin/claude update")
+    processes[0]?.emitExit(0)
+    await flush()
   })
 
   const appBundleDefinition: HarnessDefinition = {

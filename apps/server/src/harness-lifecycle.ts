@@ -25,6 +25,7 @@ import {
   checkBrewLatest,
   checkGithubLatest,
   checkNpmLatest,
+  detectBrewPackage,
   detectInstallOrigin,
   isNewerVersion,
   type FetchLike,
@@ -280,12 +281,24 @@ export const makeHarnessLifecycleManager = (
     return loaded
   }
 
-  const checkSource = async (source: HarnessUpdateSource): Promise<LatestVersionResult> => {
+  const checkSource = async (
+    source: HarnessUpdateSource,
+    binaryPath?: string
+  ): Promise<LatestVersionResult> => {
     switch (source.check.kind) {
       case "npm":
         return checkNpmLatest(source.check.packageName, source.check.distTag ?? "latest", fetchImpl)
-      case "brew":
-        return checkBrewLatest(source.check.formula, fetchImpl)
+      case "brew": {
+        const formula =
+          source.check.formula ??
+          (binaryPath === undefined
+            ? undefined
+            : detectBrewPackage(
+                binaryPath,
+                config.realpath === undefined ? {} : { realpath: config.realpath }
+              )?.formula)
+        return formula === undefined ? {} : checkBrewLatest(formula, fetchImpl)
+      }
       case "github":
         return checkGithubLatest(source.check.repo, fetchImpl)
       case "sparkle": {
@@ -337,7 +350,7 @@ export const makeHarnessLifecycleManager = (
       if (bundle === undefined) return undefined
       installedVersion = await readBundleShortVersion(bundle)
     }
-    const latest = await checkSource(source)
+    const latest = await checkSource(source, path)
     const updateAvailable =
       installedVersion !== undefined &&
       latest.latestVersion !== undefined &&
@@ -680,10 +693,21 @@ export const makeHarnessLifecycleManager = (
         return { queued: false, terminalId }
       }
       case "reinstall": {
-        const spec = (definition.installMethods ?? []).find(
-          (candidate) =>
-            candidate.kind === (origin === "brew" ? "brew" : origin === "curl" ? "curl" : "npm")
-        )
+        const detectedBrew =
+          origin === "brew"
+            ? detectBrewPackage(
+                path,
+                config.realpath === undefined ? {} : { realpath: config.realpath }
+              )
+            : undefined
+        const spec: HarnessInstallMethodSpec | undefined =
+          detectedBrew === undefined
+            ? (definition.installMethods ?? []).find(
+                (candidate) =>
+                  candidate.kind ===
+                  (origin === "brew" ? "brew" : origin === "curl" ? "curl" : "npm")
+              )
+            : { cask: detectedBrew.cask, formula: detectedBrew.formula, kind: "brew" }
         if (spec === undefined)
           throw new Error(`${harnessId} has no reinstall method for ${origin}`)
         const { terminalId } = await runOperation({
