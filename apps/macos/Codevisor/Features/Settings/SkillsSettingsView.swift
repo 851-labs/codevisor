@@ -99,6 +99,12 @@ struct SkillsSettingsView: View {
         globalSkills.contains(where: isOutOfSync)
     }
 
+    private var brokenLinks: [ServerHarnessSkill] {
+        (scan?.harnesses ?? [])
+            .flatMap(\.skills)
+            .filter { $0.classification == "broken" }
+    }
+
     /// Harness groups that actually have native/independent skills to show.
     private var harnessGroups: [ServerSkillsHarnessGroup] {
         (scan?.harnesses ?? []).filter { !$0.skills.isEmpty }
@@ -152,6 +158,33 @@ struct SkillsSettingsView: View {
 
     private var skillsList: some View {
         Form {
+            if !brokenLinks.isEmpty {
+                Section {
+                    HStack(spacing: 10) {
+                        Image(systemName: "exclamationmark.triangle")
+                            .foregroundStyle(
+                                theme.isSystem
+                                    ? AnyShapeStyle(.secondary)
+                                    : AnyShapeStyle(theme.statusWarn)
+                            )
+                            .accessibilityHidden(true)
+                        Text(brokenLinksMessage)
+                            .foregroundStyle(.primary)
+                        Spacer()
+                        Button(
+                            isMutating ? "Removing\u{2026}" : "Remove All",
+                            role: .destructive
+                        ) {
+                            Task { await removeAllBrokenLinks() }
+                        }
+                        .settingsActionTint(theme)
+                        .disabled(isMutating)
+                        .accessibilityLabel("Remove all broken skill links")
+                    }
+                }
+                .listRowBackground(theme.isSystem ? nil : theme.cardQuietBackground)
+            }
+
             if anyOutOfSync {
                 Section {
                     HStack(spacing: 10) {
@@ -220,6 +253,12 @@ struct SkillsSettingsView: View {
         }
         .settingsPaneFormStyle(theme)
         .disabled(isMutating)
+    }
+
+    private var brokenLinksMessage: String {
+        brokenLinks.count == 1
+            ? "A broken skill link was found."
+            : "\(brokenLinks.count) broken skill links were found."
     }
 
     private func globalSkillRow(_ skill: ServerGlobalSkill) -> some View {
@@ -441,6 +480,32 @@ struct SkillsSettingsView: View {
         } catch {
             actionError = ErrorReporter.userFacingMessage(for: error)
             throw error
+        }
+    }
+
+    private func removeAllBrokenLinks() async {
+        let links = brokenLinks
+        guard let first = links.first else { return }
+        do {
+            try await mutate {
+                var refreshed = try await environment.serverClient.setSkillInstalled(
+                    directoryName: first.directoryName,
+                    harnessId: first.harnessId,
+                    installed: false
+                )
+                for link in links.dropFirst() {
+                    refreshed = try await environment.serverClient.setSkillInstalled(
+                        directoryName: link.directoryName,
+                        harnessId: link.harnessId,
+                        installed: false
+                    )
+                }
+                return refreshed
+            }
+        } catch {
+            // Earlier removals in the batch may already have succeeded.
+            // Refresh so the banner always reflects what remains.
+            await reload()
         }
     }
 }
