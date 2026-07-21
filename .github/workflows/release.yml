@@ -1,151 +1,123 @@
 name: Release
 
 on:
-  push:
-    tags:
-      - "v*"
   workflow_dispatch:
     inputs:
       version:
-        description: "Version to release, without the leading v. Required when not running from a tag."
-        required: false
-        type: string
-      macos_runner:
-        description: "Apple Silicon macOS runner label. Defaults to GitHub-hosted macOS."
-        required: false
-        default: "macos-26"
-        type: string
-      macos_intel_runner:
-        description: "Intel macOS runner label used to build x64 server runtimes. Defaults to GitHub-hosted Intel macOS."
-        required: false
-        default: "macos-26-intel"
+        description: Version to release, without the leading v.
+        required: true
         type: string
 
 permissions:
   actions: read
   contents: write
 
+concurrency:
+  group: stable-release
+  cancel-in-progress: false
+
 env:
-  BUN_VERSION: "1.3.13"
   NODE_VERSION: "24.x"
   REPOSITORY: ${{ github.repository }}
-  # R2 buckets can't be renamed; keep the existing bucket and use a new prefix.
+  # R2 is a frozen compatibility bridge after the first release from this
+  # workflow. The existing bucket name cannot be changed.
   R2_BUCKET: "herdman"
-  R2_PUBLIC_BASE_URL: "https://pub-d2d6eb72b71c4986a742c0527774c9f0.r2.dev/releases/codevisor"
 
 jobs:
   metadata:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
-      version: ${{ steps.version.outputs.version }}
-      tag: ${{ steps.version.outputs.tag }}
+      version: ${{ steps.release.outputs.version }}
+      tag: ${{ steps.release.outputs.tag }}
+      rc_run_id: ${{ steps.release.outputs.rc_run_id }}
+      include_compatibility_artifacts: ${{ steps.bridge.outputs.include }}
     steps:
-      - name: Resolve release version
-        id: version
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+      - name: Require the tag to match current main and a successful RC
+        id: release
         shell: bash
         env:
+          GH_TOKEN: ${{ github.token }}
           INPUT_VERSION: ${{ inputs.version }}
         run: |
-          if [[ "${GITHUB_REF_TYPE}" == "tag" && "${GITHUB_REF_NAME}" == v* ]]; then
-            tag="${GITHUB_REF_NAME}"
-            version="${tag#v}"
-          else
-            version="${INPUT_VERSION#v}"
-            if [[ -z "$version" ]]; then
-              echo "version input is required when the workflow is not running from a v* tag" >&2
-              exit 1
-            fi
-            tag="v$version"
+          version="${INPUT_VERSION#v}"
+          tag="v$version"
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Release tags must be numeric semantic versions (vMAJOR.MINOR.PATCH)." >&2
+            exit 1
+          fi
+
+          git fetch origin main --no-tags
+          source_sha="$(git rev-parse HEAD)"
+          main_sha="$(git rev-parse origin/main)"
+          if [[ "$source_sha" != "$main_sha" || "$source_sha" != "$GITHUB_SHA" ]]; then
+            echo "Release source is $source_sha, but current origin/main is $main_sha." >&2
+            echo "Dispatch the release from current main HEAD." >&2
+            exit 1
+          fi
+          existing_tag_sha="$(git ls-remote origin "refs/tags/$tag^{}" | awk '{print $1}')"
+          if [[ -z "$existing_tag_sha" ]]; then
+            existing_tag_sha="$(git ls-remote origin "refs/tags/$tag" | awk '{print $1}')"
+          fi
+          if [[ -n "$existing_tag_sha" && "$existing_tag_sha" != "$source_sha" ]]; then
+            echo "$tag already exists at $existing_tag_sha; release tags are never moved." >&2
+            exit 1
+          fi
+
+          rc_run_id="$(gh run list \
+            --workflow release-candidate.yml \
+            --commit "$source_sha" \
+            --status success \
+            --limit 10 \
+            --json databaseId,headSha \
+            --jq 'map(select(.headSha == "'$source_sha'"))[0].databaseId // empty')"
+          if [[ -z "$rc_run_id" ]]; then
+            echo "No successful release-candidate run exists for $source_sha." >&2
+            exit 1
+          fi
+
+          provenance_dir="$RUNNER_TEMP/codevisor-rc-provenance"
+          gh run download "$rc_run_id" \
+            --name codevisor-release-provenance \
+            --dir "$provenance_dir"
+          rc_sha="$(jq -r .source_sha "$provenance_dir/release-provenance.json")"
+          rc_version="$(jq -r .version "$provenance_dir/release-provenance.json")"
+          rc_channel="$(jq -r .channel "$provenance_dir/release-provenance.json")"
+          if [[ "$rc_sha" != "$source_sha" || "$rc_version" != "$version" || "$rc_channel" != "rc" ]]; then
+            echo "RC provenance does not match release $tag at $source_sha." >&2
+            jq . "$provenance_dir/release-provenance.json" >&2
+            exit 1
           fi
 
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
-
-  # Keep the JS/TS check suite on plentiful Linux capacity. Swift package tests
-  # run on the already-required Intel macOS runner after its app runtime has
-  # been uploaded, avoiding a second macOS runner queue on the release path.
-  checks:
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v6
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: ${{ env.BUN_VERSION }}
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
-      - name: Run JS release checks
-        run: bun run check:js
-
-  build-server-linux:
-    needs: metadata
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v6
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: ${{ env.BUN_VERSION }}
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
-      - name: Build Linux server archive
-        run: scripts/release/build-server-archive.sh "${{ needs.metadata.outputs.version }}" dist/release
-      - uses: actions/upload-artifact@v7
-        with:
-          name: codevisor-server-linux
-          path: |
-            dist/release/codevisor-server-*.tar.gz
-            dist/release/codevisor-server-*.tar.gz.sha256
-          if-no-files-found: error
-
-  build-server-macos-x64:
-    needs: metadata
-    runs-on: ${{ inputs.macos_intel_runner || vars.CODEVISOR_MACOS_INTEL_RUNNER || vars.HERDMAN_MACOS_INTEL_RUNNER || 'macos-26-intel' }}
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v6
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: ${{ env.BUN_VERSION }}
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
-      - name: Build Intel macOS server runtime
+          echo "rc_run_id=$rc_run_id" >> "$GITHUB_OUTPUT"
+          echo "Releasing $tag at current main HEAD $source_sha from RC run $rc_run_id"
+      - name: Check whether the R2 bridge still needs a universal app
+        id: bridge
         shell: bash
         run: |
-          runtime_dir="dist/release/work/app-server-runtime-darwin-x64"
-          scripts/release/build-server-runtime.sh "${{ needs.metadata.outputs.version }}" "$runtime_dir" darwin-x64
-          tar -C "$runtime_dir" -czf dist/release/codevisor-app-server-runtime-darwin-x64.tar.gz .
-      # The ARM app build can start as soon as this runtime is available. Do
-      # not make it wait for the standalone archive or Swift tests below.
-      - name: Upload Intel macOS app runtime
-        uses: actions/upload-artifact@v7
-        with:
-          name: codevisor-macos-x64-runtime
-          path: dist/release/codevisor-app-server-runtime-darwin-x64.tar.gz
-          if-no-files-found: error
-      - name: Build Intel macOS server archive
-        run: scripts/release/build-server-archive.sh "${{ needs.metadata.outputs.version }}" dist/release darwin-x64 dist/release/work/app-server-runtime-darwin-x64
-      - name: Run Swift package tests
-        run: bun run swift:test
-      - name: Upload Intel macOS server archive
-        uses: actions/upload-artifact@v7
-        with:
-          name: codevisor-server-macos-x64
-          path: |
-            dist/release/codevisor-server-darwin-x64.tar.gz
-            dist/release/codevisor-server-darwin-x64.tar.gz.sha256
-          if-no-files-found: error
+          include=true
+          if curl --fail --silent --show-error --head \
+            https://pub-d2d6eb72b71c4986a742c0527774c9f0.r2.dev/releases/codevisor/bridge.json \
+            >/dev/null 2>&1; then
+            include=false
+          fi
+          echo "include=$include" >> "$GITHUB_OUTPUT"
 
-  build-macos:
+  build:
     needs: metadata
-    runs-on: ${{ inputs.macos_runner || vars.CODEVISOR_MACOS_ARM_RUNNER || vars.CODEVISOR_MACOS_RUNNER || vars.HERDMAN_MACOS_ARM_RUNNER || vars.HERDMAN_MACOS_RUNNER || 'macos-26' }}
-    env:
+    uses: ./.github/workflows/build-release-artifacts.yml
+    with:
+      version: ${{ needs.metadata.outputs.version }}
+      channel: stable
+      source_sha: ${{ github.sha }}
+      reuse_run_id: ${{ needs.metadata.outputs.rc_run_id }}
+      artifact_retention_days: 30
+      include_compatibility_artifacts: ${{ needs.metadata.outputs.include_compatibility_artifacts == 'true' }}
+    secrets:
       APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
       APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
       APPLE_CODESIGN_IDENTITY: ${{ secrets.APPLE_CODESIGN_IDENTITY }}
@@ -155,197 +127,155 @@ jobs:
       APP_STORE_CONNECT_API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
       APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
       APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
-      CODEVISOR_BUILD_NUMBER: ${{ github.run_number }}
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v6
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: ${{ env.BUN_VERSION }}
-      # The pinned Ghostty revision lives in build-ghostty.sh, so the script
-      # hash is the whole cache identity. The warm cache is produced on the
-      # default branch by .github/workflows/ghostty-cache.yml — caches saved
-      # by tag-triggered runs are invisible to other tags, so a release run
-      # building GhosttyKit here means the warmer has not run (or was evicted).
-      - name: Restore GhosttyKit cache
-        id: ghosttykit-cache
-        uses: actions/cache/restore@v6
-        with:
-          path: apps/macos/Frameworks/GhosttyKit.xcframework
-          key: ghosttykit-${{ hashFiles('apps/macos/scripts/build-ghostty.sh') }}
-      - name: Fetch Ghostty source
-        if: steps.ghosttykit-cache.outputs.cache-hit != 'true'
-        run: apps/macos/scripts/build-ghostty.sh --fetch-only
-      - uses: DeterminateSystems/nix-installer-action@main
-        if: steps.ghosttykit-cache.outputs.cache-hit != 'true'
-        with:
-          determinate: true
-      - name: Build GhosttyKit
-        if: steps.ghosttykit-cache.outputs.cache-hit != 'true'
-        run: nix develop ./.repos/ghostty -c apps/macos/scripts/build-ghostty.sh
-      - name: Verify GhosttyKit cache
-        shell: bash
-        run: |
-          if [[ ! -d apps/macos/Frameworks/GhosttyKit.xcframework ]]; then
-            echo "GhosttyKit.xcframework was not restored or built." >&2
-            exit 1
-          fi
-      - name: Save GhosttyKit cache
-        if: steps.ghosttykit-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v6
-        with:
-          path: apps/macos/Frameworks/GhosttyKit.xcframework
-          key: ghosttykit-${{ hashFiles('apps/macos/scripts/build-ghostty.sh') }}
-      # Default-branch builds populate this cache in ghostty-cache.yml. Tag
-      # runs can restore caches from main, but caches created by one tag are
-      # not visible to the next tag.
-      - name: Resolve Xcode cache version
-        id: xcode-cache-version
-        shell: bash
-        run: echo "value=$(xcodebuild -version | shasum -a 256 | awk '{print $1}')" >> "$GITHUB_OUTPUT"
-      - name: Restore Xcode DerivedData cache
-        uses: actions/cache/restore@v6
-        with:
-          path: dist/release/DerivedData
-          key: codevisor-xcode-${{ runner.arch }}-${{ steps.xcode-cache-version.outputs.value }}-${{ hashFiles('apps/macos/Codevisor.xcodeproj/**', 'apps/macos/Codevisor/**', 'apps/macos/Packages/**', 'apps/macos/scripts/build-ghostty.sh', 'scripts/release/build-macos-xcode.sh') }}
-          restore-keys: |
-            codevisor-xcode-${{ runner.arch }}-${{ steps.xcode-cache-version.outputs.value }}-
-      - name: Import Developer ID certificate
-        if: env.APPLE_CERTIFICATE_BASE64 != ''
-        shell: bash
-        env:
-          KEYCHAIN_PASSWORD: ${{ github.run_id }}-${{ github.run_attempt }}
-        run: |
-          certificate_path="$RUNNER_TEMP/apple-certificate.p12"
-          keychain_path="$RUNNER_TEMP/codevisor-signing.keychain-db"
-
-          echo "$APPLE_CERTIFICATE_BASE64" | base64 --decode > "$certificate_path"
-          security create-keychain -p "$KEYCHAIN_PASSWORD" "$keychain_path"
-          security set-keychain-settings -lut 21600 "$keychain_path"
-          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$keychain_path"
-          security import "$certificate_path" -P "$APPLE_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$keychain_path"
-          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$keychain_path"
-          security list-keychains -d user -s "$keychain_path" $(security list-keychains -d user | tr -d '"')
-      - name: Prepare App Store Connect API key
-        if: env.APP_STORE_CONNECT_API_KEY_BASE64 != ''
-        shell: bash
-        run: |
-          if [[ -z "$APP_STORE_CONNECT_API_KEY_ID" || -z "$APP_STORE_CONNECT_ISSUER_ID" ]]; then
-            echo "APP_STORE_CONNECT_API_KEY_ID and APP_STORE_CONNECT_ISSUER_ID are required when APP_STORE_CONNECT_API_KEY_BASE64 is set." >&2
-            exit 1
-          fi
-
-          api_key_path="$RUNNER_TEMP/AuthKey_$APP_STORE_CONNECT_API_KEY_ID.p8"
-          echo "$APP_STORE_CONNECT_API_KEY_BASE64" | base64 --decode > "$api_key_path"
-          chmod 600 "$api_key_path"
-          echo "APP_STORE_CONNECT_API_KEY_PATH=$api_key_path" >> "$GITHUB_ENV"
-      - name: Build macOS app archive
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          CODEVISOR_DARWIN_X64_RUNTIME_ARCHIVE: dist/release/codevisor-app-server-runtime-darwin-x64.tar.gz
-          CODEVISOR_RUNTIME_ARCHIVE_WAIT_SECONDS: "900"
-          CODEVISOR_REQUIRE_UNIVERSAL_MACOS_APP: "1"
-        run: |
-          runtime_archive="$CODEVISOR_DARWIN_X64_RUNTIME_ARCHIVE"
-          runtime_download_dir="$(mktemp -d "$RUNNER_TEMP/codevisor-x64-runtime.XXXXXX")"
-          failure_marker="$RUNNER_TEMP/codevisor-x64-runtime-download-failed"
-          rm -f "$failure_marker" "$runtime_archive.part"
-          mkdir -p "$(dirname "$runtime_archive")"
-
-          download_intel_runtime() {
-            for attempt in {1..90}; do
-              if gh run download "$GITHUB_RUN_ID" \
-                --name codevisor-macos-x64-runtime \
-                --dir "$runtime_download_dir"; then
-                cp "$runtime_download_dir/codevisor-app-server-runtime-darwin-x64.tar.gz" "$runtime_archive.part"
-                mv "$runtime_archive.part" "$runtime_archive"
-                return 0
-              fi
-              echo "Intel macOS runtime artifact is not ready yet; retrying in 10s ($attempt/90)."
-              sleep 10
-            done
-            echo "error: timed out waiting for codevisor-macos-x64-runtime artifact." >&2
-            return 1
-          }
-
-          (download_intel_runtime || { touch "$failure_marker"; exit 1; }) &
-          download_pid=$!
-          trap 'kill "$download_pid" 2>/dev/null || true' EXIT
-          bun install --frozen-lockfile
-          CODEVISOR_RUNTIME_ARCHIVE_FAILURE_MARKER="$failure_marker" \
-            scripts/release/build-macos-app.sh "${{ needs.metadata.outputs.version }}" dist/release
-          wait "$download_pid"
-          trap - EXIT
-      - name: Build macOS server archive
-        run: scripts/release/build-server-archive.sh "${{ needs.metadata.outputs.version }}" dist/release darwin-arm64 dist/release/work/app-server-runtimes/darwin-arm64
-      - uses: actions/upload-artifact@v7
-        with:
-          name: codevisor-macos
-          path: |
-            dist/release/Codevisor-macOS*.zip
-            dist/release/Codevisor-macOS*.zip.sha256
-            dist/release/Codevisor-*.dmg
-            dist/release/Codevisor-*.dmg.sha256
-            dist/release/codevisor-server-*.tar.gz
-            dist/release/codevisor-server-*.tar.gz.sha256
-          if-no-files-found: error
 
   publish:
-    needs:
-      - metadata
-      - checks
-      - build-server-linux
-      - build-server-macos-x64
-      - build-macos
-    runs-on: ubuntu-latest
+    needs: [metadata, build]
+    runs-on: ubuntu-24.04
     env:
       VERSION: ${{ needs.metadata.outputs.version }}
       TAG: ${{ needs.metadata.outputs.tag }}
-      GH_TOKEN: ${{ github.token }}
-      TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/download-artifact@v8
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Download macOS release artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
+          name: codevisor-macos
           path: dist/release
-          merge-multiple: true
-      - name: Publish GitHub release assets
-        shell: bash
-        run: |
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" dist/release/*.zip dist/release/*.tar.gz dist/release/*.dmg --clobber
-          else
-            gh release create "$TAG" dist/release/*.zip dist/release/*.tar.gz dist/release/*.dmg \
-              --target "$GITHUB_SHA" \
-              --title "$TAG" \
-              --generate-notes
-          fi
-      - uses: actions/setup-node@v6
+      - name: Download x64 Linux server release artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          node-version: ${{ env.NODE_VERSION }}
-      - name: Upload R2 release assets
+          name: codevisor-server-linux-x64
+          path: dist/release
+      - name: Download ARM Linux server release artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: codevisor-server-linux-arm64
+          path: dist/release
+      - name: Download Intel server release artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: codevisor-server-macos-x64
+          path: dist/release
+      - name: Determine whether this is the one-time R2 bridge release
+        id: bridge
         shell: bash
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.CLOUDFLARE_R2_SECRET_ACCESS_KEY }}
           R2_S3_API_ENDPOINT: ${{ secrets.CLOUDFLARE_R2_S3_API_ENDPOINT }}
-        run: scripts/release/upload-r2-artifacts.sh "$VERSION" dist/release
-      - name: Update Homebrew tap
+        run: |
+          bridge_url="https://pub-d2d6eb72b71c4986a742c0527774c9f0.r2.dev/releases/codevisor/bridge.json"
+          if bridge_json="$(curl --fail --silent --show-error "$bridge_url" 2>/dev/null)"; then
+            echo "required=false" >> "$GITHUB_OUTPUT"
+            bridge_version="$(jq -r .version <<<"$bridge_json")"
+            echo "version=${bridge_version#v}" >> "$GITHUB_OUTPUT"
+            echo "R2 already contains its frozen compatibility bridge."
+
+            # Apps from the brief pre-R2 era query GitHub latest but hardcode
+            # this asset name. Reattach the frozen bridge app to every latest
+            # release so a dormant install can still cross the migration years
+            # later; modern users continue to download the small split assets.
+            legacy_url="https://pub-d2d6eb72b71c4986a742c0527774c9f0.r2.dev/releases/herdman/v${bridge_version#v}/HerdMan-macOS.zip"
+            curl --fail --silent --show-error --location \
+              "$legacy_url" \
+              --output dist/release/HerdMan-macOS.zip
+            shasum -a 256 dist/release/HerdMan-macOS.zip | awk '{print $1}' \
+              > dist/release/HerdMan-macOS.zip.sha256
+          else
+            if [[ -z "$AWS_ACCESS_KEY_ID" || -z "$AWS_SECRET_ACCESS_KEY" || -z "$R2_S3_API_ENDPOINT" ]]; then
+              echo "R2 credentials are required for the one-time compatibility bridge." >&2
+              exit 1
+            fi
+            echo "required=true" >> "$GITHUB_OUTPUT"
+            echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+            cp dist/release/Codevisor-macOS.zip dist/release/HerdMan-macOS.zip
+            shasum -a 256 dist/release/HerdMan-macOS.zip | awk '{print $1}' \
+              > dist/release/HerdMan-macOS.zip.sha256
+            echo "This release will become the permanent R2 bridge."
+          fi
+      - name: Publish GitHub release assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          existing_tag_sha="$(git ls-remote origin "refs/tags/$TAG^{}" | awk '{print $1}')"
+          if [[ -z "$existing_tag_sha" ]]; then
+            existing_tag_sha="$(git ls-remote origin "refs/tags/$TAG" | awk '{print $1}')"
+          fi
+          main_sha="$(git ls-remote origin refs/heads/main | awk '{print $1}')"
+          if [[ -n "$existing_tag_sha" && "$existing_tag_sha" != "$GITHUB_SHA" ]]; then
+            echo "$TAG already points to $existing_tag_sha, not $GITHUB_SHA." >&2
+            exit 1
+          fi
+          if [[ -z "$existing_tag_sha" && "$main_sha" != "$GITHUB_SHA" ]]; then
+            echo "main advanced to $main_sha after this release started at $GITHUB_SHA." >&2
+            echo "Wait for that HEAD's RC and dispatch a new version." >&2
+            exit 1
+          fi
+          if [[ -z "$existing_tag_sha" ]]; then
+            git push origin "$GITHUB_SHA:refs/tags/$TAG"
+          fi
+          shopt -s nullglob
+          artifacts=(
+            dist/release/*.zip
+            dist/release/*.tar.gz
+            dist/release/*.dmg
+            dist/release/*.sha256
+          )
+          if [[ "${#artifacts[@]}" -eq 0 ]]; then
+            echo "No release artifacts were downloaded." >&2
+            exit 1
+          fi
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "${artifacts[@]}" --clobber
+            gh release edit "$TAG" --title "$TAG" --latest
+          else
+            gh release create "$TAG" "${artifacts[@]}" \
+              --verify-tag \
+              --title "$TAG" \
+              --generate-notes \
+              --latest
+          fi
+      - name: Verify public GitHub release assets
         shell: bash
         run: |
-          if [[ -z "$TAP_TOKEN" ]]; then
-            echo "HOMEBREW_TAP_TOKEN is not set; skipping tap update." >&2
-            exit 0
+          expected=(
+            Codevisor-macOS-arm64.zip
+            Codevisor-macOS-x64.zip
+            Codevisor-arm64.dmg
+            Codevisor-x64.dmg
+            codevisor-server-darwin-arm64.tar.gz
+            codevisor-server-darwin-x64.tar.gz
+            codevisor-server-linux-arm64.tar.gz
+            codevisor-server-linux-x64.tar.gz
+          )
+          expected+=(HerdMan-macOS.zip)
+          if [[ "${{ steps.bridge.outputs.required }}" == "true" ]]; then
+            expected+=(Codevisor-macOS.zip)
           fi
-
+          for name in "${expected[@]}"; do
+            for asset in "$name" "$name.sha256"; do
+              url="https://github.com/$REPOSITORY/releases/download/$TAG/$asset"
+              curl --fail --silent --show-error --location --head "$url" >/dev/null
+              echo "Verified $url"
+            done
+          done
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Update Homebrew tap to GitHub assets
+        shell: bash
+        env:
+          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          if [[ -z "$TAP_TOKEN" ]]; then
+            echo "HOMEBREW_TAP_TOKEN is required for stable releases." >&2
+            exit 1
+          fi
           tap_dir="$RUNNER_TEMP/homebrew-tap"
           git clone "https://x-access-token:${TAP_TOKEN}@github.com/851-labs/homebrew-tap.git" "$tap_dir"
-          VERSION="$VERSION" REPOSITORY="$REPOSITORY" ARTIFACT_DIR="dist/release" ARTIFACT_BASE_URL="$R2_PUBLIC_BASE_URL/v#{version}" \
+          VERSION="$VERSION" REPOSITORY="$REPOSITORY" ARTIFACT_DIR="dist/release" \
             node scripts/release/update-homebrew-tap.mjs "$tap_dir"
-
           cd "$tap_dir"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -355,4 +285,45 @@ jobs:
           else
             git commit -m "Update Codevisor to $VERSION"
             git push
+          fi
+      - name: Publish and freeze the R2 compatibility bridge
+        if: steps.bridge.outputs.required == 'true'
+        shell: bash
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.CLOUDFLARE_R2_SECRET_ACCESS_KEY }}
+          R2_S3_API_ENDPOINT: ${{ secrets.CLOUDFLARE_R2_S3_API_ENDPOINT }}
+          R2_BRIDGE_MODE: "1"
+        run: scripts/release/upload-r2-artifacts.sh "$VERSION" dist/release
+      - name: Verify updater sources
+        shell: bash
+        run: |
+          api_tag=""
+          for attempt in {1..12}; do
+            api_tag="$(curl --fail --silent --show-error \
+              -H 'Accept: application/vnd.github+json' \
+              -H 'X-GitHub-Api-Version: 2022-11-28' \
+              "https://api.github.com/repos/$REPOSITORY/releases/latest" | jq -r .tag_name)"
+            [[ "$api_tag" == "$TAG" ]] && break
+            echo "GitHub latest reports $api_tag; retrying ($attempt/12)."
+            sleep 10
+          done
+          if [[ "$api_tag" != "$TAG" ]]; then
+            echo "GitHub latest reports $api_tag, expected $TAG." >&2
+            exit 1
+          fi
+          if [[ "${{ steps.bridge.outputs.required }}" == "true" ]]; then
+            bridge_version=""
+            for attempt in {1..12}; do
+              bridge_version="$(curl --fail --silent --show-error \
+                https://pub-d2d6eb72b71c4986a742c0527774c9f0.r2.dev/releases/codevisor/latest.json \
+                | jq -r .version)"
+              [[ "${bridge_version#v}" == "$VERSION" ]] && break
+              echo "R2 bridge reports $bridge_version; retrying ($attempt/12)."
+              sleep 10
+            done
+            if [[ "${bridge_version#v}" != "$VERSION" ]]; then
+              echo "R2 bridge reports $bridge_version, expected $VERSION." >&2
+              exit 1
+            fi
           fi

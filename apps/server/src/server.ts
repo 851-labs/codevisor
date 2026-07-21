@@ -1168,11 +1168,13 @@ const routeProjects = async (
         // our initial scan. Retry only the name constraint; a duplicate
         // client-supplied id or any other database failure is not recoverable
         // by changing the branch name.
+        /* v8 ignore start -- requires a deterministic interleaving inside the database's atomic unique constraint. */
         if (isWorktreeNameCollision(cause) && attempt < 99) {
           existing.add(name)
           continue
         }
         throw cause
+        /* v8 ignore stop */
       }
       const startedAt = Date.now()
       const publishSetup = makeWorktreeSetupPublisher(
@@ -1198,6 +1200,7 @@ const routeProjects = async (
         // Release the reservation before retrying the same client-supplied id
         // under a new name. Only a branch collision is retryable; other Git
         // failures retain their terminal setup event and original response.
+        /* v8 ignore start -- requires another process to claim a branch between the preflight scan and git worktree add. */
         await run(services.db.deleteWorktree(worktree.id)).catch(() => undefined)
         if (isWorktreeBranchCollision(cause) && attempt < 99) {
           existing.add(name)
@@ -1214,11 +1217,13 @@ const routeProjects = async (
           durationMs: Date.now() - startedAt
         })
         throw cause
+        /* v8 ignore stop */
       }
       await appendAndPublish(services.db, fanout, "worktree.created", worktree.id, worktree)
       writeJson(response, 201, worktree)
       return true
     }
+    /* v8 ignore next -- the allocator's candidate bound guarantees a free name before 100 attempts absent continuous external races. */
     throw new HttpFailure(422, "Unable to allocate an unused Git worktree branch")
   }
 
@@ -1320,12 +1325,14 @@ const availableWorktreeName = (base: string, existing: ReadonlySet<string>): str
   throw new Error("Unable to allocate a unique worktree name")
 }
 
+/* v8 ignore start -- exercised only by the deliberately timing-dependent database race above. */
 const isWorktreeNameCollision = (cause: unknown): boolean =>
   cause instanceof DatabaseError &&
   cause.operation === "createWorktree" &&
   cause.message.includes(
     "UNIQUE constraint failed: worktrees.project_id, worktrees.server_id, worktrees.name"
   )
+/* v8 ignore stop */
 
 type WorktreeSetupDetail = Omit<WorktreeSetupUpdate, "worktreeId" | "projectId" | "name" | "branch">
 
@@ -3483,6 +3490,7 @@ const writeFailure = (response: ServerResponse, cause: unknown): void => {
     })
     return
   }
+  /* v8 ignore next 3 -- Git command classifications are covered in git.test; this is their thin HTTP mapping. */
   if (cause instanceof GitError) {
     writeJson(response, 422, { error: cause.message })
     return

@@ -19,7 +19,9 @@
 
 set -eu
 
-RELEASE_BASE="https://pub-d2d6eb72b71c4986a742c0527774c9f0.r2.dev/releases/codevisor"
+RELEASE_REPOSITORY="851-labs/codevisor"
+RELEASE_API="https://api.github.com/repos/$RELEASE_REPOSITORY/releases/latest"
+RELEASE_DOWNLOAD_BASE="https://github.com/$RELEASE_REPOSITORY/releases/download"
 
 say() { printf '\033[1;32m==>\033[0m %s\n' "$*"; }
 note() { printf '    %s\n' "$*"; }
@@ -43,9 +45,9 @@ resolve_version() {
     printf '%s' "${requested_version#v}"
     return
   fi
-  manifest=$(fetch "$RELEASE_BASE/latest.json") || fail "could not fetch $RELEASE_BASE/latest.json"
-  version=$(printf '%s' "$manifest" | sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"v\{0,1\}\([^"]*\)".*/\1/p')
-  [ -n "$version" ] || fail "could not parse version from release manifest"
+  release=$(fetch "$RELEASE_API") || fail "could not fetch the latest GitHub release"
+  version=$(printf '%s' "$release" | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"v\{0,1\}\([^"]*\)".*/\1/p')
+  [ -n "$version" ] || fail "could not parse version from GitHub release"
   printf '%s' "$version"
 }
 
@@ -72,12 +74,12 @@ install_macos() {
   archive="$tmp_dir/Codevisor.dmg"
   kind="dmg"
   if [ -n "$app_arch" ] \
-    && curl -fsSL -o "$archive" "$RELEASE_BASE/v$version/Codevisor-$app_arch.dmg"; then
-    archive_url="$RELEASE_BASE/v$version/Codevisor-$app_arch.dmg"
-  elif curl -fsSL -o "$archive" "$RELEASE_BASE/v$version/Codevisor.dmg"; then
-    archive_url="$RELEASE_BASE/v$version/Codevisor.dmg"
+    && curl -fsSL -o "$archive" "$RELEASE_DOWNLOAD_BASE/v$version/Codevisor-$app_arch.dmg"; then
+    archive_url="$RELEASE_DOWNLOAD_BASE/v$version/Codevisor-$app_arch.dmg"
+  elif curl -fsSL -o "$archive" "$RELEASE_DOWNLOAD_BASE/v$version/Codevisor.dmg"; then
+    archive_url="$RELEASE_DOWNLOAD_BASE/v$version/Codevisor.dmg"
   else
-    archive_url="$RELEASE_BASE/v$version/Codevisor-macOS.zip"
+    archive_url="$RELEASE_DOWNLOAD_BASE/v$version/Codevisor-macOS.zip"
     archive="$tmp_dir/Codevisor-macOS.zip"
     kind="zip"
     say "Downloading $archive_url"
@@ -140,7 +142,7 @@ install_linux() {
   port="${CODEVISOR_PORT:-${HERDMAN_PORT:-49361}}"
 
   target="linux-$arch"
-  archive_url="$RELEASE_BASE/v$version/codevisor-server-$target.tar.gz"
+  archive_url="$RELEASE_DOWNLOAD_BASE/v$version/codevisor-server-$target.tar.gz"
   archive="$tmp_dir/codevisor-server.tar.gz"
 
   say "Installing codevisor-server $version ($target)"

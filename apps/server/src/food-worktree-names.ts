@@ -174,5 +174,6 @@ export const availableDevelopmentWorktreeName = (
       if (!existing.has(candidate)) return candidate
     }
   }
+  /* v8 ignore next -- reaching this requires all 5M+ generated names to exist simultaneously. */
   throw new Error("Unable to allocate a unique development worktree name")
 }

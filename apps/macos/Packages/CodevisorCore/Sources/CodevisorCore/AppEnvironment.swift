@@ -336,12 +336,9 @@ public final class AppEnvironment {
         await finishOnboarding(projectFolders: [projectFolder])!
     }
 
-    /// The production environment: file-backed persistence and real agent
-    /// discovery/launching.
-    /// The public artifact bucket that distributes app and server releases —
-    /// the same one the Homebrew tap installs from. The source repository is
-    /// private, so update checks go through this bucket, not the GitHub API.
-    public static let releaseArtifactBaseURL = URL(
+    /// Frozen at the first GitHub-aware release so older apps can cross the
+    /// update-source migration. It is only consulted if GitHub is unavailable.
+    public static let legacyReleaseArtifactBaseURL = URL(
         string: "https://pub-d2d6eb72b71c4986a742c0527774c9f0.r2.dev/releases/codevisor"
     )!
 
@@ -365,7 +362,11 @@ public final class AppEnvironment {
             localServer: localServer,
             appUpdate: AppUpdateModel(
                 currentVersion: AppUpdateModel.bundleVersion(),
-                checker: ManifestAppUpdateChecker(baseURL: releaseArtifactBaseURL)
+                currentReleaseChannel: AppUpdateModel.bundleReleaseChannel(),
+                checker: FallbackAppUpdateChecker(
+                    primary: GitHubAppUpdateChecker(),
+                    fallback: ManifestAppUpdateChecker(baseURL: legacyReleaseArtifactBaseURL)
+                )
             ),
             customThemesDirectory: ThemeManager.defaultCustomThemesDirectory()
         )

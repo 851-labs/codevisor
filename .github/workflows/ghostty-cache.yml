@@ -1,4 +1,6 @@
-# Keeps warm GhosttyKit and Xcode DerivedData caches on the default branch.
+# Weekly insurance for the GhosttyKit and Xcode caches. Every main push now
+# warms these through release-candidate.yml, so a second push-triggered build
+# would only duplicate the signed RC build.
 #
 # GitHub Actions cache scoping means a cache saved during a tag-triggered
 # release run is only visible to that same tag ref — every new release tag
@@ -6,17 +8,11 @@
 # saved from the default branch, however, are visible to ALL refs, so this
 # workflow builds and saves the cache from main and release runs restore it.
 #
-# Release tags can restore caches created on main but not caches created by a
-# different tag. This workflow therefore owns both reusable cache lifecycles.
+# The main-push RC workflow owns normal cache writes; this schedule only keeps
+# them alive during quiet weeks.
 name: macOS Build Caches
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - "apps/macos/**"
-      - "scripts/release/build-macos-xcode.sh"
-      - ".github/workflows/ghostty-cache.yml"
   schedule:
     # Caches are evicted after 7 days without access; rebuild weekly as
     # insurance for quiet stretches between releases.
@@ -32,19 +28,21 @@ concurrency:
 
 jobs:
   build:
-    runs-on: ${{ vars.CODEVISOR_MACOS_ARM_RUNNER || vars.CODEVISOR_MACOS_RUNNER || 'macos-26' }}
+    runs-on: [self-hosted, macOS, ARM64, codevisor-macos-arm64]
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          clean: true
       - name: Check GhosttyKit cache
         id: ghosttykit-cache
-        uses: actions/cache/restore@v6
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: apps/macos/Frameworks/GhosttyKit.xcframework
           key: ghosttykit-${{ hashFiles('apps/macos/scripts/build-ghostty.sh') }}
       - name: Fetch Ghostty source
         if: steps.ghosttykit-cache.outputs.cache-hit != 'true'
         run: apps/macos/scripts/build-ghostty.sh --fetch-only
-      - uses: DeterminateSystems/nix-installer-action@main
+      - uses: DeterminateSystems/nix-installer-action@33c9ab3ef95cd57c164d9d6eb1f9a46338538d41
         if: steps.ghosttykit-cache.outputs.cache-hit != 'true'
         with:
           determinate: true
@@ -53,7 +51,7 @@ jobs:
         run: nix develop ./.repos/ghostty -c apps/macos/scripts/build-ghostty.sh
       - name: Save GhosttyKit cache
         if: steps.ghosttykit-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v6
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: apps/macos/Frameworks/GhosttyKit.xcframework
           key: ghosttykit-${{ hashFiles('apps/macos/scripts/build-ghostty.sh') }}
@@ -63,7 +61,7 @@ jobs:
         run: echo "value=$(xcodebuild -version | shasum -a 256 | awk '{print $1}')" >> "$GITHUB_OUTPUT"
       - name: Restore Xcode DerivedData cache
         id: xcode-cache
-        uses: actions/cache/restore@v6
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: dist/release/DerivedData
           key: codevisor-xcode-${{ runner.arch }}-${{ steps.xcode-cache-version.outputs.value }}-${{ hashFiles('apps/macos/Codevisor.xcodeproj/**', 'apps/macos/Codevisor/**', 'apps/macos/Packages/**', 'apps/macos/scripts/build-ghostty.sh', 'scripts/release/build-macos-xcode.sh') }}
@@ -74,7 +72,10 @@ jobs:
         run: scripts/release/build-macos-xcode.sh dist/release/DerivedData
       - name: Save Xcode DerivedData cache
         if: steps.xcode-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v6
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: dist/release/DerivedData
           key: codevisor-xcode-${{ runner.arch }}-${{ steps.xcode-cache-version.outputs.value }}-${{ hashFiles('apps/macos/Codevisor.xcodeproj/**', 'apps/macos/Codevisor/**', 'apps/macos/Packages/**', 'apps/macos/scripts/build-ghostty.sh', 'scripts/release/build-macos-xcode.sh') }}
+      - name: Clean persistent runner workspace
+        if: always()
+        run: rm -rf dist/release

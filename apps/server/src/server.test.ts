@@ -158,6 +158,22 @@ const makeAgents = (): AgentRuntimeService & {
               { name: "Fast", value: "fast" }
             ]
           : [{ name: "Standard", value: "standard" }]
+    },
+    {
+      category: "tone",
+      currentValue: "brief",
+      id: "tone",
+      name: "Tone",
+      options: [
+        {
+          group: "response-style",
+          name: "Response style",
+          options: [
+            { name: "Brief", value: "brief" },
+            { name: "Detailed", value: "detailed" }
+          ]
+        }
+      ]
     }
   ]
   const emit = async (sessionId: string, event: RuntimeEvent): Promise<void> => {
@@ -940,7 +956,8 @@ describe("@codevisor/server", () => {
     for (const [configId, value] of [
       ["model", "model-saved"],
       ["reasoning", "high"],
-      ["speed", "fast"]
+      ["speed", "fast"],
+      ["tone", "detailed"]
     ] as const) {
       expect(
         (
@@ -954,7 +971,8 @@ describe("@codevisor/server", () => {
     expect(await run(services.db.getSessionConfigSelections(session.id))).toEqual({
       model: "model-saved",
       reasoning: "high",
-      speed: "fast"
+      speed: "fast",
+      tone: "detailed"
     })
 
     agents.configs.splice(0)
@@ -964,19 +982,23 @@ describe("@codevisor/server", () => {
     expect(agents.configs).toEqual([
       [session.agentSessionId, "model", "model-saved"],
       [session.agentSessionId, "reasoning", "high"],
-      [session.agentSessionId, "speed", "fast"]
+      [session.agentSessionId, "speed", "fast"],
+      [session.agentSessionId, "tone", "detailed"]
     ])
     expect(configSelectionsFromTestOptions(restored.configOptions)).toEqual({
       model: "model-saved",
       reasoning: "high",
-      speed: "fast"
+      speed: "fast",
+      tone: "detailed"
     })
 
     await run(
       services.db.replaceSessionConfigSelections(session.id, {
         model: "model-removed",
         reasoning: "high",
-        speed: "fast"
+        speed: "fast",
+        tone: "tone-removed",
+        "zzz-removed": "unavailable"
       })
     )
     agents.configs.splice(0)
@@ -987,12 +1009,14 @@ describe("@codevisor/server", () => {
     expect(configSelectionsFromTestOptions(fallback.configOptions)).toEqual({
       model: "model-default",
       reasoning: "low",
-      speed: "standard"
+      speed: "standard",
+      tone: "brief"
     })
     expect(await run(services.db.getSessionConfigSelections(session.id))).toEqual({
       model: "model-default",
       reasoning: "low",
-      speed: "standard"
+      speed: "standard",
+      tone: "brief"
     })
   })
 

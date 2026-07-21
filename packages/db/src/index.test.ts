@@ -466,6 +466,9 @@ describe("@codevisor/db", () => {
     const session = await run(db.createSession({ projectId: project.id, harnessId: "codex" }))
 
     expect(await run(db.getSessionConfigSelections(session.id))).toEqual({})
+    await expect(run(db.getSessionConfigSelections("missing-session"))).rejects.toThrow(
+      "Session not found: missing-session"
+    )
     await run(
       db.replaceSessionConfigSelections(session.id, {
         model: "gpt-5.6-sol",
@@ -482,6 +485,15 @@ describe("@codevisor/db", () => {
       speed: "standard"
     })
     await Effect.runPromise(reopened.close)
+
+    const sqlite = new Database(filename)
+    sqlite
+      .prepare("update sessions set config_selections = ? where id = ?")
+      .run("not-json", session.id)
+    sqlite.close()
+    const recovered = await run(makeDatabase({ filename, serverId: "local" }))
+    expect(await run(recovered.getSessionConfigSelections(session.id))).toEqual({})
+    await Effect.runPromise(recovered.close)
   })
 
   it("snapshots a pending question with the session cursor and clears it terminally", async () => {

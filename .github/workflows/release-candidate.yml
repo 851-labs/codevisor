@@ -1,0 +1,73 @@
+name: Release candidate
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: release-candidate-main
+  cancel-in-progress: true
+
+jobs:
+  metadata:
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      include_compatibility_artifacts: ${{ steps.bridge.outputs.include }}
+    steps:
+      - name: Resolve the next stable marketing version
+        id: version
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Tags become visible before a release's remaining publication steps
+          # finish, so a push during that window still receives the next unused
+          # version instead of rebuilding the just-tagged one.
+          latest="$(gh api --paginate "repos/$GITHUB_REPOSITORY/tags?per_page=100" --jq '.[].name' \
+            | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \
+            | sort -V \
+            | tail -n 1)"
+          latest="${latest#v}"
+          if [[ ! "$latest" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+            echo "Latest stable tag is not a numeric semantic version: $latest" >&2
+            exit 1
+          fi
+          version="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.$((BASH_REMATCH[3] + 1))"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Building RC $version for $GITHUB_SHA"
+      - name: Check whether the R2 bridge still needs a universal app
+        id: bridge
+        shell: bash
+        run: |
+          include=true
+          if curl --fail --silent --show-error --head \
+            https://pub-d2d6eb72b71c4986a742c0527774c9f0.r2.dev/releases/codevisor/bridge.json \
+            >/dev/null 2>&1; then
+            include=false
+          fi
+          echo "include=$include" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: metadata
+    uses: ./.github/workflows/build-release-artifacts.yml
+    with:
+      version: ${{ needs.metadata.outputs.version }}
+      channel: rc
+      source_sha: ${{ github.sha }}
+      artifact_retention_days: 14
+      include_compatibility_artifacts: ${{ needs.metadata.outputs.include_compatibility_artifacts == 'true' }}
+    secrets:
+      APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+      APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+      APPLE_CODESIGN_IDENTITY: ${{ secrets.APPLE_CODESIGN_IDENTITY }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      APP_STORE_CONNECT_API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
+      APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+      APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}

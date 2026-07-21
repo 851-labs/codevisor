@@ -57,7 +57,10 @@ struct CodevisorApp: App {
 /// The top-level split view: collapsible sidebar plus the active session or the
 /// new-chat page.
 struct RootView: View {
-    private static let appUpdateCheckInterval: Duration = .seconds(300)
+    // GitHub's anonymous API quota is shared by clients behind one public IP.
+    // Check immediately at launch, then only a few times per day; the manual
+    // check remains immediate.
+    private static let appUpdateCheckInterval: Duration = .seconds(6 * 60 * 60)
 
     @Environment(AppEnvironment.self) private var environment
     @Environment(\.theme) private var theme

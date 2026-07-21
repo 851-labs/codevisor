@@ -87,6 +87,20 @@ struct AppUpdateModelTests {
         #expect(model.availableRelease == nil)
     }
 
+    @Test("Stable release replaces an RC with the same marketing version")
+    func stableReleaseReplacesSameVersionRC() async {
+        let release = AppUpdateRelease(version: "0.2.0")
+        let model = AppUpdateModel(
+            currentVersion: "0.2.0",
+            currentReleaseChannel: "rc",
+            checker: FakeUpdateChecker(release: release)
+        )
+
+        await model.checkForUpdates()
+
+        #expect(model.phase == .available(release))
+    }
+
     @Test("Check failures stay silent")
     func checkFailureIsSilent() async {
         let model = AppUpdateModel(
@@ -252,6 +266,80 @@ struct AppUpdateModelTests {
         #expect(release == nil)
     }
 
+    @Test("GitHub checker selects the current architecture from the latest stable release")
+    func githubCheckerSelectsArchitectureArchive() async throws {
+        var capturedRequest: URLRequest?
+        StubURLProtocol.handler = { request in
+            capturedRequest = request
+            return (200, Data(#"""
+            {
+                "tag_name":"v0.4.0",
+                "html_url":"https://github.com/851-labs/codevisor/releases/tag/v0.4.0",
+                "draft":false,
+                "prerelease":false,
+                "assets":[
+                    {"name":"Codevisor-macOS-x64.zip","browser_download_url":"https://github.example/x64.zip"},
+                    {"name":"Codevisor-macOS-arm64.zip","browser_download_url":"https://github.example/arm64.zip"}
+                ]
+            }
+            """#.utf8))
+        }
+        defer { StubURLProtocol.handler = nil }
+        let checker = GitHubAppUpdateChecker(
+            apiURL: URL(string: "https://api.github.example/releases/latest")!,
+            urlSession: StubURLProtocol.makeSession(),
+            architecture: "x64"
+        )
+
+        let release = try await checker.latestRelease()
+
+        #expect(release == AppUpdateRelease(
+            version: "0.4.0",
+            archiveURL: URL(string: "https://github.example/x64.zip"),
+            releasePageURL: URL(string: "https://github.com/851-labs/codevisor/releases/tag/v0.4.0")
+        ))
+        #expect(capturedRequest?.value(forHTTPHeaderField: "Accept") == "application/vnd.github+json")
+        #expect(capturedRequest?.value(forHTTPHeaderField: "X-GitHub-Api-Version") == "2022-11-28")
+    }
+
+    @Test("GitHub checker falls back to the universal asset")
+    func githubCheckerFallsBackToUniversalArchive() async throws {
+        StubURLProtocol.handler = { _ in
+            (200, Data(#"""
+            {
+                "tag_name":"0.3.0",
+                "html_url":"https://github.example/release",
+                "draft":false,
+                "prerelease":false,
+                "assets":[
+                    {"name":"Codevisor-macOS.zip","browser_download_url":"https://github.example/universal.zip"}
+                ]
+            }
+            """#.utf8))
+        }
+        defer { StubURLProtocol.handler = nil }
+        let checker = GitHubAppUpdateChecker(
+            apiURL: URL(string: "https://api.github.example/releases/latest")!,
+            urlSession: StubURLProtocol.makeSession(),
+            architecture: "arm64"
+        )
+
+        let release = try await checker.latestRelease()
+
+        #expect(release?.archiveURL == URL(string: "https://github.example/universal.zip"))
+    }
+
+    @Test("Compatibility checker is used when GitHub is unavailable")
+    func updateCheckerFallsBackWhenGitHubFails() async throws {
+        let expected = AppUpdateRelease(version: "0.3.0")
+        let checker = FallbackAppUpdateChecker(
+            primary: FakeUpdateChecker(error: UpdateTestError()),
+            fallback: FakeUpdateChecker(release: expected)
+        )
+
+        #expect(try await checker.latestRelease() == expected)
+    }
+
     @Test("Version comparison handles v-prefixes, lengths, and prereleases")
     func versionComparison() {
         #expect(AppUpdateModel.isVersion("0.2.0", newerThan: "0.1.9"))
@@ -263,5 +351,15 @@ struct AppUpdateModelTests {
         #expect(!AppUpdateModel.isVersion("0.1.9", newerThan: "0.1.9"))
         #expect(!AppUpdateModel.isVersion("0.1.8", newerThan: "0.1.9"))
         #expect(!AppUpdateModel.isVersion("v0.1.9", newerThan: "0.1.9"))
+        #expect(AppUpdateModel.shouldOfferStableRelease(
+            "0.1.9",
+            currentVersion: "0.1.9",
+            currentReleaseChannel: "rc"
+        ))
+        #expect(!AppUpdateModel.shouldOfferStableRelease(
+            "0.1.9",
+            currentVersion: "0.1.9",
+            currentReleaseChannel: "stable"
+        ))
     }
 }

@@ -30,10 +30,9 @@ public struct DisabledUpdateChecker: AppUpdateChecking {
     public func latestRelease() async throws -> AppUpdateRelease? { nil }
 }
 
-/// Checks the release manifest on the public artifact bucket that distributes
-/// the app (the same bucket the Homebrew cask installs from). The source
-/// repository is private, so the GitHub releases API is unreachable from user
-/// machines; the bucket is the one public source of release truth.
+/// Checks the frozen compatibility manifest on the former public artifact
+/// bucket. New clients use GitHub first; this remains only as a bridge for the
+/// first GitHub-aware release and as an outage fallback for that release.
 public struct ManifestAppUpdateChecker: AppUpdateChecking {
     /// The universal macOS app archive, shipped by every release before the
     /// architecture split and kept as a transitional artifact afterwards so
@@ -113,6 +112,108 @@ public struct ManifestAppUpdateChecker: AppUpdateChecking {
     }
 }
 
+/// Checks the latest stable GitHub release and selects the app archive for the
+/// running CPU. GitHub's `/releases/latest` endpoint excludes drafts and
+/// prereleases, so release-candidate builds never become updater-visible.
+public struct GitHubAppUpdateChecker: AppUpdateChecking {
+    public static let defaultAPIURL = URL(
+        string: "https://api.github.com/repos/851-labs/codevisor/releases/latest"
+    )!
+
+    private let apiURL: URL
+    private let urlSession: URLSession
+    private let architecture: String
+
+    public init(
+        apiURL: URL = Self.defaultAPIURL,
+        urlSession: URLSession = .shared,
+        architecture: String = ManifestAppUpdateChecker.currentArchitecture
+    ) {
+        self.apiURL = apiURL
+        self.urlSession = urlSession
+        self.architecture = architecture
+    }
+
+    public func latestRelease() async throws -> AppUpdateRelease? {
+        var request = URLRequest(url: apiURL)
+        request.cachePolicy = .useProtocolCachePolicy
+        request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+        request.setValue("2022-11-28", forHTTPHeaderField: "X-GitHub-Api-Version")
+        request.setValue("Codevisor-Updater", forHTTPHeaderField: "User-Agent")
+        let (data, response) = try await urlSession.data(for: request)
+        guard let http = response as? HTTPURLResponse else { return nil }
+        guard (200..<300).contains(http.statusCode) else {
+            throw GitHubReleaseError.httpStatus(http.statusCode)
+        }
+
+        let release = try JSONDecoder().decode(GitHubRelease.self, from: data)
+        guard !release.draft, !release.prerelease else { return nil }
+        let version = release.tagName.hasPrefix("v")
+            ? String(release.tagName.dropFirst())
+            : release.tagName
+        guard !version.isEmpty else { return nil }
+
+        let preferredName = ManifestAppUpdateChecker.archiveName(architecture: architecture)
+        let archive = release.assets.first(where: { $0.name == preferredName })
+            ?? release.assets.first(where: { $0.name == ManifestAppUpdateChecker.appArchiveName })
+        return AppUpdateRelease(
+            version: version,
+            archiveURL: archive?.browserDownloadURL,
+            releasePageURL: release.htmlURL
+        )
+    }
+
+    private enum GitHubReleaseError: Error {
+        case httpStatus(Int)
+    }
+
+    private struct GitHubRelease: Decodable {
+        struct Asset: Decodable {
+            var name: String
+            var browserDownloadURL: URL
+
+            enum CodingKeys: String, CodingKey {
+                case name
+                case browserDownloadURL = "browser_download_url"
+            }
+        }
+
+        var tagName: String
+        var htmlURL: URL
+        var draft: Bool
+        var prerelease: Bool
+        var assets: [Asset]
+
+        enum CodingKeys: String, CodingKey {
+            case tagName = "tag_name"
+            case htmlURL = "html_url"
+            case draft
+            case prerelease
+            case assets
+        }
+    }
+}
+
+/// Uses the compatibility source only when GitHub is unavailable. A valid
+/// GitHub response (including no published release) remains authoritative.
+public struct FallbackAppUpdateChecker: AppUpdateChecking {
+    private let primary: any AppUpdateChecking
+    private let fallback: any AppUpdateChecking
+
+    public init(primary: any AppUpdateChecking, fallback: any AppUpdateChecking) {
+        self.primary = primary
+        self.fallback = fallback
+    }
+
+    public func latestRelease() async throws -> AppUpdateRelease? {
+        do {
+            return try await primary.latestRelease()
+        } catch {
+            return try await fallback.latestRelease()
+        }
+    }
+}
+
 /// Tracks whether a newer version of the app is available and runs the install
 /// flow. The download/swap/relaunch work is injected by the app target via
 /// `installHandler` so this model stays AppKit-free and unit-testable.
@@ -130,6 +231,7 @@ public final class AppUpdateModel {
 
     public private(set) var phase: Phase = .idle
     public let currentVersion: String
+    public let currentReleaseChannel: String
 
     /// Downloads and installs a release, then relaunches the app. On success
     /// it never returns (the process is replaced).
@@ -137,8 +239,13 @@ public final class AppUpdateModel {
 
     private let checker: any AppUpdateChecking
 
-    public init(currentVersion: String, checker: any AppUpdateChecking) {
+    public init(
+        currentVersion: String,
+        currentReleaseChannel: String = "stable",
+        checker: any AppUpdateChecking
+    ) {
         self.currentVersion = currentVersion
+        self.currentReleaseChannel = currentReleaseChannel
         self.checker = checker
     }
 
@@ -183,7 +290,11 @@ public final class AppUpdateModel {
         }
         do {
             guard let release = try await checker.latestRelease(),
-                  Self.isVersion(release.version, newerThan: currentVersion) else {
+                  Self.shouldOfferStableRelease(
+                    release.version,
+                    currentVersion: currentVersion,
+                    currentReleaseChannel: currentReleaseChannel
+                  ) else {
                 phase = .upToDate
                 return
             }
@@ -231,9 +342,26 @@ public final class AppUpdateModel {
         return false
     }
 
+    /// A stable build replaces an RC with the same marketing version. This is
+    /// needed because RC artifacts are signed/notarized with the next stable
+    /// version, while their channel marker distinguishes them from the release.
+    public static func shouldOfferStableRelease(
+        _ candidate: String,
+        currentVersion: String,
+        currentReleaseChannel: String
+    ) -> Bool {
+        if isVersion(candidate, newerThan: currentVersion) { return true }
+        return currentReleaseChannel == "rc"
+            && numericComponents(candidate) == numericComponents(currentVersion)
+    }
+
     /// The running app's marketing version (stamped by the release build).
     public static func bundleVersion(_ bundle: Bundle = .main) -> String {
         (bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String) ?? "0.0.0"
+    }
+
+    public static func bundleReleaseChannel(_ bundle: Bundle = .main) -> String {
+        (bundle.object(forInfoDictionaryKey: "CodevisorReleaseChannel") as? String) ?? "stable"
     }
 
     private static func numericComponents(_ version: String) -> [Int] {

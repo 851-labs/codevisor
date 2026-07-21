@@ -1,26 +1,37 @@
 ---
 name: release-codevisor
-description: Cut and monitor a new Codevisor release by creating and pushing its version tag. Use when the user asks to publish, release, or cut a new Codevisor version.
+description: Cut and monitor a new Codevisor release from the successful release candidate at current main HEAD. Use when the user asks to publish, release, or cut a new Codevisor version.
 ---
 
 # Release Codevisor
 
-Codevisor releases run from `.github/workflows/release.yml` when a `v*` tag is pushed.
+Codevisor stable releases are manually dispatched from `main`. The workflow
+requires a successful same-SHA release candidate, rebuilds the signed stable
+artifacts from that RC's unsigned inputs, rechecks that `main` has not advanced,
+then creates the immutable version tag and GitHub release. Do not create or
+push the version tag yourself.
 
-Confirm the requested version and target commit, then make sure the tag does not already exist locally or remotely:
+Fetch current `main`, verify the working tree is not hiding local release work,
+and identify the successful Release candidate run for `origin/main`:
 
 ```sh
 git status --short
-git fetch origin --tags
-git tag --list v0.1.0
-git ls-remote --tags origin refs/tags/v0.1.0
+git fetch origin main --tags
+main_sha="$(git rev-parse origin/main)"
+gh run list --workflow release-candidate.yml --commit "$main_sha" --status success --limit 5
 ```
 
-Create and push the tag:
+Confirm the requested numeric version, make sure its tag does not already point
+elsewhere, then dispatch the stable release on `main`:
 
 ```sh
-git tag v0.1.0 <commit>
-git push origin v0.1.0
+git ls-remote --tags origin refs/tags/v0.1.0 refs/tags/v0.1.0^{}
+gh workflow run release.yml --ref main -f version=0.1.0
 ```
 
-Monitor the resulting Release workflow through completion. If it fails, inspect the failing job in `.github/workflows/release.yml` and its logs. Never move or replace an existing release tag without explicit user authorization.
+Monitor the resulting Release workflow through completion. Verify its GitHub
+assets, signatures/staples, latest-release API result, Homebrew update, and (for
+the first GitHub-aware release only) frozen R2 bridge. If it fails before
+tagging, fix `main`, wait for the new HEAD's RC, and dispatch the version from
+that RC's provenance. Never move or replace an existing release tag without
+explicit user authorization.

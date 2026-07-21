@@ -5,10 +5,12 @@ usage() {
   cat <<'EOF'
 usage: scripts/release/upload-r2-artifacts.sh <version> <artifact-dir>
 
-Uploads Codevisor release artifacts to the existing R2 bucket via the S3 API,
-which multipart-uploads large files (wrangler caps out at 300 MiB). Requires
-the aws CLI plus R2 S3 credentials in AWS_ACCESS_KEY_ID,
-AWS_SECRET_ACCESS_KEY, and R2_S3_API_ENDPOINT.
+Publishes the one-time compatibility bridge to the existing R2 bucket via the
+S3 API. Once bridge.json exists this command is a no-op: old clients must keep
+seeing the GitHub-aware bridge forever, while all newer clients use GitHub.
+
+Requires R2_BRIDGE_MODE=1, the aws CLI, and R2 S3 credentials in
+AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, and R2_S3_API_ENDPOINT.
 EOF
 }
 
@@ -22,6 +24,11 @@ artifact_dir="${2:-}"
 
 if [[ -z "$version" || -z "$artifact_dir" ]]; then
   usage >&2
+  exit 1
+fi
+
+if [[ "${R2_BRIDGE_MODE:-}" != 1 ]]; then
+  echo "Refusing to mutate the frozen R2 feed without R2_BRIDGE_MODE=1." >&2
   exit 1
 fi
 
@@ -45,13 +52,29 @@ bucket="${R2_BUCKET:-herdman}"
 prefix="${R2_PREFIX:-releases/codevisor}"
 legacy_prefix="${R2_LEGACY_PREFIX:-releases/herdman}"
 cache_control="${R2_CACHE_CONTROL:-public, max-age=31536000, immutable}"
+bridge_key="$prefix/bridge.json"
+
+if aws s3api head-object \
+  --bucket "$bucket" \
+  --key "$bridge_key" \
+  --endpoint-url "$R2_S3_API_ENDPOINT" >/dev/null 2>&1; then
+  echo "R2 compatibility bridge already exists; leaving it unchanged."
+  exit 0
+fi
 
 shopt -s nullglob
-artifacts=("$artifact_dir"/*.zip "$artifact_dir"/*.tar.gz "$artifact_dir"/*.dmg)
+artifacts=(
+  "$artifact_dir"/Codevisor-*.zip
+  "$artifact_dir"/Codevisor-*.zip.sha256
+  "$artifact_dir"/Codevisor*.dmg
+  "$artifact_dir"/Codevisor*.dmg.sha256
+  "$artifact_dir"/codevisor-server-*.tar.gz
+  "$artifact_dir"/codevisor-server-*.tar.gz.sha256
+)
 shopt -u nullglob
 
 if [[ "${#artifacts[@]}" -eq 0 ]]; then
-  echo "No .zip, .tar.gz, or .dmg release artifacts found in $artifact_dir" >&2
+  echo "No release artifacts found in $artifact_dir" >&2
   exit 1
 fi
 
@@ -60,6 +83,9 @@ for artifact in "${artifacts[@]}"; do
   case "$name" in
     *.zip)
       content_type="application/zip"
+      ;;
+    *.sha256)
+      content_type="text/plain"
       ;;
     *.tar.gz)
       content_type="application/gzip"
@@ -83,8 +109,11 @@ for artifact in "${artifacts[@]}"; do
   legacy_name=""
   case "$name" in
     Codevisor-macOS.zip) legacy_name="HerdMan-macOS.zip" ;;
+    Codevisor-macOS.zip.sha256) legacy_name="HerdMan-macOS.zip.sha256" ;;
     Codevisor.dmg) legacy_name="HerdMan.dmg" ;;
+    Codevisor.dmg.sha256) legacy_name="HerdMan.dmg.sha256" ;;
     codevisor-server-*.tar.gz) legacy_name="herdman-${name#codevisor-}" ;;
+    codevisor-server-*.tar.gz.sha256) legacy_name="herdman-${name#codevisor-}" ;;
   esac
   if [[ -n "$legacy_name" ]]; then
     aws s3 cp "$artifact" "s3://$bucket/$legacy_prefix/v$version/$legacy_name" \
@@ -94,12 +123,12 @@ for artifact in "${artifacts[@]}"; do
   fi
 done
 
-# The manifest the app and server update checks read (the GitHub repository is
-# private, so the bucket is the one public source of release truth). Uploaded
-# last so it never points at a partially uploaded release, and with a short
-# cache so new releases are visible promptly.
-manifest="$(mktemp)"
-trap 'rm -f "$manifest"' EXIT
+# Upload both manifests last so no old client can discover a partial bridge.
+# The immutable marker is last of all and prevents future stable releases from
+# advancing either feed.
+work_dir="$(mktemp -d)"
+trap 'rm -rf "$work_dir"' EXIT
+manifest="$work_dir/latest.json"
 printf '{"version":"%s"}\n' "$version" > "$manifest"
 aws s3 cp "$manifest" "s3://$bucket/$prefix/latest.json" \
   --endpoint-url "$R2_S3_API_ENDPOINT" \
@@ -109,3 +138,11 @@ aws s3 cp "$manifest" "s3://$bucket/$legacy_prefix/latest.json" \
   --endpoint-url "$R2_S3_API_ENDPOINT" \
   --content-type "application/json" \
   --cache-control "${R2_LATEST_CACHE_CONTROL:-public, max-age=60}"
+
+bridge="$work_dir/bridge.json"
+printf '{"version":"%s","source":"github","frozen":true}\n' "$version" > "$bridge"
+aws s3 cp "$bridge" "s3://$bucket/$bridge_key" \
+  --endpoint-url "$R2_S3_API_ENDPOINT" \
+  --content-type "application/json" \
+  --cache-control "$cache_control"
+echo "R2 compatibility feeds are frozen at Codevisor $version."

@@ -39,8 +39,17 @@ import { makeMcpManager } from "./mcp-manager.js"
 import { makeNativeMcpManager } from "./native-mcp-manager.js"
 import { makeSkillsManager } from "./skills-manager.js"
 import { migrateLegacyLayout, migrateTmpDataDir } from "./legacy-layout.js"
+import {
+  DEFAULT_GITHUB_REPOSITORY,
+  DEFAULT_LEGACY_RELEASE_BASE_URL,
+  fetchLatestServerRelease,
+  parseSha256,
+  sha256File,
+  type ServerRelease
+} from "./release-source.js"
 
 const SERVER_PROCESS_TITLE = "codevisor-server"
+const SERVER_UPDATE_CHECK_TTL_MS = 6 * 60 * 60 * 1_000
 
 const writeDataUpgradeStatus = (path: string, progress: DataUpgradeProgress): void => {
   mkdirSync(dirname(path), { recursive: true })
@@ -83,13 +92,16 @@ export const bundledVersion = (): string | undefined => {
   return version.length > 0 ? version : undefined
 }
 
-/// The public artifact bucket that distributes server releases (the same one
-/// the Homebrew formula installs from). The source repository is private, so
-/// update checks go through this bucket, not the GitHub API.
-const RELEASE_BASE_URL =
+const GITHUB_RELEASE_REPOSITORY =
+  process.env.CODEVISOR_GITHUB_REPOSITORY ?? DEFAULT_GITHUB_REPOSITORY
+
+/// Compatibility fallback frozen at the first GitHub-aware release. Preserve
+/// the old override names for managed installations that already set them.
+const LEGACY_RELEASE_BASE_URL =
+  process.env.CODEVISOR_LEGACY_RELEASE_BASE_URL ??
   process.env.CODEVISOR_RELEASE_BASE_URL ??
   process.env.HERDMAN_RELEASE_BASE_URL ??
-  "https://pub-d2d6eb72b71c4986a742c0527774c9f0.r2.dev/releases/codevisor"
+  DEFAULT_LEGACY_RELEASE_BASE_URL
 
 /// "darwin-arm64", "linux-x64", … matching the published server archives.
 const releaseTarget = (): string | undefined => {
@@ -99,8 +111,8 @@ const releaseTarget = (): string | undefined => {
   return platform !== undefined && arch !== undefined ? `${platform}-${arch}` : undefined
 }
 
-/// Self-updater for standalone server installs: checks the release manifest
-/// on the artifact bucket, and on apply downloads the matching server archive,
+/// Self-updater for standalone server installs: checks GitHub's latest stable
+/// release and on apply downloads the matching server archive,
 /// unpacks it next to the database, hands off to the new runtime, and exits.
 const makeSelfUpdater = (options: {
   readonly currentVersion: string
@@ -108,23 +120,30 @@ const makeSelfUpdater = (options: {
   readonly dataDir: string
   readonly serveArgs: ReadonlyArray<string>
 }): CodevisorServerUpdater => {
-  let cached: { readonly at: number; readonly info: UpdateInfo } | undefined
+  let cached:
+    | {
+        readonly at: number
+        readonly info: UpdateInfo
+        readonly release: ServerRelease | undefined
+      }
+    | undefined
 
   const check = async (): Promise<UpdateInfo> => {
-    if (cached !== undefined && Date.now() - cached.at < 60_000) {
+    if (cached !== undefined && Date.now() - cached.at < SERVER_UPDATE_CHECK_TTL_MS) {
       return cached.info
     }
     let latestVersion = options.currentVersion
+    let release: ServerRelease | undefined
     try {
-      const response = await fetch(`${RELEASE_BASE_URL}/latest.json`, {
-        headers: { "cache-control": "no-cache" },
-        signal: AbortSignal.timeout(10_000)
-      })
-      if (response.ok) {
-        const manifest = (await response.json()) as { readonly version?: string }
-        const version = (manifest.version ?? "").replace(/^v/, "")
-        if (version.length > 0) {
-          latestVersion = version
+      const target = releaseTarget()
+      if (target !== undefined) {
+        release = await fetchLatestServerRelease({
+          repository: GITHUB_RELEASE_REPOSITORY,
+          legacyBaseURL: LEGACY_RELEASE_BASE_URL,
+          target
+        })
+        if (release !== undefined) {
+          latestVersion = release.version
         }
       }
     } catch {
@@ -139,7 +158,7 @@ const makeSelfUpdater = (options: {
       migrationState: "idle"
     }
     await Effect.runPromise(options.db.setUpdateInfo(info)).catch(() => undefined)
-    cached = { at: Date.now(), info }
+    cached = { at: Date.now(), info, release }
     return info
   }
 
@@ -169,7 +188,19 @@ const makeSelfUpdater = (options: {
     const runtimeDir = join(updateDir, "runtime")
     mkdirSync(runtimeDir, { recursive: true })
 
-    const url = `${RELEASE_BASE_URL}/v${info.latestVersion}/codevisor-server-${target}.tar.gz`
+    let release = cached?.release
+    if (release === undefined || release.version !== info.latestVersion) {
+      release = await fetchLatestServerRelease({
+        repository: GITHUB_RELEASE_REPOSITORY,
+        legacyBaseURL: LEGACY_RELEASE_BASE_URL,
+        target
+      })
+    }
+    if (release === undefined || release.version !== info.latestVersion) {
+      throw new Error(`Release assets for Codevisor server ${info.latestVersion} are unavailable`)
+    }
+
+    const url = release.archiveURL
     console.log(`Downloading Codevisor server ${info.latestVersion} from ${url}`)
     const response = await fetch(url, { signal: AbortSignal.timeout(300_000) })
     if (!response.ok || response.body === null) {
@@ -179,6 +210,25 @@ const makeSelfUpdater = (options: {
       Readable.fromWeb(response.body as import("node:stream/web").ReadableStream),
       createWriteStream(archivePath)
     )
+
+    if (release.checksumURL !== undefined) {
+      const checksumResponse = await fetch(release.checksumURL, {
+        signal: AbortSignal.timeout(30_000)
+      })
+      if (!checksumResponse.ok) {
+        throw new Error(
+          `Failed to download ${release.checksumURL}: HTTP ${checksumResponse.status}`
+        )
+      }
+      const expected = parseSha256(await checksumResponse.text())
+      if (expected === undefined) {
+        throw new Error(`Invalid SHA-256 sidecar at ${release.checksumURL}`)
+      }
+      const actual = await sha256File(archivePath)
+      if (actual !== expected) {
+        throw new Error(`Checksum mismatch for ${url}: expected ${expected}, got ${actual}`)
+      }
+    }
 
     const extractArchive = (destination: string): Promise<void> =>
       new Promise<void>((resolve, reject) => {
