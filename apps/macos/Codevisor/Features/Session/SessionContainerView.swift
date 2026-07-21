@@ -18,9 +18,6 @@ struct SessionContainerView: View {
     /// selection follows, keeping the by-chat list in sync with focus.
     /// Non-chat focus (terminals) fires nothing: the last chat stays.
     var onFocusedChatChanged: ((UUID) -> Void)? = nil
-    /// Fired when closing the final active chat archives the workspace.
-    var onWorkspaceArchived: (() -> Void)? = nil
-
     @Environment(AppEnvironment.self) private var environment
     @Environment(\.theme) private var theme
     @Environment(AdaptivePanelLayout.self) private var panelLayout
@@ -324,10 +321,7 @@ struct SessionContainerView: View {
                     if let closed = environment.projectList.sessions.first(where: {
                         $0.serverId == session.serverId && $0.id == closedSessionId
                     }) {
-                        let archivedWorkspace = environment.archiveSession(closed)
-                        if archivedWorkspace {
-                            onWorkspaceArchived?()
-                        }
+                        environment.archiveSession(closed)
                     }
                     // The ROUTED chat left: hand the route to the
                     // workspace's first surviving chat, so the sidebar

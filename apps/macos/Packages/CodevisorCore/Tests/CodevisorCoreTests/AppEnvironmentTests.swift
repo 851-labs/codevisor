@@ -123,8 +123,30 @@ struct AppEnvironmentTests {
         #expect(recommendations.isEmpty)
     }
 
-    @Test("Archiving the final active chat archives its workspace")
-    func archivingFinalChatArchivesWorkspace() {
+    @Test("Archiving a chat from a tab preserves its workspace")
+    func archivingChatPreservesWorkspace() {
+        let project = Project.fromFolder(URL(fileURLWithPath: "/tmp/preserve-workspace"))
+        let session = ChatSession(projectId: project.id, harnessId: "codex", title: "Chat")
+        let environment = AppEnvironment.preview(seedProjects: [project], seedSessions: [session])
+        let workspace = environment.workspaces.ensureWorkspace(
+            for: WorkspaceSessionSeed(
+                sessionId: session.id,
+                initialName: project.name,
+                serverId: session.serverId,
+                projectId: session.projectId,
+                rootDirectory: project.folderURL.path
+            ),
+            legacyGroups: nil
+        )
+
+        environment.archiveSession(session)
+
+        #expect(environment.projectList.sessions.first?.isArchived == true)
+        #expect(environment.workspaces.workspace(id: workspace.id)?.isArchived == false)
+    }
+
+    @Test("Sidebar archiving the final active chat archives its workspace")
+    func sidebarArchivingFinalChatArchivesWorkspace() {
         let project = Project.fromFolder(URL(fileURLWithPath: "/tmp/archive-workspace"))
         let first = ChatSession(projectId: project.id, harnessId: "codex", title: "First")
         let second = ChatSession(projectId: project.id, harnessId: "codex", title: "Second")
@@ -150,9 +172,9 @@ struct AppEnvironmentTests {
         }
         environment.workspaces.save(workspace)
 
-        #expect(!environment.archiveSession(first))
+        #expect(!environment.archiveSessionAndWorkspaceIfEmpty(first))
         #expect(environment.workspaces.workspace(id: workspace.id)?.isArchived == false)
-        #expect(environment.archiveSession(second))
+        #expect(environment.archiveSessionAndWorkspaceIfEmpty(second))
         #expect(environment.workspaces.workspace(id: workspace.id)?.isArchived == true)
         #expect(environment.projectList.sessions.allSatisfy { $0.isArchived })
     }

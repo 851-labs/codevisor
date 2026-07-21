@@ -147,12 +147,19 @@ public final class AppEnvironment {
         projectList.showsImportedSessions = true
     }
 
-    /// Archives a chat and, when it was the workspace's final active chat,
-    /// archives the workspace with it. Returns true when the workspace was
-    /// archived so callers can leave its now-hidden route.
-    @discardableResult
-    public func archiveSession(_ session: ChatSession) -> Bool {
+    /// Archives a chat without changing its workspace. This is the tab-close
+    /// behavior: an empty workspace remains available for its New Tab page.
+    public func archiveSession(_ session: ChatSession) {
         projectList.archiveSession(session)
+    }
+
+    /// Archives a chat and, when it was the workspace's final active chat,
+    /// archives the workspace with it. This is the sidebar archive policy.
+    /// Returns true when the workspace was archived so callers can leave its
+    /// now-hidden route.
+    @discardableResult
+    public func archiveSessionAndWorkspaceIfEmpty(_ session: ChatSession) -> Bool {
+        archiveSession(session)
 
         guard let workspaceId = workspaces.workspaceId(forSession: session.id),
               var workspace = workspaces.workspace(id: workspaceId),

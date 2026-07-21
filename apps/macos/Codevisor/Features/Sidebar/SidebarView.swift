@@ -1066,7 +1066,7 @@ struct SidebarView: View {
     }
 
     private func archiveChat(_ session: ChatSession) {
-        let archivedWorkspace = environment.archiveSession(session)
+        let archivedWorkspace = environment.archiveSessionAndWorkspaceIfEmpty(session)
         if selection == .session(serverId: session.serverId, id: session.id) {
             selection = .newChat(nil)
         }

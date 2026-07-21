@@ -351,8 +351,8 @@ final class PaneGroupModel: Identifiable {
 
     /// Whether a tab may close: the group-local state rules plus the
     /// container's workspace-wide policy (lone-placeholder dissolve). Chats
-    /// close like any tab — closing archives the session, and closing the
-    /// final active chat archives its workspace.
+    /// close like any tab — closing archives the session while preserving
+    /// the workspace.
     func canClose(id: UUID) -> Bool {
         guard state.canClosePane(id: id),
               let descriptor = state.panes.first(where: { $0.id == id }) else { return false }
