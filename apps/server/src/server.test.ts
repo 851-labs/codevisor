@@ -7,7 +7,13 @@ import {
   type RuntimeEventSink,
   type SetGoalUpdate
 } from "@codevisor/agent-runtime"
-import type { Harness, McpServer, NativeMcpScan, SkillsScan } from "@codevisor/api"
+import type {
+  Harness,
+  McpServer,
+  NativeMcpScan,
+  SessionConfigOption,
+  SkillsScan
+} from "@codevisor/api"
 import { makeDatabase, type CodevisorDatabaseService } from "@codevisor/db"
 import Database from "better-sqlite3"
 import type {
@@ -63,6 +69,11 @@ import { ToolListChangedNotificationSchema } from "@modelcontextprotocol/sdk/typ
 
 const run = <A, E>(effect: Effect.Effect<A, E>): Promise<A> => Effect.runPromise(effect)
 
+const configSelectionsFromTestOptions = (
+  options: ReadonlyArray<SessionConfigOption>
+): Readonly<Record<string, string>> =>
+  Object.fromEntries(options.map((option) => [option.id, option.currentValue]))
+
 const harnesses: ReadonlyArray<Harness> = [
   {
     id: "codex",
@@ -105,6 +116,50 @@ const makeAgents = (): AgentRuntimeService & {
   const creations: Array<readonly [string, string]> = []
   const environmentRefreshes: Array<number> = []
   const sinks = new Map<string, RuntimeEventSink>()
+  const configOptionsBySession = new Map<string, ReadonlyArray<SessionConfigOption>>()
+  const dependencyConfigSessions = new Set<string>()
+  const dependencyConfigOptions = (
+    model = "model-default",
+    reasoning = "low",
+    speed = "standard"
+  ): ReadonlyArray<SessionConfigOption> => [
+    {
+      category: "model",
+      currentValue: model,
+      id: "model",
+      name: "Model",
+      options: [
+        { name: "Default model", value: "model-default" },
+        { name: "Saved model", value: "model-saved" }
+      ]
+    },
+    {
+      category: "thought_level",
+      currentValue: reasoning,
+      id: "reasoning",
+      name: "Reasoning",
+      options:
+        model === "model-saved"
+          ? [
+              { name: "Low", value: "low" },
+              { name: "High", value: "high" }
+            ]
+          : [{ name: "Low", value: "low" }]
+    },
+    {
+      category: "speed",
+      currentValue: speed,
+      id: "speed",
+      name: "Speed",
+      options:
+        model === "model-saved"
+          ? [
+              { name: "Standard", value: "standard" },
+              { name: "Fast", value: "fast" }
+            ]
+          : [{ name: "Standard", value: "standard" }]
+    }
+  ]
   const emit = async (sessionId: string, event: RuntimeEvent): Promise<void> => {
     await sinks.get(sessionId)?.(event)
   }
@@ -196,19 +251,27 @@ const makeAgents = (): AgentRuntimeService & {
       Effect.sync(() => {
         loads.push([harnessId, agentSessionId, cwd])
         sinks.set(agentSessionId, sink)
+        if (cwd.includes("session-config")) {
+          dependencyConfigSessions.add(agentSessionId)
+          const configOptions = dependencyConfigOptions()
+          configOptionsBySession.set(agentSessionId, configOptions)
+          return { configOptions, sessionId: agentSessionId }
+        }
+        const configOptions: ReadonlyArray<SessionConfigOption> = [
+          {
+            category: "model",
+            currentValue: "gpt-current",
+            id: "model",
+            name: "Model",
+            options: [
+              { name: "GPT Current", value: "gpt-current" },
+              { name: "GPT New", value: "gpt-new" }
+            ]
+          }
+        ]
+        configOptionsBySession.set(agentSessionId, configOptions)
         return {
-          configOptions: [
-            {
-              category: "model",
-              currentValue: "gpt-current",
-              id: "model",
-              name: "Model",
-              options: [
-                { name: "GPT Current", value: "gpt-current" },
-                { name: "GPT New", value: "gpt-new" }
-              ]
-            }
-          ],
+          configOptions,
           sessionId: agentSessionId
         }
       }),
@@ -342,11 +405,32 @@ const makeAgents = (): AgentRuntimeService & {
     setConfigOption: (sessionId, configId, value) =>
       Effect.promise(async () => {
         configs.push([sessionId, configId, value])
+        const current = configOptionsBySession.get(sessionId) ?? []
+        let configOptions: ReadonlyArray<SessionConfigOption>
+        if (dependencyConfigSessions.has(sessionId) && configId === "model") {
+          configOptions = dependencyConfigOptions(value)
+        } else {
+          const option = current.find((candidate) => candidate.id === configId)
+          if (dependencyConfigSessions.has(sessionId)) {
+            const values =
+              option?.options.flatMap((entry) =>
+                "value" in entry ? [entry.value] : entry.options.map((nested) => nested.value)
+              ) ?? []
+            if (!values.includes(value)) {
+              throw new Error(`Unsupported ${configId}: ${value}`)
+            }
+          }
+          configOptions = current.map((candidate) =>
+            candidate.id === configId ? { ...candidate, currentValue: value } : candidate
+          )
+        }
+        configOptionsBySession.set(sessionId, configOptions)
         await emit(sessionId, {
           kind: "session.updated",
           subjectId: sessionId,
-          payload: { configId, configOptions: [], value }
+          payload: { configId, configOptions, value }
         })
+        return configOptions
       }),
     setGoal: (sessionId, update) =>
       Effect.promise(async () => {
@@ -833,6 +917,83 @@ describe("@codevisor/server", () => {
         turnState: "ended"
       })
     )
+  })
+
+  it("persists session config and restores model before dependent reasoning and speed", async () => {
+    const { agents, services } = await makeServices("server-a")
+    const folder = mkdtempSync(join(tmpdir(), "codevisor-session-config-"))
+    tempDirs.push(folder)
+    const project = await run(services.db.createProject({ folderPath: folder }))
+    const session = await run(
+      services.db.createSession({
+        projectId: project.id,
+        harnessId: "codex",
+        agentSessionId: "agent-session-config"
+      })
+    )
+    const server = await startWithApp(services)
+    runningServers.push(server)
+
+    expect(
+      (await jsonRequest(server, `/v1/sessions/${session.id}/connect`, { method: "POST" })).status
+    ).toBe(200)
+    for (const [configId, value] of [
+      ["model", "model-saved"],
+      ["reasoning", "high"],
+      ["speed", "fast"]
+    ] as const) {
+      expect(
+        (
+          await jsonRequest(server, `/v1/sessions/${session.id}/config`, {
+            body: JSON.stringify({ configId, value }),
+            method: "POST"
+          })
+        ).status
+      ).toBe(202)
+    }
+    expect(await run(services.db.getSessionConfigSelections(session.id))).toEqual({
+      model: "model-saved",
+      reasoning: "high",
+      speed: "fast"
+    })
+
+    agents.configs.splice(0)
+    const restored = (
+      await jsonRequest(server, `/v1/sessions/${session.id}/connect`, { method: "POST" })
+    ).body as { readonly configOptions: ReadonlyArray<SessionConfigOption> }
+    expect(agents.configs).toEqual([
+      [session.agentSessionId, "model", "model-saved"],
+      [session.agentSessionId, "reasoning", "high"],
+      [session.agentSessionId, "speed", "fast"]
+    ])
+    expect(configSelectionsFromTestOptions(restored.configOptions)).toEqual({
+      model: "model-saved",
+      reasoning: "high",
+      speed: "fast"
+    })
+
+    await run(
+      services.db.replaceSessionConfigSelections(session.id, {
+        model: "model-removed",
+        reasoning: "high",
+        speed: "fast"
+      })
+    )
+    agents.configs.splice(0)
+    const fallback = (
+      await jsonRequest(server, `/v1/sessions/${session.id}/connect`, { method: "POST" })
+    ).body as { readonly configOptions: ReadonlyArray<SessionConfigOption> }
+    expect(agents.configs).toEqual([])
+    expect(configSelectionsFromTestOptions(fallback.configOptions)).toEqual({
+      model: "model-default",
+      reasoning: "low",
+      speed: "standard"
+    })
+    expect(await run(services.db.getSessionConfigSelections(session.id))).toEqual({
+      model: "model-default",
+      reasoning: "low",
+      speed: "standard"
+    })
   })
 
   it("terminalizes a durably claimed prompt instead of losing or replaying it after restart", async () => {

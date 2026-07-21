@@ -138,6 +138,7 @@ interface SessionRow {
   readonly cost_kind: "reported" | "estimated" | null
   readonly pending_question: string | null
   readonly background_tasks: string
+  readonly config_selections: string
 }
 
 interface HarnessAccountRow {
@@ -1044,6 +1045,13 @@ const migrations: ReadonlyArray<Migration> = [
         restored_at text
       );
     `
+  },
+  {
+    id: 26,
+    name: "durable session config selections",
+    sql: `
+      alter table sessions add column config_selections text not null default '{}';
+    `
   }
 ]
 
@@ -1067,6 +1075,16 @@ const parseJsonRecord = (raw: string): JsonRecord | undefined => {
   } catch {
     return undefined
   }
+}
+
+const sessionConfigSelectionsFromRaw = (raw: string): Readonly<Record<string, string>> => {
+  const record = parseJsonRecord(raw)
+  if (record === undefined) return {}
+  return Object.fromEntries(
+    Object.entries(record).filter(
+      (entry): entry is [string, string] => typeof entry[1] === "string"
+    )
+  )
 }
 
 const pendingQuestionFromRaw = (raw: string | null): QuestionPayload | undefined =>
@@ -1973,6 +1991,9 @@ export interface CodevisorDatabaseService {
   ) => Effect.Effect<SessionSummary, DatabaseError>
   readonly listSessions: Effect.Effect<ReadonlyArray<SessionSummary>, DatabaseError>
   readonly getSessionSummary: (id: string) => Effect.Effect<SessionSummary, DatabaseError>
+  readonly getSessionConfigSelections: (
+    id: string
+  ) => Effect.Effect<Readonly<Record<string, string>>, DatabaseError>
   readonly getSessionDetail: (id: string) => Effect.Effect<SessionDetail, DatabaseError>
   readonly getTranscriptPage: (
     sessionId: string,
@@ -1987,6 +2008,10 @@ export interface CodevisorDatabaseService {
     id: string,
     request: UpdateSessionRequest
   ) => Effect.Effect<SessionSummary, DatabaseError>
+  readonly replaceSessionConfigSelections: (
+    id: string,
+    selections: Readonly<Record<string, string>>
+  ) => Effect.Effect<void, DatabaseError>
   readonly updateSessionTitleFromHarness: (
     id: string,
     title: string
@@ -2789,6 +2814,14 @@ const createService = (
         ).map(sessionEventFromRow)
         return { itemId, revision: item.revision, events }
       }),
+    getSessionConfigSelections: (id) =>
+      attempt("getSessionConfigSelections", () => {
+        const row = sqlite
+          .prepare("select config_selections from sessions where id = ?")
+          .get(id) as { readonly config_selections: string } | undefined
+        if (row === undefined) throw new Error(`Session not found: ${id}`)
+        return sessionConfigSelectionsFromRaw(row.config_selections)
+      }),
     // Metadata updates deliberately leave updated_at alone: recency ordering
     // tracks conversation activity (chat events stamp it as items
     // land, the last being the finished assistant response), so opening or
@@ -2821,6 +2854,13 @@ const createService = (
             id
           )
         return getSession(id)
+      }),
+    replaceSessionConfigSelections: (id, selections) =>
+      attempt("replaceSessionConfigSelections", () => {
+        getSession(id)
+        sqlite
+          .prepare("update sessions set config_selections = ? where id = ?")
+          .run(JSON.stringify(selections), id)
       }),
     // This condition lives in the UPDATE itself so a user rename and a
     // harness title arriving concurrently cannot pass a stale read/check.

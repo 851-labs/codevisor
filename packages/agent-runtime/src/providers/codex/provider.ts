@@ -763,11 +763,13 @@ export const makeCodexProvider = (
         } else {
           throw new Error(`Unknown config option: ${configId}`)
         }
+        const configOptions = configOptionsFor(session)
         await session.emit({
           kind: "session.updated",
-          payload: { configId, configOptions: configOptionsFor(session), value },
+          payload: { configId, configOptions, value },
           subjectId: session.key
         })
+        return configOptions
       }),
     setMode: (modeId) =>
       adapterPromise("setMode", async () => {

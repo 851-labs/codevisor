@@ -885,6 +885,17 @@ final class SessionController {
         modelOption != nil || thoughtLevelOption != nil || speedOption != nil
     }
 
+    /// Resumed chats intentionally avoid painting generic fresh-session
+    /// defaults while their runtime metadata loads. Reserve the model picker's
+    /// place with a spinner during that gap instead of popping it in later.
+    var isLoadingModelMenu: Bool {
+        guard !hasModelMenu else { return false }
+        if isConnecting { return true }
+        guard model == nil, serverSession?.agentSessionId?.isEmpty == false else { return false }
+        if case .failed = status { return false }
+        return true
+    }
+
     /// The config options still shown as individual picker chips (model
     /// config, unknown categories), in a sensible order. Mode options are
     /// excluded entirely: the composer's plan toggle is the only mode control
@@ -1792,12 +1803,19 @@ final class SessionController {
                 : nil
 
         let transport = ServerSessionTransport(client: serverClient, sessionId: session.id)
+        // Generic capability inspection represents a fresh harness and can
+        // advertise defaults that differ from this resumed chat. Do not paint
+        // those defaults while runtime metadata is loading; the connected
+        // session supplies its durable model/effort/speed below.
+        let initialConfigOptions = session.agentSessionId?.isEmpty == false
+            ? []
+            : (configOptionsByHarness[harness.id]
+                ?? configCache.options(forHarness: harness.id, onServer: project.serverId))
         let model = SessionModel(
             serverTransport: transport,
             sessionId: session.id.uuidString,
             modeState: modeStateByHarness[harness.id],
-            configOptions: configOptionsByHarness[harness.id]
-                ?? configCache.options(forHarness: harness.id, onServer: project.serverId)
+            configOptions: initialConfigOptions
         )
         model.onTurnEnded = { [weak self, weak model] in
             if let model { self?.captureTurnEnded(model) }
@@ -2085,10 +2103,15 @@ final class SessionController {
         // the others, so the server snapshot is the sole authority.
         harnesses = available
         for capability in capabilities {
-            configOptionsByHarness[capability.harness.id] = capability.configOptions
-            if let model,
-               (connectedHarnessId ?? selectedHarnessId) == capability.harness.id {
-                model.replaceConfigOptions(capability.configOptions)
+            // Inspection describes a fresh harness and carries its defaults.
+            // Once a runtime is connected, its session-specific metadata is
+            // authoritative: a late capability refresh must not replace a
+            // resumed chat's persisted model/effort/speed with fresh-session
+            // defaults (for example, changing Codex `high` back to `low`).
+            let isConnectedHarness = model != nil
+                && connectedHarnessId == capability.harness.id
+            if !isConnectedHarness {
+                configOptionsByHarness[capability.harness.id] = capability.configOptions
             }
             if let modes = capability.modes {
                 modeStateByHarness[capability.harness.id] = modes

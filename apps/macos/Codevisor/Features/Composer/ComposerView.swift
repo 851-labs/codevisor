@@ -300,7 +300,10 @@ struct ComposerCard: View {
         Menu {
             ForEach(option.options) { value in
                 Toggle(isOn: Binding(
-                    get: { value.value == option.currentValue },
+                    get: {
+                        controller.configOptions.first { $0.id == option.id }?.currentValue
+                            == value.value
+                    },
                     set: { isOn in
                         guard isOn else { return }
                         Task { await controller.setConfigOption(option.id, value.value) }
@@ -805,7 +808,15 @@ struct ModelConfigMenu: View {
     @Bindable var controller: SessionController
 
     var body: some View {
-        if controller.hasModelMenu {
+        if controller.isLoadingModelMenu {
+            // Keep the toolbar stable while a resumed runtime supplies its
+            // session-specific model, reasoning, and speed options.
+            ProgressView()
+                .controlSize(.small)
+                .frame(minWidth: 96)
+                .help("Loading model settings")
+                .accessibilityLabel("Loading model settings")
+        } else if controller.hasModelMenu {
             Menu {
                 if let option = controller.modelOption {
                     section("Model", option)
@@ -825,6 +836,7 @@ struct ModelConfigMenu: View {
             .fixedSize()
             .help("Model, thinking level, and speed")
             .accessibilityLabel("Model settings")
+            .accessibilityValue(accessibilityValue)
         }
     }
 
@@ -836,7 +848,10 @@ struct ModelConfigMenu: View {
         Section(title) {
             ForEach(option.options) { value in
                 Toggle(isOn: Binding(
-                    get: { value.value == option.currentValue },
+                    get: {
+                        controller.configOptions.first { $0.id == option.id }?.currentValue
+                            == value.value
+                    },
                     set: { isOn in
                         guard isOn else { return }
                         Task { await controller.setConfigOption(option.id, value.value) }
@@ -851,6 +866,16 @@ struct ModelConfigMenu: View {
 
     private var isFastSpeed: Bool {
         controller.speedOption?.currentValue == "fast"
+    }
+
+    private var accessibilityValue: String {
+        [
+            controller.modelOption?.currentName,
+            controller.thoughtLevelOption?.currentName,
+            controller.speedOption?.currentName
+        ]
+        .compactMap { $0 }
+        .joined(separator: ", ")
     }
 
     private var chipLabel: some View {

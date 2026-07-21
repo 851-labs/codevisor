@@ -1062,15 +1062,17 @@ export const makeClaudeProvider = (
         } else {
           throw new Error(`Unknown config option: ${configId}`)
         }
+        const configOptions = metadataFor(session).configOptions
         await session.emit({
           kind: "session.updated",
           payload: {
             configId,
-            configOptions: metadataFor(session).configOptions,
+            configOptions,
             value
           },
           subjectId: session.key
         })
+        return configOptions
       }),
     setMode: (modeId) =>
       adapterPromise("setMode", async () => {

@@ -973,7 +973,7 @@ describe("@codevisor/agent-runtime", () => {
 
     await run(runtime.cancel(sessionId))
     await run(runtime.setMode(sessionId, "plan"))
-    await run(runtime.setConfigOption(sessionId, "model", "gpt-5"))
+    const configOptions = await run(runtime.setConfigOption(sessionId, "model", "gpt-5"))
 
     expect(connector.connections[0]?.cancellations).toEqual([sessionId])
     expect(events).toHaveLength(3)
@@ -989,6 +989,7 @@ describe("@codevisor/agent-runtime", () => {
       kind: "session.updated",
       payload: { configId: "model", value: "gpt-5" }
     })
+    expect(configOptions).toEqual([{ currentValue: "gpt-5", id: "model" }])
   })
 
   it("fails goal calls on harnesses without goal support", async () => {
@@ -1041,7 +1042,7 @@ describe("@codevisor/agent-runtime", () => {
             }),
             close: Effect.void,
             prompt: () => Effect.succeed({ stopReason: "end_turn" }),
-            setConfigOption: () => Effect.void,
+            setConfigOption: () => Effect.succeed([]),
             setGoal: (update: unknown) =>
               Effect.sync(() => {
                 goalCalls.push(update)
@@ -1102,7 +1103,7 @@ describe("@codevisor/agent-runtime", () => {
       cancel: Effect.void,
       close: Effect.void,
       prompt: () => Effect.succeed({ stopReason: "end_turn" }),
-      setConfigOption: () => Effect.void,
+      setConfigOption: () => Effect.succeed([]),
       setMode: () => Effect.void
     }
     const custom = {

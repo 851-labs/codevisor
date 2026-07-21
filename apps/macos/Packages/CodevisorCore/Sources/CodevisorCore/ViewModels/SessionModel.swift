@@ -61,6 +61,9 @@ public final class SessionModel {
     public private(set) var availableCommands: [AvailableCommand] = []
     public private(set) var modeState: SessionModeState?
     public private(set) var configOptions: [SessionConfigOption]
+    /// Monotonic per-picker revisions keep a failed, slower request from
+    /// rolling back a newer optimistic selection for the same option.
+    @ObservationIgnored private var configMutationRevisions: [String: UInt64] = [:]
     public private(set) var errorMessage: String?
     /// The most recent harness-auth failure is retained separately so a
     /// duplicate generic failure carrying the same server message does not
@@ -379,16 +382,33 @@ public final class SessionModel {
         if !configOptions.isEmpty { self.configOptions = configOptions }
     }
 
-    /// Sets a config option's value and applies the agent's updated option set.
+    /// Sets a config option optimistically, then asks the server to persist it.
+    /// Runtime config-update events remain authoritative for dependent options
+    /// (a model change can replace the available effort and speed lists).
     @discardableResult
     public func setConfigOption(configId: String, value: String) async -> Bool {
+        let revision = (configMutationRevisions[configId] ?? 0) &+ 1
+        configMutationRevisions[configId] = revision
+        let previousValue: String?
+        if let index = configOptions.firstIndex(where: { $0.id == configId }) {
+            previousValue = configOptions[index].currentValue
+            configOptions[index].currentValue = value
+        } else {
+            previousValue = nil
+        }
+
         do {
             try await transport.setConfigOption(configId: configId, value: value)
-            if let index = configOptions.firstIndex(where: { $0.id == configId }) {
-                configOptions[index].currentValue = value
-            }
             return true
         } catch {
+            // Only undo this mutation if it is still the newest request and
+            // the live config stream has not already supplied another value.
+            if configMutationRevisions[configId] == revision,
+               let previousValue,
+               let index = configOptions.firstIndex(where: { $0.id == configId }),
+               configOptions[index].currentValue == value {
+                configOptions[index].currentValue = previousValue
+            }
             errorMessage = serverErrorMessage(error)
             return false
         }

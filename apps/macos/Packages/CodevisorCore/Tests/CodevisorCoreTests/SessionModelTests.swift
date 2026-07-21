@@ -1318,10 +1318,12 @@ struct SessionModelTests {
         #expect(assistant.turn.workedEntries.map(\.id) == ["tool:readme", "tool:package"])
     }
 
-    @Test("Server-backed config updates are sent and reflected optimistically")
+    @Test("Server-backed config updates paint before the request completes")
     func serverBackedConfigUpdate() async {
         let sessionId = UUID()
         let client = FakeSessionServerClient(sessionId: sessionId)
+        let (gate, continuation) = AsyncStream.makeStream(of: Void.self)
+        client.holdConfigUpdates(until: gate)
         let option = SessionConfigOption(
             id: "model",
             name: "Model",
@@ -1338,12 +1340,47 @@ struct SessionModelTests {
             configOptions: [option]
         )
 
-        await model.setConfigOption(configId: "model", value: "large")
+        let update = Task { await model.setConfigOption(configId: "model", value: "large") }
+        for _ in 0..<20 {
+            await Task.yield()
+            if !client.configUpdates.isEmpty { break }
+        }
 
         #expect(client.configUpdates.count == 1)
         #expect(client.configUpdates.first?.0 == "model")
         #expect(client.configUpdates.first?.1 == "large")
         #expect(model.configOptions.first?.currentValue == "large")
+
+        continuation.yield()
+        continuation.finish()
+        #expect(await update.value)
+    }
+
+    @Test("A rejected config update rolls back its optimistic selection")
+    func rejectedServerBackedConfigUpdate() async {
+        let sessionId = UUID()
+        let client = FakeSessionServerClient(sessionId: sessionId)
+        client.failNextConfigUpdate()
+        let option = SessionConfigOption(
+            id: "effort",
+            name: "Reasoning",
+            category: "thought_level",
+            currentValue: "low",
+            options: [
+                SessionConfigSelectOption(value: "low", name: "Low"),
+                SessionConfigSelectOption(value: "xhigh", name: "X-High")
+            ]
+        )
+        let model = SessionModel(
+            serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
+            sessionId: sessionId.uuidString,
+            configOptions: [option]
+        )
+
+        let accepted = await model.setConfigOption(configId: "effort", value: "xhigh")
+
+        #expect(!accepted)
+        #expect(model.configOptions.first?.currentValue == "low")
     }
 
     @Test("Fresh harness capabilities replace draft model options")
@@ -2234,6 +2271,8 @@ private final class FakeSessionServerClient: CodevisorServerClienting, @unchecke
     private var _promptedMessageIds: [String?] = []
     private var _cancelCount = 0
     private var _configUpdates: [(String, String)] = []
+    private var _configUpdateGate: AsyncStream<Void>?
+    private var _nextConfigUpdateShouldFail = false
     private var _eventSinceValues: [Int] = []
     private var _sessionEventSinceValues: [Int] = []
     private var _transcriptPageRequests: [(before: String?, limit: Int)] = []
@@ -2276,6 +2315,14 @@ private final class FakeSessionServerClient: CodevisorServerClienting, @unchecke
 
     var configUpdates: [(String, String)] {
         lock.withLock { _configUpdates }
+    }
+
+    func holdConfigUpdates(until gate: AsyncStream<Void>) {
+        lock.withLock { _configUpdateGate = gate }
+    }
+
+    func failNextConfigUpdate() {
+        lock.withLock { _nextConfigUpdateShouldFail = true }
     }
 
     var eventSinceValues: [Int] {
@@ -2412,7 +2459,18 @@ private final class FakeSessionServerClient: CodevisorServerClienting, @unchecke
     func setSessionMode(id: UUID, modeId: String) async throws {}
 
     func setSessionConfig(id: UUID, configId: String, value: String) async throws {
-        lock.withLock { _configUpdates.append((configId, value)) }
+        let (gate, shouldFail) = lock.withLock {
+            _configUpdates.append((configId, value))
+            let shouldFail = _nextConfigUpdateShouldFail
+            _nextConfigUpdateShouldFail = false
+            return (_configUpdateGate, shouldFail)
+        }
+        if let gate {
+            for await _ in gate { break }
+        }
+        if shouldFail {
+            throw CodevisorServerClientError.invalidResponse
+        }
     }
 
     @discardableResult

@@ -459,6 +459,31 @@ describe("@codevisor/db", () => {
     await Effect.runPromise(db.close)
   })
 
+  it("persists the resolved config selections for each session", async () => {
+    const filename = tempDatabase()
+    const db = await run(makeDatabase({ filename, serverId: "local" }))
+    const project = await run(db.createProject({ folderPath: "/tmp/session-config" }))
+    const session = await run(db.createSession({ projectId: project.id, harnessId: "codex" }))
+
+    expect(await run(db.getSessionConfigSelections(session.id))).toEqual({})
+    await run(
+      db.replaceSessionConfigSelections(session.id, {
+        model: "gpt-5.6-sol",
+        reasoning: "high",
+        speed: "standard"
+      })
+    )
+    await Effect.runPromise(db.close)
+
+    const reopened = await run(makeDatabase({ filename, serverId: "local" }))
+    expect(await run(reopened.getSessionConfigSelections(session.id))).toEqual({
+      model: "gpt-5.6-sol",
+      reasoning: "high",
+      speed: "standard"
+    })
+    await Effect.runPromise(reopened.close)
+  })
+
   it("snapshots a pending question with the session cursor and clears it terminally", async () => {
     const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
     const project = await run(db.createProject({ folderPath: "/tmp/pending-question" }))
@@ -618,6 +643,7 @@ describe("@codevisor/db", () => {
     ])
     expect(detail.promptQueue.map((item) => item.text)).toEqual(["queued"])
     expect(await run(db.getSessionActionResult("sess-1", "action-1"))).toEqual({})
+    expect(await run(db.getSessionConfigSelections("sess-1"))).toEqual({})
 
     const sqlite = new Database(filename)
     expect(
@@ -662,7 +688,7 @@ describe("@codevisor/db", () => {
       (sqlite.pragma("table_info(sessions)") as ReadonlyArray<{ readonly name: string }>).map(
         (column) => column.name
       )
-    ).toContain("workspace_id")
+    ).toEqual(expect.arrayContaining(["workspace_id", "config_selections"]))
     expect(sqlite.pragma("foreign_key_check")).toEqual([])
     sqlite.close()
 

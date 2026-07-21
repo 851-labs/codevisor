@@ -1,4 +1,10 @@
-import type { EventEnvelope, Harness, HarnessUsageLimits, SessionGoal } from "@codevisor/api"
+import type {
+  EventEnvelope,
+  Harness,
+  HarnessUsageLimits,
+  SessionConfigOption,
+  SessionGoal
+} from "@codevisor/api"
 import { isoTimestamp } from "@codevisor/api"
 import type { AgentSessionSummary } from "./agent-sessions.js"
 import { accessSync, constants } from "node:fs"
@@ -172,7 +178,7 @@ export interface AgentRuntimeService {
     sessionId: string,
     configId: string,
     value: string
-  ) => Effect.Effect<void, AgentRuntimeError>
+  ) => Effect.Effect<ReadonlyArray<SessionConfigOption>, AgentRuntimeError>
   /// Fails with AgentRuntimeError when the session's harness has no goal
   /// support (see AgentSessionMetadata.supportsGoals).
   readonly setGoal: (

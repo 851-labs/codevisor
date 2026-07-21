@@ -19,6 +19,7 @@ import type {
   PromptAcceptedResponse,
   PromptQueueItem,
   ServerKind,
+  SessionConfigOption,
   SessionSummary,
   TerminalClientFrame,
   UpdateInfo,
@@ -2552,8 +2553,14 @@ const routeSessionActions = async (
           config.id,
           configSessionId
         )
-        await run(
+        const configOptions = await run(
           services.agents.setConfigOption(agentSession.sessionId, payload.configId, payload.value)
+        )
+        await run(
+          services.db.replaceSessionConfigSelections(
+            configSessionId,
+            configSelectionsFromOptions(configOptions)
+          )
         )
         return { configId: payload.configId }
       }
@@ -3208,7 +3215,7 @@ const ensureAgentSessionFor = async (
       updatedSession.id,
       updatedSession
     )
-    return run(
+    const metadata = await run(
       services.agents.loadAgentSession(
         session.harnessId,
         agentSessionId,
@@ -3218,10 +3225,11 @@ const ensureAgentSessionFor = async (
         toolGateway
       )
     )
+    return restoreSessionConfigSelections(services, sessionId, metadata)
   }
   const agentSessionId = session.agentSessionId ?? sessionId
   const toolGateway = await services.mcp?.issueGateway(session.id, session.projectId)
-  return run(
+  const metadata = await run(
     services.agents.loadAgentSession(
       session.harnessId,
       agentSessionId,
@@ -3231,6 +3239,72 @@ const ensureAgentSessionFor = async (
       toolGateway
     )
   )
+  return restoreSessionConfigSelections(services, sessionId, metadata)
+}
+
+const selectableValues = (option: SessionConfigOption): ReadonlySet<string> =>
+  new Set(
+    option.options.flatMap((entry) =>
+      "value" in entry ? [entry.value] : entry.options.map((nested) => nested.value)
+    )
+  )
+
+const configSelectionsFromOptions = (
+  options: ReadonlyArray<SessionConfigOption>
+): Readonly<Record<string, string>> =>
+  Object.fromEntries(options.map((option) => [option.id, option.currentValue]))
+
+const configRestorePriority = (option: SessionConfigOption | undefined): number => {
+  if (option?.category === "model" || option?.id === "model") return 0
+  if (option?.category === "thought_level") return 1
+  if (option?.category === "speed" || option?.id === "speed") return 2
+  return 3
+}
+
+/// Rehydrates durable per-chat picker values after the provider has resumed
+/// its native thread. Model goes first because it can replace the available
+/// reasoning and speed lists. Every later value is validated against the
+/// latest options returned by the provider; removed values fall through to
+/// the provider's current default and the resolved snapshot replaces them.
+const restoreSessionConfigSelections = async (
+  services: CodevisorServerServices,
+  sessionId: string,
+  metadata: AgentSessionMetadata
+): Promise<AgentSessionMetadata> => {
+  const saved = await run(services.db.getSessionConfigSelections(sessionId))
+  let configOptions = metadata.configOptions
+  const ordered = Object.entries(saved).sort(([leftId], [rightId]) => {
+    const left = configOptions.find((option) => option.id === leftId)
+    const right = configOptions.find((option) => option.id === rightId)
+    const difference = configRestorePriority(left) - configRestorePriority(right)
+    return difference === 0 ? leftId.localeCompare(rightId) : difference
+  })
+  for (const [configId, value] of ordered) {
+    const option = configOptions.find((candidate) => candidate.id === configId)
+    if (
+      option === undefined ||
+      option.currentValue === value ||
+      !selectableValues(option).has(value)
+    ) {
+      continue
+    }
+    try {
+      configOptions = await run(
+        services.agents.setConfigOption(metadata.sessionId, configId, value)
+      )
+    } catch {
+      // A harness can reject a value between advertising it and applying it.
+      // Session open must still succeed; its current value becomes the durable
+      // fallback below.
+    }
+  }
+  await run(
+    services.db.replaceSessionConfigSelections(
+      sessionId,
+      configSelectionsFromOptions(configOptions)
+    )
+  )
+  return { ...metadata, configOptions }
 }
 
 const existingDirectory = (folderPath: string | null): string | undefined => {

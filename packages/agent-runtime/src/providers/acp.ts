@@ -301,6 +301,7 @@ export const makeAcpProvider = (
             payload: { configId, configOptions, value }
           })
         )
+        return configOptions as ReadonlyArray<SessionConfigOption>
       }),
     ...(connection.answerQuestion === undefined
       ? {}

@@ -279,7 +279,7 @@ export interface AgentSessionHandle {
   readonly setConfigOption: (
     configId: string,
     value: string
-  ) => Effect.Effect<void, AgentRuntimeError>
+  ) => Effect.Effect<ReadonlyArray<SessionConfigOption>, AgentRuntimeError>
   /// Present only on harnesses that support goals (see
   /// AgentSessionMetadata.supportsGoals). Returns the updated goal snapshot.
   readonly setGoal?: (update: SetGoalUpdate) => Effect.Effect<SessionGoal, AgentRuntimeError>
