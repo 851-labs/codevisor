@@ -221,4 +221,24 @@ describe("detectBrewPackage", () => {
       })
     ).toBeUndefined()
   })
+
+  it("resolves real symlinks by default and tolerates missing paths", async () => {
+    const { mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } = await import("node:fs")
+    const { tmpdir } = await import("node:os")
+    const { join } = await import("node:path")
+    const dir = mkdtempSync(join(tmpdir(), "codevisor-brew-"))
+    try {
+      // Default realpath follows a real symlink into a Cellar-shaped path.
+      const cellarBinary = join(dir, "Cellar/tool/1.0.0/bin/tool")
+      mkdirSync(join(dir, "Cellar/tool/1.0.0/bin"), { recursive: true })
+      writeFileSync(cellarBinary, "#!/bin/sh\n")
+      const link = join(dir, "tool")
+      symlinkSync(cellarBinary, link)
+      expect(detectBrewPackage(link)).toEqual({ cask: false, formula: "tool" })
+      // A dangling path falls back to the literal argument (no Homebrew match).
+      expect(detectBrewPackage(join(dir, "does-not-exist"))).toBeUndefined()
+    } finally {
+      rmSync(dir, { force: true, recursive: true })
+    }
+  })
 })
