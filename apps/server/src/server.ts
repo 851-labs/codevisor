@@ -70,7 +70,7 @@ import {
   decode,
   makeOpenApiDocument
 } from "@codevisor/api"
-import { managedRepoPath, type CodevisorDatabaseService } from "@codevisor/db"
+import { DatabaseError, managedRepoPath, type CodevisorDatabaseService } from "@codevisor/db"
 import type { TerminalManagerService } from "@codevisor/terminal"
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http"
 import { existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs"
@@ -84,6 +84,8 @@ import {
   cloneRepository,
   gitBranchDiffTotals,
   isGitWorkTree,
+  isWorktreeBranchCollision,
+  listCodevisorWorktreeBranchNames,
   removeWorktree,
   worktreeStartPoint
 } from "./git.js"
@@ -97,6 +99,7 @@ import { parseCustomHarnessDocument, type CustomHarnessStore } from "./custom-ha
 import type { McpManager } from "./mcp-manager.js"
 import { NativeMcpError, type NativeMcpManager } from "./native-mcp-manager.js"
 import { SkillsError, type SkillsManager } from "./skills-manager.js"
+import { availableDevelopmentWorktreeName } from "./food-worktree-names.js"
 import { availableGeneratedWorktreeName } from "./worktree-names.js"
 
 export class ServerError extends Schema.TaggedErrorClass<ServerError>()("ServerError", {
@@ -124,6 +127,7 @@ export interface CodevisorServerConfig {
   readonly kind: ServerKind
   readonly host: string
   readonly port: number
+  readonly worktreeNameStyle: "production" | "development"
   readonly auth: CodevisorServerAuthConfig
   /// Origins allowed to call the HTTP API from a browser context (e.g. the
   /// Tauri desktop webview's tauri://localhost). Never a wildcard: loopback
@@ -303,6 +307,7 @@ export const defaultServerConfig = (
   kind: overrides.kind ?? "local",
   host: overrides.host ?? "127.0.0.1",
   port: overrides.port ?? 49361,
+  worktreeNameStyle: overrides.worktreeNameStyle ?? "production",
   auth: overrides.auth ?? {
     allowLocalhostWithoutAuth: true,
     requireBearerToken: false
@@ -717,7 +722,7 @@ const handleRequest = async (
       return
     }
 
-    if (await routeProjects(services, config.id, fanout, request, response, url)) {
+    if (await routeProjects(services, config, fanout, request, response, url)) {
       return
     }
     if (await routeWorkspaces(services, fanout, request, response, url)) {
@@ -1013,12 +1018,13 @@ const routeSkills = async (
 
 const routeProjects = async (
   services: CodevisorServerServices,
-  serverId: string,
+  config: CodevisorServerConfig,
   fanout: EventFanout,
   request: IncomingMessage,
   response: ServerResponse,
   url: URL
 ): Promise<boolean> => {
+  const serverId = config.id
   if (request.method === "GET" && url.pathname === "/v1/projects") {
     const projects = await run(services.db.listProjects)
     writeJson(
@@ -1133,51 +1139,86 @@ const routeProjects = async (
     if (!(await isGitWorkTree(location.folderPath))) {
       throw new HttpFailure(422, `Project folder is not a git repository: ${location.folderPath}`)
     }
+    // Server data/worktree directories may be isolated, but local branches
+    // belong to the shared Git repository. Include both namespaces so an
+    // archived worktree or another development server cannot look available.
     const existing = new Set((await run(services.db.listWorktrees(project.id))).map((w) => w.name))
-    const requested = slugifyWorktreeName(payload.name)
-    const name =
-      requested === undefined
-        ? availableGeneratedWorktreeName(existing)
-        : availableWorktreeName(requested, existing)
-    const branch = `codevisor/${name}`
-    const worktree = await run(services.db.createWorktree(project.id, name, branch, payload.id))
-    const startedAt = Date.now()
-    const publishSetup = makeWorktreeSetupPublisher(
-      services.db,
-      fanout,
-      worktree,
-      payload.sessionId
-    )
-    await publishSetup({ state: "started" })
-    try {
-      mkdirSync(dirname(worktree.path), { recursive: true })
-      // Refresh and prefer remote main over the local checkout's HEAD so new
-      // worktrees are not pinned to a stale or drifted local main.
-      const startPoint = await worktreeStartPoint(location.folderPath)
-      await addWorktree(
-        location.folderPath,
-        worktree.path,
-        branch,
-        (stream, line) => {
-          void publishSetup({ state: "log", stream, line })
-        },
-        startPoint
-      )
-      await publishSetup({ state: "completed", durationMs: Date.now() - startedAt })
-    } catch (cause) {
-      await publishSetup({
-        state: "failed",
-        message: failureMessage(cause),
-        durationMs: Date.now() - startedAt
-      })
-      // The directory never materialized; drop the record so the name can be retried.
-      /* v8 ignore next 2 -- best-effort cleanup; a second fault still surfaces the git error. */
-      await run(services.db.deleteWorktree(worktree.id)).catch(() => undefined)
-      throw cause
+    for (const name of await listCodevisorWorktreeBranchNames(location.folderPath)) {
+      existing.add(name)
     }
-    await appendAndPublish(services.db, fanout, "worktree.created", worktree.id, worktree)
-    writeJson(response, 201, worktree)
-    return true
+    const requested = slugifyWorktreeName(payload.name)
+    // Refresh once, outside the collision loop. The ref check above handles
+    // established conflicts; retrying `git worktree add -b` handles the race
+    // where another isolated server claims the same branch after our scan.
+    const startPoint = await worktreeStartPoint(location.folderPath)
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      const name =
+        config.worktreeNameStyle === "development"
+          ? availableDevelopmentWorktreeName(existing)
+          : requested === undefined
+            ? availableGeneratedWorktreeName(existing)
+            : availableWorktreeName(requested, existing)
+      const branch = `codevisor/${name}`
+      let worktree: Worktree
+      try {
+        worktree = await run(services.db.createWorktree(project.id, name, branch, payload.id))
+      } catch (cause) {
+        // A concurrent request on this server can reserve the candidate after
+        // our initial scan. Retry only the name constraint; a duplicate
+        // client-supplied id or any other database failure is not recoverable
+        // by changing the branch name.
+        if (isWorktreeNameCollision(cause) && attempt < 99) {
+          existing.add(name)
+          continue
+        }
+        throw cause
+      }
+      const startedAt = Date.now()
+      const publishSetup = makeWorktreeSetupPublisher(
+        services.db,
+        fanout,
+        worktree,
+        payload.sessionId
+      )
+      await publishSetup({ state: "started" })
+      try {
+        mkdirSync(dirname(worktree.path), { recursive: true })
+        await addWorktree(
+          location.folderPath,
+          worktree.path,
+          branch,
+          (stream, line) => {
+            void publishSetup({ state: "log", stream, line })
+          },
+          startPoint
+        )
+        await publishSetup({ state: "completed", durationMs: Date.now() - startedAt })
+      } catch (cause) {
+        // Release the reservation before retrying the same client-supplied id
+        // under a new name. Only a branch collision is retryable; other Git
+        // failures retain their terminal setup event and original response.
+        await run(services.db.deleteWorktree(worktree.id)).catch(() => undefined)
+        if (isWorktreeBranchCollision(cause) && attempt < 99) {
+          existing.add(name)
+          await publishSetup({
+            state: "log",
+            stream: "stderr",
+            line: `Branch ${branch} was claimed concurrently; choosing another name.`
+          })
+          continue
+        }
+        await publishSetup({
+          state: "failed",
+          message: failureMessage(cause),
+          durationMs: Date.now() - startedAt
+        })
+        throw cause
+      }
+      await appendAndPublish(services.db, fanout, "worktree.created", worktree.id, worktree)
+      writeJson(response, 201, worktree)
+      return true
+    }
+    throw new HttpFailure(422, "Unable to allocate an unused Git worktree branch")
   }
 
   return false
@@ -1277,6 +1318,13 @@ const availableWorktreeName = (base: string, existing: ReadonlySet<string>): str
   /* v8 ignore next -- existing.size + 1 candidates guarantee a free suffix. */
   throw new Error("Unable to allocate a unique worktree name")
 }
+
+const isWorktreeNameCollision = (cause: unknown): boolean =>
+  cause instanceof DatabaseError &&
+  cause.operation === "createWorktree" &&
+  cause.message.includes(
+    "UNIQUE constraint failed: worktrees.project_id, worktrees.server_id, worktrees.name"
+  )
 
 type WorktreeSetupDetail = Omit<WorktreeSetupUpdate, "worktreeId" | "projectId" | "name" | "branch">
 

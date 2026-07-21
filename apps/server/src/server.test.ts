@@ -54,6 +54,7 @@ import type { CodevisorServerServices } from "./server.js"
 import { NativeMcpError } from "./native-mcp-manager.js"
 import { SkillsError } from "./skills-manager.js"
 import { generatedWorktreeNames } from "./worktree-names.js"
+import { foodWorktreeNames } from "./food-worktree-names.js"
 import { boundedMcpTimerDelay, makeMcpManager, NodeStreamableHttpTransport } from "./mcp-manager.js"
 import { Client as McpClient } from "@modelcontextprotocol/sdk/client/index.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
@@ -3861,28 +3862,30 @@ describe("@codevisor/server", () => {
           .length
       ).toBe(4)
 
-      // A failing git operation (branch already exists) surfaces as 422 and
-      // releases the reserved name for a retry.
+      // Git refs outlive archived database rows and are shared by isolated
+      // development servers. A stale branch is included in allocation, so
+      // the request transparently moves to the next readable name.
       await git(["branch", "codevisor/doomed"], repoFolder)
-      const failed = await jsonRequest(server, "/v1/projects/git-project/worktrees", {
+      const recovered = await jsonRequest(server, "/v1/projects/git-project/worktrees", {
         body: JSON.stringify({ id: "wt-doomed", name: "doomed" }),
         method: "POST"
       })
-      expect(failed.status).toBe(422)
-      expect((failed.body as { readonly error: string }).error).toContain("doomed")
-      // The failure is also published as a terminal worktree.setup event so
-      // clients following the stream see what went wrong.
-      const failedSetup = (await run(services.db.listEvents(0)))
+      expect(recovered.status).toBe(201)
+      expect(recovered.body).toMatchObject({
+        id: "wt-doomed",
+        name: "doomed-2",
+        branch: "codevisor/doomed-2"
+      })
+      const recoveredSetup = (await run(services.db.listEvents(0)))
         .filter((event) => event.kind === "worktree.setup" && event.subjectId === "wt-doomed")
-        .map((event) => event.payload as { readonly state: string; readonly message?: string })
-      expect(failedSetup[0]?.state).toBe("started")
-      const failure = failedSetup[failedSetup.length - 1]
-      expect(failure?.state).toBe("failed")
-      expect(failure?.message).toContain("doomed")
+        .map((event) => (event.payload as { readonly state: string }).state)
+      expect(recoveredSetup[0]).toBe("started")
+      expect(recoveredSetup.at(-1)).toBe("completed")
+      expect(recoveredSetup).not.toContain("failed")
       expect(
         ((await jsonRequest(server, "/v1/projects/git-project/worktrees")).body as Array<unknown>)
           .length
-      ).toBe(4)
+      ).toBe(5)
 
       // Sessions created with a worktree run the agent inside the worktree.
       const sessionResponse = await jsonRequest(server, "/v1/sessions", {
@@ -4054,6 +4057,55 @@ describe("@codevisor/server", () => {
           })
         ).status
       ).toBe(400)
+    } finally {
+      delete process.env["CODEVISOR_WORKTREES_ROOT"]
+    }
+  })
+
+  it("uses food names with four-digit suffixes for development worktrees", async () => {
+    const execFileAsync = promisify(execFile)
+    const git = (args: ReadonlyArray<string>, cwd: string) =>
+      execFileAsync("git", [...args], { cwd })
+    const worktreesRoot = mkdtempSync(join(tmpdir(), "codevisor-development-worktrees-"))
+    tempDirs.push(worktreesRoot)
+    process.env["CODEVISOR_WORKTREES_ROOT"] = worktreesRoot
+    try {
+      const { services } = await makeServices("server-dev")
+      const server = await run(
+        startCodevisorServer(
+          services,
+          defaultServerConfig({
+            id: "server-dev",
+            port: 0,
+            worktreeNameStyle: "development"
+          })
+        )
+      )
+      runningServers.push(server)
+      const repoFolder = mkdtempSync(join(tmpdir(), "codevisor-development-repo-"))
+      tempDirs.push(repoFolder)
+      await git(["init"], repoFolder)
+      await git(
+        ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "--allow-empty", "-m", "init"],
+        repoFolder
+      )
+      expect(
+        (
+          await jsonRequest(server, "/v1/projects", {
+            body: JSON.stringify({ folderPath: repoFolder, id: "food-project" }),
+            method: "POST"
+          })
+        ).status
+      ).toBe(201)
+
+      const response = await jsonRequest(server, "/v1/projects/food-project/worktrees", {
+        method: "POST"
+      })
+      expect(response.status).toBe(201)
+      const name = (response.body as { readonly name: string }).name
+      const match = /^(.*)-(\d{4})$/.exec(name)
+      expect(match).not.toBeNull()
+      expect(foodWorktreeNames).toContain(match?.[1])
     } finally {
       delete process.env["CODEVISOR_WORKTREES_ROOT"]
     }

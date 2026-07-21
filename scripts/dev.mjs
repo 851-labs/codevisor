@@ -180,6 +180,7 @@ const remoteServer = spawn(
     cwd: repoRoot,
     env: {
       ...process.env,
+      CODEVISOR_DEV_INSTANCE_ID: `${instanceName}-remote`,
       CODEVISOR_DATA_DIR: remoteDataDirectory,
       CODEVISOR_WORKTREES_ROOT: join(remoteDataDirectory, "worktrees"),
       CODEVISOR_REPOS_ROOT: join(remoteDataDirectory, "repos")

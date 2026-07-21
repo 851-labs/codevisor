@@ -11,6 +11,8 @@ import {
   cloneRepository,
   gitBranchDiffTotals,
   isGitWorkTree,
+  isWorktreeBranchCollision,
+  listCodevisorWorktreeBranchNames,
   parseGitNumstat,
   sanitizeGitOutputLine,
   worktreeStartPoint,
@@ -47,6 +49,14 @@ describe("git helper", () => {
     // The spawn fails before git can write to stderr, exercising the
     // error-message fallback in the buffered git helper.
     expect(await isGitWorkTree("/nonexistent-codevisor-repo")).toBe(false)
+  })
+
+  it("lists names already occupying the shared Codevisor branch namespace", async () => {
+    const { repo } = makeRepo()
+    execFileSync("git", ["branch", "codevisor/chicken-fingers-8394"], { cwd: repo })
+    execFileSync("git", ["branch", "unrelated"], { cwd: repo })
+
+    expect(await listCodevisorWorktreeBranchNames(repo)).toEqual(["chicken-fingers-8394"])
   })
 
   it("streams git output lines while adding a worktree", async () => {
@@ -215,6 +225,10 @@ describe("git helper", () => {
     )
     expect(failure).toBeInstanceOf(GitError)
     expect((failure as GitError).message).toContain("taken")
+    expect(isWorktreeBranchCollision(failure)).toBe(true)
+    expect(isWorktreeBranchCollision(new GitError("add-worktree", "fatal: another failure"))).toBe(
+      false
+    )
   })
 
   it("strips ANSI escapes and control characters from log lines", () => {

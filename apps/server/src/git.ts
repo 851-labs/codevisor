@@ -44,6 +44,29 @@ export const isGitWorkTree = async (dir: string): Promise<boolean> => {
   }
 }
 
+/// Returns the names already occupying Codevisor's shared local branch
+/// namespace. Worktree directories and server databases may be isolated, but
+/// every server operating on the same repository still shares these refs.
+export const listCodevisorWorktreeBranchNames = async (
+  repoDir: string
+): Promise<ReadonlyArray<string>> => {
+  const output = await gitRaw(
+    "list-codevisor-branches",
+    ["for-each-ref", "--format=%(refname:strip=3)", "refs/heads/codevisor/"],
+    repoDir
+  )
+  return output
+    .split("\n")
+    .map((name) => name.trim())
+    .filter((name) => name.length > 0)
+}
+
+/// A preflight branch scan closes the normal stale-ref case; this classifier
+/// closes the remaining race where another server creates the branch between
+/// that scan and our atomic `git worktree add -b`.
+export const isWorktreeBranchCollision = (cause: unknown): boolean =>
+  cause instanceof GitError && /branch named ['"].+['"] already exists/i.test(cause.message)
+
 export type GitOutputStream = "stdout" | "stderr"
 export type GitOutputListener = (stream: GitOutputStream, line: string) => void
 

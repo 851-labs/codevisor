@@ -299,6 +299,11 @@ export const runServe = (args: Record<string, string>): Promise<void> => {
     const host = args.host ?? "127.0.0.1"
     const port = Number(args.port ?? "49361")
     const serverId = args.serverId ?? "local"
+    const worktreeNameStyle =
+      process.env.CODEVISOR_DEV_INSTANCE_ID !== undefined ||
+      process.env.HERDMAN_DEV_INSTANCE_ID !== undefined
+        ? "development"
+        : "production"
     const authMode = args.auth ?? (host === "127.0.0.1" ? "none" : "token")
     const version = args.version ?? bundledVersion()
     if (authMode !== "none" && authMode !== "token") {
@@ -469,6 +474,7 @@ export const runServe = (args: Record<string, string>): Promise<void> => {
         // not the default "local" server id.
         name: args.name ?? (host === "127.0.0.1" ? "Local Codevisor" : hostname()),
         port,
+        worktreeNameStyle,
         ...(version === undefined ? {} : { version }),
         ...(corsOrigins.length === 0 ? {} : { corsOrigins }),
         auth: {
