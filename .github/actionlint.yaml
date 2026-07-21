@@ -1,0 +1,4 @@
+self-hosted-runner:
+  labels:
+    - codevisor-macos-arm64
+    - codevisor-macos-x64

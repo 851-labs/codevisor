@@ -1,0 +1,472 @@
+name: Build release artifacts
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: Numeric marketing version shared by the RC and stable build.
+        required: true
+        type: string
+      channel:
+        description: Bundle release channel (rc or stable).
+        required: true
+        type: string
+      source_sha:
+        description: Exact source revision to build.
+        required: true
+        type: string
+      reuse_run_id:
+        description: Successful same-SHA RC run whose unsigned macOS inputs can be reused.
+        required: false
+        default: ""
+        type: string
+      artifact_retention_days:
+        required: false
+        default: 14
+        type: number
+      include_compatibility_artifacts:
+        description: Build the universal zip required by the one-time R2 bridge.
+        required: false
+        default: false
+        type: boolean
+    secrets:
+      APPLE_CERTIFICATE_BASE64:
+        required: true
+      APPLE_CERTIFICATE_PASSWORD:
+        required: true
+      APPLE_CODESIGN_IDENTITY:
+        required: true
+      APPLE_ID:
+        required: false
+      APPLE_APP_SPECIFIC_PASSWORD:
+        required: false
+      APPLE_TEAM_ID:
+        required: false
+      APP_STORE_CONNECT_API_KEY_BASE64:
+        required: false
+      APP_STORE_CONNECT_API_KEY_ID:
+        required: false
+      APP_STORE_CONNECT_ISSUER_ID:
+        required: false
+
+permissions:
+  actions: read
+  contents: read
+
+env:
+  BUN_VERSION: "1.3.13"
+  NODE_VERSION: "24.x"
+
+jobs:
+  guard:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Restrict self-hosted builds to trusted refs
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+        run: |
+          if [[ "$GITHUB_EVENT_NAME" != "push" && "$GITHUB_EVENT_NAME" != "workflow_dispatch" ]]; then
+            echo "Release artifact builds only accept trusted push or manual release events." >&2
+            exit 1
+          fi
+          if [[ "$GITHUB_REF" != "refs/heads/main" && "$GITHUB_REF" != refs/tags/v* ]]; then
+            echo "Release artifact builds only accept main or v* tags." >&2
+            exit 1
+          fi
+          if [[ "$SOURCE_SHA" != "$GITHUB_SHA" ]]; then
+            echo "Requested source $SOURCE_SHA does not match event SHA $GITHUB_SHA." >&2
+            exit 1
+          fi
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" && "$GITHUB_REF" != "refs/heads/main" ]]; then
+            echo "Manual stable releases must be dispatched from main." >&2
+            exit 1
+          fi
+          if [[ "${{ inputs.channel }}" != "rc" && "${{ inputs.channel }}" != "stable" ]]; then
+            echo "channel must be rc or stable" >&2
+            exit 1
+          fi
+
+  checks:
+    needs: guard
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.source_sha }}
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Run JS release checks
+        run: bun run check:js
+
+  build-server-linux-x64:
+    needs: guard
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.source_sha }}
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Build Linux server archives
+        run: scripts/release/build-server-archive.sh "${{ inputs.version }}" dist/release
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: codevisor-server-linux-x64
+          path: |
+            dist/release/codevisor-server-*.tar.gz
+            dist/release/codevisor-server-*.tar.gz.sha256
+          if-no-files-found: error
+          retention-days: ${{ inputs.artifact_retention_days }}
+
+  build-server-linux-arm64:
+    needs: guard
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.source_sha }}
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Build ARM Linux server archive
+        run: scripts/release/build-server-archive.sh "${{ inputs.version }}" dist/release
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: codevisor-server-linux-arm64
+          path: |
+            dist/release/codevisor-server-*.tar.gz
+            dist/release/codevisor-server-*.tar.gz.sha256
+          if-no-files-found: error
+          retention-days: ${{ inputs.artifact_retention_days }}
+
+  build-server-macos-x64:
+    needs: guard
+    runs-on: [self-hosted, macOS, X64, codevisor-macos-x64]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.source_sha }}
+          clean: true
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Restore exact-SHA RC Intel runtime
+        if: inputs.reuse_run_id != ''
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p dist/release
+          scripts/release/download-github-artifact.sh \
+            "${{ inputs.reuse_run_id }}" \
+            codevisor-macos-x64-runtime \
+            dist/release \
+            60
+          mkdir -p dist/release/work/app-server-runtime-darwin-x64
+          tar -C dist/release/work/app-server-runtime-darwin-x64 \
+            -xzf dist/release/codevisor-app-server-runtime-darwin-x64.tar.gz
+      - name: Build Intel macOS server runtime
+        if: inputs.reuse_run_id == ''
+        shell: bash
+        run: |
+          runtime_dir="dist/release/work/app-server-runtime-darwin-x64"
+          scripts/release/build-server-runtime.sh "${{ inputs.version }}" "$runtime_dir" darwin-x64
+          tar -C "$runtime_dir" -czf dist/release/codevisor-app-server-runtime-darwin-x64.tar.gz .
+      - name: Upload Intel macOS app runtime
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: codevisor-macos-x64-runtime
+          path: dist/release/codevisor-app-server-runtime-darwin-x64.tar.gz
+          if-no-files-found: error
+          retention-days: ${{ inputs.artifact_retention_days }}
+      - name: Build Intel macOS server archive
+        run: scripts/release/build-server-archive.sh "${{ inputs.version }}" dist/release darwin-x64 dist/release/work/app-server-runtime-darwin-x64
+      - name: Run Swift package tests on Intel
+        run: bun run swift:test
+      - name: Upload Intel macOS server archive
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: codevisor-server-macos-x64
+          path: |
+            dist/release/codevisor-server-darwin-x64.tar.gz
+            dist/release/codevisor-server-darwin-x64.tar.gz.sha256
+          if-no-files-found: error
+          retention-days: ${{ inputs.artifact_retention_days }}
+      - name: Clean persistent runner workspace
+        if: always()
+        shell: bash
+        run: rm -rf dist/release node_modules
+
+  build-macos:
+    needs: guard
+    runs-on: [self-hosted, macOS, ARM64, codevisor-macos-arm64]
+    env:
+      CODEVISOR_BUILD_NUMBER: ${{ github.run_number }}
+      CODEVISOR_RELEASE_CHANNEL: ${{ inputs.channel }}
+      CODEVISOR_SOURCE_REVISION: ${{ inputs.source_sha }}
+      CODEVISOR_INCLUDE_COMPATIBILITY_ARTIFACTS: ${{ inputs.include_compatibility_artifacts && '1' || '0' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.source_sha }}
+          clean: true
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - name: Restore exact-SHA RC build inputs
+        if: inputs.reuse_run_id != ''
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p dist/release/reuse
+          scripts/release/download-github-artifact.sh \
+            "${{ inputs.reuse_run_id }}" \
+            codevisor-macos-build-inputs \
+            dist/release/reuse \
+            60
+          scripts/release/download-github-artifact.sh \
+            "${{ inputs.reuse_run_id }}" \
+            codevisor-macos-x64-runtime \
+            dist/release/reuse \
+            60
+          echo "CODEVISOR_UNSIGNED_APP_ARCHIVE=dist/release/reuse/codevisor-unsigned-app.zip" >> "$GITHUB_ENV"
+          echo "CODEVISOR_DARWIN_ARM64_RUNTIME_ARCHIVE=dist/release/reuse/codevisor-app-server-runtime-darwin-arm64.tar.gz" >> "$GITHUB_ENV"
+          echo "CODEVISOR_DARWIN_X64_RUNTIME_ARCHIVE=dist/release/reuse/codevisor-app-server-runtime-darwin-x64.tar.gz" >> "$GITHUB_ENV"
+          echo "CODEVISOR_SKIP_WEB_BUILD=1" >> "$GITHUB_ENV"
+      - name: Restore GhosttyKit cache
+        if: inputs.reuse_run_id == ''
+        id: ghosttykit-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: apps/macos/Frameworks/GhosttyKit.xcframework
+          key: ghosttykit-${{ hashFiles('apps/macos/scripts/build-ghostty.sh') }}
+      - name: Fetch Ghostty source
+        if: inputs.reuse_run_id == '' && steps.ghosttykit-cache.outputs.cache-hit != 'true'
+        run: apps/macos/scripts/build-ghostty.sh --fetch-only
+      - uses: DeterminateSystems/nix-installer-action@33c9ab3ef95cd57c164d9d6eb1f9a46338538d41
+        if: inputs.reuse_run_id == '' && steps.ghosttykit-cache.outputs.cache-hit != 'true'
+        with:
+          determinate: true
+      - name: Build GhosttyKit
+        if: inputs.reuse_run_id == '' && steps.ghosttykit-cache.outputs.cache-hit != 'true'
+        run: nix develop ./.repos/ghostty -c apps/macos/scripts/build-ghostty.sh
+      - name: Save GhosttyKit cache
+        if: inputs.reuse_run_id == '' && steps.ghosttykit-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: apps/macos/Frameworks/GhosttyKit.xcframework
+          key: ghosttykit-${{ hashFiles('apps/macos/scripts/build-ghostty.sh') }}
+      - name: Verify GhosttyKit
+        if: inputs.reuse_run_id == ''
+        run: test -d apps/macos/Frameworks/GhosttyKit.xcframework
+      - name: Resolve Xcode cache version
+        if: inputs.reuse_run_id == ''
+        id: xcode-cache-version
+        shell: bash
+        run: echo "value=$(xcodebuild -version | shasum -a 256 | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+      - name: Restore Xcode DerivedData cache
+        if: inputs.reuse_run_id == ''
+        id: xcode-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: dist/release/DerivedData
+          key: codevisor-xcode-${{ runner.arch }}-${{ steps.xcode-cache-version.outputs.value }}-${{ hashFiles('apps/macos/Codevisor.xcodeproj/**', 'apps/macos/Codevisor/**', 'apps/macos/Packages/**', 'apps/macos/scripts/build-ghostty.sh', 'scripts/release/build-macos-xcode.sh') }}
+          restore-keys: |
+            codevisor-xcode-${{ runner.arch }}-${{ steps.xcode-cache-version.outputs.value }}-
+      - name: Validate signing and notarization credentials
+        shell: bash
+        env:
+          APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_CODESIGN_IDENTITY: ${{ secrets.APPLE_CODESIGN_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APP_STORE_CONNECT_API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
+        run: |
+          if [[ -z "$APPLE_CERTIFICATE_BASE64" || -z "$APPLE_CERTIFICATE_PASSWORD" || -z "$APPLE_CODESIGN_IDENTITY" ]]; then
+            echo "Developer ID signing credentials are required." >&2
+            exit 1
+          fi
+          if [[ -z "$APP_STORE_CONNECT_API_KEY_BASE64" && ( -z "$APPLE_ID" || -z "$APPLE_APP_SPECIFIC_PASSWORD" || -z "$APPLE_TEAM_ID" ) ]]; then
+            echo "App Store Connect API key or Apple ID notarization credentials are required." >&2
+            exit 1
+          fi
+      - name: Import Developer ID certificate
+        shell: bash
+        env:
+          APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          certificate_path="$RUNNER_TEMP/apple-certificate.p12"
+          keychain_path="$RUNNER_TEMP/codevisor-signing.keychain-db"
+          security list-keychains -d user > "$RUNNER_TEMP/original-keychains.txt"
+          echo "$APPLE_CERTIFICATE_BASE64" | base64 --decode > "$certificate_path"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$keychain_path"
+          security set-keychain-settings -lut 21600 "$keychain_path"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$keychain_path"
+          security import "$certificate_path" -P "$APPLE_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$keychain_path"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$keychain_path"
+          security list-keychains -d user -s "$keychain_path" $(security list-keychains -d user | tr -d '"')
+      - name: Prepare App Store Connect API key
+        shell: bash
+        env:
+          APP_STORE_CONNECT_API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
+          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+        run: |
+          if [[ -z "$APP_STORE_CONNECT_API_KEY_BASE64" ]]; then
+            exit 0
+          fi
+          if [[ -z "$APP_STORE_CONNECT_API_KEY_ID" || -z "$APP_STORE_CONNECT_ISSUER_ID" ]]; then
+            echo "API key id and issuer id are required with an App Store Connect key." >&2
+            exit 1
+          fi
+          api_key_path="$RUNNER_TEMP/AuthKey_$APP_STORE_CONNECT_API_KEY_ID.p8"
+          echo "$APP_STORE_CONNECT_API_KEY_BASE64" | base64 --decode > "$api_key_path"
+          chmod 600 "$api_key_path"
+          echo "APP_STORE_CONNECT_API_KEY_PATH=$api_key_path" >> "$GITHUB_ENV"
+      - name: Build and notarize macOS app artifacts
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APPLE_CODESIGN_IDENTITY: ${{ secrets.APPLE_CODESIGN_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          CODEVISOR_RUNTIME_ARCHIVE_WAIT_SECONDS: "900"
+          CODEVISOR_REQUIRE_UNIVERSAL_MACOS_APP: "1"
+          CODEVISOR_UNSIGNED_APP_ARCHIVE_OUTPUT: dist/release/build-inputs/codevisor-unsigned-app.zip
+          CODEVISOR_DARWIN_ARM64_RUNTIME_ARCHIVE_OUTPUT: dist/release/build-inputs/codevisor-app-server-runtime-darwin-arm64.tar.gz
+        run: |
+          if [[ -n "${{ inputs.reuse_run_id }}" ]]; then
+            scripts/release/build-macos-app.sh "${{ inputs.version }}" dist/release
+            exit 0
+          fi
+
+          runtime_archive="dist/release/codevisor-app-server-runtime-darwin-x64.tar.gz"
+          runtime_download_dir="$(mktemp -d "$RUNNER_TEMP/codevisor-x64-runtime.XXXXXX")"
+          failure_marker="$RUNNER_TEMP/codevisor-x64-runtime-download-failed"
+          rm -f "$failure_marker" "$runtime_archive.part"
+          mkdir -p "$(dirname "$runtime_archive")"
+          download_intel_runtime() {
+            scripts/release/download-github-artifact.sh \
+              "$GITHUB_RUN_ID" \
+              codevisor-macos-x64-runtime \
+              "$runtime_download_dir" \
+              900
+            cp "$runtime_download_dir/codevisor-app-server-runtime-darwin-x64.tar.gz" "$runtime_archive.part"
+            mv "$runtime_archive.part" "$runtime_archive"
+          }
+          (download_intel_runtime || { touch "$failure_marker"; exit 1; }) &
+          download_pid=$!
+          trap 'kill "$download_pid" 2>/dev/null || true' EXIT
+          bun install --frozen-lockfile
+          CODEVISOR_DARWIN_X64_RUNTIME_ARCHIVE="$runtime_archive" \
+          CODEVISOR_RUNTIME_ARCHIVE_FAILURE_MARKER="$failure_marker" \
+            scripts/release/build-macos-app.sh "${{ inputs.version }}" dist/release
+          wait "$download_pid"
+          trap - EXIT
+      - name: Restore unsigned app before caching DerivedData
+        if: inputs.reuse_run_id == ''
+        shell: bash
+        run: |
+          app_parent="dist/release/DerivedData/Build/Products/Release"
+          rm -rf "$app_parent/Codevisor.app"
+          ditto -x -k dist/release/build-inputs/codevisor-unsigned-app.zip "$app_parent"
+      - name: Save Xcode DerivedData cache
+        if: inputs.reuse_run_id == '' && steps.xcode-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: dist/release/DerivedData
+          key: codevisor-xcode-${{ runner.arch }}-${{ steps.xcode-cache-version.outputs.value }}-${{ hashFiles('apps/macos/Codevisor.xcodeproj/**', 'apps/macos/Codevisor/**', 'apps/macos/Packages/**', 'apps/macos/scripts/build-ghostty.sh', 'scripts/release/build-macos-xcode.sh') }}
+      - name: Build ARM macOS server archive
+        run: scripts/release/build-server-archive.sh "${{ inputs.version }}" dist/release darwin-arm64 dist/release/work/app-server-runtimes/darwin-arm64
+      - name: Upload reusable exact-SHA macOS inputs
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: codevisor-macos-build-inputs
+          path: dist/release/build-inputs/*
+          if-no-files-found: error
+          retention-days: ${{ inputs.artifact_retention_days }}
+      - name: Upload macOS release artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: codevisor-macos
+          path: |
+            dist/release/Codevisor-macOS*.zip
+            dist/release/Codevisor-macOS*.zip.sha256
+            dist/release/Codevisor-*.dmg
+            dist/release/Codevisor-*.dmg.sha256
+            dist/release/codevisor-server-*.tar.gz
+            dist/release/codevisor-server-*.tar.gz.sha256
+          if-no-files-found: error
+          retention-days: ${{ inputs.artifact_retention_days }}
+      - name: Remove signing material and clean persistent runner
+        if: always()
+        shell: bash
+        run: |
+          keychain_path="$RUNNER_TEMP/codevisor-signing.keychain-db"
+          if [[ -f "$RUNNER_TEMP/original-keychains.txt" ]]; then
+            security list-keychains -d user -s $(tr -d '"' < "$RUNNER_TEMP/original-keychains.txt") || true
+          fi
+          security delete-keychain "$keychain_path" 2>/dev/null || true
+          rm -f "$RUNNER_TEMP/apple-certificate.p12" "$RUNNER_TEMP"/AuthKey_*.p8
+          rm -f "$RUNNER_TEMP/original-keychains.txt"
+          rm -rf dist/release node_modules
+
+  provenance:
+    needs:
+      - checks
+      - build-server-linux-x64
+      - build-server-linux-arm64
+      - build-server-macos-x64
+      - build-macos
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Record successful build provenance
+        shell: bash
+        run: |
+          jq -n \
+            --arg version "${{ inputs.version }}" \
+            --arg channel "${{ inputs.channel }}" \
+            --arg source_sha "${{ inputs.source_sha }}" \
+            --arg run_id "$GITHUB_RUN_ID" \
+            '{version: $version, channel: $channel, source_sha: $source_sha, run_id: $run_id}' \
+            > release-provenance.json
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: codevisor-release-provenance
+          path: release-provenance.json
+          if-no-files-found: error
+          retention-days: ${{ inputs.artifact_retention_days }}
