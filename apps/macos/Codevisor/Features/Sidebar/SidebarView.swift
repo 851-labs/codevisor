@@ -717,7 +717,7 @@ struct SidebarView: View {
                         .frame(width: 18)
                         Text(project.name)
                             .font(itemTitleFont)
-                            .fontWeight(.medium)
+                            .foregroundStyle(.secondary)
                             .lineLimit(1)
                         Spacer(minLength: 6)
                     }
