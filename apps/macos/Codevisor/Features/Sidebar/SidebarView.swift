@@ -239,11 +239,12 @@ struct SidebarView: View {
         workspaceRevision += 1
     }
 
-    /// A newly created chat should be visible immediately in project mode.
+    /// A newly created chat should be visible immediately in either
+    /// workspace-based organization.
     /// Expand only for additions—not ordinary selection changes—so navigating
     /// among existing chats never overrides the user's disclosure choices.
     private func revealNewChatWorkspaces(_ sessionIDs: Set<UUID>) {
-        guard organization == .byProject, !sessionIDs.isEmpty else { return }
+        guard organization != .compact, !sessionIDs.isEmpty else { return }
 
         let workspaces = sessionIDs.compactMap { sessionID -> Workspace? in
             guard let workspaceID = environment.workspaces.workspaceId(forSession: sessionID) else {
@@ -254,7 +255,9 @@ struct SidebarView: View {
         guard !workspaces.isEmpty else { return }
 
         withAnimation(.snappy(duration: 0.28)) {
-            expanded.formUnion(workspaces.map(\.projectId))
+            if organization == .byProject {
+                expanded.formUnion(workspaces.map(\.projectId))
+            }
             expandedWorkspaces.formUnion(workspaces.map(\.id))
         }
     }
@@ -316,7 +319,7 @@ struct SidebarView: View {
                         }
                     } else if organization == .byWorkspace {
                         ForEach(workspaceItems) { item in
-                            workspaceRow(item)
+                            workspaceFolder(item, hierarchyDepth: 0)
                                 .transition(.identity)
                         }
                     } else {
@@ -609,7 +612,7 @@ struct SidebarView: View {
         if isProjectVisuallyExpanded(project.id) {
             let items = workspaceItems.filter { $0.workspace.projectId == project.id }
             ForEach(items) { item in
-                projectWorkspaceFolder(item)
+                workspaceFolder(item, hierarchyDepth: 1)
                     .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
             }
             if items.isEmpty {
@@ -624,24 +627,30 @@ struct SidebarView: View {
     }
 
     @ViewBuilder
-    private func projectWorkspaceFolder(_ item: SidebarWorkspaceListItem) -> some View {
+    private func workspaceFolder(
+        _ item: SidebarWorkspaceListItem,
+        hierarchyDepth: Int
+    ) -> some View {
         workspaceRow(
             item,
-            isNested: true,
+            isNested: hierarchyDepth > 0,
             isExpanded: expandedWorkspaces.contains(item.id),
             onToggle: { toggleWorkspace(item.id) }
         )
 
         if expandedWorkspaces.contains(item.id) {
             ForEach(item.sessions) { session in
-                sessionRow(session, hierarchyDepth: 2)
+                sessionRow(session, hierarchyDepth: hierarchyDepth + 1)
                     .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
             }
             if item.sessions.isEmpty {
                 Text("No tabs yet")
                     .font(.subheadline)
                     .foregroundStyle(.tertiary)
-                    .padding(.leading, 40)
+                    .padding(
+                        .leading,
+                        8 + CGFloat(hierarchyDepth + 1) * hierarchyIndent + 24
+                    )
                     .padding(.vertical, 3)
                     .transition(.opacity)
             }
@@ -868,7 +877,7 @@ struct SidebarView: View {
                                     .opacity(isHovered ? 1 : 0)
                             }
                             .frame(width: 18)
-                            Text(item.workspace.name)
+                            Text(workspaceTitle(item, isNested: isNested))
                                 .font(itemTitleFont)
                                 .lineLimit(1)
                             Spacer(minLength: 6)
@@ -898,15 +907,9 @@ struct SidebarView: View {
                     Image(systemName: workspaceSymbol(item))
                         .frame(width: 18)
                         .foregroundStyle(.secondary)
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(item.workspace.name)
-                            .font(itemTitleFont)
-                            .lineLimit(1)
-                        Text(workspaceSubtitle(item))
-                            .font(.caption2)
-                            .foregroundStyle(.tertiary)
-                            .lineLimit(1)
-                    }
+                    Text(workspaceTitle(item, isNested: isNested))
+                        .font(itemTitleFont)
+                        .lineLimit(1)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 if onToggle == nil, let session = item.primarySession {
@@ -981,14 +984,20 @@ struct SidebarView: View {
         return "square.grid.2x2"
     }
 
-    private func workspaceSubtitle(_ item: SidebarWorkspaceListItem) -> String {
-        var parts: [String] = []
-        if let project = item.project { parts.append(project.name) }
-        if let root = item.workspace.rootDirectory {
-            let component = URL(fileURLWithPath: root).lastPathComponent
-            if parts.last != component { parts.append(component) }
+    private func workspaceTitle(
+        _ item: SidebarWorkspaceListItem,
+        isNested: Bool
+    ) -> String {
+        guard !isNested, let project = item.project else {
+            return item.workspace.name
         }
-        return parts.isEmpty ? "Workspace" : parts.joined(separator: " · ")
+        guard let worktree = item.primarySession?.worktreeName?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+              !worktree.isEmpty,
+              worktree.localizedCaseInsensitiveCompare(project.name) != .orderedSame else {
+            return project.name
+        }
+        return "\(project.name) · \(worktree)"
     }
 
     private func chronologicalSessionRow(
