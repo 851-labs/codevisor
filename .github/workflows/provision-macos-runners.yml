@@ -1,0 +1,34 @@
+name: Provision macOS release runners
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: provision-macos-release-runners
+  cancel-in-progress: false
+
+jobs:
+  provision-intel:
+    name: Provision Georges-MBP
+    runs-on: [self-hosted, macOS, X64, codevisor-macos-x64]
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          clean: true
+      - name: Install and initialize full Xcode
+        run: scripts/release/provision-xcode.sh
+
+  provision-arm:
+    name: Provision tuftlords-MBP-luna
+    runs-on: [self-hosted, macOS, ARM64, codevisor-macos-arm64]
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          clean: true
+      - name: Install and initialize full Xcode
+        run: scripts/release/provision-xcode.sh
