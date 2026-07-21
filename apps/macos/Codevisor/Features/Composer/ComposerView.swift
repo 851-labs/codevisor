@@ -10,6 +10,19 @@ extension EnvironmentValues {
     @Entry var isAppUpdateInProgress: Bool = false
 }
 
+/// A row in the slash-command popup: either a harness-advertised command
+/// (accepted by rewriting the composer to "/name ") or a local app command
+/// whose acceptance runs an action and clears the composer.
+struct ComposerSlashItem: Identifiable {
+    let name: String
+    let description: String
+    var hint: String? = nil
+    /// Present only on local commands (e.g. /plan, /goal).
+    var action: (@MainActor () -> Void)? = nil
+
+    var id: String { name }
+}
+
 /// The chat composer card: a multiline input (Return sends, Shift+Return adds a
 /// newline) with an inline toolbar holding the combined model dropdown
 /// (model/thinking level/speed), the harness picker (before connecting), any
@@ -43,6 +56,9 @@ struct ComposerCard: View {
     // Match ChatInputEditor's first TextKit measurement so switching sessions
     // never shows the shorter pre-measurement card for a frame.
     @State private var editorHeight: CGFloat = ChatInputEditor.singleLineHeight
+    /// The editor's caret/selection, synced from AppKit. The slash palette
+    /// keys off the token at the caret, so it triggers mid-message too.
+    @State private var selection = NSRange(location: 0, length: 0)
     @State private var slashSelection = 0
     @State private var isSlashMenuDismissed = false
     @State private var slashMenuContentHeight: CGFloat = 0
@@ -54,6 +70,13 @@ struct ComposerCard: View {
 
     /// Tallest the slash-command menu can grow before it scrolls (~6 rows).
     private static let slashMenuMaxHeight: CGFloat = 220
+
+    /// The palette's rendered height: its measured content, capped at the
+    /// scrolling maximum. Drives both its scroll frame and its lift above
+    /// the composer card.
+    private var paletteHeight: CGFloat {
+        min(slashMenuContentHeight, Self.slashMenuMaxHeight)
+    }
 
     var body: some View {
         ZStack {
@@ -79,6 +102,27 @@ struct ComposerCard: View {
             id: .composer,
             in: glassNamespace
         )
+        // The palette floats over the transcript as its own transient Liquid
+        // Glass surface (HIG: ephemeral overlays get their own glass layer)
+        // and blooms up from the input with the standard quick unfold.
+        // Anchored to the finished card: full card width, with its bottom
+        // held one cluster gap above the card's top edge so it never overlaps
+        // the composer glass.
+        .overlay(alignment: .top) {
+            ZStack(alignment: .top) {
+                if controller.activeQuestion == nil, !visibleSlashMatches.isEmpty {
+                    slashCommandPopup
+                        .transition(Motion.unfold(reduceMotion: reduceMotion, anchor: .bottom))
+                }
+            }
+            // Lift the palette's own (measured) height plus one cluster gap
+            // above the card's top edge so it never overlaps the composer.
+            .offset(y: -(paletteHeight + ComposerGlassStyle.clusterSpacing))
+            .animation(
+                Motion.quick(reduceMotion: reduceMotion),
+                value: visibleSlashMatches.isEmpty
+            )
+        }
         .overlay {
             if controller.activeQuestion != nil, isQuestionResolving {
                 ZStack {
@@ -133,6 +177,7 @@ struct ComposerCard: View {
                     ChatInputEditor(
                         text: $controller.composerText,
                         calculatedHeight: $editorHeight,
+                        selection: $selection,
                         onSubmit: submitOrAcceptSlash,
                         onKeyCommand: handleKeyCommand,
                         onPasteAttachments: handlePastedAttachments,
@@ -155,10 +200,6 @@ struct ComposerCard: View {
                             .padding(.top, 6)
                             .allowsHitTesting(false)
                     }
-                }
-                .overlay(alignment: .bottomLeading) {
-                    slashCommandPopup
-                        .offset(y: -editorHeight - 10)
                 }
             }
 
@@ -183,15 +224,20 @@ struct ComposerCard: View {
                     ForEach(controller.pickerOptions) { option in
                         configMenu(option)
                     }
-                    // Tighter than the row's 10pt: the chips' hover fill bleeds
-                    // 5pt into their gaps, so 5pt here keeps the visual rhythm
-                    // even between these two bare circles.
-                    HStack(spacing: 5) {
-                        if controller.hasPlanMode {
-                            planModeButton
+                    // Active modes show as removable chips (turned on via
+                    // the /plan and /goal slash commands).
+                    if controller.hasPlanMode, controller.isPlanModeOn {
+                        ModeChip(
+                            label: "Plan",
+                            systemImage: "map",
+                            isRemoveDisabled: controller.isPlanModeUpdatePending
+                        ) {
+                            Task { await controller.togglePlanMode() }
                         }
-                        if controller.canEditGoal {
-                            goalModeButton
+                    }
+                    if controller.canEditGoal, controller.isGoalComposerArmed {
+                        ModeChip(label: "Goal", systemImage: "target") {
+                            withAnimation(.snappy(duration: 0.15)) { controller.exitGoalComposer() }
                         }
                     }
                     Spacer(minLength: 0)
@@ -243,29 +289,20 @@ struct ComposerCard: View {
                         slashMenuContentHeight = $0
                     }
                 }
-                .frame(height: min(slashMenuContentHeight, Self.slashMenuMaxHeight))
+                .frame(height: paletteHeight)
                 .onChange(of: selectedIndex) { _, index in
                     guard matches.indices.contains(index) else { return }
                     proxy.scrollTo(matches[index].id)
                 }
             }
-            .frame(maxWidth: 520)
-            .background(
-                RoundedRectangle(cornerRadius: 10)
-                    .fill(theme.composerBackground)
-                    .shadow(radius: 12, y: 4)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 10)
-                    .strokeBorder(.separator, lineWidth: 1)
-            )
+            .composerGlassSurface(cornerRadius: ComposerGlassStyle.accessoryCornerRadius)
             .accessibilityElement(children: .contain)
             .accessibilityLabel("Slash commands")
             .accessibilityHint("Use the up and down arrows to choose a command, Return to accept, Escape to close")
         }
     }
 
-    private func slashCommandRow(_ command: AvailableCommand, isSelected: Bool) -> some View {
+    private func slashCommandRow(_ command: ComposerSlashItem, isSelected: Bool) -> some View {
         Button {
             acceptSlashCommand(command)
         } label: {
@@ -276,7 +313,7 @@ struct ComposerCard: View {
                     .lineLimit(1)
                     .foregroundStyle(isSelected ? AnyShapeStyle(.white.opacity(0.85)) : AnyShapeStyle(.secondary))
                 Spacer(minLength: 0)
-                if let hint = command.input?.hint {
+                if let hint = command.hint {
                     Text(hint)
                         .lineLimit(1)
                         .foregroundStyle(isSelected ? AnyShapeStyle(.white.opacity(0.7)) : AnyShapeStyle(.tertiary))
@@ -322,32 +359,6 @@ struct ComposerCard: View {
         .help(option.name)
     }
 
-    /// Plan-mode toggle: on, the agent plans before making changes; off, it
-    /// runs in the harness's full-access/build mode. Shown only when the
-    /// harness maps a plan mode; the old multi-mode picker is gone (the other
-    /// modes were never used).
-    private var planModeButton: some View {
-        let isOn = controller.isPlanModeOn
-        return Button {
-            Task { await controller.togglePlanMode() }
-        } label: {
-            Image(systemName: "map")
-                .font(.system(size: 12, weight: .semibold))
-                .frame(width: 26, height: 26)
-                .foregroundStyle(isOn ? AnyShapeStyle(theme.windowBackground) : AnyShapeStyle(.secondary))
-                .background(
-                    Circle().fill(isOn ? Color.primary.opacity(0.82) : .clear)
-                )
-                .contentShape(Circle())
-        }
-        .buttonStyle(HoverIconButtonStyle())
-        .disabled(controller.isPlanModeUpdatePending)
-        .help("Toggle plan mode")
-        .accessibilityLabel("Plan mode")
-        .accessibilityValue(isOn ? "On" : "Off")
-        .accessibilityAddTraits(isOn ? .isSelected : [])
-    }
-
     /// Leaves edit-goal mode without changing the goal (the banner returns).
     private var goalEditBackButton: some View {
         Button {
@@ -366,28 +377,6 @@ struct ComposerCard: View {
         .help("Back — keep the current goal (esc)")
         .accessibilityLabel("Back")
         .accessibilityHint("Keep the current goal. Keyboard shortcut: Escape")
-    }
-
-    /// Goal-mode toggle: when armed, submitting the composer sets the text
-    /// as the session goal instead of sending a prompt.
-    private var goalModeButton: some View {
-        let isArmed = controller.isGoalComposerArmed
-        return Button {
-            withAnimation(.snappy(duration: 0.15)) { controller.toggleGoalComposer() }
-        } label: {
-            Image(systemName: "target")
-                .font(.system(size: 12, weight: .semibold))
-                .frame(width: 26, height: 26)
-                .foregroundStyle(isArmed ? AnyShapeStyle(theme.windowBackground) : AnyShapeStyle(.secondary))
-                .background(
-                    Circle().fill(isArmed ? Color.primary.opacity(0.82) : .clear)
-                )
-                .contentShape(Circle())
-        }
-        .buttonStyle(HoverIconButtonStyle())
-        .help("Toggle goal mode")
-        .accessibilityLabel("Goal mode")
-        .accessibilityAddTraits(isArmed ? .isSelected : [])
     }
 
     private func chipLabel(_ text: String) -> some View {
@@ -503,17 +492,81 @@ struct ComposerCard: View {
         }
     }
 
-    private var slashQuery: String? {
-        guard controller.composerText.hasPrefix("/") else { return nil }
-        let firstLine = controller.composerText.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false).first ?? ""
-        let token = firstLine.dropFirst()
-        guard !token.contains(" ") else { return nil }
-        return String(token).lowercased()
+    private var slashTokenRange: NSRange? {
+        Self.slashTokenRange(in: controller.composerText, selection: selection)
     }
 
-    private var slashMatches: [AvailableCommand] {
+    private var slashQuery: String? {
+        guard let range = slashTokenRange else { return nil }
+        let text = controller.composerText as NSString
+        return text
+            .substring(with: NSRange(location: range.location + 1, length: range.length - 1))
+            .lowercased()
+    }
+
+    /// The "/token" being typed at the caret — anywhere in the message, not
+    /// just at its start: the nearest "/" before the caret with no whitespace
+    /// in between, itself preceded by whitespace or the start of the text
+    /// (so paths and URLs like "src/foo" never trigger the palette).
+    static func slashTokenRange(in text: String, selection: NSRange) -> NSRange? {
+        guard selection.length == 0 else { return nil }
+        let text = text as NSString
+        let caret = min(selection.location, text.length)
+        var index = caret
+        while index > 0 {
+            let unit = text.character(at: index - 1)
+            if isWhitespace(unit) { return nil }
+            if unit == unichar(UInt8(ascii: "/")) {
+                let slashIndex = index - 1
+                guard slashIndex == 0 || isWhitespace(text.character(at: slashIndex - 1)) else {
+                    return nil
+                }
+                return NSRange(location: slashIndex, length: caret - slashIndex)
+            }
+            index -= 1
+        }
+        return nil
+    }
+
+    private static func isWhitespace(_ unit: unichar) -> Bool {
+        guard let scalar = Unicode.Scalar(unit) else { return false }
+        return CharacterSet.whitespacesAndNewlines.contains(scalar)
+    }
+
+    /// Local commands run in the app itself instead of being sent to the
+    /// agent: /plan and /goal toggle their composer modes.
+    private var localSlashCommands: [ComposerSlashItem] {
+        var items: [ComposerSlashItem] = []
+        if controller.hasPlanMode {
+            items.append(
+                ComposerSlashItem(name: "plan", description: "Toggle plan mode") {
+                    Task { await controller.togglePlanMode() }
+                }
+            )
+        }
+        if controller.canEditGoal {
+            items.append(
+                ComposerSlashItem(name: "goal", description: "Toggle goal mode") {
+                    withAnimation(.snappy(duration: 0.15)) { controller.toggleGoalComposer() }
+                }
+            )
+        }
+        return items
+    }
+
+    /// The full palette: local commands first, then the harness's commands
+    /// (minus any whose name a local command shadows).
+    private var slashCommands: [ComposerSlashItem] {
+        let local = localSlashCommands
+        let harness = controller.availableCommands
+            .filter { command in !local.contains { $0.name == command.name } }
+            .map { ComposerSlashItem(name: $0.name, description: $0.description, hint: $0.input?.hint) }
+        return local + harness
+    }
+
+    private var slashMatches: [ComposerSlashItem] {
         guard let query = slashQuery else { return [] }
-        let commands = controller.availableCommands
+        let commands = slashCommands
         guard !commands.isEmpty else { return [] }
         if query.isEmpty {
             return commands
@@ -526,7 +579,7 @@ struct ComposerCard: View {
     }
 
     /// The matches actually shown: empty while the menu is dismissed with Escape.
-    private var visibleSlashMatches: [AvailableCommand] {
+    private var visibleSlashMatches: [ComposerSlashItem] {
         isSlashMenuDismissed ? [] : slashMatches
     }
 
@@ -541,23 +594,48 @@ struct ComposerCard: View {
         }
     }
 
-    private var selectedSlashCommand: AvailableCommand? {
+    private var selectedSlashCommand: ComposerSlashItem? {
         let matches = visibleSlashMatches
         guard !matches.isEmpty else { return nil }
         return matches[min(slashSelection, matches.count - 1)]
     }
 
-    private func acceptSlashCommand(_ command: AvailableCommand) {
-        controller.composerText = "/\(command.name) "
+    /// Accepts in place: the token at the caret is rewritten (harness
+    /// commands) or excised (local commands), preserving the rest of the
+    /// draft around it.
+    private func acceptSlashCommand(_ command: ComposerSlashItem) {
+        guard let tokenRange = slashTokenRange else { return }
+        let text = controller.composerText as NSString
+        if let action = command.action {
+            controller.composerText = text.replacingCharacters(in: tokenRange, with: "")
+            selection = NSRange(location: tokenRange.location, length: 0)
+            action()
+        } else {
+            let insertion = "/\(command.name) "
+            controller.composerText = text.replacingCharacters(in: tokenRange, with: insertion)
+            selection = NSRange(
+                location: tokenRange.location + (insertion as NSString).length,
+                length: 0
+            )
+        }
         slashSelection = 0
     }
 
     private func handleKeyCommand(_ command: ComposerKeyCommand) -> Bool {
+        // The palette handles keys first, so Escape always closes an open
+        // palette before it can mean anything else (e.g. leaving goal mode).
+        if handleSlashMenuKeyCommand(command) {
+            return true
+        }
         // Escape leaves goal mode (and restores the goal banner).
         if controller.isGoalComposerArmed, command == .dismissSelection {
             controller.exitGoalComposer()
             return true
         }
+        return false
+    }
+
+    private func handleSlashMenuKeyCommand(_ command: ComposerKeyCommand) -> Bool {
         let matches = visibleSlashMatches
         guard !matches.isEmpty else { return false }
         switch command {
@@ -575,6 +653,79 @@ struct ComposerCard: View {
             slashSelection = 0
             return true
         }
+    }
+}
+
+/// An active-mode pill in the composer toolbar (plan/goal). Hovering the chip
+/// swaps the mode icon for an ✕ remove button in the same slot; hovering the
+/// ✕ itself adds the circular hover wash (matching the pane tabs' close
+/// button). Replaces the always-visible toggle buttons — the modes are turned
+/// on via the /plan and /goal commands.
+struct ModeChip: View {
+    @Environment(\.theme) private var theme
+    let label: String
+    let systemImage: String
+    var isRemoveDisabled: Bool = false
+    let onRemove: () -> Void
+
+    @State private var isHovered = false
+    @State private var isRemoveHovered = false
+
+    private var showsRemoveGlyph: Bool { isHovered && !isRemoveDisabled }
+
+    var body: some View {
+        HStack(spacing: 4) {
+            removeButton
+            Text(label)
+        }
+        .foregroundStyle(AnyShapeStyle(theme.windowBackground))
+        .padding(.leading, 6)
+        .padding(.trailing, 10)
+        .frame(height: 26)
+        .background(Capsule().fill(Color.primary.opacity(0.82)))
+        .opacity(isRemoveDisabled ? 0.5 : 1)
+        .onHover { hovering in
+            // Instant swap: animating here rebuilds AppKit hover tracking
+            // mid-hover, which oscillates the state and flickers.
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) {
+                isHovered = hovering
+                if !hovering { isRemoveHovered = false }
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("\(label) mode on")
+    }
+
+    /// Always a button (so it stays reachable by assistive tech); only the
+    /// glyph is hover-driven — the mode icon at rest, ✕ while the chip is
+    /// hovered, with the tabs' circular wash while the ✕ itself is hovered.
+    private var removeButton: some View {
+        Button(action: onRemove) {
+            Image(systemName: showsRemoveGlyph ? "xmark" : systemImage)
+                .font(
+                    showsRemoveGlyph
+                        ? .system(size: 8.5, weight: .bold)
+                        : .system(size: 11, weight: .semibold)
+                )
+                .frame(width: 16, height: 16)
+                .background(
+                    Circle().fill(
+                        theme.windowBackground.opacity(isRemoveHovered && showsRemoveGlyph ? 0.22 : 0)
+                    )
+                )
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .disabled(isRemoveDisabled)
+        .onHover { hovering in
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) { isRemoveHovered = hovering }
+        }
+        .help("Turn off \(label.lowercased()) mode")
+        .accessibilityLabel("Turn off \(label.lowercased()) mode")
     }
 }
 

@@ -31,6 +31,10 @@ struct ChatInputEditor: NSViewRepresentable {
 
     @Binding var text: String
     @Binding var calculatedHeight: CGFloat
+    /// Two-way caret/selection sync. The composer's slash palette derives its
+    /// query from the token at the caret, and accepting a command repositions
+    /// the caret after rewriting the text. Nil call sites opt out.
+    var selection: Binding<NSRange>? = nil
     var minHeight: CGFloat = Self.singleLineHeight
     var maxHeight: CGFloat = 240
     var onSubmit: () -> Void
@@ -94,12 +98,28 @@ struct ChatInputEditor: NSViewRepresentable {
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         guard let textView = scrollView.documentView as? SubmittingTextView else { return }
         context.coordinator.parent = self
+        // Programmatic string/selection writes below fire the selection
+        // delegate; suppress the echo so SwiftUI state is not modified
+        // mid-view-update.
+        context.coordinator.isApplyingUpdate = true
+        defer { context.coordinator.isApplyingUpdate = false }
         textView.onSubmit = { onSubmit() }
         textView.onKeyCommand = onKeyCommand
         textView.onPasteAttachments = onPasteAttachments
         textView.isEditable = isEnabled
         if textView.string != text {
             textView.string = text
+        }
+        if let selection {
+            let length = (textView.string as NSString).length
+            let location = min(selection.wrappedValue.location, length)
+            let clamped = NSRange(
+                location: location,
+                length: min(selection.wrappedValue.length, length - location)
+            )
+            if textView.selectedRange() != clamped {
+                textView.setSelectedRange(clamped)
+            }
         }
         // Change-driven: this runs on EVERY SwiftUI invalidation of the
         // composer (including transcript streaming re-renders), and
@@ -123,6 +143,8 @@ struct ChatInputEditor: NSViewRepresentable {
     final class Coordinator: NSObject, NSTextViewDelegate {
         var parent: ChatInputEditor
         weak var textView: SubmittingTextView?
+        /// True while `updateNSView` applies SwiftUI state to the text view.
+        var isApplyingUpdate = false
         /// The text/width the height was last measured for. Guards the
         /// full-layout `recalculateHeight` so it runs once per real change
         /// instead of once per SwiftUI invalidation (and prevents the
@@ -164,6 +186,14 @@ struct ChatInputEditor: NSViewRepresentable {
             parent.text = textView.string
             recordMeasurement(textView)
             parent.recalculateHeight(textView)
+        }
+
+        func textViewDidChangeSelection(_ notification: Notification) {
+            guard !isApplyingUpdate, let selection = parent.selection, let textView else { return }
+            let range = textView.selectedRange()
+            if selection.wrappedValue != range {
+                selection.wrappedValue = range
+            }
         }
 
         /// Routes navigation commands to the composer (slash-command menu) via

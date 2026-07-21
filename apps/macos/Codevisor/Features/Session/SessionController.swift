@@ -556,6 +556,11 @@ final class SessionController {
             exitGoalComposer()
         } else {
             isGoalComposerArmed = true
+            // Plan and goal are mutually exclusive: arming the goal composer
+            // leaves plan mode.
+            if isPlanModeOn, !isPlanModeUpdatePending {
+                Task { await togglePlanMode() }
+            }
         }
     }
 
@@ -1760,6 +1765,11 @@ final class SessionController {
         // same transition more than once.
         guard pendingPlanModeOn == nil, let planControl else { return }
         let targetIsOn = !isPlanModeOn
+        // Plan and goal are mutually exclusive: entering plan mode disarms
+        // the goal composer.
+        if targetIsOn, isGoalComposerArmed {
+            exitGoalComposer()
+        }
         pendingPlanModeOn = targetIsOn
         defer { pendingPlanModeOn = nil }
 
