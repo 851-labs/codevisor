@@ -7,11 +7,13 @@ import os
 private enum SidebarOrganization: String, CaseIterable {
     case compact
     case byWorkspace
+    case byProject
 
     var title: String {
         switch self {
         case .compact: return "Agents"
         case .byWorkspace: return "Workspaces"
+        case .byProject: return "Projects"
         }
     }
 }
@@ -47,12 +49,12 @@ private struct SidebarSessionListItem: Identifiable {
     var id: UUID { session.id }
 }
 
-/// A workspace row in "by workspace" mode. The primary session/project are
-/// resolved from the live session list so status and activation reuse the
-/// session machinery (the single-chat era: opening a workspace opens its
-/// primary chat).
+/// A workspace row in either workspace-based mode. Its tabs and primary
+/// session/project are resolved from the live session list so status and
+/// activation reuse the session machinery.
 private struct SidebarWorkspaceListItem: Identifiable {
     let workspace: Workspace
+    let sessions: [ChatSession]
     let primarySession: ChatSession?
     let project: Project?
 
@@ -93,6 +95,11 @@ struct SidebarView: View {
             .split(separator: "\n")
             .compactMap { UUID(uuidString: String($0)) }
     )
+    @State private var expandedWorkspaces: Set<UUID> = Set(
+        (UserDefaults.standard.string(forKey: "sidebar.expandedWorkspaces") ?? "")
+            .split(separator: "\n")
+            .compactMap { UUID(uuidString: String($0)) }
+    )
     @State private var iconEditing: Project?
     @State private var renamingSession: ChatSession?
     @State private var renameTitle = ""
@@ -109,6 +116,7 @@ struct SidebarView: View {
     @AppStorage("sidebar.manualProjectOrder") private var manualProjectOrderRaw = ""
     @AppStorage("sidebar.manualSessionOrder") private var manualSessionOrderRaw = ""
     @AppStorage("sidebar.expandedProjects") private var expandedProjectsRaw = ""
+    @AppStorage("sidebar.expandedWorkspaces") private var expandedWorkspacesRaw = ""
     @AppStorage("update.skippedVersion") private var skippedUpdateVersion = ""
     @AppStorage("update.skippedServerVersion") private var skippedServerUpdate = ""
 
@@ -116,6 +124,8 @@ struct SidebarView: View {
     private var organization: SidebarOrganization { SidebarOrganization(rawValue: organizationRaw) ?? .compact }
     private var order: SidebarOrder { SidebarOrder(rawValue: orderRaw) ?? .updated }
     private var isReordering: Bool { draggingProjectID != nil || draggingSessionID != nil }
+    private var itemTitleFont: Font { .body }
+    private var hierarchyIndent: CGFloat { 8 }
     private var notificationColor: Color { theme.isSystem ? .blue : theme.accent }
     private var developmentWorktreeColor: Color {
         guard let rgba = RGBA(hex: CodevisorAppVariant.developmentIconColorHex) else { return .blue }
@@ -177,6 +187,7 @@ struct SidebarView: View {
         }
         return workspaces
             .map { workspace -> (item: SidebarWorkspaceListItem, rank: Int, created: Date) in
+                let workspaceSessions = workspace.chatSessionIds.compactMap { sessionsById[$0]?.session }
                 let primary = workspace.chatSessionIds.lazy.compactMap { sessionsById[$0] }.first
                 // A legacy or draft CHAT-LESS workspace stays openable
                 // through any session still routed to it by the grow-only
@@ -193,6 +204,7 @@ struct SidebarView: View {
                 return (
                     SidebarWorkspaceListItem(
                         workspace: workspace,
+                        sessions: workspaceSessions,
                         primarySession: routingSession,
                         project: routingProject
                     ),
@@ -207,11 +219,11 @@ struct SidebarView: View {
             .map(\.item)
     }
 
-    /// Existing chats gain owning workspaces lazily; entering by-workspace
-    /// mode sweeps the visible sessions so the list is complete. Idempotent
-    /// and cheap after the first pass (indexed lookups).
+    /// Existing chats gain owning workspaces lazily; entering either
+    /// workspace-based mode sweeps the visible sessions so the list is
+    /// complete. Idempotent and cheap after the first pass (indexed lookups).
     private func backfillWorkspaces() {
-        guard organization == .byWorkspace else { return }
+        guard organization != .compact else { return }
         for item in chronologicalSessions {
             _ = environment.workspaces.ensureWorkspace(
                 for: WorkspaceSessionSeed(
@@ -225,6 +237,26 @@ struct SidebarView: View {
             )
         }
         workspaceRevision += 1
+    }
+
+    /// A newly created chat should be visible immediately in project mode.
+    /// Expand only for additions—not ordinary selection changes—so navigating
+    /// among existing chats never overrides the user's disclosure choices.
+    private func revealNewChatWorkspaces(_ sessionIDs: Set<UUID>) {
+        guard organization == .byProject, !sessionIDs.isEmpty else { return }
+
+        let workspaces = sessionIDs.compactMap { sessionID -> Workspace? in
+            guard let workspaceID = environment.workspaces.workspaceId(forSession: sessionID) else {
+                return nil
+            }
+            return environment.workspaces.workspace(id: workspaceID)
+        }
+        guard !workspaces.isEmpty else { return }
+
+        withAnimation(.snappy(duration: 0.28)) {
+            expanded.formUnion(workspaces.map(\.projectId))
+            expandedWorkspaces.formUnion(workspaces.map(\.id))
+        }
     }
 
     var body: some View {
@@ -278,7 +310,11 @@ struct SidebarView: View {
                 // A plain VStack: lazy row materialization re-measures the
                 // content mid-bounce, which reads as random overscroll snaps.
                 VStack(alignment: .leading, spacing: 1) {
-                    if organization == .byWorkspace {
+                    if organization == .byProject {
+                        ForEach(visibleProjects) { project in
+                            projectFolder(project)
+                        }
+                    } else if organization == .byWorkspace {
                         ForEach(workspaceItems) { item in
                             workspaceRow(item)
                                 .transition(.identity)
@@ -289,13 +325,19 @@ struct SidebarView: View {
                                 .transition(.identity)
                         }
                     }
-                    if organization == .byWorkspace && workspaceItems.isEmpty {
+                    if organization == .byProject && visibleProjects.isEmpty {
+                        Text("No projects yet")
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 4)
+                    } else if organization == .byWorkspace && workspaceItems.isEmpty {
                         Text("No workspaces yet")
                             .font(.caption)
                             .foregroundStyle(.tertiary)
                             .padding(.horizontal, 10)
                             .padding(.vertical, 4)
-                    } else if organization != .byWorkspace && chronologicalSessions.isEmpty {
+                    } else if organization == .compact && chronologicalSessions.isEmpty {
                         Text("No agents yet")
                             .font(.caption)
                             .foregroundStyle(.tertiary)
@@ -310,6 +352,7 @@ struct SidebarView: View {
                 .animation(Motion.listReflow(reduceMotion: reduceMotion), value: chronologicalSessions.map(\.id))
                 .animation(Motion.listReflow(reduceMotion: reduceMotion), value: visibleProjects.map(\.id))
                 .animation(Motion.listReflow(reduceMotion: reduceMotion), value: expanded)
+                .animation(Motion.listReflow(reduceMotion: reduceMotion), value: expandedWorkspaces)
             }
             .scrollContentBackground(.hidden)
             .scrollBounceBehavior(.basedOnSize)
@@ -374,13 +417,14 @@ struct SidebarView: View {
             }
             Button("Cancel", role: .cancel) {}
         }
-        // Entering by-workspace mode (or sessions changing while in it)
+        // Entering a workspace-based mode (or sessions changing while in it)
         // sweeps the visible chats so every one has an owning workspace.
         .onChange(of: organizationRaw, initial: true) { _, _ in
             backfillWorkspaces()
         }
-        .onChange(of: chronologicalSessions.map(\.id)) { _, _ in
+        .onChange(of: chronologicalSessions.map(\.id)) { oldIDs, newIDs in
             backfillWorkspaces()
+            revealNewChatWorkspaces(Set(newIDs).subtracting(Set(oldIDs)))
         }
         .sheet(item: $iconEditing) { project in
             IconPickerView(currentSymbol: project.symbolName) { symbol in
@@ -416,6 +460,9 @@ struct SidebarView: View {
         }
         .onChange(of: expanded) { _, newValue in
             expandedProjectsRaw = newValue.map(\.uuidString).sorted().joined(separator: "\n")
+        }
+        .onChange(of: expandedWorkspaces) { _, newValue in
+            expandedWorkspacesRaw = newValue.map(\.uuidString).sorted().joined(separator: "\n")
         }
         .focusedSceneValue(
             \.sidebarActions,
@@ -506,6 +553,7 @@ struct SidebarView: View {
                 switch organization {
                 case .byWorkspace: "Workspaces"
                 case .compact: "Agents"
+                case .byProject: "Projects"
                 }
             }())
                 .font(.subheadline.weight(.semibold))
@@ -555,17 +603,45 @@ struct SidebarView: View {
     private func projectFolder(_ project: Project) -> some View {
         reorderableProjectRow(project)
 
-        if expanded.contains(project.id) {
-            ForEach(orderedSessions(in: project)) { session in
-                reorderableSessionRow(session)
+        // Keep the persisted disclosure state intact while making the list
+        // compact enough to reorder. Ending the drag restores every folder
+        // exactly as the user left it.
+        if isProjectVisuallyExpanded(project.id) {
+            let items = workspaceItems.filter { $0.workspace.projectId == project.id }
+            ForEach(items) { item in
+                projectWorkspaceFolder(item)
                     .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
             }
-            if orderedSessions(in: project).isEmpty {
-                Text("No sessions yet")
+            if items.isEmpty {
+                Text("No workspaces yet")
                     .font(.subheadline)
                     .foregroundStyle(.tertiary)
-                    // Lines up with the session icons (8 row padding + 8 indent).
                     .padding(.leading, 16)
+                    .padding(.vertical, 3)
+                    .transition(.opacity)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func projectWorkspaceFolder(_ item: SidebarWorkspaceListItem) -> some View {
+        workspaceRow(
+            item,
+            isNested: true,
+            isExpanded: expandedWorkspaces.contains(item.id),
+            onToggle: { toggleWorkspace(item.id) }
+        )
+
+        if expandedWorkspaces.contains(item.id) {
+            ForEach(item.sessions) { session in
+                sessionRow(session, hierarchyDepth: 2)
+                    .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
+            }
+            if item.sessions.isEmpty {
+                Text("No tabs yet")
+                    .font(.subheadline)
+                    .foregroundStyle(.tertiary)
+                    .padding(.leading, 40)
                     .padding(.vertical, 3)
                     .transition(.opacity)
             }
@@ -622,11 +698,14 @@ struct SidebarView: View {
                             Image(systemName: "chevron.right")
                                 .font(.caption2.weight(.semibold))
                                 .foregroundStyle(.secondary)
-                                .rotationEffect(.degrees(expanded.contains(project.id) ? 90 : 0))
+                                .rotationEffect(.degrees(isProjectVisuallyExpanded(project.id) ? 90 : 0))
                                 .opacity(isHovered ? 1 : 0)
                         }
                         .frame(width: 18)
-                        Text(project.name).fontWeight(.medium).lineLimit(1)
+                        Text(project.name)
+                            .font(itemTitleFont)
+                            .fontWeight(.medium)
+                            .lineLimit(1)
                         Spacer(minLength: 6)
                     }
                     .padding(.vertical, 5)
@@ -688,7 +767,11 @@ struct SidebarView: View {
         .onTapGesture(perform: toggle)
     }
 
-    private func sessionRow(_ session: ChatSession, isDragPreview: Bool = false) -> some View {
+    private func sessionRow(
+        _ session: ChatSession,
+        isDragPreview: Bool = false,
+        hierarchyDepth: Int = 0
+    ) -> some View {
         let isSelected = !isDragPreview
             && selection == .session(serverId: session.serverId, id: session.id)
         return HoverableRow(
@@ -702,14 +785,16 @@ struct SidebarView: View {
                     // dimmer foreground tints the icon along with the text.
                     sessionLeadingIcon(session)
                         .frame(width: 18)
-                    Text(session.title).lineLimit(1)
+                    Text(session.title)
+                        .font(itemTitleFont)
+                        .lineLimit(1)
                     Spacer(minLength: 6)
                 }
 
                 sessionStatus(session, isHovered: isHovered)
             }
             .padding(.horizontal, 8)
-            .padding(.leading, 8)
+            .padding(.leading, CGFloat(hierarchyDepth) * hierarchyIndent)
             .padding(.vertical, 5)
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
@@ -745,38 +830,86 @@ struct SidebarView: View {
         }
     }
 
-    /// One workspace in "by workspace" mode. Single-chat era: activation
-    /// opens the primary chat (which IS the workspace); status/spinners come
-    /// from that session.
-    private func workspaceRow(_ item: SidebarWorkspaceListItem) -> some View {
-        // Selected when ANY of its chats is routed — focus-follow moves the
-        // selection between sibling chats, and the workspace row must not
-        // flicker off when it lands on a non-primary one.
-        let isSelected: Bool = {
+    /// One workspace row, either top-level or nested beneath its project.
+    /// Nested rows are disclosure-only; top-level workspace rows retain their
+    /// primary-chat activation behavior.
+    private func workspaceRow(
+        _ item: SidebarWorkspaceListItem,
+        isNested: Bool = false,
+        isExpanded: Bool = false,
+        onToggle: (() -> Void)? = nil
+    ) -> some View {
+        // Top-level workspace organization uses workspace selection styling.
+        // A nested workspace is only a disclosure container; its child chat
+        // owns selection instead.
+        let routesSelectedSession: Bool = {
             guard case let .session(serverId, sessionId) = selection,
                   serverId == item.workspace.serverId else { return false }
             return environment.workspaces.workspaceId(forSession: sessionId) == item.workspace.id
         }()
+        let isSelected = onToggle == nil && routesSelectedSession
         return HoverableRow(
             isSelected: isSelected,
             isHoverEnabled: !isReordering,
             isHoverForced: false
         ) { isHovered in
             HStack(spacing: 7) {
-                Image(systemName: workspaceSymbol(item))
-                    .frame(width: 18)
-                    .foregroundStyle(.secondary)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(item.workspace.name)
-                        .font(.subheadline)
-                        .lineLimit(1)
-                    Text(workspaceSubtitle(item))
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
-                        .lineLimit(1)
+                if let onToggle {
+                    Button(action: onToggle) {
+                        HStack(spacing: 7) {
+                            ZStack {
+                                Image(systemName: FilledSymbol.preferred("square.grid.2x2"))
+                                    .foregroundStyle(.secondary)
+                                    .opacity(isHovered ? 0 : 1)
+                                Image(systemName: "chevron.right")
+                                    .font(.caption2.weight(.semibold))
+                                    .foregroundStyle(.secondary)
+                                    .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                                    .opacity(isHovered ? 1 : 0)
+                            }
+                            .frame(width: 18)
+                            Text(item.workspace.name)
+                                .font(itemTitleFont)
+                                .lineLimit(1)
+                            Spacer(minLength: 6)
+                            if let session = item.primarySession, !isHovered {
+                                sessionStatus(session, isHovered: false)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .help(isExpanded ? "Collapse workspace" : "Expand workspace")
+                    .accessibilityLabel(
+                        isExpanded
+                            ? "Collapse \(item.workspace.name)"
+                            : "Expand \(item.workspace.name)"
+                    )
+                    if let session = item.primarySession, isHovered {
+                        sessionStatus(
+                            session,
+                            isHovered: true,
+                            onArchive: { archiveWorkspace(item) }
+                        )
+                    }
+                } else {
+                    Image(systemName: workspaceSymbol(item))
+                        .frame(width: 18)
+                        .foregroundStyle(.secondary)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(item.workspace.name)
+                            .font(itemTitleFont)
+                            .lineLimit(1)
+                        Text(workspaceSubtitle(item))
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                            .lineLimit(1)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                if let session = item.primarySession {
+                if onToggle == nil, let session = item.primarySession {
                     sessionStatus(
                         session,
                         isHovered: isHovered,
@@ -785,11 +918,13 @@ struct SidebarView: View {
                 }
             }
             .padding(.horizontal, 8)
+            .padding(.leading, isNested ? hierarchyIndent : 0)
             .padding(.vertical, 5)
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
             .foregroundStyle(isSelected ? Color.primary : .secondary)
             .onTapGesture {
+                guard onToggle == nil else { return }
                 guard let session = item.primarySession else { return }
                 activateSession(session)
             }
@@ -877,7 +1012,7 @@ struct SidebarView: View {
                     .foregroundStyle(.secondary)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(session.title)
-                        .font(.subheadline)
+                        .font(itemTitleFont)
                         .lineLimit(1)
                     Text([project.name, session.worktreeName].compactMap { $0 }.joined(separator: " · "))
                         .font(.caption2)
@@ -923,9 +1058,23 @@ struct SidebarView: View {
         }
     }
 
+    private func isProjectVisuallyExpanded(_ id: UUID) -> Bool {
+        draggingProjectID == nil && expanded.contains(id)
+    }
+
     private func toggle(_ id: UUID) {
         withAnimation(.snappy(duration: 0.28)) {
             if expanded.contains(id) { expanded.remove(id) } else { expanded.insert(id) }
+        }
+    }
+
+    private func toggleWorkspace(_ id: UUID) {
+        withAnimation(.snappy(duration: 0.28)) {
+            if expandedWorkspaces.contains(id) {
+                expandedWorkspaces.remove(id)
+            } else {
+                expandedWorkspaces.insert(id)
+            }
         }
     }
 
@@ -1039,7 +1188,7 @@ struct SidebarView: View {
     ) -> some View {
         if store?.hasUnreadError(session) == true {
             EmptyView()
-        } else if organization == .byWorkspace || isHovered {
+        } else if organization != .compact || isHovered {
             // Fixed-size trailing slot so swapping the timestamp for the archive
             // button doesn't change the row height. Compact rows omit the slot
             // entirely when no control is visible.
