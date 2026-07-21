@@ -631,28 +631,32 @@ struct SidebarView: View {
         _ item: SidebarWorkspaceListItem,
         hierarchyDepth: Int
     ) -> some View {
-        workspaceRow(
-            item,
-            isNested: hierarchyDepth > 0,
-            isExpanded: expandedWorkspaces.contains(item.id),
-            onToggle: { toggleWorkspace(item.id) }
-        )
+        if item.sessions.count == 1, let session = item.sessions.first {
+            sessionRow(session, hierarchyDepth: hierarchyDepth)
+        } else {
+            workspaceRow(
+                item,
+                isNested: hierarchyDepth > 0,
+                isExpanded: expandedWorkspaces.contains(item.id),
+                onToggle: { toggleWorkspace(item.id) }
+            )
 
-        if expandedWorkspaces.contains(item.id) {
-            ForEach(item.sessions) { session in
-                sessionRow(session, hierarchyDepth: hierarchyDepth + 1)
-                    .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
-            }
-            if item.sessions.isEmpty {
-                Text("No tabs yet")
-                    .font(.subheadline)
-                    .foregroundStyle(.tertiary)
-                    .padding(
-                        .leading,
-                        8 + CGFloat(hierarchyDepth + 1) * hierarchyIndent + 24
-                    )
-                    .padding(.vertical, 3)
-                    .transition(.opacity)
+            if expandedWorkspaces.contains(item.id) {
+                ForEach(item.sessions) { session in
+                    sessionRow(session, hierarchyDepth: hierarchyDepth + 1)
+                        .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
+                }
+                if item.sessions.isEmpty {
+                    Text("No tabs yet")
+                        .font(.subheadline)
+                        .foregroundStyle(.tertiary)
+                        .padding(
+                            .leading,
+                            8 + CGFloat(hierarchyDepth + 1) * hierarchyIndent + 24
+                        )
+                        .padding(.vertical, 3)
+                        .transition(.opacity)
+                }
             }
         }
     }
