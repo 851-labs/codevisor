@@ -31,7 +31,17 @@ import {
   CreateProjectFromGitRequest as CreateProjectFromGitRequestSchema,
   CreateProjectRequest as CreateProjectRequestSchema,
   CreateMcpServerRequest as CreateMcpServerRequestSchema,
+  CreateSkillRequest as CreateSkillRequestSchema,
   DetectMcpAuthRequest as DetectMcpAuthRequestSchema,
+  DiscoverRemoteSkillsRequest as DiscoverRemoteSkillsRequestSchema,
+  ImportNativeMcpsRequest as ImportNativeMcpsRequestSchema,
+  ImportRemoteSkillRequest as ImportRemoteSkillRequestSchema,
+  ImportSkillRequest as ImportSkillRequestSchema,
+  RemoveNativeMcpRequest as RemoveNativeMcpRequestSchema,
+  SetNativeMcpEnabledRequest as SetNativeMcpEnabledRequestSchema,
+  SyncSkillsRequest as SyncSkillsRequestSchema,
+  MakeSkillGlobalRequest as MakeSkillGlobalRequestSchema,
+  SetSkillInstalledRequest as SetSkillInstalledRequestSchema,
   CreateHarnessAccountRequest as CreateHarnessAccountRequestSchema,
   CreateSessionRequest as CreateSessionRequestSchema,
   CreateWorktreeRequest as CreateWorktreeRequestSchema,
@@ -85,6 +95,8 @@ import type { HarnessAuthManager } from "./harness-auth.js"
 import type { HarnessLifecycleManager } from "./harness-lifecycle.js"
 import { parseCustomHarnessDocument, type CustomHarnessStore } from "./custom-harnesses.js"
 import type { McpManager } from "./mcp-manager.js"
+import { NativeMcpError, type NativeMcpManager } from "./native-mcp-manager.js"
+import { SkillsError, type SkillsManager } from "./skills-manager.js"
 import { availableGeneratedWorktreeName } from "./worktree-names.js"
 
 export class ServerError extends Schema.TaggedErrorClass<ServerError>()("ServerError", {
@@ -136,6 +148,12 @@ export interface CodevisorServerServices {
   /// Harness install/update lifecycle (update detection, later install/
   /// update execution). Absent on hosts that don't support it.
   readonly lifecycle?: HarnessLifecycleManager
+  /// Discovery over MCP servers registered directly in harness config files.
+  /// Absent on hosts that don't support it — routes 501.
+  readonly nativeMcp?: NativeMcpManager
+  /// Skills discovery over the canonical store and harness skills dirs.
+  /// Absent on hosts that don't support it — routes 501.
+  readonly skills?: SkillsManager
 }
 
 export interface RunningCodevisorServer {
@@ -714,6 +732,12 @@ const handleRequest = async (
     if (await routeMcpScopes(services, request, response, url)) {
       return
     }
+    if (await routeNativeMcps(services, request, response, url)) {
+      return
+    }
+    if (await routeSkills(services, request, response, url)) {
+      return
+    }
     if (await routeSessions(services, fanout, routeState, request, response, url, config)) {
       return
     }
@@ -843,6 +867,145 @@ const routeMcpScopes = async (
         session.projectId
       )
     )
+    return true
+  }
+  return false
+}
+
+const routeNativeMcps = async (
+  services: CodevisorServerServices,
+  request: IncomingMessage,
+  response: ServerResponse,
+  url: URL
+): Promise<boolean> => {
+  const manager = services.nativeMcp
+  if (!url.pathname.startsWith("/v1/native-mcps")) return false
+  if (manager === undefined) throw new HttpFailure(501, "Native MCP discovery unavailable")
+
+  if (url.pathname === "/v1/native-mcps" && request.method === "GET") {
+    writeJson(response, 200, await manager.scan())
+    return true
+  }
+
+  if (url.pathname === "/v1/native-mcps/import" && request.method === "POST") {
+    writeJson(
+      response,
+      200,
+      await manager.importServers(await readSchema(request, ImportNativeMcpsRequestSchema))
+    )
+    return true
+  }
+
+  if (url.pathname === "/v1/native-mcps/remove" && request.method === "POST") {
+    const payload = await readSchema(request, RemoveNativeMcpRequestSchema)
+    writeJson(response, 200, await manager.removeServer(payload.harnessId, payload.serverName))
+    return true
+  }
+
+  if (url.pathname === "/v1/native-mcps/removals" && request.method === "GET") {
+    writeJson(response, 200, await manager.listRemovals())
+    return true
+  }
+
+  const removalRoute = matchRouteParams(url.pathname, "/v1/native-mcps/removals/:id/:action")
+  if (
+    removalRoute !== undefined &&
+    removalRoute.action === "restore" &&
+    request.method === "POST"
+  ) {
+    writeJson(response, 200, await manager.restoreRemoval(removalRoute.id!))
+    return true
+  }
+
+  if (url.pathname === "/v1/native-mcps/set-enabled" && request.method === "POST") {
+    const payload = await readSchema(request, SetNativeMcpEnabledRequestSchema)
+    writeJson(
+      response,
+      200,
+      await manager.setNativeEnabled(payload.harnessId, payload.serverName, payload.enabled)
+    )
+    return true
+  }
+  return false
+}
+
+const routeSkills = async (
+  services: CodevisorServerServices,
+  request: IncomingMessage,
+  response: ServerResponse,
+  url: URL
+): Promise<boolean> => {
+  const manager = services.skills
+  if (!url.pathname.startsWith("/v1/skills")) return false
+  if (manager === undefined) throw new HttpFailure(501, "Skills management unavailable")
+
+  if (url.pathname === "/v1/skills") {
+    if (request.method === "GET") {
+      writeJson(response, 200, await manager.list())
+      return true
+    }
+    if (request.method === "POST") {
+      writeJson(
+        response,
+        201,
+        await manager.create(await readSchema(request, CreateSkillRequestSchema))
+      )
+      return true
+    }
+  }
+
+  if (url.pathname === "/v1/skills/import" && request.method === "POST") {
+    writeJson(
+      response,
+      201,
+      await manager.importLocal(await readSchema(request, ImportSkillRequestSchema))
+    )
+    return true
+  }
+
+  if (url.pathname === "/v1/skills/import-remote" && request.method === "POST") {
+    writeJson(
+      response,
+      201,
+      await manager.importRemote(await readSchema(request, ImportRemoteSkillRequestSchema))
+    )
+    return true
+  }
+
+  if (url.pathname === "/v1/skills/discover-remote" && request.method === "POST") {
+    writeJson(
+      response,
+      200,
+      await manager.discoverRemote(await readSchema(request, DiscoverRemoteSkillsRequestSchema))
+    )
+    return true
+  }
+
+  if (url.pathname === "/v1/skills/make-global" && request.method === "POST") {
+    const payload = await readSchema(request, MakeSkillGlobalRequestSchema)
+    writeJson(response, 200, await manager.makeGlobal(payload.harnessId, payload.directoryName))
+    return true
+  }
+
+  if (url.pathname === "/v1/skills/sync" && request.method === "POST") {
+    writeJson(response, 200, await manager.sync(await readSchema(request, SyncSkillsRequestSchema)))
+    return true
+  }
+
+  const installRoute = matchRouteParams(url.pathname, "/v1/skills/:name/harnesses/:harnessId")
+  if (installRoute !== undefined && request.method === "PUT") {
+    const payload = await readSchema(request, SetSkillInstalledRequestSchema)
+    writeJson(
+      response,
+      200,
+      await manager.setInstalled(installRoute.name!, installRoute.harnessId!, payload.installed)
+    )
+    return true
+  }
+
+  const name = matchRoute(url.pathname, "/v1/skills/:name")
+  if (name !== undefined && request.method === "DELETE") {
+    writeJson(response, 200, await manager.remove(name))
     return true
   }
   return false
@@ -3178,6 +3341,16 @@ const writeFailure = (response: ServerResponse, cause: unknown): void => {
       error: cause.message,
       ...(cause.code === undefined ? {} : { code: cause.code })
     })
+    return
+  }
+  if (cause instanceof SkillsError) {
+    const status = cause.code === "invalid" ? 400 : cause.code === "notFound" ? 404 : 409
+    writeJson(response, status, { code: cause.code, error: cause.message })
+    return
+  }
+  if (cause instanceof NativeMcpError) {
+    const status = cause.code === "notFound" ? 404 : cause.code === "conflict" ? 409 : 422
+    writeJson(response, status, { code: cause.code, error: cause.message })
     return
   }
   if (cause instanceof CloneError) {

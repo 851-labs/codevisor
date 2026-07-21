@@ -2338,3 +2338,59 @@ describe("@codevisor/db", () => {
     await Effect.runPromise(db.close)
   })
 })
+
+describe("native config safety", () => {
+  it("stores one-time backups with first-write-wins semantics", async () => {
+    const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
+    expect(await run(db.getNativeConfigBackup("/home/u/.claude.json"))).toBeUndefined()
+    await run(
+      db.saveNativeConfigBackup({
+        backupPath: "/data/backups/abc-.claude.json",
+        createdAt: "2026-07-20T00:00:00.000Z",
+        filePath: "/home/u/.claude.json"
+      })
+    )
+    // A second save must not replace the original pre-mutation snapshot.
+    await run(
+      db.saveNativeConfigBackup({
+        backupPath: "/data/backups/later.json",
+        createdAt: "2026-07-21T00:00:00.000Z",
+        filePath: "/home/u/.claude.json"
+      })
+    )
+    expect(await run(db.getNativeConfigBackup("/home/u/.claude.json"))).toEqual({
+      backupPath: "/data/backups/abc-.claude.json",
+      createdAt: "2026-07-20T00:00:00.000Z",
+      filePath: "/home/u/.claude.json"
+    })
+    await run(db.close)
+  })
+
+  it("parks removals and marks them restored", async () => {
+    const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
+    const removal = await run(
+      db.saveNativeMcpRemoval({
+        configPath: "/home/u/.claude.json",
+        fragment: JSON.stringify({ command: "docs-mcp" }),
+        harnessId: "claude-code",
+        serverName: "docs"
+      })
+    )
+    expect(removal).toMatchObject({
+      configPath: "/home/u/.claude.json",
+      fragment: JSON.stringify({ command: "docs-mcp" }),
+      harnessId: "claude-code",
+      serverName: "docs"
+    })
+    expect(removal.restoredAt).toBeUndefined()
+
+    expect(await run(db.listNativeMcpRemovals())).toHaveLength(1)
+    await run(db.markNativeMcpRemovalRestored(removal.id))
+    // Restored entries drop out of the default listing but stay in history.
+    expect(await run(db.listNativeMcpRemovals())).toHaveLength(0)
+    const all = await run(db.listNativeMcpRemovals(true))
+    expect(all).toHaveLength(1)
+    expect(all[0]?.restoredAt).toBeDefined()
+    await run(db.close)
+  })
+})

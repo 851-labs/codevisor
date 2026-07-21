@@ -98,3 +98,9 @@
 [submodule ".repos/herdr"]
 	path = .repos/herdr
 	url = https://github.com/ogulcancelik/herdr.git
+[submodule ".repos/skills"]
+	path = .repos/skills
+	url = https://github.com/vercel-labs/skills.git
+[submodule ".repos/add-mcp"]
+	path = .repos/add-mcp
+	url = https://github.com/neon-solutions/add-mcp.git

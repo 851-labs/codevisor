@@ -7,7 +7,7 @@ import {
   type RuntimeEventSink,
   type SetGoalUpdate
 } from "@codevisor/agent-runtime"
-import type { Harness, McpServer } from "@codevisor/api"
+import type { Harness, McpServer, NativeMcpScan, SkillsScan } from "@codevisor/api"
 import { makeDatabase, type CodevisorDatabaseService } from "@codevisor/db"
 import Database from "better-sqlite3"
 import type {
@@ -51,6 +51,8 @@ import {
 } from "./server.js"
 import type { HarnessAuthManager } from "./harness-auth.js"
 import type { CodevisorServerServices } from "./server.js"
+import { NativeMcpError } from "./native-mcp-manager.js"
+import { SkillsError } from "./skills-manager.js"
 import { generatedWorktreeNames } from "./worktree-names.js"
 import { boundedMcpTimerDelay, makeMcpManager, NodeStreamableHttpTransport } from "./mcp-manager.js"
 import { Client as McpClient } from "@modelcontextprotocol/sdk/client/index.js"
@@ -5087,5 +5089,364 @@ describe("@codevisor/server", () => {
       await waitFor(() => turns.includes("end codex"))
       expect(turns[0]).toBe("start codex")
     })
+  })
+})
+
+describe("native MCP and skills routes", () => {
+  const nativeMcpScan: NativeMcpScan = {
+    candidates: [
+      {
+        alreadyManaged: false,
+        args: ["-y", "docs-mcp"],
+        command: "npx",
+        foundIn: ["claude-code"],
+        identity: "docs-mcp",
+        name: "docs",
+        transport: "stdio"
+      }
+    ],
+    harnesses: [
+      {
+        configPath: "/home/u/.claude.json",
+        exists: true,
+        harnessId: "claude-code",
+        harnessName: "Claude Code",
+        harnessSymbol: "sparkle",
+        servers: []
+      }
+    ]
+  }
+
+  const skillsScan: SkillsScan = {
+    canonicalDir: "/home/u/.agents/skills",
+    global: [
+      {
+        directoryName: "deploy",
+        installs: [{ harnessId: "claude-code", state: "linked" }],
+        name: "Deploy",
+        path: "/home/u/.agents/skills/deploy"
+      }
+    ],
+    harnesses: [
+      {
+        harnessId: "claude-code",
+        harnessName: "Claude Code",
+        harnessSymbol: "sparkle",
+        skills: [],
+        skillsDir: "/home/u/.claude/skills"
+      }
+    ]
+  }
+
+  const nativeMcpRemoval = {
+    configPath: "/home/u/.claude.json",
+    harnessId: "claude-code",
+    id: "removal-1",
+    removedAt: "2026-07-20T00:00:00.000Z",
+    serverName: "docs"
+  }
+
+  const nativeMcpStub = (calls: Array<unknown[]>) => ({
+    importServers: async (request: { identities: ReadonlyArray<string> }) => ({
+      outcomes: request.identities.map((identity) => ({
+        identity,
+        status: "imported" as const,
+        warnings: []
+      })),
+      scan: nativeMcpScan
+    }),
+    listRemovals: async () => [nativeMcpRemoval],
+    removeServer: async (harnessId: string, serverName: string) => {
+      calls.push(["removeServer", harnessId, serverName])
+      return { removal: nativeMcpRemoval, scan: nativeMcpScan }
+    },
+    restoreRemoval: async (id: string) => {
+      calls.push(["restoreRemoval", id])
+      return nativeMcpScan
+    },
+    scan: async () => nativeMcpScan,
+    setNativeEnabled: async (harnessId: string, serverName: string, enabled: boolean) => {
+      calls.push(["setNativeEnabled", harnessId, serverName, enabled])
+      return nativeMcpScan
+    }
+  })
+
+  const skillsStub = (calls: Array<unknown[]>) => ({
+    create: async (request: unknown) => {
+      calls.push(["create", request])
+      return skillsScan
+    },
+    importLocal: async (request: unknown) => {
+      calls.push(["importLocal", request])
+      return skillsScan
+    },
+    importRemote: async (request: unknown) => {
+      calls.push(["importRemote", request])
+      return skillsScan
+    },
+    sync: async (request?: unknown) => {
+      calls.push(["sync", request])
+      return skillsScan
+    },
+    discoverRemote: async (request: unknown) => {
+      calls.push(["discoverRemote", request])
+      return {
+        skills: [{ alreadyExists: false, directoryName: "deploy", name: "Deploy" } as const]
+      }
+    },
+    list: async () => skillsScan,
+    makeGlobal: async (harnessId: string, directoryName: string) => {
+      calls.push(["makeGlobal", harnessId, directoryName])
+      return skillsScan
+    },
+    remove: async (directoryName: string) => {
+      calls.push(["remove", directoryName])
+      return skillsScan
+    },
+    setInstalled: async (directoryName: string, harnessId: string, installed: boolean) => {
+      calls.push(["setInstalled", directoryName, harnessId, installed])
+      return skillsScan
+    }
+  })
+
+  it("serves scans from the configured managers", async () => {
+    const { services } = await makeServices("server-a")
+    const server = await startWithApp({
+      ...services,
+      nativeMcp: nativeMcpStub([]),
+      skills: skillsStub([])
+    })
+    runningServers.push(server)
+
+    const nativeResponse = await jsonRequest(server, "/v1/native-mcps")
+    expect(nativeResponse.status).toBe(200)
+    expect(nativeResponse.body).toEqual(nativeMcpScan)
+
+    const importResponse = await jsonRequest(server, "/v1/native-mcps/import", {
+      body: JSON.stringify({ identities: ["docs-mcp"] }),
+      method: "POST"
+    })
+    expect(importResponse.status).toBe(200)
+    expect(importResponse.body).toEqual({
+      outcomes: [{ identity: "docs-mcp", status: "imported", warnings: [] }],
+      scan: nativeMcpScan
+    })
+
+    const skillsResponse = await jsonRequest(server, "/v1/skills")
+    expect(skillsResponse.status).toBe(200)
+    expect(skillsResponse.body).toEqual(skillsScan)
+
+    // Unknown methods and subpaths fall through to 404.
+    expect((await jsonRequest(server, "/v1/native-mcps", { method: "POST" })).status).toBe(404)
+    expect((await jsonRequest(server, "/v1/native-mcps/unknown")).status).toBe(404)
+    expect((await jsonRequest(server, "/v1/skills/unknown")).status).toBe(404)
+    expect((await jsonRequest(server, "/v1/skills/unknown", { method: "PATCH" })).status).toBe(404)
+    expect((await jsonRequest(server, "/v1/skills", { method: "PATCH" })).status).toBe(404)
+  })
+
+  it("routes native MCP destructive operations to the manager", async () => {
+    const { services } = await makeServices("server-a")
+    const calls: Array<unknown[]> = []
+    const server = await startWithApp({ ...services, nativeMcp: nativeMcpStub(calls) })
+    runningServers.push(server)
+
+    const removeResponse = await jsonRequest(server, "/v1/native-mcps/remove", {
+      body: JSON.stringify({ harnessId: "claude-code", serverName: "docs" }),
+      method: "POST"
+    })
+    expect(removeResponse.status).toBe(200)
+    expect(removeResponse.body).toEqual({ removal: nativeMcpRemoval, scan: nativeMcpScan })
+
+    const removalsResponse = await jsonRequest(server, "/v1/native-mcps/removals")
+    expect(removalsResponse.status).toBe(200)
+    expect(removalsResponse.body).toEqual([nativeMcpRemoval])
+
+    expect(
+      (
+        await jsonRequest(server, "/v1/native-mcps/removals/removal-1/restore", {
+          method: "POST"
+        })
+      ).status
+    ).toBe(200)
+    expect(
+      (
+        await jsonRequest(server, "/v1/native-mcps/removals/removal-1/unknown", {
+          method: "POST"
+        })
+      ).status
+    ).toBe(404)
+
+    expect(
+      (
+        await jsonRequest(server, "/v1/native-mcps/set-enabled", {
+          body: JSON.stringify({ enabled: false, harnessId: "opencode", serverName: "local" }),
+          method: "POST"
+        })
+      ).status
+    ).toBe(200)
+
+    expect(calls).toEqual([
+      ["removeServer", "claude-code", "docs"],
+      ["restoreRemoval", "removal-1"],
+      ["setNativeEnabled", "opencode", "local", false]
+    ])
+  })
+
+  it("maps NativeMcpError codes onto HTTP statuses", async () => {
+    const { services } = await makeServices("server-a")
+    const failing = {
+      ...nativeMcpStub([]),
+      removeServer: async () => {
+        throw new NativeMcpError("can't edit safely", "unsupported")
+      },
+      restoreRemoval: async () => {
+        throw new NativeMcpError("name in use", "conflict")
+      },
+      setNativeEnabled: async () => {
+        throw new NativeMcpError("no such server", "notFound")
+      }
+    }
+    const server = await startWithApp({ ...services, nativeMcp: failing })
+    runningServers.push(server)
+
+    const unsupported = await jsonRequest(server, "/v1/native-mcps/remove", {
+      body: JSON.stringify({ harnessId: "goose", serverName: "docs" }),
+      method: "POST"
+    })
+    expect(unsupported.status).toBe(422)
+    expect(unsupported.body).toEqual({ code: "unsupported", error: "can't edit safely" })
+    expect(
+      (
+        await jsonRequest(server, "/v1/native-mcps/removals/removal-1/restore", {
+          method: "POST"
+        })
+      ).status
+    ).toBe(409)
+    expect(
+      (
+        await jsonRequest(server, "/v1/native-mcps/set-enabled", {
+          body: JSON.stringify({ enabled: true, harnessId: "opencode", serverName: "ghost" }),
+          method: "POST"
+        })
+      ).status
+    ).toBe(404)
+  })
+
+  it("routes skills CRUD operations to the manager", async () => {
+    const { services } = await makeServices("server-a")
+    const calls: Array<unknown[]> = []
+    const server = await startWithApp({ ...services, skills: skillsStub(calls) })
+    runningServers.push(server)
+
+    expect(
+      (
+        await jsonRequest(server, "/v1/skills", {
+          body: JSON.stringify({ description: "Deploy checklist", name: "Deploy" }),
+          method: "POST"
+        })
+      ).status
+    ).toBe(201)
+    expect(
+      (
+        await jsonRequest(server, "/v1/skills/import", {
+          body: JSON.stringify({ path: "/tmp/deploy" }),
+          method: "POST"
+        })
+      ).status
+    ).toBe(201)
+    expect(
+      (
+        await jsonRequest(server, "/v1/skills/import-remote", {
+          body: JSON.stringify({ source: "vercel-labs/skills" }),
+          method: "POST"
+        })
+      ).status
+    ).toBe(201)
+    expect(
+      (
+        await jsonRequest(server, "/v1/skills/make-global", {
+          body: JSON.stringify({ directoryName: "ship-it", harnessId: "claude-code" }),
+          method: "POST"
+        })
+      ).status
+    ).toBe(200)
+    expect(
+      (
+        await jsonRequest(server, "/v1/skills/sync", {
+          body: JSON.stringify({}),
+          method: "POST"
+        })
+      ).status
+    ).toBe(200)
+    const discovered = await jsonRequest(server, "/v1/skills/discover-remote", {
+      body: JSON.stringify({ source: "vercel-labs/skills" }),
+      method: "POST"
+    })
+    expect(discovered.status).toBe(200)
+    expect(discovered.body).toEqual({
+      skills: [{ alreadyExists: false, directoryName: "deploy", name: "Deploy" }]
+    })
+    expect(
+      (
+        await jsonRequest(server, "/v1/skills/deploy/harnesses/claude-code", {
+          body: JSON.stringify({ installed: true }),
+          method: "PUT"
+        })
+      ).status
+    ).toBe(200)
+    expect((await jsonRequest(server, "/v1/skills/deploy", { method: "DELETE" })).status).toBe(200)
+
+    expect(calls).toEqual([
+      ["create", { description: "Deploy checklist", name: "Deploy" }],
+      ["importLocal", { path: "/tmp/deploy" }],
+      ["importRemote", { source: "vercel-labs/skills" }],
+      ["makeGlobal", "claude-code", "ship-it"],
+      ["sync", {}],
+      ["discoverRemote", { source: "vercel-labs/skills" }],
+      ["setInstalled", "deploy", "claude-code", true],
+      ["remove", "deploy"]
+    ])
+  })
+
+  it("maps SkillsError codes onto HTTP statuses", async () => {
+    const { services } = await makeServices("server-a")
+    const failing = {
+      ...skillsStub([]),
+      create: async () => {
+        throw new SkillsError("already exists", "conflict")
+      },
+      importLocal: async () => {
+        throw new SkillsError("not a directory", "invalid")
+      },
+      remove: async () => {
+        throw new SkillsError("no such skill", "notFound")
+      }
+    }
+    const server = await startWithApp({ ...services, skills: failing })
+    runningServers.push(server)
+
+    const conflict = await jsonRequest(server, "/v1/skills", {
+      body: JSON.stringify({ description: "", name: "deploy" }),
+      method: "POST"
+    })
+    expect(conflict.status).toBe(409)
+    expect(conflict.body).toEqual({ code: "conflict", error: "already exists" })
+    expect(
+      (
+        await jsonRequest(server, "/v1/skills/import", {
+          body: JSON.stringify({ path: "/tmp/nope" }),
+          method: "POST"
+        })
+      ).status
+    ).toBe(400)
+    expect((await jsonRequest(server, "/v1/skills/deploy", { method: "DELETE" })).status).toBe(404)
+  })
+
+  it("returns 501 when the host has no native MCP or skills managers", async () => {
+    const { services } = await makeServices("server-a")
+    const server = await startWithApp(services)
+    runningServers.push(server)
+    expect((await jsonRequest(server, "/v1/native-mcps")).status).toBe(501)
+    expect((await jsonRequest(server, "/v1/skills")).status).toBe(501)
   })
 })

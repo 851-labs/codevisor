@@ -12,6 +12,7 @@ enum SettingsTab: String {
     case machines
     case harnesses
     case mcps
+    case skills
 }
 
 /// Routes programmatic Settings navigation (e.g. the sidebar's
@@ -50,6 +51,9 @@ struct SettingsView: View {
             McpSettingsView()
                 .tabItem { Label("MCPs", systemImage: "puzzlepiece.extension") }
                 .tag(SettingsTab.mcps)
+            SkillsSettingsView()
+                .tabItem { Label("Skills", systemImage: "book.closed") }
+                .tag(SettingsTab.skills)
         }
         .frame(width: 580, height: 500)
         // When themed, drop the grouped forms' own backdrop so the theme
@@ -754,13 +758,14 @@ struct HarnessesSettingsView: View {
 
             if !serverNotInstalled.isEmpty {
                 Section {
-                    DisclosureGroup(isExpanded: $showsNotInstalled) {
+                    SettingsDisclosureRow(
+                        "Not installed (\(serverNotInstalled.count))",
+                        isExpanded: $showsNotInstalled
+                    ) {
                         ForEach(serverNotInstalled, id: \.id) { harness in
                             serverNotInstalledRow(harness)
+                                .padding(.top, 6)
                         }
-                    } label: {
-                        Text("Not installed (\(serverNotInstalled.count))")
-                            .foregroundStyle(.secondary)
                     }
                 }
             }

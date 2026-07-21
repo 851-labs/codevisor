@@ -155,6 +155,49 @@ export interface HarnessUpdateSource {
   readonly apply: UpdateApplySpec
 }
 
+/// Where a harness keeps its user-level (global) MCP server registrations on
+/// disk, plus enough shape metadata to read — and, where safe, edit — that
+/// file without understanding the rest of it. Paths are `~/`-relative and
+/// resolved against the scanning machine's home directory at read time.
+export interface NativeMcpConfigSpec {
+  /// Config file holding global MCP registrations, e.g. "~/.claude.json".
+  /// Environment overrides (CODEX_HOME, XDG_CONFIG_HOME) are applied by the
+  /// scanner, not encoded here.
+  readonly path: string
+  /// Dotted key of the server map inside the file ("mcpServers",
+  /// "mcp_servers", "mcp", "extensions").
+  readonly key: string
+  readonly format: "json" | "toml" | "yaml"
+  /// Project-level file name (relative to a project root) that also carries
+  /// MCP registrations — read-only in Codevisor (team-committed state).
+  readonly projectFile?: string
+  /// Present only when the harness has a real per-server enable flag we can
+  /// honestly toggle. `enabledWhen` is the field value that means "enabled"
+  /// (opencode: {name:"enabled", enabledWhen:true}; cline: {name:"disabled",
+  /// enabledWhen:false}).
+  readonly disableField?: { readonly name: string; readonly enabledWhen: boolean }
+  /// False when Codevisor cannot yet edit the file without risking damage to
+  /// user formatting (goose YAML in v1) — such harnesses are scan-only.
+  readonly writable: boolean
+}
+
+/// Where a harness reads user-level agent skills from. Only declared for
+/// harnesses that document skills support — the field's presence is what
+/// gates skills UI affordances.
+export interface HarnessSkillsSpec {
+  /// Global skills directory, `~/`-relative, e.g. "~/.claude/skills".
+  readonly globalDir: string
+  /// True when `globalDir` IS the canonical ~/.agents/skills store: the
+  /// harness needs no symlink and must never receive one (it would
+  /// double-list or self-reference).
+  readonly readsCanonical?: boolean
+  /// True when the harness has its own skills directory AND scans the
+  /// canonical ~/.agents/skills store too (OpenCode). Every global skill is
+  /// ambiently available; installing a link into its own dir would only
+  /// produce duplicate-name warnings.
+  readonly alsoReadsCanonical?: boolean
+}
+
 export interface HarnessDefinition {
   readonly id: string
   readonly name: string
@@ -182,6 +225,12 @@ export interface HarnessDefinition {
   /// Update sources keyed by detected install origin. Absent = no update
   /// support (custom entries, harnesses without a version channel).
   readonly update?: { readonly sources: ReadonlyArray<HarnessUpdateSource> }
+  /// Native (harness-owned) MCP config location + shape. Absent = the harness
+  /// is skipped by native MCP discovery.
+  readonly nativeMcp?: NativeMcpConfigSpec
+  /// Skills directory metadata. Absent = the harness is skipped by skills
+  /// discovery and never offered as a skills install target.
+  readonly skills?: HarnessSkillsSpec
 }
 
 export interface ProviderEnvironment {

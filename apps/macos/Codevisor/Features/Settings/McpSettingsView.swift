@@ -12,6 +12,21 @@ struct McpSettingsView: View {
     @State private var selectedServer: ServerMcpServer?
     @State private var editingServer: ServerMcpServer?
     @State private var serverPendingRemoval: ServerMcpServer?
+    /// Native discovery is additive: nil (older server or scan failure) hides
+    /// the sections entirely rather than blocking the managed list.
+    @State private var nativeScan: ServerNativeMcpScan?
+    @State private var showsNativeInstalled = false
+    @State private var selectedNativeServer: ServerNativeMcpServer?
+    /// Identities currently being imported (per-row spinners) and the last
+    /// batch's failures/warnings for the section footer.
+    @State private var importingIdentities: Set<String> = []
+    @State private var importFeedback: String?
+    /// Native destructive-op state: pending confirmation, this session's
+    /// most recent removal (for Undo), and any failure message.
+    @State private var nativeServerPendingRemoval: ServerNativeMcpServer?
+    @State private var lastNativeRemoval: ServerNativeMcpRemoval?
+    @State private var nativeActionError: String?
+    @State private var expandedNativeHarnesses: Set<String> = []
 
     var body: some View {
         content
@@ -53,6 +68,27 @@ struct McpSettingsView: View {
                 }
                 .environment(environment)
             }
+            .sheet(item: $selectedNativeServer) { server in
+                NativeMcpDetailSheet(server: server)
+            }
+            .confirmationDialog(
+                "Remove \(nativeServerPendingRemoval?.serverName ?? "server") from \(nativeServerPendingRemoval?.harnessName ?? "harness")?",
+                isPresented: Binding(
+                    get: { nativeServerPendingRemoval != nil },
+                    set: { if !$0 { nativeServerPendingRemoval = nil } }
+                ),
+                titleVisibility: .visible
+            ) {
+                Button("Remove from \(nativeServerPendingRemoval?.harnessName ?? "Harness")", role: .destructive) {
+                    guard let server = nativeServerPendingRemoval else { return }
+                    Task { await removeNativeServer(server) }
+                }
+                .settingsActionTint(theme)
+                Button("Cancel", role: .cancel) { nativeServerPendingRemoval = nil }
+                    .settingsActionTint(theme)
+            } message: {
+                Text("Codevisor edits only this entry in \(abbreviatePath(nativeServerPendingRemoval?.configPath ?? "")), backs the file up first, and keeps the entry so you can undo.")
+            }
             .confirmationDialog(
                 "Remove \(serverPendingRemoval?.name ?? "MCP server")?",
                 isPresented: Binding(
@@ -73,6 +109,20 @@ struct McpSettingsView: View {
             }
     }
 
+    /// Native servers discovered in harness configs, flattened per harness.
+    private var nativeHarnessesWithServers: [ServerNativeMcpHarnessServers] {
+        (nativeScan?.harnesses ?? []).filter { !$0.servers.isEmpty || $0.error != nil }
+    }
+
+    /// Candidates worth surfacing for import (not yet in the gateway).
+    private var importCandidates: [ServerNativeMcpImportCandidate] {
+        (nativeScan?.candidates ?? []).filter { !$0.alreadyManaged }
+    }
+
+    private var hasNativeContent: Bool {
+        !nativeHarnessesWithServers.isEmpty
+    }
+
     @ViewBuilder
     private var content: some View {
         if isLoading, servers.isEmpty {
@@ -81,7 +131,7 @@ struct McpSettingsView: View {
                 .tint(theme.isSystem ? nil : theme.accent)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .accessibilityLabel("Loading MCP servers")
-        } else if errorMessage == nil, servers.isEmpty {
+        } else if errorMessage == nil, servers.isEmpty, !hasNativeContent {
             emptyState
         } else {
             serverList
@@ -112,6 +162,9 @@ struct McpSettingsView: View {
                 if let errorMessage, servers.isEmpty {
                     Label(errorMessage, systemImage: "exclamationmark.triangle")
                         .foregroundStyle(.secondary)
+                } else if servers.isEmpty {
+                    Text("No MCP servers managed by Codevisor yet.")
+                        .foregroundStyle(.secondary)
                 } else {
                     ForEach(servers) { server in
                         serverRow(server)
@@ -133,8 +186,309 @@ struct McpSettingsView: View {
                 }
             }
             .listRowBackground(theme.isSystem ? nil : theme.cardQuietBackground)
+
+            if !importCandidates.isEmpty || importFeedback != nil {
+                Section {
+                    ForEach(importCandidates) { candidate in
+                        importCandidateRow(candidate)
+                    }
+                } header: {
+                    HStack {
+                        Text("Found in Your Harnesses")
+                        Spacer()
+                        if importCandidates.count > 1 {
+                            Button("Import All") {
+                                Task { await importIdentities(importCandidates.map(\.identity)) }
+                            }
+                            .buttonStyle(.borderless)
+                            .settingsActionTint(theme)
+                            .disabled(!importingIdentities.isEmpty)
+                        }
+                    }
+                } footer: {
+                    if let importFeedback {
+                        Text(importFeedback)
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .listRowBackground(theme.isSystem ? nil : theme.cardQuietBackground)
+            }
+
+            if hasNativeContent || lastNativeRemoval != nil {
+                Section {
+                    SettingsDisclosureRow(
+                        "Installed in your harnesses (\(nativeServerCount))",
+                        isExpanded: $showsNativeInstalled
+                    ) {
+                        ForEach(nativeHarnessesWithServers) { harness in
+                            nativeHarnessGroup(harness)
+                                .padding(.leading, 17)
+                                .padding(.top, 6)
+                        }
+                    }
+                } footer: {
+                    if let error = nativeActionError {
+                        Label(error, systemImage: "exclamationmark.triangle")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                    } else if let removal = lastNativeRemoval {
+                        HStack(spacing: 8) {
+                            Text("Removed \(removal.serverName) from \(harnessNames(for: [removal.harnessId])). The original file was backed up.")
+                                .font(.callout)
+                                .foregroundStyle(.secondary)
+                            Button("Undo") {
+                                Task { await undoNativeRemoval(removal) }
+                            }
+                            .buttonStyle(.borderless)
+                            .settingsActionTint(theme)
+                            .controlSize(.small)
+                        }
+                    }
+                }
+                .listRowBackground(theme.isSystem ? nil : theme.cardQuietBackground)
+            }
         }
         .settingsPaneFormStyle(theme)
+    }
+
+    private var nativeServerCount: Int {
+        nativeHarnessesWithServers.reduce(0) { $0 + $1.servers.count }
+    }
+
+    private func importCandidateRow(_ candidate: ServerNativeMcpImportCandidate) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: candidate.transport == "http" ? "globe" : "terminal")
+                .foregroundStyle(.secondary)
+                .frame(width: 20)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(candidate.name).foregroundStyle(.primary)
+                Text("Found in \(harnessNames(for: candidate.foundIn)) · \(candidate.identity)")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            if importingIdentities.contains(candidate.identity) {
+                ProgressView().controlSize(.small)
+            } else {
+                Button("Import") {
+                    Task { await importIdentities([candidate.identity]) }
+                }
+                .settingsActionTint(theme)
+                .controlSize(.small)
+                .disabled(!importingIdentities.isEmpty)
+                .help("Add to Codevisor's managed MCP servers")
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("\(candidate.name), found in \(harnessNames(for: candidate.foundIn))")
+    }
+
+    private func removeNativeServer(_ server: ServerNativeMcpServer) async {
+        do {
+            let result = try await environment.serverClient.removeNativeMcp(
+                harnessId: server.harnessId,
+                serverName: server.serverName
+            )
+            nativeScan = result.scan
+            lastNativeRemoval = result.removal
+            nativeActionError = nil
+        } catch {
+            nativeActionError = ErrorReporter.userFacingMessage(for: error)
+        }
+    }
+
+    private func undoNativeRemoval(_ removal: ServerNativeMcpRemoval) async {
+        do {
+            nativeScan = try await environment.serverClient.restoreNativeMcpRemoval(id: removal.id)
+            lastNativeRemoval = nil
+            nativeActionError = nil
+        } catch {
+            nativeActionError = ErrorReporter.userFacingMessage(for: error)
+        }
+    }
+
+    private func setNativeEnabled(_ server: ServerNativeMcpServer, enabled: Bool) async {
+        do {
+            nativeScan = try await environment.serverClient.setNativeMcpEnabled(
+                harnessId: server.harnessId,
+                serverName: server.serverName,
+                enabled: enabled
+            )
+            nativeActionError = nil
+        } catch {
+            nativeActionError = ErrorReporter.userFacingMessage(for: error)
+        }
+    }
+
+    private func importIdentities(_ identities: [String]) async {
+        importingIdentities.formUnion(identities)
+        defer { importingIdentities.subtract(identities) }
+        do {
+            let result = try await environment.serverClient.importNativeMcps(identities: identities)
+            nativeScan = result.scan
+            importFeedback = feedback(for: result.outcomes)
+            // The managed list changed too — refresh it (not the native scan,
+            // which the result already replaced).
+            servers = try await environment.serverClient.listMcpServers()
+        } catch {
+            importFeedback = ErrorReporter.userFacingMessage(for: error)
+        }
+    }
+
+    /// Fold a batch's outcomes into one footer line: failures first, then
+    /// warnings, silence when everything just worked.
+    private func feedback(for outcomes: [ServerNativeMcpImportOutcome]) -> String? {
+        var parts: [String] = []
+        for outcome in outcomes {
+            if outcome.status == "failed", let detail = outcome.detail {
+                parts.append("\(outcome.identity): \(detail)")
+            }
+            parts.append(contentsOf: outcome.warnings)
+        }
+        let imported = outcomes.filter { $0.status == "imported" }.count
+        if parts.isEmpty {
+            return imported > 0
+                ? "Imported \(imported) server\(imported == 1 ? "" : "s")."
+                : nil
+        }
+        return parts.joined(separator: " · ")
+    }
+
+    private func nativeHarnessGroup(_ harness: ServerNativeMcpHarnessServers) -> some View {
+        SettingsDisclosureRow(isExpanded: nativeHarnessExpansion(harness.harnessId)) {
+            // The bundled brand glyph, falling back to the catalog symbol.
+            HarnessIcon(
+                harnessId: harness.harnessId,
+                fallbackSymbolName: harness.harnessSymbol ?? "cpu",
+                size: 14
+            )
+            .frame(width: 16)
+            Text("\(harness.harnessName) (\(harness.servers.count))")
+                .foregroundStyle(theme.isSystem ? Color.primary : theme.textPrimary)
+        } content: {
+            if let error = harness.error {
+                Label(
+                    "Couldn't read \(abbreviatePath(harness.configPath)): \(error)",
+                    systemImage: "exclamationmark.triangle"
+                )
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .padding(.leading, 23)
+                .padding(.top, 6)
+            }
+            ForEach(harness.servers) { server in
+                nativeServerRow(server)
+                    .padding(.leading, 23)
+                    .padding(.top, 6)
+            }
+        }
+    }
+
+    private func nativeHarnessExpansion(_ harnessId: String) -> Binding<Bool> {
+        Binding(
+            get: { expandedNativeHarnesses.contains(harnessId) },
+            set: { expanded in
+                if expanded {
+                    expandedNativeHarnesses.insert(harnessId)
+                } else {
+                    expandedNativeHarnesses.remove(harnessId)
+                }
+            }
+        )
+    }
+
+    private func nativeServerRow(_ server: ServerNativeMcpServer) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: server.transport == "http" ? "globe" : "terminal")
+                .foregroundStyle(.secondary)
+                .frame(width: 20)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text(server.serverName).foregroundStyle(.primary)
+                    if server.scope == "project" {
+                        nativeBadge("Project")
+                    }
+                    if server.enabled == false {
+                        nativeBadge("Disabled")
+                    }
+                    if server.alreadyManaged {
+                        nativeBadge("In Codevisor")
+                    }
+                }
+                Text(server.identity)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            if server.supportsDisable {
+                Toggle(
+                    "Enable \(server.serverName) in \(server.harnessName)",
+                    isOn: Binding(
+                        get: { server.enabled ?? true },
+                        set: { enabled in Task { await setNativeEnabled(server, enabled: enabled) } }
+                    )
+                )
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .controlSize(.small)
+            }
+            Menu {
+                Button("Show Details…") { selectedNativeServer = server }
+                if FileManager.default.fileExists(atPath: server.configPath) {
+                    Button("Reveal Config in Finder") {
+                        NSWorkspace.shared.activateFileViewerSelecting(
+                            [URL(fileURLWithPath: server.configPath)]
+                        )
+                    }
+                }
+                if server.supportsRemove {
+                    Divider()
+                    Button("Remove from \(server.harnessName)…", role: .destructive) {
+                        nativeServerPendingRemoval = server
+                    }
+                }
+            } label: {
+                Label("More actions for \(server.serverName)", systemImage: "ellipsis.circle")
+            }
+            .labelStyle(.iconOnly)
+            .buttonStyle(.borderless)
+            .settingsActionTint(theme)
+            .menuIndicator(.hidden)
+            .help("More Actions")
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("\(server.serverName), installed in \(server.harnessName)")
+    }
+
+    private func nativeBadge(_ text: String) -> some View {
+        Text(text)
+            .font(.caption2.weight(.medium))
+            .padding(.horizontal, 5)
+            .padding(.vertical, 1)
+            .background(
+                RoundedRectangle(cornerRadius: 4)
+                    .fill(theme.isSystem ? AnyShapeStyle(.quaternary) : AnyShapeStyle(theme.cardQuietBackground))
+            )
+            .foregroundStyle(.secondary)
+    }
+
+    private func harnessNames(for harnessIds: [String]) -> String {
+        let names = nativeScan?.harnesses.reduce(into: [String: String]()) { partial, harness in
+            partial[harness.harnessId] = harness.harnessName
+        } ?? [:]
+        return harnessIds.map { names[$0] ?? $0 }.joined(separator: ", ")
+    }
+
+    private func abbreviatePath(_ path: String) -> String {
+        let home = NSHomeDirectory()
+        return path.hasPrefix(home) ? "~" + path.dropFirst(home.count) : path
     }
 
     private func serverRow(_ server: ServerMcpServer) -> some View {
@@ -237,6 +591,9 @@ struct McpSettingsView: View {
         } catch {
             errorMessage = ErrorReporter.userFacingMessage(for: error)
         }
+        // Native discovery is best-effort: older servers (404/501) or scan
+        // failures simply hide the sections instead of surfacing an error.
+        nativeScan = try? await environment.serverClient.listNativeMcps()
     }
 
     private func setEnabled(_ server: ServerMcpServer, enabled: Bool) async {
@@ -1292,4 +1649,104 @@ private struct McpServerDetailSheet: View {
     McpSettingsView()
         .environment(AppEnvironment.preview())
         .frame(width: 560, height: 460)
+}
+
+/// Read-only detail for an MCP server that lives in a harness's own config
+/// file. Secret values never reach the client, so env vars and headers render
+/// as names only.
+private struct NativeMcpDetailSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.theme) private var theme
+    let server: ServerNativeMcpServer
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 10) {
+                Image(systemName: server.transport == "http" ? "globe" : "terminal")
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(server.serverName).font(.headline)
+                    Text("Installed in \(server.harnessName)\(server.scope == "project" ? " · Project" : "")")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 18)
+            Form {
+                Section("Connection") {
+                    LabeledContent("Transport", value: server.transport == "http" ? "HTTP" : "Local command")
+                    if let url = server.url {
+                        LabeledContent("Server URL") {
+                            Text(url).textSelection(.enabled)
+                        }
+                    }
+                    if let command = server.command {
+                        LabeledContent("Command") {
+                            Text(([command] + server.args).joined(separator: " "))
+                                .font(.body.monospaced())
+                                .textSelection(.enabled)
+                        }
+                    }
+                    if let enabled = server.enabled {
+                        LabeledContent("Enabled in \(server.harnessName)", value: enabled ? "Yes" : "No")
+                    }
+                }
+                .listRowBackground(themedFormRowBackground)
+                if !server.headerNames.isEmpty || !server.envNames.isEmpty {
+                    Section("Secrets") {
+                        if !server.headerNames.isEmpty {
+                            LabeledContent("HTTP Headers", value: server.headerNames.joined(separator: ", "))
+                        }
+                        if !server.envNames.isEmpty {
+                            LabeledContent("Environment Variables", value: server.envNames.joined(separator: ", "))
+                        }
+                        Text("Values stay in the harness's config file and are never read into Codevisor.")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                    }
+                    .listRowBackground(themedFormRowBackground)
+                }
+                Section("Source") {
+                    LabeledContent("Config File") {
+                        Text(server.configPath)
+                            .font(.body.monospaced())
+                            .textSelection(.enabled)
+                            .lineLimit(2)
+                            .truncationMode(.middle)
+                    }
+                }
+                .listRowBackground(themedFormRowBackground)
+            }
+            .formStyle(.grouped)
+            .scrollContentBackground(theme.isSystem ? .automatic : .hidden)
+            Divider()
+                .overlay(theme.isSystem ? Color.clear : theme.separator)
+            HStack {
+                if FileManager.default.fileExists(atPath: server.configPath) {
+                    Button("Reveal Config in Finder") {
+                        NSWorkspace.shared.activateFileViewerSelecting(
+                            [URL(fileURLWithPath: server.configPath)]
+                        )
+                    }
+                    .settingsActionTint(theme)
+                }
+                Spacer()
+                Button("Done") { dismiss() }
+                    .settingsActionTint(theme)
+                    .keyboardShortcut(.defaultAction)
+            }
+            .padding()
+            .themedSurface(.sheet)
+        }
+        .frame(width: 540, height: 420)
+        .scrollContentBackground(theme.isSystem ? .automatic : .hidden)
+        .themedSurface(.sheet)
+    }
+
+    private var themedFormRowBackground: Color? {
+        theme.isSystem ? nil : theme.cardQuietBackground
+    }
 }

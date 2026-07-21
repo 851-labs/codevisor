@@ -15,6 +15,7 @@ import type {
   McpConnectionState,
   McpServer,
   McpTransport,
+  NativeMcpRemoval,
   Project,
   ProjectLocation,
   PromptQueueItem,
@@ -179,6 +180,27 @@ interface McpServerRow {
 
 export interface McpServerRecord extends McpServer {
   readonly secretCipher?: string
+}
+
+/// One-time backup of a harness config file, taken before Codevisor's first
+/// ever mutation of it and never overwritten afterwards.
+export interface NativeConfigBackupRecord {
+  readonly filePath: string
+  readonly backupPath: string
+  readonly createdAt: string
+}
+
+/// A parked native MCP removal; `fragment` is the verbatim parsed entry
+/// (JSON-encoded) so restore can reinsert exactly what was removed.
+export interface NativeMcpRemovalRecord extends NativeMcpRemoval {
+  readonly fragment: string
+}
+
+export interface SaveNativeMcpRemovalRequest {
+  readonly harnessId: string
+  readonly configPath: string
+  readonly serverName: string
+  readonly fragment: string
 }
 
 export interface SaveMcpServerRecordRequest {
@@ -999,6 +1021,27 @@ const migrations: ReadonlyArray<Migration> = [
         requested_at text not null,
         started_at text,
         timeout_at text
+      );
+    `
+  },
+  {
+    id: 25,
+    name: "native config safety",
+    sql: `
+      create table if not exists native_config_backups (
+        file_path text primary key,
+        backup_path text not null,
+        created_at text not null
+      );
+
+      create table if not exists native_mcp_removals (
+        id text primary key,
+        harness_id text not null,
+        config_path text not null,
+        server_name text not null,
+        fragment text not null,
+        removed_at text not null,
+        restored_at text
       );
     `
   }
@@ -2051,6 +2094,19 @@ export interface CodevisorDatabaseService {
     projectId?: string,
     sessionId?: string
   ) => Effect.Effect<ReadonlyArray<McpServerRecord>, DatabaseError>
+  readonly getNativeConfigBackup: (
+    filePath: string
+  ) => Effect.Effect<NativeConfigBackupRecord | undefined, DatabaseError>
+  readonly saveNativeConfigBackup: (
+    record: NativeConfigBackupRecord
+  ) => Effect.Effect<void, DatabaseError>
+  readonly saveNativeMcpRemoval: (
+    request: SaveNativeMcpRemovalRequest
+  ) => Effect.Effect<NativeMcpRemovalRecord, DatabaseError>
+  readonly listNativeMcpRemovals: (
+    includeRestored?: boolean
+  ) => Effect.Effect<ReadonlyArray<NativeMcpRemovalRecord>, DatabaseError>
+  readonly markNativeMcpRemovalRestored: (id: string) => Effect.Effect<void, DatabaseError>
   readonly listHarnessAccounts: (
     harnessId: string
   ) => Effect.Effect<ReadonlyArray<HarnessAccountRecord>, DatabaseError>
@@ -3179,6 +3235,61 @@ const createService = (
               sessionSettings.get(server.id) !== false
           }))
       }),
+    getNativeConfigBackup: (filePath) =>
+      attempt("getNativeConfigBackup", () => {
+        const row = sqlite
+          .prepare("select * from native_config_backups where file_path = ?")
+          .get(filePath) as NativeConfigBackupRow | undefined
+        return row === undefined
+          ? undefined
+          : { backupPath: row.backup_path, createdAt: row.created_at, filePath: row.file_path }
+      }),
+    saveNativeConfigBackup: (record) =>
+      attempt("saveNativeConfigBackup", () => {
+        // First write wins: the backup captures the file before Codevisor
+        // ever touched it and must never be replaced by a later state.
+        sqlite
+          .prepare(
+            `insert into native_config_backups (file_path, backup_path, created_at)
+             values (?, ?, ?) on conflict(file_path) do nothing`
+          )
+          .run(record.filePath, record.backupPath, record.createdAt)
+      }),
+    saveNativeMcpRemoval: (request) =>
+      attempt("saveNativeMcpRemoval", () => {
+        const id = randomUUID()
+        const now = isoTimestamp()
+        sqlite
+          .prepare(
+            `insert into native_mcp_removals
+               (id, harness_id, config_path, server_name, fragment, removed_at)
+             values (?, ?, ?, ?, ?, ?)`
+          )
+          .run(id, request.harnessId, request.configPath, request.serverName, request.fragment, now)
+        return nativeMcpRemovalFromRow(
+          sqlite
+            .prepare("select * from native_mcp_removals where id = ?")
+            .get(id) as NativeMcpRemovalRow
+        )
+      }),
+    listNativeMcpRemovals: (includeRestored) =>
+      attempt("listNativeMcpRemovals", () =>
+        (
+          sqlite
+            .prepare(
+              includeRestored === true
+                ? "select * from native_mcp_removals order by removed_at desc"
+                : "select * from native_mcp_removals where restored_at is null order by removed_at desc"
+            )
+            .all() as ReadonlyArray<NativeMcpRemovalRow>
+        ).map(nativeMcpRemovalFromRow)
+      ),
+    markNativeMcpRemovalRestored: (id) =>
+      attempt("markNativeMcpRemovalRestored", () => {
+        sqlite
+          .prepare("update native_mcp_removals set restored_at = ? where id = ?")
+          .run(isoTimestamp(), id)
+      }),
     listHarnessAccounts: (harnessId) =>
       attempt("listHarnessAccounts", () =>
         harnessAccountRows(harnessId).map(harnessAccountFromRow)
@@ -3772,6 +3883,32 @@ const mcpServerFromRow = (row: McpServerRow): McpServerRecord => ({
   ...(row.secret_cipher === null ? {} : { secretCipher: row.secret_cipher }),
   createdAt: row.created_at,
   updatedAt: row.updated_at
+})
+
+interface NativeConfigBackupRow {
+  readonly file_path: string
+  readonly backup_path: string
+  readonly created_at: string
+}
+
+interface NativeMcpRemovalRow {
+  readonly id: string
+  readonly harness_id: string
+  readonly config_path: string
+  readonly server_name: string
+  readonly fragment: string
+  readonly removed_at: string
+  readonly restored_at: string | null
+}
+
+const nativeMcpRemovalFromRow = (row: NativeMcpRemovalRow): NativeMcpRemovalRecord => ({
+  configPath: row.config_path,
+  fragment: row.fragment,
+  harnessId: row.harness_id,
+  id: row.id,
+  removedAt: row.removed_at,
+  ...(row.restored_at === null ? {} : { restoredAt: row.restored_at }),
+  serverName: row.server_name
 })
 
 const hashToken = (token: string): string => createHash("sha256").update(token).digest("hex")

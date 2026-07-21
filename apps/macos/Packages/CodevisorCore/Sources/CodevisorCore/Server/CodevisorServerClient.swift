@@ -172,6 +172,44 @@ public protocol CodevisorServerClienting: Sendable {
     func disconnectMcpOAuth(id: String) async throws -> ServerMcpServer
     func removeMcpServer(id: String) async throws
     func listMcpTools(id: String) async throws -> [ServerMcpTool]
+    /// MCP servers registered directly in harness config files (read-only
+    /// discovery; secret values never leave the server).
+    func listNativeMcps() async throws -> ServerNativeMcpScan
+    /// Import coalesced native candidates (by identity) into the managed
+    /// gateway; secrets are re-read server-side.
+    func importNativeMcps(identities: [String]) async throws -> ServerNativeMcpImportResult
+    /// Remove a server from a harness's own config file (backed up and
+    /// parked for undo).
+    func removeNativeMcp(harnessId: String, serverName: String) async throws -> ServerRemoveNativeMcpResult
+    func listNativeMcpRemovals() async throws -> [ServerNativeMcpRemoval]
+    /// Undo a native removal by reinserting the parked entry.
+    func restoreNativeMcpRemoval(id: String) async throws -> ServerNativeMcpScan
+    /// Toggle a harness's own per-server enable flag (only where one exists).
+    func setNativeMcpEnabled(harnessId: String, serverName: String, enabled: Bool) async throws -> ServerNativeMcpScan
+    /// Skills in the canonical ~/.agents/skills store plus each harness's own
+    /// skills directory.
+    func listSkills() async throws -> ServerSkillsScan
+    /// Create a skill in the canonical store — from a template, or from
+    /// pasted SKILL.md content.
+    func createSkill(name: String, description: String, content: String?) async throws -> ServerSkillsScan
+    /// Import a local skill folder (a path on the server's machine) into the
+    /// canonical store.
+    func importSkill(path: String) async throws -> ServerSkillsScan
+    /// List the skills a remote source offers (GitHub/GitLab repos, git
+    /// URLs, or sites publishing skills via well-known endpoints).
+    func discoverRemoteSkills(source: String) async throws -> [ServerRemoteSkillCandidate]
+    /// Import skills from a remote source into the canonical store,
+    /// optionally narrowed to a selection from discovery.
+    func importRemoteSkill(source: String, skillNames: [String]?) async throws -> ServerSkillsScan
+    /// Delete a canonical skill and sweep its links from every harness.
+    func removeSkill(directoryName: String) async throws -> ServerSkillsScan
+    /// Install (symlink) or uninstall a canonical skill for one harness.
+    func setSkillInstalled(directoryName: String, harnessId: String, installed: Bool) async throws -> ServerSkillsScan
+    /// Promote an independent harness-dir skill into the canonical store.
+    func makeSkillGlobal(harnessId: String, directoryName: String) async throws -> ServerSkillsScan
+    /// Link the named skills (or all of them) into every harness that needs
+    /// a link, bringing harnesses in sync with the shared store.
+    func syncSkills(directoryNames: [String]?) async throws -> ServerSkillsScan
     func listProjects() async throws -> [ServerProject]
     func upsertProject(_ project: Project) async throws -> ServerProject
     func updateProject(_ project: Project) async throws -> ServerProject
@@ -408,6 +446,51 @@ public extension CodevisorServerClienting {
     }
     func removeMcpServer(id: String) async throws {}
     func listMcpTools(id: String) async throws -> [ServerMcpTool] { [] }
+    /// Defaults for fakes/older servers: empty scans hide the sections and
+    /// mutations report the endpoint as unavailable.
+    func listNativeMcps() async throws -> ServerNativeMcpScan {
+        ServerNativeMcpScan(candidates: [], harnesses: [])
+    }
+    func listSkills() async throws -> ServerSkillsScan {
+        ServerSkillsScan(canonicalDir: "", global: [], harnesses: [])
+    }
+    func importNativeMcps(identities: [String]) async throws -> ServerNativeMcpImportResult {
+        throw CodevisorServerClientError.invalidResponse
+    }
+    func removeNativeMcp(harnessId: String, serverName: String) async throws -> ServerRemoveNativeMcpResult {
+        throw CodevisorServerClientError.invalidResponse
+    }
+    func listNativeMcpRemovals() async throws -> [ServerNativeMcpRemoval] { [] }
+    func restoreNativeMcpRemoval(id: String) async throws -> ServerNativeMcpScan {
+        throw CodevisorServerClientError.invalidResponse
+    }
+    func setNativeMcpEnabled(harnessId: String, serverName: String, enabled: Bool) async throws -> ServerNativeMcpScan {
+        throw CodevisorServerClientError.invalidResponse
+    }
+    func createSkill(name: String, description: String, content: String?) async throws -> ServerSkillsScan {
+        throw CodevisorServerClientError.invalidResponse
+    }
+    func importSkill(path: String) async throws -> ServerSkillsScan {
+        throw CodevisorServerClientError.invalidResponse
+    }
+    func discoverRemoteSkills(source: String) async throws -> [ServerRemoteSkillCandidate] {
+        throw CodevisorServerClientError.invalidResponse
+    }
+    func importRemoteSkill(source: String, skillNames: [String]?) async throws -> ServerSkillsScan {
+        throw CodevisorServerClientError.invalidResponse
+    }
+    func removeSkill(directoryName: String) async throws -> ServerSkillsScan {
+        throw CodevisorServerClientError.invalidResponse
+    }
+    func setSkillInstalled(directoryName: String, harnessId: String, installed: Bool) async throws -> ServerSkillsScan {
+        throw CodevisorServerClientError.invalidResponse
+    }
+    func makeSkillGlobal(harnessId: String, directoryName: String) async throws -> ServerSkillsScan {
+        throw CodevisorServerClientError.invalidResponse
+    }
+    func syncSkills(directoryNames: [String]?) async throws -> ServerSkillsScan {
+        throw CodevisorServerClientError.invalidResponse
+    }
 
     /// Default for fakes/older transports: attachments are dropped and the
     /// text-only prompt path is used.
@@ -894,6 +977,355 @@ public struct ServerMcpAuthDetection: Codable, Equatable, Sendable {
     public var authType: String
     public var detail: String
     public var suggestedName: String? = nil
+}
+
+/// An MCP server registered directly in a harness's own config file. Secret
+/// values never leave the server — only env/header names arrive for display.
+public struct ServerNativeMcpServer: Codable, Equatable, Identifiable, Sendable {
+    public var harnessId: String
+    public var harnessName: String
+    public var serverName: String
+    /// "global" (user-level config) or "project" (committed file, read-only).
+    public var scope: String
+    public var configPath: String
+    public var transport: String
+    public var url: String?
+    public var command: String?
+    public var args: [String]
+    public var envNames: [String]
+    public var headerNames: [String]
+    /// Present only when the harness has a real per-server enable flag.
+    public var enabled: Bool?
+    public var supportsDisable: Bool
+    public var supportsRemove: Bool
+    public var identity: String
+    public var alreadyManaged: Bool
+
+    public var id: String { "\(harnessId)|\(scope)|\(configPath)|\(serverName)" }
+
+    public init(
+        harnessId: String,
+        harnessName: String,
+        serverName: String,
+        scope: String,
+        configPath: String,
+        transport: String,
+        url: String? = nil,
+        command: String? = nil,
+        args: [String] = [],
+        envNames: [String] = [],
+        headerNames: [String] = [],
+        enabled: Bool? = nil,
+        supportsDisable: Bool = false,
+        supportsRemove: Bool = false,
+        identity: String = "",
+        alreadyManaged: Bool = false
+    ) {
+        self.harnessId = harnessId
+        self.harnessName = harnessName
+        self.serverName = serverName
+        self.scope = scope
+        self.configPath = configPath
+        self.transport = transport
+        self.url = url
+        self.command = command
+        self.args = args
+        self.envNames = envNames
+        self.headerNames = headerNames
+        self.enabled = enabled
+        self.supportsDisable = supportsDisable
+        self.supportsRemove = supportsRemove
+        self.identity = identity
+        self.alreadyManaged = alreadyManaged
+    }
+}
+
+/// One importable server, coalesced across every harness it was found in.
+public struct ServerNativeMcpImportCandidate: Codable, Equatable, Identifiable, Sendable {
+    public var identity: String
+    public var name: String
+    public var transport: String
+    public var url: String?
+    public var command: String?
+    public var args: [String]
+    public var foundIn: [String]
+    public var alreadyManaged: Bool
+
+    public var id: String { identity }
+
+    public init(
+        identity: String,
+        name: String,
+        transport: String,
+        url: String? = nil,
+        command: String? = nil,
+        args: [String] = [],
+        foundIn: [String] = [],
+        alreadyManaged: Bool = false
+    ) {
+        self.identity = identity
+        self.name = name
+        self.transport = transport
+        self.url = url
+        self.command = command
+        self.args = args
+        self.foundIn = foundIn
+        self.alreadyManaged = alreadyManaged
+    }
+}
+
+public struct ServerNativeMcpHarnessServers: Codable, Equatable, Identifiable, Sendable {
+    public var harnessId: String
+    public var harnessName: String
+    /// SF Symbol from the harness catalog; nil from older servers.
+    public var harnessSymbol: String?
+    public var configPath: String
+    public var exists: Bool
+    /// Per-harness read/parse failure, surfaced instead of failing the scan.
+    public var error: String?
+    public var servers: [ServerNativeMcpServer]
+
+    public var id: String { harnessId }
+
+    public init(
+        harnessId: String,
+        harnessName: String,
+        harnessSymbol: String? = nil,
+        configPath: String,
+        exists: Bool,
+        error: String? = nil,
+        servers: [ServerNativeMcpServer] = []
+    ) {
+        self.harnessId = harnessId
+        self.harnessName = harnessName
+        self.harnessSymbol = harnessSymbol
+        self.configPath = configPath
+        self.exists = exists
+        self.error = error
+        self.servers = servers
+    }
+}
+
+public struct ServerNativeMcpScan: Codable, Equatable, Sendable {
+    public var candidates: [ServerNativeMcpImportCandidate]
+    public var harnesses: [ServerNativeMcpHarnessServers]
+
+    public init(
+        candidates: [ServerNativeMcpImportCandidate] = [],
+        harnesses: [ServerNativeMcpHarnessServers] = []
+    ) {
+        self.candidates = candidates
+        self.harnesses = harnesses
+    }
+}
+
+public struct ServerNativeMcpImportOutcome: Codable, Equatable, Identifiable, Sendable {
+    public var identity: String
+    /// imported | skipped | failed
+    public var status: String
+    public var serverId: String?
+    public var serverName: String?
+    public var detail: String?
+    public var warnings: [String]
+
+    public var id: String { identity }
+
+    public init(
+        identity: String,
+        status: String,
+        serverId: String? = nil,
+        serverName: String? = nil,
+        detail: String? = nil,
+        warnings: [String] = []
+    ) {
+        self.identity = identity
+        self.status = status
+        self.serverId = serverId
+        self.serverName = serverName
+        self.detail = detail
+        self.warnings = warnings
+    }
+}
+
+public struct ServerNativeMcpImportResult: Codable, Equatable, Sendable {
+    public var outcomes: [ServerNativeMcpImportOutcome]
+    /// Post-import rescan for wholesale state replacement.
+    public var scan: ServerNativeMcpScan
+
+    public init(outcomes: [ServerNativeMcpImportOutcome] = [], scan: ServerNativeMcpScan = .init()) {
+        self.outcomes = outcomes
+        self.scan = scan
+    }
+}
+
+/// A server entry Codevisor removed from a harness config file, parked so
+/// the removal can be undone.
+public struct ServerNativeMcpRemoval: Codable, Equatable, Identifiable, Sendable {
+    public var id: String
+    public var harnessId: String
+    public var configPath: String
+    public var serverName: String
+    public var removedAt: String
+    public var restoredAt: String?
+
+    public init(
+        id: String,
+        harnessId: String,
+        configPath: String,
+        serverName: String,
+        removedAt: String,
+        restoredAt: String? = nil
+    ) {
+        self.id = id
+        self.harnessId = harnessId
+        self.configPath = configPath
+        self.serverName = serverName
+        self.removedAt = removedAt
+        self.restoredAt = restoredAt
+    }
+}
+
+public struct ServerRemoveNativeMcpResult: Codable, Equatable, Sendable {
+    public var removal: ServerNativeMcpRemoval
+    public var scan: ServerNativeMcpScan
+
+    public init(removal: ServerNativeMcpRemoval, scan: ServerNativeMcpScan = .init()) {
+        self.removal = removal
+        self.scan = scan
+    }
+}
+
+public struct ServerSkillHarnessInstall: Codable, Equatable, Sendable {
+    public var harnessId: String
+    /// linked | copied | canonical | notInstalled | broken | conflict
+    public var state: String
+
+    public init(harnessId: String, state: String) {
+        self.harnessId = harnessId
+        self.state = state
+    }
+}
+
+/// A skill in the canonical ~/.agents/skills store with per-harness installs.
+public struct ServerGlobalSkill: Codable, Equatable, Identifiable, Sendable {
+    public var name: String
+    public var directoryName: String
+    public var description: String?
+    public var path: String
+    public var invalid: Bool?
+    public var installs: [ServerSkillHarnessInstall]
+
+    public var id: String { directoryName }
+
+    public init(
+        name: String,
+        directoryName: String,
+        description: String? = nil,
+        path: String,
+        invalid: Bool? = nil,
+        installs: [ServerSkillHarnessInstall] = []
+    ) {
+        self.name = name
+        self.directoryName = directoryName
+        self.description = description
+        self.path = path
+        self.invalid = invalid
+        self.installs = installs
+    }
+}
+
+/// A skill found in a harness's own skills directory that is not a link into
+/// the canonical store: an independent copy or a broken link.
+public struct ServerHarnessSkill: Codable, Equatable, Identifiable, Sendable {
+    public var harnessId: String
+    public var directoryName: String
+    public var name: String
+    public var description: String?
+    public var path: String
+    /// independent | broken
+    public var classification: String
+    public var invalid: Bool?
+    public var duplicateOf: String?
+
+    public var id: String { "\(harnessId)|\(directoryName)" }
+
+    public init(
+        harnessId: String,
+        directoryName: String,
+        name: String,
+        description: String? = nil,
+        path: String,
+        classification: String,
+        invalid: Bool? = nil,
+        duplicateOf: String? = nil
+    ) {
+        self.harnessId = harnessId
+        self.directoryName = directoryName
+        self.name = name
+        self.description = description
+        self.path = path
+        self.classification = classification
+        self.invalid = invalid
+        self.duplicateOf = duplicateOf
+    }
+}
+
+public struct ServerSkillsHarnessGroup: Codable, Equatable, Identifiable, Sendable {
+    public var harnessId: String
+    public var harnessName: String
+    /// SF Symbol from the harness catalog; nil from older servers.
+    public var harnessSymbol: String?
+    public var skillsDir: String
+    public var skills: [ServerHarnessSkill]
+
+    public var id: String { harnessId }
+
+    public init(
+        harnessId: String,
+        harnessName: String,
+        harnessSymbol: String? = nil,
+        skillsDir: String,
+        skills: [ServerHarnessSkill] = []
+    ) {
+        self.harnessId = harnessId
+        self.harnessName = harnessName
+        self.harnessSymbol = harnessSymbol
+        self.skillsDir = skillsDir
+        self.skills = skills
+    }
+}
+
+/// One skill offered by a remote source, for the pre-import picker.
+public struct ServerRemoteSkillCandidate: Codable, Equatable, Identifiable, Sendable {
+    public var name: String
+    public var directoryName: String
+    public var description: String?
+    public var alreadyExists: Bool
+
+    public var id: String { directoryName }
+
+    public init(name: String, directoryName: String, description: String? = nil, alreadyExists: Bool = false) {
+        self.name = name
+        self.directoryName = directoryName
+        self.description = description
+        self.alreadyExists = alreadyExists
+    }
+}
+
+public struct ServerSkillsScan: Codable, Equatable, Sendable {
+    public var canonicalDir: String
+    public var global: [ServerGlobalSkill]
+    public var harnesses: [ServerSkillsHarnessGroup]
+
+    public init(
+        canonicalDir: String = "",
+        global: [ServerGlobalSkill] = [],
+        harnesses: [ServerSkillsHarnessGroup] = []
+    ) {
+        self.canonicalDir = canonicalDir
+        self.global = global
+        self.harnesses = harnesses
+    }
 }
 
 public struct CreateMcpServerBody: Encodable, Equatable, Sendable {
@@ -1886,6 +2318,184 @@ public final class CodevisorServerClient: CodevisorServerClienting, @unchecked S
 
     public func listMcpTools(id: String) async throws -> [ServerMcpTool] {
         try await get("/v1/mcps/\(pathComponent(id))/tools")
+    }
+
+    public func listNativeMcps() async throws -> ServerNativeMcpScan {
+        try await get("/v1/native-mcps")
+    }
+
+    private struct ImportNativeMcpsBody: Encodable {
+        var identities: [String]
+    }
+
+    public func importNativeMcps(identities: [String]) async throws -> ServerNativeMcpImportResult {
+        try await send(
+            "/v1/native-mcps/import",
+            method: "POST",
+            body: ImportNativeMcpsBody(identities: identities)
+        )
+    }
+
+    private struct RemoveNativeMcpBody: Encodable {
+        var harnessId: String
+        var serverName: String
+    }
+
+    private struct SetNativeMcpEnabledBody: Encodable {
+        var harnessId: String
+        var serverName: String
+        var enabled: Bool
+    }
+
+    public func removeNativeMcp(
+        harnessId: String,
+        serverName: String
+    ) async throws -> ServerRemoveNativeMcpResult {
+        try await send(
+            "/v1/native-mcps/remove",
+            method: "POST",
+            body: RemoveNativeMcpBody(harnessId: harnessId, serverName: serverName)
+        )
+    }
+
+    public func listNativeMcpRemovals() async throws -> [ServerNativeMcpRemoval] {
+        try await get("/v1/native-mcps/removals")
+    }
+
+    public func restoreNativeMcpRemoval(id: String) async throws -> ServerNativeMcpScan {
+        try await send(
+            "/v1/native-mcps/removals/\(pathComponent(id))/restore",
+            method: "POST",
+            body: Optional<EmptyBody>.none
+        )
+    }
+
+    public func setNativeMcpEnabled(
+        harnessId: String,
+        serverName: String,
+        enabled: Bool
+    ) async throws -> ServerNativeMcpScan {
+        try await send(
+            "/v1/native-mcps/set-enabled",
+            method: "POST",
+            body: SetNativeMcpEnabledBody(
+                harnessId: harnessId,
+                serverName: serverName,
+                enabled: enabled
+            )
+        )
+    }
+
+    public func listSkills() async throws -> ServerSkillsScan {
+        try await get("/v1/skills")
+    }
+
+    private struct CreateSkillBody: Encodable {
+        var name: String
+        var description: String
+        var content: String?
+    }
+
+    private struct ImportRemoteSkillBody: Encodable {
+        var source: String
+        var skillNames: [String]?
+    }
+
+    private struct DiscoverRemoteSkillsBody: Encodable {
+        var source: String
+    }
+
+    private struct DiscoverRemoteSkillsResponse: Decodable {
+        var skills: [ServerRemoteSkillCandidate]
+    }
+
+    private struct ImportSkillBody: Encodable {
+        var path: String
+    }
+
+    private struct SetSkillInstalledBody: Encodable {
+        var installed: Bool
+    }
+
+    private struct MakeSkillGlobalBody: Encodable {
+        var harnessId: String
+        var directoryName: String
+    }
+
+    private struct SyncSkillsBody: Encodable {
+        var directoryNames: [String]?
+    }
+
+    public func createSkill(
+        name: String,
+        description: String,
+        content: String?
+    ) async throws -> ServerSkillsScan {
+        try await send(
+            "/v1/skills",
+            method: "POST",
+            body: CreateSkillBody(name: name, description: description, content: content)
+        )
+    }
+
+    public func discoverRemoteSkills(source: String) async throws -> [ServerRemoteSkillCandidate] {
+        let response: DiscoverRemoteSkillsResponse = try await send(
+            "/v1/skills/discover-remote",
+            method: "POST",
+            body: DiscoverRemoteSkillsBody(source: source)
+        )
+        return response.skills
+    }
+
+    public func importRemoteSkill(source: String, skillNames: [String]?) async throws -> ServerSkillsScan {
+        try await send(
+            "/v1/skills/import-remote",
+            method: "POST",
+            body: ImportRemoteSkillBody(source: source, skillNames: skillNames)
+        )
+    }
+
+    public func importSkill(path: String) async throws -> ServerSkillsScan {
+        try await send("/v1/skills/import", method: "POST", body: ImportSkillBody(path: path))
+    }
+
+    public func removeSkill(directoryName: String) async throws -> ServerSkillsScan {
+        try await send(
+            "/v1/skills/\(pathComponent(directoryName))",
+            method: "DELETE",
+            body: Optional<EmptyBody>.none
+        )
+    }
+
+    public func setSkillInstalled(
+        directoryName: String,
+        harnessId: String,
+        installed: Bool
+    ) async throws -> ServerSkillsScan {
+        try await send(
+            "/v1/skills/\(pathComponent(directoryName))/harnesses/\(pathComponent(harnessId))",
+            method: "PUT",
+            body: SetSkillInstalledBody(installed: installed)
+        )
+    }
+
+    public func makeSkillGlobal(
+        harnessId: String,
+        directoryName: String
+    ) async throws -> ServerSkillsScan {
+        try await send(
+            "/v1/skills/make-global",
+            method: "POST",
+            body: MakeSkillGlobalBody(harnessId: harnessId, directoryName: directoryName)
+        )
+    }
+
+    public func syncSkills(directoryNames: [String]?) async throws -> ServerSkillsScan {
+        try await send(
+            "/v1/skills/sync",
+            method: "POST",
+            body: SyncSkillsBody(directoryNames: directoryNames)
+        )
     }
 
     private func harnessAccountsPath(_ harnessId: String) -> String {

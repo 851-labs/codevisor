@@ -36,6 +36,8 @@ import { makeHarnessLifecycleManager } from "./harness-lifecycle.js"
 import { defaultServerConfig, startCodevisorServer, type CodevisorServerUpdater } from "./server.js"
 import { makeHarnessAuthManager } from "./harness-auth.js"
 import { makeMcpManager } from "./mcp-manager.js"
+import { makeNativeMcpManager } from "./native-mcp-manager.js"
+import { makeSkillsManager } from "./skills-manager.js"
 import { migrateLegacyLayout, migrateTmpDataDir } from "./legacy-layout.js"
 
 const SERVER_PROCESS_TITLE = "codevisor-server"
@@ -401,6 +403,13 @@ export const runServe = (args: Record<string, string>): Promise<void> => {
       preferDeviceCode: (kind ?? (host === "127.0.0.1" ? "local" : "remote")) === "remote"
     })
     const mcp = makeMcpManager({ db, dataDir: dirname(databasePath) })
+    const nativeMcp = makeNativeMcpManager({
+      agents,
+      dataDir: dirname(databasePath),
+      db,
+      mcp
+    })
+    const skills = makeSkillsManager({ agents })
     /// Custom-harness persistence + handshake probe for the /v1/harnesses/
     /// custom routes. The file stays the source of truth; replace() swaps the
     /// runtime catalog live so no restart is needed.
@@ -445,6 +454,8 @@ export const runServe = (args: Record<string, string>): Promise<void> => {
         db,
         lifecycle,
         mcp,
+        nativeMcp,
+        skills,
         terminal
       },
       defaultServerConfig({

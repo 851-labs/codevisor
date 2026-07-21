@@ -222,7 +222,18 @@ export const harnessCatalog: ReadonlyArray<HarnessDefinition> = [
       { kind: "npm", packageName: "@anthropic-ai/claude-code" }
     ],
     name: "Claude Code",
+    // Global registrations live inside ~/.claude.json (a large state file the
+    // CLI rewrites constantly — edits must stay surgical); project-level ones
+    // in a committed .mcp.json. No per-server enable flag exists.
+    nativeMcp: {
+      format: "json",
+      key: "mcpServers",
+      path: "~/.claude.json",
+      projectFile: ".mcp.json",
+      writable: true
+    },
     provider: "claude",
+    skills: { globalDir: "~/.claude/skills" },
     symbolName: "sparkle",
     update: {
       sources: [
@@ -272,7 +283,17 @@ export const harnessCatalog: ReadonlyArray<HarnessDefinition> = [
       { kind: "npm", packageName: "@openai/codex" }
     ],
     name: "Codex",
+    // TOML config: readable everywhere, but edits go through the verified
+    // text-excision path (never a whole-file TOML re-stringify). The scanner
+    // honors CODEX_HOME over the literal path.
+    nativeMcp: {
+      format: "toml",
+      key: "mcp_servers",
+      path: "~/.codex/config.toml",
+      writable: true
+    },
     provider: "codex",
+    skills: { globalDir: "~/.codex/skills" },
     symbolName: "chevron.left.forwardslash.chevron.right",
     update: {
       sources: [
@@ -330,6 +351,13 @@ export const harnessCatalog: ReadonlyArray<HarnessDefinition> = [
       { kind: "npm", packageName: "@google/gemini-cli" },
       { formula: "gemini-cli", kind: "brew" }
     ],
+    nativeMcp: {
+      format: "json",
+      key: "mcpServers",
+      path: "~/.gemini/settings.json",
+      writable: true
+    },
+    skills: { globalDir: "~/.gemini/skills" },
     update: {
       // Gemini CLI has no self-update command (explicitly "not planned"
       // upstream) — reinstall via the detected origin.
@@ -352,6 +380,19 @@ export const harnessCatalog: ReadonlyArray<HarnessDefinition> = [
       { command: "curl -fsSL https://opencode.ai/install | bash", kind: "curl" },
       { kind: "npm", packageName: "opencode-ai" }
     ],
+    // OpenCode has a real per-server `enabled` flag — the one JSON harness
+    // where a native disable toggle is honest. XDG_CONFIG_HOME is honored by
+    // the scanner.
+    nativeMcp: {
+      disableField: { enabledWhen: true, name: "enabled" },
+      format: "json",
+      key: "mcp",
+      path: "~/.config/opencode/opencode.json",
+      writable: true
+    },
+    // OpenCode scans ~/.agents/skills (and ~/.claude/skills) in addition to
+    // its own directory — every global skill is ambiently available.
+    skills: { alsoReadsCanonical: true, globalDir: "~/.config/opencode/skills" },
     update: {
       // `opencode upgrade` detects curl/npm/pnpm/bun/brew itself.
       sources: [
@@ -365,6 +406,14 @@ export const harnessCatalog: ReadonlyArray<HarnessDefinition> = [
   }),
   executableHarness("goose", "goose", "bird", ["goose"], "goose", ["acp"], {
     installMethods: [{ formula: "block-goose-cli", kind: "brew" }],
+    // Read-only in v1: comment-preserving YAML edits aren't wired up yet, and
+    // goose configs commonly carry hand-written comments.
+    nativeMcp: {
+      format: "yaml",
+      key: "extensions",
+      path: "~/.config/goose/config.yaml",
+      writable: false
+    },
     update: {
       sources: [
         {
@@ -396,9 +445,14 @@ export const harnessCatalog: ReadonlyArray<HarnessDefinition> = [
   },
   // Amp's harness runs through the separate `amp-acp` adapter binary, not the
   // `amp` CLI itself — no verified install/update channel for the adapter yet.
-  executableHarness("amp", "Amp", "bolt", ["amp-acp"], "amp-acp"),
+  // amp/auggie: nativeMcp omitted — their MCP config formats are unverified;
+  // adding them later is a pure catalog-data change.
+  executableHarness("amp", "Amp", "bolt", ["amp-acp"], "amp-acp", [], {
+    skills: { globalDir: "~/.config/agents/skills" }
+  }),
   executableHarness("auggie", "Auggie CLI", "a.square", ["auggie"], "auggie", ["--acp"], {
     installMethods: [{ kind: "npm", packageName: "@augmentcode/auggie" }],
+    skills: { globalDir: "~/.augment/skills" },
     update: {
       // No self-update command; auggie's own background auto-updater covers
       // most installs, reinstall covers the rest.
@@ -413,6 +467,16 @@ export const harnessCatalog: ReadonlyArray<HarnessDefinition> = [
   }),
   executableHarness("cline", "Cline", "terminal", ["cline"], "cline", ["--acp"], {
     installMethods: [{ kind: "npm", packageName: "cline" }],
+    // Cline CLI stores MCPs in its data dir and has a real `disabled` flag.
+    // Its skills dir IS the canonical ~/.agents/skills store — never symlink.
+    nativeMcp: {
+      disableField: { enabledWhen: false, name: "disabled" },
+      format: "json",
+      key: "mcpServers",
+      path: "~/.cline/data/settings/cline_mcp_settings.json",
+      writable: true
+    },
+    skills: { globalDir: "~/.agents/skills", readsCanonical: true },
     update: {
       // `cline update` detects npm/pnpm/yarn/bun itself (npm-only distro).
       sources: [
@@ -433,6 +497,13 @@ export const harnessCatalog: ReadonlyArray<HarnessDefinition> = [
     ["--acp"],
     {
       installMethods: [{ kind: "npm", packageName: "@github/copilot" }],
+      nativeMcp: {
+        format: "json",
+        key: "mcpServers",
+        path: "~/.copilot/mcp-config.json",
+        writable: true
+      },
+      skills: { globalDir: "~/.copilot/skills" },
       update: {
         // `copilot update` exists but is closed source; failures surface
         // gracefully as a failed lifecycle state.
@@ -455,6 +526,7 @@ export const harnessCatalog: ReadonlyArray<HarnessDefinition> = [
     ["--acp", "--experimental-skills"],
     {
       installMethods: [{ kind: "npm", packageName: "@qwen-code/qwen-code" }],
+      skills: { globalDir: "~/.qwen/skills" },
       update: {
         // No self-update command — reinstall via npm.
         sources: [
@@ -985,7 +1057,10 @@ function executableHarness(
   /// Lifecycle metadata (installMethods/update) and other optional
   /// definition fields that don't fit the positional shorthand.
   extra: Partial<
-    Pick<HarnessDefinition, "installMethods" | "update" | "installHint" | "fallbackPaths">
+    Pick<
+      HarnessDefinition,
+      "installMethods" | "update" | "installHint" | "fallbackPaths" | "nativeMcp" | "skills"
+    >
   > = {}
 ): HarnessDefinition {
   return {
