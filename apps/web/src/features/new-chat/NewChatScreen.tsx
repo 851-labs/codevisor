@@ -4,7 +4,7 @@ import {
   Code2Icon,
   FolderIcon,
   GitBranchIcon,
-  ListTodoIcon,
+  MapIcon,
   MousePointer2Icon,
   SparklesIcon,
   TargetIcon,
@@ -529,7 +529,7 @@ export function NewChatScreen({ preferredProjectId }: { preferredProjectId?: str
                           : "text-muted-foreground hover:bg-primary/5 hover:text-foreground"
                       )}
                     >
-                      <ListTodoIcon className="size-4" />
+                      <MapIcon className="size-4" />
                     </button>
                   )}
                   {supportsGoals && (

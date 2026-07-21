@@ -8,7 +8,7 @@ import type {
 } from "@codevisor/api"
 import {
   HistoryIcon,
-  ListTodoIcon,
+  MapIcon,
   PauseIcon,
   PencilIcon,
   PlayIcon,
@@ -642,7 +642,7 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
             : "text-muted-foreground hover:bg-primary/5 hover:text-foreground"
         )}
       >
-        <ListTodoIcon className="size-4" />
+        <MapIcon className="size-4" />
       </button>
     ) : null
 

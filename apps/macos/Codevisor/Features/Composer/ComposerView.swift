@@ -328,7 +328,7 @@ struct ComposerCard: View {
         return Button {
             Task { await controller.togglePlanMode() }
         } label: {
-            Image(systemName: "checklist")
+            Image(systemName: "map")
                 .font(.system(size: 12, weight: .semibold))
                 .frame(width: 26, height: 26)
                 .foregroundStyle(isOn ? AnyShapeStyle(theme.windowBackground) : AnyShapeStyle(.secondary))
