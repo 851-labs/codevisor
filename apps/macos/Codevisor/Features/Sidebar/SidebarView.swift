@@ -1192,34 +1192,21 @@ struct SidebarView: View {
         isHovered: Bool,
         onArchive: (() -> Void)? = nil
     ) -> some View {
-        if store?.hasUnreadError(session) == true {
-            EmptyView()
-        } else if organization != .compact || isHovered {
-            // Fixed-size trailing slot so swapping the timestamp for the archive
-            // button doesn't change the row height. Compact rows omit the slot
-            // entirely when no control is visible.
-            Group {
-                if isHovered {
-                    Button {
-                        if let onArchive {
-                            onArchive()
-                        } else {
-                            archiveChat(session)
-                        }
-                    } label: {
-                        Image(systemName: "archivebox")
-                            .font(.caption2)
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.secondary)
-                    .help("Archive chat")
-                    .accessibilityLabel("Archive \(session.title)")
+        if store?.hasUnreadError(session) != true, isHovered {
+            Button {
+                if let onArchive {
+                    onArchive()
                 } else {
-                    Text(RelativeTime.short(from: timestamp(for: session)))
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
+                    archiveChat(session)
                 }
+            } label: {
+                Image(systemName: "archivebox")
+                    .font(.caption2)
             }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+            .help("Archive chat")
+            .accessibilityLabel("Archive \(session.title)")
             .frame(width: 24, height: 14, alignment: .trailing)
         }
     }
