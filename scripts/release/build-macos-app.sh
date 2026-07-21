@@ -25,6 +25,7 @@ Optional environment:
   APP_STORE_CONNECT_ISSUER_ID   App Store Connect issuer id for notarization.
   CODEVISOR_XCODE_SCHEME          Defaults to Codevisor.
   CODEVISOR_BUILD_NUMBER          Defaults to GITHUB_RUN_NUMBER or 1.
+  CODEVISOR_CLEAN_DERIVED_DATA    Set to 1 to discard incremental Xcode state.
   CODEVISOR_DARWIN_ARM64_RUNTIME_ARCHIVE
                                 Optional prebuilt darwin-arm64 server runtime tarball.
   CODEVISOR_DARWIN_X64_RUNTIME_ARCHIVE
@@ -49,13 +50,23 @@ fi
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "$script_dir/../.." && pwd)"
-scheme="${CODEVISOR_XCODE_SCHEME:-Codevisor}"
-build_number="${CODEVISOR_BUILD_NUMBER:-${GITHUB_RUN_NUMBER:-1}}"
 derived_data="$repo_root/dist/release/DerivedData"
 runtime_root="$repo_root/dist/release/work/app-server-runtimes"
 archive_path="$output_dir/Codevisor-macOS.zip"
 node_entitlements="$script_dir/node-entitlements.plist"
 host_target="$("$script_dir/detect-target.sh")"
+release_started_at=$SECONDS
+phase_started_at=$SECONDS
+
+finish_phase() {
+  local label="$1"
+  local elapsed=$((SECONDS - phase_started_at))
+  echo "Release timing: $label completed in ${elapsed}s"
+  if [[ -n "${GITHUB_ACTIONS:-}" ]]; then
+    echo "::notice title=Release timing::$label completed in ${elapsed}s"
+  fi
+  phase_started_at=$SECONDS
+}
 
 runtime_archive_for_target() {
   case "$1" in
@@ -127,80 +138,13 @@ mkdir -p "$output_dir"
 rm -rf "$runtime_root"
 prepare_server_runtime "darwin-arm64"
 prepare_server_runtime "darwin-x64"
+finish_phase "Server build and runtime preparation"
 
-rm -rf "$derived_data"
-xcode_args=(
-  -project "$repo_root/apps/macos/Codevisor.xcodeproj" \
-  -scheme "$scheme" \
-  -configuration Release \
-  -derivedDataPath "$derived_data" \
-  MARKETING_VERSION="$version" \
-  CURRENT_PROJECT_VERSION="$build_number" \
-  CODE_SIGNING_ALLOWED=NO \
-  ARCHS="arm64 x86_64" \
-  ONLY_ACTIVE_ARCH=NO
-)
-
-ghostty_framework="$repo_root/apps/macos/Frameworks/GhosttyKit.xcframework"
-ghostty_library=""
-# Note: `lipo -verify_arch` only accepts a single architecture in newer Xcode
-# toolchains (passing two mis-parses and always fails), so check the slice
-# list from `lipo -archs` instead.
-library_has_arch() {
-  lipo -archs "$1" 2>/dev/null | tr " " "\n" | grep -qx "$2"
-}
-while IFS= read -r candidate; do
-  lipo -info "$candidate" || true
-  if library_has_arch "$candidate" arm64 && library_has_arch "$candidate" x86_64; then
-    ghostty_library="$candidate"
-    break
-  fi
-done < <(find "$ghostty_framework" -name "*.a" -type f -print 2>/dev/null | sort)
-ghostty_slice_dir="$(dirname "$ghostty_library")"
-ghostty_headers="$ghostty_slice_dir/Headers/ghostty.h"
-ghostty_resources="$repo_root/apps/macos/Codevisor/Resources/ghostty-resources.tar.gz"
-if [[ -z "$ghostty_library" || ! -f "$ghostty_library" ]]; then
-  echo "error: GhosttyKit must include a universal macOS static library with arm64 and x86_64 slices." >&2
-  exit 1
+if [[ "${CODEVISOR_CLEAN_DERIVED_DATA:-}" == 1 ]]; then
+  rm -rf "$derived_data"
 fi
-if [[ ! -f "$ghostty_headers" ]]; then
-  echo "error: GhosttyKit headers are required at $ghostty_headers" >&2
-  exit 1
-fi
-if [[ ! -f "$ghostty_resources" ]]; then
-  echo "error: Ghostty runtime resources are required at $ghostty_resources" >&2
-  exit 1
-fi
-echo "Building with GhosttyKit from $ghostty_library"
-
-ghostty_link_flags=(
-  "-force_load"
-  "$ghostty_library"
-  "-lc++"
-  "-framework" "Metal"
-  "-framework" "MetalKit"
-  "-framework" "QuartzCore"
-  "-framework" "CoreText"
-  "-framework" "CoreGraphics"
-  "-framework" "CoreVideo"
-  "-framework" "IOSurface"
-  "-framework" "IOKit"
-  "-framework" "Carbon"
-  "-framework" "AppKit"
-  "-framework" "Foundation"
-  "-framework" "CoreFoundation"
-  "-framework" "Security"
-  "-framework" "ApplicationServices"
-  "-framework" "AudioToolbox"
-  "-framework" "UniformTypeIdentifiers"
-  "-framework" "GameController"
-  "-framework" "Combine"
-)
-
-xcodebuild "${xcode_args[@]}" \
-  OTHER_LDFLAGS="${ghostty_link_flags[*]}" \
-  SWIFT_INCLUDE_PATHS="$ghostty_slice_dir/Headers" \
-  build
+"$script_dir/build-macos-xcode.sh" "$version" "$derived_data"
+finish_phase "Universal Xcode build"
 
 app_path="$derived_data/Build/Products/Release/Codevisor.app"
 if [[ ! -d "$app_path" ]]; then
@@ -281,13 +225,14 @@ if [[ "$host_target" == "darwin-arm64" && -x "$server_resources/darwin-x64/bin/n
     echo "Rosetta unavailable; skipping Intel runtime smoke" >&2
   fi
 fi
+finish_phase "Bundle signing and runtime smoke tests"
 
 rm -f "$archive_path"
 ditto --norsrc -c -k --keepParent "$app_path" "$archive_path"
 
-# Notarization runs as two concurrent submissions (zip + DMG) instead of two
-# serial `submit --wait` calls: submit both, then wait on both. Apple's queue
-# time dominates here, so overlapping the waits removes minutes per release.
+# Artifact uploads to Apple's notary service run concurrently, and all
+# submissions are created before waiting. Apple's processing queue dominates
+# this stage, so starting every scan as early as possible reduces wall time.
 notary_args=()
 if [[ -n "${APP_STORE_CONNECT_API_KEY_PATH:-}" && -n "${APP_STORE_CONNECT_API_KEY_ID:-}" && -n "${APP_STORE_CONNECT_ISSUER_ID:-}" ]]; then
   notary_args=(
@@ -318,6 +263,13 @@ submit_for_notarization() {
   printf '%s' "$id"
 }
 
+submit_for_notarization_to_file() {
+  local path="$1" id_file="$2" label="$3" started_at=$SECONDS id
+  id="$(submit_for_notarization "$path")"
+  printf '%s' "$id" > "$id_file"
+  echo "Notarization submitted for $label in $((SECONDS - started_at))s ($id)"
+}
+
 wait_for_notarization() {
   local id="$1" label="$2" response status
   response="$(xcrun notarytool wait "$id" "${notary_args[@]}" --output-format json)" || true
@@ -332,11 +284,16 @@ wait_for_notarization() {
 
 # The universal zip stays published as a transitional artifact: apps from
 # before the architecture split hardcode this name in their update checker.
-# Submitted first (it is the largest upload) so Apple scans it while the
-# per-architecture variants are being packaged.
+# Its upload starts first (it is the largest) and overlaps per-architecture
+# packaging instead of blocking that work.
 universal_zip_submission=""
+notary_work="$repo_root/dist/release/work/notary-submissions"
+notary_pids=()
 if [[ ${#notary_args[@]} -gt 0 ]]; then
-  universal_zip_submission="$(submit_for_notarization "$archive_path")"
+  rm -rf "$notary_work"
+  mkdir -p "$notary_work"
+  submit_for_notarization_to_file "$archive_path" "$notary_work/universal-zip.id" "Codevisor-macOS.zip" &
+  notary_pids+=("$!")
 fi
 
 # Builds a signed DMG for direct download from www.codevisor.dev (installs
@@ -363,12 +320,12 @@ make_dmg() {
 # (they are copied unmodified); only the outer bundle re-signs after thinning.
 split_work="$repo_root/dist/release/work/split"
 rm -rf "$split_work"
-for entry in "arm64:arm64:darwin-x64" "x86_64:x64:darwin-arm64"; do
-  lipo_arch="${entry%%:*}"
-  rest="${entry#*:}"
-  suffix="${rest%%:*}"
-  foreign_target="${rest#*:}"
-  variant_app="$split_work/$suffix/Codevisor.app"
+mkdir -p "$split_work"
+
+make_variant() {
+  local lipo_arch="$1" suffix="$2" foreign_target="$3"
+  local variant_app="$split_work/$suffix/Codevisor.app"
+  local binary archs
   mkdir -p "$split_work/$suffix"
   ditto "$app_path" "$variant_app"
 
@@ -393,13 +350,54 @@ for entry in "arm64:arm64:darwin-x64" "x86_64:x64:darwin-arm64"; do
 
   ditto --norsrc -c -k --keepParent "$variant_app" "$output_dir/Codevisor-macOS-$suffix.zip"
   make_dmg "$variant_app" "$output_dir/Codevisor-$suffix.dmg" "$suffix"
-done
+}
+
+# The variants touch disjoint directories and outputs, so copy, thinning,
+# signing, ZIP compression, and DMG creation can all run in parallel.
+make_variant "arm64" "arm64" "darwin-x64" &
+arm_variant_pid=$!
+make_variant "x86_64" "x64" "darwin-arm64" &
+x64_variant_pid=$!
+variant_failed=0
+if ! wait "$arm_variant_pid"; then
+  variant_failed=1
+fi
+if ! wait "$x64_variant_pid"; then
+  variant_failed=1
+fi
+if [[ "$variant_failed" != 0 ]]; then
+  echo "error: one or more architecture variants failed to package" >&2
+  exit 1
+fi
+finish_phase "Universal and per-architecture artifact packaging"
 
 if [[ ${#notary_args[@]} -gt 0 ]]; then
-  arm_zip_submission="$(submit_for_notarization "$output_dir/Codevisor-macOS-arm64.zip")"
-  arm_dmg_submission="$(submit_for_notarization "$output_dir/Codevisor-arm64.dmg")"
-  x64_zip_submission="$(submit_for_notarization "$output_dir/Codevisor-macOS-x64.zip")"
-  x64_dmg_submission="$(submit_for_notarization "$output_dir/Codevisor-x64.dmg")"
+  submit_for_notarization_to_file "$output_dir/Codevisor-macOS-arm64.zip" "$notary_work/arm-zip.id" "Codevisor-macOS-arm64.zip" &
+  notary_pids+=("$!")
+  submit_for_notarization_to_file "$output_dir/Codevisor-arm64.dmg" "$notary_work/arm-dmg.id" "Codevisor-arm64.dmg" &
+  notary_pids+=("$!")
+  submit_for_notarization_to_file "$output_dir/Codevisor-macOS-x64.zip" "$notary_work/x64-zip.id" "Codevisor-macOS-x64.zip" &
+  notary_pids+=("$!")
+  submit_for_notarization_to_file "$output_dir/Codevisor-x64.dmg" "$notary_work/x64-dmg.id" "Codevisor-x64.dmg" &
+  notary_pids+=("$!")
+
+  submission_failed=0
+  for submission_pid in "${notary_pids[@]}"; do
+    if ! wait "$submission_pid"; then
+      submission_failed=1
+    fi
+  done
+  if [[ "$submission_failed" != 0 ]]; then
+    echo "error: one or more notarization submissions failed" >&2
+    exit 1
+  fi
+
+  universal_zip_submission="$(<"$notary_work/universal-zip.id")"
+  arm_zip_submission="$(<"$notary_work/arm-zip.id")"
+  arm_dmg_submission="$(<"$notary_work/arm-dmg.id")"
+  x64_zip_submission="$(<"$notary_work/x64-zip.id")"
+  x64_dmg_submission="$(<"$notary_work/x64-dmg.id")"
+  finish_phase "Notarization submissions"
 
   wait_for_notarization "$universal_zip_submission" "Codevisor-macOS.zip"
   xcrun stapler staple "$app_path"
@@ -420,6 +418,7 @@ if [[ ${#notary_args[@]} -gt 0 ]]; then
   xcrun stapler staple "$output_dir/Codevisor-arm64.dmg"
   wait_for_notarization "$x64_dmg_submission" "Codevisor-x64.dmg"
   xcrun stapler staple "$output_dir/Codevisor-x64.dmg"
+  finish_phase "Notarization waits, stapling, and final ZIPs"
 fi
 
 for artifact in \
@@ -430,4 +429,6 @@ for artifact in \
   "$output_dir/Codevisor-x64.dmg"; do
   shasum -a 256 "$artifact" | awk '{print $1}' > "$artifact.sha256"
 done
+finish_phase "Artifact checksums"
+echo "Release timing: macOS app archive completed in $((SECONDS - release_started_at))s total"
 echo "$archive_path"
