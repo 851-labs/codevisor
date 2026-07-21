@@ -3,15 +3,16 @@ set -euo pipefail
 
 usage() {
   cat >&2 <<'EOF'
-usage: scripts/release/build-macos-xcode.sh <version> <derived-data-dir>
+usage: scripts/release/build-macos-xcode.sh <derived-data-dir>
 
 Builds the unsigned universal Codevisor.app into the supplied DerivedData
 directory. Existing DerivedData is intentionally preserved so CI can restore
-incremental Xcode and Swift package build products.
+incremental Xcode and Swift package build products. Stable placeholder bundle
+versions keep warmed and release builds identical; build-macos-app.sh stamps
+the real release metadata before signing.
 
 Optional environment:
   CODEVISOR_XCODE_SCHEME  Defaults to Codevisor.
-  CODEVISOR_BUILD_NUMBER Defaults to GITHUB_RUN_NUMBER or 1.
 EOF
 }
 
@@ -20,9 +21,8 @@ if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
   exit 0
 fi
 
-version="${1:-}"
-derived_data="${2:-}"
-if [[ -z "$version" || -z "$derived_data" ]]; then
+derived_data="${1:-}"
+if [[ -z "$derived_data" ]]; then
   usage
   exit 1
 fi
@@ -30,15 +30,19 @@ fi
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "$script_dir/../.." && pwd)"
 scheme="${CODEVISOR_XCODE_SCHEME:-Codevisor}"
-build_number="${CODEVISOR_BUILD_NUMBER:-${GITHUB_RUN_NUMBER:-1}}"
+# These values are deliberately constant. Changing either value makes Xcode
+# rebuild the app target even after an exact DerivedData cache restore. The
+# shipping values are written into Info.plist before the bundle is signed.
+placeholder_version="0.0.0"
+placeholder_build_number="1"
 
 xcode_args=(
   -project "$repo_root/apps/macos/Codevisor.xcodeproj"
   -scheme "$scheme"
   -configuration Release
   -derivedDataPath "$derived_data"
-  MARKETING_VERSION="$version"
-  CURRENT_PROJECT_VERSION="$build_number"
+  MARKETING_VERSION="$placeholder_version"
+  CURRENT_PROJECT_VERSION="$placeholder_build_number"
   CODE_SIGNING_ALLOWED=NO
   ARCHS="arm64 x86_64"
   ONLY_ACTIVE_ARCH=NO

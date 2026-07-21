@@ -71,9 +71,7 @@ jobs:
             codevisor-xcode-${{ runner.arch }}-${{ steps.xcode-cache-version.outputs.value }}-
       - name: Warm Xcode DerivedData
         if: steps.xcode-cache.outputs.cache-hit != 'true'
-        env:
-          CODEVISOR_BUILD_NUMBER: "1"
-        run: scripts/release/build-macos-xcode.sh 0.0.0 dist/release/DerivedData
+        run: scripts/release/build-macos-xcode.sh dist/release/DerivedData
       - name: Save Xcode DerivedData cache
         if: steps.xcode-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v6

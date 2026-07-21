@@ -30,6 +30,10 @@ Optional environment:
                                 Optional prebuilt darwin-arm64 server runtime tarball.
   CODEVISOR_DARWIN_X64_RUNTIME_ARCHIVE
                                 Optional prebuilt darwin-x64 server runtime tarball.
+  CODEVISOR_RUNTIME_ARCHIVE_WAIT_SECONDS
+                                Seconds to wait for a prebuilt runtime archive.
+  CODEVISOR_RUNTIME_ARCHIVE_FAILURE_MARKER
+                                Optional file signaling an asynchronous download failure.
   CODEVISOR_REQUIRE_UNIVERSAL_MACOS_APP
                                 Set to 1 to require both macOS server runtimes.
 EOF
@@ -55,6 +59,7 @@ runtime_root="$repo_root/dist/release/work/app-server-runtimes"
 archive_path="$output_dir/Codevisor-macOS.zip"
 node_entitlements="$script_dir/node-entitlements.plist"
 host_target="$("$script_dir/detect-target.sh")"
+build_number="${CODEVISOR_BUILD_NUMBER:-${GITHUB_RUN_NUMBER:-1}}"
 release_started_at=$SECONDS
 phase_started_at=$SECONDS
 
@@ -107,6 +112,22 @@ prepare_server_runtime() {
   if [[ "$target" == "$host_target" ]]; then
     "$script_dir/build-server-runtime.sh" "$version" "$destination" "$target"
   elif [[ -n "$archive" ]]; then
+    local wait_seconds="${CODEVISOR_RUNTIME_ARCHIVE_WAIT_SECONDS:-0}"
+    local failure_marker="${CODEVISOR_RUNTIME_ARCHIVE_FAILURE_MARKER:-}"
+    local deadline
+    if [[ "$wait_seconds" == *[!0-9]* ]]; then
+      echo "error: CODEVISOR_RUNTIME_ARCHIVE_WAIT_SECONDS must be a non-negative integer" >&2
+      exit 1
+    fi
+    deadline=$((SECONDS + wait_seconds))
+    while [[ ! -f "$archive" && $SECONDS -lt $deadline ]]; do
+      if [[ -n "$failure_marker" && -f "$failure_marker" ]]; then
+        echo "error: asynchronous server runtime download failed for $target" >&2
+        exit 1
+      fi
+      echo "Waiting for $target server runtime archive..."
+      sleep 5
+    done
     if [[ ! -f "$archive" ]]; then
       echo "error: server runtime archive for $target does not exist: $archive" >&2
       exit 1
@@ -137,14 +158,19 @@ mkdir -p "$output_dir"
 (cd "$repo_root" && bun run build)
 rm -rf "$runtime_root"
 prepare_server_runtime "darwin-arm64"
-prepare_server_runtime "darwin-x64"
-finish_phase "Server build and runtime preparation"
+finish_phase "Local server build and runtime preparation"
 
 if [[ "${CODEVISOR_CLEAN_DERIVED_DATA:-}" == 1 ]]; then
   rm -rf "$derived_data"
 fi
-"$script_dir/build-macos-xcode.sh" "$version" "$derived_data"
+"$script_dir/build-macos-xcode.sh" "$derived_data"
 finish_phase "Universal Xcode build"
+
+# The Intel runtime is produced on a native x86_64 runner. CI starts that
+# artifact download while this runner prepares its local runtime and Xcode
+# product, then we join it only when both runtimes are needed for bundling.
+prepare_server_runtime "darwin-x64"
+finish_phase "Intel runtime handoff"
 
 app_path="$derived_data/Build/Products/Release/Codevisor.app"
 if [[ ! -d "$app_path" ]]; then
@@ -153,6 +179,21 @@ if [[ ! -d "$app_path" ]]; then
 fi
 
 plist_path="$app_path/Contents/Info.plist"
+# Xcode builds with stable placeholder metadata so a default-branch warm build
+# can be reused by a tag build of the same commit. Stamp the shipping metadata
+# into the unsigned product; changing it after signing would invalidate the
+# bundle signature and break the in-app updater's signature check.
+/usr/bin/plutil -replace CFBundleShortVersionString -string "$version" "$plist_path"
+/usr/bin/plutil -replace CFBundleVersion -string "$build_number" "$plist_path"
+stamped_version="$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$plist_path")"
+stamped_build="$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$plist_path")"
+if [[ "$stamped_version" != "$version" || "$stamped_build" != "$build_number" ]]; then
+  echo "error: failed to stamp release metadata into $plist_path" >&2
+  echo "expected version/build $version/$build_number, found $stamped_version/$stamped_build" >&2
+  exit 1
+fi
+echo "Stamped Codevisor.app version $stamped_version (build $stamped_build)"
+
 # Xcode's Icon Composer pipeline owns app icon generation. Keep the compiled
 # asset catalog in the bundle so LaunchServices resolves the .icon file output.
 # CFBundleIconFile is legacy and can be omitted by Xcode's asset catalog path.

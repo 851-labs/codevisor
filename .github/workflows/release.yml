@@ -241,29 +241,44 @@ jobs:
           echo "$APP_STORE_CONNECT_API_KEY_BASE64" | base64 --decode > "$api_key_path"
           chmod 600 "$api_key_path"
           echo "APP_STORE_CONNECT_API_KEY_PATH=$api_key_path" >> "$GITHUB_ENV"
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
-      - name: Download Intel macOS server runtime
+      - name: Build macOS app archive
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          for attempt in {1..45}; do
-            if gh run download "$GITHUB_RUN_ID" \
-              --name codevisor-macos-x64-runtime \
-              --dir dist/release; then
-              exit 0
-            fi
-            echo "Intel macOS runtime artifact is not ready yet; retrying in 20s ($attempt/45)."
-            sleep 20
-          done
-          echo "error: timed out waiting for codevisor-macos-x64-runtime artifact." >&2
-          exit 1
-      - name: Build macOS app archive
-        env:
           CODEVISOR_DARWIN_X64_RUNTIME_ARCHIVE: dist/release/codevisor-app-server-runtime-darwin-x64.tar.gz
+          CODEVISOR_RUNTIME_ARCHIVE_WAIT_SECONDS: "900"
           CODEVISOR_REQUIRE_UNIVERSAL_MACOS_APP: "1"
-        run: scripts/release/build-macos-app.sh "${{ needs.metadata.outputs.version }}" dist/release
+        run: |
+          runtime_archive="$CODEVISOR_DARWIN_X64_RUNTIME_ARCHIVE"
+          runtime_download_dir="$(mktemp -d "$RUNNER_TEMP/codevisor-x64-runtime.XXXXXX")"
+          failure_marker="$RUNNER_TEMP/codevisor-x64-runtime-download-failed"
+          rm -f "$failure_marker" "$runtime_archive.part"
+          mkdir -p "$(dirname "$runtime_archive")"
+
+          download_intel_runtime() {
+            for attempt in {1..90}; do
+              if gh run download "$GITHUB_RUN_ID" \
+                --name codevisor-macos-x64-runtime \
+                --dir "$runtime_download_dir"; then
+                cp "$runtime_download_dir/codevisor-app-server-runtime-darwin-x64.tar.gz" "$runtime_archive.part"
+                mv "$runtime_archive.part" "$runtime_archive"
+                return 0
+              fi
+              echo "Intel macOS runtime artifact is not ready yet; retrying in 10s ($attempt/90)."
+              sleep 10
+            done
+            echo "error: timed out waiting for codevisor-macos-x64-runtime artifact." >&2
+            return 1
+          }
+
+          (download_intel_runtime || { touch "$failure_marker"; exit 1; }) &
+          download_pid=$!
+          trap 'kill "$download_pid" 2>/dev/null || true' EXIT
+          bun install --frozen-lockfile
+          CODEVISOR_RUNTIME_ARCHIVE_FAILURE_MARKER="$failure_marker" \
+            scripts/release/build-macos-app.sh "${{ needs.metadata.outputs.version }}" dist/release
+          wait "$download_pid"
+          trap - EXIT
       - name: Build macOS server archive
         run: scripts/release/build-server-archive.sh "${{ needs.metadata.outputs.version }}" dist/release darwin-arm64 dist/release/work/app-server-runtimes/darwin-arm64
       - uses: actions/upload-artifact@v7
