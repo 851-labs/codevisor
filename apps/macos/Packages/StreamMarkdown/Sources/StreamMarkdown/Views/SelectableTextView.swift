@@ -282,7 +282,8 @@ public final class SelectableTextKitView: TranscriptSelectableTextView {
 @MainActor
 public class TranscriptSelectableTextView: NSTextView {
     private var mouseSelectionAnchor: Int?
-    private var selectionBeforeMouseDown: NSRange?
+    private var selectionRepaintTracker = SelectionRepaintTracker()
+    private var isTrackingMouseSelection = false
     private var linkHoverTrackingArea: NSTrackingArea?
     private(set) var hoveredLinkRange: NSRange?
 
@@ -317,7 +318,8 @@ public class TranscriptSelectableTextView: NSTextView {
     }
 
     public override func mouseDown(with event: NSEvent) {
-        selectionBeforeMouseDown = selectedRange()
+        selectionRepaintTracker.begin(with: selectedRange())
+        isTrackingMouseSelection = true
         if event.clickCount == 1,
             event.modifierFlags.intersection([.shift, .command, .option]).isEmpty
         {
@@ -350,6 +352,29 @@ public class TranscriptSelectableTextView: NSTextView {
         correctVisualLineEndSelection(at: convert(event.locationInWindow, from: nil))
         finishMouseSelectionRepaint()
         mouseSelectionAnchor = nil
+    }
+
+    public override func setSelectedRange(
+        _ charRange: NSRange,
+        affinity: NSSelectionAffinity,
+        stillSelecting stillSelectingFlag: Bool
+    ) {
+        let removedRanges = isTrackingMouseSelection
+            ? selectionRepaintTracker.record(charRange)
+            : []
+        super.setSelectedRange(
+            charRange,
+            affinity: affinity,
+            stillSelecting: stillSelectingFlag
+        )
+
+        // NSTextView updates the selection repeatedly inside its mouse-down
+        // tracking loop. Clean up each portion as soon as it leaves the live
+        // selection; waiting for mouse-up makes the stale antialiased edge
+        // pixels visible for the rest of the gesture.
+        for range in removedRanges {
+            repaintRemovedSelection(range, immediately: true)
+        }
     }
 
     public override func resignFirstResponder() -> Bool {
@@ -443,12 +468,11 @@ public class TranscriptSelectableTextView: NSTextView {
     }
 
     private func finishMouseSelectionRepaint() {
-        defer { selectionBeforeMouseDown = nil }
-        guard let previous = selectionBeforeMouseDown,
-            previous.length > 0,
-            previous != selectedRange()
-        else { return }
-        repaintRemovedSelection(previous)
+        isTrackingMouseSelection = false
+        guard let dirtyRange = selectionRepaintTracker.finish(current: selectedRange()) else {
+            return
+        }
+        repaintRemovedSelection(dirtyRange)
     }
 
     /// TextKit invalidates the exact selection geometry when a range changes.
@@ -456,7 +480,10 @@ public class TranscriptSelectableTextView: NSTextView {
     /// land just outside those rectangles and survive as one-pixel blue lines.
     /// Repaint only the old selection rects with a small margin, once after
     /// AppKit has finished updating its temporary selection attributes.
-    private func repaintRemovedSelection(_ characterRange: NSRange) {
+    private func repaintRemovedSelection(
+        _ characterRange: NSRange,
+        immediately: Bool = false
+    ) {
         guard let layoutManager, let textContainer,
             characterRange.length > 0
         else { return }
@@ -478,12 +505,19 @@ public class TranscriptSelectableTextView: NSTextView {
             )
         }
 
-        DispatchQueue.main.async { [weak self] in
+        let displayDirtyRects: @MainActor @Sendable () -> Void = { [weak self] in
             guard let self else { return }
             for rect in dirtyRects {
                 self.setNeedsDisplay(rect)
                 self.layer?.setNeedsDisplay(rect)
             }
+        }
+
+        if immediately {
+            displayDirtyRects()
+            displayIfNeeded()
+        } else {
+            DispatchQueue.main.async(execute: displayDirtyRects)
         }
     }
 
@@ -524,6 +558,60 @@ public class TranscriptSelectableTextView: NSTextView {
             return lineStart
         }
         return nil
+    }
+}
+
+/// Tracks the full span painted by one mouse-selection gesture. The range can
+/// grow across the transcript and then shrink all the way back to its anchor,
+/// so comparing only the selection before and after mouseDown misses every
+/// rectangle that was selected in between.
+struct SelectionRepaintTracker {
+    private var paintedRange: NSRange?
+    private var currentRange = NSRange(location: 0, length: 0)
+
+    mutating func begin(with range: NSRange) {
+        currentRange = range
+        paintedRange = range.length > 0 ? range : nil
+    }
+
+    mutating func record(_ range: NSRange) -> [NSRange] {
+        let removedRanges = currentRange.removingIntersection(with: range)
+        currentRange = range
+        if range.length > 0 {
+            paintedRange = paintedRange.map { NSUnionRange($0, range) } ?? range
+        }
+        return removedRanges
+    }
+
+    mutating func finish(current: NSRange) -> NSRange? {
+        defer {
+            paintedRange = nil
+            currentRange = NSRange(location: 0, length: 0)
+        }
+        guard let paintedRange, paintedRange != current else { return nil }
+        return paintedRange
+    }
+}
+
+extension NSRange {
+    /// Returns the portions of this range that are not covered by `other`.
+    /// Selection ranges are contiguous, so removing their intersection can
+    /// yield at most one prefix and one suffix.
+    fileprivate func removingIntersection(with other: NSRange) -> [NSRange] {
+        guard length > 0 else { return [] }
+        let intersection = NSIntersectionRange(self, other)
+        guard intersection.length > 0 else { return [self] }
+
+        var ranges: [NSRange] = []
+        if location < intersection.location {
+            ranges.append(NSRange(location: location, length: intersection.location - location))
+        }
+        let intersectionEnd = NSMaxRange(intersection)
+        let rangeEnd = NSMaxRange(self)
+        if intersectionEnd < rangeEnd {
+            ranges.append(NSRange(location: intersectionEnd, length: rangeEnd - intersectionEnd))
+        }
+        return ranges
     }
 }
 

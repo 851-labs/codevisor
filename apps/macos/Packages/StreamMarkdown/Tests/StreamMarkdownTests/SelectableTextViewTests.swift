@@ -150,6 +150,45 @@ struct SelectableTextViewTests {
         #expect(view.selectedRange() == NSRange(location: 12, length: 0))
     }
 
+    @Test("Dragging out and back repaints the entire traversed selection")
+    func outAndBackSelectionRepaintRange() {
+        var tracker = SelectionRepaintTracker()
+        tracker.begin(with: NSRange(location: 5, length: 0))
+        #expect(tracker.record(NSRange(location: 5, length: 40)).isEmpty)
+        #expect(tracker.record(NSRange(location: 5, length: 90)).isEmpty)
+        #expect(
+            tracker.record(NSRange(location: 5, length: 25))
+                == [NSRange(location: 30, length: 65)]
+        )
+        #expect(
+            tracker.record(NSRange(location: 5, length: 0))
+                == [NSRange(location: 5, length: 25)]
+        )
+
+        #expect(
+            tracker.finish(current: NSRange(location: 5, length: 0))
+                == NSRange(location: 5, length: 90)
+        )
+    }
+
+    @Test("Live selection cleanup handles movement through both endpoints")
+    func liveSelectionRemovedRanges() {
+        var tracker = SelectionRepaintTracker()
+        tracker.begin(with: NSRange(location: 20, length: 30))
+
+        #expect(
+            tracker.record(NSRange(location: 10, length: 30))
+                == [NSRange(location: 40, length: 10)]
+        )
+        #expect(
+            tracker.record(NSRange(location: 25, length: 10))
+                == [
+                    NSRange(location: 10, length: 15),
+                    NSRange(location: 35, length: 5),
+                ]
+        )
+    }
+
     @Test("Past the visual end of a mixed-direction line maps to its logical end")
     func mixedDirectionLineEndHitTesting() {
         let rendered = MarkdownTextRunRenderer.attributedString(
