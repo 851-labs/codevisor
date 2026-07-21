@@ -26,6 +26,7 @@ import type {
 } from "@modelcontextprotocol/sdk/shared/auth.js"
 import {
   type CallToolResult,
+  isInitializeRequest,
   type JSONRPCMessage,
   JSONRPCMessageSchema,
   type Tool
@@ -78,13 +79,24 @@ interface SandboxExecuteResult {
   readonly logs?: ReadonlyArray<string>
 }
 
-interface GatewayRuntime {
-  readonly sessionId: string
-  readonly projectId?: string | undefined
+/// One live MCP connection to a gateway. Harnesses may connect more than
+/// once per Codevisor session: codex 0.145+ tears down and re-initializes
+/// its MCP connections on mid-session events (account changes, plugin
+/// changes), so a gateway must accept fresh `initialize` handshakes for as
+/// long as the session lives — a single stateful transport (the previous
+/// design) rejects the redial and the harness silently drops every tool.
+interface GatewayConnection {
   readonly server: McpSdkServer
   readonly transport: StreamableHTTPServerTransport
   readonly searchTool: RegisteredTool
   readonly runCodeTool: RegisteredTool
+}
+
+interface GatewayRuntime {
+  readonly sessionId: string
+  readonly projectId?: string | undefined
+  /// Live connections keyed by MCP session id (assigned at initialize).
+  readonly connections: Map<string, GatewayConnection>
   inventory: string
 }
 
@@ -132,6 +144,18 @@ export interface McpManagerConfig {
 }
 
 const run = <A>(effect: Effect.Effect<A, unknown>): Promise<A> => Effect.runPromise(effect)
+
+/// Buffer and parse a JSON request body. The parsed value is handed to the
+/// SDK transport (which accepts pre-parsed bodies), so consuming the stream
+/// here is safe.
+const readJsonBody = async (request: IncomingMessage): Promise<unknown> => {
+  const chunks: Array<Buffer> = []
+  // Without setEncoding, node HTTP request streams always yield Buffers.
+  for await (const chunk of request) {
+    chunks.push(chunk as Buffer)
+  }
+  return JSON.parse(Buffer.concat(chunks).toString("utf8")) as unknown
+}
 
 const errorMessage = (cause: unknown): string => {
   /* v8 ignore next -- SDK, database, HTTP, and runtime failures use Error instances. */
@@ -739,8 +763,10 @@ export const makeMcpManager = (config: McpManagerConfig): McpManager => {
         const inventory = await integrationInventory(gateway.projectId, gateway.sessionId)
         if (inventory === gateway.inventory) return
         gateway.inventory = inventory
-        gateway.searchTool.update({ description: searchToolDescription(inventory) })
-        gateway.runCodeTool.update({ description: runCodeToolDescription(inventory) })
+        for (const connection of gateway.connections.values()) {
+          connection.searchTool.update({ description: searchToolDescription(inventory) })
+          connection.runCodeTool.update({ description: runCodeToolDescription(inventory) })
+        }
       })
     )
   }
@@ -925,8 +951,21 @@ export const makeMcpManager = (config: McpManagerConfig): McpManager => {
     return definition
   }
 
-  const gatewayRuntime = async (sessionId: string, projectId?: string) => {
+  const gatewayRuntime = async (sessionId: string, projectId?: string): Promise<GatewayRuntime> => {
     const inventory = await integrationInventory(projectId, sessionId)
+    return {
+      sessionId,
+      ...(projectId === undefined ? {} : { projectId }),
+      connections: new Map(),
+      inventory
+    }
+  }
+
+  /// Build one MCP server + transport pair for a fresh `initialize`. The
+  /// connection registers itself in the runtime once the SDK assigns its MCP
+  /// session id, and removes itself when the transport closes.
+  const createGatewayConnection = async (runtime: GatewayRuntime): Promise<GatewayConnection> => {
+    const { inventory, projectId, sessionId } = runtime
     const sdkServer = new McpSdkServer(
       { name: "Codevisor Tool Gateway", version: "0.1.0" },
       {
@@ -1078,17 +1117,24 @@ export const makeMcpManager = (config: McpManagerConfig): McpManager => {
         }
       }
     )
-    const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: randomUUID })
-    await sdkServer.connect(transport as unknown as Transport)
-    return {
-      sessionId,
-      ...(projectId === undefined ? {} : { projectId }),
+    const transport = new StreamableHTTPServerTransport({
+      sessionIdGenerator: randomUUID,
+      onsessioninitialized: (mcpSessionId) => {
+        runtime.connections.set(mcpSessionId, connection)
+      }
+    })
+    transport.onclose = () => {
+      /* v8 ignore next -- transports without a completed initialize never register. */
+      if (transport.sessionId !== undefined) runtime.connections.delete(transport.sessionId)
+    }
+    const connection: GatewayConnection = {
       server: sdkServer,
       transport,
       searchTool,
-      runCodeTool,
-      inventory
+      runCodeTool
     }
+    await sdkServer.connect(transport as unknown as Transport)
+    return connection
   }
 
   const manager: McpManager = {
@@ -1385,17 +1431,65 @@ export const makeMcpManager = (config: McpManagerConfig): McpManager => {
         response.end(JSON.stringify({ error: "Codevisor tool gateway session not found" }))
         return
       }
-      await runtime.transport.handleRequest(request, response)
+
+      // Route follow-up requests to their existing MCP connection. (Node
+      // folds duplicate non-set-cookie headers into one string, so the
+      // header is a string or absent — never an array.)
+      const sessionHeader = request.headers["mcp-session-id"]
+      const mcpSessionId = typeof sessionHeader === "string" ? sessionHeader : undefined
+      const existing =
+        mcpSessionId === undefined ? undefined : runtime.connections.get(mcpSessionId)
+      if (existing !== undefined) {
+        await existing.transport.handleRequest(request, response)
+        return
+      }
+      if (mcpSessionId !== undefined) {
+        // A session id we no longer know (e.g. a connection from before a
+        // server restart). 404 tells spec-following clients to re-initialize.
+        response.writeHead(404, { "content-type": "application/json" })
+        response.end(JSON.stringify({ error: "Unknown MCP session — re-initialize" }))
+        return
+      }
+
+      // No session id: only a fresh `initialize` may open a new connection.
+      // Harnesses re-initialize mid-session (codex 0.145+ rebuilds its MCP
+      // connections on account/plugin changes), so every handshake gets its
+      // own server + transport pair for the lifetime of that MCP session.
+      if (request.method !== "POST") {
+        response.writeHead(405, { "content-type": "application/json" })
+        response.end(JSON.stringify({ error: "Method not allowed without an MCP session" }))
+        return
+      }
+      let body: unknown
+      try {
+        body = await readJsonBody(request)
+      } catch {
+        response.writeHead(400, { "content-type": "application/json" })
+        response.end(JSON.stringify({ error: "Invalid JSON body" }))
+        return
+      }
+      const isInitialize = Array.isArray(body)
+        ? body.some((entry) => isInitializeRequest(entry))
+        : isInitializeRequest(body)
+      if (!isInitialize) {
+        response.writeHead(400, { "content-type": "application/json" })
+        response.end(JSON.stringify({ error: "Send an initialize request to open an MCP session" }))
+        return
+      }
+      const connection = await createGatewayConnection(runtime)
+      await connection.transport.handleRequest(request, response, body)
     },
     close: async () => {
       /* v8 ignore next -- timers only exist for the live OAuth refresh adapter. */
       for (const timer of refreshTimers.values()) clearTimeout(timer)
       await Promise.all([...connections.keys()].map(closeConnection))
       await Promise.all(
-        [...gateways.values()].map(async (gateway) => {
-          /* v8 ignore next -- best-effort cleanup; normal gateway shutdown resolves cleanly. */
-          await gateway.server.close().catch(() => undefined)
-        })
+        [...gateways.values()].flatMap((gateway) =>
+          [...gateway.connections.values()].map(async (connection) => {
+            /* v8 ignore next -- best-effort cleanup; normal gateway shutdown resolves cleanly. */
+            await connection.server.close().catch(() => undefined)
+          })
+        )
       )
       gateways.clear()
       sessionGatewayIds.clear()

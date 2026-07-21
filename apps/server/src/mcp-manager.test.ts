@@ -420,6 +420,131 @@ describe("MCP manager", () => {
     expect(await manager.list()).toEqual([])
   })
 
+  it("accepts harness redials: fresh initialize handshakes reuse the same gateway", async () => {
+    // codex 0.145+ tears down and re-initializes its MCP connections on
+    // mid-session events. The gateway must accept the redial instead of
+    // rejecting the second initialize (the pre-fix behavior, which made the
+    // harness silently drop every gateway tool).
+    const upstream = await workingUpstream()
+    const { db, manager } = await testManager()
+    const gatewayBase = await listen(createServer(manager.handleGatewayRequest))
+    manager.setBaseUrl(gatewayBase)
+    const created = await manager.create({
+      authType: "none",
+      enabled: true,
+      name: "Redial Tracker",
+      transport: "http",
+      url: upstream.url
+    })
+    const project = await run(db.createProject({ folderPath: "/tmp/mcp-manager-redial" }))
+    const session = await run(
+      db.createSession({ harnessId: "codex", projectId: project.id, title: "Redial" })
+    )
+    const issued = await manager.issueGateway(session.id, project.id)
+    const authorization = { authorization: `Bearer ${issued.bearerToken}` }
+
+    const connect = async () => {
+      const transport = new StreamableHTTPClientTransport(new URL(issued.url), {
+        requestInit: { headers: authorization }
+      })
+      const client = new Client({ name: "redial-test", version: "1" })
+      await client.connect(transport as unknown as Transport)
+      return { client, transport }
+    }
+
+    const first = await connect()
+    try {
+      expect(
+        JSON.stringify(
+          (await first.client.callTool({ name: "search", arguments: { query: "project" } })).content
+        )
+      ).toContain("lookup_project")
+
+      // The redial: a brand-new initialize against the same gateway URL.
+      const second = await connect()
+      try {
+        expect(
+          JSON.stringify(
+            (await second.client.callTool({ name: "search", arguments: { query: "issues" } }))
+              .content
+          )
+        ).toContain("list_issues")
+        // The first connection keeps working alongside the second.
+        expect(
+          (await first.client.callTool({ name: "search", arguments: { query: "project" } })).isError
+        ).not.toBe(true)
+
+        // Terminating one MCP session leaves the other connected and makes
+        // the terminated session id unknown to the gateway.
+        const secondSessionId = second.transport.sessionId
+        await second.transport.terminateSession()
+        expect(
+          await fetch(issued.url, {
+            method: "POST",
+            headers: {
+              ...authorization,
+              "content-type": "application/json",
+              "mcp-session-id": secondSessionId ?? ""
+            },
+            body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" })
+          }).then((response) => response.status)
+        ).toBe(404)
+        expect(
+          (await first.client.callTool({ name: "search", arguments: { query: "project" } })).isError
+        ).not.toBe(true)
+      } finally {
+        await second.client.close().catch(() => undefined)
+      }
+
+      // Session-less requests that are not an initialize are rejected.
+      expect(
+        await fetch(issued.url, { method: "GET", headers: authorization }).then(
+          (response) => response.status
+        )
+      ).toBe(405)
+      expect(
+        await fetch(issued.url, {
+          method: "POST",
+          headers: { ...authorization, "content-type": "application/json" },
+          body: "{ not json"
+        }).then((response) => response.status)
+      ).toBe(400)
+      expect(
+        await fetch(issued.url, {
+          method: "POST",
+          headers: { ...authorization, "content-type": "application/json" },
+          body: JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/list" })
+        }).then((response) => response.status)
+      ).toBe(400)
+      // Batches count as an initialize when any entry is one.
+      expect(
+        await fetch(issued.url, {
+          method: "POST",
+          headers: {
+            ...authorization,
+            accept: "application/json, text/event-stream",
+            "content-type": "application/json"
+          },
+          body: JSON.stringify([
+            {
+              jsonrpc: "2.0",
+              id: 3,
+              method: "initialize",
+              params: {
+                protocolVersion: "2025-03-26",
+                capabilities: {},
+                clientInfo: { name: "batch", version: "1" }
+              }
+            }
+          ])
+        }).then((response) => response.status)
+      ).not.toBe(400)
+      void created
+    } finally {
+      await first.client.close().catch(() => undefined)
+    }
+  })
+
   it("rejects transport-specific configuration before persisting it", async () => {
     const { db, manager } = await testManager()
     const create = (overrides: Record<string, unknown>) =>
