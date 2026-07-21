@@ -14,10 +14,6 @@ else
     echo "At least 45 GiB free is required to install and initialize Xcode." >&2
     exit 1
   fi
-  if ! sudo -n true; then
-    echo "The runner account needs passwordless sudo to initialize Xcode." >&2
-    exit 1
-  fi
   if ! command -v brew >/dev/null 2>&1; then
     echo "Homebrew is required to install the Mac App Store CLI." >&2
     exit 1
@@ -30,6 +26,14 @@ else
   # Store account already signed in on the runner user.
   mas get 497799835
   developer_dir="$("$(dirname "$0")/resolve-xcode.sh")"
+fi
+
+if ! sudo -n true; then
+  echo "Xcode is installed, but the runner account needs passwordless sudo for one-time initialization." >&2
+  echo "Run these commands once on the runner, then dispatch this workflow again:" >&2
+  echo "  sudo '$developer_dir/usr/bin/xcodebuild' -license accept" >&2
+  echo "  sudo '$developer_dir/usr/bin/xcodebuild' -runFirstLaunch" >&2
+  exit 1
 fi
 
 sudo -n "$developer_dir/usr/bin/xcodebuild" -license accept
