@@ -76,6 +76,7 @@ private struct PendingSessionImport: Identifiable {
 struct SidebarView: View {
     @Environment(AppEnvironment.self) private var environment
     @Environment(\.theme) private var theme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Binding var selection: SidebarSelection?
     var store: SessionStore? = nil
     var publishesSceneActions = true
@@ -280,10 +281,12 @@ struct SidebarView: View {
                     if organization == .byWorkspace {
                         ForEach(workspaceItems) { item in
                             workspaceRow(item)
+                                .transition(.identity)
                         }
                     } else {
                         ForEach(chronologicalSessions) { item in
                             reorderableChronologicalSessionRow(item.session, project: item.project)
+                                .transition(.identity)
                         }
                     }
                     if organization == .byWorkspace && workspaceItems.isEmpty {
@@ -303,9 +306,10 @@ struct SidebarView: View {
                 }
                 .padding(.horizontal, 8)
                 .padding(.bottom, 8)
-                .animation(.snappy(duration: 0.22), value: visibleProjects.map(\.id))
-                .animation(.snappy(duration: 0.22), value: chronologicalSessions.map(\.id))
-                .animation(.snappy(duration: 0.22), value: expanded)
+                .animation(Motion.listReflow(reduceMotion: reduceMotion), value: workspaceItems.map(\.id))
+                .animation(Motion.listReflow(reduceMotion: reduceMotion), value: chronologicalSessions.map(\.id))
+                .animation(Motion.listReflow(reduceMotion: reduceMotion), value: visibleProjects.map(\.id))
+                .animation(Motion.listReflow(reduceMotion: reduceMotion), value: expanded)
             }
             .scrollContentBackground(.hidden)
             .scrollBounceBehavior(.basedOnSize)

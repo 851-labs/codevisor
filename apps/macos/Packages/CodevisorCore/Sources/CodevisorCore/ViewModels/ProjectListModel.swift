@@ -37,8 +37,19 @@ public final class ProjectListModel {
             persistPendingServerSessions()
         }
     }
+    /// Archives are optimistic: the row leaves the sidebar before the server
+    /// round-trip completes. Keep that local state authoritative until a
+    /// server snapshot actually acknowledges `isArchived`, otherwise an
+    /// older in-flight snapshot briefly resurrects the row.
+    private var pendingArchivedSessionIds: Set<ScopedSessionID> = [] {
+        didSet {
+            guard pendingArchivedSessionIds != oldValue else { return }
+            persistPendingArchivedSessions()
+        }
+    }
 
     private static let pendingServerSessionsKey = "pending-server-sessions-v1"
+    private static let pendingArchivedSessionsKey = "pending-archived-sessions-v1"
 
     private func persistPendingServerSessions() {
         guard let legacyMigrationStore else { return }
@@ -55,6 +66,23 @@ public final class ProjectListModel {
               let data = legacyMigrationStore.loadData(forKey: Self.pendingServerSessionsKey),
               let ids = try? JSONDecoder().decode([ScopedSessionID].self, from: data) else { return }
         pendingServerSessionIds = Set(ids)
+    }
+
+    private func persistPendingArchivedSessions() {
+        guard let legacyMigrationStore else { return }
+        do {
+            let data = try JSONEncoder().encode(Array(pendingArchivedSessionIds))
+            try legacyMigrationStore.saveData(data, forKey: Self.pendingArchivedSessionsKey)
+        } catch {
+            Log.sync.error("Failed to persist pending archived session markers: \(String(describing: error), privacy: .public)")
+        }
+    }
+
+    private func loadPendingArchivedSessions() {
+        guard let legacyMigrationStore,
+              let data = legacyMigrationStore.loadData(forKey: Self.pendingArchivedSessionsKey),
+              let ids = try? JSONDecoder().decode([ScopedSessionID].self, from: data) else { return }
+        pendingArchivedSessionIds = Set(ids)
     }
     /// Shared: formatter construction is milliseconds-expensive and the
     /// import loops used to build one per imported session. Native scanners
@@ -81,6 +109,7 @@ public final class ProjectListModel {
         self.legacyMigrationStore = legacyMigrationStore
         load()
         loadPendingServerSessions()
+        loadPendingArchivedSessions()
         // Unconfirmed local sessions survive relaunches AND retry their
         // sync (the fire-and-forget upsert may have died with the app).
         for pending in pendingServerSessionIds {
@@ -88,6 +117,18 @@ public final class ProjectListModel {
                 $0.serverId == pending.serverId && $0.id == pending.id
             }) {
                 syncSession(session)
+            }
+        }
+        // A quit while an archive upload was in flight must not let the next
+        // launch's initial server refresh revive the row. Retry the archived
+        // record; the marker clears once a matching snapshot is observed.
+        for pending in pendingArchivedSessionIds {
+            if let session = sessions.first(where: {
+                $0.serverId == pending.serverId && $0.id == pending.id && $0.isArchived
+            }) {
+                syncSession(session)
+            } else {
+                pendingArchivedSessionIds.remove(pending)
             }
         }
         refreshFromServerIfConfigured()
@@ -186,6 +227,9 @@ public final class ProjectListModel {
         pendingServerSessionIds.subtract(removedSessionIDs.map {
             ScopedSessionID(serverId: project.serverId, id: $0)
         })
+        pendingArchivedSessionIds.subtract(removedSessionIDs.map {
+            ScopedSessionID(serverId: project.serverId, id: $0)
+        })
         projects.removeAll { $0.serverId == project.serverId && $0.id == project.id }
         sessions.removeAll { $0.serverId == project.serverId && $0.projectId == project.id }
         persistProjects()
@@ -220,6 +264,11 @@ public final class ProjectListModel {
         guard let index = sessions.firstIndex(where: {
             $0.serverId == session.serverId && $0.id == session.id
         }) else { return }
+        if serverClient != nil, session.serverId == selectedServerId {
+            pendingArchivedSessionIds.insert(
+                ScopedSessionID(serverId: session.serverId, id: session.id)
+            )
+        }
         sessions[index].isArchived = true
         persistSessions()
         syncSession(sessions[index])
@@ -444,7 +493,9 @@ public final class ProjectListModel {
     }
 
     public func deleteSession(_ session: ChatSession) {
-        pendingServerSessionIds.remove(ScopedSessionID(serverId: session.serverId, id: session.id))
+        let scopedId = ScopedSessionID(serverId: session.serverId, id: session.id)
+        pendingServerSessionIds.remove(scopedId)
+        pendingArchivedSessionIds.remove(scopedId)
         sessions.removeAll { $0.serverId == session.serverId && $0.id == session.id }
         persistSessions()
         deleteSessionFromServer(session.id, serverId: session.serverId)
@@ -454,7 +505,9 @@ public final class ProjectListModel {
     /// client's event); intentionally does not call back to the server.
     public func removeSessionLocally(id: UUID, serverId: String) {
         guard sessions.contains(where: { $0.serverId == serverId && $0.id == id }) else { return }
-        pendingServerSessionIds.remove(ScopedSessionID(serverId: serverId, id: id))
+        let scopedId = ScopedSessionID(serverId: serverId, id: id)
+        pendingServerSessionIds.remove(scopedId)
+        pendingArchivedSessionIds.remove(scopedId)
         sessions.removeAll { $0.serverId == serverId && $0.id == id }
         persistSessions()
     }
@@ -466,6 +519,7 @@ public final class ProjectListModel {
             .filter { $0.serverId == serverId && $0.projectId == id }
             .map { ScopedSessionID(serverId: serverId, id: $0.id) }
         pendingServerSessionIds.subtract(removedSessionIds)
+        pendingArchivedSessionIds.subtract(removedSessionIds)
         projects.removeAll { $0.serverId == serverId && $0.id == id }
         sessions.removeAll { $0.serverId == serverId && $0.projectId == id }
         persistProjects()
@@ -477,6 +531,9 @@ public final class ProjectListModel {
         let projectIDs = projects.filter { $0.serverId == selectedServerId }.map(\.id)
         let sessionIDs = sessions.filter { $0.serverId == selectedServerId }.map(\.id)
         pendingServerSessionIds.subtract(sessionIDs.map {
+            ScopedSessionID(serverId: selectedServerId, id: $0)
+        })
+        pendingArchivedSessionIds.subtract(sessionIDs.map {
             ScopedSessionID(serverId: selectedServerId, id: $0)
         })
         projects.removeAll { $0.serverId == selectedServerId }
@@ -637,7 +694,26 @@ public final class ProjectListModel {
             $0.serverId == serverId
                 && pendingServerSessionIds.contains(ScopedSessionID(serverId: serverId, id: $0.id))
         }
-        return (otherServers + pending + remote).sorted {
+        let reconciledRemote = remote.map { session -> ChatSession in
+            let scopedId = ScopedSessionID(serverId: serverId, id: session.id)
+            guard pendingArchivedSessionIds.contains(scopedId) else { return session }
+            if session.isArchived {
+                // This snapshot was taken after the archive reached the
+                // server, so future server state can be authoritative again.
+                pendingArchivedSessionIds.remove(scopedId)
+                return session
+            }
+            // Preserve all newer remote metadata while holding only the
+            // optimistic archived flag against this stale snapshot.
+            var archived = session
+            archived.isArchived = true
+            return archived
+        }
+        let missingPendingArchives = pendingArchivedSessionIds.filter {
+            $0.serverId == serverId && !remoteIds.contains($0)
+        }
+        pendingArchivedSessionIds.subtract(missingPendingArchives)
+        return (otherServers + pending + reconciledRemote).sorted {
             ($0.updatedAt ?? $0.createdAt) > ($1.updatedAt ?? $1.createdAt)
         }
     }

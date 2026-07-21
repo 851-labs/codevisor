@@ -176,6 +176,45 @@ struct ProjectListModelTests {
         #expect(model.sessions.filter { $0.id == session.id }.count == 1)
     }
 
+    @Test("Stale server refresh cannot revive a pending archived session")
+    func serverRefreshPreservesPendingArchive() async throws {
+        let project = Project.fromFolder(URL(fileURLWithPath: "/tmp/pending-archive"))
+        let session = ChatSession(
+            projectId: project.id,
+            harnessId: "codex",
+            title: "Archive me"
+        )
+        let fakeServer = FakeServerClient(
+            projects: [serverProject(from: project)],
+            sessions: [serverSession(from: session)]
+        )
+        let model = ProjectListModel(
+            projectRepository: DefaultProjectRepository(store: InMemoryStore()),
+            sessionRepository: DefaultSessionRepository(store: InMemoryStore()),
+            serverClient: fakeServer
+        )
+        try await waitUntil { model.sessions.contains { $0.id == session.id } }
+
+        // Hold the archive upload so a refresh can return the older active
+        // record in between the optimistic local update and server ack.
+        let archiveUpload = Latch()
+        await fakeServer.setSessionUpsertDelay { await archiveUpload.wait() }
+        model.archiveSession(session)
+        #expect(model.sessions(in: project).isEmpty)
+
+        await model.refreshFromServer()
+        #expect(model.sessions(in: project).isEmpty)
+        #expect(model.sessions.first { $0.id == session.id }?.isArchived == true)
+
+        await archiveUpload.open()
+        try await waitUntilAsync {
+            let snapshot = await fakeServer.snapshot()
+            return snapshot.upsertedSessionIDs.contains(session.id.uuidString)
+        }
+        await model.refreshFromServer()
+        #expect(model.sessions(in: project).isEmpty)
+    }
+
     @Test("Legacy JSON metadata is uploaded exactly once before server authority takes over")
     func legacyCacheMigratesOnce() async throws {
         let project = Project.fromFolder(URL(fileURLWithPath: "/tmp/legacy-project"))
@@ -606,6 +645,15 @@ private func waitUntil(_ predicate: () -> Bool) async throws {
     Issue.record("Timed out waiting for condition")
 }
 
+@MainActor
+private func waitUntilAsync(_ predicate: () async -> Bool) async throws {
+    for _ in 0..<50 {
+        if await predicate() { return }
+        try await Task.sleep(nanoseconds: 10_000_000)
+    }
+    Issue.record("Timed out waiting for condition")
+}
+
 private struct FakeServerSnapshot: Sendable {
     var upsertedProjectIDs: [String]
     var upsertedSessionIDs: [String]
@@ -623,6 +671,7 @@ private actor FakeServerClient: CodevisorServerClienting {
     /// When set, `listProjects` suspends on this first — lets tests hold a
     /// "network" call in flight while the app state changes underneath it.
     private var listDelay: (@Sendable () async -> Void)?
+    private var sessionUpsertDelay: (@Sendable () async -> Void)?
 
     init(projects: [ServerProject] = [], sessions: [ServerSession] = []) {
         self.projects = projects
@@ -631,6 +680,10 @@ private actor FakeServerClient: CodevisorServerClienting {
 
     func setListDelay(_ delay: @escaping @Sendable () async -> Void) {
         listDelay = delay
+    }
+
+    func setSessionUpsertDelay(_ delay: @escaping @Sendable () async -> Void) {
+        sessionUpsertDelay = delay
     }
 
     func health() async throws -> ServerHealth {
@@ -678,6 +731,7 @@ private actor FakeServerClient: CodevisorServerClienting {
     }
 
     func upsertSession(_ session: ChatSession) async throws -> ServerSession {
+        if let sessionUpsertDelay { await sessionUpsertDelay() }
         let serverSession = serverSession(from: session)
         upsertedSessionIDs.append(serverSession.id)
         sessions.removeAll { $0.id == serverSession.id }

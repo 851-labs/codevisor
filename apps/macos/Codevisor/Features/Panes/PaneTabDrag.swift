@@ -86,23 +86,56 @@ final class PaneTabDragCoordinator {
     /// flags monitor re-resolves while the pointer is stationary.
     private(set) var joinModifierHeld = false
     @ObservationIgnored private var flagsMonitor: Any?
-    @ObservationIgnored private var bars: [PaneGroupRef: BarGeometry] = [:]
-    @ObservationIgnored private var contentFrames: [UUID: CGRect] = [:]
+    /// Geometry belongs to a particular mounted view instance. A tree rewrite
+    /// can mount a replacement leaf with the SAME PaneGroupRef before the old
+    /// leaf's onDisappear runs; owner tokens keep that stale teardown from
+    /// deleting the replacement's freshly registered geometry.
+    private struct OwnedBarGeometry {
+        let owner: UUID
+        var geometry: BarGeometry
+    }
+
+    private struct OwnedContentFrame {
+        let owner: UUID
+        var frame: CGRect
+    }
+
+    @ObservationIgnored private var bars: [PaneGroupRef: OwnedBarGeometry] = [:]
+    @ObservationIgnored private var contentFrames: [UUID: OwnedContentFrame] = [:]
     /// Wired by the session container: performs the model/tree-level move.
     @ObservationIgnored var onResolve: ((UUID, PaneGroupRef, PaneDropResolution) -> Void)?
 
     // MARK: - Geometry registration
 
-    func updateBarFrame(_ frame: CGRect, for ref: PaneGroupRef) {
-        bars[ref, default: BarGeometry()].barFrame = frame
+    func registerBar(owner: UUID, for ref: PaneGroupRef) {
+        if bars[ref]?.owner != owner {
+            bars[ref] = OwnedBarGeometry(owner: owner, geometry: BarGeometry())
+        }
     }
 
-    func updateStrip(minX: CGFloat, slotWidth: CGFloat, paneCount: Int, for ref: PaneGroupRef) {
-        var bar = bars[ref, default: BarGeometry()]
-        bar.stripMinX = minX
-        bar.slotWidth = slotWidth
-        bar.paneCount = paneCount
-        bars[ref] = bar
+    func updateBarFrame(_ frame: CGRect, for ref: PaneGroupRef, owner: UUID) {
+        guard var registration = bars[ref], registration.owner == owner else { return }
+        registration.geometry.barFrame = frame
+        bars[ref] = registration
+    }
+
+    func updateStrip(
+        minX: CGFloat,
+        slotWidth: CGFloat,
+        paneCount: Int,
+        for ref: PaneGroupRef,
+        owner: UUID
+    ) {
+        guard var registration = bars[ref], registration.owner == owner else { return }
+        registration.geometry.stripMinX = minX
+        registration.geometry.slotWidth = slotWidth
+        registration.geometry.paneCount = paneCount
+        bars[ref] = registration
+    }
+
+    func unregisterBar(owner: UUID, for ref: PaneGroupRef) {
+        guard bars[ref]?.owner == owner else { return }
+        bars[ref] = nil
     }
 
     /// Bars unmount (the panel closes; a leaf dissolves); stale frames must
@@ -112,11 +145,23 @@ final class PaneTabDragCoordinator {
     }
 
     func barGeometry(for ref: PaneGroupRef) -> BarGeometry? {
-        bars[ref]
+        bars[ref]?.geometry
     }
 
-    func updateContentFrame(_ frame: CGRect, leafId: UUID) {
-        contentFrames[leafId] = frame
+    func registerContent(owner: UUID, leafId: UUID) {
+        if contentFrames[leafId]?.owner != owner {
+            contentFrames[leafId] = OwnedContentFrame(owner: owner, frame: .zero)
+        }
+    }
+
+    func updateContentFrame(_ frame: CGRect, leafId: UUID, owner: UUID) {
+        guard contentFrames[leafId]?.owner == owner else { return }
+        contentFrames[leafId]?.frame = frame
+    }
+
+    func unregisterContent(owner: UUID, leafId: UUID) {
+        guard contentFrames[leafId]?.owner == owner else { return }
+        contentFrames[leafId] = nil
     }
 
     func clearContentFrame(leafId: UUID) {
@@ -128,7 +173,7 @@ final class PaneTabDragCoordinator {
     /// Whether `location` has escaped the source bar (vertically far enough
     /// that this drag reads as a tear-out rather than a reorder).
     func escapesSourceBar(_ location: CGPoint, source: PaneGroupRef) -> Bool {
-        guard let bar = bars[source] else { return false }
+        guard let bar = bars[source]?.geometry else { return false }
         return !bar.barFrame.insetBy(dx: 0, dy: -Self.dropSlop).contains(location)
     }
 
@@ -239,13 +284,15 @@ final class PaneTabDragCoordinator {
         allowsBottomDrop: Bool
     ) -> PaneDropResolution? {
         // Bars win over content (they overlap content edges visually).
-        for (ref, bar) in bars where ref != source {
+        for (ref, registration) in bars where ref != source {
+            let bar = registration.geometry
             if ref == .bottom && !allowsBottomDrop { continue }
             if bar.barFrame.insetBy(dx: 0, dy: -Self.dropSlop).contains(location) {
                 return .bar(ref, index: insertionIndex(for: location.x, in: bar))
             }
         }
-        for (leafId, frame) in contentFrames where frame.contains(location) {
+        for (leafId, registration) in contentFrames where registration.frame.contains(location) {
+            let frame = registration.frame
             let ref = PaneGroupRef.centerLeaf(leafId)
             // ⇧: drop INTO the hovered group instead of splitting it.
             if joinModifierHeld {
@@ -304,6 +351,7 @@ struct PaneDropZoneModifier: ViewModifier {
     /// otherwise never heal — and every drop over this zone would silently
     /// resolve to nothing.
     @State private var measuredFrame: CGRect = .zero
+    @State private var geometryOwner = UUID()
 
     func body(content: Content) -> some View {
         content
@@ -311,15 +359,30 @@ struct PaneDropZoneModifier: ViewModifier {
                 proxy.frame(in: .global)
             } action: { frame in
                 measuredFrame = frame
-                coordinator?.updateContentFrame(frame, leafId: leafId)
+                coordinator?.updateContentFrame(frame, leafId: leafId, owner: geometryOwner)
             }
             .onChange(of: coordinator?.active?.paneId) { _, active in
                 if active != nil, measuredFrame != .zero {
-                    coordinator?.updateContentFrame(measuredFrame, leafId: leafId)
+                    coordinator?.registerContent(owner: geometryOwner, leafId: leafId)
+                    coordinator?.updateContentFrame(
+                        measuredFrame,
+                        leafId: leafId,
+                        owner: geometryOwner
+                    )
+                }
+            }
+            .onAppear {
+                coordinator?.registerContent(owner: geometryOwner, leafId: leafId)
+                if measuredFrame != .zero {
+                    coordinator?.updateContentFrame(
+                        measuredFrame,
+                        leafId: leafId,
+                        owner: geometryOwner
+                    )
                 }
             }
             .onDisappear {
-                coordinator?.clearContentFrame(leafId: leafId)
+                coordinator?.unregisterContent(owner: geometryOwner, leafId: leafId)
             }
             .overlay {
                 if let coordinator, let edge = coordinator.contentPreview(for: leafId) {

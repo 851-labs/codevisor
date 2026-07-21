@@ -67,9 +67,13 @@ struct PaneGroupBar: View {
     /// local event monitor gated by this frame handles them instead).
     @State private var stripFrame: CGRect = .zero
     @State private var stripMaxScroll: CGFloat = 0
+    @State private var measuredSlotWidth: CGFloat = 100
     /// The bar's last measured frame (re-pushed to the drop coordinator at
     /// drag start — see the self-healing registration below).
     @State private var measuredBarFrame: CGRect = .zero
+    /// Distinguishes this mounted bar from a replacement with the same group
+    /// ref, so the old view's delayed onDisappear cannot clear the new one.
+    @State private var geometryOwner = UUID()
     @State private var scrollMonitor: Any?
     /// Identity ledger for spotting freshly inserted tabs DURING body
     /// evaluation (plain class — reads are legal mid-body and don't
@@ -158,18 +162,19 @@ struct PaneGroupBar: View {
         } action: { frame in
             measuredBarFrame = frame
             if let ref = group.dropRef {
-                dragCoordinator?.updateBarFrame(frame, for: ref)
+                dragCoordinator?.updateBarFrame(frame, for: ref, owner: geometryOwner)
             }
         }
         // Self-healing registration: onGeometryChange only fires on frame
         // CHANGES, so a registration lost to a dissolve/unmount race would
         // never return — re-push at every drag start.
         .onChange(of: dragCoordinator?.active?.paneId) { _, active in
-            if active != nil, measuredBarFrame != .zero, let ref = group.dropRef {
-                dragCoordinator?.updateBarFrame(measuredBarFrame, for: ref)
+            if active != nil {
+                registerDragGeometry()
             }
         }
         .onAppear {
+            registerDragGeometry()
             guard scrollMonitor == nil else { return }
             scrollMonitor = NSEvent.addLocalMonitorForEvents(matching: [.scrollWheel]) { event in
                 handleStripScroll(event)
@@ -183,7 +188,7 @@ struct PaneGroupBar: View {
             // Bars unmount (the panel closes; a leaf dissolves); a stale
             // frame must not keep catching drops.
             if let ref = group.dropRef {
-                dragCoordinator?.clearGeometry(for: ref)
+                dragCoordinator?.unregisterBar(owner: geometryOwner, for: ref)
             }
         }
     }
@@ -293,12 +298,14 @@ struct PaneGroupBar: View {
                     } action: { frame in
                         stripFrame = frame
                         stripMaxScroll = maxScroll
+                        measuredSlotWidth = slotWidth
                         if let ref = group.dropRef {
                             dragCoordinator?.updateStrip(
                                 minX: frame.minX,
                                 slotWidth: slotWidth,
                                 paneCount: group.state.panes.count,
-                                for: ref
+                                for: ref,
+                                owner: geometryOwner
                             )
                         }
                     }
@@ -326,12 +333,14 @@ struct PaneGroupBar: View {
             // coordinator's slot metrics explicitly or its insertion math
             // works against a stale count.
             .onChange(of: group.state.panes.count) { _, paneCount in
+                measuredSlotWidth = slotWidth
                 if let ref = group.dropRef {
                     dragCoordinator?.updateStrip(
                         minX: stripFrame.minX,
                         slotWidth: slotWidth,
                         paneCount: paneCount,
-                        for: ref
+                        for: ref,
+                        owner: geometryOwner
                     )
                 }
             }
@@ -567,6 +576,11 @@ struct PaneGroupBar: View {
         DragGesture(minimumDistance: 3, coordinateSpace: .global)
             .onChanged { value in
                 if draggingPaneId != paneId {
+                    // A split can remount the surviving source leaf under the
+                    // same ref. Re-register synchronously before asking whether
+                    // the pointer escaped, so stale teardown can never deadlock
+                    // tear-out dragging until some later resize.
+                    registerDragGeometry(slotWidth: slotWidth)
                     draggingPaneId = paneId
                     dragAdjustment = 0
                     // Dragging always operates on the selected tab: picking up
@@ -648,6 +662,31 @@ struct PaneGroupBar: View {
         let neighbor = index + direction
         guard group.state.panes.indices.contains(neighbor) else { return nil }
         return group.state.panes[neighbor].id
+    }
+
+    /// Claims this mounted bar's geometry registration and pushes the latest
+    /// measurements. Safe to call repeatedly; ownership is stable for the
+    /// lifetime of this PaneGroupBar mount.
+    private func registerDragGeometry(slotWidth: CGFloat? = nil) {
+        guard let dragCoordinator, let ref = group.dropRef else { return }
+        dragCoordinator.registerBar(owner: geometryOwner, for: ref)
+        if measuredBarFrame != .zero {
+            dragCoordinator.updateBarFrame(
+                measuredBarFrame,
+                for: ref,
+                owner: geometryOwner
+            )
+        }
+        let resolvedSlotWidth = slotWidth ?? measuredSlotWidth
+        if stripFrame != .zero, resolvedSlotWidth > 0 {
+            dragCoordinator.updateStrip(
+                minX: stripFrame.minX,
+                slotWidth: resolvedSlotWidth,
+                paneCount: group.state.panes.count,
+                for: ref,
+                owner: geometryOwner
+            )
+        }
     }
 
     /// The insertion caret shown while a tab from another group hovers over

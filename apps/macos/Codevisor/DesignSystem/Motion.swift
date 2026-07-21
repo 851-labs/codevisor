@@ -45,6 +45,14 @@ enum Motion {
         reduceMotion ? nil : .snappy(duration: 0.2)
     }
 
+    /// Sidebar collection reflow after an item is removed. The archived row
+    /// itself leaves immediately; surviving rows use a brief, zero-bounce
+    /// settle so their new positions remain easy to track without making a
+    /// frequent action feel delayed or playful.
+    static func listReflow(reduceMotion: Bool = false) -> Animation? {
+        reduceMotion ? nil : .smooth(duration: 0.2)
+    }
+
     /// Panel-scale show/hide (e.g. the terminal pane group).
     static func panel(reduceMotion: Bool = false) -> Animation? {
         reduceMotion ? nil : .snappy(duration: 0.25)
