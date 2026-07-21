@@ -881,9 +881,6 @@ struct SidebarView: View {
                                 .font(itemTitleFont)
                                 .lineLimit(1)
                             Spacer(minLength: 6)
-                            if let session = item.primarySession, !isHovered {
-                                sessionStatus(session, isHovered: false)
-                            }
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .contentShape(Rectangle())
