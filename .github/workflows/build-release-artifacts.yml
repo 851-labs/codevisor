@@ -165,6 +165,13 @@ jobs:
         with:
           ref: ${{ inputs.source_sha }}
           clean: true
+      - name: Select full Xcode
+        shell: bash
+        run: |
+          developer_dir="$(scripts/release/resolve-xcode.sh)"
+          echo "DEVELOPER_DIR=$developer_dir" >> "$GITHUB_ENV"
+          DEVELOPER_DIR="$developer_dir" xcodebuild -version
+          DEVELOPER_DIR="$developer_dir" xcrun swift --version
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: ${{ env.NODE_VERSION }}
@@ -233,6 +240,13 @@ jobs:
         with:
           ref: ${{ inputs.source_sha }}
           clean: true
+      - name: Select full Xcode
+        shell: bash
+        run: |
+          developer_dir="$(scripts/release/resolve-xcode.sh)"
+          echo "DEVELOPER_DIR=$developer_dir" >> "$GITHUB_ENV"
+          DEVELOPER_DIR="$developer_dir" xcodebuild -version
+          DEVELOPER_DIR="$developer_dir" xcrun swift --version
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: ${{ env.NODE_VERSION }}
