@@ -309,6 +309,9 @@ struct SessionContainerView: View {
                 sessionFocus.focusComposer()
             }
         }
+        model.requestBackgroundFocus = {
+            sessionFocus.focusPaneBackground()
+        }
         model.requestToggle = {
             sessionFocus.requestPanelToggle?()
         }

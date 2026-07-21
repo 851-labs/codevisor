@@ -69,6 +69,12 @@ struct NewTabPageView: View {
             }
         }
         .background(theme.paneBackground)
+        // The placeholder has no editor of its own, so whitespace clicks
+        // explicitly activate the group and clear any stale terminal/editor
+        // first responder. Controls still perform their normal actions.
+        .simultaneousGesture(TapGesture().onEnded {
+            group?.focusSelectedPane()
+        })
     }
 
     /// Where the new tab opens — the same menu idiom as the composer's

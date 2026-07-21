@@ -728,6 +728,9 @@ struct PaneGroupBar: View {
             Button {
                 frozenTabWidth = nil
                 group.addNewTabPane()
+                // Defer until the passive page has replaced the previous
+                // pane, then release that pane's first responder.
+                DispatchQueue.main.async { group.focusSelectedPane() }
             } label: {
                 addPaneGlyph
             }

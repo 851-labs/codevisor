@@ -296,6 +296,17 @@ final class TerminalFocusController {
         paneGroup?.focusSelectedPane()
     }
 
+    /// Gives a passive pane (currently New Tab) neutral keyboard focus. The
+    /// window becomes its own first responder, which cleanly resigns a hidden
+    /// terminal or editor without routing keys into an unrelated chat.
+    func focusPaneBackground() {
+        guard let window = hostWindow,
+              window.isKeyWindow,
+              window.attachedSheet == nil,
+              NSApp.modalWindow == nil else { return }
+        window.makeFirstResponder(nil)
+    }
+
     /// Makes ordinary typing anywhere in the session move focus into the
     /// composer without dropping the first character, and makes a click
     /// anywhere in the chat history move keyboard focus onto the history (so
@@ -388,7 +399,10 @@ final class TerminalFocusController {
               window.attachedSheet == nil,
               NSApp.modalWindow == nil,
               window.firstResponder !== target,
-              Self.isTypeToFocusEvent(event) else {
+              Self.isTypeToFocusEvent(
+                  event,
+                  includesQuestionPickerCommands: target is QuestionPickerKeyView
+              ) else {
             return event
         }
 
@@ -520,17 +534,41 @@ final class TerminalFocusController {
         return event
     }
 
-    private static func isTypeToFocusEvent(_ event: NSEvent) -> Bool {
-        let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-        guard modifiers.intersection([.command, .control, .function]).isEmpty,
-              event.specialKey == nil else {
-            return false
+    private static func isTypeToFocusEvent(
+        _ event: NSEvent,
+        includesQuestionPickerCommands: Bool = false
+    ) -> Bool {
+        let modifiers = event.modifierFlags
+            .intersection(.deviceIndependentFlagsMask)
+
+        if includesQuestionPickerCommands {
+            // Arrow keys carry implicit function/numpad flags. After removing
+            // those, picker commands must be genuinely unmodified.
+            let pickerModifiers = modifiers.subtracting([.function, .numericPad])
+            if pickerModifiers.isEmpty {
+                switch event.specialKey {
+                case .upArrow, .downArrow, .leftArrow, .rightArrow:
+                    return true
+                default:
+                    break
+                }
+                // Return, keypad Enter, Escape, and Space operate the picker.
+                if event.keyCode == 36 || event.keyCode == 76 || event.keyCode == 53
+                    || event.charactersIgnoringModifiers == " " {
+                    return true
+                }
+            }
         }
 
+        guard modifiers.intersection([.command, .control, .function]).isEmpty,
+              event.specialKey == nil else { return false }
+
         // Keep Space available for scrolling and Full Keyboard Access button
-        // activation when the composer is not focused. Option is deliberately
-        // allowed because it produces text on many keyboard layouts; dead-key
-        // events may have no characters yet and must still reach NSTextView.
+        // activation when the ordinary composer is not focused. A question
+        // picker's Space is handled above because it toggles the highlighted
+        // option. Option is deliberately allowed because it produces text on
+        // many keyboard layouts; dead-key events may have no characters and
+        // still need to reach NSTextView.
         return event.characters != " " && event.characters != "\u{00A0}"
     }
 }

@@ -37,6 +37,11 @@ final class PaneGroupModel: Identifiable {
     /// when closing the last tab collapses the group, and as the chat pane's
     /// focus target).
     @ObservationIgnored var requestComposerFocus: (() -> Void)?
+    /// Set by the session screen: clears focus from another pane without
+    /// inventing an input target for content that has none (currently the
+    /// New Tab placeholder). This keeps a hidden terminal from remaining the
+    /// first responder after its tab is replaced by a passive page.
+    @ObservationIgnored var requestBackgroundFocus: (() -> Void)?
     /// Fired after a tab closes (the descriptor already removed) — the app
     /// layer cleans up per-pane resources (draft controllers) and archives
     /// closed established chats' sessions.
@@ -118,15 +123,21 @@ final class PaneGroupModel: Identifiable {
     /// to its OLD model, whose descriptor lookup fails (the pane left) and
     /// renders nothing.
     private func wireChatHost(_ chat: ChatPane, paneId: UUID) {
-        // CHAT panes hand focus to the composer; a New Tab placeholder's
-        // page is click-driven — focusing it must not grab some other
-        // chat's composer (which would trip focus-follow and snap the tab
-        // selection right back off the placeholder).
+        // Chat panes hand focus to their composer. A New Tab placeholder has
+        // no editor, but still needs a neutral focus target so selecting it
+        // releases a terminal or another panel's controls.
         chat.onFocus = { [weak self, paneId] in
             guard let self,
-                  let descriptor = self.state.panes.first(where: { $0.id == paneId }),
-                  descriptor.kind == .chat else { return }
-            self.requestComposerFocus?()
+                  let descriptor = self.state.panes.first(where: { $0.id == paneId })
+            else { return }
+            switch descriptor.kind {
+            case .chat:
+                self.requestComposerFocus?()
+            case .newTab:
+                self.requestBackgroundFocus?()
+            case .terminal:
+                break
+            }
         }
         chat.contentProvider = { [weak self, paneId] in
             guard let self,
@@ -170,9 +181,8 @@ final class PaneGroupModel: Identifiable {
                 addTerminalPane()
                 DispatchQueue.main.async { [weak self] in self?.focusSelectedPane() }
             } else {
-                // No focus handoff: the placeholder page is click-driven
-                // (focusing it would send keystrokes to the chat composer).
                 addNewTabPane()
+                DispatchQueue.main.async { [weak self] in self?.focusSelectedPane() }
             }
         case .nextTab, .previousTab:
             let panes = state.panes
@@ -207,6 +217,10 @@ final class PaneGroupModel: Identifiable {
     }
 
     func focusSelectedPane() {
+        // Focusing an already-selected tab is still user activity in this
+        // group. This is load-bearing for a selected New Tab in an inactive
+        // split: select(id:) is otherwise a no-op and never activates it.
+        onActivated?()
         selectedPane?.focus()
     }
 
