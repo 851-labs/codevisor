@@ -127,6 +127,11 @@ final class SessionController {
     var selectedHarnessId: String? { didSet { draftDidChange() } }
     private(set) var model: SessionModel?
     private(set) var status: Status = .idle
+    /// Calm progress message shown while the eager connect waits for an
+    /// unreachable server to come back (e.g. the managed server rebooting
+    /// right after an app update). Non-nil only during that wait; the
+    /// transcript renders it as a shimmer row instead of an error banner.
+    private(set) var serverWaitMessage: String?
     /// The first prompt, held while the session record/agent are being created
     /// so the UI can show it optimistically the instant the user sends.
     private(set) var pendingUserText: String?
@@ -1297,9 +1302,23 @@ final class SessionController {
         _ = await prepareFromServerCapabilities(serverClient)
     }
 
+    /// How long the eager connect quietly waits on an unreachable server
+    /// before softening the loading copy ("taking longer than usual").
+    private static let serverWaitSlowThreshold: Duration = .seconds(5)
+    /// How long an unreachable server gets before the wait is treated as a
+    /// real failure (error banner with the Restart remedy).
+    private static let serverWaitFailureThreshold: Duration = .seconds(10)
+    private static let serverWaitRetryInterval: Duration = .milliseconds(500)
+
     /// Eagerly connects the selected harness (without sending) so model and
     /// reasoning config options are available in the composer before the first
     /// message. Safe to call repeatedly.
+    ///
+    /// A server that refuses connections here is usually just booting — after
+    /// an update the app relaunches before its managed server is listening
+    /// again. Unreachable errors therefore retry behind a calm loading state
+    /// (softened past 5s) and only surface the failure banner — with its
+    /// Restart remedy — after 10s without contact.
     func connectIfNeeded() async {
         guard model == nil, !isConnecting, let harness = selectedHarness else { return }
         // A worktree draft has no cwd until the worktree is created on first
@@ -1307,23 +1326,43 @@ final class SessionController {
         guard !wantsNewWorktree || sessionCwdOverride != nil else { return }
         guard serverSession != nil else { return }
         status = .connecting("Starting \(harness.name)…")
-        do {
-            model = try await connect(harness)
-            status = .idle
-        } catch {
-            // The eager connect rides the chat view's `.task`; a mid-flight
-            // cancellation (pane re-hosted, controller replaced during
-            // workspace restore) is lifecycle noise, not a failure — the
-            // remount reconnects. Reset to `.idle` so the remount's
-            // `connectIfNeeded()` passes the `!isConnecting` guard and
-            // actually retries — leaving `.connecting` would wedge the
-            // controller forever (and `SessionStore` would never evict it,
-            // since `.connecting` counts as running).
-            guard !isTaskCancellation(error) else {
-                if case .connecting = status { status = .idle }
+        defer { serverWaitMessage = nil }
+        let clock = ContinuousClock()
+        let start = clock.now
+        while true {
+            do {
+                model = try await connect(harness)
+                status = .idle
                 return
+            } catch {
+                // The eager connect rides the chat view's `.task`; a mid-flight
+                // cancellation (pane re-hosted, controller replaced during
+                // workspace restore) is lifecycle noise, not a failure — the
+                // remount reconnects. Reset to `.idle` so the remount's
+                // `connectIfNeeded()` passes the `!isConnecting` guard and
+                // actually retries — leaving `.connecting` would wedge the
+                // controller forever (and `SessionStore` would never evict it,
+                // since `.connecting` counts as running).
+                guard !isTaskCancellation(error) else {
+                    if case .connecting = status { status = .idle }
+                    return
+                }
+                let message = serverErrorMessage(error)
+                let elapsed = clock.now - start
+                guard message == serverUnreachableErrorMessage,
+                      elapsed < Self.serverWaitFailureThreshold else {
+                    status = .failed(message)
+                    return
+                }
+                serverWaitMessage = elapsed < Self.serverWaitSlowThreshold
+                    ? "Connecting to the server..."
+                    : "Still connecting... this is taking longer than usual."
+                try? await Task.sleep(for: Self.serverWaitRetryInterval)
+                guard !Task.isCancelled else {
+                    if case .connecting = status { status = .idle }
+                    return
+                }
             }
-            status = .failed(serverErrorMessage(error))
         }
     }
 

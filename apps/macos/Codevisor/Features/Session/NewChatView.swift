@@ -448,10 +448,23 @@ struct NewChatView: View {
 
     /// Inline error for a failed session start. This page has no transcript
     /// yet, so directly beneath the composer IS adjacent to where the failure
-    /// happened (HIG: show errors near their source).
+    /// happened (HIG: show errors near their source). While the connect is
+    /// still waiting on a (re)booting server the label is a calm loading
+    /// state — the error styling appears only after the wait times out.
     @ViewBuilder
     private func statusLabel(_ controller: SessionController) -> some View {
-        if case let .failed(message) = controller.status {
+        if let waitMessage = controller.serverWaitMessage {
+            HStack(spacing: 8) {
+                Image(systemName: "arrow.triangle.2.circlepath")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                ShimmeringText(text: waitMessage)
+                Spacer(minLength: 0)
+            }
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityElement(children: .combine)
+        } else if case let .failed(message) = controller.status {
             HStack(spacing: 12) {
                 Label(message, systemImage: "exclamationmark.triangle.fill")
                     .font(.callout)

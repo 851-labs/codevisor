@@ -295,6 +295,16 @@ struct ChatScreen: View {
                 estimatedHeight: 32
             ))
         }
+        // Waiting for the server to come back (e.g. the managed server is
+        // still booting right after an app update) is a loading state, not a
+        // failure — the error banner only appears if the wait times out.
+        if let serverWait = controller.serverWaitMessage {
+            result.append(.init(
+                id: .serverWait,
+                content: .serverWait(serverWait),
+                estimatedHeight: 32
+            ))
+        }
         if let error = controller.errorMessage {
             result.append(.init(id: .error, content: .error(error), estimatedHeight: 56))
         }
@@ -414,6 +424,14 @@ struct ChatScreen: View {
                     .font(.callout)
                     .foregroundStyle(.secondary)
                 ShimmeringText.waitingOnHarnessUpdate(harnessName)
+                Spacer(minLength: 0)
+            }
+        case let .serverWait(message):
+            HStack(spacing: 8) {
+                Image(systemName: "arrow.triangle.2.circlepath")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                ShimmeringText(text: message)
                 Spacer(minLength: 0)
             }
         case let .error(message):

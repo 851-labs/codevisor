@@ -482,14 +482,20 @@ struct ComposerCard: View {
                 .background(Circle().fill(Color.secondary.opacity(0.16)))
                 .help(controller.isResolvingQuestion ? "Submitting response…" : "Sending…")
         } else {
+            // Goal mode still respects the connecting gate: `submitGoal…`
+            // silently drops input while connecting, so an enabled-looking
+            // button would be a lie.
             let isEnabled = !isAppUpdateInProgress && (controller.isGoalComposerArmed
                 ? !controller.composerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    && !controller.isConnecting
                 : (controller.canSend || !visibleSlashMatches.isEmpty))
             ComposerSubmitButton(
                 isEnabled: isEnabled,
                 help: isAppUpdateInProgress
                     ? "Updating… you can send once the update finishes."
-                    : "Send (↩)",
+                    : controller.isConnecting
+                        ? "Connecting… you can send once the agent is ready."
+                        : "Send (↩)",
                 accessibilityLabel: "Send"
             ) {
                 submitOrAcceptSlash()

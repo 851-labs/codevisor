@@ -17,6 +17,7 @@ struct TranscriptVirtualRow: Identifiable, Equatable {
         case optimistic
         case backgroundTask
         case updateGate
+        case serverWait
         case error
         case statusError
         case bottomSpacer
@@ -32,6 +33,7 @@ struct TranscriptVirtualRow: Identifiable, Equatable {
             case .optimistic: "special:optimistic"
             case .backgroundTask: "special:background"
             case .updateGate: "special:update-gate"
+            case .serverWait: "special:server-wait"
             case .error: "special:error"
             case .statusError: "special:status-error"
             case .bottomSpacer: "special:bottom-spacer"
@@ -41,8 +43,8 @@ struct TranscriptVirtualRow: Identifiable, Equatable {
         var isCacheableSettledRow: Bool {
             switch self {
             case .message, .assistantPlanning, .plan, .assistantResult: true
-            case .active, .setup, .optimistic, .backgroundTask, .updateGate, .error,
-                 .statusError, .bottomSpacer: false
+            case .active, .setup, .optimistic, .backgroundTask, .updateGate, .serverWait,
+                 .error, .statusError, .bottomSpacer: false
             }
         }
 
@@ -62,6 +64,9 @@ struct TranscriptVirtualRow: Identifiable, Equatable {
         case backgroundTask(String)
         /// Prompts held while the named harness updates.
         case updateGate(String)
+        /// Calm wait while an unreachable server (re)boots — a loading state,
+        /// deliberately not an error.
+        case serverWait(String)
         case error(String)
         case bottomSpacer(CGFloat)
     }
