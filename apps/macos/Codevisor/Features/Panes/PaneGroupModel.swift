@@ -63,6 +63,10 @@ final class PaneGroupModel: Identifiable {
     /// root. Wired by the container; nil (previews) leaves spawns on the
     /// anchor session's cwd resolution.
     @ObservationIgnored var defaultSpawnCwd: (() -> String?)?
+    /// Center leaves hand workspace-level tab/split commands to their
+    /// container. Returning true means the command was consumed. Bottom
+    /// panel models leave this nil and retain their local tab behavior.
+    @ObservationIgnored var workspaceCommandHandler: ((PaneGroupCommand) -> Bool)?
     /// Debounces height persistence during drags (state itself updates live).
     @ObservationIgnored private var pendingHeightSave: Task<Void, Never>?
 
@@ -168,10 +172,11 @@ final class PaneGroupModel: Identifiable {
         }
     }
 
-    /// Keyboard shortcuts forwarded from a focused pane: ⌘⌥←/→ navigate
-    /// tabs (wrapping), ⌘T adds a terminal. Focus follows the new selection
-    /// so the keyboard stays in the pane group.
+    /// Keyboard shortcuts forwarded from a focused pane. Center leaves first
+    /// offer them to the workspace container; bottom-panel groups retain
+    /// local tab selection and terminal creation behavior.
     func handleCommand(_ command: PaneGroupCommand) {
+        if workspaceCommandHandler?(command) == true { return }
         switch command {
         case .newTab:
             // ⌘T opens the "New tab" page (Chrome semantics — pick what the
@@ -196,6 +201,8 @@ final class PaneGroupModel: Identifiable {
             guard state.panes.indices.contains(index) else { return }
             select(id: state.panes[index].id)
             DispatchQueue.main.async { [weak self] in self?.focusSelectedPane() }
+        case .split, .focusSplit, .previousSplit, .nextSplit:
+            return
         case .togglePanel:
             requestToggle?()
         case .closeTab:
@@ -260,6 +267,15 @@ final class PaneGroupModel: Identifiable {
     /// Binds a draft chat pane to its just-created session (first send).
     func assignChatSession(paneId: UUID, sessionId: UUID, name: String) {
         state.assignChatSession(paneId: paneId, sessionId: sessionId, name: name)
+        persist()
+    }
+
+    func renamePane(id: UUID, to name: String) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty,
+              let index = state.panes.firstIndex(where: { $0.id == id }),
+              state.panes[index].name != trimmed else { return }
+        state.panes[index].name = trimmed
         persist()
     }
 

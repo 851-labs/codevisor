@@ -1177,17 +1177,7 @@ struct SidebarView: View {
 
     @ViewBuilder
     private func sessionLeadingIcon(_ session: ChatSession) -> some View {
-        if store?.hasUnreadError(session) == true {
-            ErrorUnreadBadge(color: theme.statusError)
-        } else if store?.isWaitingOnUser(session) == true {
-            ActionRequiredIndicator(color: theme.statusError)
-        } else if store?.isRunning(session) == true {
-            AgentActivityIndicator()
-        } else if unreadCount(for: session) != nil {
-            UnreadBadge(color: notificationColor)
-        } else {
-            HarnessIcon(harnessId: session.harnessId, fallbackSymbolName: "bubble.left.fill")
-        }
+        ChatSessionLeadingIcon(session: session, store: store)
     }
 
     @ViewBuilder
@@ -1417,7 +1407,7 @@ struct SidebarView: View {
 
 /// Herdr-inspired working glyph: its ten braille frames advance at roughly
 /// eight steps per second in the harness icon's slot and foreground.
-private struct AgentActivityIndicator: View {
+struct AgentActivityIndicator: View {
     private static let frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -1534,7 +1524,7 @@ private struct SessionDropDelegate: DropDelegate {
 }
 
 /// A count-less notification badge for chats that changed while unopened.
-private struct UnreadBadge: View {
+struct UnreadBadge: View {
     let color: Color
 
     var body: some View {
@@ -1546,7 +1536,7 @@ private struct UnreadBadge: View {
 }
 
 /// Higher-priority unread marker for an activity epoch that ended abnormally.
-private struct ErrorUnreadBadge: View {
+struct ErrorUnreadBadge: View {
     let color: Color
 
     var body: some View {
@@ -1559,7 +1549,7 @@ private struct ErrorUnreadBadge: View {
 }
 
 /// Attention marker for a chat blocked on a question or plan approval.
-private struct ActionRequiredIndicator: View {
+struct ActionRequiredIndicator: View {
     let color: Color
 
     var body: some View {

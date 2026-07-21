@@ -287,7 +287,9 @@ final class SessionStore {
     /// duplicate instances would clobber each other's saves).
     func centerPaneGroup(for session: ChatSession, project: Project) -> PaneGroupModel {
         let workspace = workspace(for: session, project: project)
-        guard let leafId = workspace.centerTree.groupId(containingChat: session.id)
+        guard let leafId = workspace.centerTabs.lazy.compactMap({
+            $0.root.groupId(containingChat: session.id)
+        }).first
             ?? workspace.centerTree.allGroups.first?.id else {
             // Unreachable (a workspace always has a leaf); satisfies the
             // optional without a second cache.
@@ -347,7 +349,9 @@ final class SessionStore {
         // session's chat.
         let workspace = workspace(for: session, project: project)
         let resolvedLeafId = placement == .center
-            ? (leafId ?? workspace.centerTree.groupId(containingChat: session.id))
+            ? (leafId ?? workspace.centerTabs.lazy.compactMap {
+                $0.root.groupId(containingChat: session.id)
+            }.first)
             : nil
         let repository = WorkspacePaneGroupRepository(
             workspaceId: workspace.id,

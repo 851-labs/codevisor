@@ -38,6 +38,7 @@ struct CodevisorApp: App {
             FileCommands()
             MachineCommands(machines: environment.machines)
             TerminalCommands()
+            WorkspaceLayoutCommands()
             ScratchpadCommands()
             DebugOverlayCommands()
             // Provides the Format menu (⌘B/⌘I etc.) for the scratchpad's

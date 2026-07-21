@@ -1,7 +1,8 @@
 //  Workspace persistence + the sessions→workspaces backfill.
 //
-//  Workspaces are the persistence root for pane layout (center split tree +
-//  bottom panel). The backfill is incremental and idempotent: "ensure a
+//  Workspaces are the persistence root for pane layout (top tabs containing
+//  center split trees, plus the bottom panel). The backfill is incremental
+//  and idempotent: "ensure a
 //  workspace exists for this session" runs whenever a session is opened, so
 //  existing chats gain owning workspaces lazily per machine as their
 //  sessions load — never touching server-side session data, only
@@ -66,7 +67,7 @@ public final class DefaultWorkspaceRepository: WorkspaceRepository, @unchecked S
         var workspaces: [Workspace]
         var sessionIndex: [UUID: UUID]
 
-        static let empty = Payload(version: 1, workspaces: [], sessionIndex: [:])
+        static let empty = Payload(version: 2, workspaces: [], sessionIndex: [:])
     }
 
     private let store: any PersistenceStore
@@ -179,15 +180,37 @@ public final class DefaultWorkspaceRepository: WorkspaceRepository, @unchecked S
         } else {
             loaded = .empty
         }
-        // Load-time healing: drop empty groups persisted by an interrupted
-        // drop (see `prunedEmptyGroups`). Runs once per launch, before the
-        // cache exists, so it can never race an in-session drop's transient
-        // empty group.
+        let requiresRewrite = loaded.version < 2
+        loaded.version = 2
+        let workspacesBeforeHealing = loaded.workspaces
+        // Load-time healing: prune interrupted empty leaves from every top
+        // tab, drop empty tabs, and repair both selection levels.
         for index in loaded.workspaces.indices {
-            if let pruned = loaded.workspaces[index].centerTree.prunedEmptyGroups,
-               pruned != loaded.workspaces[index].centerTree {
-                loaded.workspaces[index].centerTree = pruned
+            var workspace = loaded.workspaces[index]
+            workspace.centerTabs = workspace.centerTabs.compactMap { tab in
+                guard let pruned = tab.root.prunedEmptyGroups else { return nil }
+                var repaired = tab
+                repaired.root = pruned
+                if pruned.group(id: repaired.activeLeafId) == nil,
+                   let first = pruned.allGroups.first?.id {
+                    repaired.activeLeafId = first
+                }
+                return repaired
             }
+            if workspace.centerTabs.isEmpty {
+                var state = PaneGroupState()
+                _ = state.addNewTabPane()
+                let tab = WorkspaceTab(root: .leaf(state))
+                workspace.centerTabs = [tab]
+                workspace.selectedCenterTabId = tab.id
+            } else if !workspace.centerTabs.contains(where: { $0.id == workspace.selectedCenterTabId }) {
+                workspace.selectedCenterTabId = workspace.centerTabs[0].id
+            }
+            loaded.workspaces[index] = workspace
+        }
+        if (requiresRewrite || loaded.workspaces != workspacesBeforeHealing),
+           let encoded = try? JSONEncoder().encode(loaded) {
+            try? store.saveData(encoded, forKey: key)
         }
         lock.withLock { if cache == nil { cache = loaded } }
         return loaded
@@ -226,7 +249,7 @@ public final class WorkspacePaneGroupRepository: PaneGroupRepository, @unchecked
             return workspace.bottomGroup
         case .center:
             guard let groupId else { return workspace.centerTree.allGroups.first?.state }
-            return workspace.centerTree.group(id: groupId)
+            return workspace.centerTabs.lazy.compactMap { $0.root.group(id: groupId) }.first
         }
     }
 
@@ -238,7 +261,11 @@ public final class WorkspacePaneGroupRepository: PaneGroupRepository, @unchecked
         case .center:
             let targetId = groupId ?? workspace.centerTree.allGroups.first?.id
             guard let targetId else { return }
-            workspace.centerTree = workspace.centerTree.updatingGroup(id: targetId) { _ in state }
+            guard let tabIndex = workspace.centerTabs.firstIndex(where: {
+                $0.root.group(id: targetId) != nil
+            }) else { return }
+            workspace.centerTabs[tabIndex].root = workspace.centerTabs[tabIndex].root
+                .updatingGroup(id: targetId) { _ in state }
         }
         repository.save(workspace)
     }
