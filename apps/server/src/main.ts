@@ -20,8 +20,7 @@ Options:
 
 const args = process.argv.slice(2)
 const command = args[0] ?? "serve"
-const wantsHelp =
-  command === "help" || args.some((arg) => arg === "--help" || arg === "-h")
+const wantsHelp = command === "help" || args.some((arg) => arg === "--help" || arg === "-h")
 
 if (wantsHelp) {
   console.log(USAGE)

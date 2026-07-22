@@ -391,6 +391,7 @@ const hasExistingListener = (host: string, port: number): Promise<boolean> =>
     }
     socket.once("connect", () => done(true))
     socket.once("error", () => done(false))
+    /* v8 ignore next -- an OS-level connect timeout is nondeterministic; connect/error cover the observable outcomes. */
     socket.setTimeout(1_000, () => done(false))
   })
 
@@ -405,7 +406,10 @@ export const startCodevisorServer = (
     // shadow-bound the loopback address of a live server and hijacked its
     // clients mid-turn. Refuse to start when the port is already served;
     // ephemeral ports (tests) cannot conflict and skip the probe.
-    if (config.port !== 0 && (yield* Effect.promise(() => hasExistingListener(config.host, config.port)))) {
+    if (
+      config.port !== 0 &&
+      (yield* Effect.promise(() => hasExistingListener(config.host, config.port)))
+    ) {
       return yield* Effect.fail(
         new ServerError({
           operation: "start",

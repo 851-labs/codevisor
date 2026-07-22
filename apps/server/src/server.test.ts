@@ -823,12 +823,14 @@ describe("@codevisor/server", () => {
     )
     runningServers.push(first)
 
-    // The kernel happily grants a loopback bind that overlaps a wildcard one,
-    // so a bind attempt alone would "succeed" and hijack the live server's
-    // clients. The startup probe must reject before any bind happens.
+    // A wildcard candidate must probe loopback, where an existing server is
+    // already accepting clients, and reject before attempting its own bind.
     await expect(
       run(
-        startCodevisorServer(services, defaultServerConfig({ id: "server-b", port: first.port }))
+        startCodevisorServer(
+          services,
+          defaultServerConfig({ host: "0.0.0.0", id: "server-b", port: first.port })
+        )
       )
     ).rejects.toMatchObject({
       operation: "start",

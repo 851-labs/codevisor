@@ -3145,7 +3145,16 @@ const createService = (
             .all(sessionId, excludeItemId ?? "") as Array<{ id: string }>
           const now = isoTimestamp()
           for (const row of stale) {
-            finishAssistantChatItem(sqlite, sessionId, row.id, now, "interrupted", stopDetail, false, true)
+            finishAssistantChatItem(
+              sqlite,
+              sessionId,
+              row.id,
+              now,
+              "interrupted",
+              stopDetail,
+              false,
+              true
+            )
           }
           // A failed row can never be the projection's write target again; a
           // pointer left on one would resurrect it on the next assistant event.
