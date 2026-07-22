@@ -475,8 +475,9 @@ jobs:
             --arg version "${{ inputs.version }}" \
             --arg channel "${{ inputs.channel }}" \
             --arg source_sha "${{ inputs.source_sha }}" \
+            --arg build_number "$GITHUB_RUN_NUMBER" \
             --arg run_id "$GITHUB_RUN_ID" \
-            '{version: $version, channel: $channel, source_sha: $source_sha, run_id: $run_id}' \
+            '{version: $version, channel: $channel, source_sha: $source_sha, build_number: $build_number, run_id: $run_id}' \
             > release-provenance.json
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:

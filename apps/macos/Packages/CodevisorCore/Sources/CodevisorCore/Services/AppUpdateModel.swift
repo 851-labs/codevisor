@@ -3,16 +3,25 @@ import Observation
 
 /// A published release of the app, discovered by an `AppUpdateChecking`.
 public struct AppUpdateRelease: Equatable, Sendable {
-    /// The release's version, without any leading "v" (e.g. "0.2.0").
+    /// The release tag without its leading "v" (e.g. "0.2.0" or
+    /// "0.2.0-rc.123").
     public var version: String
+    /// Whether GitHub marked this release as a prerelease.
+    public var isPrerelease: Bool
     /// The downloadable macOS app archive (Codevisor-macOS.zip), when published.
     public var archiveURL: URL?
     /// The human-readable release page, used as a fallback when the archive
     /// can't be installed automatically.
     public var releasePageURL: URL?
 
-    public init(version: String, archiveURL: URL? = nil, releasePageURL: URL? = nil) {
+    public init(
+        version: String,
+        isPrerelease: Bool = false,
+        archiveURL: URL? = nil,
+        releasePageURL: URL? = nil
+    ) {
         self.version = version
+        self.isPrerelease = isPrerelease
         self.archiveURL = archiveURL
         self.releasePageURL = releasePageURL
     }
@@ -112,26 +121,32 @@ public struct ManifestAppUpdateChecker: AppUpdateChecking {
     }
 }
 
-/// Checks the latest stable GitHub release and selects the app archive for the
-/// running CPU. GitHub's `/releases/latest` endpoint excludes drafts and
-/// prereleases, so release-candidate builds never become updater-visible.
+/// Checks GitHub releases and selects the app archive for the running CPU.
+/// Stable mode uses `/releases/latest`; the explicitly enabled beta mode uses
+/// the releases collection and admits prereleases while still rejecting drafts.
 public struct GitHubAppUpdateChecker: AppUpdateChecking {
     public static let defaultAPIURL = URL(
         string: "https://api.github.com/repos/851-labs/codevisor/releases/latest"
+    )!
+    public static let prereleaseAPIURL = URL(
+        string: "https://api.github.com/repos/851-labs/codevisor/releases?per_page=100"
     )!
 
     private let apiURL: URL
     private let urlSession: URLSession
     private let architecture: String
+    private let includesPrereleases: Bool
 
     public init(
-        apiURL: URL = Self.defaultAPIURL,
+        apiURL: URL? = nil,
         urlSession: URLSession = .shared,
-        architecture: String = ManifestAppUpdateChecker.currentArchitecture
+        architecture: String = ManifestAppUpdateChecker.currentArchitecture,
+        includesPrereleases: Bool = false
     ) {
-        self.apiURL = apiURL
+        self.apiURL = apiURL ?? (includesPrereleases ? Self.prereleaseAPIURL : Self.defaultAPIURL)
         self.urlSession = urlSession
         self.architecture = architecture
+        self.includesPrereleases = includesPrereleases
     }
 
     public func latestRelease() async throws -> AppUpdateRelease? {
@@ -146,8 +161,14 @@ public struct GitHubAppUpdateChecker: AppUpdateChecking {
             throw GitHubReleaseError.httpStatus(http.statusCode)
         }
 
-        let release = try JSONDecoder().decode(GitHubRelease.self, from: data)
-        guard !release.draft, !release.prerelease else { return nil }
+        let releases = if includesPrereleases {
+            try JSONDecoder().decode([GitHubRelease].self, from: data)
+        } else {
+            [try JSONDecoder().decode(GitHubRelease.self, from: data)]
+        }
+        guard let release = releases.first(where: {
+            !$0.draft && (includesPrereleases || !$0.prerelease)
+        }) else { return nil }
         let version = release.tagName.hasPrefix("v")
             ? String(release.tagName.dropFirst())
             : release.tagName
@@ -158,6 +179,7 @@ public struct GitHubAppUpdateChecker: AppUpdateChecking {
             ?? release.assets.first(where: { $0.name == ManifestAppUpdateChecker.appArchiveName })
         return AppUpdateRelease(
             version: version,
+            isPrerelease: release.prerelease,
             archiveURL: archive?.browserDownloadURL,
             releasePageURL: release.htmlURL
         )
@@ -232,21 +254,34 @@ public final class AppUpdateModel {
     public private(set) var phase: Phase = .idle
     public let currentVersion: String
     public let currentReleaseChannel: String
+    public let currentBuildNumber: Int?
+    public private(set) var allowsPrereleaseUpdates: Bool
 
     /// Downloads and installs a release, then relaunches the app. On success
     /// it never returns (the process is replaced).
     public var installHandler: (@MainActor (AppUpdateRelease) async throws -> Void)?
 
     private let checker: any AppUpdateChecking
+    private let prereleaseChecker: (any AppUpdateChecking)?
 
     public init(
         currentVersion: String,
         currentReleaseChannel: String = "stable",
-        checker: any AppUpdateChecking
+        currentBuildNumber: Int? = nil,
+        checker: any AppUpdateChecking,
+        prereleaseChecker: (any AppUpdateChecking)? = nil,
+        allowsPrereleaseUpdates: Bool = false
     ) {
         self.currentVersion = currentVersion
         self.currentReleaseChannel = currentReleaseChannel
+        self.currentBuildNumber = currentBuildNumber
         self.checker = checker
+        self.prereleaseChecker = prereleaseChecker
+        self.allowsPrereleaseUpdates = allowsPrereleaseUpdates
+    }
+
+    public func setAllowsPrereleaseUpdates(_ value: Bool) {
+        allowsPrereleaseUpdates = value
     }
 
     /// The release behind the banner, regardless of install progress.
@@ -289,11 +324,14 @@ public final class AppUpdateModel {
             phase = .checking
         }
         do {
-            guard let release = try await checker.latestRelease(),
-                  Self.shouldOfferStableRelease(
+            let selectedChecker = allowsPrereleaseUpdates ? (prereleaseChecker ?? checker) : checker
+            guard let release = try await selectedChecker.latestRelease(),
+                  Self.shouldOfferRelease(
                     release.version,
+                    candidateIsPrerelease: release.isPrerelease,
                     currentVersion: currentVersion,
-                    currentReleaseChannel: currentReleaseChannel
+                    currentReleaseChannel: currentReleaseChannel,
+                    currentBuildNumber: currentBuildNumber
                   ) else {
                 phase = .upToDate
                 return
@@ -350,9 +388,34 @@ public final class AppUpdateModel {
         currentVersion: String,
         currentReleaseChannel: String
     ) -> Bool {
-        if isVersion(candidate, newerThan: currentVersion) { return true }
-        return currentReleaseChannel == "rc"
-            && numericComponents(candidate) == numericComponents(currentVersion)
+        shouldOfferRelease(
+            candidate,
+            candidateIsPrerelease: false,
+            currentVersion: currentVersion,
+            currentReleaseChannel: currentReleaseChannel,
+            currentBuildNumber: nil
+        )
+    }
+
+    /// Orders stable and prerelease builds. Marketing versions remain the
+    /// primary key; within one marketing version, a stable build supersedes
+    /// every RC and RC workflow run numbers order beta-to-beta updates.
+    public static func shouldOfferRelease(
+        _ candidate: String,
+        candidateIsPrerelease: Bool,
+        currentVersion: String,
+        currentReleaseChannel: String,
+        currentBuildNumber: Int?
+    ) -> Bool {
+        let candidateComponents = numericComponents(candidate)
+        let currentComponents = numericComponents(currentVersion)
+        if compare(candidateComponents, currentComponents) > 0 { return true }
+        if compare(candidateComponents, currentComponents) < 0 { return false }
+        if !candidateIsPrerelease { return currentReleaseChannel == "rc" }
+        guard currentReleaseChannel == "rc",
+              let candidateBuild = rcBuildNumber(candidate),
+              let currentBuildNumber else { return false }
+        return candidateBuild > currentBuildNumber
     }
 
     /// The running app's marketing version (stamped by the release build).
@@ -362,6 +425,28 @@ public final class AppUpdateModel {
 
     public static func bundleReleaseChannel(_ bundle: Bundle = .main) -> String {
         (bundle.object(forInfoDictionaryKey: "CodevisorReleaseChannel") as? String) ?? "stable"
+    }
+
+    public static func bundleBuildNumber(_ bundle: Bundle = .main) -> Int? {
+        guard let value = bundle.object(forInfoDictionaryKey: "CFBundleVersion") as? String else {
+            return nil
+        }
+        return Int(value)
+    }
+
+    private static func compare(_ lhs: [Int], _ rhs: [Int]) -> Int {
+        for index in 0..<max(lhs.count, rhs.count) {
+            let left = index < lhs.count ? lhs[index] : 0
+            let right = index < rhs.count ? rhs[index] : 0
+            if left != right { return left < right ? -1 : 1 }
+        }
+        return 0
+    }
+
+    private static func rcBuildNumber(_ version: String) -> Int? {
+        let normalized = version.lowercased()
+        guard let range = normalized.range(of: "-rc.", options: .backwards) else { return nil }
+        return Int(normalized[range.upperBound...])
     }
 
     private static func numericComponents(_ version: String) -> [Int] {

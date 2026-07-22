@@ -13,7 +13,9 @@ permissions:
   contents: write
 
 concurrency:
-  group: stable-release
+  # Serialize stable publication with the hourly prerelease publisher so a
+  # scheduler run cannot create an RC after this workflow tags the final.
+  group: github-release-publication
   cancel-in-progress: false
 
 env:

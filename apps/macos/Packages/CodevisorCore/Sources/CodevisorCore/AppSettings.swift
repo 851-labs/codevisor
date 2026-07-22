@@ -14,6 +14,10 @@ public struct AppSettings: Sendable, Codable, Equatable {
     /// events. Content such as prompts, responses, code, paths, and terminal
     /// commands must never be included in those events.
     public var shareAnalytics: Bool
+    /// Opts this installation into GitHub prerelease builds. Stable remains
+    /// the default so existing and newly installed clients never follow RCs
+    /// unless the user explicitly enables them.
+    public var betaUpdatesEnabled: Bool
     /// Harness ids the user has explicitly turned off. A harness is "enabled"
     /// (shown in the composer picker) when its id is not in this set, so the
     /// default — an empty set — enables every installed harness.
@@ -38,6 +42,7 @@ public struct AppSettings: Sendable, Codable, Equatable {
         hasCompletedOnboarding: Bool = false,
         importExternalSessions: Bool = false,
         shareAnalytics: Bool = false,
+        betaUpdatesEnabled: Bool = false,
         disabledHarnessIds: Set<String> = [],
         themeMode: ThemeMode = .system,
         lightThemeId: String = ThemeCatalog.systemLightID,
@@ -51,6 +56,7 @@ public struct AppSettings: Sendable, Codable, Equatable {
         self.hasCompletedOnboarding = hasCompletedOnboarding
         self.importExternalSessions = importExternalSessions
         self.shareAnalytics = shareAnalytics
+        self.betaUpdatesEnabled = betaUpdatesEnabled
         self.disabledHarnessIds = disabledHarnessIds
         self.themeMode = themeMode
         self.lightThemeId = lightThemeId
@@ -63,7 +69,8 @@ public struct AppSettings: Sendable, Codable, Equatable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case hasCompletedOnboarding, importExternalSessions, shareAnalytics, disabledHarnessIds
+        case hasCompletedOnboarding, importExternalSessions, shareAnalytics, betaUpdatesEnabled
+        case disabledHarnessIds
         case themeMode, lightThemeId, darkThemeId
         case notificationsEnabled, systemNotificationsEnabled, notificationSoundsEnabled
         case chatFinishedSoundPath, actionRequiredSoundPath
@@ -78,6 +85,7 @@ public struct AppSettings: Sendable, Codable, Equatable {
         // remain disabled until the final onboarding step is completed.
         shareAnalytics = try container.decodeIfPresent(Bool.self, forKey: .shareAnalytics)
             ?? hasCompletedOnboarding
+        betaUpdatesEnabled = try container.decodeIfPresent(Bool.self, forKey: .betaUpdatesEnabled) ?? false
         disabledHarnessIds = try container.decodeIfPresent(Set<String>.self, forKey: .disabledHarnessIds) ?? []
         themeMode = try container.decodeIfPresent(ThemeMode.self, forKey: .themeMode) ?? .system
         lightThemeId = try container.decodeIfPresent(String.self, forKey: .lightThemeId) ?? ThemeCatalog.systemLightID
@@ -128,6 +136,7 @@ public final class AppSettingsModel {
     public var hasCompletedOnboarding: Bool { settings.hasCompletedOnboarding }
     public var importExternalSessions: Bool { settings.importExternalSessions }
     public var shareAnalytics: Bool { settings.shareAnalytics }
+    public var betaUpdatesEnabled: Bool { settings.betaUpdatesEnabled }
 
     /// Whether a harness is enabled (not turned off by the user).
     public func isHarnessEnabled(_ id: String) -> Bool {
@@ -164,6 +173,11 @@ public final class AppSettingsModel {
     /// Updates the privacy preference used as the single gate for analytics.
     public func setShareAnalytics(_ value: Bool) {
         settings.shareAnalytics = value
+        persist()
+    }
+
+    public func setBetaUpdatesEnabled(_ value: Bool) {
+        settings.betaUpdatesEnabled = value
         persist()
     }
 

@@ -101,6 +101,40 @@ struct AppUpdateModelTests {
         #expect(model.phase == .available(release))
     }
 
+    @Test("A newer RC build replaces an older RC of the same marketing version")
+    func newerRCBuildAvailable() async {
+        let release = AppUpdateRelease(version: "0.2.0-rc.43", isPrerelease: true)
+        let model = AppUpdateModel(
+            currentVersion: "0.2.0",
+            currentReleaseChannel: "rc",
+            currentBuildNumber: 42,
+            checker: FakeUpdateChecker(),
+            prereleaseChecker: FakeUpdateChecker(release: release),
+            allowsPrereleaseUpdates: true
+        )
+
+        await model.checkForUpdates()
+
+        #expect(model.phase == .available(release))
+    }
+
+    @Test("Stable update mode never consults the prerelease checker")
+    func stableModeIgnoresPrereleases() async {
+        let prerelease = AppUpdateRelease(version: "0.2.0-rc.43", isPrerelease: true)
+        let model = AppUpdateModel(
+            currentVersion: "0.1.0",
+            checker: FakeUpdateChecker(),
+            prereleaseChecker: FakeUpdateChecker(release: prerelease)
+        )
+
+        await model.checkForUpdates()
+        #expect(model.phase == .upToDate)
+
+        model.setAllowsPrereleaseUpdates(true)
+        await model.checkForUpdates()
+        #expect(model.phase == .available(prerelease))
+    }
+
     @Test("Check failures stay silent")
     func checkFailureIsSilent() async {
         let model = AppUpdateModel(
@@ -329,6 +363,77 @@ struct AppUpdateModelTests {
         #expect(release?.archiveURL == URL(string: "https://github.example/universal.zip"))
     }
 
+    @Test("GitHub beta checker includes prereleases but excludes drafts")
+    func githubBetaCheckerIncludesPrereleases() async throws {
+        StubURLProtocol.handler = { _ in
+            (200, Data(#"""
+            [
+                {
+                    "tag_name":"v0.5.0-rc.43",
+                    "html_url":"https://github.example/rc",
+                    "draft":true,
+                    "prerelease":true,
+                    "assets":[]
+                },
+                {
+                    "tag_name":"v0.5.0-rc.42",
+                    "html_url":"https://github.example/rc",
+                    "draft":false,
+                    "prerelease":true,
+                    "assets":[
+                        {"name":"Codevisor-macOS-arm64.zip","browser_download_url":"https://github.example/rc.zip"}
+                    ]
+                },
+                {
+                    "tag_name":"v0.4.0",
+                    "html_url":"https://github.example/stable",
+                    "draft":false,
+                    "prerelease":false,
+                    "assets":[]
+                }
+            ]
+            """#.utf8))
+        }
+        defer { StubURLProtocol.handler = nil }
+        let checker = GitHubAppUpdateChecker(
+            apiURL: URL(string: "https://api.github.example/releases?per_page=100")!,
+            urlSession: StubURLProtocol.makeSession(),
+            architecture: "arm64",
+            includesPrereleases: true
+        )
+
+        let release = try await checker.latestRelease()
+
+        #expect(release == AppUpdateRelease(
+            version: "0.5.0-rc.42",
+            isPrerelease: true,
+            archiveURL: URL(string: "https://github.example/rc.zip"),
+            releasePageURL: URL(string: "https://github.example/rc")
+        ))
+    }
+
+    @Test("GitHub stable checker rejects a prerelease response defensively")
+    func githubStableCheckerRejectsPrerelease() async throws {
+        StubURLProtocol.handler = { _ in
+            (200, Data(#"""
+            {
+                "tag_name":"v0.5.0-rc.42",
+                "html_url":"https://github.example/rc",
+                "draft":false,
+                "prerelease":true,
+                "assets":[]
+            }
+            """#.utf8))
+        }
+        defer { StubURLProtocol.handler = nil }
+        let checker = GitHubAppUpdateChecker(
+            apiURL: URL(string: "https://api.github.example/releases/latest")!,
+            urlSession: StubURLProtocol.makeSession()
+        )
+
+        #expect(try await checker.latestRelease() == nil)
+    }
+
     @Test("Compatibility checker is used when GitHub is unavailable")
     func updateCheckerFallsBackWhenGitHubFails() async throws {
         let expected = AppUpdateRelease(version: "0.3.0")
@@ -360,6 +465,27 @@ struct AppUpdateModelTests {
             "0.1.9",
             currentVersion: "0.1.9",
             currentReleaseChannel: "stable"
+        ))
+        #expect(AppUpdateModel.shouldOfferRelease(
+            "0.2.0-rc.43",
+            candidateIsPrerelease: true,
+            currentVersion: "0.2.0",
+            currentReleaseChannel: "rc",
+            currentBuildNumber: 42
+        ))
+        #expect(!AppUpdateModel.shouldOfferRelease(
+            "0.2.0-rc.42",
+            candidateIsPrerelease: true,
+            currentVersion: "0.2.0",
+            currentReleaseChannel: "rc",
+            currentBuildNumber: 42
+        ))
+        #expect(!AppUpdateModel.shouldOfferRelease(
+            "0.2.0-rc.44",
+            candidateIsPrerelease: true,
+            currentVersion: "0.2.0",
+            currentReleaseChannel: "stable",
+            currentBuildNumber: 43
         ))
     }
 }

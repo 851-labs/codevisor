@@ -30,18 +30,32 @@ struct SessionOverlayTests {
         let model = AppSettingsModel(store: store)
         #expect(model.hasCompletedOnboarding == false)
         #expect(model.shareAnalytics == false)
+        #expect(model.betaUpdatesEnabled == false)
         #expect(model.settings.notificationsEnabled)
         #expect(model.settings.systemNotificationsEnabled)
         #expect(model.settings.notificationSoundsEnabled)
         model.completeOnboarding(importExternalSessions: true)
         model.setShareAnalytics(true)
+        model.setBetaUpdatesEnabled(true)
         model.setChatFinishedSoundPath("/System/Library/Sounds/Ping.aiff")
         model.setActionRequiredSoundPath("/System/Library/Sounds/Hero.aiff")
         #expect(AppSettingsModel(store: store).hasCompletedOnboarding)
         #expect(AppSettingsModel(store: store).importExternalSessions)
         #expect(AppSettingsModel(store: store).shareAnalytics)
+        #expect(AppSettingsModel(store: store).betaUpdatesEnabled)
         #expect(AppSettingsModel(store: store).settings.chatFinishedSoundPath.hasSuffix("Ping.aiff"))
         #expect(AppSettingsModel(store: store).settings.actionRequiredSoundPath.hasSuffix("Hero.aiff"))
+    }
+
+    @Test("Settings saved before beta updates default to the stable channel")
+    func legacySettingsDefaultToStableUpdates() throws {
+        let store = InMemoryStore()
+        try store.saveData(
+            Data(#"{"hasCompletedOnboarding":true,"shareAnalytics":true}"#.utf8),
+            forKey: "settings"
+        )
+
+        #expect(!AppSettingsModel(store: store).betaUpdatesEnabled)
     }
 
     @Test("Importing creates projects by cwd and dedups")
@@ -120,7 +134,9 @@ struct SessionOverlayTests {
     func deleteAllData() {
         let environment = AppEnvironment.preview()
         environment.configCache.store([], forHarness: "claude-code", onServer: "local")
+        environment.setBetaUpdatesEnabled(true)
         #expect(environment.settings.hasCompletedOnboarding)
+        #expect(environment.appUpdate.allowsPrereleaseUpdates)
         #expect(!environment.projectList.projects.isEmpty)
 
         environment.deleteAllData()
@@ -129,6 +145,8 @@ struct SessionOverlayTests {
         #expect(environment.projectList.sessions.isEmpty)
         #expect(environment.configCache.options(forHarness: "claude-code", onServer: "local").isEmpty)
         #expect(!environment.settings.hasCompletedOnboarding)
+        #expect(!environment.settings.betaUpdatesEnabled)
+        #expect(!environment.appUpdate.allowsPrereleaseUpdates)
     }
 
     @Test("Harness enable/disable persists")

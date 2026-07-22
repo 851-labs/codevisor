@@ -283,6 +283,7 @@ public final class AppEnvironment {
         composerDefaults.clear()
         composerDrafts.clear()
         settings.reset()
+        appUpdate.setAllowsPrereleaseUpdates(settings.betaUpdatesEnabled)
         projectList.showsImportedSessions = settings.importExternalSessions
     }
 
@@ -291,6 +292,14 @@ public final class AppEnvironment {
     public func setShareAnalytics(_ enabled: Bool) {
         settings.setShareAnalytics(enabled)
         AnalyticsClient.shared.setEnabled(enabled)
+    }
+
+    /// Changes update channels immediately; the Settings view follows this
+    /// with a fresh check so enabling or disabling beta updates updates the
+    /// banner without requiring a relaunch.
+    public func setBetaUpdatesEnabled(_ enabled: Bool) {
+        settings.setBetaUpdatesEnabled(enabled)
+        appUpdate.setAllowsPrereleaseUpdates(enabled)
     }
 
     /// Applies the user's onboarding choice and imports if requested.
@@ -345,6 +354,7 @@ public final class AppEnvironment {
     public static func live() -> AppEnvironment {
         CodevisorAppVariant.migrateLegacyApplicationSupportIfNeeded()
         let store = FileSystemStore(directory: CodevisorAppVariant.applicationSupportURL())
+        let settings = AppSettingsModel(store: store)
         let serverClient = CodevisorServerClient(config: .localDefault)
         let localServer = LocalCodevisorServer(client: serverClient)
         return AppEnvironment(
@@ -353,7 +363,7 @@ public final class AppEnvironment {
             configCache: ConfigOptionCache(store: store),
             composerDefaults: ComposerDefaultsStore(store: store),
             composerDrafts: ComposerDraftStore(store: store),
-            settings: AppSettingsModel(store: store),
+            settings: settings,
             machineStore: store,
             legacyCacheMigrationStore: store,
             paneGroups: DefaultPaneGroupRepository(store: store),
@@ -363,10 +373,16 @@ public final class AppEnvironment {
             appUpdate: AppUpdateModel(
                 currentVersion: AppUpdateModel.bundleVersion(),
                 currentReleaseChannel: AppUpdateModel.bundleReleaseChannel(),
+                currentBuildNumber: AppUpdateModel.bundleBuildNumber(),
                 checker: FallbackAppUpdateChecker(
                     primary: GitHubAppUpdateChecker(),
                     fallback: ManifestAppUpdateChecker(baseURL: legacyReleaseArtifactBaseURL)
-                )
+                ),
+                prereleaseChecker: FallbackAppUpdateChecker(
+                    primary: GitHubAppUpdateChecker(includesPrereleases: true),
+                    fallback: ManifestAppUpdateChecker(baseURL: legacyReleaseArtifactBaseURL)
+                ),
+                allowsPrereleaseUpdates: settings.betaUpdatesEnabled
             ),
             customThemesDirectory: ThemeManager.defaultCustomThemesDirectory()
         )

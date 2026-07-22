@@ -1,0 +1,206 @@
+name: Publish release candidate
+
+on:
+  schedule:
+    - cron: "15 * * * *"
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: write
+
+concurrency:
+  group: github-release-publication
+  cancel-in-progress: false
+
+env:
+  REPOSITORY: ${{ github.repository }}
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Find the unpublished RC for current main
+        id: candidate
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          source_sha="$(gh api "repos/$REPOSITORY/commits/main" --jq .sha)"
+          rc_run_id="$(gh run list \
+            --workflow release-candidate.yml \
+            --branch main \
+            --commit "$source_sha" \
+            --status success \
+            --limit 20 \
+            --json databaseId,headSha \
+            --jq 'map(select(.headSha == "'"$source_sha"'"))[0].databaseId // empty')"
+          if [[ -z "$rc_run_id" ]]; then
+            echo "No successful release-candidate build exists for current main $source_sha; the next hourly run will retry."
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          provenance_dir="$RUNNER_TEMP/codevisor-rc-provenance"
+          gh run download "$rc_run_id" \
+            --name codevisor-release-provenance \
+            --dir "$provenance_dir"
+          provenance="$provenance_dir/release-provenance.json"
+          rc_sha="$(jq -r .source_sha "$provenance")"
+          version="$(jq -r .version "$provenance")"
+          channel="$(jq -r .channel "$provenance")"
+          build_number="$(jq -r '.build_number // empty' "$provenance")"
+          if [[ -z "$build_number" ]]; then
+            # Compatibility with an RC produced immediately before provenance
+            # began recording the caller workflow's run number.
+            build_number="$(gh api "repos/$REPOSITORY/actions/runs/$rc_run_id" --jq .run_number)"
+          fi
+          if [[ "$rc_sha" != "$source_sha" || "$channel" != "rc" \
+             || ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ \
+             || ! "$build_number" =~ ^[0-9]+$ ]]; then
+            echo "RC provenance is invalid or does not match current main." >&2
+            jq . "$provenance" >&2
+            exit 1
+          fi
+
+          stable_tag="v$version"
+          if git ls-remote --exit-code origin "refs/tags/$stable_tag" >/dev/null 2>&1; then
+            echo "$stable_tag is already tagged as stable; refusing to publish an RC for it."
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          tag="v$version-rc.$build_number"
+          expected=(
+            Codevisor-macOS-arm64.zip
+            Codevisor-macOS-x64.zip
+            Codevisor-arm64.dmg
+            Codevisor-x64.dmg
+            codevisor-server-darwin-arm64.tar.gz
+            codevisor-server-darwin-x64.tar.gz
+            codevisor-server-linux-arm64.tar.gz
+            codevisor-server-linux-x64.tar.gz
+          )
+
+          if gh release view "$tag" >/dev/null 2>&1; then
+            git fetch --force origin "refs/tags/$tag:refs/tags/$tag"
+            tag_sha="$(git rev-list -n 1 "$tag")"
+            if [[ "$tag_sha" != "$source_sha" ]]; then
+              echo "$tag already points to $tag_sha, not $source_sha; RC tags are never moved." >&2
+              exit 1
+            fi
+            release_json="$(gh release view "$tag" --json assets,isDraft,isPrerelease)"
+            complete="$(jq -r --argjson expected "$(printf '%s\n' "${expected[@]}" | jq -R . | jq -s '[.[] | ., . + ".sha256"]')" '
+              (.isDraft == false)
+              and (.isPrerelease == true)
+              and (($expected - [.assets[].name]) | length == 0)
+            ' <<<"$release_json")"
+            if [[ "$complete" == "true" ]]; then
+              echo "$tag is already a complete GitHub prerelease for current main."
+              echo "publish=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo "Repairing incomplete prerelease $tag from RC run $rc_run_id."
+          else
+            existing_tag_sha="$(git ls-remote origin "refs/tags/$tag^{}" | awk '{print $1}')"
+            if [[ -z "$existing_tag_sha" ]]; then
+              existing_tag_sha="$(git ls-remote origin "refs/tags/$tag" | awk '{print $1}')"
+            fi
+            if [[ -n "$existing_tag_sha" && "$existing_tag_sha" != "$source_sha" ]]; then
+              echo "$tag already points to $existing_tag_sha, not $source_sha; RC tags are never moved." >&2
+              exit 1
+            fi
+            echo "Publishing $tag at current main $source_sha from RC run $rc_run_id."
+          fi
+
+          echo "publish=true" >> "$GITHUB_OUTPUT"
+          echo "source_sha=$source_sha" >> "$GITHUB_OUTPUT"
+          echo "rc_run_id=$rc_run_id" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - name: Download RC artifacts
+        if: steps.candidate.outputs.publish == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RC_RUN_ID: ${{ steps.candidate.outputs.rc_run_id }}
+        run: |
+          mkdir -p dist/release
+          for name in \
+            codevisor-macos \
+            codevisor-server-linux-x64 \
+            codevisor-server-linux-arm64 \
+            codevisor-server-macos-x64; do
+            gh run download "$RC_RUN_ID" --name "$name" --dir dist/release
+          done
+
+      - name: Publish GitHub prerelease
+        if: steps.candidate.outputs.publish == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ steps.candidate.outputs.source_sha }}
+          TAG: ${{ steps.candidate.outputs.tag }}
+        run: |
+          shopt -s nullglob
+          artifacts=(
+            dist/release/*.zip
+            dist/release/*.tar.gz
+            dist/release/*.dmg
+            dist/release/*.sha256
+          )
+          if [[ "${#artifacts[@]}" -eq 0 ]]; then
+            echo "No RC artifacts were downloaded." >&2
+            exit 1
+          fi
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "${artifacts[@]}" --clobber
+            gh release edit "$TAG" --title "$TAG" --prerelease --draft=false
+          else
+            gh release create "$TAG" "${artifacts[@]}" \
+              --target "$SOURCE_SHA" \
+              --title "$TAG" \
+              --generate-notes \
+              --prerelease \
+              --latest=false
+          fi
+
+      - name: Verify published RC assets
+        if: steps.candidate.outputs.publish == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.candidate.outputs.tag }}
+        run: |
+          release_json="$(gh release view "$TAG" --json assets,isDraft,isPrerelease)"
+          if [[ "$(jq -r .isDraft <<<"$release_json")" != "false" \
+             || "$(jq -r .isPrerelease <<<"$release_json")" != "true" ]]; then
+            echo "$TAG was not published as a GitHub prerelease." >&2
+            exit 1
+          fi
+          expected=(
+            Codevisor-macOS-arm64.zip
+            Codevisor-macOS-x64.zip
+            Codevisor-arm64.dmg
+            Codevisor-x64.dmg
+            codevisor-server-darwin-arm64.tar.gz
+            codevisor-server-darwin-x64.tar.gz
+            codevisor-server-linux-arm64.tar.gz
+            codevisor-server-linux-x64.tar.gz
+          )
+          for name in "${expected[@]}"; do
+            for asset in "$name" "$name.sha256"; do
+              if ! jq -e --arg asset "$asset" '.assets[] | select(.name == $asset)' \
+                <<<"$release_json" >/dev/null; then
+                echo "$TAG is missing $asset." >&2
+                exit 1
+              fi
+            done
+          done
+          echo "Verified $TAG as a complete GitHub prerelease."

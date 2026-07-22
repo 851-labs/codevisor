@@ -553,6 +553,20 @@ struct GeneralSettingsView: View {
                 Text("Privacy")
             }
 
+            Section {
+                Toggle(isOn: betaUpdatesEnabled) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Beta tester mode")
+                        Text("Receive release candidates in addition to stable Codevisor updates.")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .toggleStyle(.switch)
+            } header: {
+                Text("Updates")
+            }
+
             Section("Data") {
                 HStack(alignment: .center, spacing: 16) {
                     VStack(alignment: .leading, spacing: 3) {
@@ -596,6 +610,16 @@ struct GeneralSettingsView: View {
         Binding(
             get: { environment.settings.shareAnalytics },
             set: { environment.setShareAnalytics($0) }
+        )
+    }
+
+    private var betaUpdatesEnabled: Binding<Bool> {
+        Binding(
+            get: { environment.settings.betaUpdatesEnabled },
+            set: { enabled in
+                environment.setBetaUpdatesEnabled(enabled)
+                Task { await environment.appUpdate.checkForUpdates() }
+            }
         )
     }
 
