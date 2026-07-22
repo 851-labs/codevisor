@@ -159,7 +159,7 @@ jobs:
 
   build-server-macos-x64:
     needs: guard
-    runs-on: macos-26-intel
+    runs-on: [self-hosted, macOS, X64, codevisor-macos-x64]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -229,7 +229,7 @@ jobs:
 
   build-macos:
     needs: guard
-    runs-on: macos-26
+    runs-on: [self-hosted, macOS, ARM64, codevisor-macos-arm64]
     env:
       CODEVISOR_BUILD_NUMBER: ${{ github.run_number }}
       CODEVISOR_RELEASE_CHANNEL: ${{ inputs.channel }}
