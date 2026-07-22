@@ -816,7 +816,7 @@ describe("@codevisor/server", () => {
     })
   })
 
-  it("restores session context and terminalizes a turn orphaned by server restart", async () => {
+  it("terminalizes orphaned durable state and restores the agent only when the chat connects", async () => {
     const { agents, services } = await makeServices("server-a")
     const folder = mkdtempSync(join(tmpdir(), "codevisor-recovery-project-"))
     tempDirs.push(folder)
@@ -902,7 +902,10 @@ describe("@codevisor/server", () => {
     )
     runningServers.push(server)
 
-    expect(agents.loads).toContainEqual(["codex", "agent-before-crash", folder])
+    // Startup recovery must stay database-only. A cold provider process can
+    // take tens of seconds to initialize, and health/chat history do not need
+    // it yet.
+    expect(agents.loads).toEqual([])
     const page = await run(services.db.getTranscriptPage(session.id, undefined, 8))
     expect(page.pendingQuestion).toBeUndefined()
     expect(page.backgroundTasks).toEqual([])
@@ -916,7 +919,7 @@ describe("@codevisor/server", () => {
       isGenerating: false,
       stopReason: "interrupted",
       stopDetail:
-        "The server restarted before this turn finished. The agent session was restored; send a message to continue."
+        "The server restarted before this turn finished. Reopen the chat to reconnect its agent session, then send a message to continue."
     })
     const events = await run(services.db.listSubjectEvents(session.id))
     expect(events.map((event) => event.payload)).toContainEqual(
@@ -933,6 +936,11 @@ describe("@codevisor/server", () => {
         turnState: "ended"
       })
     )
+
+    expect(
+      (await jsonRequest(server, `/v1/sessions/${session.id}/connect`, { method: "POST" })).status
+    ).toBe(200)
+    expect(agents.loads).toEqual([["codex", "agent-before-crash", folder]])
   })
 
   it("persists session config and restores model before dependent reasoning and speed", async () => {
@@ -1142,8 +1150,8 @@ describe("@codevisor/server", () => {
     expect(await run(services.db.listSubjectEvents(session.id))).toHaveLength(before.length)
   })
 
-  it("terminalizes an orphaned turn when its agent session cannot be restored", async () => {
-    const { services } = await makeServices("server-a")
+  it("terminalizes an orphaned turn even when its agent session cannot be restored yet", async () => {
+    const { agents, services } = await makeServices("server-a")
     const missingFolder = join(tmpdir(), `codevisor-missing-${randomUUID()}`)
     const project = await run(services.db.createProject({ folderPath: missingFolder }))
     const session = await run(
@@ -1165,15 +1173,20 @@ describe("@codevisor/server", () => {
     )
     runningServers.push(server)
 
+    expect(agents.loads).toEqual([])
     expect(await run(services.db.getTranscriptPage(session.id, undefined, 8))).toMatchObject({
       items: [
         {
           isGenerating: false,
           stopReason: "interrupted",
-          stopDetail: expect.stringContaining("could not restore the agent session")
+          stopDetail: expect.stringContaining("Reopen the chat to reconnect its agent session")
         }
       ]
     })
+    expect(
+      (await jsonRequest(server, `/v1/sessions/${session.id}/connect`, { method: "POST" })).status
+    ).toBe(400)
+    expect(agents.loads).toEqual([])
   })
 
   it("loads a large SSE tool catalog without opening the optional notification stream", async () => {

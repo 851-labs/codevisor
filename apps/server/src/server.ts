@@ -386,8 +386,10 @@ export const startCodevisorServer = (
     const fanout = yield* makeEventFanout
     yield* Effect.sync(() => sweepAttachmentTempFiles())
     // Every runtime continuation belongs to this server process. If the
-    // previous process died mid-turn, restore the durable harness thread when
-    // possible, then close only the orphaned turn before accepting clients.
+    // previous process died mid-turn, close only the orphaned durable state
+    // before accepting clients. Agent processes are deliberately restored on
+    // demand by /connect: cold-starting one here for every interrupted chat
+    // used to keep /health unavailable for minutes after an app relaunch.
     // This makes startup reconciliation idempotent and prevents a reconnecting
     // UI from inheriting a generating row that can never emit again.
     return yield* Effect.tryPromise({
@@ -473,15 +475,6 @@ export const reconcileOrphanedSessionTurns = async (
     }
     if (!hasOrphanedTurn && !hasOrphanedTasks && processingPrompts.length === 0) continue
 
-    let restored = false
-    let restoreFailure = "unknown error"
-    try {
-      await ensureAgentSessionFor(services, fanout, serverId, session.id)
-      restored = true
-    } catch (cause) {
-      restoreFailure = failureMessage(cause)
-    }
-
     // The provider-side resolver vanished with the old process. Pair a
     // persisted question before ending the turn so event replay never leaves
     // an apparently answerable request behind.
@@ -539,15 +532,13 @@ export const reconcileOrphanedSessionTurns = async (
 
     if (!hasOrphanedTurn && terminalTurnId === undefined) continue
 
-    const stopDetail = restored
-      ? "The server restarted before this turn finished. The agent session was restored; send a message to continue."
-      : `The server restarted before this turn finished and could not restore the agent session: ${restoreFailure}`
     await appendAndPublish(services.db, fanout, "session.updated", session.id, {
       ...(terminalTurnId === undefined
         ? {}
         : { initiatedBy: "user", turnId: terminalTurnId, turnState: "ended" }),
       serverId,
-      stopDetail,
+      stopDetail:
+        "The server restarted before this turn finished. Reopen the chat to reconnect its agent session, then send a message to continue.",
       stopReason: "interrupted"
     })
   }
