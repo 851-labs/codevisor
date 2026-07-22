@@ -75,7 +75,8 @@ struct ComposerCard: View {
     /// scrolling maximum. Drives both its scroll frame and its lift above
     /// the composer card.
     private var paletteHeight: CGFloat {
-        min(slashMenuContentHeight, Self.slashMenuMaxHeight)
+        if isLoadingSlashCommands, slashMenuContentHeight == 0 { return 40 }
+        return min(slashMenuContentHeight, Self.slashMenuMaxHeight)
     }
 
     var body: some View {
@@ -110,7 +111,7 @@ struct ComposerCard: View {
         // the composer glass.
         .overlay(alignment: .top) {
             ZStack(alignment: .top) {
-                if controller.activeQuestion == nil, !visibleSlashMatches.isEmpty {
+                if controller.activeQuestion == nil, showsSlashCommandPopup {
                     slashCommandPopup
                         .transition(Motion.unfold(reduceMotion: reduceMotion, anchor: .bottom))
                 }
@@ -120,7 +121,7 @@ struct ComposerCard: View {
             .offset(y: -(paletteHeight + ComposerGlassStyle.clusterSpacing))
             .animation(
                 Motion.quick(reduceMotion: reduceMotion),
-                value: visibleSlashMatches.isEmpty
+                value: !showsSlashCommandPopup
             )
         }
         .overlay {
@@ -171,6 +172,25 @@ struct ComposerCard: View {
                 }
                 if !controller.composerAttachments.isEmpty {
                     ComposerAttachmentRow(controller: controller)
+                }
+                if let message = controller.configurationValidationError {
+                    HStack(spacing: 8) {
+                        Label(message, systemImage: "exclamationmark.triangle")
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                        Spacer(minLength: 0)
+                        Button("Retry") {
+                            Task { await controller.retryExistingSessionCapabilities() }
+                        }
+                        .buttonStyle(.plain)
+                        .font(.caption.weight(.medium))
+                    }
+                    .accessibilityElement(children: .combine)
+                } else if let message = controller.configurationAdjustmentMessage {
+                    Label(message, systemImage: "exclamationmark.triangle")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .accessibilityLabel(message)
                 }
 
                 ZStack(alignment: .topLeading) {
@@ -274,8 +294,25 @@ struct ComposerCard: View {
 
     @ViewBuilder
     private var slashCommandPopup: some View {
-        let matches = visibleSlashMatches
-        if !matches.isEmpty {
+        if isLoadingSlashCommands {
+            HStack(spacing: 8) {
+                ProgressView()
+                    .controlSize(.small)
+                Text("Connecting to harness…")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 9)
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: {
+                slashMenuContentHeight = $0
+            }
+            .composerGlassSurface(cornerRadius: ComposerGlassStyle.accessoryCornerRadius)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Connecting to harness")
+        } else if !visibleSlashMatches.isEmpty {
+            let matches = visibleSlashMatches
             let selectedIndex = min(slashSelection, matches.count - 1)
             ScrollViewReader { proxy in
                 ScrollView {
@@ -336,18 +373,23 @@ struct ComposerCard: View {
 
     private func configMenu(_ option: SessionConfigOption) -> some View {
         Menu {
-            ForEach(option.options) { value in
-                Toggle(isOn: Binding(
-                    get: {
-                        controller.configOptions.first { $0.id == option.id }?.currentValue
-                            == value.value
-                    },
-                    set: { isOn in
-                        guard isOn else { return }
-                        Task { await controller.setConfigOption(option.id, value.value) }
+            if controller.isConnectingToHarness {
+                Label("Connecting to harness…", systemImage: "arrow.triangle.2.circlepath")
+                    .disabled(true)
+            } else {
+                ForEach(option.options) { value in
+                    Toggle(isOn: Binding(
+                        get: {
+                            controller.configOptions.first { $0.id == option.id }?.currentValue
+                                == value.value
+                        },
+                        set: { isOn in
+                            guard isOn else { return }
+                            Task { await controller.setConfigOption(option.id, value.value) }
+                        }
+                    )) {
+                        Text(value.name)
                     }
-                )) {
-                    Text(value.name)
                 }
             }
         } label: {
@@ -475,14 +517,23 @@ struct ComposerCard: View {
             // Goal mode still respects the connecting gate: `submitGoal…`
             // silently drops input while connecting, so an enabled-looking
             // button would be a lie.
-            let isEnabled = !isAppUpdateInProgress && (controller.isGoalComposerArmed
+            let hasSubmittableContent = controller.isGoalComposerArmed
                 ? !controller.composerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                : hasComposerDraft || !visibleSlashMatches.isEmpty
+            let isBlockedByCapabilities = hasSubmittableContent
+                && controller.isConnectingToHarness
+            let isEnabled = !isAppUpdateInProgress && (controller.isGoalComposerArmed
+                ? hasSubmittableContent
                     && !controller.isConnecting
-                : (controller.canSend || !visibleSlashMatches.isEmpty))
+                    && !controller.isConnectingToHarness
+                : !controller.isConnectingToHarness
+                    && (controller.canSend || !visibleSlashMatches.isEmpty))
             ComposerSubmitButton(
                 isEnabled: isEnabled,
                 help: isAppUpdateInProgress
                     ? "Updating… you can send once the update finishes."
+                    : isBlockedByCapabilities
+                        ? "Connecting to harness…"
                     : controller.isConnecting
                         ? "Connecting… you can send once the agent is ready."
                         : "Send (↩)",
@@ -581,8 +632,17 @@ struct ComposerCard: View {
         isSlashMenuDismissed ? [] : slashMatches
     }
 
+    private var isLoadingSlashCommands: Bool {
+        slashQuery != nil && controller.isConnectingToHarness && !isSlashMenuDismissed
+    }
+
+    private var showsSlashCommandPopup: Bool {
+        isLoadingSlashCommands || !visibleSlashMatches.isEmpty
+    }
+
     private func submitOrAcceptSlash() {
         guard !controller.isResolvingQuestion else { return }
+        if isLoadingSlashCommands { return }
         if let command = selectedSlashCommand {
             acceptSlashCommand(command)
         } else if controller.isGoalComposerArmed {
@@ -973,14 +1033,19 @@ struct ModelConfigMenu: View {
                 .accessibilityLabel("Loading model settings")
         } else if controller.hasModelMenu {
             Menu {
-                if let option = controller.modelOption {
-                    section("Model", option)
-                }
-                ForEach(controller.thoughtLevelOptions) { option in
-                    section(option.name, option)
-                }
-                if let option = controller.speedOption {
-                    section("Speed", option)
+                if controller.isConnectingToHarness {
+                    Label("Connecting to harness…", systemImage: "arrow.triangle.2.circlepath")
+                        .disabled(true)
+                } else {
+                    if let option = controller.modelOption {
+                        section("Model", option)
+                    }
+                    ForEach(controller.thoughtLevelOptions) { option in
+                        section(option.name, option)
+                    }
+                    if let option = controller.speedOption {
+                        section("Speed", option)
+                    }
                 }
             } label: {
                 chipLabel

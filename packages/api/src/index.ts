@@ -1066,6 +1066,10 @@ export const SessionSummary = Schema.Struct({
   /// one. Optional for sessions created before workspaces existed.
   workspaceId: Schema.optional(Schema.String),
   cwd: Schema.optional(Schema.String),
+  /// Last configuration values accepted for this chat. Clients combine this
+  /// small snapshot with cached option metadata to paint the previous
+  /// composer configuration while the harness validates it.
+  configSelections: Schema.optional(Schema.Record(Schema.String, Schema.String)),
   createdAt: Schema.String,
   updatedAt: Schema.optional(Schema.String),
   usage: Schema.optional(SessionUsage)

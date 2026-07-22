@@ -100,6 +100,9 @@ public protocol CodevisorServerClienting: Sendable {
     /// a token to copy, so it stays consistent.
     func connectionToken() async throws -> ServerPairingToken
     func capabilities(cwd: String) async throws -> ServerCapabilities
+    /// Inspects only one known harness. Existing chats use this overload so
+    /// unrelated agents never enter their loading path.
+    func capabilities(cwd: String, harnessId: String) async throws -> ServerCapabilities
     func listHarnesses() async throws -> [ServerHarness]
     /// The list with lifecycle decoration (update knowledge, install
     /// methods) — for Settings and update banners. The plain `listHarnesses`
@@ -294,6 +297,15 @@ public protocol CodevisorServerClienting: Sendable {
 }
 
 public extension CodevisorServerClienting {
+    /// Compatibility fallback for test doubles and older transports. The HTTP
+    /// client overrides this with the server-side filtered request.
+    func capabilities(cwd: String, harnessId: String) async throws -> ServerCapabilities {
+        let response = try await capabilities(cwd: cwd)
+        return ServerCapabilities(
+            harnesses: response.harnesses.filter { $0.harness.id == harnessId }
+        )
+    }
+
     func connectSession(id: UUID) async throws -> ServerSessionRuntimeMetadata? { nil }
 
     /// Default for fakes/older transports: no combined open — callers use
@@ -1817,6 +1829,7 @@ public struct ServerSession: Decodable, Equatable, Sendable {
     public var isArchived: Bool
     public var worktreeName: String?
     public var cwd: String?
+    public var configSelections: [String: String]? = nil
     public var createdAt: String
     public var updatedAt: String?
     public var usage: ServerSessionUsage?
@@ -1843,6 +1856,7 @@ public struct ServerSession: Decodable, Equatable, Sendable {
             isArchived: isArchived,
             worktreeName: worktreeName,
             cwd: cwd,
+            configSelections: configSelections,
             createdAt: try ServerDateCoding.date(from: createdAt),
             updatedAt: try updatedAt.map(ServerDateCoding.date)
         )
@@ -2019,8 +2033,24 @@ public final class CodevisorServerClient: CodevisorServerClienting, @unchecked S
     }
 
     public func capabilities(cwd: String) async throws -> ServerCapabilities {
-        let encoded = cwd.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? cwd
-        return try await get("/v1/capabilities?cwd=\(encoded)")
+        try await capabilities(cwd: cwd, harnessId: nil)
+    }
+
+    public func capabilities(cwd: String, harnessId: String) async throws -> ServerCapabilities {
+        try await capabilities(cwd: cwd, harnessId: Optional(harnessId))
+    }
+
+    private func capabilities(cwd: String, harnessId: String?) async throws -> ServerCapabilities {
+        var components = URLComponents()
+        components.path = "/v1/capabilities"
+        components.queryItems = [URLQueryItem(name: "cwd", value: cwd)]
+        if let harnessId {
+            components.queryItems?.append(URLQueryItem(name: "harnessId", value: harnessId))
+        }
+        guard let path = components.string else {
+            throw CodevisorServerClientError.invalidURL("capabilities")
+        }
+        return try await get(path)
     }
 
     public func listHarnesses() async throws -> [ServerHarness] {

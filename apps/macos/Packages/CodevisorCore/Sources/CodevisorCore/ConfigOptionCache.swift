@@ -85,6 +85,21 @@ public final class ConfigOptionCache {
         persist()
     }
 
+    /// Merges one freshly inspected harness without discarding the cached
+    /// catalog for every other harness on the same server.
+    public func store(_ capability: ServerHarnessCapability, forServer serverId: String) {
+        provisionalCapabilityServers.remove(serverId)
+        var capabilities = capabilitiesCache[serverId] ?? []
+        if let index = capabilities.firstIndex(where: { $0.harness.id == capability.harness.id }) {
+            capabilities[index] = capability
+        } else {
+            capabilities.append(capability)
+        }
+        capabilitiesCache[serverId] = capabilities
+        cache[serverId, default: [:]][capability.harness.id] = capability.configOptions
+        persist()
+    }
+
     /// Stores a speculative warm only while this server has no capability
     /// snapshot. A project-specific composer refresh is more authoritative;
     /// if it wins the race, a generic onboarding warm must not overwrite it.

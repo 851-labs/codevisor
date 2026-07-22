@@ -117,6 +117,15 @@ final class SessionController {
         case failed
     }
 
+    /// Validation of a resumed chat's persisted composer configuration. The
+    /// transcript is deliberately independent of this state; only actions
+    /// that depend on current harness metadata wait for it.
+    enum ConfigurationValidationState: Equatable {
+        case ready
+        case connecting
+        case failed(String)
+    }
+
     var composerText: String = "" { didSet { draftDidChange() } }
     private(set) var composerAttachments: [ComposerAttachment] = [] { didSet { draftDidChange() } }
     /// Attachments shown with the optimistic first message while connecting.
@@ -124,6 +133,14 @@ final class SessionController {
     private var uploadTasks: [UUID: Task<Void, Never>] = [:]
     private(set) var harnesses: [ServerHarness] = []
     private(set) var preparationState: PreparationState = .loading
+    private(set) var configurationValidationState: ConfigurationValidationState = .ready
+    /// Non-nil when reconnecting replaced a persisted value that the harness
+    /// no longer advertises.
+    private(set) var configurationAdjustmentMessage: String?
+    /// The first transcript page has its own state so an existing empty model
+    /// never presents as an unexplained blank screen.
+    private(set) var isLoadingInitialHistory = false
+    private var initialHistoryLoadStartedAt: TimeInterval?
     var selectedHarnessId: String? { didSet { draftDidChange() } }
     private(set) var model: SessionModel?
     private(set) var status: Status = .idle
@@ -336,6 +353,10 @@ final class SessionController {
     private var modeStateByHarness: [String: SessionModeState] = [:]
     private var configOptionsByHarness: [String: [SessionConfigOption]] = [:]
     private var supportsGoalsByHarness: [String: Bool] = [:]
+    private var didLoadExistingHarnessCapabilities = false
+    private var didFinishExistingRuntimeConfiguration = false
+    private var didLoadExistingRuntimeConfiguration = false
+    private var existingConfigurationError: String?
 
     init(
         project: Project,
@@ -349,6 +370,105 @@ final class SessionController {
         self.serverClient = serverClient
         if seedFromCachedServerCapabilities() {
             preparationState = .ready
+        }
+    }
+
+    /// Binds a persisted chat to this controller and paints its last accepted
+    /// selections over cached option definitions. The values remain
+    /// provisional until the live session reconnect validates them.
+    func configureExistingSession(_ session: ChatSession) {
+        let identityChanged = serverSession?.id != session.id
+            || resumeAgentSessionId != session.agentSessionId
+        serverSession = session
+        resumeAgentSessionId = session.agentSessionId
+        if !session.harnessId.isEmpty {
+            selectedHarnessId = session.harnessId
+        }
+        guard model == nil else { return }
+        seedExistingSessionConfiguration(from: session)
+        guard identityChanged, session.agentSessionId?.isEmpty == false else { return }
+        didLoadExistingHarnessCapabilities = false
+        didFinishExistingRuntimeConfiguration = false
+        didLoadExistingRuntimeConfiguration = false
+        existingConfigurationError = nil
+        configurationAdjustmentMessage = nil
+        configurationValidationState = .connecting
+        isLoadingInitialHistory = true
+        initialHistoryLoadStartedAt = ProcessInfo.processInfo.systemUptime
+    }
+
+    private func seedExistingSessionConfiguration(from session: ChatSession? = nil) {
+        let session = session ?? serverSession
+        guard model == nil,
+              let session,
+              !session.harnessId.isEmpty,
+              let selections = session.configSelections,
+              !selections.isEmpty else { return }
+        var options = configOptionsByHarness[session.harnessId]
+            ?? configCache.options(forHarness: session.harnessId, onServer: project.serverId)
+        for (configId, value) in selections {
+            if let index = options.firstIndex(where: { $0.id == configId }) {
+                // Keep even a now-unknown value visible while validation runs;
+                // SessionConfigOption.currentName falls back to the raw value.
+                options[index].currentValue = value
+            } else {
+                // The value snapshot is enough to paint a disabled provisional
+                // picker even when this machine has no cached definitions yet.
+                options.append(Self.provisionalConfigOption(id: configId, value: value))
+            }
+        }
+        configOptionsByHarness[session.harnessId] = options
+    }
+
+    private static func provisionalConfigOption(id: String, value: String) -> SessionConfigOption {
+        let normalized = id.lowercased()
+        let category: String? = if normalized == "model" {
+            SessionConfigOption.Category.model
+        } else if normalized.contains("reason")
+            || normalized.contains("effort")
+            || normalized.contains("thinking") {
+            SessionConfigOption.Category.thoughtLevel
+        } else if normalized.contains("speed") {
+            SessionConfigOption.Category.speed
+        } else {
+            SessionConfigOption.Category.modelConfig
+        }
+        return SessionConfigOption(
+            id: id,
+            name: id.replacingOccurrences(of: "_", with: " ").capitalized,
+            category: category,
+            currentValue: value,
+            options: [SessionConfigSelectOption(value: value, name: value)]
+        )
+    }
+
+    private var hasExistingAgentSession: Bool {
+        resumeAgentSessionId?.isEmpty == false
+            || serverSession?.agentSessionId?.isEmpty == false
+    }
+
+    var isConnectingToHarness: Bool {
+        configurationValidationState == .connecting
+    }
+
+    var configurationValidationError: String? {
+        guard case let .failed(message) = configurationValidationState else { return nil }
+        return message
+    }
+
+    private func updateConfigurationValidationState() {
+        guard hasExistingAgentSession else {
+            configurationValidationState = .ready
+            return
+        }
+        if didLoadExistingRuntimeConfiguration
+            || (didFinishExistingRuntimeConfiguration && didLoadExistingHarnessCapabilities) {
+            configurationValidationState = .ready
+        } else if didFinishExistingRuntimeConfiguration,
+                  let existingConfigurationError {
+            configurationValidationState = .failed(existingConfigurationError)
+        } else {
+            configurationValidationState = .connecting
         }
     }
 
@@ -485,7 +605,7 @@ final class SessionController {
             && resumeAgentSessionId == nil
     }
     var modeState: SessionModeState? {
-        if let model { return model.modeState }
+        if let live = model?.modeState { return live }
         guard let selectedHarnessId, var state = modeStateByHarness[selectedHarnessId] else { return nil }
         if let pendingModeId { state.currentModeId = pendingModeId }
         return state
@@ -655,7 +775,7 @@ final class SessionController {
         if showsSetupPhases { beginSetupPhase(.startingAgent(named: harness.name)) }
         do {
             // connect applies the pending goal once the agent session exists.
-            let model = try await connect(harness)
+            let model = try await connect(harnessId: harness.id)
             self.model = model
             setupPhases.removeAll { $0.id == SessionSetupPhase.agentPhaseId }
             status = .idle
@@ -845,7 +965,9 @@ final class SessionController {
     /// Selectable config options: live when connected, otherwise the cached
     /// (stale) options for the selected harness with any pending edits applied.
     var configOptions: [SessionConfigOption] {
-        if let model { return model.configOptions }
+        if let model, !model.configOptions.isEmpty || !isConnectingToHarness {
+            return model.configOptions
+        }
         guard let harnessId = selectedHarnessId else { return [] }
         let pendingConfig = pendingConfigByHarness[harnessId] ?? [:]
         return (configOptionsByHarness[harnessId]
@@ -901,7 +1023,7 @@ final class SessionController {
     /// place with a spinner during that gap instead of popping it in later.
     var isLoadingModelMenu: Bool {
         guard !hasModelMenu else { return false }
-        if isConnecting { return true }
+        if isConnecting || isConnectingToHarness { return true }
         guard model == nil, serverSession?.agentSessionId?.isEmpty == false else { return false }
         if case .failed = status { return false }
         return true
@@ -929,6 +1051,7 @@ final class SessionController {
     }
 
     func setConfigOption(_ configId: String, _ value: String) async {
+        guard !isConnectingToHarness else { return }
         let optionBeforeChange = configOptions.first { $0.id == configId }
         let previousValue = optionBeforeChange?.currentValue
         var accepted = true
@@ -1104,6 +1227,7 @@ final class SessionController {
         (!composerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             || !composerAttachments.isEmpty)
             && !isConnecting
+            && configurationValidationState == .ready
             && (isConnected || selectedHarness != nil)
     }
 
@@ -1297,6 +1421,66 @@ final class SessionController {
         _ = await prepareFromServerCapabilities(serverClient)
     }
 
+    /// Refreshes only the harness used by a resumed chat. This runs beside
+    /// transcript/runtime connection and never gates the first history paint.
+    /// The live resumed-session metadata remains authoritative; this snapshot
+    /// supplies fresh picker definitions and the compatibility fallback for
+    /// servers that do not yet return runtime metadata from `/connect`.
+    func prepareExistingSessionCapabilities() async {
+        let harnessId = serverSession?.harnessId ?? selectedHarnessId ?? ""
+        guard hasExistingAgentSession, let serverClient, !harnessId.isEmpty else { return }
+        let startedAt = ProcessInfo.processInfo.systemUptime
+        do {
+            let response = try await serverClient.capabilities(
+                cwd: sessionCwdURL.path,
+                harnessId: harnessId
+            )
+            guard let capability = response.harnesses.first(where: { $0.harness.id == harnessId }) else {
+                existingConfigurationError = "The chat's harness is unavailable."
+                updateConfigurationValidationState()
+                logExistingChatPhase("capabilities_missing", harnessId: harnessId, startedAt: startedAt)
+                return
+            }
+            var validatedCapability = capability
+            validatedCapability.configOptions = Self.configurationOptions(
+                restoring: serverSession?.configSelections,
+                from: capability.configOptions
+            )
+            if !didLoadExistingRuntimeConfiguration {
+                configurationAdjustmentMessage = Self.configurationAdjustmentMessage(
+                    saved: serverSession?.configSelections,
+                    validated: validatedCapability.configOptions
+                )
+            }
+            configCache.store(validatedCapability, forServer: project.serverId)
+            applyHarnessCapabilities([validatedCapability])
+            // A late generic inspection must not leave its fresh-session
+            // defaults in the fast cache after the actual resumed runtime won.
+            if let model, let connectedHarnessId {
+                configCache.store(
+                    model.configOptions,
+                    forHarness: connectedHarnessId,
+                    onServer: project.serverId
+                )
+            }
+            didLoadExistingHarnessCapabilities = true
+            existingConfigurationError = nil
+            updateConfigurationValidationState()
+            logExistingChatPhase("capabilities_ready", harnessId: harnessId, startedAt: startedAt)
+        } catch {
+            existingConfigurationError = serverErrorMessage(error)
+            updateConfigurationValidationState()
+            logExistingChatPhase("capabilities_failed", harnessId: harnessId, startedAt: startedAt)
+        }
+    }
+
+    func retryExistingSessionCapabilities() async {
+        didLoadExistingHarnessCapabilities = false
+        existingConfigurationError = nil
+        updateConfigurationValidationState()
+        await prepareExistingSessionCapabilities()
+    }
+
     /// Reloads the authoritative harness catalog after authentication or
     /// enablement changes. Unlike `prepare()`, this deliberately bypasses the
     /// stale cache because the caller is responding to an explicit mutation.
@@ -1326,18 +1510,21 @@ final class SessionController {
     /// (softened past 5s) and only surface the failure banner — with its
     /// Restart remedy — after 10s without contact.
     func connectIfNeeded() async {
-        guard model == nil, !isConnecting, let harness = selectedHarness else { return }
+        guard model == nil, !isConnecting, let serverSession else { return }
+        let persistedHarnessId = serverSession.harnessId
+        let harnessId = persistedHarnessId.isEmpty ? selectedHarness?.id : persistedHarnessId
+        guard let harnessId, !harnessId.isEmpty else { return }
+        let harnessName = selectedHarness?.name ?? harnessId
         // A worktree draft has no cwd until the worktree is created on first
         // send; connecting now would pin the agent to the project folder.
         guard !wantsNewWorktree || sessionCwdOverride != nil else { return }
-        guard serverSession != nil else { return }
-        status = .connecting("Starting \(harness.name)…")
+        status = .connecting("Starting \(harnessName)…")
         defer { serverWaitMessage = nil }
         let clock = ContinuousClock()
         let start = clock.now
         while true {
             do {
-                model = try await connect(harness)
+                model = try await connect(harnessId: harnessId)
                 status = .idle
                 return
             } catch {
@@ -1357,6 +1544,15 @@ final class SessionController {
                 let elapsed = clock.now - start
                 guard message == serverUnreachableErrorMessage,
                       elapsed < Self.serverWaitFailureThreshold else {
+                    if hasExistingAgentSession {
+                        didFinishExistingRuntimeConfiguration = true
+                        existingConfigurationError = message
+                        updateConfigurationValidationState()
+                        finishInitialHistoryLoading(
+                            sessionId: serverSession.id,
+                            outcome: "failed"
+                        )
+                    }
                     status = .failed(message)
                     return
                 }
@@ -1422,7 +1618,10 @@ final class SessionController {
     /// progress there as `setupPhases`.
     func send() async {
         let text = composerText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty || !composerAttachments.isEmpty, !isConnecting, !isSubmitting else { return }
+        guard !text.isEmpty || !composerAttachments.isEmpty,
+              !isConnecting,
+              configurationValidationState == .ready,
+              !isSubmitting else { return }
         let shouldAnimateTranscriptSend = !isSending
         // Ask at the first moment notifications become useful instead of at
         // launch: the user just started work that may finish while they are in
@@ -1524,7 +1723,7 @@ final class SessionController {
         status = .connecting("Starting \(harness.name)…")
         if showsSetupPhases { beginSetupPhase(.startingAgent(named: harness.name)) }
         do {
-            let model = try await connect(harness)
+            let model = try await connect(harnessId: harness.id)
             self.model = model
             // Agent start is quick, so the row is ephemeral: it narrates while
             // running and simply disappears on success (failures stay).
@@ -1784,28 +1983,56 @@ final class SessionController {
 
     func retry() async {
         status = .idle
-        await prepare()
+        if hasExistingAgentSession {
+            if model == nil {
+                didFinishExistingRuntimeConfiguration = false
+                didLoadExistingRuntimeConfiguration = false
+            }
+            didLoadExistingHarnessCapabilities = false
+            existingConfigurationError = nil
+            updateConfigurationValidationState()
+            async let capabilities: Void = prepareExistingSessionCapabilities()
+            await connectIfNeeded()
+            await capabilities
+        } else {
+            await prepare()
+        }
     }
 
     // MARK: - Connection
 
-    private func connect(_ harness: ServerHarness) async throws -> SessionModel {
+    private func connect(harnessId: String) async throws -> SessionModel {
         guard let serverClient, var serverSession else {
             throw SessionControllerError.serverUnavailable
         }
-        return try await connectServerSession(harness, serverClient: serverClient, session: &serverSession)
+        return try await connectServerSession(
+            harnessId: harnessId,
+            serverClient: serverClient,
+            session: &serverSession
+        )
     }
 
     private func connectServerSession(
-        _ harness: ServerHarness,
+        harnessId: String,
         serverClient: any CodevisorServerClienting,
         session: inout ChatSession
     ) async throws -> SessionModel {
         if session.harnessId.isEmpty {
-            session.harnessId = harness.id
+            session.harnessId = harnessId
         }
         if session.agentSessionId == nil, let resumeAgentSessionId {
             session.agentSessionId = resumeAgentSessionId
+        }
+        let loadsExistingHistory = session.agentSessionId?.isEmpty == false && pendingUserText == nil
+        if loadsExistingHistory {
+            isLoadingInitialHistory = true
+            initialHistoryLoadStartedAt = initialHistoryLoadStartedAt
+                ?? ProcessInfo.processInfo.systemUptime
+        }
+        defer {
+            if loadsExistingHistory {
+                finishInitialHistoryLoading(sessionId: session.id, outcome: "failed")
+            }
         }
 
         // One round-trip replaces the discrete listProjects → upsertProject →
@@ -1834,7 +2061,7 @@ final class SessionController {
         }
         self.serverSession = session
 
-        connectedHarnessId = harness.id
+        connectedHarnessId = harnessId
         if let agentSessionId = session.agentSessionId {
             connectedAgentSessionId = agentSessionId
             onAgentSessionCreated?(agentSessionId)
@@ -1847,24 +2074,23 @@ final class SessionController {
         // agent, so history loads — and paints — in parallel. The metadata is
         // awaited below, before anything runtime-dependent runs.
         let sessionId = session.id
+        let runtimeConnectStartedAt = ProcessInfo.processInfo.systemUptime
         let runtimeConnect: Task<ServerSessionRuntimeMetadata?, Error>? =
             session.agentSessionId?.isEmpty == false
                 ? Task { try await serverClient.connectSession(id: sessionId) }
                 : nil
 
         let transport = ServerSessionTransport(client: serverClient, sessionId: session.id)
-        // Generic capability inspection represents a fresh harness and can
-        // advertise defaults that differ from this resumed chat. Do not paint
-        // those defaults while runtime metadata is loading; the connected
-        // session supplies its durable model/effort/speed below.
-        let initialConfigOptions = session.agentSessionId?.isEmpty == false
-            ? []
-            : (configOptionsByHarness[harness.id]
-                ?? configCache.options(forHarness: harness.id, onServer: project.serverId))
+        // Paint the persisted selections over cached option definitions while
+        // the live runtime validates them. The runtime snapshot below remains
+        // authoritative and replaces removed models/options before Send is
+        // enabled.
+        let initialConfigOptions = configOptionsByHarness[harnessId]
+            ?? configCache.options(forHarness: harnessId, onServer: project.serverId)
         let model = SessionModel(
             serverTransport: transport,
             sessionId: session.id.uuidString,
-            modeState: modeStateByHarness[harness.id],
+            modeState: modeStateByHarness[harnessId],
             configOptions: initialConfigOptions
         )
         model.onTurnEnded = { [weak self, weak model] in
@@ -1896,6 +2122,9 @@ final class SessionController {
         // terminal event never reach the live UI. Older servers still fall
         // back inside loadHistory() when the transcript endpoint returns 404.
         await model.loadHistory(preloaded: preloadedTranscript.map(transport.historyPage(from:)))
+        if loadsExistingHistory {
+            finishInitialHistoryLoading(sessionId: session.id, outcome: "ready")
+        }
         analyticsUsageBaseline = model.usage
 
         // Publish the model as soon as history is loaded so the transcript
@@ -1913,26 +2142,48 @@ final class SessionController {
         // list, so let the loaded runtime replace the generic/cache snapshot.
         // (Stream events that arrive after this still overwrite as usual.)
         do {
-            if let runtimeConnect,
-               let metadata = try await withTaskCancellationHandler(
-                   operation: { try await runtimeConnect.value },
-                   onCancel: { runtimeConnect.cancel() }
-               ) {
-                if !metadata.configOptions.isEmpty {
-                    configOptionsByHarness[harness.id] = metadata.configOptions
+            if let runtimeConnect {
+                let metadata = try await withTaskCancellationHandler(
+                    operation: { try await runtimeConnect.value },
+                    onCancel: { runtimeConnect.cancel() }
+                )
+                if let metadata {
+                    if !metadata.configOptions.isEmpty {
+                        configOptionsByHarness[harnessId] = metadata.configOptions
+                    }
+                    if let modes = metadata.modes {
+                        modeStateByHarness[harnessId] = modes
+                    }
+                    if let supportsGoals = metadata.supportsGoals {
+                        supportsGoalsByHarness[harnessId] = supportsGoals
+                    }
+                    configurationAdjustmentMessage = Self.configurationAdjustmentMessage(
+                        saved: session.configSelections,
+                        validated: metadata.configOptions
+                    )
+                    didLoadExistingRuntimeConfiguration = true
+                    model.applyRuntimeMetadata(
+                        modeState: metadata.modes,
+                        configOptions: metadata.configOptions
+                    )
                 }
-                if let modes = metadata.modes {
-                    modeStateByHarness[harness.id] = modes
-                }
-                if let supportsGoals = metadata.supportsGoals {
-                    supportsGoalsByHarness[harness.id] = supportsGoals
-                }
-                model.applyRuntimeMetadata(
-                    modeState: metadata.modes,
-                    configOptions: metadata.configOptions
+                logExistingChatPhase(
+                    "runtime_ready",
+                    harnessId: harnessId,
+                    startedAt: runtimeConnectStartedAt
                 )
             }
+            didFinishExistingRuntimeConfiguration = runtimeConnect != nil
+            updateConfigurationValidationState()
         } catch {
+            logExistingChatPhase(
+                "runtime_failed",
+                harnessId: harnessId,
+                startedAt: runtimeConnectStartedAt
+            )
+            didFinishExistingRuntimeConfiguration = runtimeConnect != nil
+            existingConfigurationError = serverErrorMessage(error)
+            updateConfigurationValidationState()
             // The transcript may already have painted, but the runtime never
             // came up. Return to the fully disconnected state so the caller's
             // failure handling (status banner, remount retry, reconnect)
@@ -1950,7 +2201,7 @@ final class SessionController {
         // Model changes can replace the model-specific thinking and speed
         // options. Apply dependent selections afterward so a remembered fast
         // tier is available by the time it is restored.
-        let pendingConfig = pendingConfigByHarness[harness.id] ?? [:]
+        let pendingConfig = pendingConfigByHarness[harnessId] ?? [:]
         let optionCategories = Dictionary(
             uniqueKeysWithValues: model.configOptions.map { ($0.id, $0.category ?? "") }
         )
@@ -1977,14 +2228,73 @@ final class SessionController {
         for (configId, value) in orderedPendingConfig {
             await model.setConfigOption(configId: configId, value: value)
         }
-        pendingConfigByHarness[harness.id] = nil
+        pendingConfigByHarness[harnessId] = nil
 
-        captureChatCreatedIfNeeded(model: model, harnessId: harness.id)
+        captureChatCreatedIfNeeded(model: model, harnessId: harnessId)
         await applyPendingGoal(to: model)
 
-        configCache.store(model.configOptions, forHarness: harness.id, onServer: project.serverId)
-        configOptionsByHarness[harness.id] = model.configOptions
+        configCache.store(model.configOptions, forHarness: harnessId, onServer: project.serverId)
+        configOptionsByHarness[harnessId] = model.configOptions
         return model
+    }
+
+    private static func configurationAdjustmentMessage(
+        saved: [String: String]?,
+        validated: [SessionConfigOption]
+    ) -> String? {
+        guard let saved, !saved.isEmpty else { return nil }
+        let changed = saved.compactMap { configId, previousValue -> (String, SessionConfigOption?)? in
+            let option = validated.first(where: { $0.id == configId })
+            guard option?.currentValue != previousValue else { return nil }
+            return (previousValue, option)
+        }
+        guard !changed.isEmpty else { return nil }
+        if let (previousModel, model) = changed.first(where: {
+            $0.1?.category == SessionConfigOption.Category.model || $0.1?.id == "model"
+        }), let model {
+            return "\(previousModel) is no longer available. Using \(model.currentName)."
+        }
+        return "Some saved settings are no longer available. Current harness defaults are being used."
+    }
+
+    /// A capability inspection represents a fresh session, so its
+    /// `currentValue`s are defaults. Preserve persisted values only when the
+    /// freshly inspected option list still advertises them; removed values
+    /// deliberately fall back to the harness default.
+    private static func configurationOptions(
+        restoring saved: [String: String]?,
+        from inspected: [SessionConfigOption]
+    ) -> [SessionConfigOption] {
+        guard let saved, !saved.isEmpty else { return inspected }
+        var restored = inspected
+        for (configId, previousValue) in saved {
+            guard let index = restored.firstIndex(where: { $0.id == configId }),
+                  restored[index].options.contains(where: { $0.value == previousValue }) else { continue }
+            restored[index].currentValue = previousValue
+        }
+        return restored
+    }
+
+    private func finishInitialHistoryLoading(sessionId: UUID, outcome: String) {
+        guard isLoadingInitialHistory else { return }
+        let startedAt = initialHistoryLoadStartedAt ?? ProcessInfo.processInfo.systemUptime
+        isLoadingInitialHistory = false
+        initialHistoryLoadStartedAt = nil
+        let durationMs = Int(((ProcessInfo.processInfo.systemUptime - startedAt) * 1_000).rounded())
+        Log.session.info(
+            "existing_chat_history phase=\(outcome, privacy: .public) session_id=\(sessionId.uuidString, privacy: .public) duration_ms=\(durationMs)"
+        )
+    }
+
+    private func logExistingChatPhase(
+        _ phase: String,
+        harnessId: String,
+        startedAt: TimeInterval
+    ) {
+        let durationMs = Int(((ProcessInfo.processInfo.systemUptime - startedAt) * 1_000).rounded())
+        Log.session.info(
+            "existing_chat_load phase=\(phase, privacy: .public) harness_id=\(harnessId, privacy: .public) duration_ms=\(durationMs)"
+        )
     }
 
     // MARK: - Analytics

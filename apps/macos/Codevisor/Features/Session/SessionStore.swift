@@ -113,7 +113,7 @@ final class SessionStore {
                 existing.project = project
             }
             if existing.serverSession != session {
-                existing.serverSession = session
+                existing.configureExistingSession(session)
             }
             return existing
         }
@@ -122,11 +122,7 @@ final class SessionStore {
             configCache: environment.configCache,
             serverClient: environment.machines.client(for: session.serverId)
         )
-        controller.serverSession = session
-        controller.resumeAgentSessionId = session.agentSessionId
-        if !session.harnessId.isEmpty {
-            controller.selectedHarnessId = session.harnessId
-        }
+        controller.configureExistingSession(session)
         controller.onAgentSessionCreated = { [weak projectList = environment.projectList] agentSessionId in
             projectList?.setAgentSessionId(
                 agentSessionId,

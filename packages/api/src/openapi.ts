@@ -363,7 +363,10 @@ const pathParameters = (path: string): ReadonlyArray<JsonObject> =>
 
 const queryParameters = (endpoint: Endpoint): ReadonlyArray<JsonObject> => {
   if (endpoint === "GET /v1/capabilities") {
-    return [{ name: "cwd", in: "query", schema: { type: "string" } }]
+    return [
+      { name: "cwd", in: "query", schema: { type: "string" } },
+      { name: "harnessId", in: "query", schema: { type: "string" } }
+    ]
   }
   if (endpoint === "GET /v1/sessions/:id/transcript") {
     return [

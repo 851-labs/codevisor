@@ -118,6 +118,21 @@ struct ConfigOptionCacheTests {
         #expect(cache.capabilities(forServer: "local").first?.configOptions.first?.currentValue == "project")
     }
 
+    @Test("A single-harness refresh preserves the rest of the server catalog")
+    func singleHarnessMerge() {
+        let cache = ConfigOptionCache(store: InMemoryStore())
+        let codex = capability(model: "old")
+        var claude = capability(model: "sonnet")
+        claude.harness.id = "claude-code"
+        cache.store([codex, claude], forServer: "local")
+
+        cache.store(capability(model: "new"), forServer: "local")
+
+        #expect(cache.capabilities(forServer: "local").map(\.harness.id) == ["codex", "claude-code"])
+        #expect(cache.options(forHarness: "codex", onServer: "local").first?.currentValue == "new")
+        #expect(cache.options(forHarness: "claude-code", onServer: "local").first?.currentValue == "sonnet")
+    }
+
     @Test("Invalidating one server drops its catalog but preserves config choices")
     func invalidatesCatalogPerServer() {
         let store = InMemoryStore()

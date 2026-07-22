@@ -109,11 +109,22 @@ struct ChatScreen: View {
         // several chats at once (splits, tabs) — without this, the others
         // render empty transcripts.
         .task(id: ObjectIdentifier(controller)) {
-            if !controller.isPrepared && !controller.isConnected {
-                await controller.prepare()
-            }
-            if !AppPreview.isRunning {
-                await controller.connectIfNeeded()
+            if controller.resumeAgentSessionId?.isEmpty == false {
+                // Existing chats know their harness. Refresh only that one in
+                // parallel; neither config inspection nor runtime startup may
+                // hold the first transcript page behind them.
+                async let capabilities: Void = controller.prepareExistingSessionCapabilities()
+                if !AppPreview.isRunning {
+                    await controller.connectIfNeeded()
+                }
+                await capabilities
+            } else {
+                if !controller.isPrepared && !controller.isConnected {
+                    await controller.prepare()
+                }
+                if !AppPreview.isRunning {
+                    await controller.connectIfNeeded()
+                }
             }
         }
     }
@@ -175,7 +186,13 @@ struct ChatScreen: View {
         }()
 
         if settled.isEmpty, !controller.hasActiveItem {
-            if controller.isConnecting || controller.pendingUserText != nil {
+            if controller.isLoadingInitialHistory {
+                result.append(.init(
+                    id: .initialLoading,
+                    content: .initialLoading,
+                    estimatedHeight: 40
+                ))
+            } else if controller.isConnecting || controller.pendingUserText != nil {
                 let text = controller.pendingUserText
                     ?? controller.composerText.trimmingCharacters(in: .whitespacesAndNewlines)
                 let message = UserMessage(
@@ -409,6 +426,15 @@ struct ChatScreen: View {
                 if showsStartingAgent {
                     ShimmeringText.startingAgent
                 }
+            }
+        case .initialLoading:
+            HStack(spacing: 8) {
+                ProgressView()
+                    .controlSize(.small)
+                Text("Loading conversation…")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                Spacer(minLength: 0)
             }
         case let .backgroundTask(description):
             HStack(spacing: 8) {

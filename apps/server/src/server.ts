@@ -1983,7 +1983,12 @@ const discoverCapabilities = async (
   url: URL
 ): Promise<{ readonly harnesses: ReadonlyArray<HarnessCapability> }> => {
   const cwd = existingDirectory(url.searchParams.get("cwd")) ?? tmpdir()
-  const harnesses = await discoverHarnesses(services)
+  // Existing chats already know their harness. Filtering before auth
+  // decoration and inspection is important: both stages can start real CLI
+  // processes, so inspecting the whole catalog would put unrelated agents on
+  // the resumed chat's critical path.
+  const requestedHarnessId = url.searchParams.get("harnessId")?.trim() || undefined
+  const harnesses = await discoverHarnesses(services, false, requestedHarnessId)
   const readyHarnesses = harnesses.filter(
     (harness) => harness.enabled && harness.readiness.state === "ready"
   )

@@ -476,6 +476,11 @@ describe("@codevisor/db", () => {
         speed: "standard"
       })
     )
+    expect((await run(db.getSessionSummary(session.id))).configSelections).toEqual({
+      model: "gpt-5.6-sol",
+      reasoning: "high",
+      speed: "standard"
+    })
     await Effect.runPromise(db.close)
 
     const reopened = await run(makeDatabase({ filename, serverId: "local" }))

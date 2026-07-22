@@ -52,6 +52,10 @@ public struct ChatSession: Identifiable, Sendable, Codable, Equatable {
     /// The server-resolved working directory for the session (project folder
     /// or worktree path). Nil for drafts that haven't been synced yet.
     public var cwd: String?
+    /// Last configuration values accepted for this chat. Option definitions
+    /// come from the harness cache/live runtime; these values let the composer
+    /// paint the chat's actual previous selections while reconnecting.
+    public var configSelections: [String: String]?
     public var createdAt: Date
     public var updatedAt: Date?
 
@@ -67,6 +71,7 @@ public struct ChatSession: Identifiable, Sendable, Codable, Equatable {
         isArchived: Bool = false,
         worktreeName: String? = nil,
         cwd: String? = nil,
+        configSelections: [String: String]? = nil,
         createdAt: Date = Date(),
         updatedAt: Date? = nil
     ) {
@@ -81,13 +86,14 @@ public struct ChatSession: Identifiable, Sendable, Codable, Equatable {
         self.isArchived = isArchived
         self.worktreeName = worktreeName
         self.cwd = cwd
+        self.configSelections = configSelections
         self.createdAt = createdAt
         self.updatedAt = updatedAt
     }
 
     private enum Keys: String, CodingKey {
         case id, projectId, serverId, harnessId, harnessAccountId, agentSessionId, title, origin, isArchived
-        case worktreeName, cwd, createdAt, updatedAt
+        case worktreeName, cwd, configSelections, createdAt, updatedAt
         /// Pre-rename persisted sessions used this key for `projectId`.
         case workspaceId
     }
@@ -110,6 +116,7 @@ public struct ChatSession: Identifiable, Sendable, Codable, Equatable {
         isArchived = try container.decodeIfPresent(Bool.self, forKey: .isArchived) ?? false
         worktreeName = try container.decodeIfPresent(String.self, forKey: .worktreeName)
         cwd = try container.decodeIfPresent(String.self, forKey: .cwd)
+        configSelections = try container.decodeIfPresent([String: String].self, forKey: .configSelections)
         createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
         updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt)
     }
@@ -127,6 +134,7 @@ public struct ChatSession: Identifiable, Sendable, Codable, Equatable {
         try container.encode(isArchived, forKey: .isArchived)
         try container.encodeIfPresent(worktreeName, forKey: .worktreeName)
         try container.encodeIfPresent(cwd, forKey: .cwd)
+        try container.encodeIfPresent(configSelections, forKey: .configSelections)
         try container.encode(createdAt, forKey: .createdAt)
         try container.encodeIfPresent(updatedAt, forKey: .updatedAt)
     }

@@ -3760,6 +3760,7 @@ const workspaceNotesFromRow = (row: WorkspaceNotesRow): WorkspaceNotes => ({
 
 const sessionFromRow = (row: SessionRow, folderPath: string | undefined): SessionSummary => {
   const cwd = resolveSessionCwd(folderPath, row.project_id, row.worktree_name ?? undefined)
+  const configSelections = sessionConfigSelectionsFromRaw(row.config_selections)
   return {
     id: row.id,
     projectId: row.project_id,
@@ -3773,6 +3774,7 @@ const sessionFromRow = (row: SessionRow, folderPath: string | undefined): Sessio
     ...(row.worktree_name === null ? {} : { worktreeName: row.worktree_name }),
     ...(row.workspace_id === null ? {} : { workspaceId: row.workspace_id }),
     ...(cwd === undefined ? {} : { cwd }),
+    ...(Object.keys(configSelections).length === 0 ? {} : { configSelections }),
     createdAt: row.created_at,
     ...(row.updated_at === null ? {} : { updatedAt: row.updated_at }),
     usage: {

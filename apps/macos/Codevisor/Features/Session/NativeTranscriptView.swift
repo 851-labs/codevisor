@@ -15,6 +15,7 @@ struct TranscriptVirtualRow: Identifiable, Equatable {
         case active
         case setup
         case optimistic
+        case initialLoading
         case backgroundTask
         case updateGate
         case serverWait
@@ -31,6 +32,7 @@ struct TranscriptVirtualRow: Identifiable, Equatable {
             case .active: "special:active"
             case .setup: "special:setup"
             case .optimistic: "special:optimistic"
+            case .initialLoading: "special:initial-loading"
             case .backgroundTask: "special:background"
             case .updateGate: "special:update-gate"
             case .serverWait: "special:server-wait"
@@ -43,7 +45,7 @@ struct TranscriptVirtualRow: Identifiable, Equatable {
         var isCacheableSettledRow: Bool {
             switch self {
             case .message, .assistantPlanning, .plan, .assistantResult: true
-            case .active, .setup, .optimistic, .backgroundTask, .updateGate, .serverWait,
+            case .active, .setup, .optimistic, .initialLoading, .backgroundTask, .updateGate, .serverWait,
                  .error, .statusError, .bottomSpacer: false
             }
         }
@@ -61,6 +63,7 @@ struct TranscriptVirtualRow: Identifiable, Equatable {
         case active
         case setup([SessionSetupPhase])
         case optimistic(UserMessage, showsStartingAgent: Bool)
+        case initialLoading
         case backgroundTask(String)
         /// Prompts held while the named harness updates.
         case updateGate(String)

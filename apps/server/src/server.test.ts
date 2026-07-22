@@ -1041,6 +1041,16 @@ describe("@codevisor/server", () => {
       speed: "fast",
       tone: "detailed"
     })
+    expect((await jsonRequest(server, `/v1/sessions/${session.id}`)).body).toMatchObject({
+      session: {
+        configSelections: {
+          model: "model-saved",
+          reasoning: "high",
+          speed: "fast",
+          tone: "detailed"
+        }
+      }
+    })
 
     agents.configs.splice(0)
     const restored = (
@@ -2505,6 +2515,25 @@ describe("@codevisor/server", () => {
         }
       ]
     })
+    expect(agents.inspections).toEqual([["codex", workspaceFolder]])
+    agents.inspections.splice(0)
+    expect(
+      (
+        await jsonRequest(
+          server,
+          `/v1/capabilities?cwd=${encodeURIComponent(workspaceFolder)}&harnessId=missing`
+        )
+      ).body
+    ).toEqual({ harnesses: [] })
+    expect(agents.inspections).toEqual([])
+    expect(
+      (
+        await jsonRequest(
+          server,
+          `/v1/capabilities?cwd=${encodeURIComponent(workspaceFolder)}&harnessId=codex`
+        )
+      ).body
+    ).toMatchObject({ harnesses: [{ harness: { id: "codex" } }] })
     expect(agents.inspections).toEqual([["codex", workspaceFolder]])
     expect((await jsonRequest(server, "/v1/capabilities")).body).toMatchObject({
       harnesses: [{ harness: { id: "codex" } }]
