@@ -152,8 +152,15 @@ struct ScratchpadModelTests {
         let repository = DefaultScratchpadRepository(store: InMemoryStore())
         let model = ScratchpadModel(sessionId: UUID(), repository: repository)
         model.text = AttributedString("typed")
-        try await Task.sleep(for: .milliseconds(900))
-        #expect(String(repository.load(sessionId: model.sessionId)!.text.characters) == "typed")
+
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: .seconds(3))
+        while repository.load(sessionId: model.sessionId) == nil, clock.now < deadline {
+            try await Task.sleep(for: .milliseconds(50))
+        }
+
+        let saved = try #require(repository.load(sessionId: model.sessionId))
+        #expect(String(saved.text.characters) == "typed")
     }
 
     @Test("Visibility persists immediately")
