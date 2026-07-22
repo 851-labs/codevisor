@@ -67,9 +67,8 @@ private final class CodevisorGhosttySurfaceView: Ghostty.SurfaceView {
         window?.makeFirstResponder(self)
     }
 
-    /// Pane-group shortcuts, captured only while this surface has keyboard
-    /// focus: ⌘⌥←/→ navigate tabs, ⌘T opens a new terminal tab. Everything
-    /// else falls through to Ghostty's key handling. The guard is the actual
+    /// Workspace shortcuts, captured only while this surface has keyboard
+    /// focus. Everything else falls through to Ghostty's key handling. The guard is the actual
     /// first-responder relationship — not the published `focused` flag, which
     /// can go stale and would eat composer/menu key equivalents.
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
@@ -81,17 +80,53 @@ private final class CodevisorGhosttySurfaceView: Ghostty.SurfaceView {
                 .subtracting([.function, .numericPad])
             if mods == [.command, .option] {
                 if event.specialKey == .leftArrow {
-                    onPaneCommand(.previousTab)
+                    onPaneCommand(.focusSplit(.leading))
                     return true
                 }
                 if event.specialKey == .rightArrow {
+                    onPaneCommand(.focusSplit(.trailing))
+                    return true
+                }
+                if event.specialKey == .upArrow {
+                    onPaneCommand(.focusSplit(.top))
+                    return true
+                }
+                if event.specialKey == .downArrow {
+                    onPaneCommand(.focusSplit(.bottom))
+                    return true
+                }
+            }
+            if mods == [.command, .shift], let chars = event.charactersIgnoringModifiers?.lowercased() {
+                // AppKit preserves Shift in charactersIgnoringModifiers for
+                // punctuation, yielding braces for the bracket keys.
+                if chars == "[" || chars == "{" {
+                    onPaneCommand(.previousTab)
+                    return true
+                }
+                if chars == "]" || chars == "}" {
                     onPaneCommand(.nextTab)
+                    return true
+                }
+                if chars == "d" {
+                    onPaneCommand(.split(.bottom))
                     return true
                 }
             }
             if mods == .command, let chars = event.charactersIgnoringModifiers?.lowercased() {
+                if chars == "[" {
+                    onPaneCommand(.previousSplit)
+                    return true
+                }
+                if chars == "]" {
+                    onPaneCommand(.nextSplit)
+                    return true
+                }
                 if chars == "t" {
                     onPaneCommand(.newTab)
+                    return true
+                }
+                if chars == "d" {
+                    onPaneCommand(.split(.trailing))
                     return true
                 }
                 // ⌘J toggles the panel. Handled here rather than relying on

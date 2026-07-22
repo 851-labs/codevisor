@@ -123,6 +123,64 @@ struct SplitTreeTests {
         #expect(SplitNode.leaf(groupState(), id: a).removingGroup(id: a) == nil)
     }
 
+    @Test("Moving a group reorders siblings and preserves identity and state")
+    func moveGroupAmongSiblings() {
+        let a = UUID(), b = UUID(), c = UUID()
+        let aState = groupState(2)
+        let tree = SplitNode.split(orientation: .horizontal, children: [
+            SplitChild(fraction: 0.4, node: .leaf(aState, id: a)),
+            SplitChild(fraction: 0.3, node: .leaf(groupState(), id: b)),
+            SplitChild(fraction: 0.3, node: .leaf(groupState(), id: c))
+        ])
+
+        let moved = tree.movingGroup(id: a, relativeTo: b, edge: .trailing)
+
+        #expect(moved.allGroups.map(\.id) == [b, a, c])
+        #expect(moved.group(id: a) == aState)
+        guard case let .split(orientation, children) = moved else {
+            Issue.record("expected horizontal split")
+            return
+        }
+        #expect(orientation == .horizontal)
+        #expect(children.count == 3)
+        #expect(abs(children.map(\.fraction).reduce(0, +) - 1) < 0.0001)
+    }
+
+    @Test("Moving a nested group collapses its old parent and inserts on the target edge")
+    func moveNestedGroup() {
+        let a = UUID(), b = UUID(), c = UUID()
+        let tree = SplitNode.split(orientation: .horizontal, children: [
+            SplitChild(fraction: 0.7, node: .split(orientation: .vertical, children: [
+                SplitChild(fraction: 0.5, node: .leaf(groupState(), id: a)),
+                SplitChild(fraction: 0.5, node: .leaf(groupState(), id: b))
+            ])),
+            SplitChild(fraction: 0.3, node: .leaf(groupState(), id: c))
+        ])
+
+        let moved = tree.movingGroup(id: c, relativeTo: a, edge: .top)
+
+        guard case let .split(orientation, children) = moved else {
+            Issue.record("expected collapsed vertical root")
+            return
+        }
+        #expect(orientation == .vertical)
+        #expect(children.count == 3)
+        #expect(moved.allGroups.map(\.id) == [c, a, b])
+    }
+
+    @Test("Invalid and self-targeted group moves are no-ops")
+    func invalidGroupMoves() {
+        let a = UUID(), b = UUID()
+        let tree = SplitNode.split(orientation: .horizontal, children: [
+            SplitChild(fraction: 0.5, node: .leaf(groupState(), id: a)),
+            SplitChild(fraction: 0.5, node: .leaf(groupState(), id: b))
+        ])
+
+        #expect(tree.movingGroup(id: a, relativeTo: a, edge: .leading) == tree)
+        #expect(tree.movingGroup(id: UUID(), relativeTo: b, edge: .leading) == tree)
+        #expect(tree.movingGroup(id: a, relativeTo: UUID(), edge: .leading) == tree)
+    }
+
     @Test("Pruning removes empty groups and collapses their splits")
     func pruneEmptyGroups() {
         let chat = UUID(), empty = UUID(), terminal = UUID()
@@ -289,12 +347,75 @@ struct WorkspaceRepositoryTests {
             for: seed(sessionId: sessionId),
             legacyGroups: legacy
         )
-        // Chat + terminal in the center leaf; the chat pane learned its
+        // The legacy group's selected terminal remains the visible-layout
+        // tab; its hidden chat is lifted into its own top tab and learns its
         // session reference during migration.
-        let centerGroup = workspace.centerTree.allGroups[0].state
-        #expect(centerGroup.panes.map(\.kind) == [.chat, .terminal])
-        #expect(centerGroup.panes[0].chatSessionId == sessionId)
+        #expect(workspace.centerTabs.count == 2)
+        #expect(workspace.centerTabs.allSatisfy {
+            $0.root.allGroups.allSatisfy { $0.state.panes.count == 1 }
+        })
+        #expect(workspace.chatSessionIds == [sessionId])
         #expect(workspace.bottomGroup.panes.count == 2)
+    }
+
+    @Test("Version-1 split groups invert into layout tabs without losing panes")
+    func legacyWorkspaceInversion() throws {
+        let chatSession = UUID()
+        var left = PaneGroupState.centerInitial(sessionId: chatSession)
+        let selectedTerminal = left.addTerminalPane(sessionId: chatSession)
+        var right = PaneGroupState()
+        let firstRight = right.addTerminalPane(sessionId: chatSession)
+        let selectedRight = right.addTerminalPane(sessionId: chatSession)
+        let leftId = UUID(), rightId = UUID()
+        let legacyTree = SplitNode.split(orientation: .horizontal, children: [
+            SplitChild(fraction: 0.35, node: .leaf(left, id: leftId)),
+            SplitChild(fraction: 0.65, node: .leaf(right, id: rightId))
+        ])
+
+        let fresh = Workspace(
+            name: "Legacy", rootDirectory: "/tmp", serverId: "local", projectId: UUID(),
+            centerTree: .leaf(.centerInitial(sessionId: chatSession)),
+            bottomGroup: .initial(sessionId: chatSession)
+        )
+        var json = try JSONSerialization.jsonObject(with: JSONEncoder().encode(fresh)) as! [String: Any]
+        json.removeValue(forKey: "centerTabs")
+        json.removeValue(forKey: "selectedCenterTabId")
+        json["centerTree"] = try JSONSerialization.jsonObject(with: JSONEncoder().encode(legacyTree))
+
+        let decoded = try JSONDecoder().decode(
+            Workspace.self,
+            from: JSONSerialization.data(withJSONObject: json)
+        )
+        #expect(decoded.centerTabs.count == 3)
+        #expect(decoded.centerTabs[0].root.allGroups.map(\.id) == [leftId, rightId])
+        #expect(decoded.centerTabs[0].root.allGroups.map { $0.state.panes[0].id }
+            == [selectedTerminal.id, selectedRight.id])
+        #expect(decoded.centerTabs[1].root.allGroups[0].state.panes[0].chatSessionId == chatSession)
+        #expect(decoded.centerTabs[2].root.allGroups[0].state.panes[0].id == firstRight.id)
+        #expect(decoded.centerTabs.flatMap { $0.root.allGroups }.allSatisfy {
+            $0.state.panes.count == 1
+        })
+    }
+
+    @Test("A version-2 workspace with no tabs repairs to a New Tab page")
+    func emptyTopTabsRepairOnDecode() throws {
+        let fresh = Workspace(
+            name: "Empty", rootDirectory: "/tmp/project", serverId: "local",
+            projectId: UUID(), centerTree: .leaf(.centerInitial(sessionId: UUID())),
+            bottomGroup: .initial(sessionId: UUID())
+        )
+        var json = try JSONSerialization.jsonObject(with: JSONEncoder().encode(fresh)) as! [String: Any]
+        json["centerTabs"] = []
+        json["selectedCenterTabId"] = UUID().uuidString
+
+        let decoded = try JSONDecoder().decode(
+            Workspace.self,
+            from: JSONSerialization.data(withJSONObject: json)
+        )
+        #expect(decoded.centerTabs.count == 1)
+        #expect(decoded.selectedCenterTabId == decoded.centerTabs[0].id)
+        #expect(decoded.centerTabs[0].root.allGroups[0].state.selectedPane?.kind == .newTab)
+        #expect(decoded.centerTabs[0].root.allGroups[0].state.selectedPane?.cwdOverride == "/tmp/project")
     }
 
     @Test("Automatic names follow new worktrees but explicit names stay pinned")
@@ -338,10 +459,10 @@ struct WorkspaceRepositoryTests {
 
         var center = bridge.load(sessionId: sessionId, placement: .center)
         #expect(center?.panes.first?.kind == .chat)
-        center?.addTerminalPane(sessionId: sessionId)
+        center?.panes[0].name = "Renamed Chat"
         bridge.save(center!, sessionId: sessionId, placement: .center)
-        #expect(bridge.load(sessionId: sessionId, placement: .center)?.panes.count == 2)
-        #expect(repository.workspace(id: workspace.id)?.centerTree.allGroups[0].state.panes.count == 2)
+        #expect(bridge.load(sessionId: sessionId, placement: .center)?.panes[0].name == "Renamed Chat")
+        #expect(repository.workspace(id: workspace.id)?.centerTree.allGroups[0].state.panes.count == 1)
 
         var bottom = bridge.load(sessionId: sessionId, placement: .bottom)!
         bottom.setHeight(300)

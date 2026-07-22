@@ -834,7 +834,7 @@ private final class TabAppearanceLedger {
     var seeded = false
 }
 
-private struct PaneTab: View {
+struct PaneTab: View {
     @Environment(\.theme) private var theme
     let name: String
     let kind: PaneKind

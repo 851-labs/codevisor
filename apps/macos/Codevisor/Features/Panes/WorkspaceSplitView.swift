@@ -1,8 +1,7 @@
-//  Renders a workspace's center split tree (the VS Code editor-grid model).
-//  Leaves are tabbed pane groups, each rendering its OWN compact tab bar
-//  over its content — a content band below the native toolbar, like
-//  Finder's tab bar. Branches are resizable splits with the same owned
-//  divider grips as the inspector; a drag rewrites the subtree's fractions
+//  Renders one workspace tab's split tree. Every leaf contains exactly one
+//  pane beneath a compact identity/action header. Branches are
+//  resizable splits with the same owned divider grips as the inspector; a
+//  drag rewrites the subtree's fractions
 //  and persists the whole tree on release.
 
 import SwiftUI
@@ -15,13 +14,12 @@ struct WorkspaceSplitView: View {
     /// focus temporarily moves to the bottom panel or another window.
     let activeLeafId: UUID?
     let groupModel: (UUID) -> PaneGroupModel
-    let chatTitle: (PaneDescriptorState) -> String
-    let paneWorktree: (PaneDescriptorState) -> String?
-    /// Content drop zones (join/split) register here.
-    var dragCoordinator: PaneTabDragCoordinator? = nil
-    /// Whether a leaf's bar shows the ⌘-shortcut hints (the primary group
-    /// while nothing else holds focus).
-    var showsShortcutHints: (UUID) -> Bool = { _ in false }
+    let paneTitle: (PaneDescriptorState) -> String
+    let sessionStore: SessionStore?
+    let dragCoordinator: WorkspaceSplitDragCoordinator?
+    let onSplitLeaf: (UUID, SplitEdge) -> Void
+    let onRenameLeaf: (UUID, String) -> Void
+    let onCloseLeaf: (UUID) -> Void
     /// Called with the updated WHOLE tree after a divider drag ends.
     let onTreeChanged: (SplitNode) -> Void
     /// Called with the WHOLE tree on every frame of a divider drag (render
@@ -34,13 +32,33 @@ struct WorkspaceSplitView: View {
             activeLeafId: activeLeafId,
             dimsInactiveLeaves: node.allGroups.count > 1,
             groupModel: groupModel,
-            chatTitle: chatTitle,
-            paneWorktree: paneWorktree,
+            paneTitle: paneTitle,
+            sessionStore: sessionStore,
             dragCoordinator: dragCoordinator,
-            showsShortcutHints: showsShortcutHints,
+            onSplitLeaf: onSplitLeaf,
+            onRenameLeaf: onRenameLeaf,
+            onCloseLeaf: onCloseLeaf,
             replaceNode: onTreeChanged,
             replaceLiveNode: { onLiveTreeChanged?($0) }
         )
+        .overlay { dragGhostOverlay }
+    }
+
+    private var dragGhostOverlay: some View {
+        GeometryReader { proxy in
+            if let drag = dragCoordinator?.active {
+                WorkspaceSplitDragGhost(
+                    name: drag.name,
+                    kind: drag.kind,
+                    isAgentOwned: drag.isAgentOwned
+                )
+                .position(
+                    x: drag.location.x - proxy.frame(in: .global).minX,
+                    y: drag.location.y - proxy.frame(in: .global).minY
+                )
+            }
+        }
+        .allowsHitTesting(false)
     }
 }
 
@@ -49,10 +67,12 @@ private struct SplitNodeView: View {
     let activeLeafId: UUID?
     let dimsInactiveLeaves: Bool
     let groupModel: (UUID) -> PaneGroupModel
-    let chatTitle: (PaneDescriptorState) -> String
-    let paneWorktree: (PaneDescriptorState) -> String?
-    let dragCoordinator: PaneTabDragCoordinator?
-    let showsShortcutHints: (UUID) -> Bool
+    let paneTitle: (PaneDescriptorState) -> String
+    let sessionStore: SessionStore?
+    let dragCoordinator: WorkspaceSplitDragCoordinator?
+    let onSplitLeaf: (UUID, SplitEdge) -> Void
+    let onRenameLeaf: (UUID, String) -> Void
+    let onCloseLeaf: (UUID) -> Void
     /// Replaces THIS node in its parent (recursion rebuilds the tree upward).
     let replaceNode: (SplitNode) -> Void
     /// Render-only twin of `replaceNode`, streamed during divider drags.
@@ -65,10 +85,12 @@ private struct SplitNodeView: View {
                 leafId: id,
                 isInactive: dimsInactiveLeaves && activeLeafId != nil && id != activeLeafId,
                 groupModel: groupModel,
-                chatTitle: chatTitle,
-                paneWorktree: paneWorktree,
+                paneTitle: paneTitle,
+                sessionStore: sessionStore,
                 dragCoordinator: dragCoordinator,
-                showsShortcutHints: showsShortcutHints
+                onSplit: { edge in onSplitLeaf(id, edge) },
+                onRename: { name in onRenameLeaf(id, name) },
+                onClose: { onCloseLeaf(id) }
             )
         case let .split(orientation, children):
             SplitBranchView(
@@ -77,10 +99,12 @@ private struct SplitNodeView: View {
                 activeLeafId: activeLeafId,
                 dimsInactiveLeaves: dimsInactiveLeaves,
                 groupModel: groupModel,
-                chatTitle: chatTitle,
-                paneWorktree: paneWorktree,
+                paneTitle: paneTitle,
+                sessionStore: sessionStore,
                 dragCoordinator: dragCoordinator,
-                showsShortcutHints: showsShortcutHints,
+                onSplitLeaf: onSplitLeaf,
+                onRenameLeaf: onRenameLeaf,
+                onCloseLeaf: onCloseLeaf,
                 replaceNode: replaceNode,
                 replaceLiveNode: replaceLiveNode
             )
@@ -88,49 +112,46 @@ private struct SplitNodeView: View {
     }
 }
 
-/// One tabbed group: its compact bar over its selected pane's content.
+/// One single-pane split leaf. The header is split chrome, not another tab
+/// group: it identifies the pane and exposes leaf-targeted split actions.
 private struct SplitLeafView: View {
     let leafId: UUID
     let isInactive: Bool
     let groupModel: (UUID) -> PaneGroupModel
-    let chatTitle: (PaneDescriptorState) -> String
-    let paneWorktree: (PaneDescriptorState) -> String?
-    let dragCoordinator: PaneTabDragCoordinator?
-    let showsShortcutHints: (UUID) -> Bool
+    let paneTitle: (PaneDescriptorState) -> String
+    let sessionStore: SessionStore?
+    let dragCoordinator: WorkspaceSplitDragCoordinator?
+    let onSplit: (SplitEdge) -> Void
+    let onRename: (String) -> Void
+    let onClose: () -> Void
 
     @Environment(\.theme) private var theme
 
     var body: some View {
         let model = groupModel(leafId)
         VStack(spacing: 0) {
-            PaneGroupBar(
-                group: model,
+            SplitLeafHeader(
+                pane: model.state.selectedPane,
+                title: paneTitle,
+                sessionStore: sessionStore,
+                leafId: leafId,
                 dragCoordinator: dragCoordinator,
-                chatTitle: chatTitle,
-                paneWorktree: paneWorktree,
-                showsShortcutHints: showsShortcutHints(leafId),
-                allowsNewChatTab: true,
-                dimsForInactiveSplit: isInactive,
-                chrome: .groupHeader
+                onActivate: { model.onActivated?() },
+                onSplit: onSplit,
+                onRename: onRename,
+                onClose: onClose
             )
-            // The Color.clear backstop is load-bearing: if the selected
-            // pane's content resolves to nothing (EmptyView is layout-
-            // ABSENT, not just blank), the VStack would collapse to the
-            // bar and center it in the split region — and the drop zone's
-            // geometry would unregister with it.
             ZStack {
                 Color.clear
                 PaneGroupContent(group: model)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            // This sits below paneDropZone's preview overlay, keeping split
-            // targets bright while the underlying inactive content is dim.
-            .overlay {
-                inactiveSplitTint
-            }
-            // Join (⇧) / split drops land on this content.
-            .paneDropZone(dragCoordinator, leafId: leafId)
+            .contentShape(Rectangle())
+            .simultaneousGesture(TapGesture().onEnded { model.onActivated?() })
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .overlay { inactiveSplitTint }
+        .workspaceSplitDropZone(dragCoordinator, leafId: leafId)
     }
 
     private var inactiveSplitTint: some View {
@@ -140,6 +161,165 @@ private struct SplitLeafView: View {
             .allowsHitTesting(false)
             // Active-group changes should read as focus changes, not motion.
             .transaction { $0.animation = nil }
+    }
+}
+
+private struct SplitLeafHeader: View {
+    let pane: PaneDescriptorState?
+    let title: (PaneDescriptorState) -> String
+    let sessionStore: SessionStore?
+    let leafId: UUID
+    let dragCoordinator: WorkspaceSplitDragCoordinator?
+    let onActivate: () -> Void
+    let onSplit: (SplitEdge) -> Void
+    let onRename: (String) -> Void
+    let onClose: () -> Void
+
+    @Environment(\.theme) private var theme
+    @Environment(AppEnvironment.self) private var environment
+    @State private var renameText = ""
+    @State private var showingRename = false
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Button(action: onActivate) {
+                HStack(spacing: 7) {
+                    leadingIcon
+
+                    Text(pane.map(title) ?? "New Tab")
+                        .font(.system(size: 11.5, weight: .medium))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .foregroundStyle(theme.textPrimary)
+
+                    Spacer(minLength: 6)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .simultaneousGesture(splitDragGesture)
+
+            actionsMenu
+        }
+        .padding(.horizontal, 8)
+        .frame(height: 28)
+        .background(theme.isSystem ? Color.clear : theme.windowBackground)
+        .overlay(alignment: .bottom) { Divider() }
+        .alert(renameAlertTitle, isPresented: $showingRename) {
+            TextField("Name", text: $renameText)
+            Button("Cancel", role: .cancel) {}
+            Button("Rename") { onRename(renameText) }
+                .disabled(renameText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        }
+    }
+
+    private var iconName: String {
+        switch pane?.kind {
+        case .chat: "text.bubble"
+        case .terminal: pane?.attachOnly == true ? "server.rack" : "terminal"
+        case .newTab, .none: "square.dashed"
+        }
+    }
+
+    private var splitDragGesture: some Gesture {
+        DragGesture(minimumDistance: 3, coordinateSpace: .global)
+            .onChanged { value in
+                guard let pane, let dragCoordinator else { return }
+                if dragCoordinator.active?.sourceLeafId != leafId {
+                    onActivate()
+                }
+                dragCoordinator.dragUpdated(
+                    sourceLeafId: leafId,
+                    name: title(pane),
+                    kind: pane.kind,
+                    isAgentOwned: pane.attachOnly,
+                    location: value.location
+                )
+            }
+            .onEnded { _ in
+                dragCoordinator?.dragEnded()
+            }
+    }
+
+    @ViewBuilder
+    private var leadingIcon: some View {
+        if pane?.kind == .chat,
+           let sessionId = pane?.chatSessionId,
+           let session = environment.projectList.sessions.first(where: { $0.id == sessionId }) {
+            ChatSessionLeadingIcon(session: session, store: sessionStore)
+        } else {
+            Image(systemName: iconName)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(theme.textSecondary)
+                .frame(width: 18)
+        }
+    }
+
+    private var renameAlertTitle: String {
+        switch pane?.kind {
+        case .chat: "Rename Chat"
+        case .terminal: "Rename Terminal"
+        case .newTab, .none: "Rename Pane"
+        }
+    }
+
+    private var closeTitle: String {
+        pane?.kind == .chat && pane?.chatSessionId != nil ? "Archive" : "Close"
+    }
+
+    private var actionsMenu: some View {
+        Menu {
+            splitMenuItem("Split Right", icon: "rectangle.righthalf.inset.filled", edge: .trailing)
+            splitMenuItem("Split Left", icon: "rectangle.lefthalf.inset.filled", edge: .leading)
+            splitMenuItem("Split Down", icon: "rectangle.bottomhalf.inset.filled", edge: .bottom)
+            splitMenuItem("Split Up", icon: "rectangle.tophalf.inset.filled", edge: .top)
+
+            Divider()
+
+            Button {
+                renameText = pane.map(title) ?? "New Tab"
+                showingRename = true
+            } label: {
+                    Label("Rename", systemImage: "pencil")
+                    .labelStyle(.titleAndIcon)
+            }
+
+            Divider()
+
+            Button(role: .destructive, action: onClose) {
+                Label(closeTitle, systemImage: closeTitle == "Archive" ? "archivebox" : "xmark")
+                    .labelStyle(.titleAndIcon)
+            }
+            .keyboardShortcut("w", modifiers: .command)
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(theme.textSecondary)
+                .frame(width: 24, height: 22)
+                .contentShape(Rectangle())
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("Pane actions")
+        .accessibilityLabel("Pane actions")
+    }
+
+    @ViewBuilder
+    private func splitMenuItem(_ name: String, icon: String, edge: SplitEdge) -> some View {
+        let button = Button { onSplit(edge) } label: {
+            Label(name, systemImage: icon)
+                .labelStyle(.titleAndIcon)
+        }
+
+        switch edge {
+        case .trailing:
+            button.keyboardShortcut("d", modifiers: .command)
+        case .bottom:
+            button.keyboardShortcut("d", modifiers: [.command, .shift])
+        case .leading, .top:
+            button
+        }
     }
 }
 
@@ -229,10 +409,12 @@ private struct SplitBranchView: View {
     let activeLeafId: UUID?
     let dimsInactiveLeaves: Bool
     let groupModel: (UUID) -> PaneGroupModel
-    let chatTitle: (PaneDescriptorState) -> String
-    let paneWorktree: (PaneDescriptorState) -> String?
-    let dragCoordinator: PaneTabDragCoordinator?
-    let showsShortcutHints: (UUID) -> Bool
+    let paneTitle: (PaneDescriptorState) -> String
+    let sessionStore: SessionStore?
+    let dragCoordinator: WorkspaceSplitDragCoordinator?
+    let onSplitLeaf: (UUID, SplitEdge) -> Void
+    let onRenameLeaf: (UUID, String) -> Void
+    let onCloseLeaf: (UUID) -> Void
     let replaceNode: (SplitNode) -> Void
     let replaceLiveNode: (SplitNode) -> Void
 
@@ -247,8 +429,8 @@ private struct SplitBranchView: View {
     /// halves would fall below it).
     private var minChildLength: CGFloat {
         orientation == .horizontal
-            ? PaneTabDragCoordinator.minChildWidth
-            : PaneTabDragCoordinator.minChildHeight
+            ? WorkspaceSplitDragCoordinator.minChildWidth
+            : WorkspaceSplitDragCoordinator.minChildHeight
     }
 
     private var fractions: [Double] { liveFractions ?? children.map(\.fraction) }
@@ -275,10 +457,12 @@ private struct SplitBranchView: View {
                         activeLeafId: activeLeafId,
                         dimsInactiveLeaves: dimsInactiveLeaves,
                         groupModel: groupModel,
-                        chatTitle: chatTitle,
-                        paneWorktree: paneWorktree,
+                        paneTitle: paneTitle,
+                        sessionStore: sessionStore,
                         dragCoordinator: dragCoordinator,
-                        showsShortcutHints: showsShortcutHints,
+                        onSplitLeaf: onSplitLeaf,
+                        onRenameLeaf: onRenameLeaf,
+                        onCloseLeaf: onCloseLeaf,
                         replaceNode: { newChild in
                             var updated = children
                             updated[index] = SplitChild(

@@ -97,17 +97,9 @@ final class TerminalFocusController {
     /// The session screen's panel toggle (it owns the open/close + focus
     /// handoff); group models across all split leaves relay ⌘J here.
     var requestPanelToggle: (() -> Void)?
-    /// The session's center pane group: tab commands (⌘T/⌘W/⌘1-9/⌘⌥←→)
-    /// pressed while the chat has focus act on it, mirroring how a focused
-    /// terminal routes the same shortcuts to its own group.
+    /// The active center split: workspace tab/split commands pressed while
+    /// the chat has focus route through its model to the container.
     weak var centerGroup: PaneGroupModel?
-    /// Whether the workspace has center tabs beyond the selected one (any
-    /// group). Wired by the container against repository truth. ⌘W is
-    /// CLAIMED while this is true even when the selected tab can't close
-    /// (the anchoring chat) — falling through to Close Window with tabs
-    /// still open is catastrophic; the window only becomes ⌘W's target
-    /// once the workspace is down to its last tab.
-    var hasOtherCenterTabs: (() -> Bool)?
     private var typeToFocusMonitor: Any?
 
     func apply(_ target: SessionFocusTarget) {
@@ -328,9 +320,9 @@ final class TerminalFocusController {
         }
     }
 
-    /// Tab commands while the chat (or anything that isn't a terminal) holds
-    /// focus, acting on the center group — the same shortcuts a focused
-    /// terminal routes to its own group via its key-equivalent handler
+    /// Workspace commands while the chat (or anything that isn't a terminal)
+    /// holds focus. Focused terminals route the same shortcuts through their
+    /// active leaf model via its key-equivalent handler
     /// (GhosttyTerminalSurfaceAdapter), whose matching this mirrors.
     private func handleTabCommand(_ event: NSEvent) -> Bool {
         guard let centerGroup,
@@ -349,30 +341,58 @@ final class TerminalFocusController {
             .subtracting([.function, .numericPad])
         if mods == [.command, .option] {
             if event.specialKey == .leftArrow {
-                centerGroup.handleCommand(.previousTab)
+                centerGroup.handleCommand(.focusSplit(.leading))
                 return true
             }
             if event.specialKey == .rightArrow {
+                centerGroup.handleCommand(.focusSplit(.trailing))
+                return true
+            }
+            if event.specialKey == .upArrow {
+                centerGroup.handleCommand(.focusSplit(.top))
+                return true
+            }
+            if event.specialKey == .downArrow {
+                centerGroup.handleCommand(.focusSplit(.bottom))
+                return true
+            }
+        }
+        if mods == [.command, .shift], let chars = event.charactersIgnoringModifiers?.lowercased() {
+            // AppKit preserves Shift in charactersIgnoringModifiers for
+            // punctuation, yielding braces for the bracket keys.
+            if chars == "[" || chars == "{" {
+                centerGroup.handleCommand(.previousTab)
+                return true
+            }
+            if chars == "]" || chars == "}" {
                 centerGroup.handleCommand(.nextTab)
+                return true
+            }
+            if chars == "d" {
+                centerGroup.handleCommand(.split(.bottom))
                 return true
             }
         }
         if mods == .command, let chars = event.charactersIgnoringModifiers?.lowercased() {
+            if chars == "[" {
+                centerGroup.handleCommand(.previousSplit)
+                return true
+            }
+            if chars == "]" {
+                centerGroup.handleCommand(.nextSplit)
+                return true
+            }
             if chars == "t" {
                 centerGroup.handleCommand(.newTab)
                 return true
             }
+            if chars == "d" {
+                centerGroup.handleCommand(.split(.trailing))
+                return true
+            }
             if chars == "w" {
-                if let selected = centerGroup.state.selectedPane,
-                   centerGroup.canClose(id: selected.id) {
-                    centerGroup.handleCommand(.closeTab)
-                    return true
-                }
-                // The selected tab can't close (the anchoring chat) — but
-                // while OTHER tabs are open anywhere in the workspace, ⌘W
-                // must not fall through to Close Window; it just no-ops.
-                // Only on the last tab does ⌘W become the window's.
-                return hasOtherCenterTabs?() ?? false
+                centerGroup.handleCommand(.closeTab)
+                return true
             }
             if chars.count == 1, let digit = Int(chars), (1...9).contains(digit) {
                 centerGroup.handleCommand(.selectTab(digit - 1))

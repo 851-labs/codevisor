@@ -40,6 +40,10 @@ enum PaneGroupCommand {
     case nextTab
     case newTab
     case selectTab(Int)
+    case split(SplitEdge)
+    case focusSplit(SplitEdge)
+    case previousSplit
+    case nextSplit
     case togglePanel
     case closeTab
 }
