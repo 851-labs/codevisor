@@ -273,7 +273,6 @@ struct SessionContainerView: View {
                         selectedTabId: workspace.selectedCenterTabId,
                         title: workspaceTabTitle,
                         descriptor: workspaceTabDescriptor,
-                        paneWorktree: paneWorktreeBadge,
                         onSelect: selectCenterTab,
                         onClose: closeCenterTab,
                         onMove: moveCenterTab,
@@ -294,7 +293,6 @@ struct SessionContainerView: View {
                         onSplitLeaf: splitLeaf,
                         onRenameLeaf: renameLeaf,
                         onCloseLeaf: closeLeaf,
-                        paneWorktreeLookup: paneWorktreeBadge,
                         onCenterTreeChanged: { tree in
                             liveCenterTree = tree
                             saveSelectedTree(tree, workspaceId: workspace.id)
@@ -960,28 +958,6 @@ struct SessionContainerView: View {
 
     /// A chat pane's display title: its referenced session's LIVE title
     /// (auto-titles and renames flow through); drafts show their own name.
-    /// The tab strip's diverged-directory badge: the worktree (or folder)
-    /// name when the pane runs somewhere other than the workspace root.
-    /// Chats resolve through their session; terminals through the pane's
-    /// own directory override (the New tab page's picker).
-    private func paneWorktreeBadge(_ descriptor: PaneDescriptorState) -> String? {
-        let workspace = store.workspace(for: session, project: project)
-        switch descriptor.kind {
-        case .chat:
-            guard let id = descriptor.chatSessionId,
-                  let chat = environment.projectList.sessions.first(where: {
-                      $0.serverId == session.serverId && $0.id == id
-                  }),
-                  let cwd = chat.cwd, cwd != workspace.rootDirectory else { return nil }
-            return chat.worktreeName ?? URL(fileURLWithPath: cwd).lastPathComponent
-        case .terminal:
-            guard let cwd = descriptor.cwdOverride, cwd != workspace.rootDirectory else { return nil }
-            return URL(fileURLWithPath: cwd).lastPathComponent
-        case .newTab:
-            return nil
-        }
-    }
-
     private func paneTitle(_ descriptor: PaneDescriptorState) -> String {
         descriptor.kind == .chat ? chatPaneTitle(descriptor) : descriptor.name
     }

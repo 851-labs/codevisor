@@ -10,7 +10,6 @@ struct WorkspaceTabBar: View {
     let selectedTabId: UUID
     let title: (WorkspaceTab) -> String
     let descriptor: (WorkspaceTab) -> PaneDescriptorState?
-    let paneWorktree: (PaneDescriptorState) -> String?
     let onSelect: (UUID) -> Void
     let onClose: (UUID) -> Void
     let onMove: (UUID, UUID) -> Void
@@ -42,7 +41,6 @@ struct WorkspaceTabBar: View {
                                 PaneTab(
                                     name: title(tab),
                                     kind: pane?.kind ?? .newTab,
-                                    worktree: pane.flatMap(paneWorktree),
                                     isAgentOwned: pane?.attachOnly ?? false,
                                     isSelected: tab.id == selectedTabId,
                                     isDragging: false,

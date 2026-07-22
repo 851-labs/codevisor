@@ -29,10 +29,6 @@ struct PaneGroupBar: View {
     /// change as sessions are renamed/auto-titled; drafts show "New Chat").
     var chatTitle: ((PaneDescriptorState) -> String)?
     /// Resolves a pane's DIVERGED directory badge: the worktree (or folder)
-    /// name when the pane runs somewhere other than the workspace root —
-    /// isolation should be visible at a glance in the strip. Nil = runs at
-    /// the workspace root (no badge).
-    var paneWorktree: ((PaneDescriptorState) -> String?)?
     /// Whether the tabs show their ⌘N shortcut hints (native window tab
     /// bars show them on the bar the shortcuts currently target).
     var showsShortcutHints = false
@@ -419,7 +415,6 @@ struct PaneGroupBar: View {
                         PaneTab(
                             name: pane.kind == .chat ? (chatTitle?(pane) ?? pane.name) : pane.name,
                             kind: pane.kind,
-                            worktree: paneWorktree?(pane) ?? nil,
                             isAgentOwned: pane.attachOnly,
                             isSelected: pane.id == group.state.selectedPaneId,
                             isDragging: draggingPaneId == pane.id,
@@ -838,9 +833,6 @@ struct PaneTab: View {
     @Environment(\.theme) private var theme
     let name: String
     let kind: PaneKind
-    /// The worktree/folder badge when this pane runs OUTSIDE the workspace
-    /// root (a chat's isolated worktree, a terminal opened into one).
-    var worktree: String? = nil
     /// Agent-owned background terminals get a server-rack glyph so ownership
     /// is obvious next to the user's own shells (which get a terminal glyph).
     let isAgentOwned: Bool
@@ -990,30 +982,11 @@ struct PaneTab: View {
                     .foregroundStyle(isSelected ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
                     .help(iconHelp)
             }
-            if kind != .chat, let worktree, width >= 64 {
-                // Terminals opened into a worktree keep the compact marker
-                // (their names are generic "Terminal N"s).
-                Image(systemName: "arrow.triangle.branch")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(isSelected ? AnyShapeStyle(.secondary) : AnyShapeStyle(.tertiary))
-                    .help("Runs in worktree \u{201C}\(worktree)\u{201D}")
-            }
             Text(name)
                 .font(.system(size: 11.5))
                 .lineLimit(1)
                 .truncationMode(.tail)
                 .foregroundStyle(isSelected ? .primary : .secondary)
-            if kind == .chat, let worktree, width >= 64 {
-                // A chat in its own worktree reads "Title · worktree", the
-                // worktree subdued. The suffix never truncates — the title
-                // gives way first.
-                Text("· \(worktree)")
-                    .font(.system(size: 11.5))
-                    .lineLimit(1)
-                    .fixedSize()
-                    .foregroundStyle(isSelected ? AnyShapeStyle(.secondary) : AnyShapeStyle(.tertiary))
-                    .help("Runs in worktree \u{201C}\(worktree)\u{201D}")
-            }
         }
         .padding(.horizontal, isSliver ? 5 : contentPadding)
         // Reserve the edge adornments' zones on BOTH sides while they show,

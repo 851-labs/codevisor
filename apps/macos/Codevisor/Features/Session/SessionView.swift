@@ -32,8 +32,6 @@ struct SessionScreen: View {
     var onSplitLeaf: ((UUID, SplitEdge) -> Void)? = nil
     var onRenameLeaf: ((UUID, String) -> Void)? = nil
     var onCloseLeaf: ((UUID) -> Void)? = nil
-    /// Diverged-directory badge for bottom-panel tabs.
-    var paneWorktreeLookup: ((PaneDescriptorState) -> String?)? = nil
     var onCenterTreeChanged: ((SplitNode) -> Void)? = nil
     /// Streamed on every frame of a divider drag (render only) so the
     /// container's top-bar segments track the moving content divider.
@@ -52,7 +50,6 @@ struct SessionScreen: View {
                     PaneGroupBar(
                         group: paneGroup,
                         dragCoordinator: nil,
-                        paneWorktree: paneWorktreeLookup,
                         // The bottom bar is the shortcuts' target while one
                         // of its terminals holds keyboard focus.
                         showsShortcutHints: paneGroup.hasFocusedPane,
