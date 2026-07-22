@@ -455,6 +455,32 @@ describe("@codevisor/agent-runtime", () => {
     expect(harnesses.find((harness) => harness.id === "codex")?.source).toBe("registry")
   })
 
+  it("reports disabled custom harnesses as unavailable and refuses their sessions", async () => {
+    const runtime = makeAgentRuntime({
+      env: { PATH: "/bin" },
+      extraHarnesses: [
+        {
+          detectBinaries: ["paused-agent"],
+          disabledReason: "Temporarily paused",
+          id: "paused-agent",
+          launch: { args: ["acp"], command: "paused-agent", kind: "executable" },
+          name: "Paused Agent",
+          provider: "acp",
+          symbolName: "terminal"
+        }
+      ]
+    })
+
+    const harnesses = await run(runtime.discoverHarnesses)
+    expect(harnesses.find((harness) => harness.id === "paused-agent")?.readiness).toEqual({
+      detail: "Temporarily paused",
+      state: "unavailable"
+    })
+    await expect(
+      run(runtime.createAgentSession("paused-agent", "/tmp/project", () => undefined))
+    ).rejects.toThrow("Paused Agent is unavailable: Temporarily paused")
+  })
+
   it("drops extra harnesses whose id collides with a builtin", async () => {
     const runtime = makeAgentRuntime({
       env: { PATH: "/bin" },
