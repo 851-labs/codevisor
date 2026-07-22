@@ -22,6 +22,9 @@ struct SessionContainerView: View {
     @Environment(\.theme) private var theme
     @Environment(AdaptivePanelLayout.self) private var panelLayout
     @State private var controller: SessionController?
+    /// Global geometry + pointer state for rearranging split leaves inside
+    /// the selected top tab by dragging their headers.
+    @State private var splitDragCoordinator = WorkspaceSplitDragCoordinator()
     /// The session's focus coordinator (composer ⇄ terminals). Owned here so
     /// every center leaf's chat content — any group can host chats — wires
     /// against the same instance.
@@ -140,6 +143,21 @@ struct SessionContainerView: View {
             syncWorkspaceBackgroundTerminals()
         }
         .task(id: session.id) {
+            splitDragCoordinator.canResolve = { sourceLeafId, resolution, canvasSize in
+                canMoveSplitLeaf(
+                    sourceLeafId,
+                    relativeTo: resolution.targetLeafId,
+                    edge: resolution.edge,
+                    canvasSize: canvasSize
+                )
+            }
+            splitDragCoordinator.onResolve = { sourceLeafId, resolution in
+                moveSplitLeaf(
+                    sourceLeafId,
+                    relativeTo: resolution.targetLeafId,
+                    edge: resolution.edge
+                )
+            }
             // Lifecycle hooks (draft cleanup, dissolution) attach to the
             // primary leaf up front; other leaves get them on first access.
             // The ROUTED chat's leaf starts as the ACTIVE group, with the
@@ -272,6 +290,7 @@ struct SessionContainerView: View {
                         centerLeafModel: { leafId in configuredCenterModel(leafId: leafId) },
                         centerPaneTitle: paneTitle,
                         sessionStore: store,
+                        splitDragCoordinator: splitDragCoordinator,
                         onSplitLeaf: splitLeaf,
                         onRenameLeaf: renameLeaf,
                         onCloseLeaf: closeLeaf,
@@ -514,6 +533,71 @@ struct SessionContainerView: View {
         workspaceRevision += 1
         liveCenterTree = workspace.centerTabs[tabIndex].root
         activateLeaf(newLeafId)
+    }
+
+    /// Atomically relocates one whole leaf inside the selected top tab. The
+    /// group id survives, so its cached model and any live terminal surface
+    /// move with the layout instead of being torn down and recreated.
+    private func moveSplitLeaf(_ sourceLeafId: UUID, relativeTo targetLeafId: UUID, edge: SplitEdge) {
+        var workspace = store.workspace(for: session, project: project)
+        guard let tabIndex = workspace.selectedCenterTabIndex else { return }
+        let current = workspace.centerTabs[tabIndex].root
+        guard current.group(id: sourceLeafId) != nil,
+              current.group(id: targetLeafId) != nil else { return }
+
+        let moved = current.movingGroup(
+            id: sourceLeafId,
+            relativeTo: targetLeafId,
+            edge: edge
+        )
+        guard moved != current else { return }
+
+        workspace.centerTabs[tabIndex].root = moved
+        workspace.centerTabs[tabIndex].activeLeafId = sourceLeafId
+        environment.workspaces.save(workspace)
+        workspaceRevision += 1
+        liveCenterTree = moved
+        activateLeaf(sourceLeafId)
+
+        DispatchQueue.main.async {
+            configuredCenterModel(leafId: sourceLeafId).focusSelectedPane()
+        }
+    }
+
+    /// Validates the POST-move topology. A same-row reorder can be valid even
+    /// when the hovered leaf itself is too narrow to halve before the source
+    /// is removed; evaluating the candidate avoids hiding those targets.
+    private func canMoveSplitLeaf(
+        _ sourceLeafId: UUID,
+        relativeTo targetLeafId: UUID,
+        edge: SplitEdge,
+        canvasSize: CGSize
+    ) -> Bool {
+        let workspace = store.workspace(for: session, project: project)
+        guard let current = workspace.selectedCenterTab?.root,
+              canvasSize.width > 0,
+              canvasSize.height > 0 else { return false }
+        let candidate = current.movingGroup(
+            id: sourceLeafId,
+            relativeTo: targetLeafId,
+            edge: edge
+        )
+        guard candidate != current else { return false }
+
+        let currentFrames = normalizedLeafFrames(current).values
+        let candidateFrames = normalizedLeafFrames(candidate).values
+        guard let currentMinWidth = currentFrames.map({ $0.width * canvasSize.width }).min(),
+              let currentMinHeight = currentFrames.map({ $0.height * canvasSize.height }).min()
+        else { return false }
+
+        // A window may already be smaller than the nominal pane floor. In
+        // that case permit moves that do not make its smallest pane worse.
+        let requiredWidth = min(WorkspaceSplitDragCoordinator.minChildWidth, currentMinWidth)
+        let requiredHeight = min(WorkspaceSplitDragCoordinator.minChildHeight, currentMinHeight)
+        return candidateFrames.allSatisfy { frame in
+            frame.width * canvasSize.width >= requiredWidth - 1
+                && frame.height * canvasSize.height >= requiredHeight - 1
+        }
     }
 
     private func closeActiveLeaf() {

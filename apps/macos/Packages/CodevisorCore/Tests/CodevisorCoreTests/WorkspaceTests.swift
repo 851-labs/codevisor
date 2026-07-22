@@ -123,6 +123,64 @@ struct SplitTreeTests {
         #expect(SplitNode.leaf(groupState(), id: a).removingGroup(id: a) == nil)
     }
 
+    @Test("Moving a group reorders siblings and preserves identity and state")
+    func moveGroupAmongSiblings() {
+        let a = UUID(), b = UUID(), c = UUID()
+        let aState = groupState(2)
+        let tree = SplitNode.split(orientation: .horizontal, children: [
+            SplitChild(fraction: 0.4, node: .leaf(aState, id: a)),
+            SplitChild(fraction: 0.3, node: .leaf(groupState(), id: b)),
+            SplitChild(fraction: 0.3, node: .leaf(groupState(), id: c))
+        ])
+
+        let moved = tree.movingGroup(id: a, relativeTo: b, edge: .trailing)
+
+        #expect(moved.allGroups.map(\.id) == [b, a, c])
+        #expect(moved.group(id: a) == aState)
+        guard case let .split(orientation, children) = moved else {
+            Issue.record("expected horizontal split")
+            return
+        }
+        #expect(orientation == .horizontal)
+        #expect(children.count == 3)
+        #expect(abs(children.map(\.fraction).reduce(0, +) - 1) < 0.0001)
+    }
+
+    @Test("Moving a nested group collapses its old parent and inserts on the target edge")
+    func moveNestedGroup() {
+        let a = UUID(), b = UUID(), c = UUID()
+        let tree = SplitNode.split(orientation: .horizontal, children: [
+            SplitChild(fraction: 0.7, node: .split(orientation: .vertical, children: [
+                SplitChild(fraction: 0.5, node: .leaf(groupState(), id: a)),
+                SplitChild(fraction: 0.5, node: .leaf(groupState(), id: b))
+            ])),
+            SplitChild(fraction: 0.3, node: .leaf(groupState(), id: c))
+        ])
+
+        let moved = tree.movingGroup(id: c, relativeTo: a, edge: .top)
+
+        guard case let .split(orientation, children) = moved else {
+            Issue.record("expected collapsed vertical root")
+            return
+        }
+        #expect(orientation == .vertical)
+        #expect(children.count == 3)
+        #expect(moved.allGroups.map(\.id) == [c, a, b])
+    }
+
+    @Test("Invalid and self-targeted group moves are no-ops")
+    func invalidGroupMoves() {
+        let a = UUID(), b = UUID()
+        let tree = SplitNode.split(orientation: .horizontal, children: [
+            SplitChild(fraction: 0.5, node: .leaf(groupState(), id: a)),
+            SplitChild(fraction: 0.5, node: .leaf(groupState(), id: b))
+        ])
+
+        #expect(tree.movingGroup(id: a, relativeTo: a, edge: .leading) == tree)
+        #expect(tree.movingGroup(id: UUID(), relativeTo: b, edge: .leading) == tree)
+        #expect(tree.movingGroup(id: a, relativeTo: UUID(), edge: .leading) == tree)
+    }
+
     @Test("Pruning removes empty groups and collapses their splits")
     func pruneEmptyGroups() {
         let chat = UUID(), empty = UUID(), terminal = UUID()

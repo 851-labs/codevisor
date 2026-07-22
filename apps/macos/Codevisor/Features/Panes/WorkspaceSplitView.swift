@@ -16,6 +16,7 @@ struct WorkspaceSplitView: View {
     let groupModel: (UUID) -> PaneGroupModel
     let paneTitle: (PaneDescriptorState) -> String
     let sessionStore: SessionStore?
+    let dragCoordinator: WorkspaceSplitDragCoordinator?
     let onSplitLeaf: (UUID, SplitEdge) -> Void
     let onRenameLeaf: (UUID, String) -> Void
     let onCloseLeaf: (UUID) -> Void
@@ -33,12 +34,31 @@ struct WorkspaceSplitView: View {
             groupModel: groupModel,
             paneTitle: paneTitle,
             sessionStore: sessionStore,
+            dragCoordinator: dragCoordinator,
             onSplitLeaf: onSplitLeaf,
             onRenameLeaf: onRenameLeaf,
             onCloseLeaf: onCloseLeaf,
             replaceNode: onTreeChanged,
             replaceLiveNode: { onLiveTreeChanged?($0) }
         )
+        .overlay { dragGhostOverlay }
+    }
+
+    private var dragGhostOverlay: some View {
+        GeometryReader { proxy in
+            if let drag = dragCoordinator?.active {
+                WorkspaceSplitDragGhost(
+                    name: drag.name,
+                    kind: drag.kind,
+                    isAgentOwned: drag.isAgentOwned
+                )
+                .position(
+                    x: drag.location.x - proxy.frame(in: .global).minX,
+                    y: drag.location.y - proxy.frame(in: .global).minY
+                )
+            }
+        }
+        .allowsHitTesting(false)
     }
 }
 
@@ -49,6 +69,7 @@ private struct SplitNodeView: View {
     let groupModel: (UUID) -> PaneGroupModel
     let paneTitle: (PaneDescriptorState) -> String
     let sessionStore: SessionStore?
+    let dragCoordinator: WorkspaceSplitDragCoordinator?
     let onSplitLeaf: (UUID, SplitEdge) -> Void
     let onRenameLeaf: (UUID, String) -> Void
     let onCloseLeaf: (UUID) -> Void
@@ -66,6 +87,7 @@ private struct SplitNodeView: View {
                 groupModel: groupModel,
                 paneTitle: paneTitle,
                 sessionStore: sessionStore,
+                dragCoordinator: dragCoordinator,
                 onSplit: { edge in onSplitLeaf(id, edge) },
                 onRename: { name in onRenameLeaf(id, name) },
                 onClose: { onCloseLeaf(id) }
@@ -79,6 +101,7 @@ private struct SplitNodeView: View {
                 groupModel: groupModel,
                 paneTitle: paneTitle,
                 sessionStore: sessionStore,
+                dragCoordinator: dragCoordinator,
                 onSplitLeaf: onSplitLeaf,
                 onRenameLeaf: onRenameLeaf,
                 onCloseLeaf: onCloseLeaf,
@@ -97,6 +120,7 @@ private struct SplitLeafView: View {
     let groupModel: (UUID) -> PaneGroupModel
     let paneTitle: (PaneDescriptorState) -> String
     let sessionStore: SessionStore?
+    let dragCoordinator: WorkspaceSplitDragCoordinator?
     let onSplit: (SplitEdge) -> Void
     let onRename: (String) -> Void
     let onClose: () -> Void
@@ -110,6 +134,8 @@ private struct SplitLeafView: View {
                 pane: model.state.selectedPane,
                 title: paneTitle,
                 sessionStore: sessionStore,
+                leafId: leafId,
+                dragCoordinator: dragCoordinator,
                 onActivate: { model.onActivated?() },
                 onSplit: onSplit,
                 onRename: onRename,
@@ -125,6 +151,7 @@ private struct SplitLeafView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .overlay { inactiveSplitTint }
+        .workspaceSplitDropZone(dragCoordinator, leafId: leafId)
     }
 
     private var inactiveSplitTint: some View {
@@ -141,6 +168,8 @@ private struct SplitLeafHeader: View {
     let pane: PaneDescriptorState?
     let title: (PaneDescriptorState) -> String
     let sessionStore: SessionStore?
+    let leafId: UUID
+    let dragCoordinator: WorkspaceSplitDragCoordinator?
     let onActivate: () -> Void
     let onSplit: (SplitEdge) -> Void
     let onRename: (String) -> Void
@@ -168,6 +197,7 @@ private struct SplitLeafHeader: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .simultaneousGesture(splitDragGesture)
 
             actionsMenu
         }
@@ -189,6 +219,26 @@ private struct SplitLeafHeader: View {
         case .terminal: pane?.attachOnly == true ? "server.rack" : "terminal"
         case .newTab, .none: "square.dashed"
         }
+    }
+
+    private var splitDragGesture: some Gesture {
+        DragGesture(minimumDistance: 3, coordinateSpace: .global)
+            .onChanged { value in
+                guard let pane, let dragCoordinator else { return }
+                if dragCoordinator.active?.sourceLeafId != leafId {
+                    onActivate()
+                }
+                dragCoordinator.dragUpdated(
+                    sourceLeafId: leafId,
+                    name: title(pane),
+                    kind: pane.kind,
+                    isAgentOwned: pane.attachOnly,
+                    location: value.location
+                )
+            }
+            .onEnded { _ in
+                dragCoordinator?.dragEnded()
+            }
     }
 
     @ViewBuilder
@@ -361,6 +411,7 @@ private struct SplitBranchView: View {
     let groupModel: (UUID) -> PaneGroupModel
     let paneTitle: (PaneDescriptorState) -> String
     let sessionStore: SessionStore?
+    let dragCoordinator: WorkspaceSplitDragCoordinator?
     let onSplitLeaf: (UUID, SplitEdge) -> Void
     let onRenameLeaf: (UUID, String) -> Void
     let onCloseLeaf: (UUID) -> Void
@@ -378,8 +429,8 @@ private struct SplitBranchView: View {
     /// halves would fall below it).
     private var minChildLength: CGFloat {
         orientation == .horizontal
-            ? PaneTabDragCoordinator.minChildWidth
-            : PaneTabDragCoordinator.minChildHeight
+            ? WorkspaceSplitDragCoordinator.minChildWidth
+            : WorkspaceSplitDragCoordinator.minChildHeight
     }
 
     private var fractions: [Double] { liveFractions ?? children.map(\.fraction) }
@@ -408,6 +459,7 @@ private struct SplitBranchView: View {
                         groupModel: groupModel,
                         paneTitle: paneTitle,
                         sessionStore: sessionStore,
+                        dragCoordinator: dragCoordinator,
                         onSplitLeaf: onSplitLeaf,
                         onRenameLeaf: onRenameLeaf,
                         onCloseLeaf: onCloseLeaf,

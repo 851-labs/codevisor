@@ -28,6 +28,7 @@ struct SessionScreen: View {
     var centerLeafModel: ((UUID) -> PaneGroupModel)? = nil
     var centerPaneTitle: ((PaneDescriptorState) -> String)? = nil
     var sessionStore: SessionStore? = nil
+    var splitDragCoordinator: WorkspaceSplitDragCoordinator? = nil
     var onSplitLeaf: ((UUID, SplitEdge) -> Void)? = nil
     var onRenameLeaf: ((UUID, String) -> Void)? = nil
     var onCloseLeaf: ((UUID) -> Void)? = nil
@@ -115,6 +116,7 @@ struct SessionScreen: View {
         }
         .onDisappear {
             focus.stopTypeToFocus()
+            splitDragCoordinator?.dragCancelled()
         }
         .environment(\.attachmentImages, attachmentImages)
         .attachmentDropTarget(controller)
@@ -131,6 +133,7 @@ struct SessionScreen: View {
                     groupModel: centerLeafModel,
                     paneTitle: centerPaneTitle ?? { $0.name },
                     sessionStore: sessionStore,
+                    dragCoordinator: splitDragCoordinator,
                     onSplitLeaf: { leafId, edge in onSplitLeaf?(leafId, edge) },
                     onRenameLeaf: { leafId, name in onRenameLeaf?(leafId, name) },
                     onCloseLeaf: { leafId in onCloseLeaf?(leafId) },

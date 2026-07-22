@@ -167,6 +167,25 @@ extension SplitNode {
         }
     }
 
+    /// Moves an existing leaf beside another leaf while preserving the
+    /// source group's identity and state. Its old siblings absorb its share;
+    /// the target then splits exactly as it would for a newly-created group.
+    /// Invalid and self-targeted moves are no-ops.
+    public func movingGroup(id sourceId: UUID, relativeTo targetId: UUID, edge: SplitEdge) -> SplitNode {
+        guard sourceId != targetId,
+              let sourceState = group(id: sourceId),
+              group(id: targetId) != nil,
+              let withoutSource = removingGroup(id: sourceId)
+        else { return self }
+
+        return withoutSource.splitting(
+            groupId: targetId,
+            edge: edge,
+            newGroupId: sourceId,
+            newGroupState: sourceState
+        )
+    }
+
     /// The tree with every EMPTY group removed (siblings absorb shares,
     /// single-child splits collapse); nil when no group holds a pane.
     /// Load-time healing: a group is only ever legitimately empty for the
