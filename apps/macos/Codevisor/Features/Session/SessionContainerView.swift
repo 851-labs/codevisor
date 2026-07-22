@@ -268,16 +268,18 @@ struct SessionContainerView: View {
                 let _ = workspaceRevision
                 let workspace = store.workspace(for: session, project: project)
                 VStack(spacing: 0) {
-                    WorkspaceTabBar(
-                        tabs: workspace.centerTabs,
-                        selectedTabId: workspace.selectedCenterTabId,
-                        title: workspaceTabTitle,
-                        descriptor: workspaceTabDescriptor,
-                        onSelect: selectCenterTab,
-                        onClose: closeCenterTab,
-                        onMove: moveCenterTab,
-                        onNew: addCenterTab
-                    )
+                    if workspace.centerTabs.count > 1 {
+                        WorkspaceTabBar(
+                            tabs: workspace.centerTabs,
+                            selectedTabId: workspace.selectedCenterTabId,
+                            title: workspaceTabTitle,
+                            descriptor: workspaceTabDescriptor,
+                            onSelect: selectCenterTab,
+                            onClose: closeCenterTab,
+                            onMove: moveCenterTab,
+                            onNew: addCenterTab
+                        )
+                    }
                     SessionScreen(
                         controller: controller,
                         paneGroup: store.paneGroup(for: session, project: project),
