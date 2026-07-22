@@ -59,6 +59,7 @@ struct ChatInputEditor: NSViewRepresentable {
         textView.string = text
         textView.font = .preferredFont(forTextStyle: .body)
         textView.isRichText = false
+        textView.writingToolsBehavior = .none
         // No automatic formatting in a prompt box: smart quotes/dashes and
         // autocorrect mangle code and identifiers, and these apply even in
         // plain-text views (they follow the system defaults otherwise).

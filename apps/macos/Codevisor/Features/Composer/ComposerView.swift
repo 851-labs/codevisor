@@ -184,6 +184,7 @@ struct ComposerCard: View {
                         onTextViewReady: onTextViewReady
                     )
                     .frame(height: editorHeight)
+                    .writingToolsAffordanceVisibility(.hidden)
                     // Frozen while a send is being accepted (the moment before
                     // the session page opens; the send button spins instead)
                     // and while an update is installing (the app/server is
