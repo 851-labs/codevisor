@@ -90,8 +90,7 @@ import {
   removeWorktree,
   worktreeStartPoint
 } from "./git.js"
-import type { Socket } from "node:net"
-import type { AddressInfo } from "node:net"
+import { connect, type AddressInfo, type Socket } from "node:net"
 import { Context, Effect, Layer, PubSub, Schema } from "effect"
 import { WebSocket, WebSocketServer } from "ws"
 import type { HarnessAuthManager } from "./harness-auth.js"
@@ -378,6 +377,23 @@ export const makeCodevisorServerApp = (
   return app
 }
 
+/// True when something already accepts connections on the address this server
+/// is about to claim. Bind errors alone cannot detect this: the kernel happily
+/// grants 127.0.0.1:PORT while another process holds *:PORT, and the more
+/// specific bind then silently captures all loopback traffic.
+const hasExistingListener = (host: string, port: number): Promise<boolean> =>
+  new Promise((resolve) => {
+    const probeHost = host === "0.0.0.0" || host === "::" ? "127.0.0.1" : host
+    const socket = connect({ host: probeHost, port })
+    const done = (listening: boolean): void => {
+      socket.destroy()
+      resolve(listening)
+    }
+    socket.once("connect", () => done(true))
+    socket.once("error", () => done(false))
+    socket.setTimeout(1_000, () => done(false))
+  })
+
 export const startCodevisorServer = (
   services: CodevisorServerServices,
   config: CodevisorServerConfig
@@ -385,6 +401,18 @@ export const startCodevisorServer = (
   Effect.gen(function* () {
     const fanout = yield* makeEventFanout
     yield* Effect.sync(() => sweepAttachmentTempFiles())
+    // An accidental second `serve` against the same data directory once
+    // shadow-bound the loopback address of a live server and hijacked its
+    // clients mid-turn. Refuse to start when the port is already served;
+    // ephemeral ports (tests) cannot conflict and skip the probe.
+    if (config.port !== 0 && (yield* Effect.promise(() => hasExistingListener(config.host, config.port)))) {
+      return yield* Effect.fail(
+        new ServerError({
+          operation: "start",
+          message: `${config.host}:${config.port} already has a listener (another Codevisor server?). Stop the other process or pass a different --port.`
+        })
+      )
+    }
     // Every runtime continuation belongs to this server process. If the
     // previous process died mid-turn, close only the orphaned durable state
     // before accepting clients. Agent processes are deliberately restored on
@@ -455,10 +483,34 @@ export const reconcileOrphanedSessionTurns = async (
 ): Promise<void> => {
   const sessions = await run(services.db.listSessions)
   for (const session of sessions) {
-    if (session.isArchived) continue
+    if (session.isArchived) {
+      // Archived sessions get no turn restoration, but a stale streaming row
+      // must still be closed — unarchiving would otherwise resurface it as an
+      // endless in-progress turn.
+      await run(
+        services.db.failStaleAssistantChatItems(
+          session.id,
+          "The server restarted before this response finished."
+        )
+      )
+      continue
+    }
     const page = await run(services.db.getTranscriptPage(session.id, undefined, 1))
     const active = page.items.at(-1)
     const hasOrphanedTurn = active?.role === "assistant" && active.isGenerating
+    // Reconciliation runs before the server accepts clients, so no live turn
+    // exists anywhere: every streaming row is dead. The newest item is closed
+    // by the turn-ending path below with full restore context; older rows —
+    // stranded mid-transcript when a previous process died or a concurrent
+    // writer stole the projection pointer — would otherwise render as an
+    // endless in-progress turn that no future event can ever finish.
+    await run(
+      services.db.failStaleAssistantChatItems(
+        session.id,
+        "The server restarted before this response finished.",
+        hasOrphanedTurn ? active.id : undefined
+      )
+    )
     // The database projection always supplies the full background-task
     // snapshot; the API field is optional only for older remote clients.
     const hasOrphanedTasks = page.backgroundTasks!.length > 0

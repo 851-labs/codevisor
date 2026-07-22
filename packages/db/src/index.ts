@@ -2082,6 +2082,15 @@ export interface CodevisorDatabaseService {
     sessionId: string,
     messageId: string
   ) => Effect.Effect<boolean, DatabaseError>
+  /// Marks every still-streaming assistant chat item as failed except
+  /// `excludeItemId`. Streaming rows are process-owned: whenever no live turn
+  /// exists for them (server startup, crash recovery), they can never emit
+  /// again and would otherwise render as an endless in-progress turn.
+  readonly failStaleAssistantChatItems: (
+    sessionId: string,
+    stopDetail: string,
+    excludeItemId?: string
+  ) => Effect.Effect<number, DatabaseError>
   readonly getSessionActionResult: (
     sessionId: string,
     clientActionId: string
@@ -3123,6 +3132,34 @@ const createService = (
             .get(sessionId, messageId)
         )
       ),
+    failStaleAssistantChatItems: (sessionId, stopDetail, excludeItemId) =>
+      attempt("failStaleAssistantChatItems", () => {
+        getSession(sessionId)
+        return sqlite.transaction(() => {
+          const stale = sqlite
+            .prepare(
+              `select id from chat_items
+               where session_id = ? and role = 'assistant' and status = 'streaming' and id != ?
+               order by position asc`
+            )
+            .all(sessionId, excludeItemId ?? "") as Array<{ id: string }>
+          const now = isoTimestamp()
+          for (const row of stale) {
+            finishAssistantChatItem(sqlite, sessionId, row.id, now, "interrupted", stopDetail, false, true)
+          }
+          // A failed row can never be the projection's write target again; a
+          // pointer left on one would resurrect it on the next assistant event.
+          sqlite
+            .prepare(
+              `update session_chat_state set current_item_id = null
+               where session_id = ? and current_item_id in (
+                 select id from chat_items where session_id = ? and status = 'failed'
+               )`
+            )
+            .run(sessionId, sessionId)
+          return stale.length
+        })()
+      }),
     getSessionActionResult: (sessionId, clientActionId) =>
       attempt("getSessionActionResult", () => {
         const row = sqlite

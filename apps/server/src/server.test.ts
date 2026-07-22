@@ -816,6 +816,26 @@ describe("@codevisor/server", () => {
     })
   })
 
+  it("refuses to start when the port already has a listener", async () => {
+    const { services } = await makeServices("server-a")
+    const first = await run(
+      startCodevisorServer(services, defaultServerConfig({ id: "server-a", port: 0 }))
+    )
+    runningServers.push(first)
+
+    // The kernel happily grants a loopback bind that overlaps a wildcard one,
+    // so a bind attempt alone would "succeed" and hijack the live server's
+    // clients. The startup probe must reject before any bind happens.
+    await expect(
+      run(
+        startCodevisorServer(services, defaultServerConfig({ id: "server-b", port: first.port }))
+      )
+    ).rejects.toMatchObject({
+      operation: "start",
+      message: expect.stringContaining("already has a listener")
+    })
+  })
+
   it("terminalizes orphaned durable state and restores the agent only when the chat connects", async () => {
     const { agents, services } = await makeServices("server-a")
     const folder = mkdtempSync(join(tmpdir(), "codevisor-recovery-project-"))
@@ -870,6 +890,28 @@ describe("@codevisor/server", () => {
       })
     )
     await run(services.db.archiveSession(archived.id))
+    // A concurrent-writer incident can strand a streaming row mid-transcript:
+    // the conversation moved past it, so it is not the newest item and no
+    // future terminal event can ever close it.
+    const splitBrain = await run(
+      services.db.createSession({
+        projectId: project.id,
+        harnessId: "codex",
+        agentSessionId: "split-brain-agent"
+      })
+    )
+    await run(
+      services.db.appendConversationItem(
+        splitBrain.id,
+        "assistant",
+        "stale-message",
+        "half-finished answer",
+        true
+      )
+    )
+    await run(
+      services.db.appendConversationItem(splitBrain.id, "user", "follow-up", "hello again", false)
+    )
     await run(
       services.db.appendEvent("session.output", session.id, {
         sessionUpdate: "question",
@@ -912,9 +954,24 @@ describe("@codevisor/server", () => {
     expect(
       (await run(services.db.getTranscriptPage(backgroundOnly.id, undefined, 8))).backgroundTasks
     ).toEqual([])
+    // Archived sessions get no turn restoration, but their stale streaming
+    // rows are still closed — unarchiving must not resurface an endless
+    // in-progress turn.
     expect(
       (await run(services.db.getTranscriptPage(archived.id, undefined, 8))).items.at(-1)
-    ).toMatchObject({ isGenerating: true })
+    ).toMatchObject({
+      isGenerating: false,
+      stopReason: "interrupted",
+      stopDetail: "The server restarted before this response finished."
+    })
+    const splitPage = await run(services.db.getTranscriptPage(splitBrain.id, undefined, 8))
+    expect(splitPage.items.map((item) => item.isGenerating)).toEqual([false, false])
+    expect(splitPage.items.at(0)).toMatchObject({
+      role: "assistant",
+      isGenerating: false,
+      stopReason: "interrupted",
+      stopDetail: "The server restarted before this response finished."
+    })
     expect(page.items.at(-1)).toMatchObject({
       isGenerating: false,
       stopReason: "interrupted",
