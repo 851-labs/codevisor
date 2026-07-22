@@ -59,7 +59,7 @@ import type { HarnessAuthManager } from "./harness-auth.js"
 import type { CodevisorServerServices } from "./server.js"
 import { NativeMcpError } from "./native-mcp-manager.js"
 import { SkillsError } from "./skills-manager.js"
-import { generatedWorktreeNames } from "./worktree-names.js"
+import { productionFoodWorktreeNames } from "./worktree-names.js"
 import { foodWorktreeNames } from "./food-worktree-names.js"
 import { boundedMcpTimerDelay, makeMcpManager, NodeStreamableHttpTransport } from "./mcp-manager.js"
 import { Client as McpClient } from "@modelcontextprotocol/sdk/client/index.js"
@@ -4034,13 +4034,13 @@ describe("@codevisor/server", () => {
       ).body as { readonly name: string; readonly branch: string }
       expect(thirdWorktree.name).toBe("fix-auth-3")
       expect(thirdWorktree.branch).toBe(`codevisor/${thirdWorktree.name}`)
-      // Missing names get a short scientist surname from the curated pool.
+      // Missing names get a compact food word from the curated production pool.
       const randomNamed = (
         await jsonRequest(server, "/v1/projects/git-project/worktrees", {
           method: "POST"
         })
       ).body as { readonly name: string; readonly branch: string }
-      expect(generatedWorktreeNames).toContain(randomNamed.name)
+      expect(productionFoodWorktreeNames).toContain(randomNamed.name)
       expect(randomNamed.branch).toBe(`codevisor/${randomNamed.name}`)
       expect(
         ((await jsonRequest(server, "/v1/projects/git-project/worktrees")).body as Array<unknown>)

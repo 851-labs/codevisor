@@ -1,40 +1,46 @@
 import { describe, expect, it } from "vitest"
-import { availableGeneratedWorktreeName, generatedWorktreeNames } from "./worktree-names.js"
+import { availableProductionWorktreeName, productionFoodWorktreeNames } from "./worktree-names.js"
 
-describe("generated worktree names", () => {
-  it("contains 588 unique short surname slugs", () => {
-    expect(generatedWorktreeNames).toHaveLength(588)
-    expect(new Set(generatedWorktreeNames).size).toBe(588)
-    expect(generatedWorktreeNames.every((name) => name.length <= 12)).toBe(true)
-    expect(generatedWorktreeNames.every((name) => /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(name))).toBe(
-      true
-    )
+describe("production food worktree names", () => {
+  it("contains at least 500 unique compact food words", () => {
+    expect(productionFoodWorktreeNames.length).toBeGreaterThanOrEqual(500)
+    expect(new Set(productionFoodWorktreeNames).size).toBe(productionFoodWorktreeNames.length)
+    expect(productionFoodWorktreeNames).toContain("apple")
+    expect(productionFoodWorktreeNames).toContain("ramen")
+    expect(productionFoodWorktreeNames).toContain("saffron")
+    expect(productionFoodWorktreeNames.every((name) => name.length <= 12)).toBe(true)
+    expect(productionFoodWorktreeNames.every((name) => /^[a-z0-9]+$/.test(name))).toBe(true)
   })
 
   it("retries a random collision", () => {
     const values = [0, 0.5]
-    const candidate = availableGeneratedWorktreeName(
-      new Set([generatedWorktreeNames[0]]),
+    const candidate = availableProductionWorktreeName(
+      new Set([productionFoodWorktreeNames[0]!]),
       () => values.shift() ?? 0.5
     )
 
-    expect(candidate).toBe(generatedWorktreeNames[Math.floor(generatedWorktreeNames.length / 2)])
+    expect(candidate).toBe(
+      productionFoodWorktreeNames[Math.floor(productionFoodWorktreeNames.length / 2)]
+    )
   })
 
   it("scans the entire pool after random retries are exhausted", () => {
-    const candidate = availableGeneratedWorktreeName(new Set([generatedWorktreeNames[0]]), () => 0)
+    const candidate = availableProductionWorktreeName(
+      new Set([productionFoodWorktreeNames[0]!]),
+      () => 0
+    )
 
-    expect(candidate).toBe(generatedWorktreeNames[1])
+    expect(candidate).toBe(productionFoodWorktreeNames[1])
   })
 
   it("uses a random ID only after every base name is occupied", () => {
-    const firstName = generatedWorktreeNames[0]
-    const existing = new Set<string>(generatedWorktreeNames)
+    const firstName = productionFoodWorktreeNames[0]!
+    const existing = new Set<string>(productionFoodWorktreeNames)
     existing.add(`${firstName}-deadbeef`)
     const ids = ["deadbeef", "cafebabe"]
 
     expect(
-      availableGeneratedWorktreeName(
+      availableProductionWorktreeName(
         existing,
         () => 0,
         () => ids.shift() ?? "unused"
@@ -43,22 +49,22 @@ describe("generated worktree names", () => {
   })
 
   it("generates a default random ID after every base name is occupied", () => {
-    const candidate = availableGeneratedWorktreeName(new Set(generatedWorktreeNames), () => 0)
+    const candidate = availableProductionWorktreeName(new Set(productionFoodWorktreeNames), () => 0)
 
-    expect(candidate).toMatch(new RegExp(`^${generatedWorktreeNames[0]}-[0-9a-f]{8}$`))
+    expect(candidate).toMatch(new RegExp(`^${productionFoodWorktreeNames[0]!}-[0-9a-f]{8}$`))
   })
 
-  it("fails after every generated base and random ID collides", () => {
-    const firstName = generatedWorktreeNames[0]
-    const existing = new Set<string>(generatedWorktreeNames)
+  it("fails after every production base and random ID collides", () => {
+    const firstName = productionFoodWorktreeNames[0]!
+    const existing = new Set<string>(productionFoodWorktreeNames)
     existing.add(`${firstName}-deadbeef`)
 
     expect(() =>
-      availableGeneratedWorktreeName(
+      availableProductionWorktreeName(
         existing,
         () => 0,
         () => "deadbeef"
       )
-    ).toThrow("Unable to allocate a unique generated worktree name")
+    ).toThrow("Unable to allocate a unique production worktree name")
   })
 })

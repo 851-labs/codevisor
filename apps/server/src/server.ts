@@ -101,7 +101,7 @@ import type { McpManager } from "./mcp-manager.js"
 import { NativeMcpError, type NativeMcpManager } from "./native-mcp-manager.js"
 import { SkillsError, type SkillsManager } from "./skills-manager.js"
 import { availableDevelopmentWorktreeName } from "./food-worktree-names.js"
-import { availableGeneratedWorktreeName } from "./worktree-names.js"
+import { availableProductionWorktreeName } from "./worktree-names.js"
 
 export class ServerError extends Schema.TaggedErrorClass<ServerError>()("ServerError", {
   operation: Schema.String,
@@ -1157,7 +1157,7 @@ const routeProjects = async (
         config.worktreeNameStyle === "development"
           ? availableDevelopmentWorktreeName(existing)
           : requested === undefined
-            ? availableGeneratedWorktreeName(existing)
+            ? availableProductionWorktreeName(existing)
             : availableWorktreeName(requested, existing)
       const branch = `codevisor/${name}`
       let worktree: Worktree

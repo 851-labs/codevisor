@@ -1,5 +1,5 @@
 // Development worktrees use a visibly different namespace from production's
-// scientist surnames. The curated bases stay recognizable in window titles,
+// single food words. The curated phrases stay recognizable in window titles,
 // while the variants give development more than 500 memorable choices before
 // the four-digit uniqueness suffix is applied.
 const foodNameBases = [
