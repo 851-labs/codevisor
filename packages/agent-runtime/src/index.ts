@@ -42,6 +42,8 @@ export * from "./diff-stats.js"
 export * from "./shell-env.js"
 export * from "./agent-sessions.js"
 export {
+  acpClientCapabilities,
+  acpConfigSelection,
   acpConfigOptionIds,
   acpModelConfigId,
   acpModelConfigOption,
@@ -437,14 +439,14 @@ export const harnessCatalog: ReadonlyArray<HarnessDefinition> = [
       ]
     }
   }),
-  // Cursor is temporarily pulled: cursor-agent's headless/ACP mode fails with
-  // connection errors to Cursor's backend even where interactive mode works
-  // (their ACP path ignores the network.useHttp1ForAgent workaround).
   {
     detectBinaries: ["cursor-agent"],
-    disabledReason: "Temporarily disabled — cursor-agent's ACP mode is unreliable (upstream issue)",
     id: "cursor",
-    launch: { args: ["acp"], command: "cursor-agent", kind: "executable" },
+    launch: {
+      args: ["--force", "--sandbox", "disabled", "acp"],
+      command: "cursor-agent",
+      kind: "executable"
+    },
     name: "Cursor",
     provider: "acp",
     symbolName: "cursorarrow.rays"

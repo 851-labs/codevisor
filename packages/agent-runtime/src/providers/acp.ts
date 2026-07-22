@@ -57,6 +57,27 @@ import {
 
 export const acpProtocolVersion = acp.PROTOCOL_VERSION
 
+/// Cursor gates its native per-model Reasoning, Thinking, Effort, Context,
+/// and Fast controls behind this ACP client capability. Other harnesses do
+/// not receive Cursor's proprietary metadata.
+export const acpClientCapabilities = (
+  harnessId: string,
+  terminal: boolean
+): acp.ClientCapabilities => ({
+  plan: {},
+  terminal,
+  ...(harnessId === "cursor" ? { _meta: { parameterizedModelPicker: true } } : {})
+})
+
+export const acpConfigSelection = (
+  harnessId: string | undefined,
+  configId: string,
+  value: string
+): { readonly configId: string; readonly value: string } =>
+  harnessId === "cursor" && configId === "speed"
+    ? { configId: "fast", value: value === "fast" ? "true" : "false" }
+    : { configId, value }
+
 export interface AcpHarnessLaunchRequest {
   readonly harnessId: string
   readonly command: string
@@ -638,10 +659,7 @@ export const makeStdioAcpConnector = (
         initialized = await promiseWithTimeout(
           Promise.race([
             connection.agent.request(acp.methods.agent.initialize, {
-              clientCapabilities: {
-                plan: {},
-                terminal: terminals !== undefined
-              },
+              clientCapabilities: acpClientCapabilities(request.harnessId, terminals !== undefined),
               clientInfo: {
                 name: "Codevisor",
                 title: "Codevisor",
@@ -1094,12 +1112,13 @@ const sdkConnection = (
         if (configId === acpReasoningEffortConfigId) {
           return applyAcpReasoningEffortSelection(connection, modelStates, sessionId, value)
         }
+        const selection = acpConfigSelection(harnessId, configId, value)
         const response = await connection.agent.request(acp.methods.agent.session.setConfigOption, {
-          configId,
+          configId: selection.configId,
           sessionId,
-          value
+          value: selection.value
         })
-        return normalizeAcpConfigOptions(response.configOptions ?? [])
+        return normalizeAcpConfigOptions(response.configOptions ?? [], harnessId)
       }),
     ...(harnessId !== "grok-build"
       ? {}
@@ -2160,7 +2179,7 @@ const sessionMetadata = (
   modelState: AcpModelState | undefined,
   harnessId?: string
 ): AgentSessionMetadata => {
-  const configOptions = normalizeAcpConfigOptions(response.configOptions ?? [])
+  const configOptions = normalizeAcpConfigOptions(response.configOptions ?? [], harnessId)
   // Append each synthesized picker unless the adapter already reported an
   // equivalent native option — don't double up.
   const withModel = [...configOptions]
@@ -2225,11 +2244,30 @@ export const normalizeModeState = (state: AcpSessionModeState): SessionModeState
 })
 
 export const normalizeAcpConfigOptions = (
-  options: ReadonlyArray<AcpSessionConfigOption>
+  options: ReadonlyArray<AcpSessionConfigOption>,
+  harnessId?: string
 ): ReadonlyArray<SessionConfigOption> =>
   options.flatMap((option) => {
     if (option.type !== "select" || typeof option.currentValue !== "string") {
       return []
+    }
+    if (harnessId === "cursor" && option.id === "context") return []
+    if (harnessId === "cursor" && option.id === "fast") {
+      return [
+        {
+          id: "speed",
+          name: "Speed",
+          ...(option.description === undefined || option.description === null
+            ? {}
+            : { description: option.description }),
+          category: "speed",
+          currentValue: option.currentValue === "true" ? "fast" : "standard",
+          options: [
+            { name: "Standard", value: "standard" },
+            { name: "Fast", value: "fast" }
+          ]
+        }
+      ]
     }
     return [
       {

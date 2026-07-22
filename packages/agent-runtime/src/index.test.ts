@@ -6,6 +6,8 @@ import { describe, expect, it } from "vitest"
 import {
   AgentRuntime,
   AgentRuntimeError,
+  acpClientCapabilities,
+  acpConfigSelection,
   acpConfigOptionIds,
   acpModelConfigId,
   acpModelConfigOption,
@@ -199,6 +201,41 @@ describe("@codevisor/agent-runtime", () => {
     expect(directlyCapable.some((harness) => harness.launch?.kind === "npx")).toBe(false)
   })
 
+  it("launches Cursor ACP with command approvals bypassed and its sandbox disabled", () => {
+    expect(harnessCatalog.find((harness) => harness.id === "cursor")?.launch).toEqual({
+      args: ["--force", "--sandbox", "disabled", "acp"],
+      command: "cursor-agent",
+      kind: "executable"
+    })
+  })
+
+  it("requests Cursor's parameterized model controls without leaking proprietary metadata", () => {
+    expect(acpClientCapabilities("cursor", true)).toEqual({
+      _meta: { parameterizedModelPicker: true },
+      plan: {},
+      terminal: true
+    })
+    expect(acpClientCapabilities("grok-build", false)).toEqual({
+      plan: {},
+      terminal: false
+    })
+  })
+
+  it("translates Codevisor's speed vocabulary to Cursor's native fast toggle", () => {
+    expect(acpConfigSelection("cursor", "speed", "standard")).toEqual({
+      configId: "fast",
+      value: "false"
+    })
+    expect(acpConfigSelection("cursor", "speed", "fast")).toEqual({
+      configId: "fast",
+      value: "true"
+    })
+    expect(acpConfigSelection("gemini", "speed", "fast")).toEqual({
+      configId: "speed",
+      value: "fast"
+    })
+  })
+
   it("probes and delegates harness authentication", async () => {
     const connector = makeConnector()
     const runtime = makeAgentRuntime({
@@ -272,7 +309,7 @@ describe("@codevisor/agent-runtime", () => {
   it("discovers ready local executables and unavailable harnesses", async () => {
     const runtime = makeAgentRuntime({
       env: { PATH: "/bin" },
-      executableExists: (name) => ["gemini", "opencode", "codex"].includes(name),
+      executableExists: (name) => ["gemini", "opencode", "codex", "cursor-agent"].includes(name),
       // Pinned so path/version enrichment stays off regardless of what is
       // installed on the machine running the tests (e.g. ChatGPT.app).
       locateExecutable: () => undefined,
@@ -299,10 +336,8 @@ describe("@codevisor/agent-runtime", () => {
     expect(harnesses.find((harness) => harness.id === "factory-droid")?.launchKind).toBe(
       "executable"
     )
-    // Cursor is pulled until cursor-agent's ACP mode stabilizes upstream.
-    expect(harnesses.find((harness) => harness.id === "cursor")?.readiness).toMatchObject({
-      state: "unavailable",
-      detail: expect.stringContaining("Temporarily disabled")
+    expect(harnesses.find((harness) => harness.id === "cursor")?.readiness).toEqual({
+      state: "ready"
     })
     // Install hints ride along only for harnesses that define them.
     expect(harnesses.find((harness) => harness.id === "claude-code")?.installHint).toContain(
@@ -617,17 +652,6 @@ describe("@codevisor/agent-runtime", () => {
     await run(runtime.refreshEnvironment)
     const harnesses = await run(runtime.discoverHarnesses)
     expect(harnesses.find((harness) => harness.id === "claude-code")?.readiness.state).toBe("ready")
-  })
-
-  it("refuses sessions for disabled harnesses", async () => {
-    const runtime = makeAgentRuntime({
-      env: { PATH: "/bin" },
-      executableExists: () => true,
-      locateExecutable: (name) => `/bin/${name}`
-    })
-    await expect(
-      run(runtime.createAgentSession("cursor", "/tmp/project", () => undefined))
-    ).rejects.toThrow("Cursor is unavailable")
   })
 
   it("creates and loads agent sessions through the connector", async () => {
@@ -1324,6 +1348,78 @@ describe("@codevisor/agent-runtime", () => {
 
     expect(options[0]?.options.map((option) => option.name)).toEqual(["off", "low", "high"])
     expect(options[1]?.options.map((option) => option.name)).toEqual(["Thinking: model"])
+  })
+
+  it("normalizes Cursor's fast toggle into Speed and hides its context picker", () => {
+    const options = normalizeAcpConfigOptions(
+      [
+        {
+          category: "model",
+          currentValue: "claude-opus-4-8",
+          id: "model",
+          name: "Model",
+          options: [{ name: "Claude Opus 4.8", value: "claude-opus-4-8" }],
+          type: "select"
+        },
+        {
+          category: "thought_level",
+          currentValue: "true",
+          id: "thinking",
+          name: "Thinking",
+          options: [
+            { name: "Off", value: "false" },
+            { name: "On", value: "true" }
+          ],
+          type: "select"
+        },
+        {
+          category: "thought_level",
+          currentValue: "high",
+          id: "effort",
+          name: "Effort",
+          options: [
+            { name: "Low", value: "low" },
+            { name: "High", value: "high" }
+          ],
+          type: "select"
+        },
+        {
+          category: "model_config",
+          currentValue: "200000",
+          id: "context",
+          name: "Context",
+          options: [{ name: "200k", value: "200000" }],
+          type: "select"
+        },
+        {
+          category: "model_config",
+          currentValue: "false",
+          id: "fast",
+          name: "Fast",
+          options: [
+            { name: "Off", value: "false" },
+            { name: "On", value: "true" }
+          ],
+          type: "select"
+        }
+      ] as never,
+      "cursor"
+    )
+
+    expect(options.map(({ category, id }) => ({ category, id }))).toEqual([
+      { category: "model", id: "model" },
+      { category: "thought_level", id: "thinking" },
+      { category: "thought_level", id: "effort" },
+      { category: "speed", id: "speed" }
+    ])
+    expect(options.at(-1)).toMatchObject({
+      currentValue: "standard",
+      name: "Speed",
+      options: [
+        { name: "Standard", value: "standard" },
+        { name: "Fast", value: "fast" }
+      ]
+    })
   })
 
   it("maps ACP permission requests onto questions and answers back onto option ids", () => {

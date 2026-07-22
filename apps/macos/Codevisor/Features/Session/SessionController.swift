@@ -880,9 +880,10 @@ final class SessionController {
         configOptions.first { $0.category == SessionConfigOption.Category.model && !$0.options.isEmpty }
     }
 
-    /// The thinking/reasoning level shown in the combined model dropdown.
-    var thoughtLevelOption: SessionConfigOption? {
-        configOptions.first { $0.category == SessionConfigOption.Category.thoughtLevel && !$0.options.isEmpty }
+    /// Thinking/reasoning controls shown in the combined model dropdown.
+    /// Some agents expose more than one (for example, Thinking plus Effort).
+    var thoughtLevelOptions: [SessionConfigOption] {
+        configOptions.filter { $0.category == SessionConfigOption.Category.thoughtLevel && !$0.options.isEmpty }
     }
 
     /// The speed (standard/fast) shown in the combined model dropdown; only
@@ -892,7 +893,7 @@ final class SessionController {
     }
 
     var hasModelMenu: Bool {
-        modelOption != nil || thoughtLevelOption != nil || speedOption != nil
+        modelOption != nil || !thoughtLevelOptions.isEmpty || speedOption != nil
     }
 
     /// Resumed chats intentionally avoid painting generic fresh-session
@@ -1958,7 +1959,11 @@ final class SessionController {
             SessionConfigOption.Category.thoughtLevel: 1,
             SessionConfigOption.Category.speed: 2
         ]
-        let orderedPendingConfig = pendingConfig.sorted { left, right in
+        // Cached options can disappear after an agent update or a model
+        // change. Never replay a stale selection the runtime no longer
+        // advertises (especially a hidden model-specific control).
+        let supportedPendingConfig = pendingConfig.filter { optionCategories[$0.key] != nil }
+        let orderedPendingConfig = supportedPendingConfig.sorted { left, right in
             func priority(_ configId: String) -> Int {
                 if configId == "model" { return 0 }
                 if configId == "speed" { return 2 }

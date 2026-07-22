@@ -554,14 +554,11 @@ struct ComposerCard: View {
         return items
     }
 
-    /// The full palette: local commands first, then the harness's commands
-    /// (minus any whose name a local command shadows).
+    /// Keep the composer palette intentionally small. ACP agents can advertise
+    /// large catalogs of global, builtin, and user skills as slash commands;
+    /// those remain protocol metadata but are not surfaced here.
     private var slashCommands: [ComposerSlashItem] {
-        let local = localSlashCommands
-        let harness = controller.availableCommands
-            .filter { command in !local.contains { $0.name == command.name } }
-            .map { ComposerSlashItem(name: $0.name, description: $0.description, hint: $0.input?.hint) }
-        return local + harness
+        localSlashCommands
     }
 
     private var slashMatches: [ComposerSlashItem] {
@@ -978,8 +975,8 @@ struct ModelConfigMenu: View {
                 if let option = controller.modelOption {
                     section("Model", option)
                 }
-                if let option = controller.thoughtLevelOption {
-                    section("Reasoning", option)
+                ForEach(controller.thoughtLevelOptions) { option in
+                    section(option.name, option)
                 }
                 if let option = controller.speedOption {
                     section("Speed", option)
@@ -1026,13 +1023,10 @@ struct ModelConfigMenu: View {
     }
 
     private var accessibilityValue: String {
-        [
-            controller.modelOption?.currentName,
-            controller.thoughtLevelOption?.currentName,
-            controller.speedOption?.currentName
-        ]
-        .compactMap { $0 }
-        .joined(separator: ", ")
+        ([controller.modelOption?.currentName].compactMap { $0 }
+            + controller.thoughtLevelOptions.map(\.currentName)
+            + [controller.speedOption?.currentName].compactMap { $0 })
+            .joined(separator: ", ")
     }
 
     private var chipLabel: some View {
@@ -1047,7 +1041,7 @@ struct ModelConfigMenu: View {
                 Text(model.currentName)
                     .foregroundStyle(.primary)
             }
-            if let thought = controller.thoughtLevelOption {
+            ForEach(controller.thoughtLevelOptions) { thought in
                 Text(thought.currentName)
                     .foregroundStyle(.secondary)
             }
