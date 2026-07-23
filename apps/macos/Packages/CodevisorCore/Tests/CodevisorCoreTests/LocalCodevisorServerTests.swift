@@ -41,6 +41,7 @@ struct LocalCodevisorServerTests {
             },
             launcher: { request in
                 launches.append(request)
+                client.acceptBoot(request.bootId)
                 return Process()
             }
         )
@@ -86,9 +87,12 @@ struct LocalCodevisorServerTests {
         // health sequence instead of a timer keeps the test deterministic on
         // loaded CI machines, where a detached sleeping task can lose the
         // race against the wait loop's final progress refresh.
+        var launchedBootId: String?
         client.onHealth = { call in
             guard call == 3 else { return }
-            try? JSONEncoder().encode(completed).write(to: statusURL, options: .atomic)
+            var scoped = completed
+            scoped.bootId = launchedBootId
+            try? JSONEncoder().encode(scoped).write(to: statusURL, options: .atomic)
         }
         var launchedProcess: Process?
         let server = LocalCodevisorServer(
@@ -98,7 +102,11 @@ struct LocalCodevisorServerTests {
             serverEnvironmentProvider: { [:] },
             launcher: { request in
                 #expect(request.dataUpgradeStatusURL == statusURL)
-                try JSONEncoder().encode(running).write(to: statusURL, options: .atomic)
+                launchedBootId = request.bootId
+                client.acceptBoot(request.bootId)
+                var scoped = running
+                scoped.bootId = request.bootId
+                try JSONEncoder().encode(scoped).write(to: statusURL, options: .atomic)
                 let process = Process()
                 process.executableURL = URL(fileURLWithPath: "/bin/sleep")
                 // Far longer than the test can run: a stalled CI runner once
@@ -117,9 +125,75 @@ struct LocalCodevisorServerTests {
         for _ in 0..<200 where server.dataUpgradeProgress == nil {
             try await Task.sleep(for: .milliseconds(10))
         }
-        #expect(server.dataUpgradeProgress == running)
+        #expect(server.dataUpgradeProgress?.state == running.state)
+        #expect(server.dataUpgradeProgress?.bootId == launchedBootId)
         #expect(await result.value == .started)
-        #expect(server.dataUpgradeProgress == completed)
+        #expect(server.dataUpgradeProgress == nil)
+    }
+
+    @Test("Ignores migration progress written by another server boot")
+    func ignoresStaleDataUpgradeProgress() async throws {
+        let directory = try makeTemporaryDirectory()
+        let statusURL = directory.appendingPathComponent("data-upgrade.json")
+        let stale = LocalDataUpgradeProgress(
+            state: "running",
+            id: "attachment-object-store-v1",
+            name: "Moving attachments to disk",
+            completed: 10,
+            total: 100,
+            bootId: "old-boot"
+        )
+        try JSONEncoder().encode(stale).write(to: statusURL, options: .atomic)
+        let client = FakeLocalServerClient(healthResults: [
+            .failure(TestError()),
+            .failure(TestError()),
+            .success(.ready)
+        ])
+        var launchedProcess: Process?
+        let server = LocalCodevisorServer(
+            client: client,
+            entrypoint: directory.appendingPathComponent("main.js"),
+            dataUpgradeStatusURL: statusURL,
+            serverEnvironmentProvider: { [:] },
+            launcher: { request in
+                client.acceptBoot(request.bootId)
+                let process = Process()
+                process.executableURL = URL(fileURLWithPath: "/bin/sleep")
+                process.arguments = ["600"]
+                try process.run()
+                launchedProcess = process
+                return process
+            }
+        )
+        defer { launchedProcess?.terminate() }
+
+        let result = Task { await server.ensureRunning() }
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(server.dataUpgradeProgress == nil)
+        #expect(await result.value == .started)
+    }
+
+    @Test("Rejects health from a different server boot")
+    func rejectsDifferentBootHealth() async {
+        var wrong = ServerHealth.ready
+        wrong.bootId = "different-boot"
+        let client = FakeLocalServerClient(healthResults: [
+            .failure(TestError()),
+            .success(wrong)
+        ])
+        let server = LocalCodevisorServer(
+            client: client,
+            entrypoint: URL(fileURLWithPath: "/tmp/main.js"),
+            launcher: { _ in Process() }
+        )
+
+        let state = await server.ensureRunning()
+
+        guard case let .unavailable(message) = state else {
+            Issue.record("expected a boot ownership failure")
+            return
+        }
+        #expect(message.contains("different Codevisor server"))
     }
 
     @Test("Launch command names the server process")
@@ -147,6 +221,10 @@ struct LocalCodevisorServerTests {
             "/tmp/codevisor-server/main.js",
             "serve"
         ])
+        #expect(configuration.arguments.contains("--boot-id"))
+        #expect(configuration.arguments.contains("test-boot"))
+        #expect(configuration.arguments.contains("--app-owned"))
+        #expect(configuration.arguments.contains("--owner-pid"))
     }
 
     @Test("Launch command preserves PATH lookup when Node falls back to env")
@@ -182,7 +260,8 @@ struct LocalCodevisorServerTests {
                 try? await Task.sleep(for: .milliseconds(50))
                 return [:]
             },
-            launcher: { _ in
+            launcher: { request in
+                client.acceptBoot(request.bootId)
                 launches += 1
                 return Process()
             }
@@ -240,9 +319,7 @@ struct LocalCodevisorServerTests {
         let entrypoint = try makeRuntimeEntrypoint(version: "0.2.0")
         let client = FakeLocalServerClient(healthResults: [
             .success(.running(version: "0.1.9")), // initial probe: stale server alive
-            .failure(TestError()),                // shutdown poll: it exited
-            .failure(TestError()),                // stopStaleServer survival check: gone
-            .failure(TestError()),                // ensureRunning re-check before launching
+            .failure(TestError()),                // shutdown grace period: it exited
             .success(.running(version: "0.2.0"))  // launched runtime becomes healthy
         ])
         var launches: [LocalCodevisorServerLaunchRequest] = []
@@ -252,6 +329,7 @@ struct LocalCodevisorServerTests {
             entrypoint: entrypoint,
             launcher: { request in
                 launches.append(request)
+                client.acceptBoot(request.bootId)
                 return Process()
             },
             staleListenerTerminator: { terminatedPorts.append($0) }
@@ -270,11 +348,9 @@ struct LocalCodevisorServerTests {
         let entrypoint = try makeRuntimeEntrypoint(version: "0.2.0")
         let client = FakeLocalServerClient(healthResults: [
             .success(.running(version: "0.1.9")), // initial probe: stale server alive
-            .success(.running(version: "0.1.9")), // shutdown poll: still up
-            .failure(TestError()),                // shutdown poll: gives up cleanly
-            .success(.running(version: "0.1.9")), // survival check: it ignored shutdown
+            .success(.running(version: "0.1.9")), // shutdown grace period: still up
+            .success(.running(version: "0.1.9")), // SIGTERM check: still up
             .failure(TestError()),                // post-signal poll: now gone
-            .failure(TestError()),                // ensureRunning re-check before launching
             .success(.running(version: "0.2.0"))  // launched runtime becomes healthy
         ])
         var launches: [LocalCodevisorServerLaunchRequest] = []
@@ -284,6 +360,7 @@ struct LocalCodevisorServerTests {
             entrypoint: entrypoint,
             launcher: { request in
                 launches.append(request)
+                client.acceptBoot(request.bootId)
                 return Process()
             },
             staleListenerTerminator: { terminatedPorts.append($0) }
@@ -296,10 +373,14 @@ struct LocalCodevisorServerTests {
         #expect(terminatedPorts == [CodevisorServerConfig.localPort])
     }
 
-    @Test("Keeps a durable server that matches the bundled runtime version")
-    func keepsUpToDateServer() async throws {
+    @Test("Replaces another app boot even when its runtime version matches")
+    func replacesMatchingServerFromAnotherAppBoot() async throws {
         let entrypoint = try makeRuntimeEntrypoint(version: "0.2.0")
-        let client = FakeLocalServerClient(healthResults: [.success(.running(version: "0.2.0"))])
+        let client = FakeLocalServerClient(healthResults: [
+            .success(.running(version: "0.2.0")),
+            .failure(TestError()),
+            .success(.running(version: "0.2.0"))
+        ])
         var launches: [LocalCodevisorServerLaunchRequest] = []
         var terminatedPorts: [Int] = []
         let server = LocalCodevisorServer(
@@ -307,6 +388,7 @@ struct LocalCodevisorServerTests {
             entrypoint: entrypoint,
             launcher: { request in
                 launches.append(request)
+                client.acceptBoot(request.bootId)
                 return Process()
             },
             staleListenerTerminator: { terminatedPorts.append($0) }
@@ -314,9 +396,9 @@ struct LocalCodevisorServerTests {
 
         let state = await server.ensureRunning()
 
-        #expect(state == .alreadyRunning)
-        #expect(launches.isEmpty)
-        #expect(client.shutdownRequests == 0)
+        #expect(state == .started)
+        #expect(launches.count == 1)
+        #expect(client.shutdownRequests == 1)
         #expect(terminatedPorts.isEmpty)
     }
 
@@ -472,6 +554,7 @@ private final class FakeLocalServerClient: CodevisorServerClienting, @unchecked 
     private var healthResults: [Result<ServerHealth, Error>]
     private(set) var shutdownRequests = 0
     private var healthCalls = 0
+    private var acceptedBootId: String?
     /// Runs on every health() call with the 1-based call number, before the
     /// result is returned. Lets tests key side effects (like data-upgrade
     /// status file writes) to the health sequence instead of wall-clock
@@ -482,17 +565,25 @@ private final class FakeLocalServerClient: CodevisorServerClienting, @unchecked 
         self.healthResults = healthResults
     }
 
+    func acceptBoot(_ bootId: String) {
+        lock.withLock { acceptedBootId = bootId }
+    }
+
     func health() async throws -> ServerHealth {
-        let (result, call): (Result<ServerHealth, Error>, Int) = lock.withLock {
+        let (result, call, bootId): (Result<ServerHealth, Error>, Int, String?) = lock.withLock {
             healthCalls += 1
             return (
                 healthResults.isEmpty ? .success(.ready) : healthResults.removeFirst(),
-                healthCalls
+                healthCalls,
+                acceptedBootId
             )
         }
         onHealth?(call)
         switch result {
-        case let .success(health):
+        case var .success(health):
+            if health.bootId == nil {
+                health.bootId = bootId
+            }
             return health
         case let .failure(error):
             throw error

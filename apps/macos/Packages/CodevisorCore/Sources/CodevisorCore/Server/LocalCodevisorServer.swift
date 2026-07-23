@@ -16,6 +16,8 @@ public struct LocalCodevisorServerLaunchRequest: Equatable, Sendable {
     public var host: String
     public var port: Int
     public var name: String
+    public var bootId: String = "test-boot"
+    public var ownerPid: Int32 = 1
     public var environment: [String: String]
     public var dataUpgradeStatusURL: URL? = nil
 }
@@ -27,6 +29,9 @@ public struct LocalDataUpgradeProgress: Codable, Equatable, Sendable {
     public var completed: Int
     public var total: Int
     public var error: String?
+    public var bootId: String?
+    public var pid: Int?
+    public var updatedAt: String?
 
     public init(
         state: String,
@@ -34,7 +39,10 @@ public struct LocalDataUpgradeProgress: Codable, Equatable, Sendable {
         name: String,
         completed: Int,
         total: Int,
-        error: String? = nil
+        error: String? = nil,
+        bootId: String? = nil,
+        pid: Int? = nil,
+        updatedAt: String? = nil
     ) {
         self.state = state
         self.id = id
@@ -42,6 +50,9 @@ public struct LocalDataUpgradeProgress: Codable, Equatable, Sendable {
         self.completed = completed
         self.total = total
         self.error = error
+        self.bootId = bootId
+        self.pid = pid
+        self.updatedAt = updatedAt
     }
 
     public var fractionCompleted: Double? {
@@ -73,9 +84,11 @@ public final class LocalCodevisorServer {
     private let launcher: Launcher
     private let serverEnvironmentProvider: ServerEnvironmentProvider
     private let staleListenerTerminator: ListenerTerminator
-    /// The server is intentionally not terminated with the app; it owns durable
-    /// sessions and should keep running so clients can reconnect to live work.
+    /// App-hosted servers are owned by exactly one app boot. The server also
+    /// watches this app's PID and exits if the app crashes, preventing an
+    /// updater backup or stale process from becoming the next launch's server.
     private var process: Process?
+    private var activeBootId: String?
     /// In-flight `ensureRunning()`; concurrent callers (onboarding and the
     /// root view both prepare the machine on first launch) join it instead of
     /// racing past `currentHealth()` and double-launching the server.
@@ -145,28 +158,33 @@ public final class LocalCodevisorServer {
             )
         }
         if let health = await currentHealth() {
-            // A durable server left behind by an older app install keeps
-            // serving across upgrades (`brew upgrade` replaces the bundle but
-            // never touches the process). Replace it when the bundled runtime
-            // is newer; the database lives outside the bundle, so the new
-            // runtime picks it up and runs its own migrations.
-            guard let bundledVersion = bundledServerVersion(),
-                  AppUpdateModel.isVersion(bundledVersion, newerThan: health.version)
-            else {
+            if let activeBootId, health.bootId == activeBootId {
+                dataUpgradeProgress = nil
                 state = .alreadyRunning
                 return state
             }
-            await stopStaleServer()
-            if await isHealthy() {
-                // The stale server survived both the shutdown request and the
-                // signal; keep using it rather than failing outright.
+
+            // Development runs deliberately use the standalone server started
+            // by `bun run dev`; it has no bundled VERSION and is not app-owned.
+            // Production app boots never adopt an unowned or previous app's
+            // process merely because something answered on the expected port.
+            if bundledServerVersion() == nil, health.appOwned != true {
+                dataUpgradeProgress = nil
                 state = .alreadyRunning
+                return state
+            }
+
+            let stopped = await stopStaleServer()
+            guard stopped else {
+                state = .unavailable(
+                    "Another Codevisor server is still running and could not be stopped."
+                )
                 return state
             }
         }
 
         if let process, process.isRunning {
-            return await waitUntilHealthy(process: process)
+            return await waitUntilHealthy(process: process, expectedBootId: activeBootId)
         }
 
         guard let entrypoint else {
@@ -182,6 +200,8 @@ public final class LocalCodevisorServer {
         }
 
         do {
+            let bootId = UUID().uuidString
+            activeBootId = bootId
             var serverEnvironment = await serverEnvironmentProvider()
             // Marks this server as launched by (and living inside) the app
             // bundle, so its self-updater hands app-bundle updates back to us
@@ -200,14 +220,17 @@ public final class LocalCodevisorServer {
                 host: Self.bindHost,
                 port: port,
                 name: Self.serverDisplayName(),
+                bootId: bootId,
+                ownerPid: ProcessInfo.processInfo.processIdentifier,
                 environment: serverEnvironment,
                 dataUpgradeStatusURL: dataUpgradeStatusURL
             )
             let launched = try launcher(request)
             process = launched
             observeTermination(of: launched)
-            return await waitUntilHealthy(process: launched)
+            return await waitUntilHealthy(process: launched, expectedBootId: bootId)
         } catch {
+            activeBootId = nil
             state = .unavailable(String(describing: error))
             return state
         }
@@ -216,7 +239,8 @@ public final class LocalCodevisorServer {
     /// Stops the running local server so a newer bundled runtime can take over
     /// on the next launch. Asks politely over HTTP first (the server may not be
     /// a process we own), then force-terminates any owned process that lingers.
-    public func shutdown() async {
+    @discardableResult
+    public func shutdown() async -> Bool {
         do {
             try await client.requestShutdown()
         } catch {
@@ -225,14 +249,36 @@ public final class LocalCodevisorServer {
                 "Shutdown request failed: \(String(describing: error), privacy: .public)"
             )
         }
-        for _ in 0..<20 {
-            if !(await isHealthy()) { break }
-            try? await Task.sleep(for: .milliseconds(150))
+        // The server acknowledges shutdown before exiting so the response can
+        // flush. Give that contract one bounded grace period, then escalate.
+        try? await Task.sleep(for: .milliseconds(400))
+        if !(await isHealthy()) {
+            finishShutdown()
+            return true
         }
         if let process, process.isRunning {
             process.terminate()
+            try? await Task.sleep(for: .milliseconds(300))
         }
+        if !(await isHealthy()) {
+            finishShutdown()
+            return true
+        }
+        await staleListenerTerminator(port)
+        for _ in 0..<30 {
+            if !(await isHealthy()) {
+                finishShutdown()
+                return true
+            }
+            try? await Task.sleep(for: .milliseconds(100))
+        }
+        return false
+    }
+
+    private func finishShutdown() {
         process = nil
+        activeBootId = nil
+        dataUpgradeProgress = nil
         state = .idle
     }
 
@@ -244,19 +290,23 @@ public final class LocalCodevisorServer {
         process.terminationHandler = { [weak self] finished in
             let status = finished.terminationStatus
             Task { @MainActor in
-                self?.handleTermination(status: status)
+                self?.handleTermination(process: finished, status: status)
             }
         }
     }
 
-    private func handleTermination(status: Int32) {
+    private func handleTermination(process finished: Process, status: Int32) {
+        if process === finished {
+            process = nil
+            activeBootId = nil
+        }
         guard status == Self.updateHandoffExitStatus else { return }
         onUpdateRequested?()
     }
 
     /// The version stamped into the bundled runtime next to its entrypoint.
-    /// Nil in development runs (the repo tree has no VERSION file), which
-    /// intentionally disables the stale-server replacement there.
+    /// Nil identifies development, where `bun run dev` intentionally owns the
+    /// standalone server and the native app joins it instead of replacing it.
     private func bundledServerVersion() -> String? {
         guard let entrypoint else { return nil }
         let versionURL = entrypoint.deletingLastPathComponent().appendingPathComponent("VERSION")
@@ -274,17 +324,10 @@ public final class LocalCodevisorServer {
         return trimmed.isEmpty ? nil : trimmed
     }
 
-    /// Stops a healthy-but-outdated server: politely over HTTP first, then —
-    /// for servers that predate the shutdown endpoint — by signalling whatever
-    /// still listens on the port.
-    private func stopStaleServer() async {
+    /// Stops a server owned by a previous app boot. The shutdown path first
+    /// uses the API, then the Process handle, then the confirmed port listener.
+    private func stopStaleServer() async -> Bool {
         await shutdown()
-        guard await isHealthy() else { return }
-        await staleListenerTerminator(port)
-        for _ in 0..<20 {
-            if !(await isHealthy()) { return }
-            try? await Task.sleep(for: .milliseconds(150))
-        }
     }
 
     /// Sends SIGTERM to processes listening on the port. Only ever invoked
@@ -360,14 +403,23 @@ public final class LocalCodevisorServer {
         }
     }
 
-    private func waitUntilHealthy(process: Process?) async -> LocalCodevisorServerState {
+    private func waitUntilHealthy(
+        process: Process?,
+        expectedBootId: String?
+    ) async -> LocalCodevisorServerState {
         // Breaking data upgrades are allowed to take minutes. Progress comes
         // from the sidecar, so this wait is bounded generously without making
         // the UI appear frozen.
         for _ in 0..<2400 {
-            refreshDataUpgradeProgress()
-            if await isHealthy() {
-                refreshDataUpgradeProgress()
+            refreshDataUpgradeProgress(expectedBootId: expectedBootId)
+            if let health = await currentHealth() {
+                guard expectedBootId == nil || health.bootId == expectedBootId else {
+                    state = .unavailable(
+                        "A different Codevisor server answered while the local server was starting."
+                    )
+                    return state
+                }
+                dataUpgradeProgress = nil
                 state = .started
                 return state
             }
@@ -381,13 +433,18 @@ public final class LocalCodevisorServer {
         return state
     }
 
-    private func refreshDataUpgradeProgress() {
+    private func refreshDataUpgradeProgress(expectedBootId: String?) {
         // A missing status file is the normal no-upgrade-running case (and
         // this polls, so it stays unlogged); a file that exists but doesn't
         // decode hides real upgrade progress.
         guard let data = try? Data(contentsOf: dataUpgradeStatusURL) else { return }
         do {
-            dataUpgradeProgress = try JSONDecoder().decode(LocalDataUpgradeProgress.self, from: data)
+            let progress = try JSONDecoder().decode(LocalDataUpgradeProgress.self, from: data)
+            guard expectedBootId == nil || progress.bootId == expectedBootId else {
+                dataUpgradeProgress = nil
+                return
+            }
+            dataUpgradeProgress = progress
         } catch {
             Log.server.debug(
                 "Failed to decode data-upgrade progress: \(String(describing: error), privacy: .public)"
@@ -440,7 +497,10 @@ public final class LocalCodevisorServer {
                 // machine's local server despite the 0.0.0.0 bind.
                 "--auth", "token",
                 "--kind", "local",
-                "--name", request.name
+                "--name", request.name,
+                "--boot-id", request.bootId,
+                "--app-owned", "1",
+                "--owner-pid", String(request.ownerPid)
             ] + (request.dataUpgradeStatusURL.map { ["--upgrade-status", $0.path] } ?? [])
         )
     }

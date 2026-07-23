@@ -550,6 +550,57 @@ describe("MCP manager", () => {
     ])
   })
 
+  it("keeps a Browser Use provider startup failure scoped to Browser Use", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "codevisor-browser-provider-failure-"))
+    directories.push(directory)
+    const db = await run(
+      makeDatabase({ filename: join(directory, "codevisor.sqlite"), serverId: "test" })
+    )
+    databases.push(db)
+    const errors = vi.spyOn(console, "error").mockImplementation(() => undefined)
+    const manager = makeMcpManager({
+      db,
+      dataDir: directory,
+      makeBrowserProvider: () => {
+        throw new Error("extension archive is unreadable")
+      }
+    })
+    managers.push(manager)
+
+    await expect(manager.list()).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "browser",
+          connectionState: "needsSetup",
+          detail: "extension archive is unreadable"
+        }),
+        expect.objectContaining({ id: "computer" })
+      ])
+    )
+    await expect(manager.browserConfiguration()).resolves.toMatchObject({
+      chromeConnected: false,
+      managedAvailable: false
+    })
+    expect(errors).toHaveBeenCalledWith("Browser Use unavailable: extension archive is unreadable")
+  })
+
+  it("contains managed-skill synchronization failures", async () => {
+    const errors = vi.spyOn(console, "error").mockImplementation(() => undefined)
+    const { manager } = await testManager(async () => {
+      throw new Error("managed skill directory is read-only")
+    })
+
+    await expect(manager.list()).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "browser" }),
+        expect.objectContaining({ id: "computer" })
+      ])
+    )
+    expect(errors).toHaveBeenCalledWith(
+      "Built-in MCP initialization failed: managed skill directory is read-only"
+    )
+  })
+
   it("accepts harness redials: fresh initialize handshakes reuse the same gateway", async () => {
     // codex 0.145+ tears down and re-initializes its MCP connections on
     // mid-session events. The gateway must accept the redial instead of

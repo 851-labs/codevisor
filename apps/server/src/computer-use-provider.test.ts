@@ -1,10 +1,30 @@
-import { readFileSync } from "node:fs"
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
-import { computerUseTools } from "./computer-use-provider.js"
+import { computerUseTools, linuxComputerUseHelperPath } from "./computer-use-provider.js"
 
 describe("Computer Use tool contract", () => {
+  it("finds the Linux helper in a packaged runtime launched from another directory", () => {
+    const root = mkdtempSync(join(tmpdir(), "codevisor-packaged-computer-use-"))
+    try {
+      const runtime = join(root, "linux-x64")
+      const helper = join(runtime, "apps", "server", "resources", "computer-use-linux.py")
+      mkdirSync(dirname(helper), { recursive: true })
+      writeFileSync(helper, "# helper")
+
+      expect(
+        linuxComputerUseHelperPath({
+          moduleDirectory: runtime,
+          workingDirectory: "/"
+        })
+      ).toBe(helper)
+    } finally {
+      rmSync(root, { force: true, recursive: true })
+    }
+  })
+
   it("detects AT-SPI text support through the introspected text interface", () => {
     const source = readFileSync(
       join(dirname(fileURLToPath(import.meta.url)), "..", "resources", "computer-use-linux.py"),

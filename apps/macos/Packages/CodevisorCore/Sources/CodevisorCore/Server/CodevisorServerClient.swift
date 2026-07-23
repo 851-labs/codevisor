@@ -686,6 +686,9 @@ public struct ServerHealth: Decodable, Equatable, Sendable {
     public var ok: Bool
     public var version: String
     public var database: String
+    public var bootId: String? = nil
+    public var processId: Int? = nil
+    public var appOwned: Bool? = nil
     public var migration: ServerMigrationProgress?
 }
 

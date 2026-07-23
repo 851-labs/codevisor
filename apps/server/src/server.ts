@@ -141,6 +141,9 @@ export interface CodevisorServerConfig {
   readonly id: string
   readonly name: string
   readonly version: string
+  readonly bootId: string
+  readonly processId: number
+  readonly appOwned: boolean
   readonly kind: ServerKind
   readonly host: string
   readonly port: number
@@ -355,6 +358,9 @@ export const defaultServerConfig = (
   id: overrides.id ?? "local",
   name: overrides.name ?? "Local Codevisor",
   version: overrides.version ?? "0.1.0",
+  bootId: overrides.bootId ?? "test-boot",
+  processId: overrides.processId ?? process.pid,
+  appOwned: overrides.appOwned ?? false,
   kind: overrides.kind ?? "local",
   host: overrides.host ?? "127.0.0.1",
   port: overrides.port ?? 49361,
@@ -422,7 +428,7 @@ export const makeCodevisorServerApp = (
       unsubscribeLifecycle?.()
       unsubscribeGate?.()
       webSocketServer.close()
-      void services.mcp?.close()
+      void services.mcp?.close().catch(swallowError)
     })
   }
   return app
@@ -675,7 +681,14 @@ const handleRequest = async (
       return
     }
     if (request.method === "GET" && url.pathname === "/v1/health") {
-      writeJson(response, 200, { ok: true, version: config.version, database: "ready" })
+      writeJson(response, 200, {
+        ok: true,
+        version: config.version,
+        database: "ready",
+        bootId: config.bootId,
+        processId: config.processId,
+        appOwned: config.appOwned
+      })
       return
     }
 
@@ -1249,7 +1262,7 @@ const routeProjects = async (
     try {
       mkdirSync(dirname(destination), { recursive: true })
       await cloneRepository(repoUrl, destination, (stream, line) => {
-        void publishSetup({ state: "log", stream, line })
+        void publishSetup({ state: "log", stream, line }).catch(swallowError)
       })
       await publishSetup({ state: "completed", durationMs: Date.now() - startedAt })
     } catch (cause) {
@@ -1365,7 +1378,7 @@ const routeProjects = async (
           worktree.path,
           branch,
           (stream, line) => {
-            void publishSetup({ state: "log", stream, line })
+            void publishSetup({ state: "log", stream, line }).catch(swallowError)
           },
           startPoint
         )
@@ -2684,11 +2697,13 @@ const routeSessionActions = async (
       )
     }
     writeJson(response, 202, result)
-    void drainPromptQueue(services, fanout, routeState, config.id, promptSessionId).finally(() => {
-      if (actionKey !== undefined) {
-        routeState.pendingPromptActions.delete(actionKey)
-      }
-    })
+    void drainPromptQueue(services, fanout, routeState, config.id, promptSessionId)
+      .catch(swallowError)
+      .finally(() => {
+        if (actionKey !== undefined) {
+          routeState.pendingPromptActions.delete(actionKey)
+        }
+      })
     return true
   }
 
@@ -3176,7 +3191,15 @@ const handleUpgrade = async (
     await authorize(services.db, config, request)
     if (request.method === "GET" && url.pathname === "/v1/events/socket") {
       webSocketServer.handleUpgrade(request, socket, head, (webSocket) => {
-        void attachEventSocket(services.db, fanout, numberSearchParam(url, "since"), webSocket)
+        void attachEventSocket(
+          services.db,
+          fanout,
+          numberSearchParam(url, "since"),
+          webSocket
+        ).catch(
+          /* v8 ignore next -- defensive: socket setup failures close the just-upgraded connection. */
+          () => webSocket.close()
+        )
       })
       return
     }
@@ -3190,6 +3213,9 @@ const handleUpgrade = async (
           numberSearchParam(url, "since"),
           webSocket,
           sessionEventId
+        ).catch(
+          /* v8 ignore next -- defensive: socket setup failures close the just-upgraded connection. */
+          () => webSocket.close()
         )
       })
       return
@@ -3207,6 +3233,9 @@ const handleUpgrade = async (
         terminalId,
         numberSearchParam(url, "lastOutputSeq"),
         webSocket
+      ).catch(
+        /* v8 ignore next -- defensive: socket setup failures close the just-upgraded connection. */
+        () => webSocket.close()
       )
     })
   } catch {
@@ -3858,7 +3887,7 @@ const closeServer = (server: Server, app: CodevisorServerApp): Effect.Effect<voi
   Effect.tryPromise({
     try: () =>
       new Promise<void>((resolve, reject) => {
-        void Effect.runPromise(app.close)
+        void Effect.runPromise(app.close).catch(swallowError)
         /* v8 ignore next -- normal test shutdown closes cleanly. */
         server.close((error) => (error === undefined ? resolve() : reject(error)))
       }),

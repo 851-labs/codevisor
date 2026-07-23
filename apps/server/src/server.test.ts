@@ -2214,7 +2214,10 @@ describe("@codevisor/server", () => {
 
     expect((await jsonRequest(server, "/v1/health")).body).toMatchObject({
       database: "ready",
-      ok: true
+      ok: true,
+      bootId: "test-boot",
+      processId: process.pid,
+      appOwned: false
     })
     expect((await jsonRequest(server, "/v1/info")).body).toMatchObject({
       id: "server-a",
@@ -2247,7 +2250,9 @@ describe("@codevisor/server", () => {
       kind: "local",
       name: "Local Codevisor",
       port: 49361,
-      version: "0.1.0"
+      version: "0.1.0",
+      bootId: "test-boot",
+      appOwned: false
     })
     expect(
       (await jsonRequest(server, "/v1/auth/pairing-token", { method: "POST" })).body

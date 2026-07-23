@@ -41,9 +41,11 @@ if [[ "$target" != "$host_target" ]]; then
   exit 1
 fi
 
-if [[ ! -f "$repo_root/apps/server/dist/main.js" ]]; then
-  (cd "$repo_root" && bun run build)
-fi
+# TypeScript's incremental output retains JavaScript for deleted source files.
+# A release runtime must never inherit those stale modules from a developer or
+# CI workspace, so rebuild the server from an empty output directory every time.
+rm -rf "$repo_root/apps/server/dist" "$repo_root/apps/server/tsconfig.tsbuildinfo"
+(cd "$repo_root" && bun run --cwd apps/server build)
 
 node_runtime="${CODEVISOR_RELEASE_NODE:-$(command -v node || true)}"
 if [[ -z "$node_runtime" || ! -x "$node_runtime" ]]; then
@@ -235,6 +237,10 @@ runtime_root="$(cd "$runtime_dir" && pwd)"
       if (!mcp.automationSkillPath(id).startsWith(runtime)) {
         throw new Error(`Packaged ${id} skill is not discoverable from /`)
       }
+    }
+    const computer = await import(pathToFileURL(`${runtime}/computer-use-provider.js`))
+    if (!computer.linuxComputerUseHelperPath()?.startsWith(runtime)) {
+      throw new Error("Packaged Linux Computer Use helper is not discoverable from /")
     }
   '
 )

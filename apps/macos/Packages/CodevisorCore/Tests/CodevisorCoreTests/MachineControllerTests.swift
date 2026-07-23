@@ -376,7 +376,10 @@ struct MachineControllerTests {
         let localServer = LocalCodevisorServer(
             client: client,
             entrypoint: URL(fileURLWithPath: "/tmp/main.js"),
-            launcher: { _ in Process() }
+            launcher: { request in
+                client.acceptBoot(request.bootId)
+                return Process()
+            }
         )
         let (controller, _, _) = makeController(client: client, localServer: localServer)
 
@@ -430,6 +433,7 @@ private final class RescanCountingClient: CodevisorServerClienting, @unchecked S
     private let lock = NSLock()
     private var _rescans = 0
     private var _failNextHealth: Bool
+    private var _bootId: String?
     /// When set, `info()` throws it — used to exercise add-time validation.
     let infoError: (any Error)?
 
@@ -442,14 +446,23 @@ private final class RescanCountingClient: CodevisorServerClienting, @unchecked S
 
     struct HealthError: Error {}
 
+    func acceptBoot(_ bootId: String) {
+        lock.withLock { _bootId = bootId }
+    }
+
     func health() async throws -> ServerHealth {
-        let failNow = lock.withLock {
+        let (failNow, bootId) = lock.withLock {
             let fail = _failNextHealth
             _failNextHealth = false
-            return fail
+            return (fail, _bootId)
         }
         if failNow { throw HealthError() }
-        return ServerHealth(ok: true, version: "0.1.0", database: "ready")
+        return ServerHealth(
+            ok: true,
+            version: "0.1.0",
+            database: "ready",
+            bootId: bootId
+        )
     }
 
     func info() async throws -> ServerInfo {

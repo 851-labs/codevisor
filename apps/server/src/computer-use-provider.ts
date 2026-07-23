@@ -3,11 +3,11 @@ import { randomUUID } from "node:crypto"
 import { existsSync, readFileSync } from "node:fs"
 import { createConnection, type Socket } from "node:net"
 import { tmpdir } from "node:os"
-import { dirname, join } from "node:path"
-import { fileURLToPath } from "node:url"
+import { join } from "node:path"
 import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from "node:child_process"
 import type { AutomationToolProvider } from "./automation-provider.js"
 import { textToolResult } from "./automation-provider.js"
+import { findServerResource, type ServerResourceOptions } from "./server-resources.js"
 
 const objectSchema = (
   properties: Readonly<Record<string, unknown>> = {},
@@ -295,18 +295,12 @@ const connectMacHelper = async (dataDir: string): Promise<HelperClient> => {
   return client
 }
 
-const linuxHelperPath = (): string | undefined => {
-  const here = dirname(fileURLToPath(import.meta.url))
-  const candidates = [
-    join(here, "..", "resources", "computer-use-linux.py"),
-    join(process.cwd(), "apps", "server", "resources", "computer-use-linux.py"),
-    join(process.cwd(), "resources", "computer-use-linux.py")
-  ]
-  return candidates.find(existsSync)
-}
+export const linuxComputerUseHelperPath = (
+  options: ServerResourceOptions = {}
+): string | undefined => findServerResource("computer-use-linux.py", options)
 
 const linuxHelperStatus = (): { readonly available: boolean; readonly detail?: string } => {
-  if (linuxHelperPath() === undefined) {
+  if (linuxComputerUseHelperPath() === undefined) {
     return { available: false, detail: "The Linux Computer Use helper is not installed" }
   }
   const probe = spawnSync(
@@ -324,7 +318,7 @@ const linuxHelperStatus = (): { readonly available: boolean; readonly detail?: s
 }
 
 const connectLinuxHelper = async (): Promise<HelperClient> => {
-  const script = linuxHelperPath()
+  const script = linuxComputerUseHelperPath()
   if (script === undefined) throw new Error("The Linux Computer Use helper is not installed")
   const processHandle: ChildProcessWithoutNullStreams = spawn("python3", [script], {
     env: process.env as Record<string, string>,

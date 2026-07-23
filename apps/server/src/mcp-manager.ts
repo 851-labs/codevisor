@@ -55,16 +55,20 @@ import {
 } from "node:fs"
 import type { IncomingMessage, ServerResponse } from "node:http"
 import { dirname, isAbsolute, join, relative, resolve } from "node:path"
-import { fileURLToPath } from "node:url"
 import { Effect } from "effect"
 import { z } from "zod"
 import type WebSocket from "ws"
-import type { AutomationToolProvider } from "./automation-provider.js"
+import { textToolResult, type AutomationToolProvider } from "./automation-provider.js"
 import { makeBrowserSetupBroker } from "./browser-setup-broker.js"
-import { makeBrowserUseProvider } from "./browser-use-provider.js"
+import {
+  browserUseTools,
+  makeBrowserUseProvider,
+  type BrowserUseProvider
+} from "./browser-use-provider.js"
 import { CodeExecutionToolError, makeCodeExecutor } from "./code-executor.js"
-import { makeComputerUseProvider } from "./computer-use-provider.js"
+import { computerUseTools, makeComputerUseProvider } from "./computer-use-provider.js"
 import type { ManagedSkillSpec } from "./skills-manager.js"
+import { requireServerResource, type ServerResourceOptions } from "./server-resources.js"
 
 interface StoredOAuth {
   readonly clientInformation?: OAuthClientInformationMixed | undefined
@@ -292,6 +296,13 @@ export interface McpManagerConfig {
   readonly db: CodevisorDatabaseService
   readonly dataDir: string
   readonly syncManagedSkills?: (skills: ReadonlyArray<ManagedSkillSpec>) => Promise<void>
+  readonly makeBrowserProvider?: (() => BrowserUseProvider) | undefined
+  readonly makeComputerProvider?:
+    | (() => AutomationToolProvider & {
+        readonly ensureSetup: () => Promise<void>
+        readonly status: () => Readonly<Record<string, unknown>>
+      })
+    | undefined
 }
 
 const BUILTIN_MCP_SERVERS = [
@@ -301,37 +312,26 @@ const BUILTIN_MCP_SERVERS = [
 
 export const automationSkillPath = (
   id: "browser" | "computer",
-  options: {
-    readonly moduleDirectory?: string
-    readonly workingDirectory?: string
-  } = {}
+  options: ServerResourceOptions = {}
 ): string => {
   const skillName = id === "browser" ? "browser-use" : "computer-use"
   const relative = join("automation-skills", skillName, "SKILL.md")
-  const moduleDirectory = options.moduleDirectory ?? dirname(fileURLToPath(import.meta.url))
-  const workingDirectory = options.workingDirectory ?? process.cwd()
-  const candidates = [
-    join(moduleDirectory, "..", "resources", relative),
-    // Release runtimes copy the compiled entrypoints to the runtime root while
-    // preserving resources under apps/server. Resolve this from the module:
-    // LaunchServices starts the macOS app with / as its working directory.
-    join(moduleDirectory, "apps", "server", "resources", relative),
-    join(workingDirectory, "apps", "server", "resources", relative),
-    join(workingDirectory, "resources", relative)
-  ]
-  const match = candidates.find(existsSync)
-  if (match === undefined) throw new Error(`Missing managed ${skillName} skill`)
-  return match
+  return requireServerResource(relative, `managed ${skillName} skill`, options)
 }
 
 const managedAutomationSkills = (
   enabledIds: ReadonlySet<string>
 ): ReadonlyArray<ManagedSkillSpec> =>
-  (["browser", "computer"] as const).map((id) => ({
-    directoryName: id === "browser" ? "browser-use" : "computer-use",
-    enabled: enabledIds.has(id),
-    sourcePath: dirname(automationSkillPath(id))
-  }))
+  (["browser", "computer"] as const).map((id) => {
+    const enabled = enabledIds.has(id)
+    return {
+      directoryName: id === "browser" ? "browser-use" : "computer-use",
+      enabled,
+      // Disabled managed skills only need their installed copies removed.
+      // Do not make an absent optional resource block that cleanup.
+      sourcePath: enabled ? dirname(automationSkillPath(id)) : ""
+    }
+  })
 
 const run = <A>(effect: Effect.Effect<A, unknown>): Promise<A> => Effect.runPromise(effect)
 
@@ -352,6 +352,79 @@ const errorMessage = (cause: unknown): string => {
   if (cause instanceof Error) return cause.message
   /* v8 ignore next -- retained for defensive formatting of external throwables. */
   return String(cause)
+}
+
+const reportBackgroundFailure = (operation: string, cause: unknown): void => {
+  console.error(`${operation}: ${errorMessage(cause)}`)
+}
+
+const unavailableBrowserProvider = (cause: unknown): BrowserUseProvider => {
+  const detail = errorMessage(cause)
+  const unavailable = (): never => {
+    throw new Error(detail)
+  }
+  return {
+    id: "browser",
+    tools: browserUseTools,
+    ensureSetup: async () => unavailable(),
+    status: () => ({
+      backend: "missing",
+      error: detail,
+      extensionConnected: false,
+      chromeAvailable: false,
+      extensionSetupMode: "development"
+    }),
+    sessionBackend: () => undefined,
+    setSessionBackend: () => undefined,
+    acceptExtensionConnection: (socket) => {
+      socket.close()
+    },
+    waitForExtensionConnection: async () => unavailable(),
+    onExtensionConnectionChange: () => () => undefined,
+    openDevelopmentExtensionFolder: unavailable,
+    openDevelopmentExtensionPage: unavailable,
+    openDevelopmentExtensionInstaller: unavailable,
+    openExtensionWebStore: unavailable,
+    extensionArchivePath: unavailable,
+    extensionIconPath: unavailable,
+    configureExtensionRelay: () => undefined,
+    invoke: async () => textToolResult(detail, true),
+    closeSession: async () => undefined,
+    close: async () => undefined
+  }
+}
+
+const unavailableComputerProvider = (
+  cause: unknown
+): AutomationToolProvider & {
+  readonly ensureSetup: () => Promise<void>
+  readonly status: () => Readonly<Record<string, unknown>>
+} => {
+  const detail = errorMessage(cause)
+  return {
+    id: "computer",
+    tools: computerUseTools,
+    ensureSetup: async () => {
+      throw new Error(detail)
+    },
+    status: () => ({ platform: process.platform, available: false, detail }),
+    invoke: async () => textToolResult(detail, true),
+    closeSession: async () => undefined,
+    close: async () => undefined
+  }
+}
+
+const initializeAutomationProvider = <A>(
+  name: string,
+  initialize: () => A,
+  unavailable: (cause: unknown) => A
+): A => {
+  try {
+    return initialize()
+  } catch (cause) {
+    console.error(`${name} unavailable: ${errorMessage(cause)}`)
+    return unavailable(cause)
+  }
 }
 
 const requireHttpUrl = (value: string | undefined): string => {
@@ -622,8 +695,16 @@ export const makeMcpManager = (config: McpManagerConfig): McpManager => {
     memoryLimitBytes: 64 * 1024 * 1024,
     maxStackSizeBytes: 1024 * 1024
   })
-  const browserProvider = makeBrowserUseProvider(config.dataDir)
-  const computerProvider = makeComputerUseProvider(config.dataDir)
+  const browserProvider = initializeAutomationProvider(
+    "Browser Use",
+    config.makeBrowserProvider ?? (() => makeBrowserUseProvider(config.dataDir)),
+    unavailableBrowserProvider
+  )
+  const computerProvider = initializeAutomationProvider(
+    "Computer Use",
+    config.makeComputerProvider ?? (() => makeComputerUseProvider(config.dataDir)),
+    unavailableComputerProvider
+  )
   const automationProviders = new Map<string, AutomationToolProvider>([
     [browserProvider.id, browserProvider],
     [computerProvider.id, computerProvider]
@@ -713,7 +794,14 @@ export const makeMcpManager = (config: McpManagerConfig): McpManager => {
         })
       )
     })
-  ).then(syncManagedAutomationSkills)
+  )
+    .then(syncManagedAutomationSkills)
+    .catch((cause: unknown) => {
+      // Built-in MCP registration and managed-skill installation are optional
+      // feature initialization. Preserve external MCPs and the rest of the
+      // server when a packaged resource or user skill directory is unavailable.
+      reportBackgroundFailure("Built-in MCP initialization failed", cause)
+    })
 
   const detectAuth = async (value: string): Promise<McpAuthDetection> => {
     const url = requireHttpUrl(value)
@@ -979,7 +1067,9 @@ export const makeMcpManager = (config: McpManagerConfig): McpManager => {
     const timerDelay = boundedMcpTimerDelay(delay)
     const timer = setTimeout(() => {
       if (delay <= MAX_TIMER_DELAY_MS) {
-        void refreshOAuth(server.id)
+        void refreshOAuth(server.id).catch((cause: unknown) =>
+          reportBackgroundFailure(`OAuth refresh failed for MCP ${server.id}`, cause)
+        )
         return
       }
       void record(server.id)
@@ -997,7 +1087,13 @@ export const makeMcpManager = (config: McpManagerConfig): McpManager => {
     const attempt = (refreshRetryAttempts.get(id) ?? 0) + 1
     refreshRetryAttempts.set(id, attempt)
     const delay = Math.min(15 * 60_000, 30_000 * 2 ** Math.min(attempt - 1, 5))
-    const timer = setTimeout(() => void refreshOAuth(id), delay + Math.random() * 10_000)
+    const timer = setTimeout(
+      () =>
+        void refreshOAuth(id).catch((cause: unknown) =>
+          reportBackgroundFailure(`OAuth refresh retry failed for MCP ${id}`, cause)
+        ),
+      delay + Math.random() * 10_000
+    )
     timer.unref?.()
     refreshTimers.set(id, timer)
   }
@@ -1797,7 +1893,9 @@ export const makeMcpManager = (config: McpManagerConfig): McpManager => {
           connectionState: "needsAuthorization",
           detail: undefined
         })
-        void validateOAuthConnection(id)
+        void validateOAuthConnection(id).catch((cause: unknown) =>
+          reportBackgroundFailure(`OAuth validation failed for MCP ${id}`, cause)
+        )
         return new URL("/v1/mcps/oauth/complete", oauthBaseUrl).toString()
       }
       if (provider.authorizationUrl === undefined) throw new Error("OAuth did not return a URL")
@@ -1828,7 +1926,9 @@ export const makeMcpManager = (config: McpManagerConfig): McpManager => {
         connectionState: "needsAuthorization",
         detail: undefined
       })
-      void validateOAuthConnection(id)
+      void validateOAuthConnection(id).catch((cause: unknown) =>
+        reportBackgroundFailure(`OAuth validation failed for MCP ${id}`, cause)
+      )
       return publicServer(await record(id))
     },
     disconnectOAuth: async (id) => {
@@ -2033,12 +2133,14 @@ export const makeMcpManager = (config: McpManagerConfig): McpManager => {
   }
 
   /* v8 ignore start -- startup token restoration feeds the live OAuth refresh scheduler above. */
-  void run(config.db.listMcpServers).then((servers) => {
-    for (const server of servers) {
-      const oauth = secrets(server).oauth
-      if (oauth?.tokens !== undefined) scheduleRefresh(server, oauth.tokens)
-    }
-  })
+  void run(config.db.listMcpServers)
+    .then((servers) => {
+      for (const server of servers) {
+        const oauth = secrets(server).oauth
+        if (oauth?.tokens !== undefined) scheduleRefresh(server, oauth.tokens)
+      }
+    })
+    .catch((cause: unknown) => reportBackgroundFailure("MCP OAuth restoration failed", cause))
   /* v8 ignore stop */
 
   return manager

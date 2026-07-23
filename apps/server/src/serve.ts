@@ -15,6 +15,7 @@ import {
 import { makeTerminalManager, type TerminalManagerService } from "@codevisor/terminal"
 import { Effect } from "effect"
 import { spawn } from "node:child_process"
+import { randomUUID } from "node:crypto"
 import {
   createWriteStream,
   existsSync,
@@ -35,11 +36,13 @@ import {
   customHarnessDefinition,
   loadCustomHarnesses,
   saveCustomHarnesses,
+  type CustomHarnessLoadResult,
   type CustomHarnessStore
 } from "./custom-harnesses.js"
 import { isNewerVersion } from "./harness-update-sources.js"
 import { makeHarnessLifecycleManager } from "./harness-lifecycle.js"
 import { defaultServerConfig, startCodevisorServer, type CodevisorServerUpdater } from "./server.js"
+import { acquireServerLease, type ServerLease } from "./server-lease.js"
 import { makeHarnessAuthManager } from "./harness-auth.js"
 import { makeMcpManager } from "./mcp-manager.js"
 import { makeNativeMcpManager } from "./native-mcp-manager.js"
@@ -57,11 +60,98 @@ import {
 const SERVER_PROCESS_TITLE = "codevisor-server"
 const SERVER_UPDATE_CHECK_TTL_MS = 6 * 60 * 60 * 1_000
 
-const writeDataUpgradeStatus = (path: string, progress: DataUpgradeProgress): void => {
+const failureMessage = (cause: unknown): string => {
+  if (!(cause instanceof Error)) return String(cause)
+  // Effect wraps rejected promises in an UnknownError. Preserve the useful
+  // domain error (lease owner, migration failure, missing resource, …) rather
+  // than reducing every startup failure to "An error occurred".
+  if (cause.message === "An error occurred in Effect.tryPromise" && cause.cause !== undefined) {
+    return failureMessage(cause.cause)
+  }
+  return cause.message
+}
+
+export const initializeOptionalServerFeature = <A>(
+  name: string,
+  initialize: () => A,
+  report: (message: string) => void = console.error
+): A | undefined => {
+  try {
+    return initialize()
+  } catch (cause) {
+    report(`${name} unavailable: ${failureMessage(cause)}`)
+    return undefined
+  }
+}
+
+export const initializeOptionalServerFeatureAsync = async <A>(
+  name: string,
+  initialize: () => Promise<A>,
+  report: (message: string) => void = console.error
+): Promise<A | undefined> => {
+  try {
+    return await initialize()
+  } catch (cause) {
+    report(`${name} unavailable: ${failureMessage(cause)}`)
+    return undefined
+  }
+}
+
+export interface BootScopedDataUpgradeProgress extends DataUpgradeProgress {
+  readonly bootId: string
+  readonly pid: number
+  readonly updatedAt: string
+}
+
+const writeDataUpgradeStatus = (
+  path: string,
+  bootId: string,
+  progress: DataUpgradeProgress
+): void => {
   mkdirSync(dirname(path), { recursive: true })
   const temporary = `${path}.${process.pid}.tmp`
-  writeFileSync(temporary, `${JSON.stringify(progress)}\n`, "utf8")
+  const scoped: BootScopedDataUpgradeProgress = {
+    ...progress,
+    bootId,
+    pid: process.pid,
+    updatedAt: new Date().toISOString()
+  }
+  writeFileSync(temporary, `${JSON.stringify(scoped)}\n`, "utf8")
   renameSync(temporary, path)
+}
+
+const parseProcessId = (value: string | undefined): number | undefined => {
+  if (value === undefined || value.length === 0) return undefined
+  const parsed = Number(value)
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : undefined
+}
+
+const processIsAlive = (pid: number): boolean => {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch {
+    return false
+  }
+}
+
+export const monitorAppOwner = (options: {
+  readonly ownerPid: number
+  readonly lease: Pick<ServerLease, "release">
+  readonly intervalMilliseconds?: number
+  readonly isAlive?: (pid: number) => boolean
+  readonly stopProcess?: () => void
+}): (() => void) => {
+  const isAlive = options.isAlive ?? processIsAlive
+  const stopProcess = options.stopProcess ?? (() => process.exit(0))
+  const timer = setInterval(() => {
+    if (isAlive(options.ownerPid)) return
+    console.log(`Codevisor host app ${options.ownerPid} exited; stopping its local server`)
+    clearInterval(timer)
+    void options.lease.release().finally(stopProcess)
+  }, options.intervalMilliseconds ?? 500)
+  timer.unref()
+  return () => clearInterval(timer)
 }
 
 /// Exit status used to hand an update back to a host macOS app: a server that
@@ -350,6 +440,9 @@ const backgroundTerminalIntegration = async (
 /// the `codevisor-server` daemon bin and the `codevisor serve` CLI subcommand.
 export const runServe = (args: Record<string, string>): Promise<void> => {
   process.title = SERVER_PROCESS_TITLE
+  let startupLease: ServerLease | undefined
+  let stopOwnerMonitor: (() => void) | undefined
+  let startupCompleted = false
 
   const program = Effect.gen(function* () {
     const host = args.host ?? "127.0.0.1"
@@ -376,9 +469,24 @@ export const runServe = (args: Record<string, string>): Promise<void> => {
       .map((origin) => origin.trim())
       .filter((origin) => origin.length > 0)
     const databasePath = args.db ?? defaultDatabasePath()
+    const bootId = args["boot-id"] ?? randomUUID()
+    const appOwned = args["app-owned"] === "1"
+    const ownerPid = parseProcessId(args["owner-pid"])
+    if (appOwned && ownerPid === undefined) {
+      throw new Error("An app-owned server requires --owner-pid")
+    }
     // The canonical ~/.codevisor/data directory does not exist on first start
     // (unlike the old tmpdir default, which always did).
     mkdirSync(dirname(databasePath), { recursive: true })
+    const lease = yield* Effect.tryPromise(() =>
+      acquireServerLease(databasePath, {
+        bootId,
+        appOwned,
+        waitForOwnership: appOwned
+      })
+    )
+    startupLease = lease
+    stopOwnerMonitor = ownerPid === undefined ? undefined : monitorAppOwner({ ownerPid, lease })
     const upgradeStatusPath =
       args["upgrade-status"] ?? join(dirname(databasePath), "data-upgrade.json")
     // Standalone installs used to default the database into the OS temp
@@ -393,17 +501,18 @@ export const runServe = (args: Record<string, string>): Promise<void> => {
       migrateLegacyLayout({
         databasePath,
         worktreesRoot: worktreesRoot(),
-        onProgress: (progress) => writeDataUpgradeStatus(upgradeStatusPath, progress)
+        onProgress: (progress) => writeDataUpgradeStatus(upgradeStatusPath, bootId, progress)
       })
     )
     const db = yield* makeDatabase({
       filename: databasePath,
       serverId,
-      onDataUpgradeProgress: (progress) => writeDataUpgradeStatus(upgradeStatusPath, progress)
+      onDataUpgradeProgress: (progress) =>
+        writeDataUpgradeStatus(upgradeStatusPath, bootId, progress)
     }).pipe(
       Effect.tapError((cause) =>
         Effect.sync(() =>
-          writeDataUpgradeStatus(upgradeStatusPath, {
+          writeDataUpgradeStatus(upgradeStatusPath, bootId, {
             state: "failed",
             id: "database-startup",
             name: "Applying update",
@@ -418,7 +527,7 @@ export const runServe = (args: Record<string, string>): Promise<void> => {
     yield* Effect.tryPromise({
       try: () =>
         migrateAttachmentBlobs(db, attachments, (progress) =>
-          writeDataUpgradeStatus(upgradeStatusPath, progress)
+          writeDataUpgradeStatus(upgradeStatusPath, bootId, progress)
         ),
       catch: (cause) =>
         cause instanceof Error ? cause : new Error(`Attachment migration failed: ${String(cause)}`)
@@ -454,7 +563,17 @@ export const runServe = (args: Record<string, string>): Promise<void> => {
     // User-defined custom ACP harnesses (~/.codevisor/harnesses.json) merge
     // into the catalog before anything consumes it. Bad entries are skipped
     // with a warning — a hand-edited file must never block server boot.
-    const customHarnesses = yield* Effect.promise(() => loadCustomHarnesses(codevisorRoot()))
+    const customHarnesses =
+      (yield* Effect.promise(() =>
+        initializeOptionalServerFeatureAsync("Custom harnesses", () =>
+          loadCustomHarnesses(codevisorRoot())
+        )
+      )) ??
+      ({
+        definitions: [],
+        specs: [],
+        warnings: []
+      } satisfies CustomHarnessLoadResult)
     for (const warning of customHarnesses.warnings) {
       console.error(`Custom harnesses: ${warning}`)
     }
@@ -465,25 +584,34 @@ export const runServe = (args: Record<string, string>): Promise<void> => {
         : { extraHarnesses: customHarnesses.definitions }),
       resolveEnv: () => resolveShellEnv()
     })
-    const auth = makeHarnessAuthManager({
-      dataDir: dirname(databasePath),
-      db,
-      agents,
-      terminal,
-      preferDeviceCode: (kind ?? (host === "127.0.0.1" ? "local" : "remote")) === "remote"
-    })
-    const skills = makeSkillsManager({ agents })
-    const mcp = makeMcpManager({
-      db,
-      dataDir: dirname(databasePath),
-      syncManagedSkills: skills.syncManaged
-    })
-    const nativeMcp = makeNativeMcpManager({
-      agents,
-      dataDir: dirname(databasePath),
-      db,
-      mcp
-    })
+    const auth = initializeOptionalServerFeature("Harness authentication", () =>
+      makeHarnessAuthManager({
+        dataDir: dirname(databasePath),
+        db,
+        agents,
+        terminal,
+        preferDeviceCode: (kind ?? (host === "127.0.0.1" ? "local" : "remote")) === "remote"
+      })
+    )
+    const skills = initializeOptionalServerFeature("Skills", () => makeSkillsManager({ agents }))
+    const mcp = initializeOptionalServerFeature("MCP", () =>
+      makeMcpManager({
+        db,
+        dataDir: dirname(databasePath),
+        ...(skills === undefined ? {} : { syncManagedSkills: skills.syncManaged })
+      })
+    )
+    const nativeMcp =
+      mcp === undefined
+        ? undefined
+        : initializeOptionalServerFeature("Native MCP discovery", () =>
+            makeNativeMcpManager({
+              agents,
+              dataDir: dirname(databasePath),
+              db,
+              mcp
+            })
+          )
     /// Custom-harness persistence + handshake probe for the /v1/harnesses/
     /// custom routes. The file stays the source of truth; replace() swaps the
     /// runtime catalog live so no restart is needed.
@@ -504,18 +632,21 @@ export const runServe = (args: Record<string, string>): Promise<void> => {
           { env: await resolveShellEnv() }
         )
     }
-    const lifecycle = makeHarnessLifecycleManager({
-      agents,
-      db,
-      resolveEnv: () => resolveShellEnv(),
-      terminal
+    const lifecycle = initializeOptionalServerFeature("Harness lifecycle", () => {
+      const manager = makeHarnessLifecycleManager({
+        agents,
+        db,
+        resolveEnv: () => resolveShellEnv(),
+        terminal
+      })
+      // Periodic harness update detection — jittered start, 6h cadence. The
+      // stop handle is intentionally dropped: checks live for the process.
+      manager.startPeriodicChecks()
+      return manager
     })
-    // Periodic harness update detection — jittered start, 6h cadence. The
-    // stop handle is intentionally dropped: checks live for the process.
-    lifecycle.startPeriodicChecks()
     // Interrupted updates become failures; still-armed ones re-run once the
     // server settles. Fire-and-forget so boot never waits on it.
-    void lifecycle.reconcileOnStartup().catch(() => undefined)
+    void lifecycle?.reconcileOnStartup().catch(() => undefined)
     // Self-heal PATH at boot, fire-and-forget: CLI-/brew-launched servers
     // inherit whatever PATH the parent had, and a slow login-shell probe must
     // not delay the health endpoint the launching app is waiting on.
@@ -524,14 +655,14 @@ export const runServe = (args: Record<string, string>): Promise<void> => {
       {
         agents,
         attachments,
-        auth,
         customHarnesses: customHarnessStore,
         db,
-        lifecycle,
-        mcp,
-        nativeMcp,
-        skills,
-        terminal
+        terminal,
+        ...(auth === undefined ? {} : { auth }),
+        ...(lifecycle === undefined ? {} : { lifecycle }),
+        ...(mcp === undefined ? {} : { mcp }),
+        ...(nativeMcp === undefined ? {} : { nativeMcp }),
+        ...(skills === undefined ? {} : { skills })
       },
       defaultServerConfig({
         host,
@@ -545,6 +676,9 @@ export const runServe = (args: Record<string, string>): Promise<void> => {
         name: args.name ?? (host === "127.0.0.1" ? "Local Codevisor" : hostname()),
         port,
         worktreeNameStyle,
+        bootId,
+        processId: process.pid,
+        appOwned,
         ...(version === undefined ? {} : { version }),
         ...(corsOrigins.length === 0 ? {} : { corsOrigins }),
         auth: {
@@ -556,17 +690,25 @@ export const runServe = (args: Record<string, string>): Promise<void> => {
         },
         onShutdownRequested: () => {
           console.log("Codevisor server shutting down (requested by client)")
+          stopOwnerMonitor?.()
           // Let the 202 response flush before the process exits.
-          setTimeout(() => process.exit(0), 250)
+          setTimeout(() => {
+            void lease.release().finally(() => process.exit(0))
+          }, 250)
         },
         updater
       })
     )
+    startupCompleted = true
     console.log(`Codevisor server listening at ${server.url}`)
   })
 
-  return Effect.runPromise(program).catch((cause: unknown) => {
-    console.error(cause instanceof Error ? cause.message : String(cause))
+  return Effect.runPromise(program).catch(async (cause: unknown) => {
+    stopOwnerMonitor?.()
+    if (!startupCompleted) {
+      await startupLease?.release().catch(() => undefined)
+    }
+    console.error(failureMessage(cause))
     // This is a dedicated server process. Startup may already have opened
     // long-lived helpers (for example the background-terminal Unix socket), so
     // exitCode alone can leave an inert process alive indefinitely.

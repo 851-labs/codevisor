@@ -15,6 +15,9 @@ Options:
   --cors-origins <list>    Comma-separated allowed CORS origins
   --db <path>              Database path (default: canonical data directory)
   --upgrade-status <path>  Data-upgrade status file path
+  --boot-id <id>           Unique identity for this server startup
+  --app-owned <0|1>        Tie this server to a desktop app
+  --owner-pid <pid>        Owning desktop app process identifier
   -h, --help               Print this help and exit
 `
 

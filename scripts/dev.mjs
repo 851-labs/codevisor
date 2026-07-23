@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto"
+import { createHash, X509Certificate } from "node:crypto"
 import { spawn } from "node:child_process"
 import { access, cp, mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises"
 import { createServer } from "node:net"
@@ -84,6 +84,7 @@ if (!(await pathExists(join(repoRoot, "node_modules", ".bin", "tsc")))) {
 await ensureGhosttyFramework()
 await run("bun", ["run", "--cwd", "apps/server", "build"])
 const generatedIconDirectory = await createDevelopmentAppIcon()
+const developmentSigningArguments = await resolveDevelopmentSigningArguments()
 try {
   await run("xcodebuild", [
     "-project",
@@ -100,6 +101,7 @@ try {
     "ASSETCATALOG_COMPILER_APPICON_NAME=AppIconDevGenerated",
     "INFOPLIST_KEY_CFBundleIconFile=AppIconDevGenerated",
     "INFOPLIST_KEY_CFBundleIconName=AppIconDevGenerated",
+    ...developmentSigningArguments,
     "build"
   ])
 } finally {
@@ -192,11 +194,17 @@ const remoteServer = spawn(
 )
 
 let app
+let launchedAppName
 let stopping = false
 
 const stop = async (exitCode = 0) => {
   if (stopping) return
   stopping = true
+  if (launchedAppName !== undefined) {
+    spawn("/usr/bin/killall", ["-TERM", launchedAppName], {
+      stdio: "ignore"
+    }).unref()
+  }
   app?.kill("SIGTERM")
   www.kill("SIGTERM")
 
@@ -244,17 +252,26 @@ try {
   await waitForHealth(port, server)
   await waitForHealth(remotePort, remoteServer)
   await announceDevRemote()
-  const executable = join(
-    derivedDataPath,
-    "Build",
-    "Products",
-    "Debug",
-    `${appName}.app`,
-    "Contents",
-    "MacOS",
-    appName
+  const appBundle = join(derivedDataPath, "Build", "Products", "Debug", `${appName}.app`)
+  const launchEnvironment = Object.entries(sharedEnvironment).filter(
+    ([key]) =>
+      key.startsWith("CODEVISOR_") || key.startsWith("HERDMAN_") || key.startsWith("GHOSTTY_")
   )
-  app = spawn(executable, [], { cwd: repoRoot, env: sharedEnvironment, stdio: "inherit" })
+  const openArguments = [
+    "-n",
+    "-W",
+    ...launchEnvironment.flatMap(([key, value]) => ["--env", `${key}=${value}`]),
+    appBundle
+  ]
+  // LaunchServices gives the app its own macOS responsibility identity. A
+  // direct child executable inherits the invoking terminal/agent identity,
+  // making an enabled Accessibility toggle appear denied after an update.
+  launchedAppName = appName
+  app = spawn("/usr/bin/open", openArguments, {
+    cwd: repoRoot,
+    env: process.env,
+    stdio: "inherit"
+  })
   const result = await waitForExit(app)
   if (!stopping) await stop(result.code ?? 0)
   await serverExit
@@ -439,6 +456,33 @@ function capture(command, arguments_) {
     if (result.code === 0) return output
     throw new Error(`${command} failed (${describeExit(result)})`)
   })
+}
+
+async function resolveDevelopmentSigningArguments() {
+  const identities = await capture("security", ["find-identity", "-v", "-p", "codesigning"])
+  const match = identities.match(/[0-9]+\)\s+([0-9A-F]+)\s+"(Apple Development:[^"]+)"/)
+  if (match === null) {
+    console.warn(
+      "\nNo Apple Development signing identity was found. This build will be ad-hoc signed, so macOS may require Accessibility permission again after a rebuild."
+    )
+    return []
+  }
+  const [, hash, identity] = match
+  const certificate = await capture("security", ["find-certificate", "-c", identity, "-p"])
+  const team = new X509Certificate(certificate).toLegacyObject().subject.OU
+  if (typeof team !== "string" || team.length === 0) {
+    console.warn(
+      `\nThe ${identity} certificate has no signing team identifier. This build will be ad-hoc signed, so macOS may require Accessibility permission again after a rebuild.`
+    )
+    return []
+  }
+  console.log(`Using stable development signing identity ${hash} (${team})`)
+  return [
+    `CODE_SIGN_IDENTITY=${hash}`,
+    `DEVELOPMENT_TEAM=${team}`,
+    "CODE_SIGN_STYLE=Manual",
+    "PROVISIONING_PROFILE_SPECIFIER="
+  ]
 }
 
 async function pathExists(path) {

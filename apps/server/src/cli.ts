@@ -128,6 +128,9 @@ const serve = Command.make(
     db: optionalString("db", "SQLite database path (default ~/.codevisor/data)"),
     corsOrigins: optionalString("cors-origins", "Comma-separated browser origins"),
     upgradeStatus: optionalString("upgrade-status", "Data-upgrade progress sidecar path"),
+    bootId: optionalString("boot-id", "Unique identity for this server startup"),
+    appOwned: optionalString("app-owned", "Whether a desktop app owns this server (0 or 1)"),
+    ownerPid: optionalString("owner-pid", "Owning desktop app process identifier"),
     version: optionalString("version", "Advertised server version")
   },
   (config) =>
@@ -142,6 +145,9 @@ const serve = Command.make(
         ["db", config.db],
         ["cors-origins", config.corsOrigins],
         ["upgrade-status", config.upgradeStatus],
+        ["boot-id", config.bootId],
+        ["app-owned", config.appOwned],
+        ["owner-pid", config.ownerPid],
         ["version", config.version]
       ]
       const args: Record<string, string> = {}

@@ -314,7 +314,10 @@ export const makeOpenCodeAuthManager = (config: OpenCodeAuthManagerConfig): Open
 
   const finish = (flow: InternalFlow, value: OpenCodeAuthFlow): void => {
     flow.value = value
-    void flow.server.stop().finally(flow.release)
+    void flow.server
+      .stop()
+      .catch(() => undefined)
+      .finally(flow.release)
   }
 
   const fail = (flow: InternalFlow, cause: unknown): void => {
@@ -495,7 +498,10 @@ export const makeOpenCodeAuthManager = (config: OpenCodeAuthManagerConfig): Open
       const flow = flows.get(flowId)
       if (flow === undefined) return
       flow.cancelled = true
-      void flow.server.stop().finally(flow.release)
+      void flow.server
+        .stop()
+        .catch(() => undefined)
+        .finally(flow.release)
       flows.delete(flowId)
     },
     logout: async (accountId, providerId) => {
