@@ -8,7 +8,12 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { makeMcpManager, NodeStreamableHttpTransport, type McpManager } from "./mcp-manager.js"
+import {
+  automationSkillPath,
+  makeMcpManager,
+  NodeStreamableHttpTransport,
+  type McpManager
+} from "./mcp-manager.js"
 
 const run = <A, E>(effect: Effect.Effect<A, E>): Promise<A> => Effect.runPromise(effect)
 
@@ -151,6 +156,30 @@ const workingUpstream = async () => {
 }
 
 describe("MCP manager", () => {
+  it("finds managed skills from a packaged runtime launched outside its directory", () => {
+    const root = mkdtempSync(join(tmpdir(), "codevisor-packaged-skills-"))
+    directories.push(root)
+    const runtime = join(root, "darwin-arm64")
+    const browserSkill = join(
+      runtime,
+      "apps",
+      "server",
+      "resources",
+      "automation-skills",
+      "browser-use",
+      "SKILL.md"
+    )
+    mkdirSync(join(browserSkill, ".."), { recursive: true })
+    writeFileSync(browserSkill, "# Browser Use")
+
+    expect(
+      automationSkillPath("browser", {
+        moduleDirectory: runtime,
+        workingDirectory: "/"
+      })
+    ).toBe(browserSkill)
+  })
+
   it("handles the Streamable HTTP response variants and transport lifecycle", async () => {
     const responses = [
       new Response(

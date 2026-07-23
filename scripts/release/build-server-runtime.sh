@@ -230,5 +230,11 @@ runtime_root="$(cd "$runtime_dir" && pwd)"
     if (relay.browserExtensionPath() === undefined) {
       throw new Error("Packaged browser extension is not discoverable from /")
     }
+    const mcp = await import(pathToFileURL(`${runtime}/mcp-manager.js`))
+    for (const id of ["browser", "computer"]) {
+      if (!mcp.automationSkillPath(id).startsWith(runtime)) {
+        throw new Error(`Packaged ${id} skill is not discoverable from /`)
+      }
+    }
   '
 )

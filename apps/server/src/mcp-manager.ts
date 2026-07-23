@@ -299,14 +299,25 @@ const BUILTIN_MCP_SERVERS = [
   { id: "computer", name: "Computer Use", kind: "computerUse" as const }
 ] as const
 
-const automationSkillPath = (id: "browser" | "computer"): string => {
+export const automationSkillPath = (
+  id: "browser" | "computer",
+  options: {
+    readonly moduleDirectory?: string
+    readonly workingDirectory?: string
+  } = {}
+): string => {
   const skillName = id === "browser" ? "browser-use" : "computer-use"
   const relative = join("automation-skills", skillName, "SKILL.md")
-  const moduleDirectory = dirname(fileURLToPath(import.meta.url))
+  const moduleDirectory = options.moduleDirectory ?? dirname(fileURLToPath(import.meta.url))
+  const workingDirectory = options.workingDirectory ?? process.cwd()
   const candidates = [
     join(moduleDirectory, "..", "resources", relative),
-    join(process.cwd(), "apps", "server", "resources", relative),
-    join(process.cwd(), "resources", relative)
+    // Release runtimes copy the compiled entrypoints to the runtime root while
+    // preserving resources under apps/server. Resolve this from the module:
+    // LaunchServices starts the macOS app with / as its working directory.
+    join(moduleDirectory, "apps", "server", "resources", relative),
+    join(workingDirectory, "apps", "server", "resources", relative),
+    join(workingDirectory, "resources", relative)
   ]
   const match = candidates.find(existsSync)
   if (match === undefined) throw new Error(`Missing managed ${skillName} skill`)
