@@ -63,7 +63,11 @@ describe("Browser Use tool contract", () => {
     directories.push(home)
     expect(browserExtensionInstallation(home)).toMatchObject({ bundled: true, installed: false })
 
-    const profile = join(home, "Library", "Application Support", "Google", "Chrome", "Default")
+    expect(["darwin", "linux"]).toContain(process.platform)
+    const profile =
+      process.platform === "darwin"
+        ? join(home, "Library", "Application Support", "Google", "Chrome", "Default")
+        : join(home, ".config", "google-chrome", "Default")
     mkdirSync(profile, { recursive: true })
     writeFileSync(
       join(profile, "Preferences"),
