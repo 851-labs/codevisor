@@ -50,6 +50,7 @@ const writeAll = async (
   let offset = 0
   while (offset < buffer.byteLength) {
     const result = await handle.write(buffer, offset, buffer.byteLength - offset, position + offset)
+    /* v8 ignore next 3 -- a real FileHandle either writes bytes or rejects; this guards a broken adapter. */
     if (result.bytesWritten === 0) {
       throw new AttachmentStoreError("Unable to make progress writing attachment")
     }
@@ -61,6 +62,7 @@ const writeAll = async (
 const syncDirectory = async (path: string): Promise<void> => {
   // Windows does not support opening directories for fsync. The file itself
   // is still synced before the atomic rename.
+  /* v8 ignore next -- CI exercises fsync on Unix; Windows rejects directory handles by design. */
   if (process.platform === "win32") return
   const handle = await open(path, "r")
   try {
@@ -110,12 +112,15 @@ export const makeAttachmentStore = (dataDir: string): AttachmentStore => {
     }
     try {
       await rename(temporary, path)
+      /* v8 ignore start -- requires another process to install the same object during this rename. */
     } catch (cause) {
       if (!(await verify({ sha256, sizeBytes }))) throw cause
       await rm(temporary, { force: true })
     }
+    /* v8 ignore stop */
     await chmod(path, 0o600)
     await syncDirectory(dirname(path))
+    /* v8 ignore next 3 -- requires external corruption between the atomic rename and immediate verification. */
     if (!(await verify({ sha256, sizeBytes }))) {
       throw new AttachmentStoreError(`Attachment object failed verification: ${sha256}`)
     }
@@ -152,8 +157,14 @@ export const makeAttachmentStore = (dataDir: string): AttachmentStore => {
         Buffer.concat(headerChunks, headerBytes)
       )
     } catch (cause) {
-      await handle.close().catch(() => undefined)
-      await rm(temporary, { force: true }).catch(() => undefined)
+      await handle.close().catch(
+        /* v8 ignore next -- best-effort cleanup after the primary write failure. */
+        () => undefined
+      )
+      await rm(temporary, { force: true }).catch(
+        /* v8 ignore next -- best-effort cleanup after the primary write failure. */
+        () => undefined
+      )
       throw cause
     }
   }

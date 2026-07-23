@@ -4743,6 +4743,77 @@ describe("@codevisor/server", () => {
       readonly conversation: ReadonlyArray<{ readonly text: string }>
     }
     expect(refreshed.conversation.some((item) => item.text === "malformed")).toBe(false)
+
+    // A corrupt disk-only object cannot fall back to SQLite and surfaces the
+    // storage error through prompt attachment resolution.
+    writeFileSync(
+      services.attachments.objectPath(String(png.body.sha256)),
+      Buffer.alloc(pngBytes.byteLength, 0)
+    )
+    expect(
+      (
+        await jsonRequest(server, `/v1/sessions/${session.id}/prompt`, {
+          body: JSON.stringify({ attachments: [pngRef], text: "corrupt disk object" }),
+          method: "POST"
+        })
+      ).status
+    ).toBe(202)
+    await waitFor(async () => {
+      const events = (await jsonRequest(server, `/v1/sessions/${session.id}/events`))
+        .body as ReadonlyArray<{ readonly kind: string; readonly payload: Record<string, unknown> }>
+      return events.some(
+        (event) =>
+          event.kind === "session.error" &&
+          String(event.payload.message).includes("missing or corrupt")
+      )
+    })
+  })
+
+  it("recovers legacy attachment rows and rejects corrupt SQLite bytes", async () => {
+    const { server, services } = await start()
+    const legacyBytes = Buffer.from("legacy server attachment")
+    const legacy = await run(
+      services.db.createFile("legacy.txt", "text/plain", "file", legacyBytes)
+    )
+
+    const legacyResponse = await fetch(`${server.url}/v1/files/${legacy.id}`)
+    expect(legacyResponse.status).toBe(200)
+    expect(Buffer.from(await legacyResponse.arrayBuffer())).toEqual(legacyBytes)
+    expect(await run(services.db.getFileStorage(legacy.id))).toMatchObject({
+      storageState: "dual"
+    })
+    expect(await services.attachments.verify(legacy)).toBe(true)
+
+    const dualBytes = Buffer.from("recoverable dual attachment")
+    const dual = await run(services.db.createFile("dual.txt", "text/plain", "file", dualBytes))
+    await services.attachments.put(dualBytes, dual.sha256)
+    await run(services.db.markFileStorageDual(dual.id))
+    writeFileSync(
+      services.attachments.objectPath(dual.sha256),
+      Buffer.alloc(dualBytes.byteLength, 0)
+    )
+    const dualResponse = await fetch(`${server.url}/v1/files/${dual.id}`)
+    expect(dualResponse.status).toBe(200)
+    expect(Buffer.from(await dualResponse.arrayBuffer())).toEqual(dualBytes)
+    expect(await services.attachments.verify(dual)).toBe(true)
+
+    const database = new Database(join(dirname(services.attachments.root), "codevisor.sqlite"))
+    const wrongSize = await run(
+      services.db.createFile("wrong-size.txt", "text/plain", "file", Buffer.from("correct"))
+    )
+    database
+      .prepare("update files set data = ? where id = ?")
+      .run(Buffer.from("wrong size"), wrongSize.id)
+    expect((await fetch(`${server.url}/v1/files/${wrongSize.id}`)).status).toBe(500)
+
+    const wrongHash = await run(
+      services.db.createFile("wrong-hash.txt", "text/plain", "file", Buffer.from("correct"))
+    )
+    database
+      .prepare("update files set data = ? where id = ?")
+      .run(Buffer.from("xxxxxxx"), wrongHash.id)
+    expect((await fetch(`${server.url}/v1/files/${wrongHash.id}`)).status).toBe(500)
+    database.close()
   })
 
   it("sweeps stale materialized attachment temp files at startup", async () => {
