@@ -153,7 +153,7 @@ describe("browser setup broker", () => {
       allowsOther: false,
       backOptionLabel: "Back",
       presentation: "browserExtensionSetup",
-      options: [{ label: "Open Extensions" }, { label: "Show Folder" }]
+      options: [{ label: "Open Extensions" }]
     })
     await answer(current.broker, current.events, "Back")
     await tick()
@@ -164,7 +164,7 @@ describe("browser setup broker", () => {
     await expect(resolving).resolves.toBe("managed")
   })
 
-  it("opens each development setup destination and auto-resumes when the extension connects", async () => {
+  it("opens Chrome Extensions and auto-resumes when the extension connects", async () => {
     const current = fixture()
     const resolving = current.broker.resolveBackend("session")
     await tick()
@@ -174,9 +174,6 @@ describe("browser setup broker", () => {
     await tick()
     expect(current.openExtensions).toHaveBeenCalledOnce()
     expect(current.showFolder).not.toHaveBeenCalled()
-    await answer(current.broker, current.events, "Show Folder")
-    await tick()
-    expect(current.showFolder).toHaveBeenCalledOnce()
     const waiting = current.events.at(-1)!.payload as {
       message?: string
       questions: Array<{
@@ -191,7 +188,7 @@ describe("browser setup broker", () => {
       allowsOther: false,
       backOptionLabel: "Back",
       presentation: "browserExtensionWaiting",
-      options: [{ label: "Open Extensions" }, { label: "Show Folder" }]
+      options: [{ label: "Open Extensions" }]
     })
     current.connect()
     await expect(resolving).resolves.toBe("extension")
@@ -206,7 +203,7 @@ describe("browser setup broker", () => {
     ).toBe(true)
   })
 
-  it("uses the Chrome Web Store flow in production", async () => {
+  it("uses the packaged extension guide in production", async () => {
     const current = fixture({ setupMode: "webStore" })
     const resolving = current.broker.resolveBackend("session", "extension")
     await tick()
@@ -215,16 +212,16 @@ describe("browser setup broker", () => {
     }
     expect(setup.questions[0]?.options).toEqual([
       {
-        label: "Open Web Store",
-        description: "Install Codevisor from the Chrome Web Store."
+        label: "Open Extensions",
+        description: "Open the Extensions page in Chrome."
       }
     ])
 
-    await answer(current.broker, current.events, "Open Web Store")
+    await answer(current.broker, current.events, "Open Extensions")
     await tick()
-    expect(current.openWebStore).toHaveBeenCalledOnce()
+    expect(current.openExtensions).toHaveBeenCalledOnce()
+    expect(current.openWebStore).not.toHaveBeenCalled()
     expect(current.showFolder).not.toHaveBeenCalled()
-    expect(current.openExtensions).not.toHaveBeenCalled()
     current.connect()
     await expect(resolving).resolves.toBe("extension")
   })
@@ -241,7 +238,7 @@ describe("browser setup broker", () => {
     }
     expect(setup.questions[0]).toMatchObject({
       presentation: "browserExtensionSetup",
-      question: "Drop the Codevisor extension folder into the Extensions page in Chrome."
+      question: "Drag the Codevisor extension into the Extensions page in Chrome."
     })
 
     await answer(current.broker, current.events, "Open Extensions")

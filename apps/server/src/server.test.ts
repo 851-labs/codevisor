@@ -1698,6 +1698,22 @@ describe("@codevisor/server", () => {
       chromeConnected: false,
       managedAvailable: expect.any(Boolean)
     })
+    const extensionArchive = await fetch(`${server.url}/v1/browser-use/extension/archive`)
+    expect(extensionArchive.status).toBe(200)
+    expect(extensionArchive.headers.get("content-type")).toBe("application/zip")
+    expect(
+      Buffer.from(await extensionArchive.arrayBuffer())
+        .subarray(0, 4)
+        .toString("hex")
+    ).toBe("504b0304")
+    const extensionIcon = await fetch(`${server.url}/v1/browser-use/extension/icon`)
+    expect(extensionIcon.status).toBe(200)
+    expect(extensionIcon.headers.get("content-type")).toBe("image/png")
+    expect(
+      Buffer.from(await extensionIcon.arrayBuffer())
+        .subarray(1, 4)
+        .toString("utf8")
+    ).toBe("PNG")
 
     const selected = await jsonRequest(server, "/v1/browser-use", {
       method: "PATCH",

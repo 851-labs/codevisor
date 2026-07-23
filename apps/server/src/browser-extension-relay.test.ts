@@ -3,6 +3,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import {
+  browserExtensionArchivePath,
   browserExtensionPath,
   CODEVISOR_BROWSER_EXTENSION_WEB_STORE_URL,
   openBrowserExtensionDevelopmentFolder,
@@ -75,6 +76,13 @@ describe("browser extension development installer", () => {
     await expect(readFile(join(extension, "icons", "16.png"), "utf8")).resolves.toBe("dev-16")
     await expect(readFile(join(extension, "icons", "32.png"), "utf8")).resolves.toBe("dev-32")
     await expect(readFile(join(extension, "icons", "128.png"), "utf8")).resolves.toBe("dev-128")
+    const archive = await readFile(browserExtensionArchivePath(extension))
+    expect(archive.subarray(0, 4).toString("hex")).toBe("504b0304")
+    expect(archive.toString("utf8")).toContain("Codevisor (mirrlees)")
+    expect(archive.toString("utf8")).toContain(
+      "ws://127.0.0.1:61234/v1/browser-use/extension/socket"
+    )
+    expect(archive.toString("utf8")).toContain('"key"')
   })
 
   it("opens Chrome Extensions and the unpacked directory in Finder on macOS", async () => {

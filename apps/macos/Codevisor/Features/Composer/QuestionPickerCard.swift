@@ -38,6 +38,11 @@ struct QuestionPickerContent: View {
     @State private var notes: [String: String] = [:]
     @State private var notesHeight: CGFloat = 24
     @State private var highlighted = 0
+    @State private var browserExtensionArchiveURL: URL?
+    @State private var browserExtensionIconURL: URL?
+    @State private var browserExtensionArchiveError: String?
+    @State private var isBrowserExtensionFileHovered = false
+    @State private var didOpenBrowserExtensions = false
     /// Weak handles to the picker's AppKit focus targets: the key anchor
     /// (option list) and the notes editor's text view, so explicit moves —
     /// question navigation, Escape out of the notes editor, option clicks,
@@ -121,8 +126,15 @@ struct QuestionPickerContent: View {
             selections = [:]
             notes = [:]
             highlighted = 0
+            browserExtensionArchiveURL = nil
+            browserExtensionIconURL = nil
+            browserExtensionArchiveError = nil
+            didOpenBrowserExtensions = false
             didStartResolving = false
             focusPicker()
+        }
+        .task(id: request.questionId) {
+            await loadBrowserExtensionArchiveIfNeeded()
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Agent question")
@@ -137,8 +149,7 @@ struct QuestionPickerContent: View {
 
     private func browserExtensionSetup(_ question: QuestionSpec) -> some View {
         let isWaiting = question.presentation == .browserExtensionWaiting
-        let isDevelopment = question.options.contains(where: { $0.label == "Show Folder" })
-        return VStack(alignment: .leading, spacing: 14) {
+        return VStack(alignment: .leading, spacing: 16) {
             HStack(alignment: .firstTextBaseline, spacing: 10) {
                 Text("Add Codevisor to Chrome")
                     .font(.callout.weight(.semibold))
@@ -146,48 +157,14 @@ struct QuestionPickerContent: View {
                 dismissButton
             }
 
-            VStack(alignment: .leading, spacing: 0) {
-                if isDevelopment {
-                    browserSetupStep(
-                        number: 1,
-                        title: "Open the Extensions page in Chrome",
-                        actionLabel: "Open Extensions",
-                        systemImage: "macwindow"
-                    )
-                    browserSetupDivider
-                    browserSetupStep(
-                        number: 2,
-                        title: "Open the Codevisor extension folder",
-                        actionLabel: "Show Folder",
-                        systemImage: "folder"
-                    )
-                    browserSetupDivider
-                    browserSetupStep(
-                        number: 3,
-                        title: "Drop the extension folder into the Extensions page"
-                    )
+            Group {
+                if didOpenBrowserExtensions {
+                    browserExtensionDragStage
                 } else {
-                    browserSetupStep(
-                        number: 1,
-                        title: "Install Codevisor from the Chrome Web Store",
-                        actionLabel: "Open Web Store",
-                        systemImage: "arrow.up.forward.app"
-                    )
-                    browserSetupDivider
-                    browserSetupStep(
-                        number: 2,
-                        title: "Return to Codevisor after the extension is installed"
-                    )
+                    browserExtensionOpenStage
                 }
             }
-            .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(theme.cardQuietBackground)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .strokeBorder(theme.border, lineWidth: 1)
-            )
+            .frame(maxWidth: .infinity)
 
             HStack(spacing: 8) {
                 if isWaiting {
@@ -198,9 +175,20 @@ struct QuestionPickerContent: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 8)
-                if let backOptionLabel = question.backOptionLabel {
-                    navButton("arrow.left", help: "Back") {
-                        submitDirectAnswer(question, label: backOptionLabel)
+                HStack(spacing: 4) {
+                    if didOpenBrowserExtensions {
+                        navButton("arrow.left", help: "Back to Open Chrome Extensions") {
+                            showBrowserExtensionOpenStage()
+                        }
+                    } else {
+                        if let backOptionLabel = question.backOptionLabel {
+                            navButton("arrow.left", help: "Back") {
+                                submitDirectAnswer(question, label: backOptionLabel)
+                            }
+                        }
+                        navButton("arrow.right", help: "Continue to Install Extension") {
+                            showBrowserExtensionDragStage()
+                        }
                     }
                 }
             }
@@ -209,46 +197,195 @@ struct QuestionPickerContent: View {
         .accessibilityLabel(isWaiting ? "Finish Chrome setup" : "Connect Chrome")
     }
 
-    @ViewBuilder
-    private func browserSetupStep(
-        number: Int,
-        title: String,
-        actionLabel: String? = nil,
-        systemImage: String? = nil
-    ) -> some View {
-        HStack(spacing: 10) {
-            Text("\(number).")
-                .font(.caption.monospacedDigit())
-                .foregroundStyle(.secondary)
-                .frame(width: 18, alignment: .trailing)
-            Text(title)
-                .font(.callout)
-                .foregroundStyle(.primary)
-            Spacer(minLength: 12)
-            if let actionLabel, let systemImage {
-                Button {
-                    performBrowserSetupAction(actionLabel)
-                } label: {
-                    Label(actionLabel, systemImage: systemImage)
-                        .font(.callout)
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.regular)
+    private var browserExtensionOpenStage: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 12) {
+                browserChromeIcon
+                Text("Open Chrome’s Extensions page")
+                    .font(.callout.weight(.medium))
+                    .fixedSize(horizontal: true, vertical: false)
+                Spacer(minLength: 16)
+                openChromeExtensionsButton
             }
+            .frame(maxWidth: .infinity)
+
+            VStack(spacing: 10) {
+                HStack(spacing: 10) {
+                    browserChromeIcon
+                    Text("Open Chrome’s Extensions page")
+                        .font(.callout.weight(.medium))
+                }
+                openChromeExtensionsButton
+            }
+            .frame(maxWidth: .infinity)
         }
         .padding(.horizontal, 12)
-        .padding(.vertical, 9)
+        .padding(.vertical, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(theme.cardQuietBackground)
+        )
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Open Chrome’s Extensions page")
     }
 
-    private var browserSetupDivider: some View {
-        Divider()
-            .padding(.leading, 40)
+    private var browserExtensionDragStage: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 12) {
+                Text("Drag this file into Chrome’s Extensions page")
+                    .font(.callout.weight(.medium))
+                    .fixedSize(horizontal: true, vertical: false)
+                Spacer(minLength: 16)
+                browserExtensionFile
+            }
+            .frame(maxWidth: .infinity)
+
+            VStack(spacing: 10) {
+                Text("Drag this file into Chrome’s Extensions page")
+                    .font(.callout.weight(.medium))
+                    .multilineTextAlignment(.center)
+                browserExtensionFile
+            }
+            .frame(maxWidth: .infinity)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(theme.cardQuietBackground)
+        )
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Drag Codevisor into the Chrome Extensions page")
+    }
+
+    private var browserChromeIcon: some View {
+        Image("browser-chrome")
+            .resizable()
+            .interpolation(.high)
+            .scaledToFit()
+            .frame(width: 36, height: 36)
+            .accessibilityHidden(true)
+    }
+
+    private var openChromeExtensionsButton: some View {
+        Button("Open Chrome Extensions") {
+            performBrowserSetupAction("Open Extensions")
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.regular)
+        .fixedSize()
+    }
+
+    private func browserExtensionFileIcon(_ url: URL) -> some View {
+        let icon = browserExtensionIconURL
+            .flatMap(NSImage.init(contentsOf:))
+            ?? NSWorkspace.shared.icon(forFile: url.path)
+        icon.size = NSSize(width: 48, height: 48)
+        return Image(nsImage: icon)
+            .resizable()
+            .interpolation(.high)
+            .scaledToFit()
+            .frame(width: 36, height: 36)
+            .accessibilityHidden(true)
+    }
+
+    private var browserExtensionFileBackground: some ShapeStyle {
+        if isBrowserExtensionFileHovered {
+            return AnyShapeStyle(theme.cardHoverBackground)
+        }
+        return AnyShapeStyle(Color.clear)
+    }
+
+    @ViewBuilder
+    private var browserExtensionFile: some View {
+        if let browserExtensionArchiveURL {
+            HStack(spacing: 8) {
+                browserExtensionFileIcon(browserExtensionArchiveURL)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Codevisor for Chrome.zip")
+                        .font(.caption.weight(.medium))
+                        .lineLimit(1)
+                    Label("Drag", systemImage: "hand.draw")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(.horizontal, 8)
+            .frame(width: 208, height: 52, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(browserExtensionFileBackground)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .strokeBorder(theme.border.opacity(0.7), lineWidth: 0.5)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .onHover { isBrowserExtensionFileHovered = $0 }
+            .onDrag {
+                NSItemProvider(contentsOf: browserExtensionArchiveURL) ?? NSItemProvider()
+            }
+            .help("Drag the Codevisor extension into Chrome")
+            .accessibilityLabel("Codevisor Chrome Extension zip file")
+            .accessibilityHint("Drag this file onto the Chrome Extensions page")
+        } else if browserExtensionArchiveError != nil {
+            HStack(spacing: 8) {
+                Image(systemName: "exclamationmark.triangle")
+                    .foregroundStyle(.secondary)
+                Text("Extension file unavailable")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer(minLength: 4)
+                Button("Retry") {
+                    Task { await loadBrowserExtensionArchiveIfNeeded(force: true) }
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
+            .frame(width: 208, height: 52)
+        } else {
+            HStack(spacing: 8) {
+                ProgressView()
+                    .controlSize(.small)
+                Text("Preparing extension…")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .frame(width: 208, height: 52)
+        }
+    }
+
+    private func loadBrowserExtensionArchiveIfNeeded(force: Bool = false) async {
+        guard question.map(isBrowserExtensionPresentation) == true else { return }
+        if !force, browserExtensionArchiveURL != nil { return }
+        browserExtensionArchiveError = nil
+        do {
+            browserExtensionArchiveURL = try await controller.browserExtensionArchive()
+            browserExtensionIconURL = try? await controller.browserExtensionIcon()
+        } catch {
+            browserExtensionArchiveURL = nil
+            browserExtensionIconURL = nil
+            browserExtensionArchiveError = String(describing: error)
+        }
     }
 
     private func performBrowserSetupAction(_ action: String) {
+        if action == "Open Extensions" {
+            showBrowserExtensionDragStage()
+        }
         Task {
             await controller.performBrowserExtensionSetupAction(action)
         }
+    }
+
+    private func showBrowserExtensionOpenStage() {
+        didOpenBrowserExtensions = false
+        focusPicker()
+    }
+
+    private func showBrowserExtensionDragStage() {
+        didOpenBrowserExtensions = true
+        focusPicker()
     }
 
     private var dismissButton: some View {
@@ -646,18 +783,26 @@ struct QuestionPickerContent: View {
     private func handleBrowserExtensionKey(_ key: QuestionPickerKey, question: QuestionSpec) -> Bool {
         switch key {
         case .enter, .space:
-            guard let label = question.options.first?.label else { return true }
-            performBrowserSetupAction(label)
+            if !didOpenBrowserExtensions {
+                performBrowserSetupAction("Open Extensions")
+            }
             return true
         case .left:
-            if let backOptionLabel = question.backOptionLabel {
+            if didOpenBrowserExtensions {
+                showBrowserExtensionOpenStage()
+            } else if let backOptionLabel = question.backOptionLabel {
                 submitDirectAnswer(question, label: backOptionLabel)
+            }
+            return true
+        case .right:
+            if !didOpenBrowserExtensions {
+                showBrowserExtensionDragStage()
             }
             return true
         case .escape:
             cancel()
             return true
-        case .up, .down, .right, .digit:
+        case .up, .down, .digit:
             return true
         }
     }

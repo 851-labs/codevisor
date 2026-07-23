@@ -923,6 +923,20 @@ final class SessionController {
         }
     }
 
+    func browserExtensionArchive() async throws -> URL {
+        guard let serverClient else {
+            throw CodevisorServerClientError.invalidResponse
+        }
+        return try await serverClient.browserExtensionArchive()
+    }
+
+    func browserExtensionIcon() async throws -> URL {
+        guard let serverClient else {
+            throw CodevisorServerClientError.invalidResponse
+        }
+        return try await serverClient.browserExtensionIcon()
+    }
+
     // MARK: - Codex plan approval
 
     /// Codex has no ExitPlanMode tool: when a plan-mode turn ends having

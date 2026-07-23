@@ -278,6 +278,8 @@ export interface McpManager {
   readonly openBrowserExtensionFolder: () => Promise<BrowserUseConfiguration>
   readonly openBrowserExtensionsPage: () => Promise<BrowserUseConfiguration>
   readonly openBrowserExtensionWebStore: () => Promise<BrowserUseConfiguration>
+  readonly browserExtensionArchive: () => string
+  readonly browserExtensionIcon: () => string
   readonly closeSession: (sessionId: string) => Promise<void>
   readonly handleGatewayRequest: (
     request: IncomingMessage,
@@ -1912,6 +1914,8 @@ export const makeMcpManager = (config: McpManagerConfig): McpManager => {
       browserProvider.openExtensionWebStore()
       return manager.browserConfiguration()
     },
+    browserExtensionArchive: () => browserProvider.extensionArchivePath(),
+    browserExtensionIcon: () => browserProvider.extensionIconPath(),
     closeSession: async (sessionId) => {
       const gatewayId = sessionGatewayIds.get(sessionId)
       sessionGatewayIds.delete(sessionId)

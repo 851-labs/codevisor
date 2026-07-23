@@ -9,6 +9,7 @@ import type { AutomationProviderContext, AutomationToolProvider } from "./automa
 import { textToolResult } from "./automation-provider.js"
 import { CdpConnection, delay, evaluatedValue } from "./browser-cdp.js"
 import {
+  browserExtensionArchivePath,
   browserExtensionInstallation,
   chromeBrowserAvailable,
   CODEVISOR_BROWSER_EXTENSION_ID,
@@ -29,6 +30,7 @@ export interface BrowserUseProviderStatus extends Readonly<Record<string, unknow
   readonly chromeAvailable: boolean
   readonly extensionSetupMode: BrowserExtensionSetupMode
   readonly developmentExtensionPath?: string
+  readonly extensionArchivePath?: string
 }
 
 export interface BrowserUseProvider extends AutomationToolProvider {
@@ -43,6 +45,8 @@ export interface BrowserUseProvider extends AutomationToolProvider {
   readonly openDevelopmentExtensionPage: () => void
   readonly openDevelopmentExtensionInstaller: () => void
   readonly openExtensionWebStore: () => void
+  readonly extensionArchivePath: () => string
+  readonly extensionIconPath: () => string
   readonly configureExtensionRelay: (serverBaseUrl: string) => void
 }
 
@@ -2622,6 +2626,7 @@ export const makeBrowserUseProvider = (dataDir: string): BrowserUseProvider => {
   >()
   const extensionRelay = makeBrowserExtensionRelay()
   const developmentExtensionPath = prepareBrowserExtension(dataDir, "http://127.0.0.1:49361")
+  const extensionArchive = browserExtensionArchivePath(developmentExtensionPath)
   const extensionSetupMode: BrowserExtensionSetupMode =
     process.env.CODEVISOR_DEV_WORKTREE !== undefined ||
     process.env.HERDMAN_DEV_WORKTREE !== undefined
@@ -2651,6 +2656,7 @@ export const makeBrowserUseProvider = (dataDir: string): BrowserUseProvider => {
       extensionSetupMode,
       chromeAvailable: chromeBrowserAvailable(),
       developmentExtensionPath,
+      extensionArchivePath: extensionArchive,
       userBrowserOpen: userChromiumIsRunning(),
       installing: setupPromise !== undefined,
       ...(setupError === undefined ? {} : { error: setupError })
@@ -4280,6 +4286,8 @@ export const makeBrowserUseProvider = (dataDir: string): BrowserUseProvider => {
     openDevelopmentExtensionInstaller: () =>
       openBrowserExtensionDevelopmentInstaller(developmentExtensionPath),
     openExtensionWebStore: () => openBrowserExtensionWebStore(),
+    extensionArchivePath: () => extensionArchive,
+    extensionIconPath: () => join(developmentExtensionPath, "icons", "128.png"),
     configureExtensionRelay: (serverBaseUrl) => {
       prepareBrowserExtension(dataDir, serverBaseUrl)
     },

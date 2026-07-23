@@ -144,28 +144,16 @@ export const makeBrowserSetupBroker = (
     let installerOpened = false
     while (true) {
       if (provider.status().extensionConnected) return finish("extension")
-      const development = provider.status().extensionSetupMode === "development"
       const setup = await ask(sessionId, {
         id: "browser_preference",
         header: installerOpened ? "Finish in Chrome" : "Connect Chrome",
-        question: "Drop the Codevisor extension folder into the Extensions page in Chrome.",
-        options: development
-          ? [
-              {
-                label: "Open Extensions",
-                description: "Open the Extensions page in Chrome."
-              },
-              {
-                label: "Show Folder",
-                description: "Show the Codevisor extension folder in Finder."
-              }
-            ]
-          : [
-              {
-                label: "Open Web Store",
-                description: "Install Codevisor from the Chrome Web Store."
-              }
-            ],
+        question: "Drag the Codevisor extension into the Extensions page in Chrome.",
+        options: [
+          {
+            label: "Open Extensions",
+            description: "Open the Extensions page in Chrome."
+          }
+        ],
         multiSelect: false,
         allowsOther: false,
         backOptionLabel: "Back",
@@ -177,16 +165,8 @@ export const makeBrowserSetupBroker = (
       switch (selectedAnswer(result).label) {
         case "Back":
           return "back"
-        case "Show Folder":
-          provider.openDevelopmentExtensionFolder()
-          installerOpened = true
-          break
         case "Open Extensions":
           provider.openDevelopmentExtensionPage()
-          installerOpened = true
-          break
-        case "Open Web Store":
-          provider.openExtensionWebStore()
           installerOpened = true
           break
         default:

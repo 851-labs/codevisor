@@ -166,7 +166,7 @@ const sections = [
         </p>
         <p>
           Questions or privacy requests can be sent to{" "}
-          <a href="mailto:dylan@851.sh">dylan@851.sh</a>.
+          <a href="mailto:hello@codevisor.dev">hello@codevisor.dev</a>.
         </p>
       </>
     )
@@ -242,8 +242,8 @@ function PrivacyPolicy() {
       <footer className="border-t border-hairline px-6 py-8">
         <div className="mx-auto flex max-w-5xl items-center justify-between gap-4 text-xs text-muted">
           <span>© {new Date().getFullYear()} 851 Inc.</span>
-          <a href="mailto:dylan@851.sh" className="transition-colors hover:text-text">
-            dylan@851.sh
+          <a href="mailto:hello@codevisor.dev" className="transition-colors hover:text-text">
+            hello@codevisor.dev
           </a>
         </div>
       </footer>
