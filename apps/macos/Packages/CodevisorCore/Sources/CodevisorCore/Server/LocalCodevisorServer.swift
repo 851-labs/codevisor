@@ -574,6 +574,7 @@ public final class LocalCodevisorServer {
             "codevisor-server.sqlite-shm",
             "codevisor-server.sqlite-wal",
             "data-upgrade.json",
+            "attachments",
             "server-updates",
             "harness-profiles",
             "harness-secrets",

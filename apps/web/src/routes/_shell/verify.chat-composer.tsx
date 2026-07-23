@@ -29,7 +29,7 @@ const attachments: ComposerAttachmentItem[] = [
     kind: "file",
     sizeBytes: 32_000_000,
     state: "failed",
-    error: "Larger than 25 MB"
+    error: "Upload failed"
   },
   {
     id: "image",

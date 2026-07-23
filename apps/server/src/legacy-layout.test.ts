@@ -25,10 +25,17 @@ describe("Codevisor tmp data dir migration", () => {
     const temporaryDirectory = join(root, "tmp")
     const dataDirectory = join(root, ".codevisor", "data")
     await mkdir(join(temporaryDirectory, "harness-secrets", "claude-code"), { recursive: true })
+    await mkdir(join(temporaryDirectory, "attachments", "objects", "sha256", "ab"), {
+      recursive: true
+    })
     await writeFile(join(temporaryDirectory, "codevisor-server.sqlite"), "database")
     await writeFile(join(temporaryDirectory, "codevisor-server.sqlite-wal"), "wal")
     await writeFile(join(temporaryDirectory, "mcp-secret-key"), "key")
     await writeFile(join(temporaryDirectory, "harness-secrets", "claude-code", "api-key"), "sk")
+    await writeFile(
+      join(temporaryDirectory, "attachments", "objects", "sha256", "ab", "abcdef"),
+      "attachment"
+    )
     await writeFile(join(temporaryDirectory, "unrelated.txt"), "left behind")
 
     await migrateTmpDataDir({
@@ -46,6 +53,9 @@ describe("Codevisor tmp data dir migration", () => {
     await expect(
       readFile(join(dataDirectory, "harness-secrets", "claude-code", "api-key"), "utf8")
     ).resolves.toBe("sk")
+    await expect(
+      readFile(join(dataDirectory, "attachments", "objects", "sha256", "ab", "abcdef"), "utf8")
+    ).resolves.toBe("attachment")
     await expect(readFile(join(temporaryDirectory, "unrelated.txt"), "utf8")).resolves.toBe(
       "left behind"
     )

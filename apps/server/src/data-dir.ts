@@ -2,7 +2,7 @@ import { homedir } from "node:os"
 import { join } from "node:path"
 
 /// Canonical Codevisor directory layout, identical on every OS:
-///   ~/.codevisor/data   – sqlite database + sidecar state (profiles, secrets)
+///   ~/.codevisor/data   – sqlite metadata + attachments and sidecar state
 ///   ~/.codevisor/server – standalone install runtime (managed by install.sh)
 ///   ~/.codevisor/logs   – server logs for non-service runs
 ///   ~/.codevisor/repos  – managed git clones (see @codevisor/db paths)

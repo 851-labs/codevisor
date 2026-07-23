@@ -5,10 +5,11 @@ import type {
   RuntimeEvent,
   RuntimeEventSink
 } from "@codevisor/agent-runtime"
-import { randomUUID } from "node:crypto"
+import { createHash, randomUUID } from "node:crypto"
 import type {
   AttachmentRef,
   CreateSessionRequest,
+  FileMetadata,
   UpdateSessionRequest,
   EventEnvelope,
   Harness,
@@ -72,7 +73,13 @@ import {
   decode,
   makeOpenApiDocument
 } from "@codevisor/api"
-import { DatabaseError, managedRepoPath, type CodevisorDatabaseService } from "@codevisor/db"
+import {
+  AttachmentStoreError,
+  DatabaseError,
+  managedRepoPath,
+  type AttachmentStore,
+  type CodevisorDatabaseService
+} from "@codevisor/db"
 import type { TerminalManagerService } from "@codevisor/terminal"
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http"
 import { existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs"
@@ -144,6 +151,7 @@ export interface CodevisorServerConfig {
 
 export interface CodevisorServerServices {
   readonly db: CodevisorDatabaseService
+  readonly attachments: AttachmentStore
   readonly agents: AgentRuntimeService
   readonly terminal: TerminalManagerService
   readonly auth?: HarnessAuthManager
@@ -222,7 +230,6 @@ export const makeEventFanout: Effect.Effect<EventFanout> = Effect.map(
   (pubsub) => new EventFanout(pubsub)
 )
 
-const MAX_FILE_UPLOAD_BYTES = 25 * 1024 * 1024
 const MAX_PROMPT_ATTACHMENTS = 10
 /// Attachment temp files older than this are swept at server start; agents
 /// may read a materialized path late in a turn, so nothing is deleted while
@@ -257,18 +264,52 @@ const sanitizeFileName = (name: string): string => {
   return cleaned.length === 0 ? "attachment" : cleaned
 }
 
+const readAttachment = async (
+  services: CodevisorServerServices,
+  fileId: string
+): Promise<{ readonly data: Buffer; readonly metadata: FileMetadata }> => {
+  const record = await run(services.db.getFileStorage(fileId))
+  if (record === undefined) {
+    throw new HttpFailure(404, `File not found: ${fileId}`)
+  }
+  const store = services.attachments
+  if (record.storageState !== "sqlite") {
+    try {
+      return { data: await store.read(record.metadata), metadata: record.metadata }
+    } catch (cause) {
+      if (record.storageState === "disk") throw cause
+      // Dual rows retain their legacy bytes until the disk object has been
+      // reverified, so a damaged copy remains recoverable during migration.
+    }
+  }
+  if (
+    record.data.byteLength !== record.metadata.sizeBytes ||
+    createHash("sha256").update(record.data).digest("hex") !== record.metadata.sha256
+  ) {
+    throw new AttachmentStoreError(`Attachment bytes are missing or corrupt: ${fileId}`)
+  }
+  await store.put(record.data, record.metadata.sha256)
+  await run(services.db.markFileStorageDual(fileId))
+  return { data: record.data, metadata: record.metadata }
+}
+
 /// Materializes attachment bytes as temp files so path-based provider inputs
 /// (Codex localImage, path notes for arbitrary files) can reference them.
 /// Files are immutable, so an existing materialization is reused.
 const resolvePromptAttachments = async (
-  db: CodevisorDatabaseService,
+  services: CodevisorServerServices,
   refs: ReadonlyArray<AttachmentRef>
 ): Promise<Array<PromptAttachmentInput>> => {
   const resolved: Array<PromptAttachmentInput> = []
   for (const ref of refs) {
-    const file = await run(db.getFile(ref.fileId))
-    if (file === undefined) {
-      throw new HttpFailure(422, `Attachment file missing: ${ref.fileId}`)
+    let file: Awaited<ReturnType<typeof readAttachment>>
+    try {
+      file = await readAttachment(services, ref.fileId)
+    } catch (cause) {
+      if (cause instanceof HttpFailure && cause.status === 404) {
+        throw new HttpFailure(422, `Attachment file missing: ${ref.fileId}`)
+      }
+      throw cause
     }
     const directory = join(attachmentsTempRoot(), ref.fileId)
     mkdirSync(directory, { recursive: true })
@@ -2940,7 +2981,7 @@ const runPromptInBackground = async (
     const input =
       refs.length === 0
         ? text
-        : { attachments: await resolvePromptAttachments(services.db, refs), text }
+        : { attachments: await resolvePromptAttachments(services, refs), text }
     await run(services.agents.prompt(agentSession.sessionId, input))
   } catch (cause) {
     if (isAuthenticationFailure(cause)) {
@@ -2992,23 +3033,28 @@ const routeFiles = async (
   url: URL
 ): Promise<boolean> => {
   if (request.method === "POST" && url.pathname === "/v1/files") {
-    const data = await readRawBody(request, MAX_FILE_UPLOAD_BYTES)
+    const store = services.attachments
+    const object = await store.putStream(request)
     const name = sanitizeFileName(url.searchParams.get("name") ?? "attachment")
     const mimeType =
       request.headers["content-type"]?.split(";")[0]?.trim() ?? "application/octet-stream"
-    const metadata = await run(
-      services.db.createFile(name, mimeType, sniffAttachmentKind(data, mimeType), data)
-    )
+    const metadata: FileMetadata = {
+      id: randomUUID(),
+      name,
+      mimeType,
+      sizeBytes: object.sizeBytes,
+      sha256: object.sha256,
+      kind: sniffAttachmentKind(object.header, mimeType),
+      createdAt: new Date().toISOString()
+    }
+    await run(services.db.createDiskFile(metadata))
     writeJson(response, 201, metadata)
     return true
   }
 
   const fileId = matchRoute(url.pathname, "/v1/files/:id")
   if (fileId !== undefined && request.method === "GET") {
-    const file = await run(services.db.getFile(fileId))
-    if (file === undefined) {
-      throw new HttpFailure(404, `File not found: ${fileId}`)
-    }
+    const file = await readAttachment(services, fileId)
     response.writeHead(200, {
       // Files are immutable (content is stored once at upload), so clients
       // may cache aggressively.
@@ -3507,25 +3553,6 @@ const readSchema = async <S extends Schema.ConstraintDecoder<unknown>>(
   }
 }
 
-const readRawBody = async (request: IncomingMessage, maxBytes: number): Promise<Buffer> => {
-  const chunks: Array<Buffer> = []
-  let total = 0
-  for await (const chunk of request) {
-    /* v8 ignore next -- Node HTTP request body chunks are Buffers in this server. */
-    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
-    total += buffer.byteLength
-    if (total > maxBytes) {
-      // Abort while reading rather than buffering the whole oversized body.
-      throw new HttpFailure(
-        413,
-        `File exceeds the ${Math.floor(maxBytes / (1024 * 1024))} MB limit`
-      )
-    }
-    chunks.push(buffer)
-  }
-  return Buffer.concat(chunks)
-}
-
 const readJson = async (request: IncomingMessage): Promise<unknown> => {
   const chunks: Array<Buffer> = []
   for await (const chunk of request) {
@@ -3593,6 +3620,10 @@ const writeFailure = (response: ServerResponse, cause: unknown): void => {
       error: cause.message,
       ...(cause.code === undefined ? {} : { code: cause.code })
     })
+    return
+  }
+  if (cause instanceof AttachmentStoreError) {
+    writeJson(response, 500, { error: cause.message })
     return
   }
   if (cause instanceof SkillsError) {

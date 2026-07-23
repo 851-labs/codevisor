@@ -45,6 +45,14 @@ import { Context, Effect, Layer, Schema } from "effect"
 import { resolveSessionCwd, worktreePath } from "./paths.js"
 
 export {
+  AttachmentStoreError,
+  makeAttachmentStore,
+  migrateAttachmentBlobs,
+  type AttachmentStore,
+  type StoredAttachmentObject
+} from "./attachment-store.js"
+
+export {
   managedRepoPath,
   managedReposRoot,
   resolveSessionCwd,
@@ -359,6 +367,17 @@ interface FileRow {
   readonly sha256: string
   readonly kind: AttachmentKind
   readonly created_at: string
+  readonly storage_state: FileStorageState
+}
+
+export type FileStorageState = "sqlite" | "dual" | "disk"
+
+export interface FileStorageRecord {
+  readonly metadata: FileMetadata
+  readonly storageState: FileStorageState
+  /// Present for legacy/dual rows. Disk-only rows deliberately retain an empty
+  /// BLOB sentinel until a later schema migration removes the column.
+  readonly data: Buffer
 }
 
 interface UpdateRow {
@@ -1069,6 +1088,14 @@ const migrations: ReadonlyArray<Migration> = [
     id: 28,
     name: "remove automation approvals",
     sql: "drop table if exists automation_target_grants;"
+  },
+  {
+    id: 29,
+    name: "disk backed file attachments",
+    sql: `
+      alter table files add column storage_state text not null default 'sqlite'
+        check(storage_state in ('sqlite', 'dual', 'disk'));
+    `
   }
 ]
 
@@ -2065,10 +2092,24 @@ export interface CodevisorDatabaseService {
     kind: AttachmentKind,
     data: Buffer
   ) => Effect.Effect<FileMetadata, DatabaseError>
+  readonly createDiskFile: (metadata: FileMetadata) => Effect.Effect<FileMetadata, DatabaseError>
   readonly getFileMetadata: (id: string) => Effect.Effect<FileMetadata | undefined, DatabaseError>
   readonly getFile: (
     id: string
   ) => Effect.Effect<{ metadata: FileMetadata; data: Buffer } | undefined, DatabaseError>
+  readonly getFileStorage: (
+    id: string
+  ) => Effect.Effect<FileStorageRecord | undefined, DatabaseError>
+  readonly listFileStorage: (
+    state: FileStorageState,
+    limit: number
+  ) => Effect.Effect<ReadonlyArray<FileStorageRecord>, DatabaseError>
+  readonly fileStorageCounts: Effect.Effect<
+    Readonly<Record<FileStorageState, number>>,
+    DatabaseError
+  >
+  readonly markFileStorageDual: (id: string) => Effect.Effect<void, DatabaseError>
+  readonly markFileStorageDisk: (id: string) => Effect.Effect<void, DatabaseError>
   readonly listPromptQueue: (
     sessionId: string
   ) => Effect.Effect<ReadonlyArray<PromptQueueItem>, DatabaseError>
@@ -3044,6 +3085,26 @@ const createService = (
           )
         return metadata
       }),
+    createDiskFile: (metadata) =>
+      attempt("createDiskFile", () => {
+        sqlite
+          .prepare(
+            `insert into files (
+              id, name, mime_type, size_bytes, sha256, kind, created_at, data, storage_state
+            ) values (?, ?, ?, ?, ?, ?, ?, ?, 'disk')`
+          )
+          .run(
+            metadata.id,
+            metadata.name,
+            metadata.mimeType,
+            metadata.sizeBytes,
+            metadata.sha256,
+            metadata.kind,
+            metadata.createdAt,
+            Buffer.alloc(0)
+          )
+        return metadata
+      }),
     getFileMetadata: (id) =>
       attempt("getFileMetadata", () => {
         const row = sqlite
@@ -3061,6 +3122,64 @@ const createService = (
         return row === undefined
           ? undefined
           : { metadata: fileMetadataFromRow(row), data: row.data }
+      }),
+    getFileStorage: (id) =>
+      attempt("getFileStorage", () => {
+        const row = sqlite.prepare("select * from files where id = ?").get(id) as
+          | (FileRow & { readonly data: Buffer })
+          | undefined
+        return row === undefined ? undefined : fileStorageRecordFromRow(row)
+      }),
+    listFileStorage: (state, limit) =>
+      attempt("listFileStorage", () =>
+        (
+          sqlite
+            .prepare("select * from files where storage_state = ? order by rowid asc limit ?")
+            .all(state, Math.max(1, limit)) as ReadonlyArray<FileRow & { readonly data: Buffer }>
+        ).map(fileStorageRecordFromRow)
+      ),
+    fileStorageCounts: attempt("fileStorageCounts", () => {
+      const counts: Record<FileStorageState, number> = { disk: 0, dual: 0, sqlite: 0 }
+      const rows = sqlite
+        .prepare("select storage_state, count(*) as count from files group by storage_state")
+        .all() as ReadonlyArray<{
+        readonly storage_state: FileStorageState
+        readonly count: number
+      }>
+      for (const row of rows) counts[row.storage_state] = Number(row.count)
+      return counts
+    }),
+    markFileStorageDual: (id) =>
+      attempt("markFileStorageDual", () => {
+        const result = sqlite
+          .prepare(
+            "update files set storage_state = 'dual' where id = ? and storage_state = 'sqlite'"
+          )
+          .run(id)
+        if (result.changes === 0) {
+          const current = sqlite.prepare("select storage_state from files where id = ?").get(id) as
+            | { readonly storage_state: FileStorageState }
+            | undefined
+          if (current?.storage_state !== "dual" && current?.storage_state !== "disk") {
+            throw new Error(`File not found while marking dual storage: ${id}`)
+          }
+        }
+      }),
+    markFileStorageDisk: (id) =>
+      attempt("markFileStorageDisk", () => {
+        const result = sqlite
+          .prepare(
+            "update files set storage_state = 'disk', data = x'' where id = ? and storage_state = 'dual'"
+          )
+          .run(id)
+        if (result.changes === 0) {
+          const current = sqlite.prepare("select storage_state from files where id = ?").get(id) as
+            | { readonly storage_state: FileStorageState }
+            | undefined
+          if (current?.storage_state !== "disk") {
+            throw new Error(`File is not ready for disk-only storage: ${id}`)
+          }
+        }
       }),
     listPromptQueue: (sessionId) =>
       attempt("listPromptQueue", () => {
@@ -3928,6 +4047,12 @@ const fileMetadataFromRow = (row: FileRow): FileMetadata => ({
   sha256: row.sha256,
   kind: row.kind,
   createdAt: row.created_at
+})
+
+const fileStorageRecordFromRow = (row: FileRow & { readonly data: Buffer }): FileStorageRecord => ({
+  metadata: fileMetadataFromRow(row),
+  storageState: row.storage_state,
+  data: row.data
 })
 
 const listPromptQueueSync = (

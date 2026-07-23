@@ -352,6 +352,10 @@ struct LocalCodevisorServerTests {
             at: legacy.appendingPathComponent("harness-secrets/claude-code", isDirectory: true),
             withIntermediateDirectories: true
         )
+        try fm.createDirectory(
+            at: legacy.appendingPathComponent("attachments/objects/sha256/ab", isDirectory: true),
+            withIntermediateDirectories: true
+        )
         try "database".write(
             to: legacy.appendingPathComponent("codevisor-server.sqlite"),
             atomically: true, encoding: .utf8
@@ -365,6 +369,10 @@ struct LocalCodevisorServerTests {
         )
         try "sk".write(
             to: legacy.appendingPathComponent("harness-secrets/claude-code/api-key"),
+            atomically: true, encoding: .utf8
+        )
+        try "attachment".write(
+            to: legacy.appendingPathComponent("attachments/objects/sha256/ab/abcdef"),
             atomically: true, encoding: .utf8
         )
         try "keep".write(
@@ -384,6 +392,12 @@ struct LocalCodevisorServerTests {
         #expect(
             try String(contentsOf: data.appendingPathComponent("harness-secrets/claude-code/api-key"), encoding: .utf8)
                 == "sk"
+        )
+        #expect(
+            try String(
+                contentsOf: data.appendingPathComponent("attachments/objects/sha256/ab/abcdef"),
+                encoding: .utf8
+            ) == "attachment"
         )
         #expect(
             try String(contentsOf: logs.appendingPathComponent("server.log"), encoding: .utf8) == "log"

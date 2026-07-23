@@ -14,7 +14,7 @@ import type {
   SessionConfigOption,
   SkillsScan
 } from "@codevisor/api"
-import { makeDatabase, type CodevisorDatabaseService } from "@codevisor/db"
+import { makeAttachmentStore, makeDatabase, type CodevisorDatabaseService } from "@codevisor/db"
 import Database from "better-sqlite3"
 import type {
   TerminalHandlers,
@@ -34,6 +34,7 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
+  statSync,
   symlinkSync,
   utimesSync,
   writeFileSync
@@ -572,6 +573,7 @@ const makeServices = async (serverId = "test") => {
     agents,
     services: {
       agents,
+      attachments: makeAttachmentStore(dir),
       db,
       mcp,
       terminal: makeTerminalManager({ defaultShell: "/bin/sh", env: {}, spawner })
@@ -4535,6 +4537,9 @@ describe("@codevisor/server", () => {
       name: "shot.png",
       sizeBytes: pngBytes.byteLength
     })
+    const pngStorage = await run(services.db.getFileStorage(String(png.body.id)))
+    expect(pngStorage).toMatchObject({ storageState: "disk", data: Buffer.alloc(0) })
+    expect(existsSync(services.attachments.objectPath(String(png.body.sha256)))).toBe(true)
     const jpeg = await upload(Buffer.from([0xff, 0xd8, 0xff, 0xe0, 9, 9]), { name: "raw.bin" })
     expect(jpeg.body).toMatchObject({ kind: "image", mimeType: "application/octet-stream" })
     const gif = await upload(Buffer.from("GIF89a-data"), { contentType: "image/gif" })
@@ -4567,12 +4572,22 @@ describe("@codevisor/server", () => {
     expect(Buffer.from(await download.arrayBuffer()).equals(pngBytes)).toBe(true)
     expect((await fetch(`${server.url}/v1/files/missing-file`)).status).toBe(404)
 
-    // Oversized uploads abort with 413.
-    const oversized = await fetch(`${server.url}/v1/files`, {
-      body: Buffer.alloc(25 * 1024 * 1024 + 1),
-      method: "POST"
+    // The former 25 MB cap is gone; large uploads stream to the object store.
+    const largeBytes = Buffer.alloc(25 * 1024 * 1024 + 1, 0x7a)
+    const large = await upload(largeBytes, {
+      contentType: "application/octet-stream",
+      name: "large.bin"
     })
-    expect(oversized.status).toBe(413)
+    expect(large.status).toBe(201)
+    expect(large.body).toMatchObject({ name: "large.bin", sizeBytes: largeBytes.byteLength })
+    expect(statSync(services.attachments.objectPath(String(large.body.sha256))).size).toBe(
+      largeBytes.byteLength
+    )
+    const afterLarge = await upload(Buffer.from("still healthy"), {
+      contentType: "text/plain",
+      name: "after-large.txt"
+    })
+    expect(afterLarge.status).toBe(201)
 
     const sessionResponse = await jsonRequest(server, "/v1/sessions", {
       body: JSON.stringify({

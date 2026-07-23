@@ -5,7 +5,13 @@ import {
   type BackgroundTerminalIntegration
 } from "@codevisor/agent-runtime"
 import type { DataUpgradeProgress, UpdateInfo } from "@codevisor/api"
-import { makeDatabase, worktreesRoot, type CodevisorDatabaseService } from "@codevisor/db"
+import {
+  makeAttachmentStore,
+  makeDatabase,
+  migrateAttachmentBlobs,
+  worktreesRoot,
+  type CodevisorDatabaseService
+} from "@codevisor/db"
 import { makeTerminalManager, type TerminalManagerService } from "@codevisor/terminal"
 import { Effect } from "effect"
 import { spawn } from "node:child_process"
@@ -408,6 +414,15 @@ export const runServe = (args: Record<string, string>): Promise<void> => {
         )
       )
     )
+    const attachments = makeAttachmentStore(dirname(databasePath))
+    yield* Effect.tryPromise({
+      try: () =>
+        migrateAttachmentBlobs(db, attachments, (progress) =>
+          writeDataUpgradeStatus(upgradeStatusPath, progress)
+        ),
+      catch: (cause) =>
+        cause instanceof Error ? cause : new Error(`Attachment migration failed: ${String(cause)}`)
+    })
     // Self-update needs a known current version to compare against; dev runs
     // without a VERSION file simply don't offer it. The new runtime reads its
     // own bundled VERSION, so --version is not forwarded.
@@ -508,6 +523,7 @@ export const runServe = (args: Record<string, string>): Promise<void> => {
     const server = yield* startCodevisorServer(
       {
         agents,
+        attachments,
         auth,
         customHarnesses: customHarnessStore,
         db,

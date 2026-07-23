@@ -4,7 +4,6 @@ import { useCallback, useEffect, useRef, useSyncExternalStore } from "react"
 import { useApi } from "../../lib/api"
 
 export const MAX_COMPOSER_ATTACHMENTS = 10
-export const MAX_COMPOSER_ATTACHMENT_BYTES = 25 * 1024 * 1024
 
 export interface ComposerAttachmentItem {
   id: string
@@ -222,11 +221,10 @@ export function useComposerAttachments(persistenceKey?: string) {
           kind,
           sizeBytes: file.size,
           previewUrl,
-          state: file.size > MAX_COMPOSER_ATTACHMENT_BYTES ? "failed" : "uploading",
-          error: file.size > MAX_COMPOSER_ATTACHMENT_BYTES ? "Larger than 25 MB" : undefined
+          state: "uploading"
         }
         setAttachments((current) => [...current, attachment])
-        if (attachment.state === "uploading") startUpload(attachment)
+        startUpload(attachment)
       }
     },
     [setAttachments, setError, startUpload, store]
@@ -245,7 +243,7 @@ export function useComposerAttachments(persistenceKey?: string) {
   const retryAttachment = useCallback(
     (id: string) => {
       const existing = store.snapshot.attachments.find((entry) => entry.id === id)
-      if (existing == null || existing.file.size > MAX_COMPOSER_ATTACHMENT_BYTES) return
+      if (existing == null) return
       setAttachments((current) =>
         current.map((entry) =>
           entry.id === id ? { ...entry, state: "uploading", error: undefined } : entry
