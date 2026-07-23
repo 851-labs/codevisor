@@ -386,7 +386,14 @@ final class SessionController {
         }
         guard model == nil else { return }
         seedExistingSessionConfiguration(from: session)
-        guard identityChanged, session.agentSessionId?.isEmpty == false else { return }
+        // An in-flight connect owns the validation state machine: a refresh
+        // snapshot arriving mid-connect usually carries the agent session id
+        // that this very connect just minted server-side (`session.updated`
+        // from `ensureAgentSessionFor`). Resetting to `.connecting` here would
+        // wedge the composer forever — nothing on the send path recomputes the
+        // state after the model is published. The id itself was still adopted
+        // above; the connect settles the flags when it completes.
+        guard identityChanged, session.agentSessionId?.isEmpty == false, !isConnecting else { return }
         didLoadExistingHarnessCapabilities = false
         didFinishExistingRuntimeConfiguration = false
         didLoadExistingRuntimeConfiguration = false
@@ -2250,6 +2257,19 @@ final class SessionController {
 
         configCache.store(model.configOptions, forHarness: harnessId, onServer: project.serverId)
         configOptionsByHarness[harnessId] = model.configOptions
+
+        // This connect created the agent session (there was no id to resume
+        // when it started), so there is no prior runtime configuration to
+        // validate — the just-created runtime is authoritative and its config
+        // was written by the replay above. Settle the flags so any later
+        // recompute (a mid-connect `session.updated` refresh, a pane remount
+        // re-running `prepareExistingSessionCapabilities`) resolves to
+        // `.ready` instead of wedging the composer in `.connecting`.
+        if runtimeConnect == nil {
+            didLoadExistingRuntimeConfiguration = true
+            didFinishExistingRuntimeConfiguration = true
+            updateConfigurationValidationState()
+        }
         return model
     }
 
