@@ -85,6 +85,16 @@ export interface SkillsManager {
   readonly sync: (request?: {
     readonly directoryNames?: ReadonlyArray<string> | undefined
   }) => Promise<SkillsScan>
+  /// Install, update, or remove app-owned skills without surfacing them as
+  /// user-managed entries. The marker prevents Codevisor from overwriting a
+  /// same-name skill it does not own.
+  readonly syncManaged: (skills: ReadonlyArray<ManagedSkillSpec>) => Promise<void>
+}
+
+export interface ManagedSkillSpec {
+  readonly directoryName: string
+  readonly sourcePath: string
+  readonly enabled: boolean
 }
 
 /// Typed failure the HTTP layer maps to a status code: invalid → 400,
@@ -114,6 +124,8 @@ export interface SkillsManagerConfig {
 }
 
 export const CANONICAL_SKILLS_DIR = "~/.agents/skills"
+const MANAGED_SKILL_MARKER = ".codevisor-managed-skill"
+const MANAGED_SKILL_MARKER_CONTENT = "codevisor-managed-skill-v1\n"
 
 /// Kebab-case a skill directory name, converting path-traversal attempts and
 /// special characters into hyphens. Ported from skills installer.ts.
@@ -304,6 +316,16 @@ export const makeSkillsManager = (config: SkillsManagerConfig): SkillsManager =>
 
   const canonicalDir = resolveNativeConfigPath(CANONICAL_SKILLS_DIR, { env, home })
 
+  const isManagedSkill = async (path: string): Promise<boolean> => {
+    try {
+      return (
+        (await readFile(join(path, MANAGED_SKILL_MARKER), "utf8")) === MANAGED_SKILL_MARKER_CONTENT
+      )
+    } catch {
+      return false
+    }
+  }
+
   const listCanonical = async (): Promise<ReadonlyArray<CanonicalSkill>> => {
     let entries
     try {
@@ -318,6 +340,7 @@ export const makeSkillsManager = (config: SkillsManagerConfig): SkillsManager =>
         continue
       }
       if (!(await hasSkillFile(path))) continue
+      if (await isManagedSkill(path)) continue
       skills.push({
         directoryName: entry.name,
         document: await readSkillDocument(path, entry.name),
@@ -343,6 +366,7 @@ export const makeSkillsManager = (config: SkillsManagerConfig): SkillsManager =>
     const results: Array<HarnessEntry> = []
     for (const entry of entries) {
       const path = join(skillsDir, entry.name)
+      if (await isManagedSkill(path)) continue
       if (entry.isSymbolicLink()) {
         let target: string
         try {
@@ -1128,6 +1152,67 @@ export const makeSkillsManager = (config: SkillsManagerConfig): SkillsManager =>
     return list()
   }
 
+  const syncManaged = async (skills: ReadonlyArray<ManagedSkillSpec>): Promise<void> => {
+    for (const skill of skills) {
+      const destination = assertSafeChild(canonicalDir, skill.directoryName)
+
+      let existing
+      try {
+        existing = await lstat(destination)
+      } catch {
+        existing = undefined
+      }
+
+      if (existing !== undefined && !(await isManagedSkill(destination))) {
+        // A user owns this name. Never replace or hide it; the managed skill
+        // remains unavailable until the collision is resolved.
+        continue
+      }
+
+      // Remove app-owned copy-mode installs before replacing the canonical
+      // source. Symlinks can stay when enabled because they resolve to the
+      // freshly written canonical directory; disabled skills remove both.
+      for (const definition of config.agents.catalog) {
+        const spec = definition.skills
+        if (
+          spec === undefined ||
+          spec.readsCanonical === true ||
+          spec.alsoReadsCanonical === true
+        ) {
+          continue
+        }
+        const skillsDir = resolveNativeConfigPath(spec.globalDir, { env, home })
+        const installed = join(skillsDir, skill.directoryName)
+        let installedStats
+        try {
+          installedStats = await lstat(installed)
+        } catch {
+          installedStats = undefined
+        }
+        if (installedStats === undefined) continue
+        /* v8 ignore next -- copy-mode harnesses exercise the non-symlink recovery branch. */
+        if (installedStats.isSymbolicLink()) {
+          if (!skill.enabled) await rm(installed, { force: true })
+          continue
+        }
+        /* v8 ignore next -- recovery for a stale managed copy-mode install. */
+        if (await isManagedSkill(installed)) await safeRemove(installed)
+      }
+
+      if (existing !== undefined) await safeRemove(destination)
+      if (!skill.enabled) continue
+      /* v8 ignore next -- packaged managed sources are validated during release assembly. */
+      if (!(await isDirectory(skill.sourcePath)) || !(await hasSkillFile(skill.sourcePath))) {
+        throw new Error(`Managed skill source is invalid: ${skill.sourcePath}`)
+      }
+      await copyDirectory(skill.sourcePath, destination)
+      await writeFile(join(destination, MANAGED_SKILL_MARKER), MANAGED_SKILL_MARKER_CONTENT, "utf8")
+    }
+
+    const enabled = skills.filter((skill) => skill.enabled).map((skill) => skill.directoryName)
+    await installEverywhere(enabled)
+  }
+
   return {
     create,
     discoverRemote,
@@ -1137,7 +1222,8 @@ export const makeSkillsManager = (config: SkillsManagerConfig): SkillsManager =>
     makeGlobal,
     remove,
     setInstalled,
-    sync
+    sync,
+    syncManaged
   }
 }
 

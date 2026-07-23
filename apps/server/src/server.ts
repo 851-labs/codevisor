@@ -64,6 +64,7 @@ import {
   UpdateQueuedPromptRequest,
   UpdateHarnessRequest as UpdateHarnessRequestSchema,
   UpdateMcpServerRequest as UpdateMcpServerRequestSchema,
+  UpdateBrowserUseConfigurationRequest as UpdateBrowserUseConfigurationRequestSchema,
   UpdateProjectRequest as UpdateProjectRequestSchema,
   UpdateSessionRequest as UpdateSessionRequestSchema,
   UpsertWorkspaceNotesRequest as UpsertWorkspaceNotesRequestSchema,
@@ -93,6 +94,7 @@ import {
 import { connect, type AddressInfo, type Socket } from "node:net"
 import { Context, Effect, Layer, PubSub, Schema } from "effect"
 import { WebSocket, WebSocketServer } from "ws"
+import { CODEVISOR_BROWSER_EXTENSION_ID } from "./browser-extension-relay.js"
 import type { HarnessAuthManager } from "./harness-auth.js"
 import type { HarnessLifecycleManager } from "./harness-lifecycle.js"
 import { parseCustomHarnessDocument, type CustomHarnessStore } from "./custom-harnesses.js"
@@ -779,6 +781,9 @@ const handleRequest = async (
     if (await routeHarnesses(services, request, response, url)) {
       return
     }
+    if (await routeBrowserUse(services, request, response, url)) {
+      return
+    }
     if (await routeMcps(services, request, response, url)) {
       return
     }
@@ -809,6 +814,49 @@ const handleRequest = async (
     writeFailure(response, cause)
   }
 }
+
+/* v8 ignore start -- browser setup routes are exercised by native app integration tests. */
+const routeBrowserUse = async (
+  services: CodevisorServerServices,
+  request: IncomingMessage,
+  response: ServerResponse,
+  url: URL
+): Promise<boolean> => {
+  if (!url.pathname.startsWith("/v1/browser-use")) return false
+  const manager = services.mcp
+  if (manager === undefined) throw new HttpFailure(501, "Browser Use is unavailable")
+  if (url.pathname === "/v1/browser-use" && request.method === "GET") {
+    writeJson(response, 200, await manager.browserConfiguration())
+    return true
+  }
+  if (url.pathname === "/v1/browser-use" && request.method === "PATCH") {
+    const payload = await readSchema(request, UpdateBrowserUseConfigurationRequestSchema)
+    writeJson(
+      response,
+      200,
+      await manager.setBrowserPreference(payload.preferredBrowser ?? undefined)
+    )
+    return true
+  }
+  if (url.pathname === "/v1/browser-use/extension/install" && request.method === "POST") {
+    writeJson(response, 200, await manager.openBrowserExtensionInstaller())
+    return true
+  }
+  if (url.pathname === "/v1/browser-use/extension/folder" && request.method === "POST") {
+    writeJson(response, 200, await manager.openBrowserExtensionFolder())
+    return true
+  }
+  if (url.pathname === "/v1/browser-use/extension/chrome" && request.method === "POST") {
+    writeJson(response, 200, await manager.openBrowserExtensionsPage())
+    return true
+  }
+  if (url.pathname === "/v1/browser-use/extension/web-store" && request.method === "POST") {
+    writeJson(response, 200, await manager.openBrowserExtensionWebStore())
+    return true
+  }
+  throw new HttpFailure(404, "Browser Use route not found")
+}
+/* v8 ignore stop */
 
 const routeMcps = async (
   services: CodevisorServerServices,
@@ -869,14 +917,23 @@ const routeMcps = async (
   const id = matchRoute(url.pathname, "/v1/mcps/:id")
   if (id !== undefined) {
     if (request.method === "PATCH") {
-      writeJson(
-        response,
-        200,
-        await manager.update(id, await readSchema(request, UpdateMcpServerRequestSchema))
-      )
+      const update = await readSchema(request, UpdateMcpServerRequestSchema)
+      if (["browser", "computer"].includes(id)) {
+        const unsupported = Object.keys(update).filter((key) => key !== "enabled")
+        if (unsupported.length > 0) {
+          throw new HttpFailure(
+            409,
+            "Built-in automation providers can only be enabled or disabled"
+          )
+        }
+      }
+      writeJson(response, 200, await manager.update(id, update))
       return true
     }
     if (request.method === "DELETE") {
+      if (["browser", "computer"].includes(id)) {
+        throw new HttpFailure(409, "Built-in automation providers cannot be removed")
+      }
       await manager.remove(id)
       writeJson(response, 204, undefined)
       return true
@@ -2111,6 +2168,7 @@ const routeSessions = async (
   }
 
   if (sessionId !== undefined && request.method === "DELETE") {
+    await services.mcp?.closeSession(sessionId)
     await run(services.db.deleteSession(sessionId))
     await appendAndPublish(services.db, fanout, "session.deleted", sessionId, { id: sessionId })
     writeJson(response, 204, undefined)
@@ -2148,7 +2206,8 @@ const createServerSession = async (
   // The session id is generated up front so the standing event sink can bind
   // to it before the agent session exists.
   const sessionId = payload.id ?? randomUUID()
-  const toolGateway = await services.mcp?.issueGateway(sessionId, project.id)
+  const sink = sessionEventSink(services, fanout, serverId, sessionId)
+  const toolGateway = await services.mcp?.issueGateway(sessionId, project.id, sink)
   const agentSessionId =
     payload.deferAgentSession === true
       ? ""
@@ -2157,7 +2216,7 @@ const createServerSession = async (
           services.agents.createAgentSession(
             payload.harnessId,
             cwd,
-            sessionEventSink(services, fanout, serverId, sessionId),
+            sink,
             accountContext,
             toolGateway
           )
@@ -2302,6 +2361,7 @@ const archiveSessionRuntime = async (
   services: CodevisorServerServices,
   session: SessionSummary
 ): Promise<void> => {
+  await services.mcp?.closeSession(session.id)
   /* v8 ignore next -- SessionSummary types agentSessionId as optional, but created sessions always carry one. */
   const agentSessionId = session.agentSessionId ?? ""
   if (agentSessionId.length === 0) {
@@ -2666,18 +2726,21 @@ const routeSessionActions = async (
       "question-answer",
       payload,
       async () => {
-        const agentSession = await ensureAgentSessionFor(
-          services,
-          fanout,
-          config.id,
-          answerSessionId
-        )
-        await run(
-          services.agents.answerQuestion(agentSession.sessionId, questionId, {
-            outcome: payload.outcome,
-            ...(payload.answers === undefined ? {} : { answers: payload.answers })
-          })
-        )
+        const answer = {
+          outcome: payload.outcome,
+          ...(payload.answers === undefined ? {} : { answers: payload.answers })
+        }
+        const handledByAutomation =
+          (await services.mcp?.answerQuestion(answerSessionId, questionId, answer)) ?? false
+        if (!handledByAutomation) {
+          const agentSession = await ensureAgentSessionFor(
+            services,
+            fanout,
+            config.id,
+            answerSessionId
+          )
+          await run(services.agents.answerQuestion(agentSession.sessionId, questionId, answer))
+        }
         return { outcome: payload.outcome, questionId }
       }
     )
@@ -3022,8 +3085,20 @@ const handleUpgrade = async (
   webSocketServer: WebSocketServer
 ): Promise<void> => {
   try {
-    await authorize(services.db, config, request)
     const url = parseRequestUrl(request)
+    if (
+      request.method === "GET" &&
+      url.pathname === "/v1/browser-use/extension/socket" &&
+      services.mcp !== undefined &&
+      isLocalhost(request.socket.remoteAddress) &&
+      request.headers.origin === `chrome-extension://${CODEVISOR_BROWSER_EXTENSION_ID}`
+    ) {
+      webSocketServer.handleUpgrade(request, socket, head, (webSocket) => {
+        services.mcp!.acceptBrowserExtension(webSocket)
+      })
+      return
+    }
+    await authorize(services.db, config, request)
     if (request.method === "GET" && url.pathname === "/v1/events/socket") {
       webSocketServer.handleUpgrade(request, socket, head, (webSocket) => {
         void attachEventSocket(services.db, fanout, numberSearchParam(url, "since"), webSocket)
@@ -3256,15 +3331,10 @@ const ensureAgentSessionFor = async (
     await run(services.db.bindSessionHarnessAccount(session.id, accountContext.id))
   }
   if (session.agentSessionId === "") {
-    const toolGateway = await services.mcp?.issueGateway(session.id, session.projectId)
+    const sink = sessionEventSink(services, fanout, serverId, sessionId)
+    const toolGateway = await services.mcp?.issueGateway(session.id, session.projectId, sink)
     const agentSessionId = await run(
-      services.agents.createAgentSession(
-        session.harnessId,
-        cwd,
-        sessionEventSink(services, fanout, serverId, sessionId),
-        accountContext,
-        toolGateway
-      )
+      services.agents.createAgentSession(session.harnessId, cwd, sink, accountContext, toolGateway)
     )
     const updatedSession = await run(services.db.updateSession(sessionId, { agentSessionId }))
     await appendAndPublish(
@@ -3279,7 +3349,7 @@ const ensureAgentSessionFor = async (
         session.harnessId,
         agentSessionId,
         cwd,
-        sessionEventSink(services, fanout, serverId, sessionId),
+        sink,
         accountContext,
         toolGateway
       )
@@ -3287,13 +3357,14 @@ const ensureAgentSessionFor = async (
     return restoreSessionConfigSelections(services, sessionId, metadata)
   }
   const agentSessionId = session.agentSessionId ?? sessionId
-  const toolGateway = await services.mcp?.issueGateway(session.id, session.projectId)
+  const sink = sessionEventSink(services, fanout, serverId, sessionId)
+  const toolGateway = await services.mcp?.issueGateway(session.id, session.projectId, sink)
   const metadata = await run(
     services.agents.loadAgentSession(
       session.harnessId,
       agentSessionId,
       cwd,
-      sessionEventSink(services, fanout, serverId, sessionId),
+      sink,
       accountContext,
       toolGateway
     )

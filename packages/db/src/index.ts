@@ -2,6 +2,7 @@ import type {
   AttachmentKind,
   AttachmentRef,
   BackgroundTask,
+  BrowserPreference,
   CreateProjectRequest,
   CreateSessionRequest,
   DataUpgradeProgress,
@@ -14,6 +15,7 @@ import type {
   McpAuthType,
   McpConnectionState,
   McpServer,
+  McpServerKind,
   McpTransport,
   NativeMcpRemoval,
   Project,
@@ -164,6 +166,7 @@ interface HarnessAccountRow {
 interface McpServerRow {
   readonly id: string
   readonly name: string
+  readonly kind: McpServerKind
   readonly transport: McpTransport
   readonly url: string | null
   readonly command: string | null
@@ -207,6 +210,7 @@ export interface SaveNativeMcpRemovalRequest {
 export interface SaveMcpServerRecordRequest {
   readonly id?: string
   readonly name: string
+  readonly kind?: McpServerKind
   readonly transport: McpTransport
   readonly url?: string
   readonly command?: string
@@ -1052,6 +1056,19 @@ const migrations: ReadonlyArray<Migration> = [
     sql: `
       alter table sessions add column config_selections text not null default '{}';
     `
+  },
+  {
+    id: 27,
+    name: "built-in automation MCPs",
+    sql: `
+      alter table mcp_servers add column kind text not null default 'managed'
+        check(kind in ('managed', 'browserUse', 'computerUse'));
+    `
+  },
+  {
+    id: 28,
+    name: "remove automation approvals",
+    sql: "drop table if exists automation_target_grants;"
   }
 ]
 
@@ -2175,6 +2192,10 @@ export interface CodevisorDatabaseService {
   /// Replaces the connection token with a fresh one and retires the old,
   /// forcing previously paired clients to re-pair.
   readonly rotateConnectionToken: Effect.Effect<string, DatabaseError>
+  readonly getBrowserPreference: Effect.Effect<BrowserPreference | undefined, DatabaseError>
+  readonly setBrowserPreference: (
+    preference: BrowserPreference | undefined
+  ) => Effect.Effect<void, DatabaseError>
   readonly getUpdateInfo: Effect.Effect<UpdateInfo, DatabaseError>
   readonly setUpdateInfo: (update: UpdateInfo) => Effect.Effect<UpdateInfo, DatabaseError>
   /// Persisted latest-version knowledge per harness (the periodic update
@@ -3227,11 +3248,11 @@ const createService = (
         sqlite
           .prepare(
             `insert into mcp_servers (
-               id, name, transport, url, command, args, enabled, auth_type, oauth_scope,
+               id, name, kind, transport, url, command, args, enabled, auth_type, oauth_scope,
                connection_state, tool_count, detail, secret_cipher, created_at, updated_at
-             ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
              on conflict(id) do update set
-               name = excluded.name, transport = excluded.transport, url = excluded.url,
+               name = excluded.name, kind = excluded.kind, transport = excluded.transport, url = excluded.url,
                command = excluded.command, args = excluded.args, enabled = excluded.enabled,
                auth_type = excluded.auth_type, oauth_scope = excluded.oauth_scope,
                connection_state = excluded.connection_state, tool_count = excluded.tool_count,
@@ -3241,6 +3262,7 @@ const createService = (
           .run(
             id,
             request.name,
+            request.kind ?? "managed",
             request.transport,
             request.url ?? null,
             request.command ?? null,
@@ -3593,6 +3615,25 @@ const createService = (
       rotate()
       return token
     }),
+    getBrowserPreference: attempt("getBrowserPreference", () => {
+      const row = sqlite
+        .prepare("select value from instance_meta where key = 'browser-preference'")
+        .get() as { readonly value: string } | undefined
+      return row?.value === "chrome" || row?.value === "managed" ? row.value : undefined
+    }),
+    setBrowserPreference: (preference) =>
+      attempt("setBrowserPreference", () => {
+        if (preference === undefined) {
+          sqlite.prepare("delete from instance_meta where key = 'browser-preference'").run()
+          return
+        }
+        sqlite
+          .prepare(
+            `insert into instance_meta (key, value) values ('browser-preference', ?)
+             on conflict(key) do update set value = excluded.value`
+          )
+          .run(preference)
+      }),
     listHarnessPendingUpdates: attempt("listHarnessPendingUpdates", () =>
       (
         sqlite
@@ -3958,6 +3999,9 @@ const updateFromRow = (row: UpdateRow): UpdateInfo => ({
 const mcpServerFromRow = (row: McpServerRow): McpServerRecord => ({
   id: row.id,
   name: row.name,
+  kind: row.kind,
+  canEdit: row.kind === "managed",
+  canRemove: row.kind === "managed",
   transport: row.transport,
   ...(row.url === null ? {} : { url: row.url }),
   ...(row.command === null ? {} : { command: row.command }),

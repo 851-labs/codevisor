@@ -130,8 +130,27 @@ jobs:
       APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
       APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
 
+  build-browser-extension:
+    needs: metadata
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Build Chrome Web Store extension
+        run: node scripts/release/build-browser-extension.mjs "${{ needs.metadata.outputs.version }}" dist/release
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: codevisor-browser-extension
+          path: |
+            dist/release/Codevisor-Chrome-*.zip
+            dist/release/Codevisor-Chrome-*.zip.sha256
+          if-no-files-found: error
+          retention-days: 30
+
   publish:
-    needs: [metadata, build]
+    needs: [metadata, build, build-browser-extension]
     runs-on: ubuntu-24.04
     env:
       VERSION: ${{ needs.metadata.outputs.version }}
@@ -157,6 +176,11 @@ jobs:
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: codevisor-server-macos-x64
+          path: dist/release
+      - name: Download Chrome extension release artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: codevisor-browser-extension
           path: dist/release
       - name: Determine whether this is the one-time R2 bridge release
         id: bridge
@@ -329,3 +353,37 @@ jobs:
               exit 1
             fi
           fi
+
+  publish-browser-extension:
+    needs:
+      - metadata
+      - build-browser-extension
+      - publish
+    runs-on: ubuntu-24.04
+    environment: chrome-web-store-production
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: codevisor-browser-extension
+          path: dist/release
+      - name: Authenticate to Google Cloud
+        id: google-auth
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+          token_format: access_token
+          access_token_scopes: https://www.googleapis.com/auth/chromewebstore
+      - name: Publish Chrome extension
+        env:
+          CHROME_WEBSTORE_ACCESS_TOKEN: ${{ steps.google-auth.outputs.access_token }}
+          CHROME_WEBSTORE_PUBLISHER_ID: ${{ vars.CHROME_WEBSTORE_PUBLISHER_ID }}
+          CHROME_WEBSTORE_EXTENSION_ID: ${{ vars.CHROME_WEBSTORE_EXTENSION_ID }}
+        run: node scripts/release/publish-browser-extension.mjs dist/release/Codevisor-Chrome-${{ needs.metadata.outputs.version }}.zip

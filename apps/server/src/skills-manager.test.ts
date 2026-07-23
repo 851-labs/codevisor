@@ -92,6 +92,66 @@ describe("makeSkillsManager", () => {
     for (const harness of scan.harnesses) expect(harness.skills).toEqual([])
   })
 
+  it("installs app-managed skills everywhere without exposing them as user skills", async () => {
+    const home = makeHome()
+    const sources = join(home, "managed-sources")
+    writeSkill(join(sources, "browser-use"), { name: "browser-use" })
+    writeSkill(join(sources, "computer-use"), { name: "computer-use" })
+    const skills = manager(home)
+
+    await skills.syncManaged([
+      {
+        directoryName: "browser-use",
+        enabled: true,
+        sourcePath: join(sources, "browser-use")
+      },
+      {
+        directoryName: "computer-use",
+        enabled: true,
+        sourcePath: join(sources, "computer-use")
+      }
+    ])
+
+    const scan = await skills.list()
+    expect(scan.global).toEqual([])
+    expect(scan.harnesses.every((harness) => harness.skills.length === 0)).toBe(true)
+    expect(existsSync(join(home, ".agents/skills/browser-use/SKILL.md"))).toBe(true)
+    expect(existsSync(join(home, ".claude/skills/computer-use/SKILL.md"))).toBe(true)
+    expect(existsSync(join(home, ".codex/skills/computer-use/SKILL.md"))).toBe(true)
+
+    await skills.syncManaged([
+      {
+        directoryName: "browser-use",
+        enabled: true,
+        sourcePath: join(sources, "browser-use")
+      },
+      {
+        directoryName: "computer-use",
+        enabled: false,
+        sourcePath: join(sources, "computer-use")
+      }
+    ])
+
+    expect(existsSync(join(home, ".agents/skills/browser-use/SKILL.md"))).toBe(true)
+    expect(existsSync(join(home, ".agents/skills/computer-use"))).toBe(false)
+    expect(existsSync(join(home, ".claude/skills/computer-use"))).toBe(false)
+    expect(existsSync(join(home, ".codex/skills/computer-use"))).toBe(false)
+  })
+
+  it("never overwrites a same-name user skill during managed synchronization", async () => {
+    const home = makeHome()
+    const userSkill = join(home, ".agents/skills/computer-use")
+    const source = join(home, "managed-sources/computer-use")
+    writeSkill(userSkill, { body: "User-owned instructions.", name: "computer-use" })
+    writeSkill(source, { body: "Managed instructions.", name: "computer-use" })
+
+    const skills = manager(home)
+    await skills.syncManaged([{ directoryName: "computer-use", enabled: true, sourcePath: source }])
+
+    expect(readFileSync(join(userSkill, "SKILL.md"), "utf8")).toContain("User-owned instructions.")
+    expect(globalSkill(await skills.list(), "computer-use").name).toBe("computer-use")
+  })
+
   it("lists canonical skills with frontmatter and per-harness install states", async () => {
     const home = makeHome()
     writeSkill(join(home, ".agents/skills/deploy"), {

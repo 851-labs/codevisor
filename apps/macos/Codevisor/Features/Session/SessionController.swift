@@ -900,6 +900,29 @@ final class SessionController {
         await model?.cancelQuestion()
     }
 
+    /// Opens one browser-extension setup destination without resolving the
+    /// blocking agent question. These are utility actions, so the composer
+    /// must remain mounted while Chrome or Finder opens.
+    func performBrowserExtensionSetupAction(_ action: String) async {
+        guard let serverClient else { return }
+        do {
+            switch action {
+            case "Open Extensions":
+                _ = try await serverClient.openBrowserExtensionsPage()
+            case "Show Folder":
+                _ = try await serverClient.openBrowserExtensionFolder()
+            case "Open Web Store":
+                _ = try await serverClient.openBrowserExtensionWebStore()
+            default:
+                return
+            }
+        } catch {
+            Log.server.error(
+                "Failed to open browser extension setup destination: \(String(describing: error), privacy: .public)"
+            )
+        }
+    }
+
     // MARK: - Codex plan approval
 
     /// Codex has no ExitPlanMode tool: when a plan-mode turn ends having

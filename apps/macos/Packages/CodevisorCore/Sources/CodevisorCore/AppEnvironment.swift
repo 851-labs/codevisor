@@ -356,7 +356,12 @@ public final class AppEnvironment {
         let store = FileSystemStore(directory: CodevisorAppVariant.applicationSupportURL())
         let settings = AppSettingsModel(store: store)
         let serverClient = CodevisorServerClient(config: .localDefault)
-        let localServer = LocalCodevisorServer(client: serverClient)
+        let localServer = LocalCodevisorServer(
+            client: serverClient,
+            computerUseBridge: ComputerUseBridge(
+                supportDirectory: CodevisorAppVariant.serverDataDirectoryURL()
+            )
+        )
         return AppEnvironment(
             projectRepository: DefaultProjectRepository(store: store),
             sessionRepository: DefaultSessionRepository(store: store),

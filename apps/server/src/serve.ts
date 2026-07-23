@@ -457,14 +457,18 @@ export const runServe = (args: Record<string, string>): Promise<void> => {
       terminal,
       preferDeviceCode: (kind ?? (host === "127.0.0.1" ? "local" : "remote")) === "remote"
     })
-    const mcp = makeMcpManager({ db, dataDir: dirname(databasePath) })
+    const skills = makeSkillsManager({ agents })
+    const mcp = makeMcpManager({
+      db,
+      dataDir: dirname(databasePath),
+      syncManagedSkills: skills.syncManaged
+    })
     const nativeMcp = makeNativeMcpManager({
       agents,
       dataDir: dirname(databasePath),
       db,
       mcp
     })
-    const skills = makeSkillsManager({ agents })
     /// Custom-harness persistence + handshake probe for the /v1/harnesses/
     /// custom routes. The file stays the source of truth; replace() swaps the
     /// runtime catalog live so no restart is needed.

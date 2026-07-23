@@ -352,6 +352,9 @@ export type UpdateHarnessRequest = typeof UpdateHarnessRequest.Type
 export const McpTransport = Schema.Literals(["http", "stdio"])
 export type McpTransport = typeof McpTransport.Type
 
+export const McpServerKind = Schema.Literals(["managed", "browserUse", "computerUse"])
+export type McpServerKind = typeof McpServerKind.Type
+
 export const McpAuthType = Schema.Literals(["none", "bearer", "oauth"])
 export type McpAuthType = typeof McpAuthType.Type
 
@@ -369,15 +372,37 @@ export const McpConnectionState = Schema.Literals([
   "disconnected",
   "connecting",
   "connected",
+  "needsSetup",
+  "unavailable",
   "needsAuthorization",
   "expired",
   "error"
 ])
 export type McpConnectionState = typeof McpConnectionState.Type
 
+export const BrowserPreference = Schema.Literals(["chrome", "managed"])
+export type BrowserPreference = typeof BrowserPreference.Type
+
+export const BrowserUseConfiguration = Schema.Struct({
+  preferredBrowser: Schema.optional(BrowserPreference),
+  chromeAvailable: Schema.Boolean,
+  chromeConnected: Schema.Boolean,
+  managedAvailable: Schema.Boolean,
+  developmentExtensionPath: Schema.optional(Schema.String)
+})
+export type BrowserUseConfiguration = typeof BrowserUseConfiguration.Type
+
+export const UpdateBrowserUseConfigurationRequest = Schema.Struct({
+  preferredBrowser: Schema.NullOr(BrowserPreference)
+})
+export type UpdateBrowserUseConfigurationRequest = typeof UpdateBrowserUseConfigurationRequest.Type
+
 export const McpServer = Schema.Struct({
   id: Schema.String,
   name: Schema.String,
+  kind: McpServerKind,
+  canEdit: Schema.Boolean,
+  canRemove: Schema.Boolean,
   transport: McpTransport,
   url: Schema.optional(Schema.String),
   command: Schema.optional(Schema.String),

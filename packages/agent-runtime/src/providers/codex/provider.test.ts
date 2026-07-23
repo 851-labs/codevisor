@@ -1,6 +1,11 @@
 import { Effect } from "effect"
 import { afterEach, describe, expect, it, vi } from "vitest"
-import type { HarnessDefinition, ProviderEnvironment, RuntimeEvent } from "../../types.js"
+import type {
+  HarnessDefinition,
+  ProviderEnvironment,
+  RuntimeEvent,
+  ToolGatewayConfig
+} from "../../types.js"
 import type { CodexClient, CodexSpawnRequest } from "./client.js"
 import { codexUsageLimitsFrom, makeCodexProvider } from "./provider.js"
 
@@ -195,7 +200,12 @@ class FakeCodexClient implements CodexClient {
 }
 
 const setup = async (
-  options: { failResume?: boolean; resume?: string; startModel?: string } = {}
+  options: {
+    failResume?: boolean
+    resume?: string
+    startModel?: string
+    toolGateway?: ToolGatewayConfig
+  } = {}
 ) => {
   const client = new FakeCodexClient()
   client.failResume = options.failResume ?? false
@@ -213,12 +223,23 @@ const setup = async (
   }
   const created =
     options.resume === undefined
-      ? await run(provider.createSession(definition, "/tmp/project", emit))
+      ? await run(
+          provider.createSession(definition, "/tmp/project", emit, undefined, options.toolGateway)
+        )
       : undefined
   const loaded =
     options.resume === undefined
       ? undefined
-      : await run(provider.loadSession(definition, options.resume, "/tmp/project", emit))
+      : await run(
+          provider.loadSession(
+            definition,
+            options.resume,
+            "/tmp/project",
+            emit,
+            undefined,
+            options.toolGateway
+          )
+        )
   return { client, created, events, loaded, provider, spawns }
 }
 
@@ -444,6 +465,56 @@ describe("CodexProvider", () => {
     expect(client.requests[0]).toMatchObject({
       method: "initialize",
       params: { capabilities: { experimentalApi: true } }
+    })
+  })
+
+  it("routes automation through Codevisor and disables native Codex automation", async () => {
+    const toolGateway: ToolGatewayConfig = {
+      name: "codevisor",
+      url: "http://127.0.0.1:49361/mcp/gateway?gateway=test",
+      bearerToken: "secret"
+    }
+    const expectedConfig = {
+      skills: {
+        config: [
+          { name: "computer-use:computer-use", enabled: false },
+          { name: "browser:control-in-app-browser", enabled: false },
+          { name: "chrome:control-chrome", enabled: false }
+        ]
+      },
+      features: {
+        browser_use: false,
+        browser_use_external: false,
+        browser_use_full_cdp_access: false,
+        computer_use: false,
+        in_app_browser: false
+      },
+      mcp_servers: {
+        node_repl: {
+          enabled: false
+        },
+        "computer-use": {
+          enabled: false
+        },
+        codevisor: {
+          default_tools_approval_mode: "approve"
+        }
+      }
+    }
+
+    const { client } = await setup({ toolGateway })
+    const start = client.requests.find((request) => request.method === "thread/start")
+    expect(start?.params).toMatchObject({
+      config: expectedConfig
+    })
+
+    const { client: resumedClient } = await setup({
+      resume: "thread-existing",
+      toolGateway
+    })
+    const resume = resumedClient.requests.find((request) => request.method === "thread/resume")
+    expect(resume?.params).toMatchObject({
+      config: expectedConfig
     })
   })
 

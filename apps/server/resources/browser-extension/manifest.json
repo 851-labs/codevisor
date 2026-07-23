@@ -1,0 +1,33 @@
+{
+  "manifest_version": 3,
+  "name": "Codevisor",
+  "version": "0.2.0",
+  "description": "Control Chrome with Codevisor.",
+  "icons": {
+    "16": "icons/16.png",
+    "32": "icons/32.png",
+    "128": "icons/128.png"
+  },
+  "permissions": [
+    "debugger",
+    "tabs",
+    "history",
+    "downloads",
+    "offscreen",
+    "clipboardRead",
+    "clipboardWrite"
+  ],
+  "host_permissions": ["<all_urls>"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "Codevisor",
+    "default_icon": {
+      "16": "icons/16.png",
+      "32": "icons/32.png",
+      "128": "icons/128.png"
+    }
+  },
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAu07RerBofsIsareK8yirDgcMQ+Q/oZaBcZet524sq3aFRcVfQRv0lkhtw3OqpqMcoW2nyLkYFQ5CAyKNUuxYkzujXEh0DM0MGTYJquHoECZmeEdOonjeDTQ1aW7bpdbI0UuS9Ur4S8TMD1Q/WDvdA8Hxrjszd6CvUEeAjeUtkyTls8/Ep9uB2jn7wiqovx8CwvbSkRSfx21Bvc58bk7ttFig3LTC18rtj0Zw9WNe2IgoaMh0Q/6+i8ZlrDXD09bfoEa7MT/f1/R34lAVeaIRzfsN34f/t5zS0WaP67pErYmv7Jn0tJjf2lwg7nhUteQk5rGVb5dY6dP6VKoVnPk98QIDAQAB"
+}

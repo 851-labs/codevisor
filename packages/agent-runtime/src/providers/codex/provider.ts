@@ -455,7 +455,31 @@ export const makeCodexProvider = (
       toolGateway === undefined
         ? undefined
         : {
+            // Keep the native automation skills and their transports out of
+            // Codevisor-owned threads without changing the user's global Codex
+            // settings. Plugin enablement itself is resolved before thread
+            // overrides, while skill rules and MCP server flags are honored here.
+            skills: {
+              config: [
+                { name: "computer-use:computer-use", enabled: false },
+                { name: "browser:control-in-app-browser", enabled: false },
+                { name: "chrome:control-chrome", enabled: false }
+              ]
+            },
+            features: {
+              browser_use: false,
+              browser_use_external: false,
+              browser_use_full_cdp_access: false,
+              computer_use: false,
+              in_app_browser: false
+            },
             mcp_servers: {
+              node_repl: {
+                enabled: false
+              },
+              "computer-use": {
+                enabled: false
+              },
               [toolGateway.name]: {
                 url: toolGateway.url,
                 bearer_token_env_var: "CODEVISOR_MCP_GATEWAY_TOKEN",

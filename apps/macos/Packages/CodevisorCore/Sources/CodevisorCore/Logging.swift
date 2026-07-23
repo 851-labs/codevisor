@@ -23,6 +23,7 @@ public enum Log {
     public static let terminal = Logger(subsystem: subsystem, category: "terminal")
     public static let updates = Logger(subsystem: subsystem, category: "updates")
     public static let attachments = Logger(subsystem: subsystem, category: "attachments")
+    public static let computerUse = Logger(subsystem: subsystem, category: "computer-use")
     public static let scratchpad = Logger(subsystem: subsystem, category: "scratchpad")
     public static let onboarding = Logger(subsystem: subsystem, category: "onboarding")
     /// Errors that were also surfaced to the user (mirrors every

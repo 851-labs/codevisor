@@ -107,7 +107,9 @@ struct ProtocolCodableTests {
                         QuestionOption(label: "Full design")
                     ],
                     multiSelect: false,
-                    allowsOther: true
+                    allowsOther: true,
+                    backOptionLabel: "Back",
+                    presentation: .browserExtensionSetup
                 )
             ],
             autoResolutionMs: 60_000

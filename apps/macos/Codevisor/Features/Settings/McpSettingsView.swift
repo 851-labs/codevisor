@@ -27,6 +27,7 @@ struct McpSettingsView: View {
     @State private var lastNativeRemoval: ServerNativeMcpRemoval?
     @State private var nativeActionError: String?
     @State private var expandedNativeHarnesses: Set<String> = []
+    @State private var browserConfiguration: ServerBrowserUseConfiguration?
 
     var body: some View {
         content
@@ -498,13 +499,54 @@ struct McpSettingsView: View {
                 .frame(width: 20)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
-                Text(server.name).foregroundStyle(.primary)
+                HStack(spacing: 6) {
+                    Text(server.name).foregroundStyle(.primary)
+                    if server.kind == "browserUse" || server.kind == "computerUse" {
+                        nativeBadge("Built-in")
+                    }
+                }
                 Text(statusText(server))
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            if server.kind == "browserUse", let browserConfiguration {
+                Menu {
+                    if browserConfiguration.chromeAvailable {
+                        Button {
+                            Task { await setPreferredBrowser("chrome") }
+                        } label: {
+                            if browserConfiguration.preferredBrowser == "chrome" {
+                                Label("Google Chrome", systemImage: "checkmark")
+                            } else {
+                                Text("Google Chrome")
+                            }
+                        }
+                    }
+                    Button {
+                        Task { await setPreferredBrowser("managed") }
+                    } label: {
+                        if browserConfiguration.preferredBrowser == "managed" {
+                            Label("Codevisor Browser", systemImage: "checkmark")
+                        } else {
+                            Text("Codevisor Browser")
+                        }
+                    }
+                    if browserConfiguration.chromeAvailable,
+                       !browserConfiguration.chromeConnected,
+                       browserConfiguration.developmentExtensionPath != nil {
+                        Divider()
+                        Button("Install Chrome Extension…") {
+                            Task { await installBrowserExtension() }
+                        }
+                    }
+                } label: {
+                    Text(preferredBrowserLabel(browserConfiguration))
+                }
+                .controlSize(.small)
+                .settingsActionTint(theme)
+            }
             let needsAuthorization = server.authType == "oauth" &&
                 ["needsAuthorization", "expired", "error"].contains(server.connectionState)
             if needsAuthorization {
@@ -524,9 +566,13 @@ struct McpSettingsView: View {
             }
             Menu {
                 Button("Show Details…") { selectedServer = server }
-                Button("Edit…") { editingServer = server }
-                Divider()
-                Button("Remove…", role: .destructive) { serverPendingRemoval = server }
+                if server.canEdit != false {
+                    Button("Edit…") { editingServer = server }
+                }
+                if server.canRemove != false {
+                    Divider()
+                    Button("Remove…", role: .destructive) { serverPendingRemoval = server }
+                }
             } label: {
                 Label("More actions for \(server.name)", systemImage: "ellipsis.circle")
             }
@@ -548,6 +594,8 @@ struct McpSettingsView: View {
         switch server.connectionState {
         case "connected": return "Connected · \(server.toolCount) tool\(server.toolCount == 1 ? "" : "s")"
         case "connecting": return "Connecting…"
+        case "needsSetup": return server.detail ?? "Browser setup required"
+        case "unavailable": return server.detail ?? "Unavailable on this machine"
         case "needsAuthorization": return "Authorization required"
         case "expired": return "Sign-in expired"
         case "error": return server.detail ?? "Connection failed"
@@ -563,6 +611,8 @@ struct McpSettingsView: View {
         switch server.connectionState {
         case "connected": return "checkmark.circle.fill"
         case "connecting": return "arrow.triangle.2.circlepath"
+        case "needsSetup": return "arrow.down.circle"
+        case "unavailable": return "nosign"
         case "needsAuthorization", "expired": return "person.crop.circle.badge.exclamationmark"
         case "error": return "exclamationmark.triangle.fill"
         default: return "circle"
@@ -576,7 +626,7 @@ struct McpSettingsView: View {
         }
         switch server.connectionState {
         case "connected": return AnyShapeStyle(theme.statusOK)
-        case "needsAuthorization", "expired": return AnyShapeStyle(theme.statusWarn)
+        case "needsAuthorization", "expired", "needsSetup": return AnyShapeStyle(theme.statusWarn)
         case "error": return AnyShapeStyle(theme.statusError)
         default: return AnyShapeStyle(.secondary)
         }
@@ -587,6 +637,7 @@ struct McpSettingsView: View {
         defer { isLoading = false }
         do {
             servers = try await environment.serverClient.listMcpServers()
+            browserConfiguration = try? await environment.serverClient.browserUseConfiguration()
             errorMessage = nil
         } catch {
             errorMessage = ErrorReporter.userFacingMessage(for: error)
@@ -596,11 +647,51 @@ struct McpSettingsView: View {
         nativeScan = try? await environment.serverClient.listNativeMcps()
     }
 
+    private func preferredBrowserLabel(_ configuration: ServerBrowserUseConfiguration) -> String {
+        switch configuration.preferredBrowser {
+        case "chrome": return configuration.chromeConnected ? "Chrome" : "Chrome · Setup"
+        case "managed": return "Codevisor Browser"
+        default: return "Choose Browser"
+        }
+    }
+
+    private func setPreferredBrowser(_ preference: String) async {
+        do {
+            browserConfiguration = try await environment.serverClient.setPreferredBrowser(preference)
+            errorMessage = nil
+        } catch {
+            errorMessage = ErrorReporter.userFacingMessage(for: error)
+        }
+    }
+
+    private func installBrowserExtension() async {
+        do {
+            browserConfiguration = try await environment.serverClient.installDevelopmentBrowserExtension()
+            for _ in 0..<120 {
+                try? await Task.sleep(for: .seconds(1))
+                let refreshed = try await environment.serverClient.browserUseConfiguration()
+                browserConfiguration = refreshed
+                if refreshed.chromeConnected { break }
+            }
+        } catch {
+            errorMessage = ErrorReporter.userFacingMessage(for: error)
+        }
+    }
+
     private func setEnabled(_ server: ServerMcpServer, enabled: Bool) async {
         replace(server, with: serverWithEnabled(server, enabled))
         do {
             let updated = try await environment.serverClient.setMcpServerEnabled(id: server.id, enabled: enabled)
             replace(server, with: updated)
+            if enabled, updated.connectionState == "needsSetup" {
+                for _ in 0..<90 {
+                    try? await Task.sleep(for: .seconds(2))
+                    let refreshed = try await environment.serverClient.listMcpServers()
+                    guard let current = refreshed.first(where: { $0.id == server.id }) else { break }
+                    replace(updated, with: current)
+                    if current.connectionState != "needsSetup" { break }
+                }
+            }
         } catch {
             replace(server, with: server)
             errorMessage = ErrorReporter.userFacingMessage(for: error)
@@ -1510,7 +1601,11 @@ private struct McpServerDetailSheet: View {
             .padding(.top, 18)
             Form {
                 Section("Connection") {
-                    LabeledContent("Transport", value: server.transport == "http" ? "HTTP" : "Local command")
+                    if server.kind == "browserUse" || server.kind == "computerUse" {
+                        LabeledContent("Provider", value: "Codevisor built-in")
+                    } else {
+                        LabeledContent("Transport", value: server.transport == "http" ? "HTTP" : "Local command")
+                    }
                     if let url = server.url {
                         LabeledContent("Server URL") {
                             Text(url).textSelection(.enabled)
@@ -1566,8 +1661,10 @@ private struct McpServerDetailSheet: View {
             Divider()
                 .overlay(theme.isSystem ? Color.clear : theme.separator)
             HStack {
-                Button("Remove…", role: .destructive) { confirmingRemoval = true }
-                    .settingsActionTint(theme)
+                if server.canRemove != false {
+                    Button("Remove…", role: .destructive) { confirmingRemoval = true }
+                        .settingsActionTint(theme)
+                }
                 if server.authType == "oauth" && server.connectionState == "connected" {
                     Button("Sign Out") { Task { await disconnect() } }
                         .settingsActionTint(theme)
@@ -1602,6 +1699,8 @@ private struct McpServerDetailSheet: View {
         switch server.connectionState {
         case "connected": return "Connected · \(server.toolCount) tool\(server.toolCount == 1 ? "" : "s")"
         case "connecting": return "Connecting…"
+        case "needsSetup": return server.detail ?? "Browser setup required"
+        case "unavailable": return server.detail ?? "Unavailable on this machine"
         case "needsAuthorization": return "Authorization required"
         case "expired": return "Sign-in expired"
         case "error": return server.detail ?? "Connection failed"

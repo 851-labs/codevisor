@@ -1,11 +1,15 @@
 import type {
+  BrowserPreference,
+  BrowserUseConfiguration,
   CreateMcpServerRequest,
   McpAuthDetection,
+  McpConnectionState,
   McpServer,
   McpTool,
   UpdateMcpServerRequest
 } from "@codevisor/api"
 import type { CodevisorDatabaseService, McpServerRecord } from "@codevisor/db"
+import type { QuestionAnswer, RuntimeEventSink } from "@codevisor/agent-runtime"
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import {
   auth,
@@ -40,12 +44,27 @@ import {
   randomUUID,
   timingSafeEqual
 } from "node:crypto"
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  realpathSync,
+  statSync,
+  writeFileSync
+} from "node:fs"
 import type { IncomingMessage, ServerResponse } from "node:http"
-import { join } from "node:path"
+import { dirname, isAbsolute, join, relative, resolve } from "node:path"
+import { fileURLToPath } from "node:url"
 import { Effect } from "effect"
 import { z } from "zod"
-import { makeQuickJsExecutor } from "@executor-js/runtime-quickjs"
+import type WebSocket from "ws"
+import type { AutomationToolProvider } from "./automation-provider.js"
+import { makeBrowserSetupBroker } from "./browser-setup-broker.js"
+import { makeBrowserUseProvider } from "./browser-use-provider.js"
+import { CodeExecutionToolError, makeCodeExecutor } from "./code-executor.js"
+import { makeComputerUseProvider } from "./computer-use-provider.js"
+import type { ManagedSkillSpec } from "./skills-manager.js"
 
 interface StoredOAuth {
   readonly clientInformation?: OAuthClientInformationMixed | undefined
@@ -72,12 +91,122 @@ interface UpstreamConnection {
   tools: ReadonlyArray<Tool>
 }
 
-interface SandboxExecuteResult {
-  readonly result: unknown
-  readonly output?: ReadonlyArray<unknown>
-  readonly error?: string
-  readonly logs?: ReadonlyArray<string>
+type McpContent = CallToolResult["content"][number]
+
+interface SandboxArtifactCollector {
+  readonly content: Array<McpContent>
+  readonly maxItems: number
+  readonly maxBytes: number
 }
+
+const base64Bytes = (value: string): number => Math.floor((value.length * 3) / 4)
+
+const sandboxToolResult = (value: unknown, collector: SandboxArtifactCollector): unknown => {
+  if (typeof value !== "object" || value === null || !("content" in value)) return value
+  const result = value as { readonly content?: unknown; readonly [key: string]: unknown }
+  if (!Array.isArray(result.content)) return value
+  return {
+    ...result,
+    content: result.content.map((block) => {
+      if (typeof block !== "object" || block === null) return block
+      const candidate = block as Record<string, unknown>
+      const encoded =
+        candidate.type === "image" || candidate.type === "audio"
+          ? candidate.data
+          : candidate.type === "resource" &&
+              typeof candidate.resource === "object" &&
+              candidate.resource !== null
+            ? (candidate.resource as Record<string, unknown>).blob
+            : undefined
+      if (typeof encoded !== "string") return block
+      const artifactId = randomUUID()
+      const sizeBytes = base64Bytes(encoded)
+      const emitted =
+        collector.content.length < collector.maxItems && sizeBytes <= collector.maxBytes
+      if (emitted) {
+        collector.content.push(block as McpContent)
+      }
+      return {
+        type: "artifact_ref",
+        artifactId,
+        mediaType:
+          typeof candidate.mimeType === "string"
+            ? candidate.mimeType
+            : typeof candidate.resource === "object" &&
+                candidate.resource !== null &&
+                typeof (candidate.resource as Record<string, unknown>).mimeType === "string"
+              ? (candidate.resource as Record<string, unknown>).mimeType
+              : "application/octet-stream",
+        sizeBytes,
+        emitted
+      }
+    })
+  }
+}
+
+const callToolErrorMessage = (result: CallToolResult): string => {
+  const messages = result.content.flatMap((block) =>
+    block.type === "text" && block.text.trim().length > 0 ? [block.text.trim()] : []
+  )
+  return messages.join("\n") || "Tool call failed"
+}
+
+/// Native Computer Use and browser-client methods reject their promises on a
+/// failed action. Mirror that behavior inside run_code instead of handing the
+/// model a truthy `{ isError: true }` object that it can accidentally ignore.
+const sandboxSuccessfulToolResult = (
+  result: CallToolResult,
+  collector: SandboxArtifactCollector
+): unknown => {
+  if (result.isError === true) throw new Error(callToolErrorMessage(result))
+  const transformed = sandboxToolResult(result, collector) as {
+    readonly content?: ReadonlyArray<unknown>
+    readonly structuredContent?: unknown
+  }
+  if (transformed.structuredContent !== undefined) return transformed.structuredContent
+  if (!Array.isArray(transformed.content)) return transformed
+
+  const textBlocks = transformed.content.flatMap((block) =>
+    typeof block === "object" && block !== null && (block as { type?: unknown }).type === "text"
+      ? [String((block as { text?: unknown }).text ?? "")]
+      : []
+  )
+  const artifacts = transformed.content.filter(
+    (block) =>
+      typeof block === "object" &&
+      block !== null &&
+      (block as { type?: unknown }).type === "artifact_ref"
+  )
+  const rawValue: unknown = (() => {
+    if (textBlocks.length === 0) return undefined
+    const text = textBlocks.length === 1 ? textBlocks[0]! : textBlocks
+    if (typeof text !== "string") return text
+    try {
+      return JSON.parse(text) as unknown
+    } catch {
+      return text
+    }
+  })()
+  if (artifacts.length === 0) return rawValue
+  if (typeof rawValue === "object" && rawValue !== null && !Array.isArray(rawValue)) {
+    return { ...rawValue, artifacts }
+  }
+  return { value: rawValue, artifacts }
+}
+
+const sandboxOutputContent = (output: ReadonlyArray<unknown> | undefined): Array<McpContent> =>
+  (output ?? []).flatMap((item) => {
+    if (
+      typeof item === "object" &&
+      item !== null &&
+      (item as { type?: unknown }).type === "content" &&
+      typeof (item as { content?: unknown }).content === "object" &&
+      (item as { content?: unknown }).content !== null
+    ) {
+      return [(item as { content: McpContent }).content]
+    }
+    return [{ type: "text" as const, text: JSON.stringify(item) }]
+  })
 
 /// One live MCP connection to a gateway. Harnesses may connect more than
 /// once per Codevisor session: codex 0.145+ tears down and re-initializes
@@ -130,7 +259,26 @@ export interface McpManager {
     enabled: boolean,
     projectId?: string
   ) => Promise<ReadonlyArray<McpServer>>
-  readonly issueGateway: (sessionId: string, projectId?: string) => Promise<ToolGatewayConfig>
+  readonly issueGateway: (
+    sessionId: string,
+    projectId?: string,
+    sink?: RuntimeEventSink
+  ) => Promise<ToolGatewayConfig>
+  readonly answerQuestion: (
+    sessionId: string,
+    questionId: string,
+    answer: QuestionAnswer
+  ) => Promise<boolean>
+  readonly acceptBrowserExtension: (socket: WebSocket) => void
+  readonly browserConfiguration: () => Promise<BrowserUseConfiguration>
+  readonly setBrowserPreference: (
+    preference: BrowserPreference | undefined
+  ) => Promise<BrowserUseConfiguration>
+  readonly openBrowserExtensionInstaller: () => Promise<BrowserUseConfiguration>
+  readonly openBrowserExtensionFolder: () => Promise<BrowserUseConfiguration>
+  readonly openBrowserExtensionsPage: () => Promise<BrowserUseConfiguration>
+  readonly openBrowserExtensionWebStore: () => Promise<BrowserUseConfiguration>
+  readonly closeSession: (sessionId: string) => Promise<void>
   readonly handleGatewayRequest: (
     request: IncomingMessage,
     response: ServerResponse
@@ -141,7 +289,36 @@ export interface McpManager {
 export interface McpManagerConfig {
   readonly db: CodevisorDatabaseService
   readonly dataDir: string
+  readonly syncManagedSkills?: (skills: ReadonlyArray<ManagedSkillSpec>) => Promise<void>
 }
+
+const BUILTIN_MCP_SERVERS = [
+  { id: "browser", name: "Browser Use", kind: "browserUse" as const },
+  { id: "computer", name: "Computer Use", kind: "computerUse" as const }
+] as const
+
+const automationSkillPath = (id: "browser" | "computer"): string => {
+  const skillName = id === "browser" ? "browser-use" : "computer-use"
+  const relative = join("automation-skills", skillName, "SKILL.md")
+  const moduleDirectory = dirname(fileURLToPath(import.meta.url))
+  const candidates = [
+    join(moduleDirectory, "..", "resources", relative),
+    join(process.cwd(), "apps", "server", "resources", relative),
+    join(process.cwd(), "resources", relative)
+  ]
+  const match = candidates.find(existsSync)
+  if (match === undefined) throw new Error(`Missing managed ${skillName} skill`)
+  return match
+}
+
+const managedAutomationSkills = (
+  enabledIds: ReadonlySet<string>
+): ReadonlyArray<ManagedSkillSpec> =>
+  (["browser", "computer"] as const).map((id) => ({
+    directoryName: id === "browser" ? "browser-use" : "computer-use",
+    enabled: enabledIds.has(id),
+    sourcePath: dirname(automationSkillPath(id))
+  }))
 
 const run = <A>(effect: Effect.Effect<A, unknown>): Promise<A> => Effect.runPromise(effect)
 
@@ -427,11 +604,103 @@ export const makeMcpManager = (config: McpManagerConfig): McpManager => {
   const sessionGatewayIds = new Map<string, string>()
   let gatewayBaseUrl = "http://127.0.0.1:49361"
   let oauthBaseUrl = gatewayBaseUrl
-  const codeExecutor = makeQuickJsExecutor({
-    timeoutMs: 30_000,
+  const codeExecutor = makeCodeExecutor({
+    activeTimeoutMs: 30_000,
     memoryLimitBytes: 64 * 1024 * 1024,
     maxStackSizeBytes: 1024 * 1024
   })
+  const browserProvider = makeBrowserUseProvider(config.dataDir)
+  const computerProvider = makeComputerUseProvider(config.dataDir)
+  const automationProviders = new Map<string, AutomationToolProvider>([
+    [browserProvider.id, browserProvider],
+    [computerProvider.id, computerProvider]
+  ])
+  const browserSetupBroker = makeBrowserSetupBroker(config.db, browserProvider)
+  const builtinProviderState = (
+    id: "browser" | "computer",
+    enabled: boolean
+  ): { readonly connectionState: McpConnectionState; readonly detail?: string } => {
+    if (!enabled) return { connectionState: "disconnected" }
+    if (id === "browser") {
+      const status = browserProvider.status()
+      if (status.backend !== "missing") return { connectionState: "connected" }
+      return {
+        connectionState: "needsSetup",
+        ...(typeof status.error === "string" ? { detail: status.error } : {})
+      }
+    }
+    const status = computerProvider.status()
+    if (status.available === true) return { connectionState: "connected" }
+    return {
+      connectionState: "unavailable",
+      ...(typeof status.detail === "string" ? { detail: status.detail } : {})
+    }
+  }
+  const syncManagedAutomationSkills = async (
+    records: ReadonlyArray<McpServerRecord>
+  ): Promise<void> => {
+    if (config.syncManagedSkills === undefined) return
+    await config.syncManagedSkills(
+      managedAutomationSkills(
+        new Set(records.filter((record) => record.enabled).map((record) => record.id))
+      )
+    )
+  }
+
+  const syncManagedAutomationSkillsFromDb = async (): Promise<void> => {
+    const records = await Promise.all(
+      BUILTIN_MCP_SERVERS.map((builtin) => run(config.db.getMcpServer(builtin.id)))
+    )
+    await syncManagedAutomationSkills(
+      records.filter((record): record is McpServerRecord => record !== undefined)
+    )
+  }
+
+  const builtinsReady = Promise.all(
+    BUILTIN_MCP_SERVERS.map(async (builtin) => {
+      const provider = automationProviders.get(builtin.id)!
+      const existing = await run(config.db.getMcpServer(builtin.id))
+      if (existing !== undefined) {
+        if (existing.kind !== builtin.kind) {
+          throw new Error(`Reserved built-in MCP id is already in use: ${builtin.id}`)
+        }
+        const state = builtinProviderState(builtin.id, existing.enabled)
+        return run(
+          config.db.saveMcpServer({
+            id: existing.id,
+            name: existing.name,
+            kind: existing.kind,
+            transport: existing.transport,
+            ...(existing.url === undefined ? {} : { url: existing.url }),
+            ...(existing.command === undefined ? {} : { command: existing.command }),
+            args: existing.args,
+            enabled: existing.enabled,
+            authType: existing.authType,
+            ...(existing.oauthScope === undefined ? {} : { oauthScope: existing.oauthScope }),
+            connectionState: state.connectionState,
+            toolCount: provider.tools.length,
+            ...(state.detail === undefined ? {} : { detail: state.detail }),
+            ...(existing.secretCipher === undefined ? {} : { secretCipher: existing.secretCipher })
+          })
+        )
+      }
+      const state = builtinProviderState(builtin.id, true)
+      return run(
+        config.db.saveMcpServer({
+          ...builtin,
+          // Internal providers never spawn this transport. Keeping a valid
+          // transport value preserves the existing external MCP wire schema.
+          transport: "stdio",
+          args: [],
+          enabled: true,
+          authType: "none",
+          connectionState: state.connectionState,
+          toolCount: provider.tools.length,
+          ...(state.detail === undefined ? {} : { detail: state.detail })
+        })
+      )
+    })
+  ).then(syncManagedAutomationSkills)
 
   const detectAuth = async (value: string): Promise<McpAuthDetection> => {
     const url = requireHttpUrl(value)
@@ -491,6 +760,7 @@ export const makeMcpManager = (config: McpManagerConfig): McpManager => {
   }
 
   const record = async (id: string): Promise<McpServerRecord> => {
+    await builtinsReady
     const value = await run(config.db.getMcpServer(id))
     if (value === undefined) throw new Error(`MCP server not found: ${id}`)
     return value
@@ -533,6 +803,7 @@ export const makeMcpManager = (config: McpManagerConfig): McpManager => {
       config.db.saveMcpServer({
         id: server.id,
         name: patch.name ?? server.name,
+        kind: patch.kind ?? server.kind,
         transport: patch.transport ?? server.transport,
         ...(url === undefined ? {} : { url }),
         ...(command === undefined ? {} : { command }),
@@ -548,6 +819,38 @@ export const makeMcpManager = (config: McpManagerConfig): McpManager => {
         ...(secretCipher === undefined ? {} : { secretCipher })
       })
     )
+  }
+
+  const refreshBuiltinProviderStates = async (): Promise<void> => {
+    await builtinsReady
+    for (const builtin of BUILTIN_MCP_SERVERS) {
+      const current = await record(builtin.id)
+      const state = builtinProviderState(builtin.id, current.enabled)
+      // Preserve an actionable runtime failure (for example a missing desktop
+      // D-Bus session) until an explicit reconnect. The ordinary macOS
+      // "open the app" state remains dynamic as the app starts and stops.
+      if (
+        builtin.id === "computer" &&
+        current.connectionState === "unavailable" &&
+        state.connectionState === "connected" &&
+        current.detail !== undefined &&
+        current.detail !== "Open the native Codevisor app to use Computer Use"
+      ) {
+        continue
+      }
+      if (
+        current.connectionState === state.connectionState &&
+        current.detail === state.detail &&
+        current.toolCount === automationProviders.get(builtin.id)!.tools.length
+      ) {
+        continue
+      }
+      await saveRecord(current, {
+        connectionState: state.connectionState,
+        toolCount: automationProviders.get(builtin.id)!.tools.length,
+        ...(state.detail === undefined ? {} : { detail: state.detail })
+      })
+    }
   }
 
   /* v8 ignore start -- these helpers are used exclusively by the live OAuth adapter below. */
@@ -746,13 +1049,13 @@ export const makeMcpManager = (config: McpManagerConfig): McpManager => {
 
   const searchToolDescription = (inventory: string): string =>
     [
-      "Entry point for every integration connected through Codevisor. When the user asks to use a named service or external system, call this tool first even if no direct connector is visible. Search returns exact tool paths and the next steps; continue with describe and execute instead of stopping after discovery.",
+      "Compatibility discovery endpoint for integrations connected through Codevisor. Prefer run_code for normal work so discovery, schema inspection, and actions can be composed in one invocation. Use this direct wrapper only when the harness cannot run code.",
       inventory
     ].join("\n\n")
 
   const runCodeToolDescription = (inventory: string): string =>
     [
-      "Run sandboxed JavaScript or TypeScript that discovers and composes enabled integration tools. The isolate has no filesystem, network, process environment, or credentials.",
+      "Primary Codevisor tool interface. Run sandboxed JavaScript or TypeScript that discovers and composes enabled integration, Browser Use, and Computer Use tools. Prefer this over direct search/describe/execute calls. The isolate has no filesystem, network, process environment, or credentials.",
       'Inside code, start with `await tools.search({ query: "<intent>" })`, inspect a match with `await tools.describe.tool({ path })`, then call the exact returned path with `await tools[path](args)`. Pass an async arrow function.',
       inventory
     ].join("\n\n")
@@ -783,6 +1086,7 @@ export const makeMcpManager = (config: McpManagerConfig): McpManager => {
 
     const connecting = (async () => {
       const server = await record(id)
+      if (server.kind !== "managed") throw new Error(`${server.name} is an internal provider`)
       if (!server.enabled && options.allowDisabled !== true) {
         throw new Error(`${server.name} is disabled`)
       }
@@ -881,11 +1185,16 @@ export const makeMcpManager = (config: McpManagerConfig): McpManager => {
       (server) => server.enabled
     )
     const results = await Promise.allSettled(
-      enabled.map(async (server) => ({ server, connection: await connectUpstream(server.id) }))
+      enabled.map(async (server) => {
+        const provider = automationProviders.get(server.id)
+        return provider === undefined
+          ? { server, tools: (await connectUpstream(server.id)).tools }
+          : { server, tools: provider.tools }
+      })
     )
     return results.flatMap((result) =>
       result.status === "fulfilled"
-        ? result.value.connection.tools.map((tool) => ({ server: result.value.server, tool }))
+        ? result.value.tools.map((tool) => ({ server: result.value.server, tool }))
         : []
     )
   }
@@ -944,11 +1253,77 @@ export const makeMcpManager = (config: McpManagerConfig): McpManager => {
       (candidate) => candidate.id === serverId && candidate.enabled
     )
     if (!allowed) throw new Error("Tool server is disabled for this session")
-    const definition = (await connectUpstream(serverId)).tools.find(
+    const provider = automationProviders.get(serverId)
+    const definition = (provider?.tools ?? (await connectUpstream(serverId)).tools).find(
       (candidate) => candidate.name === toolName
     )
     if (definition === undefined) throw new Error(`Tool not found: ${path}`)
     return definition
+  }
+
+  const invokeAutomationProvider = async (
+    provider: AutomationToolProvider,
+    context: { readonly sessionId: string; readonly projectId?: string | undefined },
+    toolName: string,
+    args: Readonly<Record<string, unknown>>
+  ): Promise<CallToolResult> => {
+    if (provider.id !== "browser" && provider.id !== "computer") {
+      throw new Error(`Unknown automation provider: ${provider.id}`)
+    }
+    const definition = provider.tools.find((candidate) => candidate.name === toolName)
+    if (definition === undefined) throw new Error(`Unknown ${provider.id} tool: ${toolName}`)
+    const schema = definition.inputSchema as { readonly properties?: unknown }
+    const properties =
+      typeof schema.properties === "object" && schema.properties !== null
+        ? (schema.properties as Readonly<Record<string, unknown>>)
+        : {}
+    const unknownArguments = Object.keys(args).filter((key) => !(key in properties))
+    if (unknownArguments.length > 0) {
+      throw new Error(
+        `${provider.id}.${toolName} does not accept ${unknownArguments.map((key) => `\`${key}\``).join(", ")}`
+      )
+    }
+    const providerContext =
+      provider.id === "computer"
+        ? {
+            ...context,
+            agentLabel: (await run(config.db.getSessionSummary(context.sessionId))).title
+          }
+        : context
+    let safeArgs = args
+    if (
+      provider.id === "browser" &&
+      (toolName === "upload_files" || toolName === "playwright.fileChooserSetFiles")
+    ) {
+      const session = await run(config.db.getSessionSummary(context.sessionId))
+      if (session.cwd === undefined) throw new Error("This session has no workspace folder")
+      const workspaceRoot = realpathSync(session.cwd)
+      const paths = Array.isArray(args.paths) ? args.paths : []
+      if (paths.length === 0 || !paths.every((path) => typeof path === "string")) {
+        throw new Error(`${toolName} requires one or more workspace file paths`)
+      }
+      const resolvedPaths = paths.map((path) => {
+        const candidate = realpathSync(isAbsolute(path) ? path : resolve(workspaceRoot, path))
+        const withinWorkspace = relative(workspaceRoot, candidate)
+        if (withinWorkspace.startsWith("..") || isAbsolute(withinWorkspace)) {
+          throw new Error("Browser Use can only upload files from the current workspace")
+        }
+        if (!statSync(candidate).isFile()) throw new Error(`Upload path is not a file: ${path}`)
+        return candidate
+      })
+      safeArgs = { ...args, paths: resolvedPaths }
+    }
+    if (provider.id === "browser") {
+      if (toolName === "use_backend") {
+        const requested = safeArgs.backend
+        if (requested === "managed" || requested === "extension") {
+          await browserSetupBroker.resolveBackend(context.sessionId, requested)
+        }
+      } else if (toolName !== "backends" && toolName !== "connection_status") {
+        await browserSetupBroker.resolveBackend(context.sessionId)
+      }
+    }
+    return provider.invoke(providerContext, toolName, safeArgs)
   }
 
   const gatewayRuntime = async (sessionId: string, projectId?: string): Promise<GatewayRuntime> => {
@@ -966,15 +1341,7 @@ export const makeMcpManager = (config: McpManagerConfig): McpManager => {
   /// session id, and removes itself when the transport closes.
   const createGatewayConnection = async (runtime: GatewayRuntime): Promise<GatewayConnection> => {
     const { inventory, projectId, sessionId } = runtime
-    const sdkServer = new McpSdkServer(
-      { name: "Codevisor Tool Gateway", version: "0.1.0" },
-      {
-        instructions: [
-          "Codevisor provides access to the user's enabled integrations. Use search to discover tools, describe to inspect a schema, and execute to call it. Do not conclude that an integration is unavailable before searching Codevisor. Tool calls are approved by default.",
-          inventory
-        ].join("\n\n")
-      }
-    )
+    const sdkServer = new McpSdkServer({ name: "Codevisor Tool Gateway", version: "0.1.0" })
     const searchTool = sdkServer.registerTool(
       "search",
       {
@@ -996,7 +1363,8 @@ export const makeMcpManager = (config: McpManagerConfig): McpManager => {
     sdkServer.registerTool(
       "describe",
       {
-        description: "Return the full schema for one enabled MCP tool.",
+        description:
+          "Compatibility wrapper that returns one enabled tool schema. Prefer tools.describe.tool inside run_code.",
         inputSchema: { server: z.string(), tool: z.string() }
       },
       async ({ server, tool }) => {
@@ -1009,8 +1377,9 @@ export const makeMcpManager = (config: McpManagerConfig): McpManager => {
             content: [{ type: "text" as const, text: "Tool server is disabled for this session" }]
           }
         }
-        const connection = await connectUpstream(server)
-        const definition = connection.tools.find((candidate) => candidate.name === tool)
+        const provider = automationProviders.get(server)
+        const definitions = provider?.tools ?? (await connectUpstream(server)).tools
+        const definition = definitions.find((candidate) => candidate.name === tool)
         if (definition === undefined) {
           return { isError: true, content: [{ type: "text" as const, text: "Tool not found" }] }
         }
@@ -1020,7 +1389,8 @@ export const makeMcpManager = (config: McpManagerConfig): McpManager => {
     sdkServer.registerTool(
       "execute",
       {
-        description: "Execute one enabled MCP tool with JSON arguments.",
+        description:
+          "Compatibility wrapper that executes one enabled tool. Prefer calling the exact tools[path] inside run_code.",
         inputSchema: {
           server: z.string(),
           tool: z.string(),
@@ -1038,6 +1408,15 @@ export const makeMcpManager = (config: McpManagerConfig): McpManager => {
             content: [{ type: "text", text: `${installed.name} is disabled` }]
           }
         }
+        const provider = automationProviders.get(server)
+        if (provider !== undefined) {
+          return invokeAutomationProvider(
+            provider,
+            { sessionId, ...(projectId === undefined ? {} : { projectId }) },
+            tool,
+            args
+          )
+        }
         const connection = await connectUpstream(server)
         return (await connection.client.callTool({ name: tool, arguments: args })) as CallToolResult
       }
@@ -1048,58 +1427,79 @@ export const makeMcpManager = (config: McpManagerConfig): McpManager => {
         description: runCodeToolDescription(inventory),
         inputSchema: { code: z.string().min(1) }
       },
-      async ({ code }) => {
-        const result = (await Effect.runPromise(
-          codeExecutor.execute(code, {
-            invoke: ({ path, args }: { path: string; args: unknown }) =>
-              Effect.tryPromise({
-                try: async () => {
-                  if (path === "search") {
-                    const input =
-                      typeof args === "object" && args !== null
-                        ? (args as { query?: unknown; limit?: unknown })
-                        : {}
-                    return searchCatalog(
-                      projectId,
-                      sessionId,
-                      typeof input.query === "string" ? input.query : "",
-                      typeof input.limit === "number" ? input.limit : 12
-                    )
+      async ({ code }, { signal }) => {
+        const artifacts: SandboxArtifactCollector = {
+          content: [],
+          maxItems: 4,
+          maxBytes: 10 * 1024 * 1024
+        }
+        const result = await codeExecutor.execute(
+          code,
+          {
+            invoke: async ({ path, args }) => {
+              try {
+                if (path === "search") {
+                  const input =
+                    typeof args === "object" && args !== null
+                      ? (args as { query?: unknown; limit?: unknown })
+                      : {}
+                  return searchCatalog(
+                    projectId,
+                    sessionId,
+                    typeof input.query === "string" ? input.query : "",
+                    typeof input.limit === "number" ? input.limit : 12
+                  )
+                }
+                if (path === "describe.tool") {
+                  const input =
+                    typeof args === "object" && args !== null ? (args as { path?: unknown }) : {}
+                  if (typeof input.path !== "string") {
+                    throw new Error("tools.describe.tool expects { path: string }")
                   }
-                  if (path === "describe.tool") {
-                    const input =
-                      typeof args === "object" && args !== null ? (args as { path?: unknown }) : {}
-                    if (typeof input.path !== "string") {
-                      throw new Error("tools.describe.tool expects { path: string }")
-                    }
-                    return describeCatalogPath(projectId, sessionId, input.path)
-                  }
-                  const separator = path.indexOf(".")
-                  if (separator <= 0 || separator === path.length - 1) {
-                    throw new Error(`Invalid tool path: ${path}`)
-                  }
-                  const serverId = path.slice(0, separator)
-                  const toolName = path.slice(separator + 1)
-                  const installed = await record(serverId)
-                  const allowed = (
-                    await run(config.db.resolveMcpServers(projectId, sessionId))
-                  ).some((candidate) => candidate.id === serverId && candidate.enabled)
-                  if (!installed.enabled || !allowed) {
-                    throw new Error(`${installed.name} is disabled for this session`)
-                  }
-                  const connection = await connectUpstream(serverId)
-                  return connection.client.callTool({
+                  return describeCatalogPath(projectId, sessionId, input.path)
+                }
+                const separator = path.indexOf(".")
+                if (separator <= 0 || separator === path.length - 1) {
+                  throw new Error(`Invalid tool path: ${path}`)
+                }
+                const serverId = path.slice(0, separator)
+                const toolName = path.slice(separator + 1)
+                const installed = await record(serverId)
+                const allowed = (await run(config.db.resolveMcpServers(projectId, sessionId))).some(
+                  (candidate) => candidate.id === serverId && candidate.enabled
+                )
+                if (!installed.enabled || !allowed) {
+                  throw new Error(`${installed.name} is disabled for this session`)
+                }
+                const toolArgs =
+                  typeof args === "object" && args !== null ? (args as Record<string, unknown>) : {}
+                const provider = automationProviders.get(serverId)
+                if (provider !== undefined) {
+                  return sandboxSuccessfulToolResult(
+                    await invokeAutomationProvider(
+                      provider,
+                      { sessionId, ...(projectId === undefined ? {} : { projectId }) },
+                      toolName,
+                      toolArgs
+                    ),
+                    artifacts
+                  )
+                }
+                const connection = await connectUpstream(serverId)
+                return sandboxSuccessfulToolResult(
+                  (await connection.client.callTool({
                     name: toolName,
-                    arguments:
-                      typeof args === "object" && args !== null
-                        ? (args as Record<string, unknown>)
-                        : {}
-                  })
-                },
-                catch: (cause) => new Error(errorMessage(cause))
-              })
-          }) as never
-        )) as SandboxExecuteResult
+                    arguments: toolArgs
+                  })) as CallToolResult,
+                  artifacts
+                )
+              } catch (cause) {
+                throw new CodeExecutionToolError(errorMessage(cause))
+              }
+            }
+          },
+          { signal }
+        )
         if (result.error !== undefined) {
           return { isError: true, content: [{ type: "text" as const, text: result.error }] }
         }
@@ -1109,10 +1509,11 @@ export const makeMcpManager = (config: McpManagerConfig): McpManager => {
               type: "text" as const,
               text: JSON.stringify({
                 result: result.result,
-                output: result.output,
                 logs: result.logs
               })
-            }
+            },
+            ...sandboxOutputContent(result.output),
+            ...artifacts.content
           ]
         }
       }
@@ -1142,10 +1543,15 @@ export const makeMcpManager = (config: McpManagerConfig): McpManager => {
       const parsed = new URL(url)
       gatewayBaseUrl = `${parsed.protocol}//127.0.0.1:${parsed.port}`
       oauthBaseUrl = gatewayBaseUrl
+      browserProvider.configureExtensionRelay(gatewayBaseUrl)
     },
-    list: async () => (await run(config.db.listMcpServers)).map(publicServer),
+    list: async () => {
+      await refreshBuiltinProviderStates()
+      return (await run(config.db.listMcpServers)).map(publicServer)
+    },
     detectAuth,
     create: async (request) => {
+      await builtinsReady
       validateRequest(request)
       const authType =
         request.transport === "stdio"
@@ -1178,6 +1584,7 @@ export const makeMcpManager = (config: McpManagerConfig): McpManager => {
         config.db.saveMcpServer({
           id,
           name: request.name.trim(),
+          kind: "managed",
           transport: request.transport,
           ...(url === undefined ? {} : { url }),
           ...(command === undefined ? {} : { command }),
@@ -1197,7 +1604,32 @@ export const makeMcpManager = (config: McpManagerConfig): McpManager => {
       return publicServer(await record(saved.id))
     },
     update: async (id, request) => {
+      await builtinsReady
       const current = await record(id)
+      if (!current.canEdit) {
+        const unsupported = Object.keys(request).filter((key) => key !== "enabled")
+        if (unsupported.length > 0) throw new Error(`${current.name} is managed by Codevisor`)
+        const enabled = request.enabled ?? current.enabled
+        const state = builtinProviderState(current.id as "browser" | "computer", enabled)
+        const saved = await saveRecord(current, {
+          enabled,
+          connectionState: state.connectionState,
+          ...(state.detail === undefined ? {} : { detail: state.detail })
+        })
+        const provider = automationProviders.get(saved.id)!
+        if (!saved.enabled) {
+          await provider.close()
+        } else if (saved.id === "browser" && state.connectionState === "needsSetup") {
+          // Browser downloads can take several minutes. Keep the toggle
+          // responsive and let the settings view observe setup progress.
+          void manager.connect(saved.id).catch(() => undefined)
+        } else if (state.connectionState !== "unavailable") {
+          await manager.connect(saved.id).catch(() => undefined)
+        }
+        await syncManagedAutomationSkillsFromDb()
+        await refreshGatewayInventories()
+        return publicServer(await record(saved.id))
+      }
       const currentSecrets = secrets(current)
       const transport = current.transport
       const url = request.url ?? current.url
@@ -1272,6 +1704,9 @@ export const makeMcpManager = (config: McpManagerConfig): McpManager => {
       return publicServer(await record(id))
     },
     remove: async (id) => {
+      await builtinsReady
+      const current = await record(id)
+      if (!current.canRemove) throw new Error(`${current.name} cannot be removed`)
       await closeConnection(id)
       const timer = refreshTimers.get(id)
       /* v8 ignore next -- timers only exist for the live OAuth refresh adapter. */
@@ -1285,7 +1720,9 @@ export const makeMcpManager = (config: McpManagerConfig): McpManager => {
       const pairs =
         id === undefined
           ? await allTools()
-          : (await connectUpstream(id)).tools.map((tool) => ({ server: selected!, tool }))
+          : (automationProviders.get(id)?.tools ?? (await connectUpstream(id)).tools).map(
+              (tool) => ({ server: selected!, tool })
+            )
       return pairs.map(({ server, tool }) => ({
         serverId: server.id,
         serverName: server.name,
@@ -1297,6 +1734,28 @@ export const makeMcpManager = (config: McpManagerConfig): McpManager => {
     },
     connect: async (id) => {
       await closeConnection(id)
+      const provider = automationProviders.get(id)
+      if (provider !== undefined) {
+        try {
+          if (id === "browser") await browserProvider.ensureSetup()
+          if (id === "computer") await computerProvider.ensureSetup()
+          const current = await record(id)
+          return publicServer(
+            await saveRecord(current, {
+              connectionState: "connected",
+              toolCount: provider.tools.length,
+              detail: undefined
+            })
+          )
+        } catch (cause) {
+          await saveRecord(await record(id), {
+            connectionState: id === "browser" ? "needsSetup" : "unavailable",
+            toolCount: provider.tools.length,
+            detail: errorMessage(cause)
+          })
+          throw cause
+        }
+      }
       await connectUpstream(id)
       return publicServer(await record(id))
     },
@@ -1379,8 +1838,10 @@ export const makeMcpManager = (config: McpManagerConfig): McpManager => {
       )
     },
     /* v8 ignore stop */
-    resolved: async (projectId, sessionId) =>
-      (await run(config.db.resolveMcpServers(projectId, sessionId))).map(publicServer),
+    resolved: async (projectId, sessionId) => {
+      await builtinsReady
+      return (await run(config.db.resolveMcpServers(projectId, sessionId))).map(publicServer)
+    },
     setProjectEnabled: async (projectId, serverId, enabled) => {
       await run(config.db.setProjectMcpEnabled(projectId, serverId, enabled))
       await refreshGatewayInventories()
@@ -1391,7 +1852,11 @@ export const makeMcpManager = (config: McpManagerConfig): McpManager => {
       await refreshGatewayInventories()
       return manager.resolved(projectId, sessionId)
     },
-    issueGateway: async (sessionId, projectId) => {
+    issueGateway: async (sessionId, projectId, sink) => {
+      await builtinsReady
+      if (sink !== undefined) {
+        browserSetupBroker.setSink(sessionId, sink)
+      }
       const existingId = sessionGatewayIds.get(sessionId)
       if (existingId !== undefined && gateways.has(existingId)) {
         const existingUrl = new URL("/mcp/gateway", gatewayBaseUrl)
@@ -1409,6 +1874,60 @@ export const makeMcpManager = (config: McpManagerConfig): McpManager => {
         url: url.toString(),
         bearerToken: gatewayBearerToken
       }
+    },
+    answerQuestion: (sessionId, questionId, answer) =>
+      browserSetupBroker.answerQuestion(sessionId, questionId, answer),
+    acceptBrowserExtension: (socket) => browserProvider.acceptExtensionConnection(socket),
+    browserConfiguration: async () => {
+      const status = browserProvider.status()
+      return {
+        ...(await run(config.db.getBrowserPreference).then((preferredBrowser) =>
+          preferredBrowser === undefined ? {} : { preferredBrowser }
+        )),
+        chromeAvailable: status.chromeAvailable,
+        chromeConnected: status.extensionConnected,
+        managedAvailable: status.backend !== "missing",
+        ...(status.developmentExtensionPath === undefined
+          ? {}
+          : { developmentExtensionPath: status.developmentExtensionPath })
+      }
+    },
+    setBrowserPreference: async (preference) => {
+      await run(config.db.setBrowserPreference(preference))
+      return manager.browserConfiguration()
+    },
+    openBrowserExtensionInstaller: async () => {
+      browserProvider.openDevelopmentExtensionInstaller()
+      return manager.browserConfiguration()
+    },
+    openBrowserExtensionFolder: async () => {
+      browserProvider.openDevelopmentExtensionFolder()
+      return manager.browserConfiguration()
+    },
+    openBrowserExtensionsPage: async () => {
+      browserProvider.openDevelopmentExtensionPage()
+      return manager.browserConfiguration()
+    },
+    openBrowserExtensionWebStore: async () => {
+      browserProvider.openExtensionWebStore()
+      return manager.browserConfiguration()
+    },
+    closeSession: async (sessionId) => {
+      const gatewayId = sessionGatewayIds.get(sessionId)
+      sessionGatewayIds.delete(sessionId)
+      if (gatewayId !== undefined) {
+        const gateway = gateways.get(gatewayId)
+        gateways.delete(gatewayId)
+        await Promise.all(
+          [...(gateway?.connections.values() ?? [])].map((connection) =>
+            connection.server.close().catch(() => undefined)
+          )
+        )
+      }
+      await Promise.all(
+        [...automationProviders.values()].map((provider) => provider.closeSession(sessionId))
+      )
+      await browserSetupBroker.closeSession(sessionId)
     },
     handleGatewayRequest: async (request, response) => {
       const authorization = request.headers.authorization
@@ -1483,6 +2002,8 @@ export const makeMcpManager = (config: McpManagerConfig): McpManager => {
       /* v8 ignore next -- timers only exist for the live OAuth refresh adapter. */
       for (const timer of refreshTimers.values()) clearTimeout(timer)
       await Promise.all([...connections.keys()].map(closeConnection))
+      await browserSetupBroker.close()
+      await Promise.all([...automationProviders.values()].map((provider) => provider.close()))
       await Promise.all(
         [...gateways.values()].flatMap((gateway) =>
           [...gateway.connections.values()].map(async (connection) => {

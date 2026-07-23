@@ -69,6 +69,7 @@ public final class LocalCodevisorServer {
     private let databasePath: String
     private let logURL: URL
     private let dataUpgradeStatusURL: URL
+    private let computerUseBridge: ComputerUseBridge?
     private let launcher: Launcher
     private let serverEnvironmentProvider: ServerEnvironmentProvider
     private let staleListenerTerminator: ListenerTerminator
@@ -104,6 +105,7 @@ public final class LocalCodevisorServer {
         databasePath: String = LocalCodevisorServer.defaultDatabasePath(),
         logURL: URL = LocalCodevisorServer.defaultLogURL(),
         dataUpgradeStatusURL: URL = LocalCodevisorServer.defaultDataUpgradeStatusURL(),
+        computerUseBridge: ComputerUseBridge? = nil,
         serverEnvironmentProvider: @escaping ServerEnvironmentProvider = LocalCodevisorServer.defaultServerEnvironment,
         launcher: @escaping Launcher = LocalCodevisorServer.launchProcess,
         staleListenerTerminator: @escaping ListenerTerminator = { await LocalCodevisorServer.terminateListeners(onPort: $0) }
@@ -115,6 +117,7 @@ public final class LocalCodevisorServer {
         self.databasePath = databasePath
         self.logURL = logURL
         self.dataUpgradeStatusURL = dataUpgradeStatusURL
+        self.computerUseBridge = computerUseBridge
         self.serverEnvironmentProvider = serverEnvironmentProvider
         self.launcher = launcher
         self.staleListenerTerminator = staleListenerTerminator
@@ -132,6 +135,15 @@ public final class LocalCodevisorServer {
     }
 
     private func performEnsureRunning() async -> LocalCodevisorServerState {
+        let computerUseConfiguration: ComputerUseBridge.Configuration?
+        do {
+            computerUseConfiguration = try computerUseBridge?.start()
+        } catch {
+            computerUseConfiguration = nil
+            Log.server.error(
+                "Computer Use bridge failed to start: \(String(describing: error), privacy: .public)"
+            )
+        }
         if let health = await currentHealth() {
             // A durable server left behind by an older app install keeps
             // serving across upgrades (`brew upgrade` replaces the bundle but
@@ -176,6 +188,10 @@ public final class LocalCodevisorServer {
             // instead of swapping a standalone runtime the next app launch
             // would discard.
             serverEnvironment["CODEVISOR_APP_HOSTED"] = "1"
+            if let computerUseConfiguration {
+                serverEnvironment["CODEVISOR_COMPUTER_USE_SOCKET"] = computerUseConfiguration.socketPath
+                serverEnvironment["CODEVISOR_COMPUTER_USE_TOKEN"] = computerUseConfiguration.token
+            }
             let request = LocalCodevisorServerLaunchRequest(
                 nodeExecutable: nodeExecutable,
                 entrypoint: entrypoint,

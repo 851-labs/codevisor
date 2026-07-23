@@ -104,3 +104,15 @@
 [submodule ".repos/add-mcp"]
 	path = .repos/add-mcp
 	url = https://github.com/neon-solutions/add-mcp.git
+[submodule ".repos/open-codex-computer-use"]
+	path = .repos/open-codex-computer-use
+	url = https://github.com/iFurySt/open-codex-computer-use.git
+[submodule ".repos/playwright"]
+	path = .repos/playwright
+	url = https://github.com/microsoft/playwright.git
+[submodule ".repos/playwright-mcp"]
+	path = .repos/playwright-mcp
+	url = https://github.com/microsoft/playwright-mcp.git
+[submodule ".repos/cua"]
+	path = .repos/cua
+	url = https://github.com/trycua/cua.git

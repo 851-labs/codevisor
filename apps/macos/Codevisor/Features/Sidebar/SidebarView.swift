@@ -179,9 +179,13 @@ struct SidebarView: View {
         let serverId = environment.machines.selectedMachineId
         let sessionItems = chronologicalSessions
         let sessionRank = Dictionary(
-            uniqueKeysWithValues: sessionItems.enumerated().map { ($0.element.session.id, $0.offset) }
+            sessionItems.enumerated().map { ($0.element.session.id, $0.offset) },
+            uniquingKeysWith: min
         )
-        let sessionsById = Dictionary(uniqueKeysWithValues: sessionItems.map { ($0.session.id, $0) })
+        let sessionsById = Dictionary(
+            sessionItems.map { ($0.session.id, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
         let workspaces = environment.workspaces.loadAll().filter {
             $0.serverId == serverId && !$0.isArchived
         }

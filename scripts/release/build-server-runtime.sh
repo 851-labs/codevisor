@@ -77,6 +77,7 @@ cp "$repo_root/package.json" "$runtime_dir/package.json"
 cp "$repo_root/bun.lock" "$runtime_dir/bun.lock"
 cp "$repo_root/apps/server/package.json" "$runtime_dir/apps/server/package.json"
 cp -R "$repo_root/apps/server/dist" "$runtime_dir/apps/server/dist"
+cp -R "$repo_root/apps/server/resources" "$runtime_dir/apps/server/resources"
 
 for package_name in agent-runtime api db terminal; do
   cp "$repo_root/packages/$package_name/package.json" "$runtime_dir/packages/$package_name/package.json"

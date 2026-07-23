@@ -332,6 +332,33 @@ command = "docs-mcp"
     expect(codex.servers).toHaveLength(1)
   })
 
+  it("hides Codex native automation transports from MCP settings discovery", async () => {
+    const { manager } = await testManager({
+      [`${HOME}/.claude.json`]: JSON.stringify({
+        mcpServers: { node_repl: { command: "user-node-repl" } }
+      }),
+      [`${HOME}/.codex/config.toml`]: `[mcp_servers.node_repl]
+command = "native-node-repl"
+
+[mcp_servers.computer-use]
+command = "native-computer-use"
+
+[mcp_servers.docs]
+command = "docs-mcp"
+`
+    })
+
+    const scan = await manager.scan()
+    expect(harnessGroup(scan, "codex").servers.map((server) => server.serverName)).toEqual(["docs"])
+    expect(harnessGroup(scan, "claude-code").servers.map((server) => server.serverName)).toEqual([
+      "node_repl"
+    ])
+    expect(scan.candidates.map((candidate) => candidate.identity).sort()).toEqual([
+      "docs-mcp",
+      "user-node-repl"
+    ])
+  })
+
   it("reads goose YAML as scan-only (no disable/remove support)", async () => {
     const { manager } = await testManager({
       [`${HOME}/.config/goose/config.yaml`]: `extensions:

@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Connect Chrome to Codevisor</title>
+    <link rel="stylesheet" href="connect.css" />
+  </head>
+  <body>
+    <main>
+      <div class="mark">C</div>
+      <h1>Connect Chrome to Codevisor</h1>
+      <p id="intro">
+        Codevisor will list your open web tabs. An agent must explicitly claim a tab before it can
+        inspect or control the page.
+      </p>
+      <div id="tabs" aria-live="polite"></div>
+      <p id="status"></p>
+    </main>
+    <script src="connect.js"></script>
+  </body>
+</html>

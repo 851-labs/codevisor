@@ -66,6 +66,7 @@ import { Client as McpClient } from "@modelcontextprotocol/sdk/client/index.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
 import type { Transport as McpTransport } from "@modelcontextprotocol/sdk/shared/transport.js"
 import { ToolListChangedNotificationSchema } from "@modelcontextprotocol/sdk/types.js"
+import { CODEVISOR_BROWSER_EXTENSION_ID } from "./browser-extension-relay.js"
 
 const run = <A, E>(effect: Effect.Effect<A, E>): Promise<A> => Effect.runPromise(effect)
 
@@ -1351,6 +1352,12 @@ describe("@codevisor/server", () => {
     ])
     expect(listed.tools.find((tool) => tool.name === "search")?.description).toContain("PostHog")
     expect(listed.tools.find((tool) => tool.name === "run_code")?.description).toContain("PostHog")
+    expect(listed.tools.find((tool) => tool.name === "run_code")?.description).toContain(
+      "Primary Codevisor tool interface"
+    )
+    expect(listed.tools.find((tool) => tool.name === "execute")?.description).toContain(
+      "Compatibility wrapper"
+    )
     let toolListChanges = 0
     client.setNotificationHandler(ToolListChangedNotificationSchema, () => {
       toolListChanges += 1
@@ -1453,7 +1460,7 @@ describe("@codevisor/server", () => {
   })
 
   it("manages MCP installations without returning encrypted credentials", async () => {
-    const { server, services } = await start()
+    const { agents, server, services } = await start()
     const created = await jsonRequest(server, "/v1/mcps", {
       method: "POST",
       body: JSON.stringify({
@@ -1486,7 +1493,30 @@ describe("@codevisor/server", () => {
     expect(updated.body).toMatchObject({ enabled: false, name: "Renamed" })
 
     const listed = await jsonRequest(server, "/v1/mcps")
-    expect(listed.body).toEqual([expect.objectContaining({ id, name: "Renamed" })])
+    expect(listed.body).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id, kind: "managed", name: "Renamed" }),
+        expect.objectContaining({ id: "browser", canRemove: false, kind: "browserUse" }),
+        expect.objectContaining({ id: "computer", canEdit: false, kind: "computerUse" })
+      ])
+    )
+    expect((await jsonRequest(server, "/v1/mcps/browser", { method: "DELETE" })).status).toBe(409)
+    expect(
+      (
+        await jsonRequest(server, "/v1/mcps/computer", {
+          method: "PATCH",
+          body: JSON.stringify({ name: "Renamed" })
+        })
+      ).status
+    ).toBe(409)
+    expect(
+      (
+        await jsonRequest(server, "/v1/mcps/computer", {
+          method: "PATCH",
+          body: JSON.stringify({ enabled: false })
+        })
+      ).status
+    ).toBe(200)
 
     expect((await jsonRequest(server, `/v1/mcps/${id}`, { method: "DELETE" })).status).toBe(204)
 
@@ -1512,7 +1542,9 @@ describe("@codevisor/server", () => {
     expect(changedLocal.body).toMatchObject({ environmentNames: ["ACCOUNT", "API_KEY"] })
     expect(JSON.stringify(changedLocal.body)).not.toContain("new-secret")
 
-    const project = await run(services.db.createProject({ folderPath: "/tmp/mcp-route-scope" }))
+    const scopedProjectFolder = mkdtempSync(join(tmpdir(), "codevisor-mcp-route-scope-"))
+    tempDirs.push(scopedProjectFolder)
+    const project = await run(services.db.createProject({ folderPath: scopedProjectFolder }))
     const session = await run(
       services.db.createSession({ harnessId: "codex", projectId: project.id, title: "Scoped" })
     )
@@ -1588,7 +1620,29 @@ describe("@codevisor/server", () => {
     expect((await jsonRequest(server, `/v1/mcps/${localId}`, { method: "DELETE" })).status).toBe(
       204
     )
-    expect((await jsonRequest(server, "/v1/mcps")).body).toEqual([])
+    expect(
+      ((await jsonRequest(server, "/v1/mcps")).body as ReadonlyArray<McpServer>).map(
+        (candidate) => candidate.id
+      )
+    ).toEqual(["browser", "computer"])
+
+    const automationAnswer = vi.spyOn(services.mcp, "answerQuestion").mockResolvedValueOnce(true)
+    expect(
+      (
+        await jsonRequest(
+          server,
+          `/v1/sessions/${session.id}/questions/automation-question/answer`,
+          {
+            method: "POST",
+            body: JSON.stringify({ outcome: "cancelled" })
+          }
+        )
+      ).status
+    ).toBe(202)
+    expect(automationAnswer).toHaveBeenCalledWith(session.id, "automation-question", {
+      outcome: "cancelled"
+    })
+    expect(agents.questionAnswers).toEqual([])
 
     const { mcp: _mcp, ...withoutMcp } = services
     const unavailable = await startWithApp(withoutMcp)
@@ -1613,11 +1667,65 @@ describe("@codevisor/server", () => {
     expect(
       await fetch(`${unavailable.url}/mcp/gateway`, { method: "POST" }).then((r) => r.status)
     ).toBe(501)
+    const unavailableAnswer = await jsonRequest(
+      unavailable,
+      `/v1/sessions/${session.id}/questions/no-mcp-question/answer`,
+      {
+        method: "POST",
+        body: JSON.stringify({ outcome: "cancelled" })
+      }
+    )
+    expect(unavailableAnswer.status, JSON.stringify(unavailableAnswer.body)).toBe(202)
+    expect(agents.questionAnswers.at(-1)).toEqual([
+      expect.any(String),
+      "no-mcp-question",
+      { outcome: "cancelled" }
+    ])
     expect(
       await fetch(`${unavailable.url}/v1/mcps/oauth/callback?state=x&code=y`).then(
         (response) => response.status
       )
     ).toBe(501)
+  })
+
+  it("persists Browser Use selection and tracks the live Chrome relay", async () => {
+    const { server } = await start()
+    const initial = await jsonRequest(server, "/v1/browser-use")
+    expect(initial.status).toBe(200)
+    expect(initial.body).toMatchObject({
+      chromeConnected: false,
+      managedAvailable: expect.any(Boolean)
+    })
+
+    const selected = await jsonRequest(server, "/v1/browser-use", {
+      method: "PATCH",
+      body: JSON.stringify({ preferredBrowser: "managed" })
+    })
+    expect(selected.body).toMatchObject({ preferredBrowser: "managed" })
+    expect((await jsonRequest(server, "/v1/browser-use")).body).toMatchObject({
+      preferredBrowser: "managed"
+    })
+    expect(
+      (
+        await jsonRequest(server, "/v1/browser-use", {
+          method: "PATCH",
+          body: JSON.stringify({ preferredBrowser: "firefox" })
+        })
+      ).status
+    ).toBe(400)
+
+    const socket = new WebSocket(
+      `${server.url.replace("http:", "ws:")}/v1/browser-use/extension/socket`,
+      { headers: { Origin: `chrome-extension://${CODEVISOR_BROWSER_EXTENSION_ID}` } }
+    )
+    await new Promise<void>((resolve, reject) => {
+      socket.once("open", resolve)
+      socket.once("error", reject)
+    })
+    expect((await jsonRequest(server, "/v1/browser-use")).body).toMatchObject({
+      chromeConnected: true
+    })
+    socket.close()
   })
 
   it("exposes harness authentication and account management routes", async () => {
@@ -5544,7 +5652,8 @@ describe("native MCP and skills routes", () => {
     setInstalled: async (directoryName: string, harnessId: string, installed: boolean) => {
       calls.push(["setInstalled", directoryName, harnessId, installed])
       return skillsScan
-    }
+    },
+    syncManaged: async () => {}
   })
 
   it("serves scans from the configured managers", async () => {

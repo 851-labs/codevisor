@@ -46,14 +46,20 @@ const listen = async (server: Server): Promise<string> => {
   return `http://127.0.0.1:${address.port}`
 }
 
-const testManager = async (): Promise<{ db: CodevisorDatabaseService; manager: McpManager }> => {
+const testManager = async (
+  syncManagedSkills?: NonNullable<Parameters<typeof makeMcpManager>[0]["syncManagedSkills"]>
+): Promise<{ db: CodevisorDatabaseService; manager: McpManager }> => {
   const directory = mkdtempSync(join(tmpdir(), "codevisor-mcp-manager-"))
   directories.push(directory)
   const db = await run(
     makeDatabase({ filename: join(directory, "codevisor.sqlite"), serverId: "test" })
   )
   databases.push(db)
-  const manager = makeMcpManager({ db, dataDir: directory })
+  const manager = makeMcpManager({
+    db,
+    dataDir: directory,
+    ...(syncManagedSkills === undefined ? {} : { syncManagedSkills })
+  })
   managers.push(manager)
   return { db, manager }
 }
@@ -118,7 +124,18 @@ const workingUpstream = async () => {
         arguments?: Record<string, unknown>
       }
       calls.push(params)
-      result = { content: [{ type: "text", text: JSON.stringify(params) }] }
+      result =
+        params.arguments?.binary === true
+          ? {
+              content: [
+                {
+                  type: "image",
+                  mimeType: "image/png",
+                  data: Buffer.from("gateway-binary-image").toString("base64")
+                }
+              ]
+            }
+          : { content: [{ type: "text", text: JSON.stringify(params) }] }
     } else {
       response.writeHead(400, { "content-type": "text/plain" })
       response.end("unexpected method")
@@ -244,9 +261,25 @@ describe("MCP manager", () => {
     expect(upstream.requests.some((request) => request.headers["x-workspace"] === "emojis")).toBe(
       true
     )
-    expect((await manager.list()).map((server) => server.id)).toEqual([created.id])
+    expect((await manager.list()).map((server) => server.id)).toEqual([
+      "browser",
+      "computer",
+      created.id
+    ])
+    expect(await manager.list()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "browser", kind: "browserUse", canRemove: false }),
+        expect.objectContaining({ id: "computer", kind: "computerUse", canEdit: false })
+      ])
+    )
     expect(await manager.tools(created.id)).toHaveLength(2)
-    expect(await manager.tools()).toHaveLength(2)
+    expect(await manager.tools()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ serverId: "browser", name: "snapshot" }),
+        expect.objectContaining({ serverId: "computer", name: "get_app_state" }),
+        expect.objectContaining({ serverId: created.id, name: "lookup_project" })
+      ])
+    )
 
     const project = await run(db.createProject({ folderPath: "/tmp/mcp-manager-project" }))
     const session = await run(
@@ -277,6 +310,8 @@ describe("MCP manager", () => {
       }) as unknown as Transport
     )
     try {
+      expect(client.getInstructions()).toBeUndefined()
+
       const search = await client.callTool({
         name: "search",
         arguments: { query: "project", limit: 1 }
@@ -316,6 +351,20 @@ describe("MCP manager", () => {
       })
       expect(codeResult.isError).not.toBe(true)
       expect(JSON.stringify(codeResult.content)).toContain("list_issues")
+      const binaryCodeResult = await client.callTool({
+        name: "run_code",
+        arguments: {
+          code: `async () => tools["${created.id}.lookup_project"]({ binary: true })`
+        }
+      })
+      expect(binaryCodeResult.content).toEqual(
+        expect.arrayContaining([expect.objectContaining({ type: "image", mimeType: "image/png" })])
+      )
+      const binaryContent = binaryCodeResult.content as Array<{ readonly type: string }>
+      expect(JSON.stringify(binaryContent)).toContain("artifact_ref")
+      expect(JSON.stringify(binaryContent.filter((block) => block.type === "text"))).not.toContain(
+        Buffer.from("gateway-binary-image").toString("base64")
+      )
       for (const code of [
         `async () => tools.describe.tool({})`,
         `async () => tools.describe.tool("invalid")`,
@@ -327,6 +376,21 @@ describe("MCP manager", () => {
           true
         )
       }
+      const caughtAutomationError = await client.callTool({
+        name: "run_code",
+        arguments: {
+          code: `async () => tools["computer.select_text"]({
+            app: "com.apple.Notes",
+            element_index: 1,
+            text: "story",
+            mode: "all"
+          }).catch(error => error.message)`
+        }
+      })
+      expect(caughtAutomationError.isError).not.toBe(true)
+      expect(JSON.stringify(caughtAutomationError.content)).toContain(
+        "computer.select_text does not accept `mode`"
+      )
       for (const code of [
         `async () => tools.search("issues")`,
         `async () => tools.search({ query: 42, limit: "many" })`,
@@ -417,7 +481,44 @@ describe("MCP manager", () => {
     ).toBe("needsAuthorization")
     await manager.update(created.id, { authType: "none", enabled: false })
     await manager.remove(created.id)
-    expect(await manager.list()).toEqual([])
+    expect((await manager.list()).map((server) => server.id)).toEqual(["browser", "computer"])
+  })
+
+  it("keeps built-in automation providers immutable but disableable", async () => {
+    const { manager } = await testManager()
+    await expect(manager.remove("browser")).rejects.toThrow("cannot be removed")
+    await expect(manager.update("computer", { name: "Renamed" })).rejects.toThrow(
+      "managed by Codevisor"
+    )
+    const disabled = await manager.update("computer", { enabled: false })
+    expect(disabled).toMatchObject({
+      canEdit: false,
+      canRemove: false,
+      enabled: false,
+      id: "computer",
+      kind: "computerUse"
+    })
+    expect((await manager.resolved()).find((server) => server.id === "computer")?.enabled).toBe(
+      false
+    )
+  })
+
+  it("synchronizes proper managed skills with built-in provider state", async () => {
+    const synchronized: Array<ReadonlyArray<{ directoryName: string; enabled: boolean }>> = []
+    const { manager } = await testManager(async (skills) => {
+      synchronized.push(skills.map(({ directoryName, enabled }) => ({ directoryName, enabled })))
+    })
+    await manager.list()
+    expect(synchronized.at(-1)).toEqual([
+      { directoryName: "browser-use", enabled: true },
+      { directoryName: "computer-use", enabled: true }
+    ])
+
+    await manager.update("computer", { enabled: false })
+    expect(synchronized.at(-1)).toEqual([
+      { directoryName: "browser-use", enabled: true },
+      { directoryName: "computer-use", enabled: false }
+    ])
   })
 
   it("accepts harness redials: fresh initialize handshakes reuse the same gateway", async () => {

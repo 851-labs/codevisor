@@ -105,12 +105,14 @@ try {
 } finally {
   await rm(generatedIconDirectory, { recursive: true, force: true })
 }
+const developmentBrowserIconDirectory = await createDevelopmentBrowserExtensionIcons()
 
 const sharedEnvironment = {
   ...process.env,
   CODEVISOR_DEV_WORKTREE: worktreeName,
   CODEVISOR_DEV_INSTANCE_ID: instanceName,
   CODEVISOR_DEV_ICON_COLOR: developmentIconColor.hex,
+  CODEVISOR_DEV_EXTENSION_ICON_DIR: developmentBrowserIconDirectory,
   CODEVISOR_DEV_PORT: String(port),
   CODEVISOR_DEV_WWW_PORT: String(wwwPort),
   CODEVISOR_DEV_DATA_DIR: dataDirectory,
@@ -347,6 +349,23 @@ async function createDevelopmentAppIcon() {
     join(generatedDirectory, "Assets", "icon-v2.svg")
   )
   return generatedDirectory
+}
+
+async function createDevelopmentBrowserExtensionIcons() {
+  const iconsetDirectory = join(tmpRoot, "BrowserExtensionDev.iconset")
+  const compiledIcon = join(
+    derivedDataPath,
+    "Build",
+    "Products",
+    "Debug",
+    `${appName}.app`,
+    "Contents",
+    "Resources",
+    "AppIconDevGenerated.icns"
+  )
+  await rm(iconsetDirectory, { recursive: true, force: true })
+  await run("iconutil", ["--convert", "iconset", "--output", iconsetDirectory, compiledIcon])
+  return iconsetDirectory
 }
 
 async function findAvailablePort(preferred, base, range) {

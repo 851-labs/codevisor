@@ -7,11 +7,9 @@ import ACPKit
 /// owns no background, border, padding, or transition: those belong to the
 /// shared composer shell so every state receives the same Liquid Glass style.
 ///
-/// Selection model: exactly one of the options (including "Other") for
-/// single-select questions; multi-select questions toggle. The notes editor
-/// is always visible below the options — optional alongside a selection,
-/// required when "Other" is chosen (it IS the answer) — so choosing "Other"
-/// never shifts the layout.
+/// Generic questions use the normal option-and-note picker. First-party setup
+/// flows can request a dedicated presentation while retaining the same
+/// blocking question lifecycle, keyboard focus, cancellation, and resolution.
 ///
 /// Multiple questions show one at a time with progress; answers accumulate
 /// locally and submit once after the last question (codex behavior).
@@ -76,15 +74,19 @@ struct QuestionPickerContent: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             if let question {
-                if let message = request.message, !message.isEmpty {
-                    Text(message)
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
+                if isBrowserExtensionPresentation(question) {
+                    browserExtensionSetup(question)
+                } else {
+                    if let message = request.message, !message.isEmpty {
+                        Text(message)
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                    }
+                    header(question)
+                    optionList(question)
+                    notesEditor(question)
+                    footer(question)
                 }
-                header(question)
-                optionList(question)
-                notesEditor(question)
-                footer(question)
             }
         }
         .disabled(isResolving)
@@ -128,24 +130,149 @@ struct QuestionPickerContent: View {
 
     // MARK: - Sections
 
+    private func isBrowserExtensionPresentation(_ question: QuestionSpec) -> Bool {
+        question.presentation == .browserExtensionSetup
+            || question.presentation == .browserExtensionWaiting
+    }
+
+    private func browserExtensionSetup(_ question: QuestionSpec) -> some View {
+        let isWaiting = question.presentation == .browserExtensionWaiting
+        let isDevelopment = question.options.contains(where: { $0.label == "Show Folder" })
+        return VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                Text("Add Codevisor to Chrome")
+                    .font(.callout.weight(.semibold))
+                Spacer(minLength: 12)
+                dismissButton
+            }
+
+            VStack(alignment: .leading, spacing: 0) {
+                if isDevelopment {
+                    browserSetupStep(
+                        number: 1,
+                        title: "Open the Extensions page in Chrome",
+                        actionLabel: "Open Extensions",
+                        systemImage: "macwindow"
+                    )
+                    browserSetupDivider
+                    browserSetupStep(
+                        number: 2,
+                        title: "Open the Codevisor extension folder",
+                        actionLabel: "Show Folder",
+                        systemImage: "folder"
+                    )
+                    browserSetupDivider
+                    browserSetupStep(
+                        number: 3,
+                        title: "Drop the extension folder into the Extensions page"
+                    )
+                } else {
+                    browserSetupStep(
+                        number: 1,
+                        title: "Install Codevisor from the Chrome Web Store",
+                        actionLabel: "Open Web Store",
+                        systemImage: "arrow.up.forward.app"
+                    )
+                    browserSetupDivider
+                    browserSetupStep(
+                        number: 2,
+                        title: "Return to Codevisor after the extension is installed"
+                    )
+                }
+            }
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(theme.cardQuietBackground)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .strokeBorder(theme.border, lineWidth: 1)
+            )
+
+            HStack(spacing: 8) {
+                if isWaiting {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("Waiting for Chrome…")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 8)
+                if let backOptionLabel = question.backOptionLabel {
+                    navButton("arrow.left", help: "Back") {
+                        submitDirectAnswer(question, label: backOptionLabel)
+                    }
+                }
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(isWaiting ? "Finish Chrome setup" : "Connect Chrome")
+    }
+
+    @ViewBuilder
+    private func browserSetupStep(
+        number: Int,
+        title: String,
+        actionLabel: String? = nil,
+        systemImage: String? = nil
+    ) -> some View {
+        HStack(spacing: 10) {
+            Text("\(number).")
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(.secondary)
+                .frame(width: 18, alignment: .trailing)
+            Text(title)
+                .font(.callout)
+                .foregroundStyle(.primary)
+            Spacer(minLength: 12)
+            if let actionLabel, let systemImage {
+                Button {
+                    performBrowserSetupAction(actionLabel)
+                } label: {
+                    Label(actionLabel, systemImage: systemImage)
+                        .font(.callout)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.regular)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
+    }
+
+    private var browserSetupDivider: some View {
+        Divider()
+            .padding(.leading, 40)
+    }
+
+    private func performBrowserSetupAction(_ action: String) {
+        Task {
+            await controller.performBrowserExtensionSetupAction(action)
+        }
+    }
+
+    private var dismissButton: some View {
+        Button {
+            cancel()
+        } label: {
+            Image(systemName: "xmark")
+                .font(.caption)
+                .frame(width: 20, height: 20)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(.secondary)
+        .help("Dismiss without answering (Esc)")
+        .accessibilityLabel("Dismiss without answering")
+        .accessibilityHint("Keyboard shortcut: Escape")
+    }
+
     private func header(_ question: QuestionSpec) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             Text(question.question)
                 .font(.callout.weight(.medium))
             Spacer(minLength: 0)
-            Button {
-                cancel()
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.caption)
-                    .frame(width: 20, height: 20)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
-            .help("Dismiss without answering (Esc)")
-            .accessibilityLabel("Dismiss without answering")
-            .accessibilityHint("Keyboard shortcut: Escape")
+            dismissButton
         }
     }
 
@@ -293,6 +420,11 @@ struct QuestionPickerContent: View {
             Spacer()
             // Action buttons cluster tighter than the hint text.
             HStack(spacing: 4) {
+                if let backOptionLabel = question.backOptionLabel {
+                    navButton("arrow.left", help: "Back") {
+                        submitDirectAnswer(question, label: backOptionLabel)
+                    }
+                }
                 if questionIndex > 0 {
                     navButton("arrow.left", help: "Previous question (←)") {
                         moveQuestion(-1)
@@ -436,6 +568,19 @@ struct QuestionPickerContent: View {
         }
     }
 
+    /// Internal setup flows can expose deterministic navigation without
+    /// pretending Back is one of the user's answer choices.
+    private func submitDirectAnswer(_ question: QuestionSpec, label: String) {
+        guard !isResolving else { return }
+        didStartResolving = true
+        Task {
+            await controller.answerQuestion(answers: [
+                question.id: QuestionAnswerEntry(answers: [label])
+            ])
+            didStartResolving = false
+        }
+    }
+
     /// Keys arrive through the anchor's first-responder status, so the
     /// responder chain already arbitrates: while the notes editor (an
     /// NSTextView) holds the keyboard, nothing lands here — no manual
@@ -444,6 +589,9 @@ struct QuestionPickerContent: View {
     private func handleKey(_ key: QuestionPickerKey) -> Bool {
         if isResolving { return true }
         guard let question else { return false }
+        if isBrowserExtensionPresentation(question) {
+            return handleBrowserExtensionKey(key, question: question)
+        }
         switch key {
         case .up:
             highlighted = max(0, highlighted - 1)
@@ -452,7 +600,11 @@ struct QuestionPickerContent: View {
             highlighted = min(rowCount(question) - 1, highlighted + 1)
             return true
         case .left:
-            moveQuestion(-1)
+            if let backOptionLabel = question.backOptionLabel {
+                submitDirectAnswer(question, label: backOptionLabel)
+            } else {
+                moveQuestion(-1)
+            }
             return true
         case .right:
             moveQuestion(1)
@@ -487,6 +639,25 @@ struct QuestionPickerContent: View {
             guard digit >= 1, digit <= rowCount(question) else { return false }
             highlighted = digit - 1
             activate(question, index: digit - 1)
+            return true
+        }
+    }
+
+    private func handleBrowserExtensionKey(_ key: QuestionPickerKey, question: QuestionSpec) -> Bool {
+        switch key {
+        case .enter, .space:
+            guard let label = question.options.first?.label else { return true }
+            performBrowserSetupAction(label)
+            return true
+        case .left:
+            if let backOptionLabel = question.backOptionLabel {
+                submitDirectAnswer(question, label: backOptionLabel)
+            }
+            return true
+        case .escape:
+            cancel()
+            return true
+        case .up, .down, .right, .digit:
             return true
         }
     }

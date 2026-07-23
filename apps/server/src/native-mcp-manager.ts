@@ -101,6 +101,15 @@ interface DiscoveredServer {
   readonly normalized: NormalizedNativeServer
 }
 
+// These are ChatGPT/Codex's own automation transports. Codevisor disables
+// them per thread in favor of its gateway, so offering them for import or
+// management in MCP Settings would be misleading. Keep the rule scoped to
+// Codex so an identically named user server in another harness stays visible.
+const HIDDEN_CODEX_NATIVE_MCPS = new Set(["computer-use", "node_repl"])
+
+const isHiddenNativeMcp = (harnessId: string, serverName: string): boolean =>
+  harnessId === "codex" && HIDDEN_CODEX_NATIVE_MCPS.has(serverName)
+
 export const makeNativeMcpManager = (config: NativeMcpManagerConfig): NativeMcpManager => {
   const fs = config.fs ?? defaultNativeConfigFileSystem
   const home = config.homedir ?? homedir()
@@ -183,6 +192,7 @@ export const makeNativeMcpManager = (config: NativeMcpManagerConfig): NativeMcpM
     }
     const servers: Array<DiscoveredServer> = []
     for (const [serverName, raw] of Object.entries(serversValue)) {
+      if (isHiddenNativeMcp(definition.id, serverName)) continue
       const normalized = normalizeNativeServer(definition.id, raw)
       if (normalized === undefined) continue
       servers.push(

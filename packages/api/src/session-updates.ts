@@ -146,6 +146,13 @@ export const QuestionOption = Schema.Struct({
 })
 export type QuestionOption = typeof QuestionOption.Type
 
+/** Optional first-party composer treatment for deterministic setup flows. */
+export const QuestionPresentation = Schema.Literals([
+  "browserExtensionSetup",
+  "browserExtensionWaiting"
+])
+export type QuestionPresentation = typeof QuestionPresentation.Type
+
 /** One question inside a question request. `allowsOther` adds the free-text
  *  affordance; `isSecret` masks that free-text input. */
 export const QuestionSpec = Schema.Struct({
@@ -155,7 +162,12 @@ export const QuestionSpec = Schema.Struct({
   options: Schema.Array(QuestionOption),
   multiSelect: Schema.optional(Schema.Boolean),
   allowsOther: Schema.Boolean,
-  isSecret: Schema.optional(Schema.Boolean)
+  isSecret: Schema.optional(Schema.Boolean),
+  /** Answer label submitted by the composer's native back-arrow control.
+   *  This is navigation, so it is intentionally not rendered as an option. */
+  backOptionLabel: Schema.optional(Schema.String),
+  /** Selects a dedicated first-party composer UI instead of generic options. */
+  presentation: Schema.optional(QuestionPresentation)
 })
 export type QuestionSpec = typeof QuestionSpec.Type
 

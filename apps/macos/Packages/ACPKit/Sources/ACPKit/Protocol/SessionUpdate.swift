@@ -121,6 +121,12 @@ public struct QuestionOption: Sendable, Codable, Equatable, Identifiable {
     }
 }
 
+/// Optional first-party composer treatment for deterministic setup flows.
+public enum QuestionPresentation: String, Sendable, Codable, Equatable {
+    case browserExtensionSetup
+    case browserExtensionWaiting
+}
+
 /// One question inside a blocking question request.
 public struct QuestionSpec: Sendable, Codable, Equatable, Identifiable {
     public var id: String
@@ -130,6 +136,11 @@ public struct QuestionSpec: Sendable, Codable, Equatable, Identifiable {
     public var multiSelect: Bool?
     public var allowsOther: Bool
     public var isSecret: Bool?
+    /// Answer label submitted by the composer's native back-arrow control.
+    /// It is navigation and does not appear in the option list.
+    public var backOptionLabel: String?
+    /// Selects a dedicated first-party composer UI instead of generic options.
+    public var presentation: QuestionPresentation?
 
     public init(
         id: String,
@@ -138,7 +149,9 @@ public struct QuestionSpec: Sendable, Codable, Equatable, Identifiable {
         options: [QuestionOption] = [],
         multiSelect: Bool? = nil,
         allowsOther: Bool = true,
-        isSecret: Bool? = nil
+        isSecret: Bool? = nil,
+        backOptionLabel: String? = nil,
+        presentation: QuestionPresentation? = nil
     ) {
         self.id = id
         self.header = header
@@ -147,6 +160,8 @@ public struct QuestionSpec: Sendable, Codable, Equatable, Identifiable {
         self.multiSelect = multiSelect
         self.allowsOther = allowsOther
         self.isSecret = isSecret
+        self.backOptionLabel = backOptionLabel
+        self.presentation = presentation
     }
 }
 

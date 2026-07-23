@@ -224,6 +224,23 @@ describe("@codevisor/db", () => {
     await run(db.close)
   })
 
+  it("persists and clears the preferred Browser Use backend", async () => {
+    const filename = tempDatabase()
+    const db = await run(makeDatabase({ filename, serverId: "local" }))
+    expect(await run(db.getBrowserPreference)).toBeUndefined()
+    await run(db.setBrowserPreference("chrome"))
+    expect(await run(db.getBrowserPreference)).toBe("chrome")
+    await run(db.close)
+
+    const reopened = await run(makeDatabase({ filename, serverId: "renamed" }))
+    expect(await run(reopened.getBrowserPreference)).toBe("chrome")
+    await run(reopened.setBrowserPreference("managed"))
+    expect(await run(reopened.getBrowserPreference)).toBe("managed")
+    await run(reopened.setBrowserPreference(undefined))
+    expect(await run(reopened.getBrowserPreference)).toBeUndefined()
+    await run(reopened.close)
+  })
+
   it("persists harness accounts, selection, auth state, and session bindings", async () => {
     const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
     const project = await run(db.createProject({ name: "Auth", folderPath: "/tmp/auth" }))
@@ -2305,7 +2322,10 @@ describe("@codevisor/db", () => {
     )
     expect(created).toMatchObject({
       authType: "oauth",
+      canEdit: true,
+      canRemove: true,
       enabled: true,
+      kind: "managed",
       name: "Linear",
       secretCipher: "opaque-ciphertext",
       transport: "http"

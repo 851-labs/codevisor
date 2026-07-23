@@ -166,6 +166,12 @@ public protocol CodevisorServerClienting: Sendable {
     func cancelOpenCodeAuthFlow(id: String) async throws
     func removeOpenCodeAuthProvider(accountId: String, providerId: String) async throws
     func listMcpServers() async throws -> [ServerMcpServer]
+    func browserUseConfiguration() async throws -> ServerBrowserUseConfiguration
+    func setPreferredBrowser(_ preference: String) async throws -> ServerBrowserUseConfiguration
+    func installDevelopmentBrowserExtension() async throws -> ServerBrowserUseConfiguration
+    func openBrowserExtensionFolder() async throws -> ServerBrowserUseConfiguration
+    func openBrowserExtensionsPage() async throws -> ServerBrowserUseConfiguration
+    func openBrowserExtensionWebStore() async throws -> ServerBrowserUseConfiguration
     func detectMcpAuth(url: String) async throws -> ServerMcpAuthDetection
     func createMcpServer(_ request: CreateMcpServerBody) async throws -> ServerMcpServer
     func updateMcpServer(id: String, request: UpdateMcpServerBody) async throws -> ServerMcpServer
@@ -306,6 +312,18 @@ public extension CodevisorServerClienting {
         )
     }
 
+    func openBrowserExtensionFolder() async throws -> ServerBrowserUseConfiguration {
+        throw CodevisorServerClientError.invalidResponse
+    }
+
+    func openBrowserExtensionsPage() async throws -> ServerBrowserUseConfiguration {
+        throw CodevisorServerClientError.invalidResponse
+    }
+
+    func openBrowserExtensionWebStore() async throws -> ServerBrowserUseConfiguration {
+        throw CodevisorServerClientError.invalidResponse
+    }
+
     func connectSession(id: UUID) async throws -> ServerSessionRuntimeMetadata? { nil }
 
     /// Default for fakes/older transports: no combined open — callers use
@@ -435,6 +453,15 @@ public extension CodevisorServerClienting {
     func cancelOpenCodeAuthFlow(id: String) async throws {}
     func removeOpenCodeAuthProvider(accountId: String, providerId: String) async throws {}
     func listMcpServers() async throws -> [ServerMcpServer] { [] }
+    func browserUseConfiguration() async throws -> ServerBrowserUseConfiguration {
+        .init(chromeAvailable: false, chromeConnected: false, managedAvailable: true)
+    }
+    func setPreferredBrowser(_ preference: String) async throws -> ServerBrowserUseConfiguration {
+        throw CodevisorServerClientError.invalidResponse
+    }
+    func installDevelopmentBrowserExtension() async throws -> ServerBrowserUseConfiguration {
+        throw CodevisorServerClientError.invalidResponse
+    }
     func detectMcpAuth(url: String) async throws -> ServerMcpAuthDetection {
         .init(authType: "none", detail: "No authorization challenge detected")
     }
@@ -956,6 +983,9 @@ public struct ServerHarness: Codable, Equatable, Sendable {
 public struct ServerMcpServer: Codable, Equatable, Identifiable, Sendable {
     public var id: String
     public var name: String
+    public var kind: String?
+    public var canEdit: Bool?
+    public var canRemove: Bool?
     public var transport: String
     public var url: String?
     public var command: String?
@@ -970,6 +1000,28 @@ public struct ServerMcpServer: Codable, Equatable, Identifiable, Sendable {
     public var detail: String?
     public var createdAt: String
     public var updatedAt: String
+}
+
+public struct ServerBrowserUseConfiguration: Codable, Equatable, Sendable {
+    public var preferredBrowser: String?
+    public var chromeAvailable: Bool
+    public var chromeConnected: Bool
+    public var managedAvailable: Bool
+    public var developmentExtensionPath: String?
+
+    public init(
+        preferredBrowser: String? = nil,
+        chromeAvailable: Bool,
+        chromeConnected: Bool,
+        managedAvailable: Bool,
+        developmentExtensionPath: String? = nil
+    ) {
+        self.preferredBrowser = preferredBrowser
+        self.chromeAvailable = chromeAvailable
+        self.chromeConnected = chromeConnected
+        self.managedAvailable = managedAvailable
+        self.developmentExtensionPath = developmentExtensionPath
+    }
 }
 
 public struct ServerMcpTool: Codable, Equatable, Identifiable, Sendable {
@@ -2294,6 +2346,50 @@ public final class CodevisorServerClient: CodevisorServerClienting, @unchecked S
         try await get("/v1/mcps")
     }
 
+    public func browserUseConfiguration() async throws -> ServerBrowserUseConfiguration {
+        try await get("/v1/browser-use")
+    }
+
+    public func setPreferredBrowser(_ preference: String) async throws -> ServerBrowserUseConfiguration {
+        try await send(
+            "/v1/browser-use",
+            method: "PATCH",
+            body: UpdateBrowserUseConfigurationBody(preferredBrowser: preference)
+        )
+    }
+
+    public func installDevelopmentBrowserExtension() async throws -> ServerBrowserUseConfiguration {
+        try await send(
+            "/v1/browser-use/extension/install",
+            method: "POST",
+            body: Optional<EmptyBody>.none
+        )
+    }
+
+    public func openBrowserExtensionFolder() async throws -> ServerBrowserUseConfiguration {
+        try await send(
+            "/v1/browser-use/extension/folder",
+            method: "POST",
+            body: Optional<EmptyBody>.none
+        )
+    }
+
+    public func openBrowserExtensionsPage() async throws -> ServerBrowserUseConfiguration {
+        try await send(
+            "/v1/browser-use/extension/chrome",
+            method: "POST",
+            body: Optional<EmptyBody>.none
+        )
+    }
+
+    public func openBrowserExtensionWebStore() async throws -> ServerBrowserUseConfiguration {
+        try await send(
+            "/v1/browser-use/extension/web-store",
+            method: "POST",
+            body: Optional<EmptyBody>.none
+        )
+    }
+
     public func detectMcpAuth(url: String) async throws -> ServerMcpAuthDetection {
         try await send(
             "/v1/mcps/detect-auth",
@@ -3176,6 +3272,10 @@ private struct UpdateHarnessBody: Encodable {
 
 private struct UpdateMcpEnabledBody: Encodable {
     var enabled: Bool
+}
+
+private struct UpdateBrowserUseConfigurationBody: Encodable {
+    var preferredBrowser: String
 }
 
 private struct DetectMcpAuthBody: Encodable {
