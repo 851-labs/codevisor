@@ -2,7 +2,21 @@ importScripts("relay-config.js")
 
 const connections = new Set()
 const CODEVISOR_RELAY = globalThis.CODEVISOR_RELAY
+const RECONNECT_ALARM = "codevisor-reconnect"
+const RECONNECT_BASE_DELAY_MS = 1_000
+const RECONNECT_MAX_DELAY_MS = 30_000
+const CONNECT_TIMEOUT_MS = 10_000
 let reconnectTimer
+let activeSocket
+let reconnectAttempt = 0
+let reconnectScheduleGeneration = 0
+let connectionState = "connecting"
+let nextReconnectAt
+let lastConnectedAt
+let lastDisconnectedAt
+let lastConnectionError
+let lastCommandError
+let lastCommandErrorAt
 let offscreenCreation
 
 const tabUrl = (tab) => tab.url || tab.pendingUrl || "about:blank"
@@ -112,9 +126,12 @@ class CodevisorConnection {
       const result = await this.command(message)
       this.send({ id: message.id, result: result ?? {} })
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      lastCommandError = errorMessage
+      lastCommandErrorAt = Date.now()
       this.send({
         id: typeof message?.id === "number" ? message.id : -1,
-        error: { message: error instanceof Error ? error.message : String(error) }
+        error: { message: errorMessage }
       })
     }
   }
@@ -302,16 +319,6 @@ class CodevisorConnection {
   }
 }
 
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-  if (message?.type !== "status") return false
-  sendResponse({ connected: connections.size > 0 })
-  return false
-})
-
-chrome.action.onClicked.addListener(() => {
-  chrome.tabs.create({ url: chrome.runtime.getURL("connect.html") })
-})
-
 const shareableTabIds = async () =>
   (await chrome.tabs.query({}))
     .filter(
@@ -322,19 +329,162 @@ const shareableTabIds = async () =>
     )
     .map((tab) => tab.id)
 
-const connectToCodevisor = () => {
+const clearReconnectSchedule = () => {
+  reconnectScheduleGeneration += 1
   clearTimeout(reconnectTimer)
-  const socket = new WebSocket(CODEVISOR_RELAY)
+  reconnectTimer = undefined
+  nextReconnectAt = undefined
+  return chrome.alarms.clear(RECONNECT_ALARM).catch(() => false)
+}
+
+const connectionStatus = () => {
+  const connected = connections.size > 0
+  const activeConnections = [...connections]
+  return {
+    connected,
+    state: connected ? "connected" : connectionState,
+    availableTabs: activeConnections.reduce(
+      (total, connection) => total + connection.allowedTabs.size,
+      0
+    ),
+    controlledTabs: activeConnections.reduce(
+      (total, connection) => total + connection.tabToSession.size,
+      0
+    ),
+    reconnectAttempt,
+    nextReconnectAt: nextReconnectAt ?? null,
+    lastConnectedAt: lastConnectedAt ?? null,
+    lastDisconnectedAt: lastDisconnectedAt ?? null,
+    lastConnectionError: lastConnectionError ?? null,
+    lastCommandError: lastCommandError ?? null,
+    lastCommandErrorAt: lastCommandErrorAt ?? null,
+    relay: CODEVISOR_RELAY,
+    version: chrome.runtime.getManifest().version
+  }
+}
+
+const reconnectDelay = () => {
+  const exponential = Math.min(
+    RECONNECT_MAX_DELAY_MS,
+    RECONNECT_BASE_DELAY_MS * 2 ** Math.min(reconnectAttempt, 5)
+  )
+  const jitter = exponential * (Math.random() * 0.4 - 0.2)
+  return Math.max(RECONNECT_BASE_DELAY_MS, Math.round(exponential + jitter))
+}
+
+const scheduleReconnect = () => {
+  if (
+    activeSocket?.readyState === WebSocket.CONNECTING ||
+    activeSocket?.readyState === WebSocket.OPEN
+  ) {
+    return
+  }
+  const cleared = clearReconnectSchedule()
+  const scheduleGeneration = reconnectScheduleGeneration
+  const delay = reconnectDelay()
+  reconnectAttempt += 1
+  connectionState = "reconnecting"
+  nextReconnectAt = Date.now() + delay
+  const scheduledAt = nextReconnectAt
+  reconnectTimer = setTimeout(connectToCodevisor, delay)
+  void cleared.then(() => {
+    if (scheduleGeneration === reconnectScheduleGeneration && nextReconnectAt === scheduledAt) {
+      return chrome.alarms.create(RECONNECT_ALARM, { when: scheduledAt })
+    }
+  })
+}
+
+const connectToCodevisor = () => {
+  if (
+    activeSocket?.readyState === WebSocket.CONNECTING ||
+    activeSocket?.readyState === WebSocket.OPEN
+  ) {
+    return
+  }
+  clearReconnectSchedule()
+  connectionState = reconnectAttempt === 0 ? "connecting" : "reconnecting"
+  let socket
+  try {
+    socket = new WebSocket(CODEVISOR_RELAY)
+  } catch (error) {
+    lastConnectionError = error instanceof Error ? error.message : String(error)
+    lastDisconnectedAt = Date.now()
+    activeSocket = undefined
+    scheduleReconnect()
+    return
+  }
+  activeSocket = socket
   let connection
+  const connectionTimeout = setTimeout(() => {
+    if (activeSocket !== socket || socket.readyState !== WebSocket.CONNECTING) return
+    lastConnectionError = "Codevisor did not respond within 10 seconds"
+    socket.close()
+  }, CONNECT_TIMEOUT_MS)
   socket.addEventListener("open", async () => {
-    connection = new CodevisorConnection(socket, await shareableTabIds())
-    connections.add(connection)
+    clearTimeout(connectionTimeout)
+    try {
+      const initialTabIds = await shareableTabIds()
+      if (activeSocket !== socket || socket.readyState !== WebSocket.OPEN) return
+      connection = new CodevisorConnection(socket, initialTabIds)
+      connections.add(connection)
+      reconnectAttempt = 0
+      connectionState = "connected"
+      lastConnectedAt = Date.now()
+      lastConnectionError = undefined
+      clearReconnectSchedule()
+    } catch (error) {
+      lastConnectionError = error instanceof Error ? error.message : String(error)
+      socket.close()
+    }
   })
   socket.addEventListener("close", () => {
+    clearTimeout(connectionTimeout)
     connection?.close()
-    reconnectTimer = setTimeout(connectToCodevisor, 1_000)
+    if (activeSocket !== socket) return
+    activeSocket = undefined
+    lastDisconnectedAt = Date.now()
+    lastConnectionError ??= "The connection to Codevisor closed"
+    scheduleReconnect()
   })
-  socket.addEventListener("error", () => socket.close())
+  socket.addEventListener("error", () => {
+    if (activeSocket === socket) {
+      lastConnectionError = "Could not connect to Codevisor"
+    }
+    socket.close()
+  })
 }
+
+const reconnectNow = () => {
+  clearReconnectSchedule()
+  reconnectAttempt = 0
+  connectionState = "connecting"
+  lastConnectionError = undefined
+  const socket = activeSocket
+  activeSocket = undefined
+  for (const connection of [...connections]) connection.close()
+  if (socket && socket.readyState !== WebSocket.CLOSED) socket.close()
+  connectToCodevisor()
+}
+
+chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (message?.type === "status") {
+    sendResponse(connectionStatus())
+    return false
+  }
+  if (message?.type === "reconnect") {
+    reconnectNow()
+    sendResponse(connectionStatus())
+    return false
+  }
+  return false
+})
+
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === RECONNECT_ALARM) connectToCodevisor()
+})
+
+self.addEventListener("online", () => {
+  if (connections.size === 0) reconnectNow()
+})
 
 connectToCodevisor()

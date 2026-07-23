@@ -1,0 +1,202 @@
+:root {
+  color-scheme: light dark;
+  font:
+    13px/1.35 -apple-system,
+    BlinkMacSystemFont,
+    "SF Pro Text",
+    "Segoe UI",
+    sans-serif;
+  background: Canvas;
+  color: CanvasText;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  min-width: 320px;
+  margin: 0;
+}
+
+main {
+  padding: 14px;
+}
+
+header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+header img {
+  flex: 0 0 auto;
+  border-radius: 8px;
+}
+
+.identity {
+  min-width: 0;
+  flex: 1;
+}
+
+h1 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+p {
+  margin: 2px 0 0;
+  color: color-mix(in srgb, CanvasText 58%, transparent);
+  font-size: 12px;
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: #8e8e93;
+  box-shadow: 0 0 0 3px color-mix(in srgb, #8e8e93 14%, transparent);
+}
+
+.status-dot.connected {
+  background: #30a14e;
+  box-shadow: 0 0 0 3px color-mix(in srgb, #30a14e 14%, transparent);
+}
+
+.status-dot.connecting,
+.status-dot.reconnecting {
+  background: #d29922;
+  box-shadow: 0 0 0 3px color-mix(in srgb, #d29922 14%, transparent);
+}
+
+.status-dot.disconnected {
+  background: #d1242f;
+  box-shadow: 0 0 0 3px color-mix(in srgb, #d1242f 14%, transparent);
+}
+
+.activity {
+  display: flex;
+  min-height: 48px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 14px;
+  padding: 9px 10px;
+  border: 1px solid color-mix(in srgb, CanvasText 12%, transparent);
+  border-radius: 9px;
+  background: color-mix(in srgb, CanvasText 5%, transparent);
+}
+
+.activity > div {
+  display: grid;
+  gap: 1px;
+}
+
+.activity strong {
+  font-size: 15px;
+  font-weight: 620;
+}
+
+.label,
+dt,
+summary {
+  color: color-mix(in srgb, CanvasText 58%, transparent);
+}
+
+.label {
+  font-size: 11px;
+}
+
+button {
+  min-height: 28px;
+  padding: 4px 11px;
+  border: 1px solid color-mix(in srgb, CanvasText 16%, transparent);
+  border-radius: 7px;
+  background: color-mix(in srgb, CanvasText 10%, transparent);
+  color: CanvasText;
+  font: inherit;
+  font-weight: 560;
+  cursor: pointer;
+}
+
+button:hover {
+  background: color-mix(in srgb, CanvasText 15%, transparent);
+}
+
+button:active {
+  background: color-mix(in srgb, CanvasText 20%, transparent);
+}
+
+button:focus-visible,
+summary:focus-visible {
+  outline: 2px solid Highlight;
+  outline-offset: 2px;
+}
+
+button:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+details {
+  margin-top: 10px;
+  border-top: 1px solid color-mix(in srgb, CanvasText 10%, transparent);
+  padding-top: 9px;
+}
+
+summary {
+  width: fit-content;
+  cursor: pointer;
+  font-size: 11px;
+  user-select: none;
+}
+
+dl {
+  display: grid;
+  gap: 6px;
+  margin: 10px 0;
+}
+
+dl div {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  gap: 10px;
+}
+
+dt,
+dd {
+  margin: 0;
+  font-size: 11px;
+}
+
+dd {
+  overflow: hidden;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#error-row dd {
+  color: #d1242f;
+}
+
+.secondary {
+  min-height: 26px;
+  padding-inline: 9px;
+  font-size: 11px;
+}
+
+#copy-result {
+  margin-left: 8px;
+  color: color-mix(in srgb, CanvasText 58%, transparent);
+  font-size: 11px;
+}
+
+@media (prefers-color-scheme: dark) {
+  #error-row dd {
+    color: #ff7b72;
+  }
+}

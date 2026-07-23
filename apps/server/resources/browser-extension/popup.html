@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Codevisor</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <main>
+      <header>
+        <img src="icons/32.png" width="32" height="32" alt="" />
+        <div class="identity">
+          <h1>Codevisor</h1>
+          <p id="connection-summary">Checking connection…</p>
+        </div>
+        <span id="status-dot" class="status-dot checking" aria-hidden="true"></span>
+      </header>
+
+      <section class="activity" aria-label="Browser activity">
+        <div>
+          <span class="label">Controlled tabs</span>
+          <strong id="controlled-tabs">—</strong>
+        </div>
+        <button id="reconnect" type="button" hidden>Reconnect</button>
+      </section>
+
+      <details>
+        <summary>Connection details</summary>
+        <dl>
+          <div>
+            <dt>Status</dt>
+            <dd id="connection-state">Checking</dd>
+          </div>
+          <div>
+            <dt>Available tabs</dt>
+            <dd id="available-tabs">—</dd>
+          </div>
+          <div>
+            <dt>Last connected</dt>
+            <dd id="last-connected">—</dd>
+          </div>
+          <div>
+            <dt>Relay</dt>
+            <dd id="relay">—</dd>
+          </div>
+          <div>
+            <dt>Version</dt>
+            <dd id="version">—</dd>
+          </div>
+          <div id="error-row" hidden>
+            <dt>Last error</dt>
+            <dd id="last-error">—</dd>
+          </div>
+        </dl>
+        <button id="copy-diagnostics" class="secondary" type="button">Copy Diagnostics</button>
+        <span id="copy-result" role="status" aria-live="polite"></span>
+      </details>
+    </main>
+    <script src="popup.js"></script>
+  </body>
+</html>

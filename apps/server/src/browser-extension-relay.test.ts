@@ -57,15 +57,22 @@ describe("browser extension development installer", () => {
       name: string
       description: string
       icons: Record<string, string>
-      action: { default_title: string; default_icon: Record<string, string> }
+      permissions: ReadonlyArray<string>
+      action: {
+        default_title: string
+        default_popup: string
+        default_icon: Record<string, string>
+      }
     }
 
     expect(manifest).toMatchObject({
       name: "Codevisor (mirrlees)",
       description: "Control Chrome with Codevisor.",
       icons: { "16": "icons/16.png", "32": "icons/32.png", "128": "icons/128.png" },
+      permissions: expect.arrayContaining(["alarms"]),
       action: {
         default_title: "Codevisor (mirrlees)",
+        default_popup: "popup.html",
         default_icon: {
           "16": "icons/16.png",
           "32": "icons/32.png",
@@ -82,6 +89,8 @@ describe("browser extension development installer", () => {
     expect(archive.toString("utf8")).toContain(
       "ws://127.0.0.1:61234/v1/browser-use/extension/socket"
     )
+    expect(archive.toString("utf8")).toContain("Copy Diagnostics")
+    expect(archive.toString("utf8")).toContain("RECONNECT_MAX_DELAY_MS")
     expect(archive.toString("utf8")).toContain('"key"')
   })
 
