@@ -3,6 +3,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import {
+  browserExtensionPath,
   CODEVISOR_BROWSER_EXTENSION_WEB_STORE_URL,
   openBrowserExtensionDevelopmentFolder,
   openBrowserExtensionDevelopmentInstaller,
@@ -20,6 +21,22 @@ afterEach(async () => {
 })
 
 describe("browser extension development installer", () => {
+  it("finds extension resources from a packaged runtime launched outside its directory", async () => {
+    const root = await mkdtemp(join(tmpdir(), "codevisor-packaged-browser-"))
+    temporaryDirectories.push(root)
+    const runtime = join(root, "darwin-arm64")
+    const extension = join(runtime, "apps", "server", "resources", "browser-extension")
+    await mkdir(extension, { recursive: true })
+    await writeFile(join(extension, "manifest.json"), "{}")
+
+    expect(
+      browserExtensionPath({
+        moduleDirectory: runtime,
+        workingDirectory: "/"
+      })
+    ).toBe(extension)
+  })
+
   it("brands the prepared extension for the current development worktree", async () => {
     const root = await mkdtemp(join(tmpdir(), "codevisor-browser-branding-"))
     temporaryDirectories.push(root)

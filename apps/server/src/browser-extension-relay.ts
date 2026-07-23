@@ -9,12 +9,22 @@ import { CdpConnection } from "./browser-cdp.js"
 export const CODEVISOR_BROWSER_EXTENSION_ID = "clemkifaacpllomplgomnkbeoiindbhl"
 export const CODEVISOR_BROWSER_EXTENSION_WEB_STORE_URL = `https://chromewebstore.google.com/detail/${CODEVISOR_BROWSER_EXTENSION_ID}`
 
-export const browserExtensionPath = (): string | undefined => {
-  const here = dirname(fileURLToPath(import.meta.url))
+export const browserExtensionPath = (
+  options: {
+    readonly moduleDirectory?: string
+    readonly workingDirectory?: string
+  } = {}
+): string | undefined => {
+  const here = options.moduleDirectory ?? dirname(fileURLToPath(import.meta.url))
+  const workingDirectory = options.workingDirectory ?? process.cwd()
   return [
     join(here, "..", "resources", "browser-extension"),
-    join(process.cwd(), "apps", "server", "resources", "browser-extension"),
-    join(process.cwd(), "resources", "browser-extension")
+    // Release runtimes copy the compiled entrypoints to the runtime root while
+    // preserving resources under apps/server. This path must be relative to
+    // the module, not process.cwd(): LaunchServices starts the macOS app in /.
+    join(here, "apps", "server", "resources", "browser-extension"),
+    join(workingDirectory, "apps", "server", "resources", "browser-extension"),
+    join(workingDirectory, "resources", "browser-extension")
   ].find((candidate) => existsSync(join(candidate, "manifest.json")))
 }
 

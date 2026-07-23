@@ -551,6 +551,9 @@ export const runServe = (args: Record<string, string>): Promise<void> => {
 
   return Effect.runPromise(program).catch((cause: unknown) => {
     console.error(cause instanceof Error ? cause.message : String(cause))
-    process.exitCode = 1
+    // This is a dedicated server process. Startup may already have opened
+    // long-lived helpers (for example the background-terminal Unix socket), so
+    // exitCode alone can leave an inert process alive indefinitely.
+    process.exit(1)
   })
 }

@@ -216,3 +216,19 @@ chmod +x "$runtime_dir/bin/codevisor-server" "$runtime_dir/bin/codevisor-termina
   "$runtime_dir/bin/codevisor"
 printf "%s\n" "$version" > "$runtime_dir/VERSION"
 printf "%s\n" "$target" > "$runtime_dir/TARGET"
+
+# LaunchServices starts the macOS app with / as its working directory. Probe
+# resource discovery from there so a runtime layout regression cannot ship a
+# server that stays alive without ever opening its health port.
+runtime_root="$(cd "$runtime_dir" && pwd)"
+(
+  cd /
+  CODEVISOR_SMOKE_RUNTIME="$runtime_root" "$runtime_root/bin/node" --input-type=module -e '
+    const { pathToFileURL } = await import("node:url")
+    const runtime = process.env.CODEVISOR_SMOKE_RUNTIME
+    const relay = await import(pathToFileURL(`${runtime}/browser-extension-relay.js`))
+    if (relay.browserExtensionPath() === undefined) {
+      throw new Error("Packaged browser extension is not discoverable from /")
+    }
+  '
+)
