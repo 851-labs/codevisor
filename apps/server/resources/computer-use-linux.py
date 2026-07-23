@@ -367,12 +367,12 @@ def element_value(node):
     role = node_role(node).lower()
     if "password" in role:
         return "<redacted>"
-    if bool(safe(node.is_text, False)):
-        interface = safe(node.get_text_iface)
+    interface = safe(node.get_text_iface)
+    if interface is not None:
         length = int(
             safe(lambda: Atspi.Text.get_character_count(interface), 0) or 0
         )
-        if interface is not None and length > 0:
+        if length > 0:
             value = str(
                 safe(lambda: Atspi.Text.get_text(interface, 0, min(length, TEXT_LIMIT + 1)), "")
                 or ""

@@ -861,6 +861,36 @@ const connectExistingProfile = async (profileDir: string): Promise<CdpConnection
   return CdpConnection.connect(endpoint).catch(() => undefined)
 }
 
+export interface ManagedBrowserLaunchEnvironment {
+  readonly platform: NodeJS.Platform
+  readonly uid: number | undefined
+  readonly containerized: boolean
+}
+
+export const managedBrowserSandboxArguments = (
+  environment: ManagedBrowserLaunchEnvironment
+): ReadonlyArray<string> =>
+  environment.platform === "linux" && (environment.uid === 0 || environment.containerized)
+    ? ["--no-sandbox"]
+    : []
+
+const linuxContainerRuntime = (): boolean => {
+  if (process.platform !== "linux") return false
+  if (process.env.CODEVISOR_BROWSER_NO_SANDBOX === "1") return true
+  if (existsSync("/.dockerenv") || existsSync("/run/.containerenv")) return true
+  const indicators: ReadonlyArray<readonly [string, RegExp]> = [
+    ["/proc/1/cgroup", /(?:docker|containerd|kubepods|podman|lxc)/i],
+    ["/proc/cmdline", /(?:^|\s)init=\/sbin\/vminitd(?:\s|$)/]
+  ]
+  return indicators.some(([path, pattern]) => {
+    try {
+      return pattern.test(readFileSync(path, "utf8"))
+    } catch {
+      return false
+    }
+  })
+}
+
 const launchManagedBrowser = async (
   executablePath: string,
   profileDir: string
@@ -876,6 +906,11 @@ const launchManagedBrowser = async (
       "--no-first-run",
       "--no-default-browser-check",
       "--disable-background-networking",
+      ...managedBrowserSandboxArguments({
+        platform: process.platform,
+        uid: process.getuid?.(),
+        containerized: linuxContainerRuntime()
+      }),
       ...(process.env.CODEVISOR_BROWSER_HEADLESS === "1" ? ["--headless=new"] : []),
       "about:blank"
     ],

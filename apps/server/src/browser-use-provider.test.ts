@@ -10,6 +10,7 @@ import WebSocket, { WebSocketServer } from "ws"
 import {
   browserKeyDescription,
   browserUseTools,
+  managedBrowserSandboxArguments,
   makeBrowserUseProvider
 } from "./browser-use-provider.js"
 import {
@@ -25,6 +26,21 @@ afterEach(() => {
 })
 
 describe("Browser Use tool contract", () => {
+  it("disables Chromium's process sandbox only for containerized or root Linux", () => {
+    expect(
+      managedBrowserSandboxArguments({ platform: "linux", uid: 0, containerized: false })
+    ).toEqual(["--no-sandbox"])
+    expect(
+      managedBrowserSandboxArguments({ platform: "linux", uid: 1_000, containerized: true })
+    ).toEqual(["--no-sandbox"])
+    expect(
+      managedBrowserSandboxArguments({ platform: "linux", uid: 1_000, containerized: false })
+    ).toEqual([])
+    expect(
+      managedBrowserSandboxArguments({ platform: "darwin", uid: 0, containerized: true })
+    ).toEqual([])
+  })
+
   it("exposes Codevisor's CDP targeting and snapshot rules", () => {
     const snapshot = browserUseTools.find((candidate) => candidate.name === "snapshot")
     const click = browserUseTools.find((candidate) => candidate.name === "click")

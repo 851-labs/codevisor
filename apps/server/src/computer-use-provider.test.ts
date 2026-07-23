@@ -1,7 +1,20 @@
+import { readFileSync } from "node:fs"
+import { dirname, join } from "node:path"
+import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
 import { computerUseTools } from "./computer-use-provider.js"
 
 describe("Computer Use tool contract", () => {
+  it("detects AT-SPI text support through the introspected text interface", () => {
+    const source = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), "..", "resources", "computer-use-linux.py"),
+      "utf8"
+    )
+    expect(source).not.toContain("node.is_text")
+    expect(source).toContain("interface = safe(node.get_text_iface)")
+    expect(source).toContain("if interface is not None:")
+  })
+
   it("keeps the public method and argument surface aligned with native Computer Use", () => {
     const expected = new Map<string, string[]>([
       ["list_apps", []],
