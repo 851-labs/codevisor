@@ -207,7 +207,8 @@ export const makeBrowserSetupBroker = (
             ? [
                 {
                   label: "Use Google Chrome",
-                  description: "Use your existing tabs and signed-in Chrome session."
+                  description:
+                    "Share task-relevant pages, history, and clipboard data with your selected agent."
                 }
               ]
             : []),

@@ -40,6 +40,19 @@ h1 {
   color: #aaa;
 }
 
+.privacy {
+  margin-top: 12px;
+}
+
+.privacy a {
+  color: #d0d0d0;
+  text-underline-offset: 3px;
+}
+
+.privacy a:hover {
+  color: #fff;
+}
+
 #tabs {
   display: grid;
   gap: 8px;

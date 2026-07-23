@@ -33,6 +33,24 @@ body {
   color-scheme: dark;
 }
 
+.privacy-copy a {
+  color: var(--color-text);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--color-text) 35%, transparent);
+  text-underline-offset: 3px;
+}
+
+.privacy-copy a:hover {
+  text-decoration-color: var(--color-text);
+}
+
+.privacy-copy ul {
+  display: grid;
+  gap: 0.6rem;
+  padding-left: 1.25rem;
+  list-style: disc;
+}
+
 html {
   scrollbar-gutter: stable;
 }

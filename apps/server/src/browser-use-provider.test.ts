@@ -72,6 +72,9 @@ describe("Browser Use tool contract", () => {
     expect(readFileSync(join(extension!, "offscreen.js"), "utf8")).toContain(
       "document.execCommand(type)"
     )
+    const connectPage = readFileSync(join(extension!, "connect.html"), "utf8")
+    expect(connectPage).toContain("https://www.codevisor.dev/privacy")
+    expect(connectPage).toContain("agent provider you selected in Codevisor")
   })
 
   it("distinguishes bundled extension files from an installed Chrome profile", () => {

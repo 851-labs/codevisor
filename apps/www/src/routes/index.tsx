@@ -167,9 +167,14 @@ function Footer() {
     <footer className="border-t border-hairline px-6 py-10">
       <div className="mx-auto flex max-w-5xl flex-col items-center justify-between gap-4 text-xs text-muted sm:flex-row">
         <span>© {new Date().getFullYear()} 851 Inc.</span>
-        <a href="/install.sh" className="transition-colors hover:text-text">
-          install.sh
-        </a>
+        <div className="flex items-center gap-5">
+          <a href="/privacy" className="transition-colors hover:text-text">
+            Privacy
+          </a>
+          <a href="/install.sh" className="transition-colors hover:text-text">
+            install.sh
+          </a>
+        </div>
       </div>
     </footer>
   )
