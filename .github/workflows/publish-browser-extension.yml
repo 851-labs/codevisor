@@ -1,0 +1,91 @@
+name: Publish Chrome Extension
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Stable Codevisor version whose attached extension ZIP should be published.
+        required: true
+        type: string
+      confirm_publish:
+        description: Confirm that the Chrome Web Store listing is ready for submission.
+        required: true
+        default: false
+        type: boolean
+      upload_package:
+        description: Upload the release package before publishing; disable if that version is already uploaded.
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: chrome-web-store-publication
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: "24.x"
+
+jobs:
+  publish:
+    if: ${{ inputs.confirm_publish }}
+    runs-on: ubuntu-24.04
+    environment: chrome-web-store-production
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Download the extension attached to the Stable release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_VERSION: ${{ inputs.version }}
+        shell: bash
+        run: |
+          version="${INPUT_VERSION#v}"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
+            echo "Version must be numeric semver." >&2
+            exit 1
+          }
+          tag="v$version"
+          mkdir -p dist/release
+          release_json="$(gh release view "$tag" --json isDraft,isPrerelease)"
+          jq -e '.isDraft == false and .isPrerelease == false' \
+            <<<"$release_json" >/dev/null
+          gh release download "$tag" \
+            --pattern "Codevisor-Chrome-$version.zip*" \
+            --dir dist/release
+          test -f "dist/release/Codevisor-Chrome-$version.zip"
+          test -f "dist/release/Codevisor-Chrome-$version.zip.sha256"
+          (
+            cd dist/release
+            shasum -a 256 -c "Codevisor-Chrome-$version.zip.sha256"
+          )
+          echo "version=$version" >> "$GITHUB_ENV"
+      - name: Authenticate to Google Cloud
+        id: google-auth
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+          token_format: access_token
+          access_token_scopes: https://www.googleapis.com/auth/chromewebstore
+      - name: Publish Chrome extension
+        env:
+          CHROME_WEBSTORE_ACCESS_TOKEN: ${{ steps.google-auth.outputs.access_token }}
+          CHROME_WEBSTORE_PUBLISHER_ID: ${{ vars.CHROME_WEBSTORE_PUBLISHER_ID }}
+          CHROME_WEBSTORE_EXTENSION_ID: ${{ vars.CHROME_WEBSTORE_EXTENSION_ID }}
+          UPLOAD_PACKAGE: ${{ inputs.upload_package }}
+        shell: bash
+        run: |
+          if [[ "$UPLOAD_PACKAGE" == true ]]; then
+            node scripts/release/publish-browser-extension.mjs \
+              "dist/release/Codevisor-Chrome-$version.zip"
+          else
+            node scripts/release/publish-browser-extension.mjs --publish-only
+          fi

@@ -9,7 +9,9 @@ Stable is a promotion, never a rebuild. The `Alpha` workflow creates the only
 signed and notarized app/server artifact set for a commit. `Publish Alpha`
 publishes those bytes to the Alpha Sparkle channel. `Release` attaches the same
 bytes to the Stable tag, advances the Stable Sparkle and Linux manifests,
-updates Homebrew, and publishes the Chrome extension.
+updates Homebrew, and attaches a versioned Chrome extension package. Chrome Web
+Store publication is a separate, explicit workflow and must not run as part of
+an app release.
 
 Do not create, move, or push a version tag manually. The workflow owns the tag.
 
@@ -69,7 +71,9 @@ Verify all of the following before reporting success:
   four server targets.
 - macOS artifacts are Developer ID signed, notarized, and stapled.
 - Homebrew points to the same Stable artifacts and keeps `auto_updates true`.
-- The Chrome Web Store job succeeded.
+- The versioned Chrome extension ZIP and checksum are attached to the Stable
+  release. Do not dispatch `Publish Chrome Extension` unless the user explicitly
+  says the store listing is ready and asks to publish it.
 - The first Sparkle migration release is GitHub `latest`; later Stable
   releases do not move that bridge pointer.
 

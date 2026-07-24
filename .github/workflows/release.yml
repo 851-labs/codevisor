@@ -244,34 +244,3 @@ jobs:
               "https://updates.codevisor.dev/appcast-$arch.xml" --output "$feed"
             node scripts/release/verify-appcast.mjs "$feed" "$BUILD_NUMBER" stable
           done
-
-  publish-browser-extension:
-    needs: [metadata, build-browser-extension, publish]
-    runs-on: ubuntu-24.04
-    environment: chrome-web-store-production
-    permissions:
-      contents: read
-      id-token: write
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
-        with:
-          name: codevisor-browser-extension
-          path: dist/release
-      - name: Authenticate to Google Cloud
-        id: google-auth
-        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
-        with:
-          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
-          token_format: access_token
-          access_token_scopes: https://www.googleapis.com/auth/chromewebstore
-      - name: Publish Chrome extension
-        env:
-          CHROME_WEBSTORE_ACCESS_TOKEN: ${{ steps.google-auth.outputs.access_token }}
-          CHROME_WEBSTORE_PUBLISHER_ID: ${{ vars.CHROME_WEBSTORE_PUBLISHER_ID }}
-          CHROME_WEBSTORE_EXTENSION_ID: ${{ vars.CHROME_WEBSTORE_EXTENSION_ID }}
-        run: node scripts/release/publish-browser-extension.mjs dist/release/Codevisor-Chrome-${{ needs.metadata.outputs.version }}.zip

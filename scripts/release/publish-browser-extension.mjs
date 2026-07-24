@@ -11,7 +11,7 @@ const FAILED_UPLOAD_STATES = new Set(["FAILED", "UPLOAD_FAILED"])
 
 const usage = () => {
   console.error(
-    "usage: scripts/release/publish-browser-extension.mjs <extension.zip> [--status-only]"
+    "usage: scripts/release/publish-browser-extension.mjs <extension.zip> | --publish-only | --status-only"
   )
   console.error()
   console.error("Required environment variables:")
@@ -143,6 +143,13 @@ export const publishItem = async (configuration, fetchImplementation = fetch) =>
     fetchImplementation
   )
 
+const reportPublication = (publication) => {
+  console.log(`Chrome Web Store submission state: ${publication.state}`)
+  if (publication.warningInfo?.warnings?.length) {
+    console.log(JSON.stringify(publication.warningInfo.warnings, null, 2))
+  }
+}
+
 export const main = async (args = process.argv.slice(2), environment = process.env) => {
   if (args.includes("--help") || args.includes("-h")) {
     usage()
@@ -150,10 +157,14 @@ export const main = async (args = process.argv.slice(2), environment = process.e
   }
 
   const statusOnly = args.includes("--status-only")
-  const positionalArguments = args.filter((argument) => argument !== "--status-only")
+  const publishOnly = args.includes("--publish-only")
+  const positionalArguments = args.filter(
+    (argument) => argument !== "--status-only" && argument !== "--publish-only"
+  )
   if (
-    (!statusOnly && positionalArguments.length !== 1) ||
-    (statusOnly && positionalArguments.length > 1)
+    (statusOnly && publishOnly) ||
+    (!statusOnly && !publishOnly && positionalArguments.length !== 1) ||
+    ((statusOnly || publishOnly) && positionalArguments.length !== 0)
   ) {
     usage()
     throw new Error("Invalid arguments")
@@ -171,15 +182,17 @@ export const main = async (args = process.argv.slice(2), environment = process.e
     return
   }
 
+  if (publishOnly) {
+    reportPublication(await publishItem(configuration))
+    return
+  }
+
   const archivePath = resolve(positionalArguments[0])
   const upload = await uploadPackage(archivePath, configuration)
   await waitForUpload(configuration, { initialState: upload.uploadState })
 
   const publication = await publishItem(configuration)
-  console.log(`Chrome Web Store submission state: ${publication.state}`)
-  if (publication.warningInfo?.warnings?.length) {
-    console.log(JSON.stringify(publication.warningInfo.warnings, null, 2))
-  }
+  reportPublication(publication)
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {
