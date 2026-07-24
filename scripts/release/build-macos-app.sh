@@ -257,6 +257,24 @@ else
   sign_args=(--force --sign -)
 fi
 
+# Xcode copies the prebuilt Sparkle framework while code signing is disabled.
+# Re-sign its independently sealed components inside-out with Codevisor's
+# identity, preserving the helper entitlement Sparkle uses for installation.
+sparkle_framework="$app_path/Contents/Frameworks/Sparkle.framework"
+sparkle_version="$sparkle_framework/Versions/Current"
+sparkle_components=(
+  "$sparkle_version/Autoupdate"
+  "$sparkle_version/Updater.app"
+  "$sparkle_version/XPCServices/Downloader.xpc"
+  "$sparkle_version/XPCServices/Installer.xpc"
+)
+for component in "${sparkle_components[@]}"; do
+  [[ -e "$component" ]] || { echo "error: missing Sparkle component: $component" >&2; exit 1; }
+  codesign "${sign_args[@]}" --preserve-metadata=entitlements "$component"
+done
+codesign "${sign_args[@]}" --preserve-metadata=entitlements "$sparkle_framework"
+codesign --verify --deep --strict "$sparkle_framework"
+
 # Sign every Mach-O in the bundled server runtimes. Detection is batched
 # through one xargs/file pipeline: the runtimes hold ~21k files but only ~14
 # Mach-O binaries, and the previous per-file `file` invocation spent ~4
