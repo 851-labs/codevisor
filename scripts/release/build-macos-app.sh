@@ -388,19 +388,18 @@ mkdir -p "$split_work"
 make_variant() {
   local lipo_arch="$1" suffix="$2" foreign_target="$3"
   local variant_app="$split_work/$suffix/Codevisor.app"
-  local binary archs
+  local main_binary
   mkdir -p "$split_work/$suffix"
   ditto "$app_path" "$variant_app"
 
-  # Thin every multi-arch Mach-O outside the per-arch server runtimes (in
-  # practice the main executable; the loop stays generic for future helpers).
-  while IFS= read -r binary; do
-    archs="$(lipo -archs "$binary" 2>/dev/null || true)"
-    if [[ "$archs" == *" "* ]]; then
-      lipo -thin "$lipo_arch" "$binary" -output "$binary.thin"
-      mv "$binary.thin" "$binary"
-    fi
-  done < <(find "$variant_app" -type f -not -path "*/Resources/server/*")
+  # Thin only Codevisor's executable. Nested frameworks such as Sparkle are
+  # independently sealed code: mutating their Mach-O files would invalidate
+  # those seals and require rebuilding their full inside-out signature graph.
+  # Keeping the small vendor framework universal preserves its signature while
+  # still removing the large foreign server runtime from each app variant.
+  main_binary="$variant_app/Contents/MacOS/Codevisor"
+  lipo -thin "$lipo_arch" "$main_binary" -output "$main_binary.thin"
+  mv "$main_binary.thin" "$main_binary"
 
   rm -rf "$variant_app/Contents/Resources/server/$foreign_target"
   if [[ ! -d "$variant_app/Contents/Resources/server" ]] \
