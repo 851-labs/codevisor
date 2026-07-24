@@ -24,9 +24,21 @@ struct MarkdownTableView: View {
     let rows: [[String]]
 
     @Environment(\.markdownTheme) private var theme
+    /// Shares rendered widths between SwiftUI's measurement path and the
+    /// displayed AppKit view. Without this memo, a table was independently
+    /// constructed once by `sizeThatFits` and again by `TableTextView.layout`.
+    @State private var renderMemo = MarkdownTableRenderMemo()
 
     var body: some View {
-        SelectableTextTableView(headers: headers, alignments: alignments, rows: rows, theme: theme)
+        SelectableTextTableView(
+            model: TableModel(
+                headers: headers,
+                alignments: alignments,
+                rows: rows,
+                theme: theme
+            ),
+            renderMemo: renderMemo
+        )
             .clipShape(RoundedRectangle(cornerRadius: 8))
             .overlay(
                 RoundedRectangle(cornerRadius: 8)
@@ -35,35 +47,36 @@ struct MarkdownTableView: View {
     }
 }
 
-/// The inputs needed to build a table, bundled so they compare cheaply for
-/// change detection (the theme via its render fingerprint).
-private struct TableModel: Equatable {
+/// The inputs needed to build a table. `contentKey` pre-hashes the potentially
+/// large row matrix once when SwiftUI creates the view value; repeated TextKit
+/// sizing probes then use an O(1) hash operation rather than walking every cell.
+struct TableModel: Equatable {
     let headers: [String]
     let alignments: [ColumnAlignment]
     let rows: [[String]]
     let theme: MarkdownTheme
+    let contentKey: MarkdownTableRenderCache.ContentKey
+
+    init(
+        headers: [String],
+        alignments: [ColumnAlignment],
+        rows: [[String]],
+        theme: MarkdownTheme
+    ) {
+        self.headers = headers
+        self.alignments = alignments
+        self.rows = rows
+        self.theme = theme
+        contentKey = MarkdownTableRenderCache.ContentKey(
+            headers: headers,
+            alignments: alignments,
+            rows: rows,
+            themeFingerprint: theme.renderFingerprint
+        )
+    }
 
     static func == (lhs: TableModel, rhs: TableModel) -> Bool {
-        lhs.headers == rhs.headers && lhs.alignments == rhs.alignments && lhs.rows == rhs.rows
-            && lhs.theme.renderFingerprint == rhs.theme.renderFingerprint
-    }
-
-    var contentHash: Int {
-        var hasher = Hasher()
-        hasher.combine(headers)
-        hasher.combine(alignments.map(ordinal))
-        hasher.combine(rows)
-        hasher.combine(theme.renderFingerprint)
-        return hasher.finalize()
-    }
-
-    private func ordinal(_ alignment: ColumnAlignment) -> Int {
-        switch alignment {
-        case .leading: return 0
-        case .center: return 1
-        case .trailing: return 2
-        case .none: return 3
-        }
+        lhs.contentKey == rhs.contentKey
     }
 }
 
@@ -77,22 +90,14 @@ private struct TableModel: Equatable {
 /// *measures* (on a scratch text stack) — importantly, its minimum-width probe
 /// reports the table's true minimum, so the window stays freely resizable.
 private struct SelectableTextTableView: NSViewRepresentable {
-    let headers: [String]
-    let alignments: [ColumnAlignment]
-    let rows: [[String]]
-    let theme: MarkdownTheme
+    let model: TableModel
+    let renderMemo: MarkdownTableRenderMemo
 
     /// The floor a minimum-size probe reports, so a wide table never pins the
     /// window's minimum width to its own content width.
     private static let minimumWidth: CGFloat = 180
 
-    private var model: TableModel {
-        TableModel(headers: headers, alignments: alignments, rows: rows, theme: theme)
-    }
-
-    func makeCoordinator() -> Coordinator { Coordinator() }
-
-    func makeNSView(context: Context) -> TableTextView {
+    func makeNSView(context _: Context) -> TableTextView {
         // Build an explicit TextKit 1 stack: `NSTextTable` is a TextKit 1
         // construct and does not lay out under an NSTextView's default
         // TextKit 2 stack.
@@ -122,72 +127,31 @@ private struct SelectableTextTableView: NSViewRepresentable {
             .foregroundColor: NSColor.linkColor,
             .cursor: NSCursor.pointingHand,
         ]
-        textView.update(model: model)
+        textView.update(model: model, renderMemo: renderMemo)
         return textView
     }
 
-    func updateNSView(_ textView: TableTextView, context: Context) {
-        textView.update(model: model)
+    func updateNSView(_ textView: TableTextView, context _: Context) {
+        textView.update(model: model, renderMemo: renderMemo)
     }
 
     func sizeThatFits(
-        _ proposal: ProposedViewSize, nsView textView: TableTextView, context: Context
+        _ proposal: ProposedViewSize, nsView textView: TableTextView, context _: Context
     ) -> CGSize? {
-        let coordinator = context.coordinator
         guard let proposed = proposal.width, proposed.isFinite else {
             // Unspecified / infinite proposal: the ideal size at the current
             // width (or a modest default before the view has one).
             let ideal = textView.bounds.width > 1 ? textView.bounds.width : 400
-            return coordinator.size(for: model, width: ideal)
+            return renderMemo.size(for: model, width: ideal)
         }
         if proposed <= 1 {
             // Minimum-size probe. Reporting the current/full width here is what
             // previously pinned the window's minimum size and blocked resizing;
             // report the table's true minimum instead.
-            return coordinator.size(for: model, width: Self.minimumWidth)
+            return renderMemo.size(for: model, width: Self.minimumWidth)
         }
         // A concrete width — fill it.
-        return CGSize(width: proposed, height: coordinator.size(for: model, width: proposed).height)
-    }
-
-    /// Measures table sizes on a scratch TextKit 1 stack so probes never touch
-    /// the displayed view. Memoized on (content, width).
-    @MainActor
-    final class Coordinator {
-        private let storage = NSTextStorage()
-        private let layoutManager = NSLayoutManager()
-        private let container = NSTextContainer(
-            size: NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude)
-        )
-        private var key: Int?
-        private var cached: CGSize?
-
-        init() {
-            storage.addLayoutManager(layoutManager)
-            container.lineFragmentPadding = 0
-            layoutManager.addTextContainer(container)
-        }
-
-        func size(for model: TableModel, width: CGFloat) -> CGSize {
-            var hasher = Hasher()
-            hasher.combine(model.contentHash)
-            hasher.combine(width)
-            let newKey = hasher.finalize()
-            if newKey == key, let cached { return cached }
-
-            let string = MarkdownTableRenderer.make(
-                headers: model.headers, alignments: model.alignments, rows: model.rows,
-                theme: model.theme, width: width
-            )
-            storage.setAttributedString(string)
-            container.containerSize = NSSize(width: width, height: CGFloat.greatestFiniteMagnitude)
-            layoutManager.ensureLayout(for: container)
-            let used = layoutManager.usedRect(for: container)
-            let size = CGSize(width: ceil(used.width), height: ceil(used.height))
-            key = newKey
-            cached = size
-            return size
-        }
+        return CGSize(width: proposed, height: renderMemo.size(for: model, width: proposed).height)
     }
 }
 
@@ -206,27 +170,27 @@ private struct SelectableTextTableView: NSViewRepresentable {
 /// representation from `super` is preserved for apps that accept it.
 final class TableTextView: TranscriptSelectableTextView {
     private var model: TableModel?
+    private var renderMemo: MarkdownTableRenderMemo?
     private var builtWidth: CGFloat = -1
 
-    fileprivate func update(model: TableModel) {
-        guard self.model != model else { return }
+    fileprivate func update(model: TableModel, renderMemo: MarkdownTableRenderMemo) {
+        guard self.model != model || self.renderMemo !== renderMemo else { return }
         self.model = model
+        self.renderMemo = renderMemo
         builtWidth = -1  // force a rebuild at the next layout pass
         needsLayout = true
     }
 
     override func setFrameSize(_ newSize: NSSize) {
         super.setFrameSize(newSize)
-        if newSize.width != builtWidth { needsLayout = true }
+        if abs(newSize.width - builtWidth) > 0.25 { needsLayout = true }
     }
 
     override func layout() {
         super.layout()
-        guard let model, bounds.width > 0, bounds.width != builtWidth else { return }
-        let string = MarkdownTableRenderer.make(
-            headers: model.headers, alignments: model.alignments, rows: model.rows,
-            theme: model.theme, width: bounds.width
-        )
+        guard let model, let renderMemo, bounds.width > 0,
+              abs(bounds.width - builtWidth) > 0.25 else { return }
+        let string = renderMemo.attributedString(for: model, width: bounds.width)
         updateLinkHover(at: nil)
         textStorage?.setAttributedString(string)
         builtWidth = bounds.width
@@ -274,6 +238,351 @@ final class TableTextView: TranscriptSelectableTextView {
     }
 }
 
+// MARK: - Shared rendering and measurement
+
+/// Per-mounted-table memo. It keeps the widths SwiftUI has already proposed
+/// strongly reachable even if a very table-heavy transcript turns over the
+/// bounded process cache between measurement and display.
+@MainActor
+final class MarkdownTableRenderMemo {
+    private var contentKey: MarkdownTableRenderCache.ContentKey?
+    private var entries: [CGFloat: MarkdownTableRenderCache.RenderedTable] = [:]
+    private let cache: MarkdownTableRenderCache
+
+    init(cache: MarkdownTableRenderCache = .shared) {
+        self.cache = cache
+    }
+
+    func attributedString(for model: TableModel, width: CGFloat) -> NSAttributedString {
+        entry(for: model, width: width).attributedString
+    }
+
+    func size(for model: TableModel, width: CGFloat) -> CGSize {
+        let width = Self.normalized(width)
+        let entry = entry(for: model, width: width)
+        return cache.size(of: entry)
+    }
+
+    private func entry(
+        for model: TableModel,
+        width: CGFloat
+    ) -> MarkdownTableRenderCache.RenderedTable {
+        if let existingContentKey = contentKey,
+           existingContentKey !== model.contentKey,
+           existingContentKey != model.contentKey
+        {
+            contentKey = model.contentKey
+            entries.removeAll(keepingCapacity: true)
+        } else if contentKey == nil {
+            contentKey = model.contentKey
+        }
+        let width = Self.normalized(width)
+        if let cached = entries[width] { return cached }
+        let cached = cache.renderedTable(for: model, width: width)
+        entries[width] = cached
+        return cached
+    }
+
+    private static func normalized(_ width: CGFloat) -> CGFloat {
+        max(1, width)
+    }
+}
+
+/// Bounded process cache for table preparation, rendered `NSTextTable`
+/// strings, and TextKit measurements.
+///
+/// A table is normally touched by three independent paths: SwiftUI's sizing
+/// probes, the displayed `NSTextView`, and a later remount while scrolling.
+/// Sharing the immutable result here means those paths do not each parse every
+/// cell and recreate every `NSTextTableBlock`. One scratch TextKit stack also
+/// replaces the previous scratch stack retained by every mounted table.
+@MainActor
+final class MarkdownTableRenderCache {
+    final class ContentKey: Hashable {
+        let headers: [String]
+        let alignments: [ColumnAlignment]
+        let rows: [[String]]
+        let themeFingerprint: Int
+        private let digest: Int
+
+        init(
+            headers: [String],
+            alignments: [ColumnAlignment],
+            rows: [[String]],
+            themeFingerprint: Int
+        ) {
+            self.headers = headers
+            self.alignments = alignments
+            self.rows = rows
+            self.themeFingerprint = themeFingerprint
+
+            var hasher = Hasher()
+            hasher.combine(headers)
+            for alignment in alignments {
+                switch alignment {
+                case .leading: hasher.combine(0)
+                case .center: hasher.combine(1)
+                case .trailing: hasher.combine(2)
+                case .none: hasher.combine(3)
+                }
+            }
+            hasher.combine(rows)
+            hasher.combine(themeFingerprint)
+            digest = hasher.finalize()
+        }
+
+        static func == (lhs: ContentKey, rhs: ContentKey) -> Bool {
+            lhs === rhs
+                || (
+                    lhs.digest == rhs.digest
+                        && lhs.themeFingerprint == rhs.themeFingerprint
+                        && lhs.headers == rhs.headers
+                        && lhs.alignments == rhs.alignments
+                        && lhs.rows == rhs.rows
+                )
+        }
+
+        func hash(into hasher: inout Hasher) {
+            // The full matrix was hashed once in init. Equality still compares
+            // the original values, so a digest collision can never reuse the
+            // wrong rendered table.
+            hasher.combine(digest)
+        }
+    }
+
+    private struct RenderKey: Hashable {
+        let content: ContentKey
+        let width: CGFloat
+    }
+
+    private struct CellKey: Hashable {
+        let markdown: String
+        let isHeader: Bool
+        let themeFingerprint: Int
+    }
+
+    private final class PreparedEntry {
+        let table: MarkdownTableRenderer.PreparedTable
+        var lastAccess: UInt64
+
+        init(table: MarkdownTableRenderer.PreparedTable, lastAccess: UInt64) {
+            self.table = table
+            self.lastAccess = lastAccess
+        }
+    }
+
+    final class RenderedTable {
+        let attributedString: NSAttributedString
+        fileprivate let width: CGFloat
+        fileprivate var size: CGSize?
+        fileprivate var lastAccess: UInt64
+
+        fileprivate init(
+            attributedString: NSAttributedString,
+            width: CGFloat,
+            lastAccess: UInt64
+        ) {
+            self.attributedString = attributedString
+            self.width = width
+            self.lastAccess = lastAccess
+        }
+    }
+
+    private final class CellEntry {
+        let cell: MarkdownTableRenderer.PreparedCell
+
+        init(cell: MarkdownTableRenderer.PreparedCell) {
+            self.cell = cell
+        }
+    }
+
+    static let shared = MarkdownTableRenderCache()
+
+    private let preparedLimit: Int
+    private let renderLimit: Int
+    private let cellLimit: Int
+    private var preparedEntries: [ContentKey: PreparedEntry] = [:]
+    private var renderEntries: [RenderKey: RenderedTable] = [:]
+    private var cellEntries: [CellKey: CellEntry] = [:]
+    /// Cell churn can be much higher than whole-table churn while streaming.
+    /// Keep FIFO eviction O(1) amortized instead of scanning all 4K cells for
+    /// the least-recently-used entry on every miss past the bound.
+    private var cellInsertionOrder: [CellKey] = []
+    private var cellInsertionHead = 0
+    private var accessClock: UInt64 = 0
+
+    /// A single reusable measurement stack for the whole process. Table
+    /// measurement runs on the main actor, so it is never accessed concurrently.
+    private let measurementStorage = NSTextStorage()
+    private let measurementLayoutManager = NSLayoutManager()
+    private let measurementContainer = NSTextContainer(
+        size: NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude)
+    )
+
+    /// Regression seams used by tests to verify that equivalent requests reuse
+    /// work rather than silently rebuilding it.
+    private(set) var preparationCount = 0
+    private(set) var renderCount = 0
+    private(set) var measurementCount = 0
+    private(set) var cellPreparationCount = 0
+
+    init(preparedLimit: Int = 128, renderLimit: Int = 128, cellLimit: Int = 4_096) {
+        self.preparedLimit = max(1, preparedLimit)
+        self.renderLimit = max(1, renderLimit)
+        self.cellLimit = max(1, cellLimit)
+        measurementStorage.addLayoutManager(measurementLayoutManager)
+        measurementContainer.lineFragmentPadding = 0
+        measurementLayoutManager.addTextContainer(measurementContainer)
+    }
+
+    func attributedString(for model: TableModel, width: CGFloat) -> NSAttributedString {
+        renderedTable(for: model, width: width).attributedString
+    }
+
+    func size(for model: TableModel, width: CGFloat) -> CGSize {
+        size(of: renderedTable(for: model, width: width))
+    }
+
+    func size(of entry: RenderedTable) -> CGSize {
+        if let size = entry.size { return size }
+
+        measurementStorage.setAttributedString(entry.attributedString)
+        measurementContainer.containerSize = NSSize(
+            width: entry.width,
+            height: CGFloat.greatestFiniteMagnitude
+        )
+        measurementLayoutManager.ensureLayout(for: measurementContainer)
+        let used = measurementLayoutManager.usedRect(for: measurementContainer)
+        let size = CGSize(width: ceil(used.width), height: ceil(used.height))
+        entry.size = size
+        measurementCount += 1
+        return size
+    }
+
+    func renderedTable(for model: TableModel, width: CGFloat) -> RenderedTable {
+        let width = max(1, width)
+        let key = RenderKey(content: model.contentKey, width: width)
+        if let cached = renderEntries[key] {
+            touch(cached)
+            return cached
+        }
+
+        let prepared = preparedTable(for: model)
+        let attributed = MarkdownTableRenderer.make(
+            prepared: prepared,
+            alignments: model.alignments,
+            theme: model.theme,
+            width: width
+        )
+        renderCount += 1
+        let entry = RenderedTable(
+            attributedString: attributed,
+            width: width,
+            lastAccess: tick()
+        )
+        renderEntries[key] = entry
+        evictOldestRenderEntryIfNeeded()
+        return entry
+    }
+
+    private func preparedTable(for model: TableModel) -> MarkdownTableRenderer.PreparedTable {
+        if let cached = preparedEntries[model.contentKey] {
+            touch(cached)
+            return cached.table
+        }
+
+        let prepared = MarkdownTableRenderer.prepare(
+            headers: model.headers,
+            rows: model.rows,
+            theme: model.theme
+        ) { [self, themeFingerprint = model.contentKey.themeFingerprint]
+            markdown, isHeader, theme in
+            preparedCell(
+                markdown,
+                isHeader: isHeader,
+                theme: theme,
+                themeFingerprint: themeFingerprint
+            )
+        }
+        preparationCount += 1
+        let entry = PreparedEntry(table: prepared, lastAccess: tick())
+        preparedEntries[model.contentKey] = entry
+        evictOldestPreparedEntryIfNeeded()
+        return prepared
+    }
+
+    private func preparedCell(
+        _ markdown: String,
+        isHeader: Bool,
+        theme: MarkdownTheme,
+        themeFingerprint: Int
+    ) -> MarkdownTableRenderer.PreparedCell {
+        let key = CellKey(
+            markdown: markdown,
+            isHeader: isHeader,
+            themeFingerprint: themeFingerprint
+        )
+        if let cached = cellEntries[key] {
+            return cached.cell
+        }
+
+        let cell = MarkdownTableRenderer.prepareCell(
+            markdown,
+            isHeader: isHeader,
+            theme: theme
+        )
+        cellPreparationCount += 1
+        let entry = CellEntry(cell: cell)
+        cellEntries[key] = entry
+        cellInsertionOrder.append(key)
+        evictOldestCellEntryIfNeeded()
+        return cell
+    }
+
+    private func tick() -> UInt64 {
+        accessClock &+= 1
+        return accessClock
+    }
+
+    private func touch(_ entry: PreparedEntry) {
+        entry.lastAccess = tick()
+    }
+
+    private func touch(_ entry: RenderedTable) {
+        entry.lastAccess = tick()
+    }
+
+    private func evictOldestPreparedEntryIfNeeded() {
+        guard preparedEntries.count > preparedLimit,
+              let oldest = preparedEntries.min(by: { $0.value.lastAccess < $1.value.lastAccess })
+        else { return }
+        preparedEntries.removeValue(forKey: oldest.key)
+    }
+
+    private func evictOldestRenderEntryIfNeeded() {
+        guard renderEntries.count > renderLimit,
+              let oldest = renderEntries.min(by: { $0.value.lastAccess < $1.value.lastAccess })
+        else { return }
+        renderEntries.removeValue(forKey: oldest.key)
+    }
+
+    private func evictOldestCellEntryIfNeeded() {
+        while cellEntries.count > cellLimit,
+              cellInsertionHead < cellInsertionOrder.count
+        {
+            let oldest = cellInsertionOrder[cellInsertionHead]
+            cellInsertionHead += 1
+            cellEntries.removeValue(forKey: oldest)
+        }
+        if cellInsertionHead > 1_024,
+           cellInsertionHead * 2 > cellInsertionOrder.count
+        {
+            cellInsertionOrder.removeFirst(cellInsertionHead)
+            cellInsertionHead = 0
+        }
+    }
+}
+
 // MARK: - Attributed string construction
 
 /// Builds the `NSAttributedString` for a markdown table as an `NSTextTable`:
@@ -281,6 +590,18 @@ final class TableTextView: TranscriptSelectableTextView {
 /// pinning it to a (row, column). Inline markdown (emphasis, code, links)
 /// inside cells is styled per-run.
 enum MarkdownTableRenderer {
+    struct PreparedCell {
+        let attributedString: NSAttributedString
+        let naturalWidth: CGFloat
+    }
+
+    struct PreparedTable {
+        let columnCount: Int
+        let headers: [PreparedCell]
+        let rows: [[PreparedCell]]
+        let columnContentWidths: [CGFloat]
+    }
+
     private static let horizontalPadding: CGFloat = 12
     private static let verticalPadding: CGFloat = 7
 
@@ -291,18 +612,96 @@ enum MarkdownTableRenderer {
         headers: [String], alignments: [ColumnAlignment], rows: [[String]],
         theme: MarkdownTheme, width: CGFloat? = nil
     ) -> NSAttributedString {
-        let columnCount = max(headers.count, rows.map(\.count).max() ?? 0)
-        guard columnCount > 0 else { return NSAttributedString() }
+        let prepared = prepare(headers: headers, rows: rows, theme: theme)
+        return make(
+            prepared: prepared,
+            alignments: alignments,
+            theme: theme,
+            width: width
+        )
+    }
 
+    /// Parses and styles every cell exactly once, retaining both its attributed
+    /// representation and natural width. The previous renderer repeated this
+    /// work during the width pass and again while constructing the table.
+    @MainActor
+    static func prepare(
+        headers: [String],
+        rows: [[String]],
+        theme: MarkdownTheme
+    ) -> PreparedTable {
+        prepare(headers: headers, rows: rows, theme: theme) {
+            markdown, isHeader, theme in
+            prepareCell(markdown, isHeader: isHeader, theme: theme)
+        }
+    }
+
+    @MainActor
+    static func prepare(
+        headers: [String],
+        rows: [[String]],
+        theme: MarkdownTheme,
+        cellProvider: (_ markdown: String, _ isHeader: Bool, _ theme: MarkdownTheme) ->
+            PreparedCell
+    ) -> PreparedTable {
+        let columnCount = max(headers.count, rows.map(\.count).max() ?? 0)
+        guard columnCount > 0 else {
+            return PreparedTable(
+                columnCount: 0,
+                headers: [],
+                rows: [],
+                columnContentWidths: []
+            )
+        }
+
+        var contentWidths = [CGFloat](repeating: 1, count: columnCount)
+        func prepareRow(_ values: [String], isHeader: Bool) -> [PreparedCell] {
+            (0..<columnCount).map { column in
+                let markdown = column < values.count ? values[column] : ""
+                let cell = cellProvider(markdown, isHeader, theme)
+                contentWidths[column] = max(contentWidths[column], cell.naturalWidth)
+                return cell
+            }
+        }
+
+        let preparedHeaders = prepareRow(headers, isHeader: true)
+        let preparedRows = rows.map { prepareRow($0, isHeader: false) }
+        return PreparedTable(
+            columnCount: columnCount,
+            headers: preparedHeaders,
+            rows: preparedRows,
+            columnContentWidths: contentWidths
+        )
+    }
+
+    @MainActor
+    static func prepareCell(
+        _ markdown: String,
+        isHeader: Bool,
+        theme: MarkdownTheme
+    ) -> PreparedCell {
+        let attributed = inlineAttributed(markdown, isHeader: isHeader, theme: theme)
+        return PreparedCell(
+            attributedString: attributed,
+            naturalWidth: max(1, ceil(attributed.size().width))
+        )
+    }
+
+    @MainActor
+    static func make(
+        prepared: PreparedTable,
+        alignments: [ColumnAlignment],
+        theme: MarkdownTheme,
+        width: CGFloat? = nil
+    ) -> NSAttributedString {
+        guard prepared.columnCount > 0 else { return NSAttributedString() }
         let columnWidths = distribute(
-            contentWidths: columnContentWidths(
-                headers: headers, rows: rows, columnCount: columnCount, theme: theme
-            ),
+            contentWidths: prepared.columnContentWidths,
             toFit: width
         )
 
         let table = NSTextTable()
-        table.numberOfColumns = columnCount
+        table.numberOfColumns = prepared.columnCount
         table.layoutAlgorithm = .fixedLayoutAlgorithm
         table.hidesEmptyCells = false
 
@@ -311,34 +710,47 @@ enum MarkdownTableRenderer {
         // gets none — the SwiftUI rounded border closes off the bottom.
         let separatorColor = NSColor(theme.tableBorderColor)
         let headerBackground = NSColor.labelColor.withAlphaComponent(0.05)
-        let lastRowIndex = rows.count
+        let lastRowIndex = prepared.rows.count
 
         let result = NSMutableAttributedString()
         appendRow(
-            headers, rowIndex: 0, isHeader: true, columnCount: columnCount, alignments: alignments,
-            columnWidths: columnWidths, table: table, separatorColor: separatorColor,
-            headerBackground: headerBackground, lastRowIndex: lastRowIndex, theme: theme,
+            prepared.headers,
+            rowIndex: 0,
+            isHeader: true,
+            columnCount: prepared.columnCount,
+            alignments: alignments,
+            columnWidths: columnWidths,
+            table: table,
+            separatorColor: separatorColor,
+            headerBackground: headerBackground,
+            lastRowIndex: lastRowIndex,
             into: result
         )
-        for (offset, row) in rows.enumerated() {
+        for (offset, row) in prepared.rows.enumerated() {
             appendRow(
-                row, rowIndex: offset + 1, isHeader: false, columnCount: columnCount,
-                alignments: alignments, columnWidths: columnWidths, table: table,
-                separatorColor: separatorColor, headerBackground: headerBackground,
-                lastRowIndex: lastRowIndex, theme: theme, into: result
+                row,
+                rowIndex: offset + 1,
+                isHeader: false,
+                columnCount: prepared.columnCount,
+                alignments: alignments,
+                columnWidths: columnWidths,
+                table: table,
+                separatorColor: separatorColor,
+                headerBackground: headerBackground,
+                lastRowIndex: lastRowIndex,
+                into: result
             )
         }
         return result
     }
 
     private static func appendRow(
-        _ values: [String], rowIndex: Int, isHeader: Bool, columnCount: Int,
+        _ cells: [PreparedCell], rowIndex: Int, isHeader: Bool, columnCount: Int,
         alignments: [ColumnAlignment], columnWidths: [CGFloat], table: NSTextTable,
         separatorColor: NSColor, headerBackground: NSColor, lastRowIndex: Int,
-        theme: MarkdownTheme, into result: NSMutableAttributedString
+        into result: NSMutableAttributedString
     ) {
         for column in 0..<columnCount {
-            let value = column < values.count ? values[column] : ""
             let alignment = column < alignments.count ? alignments[column] : .none
 
             let block = NSTextTableBlock(
@@ -364,7 +776,7 @@ enum MarkdownTableRenderer {
             paragraph.alignment = nsAlignment(alignment)
 
             let cell = NSMutableAttributedString(
-                attributedString: inlineAttributed(value, isHeader: isHeader, theme: theme)
+                attributedString: cells[column].attributedString
             )
             // Each table cell must be its own paragraph.
             cell.append(NSAttributedString(string: "\n"))
@@ -373,24 +785,6 @@ enum MarkdownTableRenderer {
             )
             result.append(cell)
         }
-    }
-
-    /// The natural (single-line) content width of each column: the widest cell,
-    /// header included.
-    private static func columnContentWidths(
-        headers: [String], rows: [[String]], columnCount: Int, theme: MarkdownTheme
-    ) -> [CGFloat] {
-        var widths = [CGFloat](repeating: 1, count: columnCount)
-        func consider(_ value: String, column: Int, isHeader: Bool) {
-            guard column < columnCount else { return }
-            let measured = inlineAttributed(value, isHeader: isHeader, theme: theme).size().width
-            widths[column] = max(widths[column], ceil(measured))
-        }
-        for (column, header) in headers.enumerated() { consider(header, column: column, isHeader: true) }
-        for row in rows {
-            for (column, value) in row.enumerated() { consider(value, column: column, isHeader: false) }
-        }
-        return widths
     }
 
     /// Scales the natural column widths so the table fills `width` (columns keep

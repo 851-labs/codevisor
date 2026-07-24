@@ -28,6 +28,13 @@ struct MarkdownTableRendererTests {
         TableTextView.tsv(from: attributed, in: NSRange(location: 0, length: attributed.length))
     }
 
+    private func model(
+        headers: [String] = ["Name", "Age"],
+        rows: [[String]] = [["Ann", "30"], ["Bob", "25"]]
+    ) -> TableModel {
+        TableModel(headers: headers, alignments: [], rows: rows, theme: .default)
+    }
+
     /// Lays an attributed string out in a TextKit 1 stack and returns the width
     /// it actually occupies at the given container width.
     private func laidOutWidth(_ attributed: NSAttributedString, containerWidth: CGFloat) -> CGFloat {
@@ -125,5 +132,100 @@ struct MarkdownTableRendererTests {
             headers: ["A"], alignments: [], rows: [["1"]], theme: .default
         )
         #expect(TableTextView.tsv(from: table, in: NSRange(location: 0, length: 0)) == nil)
+    }
+
+    @Test("Measurement and display share one rendered table")
+    func sharedMeasurementAndDisplayRender() {
+        let cache = MarkdownTableRenderCache()
+        let memo = MarkdownTableRenderMemo(cache: cache)
+        let table = model()
+
+        _ = memo.size(for: table, width: 420)
+        let displayed = memo.attributedString(for: table, width: 420)
+        let displayedAgain = memo.attributedString(for: table, width: 420)
+
+        #expect(displayed === displayedAgain)
+        #expect(cache.preparationCount == 1)
+        #expect(cache.renderCount == 1)
+        #expect(cache.measurementCount == 1)
+    }
+
+    @Test("Render cache retains multiple sizing widths")
+    func retainsMultipleWidths() {
+        let cache = MarkdownTableRenderCache()
+        let table = model()
+
+        let regular = cache.attributedString(for: table, width: 420)
+        _ = cache.attributedString(for: table, width: 180)
+        let regularAgain = cache.attributedString(for: table, width: 420)
+
+        #expect(regular === regularAgain)
+        #expect(cache.preparationCount == 1)
+        #expect(cache.renderCount == 2)
+    }
+
+    @Test("Equivalent remounted tables reuse render and measurement")
+    func remountReuse() {
+        let cache = MarkdownTableRenderCache()
+        let firstModel = model()
+        let remountedModel = model()
+
+        let first = cache.attributedString(for: firstModel, width: 420)
+        _ = cache.size(for: firstModel, width: 420)
+        let remounted = cache.attributedString(for: remountedModel, width: 420)
+        _ = cache.size(for: remountedModel, width: 420)
+
+        #expect(first === remounted)
+        #expect(cache.preparationCount == 1)
+        #expect(cache.renderCount == 1)
+        #expect(cache.measurementCount == 1)
+    }
+
+    @Test("Growing tables only prepare newly introduced cell values")
+    func growingTableReusesCells() {
+        let cache = MarkdownTableRenderCache()
+        let first = model(headers: ["Name", "Role"], rows: [["Ann", "Lead"]])
+        let grown = model(
+            headers: ["Name", "Role"],
+            rows: [["Ann", "Lead"], ["Bob", "Engineer"]]
+        )
+
+        _ = cache.attributedString(for: first, width: 420)
+        #expect(cache.cellPreparationCount == 4)
+        _ = cache.attributedString(for: grown, width: 420)
+
+        // The two headers and first row are cache hits; only Bob/Engineer are
+        // new inline-Markdown preparations.
+        #expect(cache.cellPreparationCount == 6)
+        #expect(cache.preparationCount == 2)
+        #expect(cache.renderCount == 2)
+    }
+
+    @Test("A table-heavy transcript does one build per table across size, display, and remount")
+    func tableHeavyTranscriptReuse() {
+        let cache = MarkdownTableRenderCache()
+        let tables = (0..<40).map { index in
+            model(
+                headers: ["Key", "Value"],
+                rows: [["Row \(index)", "Shared"]]
+            )
+        }
+
+        for table in tables {
+            let memo = MarkdownTableRenderMemo(cache: cache)
+            _ = memo.size(for: table, width: 420)
+            _ = memo.attributedString(for: table, width: 420)
+        }
+        for table in tables {
+            let remountedMemo = MarkdownTableRenderMemo(cache: cache)
+            _ = remountedMemo.size(for: table, width: 420)
+            _ = remountedMemo.attributedString(for: table, width: 420)
+        }
+
+        #expect(cache.preparationCount == 40)
+        #expect(cache.renderCount == 40)
+        #expect(cache.measurementCount == 40)
+        // Two shared headers, one shared body value, and forty distinct keys.
+        #expect(cache.cellPreparationCount == 43)
     }
 }
