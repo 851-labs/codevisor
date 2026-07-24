@@ -192,8 +192,16 @@ const token = Command.make(
     runCli((deps) => tokenCommand(deps, { port: Option.getOrUndefined(port), rotate }))
 ).pipe(Command.withDescription("Print this machine's connection token (stable until rotated)"))
 
-const update = Command.make("update", { port: portFlag }, ({ port }) =>
-  runCli((deps) => updateCommand(deps, { port: Option.getOrUndefined(port) }))
+const update = Command.make(
+  "update",
+  {
+    port: portFlag,
+    alpha: Flag.boolean("alpha").pipe(
+      Flag.withDescription("Include Alpha releases when checking for updates")
+    )
+  },
+  ({ port, alpha }) =>
+    runCli((deps) => updateCommand(deps, { port: Option.getOrUndefined(port), alpha }))
 ).pipe(Command.withDescription("Update the Codevisor server to the latest release"))
 
 const logs = Command.make(

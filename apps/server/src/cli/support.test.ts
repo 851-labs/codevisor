@@ -455,7 +455,7 @@ describe("codevisor CLI support", () => {
     const base = `http://127.0.0.1:${DEFAULT_PORT}`
     const world = makeWorld({
       http: {
-        [`GET ${base}/v1/update`]: [
+        [`GET ${base}/v1/update?refresh=1`]: [
           {
             status: 200,
             body: { updateAvailable: true, currentVersion: "1.0.0", latestVersion: "1.1.0" }
@@ -481,7 +481,7 @@ describe("codevisor CLI support", () => {
 
     const upToDate = makeWorld({
       http: {
-        [`GET ${base}/v1/update`]: [
+        [`GET ${base}/v1/update?refresh=1`]: [
           { status: 200, body: { updateAvailable: false, currentVersion: "1.0.0" } }
         ]
       }
@@ -490,14 +490,16 @@ describe("codevisor CLI support", () => {
     expect(upToDate.logs[0]).toBe("Already up to date (1.0.0)")
 
     const noVersions = makeWorld({
-      http: { [`GET ${base}/v1/update`]: [{ status: 200, body: { updateAvailable: false } }] }
+      http: {
+        [`GET ${base}/v1/update?refresh=1`]: [{ status: 200, body: { updateAvailable: false } }]
+      }
     })
     expect(await updateCommand(noVersions.deps)).toBe(0)
     expect(noVersions.logs[0]).toBe("Already up to date (unknown version)")
 
     const declined = makeWorld({
       http: {
-        [`GET ${base}/v1/update`]: [{ status: 200, body: { updateAvailable: true } }],
+        [`GET ${base}/v1/update?refresh=1`]: [{ status: 200, body: { updateAvailable: true } }],
         [`POST ${base}/v1/update/apply`]: [{ status: 200, body: { accepted: false } }]
       }
     })
@@ -507,7 +509,7 @@ describe("codevisor CLI support", () => {
 
     const timedOut = makeWorld({
       http: {
-        [`GET ${base}/v1/update`]: [
+        [`GET ${base}/v1/update?refresh=1`]: [
           {
             status: 200,
             body: { updateAvailable: true, currentVersion: "1.0.0", latestVersion: "1.1.0" }
@@ -519,6 +521,42 @@ describe("codevisor CLI support", () => {
     })
     expect(await updateCommand(timedOut.deps)).toBe(1)
     expect(timedOut.errors[0]).toContain("Timed out")
+  })
+
+  it("force-checks and applies Alpha updates, accepting the base runtime version", async () => {
+    const base = `http://127.0.0.1:${DEFAULT_PORT}`
+    const updateURL = `${base}/v1/update?refresh=1&channel=alpha`
+    const world = makeWorld({
+      http: {
+        [`GET ${updateURL}`]: [
+          {
+            status: 200,
+            body: {
+              updateAvailable: true,
+              currentVersion: "1.2.0",
+              latestVersion: "1.2.0-alpha.42"
+            }
+          },
+          {
+            status: 200,
+            body: {
+              updateAvailable: false,
+              currentVersion: "1.2.0",
+              latestVersion: "1.2.0-alpha.42"
+            }
+          }
+        ],
+        [`GET ${base}/v1/health`]: [
+          { status: 200, body: { bootId: "old" } },
+          { status: 200, body: { bootId: "new" } }
+        ],
+        [`POST ${base}/v1/update/apply?channel=alpha`]: [{ status: 202, body: { accepted: true } }],
+        [`GET ${base}/v1/info`]: [undefined, { status: 200, body: { version: "1.2.0" } }]
+      }
+    })
+
+    expect(await updateCommand(world.deps, { alpha: true })).toBe(0)
+    expect(world.logs.at(-1)).toBe("Codevisor server updated to 1.2.0-alpha.42")
   })
 
   it("streams logs from journalctl for unit installs", async () => {

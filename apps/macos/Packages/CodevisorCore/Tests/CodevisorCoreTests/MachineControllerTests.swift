@@ -339,6 +339,68 @@ struct MachineControllerTests {
         controller.stopEventSync()
     }
 
+    @Test("Periodic selected-server refresh force-checks a remote machine")
+    func periodicRemoteServerUpdateRefresh() async throws {
+        let fake = SyncFakeServerClient(projects: [], sessions: [])
+        fake.configureUpdate(current: "0.1.0", latest: "0.2.0")
+        let remote = CodevisorMachine(
+            id: "remote-test",
+            name: "Remote",
+            baseURL: URL(string: "http://remote.test:49361")!,
+            kind: "remote"
+        )
+        let store = InMemoryStore()
+        try store.saveData(
+            JSONEncoder().encode(
+                MachineRegistry(selectedMachineId: remote.id, remoteMachines: [remote])
+            ),
+            forKey: "machines"
+        )
+        let controller = MachineController(
+            store: store,
+            projectList: ProjectListModel(
+                projectRepository: DefaultProjectRepository(store: InMemoryStore()),
+                sessionRepository: DefaultSessionRepository(store: InMemoryStore())
+            ),
+            clientFactory: { _ in fake }
+        )
+
+        await controller.refreshSelectedServerUpdate()
+
+        #expect(fake.updateInfoRefreshes == [true])
+        #expect(controller.selectedServerUpdate?.updateAvailable == true)
+    }
+
+    @Test("Remote update accepts a channel-current runtime whose version string differs")
+    func remoteServerUpdateVersionMismatch() async throws {
+        let fake = SyncFakeServerClient(projects: [], sessions: [])
+        fake.configureUpdate(
+            current: "0.1.97",
+            latest: "0.1.97-alpha.55",
+            installedVersion: "0.1.97"
+        )
+        let projectList = ProjectListModel(
+            projectRepository: DefaultProjectRepository(store: InMemoryStore()),
+            sessionRepository: DefaultSessionRepository(store: InMemoryStore())
+        )
+        let controller = MachineController(
+            store: InMemoryStore(),
+            projectList: projectList,
+            clientFactory: { _ in fake },
+            updatePollInterval: .milliseconds(2),
+            updatePollAttempts: 50
+        )
+        controller.serverUpdateChannel = .alpha
+
+        await controller.refreshStatus(for: "local")
+        await controller.updateSelectedServer()
+
+        #expect(controller.serverUpdatePhase == .idle)
+        #expect(controller.selectedServerUpdate?.updateAvailable == false)
+        #expect(controller.statusByMachineId["local"]?.label.contains("0.1.97") == true)
+        controller.stopEventSync()
+    }
+
     @Test("A busy server declines the update with a clear message")
     func remoteServerUpdateRefusedWhileBusy() async throws {
         let fake = SyncFakeServerClient(projects: [], sessions: [])
@@ -596,9 +658,13 @@ private final class SyncFakeServerClient: CodevisorServerClienting, @unchecked S
 
     private var currentVersion = "0.1.0"
     private var latestVersion = "0.1.0"
+    private var installedVersionAfterUpdate: String?
+    private var updateApplied = false
+    private var bootId = "boot-before-update"
     private var downtimeRemaining = 0
     private var _appliedUpdates = 0
     private var _updateInfoChannels: [ServerUpdateChannel] = []
+    private var _updateInfoRefreshes: [Bool] = []
     private var _appliedChannels: [ServerUpdateChannel] = []
     private var _busy = false
 
@@ -606,13 +672,17 @@ private final class SyncFakeServerClient: CodevisorServerClienting, @unchecked S
 
     var appliedUpdates: Int { lock.withLock { _appliedUpdates } }
     var updateInfoChannels: [ServerUpdateChannel] { lock.withLock { _updateInfoChannels } }
+    var updateInfoRefreshes: [Bool] { lock.withLock { _updateInfoRefreshes } }
     var appliedChannels: [ServerUpdateChannel] { lock.withLock { _appliedChannels } }
 
     /// Makes the fake report an available update to `latest`.
-    func configureUpdate(current: String, latest: String) {
+    func configureUpdate(current: String, latest: String, installedVersion: String? = nil) {
         lock.withLock {
             currentVersion = current
             latestVersion = latest
+            installedVersionAfterUpdate = installedVersion
+            updateApplied = false
+            bootId = "boot-before-update"
         }
     }
 
@@ -622,7 +692,14 @@ private final class SyncFakeServerClient: CodevisorServerClienting, @unchecked S
     }
 
     func health() async throws -> ServerHealth {
-        ServerHealth(ok: true, version: lock.withLock { currentVersion }, database: "ready")
+        lock.withLock {
+            ServerHealth(
+                ok: true,
+                version: currentVersion,
+                database: "ready",
+                bootId: bootId
+            )
+        }
     }
     func info() async throws -> ServerInfo {
         let version: String = try lock.withLock {
@@ -637,10 +714,11 @@ private final class SyncFakeServerClient: CodevisorServerClienting, @unchecked S
     func updateInfo(refresh: Bool, channel: ServerUpdateChannel) async throws -> ServerUpdateInfo {
         lock.withLock {
             _updateInfoChannels.append(channel)
+            _updateInfoRefreshes.append(refresh)
             return ServerUpdateInfo(
                 currentVersion: currentVersion,
                 latestVersion: latestVersion,
-                updateAvailable: currentVersion != latestVersion,
+                updateAvailable: !updateApplied && currentVersion != latestVersion,
                 channel: channel.rawValue,
                 checkedAt: nil,
                 migrationState: "idle"
@@ -660,8 +738,11 @@ private final class SyncFakeServerClient: CodevisorServerClienting, @unchecked S
             // The server restarts: unreachable for a few probes, then back on
             // the new version.
             downtimeRemaining = 3
-            currentVersion = latestVersion
-            return ServerUpdateApplied(accepted: true, targetVersion: latestVersion)
+            let targetVersion = latestVersion
+            currentVersion = installedVersionAfterUpdate ?? latestVersion
+            updateApplied = true
+            bootId = "boot-after-update"
+            return ServerUpdateApplied(accepted: true, targetVersion: targetVersion)
         }
     }
     func issuePairingToken() async throws -> ServerPairingToken {

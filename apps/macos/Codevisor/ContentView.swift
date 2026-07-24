@@ -186,6 +186,17 @@ struct RootView: View {
                 TerminalRuntime.prewarm()
             }
         }
+        .task(id: environment.machines.selectedMachineId) {
+            guard !AppPreview.isRunning else { return }
+            while !Task.isCancelled {
+                do {
+                    try await Task.sleep(for: .seconds(5 * 60))
+                } catch {
+                    return
+                }
+                await environment.machines.refreshSelectedServerUpdate()
+            }
+        }
     }
 
     private func openNotificationSession(_ sessionId: UUID, serverId: String) async {

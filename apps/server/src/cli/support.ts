@@ -129,6 +129,10 @@ export interface CommandOptions {
   readonly port?: number | undefined
 }
 
+export interface UpdateCommandOptions extends CommandOptions {
+  readonly alpha?: boolean | undefined
+}
+
 export const startCommand = async (
   deps: CliDeps,
   options: CommandOptions = {}
@@ -359,10 +363,12 @@ export const tokenCommand = async (deps: CliDeps, options: TokenOptions = {}): P
 
 export const updateCommand = async (
   deps: CliDeps,
-  options: CommandOptions = {}
+  options: UpdateCommandOptions = {}
 ): Promise<number> => {
   const port = await resolvePort(deps, options.port)
-  const update = await deps.fetchJson(`${baseUrl(port)}/v1/update`)
+  const channelQuery = options.alpha === true ? "&channel=alpha" : ""
+  const updateURL = `${baseUrl(port)}/v1/update?refresh=1${channelQuery}`
+  const update = await deps.fetchJson(updateURL)
   if (update === undefined || update.status !== 200) {
     deps.error(`Codevisor server is not running on port ${port}.`)
     deps.error("Start it (codevisor start) or re-run the install script to update in place.")
@@ -378,7 +384,10 @@ export const updateCommand = async (
     return 0
   }
   deps.log(`Updating ${state.currentVersion ?? "?"} → ${state.latestVersion ?? "?"}`)
-  const apply = await deps.fetchJson(`${baseUrl(port)}/v1/update/apply`, { method: "POST" })
+  const initialHealth = await deps.fetchJson(`${baseUrl(port)}/v1/health`)
+  const initialBootId = (initialHealth?.body as { readonly bootId?: string } | undefined)?.bootId
+  const applyURL = `${baseUrl(port)}/v1/update/apply${options.alpha === true ? "?channel=alpha" : ""}`
+  const apply = await deps.fetchJson(applyURL, { method: "POST" })
   const accepted = (apply?.body as { readonly accepted?: boolean } | undefined)?.accepted
   if (apply === undefined || accepted !== true) {
     deps.error("Server declined the update (a chat may be mid-turn); retry shortly")
@@ -387,7 +396,25 @@ export const updateCommand = async (
   const updated = await waitFor(deps, 240, async () => {
     const info = await deps.fetchJson(`${baseUrl(port)}/v1/info`)
     const version = (info?.body as { readonly version?: string } | undefined)?.version
-    return info !== undefined && info.status === 200 && version === state.latestVersion
+    if (info === undefined || info.status !== 200) return false
+    if (version === state.latestVersion) return true
+
+    // Alpha manifests carry the full prerelease tag (for example
+    // 0.1.97-alpha.54), while the runtime reports its base marketing version.
+    // Confirm a restarted server against the requested channel rather than
+    // timing out solely because those strings differ.
+    const health = await deps.fetchJson(`${baseUrl(port)}/v1/health`)
+    const bootId = (health?.body as { readonly bootId?: string } | undefined)?.bootId
+    const restarted =
+      (initialBootId !== undefined && bootId !== undefined && bootId !== initialBootId) ||
+      (state.currentVersion !== undefined && version !== state.currentVersion)
+    if (!restarted) return false
+    const refreshed = await deps.fetchJson(updateURL)
+    return (
+      refreshed !== undefined &&
+      refreshed.status === 200 &&
+      (refreshed.body as { readonly updateAvailable?: boolean }).updateAvailable === false
+    )
   })
   if (!updated) {
     deps.error("Timed out waiting for the updated server; check: codevisor logs")

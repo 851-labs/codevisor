@@ -461,6 +461,30 @@ public final class MachineController {
         }
     }
 
+    /// Refreshes only the selected remote machine's release state. The app
+    /// calls this periodically while that machine is open so a release cut
+    /// after the initial connection still raises the update banner.
+    public func refreshSelectedServerUpdate() async {
+        let machineId = selectedMachineId
+        guard !selectedMachine.isLocal, serverUpdatePhase != .updating else { return }
+        let client = selectedClient
+        do {
+            let update = try await client.updateInfo(
+                refresh: true,
+                channel: serverUpdateChannel
+            )
+            // A machine switch can happen while the request is in flight.
+            guard machineId == selectedMachineId else { return }
+            updateInfoByMachineId[machineId] = update
+        } catch {
+            // A transient background failure should not erase a banner we
+            // already know about. The next five-minute pass will retry.
+            Log.machines.debug(
+                "Periodic update probe for \(machineId, privacy: .public) failed: \(String(describing: error), privacy: .public)"
+            )
+        }
+    }
+
     /// The selected machine's server update state, when known.
     public var selectedServerUpdate: ServerUpdateInfo? {
         updateInfoByMachineId[selectedMachineId]
@@ -473,9 +497,12 @@ public final class MachineController {
         guard serverUpdatePhase != .updating else { return }
         let machineId = selectedMachineId
         let client = selectedClient
+        let updateChannel = serverUpdateChannel
+        let initialVersion = selectedServerUpdate?.currentVersion
         serverUpdatePhase = .updating
+        let initialHealth = try? await client.health()
         do {
-            let applied = try await client.applyServerUpdate(channel: serverUpdateChannel)
+            let applied = try await client.applyServerUpdate(channel: updateChannel)
             guard applied.accepted else {
                 if applied.reason == "busy" {
                     // The server still has chats mid-turn; updating now would
@@ -499,11 +526,33 @@ public final class MachineController {
                     return
                 }
                 guard let info = try? await client.info() else { continue }
-                if applied.targetVersion == nil || info.version == applied.targetVersion {
+                let exactTargetReached =
+                    applied.targetVersion == nil || info.version == applied.targetVersion
+                var restartedWithDifferentVersion =
+                    (initialVersion ?? initialHealth?.version).map { info.version != $0 } ?? false
+                if !restartedWithDifferentVersion,
+                   let initialBootId = initialHealth?.bootId,
+                   let currentBootId = (try? await client.health())?.bootId {
+                    restartedWithDifferentVersion = currentBootId != initialBootId
+                }
+                var requestedChannelIsCurrent = false
+                if !exactTargetReached, restartedWithDifferentVersion,
+                   let update = try? await client.updateInfo(
+                       refresh: true,
+                       channel: updateChannel
+                   ) {
+                    requestedChannelIsCurrent = !update.updateAvailable
+                }
+                if exactTargetReached || requestedChannelIsCurrent {
+                    // Clear the spinner as soon as the replacement server is
+                    // confirmed. Alpha manifests include a prerelease suffix,
+                    // while the bundled runtime reports its base version, and
+                    // a remote Mac may install an even newer release according
+                    // to its own Sparkle channel.
+                    serverUpdatePhase = .idle
                     await refreshStatus(for: machineId)
                     await projectList.refreshFromServer()
                     startEventSync()
-                    serverUpdatePhase = .idle
                     return
                 }
             }

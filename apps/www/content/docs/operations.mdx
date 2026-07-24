@@ -24,6 +24,13 @@ Standalone release builds check the stable release manifest. `GET /v1/update` re
 `POST /v1/update/apply` downloads the matching runtime and restarts when no prompt is in flight. A
 busy server rejects the restart without interrupting active work.
 
+`codevisor update` always performs a fresh Stable check before applying an update. To include Alpha
+releases, run:
+
+```bash
+codevisor update --alpha
+```
+
 ## Common checks
 
 1. Confirm the process is listening on the expected address and port.
