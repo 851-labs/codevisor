@@ -151,6 +151,38 @@ public final class ProjectListModel {
             .sorted { $0.createdAt > $1.createdAt }
     }
 
+    /// Orders active projects by the most recent workspace created for each
+    /// one. Projects without workspace history retain their normal
+    /// newest-project-first order after projects that have been used.
+    public func activeProjectsByWorkspaceRecency(
+        _ workspaces: [Workspace]
+    ) -> [Project] {
+        var latestWorkspaceDates: [UUID: Date] = [:]
+        for workspace in workspaces where workspace.serverId == selectedServerId {
+            latestWorkspaceDates[workspace.projectId] = max(
+                latestWorkspaceDates[workspace.projectId] ?? .distantPast,
+                workspace.createdAt
+            )
+        }
+
+        return activeProjects.enumerated().sorted { left, right in
+            switch (
+                latestWorkspaceDates[left.element.id],
+                latestWorkspaceDates[right.element.id]
+            ) {
+            case let (leftDate?, rightDate?) where leftDate != rightDate:
+                return leftDate > rightDate
+            case (_?, nil):
+                return true
+            case (nil, _?):
+                return false
+            default:
+                return left.offset < right.offset
+            }
+        }
+        .map(\.element)
+    }
+
     /// Projects in the archived section.
     public var archivedProjects: [Project] {
         projects

@@ -18,7 +18,11 @@ struct NewWorkspaceView: View {
     /// old new-chat page.
     @State private var projectSetup = ProjectSetupModel()
 
-    private var projects: [Project] { environment.projectList.activeProjects }
+    private var projects: [Project] {
+        environment.projectList.activeProjectsByWorkspaceRecency(
+            environment.workspaces.loadAll()
+        )
+    }
 
     /// Inline setup while the machine has no projects (or a clone is midway).
     private var showsProjectSetup: Bool {

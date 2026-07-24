@@ -437,6 +437,65 @@ struct ProjectListModelTests {
         #expect(model.activeProjects.map(\.name) == ["new", "old"])
     }
 
+    @Test("Active projects are ordered by their most recently created workspace")
+    func workspaceRecencySorting() {
+        let store = InMemoryStore()
+        let repository = DefaultProjectRepository(store: store)
+        let unusedOlder = Project(
+            name: "unused-older",
+            createdAt: Date(timeIntervalSince1970: 1)
+        )
+        let usedEarlier = Project(
+            name: "used-earlier",
+            createdAt: Date(timeIntervalSince1970: 2)
+        )
+        let usedLatest = Project(
+            name: "used-latest",
+            createdAt: Date(timeIntervalSince1970: 3)
+        )
+        let unusedNewer = Project(
+            name: "unused-newer",
+            createdAt: Date(timeIntervalSince1970: 4)
+        )
+        repository.save([unusedOlder, usedEarlier, usedLatest, unusedNewer])
+        let model = ProjectListModel(
+            projectRepository: repository,
+            sessionRepository: DefaultSessionRepository(store: InMemoryStore())
+        )
+
+        func workspace(
+            projectId: UUID,
+            createdAt: TimeInterval,
+            serverId: String = "local"
+        ) -> Workspace {
+            Workspace(
+                name: "Workspace",
+                rootDirectory: nil,
+                serverId: serverId,
+                projectId: projectId,
+                centerTree: .leaf(PaneGroupState()),
+                bottomGroup: PaneGroupState(),
+                createdAt: Date(timeIntervalSince1970: createdAt)
+            )
+        }
+
+        let ordered = model.activeProjectsByWorkspaceRecency([
+            workspace(projectId: usedEarlier.id, createdAt: 10),
+            workspace(projectId: usedLatest.id, createdAt: 20),
+            // The newest workspace per project wins, not the first one.
+            workspace(projectId: usedEarlier.id, createdAt: 15),
+            // Workspace history is scoped to the selected machine.
+            workspace(projectId: unusedNewer.id, createdAt: 30, serverId: "remote")
+        ])
+
+        #expect(ordered.map(\.name) == [
+            "used-latest",
+            "used-earlier",
+            "unused-newer",
+            "unused-older"
+        ])
+    }
+
     @Test("New sessions are scoped to a project and persisted")
     func sessions() {
         let (model, _, sessionStore) = makeModel()
