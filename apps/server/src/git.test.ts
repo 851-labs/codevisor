@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process"
-import { chmodSync, mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs"
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
@@ -14,6 +14,7 @@ import {
   isWorktreeBranchCollision,
   listCodevisorWorktreeBranchNames,
   parseGitNumstat,
+  rollbackFailedWorktree,
   sanitizeGitOutputLine,
   worktreeStartPoint,
   type GitOutputStream
@@ -70,6 +71,65 @@ describe("git helper", () => {
     expect(
       lines.some(([stream, line]) => stream === "stderr" && line.includes("Preparing worktree"))
     ).toBe(true)
+  })
+
+  it("uses the caller environment for checkout hooks", async () => {
+    const { repo, root } = makeRepo()
+    const helperBin = join(root, "resolved-bin")
+    const helper = join(helperBin, "git-lfs")
+    const marker = join(root, "hook-ran")
+    mkdirSync(helperBin)
+    writeFileSync(helper, '#!/bin/sh\nprintf "found" > "$CODEVISOR_TEST_MARKER"\n')
+    chmodSync(helper, 0o755)
+    writeFileSync(
+      join(repo, ".git", "hooks", "post-checkout"),
+      "#!/bin/sh\ncommand -v git-lfs >/dev/null 2>&1 || exit 2\ngit-lfs\n"
+    )
+    chmodSync(join(repo, ".git", "hooks", "post-checkout"), 0o755)
+
+    await addWorktree(
+      repo,
+      join(root, "worktree"),
+      "codevisor/resolved-hook-path",
+      undefined,
+      undefined,
+      {
+        ...process.env,
+        CODEVISOR_TEST_MARKER: marker,
+        PATH: `${helperBin}:/usr/bin:/bin`
+      }
+    )
+
+    expect(existsSync(marker)).toBe(true)
+  })
+
+  it("rolls back a worktree and branch left registered by a failed checkout hook", async () => {
+    const { repo, root } = makeRepo()
+    const worktree = join(root, "failed-worktree")
+    const branch = "codevisor/failed-hook"
+    const hook = join(repo, ".git", "hooks", "post-checkout")
+    writeFileSync(hook, "#!/bin/sh\necho checkout hook failed >&2\nexit 2\n")
+    chmodSync(hook, 0o755)
+
+    const failure = await addWorktree(repo, worktree, branch).catch((cause: unknown) => cause)
+    expect(failure).toBeInstanceOf(GitError)
+    expect(existsSync(worktree)).toBe(true)
+
+    expect(await rollbackFailedWorktree(repo, worktree, branch)).toBe(true)
+    expect(existsSync(worktree)).toBe(false)
+    expect(() =>
+      execFileSync("git", ["show-ref", "--verify", `refs/heads/${branch}`], {
+        cwd: repo,
+        stdio: "ignore"
+      })
+    ).toThrow()
+  })
+
+  it("does nothing when a failed worktree was never registered", async () => {
+    const { repo, root } = makeRepo()
+    expect(
+      await rollbackFailedWorktree(repo, join(root, "missing-worktree"), "codevisor/never-created")
+    ).toBe(false)
   })
 
   it("resolves no start point for a repo without an origin/main ref", async () => {

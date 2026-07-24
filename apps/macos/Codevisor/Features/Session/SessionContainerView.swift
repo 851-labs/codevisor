@@ -962,15 +962,25 @@ struct SessionContainerView: View {
         }
     }
 
-    /// Whether an established chat hasn't truly begun: no agent session ever
-    /// created AND no live controller doing so right now. Such chats render
-    /// the new-chat composer (harness choice included) even though their
-    /// session record exists — eager creation is a sidebar affordance, not a
-    /// started conversation. `activeController` is a pure read (body-safe).
+    /// Whether an established chat should use the centered New Chat treatment.
+    /// First-send setup transitions into the transcript immediately; a failed
+    /// setup explicitly returns here without deleting the session or workspace.
     private func isUnstarted(_ chatSession: ChatSession) -> Bool {
+        guard let live = store.activeController(for: chatSession) else {
+            return chatSession.agentSessionId == nil
+        }
+        // New Chat eagerly connects so its model/reasoning controls are ready.
+        // Only an accepted first send — never that preparation connection —
+        // moves the pane into the transcript.
+        if live.shouldShowNewChatComposer { return true }
+        if live.hasAcceptedFirstSend { return false }
         guard chatSession.agentSessionId == nil else { return false }
-        guard let live = store.activeController(for: chatSession) else { return true }
-        return !(live.isConnected || live.isConnecting || live.isSending)
+        return !(
+            live.isConnected
+                || live.isConnecting
+                || live.isSending
+                || live.pendingUserText != nil
+        )
     }
 
     /// A chat pane's display title: its referenced session's LIVE title
@@ -1037,13 +1047,6 @@ struct SessionContainerView: View {
                                 )
                         },
                         preCreatedSession: chatSession,
-                        // Setup failure DELETES the session record — the
-                        // pane must drop its reference too (a bound pane
-                        // over a deleted session is the "no longer exists"
-                        // dead end).
-                        onSetupFailedInPane: { [weak group] in
-                            group?.unbindChatPane(paneId: descriptor.id)
-                        },
                         paneFocus: focus,
                         hostWorkspaceId: store.workspace(for: session, project: project).id
                     )

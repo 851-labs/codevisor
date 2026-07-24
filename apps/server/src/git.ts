@@ -1,6 +1,7 @@
 import { execFile, spawn } from "node:child_process"
+import { realpathSync } from "node:fs"
 import { readFile } from "node:fs/promises"
-import { join } from "node:path"
+import { join, resolve } from "node:path"
 
 import type { BranchDiffTotals } from "@codevisor/api"
 
@@ -14,26 +15,46 @@ export class GitError extends Error {
   }
 }
 
-const git = (operation: string, args: ReadonlyArray<string>, cwd: string): Promise<string> =>
+const git = (
+  operation: string,
+  args: ReadonlyArray<string>,
+  cwd: string,
+  env?: NodeJS.ProcessEnv
+): Promise<string> =>
   new Promise((resolve, reject) => {
-    execFile("git", args, { cwd }, (error, stdout, stderr) => {
-      if (error !== null) {
-        reject(new GitError(operation, stderr.trim().length > 0 ? stderr.trim() : error.message))
-        return
+    execFile(
+      "git",
+      args,
+      { cwd, ...(env === undefined ? {} : { env }) },
+      (error, stdout, stderr) => {
+        if (error !== null) {
+          reject(new GitError(operation, stderr.trim().length > 0 ? stderr.trim() : error.message))
+          return
+        }
+        resolve(stdout.trim())
       }
-      resolve(stdout.trim())
-    })
+    )
   })
 
-const gitRaw = (operation: string, args: ReadonlyArray<string>, cwd: string): Promise<string> =>
+const gitRaw = (
+  operation: string,
+  args: ReadonlyArray<string>,
+  cwd: string,
+  env?: NodeJS.ProcessEnv
+): Promise<string> =>
   new Promise((resolve, reject) => {
-    execFile("git", args, { cwd }, (error, stdout, stderr) => {
-      if (error !== null) {
-        reject(new GitError(operation, stderr.trim().length > 0 ? stderr.trim() : error.message))
-        return
+    execFile(
+      "git",
+      args,
+      { cwd, ...(env === undefined ? {} : { env }) },
+      (error, stdout, stderr) => {
+        if (error !== null) {
+          reject(new GitError(operation, stderr.trim().length > 0 ? stderr.trim() : error.message))
+          return
+        }
+        resolve(stdout)
       }
-      resolve(stdout)
-    })
+    )
   })
 
 export const isGitWorkTree = async (dir: string): Promise<boolean> => {
@@ -219,14 +240,18 @@ export const addWorktree = (
   path: string,
   branch: string,
   onOutput?: GitOutputListener,
-  startPoint?: string
+  startPoint?: string,
+  env?: NodeJS.ProcessEnv
 ): Promise<void> =>
   new Promise((resolve, reject) => {
     const args = ["worktree", "add", path, "-b", branch]
     if (startPoint !== undefined) {
       args.push(startPoint)
     }
-    const child = spawn("git", args, { cwd: repoDir })
+    const child = spawn("git", args, {
+      cwd: repoDir,
+      ...(env === undefined ? {} : { env })
+    })
     const stderrLines: Array<string> = []
     const listen = (stream: GitOutputStream) => {
       // Progress-style output repaints the same line many times; emit each
@@ -339,15 +364,16 @@ export class CloneError extends GitError {
 export const cloneRepository = (
   url: string,
   destination: string,
-  onOutput?: GitOutputListener
+  onOutput?: GitOutputListener,
+  env: NodeJS.ProcessEnv = process.env
 ): Promise<void> =>
   new Promise((resolve, reject) => {
     const child = spawn("git", ["clone", "--progress", url, destination], {
       env: {
-        ...process.env,
+        ...env,
         GIT_TERMINAL_PROMPT: "0",
         GIT_ASKPASS: "true",
-        GIT_SSH_COMMAND: process.env.GIT_SSH_COMMAND ?? "ssh -oBatchMode=yes"
+        GIT_SSH_COMMAND: env.GIT_SSH_COMMAND ?? "ssh -oBatchMode=yes"
       }
     })
     const stderrLines: Array<string> = []
@@ -395,5 +421,53 @@ export const cloneRepository = (
     })
   })
 
-export const removeWorktree = (repoDir: string, path: string): Promise<string> =>
-  git("worktree", ["worktree", "remove", path, "--force"], repoDir)
+export const removeWorktree = (
+  repoDir: string,
+  path: string,
+  env?: NodeJS.ProcessEnv
+): Promise<string> => git("worktree", ["worktree", "remove", path, "--force"], repoDir, env)
+
+/// Rolls back a `git worktree add -b` that failed after Git had already
+/// registered the checkout (checkout hooks run at exactly that point). The
+/// branch is deleted only after Git confirms ownership by successfully
+/// removing the exact worktree path; failures before registration therefore
+/// cannot delete a branch created by another process.
+export const rollbackFailedWorktree = async (
+  repoDir: string,
+  path: string,
+  branch: string,
+  env?: NodeJS.ProcessEnv
+): Promise<boolean> => {
+  const canonicalPath = (candidate: string): string => {
+    try {
+      return realpathSync(candidate)
+    } catch {
+      // A failure before checkout creation legitimately leaves no path. Using
+      // an absolute lexical path lets the ownership check return false without
+      // turning the best-effort rollback into a second error.
+      return resolve(candidate)
+    }
+  }
+  const records = (
+    await gitRaw("worktree-list", ["worktree", "list", "--porcelain", "-z"], repoDir, env)
+  )
+    .split("\0\0")
+    .map((record) => record.split("\0"))
+  const expectedPath = canonicalPath(path)
+  const ownsCheckout = records.some((fields) => {
+    const registeredPath = fields
+      .find((field) => field.startsWith("worktree "))
+      ?.slice("worktree ".length)
+    return (
+      registeredPath !== undefined &&
+      canonicalPath(registeredPath) === expectedPath &&
+      fields.includes(`branch refs/heads/${branch}`)
+    )
+  })
+  if (!ownsCheckout) {
+    return false
+  }
+  await removeWorktree(repoDir, path, env)
+  await git("worktree-branch", ["branch", "-D", branch], repoDir, env)
+  return true
+}

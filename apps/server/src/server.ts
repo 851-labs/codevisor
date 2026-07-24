@@ -104,6 +104,7 @@ import {
   isWorktreeBranchCollision,
   listCodevisorWorktreeBranchNames,
   removeWorktree,
+  rollbackFailedWorktree,
   worktreeStartPoint
 } from "./git.js"
 import { connect, type AddressInfo, type Socket } from "node:net"
@@ -168,6 +169,10 @@ export interface CodevisorServerServices {
   readonly attachments: AttachmentStore
   readonly agents: AgentRuntimeService
   readonly terminal: TerminalManagerService
+  /// Full user shell environment for Git operations that can invoke checkout
+  /// hooks and filters. GUI-launched macOS servers otherwise inherit a PATH
+  /// that omits Homebrew tools such as git-lfs.
+  readonly resolveGitEnvironment?: () => Promise<NodeJS.ProcessEnv>
   readonly auth?: HarnessAuthManager
   readonly mcp?: McpManager
   /// User-defined custom ACP harness persistence + handshake probe. Absent on
@@ -1270,9 +1275,15 @@ const routeProjects = async (
     await publishSetup({ state: "started" })
     try {
       mkdirSync(dirname(destination), { recursive: true })
-      await cloneRepository(repoUrl, destination, (stream, line) => {
-        void publishSetup({ state: "log", stream, line }).catch(swallowError)
-      })
+      const environment = await (services.resolveGitEnvironment?.() ?? Promise.resolve(process.env))
+      await cloneRepository(
+        repoUrl,
+        destination,
+        (stream, line) => {
+          void publishSetup({ state: "log", stream, line }).catch(swallowError)
+        },
+        environment
+      )
       await publishSetup({ state: "completed", durationMs: Date.now() - startedAt })
     } catch (cause) {
       /* v8 ignore next -- cloneRepository always throws CloneError; the fallback guards mkdir failures. */
@@ -1373,6 +1384,7 @@ const routeProjects = async (
         /* v8 ignore stop */
       }
       const startedAt = Date.now()
+      const environment = await (services.resolveGitEnvironment?.() ?? Promise.resolve(process.env))
       const publishSetup = makeWorktreeSetupPublisher(
         services.db,
         fanout,
@@ -1389,7 +1401,8 @@ const routeProjects = async (
           (stream, line) => {
             void publishSetup({ state: "log", stream, line }).catch(swallowError)
           },
-          startPoint
+          startPoint,
+          environment
         )
         await publishSetup({ state: "completed", durationMs: Date.now() - startedAt })
       } catch (cause) {
@@ -1406,6 +1419,23 @@ const routeProjects = async (
             line: `Branch ${branch} was claimed concurrently; choosing another name.`
           })
           continue
+        }
+        try {
+          if (
+            await rollbackFailedWorktree(location.folderPath, worktree.path, branch, environment)
+          ) {
+            await publishSetup({
+              state: "log",
+              stream: "stderr",
+              line: "Removed the partial worktree and branch."
+            })
+          }
+        } catch (cleanupCause) {
+          await publishSetup({
+            state: "log",
+            stream: "stderr",
+            line: `Could not fully remove the partial worktree: ${failureMessage(cleanupCause)}`
+          })
         }
         await publishSetup({
           state: "failed",
@@ -2499,7 +2529,8 @@ const removeArchivedSessionWorktree = async (
   }
   const project = await getProjectOrFail(services.db, session.projectId)
   const location = localLocationOrFail(serverId, project)
-  await removeWorktree(location.folderPath, worktree.path)
+  const environment = await (services.resolveGitEnvironment?.() ?? Promise.resolve(process.env))
+  await removeWorktree(location.folderPath, worktree.path, environment)
   await run(services.db.deleteWorktree(worktree.id))
 }
 

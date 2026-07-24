@@ -610,6 +610,11 @@ export const runServe = (args: Record<string, string>): Promise<void> => {
           })
     const terminal = makeTerminalManager()
     const backgroundTerminals = yield* Effect.promise(() => backgroundTerminalIntegration(terminal))
+    // Start resolving the GUI process's minimal environment without delaying
+    // server boot. The first Git operation awaits this shared result so
+    // checkout hooks and filters can find user-installed tools such as
+    // Homebrew's git-lfs.
+    const gitEnvironment = resolveShellEnv()
     // User-defined custom ACP harnesses (~/.codevisor/harnesses.json) merge
     // into the catalog before anything consumes it. Bad entries are skipped
     // with a warning — a hand-edited file must never block server boot.
@@ -707,6 +712,7 @@ export const runServe = (args: Record<string, string>): Promise<void> => {
         attachments,
         customHarnesses: customHarnessStore,
         db,
+        resolveGitEnvironment: () => gitEnvironment,
         terminal,
         ...(auth === undefined ? {} : { auth }),
         ...(lifecycle === undefined ? {} : { lifecycle }),

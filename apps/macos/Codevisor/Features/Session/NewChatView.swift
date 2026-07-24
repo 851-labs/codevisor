@@ -41,9 +41,6 @@ struct NewChatView: View {
     /// lists it before the first message): first send fills in its details
     /// (title, harness, worktree/cwd) instead of creating a new record.
     var preCreatedSession: ChatSession? = nil
-    /// Fired when a failed first-send setup deletes the session, so the
-    /// hosting pane can drop its (now dangling) session reference.
-    var onSetupFailedInPane: (() -> Void)? = nil
     /// The WORKSPACE's shared focus controller (pane mode only). The
     /// composer registers under the pre-created chat's id so pane/tab
     /// clicks and the container's open sequence can focus it exactly like
@@ -213,15 +210,21 @@ struct NewChatView: View {
         // dismissing the update notice never shifts the composer's layout.
         .overlay(alignment: .top) {
             if let controller {
-                HarnessUpdateBannerView(
-                    controller: controller,
-                    hasRunningChats: controller.activeHarnessId.map { harnessId in
-                        store.hasActiveSessions(
-                            forHarness: harnessId,
-                            onServer: environment.machines.selectedMachineId
+                Group {
+                    if case let .failed(message) = controller.status {
+                        setupFailureBanner(message)
+                    } else {
+                        HarnessUpdateBannerView(
+                            controller: controller,
+                            hasRunningChats: controller.activeHarnessId.map { harnessId in
+                                store.hasActiveSessions(
+                                    forHarness: harnessId,
+                                    onServer: environment.machines.selectedMachineId
+                                )
+                            } ?? false
                         )
-                    } ?? false
-                )
+                    }
+                }
                 .frame(maxWidth: 720)
                 .padding(.horizontal, 16)
                 .padding(.top, 12)
@@ -446,11 +449,8 @@ struct NewChatView: View {
         }
     }
 
-    /// Inline error for a failed session start. This page has no transcript
-    /// yet, so directly beneath the composer IS adjacent to where the failure
-    /// happened (HIG: show errors near their source). While the connect is
-    /// still waiting on a (re)booting server the label is a calm loading
-    /// state — the error styling appears only after the wait times out.
+    /// A rebooting server remains a calm loading state beneath the composer.
+    /// Terminal setup errors use the pane's established top-banner position.
     @ViewBuilder
     private func statusLabel(_ controller: SessionController) -> some View {
         if let waitMessage = controller.serverWaitMessage {
@@ -464,27 +464,32 @@ struct NewChatView: View {
             .padding(10)
             .frame(maxWidth: .infinity, alignment: .leading)
             .accessibilityElement(children: .combine)
-        } else if case let .failed(message) = controller.status {
-            HStack(spacing: 12) {
-                Label(message, systemImage: "exclamationmark.triangle.fill")
-                    .font(.callout)
-                    .foregroundStyle(theme.statusError)
-                Spacer(minLength: 0)
-                // Relaunching the app restarts the managed server too.
-                if message == serverUnreachableErrorMessage {
-                    Button("Restart") { AppRelauncher.relaunch() }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
-                        .help("Restart Codevisor and its server")
-                }
-            }
-            .padding(10)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: 8).fill(theme.statusError.opacity(0.1))
-            )
-            .accessibilityElement(children: .combine)
         }
+    }
+
+    private func setupFailureBanner(_ message: String) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.callout)
+                .foregroundStyle(theme.statusError)
+            Text(message)
+                .font(.subheadline)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+            // Relaunching the app restarts the managed server too.
+            if message == serverUnreachableErrorMessage {
+                Button("Restart") { AppRelauncher.relaunch() }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .help("Restart Codevisor and its server")
+            }
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 8).fill(theme.cardBackground))
+        .themedCardShadow(theme)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Could not start chat. \(message)")
     }
 
     // MARK: - Setup
@@ -492,6 +497,8 @@ struct NewChatView: View {
     private func setUpController() {
         selectedProjectId = preferredProjectId ?? projects.first?.id
         guard let project = selectedProject else { return }
+        // Keep the original draft controller path: it owns both the complete
+        // per-composer snapshot and the machine-wide composer defaults.
         let controller = paneDraftId.map {
             store.paneDraft(
                 paneId: $0,
@@ -584,25 +591,22 @@ struct NewChatView: View {
                     )
                 }
             }
-            // If worktree setup or the agent start fails, undo the promotion:
-            // delete the just-created session record (local + server), demote
-            // the controller back to the draft slot, and reopen the new-chat
-            // page — its status label shows the failure.
-            controller.onSetupFailed = { [weak controller, weak projectList = environment.projectList] in
+            // Keep the session/workspace, but put this same controller back
+            // behind the original draft persistence hooks. The restored text,
+            // attachments, harness/config, run context, and goal state then
+            // survive navigation and relaunch exactly as they did before.
+            controller.onSetupFailed = { [weak controller] in
                 guard let controller else { return }
-                projectList?.deleteSession(session)
                 controller.serverSession = nil
                 controller.onAgentSessionCreated = nil
                 controller.onWorktreeCreated = nil
                 if let paneDraftId {
-                    // The pane stays a draft; its composer (with the failed
-                    // send's status) returns to the pane's draft slot, and
-                    // the pane drops its reference to the deleted session.
-                    store.demoteToPaneDraft(controller, session: session, paneId: paneDraftId)
-                    onSetupFailedInPane?()
+                    store.restorePaneDraftPersistence(
+                        controller,
+                        paneId: paneDraftId
+                    )
                 } else {
-                    store.demote(controller, session: session)
-                    selection = .newChat(project.id)
+                    store.restoreDraftPersistence(controller)
                 }
             }
             store.register(controller, for: session)
@@ -618,7 +622,10 @@ struct NewChatView: View {
         self.controller = controller
         Task {
             await controller.prepare()
-            if !AppPreview.isRunning { await controller.connectIfNeeded() }
+            if !AppPreview.isRunning,
+               !controller.showsNewChatAfterSetupFailure {
+                await controller.connectIfNeeded()
+            }
         }
     }
 

@@ -243,11 +243,13 @@ final class SessionStore {
         environment.composerDrafts.clearPaneDraft(forPane: paneId)
     }
 
-    /// Setup failure undid a pane draft's promotion: the controller returns
-    /// to the pane's draft slot (composer state intact) and leaves the
-    /// session cache.
-    func demoteToPaneDraft(_ controller: SessionController, session: ChatSession, paneId: UUID) {
-        controllers[SessionKey(session)] = nil
+    /// First-send setup failed, but its durable session/workspace remains.
+    /// Reattach the exact same controller to the pane's original draft slot
+    /// so all composer state keeps using the established persistence path.
+    func restorePaneDraftPersistence(
+        _ controller: SessionController,
+        paneId: UUID
+    ) {
         paneDrafts[paneId] = controller
         enablePaneDraftPersistence(for: controller, paneId: paneId)
     }
@@ -655,22 +657,10 @@ final class SessionStore {
         environment.composerDrafts.clearDraft(forServer: controller.project.serverId)
     }
 
-    /// Reverts a failed first-send promotion: forgets the session registration
-    /// (the record is being deleted) and returns the controller to the draft
-    /// slot, so the reopened new-chat page picks it back up with its restored
-    /// composer text and failure status.
-    func demote(_ controller: SessionController, session: ChatSession) {
-        let key = SessionKey(session)
-        if controllers[key] === controller { controllers[key] = nil }
-        detachBottomGroup(for: session)
-        detachCenterLeaves(for: session)
-        flushScratchpad(for: session)
-        unreadCounts[key] = nil
-        unreadErrors.remove(key)
-        pendingAttentionErrors[key] = nil
-        scrollStates[key] = nil
-        todoExpansionStates[key] = nil
-        todoCompletionStates[key] = nil
+    /// Standalone counterpart to `restorePaneDraftPersistence`: retain the
+    /// durable session registration while restoring the original new-chat
+    /// draft/defaults persistence until the retry succeeds.
+    func restoreDraftPersistence(_ controller: SessionController) {
         draftsByServer[controller.project.serverId] = controller
         enableDraftPersistence(for: controller)
     }

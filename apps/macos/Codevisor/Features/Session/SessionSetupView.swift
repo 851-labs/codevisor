@@ -3,7 +3,7 @@ import CodevisorCore
 import StreamMarkdown
 import SwiftUI
 
-/// The pre-chat setup sections shown at the top of a brand-new session:
+/// The pre-chat setup sections shown after the first user message:
 /// "Setting up worktree…" / "Starting Claude Code…" rows styled like the
 /// transcript's "Worked for…" disclosure — a live timer while running, a
 /// final "Set up worktree in 60s" when done, and an expandable body with the

@@ -192,12 +192,10 @@ final class SessionController {
     /// Called once, on the first send — used by the new-chat page to create and
     /// register the real session and navigate to it.
     var onFirstSend: (() -> Void)?
-    /// Called when first-send setup (worktree creation or agent start) fails
-    /// after `onFirstSend` already promoted the draft — the new-chat page uses
-    /// it to delete the just-created session record and reopen itself with the
-    /// error showing.
+    /// Called when first-send setup fails after the draft was promoted. The
+    /// owner reattaches the original draft persistence without deleting the
+    /// durable chat session or its workspace.
     var onSetupFailed: (() -> Void)?
-
     /// The agent session to resume (existing session); nil for a brand-new chat.
     var resumeAgentSessionId: String?
     /// The durable Codevisor session mirrored by the server. Nil for a draft until first send.
@@ -296,10 +294,22 @@ final class SessionController {
             )
         }
     }
-    /// Pre-chat setup steps (worktree creation, agent start) shown on the
-    /// session page as "Worked for…"-style expandable sections with a live
-    /// timer, streamed logs, and any failure message.
+    /// Pre-chat setup steps (worktree creation, agent start) shown in the
+    /// transcript immediately after the optimistic first user message.
     private(set) var setupPhases: [SessionSetupPhase] = []
+    /// A failed first-send setup returns to the centered New Chat treatment
+    /// without deleting its durable session or workspace.
+    private(set) var showsNewChatAfterSetupFailure = false
+    /// Presentation state for an eagerly-created chat. Harness preparation may
+    /// connect an agent before the user sends, so connection state cannot tell
+    /// the container when to leave the centered New Chat treatment.
+    var shouldShowNewChatComposer: Bool {
+        showsNewChatAfterSetupFailure || (!hasSentFirst && onFirstSend != nil)
+    }
+    /// The first send is accepted synchronously before worktree or agent setup
+    /// begins, allowing the pane to enter the transcript without waiting for
+    /// either asynchronous operation.
+    var hasAcceptedFirstSend: Bool { hasSentFirst }
     /// True from the moment a send is accepted until the first-send navigation
     /// has happened — the window where the new-chat composer shows a spinner
     /// and disables input.
@@ -732,13 +742,13 @@ final class SessionController {
         isGoalComposerArmed = false
         isGoalEditing = false
         pendingGoal = objective
+        showsNewChatAfterSetupFailure = false
+        status = .idle
         isSubmitting = true
         let needsWorktree = wantsNewWorktree && sessionCwdOverride == nil
-        let showsSetupPhases = serverSession?.agentSessionId == nil && resumeAgentSessionId == nil
-        // Whether this send is the one that promotes the new-chat draft to a
-        // real session — a setup failure then reverts back to the draft.
-        let promotedDraft = !hasSentFirst && onFirstSend != nil
-
+        let showsSetupPhases =
+            (pendingNewChatAnalytics || (!hasSentFirst && onFirstSend != nil))
+                && resumeAgentSessionId == nil
         // Navigate first, exactly like a first prompt send.
         if !hasSentFirst {
             hasSentFirst = true
@@ -750,20 +760,16 @@ final class SessionController {
         }
         isSubmitting = false
         composerText = ""
-
         func restoreComposer() {
             composerText = objective
             pendingGoal = nil
+            isGoalComposerArmed = true
         }
 
         if needsWorktree {
             if let failure = await createWorktree(showsSetupPhase: showsSetupPhases) {
                 restoreComposer()
-                if promotedDraft {
-                    revertFirstSend(message: failure)
-                } else {
-                    failWorktreeSetup(with: failure, showsSetupPhase: showsSetupPhases)
-                }
+                handleSetupFailure(failure, returnsToNewChat: showsSetupPhases)
                 return
             }
         }
@@ -771,11 +777,7 @@ final class SessionController {
         guard let harness = selectedHarness else {
             let message = "No agent is installed. Install Claude Code or Codex and try again."
             restoreComposer()
-            if promotedDraft {
-                revertFirstSend(message: message)
-            } else {
-                status = .failed(message)
-            }
+            handleSetupFailure(message, returnsToNewChat: showsSetupPhases)
             return
         }
         status = .connecting("Starting \(harness.name)…")
@@ -789,12 +791,7 @@ final class SessionController {
         } catch {
             let message = serverErrorMessage(error)
             restoreComposer()
-            if promotedDraft {
-                revertFirstSend(message: message)
-            } else {
-                mutateSetupPhase(id: SessionSetupPhase.agentPhaseId) { $0.fail(message: message) }
-                status = .failed(message)
-            }
+            handleSetupFailure(message, returnsToNewChat: showsSetupPhases)
         }
     }
 
@@ -1634,16 +1631,16 @@ final class SessionController {
         await connectIfNeeded()
     }
 
-    /// Sends the composer text, connecting the harness first if needed. A
-    /// first send navigates to the session page immediately; the pre-chat
-    /// steps that follow (worktree creation, agent start) stream their
-    /// progress there as `setupPhases`.
+    /// Sends the composer text, transitioning immediately into the transcript.
+    /// Worktree and agent setup render after the optimistic first user message.
     func send() async {
         let text = composerText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty || !composerAttachments.isEmpty,
               !isConnecting,
               configurationValidationState == .ready,
               !isSubmitting else { return }
+        showsNewChatAfterSetupFailure = false
+        status = .idle
         let shouldAnimateTranscriptSend = !isSending
         // Ask at the first moment notifications become useful instead of at
         // launch: the user just started work that may finish while they are in
@@ -1673,13 +1670,11 @@ final class SessionController {
         let needsWorktree = wantsNewWorktree && sessionCwdOverride == nil
         // A brand-new chat renders its pre-chat steps as setup sections; a
         // resumed session's transcript shouldn't grow one retroactively.
-        let showsSetupPhases = serverSession?.agentSessionId == nil && resumeAgentSessionId == nil
-        // Whether this send is the one that promotes the new-chat draft to a
-        // real session — a setup failure then reverts back to the draft.
-        let promotedDraft = !hasSentFirst && onFirstSend != nil
-
-        // Navigate first: the session page opens the instant the user sends
-        // and shows the optimistic message plus live setup progress.
+        let showsSetupPhases =
+            (pendingNewChatAnalytics || (!hasSentFirst && onFirstSend != nil))
+                && resumeAgentSessionId == nil
+        // Materialize the durable session before setup so the workspace and
+        // pane keep a stable identity even if setup fails.
         if !hasSentFirst {
             hasSentFirst = true
             if onFirstSend != nil {
@@ -1690,14 +1685,12 @@ final class SessionController {
         }
         isSubmitting = false
 
-        // Clear before any await: the session page reuses this controller, and
-        // the sent text lingering in the composer next to the optimistic user
-        // message reads as a duplicate. Failure paths restore it.
+        // The session screen reuses this controller. Clear the centered
+        // composer before the transition and represent the send as an
+        // optimistic transcript row until the live model accepts it.
         composerText = ""
         let staged = composerAttachments
         composerAttachments = []
-
-        // Show the first message optimistically while pre-chat setup runs.
         if model == nil || needsWorktree {
             pendingUserText = text
             pendingUserAttachments = attachments
@@ -1716,11 +1709,7 @@ final class SessionController {
         if needsWorktree {
             if let failure = await createWorktree(showsSetupPhase: showsSetupPhases) {
                 restoreComposer()
-                if promotedDraft {
-                    revertFirstSend(message: failure)
-                } else {
-                    failWorktreeSetup(with: failure, showsSetupPhase: showsSetupPhases)
-                }
+                handleSetupFailure(failure, returnsToNewChat: showsSetupPhases)
                 return
             }
         }
@@ -1735,11 +1724,7 @@ final class SessionController {
         guard let harness = selectedHarness else {
             let message = "No agent is installed. Install Claude Code or Codex and try again."
             restoreComposer()
-            if promotedDraft {
-                revertFirstSend(message: message)
-            } else {
-                status = .failed(message)
-            }
+            handleSetupFailure(message, returnsToNewChat: showsSetupPhases)
             return
         }
         status = .connecting("Starting \(harness.name)…")
@@ -1747,24 +1732,15 @@ final class SessionController {
         do {
             let model = try await connect(harnessId: harness.id)
             self.model = model
-            // Agent start is quick, so the row is ephemeral: it narrates while
-            // running and simply disappears on success (failures stay).
             setupPhases.removeAll { $0.id == SessionSetupPhase.agentPhaseId }
             status = .idle
-            // model.send appends the real user message synchronously before
-            // its first suspension, so clearing here doesn't flash.
             pendingUserText = nil
             pendingUserAttachments = []
             await model.send(text, attachments: attachments)
         } catch {
             let message = serverErrorMessage(error)
             restoreComposer()
-            if promotedDraft {
-                revertFirstSend(message: message)
-            } else {
-                mutateSetupPhase(id: SessionSetupPhase.agentPhaseId) { $0.fail(message: message) }
-                status = .failed(message)
-            }
+            handleSetupFailure(message, returnsToNewChat: showsSetupPhases)
         }
     }
 
@@ -1790,21 +1766,6 @@ final class SessionController {
         await model.send(prompt.text, attachments: prompt.attachments)
     }
 
-    /// Rolls a failed first send back to the draft state. The setup sections
-    /// belong to the session page being torn down; the error travels back to
-    /// the new-chat page as a `.failed` status, and `onSetupFailed` (wired by
-    /// the new-chat page) deletes the just-created session record and
-    /// navigates back. A worktree that was already created is kept on the
-    /// controller so a retry reuses it instead of materializing another one.
-    private func revertFirstSend(message: String) {
-        setupPhases.removeAll()
-        hasSentFirst = false
-        pendingNewChatAnalytics = false
-        status = .failed(message)
-        onSetupFailed?()
-        onSetupFailed = nil
-    }
-
     /// Asks the server to create a git worktree for this draft. The server
     /// owns the fixed location (~/codevisor/{projectId}/{name}) and picks a
     /// random memorable name ("ferocious-walrus"); the app never computes
@@ -1812,7 +1773,7 @@ final class SessionController {
     /// `worktree.setup` events (git output, checkout hooks, failures) can be
     /// followed live into the setup section while the request is in flight.
     /// Returns the failure message on error (nil on success); the caller
-    /// routes it into the setup section, the status, or a first-send revert.
+    /// either continues the transcript transition or restores New Chat.
     private func createWorktree(showsSetupPhase: Bool) async -> String? {
         guard let serverClient else {
             return "Worktrees need the Codevisor server. Start it and try again."
@@ -1868,16 +1829,24 @@ final class SessionController {
         }
     }
 
-    /// Surfaces a worktree failure: in the setup section when the session page
-    /// shows one (the error and captured logs stay expandable there), or as a
-    /// plain failed status otherwise.
-    private func failWorktreeSetup(with message: String, showsSetupPhase: Bool) {
-        if showsSetupPhase {
-            mutateSetupPhase(id: SessionSetupPhase.worktreePhaseId) { $0.fail(message: message) }
-            status = .idle
-        } else {
+    /// Failed first-send setup returns to the centered composer with its prompt
+    /// restored. Existing-session failures remain in the transcript.
+    private func handleSetupFailure(_ message: String, returnsToNewChat: Bool) {
+        if returnsToNewChat {
+            setupPhases.removeAll()
+            // Restore the original draft lifecycle so every composer field is
+            // persisted again while the user edits or retries. The durable
+            // session remains registered; only this controller's draft-facing
+            // state is reset.
+            hasSentFirst = false
+            pendingNewChatAnalytics = false
+            showsNewChatAfterSetupFailure = true
             status = .failed(message)
+            onSetupFailed?()
+            onSetupFailed = nil
+            return
         }
+        status = .failed(message)
     }
 
     private func beginSetupPhase(_ phase: SessionSetupPhase) {
@@ -2149,13 +2118,11 @@ final class SessionController {
         }
         analyticsUsageBaseline = model.usage
 
-        // Publish the model as soon as history is loaded so the transcript
-        // paints while the agent is still spawning — but only on the eager
-        // open path. The send path keeps `model` unset until the runtime is
-        // up: its optimistic pending row renders only while the settled
-        // conversation is empty, and a resumed thread's history appearing
-        // early would hide the just-sent message for the whole spawn.
-        if pendingUserText == nil, self.model == nil {
+        // Publish the model as soon as history is loaded so an established
+        // transcript paints while the agent is still spawning — but never
+        // during pre-chat setup. A setup failure must leave no half-connected
+        // model behind for Retry to mistake for a ready conversation.
+        if pendingUserText == nil, setupPhases.isEmpty, self.model == nil {
             self.model = model
         }
 
