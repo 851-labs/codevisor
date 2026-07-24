@@ -2546,12 +2546,15 @@ describe("native config safety", () => {
 
     // Recreate the pre-migration damage directly: a remotely created
     // lowercase session with a real transcript, an uppercase phantom fork of
-    // it (opened but never prompted), and a second pair where both twins were
-    // prompted and genuinely forked.
+    // it (opened but never prompted), a second pair where both twins were
+    // prompted and genuinely forked, and a third pair where neither twin was
+    // prompted.
     const lowerA = "aaaaaaaa-1111-4111-8111-111111111111"
     const upperA = lowerA.toUpperCase()
     const lowerB = "bbbbbbbb-2222-4222-8222-222222222222"
     const upperB = lowerB.toUpperCase()
+    const lowerC = "cccccccc-3333-4333-8333-333333333333"
+    const upperC = lowerC.toUpperCase()
     const sqlite = new Database(filename)
     const insertSession = sqlite.prepare(
       `insert into sessions (id, project_id, server_id, harness_id, title, origin, is_archived, created_at, updated_at)
@@ -2585,6 +2588,20 @@ describe("native config safety", () => {
       "2026-07-03T00:30:00.000Z",
       "2026-07-03T01:00:00.000Z"
     )
+    insertSession.run(
+      lowerC,
+      project.id,
+      "Older C",
+      "2026-07-04T00:00:00.000Z",
+      "2026-07-04T01:00:00.000Z"
+    )
+    insertSession.run(
+      upperC,
+      project.id,
+      "Newer C",
+      "2026-07-04T00:30:00.000Z",
+      "2026-07-04T02:00:00.000Z"
+    )
     const insertChatItem = sqlite.prepare(
       `insert into chat_items (id, session_id, position, role, status, created_at, updated_at)
        values (?, ?, 0, 'user', 'complete', '2026-07-01T00:01:00.000Z', '2026-07-01T00:01:00.000Z')`
@@ -2617,8 +2634,14 @@ describe("native config safety", () => {
     const forkDetail = await run(reopened.getSessionDetail(forkB!.id))
     expect(forkDetail.conversation).toHaveLength(1)
 
+    // Pair C: neither twin has a transcript, so the most recently active row
+    // wins the canonical id and the older phantom is discarded.
+    const pairC = sessions.filter((session) => session.id.toLowerCase() === lowerC)
+    expect(pairC).toHaveLength(1)
+    expect(pairC[0]).toMatchObject({ id: lowerC, title: "Newer C", isArchived: false })
+
     // No case-twins remain anywhere, and ids are canonically lowercase.
-    expect(sessions).toHaveLength(3)
+    expect(sessions).toHaveLength(4)
     for (const session of sessions) {
       expect(session.id).toBe(session.id.toLowerCase())
     }

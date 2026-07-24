@@ -115,7 +115,7 @@ describe("git helper", () => {
     expect(failure).toBeInstanceOf(GitError)
     expect(existsSync(worktree)).toBe(true)
 
-    expect(await rollbackFailedWorktree(repo, worktree, branch)).toBe(true)
+    expect(await rollbackFailedWorktree(repo, worktree, branch, process.env)).toBe(true)
     expect(existsSync(worktree)).toBe(false)
     expect(() =>
       execFileSync("git", ["show-ref", "--verify", `refs/heads/${branch}`], {
