@@ -469,12 +469,13 @@ struct ChatScreen: View {
 
     private var composerOverlay: some View {
         VStack(spacing: ComposerGlassStyle.clusterSpacing) {
-            if let todos = controller.todos, !todos.entries.isEmpty {
+            if let todos = controller.visibleTodos {
                 TodoPanelView(
                     plan: todos,
                     isExpanded: $controller.isTodosExpanded,
                     glassNamespace: composerGlassNamespace
                 )
+                .transition(Motion.unfold(reduceMotion: reduceMotion, anchor: .bottom))
             }
             // Hidden while editing: the composer IS the goal UI in that mode.
             if controller.supportsGoals, !controller.isGoalEditing {
@@ -546,7 +547,7 @@ struct ChatScreen: View {
 
     private var visibleComposerGlassElements: [ComposerGlassElement] {
         var elements: [ComposerGlassElement] = []
-        if let todos = controller.todos, !todos.entries.isEmpty {
+        if controller.visibleTodos != nil {
             elements.append(.todos)
         }
         if controller.supportsGoals, !controller.isGoalEditing,

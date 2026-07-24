@@ -38,6 +38,10 @@ export function todoEntryTextClassName(status: string): string {
   )
 }
 
+export function todoPanelIsVisible(entries: readonly PlanEntryInfo[] | null | undefined): boolean {
+  return entries?.some((entry) => entry.status !== "completed") ?? false
+}
+
 // Inline fallback for old callers; the current session UI renders these
 // session-level snapshots through TodoPanelView above the composer.
 export function PlanView({ entries }: { entries: readonly PlanEntryInfo[] }) {

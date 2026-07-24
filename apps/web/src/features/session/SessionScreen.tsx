@@ -47,7 +47,7 @@ import { useComposerDraftText } from "../composer/useComposerDraftText"
 import { DropToAttachOverlay } from "../attachments/AttachmentPreview"
 import { useIsSessionRunning } from "../sidebar/SessionRow"
 import { TerminalPanel } from "../terminal/TerminalPanel"
-import { TodoPanelView } from "./PlanView"
+import { TodoPanelView, todoPanelIsVisible } from "./PlanView"
 import { PromptQueue } from "./PromptQueue"
 import { StatusBar, type TerminalPaneTab } from "./StatusBar"
 import { Transcript } from "./Transcript"
@@ -181,12 +181,9 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
   const setConfig = useSetSessionConfig()
   const serverIsRunning = useIsSessionRunning(sessionId)
   const detail = detailQuery.data
-  const todosAreCompleted =
-    detail == null
-      ? undefined
-      : detail.sessionPlan != null &&
-        detail.sessionPlan.length > 0 &&
-        detail.sessionPlan.every((entry) => entry.status === "completed")
+  const sessionTodos = detail?.sessionPlan ?? []
+  const hasTodos = sessionTodos.length > 0
+  const showsTodoPanel = todoPanelIsVisible(sessionTodos)
 
   const [composerText, setComposerText] = useComposerDraftText(`session:${sessionId}`)
   const [composerError, setComposerError] = useState<string>()
@@ -195,7 +192,7 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
   const [isGoalComposerArmed, setIsGoalComposerArmed] = useState(false)
   const [isGoalEditing, setIsGoalEditing] = useState(false)
   const composerTextBeforeGoalEdit = useRef<string | undefined>(undefined)
-  const [isTodosExpanded, setIsTodosExpanded] = useTodoExpansionState(sessionId, todosAreCompleted)
+  const [isTodosExpanded, setIsTodosExpanded] = useTodoExpansionState(sessionId)
   const [isQueueExpanded, setIsQueueExpanded] = useState(true)
   const [dismissedPlanApprovalKey, setDismissedPlanApprovalKey] =
     usePlanApprovalDismissal(sessionId)
@@ -648,35 +645,54 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
 
   const composerOverlay = (
     <div ref={composerRef} className="relative mx-auto max-w-[880px] px-6 pt-6 pb-4">
-      <div className="flex flex-col gap-2">
-        {detail.sessionPlan != null && detail.sessionPlan.length > 0 && (
-          <TodoPanelView
-            entries={detail.sessionPlan}
-            isExpanded={isTodosExpanded}
-            onToggle={() => setIsTodosExpanded(!isTodosExpanded)}
-          />
+      <div className="flex flex-col">
+        {hasTodos && (
+          <div
+            aria-hidden={!showsTodoPanel}
+            inert={!showsTodoPanel}
+            className={cn(
+              "grid transition-[grid-template-rows,opacity] duration-200 ease-out motion-reduce:transition-none",
+              showsTodoPanel
+                ? "grid-rows-[1fr] opacity-100"
+                : "pointer-events-none grid-rows-[0fr] opacity-0"
+            )}
+          >
+            <div className="min-h-0 overflow-hidden">
+              <div className="pb-2">
+                <TodoPanelView
+                  entries={sessionTodos}
+                  isExpanded={isTodosExpanded}
+                  onToggle={() => setIsTodosExpanded(!isTodosExpanded)}
+                />
+              </div>
+            </div>
+          </div>
         )}
         {supportsGoals && detail.goal != null && !isGoalEditing && (
-          <GoalBanner
-            goal={detail.goal}
-            isBusy={isGoalBusy}
-            onPause={() => setGoal.mutate({ id: sessionId, status: "paused" })}
-            onResume={() => setGoal.mutate({ id: sessionId, status: "active" })}
-            onEdit={editGoal}
-            onClear={() => {
-              if (window.confirm(`Clear this goal?\n\n${detail.goal?.objective ?? ""}`)) {
-                clearGoal.mutate(sessionId)
-              }
-            }}
-          />
+          <div className="pb-2">
+            <GoalBanner
+              goal={detail.goal}
+              isBusy={isGoalBusy}
+              onPause={() => setGoal.mutate({ id: sessionId, status: "paused" })}
+              onResume={() => setGoal.mutate({ id: sessionId, status: "active" })}
+              onEdit={editGoal}
+              onClear={() => {
+                if (window.confirm(`Clear this goal?\n\n${detail.goal?.objective ?? ""}`)) {
+                  clearGoal.mutate(sessionId)
+                }
+              }}
+            />
+          </div>
         )}
         {detail.promptQueue.length > 0 && (
-          <PromptQueue
-            sessionId={sessionId}
-            queue={detail.promptQueue}
-            isExpanded={isQueueExpanded}
-            onToggleExpanded={() => setIsQueueExpanded((expanded) => !expanded)}
-          />
+          <div className="pb-2">
+            <PromptQueue
+              sessionId={sessionId}
+              queue={detail.promptQueue}
+              isExpanded={isQueueExpanded}
+              onToggleExpanded={() => setIsQueueExpanded((expanded) => !expanded)}
+            />
+          </div>
         )}
         {activeQuestion != null ? (
           <QuestionPickerCard

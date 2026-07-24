@@ -31,9 +31,6 @@ final class SessionStore {
     /// Per-session todo-panel expansion, kept outside the controller cache for
     /// the same reason as transcript viewport state.
     @ObservationIgnored private var todoExpansionStates: [SessionKey: Bool] = [:]
-    /// Completion edges are cached alongside expansion so reopening a finished
-    /// checklist survives navigation and controller eviction.
-    @ObservationIgnored private var todoCompletionStates: [SessionKey: Bool] = [:]
     /// Bottom-panel models by WORKSPACE (the panel belongs to the
     /// workspace, and its chats share one detail container — a per-session
     /// key would mint duplicate models over the same persisted group).
@@ -135,14 +132,10 @@ final class SessionStore {
             self?.scrollStates[key] = state
         }
         controller.restoreTodoDisclosure(
-            isExpanded: todoExpansionStates[key] ?? true,
-            wasCompleted: todoCompletionStates[key] ?? false
+            isExpanded: todoExpansionStates[key] ?? true
         )
         controller.onTodosExpandedChange = { [weak self] isExpanded in
             self?.todoExpansionStates[key] = isExpanded
-        }
-        controller.onTodosCompletionChange = { [weak self] isCompleted in
-            self?.todoCompletionStates[key] = isCompleted
         }
         controller.onTurnEnded = { [weak self] in self?.noteTurnEnded(for: key) }
         controller.onRuntimeStateChanged = { [weak self] in self?.noteRuntimeStateChanged(for: key) }
@@ -636,14 +629,10 @@ final class SessionStore {
             self?.scrollStates[key] = state
         }
         controller.restoreTodoDisclosure(
-            isExpanded: todoExpansionStates[key] ?? true,
-            wasCompleted: todoCompletionStates[key] ?? false
+            isExpanded: todoExpansionStates[key] ?? true
         )
         controller.onTodosExpandedChange = { [weak self] isExpanded in
             self?.todoExpansionStates[key] = isExpanded
-        }
-        controller.onTodosCompletionChange = { [weak self] isCompleted in
-            self?.todoCompletionStates[key] = isCompleted
         }
         controller.onTurnEnded = { [weak self] in self?.noteTurnEnded(for: key) }
         controller.onRuntimeStateChanged = { [weak self] in self?.noteRuntimeStateChanged(for: key) }
@@ -703,7 +692,6 @@ final class SessionStore {
         pendingAttentionErrors[key] = nil
         scrollStates[key] = nil
         todoExpansionStates[key] = nil
-        todoCompletionStates[key] = nil
         accessOrder.removeAll { $0 == key }
     }
 

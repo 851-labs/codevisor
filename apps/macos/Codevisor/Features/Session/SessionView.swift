@@ -77,14 +77,6 @@ struct SessionScreen: View {
         // (Background-task terminal tabs are synced by the WORKSPACE
         // container across every chat's controller — a per-chat sync here
         // would prune sibling chats' tabs on chat switches.)
-        .onChange(of: controller.todos, initial: true) { _, todos in
-            guard controller.observeTodoCompletion(todos), controller.isTodosExpanded else {
-                return
-            }
-            withAnimation(Motion.quick(reduceMotion: reduceMotion)) {
-                controller.isTodosExpanded = false
-            }
-        }
         .onAppear {
             focus.paneGroup = paneGroup
             // Tab commands pressed while the chat has focus act on the
