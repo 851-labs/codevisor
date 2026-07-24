@@ -122,6 +122,9 @@ public final class MachineController {
     public private(set) var registry: MachineRegistry
     public private(set) var statusByMachineId: [String: MachineStatus] = [:]
     public private(set) var updateInfoByMachineId: [String: ServerUpdateInfo] = [:]
+    /// The release feed remote server update checks follow — mirrors the
+    /// app's alpha-updates setting. AppEnvironment keeps it in sync.
+    public var serverUpdateChannel: ServerUpdateChannel = .stable
     public private(set) var serverUpdatePhase: ServerUpdatePhase = .idle
 
     public typealias ClientFactory = @MainActor (CodevisorMachine) -> any CodevisorServerClienting
@@ -432,7 +435,10 @@ public final class MachineController {
             let info = try await client.info()
             statusByMachineId[id] = MachineStatus(isReachable: true, label: "\(info.name) \(info.version)")
             do {
-                updateInfoByMachineId[id] = try await client.updateInfo(refresh: true)
+                updateInfoByMachineId[id] = try await client.updateInfo(
+                    refresh: true,
+                    channel: serverUpdateChannel
+                )
             } catch {
                 updateInfoByMachineId[id] = nil
                 Log.machines.debug("Update info probe for \(id, privacy: .public) failed: \(String(describing: error), privacy: .public)")
@@ -469,7 +475,7 @@ public final class MachineController {
         let client = selectedClient
         serverUpdatePhase = .updating
         do {
-            let applied = try await client.applyServerUpdate()
+            let applied = try await client.applyServerUpdate(channel: serverUpdateChannel)
             guard applied.accepted else {
                 if applied.reason == "busy" {
                     // The server still has chats mid-turn; updating now would

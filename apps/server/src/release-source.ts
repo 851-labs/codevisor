@@ -1,17 +1,39 @@
 import { createHash } from "node:crypto"
 import { createReadStream } from "node:fs"
+import { isNewerVersion } from "./harness-update-sources.js"
 
 export const DEFAULT_GITHUB_REPOSITORY = "851-labs/codevisor"
 export const DEFAULT_STABLE_SERVER_MANIFEST_URL = "https://updates.codevisor.dev/server/stable.json"
+export const DEFAULT_ALPHA_SERVER_MANIFEST_URL = "https://updates.codevisor.dev/server/alpha.json"
 export const DEFAULT_LEGACY_RELEASE_BASE_URL =
   "https://pub-d2d6eb72b71c4986a742c0527774c9f0.r2.dev/releases/codevisor"
 
+/// Server update channels. `alpha` sees alpha AND stable releases (newest
+/// wins); `stable` sees stable only.
+export type ServerUpdateChannel = "stable" | "alpha"
+
 export type ServerRelease = {
   readonly version: string
+  /// CI run number stamped into every build (matches the runtime's
+  /// BUILD.json and the Sparkle `sparkle:version`). Monotonic across all
+  /// releases, unlike version strings — successive alphas share a core
+  /// version, so channel comparisons prefer this when both sides have one.
+  readonly buildNumber?: number | undefined
   readonly archiveURL: string
   readonly checksumURL?: string | undefined
   readonly releasePageURL?: string | undefined
 }
+
+/// Whether `candidate` is a newer release than the installed
+/// (version, buildNumber) pair: build numbers when both are known,
+/// falling back to semver-style version comparison.
+export const isNewerRelease = (
+  candidate: Pick<ServerRelease, "version" | "buildNumber">,
+  current: { readonly version: string; readonly buildNumber?: number | undefined }
+): boolean =>
+  candidate.buildNumber !== undefined && current.buildNumber !== undefined
+    ? candidate.buildNumber > current.buildNumber
+    : isNewerVersion(candidate.version, current.version)
 
 type GitHubReleaseResponse = {
   readonly tag_name?: unknown
@@ -24,8 +46,9 @@ type GitHubReleaseResponse = {
   }>
 }
 
-type StableServerManifest = {
+type ServerManifest = {
   readonly version?: unknown
+  readonly buildNumber?: unknown
   readonly releasePageURL?: unknown
   readonly targets?: Record<
     string,
@@ -91,7 +114,7 @@ export const fetchLatestGitHubServerRelease = async (options: {
 }
 
 export const serverReleaseFromManifest = (
-  body: StableServerManifest,
+  body: ServerManifest,
   target: string
 ): ServerRelease | undefined => {
   const version = normalizedVersion(body.version)
@@ -101,6 +124,10 @@ export const serverReleaseFromManifest = (
   }
   return {
     version,
+    buildNumber:
+      typeof body.buildNumber === "number" && Number.isSafeInteger(body.buildNumber)
+        ? body.buildNumber
+        : undefined,
     archiveURL: candidate.archiveURL,
     checksumURL: typeof candidate.checksumURL === "string" ? candidate.checksumURL : undefined,
     releasePageURL: typeof body.releasePageURL === "string" ? body.releasePageURL : undefined
@@ -120,7 +147,23 @@ export const fetchStableServerRelease = async (options: {
   if (!response.ok) {
     throw new Error(`Stable server manifest lookup failed: HTTP ${response.status}`)
   }
-  return serverReleaseFromManifest((await response.json()) as StableServerManifest, options.target)
+  return serverReleaseFromManifest((await response.json()) as ServerManifest, options.target)
+}
+
+export const fetchAlphaServerRelease = async (options: {
+  readonly manifestURL?: string | undefined
+  readonly target: string
+  readonly fetch?: typeof globalThis.fetch | undefined
+}): Promise<ServerRelease | undefined> => {
+  const fetcher = options.fetch ?? globalThis.fetch
+  const response = await fetcher(options.manifestURL ?? DEFAULT_ALPHA_SERVER_MANIFEST_URL, {
+    headers: { "cache-control": "no-cache" },
+    signal: AbortSignal.timeout(10_000)
+  })
+  if (!response.ok) {
+    throw new Error(`Alpha server manifest lookup failed: HTTP ${response.status}`)
+  }
+  return serverReleaseFromManifest((await response.json()) as ServerManifest, options.target)
 }
 
 export const fetchLegacyServerRelease = async (options: {
@@ -149,23 +192,41 @@ export const fetchLegacyServerRelease = async (options: {
 /// The first-party stable manifest is authoritative and avoids coupling Linux
 /// updates to GitHub's mutable "latest release" pointer. GitHub and the frozen
 /// bridge remain read-only fallbacks for installations crossing the cutover.
+/// On the alpha channel, the alpha manifest joins the stable one and the
+/// newest of the two wins — a stable cut after the last alpha must still be
+/// offered to alpha followers.
 export const fetchLatestServerRelease = async (options: {
+  readonly channel?: ServerUpdateChannel | undefined
   readonly manifestURL?: string | undefined
+  readonly alphaManifestURL?: string | undefined
   readonly repository?: string
   readonly legacyBaseURL?: string
   readonly target: string
   readonly fetch?: typeof globalThis.fetch | undefined
 }): Promise<ServerRelease | undefined> => {
+  const alphaRelease =
+    options.channel === "alpha"
+      ? await fetchAlphaServerRelease({
+          manifestURL: options.alphaManifestURL,
+          target: options.target,
+          fetch: options.fetch
+        }).catch(() => undefined)
+      : undefined
   try {
     const release = await fetchStableServerRelease({
       manifestURL: options.manifestURL,
       target: options.target,
       fetch: options.fetch
     })
-    if (release !== undefined) return release
+    if (release !== undefined) {
+      return alphaRelease !== undefined && isNewerRelease(alphaRelease, release)
+        ? alphaRelease
+        : release
+    }
   } catch {
     // Continue through the migration fallbacks.
   }
+  if (alphaRelease !== undefined) return alphaRelease
   try {
     const release = await fetchLatestGitHubServerRelease({
       repository: options.repository ?? DEFAULT_GITHUB_REPOSITORY,

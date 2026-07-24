@@ -111,6 +111,7 @@ import { connect, type AddressInfo, type Socket } from "node:net"
 import { Context, Effect, Layer, PubSub, Schema } from "effect"
 import { WebSocket, WebSocketServer } from "ws"
 import { CODEVISOR_BROWSER_EXTENSION_ID } from "./browser-extension-relay.js"
+import type { ServerUpdateChannel } from "./release-source.js"
 import type { HarnessAuthManager } from "./harness-auth.js"
 import type { HarnessLifecycleManager } from "./harness-lifecycle.js"
 import { parseCustomHarnessDocument, type CustomHarnessStore } from "./custom-harnesses.js"
@@ -131,12 +132,16 @@ export interface CodevisorServerAuthConfig {
 }
 
 /// Lets the host process implement self-updating: `check` refreshes and
-/// returns the update state (`force` bypasses any host-side cache), `apply`
-/// installs the newer release and restarts the server process. Wired up in
-/// main.ts; absent in tests and embedded runs.
+/// returns the update state (`force` bypasses any host-side cache, `channel`
+/// selects the release feed), `apply` installs the newer release and
+/// restarts the server process. Wired up in main.ts; absent in tests and
+/// embedded runs.
 export interface CodevisorServerUpdater {
-  readonly check: (options?: { readonly force?: boolean }) => Promise<UpdateInfo>
-  readonly apply: () => Promise<void>
+  readonly check: (options?: {
+    readonly force?: boolean
+    readonly channel?: ServerUpdateChannel
+  }) => Promise<UpdateInfo>
+  readonly apply: (options?: { readonly channel?: ServerUpdateChannel }) => Promise<void>
 }
 
 export interface CodevisorServerConfig {
@@ -787,8 +792,12 @@ const handleRequest = async (
         // `refresh=1` bypasses the updater's check cache: clients force it
         // when the user is looking at a machine so the banner reflects a
         // release cut minutes ago, not the last background probe.
+        // `channel=alpha` opts this check into pre-releases (the client
+        // forwards its own alpha-updates preference); anything else is
+        // stable.
         const force = url.searchParams.get("refresh") === "1"
-        writeJson(response, 200, await config.updater.check({ force }))
+        const channel = serverUpdateChannelFrom(url.searchParams.get("channel"))
+        writeJson(response, 200, await config.updater.check({ channel, force }))
         return
       }
       writeJson(response, 200, await run(services.db.getUpdateInfo))
@@ -808,7 +817,8 @@ const handleRequest = async (
       }
       // Forced: the decision to restart the server must rest on the live
       // release state, never a stale cache entry.
-      const info = await config.updater.check({ force: true })
+      const channel = serverUpdateChannelFrom(url.searchParams.get("channel"))
+      const info = await config.updater.check({ channel, force: true })
       if (!info.updateAvailable) {
         writeJson(response, 200, { accepted: false, targetVersion: info.currentVersion })
         return
@@ -816,7 +826,7 @@ const handleRequest = async (
       // Acknowledge first: applying restarts the process, so this response
       // must be on the wire before the server goes away.
       writeJson(response, 202, { accepted: true, targetVersion: info.latestVersion })
-      config.updater.apply().catch(() => undefined)
+      config.updater.apply({ channel }).catch(() => undefined)
       return
     }
 
@@ -3706,6 +3716,11 @@ const numberSearchParam = (url: URL, name: string): number => {
   const parsed = Number(url.searchParams.get(name) ?? "0")
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 0
 }
+
+/// Lenient channel parsing: only an explicit `alpha` opts into
+/// pre-releases; absent, empty, or unknown values stay on stable.
+const serverUpdateChannelFrom = (value: string | null): ServerUpdateChannel =>
+  value === "alpha" ? "alpha" : "stable"
 
 const writeJson = (response: ServerResponse, status: number, body: unknown): void => {
   if (status === 204) {

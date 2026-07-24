@@ -93,9 +93,9 @@ public func serverErrorMessage(_ error: any Error) -> String {
 public protocol CodevisorServerClienting: Sendable {
     func health() async throws -> ServerHealth
     func info() async throws -> ServerInfo
-    /// `refresh` bypasses the server's update-check cache (older servers
-    /// ignore the flag).
-    func updateInfo(refresh: Bool) async throws -> ServerUpdateInfo
+    /// `refresh` bypasses the server's update-check cache; `channel` selects
+    /// which release feed the server consults (older servers ignore both).
+    func updateInfo(refresh: Bool, channel: ServerUpdateChannel) async throws -> ServerUpdateInfo
     func issuePairingToken() async throws -> ServerPairingToken
     /// The machine's stable connection token (unchanged across restarts and
     /// updates until rotated). Preferred over `issuePairingToken` for showing
@@ -297,7 +297,7 @@ public protocol CodevisorServerClienting: Sendable {
         answers: [String: QuestionAnswerEntry]?
     ) async throws
     func requestShutdown() async throws
-    func applyServerUpdate() async throws -> ServerUpdateApplied
+    func applyServerUpdate(channel: ServerUpdateChannel) async throws -> ServerUpdateApplied
     func eventStream(since: Int) -> AsyncThrowingStream<ServerEventEnvelope, any Error>
     /// Project/session metadata changes after a freshly loaded shell snapshot.
     func shellEventStream() -> AsyncThrowingStream<ServerEventEnvelope, any Error>
@@ -307,10 +307,16 @@ public protocol CodevisorServerClienting: Sendable {
 }
 
 public extension CodevisorServerClienting {
-    /// Cached-read default so existing call sites keep compiling; pass
-    /// `refresh: true` when the result is shown to the user right away.
+    /// Cached-read stable-channel default so existing call sites keep
+    /// compiling; pass `refresh: true` (and the user's channel) when the
+    /// result is shown to the user right away.
     func updateInfo() async throws -> ServerUpdateInfo {
-        try await updateInfo(refresh: false)
+        try await updateInfo(refresh: false, channel: .stable)
+    }
+
+    /// Stable-channel default for callers without a channel preference.
+    func applyServerUpdate() async throws -> ServerUpdateApplied {
+        try await applyServerUpdate(channel: .stable)
     }
 
     /// Compatibility fallback for test doubles and older transports. The HTTP
@@ -613,7 +619,7 @@ public extension CodevisorServerClienting {
     func requestShutdown() async throws {}
 
     /// Default for fakes/older transports: the server declined the update.
-    func applyServerUpdate() async throws -> ServerUpdateApplied {
+    func applyServerUpdate(channel _: ServerUpdateChannel) async throws -> ServerUpdateApplied {
         ServerUpdateApplied(accepted: false, targetVersion: nil)
     }
 
@@ -719,6 +725,14 @@ public struct ServerInfo: Decodable, Equatable, Sendable {
     public var platform: String
     public var bindHost: String
     public var features: [String]?
+}
+
+/// Which release feed a server update check follows. `alpha` sees alpha AND
+/// stable releases (newest wins); `stable` sees stable only. Mirrors the
+/// server's `ServerUpdateChannel`.
+public enum ServerUpdateChannel: String, Equatable, Sendable {
+    case stable
+    case alpha
 }
 
 public struct ServerUpdateInfo: Decodable, Equatable, Sendable {
@@ -2098,9 +2112,17 @@ public final class CodevisorServerClient: CodevisorServerClienting, @unchecked S
 
     /// `refresh` bypasses the server's update-check cache so a banner shown
     /// while the user is looking at a machine reflects the live release
-    /// state. Older servers ignore the query parameter.
-    public func updateInfo(refresh: Bool = false) async throws -> ServerUpdateInfo {
-        try await get(refresh ? "/v1/update?refresh=1" : "/v1/update")
+    /// state; `channel` forwards the app's alpha-updates preference. Older
+    /// servers ignore both query parameters.
+    public func updateInfo(
+        refresh: Bool = false,
+        channel: ServerUpdateChannel = .stable
+    ) async throws -> ServerUpdateInfo {
+        var query: [String] = []
+        if refresh { query.append("refresh=1") }
+        if channel != .stable { query.append("channel=\(channel.rawValue)") }
+        let suffix = query.isEmpty ? "" : "?\(query.joined(separator: "&"))"
+        return try await get("/v1/update\(suffix)")
     }
 
     public func issuePairingToken() async throws -> ServerPairingToken {
@@ -3011,8 +3033,11 @@ public final class CodevisorServerClient: CodevisorServerClienting, @unchecked S
         try await sendNoResponse("/v1/shutdown", method: "POST")
     }
 
-    public func applyServerUpdate() async throws -> ServerUpdateApplied {
-        try await send("/v1/update/apply", method: "POST", body: Optional<EmptyBody>.none)
+    public func applyServerUpdate(
+        channel: ServerUpdateChannel = .stable
+    ) async throws -> ServerUpdateApplied {
+        let suffix = channel == .stable ? "" : "?channel=\(channel.rawValue)"
+        return try await send("/v1/update/apply\(suffix)", method: "POST", body: Optional<EmptyBody>.none)
     }
 
     public func eventStream(since: Int = 0) -> AsyncThrowingStream<ServerEventEnvelope, any Error> {

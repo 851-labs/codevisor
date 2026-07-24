@@ -168,6 +168,9 @@ jobs:
         run: |
           gh release view "${{ steps.alpha.outputs.tag }}" --json isPrerelease \
             --jq 'select(.isPrerelease == true)' >/dev/null
+          curl --fail --silent --show-error https://updates.codevisor.dev/server/alpha.json \
+            | jq -e --argjson build "${{ steps.alpha.outputs.build }}" \
+              '.buildNumber == $build' >/dev/null
           for arch in arm64 x64; do
             feed="$RUNNER_TEMP/appcast-$arch.xml"
             curl --fail --silent --show-error \

@@ -9,7 +9,8 @@ final class SparkleUpdateController: NSObject, SPUUpdaterDelegate {
     private let model: AppUpdateModel
     private weak var localServer: LocalCodevisorServer?
     private let serverAgent: MacServerAgentController
-    private var controller: SPUStandardUpdaterController!
+    private var updater: SPUUpdater!
+    private var driver: UnattendedUserDriver!
 
     init(
         model: AppUpdateModel,
@@ -20,24 +21,46 @@ final class SparkleUpdateController: NSObject, SPUUpdaterDelegate {
         self.localServer = localServer
         self.serverAgent = serverAgent
         super.init()
-        controller = SPUStandardUpdaterController(
-            startingUpdater: true,
-            updaterDelegate: self,
-            userDriverDelegate: nil
+        // A raw SPUUpdater with our own driver instead of
+        // SPUStandardUpdaterController: attended flows still get Sparkle's
+        // stock UI (the driver forwards to SPUStandardUserDriver), while
+        // remote-triggered updates run a fully headless session — the
+        // machine being updated may have nobody at its screen to accept a
+        // prompt.
+        driver = UnattendedUserDriver(hostBundle: .main)
+        updater = SPUUpdater(
+            hostBundle: .main,
+            applicationBundle: .main,
+            userDriver: driver,
+            delegate: self
         )
+        do {
+            try updater.start()
+        } catch {
+            model.reportFailure(error.localizedDescription)
+        }
         model.checkHandler = { [weak self] userInitiated in
             guard let self else { return }
             if userInitiated {
-                self.controller.checkForUpdates(nil)
+                self.updater.checkForUpdates()
             } else {
-                self.controller.updater.checkForUpdateInformation()
+                self.updater.checkForUpdateInformation()
             }
         }
         model.installHandler = { [weak self] _ in
-            self?.controller.checkForUpdates(nil)
+            self?.updater.checkForUpdates()
+        }
+        model.unattendedInstallHandler = { [weak self] in
+            guard let self else { return }
+            // An update session already showing UI keeps its UI; arming only
+            // affects the session this check starts.
+            if !self.updater.sessionInProgress {
+                self.driver.beginUnattendedSession()
+            }
+            self.updater.checkForUpdates()
         }
         model.channelChangeHandler = { [weak self] _ in
-            self?.controller.updater.resetUpdateCycle()
+            self?.updater.resetUpdateCycle()
         }
     }
 

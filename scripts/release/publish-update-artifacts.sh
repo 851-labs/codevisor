@@ -72,38 +72,44 @@ for arch in arm64 x64; do
     --cache-control "public, max-age=60"
 done
 
-if [[ "$channel" == stable ]]; then
-  for target in linux-arm64 linux-x64 darwin-arm64 darwin-x64; do
-    archive="$artifact_dir/codevisor-server-$target.tar.gz"
-    checksum="$archive.sha256"
-    [[ -f "$archive" && -f "$checksum" ]] || { echo "Missing server artifact for $target" >&2; exit 1; }
-    for file in "$archive" "$checksum"; do
-      content_type=application/gzip
-      [[ "$file" == *.sha256 ]] && content_type=text/plain
-      aws s3 cp "$file" "s3://$bucket/$prefix/$(basename "$file")" \
-        --endpoint-url "$R2_S3_API_ENDPOINT" \
-        --content-type "$content_type" \
-        --cache-control "public, max-age=31536000, immutable"
-    done
+# Server archives and the per-channel manifest publish on BOTH channels:
+# remote machines follow server/stable.json or server/alpha.json depending on
+# the update channel the client requests. The manifest version carries the
+# full tag version (alphas include their pre-release suffix) and the CI build
+# number, which the self-updater prefers for comparisons — successive alphas
+# share a core version, so version strings alone cannot order them.
+for target in linux-arm64 linux-x64 darwin-arm64 darwin-x64; do
+  archive="$artifact_dir/codevisor-server-$target.tar.gz"
+  checksum="$archive.sha256"
+  [[ -f "$archive" && -f "$checksum" ]] || { echo "Missing server artifact for $target" >&2; exit 1; }
+  for file in "$archive" "$checksum"; do
+    content_type=application/gzip
+    [[ "$file" == *.sha256 ]] && content_type=text/plain
+    aws s3 cp "$file" "s3://$bucket/$prefix/$(basename "$file")" \
+      --endpoint-url "$R2_S3_API_ENDPOINT" \
+      --content-type "$content_type" \
+      --cache-control "public, max-age=31536000, immutable"
   done
-  manifest="$work_dir/stable.json"
-  jq -n \
-    --arg version "$version" \
-    --arg releasePageURL "https://github.com/${GITHUB_REPOSITORY:-851-labs/codevisor}/releases/tag/$tag" \
-    --arg origin "$origin/$prefix" \
-    '{
-      version: $version,
-      releasePageURL: $releasePageURL,
-      targets: (["linux-arm64","linux-x64","darwin-arm64","darwin-x64"] | map({
-        key: .,
-        value: {
-          archiveURL: ($origin + "/codevisor-server-" + . + ".tar.gz"),
-          checksumURL: ($origin + "/codevisor-server-" + . + ".tar.gz.sha256")
-        }
-      }) | from_entries)
-    }' > "$manifest"
-  aws s3 cp "$manifest" "s3://$bucket/server/stable.json" \
-    --endpoint-url "$R2_S3_API_ENDPOINT" \
-    --content-type application/json \
-    --cache-control "public, max-age=60"
-fi
+done
+manifest="$work_dir/$channel.json"
+jq -n \
+  --arg version "${tag#v}" \
+  --argjson buildNumber "$build_number" \
+  --arg releasePageURL "https://github.com/${GITHUB_REPOSITORY:-851-labs/codevisor}/releases/tag/$tag" \
+  --arg origin "$origin/$prefix" \
+  '{
+    version: $version,
+    buildNumber: $buildNumber,
+    releasePageURL: $releasePageURL,
+    targets: (["linux-arm64","linux-x64","darwin-arm64","darwin-x64"] | map({
+      key: .,
+      value: {
+        archiveURL: ($origin + "/codevisor-server-" + . + ".tar.gz"),
+        checksumURL: ($origin + "/codevisor-server-" + . + ".tar.gz.sha256")
+      }
+    }) | from_entries)
+  }' > "$manifest"
+aws s3 cp "$manifest" "s3://$bucket/server/$channel.json" \
+  --endpoint-url "$R2_S3_API_ENDPOINT" \
+  --content-type application/json \
+  --cache-control "public, max-age=60"

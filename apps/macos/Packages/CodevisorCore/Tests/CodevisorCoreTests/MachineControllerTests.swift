@@ -310,6 +310,35 @@ struct MachineControllerTests {
         #expect(fake.appliedUpdates == 2)
     }
 
+    @Test("Update checks and installs follow the app's release channel")
+    func remoteServerUpdateChannel() async throws {
+        let fake = SyncFakeServerClient(projects: [], sessions: [])
+        fake.configureUpdate(current: "0.1.0", latest: "0.2.0")
+        let projectList = ProjectListModel(
+            projectRepository: DefaultProjectRepository(store: InMemoryStore()),
+            sessionRepository: DefaultSessionRepository(store: InMemoryStore())
+        )
+        let controller = MachineController(
+            store: InMemoryStore(),
+            projectList: projectList,
+            clientFactory: { _ in fake },
+            updatePollInterval: .milliseconds(2),
+            updatePollAttempts: 50
+        )
+
+        // Stable by default.
+        await controller.refreshStatus(for: "local")
+        #expect(fake.updateInfoChannels == [.stable])
+
+        // Alpha once the app opts in — checks and installs alike.
+        controller.serverUpdateChannel = .alpha
+        await controller.refreshStatus(for: "local")
+        #expect(fake.updateInfoChannels.last == .alpha)
+        await controller.updateSelectedServer()
+        #expect(fake.appliedChannels == [.alpha])
+        controller.stopEventSync()
+    }
+
     @Test("A busy server declines the update with a clear message")
     func remoteServerUpdateRefusedWhileBusy() async throws {
         let fake = SyncFakeServerClient(projects: [], sessions: [])
@@ -479,7 +508,7 @@ private final class RescanCountingClient: CodevisorServerClienting, @unchecked S
     }
 
     func listHarnesses() async throws -> [ServerHarness] { [] }
-    func updateInfo(refresh: Bool) async throws -> ServerUpdateInfo {
+    func updateInfo(refresh: Bool, channel: ServerUpdateChannel) async throws -> ServerUpdateInfo {
         ServerUpdateInfo(
             currentVersion: "0.1.0", latestVersion: "0.1.0", updateAvailable: false,
             channel: "stable", checkedAt: nil, migrationState: "idle"
@@ -569,11 +598,15 @@ private final class SyncFakeServerClient: CodevisorServerClienting, @unchecked S
     private var latestVersion = "0.1.0"
     private var downtimeRemaining = 0
     private var _appliedUpdates = 0
+    private var _updateInfoChannels: [ServerUpdateChannel] = []
+    private var _appliedChannels: [ServerUpdateChannel] = []
     private var _busy = false
 
     struct ServerDownError: Error {}
 
     var appliedUpdates: Int { lock.withLock { _appliedUpdates } }
+    var updateInfoChannels: [ServerUpdateChannel] { lock.withLock { _updateInfoChannels } }
+    var appliedChannels: [ServerUpdateChannel] { lock.withLock { _appliedChannels } }
 
     /// Makes the fake report an available update to `latest`.
     func configureUpdate(current: String, latest: String) {
@@ -601,20 +634,22 @@ private final class SyncFakeServerClient: CodevisorServerClienting, @unchecked S
         }
         return ServerInfo(id: "local", name: "Local", kind: "local", version: version, platform: "darwin", bindHost: "127.0.0.1")
     }
-    func updateInfo(refresh: Bool) async throws -> ServerUpdateInfo {
+    func updateInfo(refresh: Bool, channel: ServerUpdateChannel) async throws -> ServerUpdateInfo {
         lock.withLock {
-            ServerUpdateInfo(
+            _updateInfoChannels.append(channel)
+            return ServerUpdateInfo(
                 currentVersion: currentVersion,
                 latestVersion: latestVersion,
                 updateAvailable: currentVersion != latestVersion,
-                channel: "stable",
+                channel: channel.rawValue,
                 checkedAt: nil,
                 migrationState: "idle"
             )
         }
     }
-    func applyServerUpdate() async throws -> ServerUpdateApplied {
+    func applyServerUpdate(channel: ServerUpdateChannel) async throws -> ServerUpdateApplied {
         lock.withLock {
+            _appliedChannels.append(channel)
             _appliedUpdates += 1
             if _busy {
                 return ServerUpdateApplied(accepted: false, targetVersion: currentVersion, reason: "busy")

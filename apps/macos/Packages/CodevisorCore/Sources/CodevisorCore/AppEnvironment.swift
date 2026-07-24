@@ -102,6 +102,7 @@ public final class AppEnvironment {
             clientFactory: machineClientFactory
         )
         projectList.showsImportedSessions = settings.importExternalSessions
+        machines.serverUpdateChannel = settings.alphaUpdatesEnabled ? .alpha : .stable
         machines.onHarnessLifecycleChanged = { [weak self] serverId in
             self?.harnessCatalogDidChange(onServer: serverId)
         }
@@ -297,10 +298,15 @@ public final class AppEnvironment {
 
     /// Changes update channels immediately; the Settings view follows this
     /// with a fresh check so enabling or disabling Alpha updates updates the
-    /// banner without requiring a relaunch.
+    /// banner without requiring a relaunch. Remote machines follow the same
+    /// preference, so the selected machine's update state refreshes too.
     public func setAlphaUpdatesEnabled(_ enabled: Bool) {
         settings.setAlphaUpdatesEnabled(enabled)
         appUpdate.setAllowsAlphaUpdates(enabled)
+        machines.serverUpdateChannel = enabled ? .alpha : .stable
+        Task { [machines] in
+            await machines.refreshStatus(for: machines.selectedMachineId)
+        }
     }
 
     /// Applies the user's onboarding choice and imports if requested.

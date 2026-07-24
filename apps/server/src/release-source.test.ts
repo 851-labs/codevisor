@@ -3,12 +3,15 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import {
+  DEFAULT_ALPHA_SERVER_MANIFEST_URL,
   DEFAULT_LEGACY_RELEASE_BASE_URL,
   DEFAULT_STABLE_SERVER_MANIFEST_URL,
+  fetchAlphaServerRelease,
   fetchLatestGitHubServerRelease,
   fetchStableServerRelease,
   fetchLegacyServerRelease,
   fetchLatestServerRelease,
+  isNewerRelease,
   parseSha256,
   sha256File,
   serverReleaseFromGitHub,
@@ -300,6 +303,173 @@ describe("GitHub and compatibility fetches", () => {
       checksumURL: undefined,
       releasePageURL: "https://codevisor.dev/releases/0.4.0"
     })
+  })
+})
+
+const manifestResponse = (body: unknown): Response =>
+  new Response(JSON.stringify(body), {
+    status: 200,
+    headers: { "Content-Type": "application/json" }
+  })
+
+const alphaManifest = {
+  version: "0.5.0-alpha.7",
+  buildNumber: 57,
+  targets: {
+    "linux-x64": { archiveURL: "https://updates.example/alpha/server.tar.gz" }
+  }
+}
+
+const stableManifest = {
+  version: "0.4.0",
+  buildNumber: 50,
+  targets: {
+    "linux-x64": { archiveURL: "https://updates.example/stable/server.tar.gz" }
+  }
+}
+
+describe("alpha channel", () => {
+  it("compares releases by build number when both sides have one", () => {
+    expect(
+      isNewerRelease(
+        { version: "0.5.0-alpha.7", buildNumber: 57 },
+        { version: "0.5.0", buildNumber: 50 }
+      )
+    ).toBe(true)
+    expect(
+      isNewerRelease(
+        { version: "0.5.0", buildNumber: 50 },
+        { version: "0.5.0-alpha.7", buildNumber: 57 }
+      )
+    ).toBe(false)
+    // Same build is never an update.
+    expect(
+      isNewerRelease({ version: "0.5.0", buildNumber: 57 }, { version: "0.4.0", buildNumber: 57 })
+    ).toBe(false)
+    // Either side missing a build number falls back to version comparison.
+    expect(isNewerRelease({ version: "0.5.0" }, { version: "0.4.0", buildNumber: 57 })).toBe(true)
+    expect(isNewerRelease({ version: "0.4.0", buildNumber: 57 }, { version: "0.5.0" })).toBe(false)
+  })
+
+  it("parses the manifest build number and ignores malformed ones", () => {
+    expect(serverReleaseFromManifest(alphaManifest, "linux-x64")).toMatchObject({
+      version: "0.5.0-alpha.7",
+      buildNumber: 57
+    })
+    expect(
+      serverReleaseFromManifest({ ...alphaManifest, buildNumber: 57.5 }, "linux-x64")?.buildNumber
+    ).toBeUndefined()
+  })
+
+  it("reads the alpha manifest from its default URL with the global fetch", async () => {
+    const fetch = vi
+      .fn<typeof globalThis.fetch>()
+      .mockResolvedValue(manifestResponse(alphaManifest))
+    vi.stubGlobal("fetch", fetch)
+    await expect(fetchAlphaServerRelease({ target: "linux-x64" })).resolves.toMatchObject({
+      version: "0.5.0-alpha.7",
+      buildNumber: 57
+    })
+    expect(fetch.mock.calls[0]?.[0]).toBe(DEFAULT_ALPHA_SERVER_MANIFEST_URL)
+  })
+
+  it("surfaces alpha manifest lookup failures", async () => {
+    await expect(
+      fetchAlphaServerRelease({
+        target: "linux-x64",
+        fetch: vi
+          .fn<typeof globalThis.fetch>()
+          .mockResolvedValue(new Response("no", { status: 500 }))
+      })
+    ).rejects.toThrow("Alpha server manifest lookup failed: HTTP 500")
+  })
+
+  it("prefers the newer of the alpha and stable manifests", async () => {
+    const alphaWins = vi
+      .fn<typeof globalThis.fetch>()
+      .mockResolvedValueOnce(manifestResponse(alphaManifest))
+      .mockResolvedValueOnce(manifestResponse(stableManifest))
+    await expect(
+      fetchLatestServerRelease({ channel: "alpha", target: "linux-x64", fetch: alphaWins })
+    ).resolves.toMatchObject({ version: "0.5.0-alpha.7" })
+
+    // A stable cut after the last alpha outranks it and must be offered.
+    const stableWins = vi
+      .fn<typeof globalThis.fetch>()
+      .mockResolvedValueOnce(manifestResponse({ ...alphaManifest, buildNumber: 40 }))
+      .mockResolvedValueOnce(manifestResponse(stableManifest))
+    await expect(
+      fetchLatestServerRelease({ channel: "alpha", target: "linux-x64", fetch: stableWins })
+    ).resolves.toMatchObject({ version: "0.4.0" })
+  })
+
+  it("keeps working when either manifest is missing", async () => {
+    // No alpha manifest published yet: stable still resolves.
+    const alphaMissing = vi
+      .fn<typeof globalThis.fetch>()
+      .mockResolvedValueOnce(new Response("missing", { status: 404 }))
+      .mockResolvedValueOnce(manifestResponse(stableManifest))
+    await expect(
+      fetchLatestServerRelease({ channel: "alpha", target: "linux-x64", fetch: alphaMissing })
+    ).resolves.toMatchObject({ version: "0.4.0" })
+
+    // Stable manifest outage: the alpha release still resolves.
+    const stableMissing = vi
+      .fn<typeof globalThis.fetch>()
+      .mockResolvedValueOnce(manifestResponse(alphaManifest))
+      .mockResolvedValueOnce(new Response("unavailable", { status: 503 }))
+    await expect(
+      fetchLatestServerRelease({ channel: "alpha", target: "linux-x64", fetch: stableMissing })
+    ).resolves.toMatchObject({ version: "0.5.0-alpha.7" })
+
+    // Stable manifest resolves but without the target: the alpha still wins.
+    const stableNoTarget = vi
+      .fn<typeof globalThis.fetch>()
+      .mockResolvedValueOnce(manifestResponse(alphaManifest))
+      .mockResolvedValueOnce(manifestResponse({ version: "0.4.0", targets: {} }))
+      .mockResolvedValueOnce(new Response("rate limited", { status: 403 }))
+    await expect(
+      fetchLatestServerRelease({
+        channel: "alpha",
+        repository: "example/codevisor",
+        target: "linux-x64",
+        fetch: stableNoTarget
+      })
+    ).resolves.toMatchObject({ version: "0.5.0-alpha.7" })
+  })
+
+  it("falls back through GitHub when both manifests are unavailable", async () => {
+    const fetch = vi
+      .fn<typeof globalThis.fetch>()
+      .mockResolvedValueOnce(new Response("missing", { status: 404 }))
+      .mockResolvedValueOnce(new Response("unavailable", { status: 503 }))
+      .mockResolvedValueOnce(
+        manifestResponse({
+          tag_name: "v0.4.0",
+          assets: [
+            {
+              name: "codevisor-server-linux-x64.tar.gz",
+              browser_download_url: "https://github.example/server.tar.gz"
+            }
+          ]
+        })
+      )
+    await expect(
+      fetchLatestServerRelease({
+        channel: "alpha",
+        repository: "example/codevisor",
+        target: "linux-x64",
+        fetch
+      })
+    ).resolves.toMatchObject({ version: "0.4.0" })
+  })
+
+  it("never touches the alpha manifest on the stable channel", async () => {
+    const fetch = vi
+      .fn<typeof globalThis.fetch>()
+      .mockResolvedValue(manifestResponse(stableManifest))
+    await fetchLatestServerRelease({ channel: "stable", target: "linux-x64", fetch })
+    expect(fetch.mock.calls.map((call) => call[0])).toEqual([DEFAULT_STABLE_SERVER_MANIFEST_URL])
   })
 })
 

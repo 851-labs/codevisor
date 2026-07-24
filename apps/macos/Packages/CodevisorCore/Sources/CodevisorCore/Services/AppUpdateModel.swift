@@ -37,6 +37,10 @@ public final class AppUpdateModel {
     public var checkHandler: (@MainActor (_ userInitiated: Bool) async -> Void)?
     /// Presents Sparkle's native update UI for the release behind the banner.
     public var installHandler: (@MainActor (AppUpdateRelease) async -> Void)?
+    /// Runs one headless check-download-install-relaunch cycle with no UI.
+    /// Used when a remote client asked this machine to update itself — there
+    /// may be nobody at this screen to accept a prompt.
+    public var unattendedInstallHandler: (@MainActor () async -> Void)?
     /// Resets Sparkle's update cycle after the user changes channels.
     public var channelChangeHandler: (@MainActor (_ allowsAlpha: Bool) -> Void)?
 
@@ -90,6 +94,18 @@ public final class AppUpdateModel {
     public func installUpdate() async {
         guard let release = availableRelease, let installHandler else { return }
         await installHandler(release)
+    }
+
+    /// Installs the newest release without any Sparkle UI, then relaunches.
+    /// Falls back to the interactive check when no unattended handler is
+    /// installed (development builds have no Sparkle coordinator).
+    public func installUpdateUnattended() async {
+        guard let unattendedInstallHandler else {
+            await checkForUpdates()
+            return
+        }
+        phase = .checking
+        await unattendedInstallHandler()
     }
 
     public func reportAvailable(version: String, releasePageURL: URL?) {

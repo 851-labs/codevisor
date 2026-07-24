@@ -149,11 +149,14 @@ struct RootView: View {
             }
             if !AppPreview.isRunning {
                 // A remote client updated this machine's server: the bundled
-                // server hands the update back here. Sparkle presents the
-                // signed app update and replaces app + bundled server together.
+                // server hands the update back here. Sparkle installs the
+                // signed app update and replaces app + bundled server
+                // together — unattended, because the person who asked is at
+                // ANOTHER machine's screen and nobody here could accept a
+                // prompt.
                 environment.localServer?.onUpdateRequested = { [environment] in
                     Task { @MainActor in
-                        await environment.appUpdate.checkForUpdates()
+                        await environment.appUpdate.installUpdateUnattended()
                     }
                 }
             }

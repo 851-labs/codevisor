@@ -237,7 +237,8 @@ jobs:
           gh release view "$TAG" --json body,isPrerelease \
             --jq 'select(.isPrerelease == false and (.body | length > 0))' >/dev/null
           curl --fail --silent --show-error https://updates.codevisor.dev/server/stable.json \
-            | jq -e --arg version "$VERSION" '.version == $version' >/dev/null
+            | jq -e --arg version "$VERSION" --argjson build "$BUILD_NUMBER" \
+              '.version == $version and .buildNumber == $build' >/dev/null
           for arch in arm64 x64; do
             feed="$RUNNER_TEMP/appcast-$arch.xml"
             curl --fail --silent --show-error \

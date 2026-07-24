@@ -2304,7 +2304,14 @@ describe("@codevisor/server", () => {
     expect(shutdownRequests).toBe(1)
 
     // Servers with an updater report fresh update state and apply on request.
-    const updaterState = { available: true, applyCalls: 0, applyFails: false, forcedChecks: 0 }
+    const updaterState = {
+      available: true,
+      applyCalls: 0,
+      applyFails: false,
+      forcedChecks: 0,
+      appliedChannels: [] as Array<string>,
+      checkedChannels: [] as Array<string>
+    }
     const updatable = await run(
       startCodevisorServer(
         services,
@@ -2312,18 +2319,23 @@ describe("@codevisor/server", () => {
           id: "server-updatable",
           port: 0,
           updater: {
-            apply: async () => {
+            apply: async (options?: { readonly channel?: "stable" | "alpha" }) => {
+              updaterState.appliedChannels.push(options?.channel ?? "stable")
               updaterState.applyCalls += 1
               if (updaterState.applyFails) {
                 throw new Error("apply failed")
               }
             },
-            check: async (options?: { readonly force?: boolean }) => {
+            check: async (options?: {
+              readonly force?: boolean
+              readonly channel?: "stable" | "alpha"
+            }) => {
               if (options?.force === true) {
                 updaterState.forcedChecks += 1
               }
+              updaterState.checkedChannels.push(options?.channel ?? "stable")
               return {
-                channel: "stable",
+                channel: options?.channel ?? "stable",
                 checkedAt: "2026-06-30T00:00:00.000Z",
                 currentVersion: "0.1.0",
                 latestVersion: updaterState.available ? "0.2.0" : "0.1.0",
@@ -2338,6 +2350,7 @@ describe("@codevisor/server", () => {
     runningServers.push(updatable)
 
     expect((await jsonRequest(updatable, "/v1/update")).body).toMatchObject({
+      channel: "stable",
       latestVersion: "0.2.0",
       updateAvailable: true
     })
@@ -2348,12 +2361,24 @@ describe("@codevisor/server", () => {
       updateAvailable: true
     })
     expect(updaterState.forcedChecks).toBe(1)
-    const applied = await jsonRequest(updatable, "/v1/update/apply", { method: "POST" })
+    // The client forwards its alpha preference; unknown channels are stable.
+    expect((await jsonRequest(updatable, "/v1/update?channel=alpha")).body).toMatchObject({
+      channel: "alpha"
+    })
+    expect((await jsonRequest(updatable, "/v1/update?channel=nightly")).body).toMatchObject({
+      channel: "stable"
+    })
+    const applied = await jsonRequest(updatable, "/v1/update/apply?channel=alpha", {
+      method: "POST"
+    })
     expect(applied.status).toBe(202)
     expect(applied.body).toMatchObject({ accepted: true, targetVersion: "0.2.0" })
-    // Applying always re-checks with force so the restart decision is live.
+    // Applying always re-checks with force so the restart decision is live,
+    // and installs from the same channel it checked.
     expect(updaterState.forcedChecks).toBe(2)
     await waitFor(() => updaterState.applyCalls === 1)
+    expect(updaterState.checkedChannels.at(-1)).toBe("alpha")
+    expect(updaterState.appliedChannels).toEqual(["alpha"])
 
     // A failing apply is swallowed after the 202 acknowledgement.
     updaterState.applyFails = true

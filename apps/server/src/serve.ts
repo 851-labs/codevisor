@@ -39,7 +39,6 @@ import {
   type CustomHarnessLoadResult,
   type CustomHarnessStore
 } from "./custom-harnesses.js"
-import { isNewerVersion } from "./harness-update-sources.js"
 import { makeHarnessLifecycleManager } from "./harness-lifecycle.js"
 import { defaultServerConfig, startCodevisorServer, type CodevisorServerUpdater } from "./server.js"
 import { acquireServerLease, type ServerLease } from "./server-lease.js"
@@ -52,9 +51,11 @@ import {
   DEFAULT_GITHUB_REPOSITORY,
   DEFAULT_LEGACY_RELEASE_BASE_URL,
   fetchLatestServerRelease,
+  isNewerRelease,
   parseSha256,
   sha256File,
-  type ServerRelease
+  type ServerRelease,
+  type ServerUpdateChannel
 } from "./release-source.js"
 
 const SERVER_PROCESS_TITLE = "codevisor-server"
@@ -258,58 +259,72 @@ const releaseTarget = (): string | undefined => {
 /// unpacks it next to the database, hands off to the new runtime, and exits.
 const makeSelfUpdater = (options: {
   readonly currentVersion: string
+  readonly currentBuildNumber?: number | undefined
   readonly db: CodevisorDatabaseService
   readonly dataDir: string
   readonly serveArgs: ReadonlyArray<string>
 }): CodevisorServerUpdater => {
-  let cached:
-    | {
-        readonly at: number
-        readonly info: UpdateInfo
-        readonly release: ServerRelease | undefined
-      }
-    | undefined
+  // Per-channel: an alpha check must never satisfy a stable one (or vice
+  // versa) — they read different manifests.
+  const cached = new Map<
+    ServerUpdateChannel,
+    {
+      readonly at: number
+      readonly info: UpdateInfo
+      readonly release: ServerRelease | undefined
+    }
+  >()
 
-  const check = async (checkOptions?: { readonly force?: boolean }): Promise<UpdateInfo> => {
+  const check = async (checkOptions?: {
+    readonly force?: boolean
+    readonly channel?: ServerUpdateChannel
+  }): Promise<UpdateInfo> => {
+    const channel = checkOptions?.channel ?? "stable"
+    const hit = cached.get(channel)
     if (
       checkOptions?.force !== true &&
-      cached !== undefined &&
-      Date.now() - cached.at < SERVER_UPDATE_CHECK_TTL_MS
+      hit !== undefined &&
+      Date.now() - hit.at < SERVER_UPDATE_CHECK_TTL_MS
     ) {
-      return cached.info
+      return hit.info
     }
-    let latestVersion = options.currentVersion
     let release: ServerRelease | undefined
     try {
       const target = releaseTarget()
       if (target !== undefined) {
         release = await fetchLatestServerRelease({
+          channel,
           repository: GITHUB_RELEASE_REPOSITORY,
           legacyBaseURL: LEGACY_RELEASE_BASE_URL,
           target
         })
-        if (release !== undefined) {
-          latestVersion = release.version
-        }
       }
     } catch {
       // Offline or unreachable: report the last known state.
     }
     const info: UpdateInfo = {
       currentVersion: options.currentVersion,
-      latestVersion,
-      updateAvailable: isNewerVersion(latestVersion, options.currentVersion),
-      channel: "stable",
+      latestVersion: release?.version ?? options.currentVersion,
+      updateAvailable:
+        release !== undefined &&
+        isNewerRelease(release, {
+          version: options.currentVersion,
+          buildNumber: options.currentBuildNumber
+        }),
+      channel,
       checkedAt: new Date().toISOString(),
       migrationState: "idle"
     }
     await Effect.runPromise(options.db.setUpdateInfo(info)).catch(() => undefined)
-    cached = { at: Date.now(), info, release }
+    cached.set(channel, { at: Date.now(), info, release })
     return info
   }
 
-  const apply = async (): Promise<void> => {
-    const info = await check()
+  const apply = async (applyOptions?: {
+    readonly channel?: ServerUpdateChannel
+  }): Promise<void> => {
+    const channel = applyOptions?.channel ?? "stable"
+    const info = await check({ channel })
     if (!info.updateAvailable) {
       return
     }
@@ -339,9 +354,10 @@ const makeSelfUpdater = (options: {
     const runtimeDir = join(updateDir, "runtime")
     mkdirSync(runtimeDir, { recursive: true })
 
-    let release = cached?.release
+    let release = cached.get(channel)?.release
     if (release === undefined || release.version !== info.latestVersion) {
       release = await fetchLatestServerRelease({
+        channel,
         repository: GITHUB_RELEASE_REPOSITORY,
         legacyBaseURL: LEGACY_RELEASE_BASE_URL,
         target
@@ -597,6 +613,7 @@ export const runServe = (args: Record<string, string>): Promise<void> => {
         ? undefined
         : makeSelfUpdater({
             currentVersion: version,
+            currentBuildNumber: buildMetadata.buildNumber,
             db,
             dataDir: dirname(databasePath),
             serveArgs: [
