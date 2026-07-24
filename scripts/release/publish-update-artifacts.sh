@@ -28,6 +28,7 @@ export AWS_RESPONSE_CHECKSUM_VALIDATION="${AWS_RESPONSE_CHECKSUM_VALIDATION:-whe
 bucket="${R2_BUCKET:-herdman}"
 origin="${CODEVISOR_UPDATE_ORIGIN:-https://updates.codevisor.dev}"
 prefix="updates/$tag"
+repository="${GITHUB_REPOSITORY:-851-labs/codevisor}"
 work_dir="$(mktemp -d)"
 trap 'rm -rf "$work_dir"' EXIT
 sparkle_public_key="${CODEVISOR_SPARKLE_PUBLIC_KEY:-1FsNm9QTvUciP2sETZFfeTkWHCPjRNU6mEQ1wzqQz2k=}"
@@ -65,7 +66,9 @@ for arch in arm64 x64; do
     --url "$origin/$prefix/$name" \
     --signature "$signature" \
     --length "$length" \
-    --release-notes-url "https://github.com/${GITHUB_REPOSITORY:-851-labs/codevisor}/releases/tag/$tag"
+    --release-notes-url "$origin/$prefix/$notes_name" \
+    --release-page-url "https://github.com/$repository/releases/tag/$tag" \
+    --full-release-notes-url "https://github.com/$repository/releases"
   aws s3 cp "$new_feed" "s3://$bucket/appcast-$arch.xml" \
     --endpoint-url "$R2_S3_API_ENDPOINT" \
     --content-type application/xml \
@@ -95,7 +98,7 @@ manifest="$work_dir/$channel.json"
 jq -n \
   --arg version "${tag#v}" \
   --argjson buildNumber "$build_number" \
-  --arg releasePageURL "https://github.com/${GITHUB_REPOSITORY:-851-labs/codevisor}/releases/tag/$tag" \
+  --arg releasePageURL "https://github.com/$repository/releases/tag/$tag" \
   --arg origin "$origin/$prefix" \
   '{
     version: $version,

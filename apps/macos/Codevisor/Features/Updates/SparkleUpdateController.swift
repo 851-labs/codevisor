@@ -69,17 +69,20 @@ final class SparkleUpdateController: NSObject, SPUUpdaterDelegate {
     }
 
     func feedURLString(for updater: SPUUpdater) -> String? {
+        if let developmentFeedURL = CodevisorAppVariant.developmentSparkleFeedURL {
+            return developmentFeedURL
+        }
         #if arch(x86_64)
-            "https://updates.codevisor.dev/appcast-x64.xml"
+            return "https://updates.codevisor.dev/appcast-x64.xml"
         #else
-            "https://updates.codevisor.dev/appcast-arm64.xml"
+            return "https://updates.codevisor.dev/appcast-arm64.xml"
         #endif
     }
 
     func updater(_ updater: SPUUpdater, didFindValidUpdate item: SUAppcastItem) {
         model.reportAvailable(
             version: item.displayVersionString,
-            releasePageURL: item.releaseNotesURL ?? item.infoURL
+            releasePageURL: item.infoURL ?? item.fullReleaseNotesURL ?? item.releaseNotesURL
         )
     }
 
@@ -90,7 +93,7 @@ final class SparkleUpdateController: NSObject, SPUUpdaterDelegate {
     func updater(_ updater: SPUUpdater, willInstallUpdate item: SUAppcastItem) {
         model.reportInstalling(
             version: item.displayVersionString,
-            releasePageURL: item.releaseNotesURL ?? item.infoURL
+            releasePageURL: item.infoURL ?? item.fullReleaseNotesURL ?? item.releaseNotesURL
         )
     }
 

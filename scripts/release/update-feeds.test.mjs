@@ -50,7 +50,11 @@ test("stable appcast promotion replaces the matching Alpha item", () => {
     "--length",
     "123",
     "--release-notes-url",
+    "https://updates.codevisor.dev/updates/v1.1.0/release-notes-v1.1.0.md",
+    "--release-page-url",
     "https://github.com/851-labs/codevisor/releases/tag/v1.1.0",
+    "--full-release-notes-url",
+    "https://github.com/851-labs/codevisor/releases",
     "--publication-date",
     "Thu, 23 Jul 2026 12:00:00 GMT"
   ])
@@ -60,6 +64,18 @@ test("stable appcast promotion replaces the matching Alpha item", () => {
   assert.match(feed, /<sparkle:version>41<\/sparkle:version>/)
   assert.doesNotMatch(feed, /<sparkle:channel>alpha<\/sparkle:channel>/)
   assert.match(feed, /<sparkle:shortVersionString>1\.1\.0<\/sparkle:shortVersionString>/)
+  assert.match(
+    feed,
+    /<sparkle:releaseNotesLink>https:\/\/updates\.codevisor\.dev\/updates\/v1\.1\.0\/release-notes-v1\.1\.0\.md<\/sparkle:releaseNotesLink>/
+  )
+  assert.match(
+    feed,
+    /<link>https:\/\/github\.com\/851-labs\/codevisor\/releases\/tag\/v1\.1\.0<\/link>/
+  )
+  assert.match(
+    feed,
+    /<sparkle:fullReleaseNotesLink>https:\/\/github\.com\/851-labs\/codevisor\/releases<\/sparkle:fullReleaseNotesLink>/
+  )
 })
 
 test("release-note retries ignore tags at the release commit", () => {
@@ -106,12 +122,15 @@ test("release-note retries ignore tags at the release commit", () => {
   assert.doesNotMatch(alphaNotes, /Base release/)
 })
 
-test("appcast verification requires the matching channel and signed enclosure", () => {
+test("appcast verification requires native release notes metadata and a signed enclosure", () => {
   const feed = `<?xml version="1.0"?>
 <rss><channel>
   <item>
     <sparkle:version>42</sparkle:version>
     <sparkle:channel>alpha</sparkle:channel>
+    <link>https://github.com/851-labs/codevisor/releases/tag/v1.1.0-alpha.42</link>
+    <sparkle:releaseNotesLink>https://updates.codevisor.dev/updates/v1.1.0-alpha.42/release-notes-v1.1.0-alpha.42.md</sparkle:releaseNotesLink>
+    <sparkle:fullReleaseNotesLink>https://github.com/851-labs/codevisor/releases</sparkle:fullReleaseNotesLink>
     <enclosure url="https://updates.codevisor.dev/Codevisor.zip" length="123" sparkle:edSignature="signature" />
   </item>
 </channel></rss>`
@@ -122,6 +141,42 @@ test("appcast verification requires the matching channel and signed enclosure", 
   assert.throws(
     () => verifyAppcast(feed.replace(' sparkle:edSignature="signature"', ""), "42", "alpha"),
     /no EdDSA signature/
+  )
+  assert.throws(
+    () =>
+      verifyAppcast(
+        feed.replace(
+          "release-notes-v1.1.0-alpha.42.md",
+          "https-release-notes-v1.1.0-alpha.42.html"
+        ),
+        "42",
+        "alpha"
+      ),
+    /no HTTPS Markdown release notes URL/
+  )
+  assert.throws(
+    () =>
+      verifyAppcast(
+        feed.replace(
+          "    <link>https://github.com/851-labs/codevisor/releases/tag/v1.1.0-alpha.42</link>\n",
+          ""
+        ),
+        "42",
+        "alpha"
+      ),
+    /no HTTPS release page URL/
+  )
+  assert.throws(
+    () =>
+      verifyAppcast(
+        feed.replace(
+          "    <sparkle:fullReleaseNotesLink>https://github.com/851-labs/codevisor/releases</sparkle:fullReleaseNotesLink>\n",
+          ""
+        ),
+        "42",
+        "alpha"
+      ),
+    /no HTTPS full release notes URL/
   )
 })
 

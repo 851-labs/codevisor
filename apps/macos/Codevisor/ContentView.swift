@@ -15,13 +15,13 @@ struct CodevisorApp: App {
         if !CodevisorAppVariant.isDevelopment {
             environment.localServer?.configureManagedService(serverAgent.managedService)
         }
-        let sparkleUpdater = CodevisorAppVariant.isDevelopment
-            ? nil
-            : SparkleUpdateController(
+        let sparkleUpdater = CodevisorAppVariant.enablesSparkleUpdater
+            ? SparkleUpdateController(
                 model: environment.appUpdate,
                 localServer: environment.localServer,
                 serverAgent: serverAgent
             )
+            : nil
         AnalyticsClient.shared.configureFromMainBundle(enabled: environment.settings.shareAnalytics)
         AnalyticsClient.shared.captureAppOpenedOnce()
         _environment = State(initialValue: environment)

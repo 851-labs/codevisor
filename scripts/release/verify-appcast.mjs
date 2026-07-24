@@ -19,6 +19,13 @@ export const verifyAppcast = (contents, build, expectedChannel) => {
   if (expectedChannel === "stable" && channel !== undefined)
     throw new Error(`build ${build} still has the ${channel} channel`)
 
+  if (!/<link>https:\/\/[^<]+<\/link>/.test(item))
+    throw new Error(`build ${build} has no HTTPS release page URL`)
+  if (!/<sparkle:releaseNotesLink>https:\/\/[^<]+\.md<\/sparkle:releaseNotesLink>/.test(item))
+    throw new Error(`build ${build} has no HTTPS Markdown release notes URL`)
+  if (!/<sparkle:fullReleaseNotesLink>https:\/\/[^<]+<\/sparkle:fullReleaseNotesLink>/.test(item))
+    throw new Error(`build ${build} has no HTTPS full release notes URL`)
+
   const enclosure = item.match(/<enclosure\b[^>]*\/>/)?.[0]
   if (!enclosure) throw new Error(`build ${build} has no enclosure`)
   if (!/\burl="https:\/\/[^"]+"/.test(enclosure))

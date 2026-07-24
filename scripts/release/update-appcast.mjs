@@ -27,6 +27,8 @@ const url = required("url")
 const signature = required("signature")
 const length = required("length")
 const notesURL = required("release-notes-url")
+const releasePageURL = required("release-page-url")
+const fullReleaseNotesURL = required("full-release-notes-url")
 const publicationDate = option("publication-date") ?? new Date().toUTCString()
 if (!["alpha", "stable"].includes(channel)) throw new Error("channel must be alpha or stable")
 if (!/^\d+$/.test(build) || !/^\d+$/.test(length))
@@ -40,11 +42,13 @@ const oldItems = [...existing.matchAll(/<item>[\s\S]*?<\/item>/g)]
 const channelElement = channel === "alpha" ? "\n      <sparkle:channel>alpha</sparkle:channel>" : ""
 const item = `    <item>
       <title>Codevisor ${escapeXML(version)}${channel === "alpha" ? " Alpha" : ""}</title>
+      <link>${escapeXML(releasePageURL)}</link>
       <pubDate>${escapeXML(publicationDate)}</pubDate>
       <sparkle:version>${escapeXML(build)}</sparkle:version>
       <sparkle:shortVersionString>${escapeXML(version)}</sparkle:shortVersionString>${channelElement}
       <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
       <sparkle:releaseNotesLink>${escapeXML(notesURL)}</sparkle:releaseNotesLink>
+      <sparkle:fullReleaseNotesLink>${escapeXML(fullReleaseNotesURL)}</sparkle:fullReleaseNotesLink>
       <enclosure url="${escapeXML(url)}" length="${length}" type="application/octet-stream" sparkle:edSignature="${escapeXML(signature)}" />
     </item>`
 const contents = `<?xml version="1.0" encoding="utf-8"?>

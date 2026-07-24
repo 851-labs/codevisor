@@ -40,6 +40,20 @@ public enum CodevisorAppVariant: Sendable {
         return environment["CODEVISOR_DEV_ICON_COLOR"] ?? "#0088ff"
     }
 
+    /// Opts a development build into Sparkle using an isolated test feed.
+    /// Production builds always use their normal architecture-specific feed.
+    public static var developmentSparkleFeedURL: String? {
+        guard isDevelopment,
+              let value = environment["CODEVISOR_DEV_SPARKLE_FEED_URL"],
+              !value.isEmpty
+        else { return nil }
+        return value
+    }
+
+    public static var enablesSparkleUpdater: Bool {
+        !isDevelopment || developmentSparkleFeedURL != nil
+    }
+
     /// A local standalone server that `bun run dev` starts alongside the app,
     /// so remote-machine flows can be developed offline. Present only in
     /// development runs where the dev script provided its details.
