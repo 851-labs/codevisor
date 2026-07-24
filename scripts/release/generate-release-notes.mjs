@@ -28,12 +28,10 @@ const tags = git("tag", "--merged", commit, "--sort=-version:refname")
   // Never use a tag at the release commit as its own changelog baseline.
   .filter((tag) => git("rev-list", "-n", "1", tag) !== commitSHA)
 const stablePattern = /^v\d+\.\d+\.\d+$/
-const alphaPattern = /^v\d+\.\d+\.\d+-alpha\.\d+$/
-const baseTag =
-  channel === "stable"
-    ? tags.find(stablePattern.test.bind(stablePattern))
-    : (tags.find(alphaPattern.test.bind(alphaPattern)) ??
-      tags.find(stablePattern.test.bind(stablePattern)))
+// Every channel presents a complete release changelog from the last Stable
+// version. An earlier Alpha may have failed publication or may only represent
+// an intermediate snapshot; neither is a safe user-facing baseline.
+const baseTag = tags.find(stablePattern.test.bind(stablePattern))
 const range = baseTag ? `${baseTag}..${commit}` : commit
 const records = git("log", "--no-merges", "--format=%H%x09%s", range)
   .split("\n")

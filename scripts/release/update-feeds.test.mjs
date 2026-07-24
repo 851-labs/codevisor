@@ -74,6 +74,8 @@ test("release-note retries ignore tags at the release commit", () => {
   git("tag", "v1.0.0")
   writeFileSync(join(directory, "fixture.txt"), "base\nfeature\n")
   git("commit", "--quiet", "-am", "feat: Add the updater")
+  const featureCommit = git("rev-parse", "HEAD")
+  git("tag", "v1.1.0-alpha.41", featureCommit)
   writeFileSync(join(directory, "fixture.txt"), "base\nfeature\nfix\n")
   git("commit", "--quiet", "-am", "fix: Repair update retries")
   git("tag", "v1.1.0-alpha.42")
@@ -91,6 +93,17 @@ test("release-note retries ignore tags at the release commit", () => {
   assert.match(notes, /Repair update retries/)
   assert.equal(notes.match(/https:\/\/github\.com\/851-labs\/codevisor\/commit\//g)?.length, 2)
   assert.doesNotMatch(notes, /Base release/)
+
+  runNode(
+    "scripts/release/generate-release-notes.mjs",
+    ["--channel", "alpha", "--version", "1.1.0-alpha.42", "--commit", "HEAD", "--output", output],
+    { cwd: directory }
+  )
+  const alphaNotes = readFileSync(output, "utf8")
+  assert.match(alphaNotes, /Add the updater/)
+  assert.match(alphaNotes, /Repair update retries/)
+  assert.equal(alphaNotes.match(/https:\/\/github\.com\/851-labs\/codevisor\/commit\//g)?.length, 2)
+  assert.doesNotMatch(alphaNotes, /Base release/)
 })
 
 test("appcast verification requires the matching channel and signed enclosure", () => {
