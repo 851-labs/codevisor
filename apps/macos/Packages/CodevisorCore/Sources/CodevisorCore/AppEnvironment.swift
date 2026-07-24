@@ -82,7 +82,8 @@ public final class AppEnvironment {
         )
         self.appUpdate = appUpdate ?? AppUpdateModel(
             currentVersion: AppUpdateModel.bundleVersion(),
-            checker: DisabledUpdateChecker()
+            currentBuildNumber: AppUpdateModel.bundleBuildNumber(),
+            allowsAlphaUpdates: settings.alphaUpdatesEnabled
         )
         self.projectList = ProjectListModel(
             projectRepository: projectRepository,
@@ -283,7 +284,7 @@ public final class AppEnvironment {
         composerDefaults.clear()
         composerDrafts.clear()
         settings.reset()
-        appUpdate.setAllowsPrereleaseUpdates(settings.betaUpdatesEnabled)
+        appUpdate.setAllowsAlphaUpdates(settings.alphaUpdatesEnabled)
         projectList.showsImportedSessions = settings.importExternalSessions
     }
 
@@ -295,11 +296,11 @@ public final class AppEnvironment {
     }
 
     /// Changes update channels immediately; the Settings view follows this
-    /// with a fresh check so enabling or disabling beta updates updates the
+    /// with a fresh check so enabling or disabling Alpha updates updates the
     /// banner without requiring a relaunch.
-    public func setBetaUpdatesEnabled(_ enabled: Bool) {
-        settings.setBetaUpdatesEnabled(enabled)
-        appUpdate.setAllowsPrereleaseUpdates(enabled)
+    public func setAlphaUpdatesEnabled(_ enabled: Bool) {
+        settings.setAlphaUpdatesEnabled(enabled)
+        appUpdate.setAllowsAlphaUpdates(enabled)
     }
 
     /// Applies the user's onboarding choice and imports if requested.
@@ -345,12 +346,6 @@ public final class AppEnvironment {
         await finishOnboarding(projectFolders: [projectFolder])!
     }
 
-    /// Frozen at the first GitHub-aware release so older apps can cross the
-    /// update-source migration. It is only consulted if GitHub is unavailable.
-    public static let legacyReleaseArtifactBaseURL = URL(
-        string: "https://pub-d2d6eb72b71c4986a742c0527774c9f0.r2.dev/releases/codevisor"
-    )!
-
     public static func live() -> AppEnvironment {
         CodevisorAppVariant.migrateLegacyApplicationSupportIfNeeded()
         let store = FileSystemStore(directory: CodevisorAppVariant.applicationSupportURL())
@@ -377,17 +372,8 @@ public final class AppEnvironment {
             localServer: localServer,
             appUpdate: AppUpdateModel(
                 currentVersion: AppUpdateModel.bundleVersion(),
-                currentReleaseChannel: AppUpdateModel.bundleReleaseChannel(),
                 currentBuildNumber: AppUpdateModel.bundleBuildNumber(),
-                checker: FallbackAppUpdateChecker(
-                    primary: GitHubAppUpdateChecker(),
-                    fallback: ManifestAppUpdateChecker(baseURL: legacyReleaseArtifactBaseURL)
-                ),
-                prereleaseChecker: FallbackAppUpdateChecker(
-                    primary: GitHubAppUpdateChecker(includesPrereleases: true),
-                    fallback: ManifestAppUpdateChecker(baseURL: legacyReleaseArtifactBaseURL)
-                ),
-                allowsPrereleaseUpdates: settings.betaUpdatesEnabled
+                allowsAlphaUpdates: settings.alphaUpdatesEnabled
             ),
             customThemesDirectory: ThemeManager.defaultCustomThemesDirectory()
         )

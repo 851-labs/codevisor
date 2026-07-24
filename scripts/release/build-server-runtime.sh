@@ -218,6 +218,10 @@ chmod +x "$runtime_dir/bin/codevisor-server" "$runtime_dir/bin/codevisor-termina
   "$runtime_dir/bin/codevisor"
 printf "%s\n" "$version" > "$runtime_dir/VERSION"
 printf "%s\n" "$target" > "$runtime_dir/TARGET"
+build_number="${CODEVISOR_BUILD_NUMBER:-${GITHUB_RUN_NUMBER:-1}}"
+source_revision="${CODEVISOR_SOURCE_REVISION:-${GITHUB_SHA:-unknown}}"
+printf '{"version":"%s","buildNumber":%s,"sourceRevision":"%s","target":"%s"}\n' \
+  "$version" "$build_number" "$source_revision" "$target" > "$runtime_dir/BUILD.json"
 
 # LaunchServices starts the macOS app with / as its working directory. Probe
 # resource discovery from there so a runtime layout regression cannot ship a

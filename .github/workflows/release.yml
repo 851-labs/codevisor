@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: Version to release, without the leading v.
+        description: Version to promote, without the leading v.
         required: true
         type: string
 
@@ -13,17 +13,13 @@ permissions:
   contents: write
 
 concurrency:
-  # Serialize stable publication with the hourly prerelease publisher so a
-  # scheduler run cannot create an RC after this workflow tags the final.
   group: github-release-publication
   cancel-in-progress: false
 
 env:
   NODE_VERSION: "24.x"
   REPOSITORY: ${{ github.repository }}
-  # R2 is a frozen compatibility bridge after the first release from this
-  # workflow. The existing bucket name cannot be changed.
-  R2_BUCKET: "herdman"
+  R2_BUCKET: herdman
 
 jobs:
   metadata:
@@ -31,104 +27,101 @@ jobs:
     outputs:
       version: ${{ steps.release.outputs.version }}
       tag: ${{ steps.release.outputs.tag }}
-      rc_run_id: ${{ steps.release.outputs.rc_run_id }}
-      include_compatibility_artifacts: ${{ steps.bridge.outputs.include }}
+      alpha_run_id: ${{ steps.release.outputs.alpha_run_id }}
+      build: ${{ steps.release.outputs.build }}
+      first_bridge: ${{ steps.bridge.outputs.first }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
-      - name: Require the tag to match current main and a successful RC
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Require current main and a matching published Alpha
         id: release
-        shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           INPUT_VERSION: ${{ inputs.version }}
+        shell: bash
         run: |
           version="${INPUT_VERSION#v}"
-          tag="v$version"
-          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "Release tags must be numeric semantic versions (vMAJOR.MINOR.PATCH)." >&2
-            exit 1
-          fi
-
-          git fetch origin main --no-tags
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Version must be numeric semver." >&2; exit 1; }
           source_sha="$(git rev-parse HEAD)"
-          main_sha="$(git rev-parse origin/main)"
-          if [[ "$source_sha" != "$main_sha" || "$source_sha" != "$GITHUB_SHA" ]]; then
-            echo "Release source is $source_sha, but current origin/main is $main_sha." >&2
-            echo "Dispatch the release from current main HEAD." >&2
-            exit 1
-          fi
+          main_sha="$(git ls-remote origin refs/heads/main | awk '{print $1}')"
+          [[ "$source_sha" == "$main_sha" ]] || { echo "Release must run at current main." >&2; exit 1; }
+          tag="v$version"
           existing_tag_sha="$(git ls-remote origin "refs/tags/$tag^{}" | awk '{print $1}')"
           if [[ -z "$existing_tag_sha" ]]; then
             existing_tag_sha="$(git ls-remote origin "refs/tags/$tag" | awk '{print $1}')"
           fi
           if [[ -n "$existing_tag_sha" && "$existing_tag_sha" != "$source_sha" ]]; then
-            echo "$tag already exists at $existing_tag_sha; release tags are never moved." >&2
+            echo "$tag points to $existing_tag_sha instead of current main $source_sha." >&2
             exit 1
           fi
-
-          rc_run_id="$(gh run list \
-            --workflow release-candidate.yml \
-            --commit "$source_sha" \
-            --status success \
-            --limit 10 \
-            --json databaseId,headSha \
-            --jq 'map(select(.headSha == "'$source_sha'"))[0].databaseId // empty')"
-          if [[ -z "$rc_run_id" ]]; then
-            echo "No successful release-candidate run exists for $source_sha." >&2
-            exit 1
+          run_id="$(gh run list --workflow release-candidate.yml --commit "$source_sha" \
+            --status success --limit 20 --json databaseId,headSha \
+            --jq 'map(select(.headSha == "'"$source_sha"'"))[0].databaseId // empty')"
+          [[ -n "$run_id" ]] || { echo "No successful Alpha build exists for $source_sha." >&2; exit 1; }
+          provenance_dir="$RUNNER_TEMP/provenance"
+          gh run download "$run_id" --name codevisor-release-provenance --dir "$provenance_dir"
+          provenance="$provenance_dir/release-provenance.json"
+          [[ "$(jq -r .channel "$provenance")" == alpha ]] || { echo "Build is not Alpha." >&2; exit 1; }
+          [[ "$(jq -r .source_sha "$provenance")" == "$source_sha" ]] || { echo "Alpha SHA mismatch." >&2; exit 1; }
+          [[ "$(jq -r .version "$provenance")" == "$version" ]] || { echo "Alpha version mismatch." >&2; exit 1; }
+          build="$(jq -r .build_number "$provenance")"
+          [[ "$build" =~ ^[0-9]+$ ]] || { echo "Alpha build number is invalid." >&2; exit 1; }
+          alpha_tag="v$version-alpha.$build"
+          alpha_tag_sha="$(git ls-remote origin "refs/tags/$alpha_tag^{}" | awk '{print $1}')"
+          if [[ -z "$alpha_tag_sha" ]]; then
+            alpha_tag_sha="$(git ls-remote origin "refs/tags/$alpha_tag" | awk '{print $1}')"
           fi
-
-          provenance_dir="$RUNNER_TEMP/codevisor-rc-provenance"
-          gh run download "$rc_run_id" \
-            --name codevisor-release-provenance \
-            --dir "$provenance_dir"
-          rc_sha="$(jq -r .source_sha "$provenance_dir/release-provenance.json")"
-          rc_version="$(jq -r .version "$provenance_dir/release-provenance.json")"
-          rc_channel="$(jq -r .channel "$provenance_dir/release-provenance.json")"
-          if [[ "$rc_sha" != "$source_sha" || "$rc_version" != "$version" || "$rc_channel" != "rc" ]]; then
-            echo "RC provenance does not match release $tag at $source_sha." >&2
-            jq . "$provenance_dir/release-provenance.json" >&2
+          [[ "$alpha_tag_sha" == "$source_sha" ]] || {
+            echo "Published Alpha tag $alpha_tag does not point to current main." >&2
             exit 1
-          fi
-
+          }
+          release_json="$(gh release view "$alpha_tag" --json assets,isDraft,isPrerelease)"
+          expected_assets='[
+            "Codevisor-macOS-arm64.zip",
+            "Codevisor-macOS-x64.zip",
+            "Codevisor-arm64.dmg",
+            "Codevisor-x64.dmg",
+            "codevisor-server-darwin-arm64.tar.gz",
+            "codevisor-server-darwin-x64.tar.gz",
+            "codevisor-server-linux-arm64.tar.gz",
+            "codevisor-server-linux-x64.tar.gz"
+          ]'
+          jq -e --argjson expected "$expected_assets" '
+            (.isDraft == false)
+            and (.isPrerelease == true)
+            and (($expected - [.assets[].name]) | length == 0)
+          ' <<<"$release_json" >/dev/null || {
+            echo "Published Alpha release $alpha_tag is incomplete." >&2
+            exit 1
+          }
+          for arch in arm64 x64; do
+            feed="$RUNNER_TEMP/appcast-$arch.xml"
+            curl --fail --silent --show-error \
+              "https://updates.codevisor.dev/appcast-$arch.xml" --output "$feed"
+            if [[ -n "$existing_tag_sha" ]]; then
+              node scripts/release/verify-appcast.mjs "$feed" "$build" alpha \
+                || node scripts/release/verify-appcast.mjs "$feed" "$build" stable
+            else
+              node scripts/release/verify-appcast.mjs "$feed" "$build" alpha
+            fi
+          done
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
-          echo "rc_run_id=$rc_run_id" >> "$GITHUB_OUTPUT"
-          echo "Releasing $tag at current main HEAD $source_sha from RC run $rc_run_id"
-      - name: Check whether the R2 bridge still needs a universal app
+          echo "alpha_run_id=$run_id" >> "$GITHUB_OUTPUT"
+          echo "build=$build" >> "$GITHUB_OUTPUT"
+      - name: Detect one-time Sparkle bridge
         id: bridge
-        shell: bash
         run: |
-          include=true
           if curl --fail --silent --show-error --head \
-            https://pub-d2d6eb72b71c4986a742c0527774c9f0.r2.dev/releases/codevisor/bridge.json \
-            >/dev/null 2>&1; then
-            include=false
+            https://updates.codevisor.dev/migration/sparkle-bridge.json >/dev/null 2>&1; then
+            echo "first=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "first=true" >> "$GITHUB_OUTPUT"
           fi
-          echo "include=$include" >> "$GITHUB_OUTPUT"
-
-  build:
-    needs: metadata
-    uses: ./.github/workflows/build-release-artifacts.yml
-    with:
-      version: ${{ needs.metadata.outputs.version }}
-      channel: stable
-      source_sha: ${{ github.sha }}
-      reuse_run_id: ${{ needs.metadata.outputs.rc_run_id }}
-      artifact_retention_days: 30
-      include_compatibility_artifacts: ${{ needs.metadata.outputs.include_compatibility_artifacts == 'true' }}
-    secrets:
-      APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
-      APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-      APPLE_CODESIGN_IDENTITY: ${{ secrets.APPLE_CODESIGN_IDENTITY }}
-      APPLE_ID: ${{ secrets.APPLE_ID }}
-      APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-      APP_STORE_CONNECT_API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
-      APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
-      APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
 
   build-browser-extension:
     needs: metadata
@@ -138,227 +131,122 @@ jobs:
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: ${{ env.NODE_VERSION }}
-      - name: Build Chrome Web Store extension
-        run: node scripts/release/build-browser-extension.mjs "${{ needs.metadata.outputs.version }}" dist/release
+      - run: node scripts/release/build-browser-extension.mjs "${{ needs.metadata.outputs.version }}" dist/release
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: codevisor-browser-extension
-          path: |
-            dist/release/Codevisor-Chrome-*.zip
-            dist/release/Codevisor-Chrome-*.zip.sha256
+          path: dist/release/Codevisor-Chrome-*
           if-no-files-found: error
           retention-days: 30
 
   publish:
-    needs: [metadata, build, build-browser-extension]
+    needs: [metadata, build-browser-extension]
     runs-on: ubuntu-24.04
     env:
       VERSION: ${{ needs.metadata.outputs.version }}
       TAG: ${{ needs.metadata.outputs.tag }}
+      BUILD_NUMBER: ${{ needs.metadata.outputs.build }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - name: Download macOS release artifacts
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          name: codevisor-macos
-          path: dist/release
-      - name: Download x64 Linux server release artifacts
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
-        with:
-          name: codevisor-server-linux-x64
-          path: dist/release
-      - name: Download ARM Linux server release artifacts
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
-        with:
-          name: codevisor-server-linux-arm64
-          path: dist/release
-      - name: Download Intel server release artifacts
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
-        with:
-          name: codevisor-server-macos-x64
-          path: dist/release
-      - name: Download Chrome extension release artifacts
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+          fetch-depth: 0
+      - name: Download exact Alpha artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ALPHA_RUN_ID: ${{ needs.metadata.outputs.alpha_run_id }}
+        run: |
+          mkdir -p dist/release
+          for name in codevisor-macos codevisor-server-linux-x64 codevisor-server-linux-arm64 codevisor-server-macos-x64; do
+            gh run download "$ALPHA_RUN_ID" --name "$name" --dir dist/release
+          done
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: codevisor-browser-extension
           path: dist/release
-      - name: Determine whether this is the one-time R2 bridge release
-        id: bridge
-        shell: bash
+      - name: Generate complete Stable changelog
+        run: |
+          node scripts/release/generate-release-notes.mjs \
+            --channel stable --version "$VERSION" --commit "$GITHUB_SHA" \
+            --output dist/release/RELEASE_NOTES.md
+      - name: Publish exact Alpha bytes as Stable
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FIRST_BRIDGE: ${{ needs.metadata.outputs.first_bridge }}
+        run: |
+          if ! git ls-remote --exit-code origin "refs/tags/$TAG" >/dev/null 2>&1; then
+            current_main="$(git ls-remote origin refs/heads/main | awk '{print $1}')"
+            [[ "$current_main" == "$GITHUB_SHA" ]] || {
+              echo "main advanced to $current_main after release validation at $GITHUB_SHA." >&2
+              exit 1
+            }
+            git push origin "$GITHUB_SHA:refs/tags/$TAG"
+          fi
+          shopt -s nullglob
+          artifacts=(dist/release/*.zip dist/release/*.tar.gz dist/release/*.dmg dist/release/*.sha256)
+          latest_flag="--latest=false"
+          [[ "$FIRST_BRIDGE" == true ]] && latest_flag="--latest"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "${artifacts[@]}" --clobber
+            edit_flags=()
+            [[ "$FIRST_BRIDGE" == true ]] && edit_flags+=(--latest)
+            gh release edit "$TAG" --title "$TAG" \
+              --notes-file dist/release/RELEASE_NOTES.md "${edit_flags[@]}"
+          else
+            gh release create "$TAG" "${artifacts[@]}" \
+              --verify-tag --title "$TAG" --notes-file dist/release/RELEASE_NOTES.md "$latest_flag"
+          fi
+      - name: Publish Stable Sparkle and Linux feeds
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.CLOUDFLARE_R2_SECRET_ACCESS_KEY }}
           R2_S3_API_ENDPOINT: ${{ secrets.CLOUDFLARE_R2_S3_API_ENDPOINT }}
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
         run: |
-          bridge_url="https://pub-d2d6eb72b71c4986a742c0527774c9f0.r2.dev/releases/codevisor/bridge.json"
-          if bridge_json="$(curl --fail --silent --show-error "$bridge_url" 2>/dev/null)"; then
-            echo "required=false" >> "$GITHUB_OUTPUT"
-            bridge_version="$(jq -r .version <<<"$bridge_json")"
-            echo "version=${bridge_version#v}" >> "$GITHUB_OUTPUT"
-            echo "R2 already contains its frozen compatibility bridge."
-
-            # Apps from the brief pre-R2 era query GitHub latest but hardcode
-            # this asset name. Reattach the frozen bridge app to every latest
-            # release so a dormant install can still cross the migration years
-            # later; modern users continue to download the small split assets.
-            legacy_url="https://pub-d2d6eb72b71c4986a742c0527774c9f0.r2.dev/releases/herdman/v${bridge_version#v}/HerdMan-macOS.zip"
-            curl --fail --silent --show-error --location \
-              "$legacy_url" \
-              --output dist/release/HerdMan-macOS.zip
-            shasum -a 256 dist/release/HerdMan-macOS.zip | awk '{print $1}' \
-              > dist/release/HerdMan-macOS.zip.sha256
-          else
-            if [[ -z "$AWS_ACCESS_KEY_ID" || -z "$AWS_SECRET_ACCESS_KEY" || -z "$R2_S3_API_ENDPOINT" ]]; then
-              echo "R2 credentials are required for the one-time compatibility bridge." >&2
-              exit 1
-            fi
-            echo "required=true" >> "$GITHUB_OUTPUT"
-            echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-            cp dist/release/Codevisor-macOS.zip dist/release/HerdMan-macOS.zip
-            shasum -a 256 dist/release/HerdMan-macOS.zip | awk '{print $1}' \
-              > dist/release/HerdMan-macOS.zip.sha256
-            echo "This release will become the permanent R2 bridge."
+          scripts/release/publish-update-artifacts.sh \
+            stable "$VERSION" "$TAG" "$BUILD_NUMBER" dist/release dist/release/RELEASE_NOTES.md
+          if [[ "${{ needs.metadata.outputs.first_bridge }}" == true ]]; then
+            marker="$(mktemp)"
+            jq -n --arg version "$VERSION" --arg tag "$TAG" \
+              '{version: $version, tag: $tag, frozen: true}' > "$marker"
+            aws s3 cp "$marker" "s3://$R2_BUCKET/migration/sparkle-bridge.json" \
+              --endpoint-url "$R2_S3_API_ENDPOINT" \
+              --content-type application/json \
+              --cache-control "public, max-age=31536000, immutable"
           fi
-      - name: Publish GitHub release assets
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          existing_tag_sha="$(git ls-remote origin "refs/tags/$TAG^{}" | awk '{print $1}')"
-          if [[ -z "$existing_tag_sha" ]]; then
-            existing_tag_sha="$(git ls-remote origin "refs/tags/$TAG" | awk '{print $1}')"
-          fi
-          main_sha="$(git ls-remote origin refs/heads/main | awk '{print $1}')"
-          if [[ -n "$existing_tag_sha" && "$existing_tag_sha" != "$GITHUB_SHA" ]]; then
-            echo "$TAG already points to $existing_tag_sha, not $GITHUB_SHA." >&2
-            exit 1
-          fi
-          if [[ -z "$existing_tag_sha" && "$main_sha" != "$GITHUB_SHA" ]]; then
-            echo "main advanced to $main_sha after this release started at $GITHUB_SHA." >&2
-            echo "Wait for that HEAD's RC and dispatch a new version." >&2
-            exit 1
-          fi
-          if [[ -z "$existing_tag_sha" ]]; then
-            git push origin "$GITHUB_SHA:refs/tags/$TAG"
-          fi
-          shopt -s nullglob
-          artifacts=(
-            dist/release/*.zip
-            dist/release/*.tar.gz
-            dist/release/*.dmg
-            dist/release/*.sha256
-          )
-          if [[ "${#artifacts[@]}" -eq 0 ]]; then
-            echo "No release artifacts were downloaded." >&2
-            exit 1
-          fi
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" "${artifacts[@]}" --clobber
-            gh release edit "$TAG" --title "$TAG" --latest
-          else
-            gh release create "$TAG" "${artifacts[@]}" \
-              --verify-tag \
-              --title "$TAG" \
-              --generate-notes \
-              --latest
-          fi
-      - name: Verify public GitHub release assets
-        shell: bash
-        run: |
-          expected=(
-            Codevisor-macOS-arm64.zip
-            Codevisor-macOS-x64.zip
-            Codevisor-arm64.dmg
-            Codevisor-x64.dmg
-            codevisor-server-darwin-arm64.tar.gz
-            codevisor-server-darwin-x64.tar.gz
-            codevisor-server-linux-arm64.tar.gz
-            codevisor-server-linux-x64.tar.gz
-          )
-          expected+=(HerdMan-macOS.zip)
-          if [[ "${{ steps.bridge.outputs.required }}" == "true" ]]; then
-            expected+=(Codevisor-macOS.zip)
-          fi
-          for name in "${expected[@]}"; do
-            for asset in "$name" "$name.sha256"; do
-              url="https://github.com/$REPOSITORY/releases/download/$TAG/$asset"
-              curl --fail --silent --show-error --location --head "$url" >/dev/null
-              echo "Verified $url"
-            done
-          done
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: ${{ env.NODE_VERSION }}
-      - name: Update Homebrew tap to GitHub assets
-        shell: bash
+      - name: Update Homebrew tap
         env:
           TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
         run: |
-          if [[ -z "$TAP_TOKEN" ]]; then
-            echo "HOMEBREW_TAP_TOKEN is required for stable releases." >&2
-            exit 1
-          fi
+          [[ -n "$TAP_TOKEN" ]] || { echo "HOMEBREW_TAP_TOKEN is required." >&2; exit 1; }
           tap_dir="$RUNNER_TEMP/homebrew-tap"
           git clone "https://x-access-token:${TAP_TOKEN}@github.com/851-labs/homebrew-tap.git" "$tap_dir"
-          VERSION="$VERSION" REPOSITORY="$REPOSITORY" ARTIFACT_DIR="dist/release" \
+          VERSION="$VERSION" REPOSITORY="$REPOSITORY" ARTIFACT_DIR=dist/release \
             node scripts/release/update-homebrew-tap.mjs "$tap_dir"
           cd "$tap_dir"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
-          if git diff --cached --quiet; then
-            echo "Homebrew tap is already up to date."
-          else
-            git commit -m "Update Codevisor to $VERSION"
-            git push
-          fi
-      - name: Publish and freeze the R2 compatibility bridge
-        if: steps.bridge.outputs.required == 'true'
-        shell: bash
+          git diff --cached --quiet || { git commit -m "Update Codevisor to $VERSION"; git push; }
+      - name: Verify Stable publication
         env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_R2_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.CLOUDFLARE_R2_SECRET_ACCESS_KEY }}
-          R2_S3_API_ENDPOINT: ${{ secrets.CLOUDFLARE_R2_S3_API_ENDPOINT }}
-          R2_BRIDGE_MODE: "1"
-        run: scripts/release/upload-r2-artifacts.sh "$VERSION" dist/release
-      - name: Verify updater sources
-        shell: bash
+          GH_TOKEN: ${{ github.token }}
         run: |
-          api_tag=""
-          for attempt in {1..12}; do
-            api_tag="$(curl --fail --silent --show-error \
-              -H 'Accept: application/vnd.github+json' \
-              -H 'X-GitHub-Api-Version: 2022-11-28' \
-              "https://api.github.com/repos/$REPOSITORY/releases/latest" | jq -r .tag_name)"
-            [[ "$api_tag" == "$TAG" ]] && break
-            echo "GitHub latest reports $api_tag; retrying ($attempt/12)."
-            sleep 10
+          gh release view "$TAG" --json body,isPrerelease \
+            --jq 'select(.isPrerelease == false and (.body | length > 0))' >/dev/null
+          curl --fail --silent --show-error https://updates.codevisor.dev/server/stable.json \
+            | jq -e --arg version "$VERSION" '.version == $version' >/dev/null
+          for arch in arm64 x64; do
+            feed="$RUNNER_TEMP/appcast-$arch.xml"
+            curl --fail --silent --show-error \
+              "https://updates.codevisor.dev/appcast-$arch.xml" --output "$feed"
+            node scripts/release/verify-appcast.mjs "$feed" "$BUILD_NUMBER" stable
           done
-          if [[ "$api_tag" != "$TAG" ]]; then
-            echo "GitHub latest reports $api_tag, expected $TAG." >&2
-            exit 1
-          fi
-          if [[ "${{ steps.bridge.outputs.required }}" == "true" ]]; then
-            bridge_version=""
-            for attempt in {1..12}; do
-              bridge_version="$(curl --fail --silent --show-error \
-                https://pub-d2d6eb72b71c4986a742c0527774c9f0.r2.dev/releases/codevisor/latest.json \
-                | jq -r .version)"
-              [[ "${bridge_version#v}" == "$VERSION" ]] && break
-              echo "R2 bridge reports $bridge_version; retrying ($attempt/12)."
-              sleep 10
-            done
-            if [[ "${bridge_version#v}" != "$VERSION" ]]; then
-              echo "R2 bridge reports $bridge_version, expected $VERSION." >&2
-              exit 1
-            fi
-          fi
 
   publish-browser-extension:
-    needs:
-      - metadata
-      - build-browser-extension
-      - publish
+    needs: [metadata, build-browser-extension, publish]
     runs-on: ubuntu-24.04
     environment: chrome-web-store-production
     permissions:

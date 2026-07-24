@@ -1,4 +1,4 @@
-name: Release candidate
+name: Alpha
 
 on:
   push:
@@ -17,7 +17,6 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       version: ${{ steps.version.outputs.version }}
-      include_compatibility_artifacts: ${{ steps.bridge.outputs.include }}
     steps:
       - name: Resolve the next stable marketing version
         id: version
@@ -39,28 +38,16 @@ jobs:
           fi
           version="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.$((BASH_REMATCH[3] + 1))"
           echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "Building RC $version for $GITHUB_SHA"
-      - name: Check whether the R2 bridge still needs a universal app
-        id: bridge
-        shell: bash
-        run: |
-          include=true
-          if curl --fail --silent --show-error --head \
-            https://pub-d2d6eb72b71c4986a742c0527774c9f0.r2.dev/releases/codevisor/bridge.json \
-            >/dev/null 2>&1; then
-            include=false
-          fi
-          echo "include=$include" >> "$GITHUB_OUTPUT"
+          echo "Building Alpha $version for $GITHUB_SHA"
 
   build:
     needs: metadata
     uses: ./.github/workflows/build-release-artifacts.yml
     with:
       version: ${{ needs.metadata.outputs.version }}
-      channel: rc
+      channel: alpha
       source_sha: ${{ github.sha }}
       artifact_retention_days: 14
-      include_compatibility_artifacts: ${{ needs.metadata.outputs.include_compatibility_artifacts == 'true' }}
     secrets:
       APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
       APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}

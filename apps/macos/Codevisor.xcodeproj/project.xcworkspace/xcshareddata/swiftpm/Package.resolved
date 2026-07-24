@@ -1,5 +1,5 @@
 {
-  "originHash" : "0380e0e9f6d46bc2b797d6317a6b6311876153a8eb9b087aa7acba4356ccb5e0",
+  "originHash" : "71b6197da902040585c68e2257253f163b36edff27f47ce2ad9b6d55eea3ba99",
   "pins" : [
     {
       "identity" : "posthog-ios",
@@ -8,6 +8,15 @@
       "state" : {
         "revision" : "179438b8e0c9a357ab0caf453577f766ffddbcb3",
         "version" : "3.59.3"
+      }
+    },
+    {
+      "identity" : "sparkle",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/sparkle-project/Sparkle.git",
+      "state" : {
+        "revision" : "d46d456107feacc80711b21847b82b07bd9fb46e",
+        "version" : "2.9.3"
       }
     }
   ],

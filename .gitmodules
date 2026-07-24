@@ -116,3 +116,6 @@
 [submodule ".repos/cua"]
 	path = .repos/cua
 	url = https://github.com/trycua/cua.git
+[submodule ".repos/Sparkle"]
+	path = .repos/Sparkle
+	url = https://github.com/sparkle-project/Sparkle.git

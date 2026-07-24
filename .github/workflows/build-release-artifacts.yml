@@ -4,31 +4,21 @@ on:
   workflow_call:
     inputs:
       version:
-        description: Numeric marketing version shared by the RC and stable build.
+        description: Numeric marketing version shared by the Alpha and Stable release.
         required: true
         type: string
       channel:
-        description: Bundle release channel (rc or stable).
+        description: Release channel (alpha).
         required: true
         type: string
       source_sha:
         description: Exact source revision to build.
         required: true
         type: string
-      reuse_run_id:
-        description: Successful same-SHA RC run whose unsigned macOS inputs can be reused.
-        required: false
-        default: ""
-        type: string
       artifact_retention_days:
         required: false
         default: 14
         type: number
-      include_compatibility_artifacts:
-        description: Build the universal zip required by the one-time R2 bridge.
-        required: false
-        default: false
-        type: boolean
     secrets:
       APPLE_CERTIFICATE_BASE64:
         required: true
@@ -56,6 +46,8 @@ permissions:
 env:
   BUN_VERSION: "1.3.13"
   NODE_VERSION: "24.x"
+  CODEVISOR_BUILD_NUMBER: ${{ github.run_number }}
+  CODEVISOR_SOURCE_REVISION: ${{ inputs.source_sha }}
 
 jobs:
   guard:
@@ -82,8 +74,8 @@ jobs:
             echo "Manual stable releases must be dispatched from main." >&2
             exit 1
           fi
-          if [[ "${{ inputs.channel }}" != "rc" && "${{ inputs.channel }}" != "stable" ]]; then
-            echo "channel must be rc or stable" >&2
+          if [[ "${{ inputs.channel }}" != "alpha" ]]; then
+            echo "release artifacts are built only once, on the alpha channel" >&2
             exit 1
           fi
 
@@ -180,23 +172,7 @@ jobs:
           bun-version: ${{ env.BUN_VERSION }}
       - name: Install dependencies
         run: bun install --frozen-lockfile
-      - name: Restore exact-SHA RC Intel runtime
-        if: inputs.reuse_run_id != ''
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          mkdir -p dist/release
-          scripts/release/download-github-artifact.sh \
-            "${{ inputs.reuse_run_id }}" \
-            codevisor-macos-x64-runtime \
-            dist/release \
-            60
-          mkdir -p dist/release/work/app-server-runtime-darwin-x64
-          tar -C dist/release/work/app-server-runtime-darwin-x64 \
-            -xzf dist/release/codevisor-app-server-runtime-darwin-x64.tar.gz
       - name: Build Intel macOS server runtime
-        if: inputs.reuse_run_id == ''
         shell: bash
         run: |
           runtime_dir="dist/release/work/app-server-runtime-darwin-x64"
@@ -232,9 +208,7 @@ jobs:
     runs-on: [self-hosted, macOS, ARM64, codevisor-macos-arm64]
     env:
       CODEVISOR_BUILD_NUMBER: ${{ github.run_number }}
-      CODEVISOR_RELEASE_CHANNEL: ${{ inputs.channel }}
       CODEVISOR_SOURCE_REVISION: ${{ inputs.source_sha }}
-      CODEVISOR_INCLUDE_COMPATIBILITY_ARTIFACTS: ${{ inputs.include_compatibility_artifacts && '1' || '0' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -253,60 +227,35 @@ jobs:
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version: ${{ env.BUN_VERSION }}
-      - name: Restore exact-SHA RC build inputs
-        if: inputs.reuse_run_id != ''
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          mkdir -p dist/release/reuse
-          scripts/release/download-github-artifact.sh \
-            "${{ inputs.reuse_run_id }}" \
-            codevisor-macos-build-inputs \
-            dist/release/reuse \
-            60
-          scripts/release/download-github-artifact.sh \
-            "${{ inputs.reuse_run_id }}" \
-            codevisor-macos-x64-runtime \
-            dist/release/reuse \
-            60
-          echo "CODEVISOR_UNSIGNED_APP_ARCHIVE=dist/release/reuse/codevisor-unsigned-app.zip" >> "$GITHUB_ENV"
-          echo "CODEVISOR_DARWIN_ARM64_RUNTIME_ARCHIVE=dist/release/reuse/codevisor-app-server-runtime-darwin-arm64.tar.gz" >> "$GITHUB_ENV"
-          echo "CODEVISOR_DARWIN_X64_RUNTIME_ARCHIVE=dist/release/reuse/codevisor-app-server-runtime-darwin-x64.tar.gz" >> "$GITHUB_ENV"
-          echo "CODEVISOR_SKIP_WEB_BUILD=1" >> "$GITHUB_ENV"
       - name: Restore GhosttyKit cache
-        if: inputs.reuse_run_id == ''
         id: ghosttykit-cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: apps/macos/Frameworks/GhosttyKit.xcframework
           key: ghosttykit-${{ hashFiles('apps/macos/scripts/build-ghostty.sh') }}
       - name: Fetch Ghostty source
-        if: inputs.reuse_run_id == '' && steps.ghosttykit-cache.outputs.cache-hit != 'true'
+        if: steps.ghosttykit-cache.outputs.cache-hit != 'true'
         run: apps/macos/scripts/build-ghostty.sh --fetch-only
       - uses: DeterminateSystems/nix-installer-action@33c9ab3ef95cd57c164d9d6eb1f9a46338538d41
-        if: inputs.reuse_run_id == '' && steps.ghosttykit-cache.outputs.cache-hit != 'true'
+        if: steps.ghosttykit-cache.outputs.cache-hit != 'true'
         with:
           determinate: true
       - name: Build GhosttyKit
-        if: inputs.reuse_run_id == '' && steps.ghosttykit-cache.outputs.cache-hit != 'true'
+        if: steps.ghosttykit-cache.outputs.cache-hit != 'true'
         run: nix develop ./.repos/ghostty -c apps/macos/scripts/build-ghostty.sh
       - name: Save GhosttyKit cache
-        if: inputs.reuse_run_id == '' && steps.ghosttykit-cache.outputs.cache-hit != 'true'
+        if: steps.ghosttykit-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: apps/macos/Frameworks/GhosttyKit.xcframework
           key: ghosttykit-${{ hashFiles('apps/macos/scripts/build-ghostty.sh') }}
       - name: Verify GhosttyKit
-        if: inputs.reuse_run_id == ''
         run: test -d apps/macos/Frameworks/GhosttyKit.xcframework
       - name: Resolve Xcode cache version
-        if: inputs.reuse_run_id == ''
         id: xcode-cache-version
         shell: bash
         run: echo "value=$(xcodebuild -version | shasum -a 256 | awk '{print $1}')" >> "$GITHUB_OUTPUT"
       - name: Restore Xcode DerivedData cache
-        if: inputs.reuse_run_id == ''
         id: xcode-cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
@@ -383,11 +332,6 @@ jobs:
           CODEVISOR_UNSIGNED_APP_ARCHIVE_OUTPUT: dist/release/build-inputs/codevisor-unsigned-app.zip
           CODEVISOR_DARWIN_ARM64_RUNTIME_ARCHIVE_OUTPUT: dist/release/build-inputs/codevisor-app-server-runtime-darwin-arm64.tar.gz
         run: |
-          if [[ -n "${{ inputs.reuse_run_id }}" ]]; then
-            scripts/release/build-macos-app.sh "${{ inputs.version }}" dist/release
-            exit 0
-          fi
-
           runtime_archive="dist/release/codevisor-app-server-runtime-darwin-x64.tar.gz"
           runtime_download_dir="$(mktemp -d "$RUNNER_TEMP/codevisor-x64-runtime.XXXXXX")"
           failure_marker="$RUNNER_TEMP/codevisor-x64-runtime-download-failed"
@@ -412,27 +356,19 @@ jobs:
           wait "$download_pid"
           trap - EXIT
       - name: Restore unsigned app before caching DerivedData
-        if: inputs.reuse_run_id == ''
         shell: bash
         run: |
           app_parent="dist/release/DerivedData/Build/Products/Release"
           rm -rf "$app_parent/Codevisor.app"
           ditto -x -k dist/release/build-inputs/codevisor-unsigned-app.zip "$app_parent"
       - name: Save Xcode DerivedData cache
-        if: inputs.reuse_run_id == '' && steps.xcode-cache.outputs.cache-hit != 'true'
+        if: steps.xcode-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: dist/release/DerivedData
           key: codevisor-xcode-${{ runner.arch }}-${{ steps.xcode-cache-version.outputs.value }}-${{ hashFiles('apps/macos/Codevisor.xcodeproj/**', 'apps/macos/Codevisor/**', 'apps/macos/Packages/**', 'apps/macos/scripts/build-ghostty.sh', 'scripts/release/build-macos-xcode.sh') }}
       - name: Build ARM macOS server archive
         run: scripts/release/build-server-archive.sh "${{ inputs.version }}" dist/release darwin-arm64 dist/release/work/app-server-runtimes/darwin-arm64
-      - name: Upload reusable exact-SHA macOS inputs
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: codevisor-macos-build-inputs
-          path: dist/release/build-inputs/*
-          if-no-files-found: error
-          retention-days: ${{ inputs.artifact_retention_days }}
       - name: Upload macOS release artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:

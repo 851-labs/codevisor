@@ -1351,6 +1351,9 @@ export const HealthResponse = Schema.Struct({
   bootId: Schema.optional(Schema.String),
   processId: Schema.optional(Schema.Number),
   appOwned: Schema.optional(Schema.Boolean),
+  buildNumber: Schema.optional(Schema.Number),
+  sourceRevision: Schema.optional(Schema.String),
+  serviceManaged: Schema.optional(Schema.Boolean),
   migration: Schema.optional(
     Schema.Struct({
       id: Schema.String,

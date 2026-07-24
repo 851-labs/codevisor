@@ -1,4 +1,4 @@
-name: Publish release candidate
+name: Publish Alpha
 
 on:
   schedule:
@@ -14,7 +14,9 @@ concurrency:
   cancel-in-progress: false
 
 env:
+  NODE_VERSION: "24.x"
   REPOSITORY: ${{ github.repository }}
+  R2_BUCKET: herdman
 
 jobs:
   publish:
@@ -24,183 +26,152 @@ jobs:
         with:
           ref: main
           fetch-depth: 0
-
-      - name: Find the unpublished RC for current main
-        id: candidate
-        shell: bash
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Resolve current Alpha build
+        id: alpha
         env:
           GH_TOKEN: ${{ github.token }}
+        shell: bash
         run: |
-          source_sha="$(gh api "repos/$REPOSITORY/commits/main" --jq .sha)"
-          rc_run_id="$(gh run list \
-            --workflow release-candidate.yml \
-            --branch main \
-            --commit "$source_sha" \
-            --status success \
-            --limit 20 \
+          source_sha="$(git rev-parse HEAD)"
+          run_id="$(gh run list --workflow release-candidate.yml --branch main \
+            --commit "$source_sha" --status success --limit 20 \
             --json databaseId,headSha \
             --jq 'map(select(.headSha == "'"$source_sha"'"))[0].databaseId // empty')"
-          if [[ -z "$rc_run_id" ]]; then
-            echo "No successful release-candidate build exists for current main $source_sha; the next hourly run will retry."
+          if [[ -z "$run_id" ]]; then
+            echo "No successful Alpha build exists for current main $source_sha."
             echo "publish=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-
-          provenance_dir="$RUNNER_TEMP/codevisor-rc-provenance"
-          gh run download "$rc_run_id" \
-            --name codevisor-release-provenance \
-            --dir "$provenance_dir"
-          provenance="$provenance_dir/release-provenance.json"
-          rc_sha="$(jq -r .source_sha "$provenance")"
-          version="$(jq -r .version "$provenance")"
-          channel="$(jq -r .channel "$provenance")"
-          build_number="$(jq -r '.build_number // empty' "$provenance")"
-          if [[ -z "$build_number" ]]; then
-            # Compatibility with an RC produced immediately before provenance
-            # began recording the caller workflow's run number.
-            build_number="$(gh api "repos/$REPOSITORY/actions/runs/$rc_run_id" --jq .run_number)"
-          fi
-          if [[ "$rc_sha" != "$source_sha" || "$channel" != "rc" \
-             || ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ \
-             || ! "$build_number" =~ ^[0-9]+$ ]]; then
-            echo "RC provenance is invalid or does not match current main." >&2
-            jq . "$provenance" >&2
+          provenance_dir="$RUNNER_TEMP/provenance"
+          gh run download "$run_id" --name codevisor-release-provenance --dir "$provenance_dir"
+          version="$(jq -r .version "$provenance_dir/release-provenance.json")"
+          channel="$(jq -r .channel "$provenance_dir/release-provenance.json")"
+          build="$(jq -r .build_number "$provenance_dir/release-provenance.json")"
+          sha="$(jq -r .source_sha "$provenance_dir/release-provenance.json")"
+          if [[ "$channel" != alpha || "$sha" != "$source_sha" || ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ || ! "$build" =~ ^[0-9]+$ ]]; then
+            echo "Invalid Alpha provenance." >&2
             exit 1
           fi
-
-          stable_tag="v$version"
-          if git ls-remote --exit-code origin "refs/tags/$stable_tag" >/dev/null 2>&1; then
-            echo "$stable_tag is already tagged as stable; refusing to publish an RC for it."
+          tag="v$version-alpha.$build"
+          if git ls-remote --exit-code origin "refs/tags/v$version" >/dev/null 2>&1; then
+            echo "Stable v$version already exists; its feed must not be replaced by Alpha."
             echo "publish=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-
-          tag="v$version-rc.$build_number"
-          expected=(
-            Codevisor-macOS-arm64.zip
-            Codevisor-macOS-x64.zip
-            Codevisor-arm64.dmg
-            Codevisor-x64.dmg
-            codevisor-server-darwin-arm64.tar.gz
-            codevisor-server-darwin-x64.tar.gz
-            codevisor-server-linux-arm64.tar.gz
-            codevisor-server-linux-x64.tar.gz
-          )
-
-          if gh release view "$tag" >/dev/null 2>&1; then
-            git fetch --force origin "refs/tags/$tag:refs/tags/$tag"
-            tag_sha="$(git rev-list -n 1 "$tag")"
-            if [[ "$tag_sha" != "$source_sha" ]]; then
-              echo "$tag already points to $tag_sha, not $source_sha; RC tags are never moved." >&2
-              exit 1
-            fi
-            release_json="$(gh release view "$tag" --json assets,isDraft,isPrerelease)"
-            complete="$(jq -r --argjson expected "$(printf '%s\n' "${expected[@]}" | jq -R . | jq -s '[.[] | ., . + ".sha256"]')" '
+          existing_tag_sha="$(git ls-remote origin "refs/tags/$tag^{}" | awk '{print $1}')"
+          if [[ -z "$existing_tag_sha" ]]; then
+            existing_tag_sha="$(git ls-remote origin "refs/tags/$tag" | awk '{print $1}')"
+          fi
+          if [[ -n "$existing_tag_sha" && "$existing_tag_sha" != "$sha" ]]; then
+            echo "$tag points to $existing_tag_sha instead of $sha." >&2
+            exit 1
+          fi
+          release_complete=false
+          if release_json="$(gh release view "$tag" --json assets,isDraft,isPrerelease 2>/dev/null)"; then
+            expected_assets='[
+              "Codevisor-macOS-arm64.zip",
+              "Codevisor-macOS-x64.zip",
+              "Codevisor-arm64.dmg",
+              "Codevisor-x64.dmg",
+              "codevisor-server-darwin-arm64.tar.gz",
+              "codevisor-server-darwin-x64.tar.gz",
+              "codevisor-server-linux-arm64.tar.gz",
+              "codevisor-server-linux-x64.tar.gz"
+            ]'
+            release_complete="$(jq -r --argjson expected "$expected_assets" '
               (.isDraft == false)
               and (.isPrerelease == true)
               and (($expected - [.assets[].name]) | length == 0)
             ' <<<"$release_json")"
-            if [[ "$complete" == "true" ]]; then
-              echo "$tag is already a complete GitHub prerelease for current main."
-              echo "publish=false" >> "$GITHUB_OUTPUT"
-              exit 0
-            fi
-            echo "Repairing incomplete prerelease $tag from RC run $rc_run_id."
-          else
-            existing_tag_sha="$(git ls-remote origin "refs/tags/$tag^{}" | awk '{print $1}')"
-            if [[ -z "$existing_tag_sha" ]]; then
-              existing_tag_sha="$(git ls-remote origin "refs/tags/$tag" | awk '{print $1}')"
-            fi
-            if [[ -n "$existing_tag_sha" && "$existing_tag_sha" != "$source_sha" ]]; then
-              echo "$tag already points to $existing_tag_sha, not $source_sha; RC tags are never moved." >&2
-              exit 1
-            fi
-            echo "Publishing $tag at current main $source_sha from RC run $rc_run_id."
           fi
-
+          feeds_complete=true
+          for arch in arm64 x64; do
+            feed="$RUNNER_TEMP/appcast-$arch.xml"
+            if ! curl --fail --silent --show-error \
+              "https://updates.codevisor.dev/appcast-$arch.xml" --output "$feed" \
+              || ! node scripts/release/verify-appcast.mjs "$feed" "$build" alpha; then
+              feeds_complete=false
+            fi
+          done
+          if [[ "$release_complete" == true && "$feeds_complete" == true ]]; then
+            echo "$tag and both Alpha feeds are already complete."
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           echo "publish=true" >> "$GITHUB_OUTPUT"
-          echo "source_sha=$source_sha" >> "$GITHUB_OUTPUT"
-          echo "rc_run_id=$rc_run_id" >> "$GITHUB_OUTPUT"
+          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "build=$build" >> "$GITHUB_OUTPUT"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
-
-      - name: Download RC artifacts
-        if: steps.candidate.outputs.publish == 'true'
-        shell: bash
+      - name: Download immutable Alpha artifacts
+        if: steps.alpha.outputs.publish == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-          RC_RUN_ID: ${{ steps.candidate.outputs.rc_run_id }}
+          RUN_ID: ${{ steps.alpha.outputs.run_id }}
         run: |
           mkdir -p dist/release
-          for name in \
-            codevisor-macos \
-            codevisor-server-linux-x64 \
-            codevisor-server-linux-arm64 \
-            codevisor-server-macos-x64; do
-            gh run download "$RC_RUN_ID" --name "$name" --dir dist/release
+          for name in codevisor-macos codevisor-server-linux-x64 codevisor-server-linux-arm64 codevisor-server-macos-x64; do
+            gh run download "$RUN_ID" --name "$name" --dir dist/release
           done
-
+      - name: Generate complete Alpha changelog
+        if: steps.alpha.outputs.publish == 'true'
+        run: |
+          node scripts/release/generate-release-notes.mjs \
+            --channel alpha \
+            --version "${{ steps.alpha.outputs.version }}-alpha.${{ steps.alpha.outputs.build }}" \
+            --commit "${{ steps.alpha.outputs.sha }}" \
+            --output dist/release/RELEASE_NOTES.md
       - name: Publish GitHub prerelease
-        if: steps.candidate.outputs.publish == 'true'
-        shell: bash
+        if: steps.alpha.outputs.publish == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-          SOURCE_SHA: ${{ steps.candidate.outputs.source_sha }}
-          TAG: ${{ steps.candidate.outputs.tag }}
+          TAG: ${{ steps.alpha.outputs.tag }}
+          SHA: ${{ steps.alpha.outputs.sha }}
         run: |
           shopt -s nullglob
-          artifacts=(
-            dist/release/*.zip
-            dist/release/*.tar.gz
-            dist/release/*.dmg
-            dist/release/*.sha256
-          )
-          if [[ "${#artifacts[@]}" -eq 0 ]]; then
-            echo "No RC artifacts were downloaded." >&2
-            exit 1
+          artifacts=(dist/release/*.zip dist/release/*.tar.gz dist/release/*.dmg dist/release/*.sha256)
+          if ! git ls-remote --exit-code origin "refs/tags/$TAG" >/dev/null 2>&1; then
+            git push origin "$SHA:refs/tags/$TAG"
           fi
-
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" "${artifacts[@]}" --clobber
-            gh release edit "$TAG" --title "$TAG" --prerelease --draft=false
+            gh release edit "$TAG" --title "$TAG" \
+              --notes-file dist/release/RELEASE_NOTES.md --prerelease
           else
             gh release create "$TAG" "${artifacts[@]}" \
-              --target "$SOURCE_SHA" \
-              --title "$TAG" \
-              --generate-notes \
-              --prerelease \
-              --latest=false
+              --verify-tag --title "$TAG" --notes-file dist/release/RELEASE_NOTES.md \
+              --prerelease --latest=false
           fi
-
-      - name: Verify published RC assets
-        if: steps.candidate.outputs.publish == 'true'
-        shell: bash
+      - name: Publish Sparkle Alpha feeds
+        if: steps.alpha.outputs.publish == 'true'
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.CLOUDFLARE_R2_SECRET_ACCESS_KEY }}
+          R2_S3_API_ENDPOINT: ${{ secrets.CLOUDFLARE_R2_S3_API_ENDPOINT }}
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: |
+          scripts/release/publish-update-artifacts.sh \
+            alpha \
+            "${{ steps.alpha.outputs.version }}" \
+            "${{ steps.alpha.outputs.tag }}" \
+            "${{ steps.alpha.outputs.build }}" \
+            dist/release \
+            dist/release/RELEASE_NOTES.md
+      - name: Verify Alpha publication
+        if: steps.alpha.outputs.publish == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ steps.candidate.outputs.tag }}
         run: |
-          release_json="$(gh release view "$TAG" --json assets,isDraft,isPrerelease)"
-          if [[ "$(jq -r .isDraft <<<"$release_json")" != "false" \
-             || "$(jq -r .isPrerelease <<<"$release_json")" != "true" ]]; then
-            echo "$TAG was not published as a GitHub prerelease." >&2
-            exit 1
-          fi
-          expected=(
-            Codevisor-macOS-arm64.zip
-            Codevisor-macOS-x64.zip
-            Codevisor-arm64.dmg
-            Codevisor-x64.dmg
-            codevisor-server-darwin-arm64.tar.gz
-            codevisor-server-darwin-x64.tar.gz
-            codevisor-server-linux-arm64.tar.gz
-            codevisor-server-linux-x64.tar.gz
-          )
-          for name in "${expected[@]}"; do
-            for asset in "$name" "$name.sha256"; do
-              if ! jq -e --arg asset "$asset" '.assets[] | select(.name == $asset)' \
-                <<<"$release_json" >/dev/null; then
-                echo "$TAG is missing $asset." >&2
-                exit 1
-              fi
-            done
+          gh release view "${{ steps.alpha.outputs.tag }}" --json isPrerelease \
+            --jq 'select(.isPrerelease == true)' >/dev/null
+          for arch in arm64 x64; do
+            feed="$RUNNER_TEMP/appcast-$arch.xml"
+            curl --fail --silent --show-error \
+              "https://updates.codevisor.dev/appcast-$arch.xml" --output "$feed"
+            node scripts/release/verify-appcast.mjs \
+              "$feed" "${{ steps.alpha.outputs.build }}" alpha
           done
-          echo "Verified $TAG as a complete GitHub prerelease."

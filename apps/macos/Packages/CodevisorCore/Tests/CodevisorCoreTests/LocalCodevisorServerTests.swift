@@ -58,6 +58,38 @@ struct LocalCodevisorServerTests {
         #expect(launches.first?.environment["CODEVISOR_TEST"] == "1")
     }
 
+    @Test("Starts and adopts the platform-managed server")
+    func startsManagedServer() async throws {
+        let entrypoint = try makeRuntimeEntrypoint(version: "0.2.0")
+        var managed = ServerHealth.running(version: "0.2.0")
+        managed.serviceManaged = true
+        managed.appOwned = true
+        let client = FakeLocalServerClient(healthResults: [
+            .failure(TestError()),
+            .success(managed)
+        ])
+        var starts = 0
+        var directLaunches = 0
+        let server = LocalCodevisorServer(
+            client: client,
+            entrypoint: entrypoint,
+            launcher: { _ in
+                directLaunches += 1
+                return Process()
+            }
+        )
+        server.configureManagedService(
+            LocalCodevisorManagedService(
+                start: { starts += 1 },
+                stop: {}
+            )
+        )
+
+        #expect(await server.ensureRunning() == .started)
+        #expect(starts == 1)
+        #expect(directLaunches == 0)
+    }
+
     @Test("Publishes blocking data-upgrade progress while waiting for health")
     func publishesDataUpgradeProgress() async throws {
         let directory = try makeTemporaryDirectory()

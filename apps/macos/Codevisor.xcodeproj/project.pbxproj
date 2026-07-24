@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		4A5350550000000000000001 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 4A5350550000000000000003 /* Sparkle */; };
 		FC8A03212FF3634D00689171 /* ACPKit in Frameworks */ = {isa = PBXBuildFile; productRef = FC8A03202FF3634D00689171 /* ACPKit */; };
 		FC8A03232FF3634D00689171 /* StreamMarkdown in Frameworks */ = {isa = PBXBuildFile; productRef = FC8A03222FF3634D00689171 /* StreamMarkdown */; };
 		FCE74E8D2FF368F000B42227 /* CodevisorCore in Frameworks */ = {isa = PBXBuildFile; productRef = FCE74E8C2FF368F000B42227 /* CodevisorCore */; };
@@ -30,6 +31,7 @@
 		000000000000000130000000 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			files = (
+				4A5350550000000000000001 /* Sparkle in Frameworks */,
 				FC8A03212FF3634D00689171 /* ACPKit in Frameworks */,
 				FC8A03232FF3634D00689171 /* StreamMarkdown in Frameworks */,
 				FCE74E8D2FF368F000B42227 /* CodevisorCore in Frameworks */,
@@ -82,6 +84,7 @@
 			);
 			name = Codevisor;
 			packageProductDependencies = (
+				4A5350550000000000000003 /* Sparkle */,
 				FC8A03202FF3634D00689171 /* ACPKit */,
 				FC8A03222FF3634D00689171 /* StreamMarkdown */,
 				FCE74E8C2FF368F000B42227 /* CodevisorCore */,
@@ -117,6 +120,7 @@
 			mainGroup = 000000000000000000000001;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
+				4A5350550000000000000002 /* XCRemoteSwiftPackageReference "Sparkle" */,
 				FC8A031D2FF3634D00689171 /* XCLocalSwiftPackageReference "Packages" */,
 			);
 			preferredProjectObjectVersion = 90;
@@ -487,7 +491,23 @@
 		};
 /* End XCLocalSwiftPackageReference section */
 
+/* Begin XCRemoteSwiftPackageReference section */
+		4A5350550000000000000002 /* XCRemoteSwiftPackageReference "Sparkle" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/sparkle-project/Sparkle.git";
+			requirement = {
+				kind = exactVersion;
+				version = 2.9.3;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
 /* Begin XCSwiftPackageProductDependency section */
+		4A5350550000000000000003 /* Sparkle */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 4A5350550000000000000002 /* XCRemoteSwiftPackageReference "Sparkle" */;
+			productName = Sparkle;
+		};
 		FC8A03202FF3634D00689171 /* ACPKit */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = ACPKit;

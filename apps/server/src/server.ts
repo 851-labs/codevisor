@@ -144,6 +144,9 @@ export interface CodevisorServerConfig {
   readonly bootId: string
   readonly processId: number
   readonly appOwned: boolean
+  readonly buildNumber?: number | undefined
+  readonly sourceRevision?: string | undefined
+  readonly serviceManaged: boolean
   readonly kind: ServerKind
   readonly host: string
   readonly port: number
@@ -361,6 +364,9 @@ export const defaultServerConfig = (
   bootId: overrides.bootId ?? "test-boot",
   processId: overrides.processId ?? process.pid,
   appOwned: overrides.appOwned ?? false,
+  buildNumber: overrides.buildNumber,
+  sourceRevision: overrides.sourceRevision,
+  serviceManaged: overrides.serviceManaged ?? false,
   kind: overrides.kind ?? "local",
   host: overrides.host ?? "127.0.0.1",
   port: overrides.port ?? 49361,
@@ -687,7 +693,10 @@ const handleRequest = async (
         database: "ready",
         bootId: config.bootId,
         processId: config.processId,
-        appOwned: config.appOwned
+        appOwned: config.appOwned,
+        buildNumber: config.buildNumber,
+        sourceRevision: config.sourceRevision,
+        serviceManaged: config.serviceManaged
       })
       return
     }

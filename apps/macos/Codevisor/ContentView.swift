@@ -6,12 +6,27 @@ import QuickLook
 @main
 struct CodevisorApp: App {
     @State private var environment: AppEnvironment
+    @State private var serverAgent: MacServerAgentController
+    @State private var sparkleUpdater: SparkleUpdateController?
 
     init() {
+        let serverAgent = MacServerAgentController()
         let environment = AppEnvironment.live()
+        if !CodevisorAppVariant.isDevelopment {
+            environment.localServer?.configureManagedService(serverAgent.managedService)
+        }
+        let sparkleUpdater = CodevisorAppVariant.isDevelopment
+            ? nil
+            : SparkleUpdateController(
+                model: environment.appUpdate,
+                localServer: environment.localServer,
+                serverAgent: serverAgent
+            )
         AnalyticsClient.shared.configureFromMainBundle(enabled: environment.settings.shareAnalytics)
         AnalyticsClient.shared.captureAppOpenedOnce()
         _environment = State(initialValue: environment)
+        _serverAgent = State(initialValue: serverAgent)
+        _sparkleUpdater = State(initialValue: sparkleUpdater)
         ChatNotificationManager.shared.configure(settings: environment.settings)
     }
 
@@ -58,11 +73,6 @@ struct CodevisorApp: App {
 /// The top-level split view: collapsible sidebar plus the active session or the
 /// new-chat page.
 struct RootView: View {
-    // GitHub's anonymous API quota is shared by clients behind one public IP.
-    // Check immediately at launch, then only a few times per day; the manual
-    // check remains immediate.
-    private static let appUpdateCheckInterval: Duration = .seconds(6 * 60 * 60)
-
     @Environment(AppEnvironment.self) private var environment
     @Environment(\.theme) private var theme
     @Environment(\.controlActiveState) private var controlActiveState
@@ -138,23 +148,14 @@ struct RootView: View {
                 store?.setWindowFocused(controlActiveState == .key)
             }
             if !AppPreview.isRunning {
-                environment.appUpdate.installHandler = { [environment] release in
-                    try await AppUpdateInstaller(environment: environment).install(release)
-                }
                 // A remote client updated this machine's server: the bundled
-                // server can't swap the .app bundle it lives inside, so it
-                // hands the update back here. Run the full app update (swap
-                // bundle + relaunch), which brings a fresh bundled server. On
-                // failure installUpdate returns; restart the old server so the
-                // machine isn't left without one.
+                // server hands the update back here. Sparkle presents the
+                // signed app update and replaces app + bundled server together.
                 environment.localServer?.onUpdateRequested = { [environment] in
                     Task { @MainActor in
                         await environment.appUpdate.checkForUpdates()
-                        await environment.appUpdate.installUpdate()
-                        await environment.localServer?.ensureRunning()
                     }
                 }
-                await runAppUpdateChecks()
             }
         }
         // codevisor://add-machine deeplinks, printed by `codevisor setup` on a
@@ -181,15 +182,6 @@ struct RootView: View {
                 // so opening the terminal later can't re-enter its dispatch_once.
                 TerminalRuntime.prewarm()
             }
-        }
-    }
-
-    private func runAppUpdateChecks() async {
-        await environment.appUpdate.checkForUpdates()
-        while !Task.isCancelled {
-            try? await Task.sleep(for: Self.appUpdateCheckInterval)
-            guard !Task.isCancelled else { return }
-            await environment.appUpdate.checkForUpdatesInBackground()
         }
     }
 

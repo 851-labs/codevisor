@@ -18,6 +18,7 @@ Options:
   --boot-id <id>           Unique identity for this server startup
   --app-owned <0|1>        Tie this server to a desktop app
   --owner-pid <pid>        Owning desktop app process identifier
+  --service-managed <0|1>  Run as the desktop app's managed background service
   -h, --help               Print this help and exit
 `
 

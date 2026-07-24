@@ -3,14 +3,16 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import {
-  DEFAULT_GITHUB_REPOSITORY,
   DEFAULT_LEGACY_RELEASE_BASE_URL,
+  DEFAULT_STABLE_SERVER_MANIFEST_URL,
   fetchLatestGitHubServerRelease,
+  fetchStableServerRelease,
   fetchLegacyServerRelease,
   fetchLatestServerRelease,
   parseSha256,
   sha256File,
-  serverReleaseFromGitHub
+  serverReleaseFromGitHub,
+  serverReleaseFromManifest
 } from "./release-source.js"
 
 const temporaryRoots: Array<string> = []
@@ -77,7 +79,7 @@ describe("serverReleaseFromGitHub", () => {
 })
 
 describe("GitHub and compatibility fetches", () => {
-  it("uses the production GitHub defaults and accepts a stable response", async () => {
+  it("fetches and parses a stable GitHub release", async () => {
     const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(
       new Response(
         JSON.stringify({
@@ -93,25 +95,56 @@ describe("GitHub and compatibility fetches", () => {
         { status: 200, headers: { "Content-Type": "application/json" } }
       )
     )
-    vi.stubGlobal("fetch", fetch)
 
-    await expect(fetchLatestServerRelease({ target: "linux-x64" })).resolves.toEqual({
+    await expect(
+      fetchLatestGitHubServerRelease({
+        repository: "example/codevisor",
+        target: "linux-x64",
+        fetch
+      })
+    ).resolves.toEqual({
       version: "0.4.0",
       archiveURL: "https://github.example/server.tar.gz",
       checksumURL: undefined,
       releasePageURL: undefined
     })
+  })
+
+  it("uses the first-party stable manifest by default", async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          version: "0.4.0",
+          targets: {
+            "linux-x64": {
+              archiveURL: "https://updates.example/server.tar.gz",
+              checksumURL: "https://updates.example/server.tar.gz.sha256"
+            }
+          }
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      )
+    )
+    vi.stubGlobal("fetch", fetch)
+
+    await expect(fetchLatestServerRelease({ target: "linux-x64" })).resolves.toEqual({
+      version: "0.4.0",
+      archiveURL: "https://updates.example/server.tar.gz",
+      checksumURL: "https://updates.example/server.tar.gz.sha256",
+      releasePageURL: undefined
+    })
     expect(fetch).toHaveBeenCalledWith(
-      `https://api.github.com/repos/${DEFAULT_GITHUB_REPOSITORY}/releases/latest`,
+      DEFAULT_STABLE_SERVER_MANIFEST_URL,
       expect.objectContaining({
-        headers: expect.objectContaining({ "User-Agent": expect.any(String) })
+        headers: expect.objectContaining({ "cache-control": "no-cache" })
       })
     )
   })
 
-  it("falls back to the frozen compatibility manifest when GitHub fails", async () => {
+  it("falls back through GitHub to the frozen bridge", async () => {
     const fetch = vi
       .fn<typeof globalThis.fetch>()
+      .mockResolvedValueOnce(new Response("unavailable", { status: 503 }))
       .mockResolvedValueOnce(new Response("rate limited", { status: 403 }))
       .mockResolvedValueOnce(
         new Response('{"version":"v0.3.0"}', {
@@ -133,6 +166,60 @@ describe("GitHub and compatibility fetches", () => {
       checksumURL:
         "https://releases.example/codevisor/v0.3.0/codevisor-server-linux-x64.tar.gz.sha256"
     })
+  })
+
+  it("uses GitHub when the first-party manifest has no matching target", async () => {
+    const fetch = vi
+      .fn<typeof globalThis.fetch>()
+      .mockResolvedValueOnce(new Response('{"version":"0.4.0","targets":{}}', { status: 200 }))
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            tag_name: "v0.4.0",
+            assets: [
+              {
+                name: "codevisor-server-linux-x64.tar.gz",
+                browser_download_url: "https://github.example/server.tar.gz"
+              }
+            ]
+          }),
+          { status: 200 }
+        )
+      )
+
+    await expect(
+      fetchLatestServerRelease({
+        repository: "example/codevisor",
+        target: "linux-x64",
+        fetch
+      })
+    ).resolves.toEqual({
+      version: "0.4.0",
+      archiveURL: "https://github.example/server.tar.gz",
+      checksumURL: undefined,
+      releasePageURL: undefined
+    })
+  })
+
+  it("uses the bridge when GitHub returns no matching target", async () => {
+    const fetch = vi
+      .fn<typeof globalThis.fetch>()
+      .mockResolvedValueOnce(new Response('{"version":"0.4.0","targets":{}}', { status: 200 }))
+      .mockResolvedValueOnce(
+        new Response('{"tag_name":"v0.4.0","assets":[]}', {
+          status: 200,
+          headers: { "Content-Type": "application/json" }
+        })
+      )
+      .mockResolvedValueOnce(new Response('{"version":"v0.3.0"}', { status: 200 }))
+
+    await expect(
+      fetchLatestServerRelease({
+        legacyBaseURL: "https://releases.example/codevisor",
+        target: "linux-x64",
+        fetch
+      })
+    ).resolves.toMatchObject({ version: "0.3.0" })
   })
 
   it("handles missing and malformed compatibility manifests", async () => {
@@ -163,12 +250,13 @@ describe("GitHub and compatibility fetches", () => {
     const fetch = vi
       .fn<typeof globalThis.fetch>()
       .mockResolvedValueOnce(new Response("unavailable", { status: 503 }))
+      .mockResolvedValueOnce(new Response("unavailable", { status: 503 }))
       .mockResolvedValueOnce(new Response('{"version":"0.3.0"}', { status: 200 }))
     vi.stubGlobal("fetch", fetch)
 
     await fetchLatestServerRelease({ target: "linux-x64" })
 
-    expect(fetch.mock.calls[1]?.[0]).toBe(`${DEFAULT_LEGACY_RELEASE_BASE_URL}/latest.json`)
+    expect(fetch.mock.calls[2]?.[0]).toBe(`${DEFAULT_LEGACY_RELEASE_BASE_URL}/latest.json`)
   })
 
   it("exposes the lower-level GitHub error", async () => {
@@ -181,6 +269,37 @@ describe("GitHub and compatibility fetches", () => {
           .mockResolvedValue(new Response("no", { status: 500 }))
       })
     ).rejects.toThrow("GitHub release lookup failed: HTTP 500")
+  })
+
+  it("rejects a malformed first-party manifest", async () => {
+    await expect(
+      fetchStableServerRelease({
+        target: "linux-x64",
+        fetch: vi
+          .fn<typeof globalThis.fetch>()
+          .mockResolvedValue(new Response('{"version":"0.4.0","targets":{}}', { status: 200 }))
+      })
+    ).resolves.toBeUndefined()
+  })
+
+  it("accepts optional first-party release metadata", () => {
+    expect(
+      serverReleaseFromManifest(
+        {
+          version: "v0.4.0",
+          releasePageURL: "https://codevisor.dev/releases/0.4.0",
+          targets: {
+            "linux-x64": { archiveURL: "https://updates.example/server.tar.gz" }
+          }
+        },
+        "linux-x64"
+      )
+    ).toEqual({
+      version: "0.4.0",
+      archiveURL: "https://updates.example/server.tar.gz",
+      checksumURL: undefined,
+      releasePageURL: "https://codevisor.dev/releases/0.4.0"
+    })
   })
 })
 

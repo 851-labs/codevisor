@@ -1,6 +1,6 @@
 # Weekly insurance for the GhosttyKit and Xcode caches. Every main push now
 # warms these through release-candidate.yml, so a second push-triggered build
-# would only duplicate the signed RC build.
+# would only duplicate the signed Alpha build.
 #
 # GitHub Actions cache scoping means a cache saved during a tag-triggered
 # release run is only visible to that same tag ref — every new release tag
@@ -8,7 +8,7 @@
 # saved from the default branch, however, are visible to ALL refs, so this
 # workflow builds and saves the cache from main and release runs restore it.
 #
-# The main-push RC workflow owns normal cache writes; this schedule only keeps
+# The main-push Alpha workflow owns normal cache writes; this schedule only keeps
 # them alive during quiet weeks.
 name: macOS Build Caches
 

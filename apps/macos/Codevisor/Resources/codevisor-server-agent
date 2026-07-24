@@ -1,0 +1,42 @@
+#!/bin/bash
+set -euo pipefail
+
+resources_dir="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+case "$(uname -m)" in
+  arm64) target="darwin-arm64" ;;
+  x86_64) target="darwin-x64" ;;
+  *) exit 78 ;;
+esac
+
+runtime_dir="$resources_dir/server/$target"
+node_bin="$runtime_dir/bin/node"
+entrypoint="$runtime_dir/main.js"
+data_dir="$HOME/.codevisor/data"
+logs_dir="$HOME/.codevisor/logs"
+database_path="$data_dir/codevisor-server.sqlite"
+upgrade_status_path="$data_dir/data-upgrade.json"
+update_request_path="$data_dir/app-update-request.json"
+
+if [[ ! -x "$node_bin" || ! -f "$entrypoint" ]]; then
+  exit 78
+fi
+
+mkdir -p "$data_dir" "$logs_dir"
+login_path="$(/bin/zsh -lic 'printf %s "$PATH"' 2>/dev/null || true)"
+if [[ -n "$login_path" ]]; then
+  export PATH="$login_path"
+fi
+export CODEVISOR_APP_HOSTED=1
+export CODEVISOR_APP_UPDATE_REQUEST_PATH="$update_request_path"
+
+computer_name="$(/usr/sbin/scutil --get ComputerName 2>/dev/null || /bin/hostname)"
+exec -a codevisor-server "$node_bin" "$entrypoint" serve \
+  --host 0.0.0.0 \
+  --port 49361 \
+  --db "$database_path" \
+  --upgrade-status "$upgrade_status_path" \
+  --auth token \
+  --kind local \
+  --name "$computer_name" \
+  --boot-id "$(/usr/bin/uuidgen)" \
+  --service-managed 1

@@ -66,6 +66,21 @@ struct LocalCodevisorServerProcessConfiguration: Equatable {
     var arguments: [String]
 }
 
+/// Platform-owned lifecycle hooks. The macOS app supplies an SMAppService
+/// LaunchAgent; tests and development omit it and keep the direct child path.
+public struct LocalCodevisorManagedService {
+    public var start: @MainActor () async throws -> Void
+    public var stop: @MainActor () async throws -> Void
+
+    public init(
+        start: @escaping @MainActor () async throws -> Void,
+        stop: @escaping @MainActor () async throws -> Void
+    ) {
+        self.start = start
+        self.stop = stop
+    }
+}
+
 @MainActor
 @Observable
 public final class LocalCodevisorServer {
@@ -89,6 +104,8 @@ public final class LocalCodevisorServer {
     /// updater backup or stale process from becoming the next launch's server.
     private var process: Process?
     private var activeBootId: String?
+    private var managedService: LocalCodevisorManagedService?
+    private var updateRequestMonitor: Task<Void, Never>?
     /// In-flight `ensureRunning()`; concurrent callers (onboarding and the
     /// root view both prepare the machine on first launch) join it instead of
     /// racing past `currentHealth()` and double-launching the server.
@@ -136,6 +153,10 @@ public final class LocalCodevisorServer {
         self.staleListenerTerminator = staleListenerTerminator
     }
 
+    public func configureManagedService(_ service: LocalCodevisorManagedService) {
+        managedService = service
+    }
+
     @discardableResult
     public func ensureRunning() async -> LocalCodevisorServerState {
         if let ensureTask {
@@ -164,6 +185,15 @@ public final class LocalCodevisorServer {
                 return state
             }
 
+            if managedService != nil,
+               health.serviceManaged == true,
+               healthMatchesBundledRuntime(health) {
+                startUpdateRequestMonitor()
+                dataUpgradeProgress = nil
+                state = .alreadyRunning
+                return state
+            }
+
             // Development runs deliberately use the standalone server started
             // by `bun run dev`; it has no bundled VERSION and is not app-owned.
             // Production app boots never adopt an unowned or previous app's
@@ -174,6 +204,9 @@ public final class LocalCodevisorServer {
                 return state
             }
 
+            if health.serviceManaged == true {
+                try? await managedService?.stop()
+            }
             let stopped = await stopStaleServer()
             guard stopped else {
                 state = .unavailable(
@@ -197,6 +230,25 @@ public final class LocalCodevisorServer {
         // below opens the database at the canonical path.
         if databasePath == Self.defaultDatabasePath() {
             Self.migrateLegacyServerData()
+        }
+
+        if let managedService {
+            do {
+                try await managedService.start()
+                startUpdateRequestMonitor()
+                return await waitUntilHealthy(
+                    process: nil,
+                    expectedBootId: nil,
+                    requiresBundledIdentity: true
+                )
+            } catch {
+                // A user may disable the background item in System Settings.
+                // Keep the app functional with the old child-process lifecycle
+                // and scope the failure to durability rather than the server.
+                Log.server.error(
+                    "Managed server unavailable; using app-owned fallback: \(String(describing: error), privacy: .public)"
+                )
+            }
         }
 
         do {
@@ -234,6 +286,16 @@ public final class LocalCodevisorServer {
             state = .unavailable(String(describing: error))
             return state
         }
+    }
+
+    /// Stops launchd ownership before Sparkle replaces the bundle, then waits
+    /// for the old runtime to release its executable and database lease.
+    @discardableResult
+    public func prepareForAppUpdate() async -> Bool {
+        updateRequestMonitor?.cancel()
+        updateRequestMonitor = nil
+        try? await managedService?.stop()
+        return await shutdown()
     }
 
     /// Stops the running local server so a newer bundled runtime can take over
@@ -282,6 +344,20 @@ public final class LocalCodevisorServer {
         state = .idle
     }
 
+    private func startUpdateRequestMonitor() {
+        guard managedService != nil, updateRequestMonitor == nil else { return }
+        let requestURL = Self.defaultAppUpdateRequestURL()
+        updateRequestMonitor = Task { [weak self] in
+            while !Task.isCancelled {
+                if FileManager.default.fileExists(atPath: requestURL.path) {
+                    try? FileManager.default.removeItem(at: requestURL)
+                    self?.onUpdateRequested?()
+                }
+                try? await Task.sleep(for: .seconds(1))
+            }
+        }
+    }
+
     /// Watches the launched server for the update-handoff exit status, hopping
     /// to the main actor to invoke `onUpdateRequested`. Any other exit (a
     /// normal shutdown SIGTERM, a crash) is ignored — only the agreed status
@@ -322,6 +398,21 @@ public final class LocalCodevisorServer {
         }
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private func healthMatchesBundledRuntime(_ health: ServerHealth) -> Bool {
+        guard let version = bundledServerVersion(), health.version == version else {
+            return false
+        }
+        if let expectedBuild = AppUpdateModel.bundleBuildNumber(),
+           health.buildNumber != expectedBuild {
+            return false
+        }
+        if let expectedRevision = AppUpdateModel.bundleSourceRevision(),
+           health.sourceRevision != expectedRevision {
+            return false
+        }
+        return true
     }
 
     /// Stops a server owned by a previous app boot. The shutdown path first
@@ -405,7 +496,8 @@ public final class LocalCodevisorServer {
 
     private func waitUntilHealthy(
         process: Process?,
-        expectedBootId: String?
+        expectedBootId: String?,
+        requiresBundledIdentity: Bool = false
     ) async -> LocalCodevisorServerState {
         // Breaking data upgrades are allowed to take minutes. Progress comes
         // from the sidecar, so this wait is bounded generously without making
@@ -416,6 +508,14 @@ public final class LocalCodevisorServer {
                 guard expectedBootId == nil || health.bootId == expectedBootId else {
                     state = .unavailable(
                         "A different Codevisor server answered while the local server was starting."
+                    )
+                    return state
+                }
+                guard !requiresBundledIdentity || (
+                    health.serviceManaged == true && healthMatchesBundledRuntime(health)
+                ) else {
+                    state = .unavailable(
+                        "The local server does not match this Codevisor build."
                     )
                     return state
                 }
@@ -608,6 +708,11 @@ public final class LocalCodevisorServer {
 
     public static func defaultDataUpgradeStatusURL() -> URL {
         CodevisorAppVariant.serverDataDirectoryURL().appendingPathComponent("data-upgrade.json")
+    }
+
+    public static func defaultAppUpdateRequestURL() -> URL {
+        CodevisorAppVariant.serverDataDirectoryURL()
+            .appendingPathComponent("app-update-request.json")
     }
 
     /// One-time move of server state from the pre-canonical Application

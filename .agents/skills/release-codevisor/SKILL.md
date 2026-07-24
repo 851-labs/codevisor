@@ -1,18 +1,21 @@
 ---
 name: release-codevisor
-description: Cut and monitor a new Codevisor release from the successful release candidate at current main HEAD. Use when the user asks to publish, release, or cut a new Codevisor version.
+description: Promote the successful Alpha artifact set at current Codevisor main HEAD to a Stable release, with a complete changelog and end-to-end publication verification. Use when the user asks to publish, release, or cut a new Codevisor version.
 ---
 
 # Release Codevisor
 
-Codevisor stable releases are manually dispatched from `main`. The workflow
-requires a successful same-SHA release candidate, rebuilds the signed stable
-artifacts from that RC's unsigned inputs, rechecks that `main` has not advanced,
-then creates the immutable version tag and GitHub release. Do not create or
-push the version tag yourself.
+Stable is a promotion, never a rebuild. The `Alpha` workflow creates the only
+signed and notarized app/server artifact set for a commit. `Publish Alpha`
+publishes those bytes to the Alpha Sparkle channel. `Release` attaches the same
+bytes to the Stable tag, advances the Stable Sparkle and Linux manifests,
+updates Homebrew, and publishes the Chrome extension.
 
-Fetch current `main`, verify the working tree is not hiding local release work,
-and identify the successful Release candidate run for `origin/main`:
+Do not create, move, or push a version tag manually. The workflow owns the tag.
+
+## Prepare
+
+Require a clean release scope and current remote state:
 
 ```sh
 git status --short
@@ -21,17 +24,55 @@ main_sha="$(git rev-parse origin/main)"
 gh run list --workflow release-candidate.yml --commit "$main_sha" --status success --limit 5
 ```
 
-Confirm the requested numeric version, make sure its tag does not already point
-elsewhere, then dispatch the stable release on `main`:
+Inspect the successful run's `codevisor-release-provenance` artifact. It must
+say `channel: alpha`, use `main_sha`, and contain the numeric version and build
+number. Also require a published `vVERSION-alpha.BUILD` prerelease for that
+provenance. If the Alpha publisher has not run, dispatch
+`publish-release-candidate.yml` and monitor it first.
+
+Generate the prospective Stable notes locally:
 
 ```sh
-git ls-remote --tags origin refs/tags/v0.1.0 refs/tags/v0.1.0^{}
-gh workflow run release.yml --ref main -f version=0.1.0
+node scripts/release/generate-release-notes.mjs \
+  --channel stable \
+  --version VERSION \
+  --commit "$main_sha" \
+  --output /tmp/codevisor-release-notes.md
 ```
 
-Monitor the resulting Release workflow through completion. Verify its GitHub
-assets, signatures/staples, latest-release API result, Homebrew update, and (for
-the first GitHub-aware release only) frozen R2 bridge. If it fails before
-tagging, fix `main`, wait for the new HEAD's RC, and dispatch the version from
-that RC's provenance. Never move or replace an existing release tag without
-explicit user authorization.
+Read the notes. Every non-merge commit since the previous Stable tag must
+appear exactly once. Fix the generator or commit subjects before releasing if
+coverage is incomplete; never substitute GitHub's automatic notes.
+
+## Promote
+
+Confirm the numeric version and ensure its immutable tag is unused:
+
+```sh
+git ls-remote --tags origin refs/tags/vVERSION refs/tags/vVERSION^{}
+gh workflow run release.yml --ref main -f version=VERSION
+```
+
+Monitor the resulting `Release` workflow through completion.
+
+## Verify
+
+Verify all of the following before reporting success:
+
+- `vVERSION` points to the original Alpha source SHA.
+- The Stable macOS ZIP SHA-256 values equal the corresponding Alpha ZIP
+  SHA-256 values byte-for-byte.
+- The GitHub release body equals the generated changelog and is non-empty.
+- Both Sparkle appcasts contain the promoted build without an Alpha channel,
+  and the enclosures have valid Ed25519 signatures.
+- `https://updates.codevisor.dev/server/stable.json` reports `VERSION` and all
+  four server targets.
+- macOS artifacts are Developer ID signed, notarized, and stapled.
+- Homebrew points to the same Stable artifacts and keeps `auto_updates true`.
+- The Chrome Web Store job succeeded.
+- The first Sparkle migration release is GitHub `latest`; later Stable
+  releases do not move that bridge pointer.
+
+If publication fails before tagging, fix `main`, wait for the new HEAD's Alpha,
+and dispatch the next unused version. If it fails after tagging, repair the
+same release idempotently without moving the tag or rebuilding artifacts.

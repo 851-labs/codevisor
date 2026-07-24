@@ -554,10 +554,10 @@ struct GeneralSettingsView: View {
             }
 
             Section {
-                Toggle(isOn: betaUpdatesEnabled) {
+                Toggle(isOn: alphaUpdatesEnabled) {
                     VStack(alignment: .leading, spacing: 3) {
-                        Text("Beta tester mode")
-                        Text("Receive release candidates in addition to stable Codevisor updates.")
+                        Text("Alpha updates")
+                        Text("Receive Alpha builds in addition to stable Codevisor updates.")
                             .font(.callout)
                             .foregroundStyle(.secondary)
                     }
@@ -613,11 +613,11 @@ struct GeneralSettingsView: View {
         )
     }
 
-    private var betaUpdatesEnabled: Binding<Bool> {
+    private var alphaUpdatesEnabled: Binding<Bool> {
         Binding(
-            get: { environment.settings.betaUpdatesEnabled },
+            get: { environment.settings.alphaUpdatesEnabled },
             set: { enabled in
-                environment.setBetaUpdatesEnabled(enabled)
+                environment.setAlphaUpdatesEnabled(enabled)
                 Task { await environment.appUpdate.checkForUpdates() }
             }
         )

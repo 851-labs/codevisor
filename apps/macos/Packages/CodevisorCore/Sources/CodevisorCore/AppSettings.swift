@@ -14,10 +14,8 @@ public struct AppSettings: Sendable, Codable, Equatable {
     /// events. Content such as prompts, responses, code, paths, and terminal
     /// commands must never be included in those events.
     public var shareAnalytics: Bool
-    /// Opts this installation into GitHub prerelease builds. Stable remains
-    /// the default so existing and newly installed clients never follow RCs
-    /// unless the user explicitly enables them.
-    public var betaUpdatesEnabled: Bool
+    /// Opts this installation into signed Alpha builds in addition to Stable.
+    public var alphaUpdatesEnabled: Bool
     /// Harness ids the user has explicitly turned off. A harness is "enabled"
     /// (shown in the composer picker) when its id is not in this set, so the
     /// default — an empty set — enables every installed harness.
@@ -42,7 +40,7 @@ public struct AppSettings: Sendable, Codable, Equatable {
         hasCompletedOnboarding: Bool = false,
         importExternalSessions: Bool = false,
         shareAnalytics: Bool = false,
-        betaUpdatesEnabled: Bool = false,
+        alphaUpdatesEnabled: Bool = false,
         disabledHarnessIds: Set<String> = [],
         themeMode: ThemeMode = .system,
         lightThemeId: String = ThemeCatalog.systemLightID,
@@ -56,7 +54,7 @@ public struct AppSettings: Sendable, Codable, Equatable {
         self.hasCompletedOnboarding = hasCompletedOnboarding
         self.importExternalSessions = importExternalSessions
         self.shareAnalytics = shareAnalytics
-        self.betaUpdatesEnabled = betaUpdatesEnabled
+        self.alphaUpdatesEnabled = alphaUpdatesEnabled
         self.disabledHarnessIds = disabledHarnessIds
         self.themeMode = themeMode
         self.lightThemeId = lightThemeId
@@ -69,7 +67,9 @@ public struct AppSettings: Sendable, Codable, Equatable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case hasCompletedOnboarding, importExternalSessions, shareAnalytics, betaUpdatesEnabled
+        case hasCompletedOnboarding, importExternalSessions, shareAnalytics, alphaUpdatesEnabled
+        /// Read-only migration key written by the former custom updater.
+        case betaUpdatesEnabled
         case disabledHarnessIds
         case themeMode, lightThemeId, darkThemeId
         case notificationsEnabled, systemNotificationsEnabled, notificationSoundsEnabled
@@ -85,7 +85,10 @@ public struct AppSettings: Sendable, Codable, Equatable {
         // remain disabled until the final onboarding step is completed.
         shareAnalytics = try container.decodeIfPresent(Bool.self, forKey: .shareAnalytics)
             ?? hasCompletedOnboarding
-        betaUpdatesEnabled = try container.decodeIfPresent(Bool.self, forKey: .betaUpdatesEnabled) ?? false
+        alphaUpdatesEnabled =
+            try container.decodeIfPresent(Bool.self, forKey: .alphaUpdatesEnabled)
+            ?? container.decodeIfPresent(Bool.self, forKey: .betaUpdatesEnabled)
+            ?? false
         disabledHarnessIds = try container.decodeIfPresent(Set<String>.self, forKey: .disabledHarnessIds) ?? []
         themeMode = try container.decodeIfPresent(ThemeMode.self, forKey: .themeMode) ?? .system
         lightThemeId = try container.decodeIfPresent(String.self, forKey: .lightThemeId) ?? ThemeCatalog.systemLightID
@@ -101,6 +104,23 @@ public struct AppSettings: Sendable, Codable, Equatable {
             String.self,
             forKey: .actionRequiredSoundPath
         ) ?? Self.defaultNotificationSoundPath
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(hasCompletedOnboarding, forKey: .hasCompletedOnboarding)
+        try container.encode(importExternalSessions, forKey: .importExternalSessions)
+        try container.encode(shareAnalytics, forKey: .shareAnalytics)
+        try container.encode(alphaUpdatesEnabled, forKey: .alphaUpdatesEnabled)
+        try container.encode(disabledHarnessIds, forKey: .disabledHarnessIds)
+        try container.encode(themeMode, forKey: .themeMode)
+        try container.encode(lightThemeId, forKey: .lightThemeId)
+        try container.encode(darkThemeId, forKey: .darkThemeId)
+        try container.encode(notificationsEnabled, forKey: .notificationsEnabled)
+        try container.encode(systemNotificationsEnabled, forKey: .systemNotificationsEnabled)
+        try container.encode(notificationSoundsEnabled, forKey: .notificationSoundsEnabled)
+        try container.encode(chatFinishedSoundPath, forKey: .chatFinishedSoundPath)
+        try container.encode(actionRequiredSoundPath, forKey: .actionRequiredSoundPath)
     }
 }
 
@@ -136,7 +156,7 @@ public final class AppSettingsModel {
     public var hasCompletedOnboarding: Bool { settings.hasCompletedOnboarding }
     public var importExternalSessions: Bool { settings.importExternalSessions }
     public var shareAnalytics: Bool { settings.shareAnalytics }
-    public var betaUpdatesEnabled: Bool { settings.betaUpdatesEnabled }
+    public var alphaUpdatesEnabled: Bool { settings.alphaUpdatesEnabled }
 
     /// Whether a harness is enabled (not turned off by the user).
     public func isHarnessEnabled(_ id: String) -> Bool {
@@ -176,8 +196,8 @@ public final class AppSettingsModel {
         persist()
     }
 
-    public func setBetaUpdatesEnabled(_ value: Bool) {
-        settings.betaUpdatesEnabled = value
+    public func setAlphaUpdatesEnabled(_ value: Bool) {
+        settings.alphaUpdatesEnabled = value
         persist()
     }
 

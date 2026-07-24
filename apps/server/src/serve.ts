@@ -188,6 +188,49 @@ export const bundledVersion = (): string | undefined => {
   return version.length > 0 ? version : undefined
 }
 
+export const bundledBuildMetadata = (): {
+  readonly buildNumber?: number
+  readonly sourceRevision?: string
+} => {
+  const metadataPath = join(dirname(fileURLToPath(import.meta.url)), "BUILD.json")
+  if (!existsSync(metadataPath)) return {}
+  try {
+    const value = JSON.parse(readFileSync(metadataPath, "utf8")) as {
+      readonly buildNumber?: unknown
+      readonly sourceRevision?: unknown
+    }
+    const buildNumber =
+      typeof value.buildNumber === "number" && Number.isSafeInteger(value.buildNumber)
+        ? value.buildNumber
+        : undefined
+    const sourceRevision =
+      typeof value.sourceRevision === "string" && value.sourceRevision.length > 0
+        ? value.sourceRevision
+        : undefined
+    return {
+      ...(buildNumber === undefined ? {} : { buildNumber }),
+      ...(sourceRevision === undefined ? {} : { sourceRevision })
+    }
+  } catch {
+    return {}
+  }
+}
+
+const writeAppUpdateRequest = (path: string, version: string): void => {
+  mkdirSync(dirname(path), { recursive: true })
+  const temporary = `${path}.${process.pid}.tmp`
+  writeFileSync(
+    temporary,
+    `${JSON.stringify({
+      version,
+      requestedAt: new Date().toISOString(),
+      pid: process.pid
+    })}\n`,
+    { encoding: "utf8", mode: 0o600 }
+  )
+  renameSync(temporary, path)
+}
+
 const GITHUB_RELEASE_REPOSITORY =
   process.env.CODEVISOR_GITHUB_REPOSITORY ?? DEFAULT_GITHUB_REPOSITORY
 
@@ -271,6 +314,11 @@ const makeSelfUpdater = (options: {
     // status the app is watching for.
     if (process.env.CODEVISOR_APP_HOSTED === "1" || process.env.HERDMAN_APP_HOSTED === "1") {
       console.log("Handing update off to the host macOS app")
+      const requestPath = process.env.CODEVISOR_APP_UPDATE_REQUEST_PATH
+      if (requestPath !== undefined && requestPath.length > 0) {
+        writeAppUpdateRequest(requestPath, info.latestVersion)
+        return
+      }
       setTimeout(() => process.exit(APP_UPDATE_HANDOFF_EXIT_CODE), 300)
       return
     }
@@ -470,11 +518,13 @@ export const runServe = (args: Record<string, string>): Promise<void> => {
       .filter((origin) => origin.length > 0)
     const databasePath = args.db ?? defaultDatabasePath()
     const bootId = args["boot-id"] ?? randomUUID()
-    const appOwned = args["app-owned"] === "1"
+    const serviceManaged = args["service-managed"] === "1"
+    const appOwned = args["app-owned"] === "1" || serviceManaged
     const ownerPid = parseProcessId(args["owner-pid"])
-    if (appOwned && ownerPid === undefined) {
+    if (appOwned && !serviceManaged && ownerPid === undefined) {
       throw new Error("An app-owned server requires --owner-pid")
     }
+    const buildMetadata = bundledBuildMetadata()
     // The canonical ~/.codevisor/data directory does not exist on first start
     // (unlike the old tmpdir default, which always did).
     mkdirSync(dirname(databasePath), { recursive: true })
@@ -679,6 +729,8 @@ export const runServe = (args: Record<string, string>): Promise<void> => {
         bootId,
         processId: process.pid,
         appOwned,
+        serviceManaged,
+        ...buildMetadata,
         ...(version === undefined ? {} : { version }),
         ...(corsOrigins.length === 0 ? {} : { corsOrigins }),
         auth: {

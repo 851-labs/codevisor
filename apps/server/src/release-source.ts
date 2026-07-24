@@ -2,6 +2,7 @@ import { createHash } from "node:crypto"
 import { createReadStream } from "node:fs"
 
 export const DEFAULT_GITHUB_REPOSITORY = "851-labs/codevisor"
+export const DEFAULT_STABLE_SERVER_MANIFEST_URL = "https://updates.codevisor.dev/server/stable.json"
 export const DEFAULT_LEGACY_RELEASE_BASE_URL =
   "https://pub-d2d6eb72b71c4986a742c0527774c9f0.r2.dev/releases/codevisor"
 
@@ -21,6 +22,18 @@ type GitHubReleaseResponse = {
     readonly name?: unknown
     readonly browser_download_url?: unknown
   }>
+}
+
+type StableServerManifest = {
+  readonly version?: unknown
+  readonly releasePageURL?: unknown
+  readonly targets?: Record<
+    string,
+    {
+      readonly archiveURL?: unknown
+      readonly checksumURL?: unknown
+    }
+  >
 }
 
 const normalizedVersion = (value: unknown): string =>
@@ -77,6 +90,39 @@ export const fetchLatestGitHubServerRelease = async (options: {
   return serverReleaseFromGitHub((await response.json()) as GitHubReleaseResponse, options.target)
 }
 
+export const serverReleaseFromManifest = (
+  body: StableServerManifest,
+  target: string
+): ServerRelease | undefined => {
+  const version = normalizedVersion(body.version)
+  const candidate = body.targets?.[target]
+  if (version.length === 0 || typeof candidate?.archiveURL !== "string") {
+    return undefined
+  }
+  return {
+    version,
+    archiveURL: candidate.archiveURL,
+    checksumURL: typeof candidate.checksumURL === "string" ? candidate.checksumURL : undefined,
+    releasePageURL: typeof body.releasePageURL === "string" ? body.releasePageURL : undefined
+  }
+}
+
+export const fetchStableServerRelease = async (options: {
+  readonly manifestURL?: string | undefined
+  readonly target: string
+  readonly fetch?: typeof globalThis.fetch | undefined
+}): Promise<ServerRelease | undefined> => {
+  const fetcher = options.fetch ?? globalThis.fetch
+  const response = await fetcher(options.manifestURL ?? DEFAULT_STABLE_SERVER_MANIFEST_URL, {
+    headers: { "cache-control": "no-cache" },
+    signal: AbortSignal.timeout(10_000)
+  })
+  if (!response.ok) {
+    throw new Error(`Stable server manifest lookup failed: HTTP ${response.status}`)
+  }
+  return serverReleaseFromManifest((await response.json()) as StableServerManifest, options.target)
+}
+
 export const fetchLegacyServerRelease = async (options: {
   readonly baseURL: string
   readonly target: string
@@ -100,27 +146,41 @@ export const fetchLegacyServerRelease = async (options: {
   return { version, archiveURL, checksumURL: `${archiveURL}.sha256` }
 }
 
-/// GitHub is authoritative. The frozen bucket is consulted only when GitHub
-/// itself is unavailable or rate-limited, never to outrank a valid response.
+/// The first-party stable manifest is authoritative and avoids coupling Linux
+/// updates to GitHub's mutable "latest release" pointer. GitHub and the frozen
+/// bridge remain read-only fallbacks for installations crossing the cutover.
 export const fetchLatestServerRelease = async (options: {
+  readonly manifestURL?: string | undefined
   readonly repository?: string
   readonly legacyBaseURL?: string
   readonly target: string
   readonly fetch?: typeof globalThis.fetch | undefined
 }): Promise<ServerRelease | undefined> => {
   try {
-    return await fetchLatestGitHubServerRelease({
+    const release = await fetchStableServerRelease({
+      manifestURL: options.manifestURL,
+      target: options.target,
+      fetch: options.fetch
+    })
+    if (release !== undefined) return release
+  } catch {
+    // Continue through the migration fallbacks.
+  }
+  try {
+    const release = await fetchLatestGitHubServerRelease({
       repository: options.repository ?? DEFAULT_GITHUB_REPOSITORY,
       target: options.target,
       fetch: options.fetch
     })
+    if (release !== undefined) return release
   } catch {
-    return fetchLegacyServerRelease({
-      baseURL: options.legacyBaseURL ?? DEFAULT_LEGACY_RELEASE_BASE_URL,
-      target: options.target,
-      fetch: options.fetch
-    })
+    // Continue to the immutable compatibility bridge.
   }
+  return fetchLegacyServerRelease({
+    baseURL: options.legacyBaseURL ?? DEFAULT_LEGACY_RELEASE_BASE_URL,
+    target: options.target,
+    fetch: options.fetch
+  })
 }
 
 export const parseSha256 = (body: string): string | undefined => {

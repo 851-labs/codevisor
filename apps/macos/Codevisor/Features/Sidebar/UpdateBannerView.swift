@@ -120,7 +120,7 @@ struct ServerUpdateBannerView: View {
 }
 
 #Preview("Update available") {
-    let model = AppUpdateModel(currentVersion: "0.1.0", checker: DisabledUpdateChecker())
+    let model = AppUpdateModel(currentVersion: "0.1.0")
     return UpdateBannerView(
         model: model,
         release: AppUpdateRelease(version: "0.2.0")

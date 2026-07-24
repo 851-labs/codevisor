@@ -11,8 +11,6 @@ Contents/Resources/server, optionally signs/notarizes, and writes:
   Codevisor-macOS-{arm64,x64}.zip   per-architecture apps (Homebrew cask,
                                     in-app updater)
   Codevisor-{arm64,x64}.dmg         per-architecture disk images (website)
-  Codevisor-macOS.zip               transitional universal app so pre-split
-                                    updaters can still update
 
 Optional environment:
   APPLE_CODESIGN_IDENTITY       Developer ID Application identity, or empty for ad-hoc signing.
@@ -25,15 +23,12 @@ Optional environment:
   APP_STORE_CONNECT_ISSUER_ID   App Store Connect issuer id for notarization.
   CODEVISOR_XCODE_SCHEME          Defaults to Codevisor.
   CODEVISOR_BUILD_NUMBER          Defaults to GITHUB_RUN_NUMBER or 1.
-  CODEVISOR_RELEASE_CHANNEL       Bundle channel marker: stable (default) or rc.
   CODEVISOR_SOURCE_REVISION       Git commit recorded in the app bundle.
   CODEVISOR_CLEAN_DERIVED_DATA    Set to 1 to discard incremental Xcode state.
-  CODEVISOR_UNSIGNED_APP_ARCHIVE  Optional exact-revision unsigned app zip to reuse.
   CODEVISOR_UNSIGNED_APP_ARCHIVE_OUTPUT
-                                  Optional path to save the unsigned app for reuse.
+                                  Optional path to save the unsigned app for caching.
   CODEVISOR_DARWIN_ARM64_RUNTIME_ARCHIVE_OUTPUT
                                   Optional path to save the ARM runtime for reuse.
-  CODEVISOR_SKIP_WEB_BUILD        Set to 1 when all exact-revision inputs are reused.
   CODEVISOR_DARWIN_ARM64_RUNTIME_ARCHIVE
                                 Optional prebuilt darwin-arm64 server runtime tarball.
   CODEVISOR_DARWIN_X64_RUNTIME_ARCHIVE
@@ -44,9 +39,6 @@ Optional environment:
                                 Optional file signaling an asynchronous download failure.
   CODEVISOR_REQUIRE_UNIVERSAL_MACOS_APP
                                 Set to 1 to require both macOS server runtimes.
-  CODEVISOR_INCLUDE_COMPATIBILITY_ARTIFACTS
-                                Set to 0 after the R2 bridge is frozen to omit
-                                the legacy universal zip and its notarization.
 EOF
 }
 
@@ -67,13 +59,10 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "$script_dir/../.." && pwd)"
 derived_data="$repo_root/dist/release/DerivedData"
 runtime_root="$repo_root/dist/release/work/app-server-runtimes"
-archive_path="$output_dir/Codevisor-macOS.zip"
 node_entitlements="$script_dir/node-entitlements.plist"
 host_target="$("$script_dir/detect-target.sh")"
 build_number="${CODEVISOR_BUILD_NUMBER:-${GITHUB_RUN_NUMBER:-1}}"
-release_channel="${CODEVISOR_RELEASE_CHANNEL:-stable}"
 source_revision="${CODEVISOR_SOURCE_REVISION:-${GITHUB_SHA:-unknown}}"
-include_compatibility_artifacts="${CODEVISOR_INCLUDE_COMPATIBILITY_ARTIFACTS:-1}"
 release_started_at=$SECONDS
 phase_started_at=$SECONDS
 
@@ -169,9 +158,7 @@ prepare_server_runtime() {
 }
 
 mkdir -p "$output_dir"
-if [[ "${CODEVISOR_SKIP_WEB_BUILD:-}" != 1 ]]; then
-  (cd "$repo_root" && bun run build)
-fi
+(cd "$repo_root" && bun run build)
 rm -rf "$runtime_root"
 prepare_server_runtime "darwin-arm64"
 if [[ -n "${CODEVISOR_DARWIN_ARM64_RUNTIME_ARCHIVE_OUTPUT:-}" ]]; then
@@ -184,17 +171,7 @@ if [[ "${CODEVISOR_CLEAN_DERIVED_DATA:-}" == 1 ]]; then
   rm -rf "$derived_data"
 fi
 app_path="$derived_data/Build/Products/Release/Codevisor.app"
-if [[ -n "${CODEVISOR_UNSIGNED_APP_ARCHIVE:-}" ]]; then
-  if [[ ! -f "$CODEVISOR_UNSIGNED_APP_ARCHIVE" ]]; then
-    echo "error: unsigned app archive does not exist: $CODEVISOR_UNSIGNED_APP_ARCHIVE" >&2
-    exit 1
-  fi
-  rm -rf "$app_path"
-  mkdir -p "$(dirname "$app_path")"
-  ditto -x -k "$CODEVISOR_UNSIGNED_APP_ARCHIVE" "$(dirname "$app_path")"
-else
-  "$script_dir/build-macos-xcode.sh" "$derived_data"
-fi
+"$script_dir/build-macos-xcode.sh" "$derived_data"
 if [[ -n "${CODEVISOR_UNSIGNED_APP_ARCHIVE_OUTPUT:-}" ]]; then
   mkdir -p "$(dirname "$CODEVISOR_UNSIGNED_APP_ARCHIVE_OUTPUT")"
   rm -f "$CODEVISOR_UNSIGNED_APP_ARCHIVE_OUTPUT"
@@ -228,7 +205,6 @@ set_plist_string() {
 }
 set_plist_string CFBundleShortVersionString "$version"
 set_plist_string CFBundleVersion "$build_number"
-set_plist_string CodevisorReleaseChannel "$release_channel"
 set_plist_string CodevisorSourceRevision "$source_revision"
 stamped_version="$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$plist_path")"
 stamped_build="$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$plist_path")"
@@ -237,7 +213,7 @@ if [[ "$stamped_version" != "$version" || "$stamped_build" != "$build_number" ]]
   echo "expected version/build $version/$build_number, found $stamped_version/$stamped_build" >&2
   exit 1
 fi
-echo "Stamped Codevisor.app version $stamped_version (build $stamped_build, channel $release_channel, revision $source_revision)"
+echo "Stamped Codevisor.app version $stamped_version (build $stamped_build, revision $source_revision)"
 
 # Xcode's Icon Composer pipeline owns app icon generation. Keep the compiled
 # asset catalog in the bundle so LaunchServices resolves the .icon file output.
@@ -261,6 +237,17 @@ for target in darwin-arm64 darwin-x64; do
     cp -R "$source_runtime/." "$server_resources/$target/"
   fi
 done
+agent_source="$repo_root/apps/macos/Codevisor/Resources/codevisor-server-agent"
+agent_destination="$app_path/Contents/Resources/codevisor-server-agent"
+launch_agent_source="$repo_root/apps/macos/Codevisor/LaunchAgents/com.851labs.Codevisor.ServerAgent.plist"
+launch_agent_destination="$app_path/Contents/Library/LaunchAgents/com.851labs.Codevisor.ServerAgent.plist"
+mkdir -p "$(dirname "$launch_agent_destination")"
+cp "$agent_source" "$agent_destination"
+cp "$launch_agent_source" "$launch_agent_destination"
+# The synchronized Xcode group also sees the source plist as a resource.
+# SMAppService requires it only in Contents/Library/LaunchAgents.
+rm -f "$app_path/Contents/Resources/$(basename "$launch_agent_source")"
+chmod +x "$agent_destination"
 find "$app_path" -name "._*" -delete
 
 identity="${APPLE_CODESIGN_IDENTITY:-}"
@@ -312,14 +299,6 @@ if [[ "$host_target" == "darwin-arm64" && -x "$server_resources/darwin-x64/bin/n
   fi
 fi
 finish_phase "Bundle signing and runtime smoke tests"
-
-if [[ "$include_compatibility_artifacts" == 1 ]]; then
-  rm -f "$archive_path"
-  ditto --norsrc -c -k --keepParent "$app_path" "$archive_path"
-else
-  rm -f "$archive_path" "$archive_path.sha256"
-  echo "Skipping the frozen-feed universal compatibility zip."
-fi
 
 # Artifact uploads to Apple's notary service run concurrently, and all
 # submissions are created before waiting. Apple's processing queue dominates
@@ -373,20 +352,11 @@ wait_for_notarization() {
   echo "Notarization accepted for $label ($id)"
 }
 
-# The universal zip stays published as a transitional artifact: apps from
-# before the architecture split hardcode this name in their update checker.
-# Its upload starts first (it is the largest) and overlaps per-architecture
-# packaging instead of blocking that work.
-universal_zip_submission=""
 notary_work="$repo_root/dist/release/work/notary-submissions"
 notary_pids=()
 if [[ ${#notary_args[@]} -gt 0 ]]; then
   rm -rf "$notary_work"
   mkdir -p "$notary_work"
-  if [[ "$include_compatibility_artifacts" == 1 ]]; then
-    submit_for_notarization_to_file "$archive_path" "$notary_work/universal-zip.id" "Codevisor-macOS.zip" &
-    notary_pids+=("$!")
-  fi
 fi
 
 # Builds a signed DMG for direct download from www.codevisor.dev (installs
@@ -462,7 +432,7 @@ if [[ "$variant_failed" != 0 ]]; then
   echo "error: one or more architecture variants failed to package" >&2
   exit 1
 fi
-finish_phase "Universal and per-architecture artifact packaging"
+finish_phase "Per-architecture artifact packaging"
 
 if [[ ${#notary_args[@]} -gt 0 ]]; then
   submit_for_notarization_to_file "$output_dir/Codevisor-macOS-arm64.zip" "$notary_work/arm-zip.id" "Codevisor-macOS-arm64.zip" &
@@ -485,21 +455,11 @@ if [[ ${#notary_args[@]} -gt 0 ]]; then
     exit 1
   fi
 
-  if [[ "$include_compatibility_artifacts" == 1 ]]; then
-    universal_zip_submission="$(<"$notary_work/universal-zip.id")"
-  fi
   arm_zip_submission="$(<"$notary_work/arm-zip.id")"
   arm_dmg_submission="$(<"$notary_work/arm-dmg.id")"
   x64_zip_submission="$(<"$notary_work/x64-zip.id")"
   x64_dmg_submission="$(<"$notary_work/x64-dmg.id")"
   finish_phase "Notarization submissions"
-
-  if [[ "$include_compatibility_artifacts" == 1 ]]; then
-    wait_for_notarization "$universal_zip_submission" "Codevisor-macOS.zip"
-    xcrun stapler staple "$app_path"
-    rm -f "$archive_path"
-    ditto --norsrc -c -k --keepParent "$app_path" "$archive_path"
-  fi
 
   wait_for_notarization "$arm_zip_submission" "Codevisor-macOS-arm64.zip"
   xcrun stapler staple "$split_work/arm64/Codevisor.app"
@@ -524,9 +484,6 @@ artifacts=(
   "$output_dir/Codevisor-arm64.dmg"
   "$output_dir/Codevisor-x64.dmg"
 )
-if [[ "$include_compatibility_artifacts" == 1 ]]; then
-  artifacts+=("$archive_path")
-fi
 for artifact in "${artifacts[@]}"; do
   shasum -a 256 "$artifact" | awk '{print $1}' > "$artifact.sha256"
 done
