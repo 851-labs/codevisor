@@ -4,6 +4,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { test } from "node:test"
+import { signSparkleUpdate } from "./sign-sparkle-update.mjs"
 import { verifyAppcast } from "./verify-appcast.mjs"
 
 const repositoryRoot = resolve(import.meta.dirname, "../..")
@@ -108,5 +109,26 @@ test("appcast verification requires the matching channel and signed enclosure", 
   assert.throws(
     () => verifyAppcast(feed.replace(' sparkle:edSignature="signature"', ""), "42", "alpha"),
     /no EdDSA signature/
+  )
+})
+
+test("Sparkle signing matches the RFC 8032 Ed25519 test vector", () => {
+  const seed = Buffer.from(
+    "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60",
+    "hex"
+  ).toString("base64")
+  const publicKey = Buffer.from(
+    "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+    "hex"
+  ).toString("base64")
+
+  assert.equal(
+    Buffer.from(signSparkleUpdate(Buffer.alloc(0), seed, publicKey), "base64").toString("hex"),
+    "e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e06522490155" +
+      "5fb8821590a33bacc61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b"
+  )
+  assert.throws(
+    () => signSparkleUpdate(Buffer.alloc(0), seed, Buffer.alloc(32).toString("base64")),
+    /does not match/
   )
 })

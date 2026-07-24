@@ -30,17 +30,7 @@ origin="${CODEVISOR_UPDATE_ORIGIN:-https://updates.codevisor.dev}"
 prefix="updates/$tag"
 work_dir="$(mktemp -d)"
 trap 'rm -rf "$work_dir"' EXIT
-
-sparkle_archive="$work_dir/Sparkle.tar.xz"
-curl --fail --silent --show-error --location \
-  https://github.com/sparkle-project/Sparkle/releases/download/2.9.3/Sparkle-2.9.3.tar.xz \
-  --output "$sparkle_archive"
-tar -C "$work_dir" -xf "$sparkle_archive"
-sign_update="$(find "$work_dir" -type f -path '*/bin/sign_update' -perm -111 | head -1)"
-if [[ -z "$sign_update" ]]; then
-  echo "Sparkle sign_update was not found in the official release archive." >&2
-  exit 1
-fi
+sparkle_public_key="${CODEVISOR_SPARKLE_PUBLIC_KEY:-1FsNm9QTvUciP2sETZFfeTkWHCPjRNU6mEQ1wzqQz2k=}"
 
 notes_name="release-notes-$tag.md"
 aws s3 cp "$release_notes" "s3://$bucket/$prefix/$notes_name" \
@@ -51,9 +41,7 @@ aws s3 cp "$release_notes" "s3://$bucket/$prefix/$notes_name" \
 for arch in arm64 x64; do
   archive="$artifact_dir/Codevisor-macOS-$arch.zip"
   [[ -f "$archive" ]] || { echo "Missing $archive" >&2; exit 1; }
-  signature="$(printf '%s' "$SPARKLE_PRIVATE_KEY" | "$sign_update" --ed-key-file - -p "$archive")"
-  printf '%s' "$SPARKLE_PRIVATE_KEY" \
-    | "$sign_update" --ed-key-file - --verify "$archive" "$signature"
+  signature="$(node scripts/release/sign-sparkle-update.mjs "$archive" "$sparkle_public_key")"
   if [[ "$(uname -s)" == Darwin ]]; then
     length="$(stat -f %z "$archive")"
   else
