@@ -293,6 +293,15 @@ private final class TranscriptRowHost: NSView {
         contentController.invalidateContentSize()
     }
 
+    /// Forces the next layout pass to re-report the content height even when
+    /// it is unchanged. Used when a row's measurement revision moves under a
+    /// mounted host: the report itself is the signal that lets the virtualizer
+    /// clear the stale flag and rewrite revision-keyed caches, so it must not
+    /// be swallowed by the unchanged-height dedupe.
+    func resetReportedContentHeight() {
+        contentController.resetReportedHeight()
+    }
+
     private func contentHeightDidChange(_ height: CGFloat) {
         // SwiftUI can lay out beyond this wrapper's estimated height before the
         // virtualizer consumes the measurement. Keep the AppKit wrapper in sync
@@ -330,7 +339,11 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
     private var rows: [TranscriptVirtualRow] = []
     private var rowByKey: [String: TranscriptVirtualRow] = [:]
     private var virtualLayout = VirtualTranscriptLayout(items: [], measuredHeights: [:], spacing: rowSpacing)
-    private var measuredHeights: [String: CGFloat] = [:]
+    /// Measured row heights plus staleness. The ledger's invariant is the fix
+    /// for settled rows whose content keeps changing (background subagents
+    /// streaming into an ended turn): a revision change keeps the old height
+    /// as stale layout geometry instead of reverting the row to its estimate.
+    private var measurements = TranscriptMeasurementLedger()
     /// Settled-row height snapshots shared copy-on-write with scroll state.
     /// Position updates can therefore publish synchronously without walking
     /// the transcript or copying these dictionaries on every trackpad frame.
@@ -623,7 +636,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
             _ = activateMeasurementCacheIfNeeded()
             for row in newRows {
                 if case let .bottomSpacer(height) = row.content {
-                    measuredHeights[row.id.layoutKey] = height
+                    measurements.setExact(height, for: row.id.layoutKey)
                 }
             }
             refreshMountedRootViews()
@@ -721,7 +734,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
         to newRows: [TranscriptVirtualRow]
     ) {
         guard oldRows.contains(where: { $0.id == .active }),
-              let activeHeight = measuredHeights[TranscriptVirtualRow.ID.active.layoutKey],
+              let activeHeight = measurements[TranscriptVirtualRow.ID.active.layoutKey],
               !newRows.contains(where: { $0.id == .active }) else { return }
         let oldKeys = Set(oldRows.map(\.id.layoutKey))
         let insertedSettledRows = newRows.filter {
@@ -733,17 +746,13 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
         // slice would poison scroll geometry.
         guard insertedSettledRows.count == 1,
               let settledActive = insertedSettledRows.first,
-              measuredHeights[settledActive.id.layoutKey] == nil else { return }
-        measuredHeights[settledActive.id.layoutKey] = activeHeight
-        let measurement = SessionMeasuredRow(
-            height: activeHeight,
-            revision: settledActive.measurementRevision
-        )
-        let key = settledActive.id.layoutKey
-        settledRowHeightSnapshot[key] = measurement
-        if let activeMeasurementCacheKey {
-            measurementCaches[activeMeasurementCacheKey, default: [:]][key] = measurement
-        }
+              measurements[settledActive.id.layoutKey] == nil else { return }
+        // Provisional, never authoritative: the settled render (auto-collapsed
+        // worked section, answer hoisted out of it) differs from the streaming
+        // render, so the streaming height positions rows until the settled
+        // host measures — but it must not be written into revision-keyed
+        // caches where it could outlive this mount as an "exact" measurement.
+        measurements.setProvisional(activeHeight, for: settledActive.id.layoutKey)
     }
 
     private func invalidateChangedMeasurements(
@@ -755,10 +764,22 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
                   let previous = previousRowsByKey[row.id.layoutKey],
                   previous.measurementRevision != row.measurementRevision else { continue }
             let key = row.id.layoutKey
-            measuredHeights.removeValue(forKey: key)
+            // The last measured height stays in the ledger as stale layout
+            // geometry: a settled row whose content keeps changing (a
+            // background subagent streaming into an ended turn bumps this
+            // revision on every flush) must never snap back to its flat
+            // estimate and let its unclipped content overlap the rows below.
+            measurements.markStale(key)
             settledRowHeightSnapshot.removeValue(forKey: key)
             if let activeMeasurementCacheKey {
                 measurementCaches[activeMeasurementCacheKey]?.removeValue(forKey: key)
+            }
+            // A mounted host must re-report even an unchanged height so the
+            // stale flag clears and caches relearn the new revision; without
+            // the reset, the unchanged-height dedupe swallows that report.
+            if let host = mountedHosts[key] {
+                host.resetReportedContentHeight()
+                host.requestContentMeasurement()
             }
         }
     }
@@ -790,11 +811,13 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
 
         // Keep mounted heights as provisional geometry while their independent
         // inner hosts remeasure at the new width. Provisional values are not
-        // written into the new width's cache.
+        // written into the new width's cache — but they are marked stale, so
+        // a host whose height happens to be identical at the new width still
+        // commits it into that width's cache instead of being deduped away.
         let provisionalMountedHeights = Dictionary(uniqueKeysWithValues: mountedHosts.keys.compactMap { key in
-            measuredHeights[key].map { (key, $0) }
+            measurements[key].map { (key, $0) }
         })
-        measuredHeights.removeAll(keepingCapacity: true)
+        measurements.removeAll(keepingCapacity: true)
         let cached = measurementCaches[key] ?? [:]
         var valid: [String: SessionMeasuredRow] = [:]
         valid.reserveCapacity(cached.count)
@@ -805,17 +828,17 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
                   measurement.revision == row.measurementRevision,
                   measurement.height > 0 else { continue }
             valid[rowKey] = measurement
-            measuredHeights[rowKey] = measurement.height
+            measurements.setExact(measurement.height, for: rowKey)
         }
         settledRowHeightSnapshot = valid
         measurementCaches[key] = valid
         for row in rows {
             if case let .bottomSpacer(height) = row.content {
-                measuredHeights[row.id.layoutKey] = height
+                measurements.setExact(height, for: row.id.layoutKey)
             }
         }
-        for (key, height) in provisionalMountedHeights where measuredHeights[key] == nil {
-            measuredHeights[key] = height
+        for (key, height) in provisionalMountedHeights where measurements[key] == nil {
+            measurements.setProvisional(height, for: key)
         }
         // ChatGPT restores the exact height map that produced its saved
         // coordinate before mounting the saved rendered window. Apply it only
@@ -823,9 +846,19 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
         // replace these provisional values as soon as the hosts lay out.
         if let restore = pendingInitialState?.virtualTranscript,
            restore.measurementCacheKey == key {
-            for (rowKey, height) in restore.rowHeightsByKey
-            where rowByKey[rowKey] != nil && height > 0 {
-                measuredHeights[rowKey] = height
+            for (rowKey, height) in restore.rowHeightsByKey where height > 0 {
+                guard let row = rowByKey[rowKey] else { continue }
+                // A settled row's saved height is applied only when its
+                // revision still matches: content can change while the pane
+                // is closed (a background subagent streaming into an ended
+                // turn), and the snapshot must not restore that stale height
+                // as if it were current. Mismatches fall back to the
+                // revision-checked cache entry applied above, or the estimate.
+                if row.id.isCacheableSettledRow {
+                    guard restore.settledRowsByKey[rowKey]?.revision
+                        == row.measurementRevision else { continue }
+                }
+                measurements.setProvisional(height, for: rowKey)
             }
         }
         return true
@@ -858,7 +891,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
             visibleAnchorKey = visibleRange.compactMap { index -> String? in
                 guard previousLayout.keys.indices.contains(index) else { return nil }
                 let key = previousLayout.keys[index]
-                return measuredHeights[key] == nil ? nil : key
+                return measurements[key] == nil ? nil : key
             }.first ?? visibleRange.first.flatMap { index in
                 previousLayout.keys.indices.contains(index) ? previousLayout.keys[index] : nil
             }
@@ -878,7 +911,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
                 items: rows.map {
                     .init(key: $0.id.layoutKey, estimatedHeight: $0.estimatedHeight)
                 },
-                measuredHeights: measuredHeights,
+                measuredHeights: measurements.heightsByKey,
                 spacing: Self.rowSpacing
             )
             initialRestoreRange = pendingInitialState?.virtualTranscript?.renderedWindow.flatMap {
@@ -1229,8 +1262,12 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
     private func recordMeasuredHeight(_ rawHeight: CGFloat, for key: String) {
         let height = max(1, rawHeight.rounded(.up))
         guard rowByKey[key] != nil else { return }
-        let current = pendingMeasuredHeights[key] ?? measuredHeights[key] ?? 0
-        guard abs(current - height) > 0.5 else { return }
+        // A stale ledger key must reach the commit even when the reported
+        // height is unchanged — that commit is what clears the staleness and
+        // rewrites the row's revision-keyed cache entries.
+        let needsCommit = pendingMeasuredHeights[key].map { abs($0 - height) > 0.5 }
+            ?? measurements.needsCommit(height, for: key)
+        guard needsCommit else { return }
         pendingMeasuredHeights[key] = height
 
         // A streaming active row needs its latest height in the same update;
@@ -1257,17 +1294,22 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
         var changed = false
         for (key, height) in pending {
             guard rowByKey[key] != nil,
-                  abs((measuredHeights[key] ?? 0) - height) > 0.5 else { continue }
-            storeMeasuredHeight(height, for: key)
-            changed = true
+                  measurements.needsCommit(height, for: key) else { continue }
+            if storeMeasuredHeight(height, for: key) {
+                changed = true
+            }
         }
         if changed {
             rebuildDocumentGeometry()
         }
     }
 
-    private func storeMeasuredHeight(_ height: CGFloat, for key: String) {
-        measuredHeights[key] = height
+    /// Commits one measurement into the ledger and the revision-keyed caches.
+    /// Returns whether the height actually moved (geometry must rebuild); a
+    /// same-height commit still refreshes caches for the row's new revision.
+    @discardableResult
+    private func storeMeasuredHeight(_ height: CGFloat, for key: String) -> Bool {
+        let heightChanged = measurements.commit(height, for: key)
         if let row = rowByKey[key], row.id.isCacheableSettledRow {
             let measurement = SessionMeasuredRow(
                 height: height,
@@ -1278,6 +1320,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
                 measurementCaches[activeMeasurementCacheKey, default: [:]][key] = measurement
             }
         }
+        return heightChanged
     }
 
     private func positionMountedRows() {
@@ -1346,7 +1389,11 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
             // Dictionary assignment is copy-on-write. Restore already ignores
             // keys absent from the current transcript, so this keeps viewport
             // snapshots O(mounted rows) instead of walking the full history.
-            rowHeightsByKey: measuredHeights,
+            rowHeightsByKey: measurements.heightsByKey,
+            // The revision-carrying snapshot rides along (also copy-on-write)
+            // so restore can reject settled-row heights whose content changed
+            // while the pane was closed.
+            settledRowsByKey: settledRowHeightSnapshot,
             renderedWindow: renderedWindow
         )
     }

@@ -64,6 +64,11 @@ struct SessionRenderedTranscriptWindow: Equatable {
 struct SessionVirtualTranscriptRestoreState: Equatable {
     var measurementCacheKey: SessionMeasurementCacheKey?
     var rowHeightsByKey: [String: CGFloat]
+    /// Revisions for the settled subset of `rowHeightsByKey`. Restore applies
+    /// a settled row's saved height only when its revision still matches the
+    /// current transcript — content can change while a pane is closed (e.g. a
+    /// background subagent streaming into an already-ended turn).
+    var settledRowsByKey: [String: SessionMeasuredRow] = [:]
     var renderedWindow: SessionRenderedTranscriptWindow?
 }
 

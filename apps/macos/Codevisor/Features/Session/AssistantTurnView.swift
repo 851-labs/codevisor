@@ -36,6 +36,7 @@ struct AssistantTurnView: View {
     @Environment(\.runningSubagentToolCallIds) private var runningSubagentToolCallIds
     @Environment(\.transcriptController) private var transcriptController
     @Environment(\.transcriptPerformAnchoredDisclosureChange) private var performAnchoredDisclosureChange
+    @Environment(\.transcriptInvalidateRowMeasurement) private var invalidateRowMeasurement
     @Environment(\.theme) private var theme
     /// Transient one-shot guard for the finish/assert auto-collapse. Stays
     /// `@State`: it only matters while the turn is generating/settling, which
@@ -235,6 +236,7 @@ struct AssistantTurnView: View {
             if generating {
                 if !hasAutoCollapsed {
                     for key in sectionKeys { store.setExpanded(key, true) }
+                    invalidateRowMeasurement?()
                 }
                 return
             }
@@ -276,6 +278,11 @@ struct AssistantTurnView: View {
         // Commit layout immediately. The reveal component animates only its
         // pixels; virtual-row height is never an intermediate animation value.
         for key in sectionKeys { store.setExpanded(key, false) }
+        // Store-driven: the collapse re-renders entirely inside this row's
+        // hosting controller, so explicitly ask the virtualizer to remeasure —
+        // settled rows (a turn whose background subagent just finished) have
+        // no other layout pass coming.
+        invalidateRowMeasurement?()
     }
 
     /// One "Worked for…" disclosure over `items`, keyed independently so the
@@ -301,6 +308,7 @@ struct AssistantTurnView: View {
                             store.requestReveal(key)
                             store.setExpanded(key, true)
                         }
+                        invalidateRowMeasurement?()
                     }
                     performAnchoredDisclosureChange?(change) ?? change()
                 } label: {
@@ -448,6 +456,7 @@ private struct WorkedContentReveal<Content: View>: View {
 
 struct TranscriptDisclosureContentReveal<Content: View>: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.transcriptInvalidateRowMeasurement) private var invalidateRowMeasurement
     let isExpanded: Bool
     @State private var phase: Phase
     @State private var measuredHeight: CGFloat = 0
@@ -507,6 +516,15 @@ struct TranscriptDisclosureContentReveal<Content: View>: View {
         }
         .onChange(of: isExpanded) { _, expanded in
             setExpanded(expanded)
+        }
+        // Every discrete presented-height step (collapse to 0, expand to the
+        // measured height, settle to natural height) changes this row's ideal
+        // size entirely inside the hosting controller — AppKit may never lay
+        // the pinned outer wrapper out again on its own. Tell the virtualizer
+        // to remeasure so store-driven collapses (e.g. a background subagent
+        // finishing inside a settled row) commit their height immediately.
+        .onChange(of: presentedHeight) { _, _ in
+            invalidateRowMeasurement?()
         }
     }
 
