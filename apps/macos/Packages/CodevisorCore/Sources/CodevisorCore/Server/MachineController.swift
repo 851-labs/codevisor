@@ -405,7 +405,8 @@ public final class MachineController {
                 projectList.removeSessionLocally(id: id, serverId: serverId)
             }
         case "project.created", "project.updated", "worktree.created",
-             "session.created", "session.updated", "session.archived":
+             "session.created", "session.updated", "session.attention.updated",
+             "session.archived":
             scheduleProjectRefresh()
         case "harness.lifecycle.updated":
             // Update detection / install progress changed a harness — bump

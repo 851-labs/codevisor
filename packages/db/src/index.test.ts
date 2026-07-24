@@ -476,6 +476,354 @@ describe("@codevisor/db", () => {
     await Effect.runPromise(db.close)
   })
 
+  it("persists cross-device unread cursors and intrinsic action-required state", async () => {
+    const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
+    const project = await run(db.createProject({ folderPath: "/tmp/session-attention" }))
+    const session = await run(db.createSession({ projectId: project.id, harnessId: "codex" }))
+
+    expect(await run(db.getSessionSummary(session.id))).toMatchObject({
+      actionRequired: false,
+      latestAttentionSequence: 0,
+      lastSeenAttentionSequence: 0,
+      unreadCount: 0
+    })
+
+    await run(
+      db.appendEvent("session.updated", session.id, {
+        initiatedBy: "user",
+        turnId: "turn-1",
+        turnState: "started"
+      })
+    )
+    await run(
+      db.appendEvent("session.updated", session.id, {
+        initiatedBy: "user",
+        stopReason: "end_turn",
+        turnId: "turn-1",
+        turnState: "ended"
+      })
+    )
+    expect(await run(db.getSessionSummary(session.id))).toMatchObject({
+      latestAttentionSequence: 1,
+      lastSeenAttentionSequence: 0,
+      unreadCount: 1
+    })
+
+    await run(db.markSessionRead(session.id, 1))
+    expect(await run(db.getSessionSummary(session.id))).toMatchObject({
+      lastSeenAttentionSequence: 1,
+      unreadCount: 0
+    })
+
+    // A stale client may acknowledge only what it rendered. That must not
+    // accidentally consume newer attention produced before its request lands.
+    await run(
+      db.appendEvent("session.updated", session.id, {
+        initiatedBy: "user",
+        turnId: "turn-2",
+        turnState: "started"
+      })
+    )
+    await run(
+      db.appendEvent("session.updated", session.id, {
+        initiatedBy: "user",
+        stopReason: "end_turn",
+        turnId: "turn-2",
+        turnState: "ended"
+      })
+    )
+    await run(db.markSessionRead(session.id, 1))
+    expect(await run(db.getSessionSummary(session.id))).toMatchObject({
+      latestAttentionSequence: 2,
+      lastSeenAttentionSequence: 1,
+      unreadCount: 1
+    })
+    // A client actively viewing the session can omit the cursor to
+    // atomically acknowledge the server's current tip.
+    await run(db.markSessionRead(session.id))
+    expect(await run(db.getSessionSummary(session.id))).toMatchObject({
+      latestAttentionSequence: 2,
+      lastSeenAttentionSequence: 2,
+      unreadCount: 0
+    })
+
+    const question = {
+      questionId: "question-1",
+      questions: [
+        {
+          id: "choice",
+          question: "Continue?",
+          options: [{ label: "Yes" }],
+          allowsOther: false
+        }
+      ],
+      sessionUpdate: "question"
+    }
+    await run(db.appendEvent("session.output", session.id, question))
+    expect(await run(db.getSessionSummary(session.id))).toMatchObject({
+      actionRequired: true,
+      actionRequiredKind: "question",
+      latestAttentionSequence: 3,
+      unreadCount: 1
+    })
+
+    // Reading is shared but does not resolve the underlying blocking action.
+    await run(db.markSessionRead(session.id, 3))
+    expect(await run(db.getSessionSummary(session.id))).toMatchObject({
+      actionRequired: true,
+      unreadCount: 0
+    })
+    await run(
+      db.appendEvent("session.output", session.id, {
+        outcome: "answered",
+        questionId: question.questionId,
+        questions: question.questions,
+        sessionUpdate: "question_resolved"
+      })
+    )
+    expect(await run(db.getSessionSummary(session.id))).toMatchObject({
+      actionRequired: false,
+      unreadCount: 0
+    })
+
+    await run(db.markSessionUnread(session.id))
+    expect((await run(db.getSessionSummary(session.id))).unreadCount).toBe(1)
+    await Effect.runPromise(db.close)
+  })
+
+  it("waits for agent continuations and normalizes unknown runtime states", async () => {
+    const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
+    const project = await run(db.createProject({ folderPath: "/tmp/continued-attention" }))
+    const session = await run(db.createSession({ projectId: project.id, harnessId: "codex" }))
+
+    // A terminal callback with no user-owned epoch is only continuation
+    // bookkeeping. It must not invent unread attention.
+    await run(
+      db.appendEvent("session.updated", session.id, {
+        initiatedBy: "agent",
+        stopReason: "end_turn",
+        turnId: "orphan-continuation",
+        turnState: "ended"
+      })
+    )
+    expect((await run(db.getSessionSummary(session.id))).unreadCount).toBe(0)
+
+    await run(
+      db.appendEvent("session.updated", session.id, {
+        runtimeState: "running",
+        turnId: "user-turn",
+        turnState: "started"
+      })
+    )
+    await run(
+      db.appendEvent("session.updated", session.id, {
+        initiatedBy: "user",
+        stopReason: "end_turn",
+        turnId: "user-turn",
+        turnState: "ended"
+      })
+    )
+    expect((await run(db.getSessionSummary(session.id))).unreadCount).toBe(0)
+
+    // Agent-owned terminal events preserve the pending user epoch while the
+    // harness is still running. Unknown future runtime values degrade to idle,
+    // which safely releases that epoch instead of leaving it stuck forever.
+    await run(
+      db.appendEvent("session.updated", session.id, {
+        initiatedBy: "agent",
+        stopReason: "end_turn",
+        turnId: "agent-continuation",
+        turnState: "ended"
+      })
+    )
+    expect((await run(db.getSessionSummary(session.id))).unreadCount).toBe(0)
+    await run(
+      db.appendEvent("session.updated", session.id, {
+        runtimeState: "future-runtime-state"
+      })
+    )
+    expect(await run(db.getSessionSummary(session.id))).toMatchObject({
+      latestAttentionSequence: 1,
+      unreadCount: 1
+    })
+
+    // An agent-initiated failure is independently noteworthy even when there
+    // is no pending user epoch.
+    await run(
+      db.appendEvent("session.error", session.id, {
+        initiatedBy: "agent",
+        message: "Continuation failed"
+      })
+    )
+    expect(await run(db.getSessionSummary(session.id))).toMatchObject({
+      latestAttentionSequence: 2,
+      unreadCount: 2
+    })
+
+    await Effect.runPromise(db.close)
+  })
+
+  it("restores attention and shared read state after a server restart", async () => {
+    const filename = tempDatabase()
+    const first = await run(makeDatabase({ filename, serverId: "local" }))
+    const project = await run(first.createProject({ folderPath: "/tmp/restart-attention" }))
+    const session = await run(
+      first.createSession({ projectId: project.id, harnessId: "claude-code" })
+    )
+    await run(
+      first.appendEvent("session.output", session.id, {
+        questionId: "question-after-restart",
+        questions: [
+          {
+            id: "choice",
+            question: "Continue?",
+            options: [{ label: "Yes" }],
+            allowsOther: false
+          }
+        ],
+        sessionUpdate: "question"
+      })
+    )
+    await run(first.markSessionRead(session.id, 1))
+    await Effect.runPromise(first.close)
+
+    const reopened = await run(makeDatabase({ filename, serverId: "local" }))
+    expect(await run(reopened.getSessionSummary(session.id))).toMatchObject({
+      actionRequired: true,
+      actionRequiredKind: "question",
+      latestAttentionSequence: 1,
+      lastSeenAttentionSequence: 1,
+      unreadCount: 0
+    })
+    expect(await run(reopened.getSessionDetail(session.id))).toMatchObject({
+      pendingQuestion: { questionId: "question-after-restart" }
+    })
+    await Effect.runPromise(reopened.close)
+  })
+
+  it("upgrades a v30 database to durable attention state and backfills the active mode", async () => {
+    const filename = tempDatabase()
+    const current = await run(makeDatabase({ filename, serverId: "local" }))
+    const project = await run(current.createProject({ folderPath: "/tmp/v30-attention" }))
+    const session = await run(current.createSession({ projectId: project.id, harnessId: "codex" }))
+    await run(current.appendEvent("session.updated", session.id, { modeId: "plan" }))
+    await Effect.runPromise(current.close)
+
+    // Recreate the exact v30 boundary: all prior migrations and persisted
+    // session events exist, while migration 31's three tables and marker do
+    // not. Reopening must install and backfill them atomically.
+    const legacy = new Database(filename)
+    legacy.pragma("foreign_keys = OFF")
+    legacy.exec(`
+      drop table session_read_state;
+      drop table session_attention_events;
+      drop table session_attention_state;
+      delete from schema_migrations where id = 31;
+    `)
+    legacy.close()
+
+    const upgraded = await run(makeDatabase({ filename, serverId: "local" }))
+    expect(await run(upgraded.getSessionSummary(session.id))).toMatchObject({
+      actionRequired: false,
+      latestAttentionSequence: 0,
+      lastSeenAttentionSequence: 0,
+      unreadCount: 0
+    })
+
+    // The mode backfill is behaviorally important: a plan completed after the
+    // upgrade must become a durable approval action even though the mode event
+    // itself was written by v30.
+    await run(
+      upgraded.appendEvent("session.updated", session.id, {
+        initiatedBy: "user",
+        turnId: "turn-after-upgrade",
+        turnState: "started"
+      })
+    )
+    await run(
+      upgraded.appendEvent("session.output", session.id, {
+        markdown: "# Plan\n\nUpgrade safely.",
+        sessionUpdate: "plan_document"
+      })
+    )
+    await run(
+      upgraded.appendEvent("session.updated", session.id, {
+        initiatedBy: "user",
+        stopReason: "end_turn",
+        turnId: "turn-after-upgrade",
+        turnState: "ended"
+      })
+    )
+    expect(await run(upgraded.getSessionSummary(session.id))).toMatchObject({
+      actionRequired: true,
+      actionRequiredKind: "planApproval",
+      latestAttentionSequence: 1,
+      pendingPlanApproval: true,
+      unreadCount: 1
+    })
+    expect(await run(upgraded.migrate)).toEqual([])
+    await Effect.runPromise(upgraded.close)
+
+    const verified = new Database(filename)
+    expect(verified.prepare("select name from schema_migrations where id = 31").get()).toEqual({
+      name: "durable cross-device session attention"
+    })
+    expect(verified.pragma("foreign_key_check")).toEqual([])
+    verified.close()
+  })
+
+  it("persists Codex plan approval as a server-owned action", async () => {
+    const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
+    const project = await run(db.createProject({ folderPath: "/tmp/plan-attention" }))
+    const session = await run(db.createSession({ projectId: project.id, harnessId: "codex" }))
+
+    await run(db.appendEvent("session.updated", session.id, { modeId: "plan" }))
+    await run(
+      db.appendEvent("session.updated", session.id, {
+        initiatedBy: "user",
+        turnId: "turn-plan",
+        turnState: "started"
+      })
+    )
+    await run(
+      db.appendEvent("session.output", session.id, {
+        markdown: "# Plan\n\nBuild it.",
+        sessionUpdate: "plan_document"
+      })
+    )
+    await run(
+      db.appendEvent("session.updated", session.id, {
+        initiatedBy: "user",
+        stopReason: "end_turn",
+        turnId: "turn-plan",
+        turnState: "ended"
+      })
+    )
+
+    expect(await run(db.getSessionSummary(session.id))).toMatchObject({
+      actionRequired: true,
+      actionRequiredKind: "planApproval",
+      pendingPlanApproval: true,
+      unreadCount: 1
+    })
+    expect(await run(db.getTranscriptPage(session.id, undefined, 8))).toMatchObject({
+      pendingPlanApproval: true
+    })
+
+    await run(db.clearSessionPlanApproval(session.id))
+    expect(await run(db.getSessionSummary(session.id))).toMatchObject({
+      actionRequired: false,
+      pendingPlanApproval: false
+    })
+    expect(await run(db.getSessionDetail(session.id))).toMatchObject({
+      pendingPlanApproval: false
+    })
+    expect(await run(db.getTranscriptPage(session.id, undefined, 8))).toMatchObject({
+      pendingPlanApproval: false
+    })
+    await Effect.runPromise(db.close)
+  })
+
   it("persists the resolved config selections for each session", async () => {
     const filename = tempDatabase()
     const db = await run(makeDatabase({ filename, serverId: "local" }))

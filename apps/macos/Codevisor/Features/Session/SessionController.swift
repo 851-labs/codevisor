@@ -898,6 +898,9 @@ final class SessionController {
         // to the composer.
         if pendingPlanApproval {
             pendingPlanApproval = false
+            if let session = serverSession {
+                try? await serverClient?.clearSessionPlanApproval(id: session.id)
+            }
             return
         }
         await model?.cancelQuestion()
@@ -985,6 +988,9 @@ final class SessionController {
 
     private func resolvePlanApproval(_ answers: [String: QuestionAnswerEntry]) async {
         pendingPlanApproval = false
+        if let session = serverSession {
+            try? await serverClient?.clearSessionPlanApproval(id: session.id)
+        }
         let entry = answers[QuestionRequest.exitPlanModeId]
         let note = (entry?.note ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         if entry?.answers.first == QuestionRequest.implementPlanLabel {
@@ -2132,6 +2138,9 @@ final class SessionController {
         model.onActionRequired = { [weak self] in
             self?.onActionRequired?()
         }
+        model.onPlanApprovalChanged = { [weak self] required in
+            self?.pendingPlanApproval = required
+        }
         // Negotiate the canonical transcript + session-scoped event stream
         // for every server-backed model, including a brand-new empty chat.
         // Skipping this on first send leaves `usesPaginatedHistory` false, so
@@ -2141,6 +2150,7 @@ final class SessionController {
         // terminal event never reach the live UI. Older servers still fall
         // back inside loadHistory() when the transcript endpoint returns 404.
         await model.loadHistory(preloaded: preloadedTranscript.map(transport.historyPage(from:)))
+        pendingPlanApproval = model.pendingPlanApproval
         if loadsExistingHistory {
             finishInitialHistoryLoading(sessionId: session.id, outcome: "ready")
         }

@@ -52,12 +52,6 @@ final class SessionStore {
     /// composer), keyed by pane id. Promoted to the session cache on first
     /// send; discarded when the pane closes unsent.
     private var paneDrafts: [UUID: SessionController] = [:]
-    /// Completed activity epochs whose session wasn't open, keyed by session
-    /// id — the sidebar's iOS-style unread badges. Cleared on open.
-    private var unreadCounts: [SessionKey: Int] = [:]
-    /// Unread sessions whose completed activity epoch ended abnormally. Kept
-    /// beside the count so controller eviction cannot erase the red indicator.
-    private var unreadErrors: Set<SessionKey> = []
     /// One deferred attention outcome per user-created activity epoch. Agent
     /// follow-ups merge into it; only stable quiescence consumes it, preventing
     /// one alert per Claude background-task notification.
@@ -491,8 +485,12 @@ final class SessionStore {
     /// a plan-approval prompt. The model isn't busy, it needs a response, so the
     /// sidebar surfaces this as the attention badge instead of the spinner.
     func isWaitingOnUser(_ session: ChatSession) -> Bool {
-        guard let controller = controllers[SessionKey(session)] else { return false }
-        return controller.pendingQuestion != nil || controller.pendingPlanApproval
+        guard let controller = controllers[SessionKey(session)] else {
+            return session.actionRequired
+        }
+        return session.actionRequired
+            || controller.pendingQuestion != nil
+            || controller.pendingPlanApproval
     }
 
     private func isWaitingOnUser(_ key: SessionKey) -> Bool {
@@ -504,26 +502,24 @@ final class SessionStore {
 
     /// Finished-and-not-yet-opened turns for a session — the sidebar badge count.
     func unreadCount(_ session: ChatSession) -> Int {
-        unreadCounts[SessionKey(session)] ?? 0
+        session.unreadCount
     }
 
     func hasUnreadError(_ session: ChatSession) -> Bool {
-        unreadErrors.contains(SessionKey(session))
+        session.hasUnreadError
     }
 
     /// Manually flags a session as unread (sidebar context menu). Keeps any
     /// existing turn-finish count rather than resetting it to 1.
     func markUnread(_ session: ChatSession) {
-        let key = SessionKey(session)
-        unreadCounts[key] = max(1, unreadCounts[key] ?? 0)
+        environment.projectList.markSessionUnread(session.id, serverId: session.serverId)
     }
 
     /// Marks a session as the one on screen and clears its unread badge.
     func markOpened(_ sessionId: UUID, serverId: String) {
         let key = SessionKey(serverId: serverId, sessionId: sessionId)
         openSessionKey = key
-        unreadCounts[key] = nil
-        unreadErrors.remove(key)
+        environment.projectList.markSessionRead(sessionId, serverId: serverId)
         notificationDelivery.clearNotifications(for: sessionId)
     }
 
@@ -586,9 +582,12 @@ final class SessionStore {
         pendingAttentionErrors[key] = nil
         let kind: ChatAttentionKind = isWaitingOnUser(key) ? .actionRequired : .finished
         deliverNotification(for: key, kind: kind)
-        guard key != openSessionKey else { return }
-        unreadCounts[key, default: 0] += 1
-        if failed { unreadErrors.insert(key) }
+        if key == openSessionKey {
+            // The server creates the durable attention event before this
+            // terminal event reaches the client. Keep a currently visible
+            // chat read across every device.
+            environment.projectList.markSessionRead(key.sessionId, serverId: key.serverId)
+        }
     }
 
     private func goalNeedsErrorAttention(_ goal: SessionGoal?) -> Bool {
@@ -598,6 +597,9 @@ final class SessionStore {
 
     private func noteActionRequired(for key: SessionKey) {
         deliverNotification(for: key, kind: .actionRequired)
+        if key == openSessionKey {
+            environment.projectList.markSessionRead(key.sessionId, serverId: key.serverId)
+        }
     }
 
     private func deliverNotification(for key: SessionKey, kind: ChatAttentionKind) {
@@ -682,8 +684,6 @@ final class SessionStore {
         detachBottomGroup(for: session)
         detachCenterLeaves(for: session)
         flushScratchpad(for: session)
-        unreadCounts[key] = nil
-        unreadErrors.remove(key)
         pendingAttentionErrors[key] = nil
         scrollStates[key] = nil
         todoExpansionStates[key] = nil

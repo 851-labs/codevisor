@@ -268,6 +268,9 @@ public protocol CodevisorServerClienting: Sendable {
     func upsertSession(_ session: ChatSession) async throws -> ServerSession
     func updateSession(_ session: ChatSession) async throws -> ServerSession
     func touchSession(id: UUID, updatedAt: Date) async throws
+    func markSessionRead(id: UUID, throughSequence: Int?) async throws -> ServerSession?
+    func markSessionUnread(id: UUID) async throws -> ServerSession?
+    func clearSessionPlanApproval(id: UUID) async throws
     func deleteSession(id: UUID) async throws
     func promptSession(id: UUID, text: String) async throws -> ServerPromptAccepted
     func promptSession(id: UUID, text: String, attachments: [ServerAttachmentRef]) async throws -> ServerPromptAccepted
@@ -382,6 +385,10 @@ public extension CodevisorServerClienting {
     }
 
     func promptQueue(id: UUID) async throws -> [ServerPromptQueueItem] { [] }
+
+    func markSessionRead(id: UUID, throughSequence: Int?) async throws -> ServerSession? { nil }
+    func markSessionUnread(id: UUID) async throws -> ServerSession? { nil }
+    func clearSessionPlanApproval(id: UUID) async throws {}
 
     /// Default for fakes/older transports: a plain list (no PATH refresh).
     /// The HTTP client overrides this with the real rescan endpoint.
@@ -1923,6 +1930,13 @@ public struct ServerSession: Decodable, Equatable, Sendable {
     public var createdAt: String
     public var updatedAt: String?
     public var usage: ServerSessionUsage?
+    public var latestAttentionSequence: Int? = nil
+    public var lastSeenAttentionSequence: Int? = nil
+    public var unreadCount: Int? = nil
+    public var hasUnreadError: Bool? = nil
+    public var actionRequired: Bool? = nil
+    public var actionRequiredKind: String? = nil
+    public var pendingPlanApproval: Bool? = nil
 
     public func chatSession(serverId scopedServerId: String? = nil) throws -> ChatSession {
         guard let uuid = UUID(uuidString: id) else {
@@ -1948,7 +1962,14 @@ public struct ServerSession: Decodable, Equatable, Sendable {
             cwd: cwd,
             configSelections: configSelections,
             createdAt: try ServerDateCoding.date(from: createdAt),
-            updatedAt: try updatedAt.map(ServerDateCoding.date)
+            updatedAt: try updatedAt.map(ServerDateCoding.date),
+            latestAttentionSequence: latestAttentionSequence ?? 0,
+            lastSeenAttentionSequence: lastSeenAttentionSequence ?? 0,
+            unreadCount: unreadCount ?? 0,
+            hasUnreadError: hasUnreadError ?? false,
+            actionRequired: actionRequired ?? false,
+            actionRequiredKind: actionRequiredKind,
+            pendingPlanApproval: pendingPlanApproval ?? false
         )
     }
 }
@@ -1975,6 +1996,7 @@ public struct ServerSessionDetail: Decodable, Equatable, Sendable {
     public var promptQueue: [ServerPromptQueueItem]
     public var eventCursor: Int
     public var pendingQuestion: QuestionRequest?
+    public var pendingPlanApproval: Bool
     public var backgroundTasks: [BackgroundTaskInfo]?
     public var goal: SessionGoal?
 
@@ -1984,6 +2006,7 @@ public struct ServerSessionDetail: Decodable, Equatable, Sendable {
         promptQueue: [ServerPromptQueueItem] = [],
         eventCursor: Int,
         pendingQuestion: QuestionRequest? = nil,
+        pendingPlanApproval: Bool = false,
         backgroundTasks: [BackgroundTaskInfo]? = nil,
         goal: SessionGoal? = nil
     ) {
@@ -1992,6 +2015,7 @@ public struct ServerSessionDetail: Decodable, Equatable, Sendable {
         self.promptQueue = promptQueue
         self.eventCursor = eventCursor
         self.pendingQuestion = pendingQuestion
+        self.pendingPlanApproval = pendingPlanApproval
         self.backgroundTasks = backgroundTasks
         self.goal = goal
     }
@@ -2001,7 +2025,7 @@ public struct ServerSessionDetail: Decodable, Equatable, Sendable {
         case conversation
         case promptQueue
         case eventCursor
-        case pendingQuestion
+        case pendingQuestion, pendingPlanApproval
         case backgroundTasks
         case goal
     }
@@ -2013,6 +2037,7 @@ public struct ServerSessionDetail: Decodable, Equatable, Sendable {
         promptQueue = try container.decodeIfPresent([ServerPromptQueueItem].self, forKey: .promptQueue) ?? []
         eventCursor = try container.decode(Int.self, forKey: .eventCursor)
         pendingQuestion = try container.decodeIfPresent(QuestionRequest.self, forKey: .pendingQuestion)
+        pendingPlanApproval = try container.decodeIfPresent(Bool.self, forKey: .pendingPlanApproval) ?? false
         backgroundTasks = try container.decodeIfPresent([BackgroundTaskInfo].self, forKey: .backgroundTasks)
         goal = try container.decodeIfPresent(SessionGoal.self, forKey: .goal)
     }
@@ -2053,10 +2078,60 @@ public struct ServerTranscriptPage: Decodable, Equatable, Sendable {
     public var nextBefore: String?
     public var hasMore: Bool
     public var eventCursor: Int
-    public var pendingQuestion: QuestionRequest? = nil
-    public var backgroundTasks: [BackgroundTaskInfo]? = nil
-    public var goal: SessionGoal? = nil
-    public var usage: ServerSessionUsage? = nil
+    public var pendingQuestion: QuestionRequest?
+    public var pendingPlanApproval: Bool
+    public var backgroundTasks: [BackgroundTaskInfo]?
+    public var goal: SessionGoal?
+    public var usage: ServerSessionUsage?
+
+    public init(
+        items: [ServerTranscriptItem],
+        nextBefore: String? = nil,
+        hasMore: Bool,
+        eventCursor: Int,
+        pendingQuestion: QuestionRequest? = nil,
+        pendingPlanApproval: Bool = false,
+        backgroundTasks: [BackgroundTaskInfo]? = nil,
+        goal: SessionGoal? = nil,
+        usage: ServerSessionUsage? = nil
+    ) {
+        self.items = items
+        self.nextBefore = nextBefore
+        self.hasMore = hasMore
+        self.eventCursor = eventCursor
+        self.pendingQuestion = pendingQuestion
+        self.pendingPlanApproval = pendingPlanApproval
+        self.backgroundTasks = backgroundTasks
+        self.goal = goal
+        self.usage = usage
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case items
+        case nextBefore
+        case hasMore
+        case eventCursor
+        case pendingQuestion
+        case pendingPlanApproval
+        case backgroundTasks
+        case goal
+        case usage
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        items = try container.decode([ServerTranscriptItem].self, forKey: .items)
+        nextBefore = try container.decodeIfPresent(String.self, forKey: .nextBefore)
+        hasMore = try container.decode(Bool.self, forKey: .hasMore)
+        eventCursor = try container.decode(Int.self, forKey: .eventCursor)
+        pendingQuestion = try container.decodeIfPresent(QuestionRequest.self, forKey: .pendingQuestion)
+        pendingPlanApproval =
+            try container.decodeIfPresent(Bool.self, forKey: .pendingPlanApproval) ?? false
+        backgroundTasks =
+            try container.decodeIfPresent([BackgroundTaskInfo].self, forKey: .backgroundTasks)
+        goal = try container.decodeIfPresent(SessionGoal.self, forKey: .goal)
+        usage = try container.decodeIfPresent(ServerSessionUsage.self, forKey: .usage)
+    }
 }
 
 /// Response of the combined `POST /v1/sessions/:id/open`: the authoritative
@@ -2901,6 +2976,41 @@ public final class CodevisorServerClient: CodevisorServerClienting, @unchecked S
         )
     }
 
+    public func markSessionRead(id: UUID, throughSequence: Int?) async throws -> ServerSession? {
+        do {
+            return try await send(
+                "/v1/sessions/\(id.uuidString)/read",
+                method: "POST",
+                body: MarkSessionReadBody(throughSequence: throughSequence)
+            )
+        } catch CodevisorServerClientError.httpStatus(404, _) {
+            return nil
+        }
+    }
+
+    public func markSessionUnread(id: UUID) async throws -> ServerSession? {
+        do {
+            return try await send(
+                "/v1/sessions/\(id.uuidString)/unread",
+                method: "POST",
+                body: Optional<EmptyBody>.none
+            )
+        } catch CodevisorServerClientError.httpStatus(404, _) {
+            return nil
+        }
+    }
+
+    public func clearSessionPlanApproval(id: UUID) async throws {
+        do {
+            try await sendNoResponse(
+                "/v1/sessions/\(id.uuidString)/plan-approval",
+                method: "DELETE"
+            )
+        } catch CodevisorServerClientError.httpStatus(404, _) {
+            // Older servers only had the client-local synthetic prompt.
+        }
+    }
+
     public func deleteSession(id: UUID) async throws {
         try await sendNoResponse("/v1/sessions/\(id.uuidString)", method: "DELETE")
     }
@@ -3492,6 +3602,10 @@ private struct UpdateSessionBody: Encodable {
 
 private struct TouchSessionBody: Encodable {
     var updatedAt: String
+}
+
+private struct MarkSessionReadBody: Encodable {
+    var throughSequence: Int?
 }
 
 /// Mirrors the legacy discrete open sequence in one payload: `session` is

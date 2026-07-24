@@ -132,6 +132,7 @@ public final class SessionModel {
     /// renders as a picker while this is set. Cleared by the paired
     /// `question_resolved` event (replay collapses the pair) and at turn end.
     public private(set) var pendingQuestion: QuestionRequest?
+    public private(set) var pendingPlanApproval = false
     /// True from the moment an answer or dismissal is accepted locally until
     /// the server acknowledges it. Callers use this for immediate feedback and
     /// to prevent duplicate operations while the blocking provider request is
@@ -163,6 +164,7 @@ public final class SessionModel {
     /// separate from turn end because question tools pause an in-flight turn.
     /// Never fired while replaying transcript history.
     public var onActionRequired: (() -> Void)?
+    public var onPlanApprovalChanged: ((Bool) -> Void)?
     /// Fires only after the server accepts a new prompt queue item. Carries
     /// counts/state only; prompt and attachment content never leave the model.
     public var onPromptAccepted: ((_ attachmentCount: Int, _ isQueued: Bool) -> Void)?
@@ -638,6 +640,7 @@ public final class SessionModel {
                 usage = persistedUsage
             }
             pendingQuestion = page.pendingQuestion
+            pendingPlanApproval = page.pendingPlanApproval
             if let tasks = page.backgroundTasks {
                 backgroundTasks = tasks
                 hasBackgroundTaskSnapshot = true
@@ -700,6 +703,7 @@ public final class SessionModel {
             if history.events.isEmpty {
                 setConversation(snapshot.conversation)
                 pendingQuestion = snapshot.pendingQuestion
+                pendingPlanApproval = snapshot.pendingPlanApproval
                 goal = snapshot.goal
                 if let tasks = snapshot.backgroundTasks {
                     backgroundTasks = tasks
@@ -841,7 +845,7 @@ public final class SessionModel {
                     turn.stopDetail = message
                     turn.isGenerating = false
                 case .userMessage, .queueUpdated, .retrying, .backgroundTasks, .runtimeState,
-                     .updateGate:
+                     .planApprovalRequired, .updateGate:
                     break
                 }
             }
@@ -1100,6 +1104,9 @@ public final class SessionModel {
         case let .runtimeState(state):
             runtimeState = state
             onRuntimeStateChanged?()
+        case let .planApprovalRequired(required):
+            pendingPlanApproval = required
+            onPlanApprovalChanged?(required)
         }
     }
 

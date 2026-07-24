@@ -6,6 +6,7 @@ public struct ServerSessionSnapshot: Equatable, Sendable {
     public var promptQueue: [ServerPromptQueueItem]
     public var eventCursor: Int
     public var pendingQuestion: QuestionRequest?
+    public var pendingPlanApproval: Bool = false
     public var backgroundTasks: [BackgroundTaskInfo]?
     public var goal: SessionGoal?
 }
@@ -16,6 +17,7 @@ public struct TranscriptHistoryPage: Equatable, Sendable {
     public var hasMore: Bool
     public var eventCursor: Int
     public var pendingQuestion: QuestionRequest? = nil
+    public var pendingPlanApproval: Bool = false
     public var backgroundTasks: [BackgroundTaskInfo]? = nil
     public var goal: SessionGoal? = nil
     public var usage: SessionUsage? = nil
@@ -64,6 +66,8 @@ public enum ServerSessionStreamEvent: Equatable, Sendable {
     /// Claude's main turn-loop state. `idle` is paired with the background-task
     /// snapshot; detached terminal processes do not prevent quiescence.
     case runtimeState(SessionRuntimeState)
+    /// Durable form of Codex's synthetic post-plan approval prompt.
+    case planApprovalRequired(Bool)
 }
 
 /// One in-flight background task owned by the agent process, from the
@@ -216,6 +220,7 @@ public struct ServerSessionTransport: Sendable {
             promptQueue: detail.promptQueue,
             eventCursor: detail.eventCursor,
             pendingQuestion: detail.pendingQuestion,
+            pendingPlanApproval: detail.pendingPlanApproval,
             backgroundTasks: detail.backgroundTasks,
             goal: detail.goal
         )
@@ -245,6 +250,7 @@ public struct ServerSessionTransport: Sendable {
             hasMore: page.hasMore,
             eventCursor: page.eventCursor,
             pendingQuestion: page.pendingQuestion,
+            pendingPlanApproval: page.pendingPlanApproval,
             backgroundTasks: page.backgroundTasks,
             goal: page.goal,
             usage: page.usage?.sessionUsage
@@ -423,6 +429,10 @@ public struct ServerSessionTransport: Sendable {
         }
 
         switch event.kind {
+        case "session.attention.updated":
+            return [.planApprovalRequired(
+                event.payload["pendingPlanApproval"]?.boolValue == true
+            )]
         case "session.queue.updated":
             return [.queueUpdated(promptQueue(from: event.payload))]
         case "session.updateGate.updated":

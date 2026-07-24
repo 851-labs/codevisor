@@ -149,6 +149,12 @@ interface SessionRow {
   readonly pending_question: string | null
   readonly background_tasks: string
   readonly config_selections: string
+  readonly attention_latest_sequence: number
+  readonly attention_last_seen_sequence: number
+  readonly attention_unread_count: number
+  readonly attention_has_unread_error: number
+  readonly attention_manually_unread: number
+  readonly pending_plan_approval: number
 }
 
 interface HarnessAccountRow {
@@ -1245,6 +1251,68 @@ const migrations: ReadonlyArray<Migration> = [
             and subject_id like '________-____-____-____-____________';
       `)
     }
+  },
+  {
+    id: 31,
+    name: "durable cross-device session attention",
+    sql: `
+      create table if not exists session_attention_state (
+        session_id text primary key references sessions(id) on delete cascade,
+        pending_epoch integer not null default 0 check(pending_epoch in (0, 1)),
+        pending_error integer not null default 0 check(pending_error in (0, 1)),
+        turn_active integer not null default 0 check(turn_active in (0, 1)),
+        runtime_state text not null default 'idle'
+          check(runtime_state in ('running', 'idle', 'requires_action')),
+        has_runtime_state integer not null default 0 check(has_runtime_state in (0, 1)),
+        current_mode_id text,
+        pending_plan_approval integer not null default 0
+          check(pending_plan_approval in (0, 1))
+      );
+
+      create table if not exists session_attention_events (
+        session_id text not null references sessions(id) on delete cascade,
+        sequence integer not null,
+        source_revision integer not null,
+        kind text not null check(kind in ('finished', 'action_required')),
+        has_error integer not null default 0 check(has_error in (0, 1)),
+        created_at text not null,
+        primary key(session_id, sequence),
+        unique(session_id, source_revision, kind)
+      );
+
+      create table if not exists session_read_state (
+        session_id text not null references sessions(id) on delete cascade,
+        reader_id text not null,
+        last_seen_sequence integer not null default 0,
+        manually_unread integer not null default 0 check(manually_unread in (0, 1)),
+        updated_at text not null,
+        primary key(session_id, reader_id)
+      );
+
+      create index if not exists session_attention_events_unread_idx
+        on session_attention_events(session_id, sequence, has_error);
+    `,
+    run: (sqlite) => {
+      sqlite.exec(`
+        insert into session_attention_state (session_id, current_mode_id)
+        select s.id, (
+          select json_extract(se.payload, '$.modeId')
+          from session_events se
+          where se.session_id = s.id
+            and se.kind = 'session.updated'
+            and json_type(se.payload, '$.modeId') = 'text'
+          order by se.revision desc limit 1
+        )
+        from sessions s
+        where exists (
+          select 1 from session_events se
+          where se.session_id = s.id
+            and se.kind = 'session.updated'
+            and json_type(se.payload, '$.modeId') = 'text'
+        )
+        on conflict(session_id) do update set current_mode_id = excluded.current_mode_id;
+      `)
+    }
   }
 ]
 
@@ -1828,6 +1896,219 @@ const projectChatEvent = (sqlite: Database.Database, event: SessionEventRow): vo
   }
 }
 
+const ensureSessionAttentionState = (sqlite: Database.Database, sessionId: string): void => {
+  sqlite
+    .prepare("insert into session_attention_state (session_id) values (?) on conflict do nothing")
+    .run(sessionId)
+}
+
+const appendSessionAttention = (
+  sqlite: Database.Database,
+  event: SessionEventRow,
+  kind: "finished" | "action_required",
+  hasError: boolean
+): void => {
+  const next = sqlite
+    .prepare(
+      "select coalesce(max(sequence), 0) + 1 as sequence from session_attention_events where session_id = ?"
+    )
+    .get(event.session_id) as { readonly sequence: number }
+  sqlite
+    .prepare(
+      `insert into session_attention_events (
+         session_id, sequence, source_revision, kind, has_error, created_at
+       ) values (?, ?, ?, ?, ?, ?)
+       on conflict(session_id, source_revision, kind) do nothing`
+    )
+    .run(event.session_id, next.sequence, event.revision, kind, hasError ? 1 : 0, event.created_at)
+}
+
+const sessionHasActiveGoal = (sqlite: Database.Database, sessionId: string): boolean =>
+  sessionGoalSnapshot(sqlite, sessionId)?.status === "active"
+
+const releasePendingSessionAttention = (
+  sqlite: Database.Database,
+  event: SessionEventRow
+): void => {
+  const state = sqlite
+    .prepare("select * from session_attention_state where session_id = ?")
+    .get(event.session_id) as
+    | {
+        readonly pending_epoch: number
+        readonly pending_error: number
+        readonly turn_active: number
+        readonly runtime_state: string
+        readonly has_runtime_state: number
+        readonly pending_plan_approval: number
+      }
+    | undefined
+  if (
+    state === undefined ||
+    state.pending_epoch !== 1 ||
+    state.turn_active === 1 ||
+    state.pending_plan_approval === 1 ||
+    sessionHasActiveGoal(sqlite, event.session_id)
+  ) {
+    return
+  }
+  const session = sqlite
+    .prepare("select background_tasks, pending_question from sessions where id = ?")
+    .get(event.session_id) as {
+    readonly background_tasks: string
+    readonly pending_question: string | null
+  }
+  const tasks = JSON.parse(session.background_tasks) as unknown
+  if (
+    (Array.isArray(tasks) && tasks.length > 0) ||
+    session.pending_question !== null ||
+    (state.has_runtime_state === 1 && state.runtime_state !== "idle")
+  ) {
+    return
+  }
+  appendSessionAttention(sqlite, event, "finished", state.pending_error === 1)
+  sqlite
+    .prepare(
+      "update session_attention_state set pending_epoch = 0, pending_error = 0 where session_id = ?"
+    )
+    .run(event.session_id)
+}
+
+const terminalAttentionError = (event: SessionEventRow, payload: JsonRecord): boolean =>
+  event.kind === "session.error" ||
+  typeof payload.stopDetail === "string" ||
+  (typeof payload.stopReason === "string" &&
+    payload.stopReason !== "end_turn" &&
+    payload.stopReason !== "cancelled")
+
+/// Projects the append-only runtime log into durable, cross-device attention
+/// state. This runs in the same SQLite transaction as the source event, so a
+/// reconnect cannot observe a terminal/question event without its unread or
+/// action-required consequence.
+const projectSessionAttention = (sqlite: Database.Database, event: SessionEventRow): void => {
+  const payload = jsonRecord(JSON.parse(event.payload))
+  if (payload === undefined) return
+  ensureSessionAttentionState(sqlite, event.session_id)
+
+  if (event.kind === "session.updated" && typeof payload.modeId === "string") {
+    sqlite
+      .prepare(
+        `update session_attention_state set current_mode_id = ?,
+           pending_plan_approval = case when ? = 'plan' then pending_plan_approval else 0 end
+         where session_id = ?`
+      )
+      .run(payload.modeId, payload.modeId, event.session_id)
+  }
+  if (event.kind === "session.updated" && typeof payload.runtimeState === "string") {
+    const state =
+      payload.runtimeState === "running" ||
+      payload.runtimeState === "idle" ||
+      payload.runtimeState === "requires_action"
+        ? payload.runtimeState
+        : "idle"
+    sqlite
+      .prepare(
+        `update session_attention_state
+         set runtime_state = ?, has_runtime_state = 1 where session_id = ?`
+      )
+      .run(state, event.session_id)
+  }
+  if (event.kind === "session.updated" && payload.turnState === "started") {
+    sqlite
+      .prepare("update session_attention_state set turn_active = 1 where session_id = ?")
+      .run(event.session_id)
+  }
+
+  const conversation =
+    event.kind === "session.output" ? conversationEventPayload(payload) : undefined
+  if (conversation?.role === "user") {
+    sqlite
+      .prepare("update session_attention_state set pending_plan_approval = 0 where session_id = ?")
+      .run(event.session_id)
+  }
+
+  const update = typeof payload.sessionUpdate === "string" ? payload.sessionUpdate : undefined
+  if (
+    event.kind === "session.output" &&
+    update === "question" &&
+    typeof payload.questionId === "string" &&
+    Array.isArray(payload.questions)
+  ) {
+    appendSessionAttention(sqlite, event, "action_required", false)
+  }
+
+  const terminal =
+    event.kind === "session.error" ||
+    (event.kind === "session.updated" &&
+      (payload.turnState === "ended" || typeof payload.stopReason === "string"))
+  if (terminal) {
+    const initiatedBy = payload.initiatedBy === "agent" ? "agent" : "user"
+    const failed = terminalAttentionError(event, payload)
+    sqlite
+      .prepare("update session_attention_state set turn_active = 0 where session_id = ?")
+      .run(event.session_id)
+
+    const state = sqlite
+      .prepare(
+        `select ast.current_mode_id, s.harness_id
+         from session_attention_state ast join sessions s on s.id = ast.session_id
+         where ast.session_id = ?`
+      )
+      .get(event.session_id) as {
+      readonly current_mode_id: string | null
+      readonly harness_id: string
+    }
+    // The terminal event is routed to the assistant item it completed by the
+    // chat projection immediately above. Only a plan produced by that turn
+    // should raise approval; an older plan elsewhere in the transcript must
+    // not make every later plan-mode turn actionable.
+    const completedTurnPlan = sqlite
+      .prepare(
+        `select 1 from session_events se
+         join chat_parts cp on cp.item_id = se.chat_item_id and cp.kind = 'plan'
+         where se.session_id = ? and se.revision = ?
+           and cp.text is not null and length(cp.text) > 0
+         limit 1`
+      )
+      .get(event.session_id, event.revision)
+    const needsPlanApproval =
+      initiatedBy === "user" &&
+      state.harness_id === "codex" &&
+      state.current_mode_id === "plan" &&
+      completedTurnPlan !== undefined
+
+    if (needsPlanApproval) {
+      sqlite
+        .prepare(
+          `update session_attention_state set pending_plan_approval = 1,
+             pending_epoch = 0, pending_error = 0 where session_id = ?`
+        )
+        .run(event.session_id)
+      appendSessionAttention(sqlite, event, "action_required", failed)
+    } else if (initiatedBy === "user") {
+      sqlite
+        .prepare(
+          `update session_attention_state set pending_epoch = 1,
+             pending_error = max(pending_error, ?) where session_id = ?`
+        )
+        .run(failed ? 1 : 0, event.session_id)
+    } else {
+      const current = sqlite
+        .prepare("select pending_epoch from session_attention_state where session_id = ?")
+        .get(event.session_id) as { readonly pending_epoch: number }
+      if (current.pending_epoch === 1 || failed) {
+        sqlite
+          .prepare(
+            `update session_attention_state set pending_epoch = 1,
+               pending_error = max(pending_error, ?) where session_id = ?`
+          )
+          .run(failed ? 1 : 0, event.session_id)
+      }
+    }
+  }
+
+  releasePendingSessionAttention(sqlite, event)
+}
+
 const insertSessionEvent = (
   sqlite: Database.Database,
   row: Omit<SessionEventRow, "revision" | "chat_item_id"> & {
@@ -2134,7 +2415,12 @@ const runBlockingDataUpgrades = (
 }
 
 const isSessionShellEvent = (kind: EventKind, payload: unknown): boolean => {
-  if (kind === "session.created" || kind === "session.archived" || kind === "session.deleted") {
+  if (
+    kind === "session.created" ||
+    kind === "session.archived" ||
+    kind === "session.deleted" ||
+    kind === "session.attention.updated"
+  ) {
     return true
   }
   if (kind !== "session.updated") return false
@@ -2184,6 +2470,12 @@ export interface CodevisorDatabaseService {
   ) => Effect.Effect<SessionSummary, DatabaseError>
   readonly listSessions: Effect.Effect<ReadonlyArray<SessionSummary>, DatabaseError>
   readonly getSessionSummary: (id: string) => Effect.Effect<SessionSummary, DatabaseError>
+  readonly markSessionRead: (
+    id: string,
+    throughSequence?: number
+  ) => Effect.Effect<SessionSummary, DatabaseError>
+  readonly markSessionUnread: (id: string) => Effect.Effect<SessionSummary, DatabaseError>
+  readonly clearSessionPlanApproval: (id: string) => Effect.Effect<SessionSummary, DatabaseError>
   readonly getSessionConfigSelections: (
     id: string
   ) => Effect.Effect<Readonly<Record<string, string>>, DatabaseError>
@@ -2550,6 +2842,7 @@ const createService = (
           })
           subjectRevision = sessionEvent.revision
           projectChatEvent(sqlite, sessionEvent)
+          projectSessionAttention(sqlite, sessionEvent)
           if (kind === "session.output") {
             sqlite
               .prepare("update sessions set updated_at = ? where id = ?")
@@ -2580,6 +2873,51 @@ const createService = (
       .prepare("select * from project_locations where project_id = ? and server_id = ?")
       .get(projectId, config.serverId) as ProjectLocationRow | undefined
 
+  // Attention is owned by the server and read state is shared by every
+  // device authenticated as this server's owner. Keep the projection in the
+  // session snapshot so sidebars never need to open every transcript.
+  const sessionSummarySelect = `
+    select sessions.*,
+      coalesce((
+        select max(sequence) from session_attention_events ae
+        where ae.session_id = sessions.id
+      ), 0) as attention_latest_sequence,
+      coalesce((
+        select last_seen_sequence from session_read_state rs
+        where rs.session_id = sessions.id and rs.reader_id = 'owner'
+      ), 0) as attention_last_seen_sequence,
+      max(
+        coalesce((
+          select count(*) from session_attention_events ae
+          where ae.session_id = sessions.id
+            and ae.sequence > coalesce((
+              select last_seen_sequence from session_read_state rs
+              where rs.session_id = sessions.id and rs.reader_id = 'owner'
+            ), 0)
+        ), 0),
+        coalesce((
+          select manually_unread from session_read_state rs
+          where rs.session_id = sessions.id and rs.reader_id = 'owner'
+        ), 0)
+      ) as attention_unread_count,
+      coalesce((
+        select manually_unread from session_read_state rs
+        where rs.session_id = sessions.id and rs.reader_id = 'owner'
+      ), 0) as attention_manually_unread,
+      exists(
+        select 1 from session_attention_events ae
+        where ae.session_id = sessions.id and ae.has_error = 1
+          and ae.sequence > coalesce((
+            select last_seen_sequence from session_read_state rs
+            where rs.session_id = sessions.id and rs.reader_id = 'owner'
+          ), 0)
+      ) as attention_has_unread_error,
+      coalesce((
+        select pending_plan_approval from session_attention_state ast
+        where ast.session_id = sessions.id
+      ), 0) as pending_plan_approval
+    from sessions`
+
   const getProject = (id: string): Project => {
     // Case-insensitive: UUID identifiers may arrive in either case. Use the
     // stored id (row.id) for the location lookup so it matches exactly.
@@ -2596,7 +2934,7 @@ const createService = (
     // Stored session ids are canonically lowercase; tolerate uppercase ids
     // from Swift clients by normalizing the argument (see canonicalUuid).
     const id = canonicalUuid(rawId)
-    const row = sqlite.prepare("select * from sessions where id = ?").get(id) as
+    const row = sqlite.prepare(`${sessionSummarySelect} where sessions.id = ?`).get(id) as
       | SessionRow
       | undefined
     if (row === undefined) {
@@ -2921,7 +3259,9 @@ const createService = (
     createSession,
     listSessions: attempt("listSessions", () =>
       sqlite
-        .prepare("select * from sessions order by coalesce(updated_at, created_at) desc")
+        .prepare(
+          `${sessionSummarySelect} order by coalesce(sessions.updated_at, sessions.created_at) desc`
+        )
         .all()
         .map((row) =>
           sessionFromRow(
@@ -2931,6 +3271,62 @@ const createService = (
         )
     ),
     getSessionSummary: (id) => attempt("getSessionSummary", () => getSession(id)),
+    markSessionRead: (rawId, throughSequence) =>
+      attempt("markSessionRead", () => {
+        const id = canonicalUuid(rawId)
+        getSession(id)
+        const latest = (
+          sqlite
+            .prepare(
+              "select coalesce(max(sequence), 0) as sequence from session_attention_events where session_id = ?"
+            )
+            .get(id) as { readonly sequence: number }
+        ).sequence
+        const requested =
+          throughSequence === undefined || !Number.isFinite(throughSequence)
+            ? latest
+            : Math.max(0, Math.min(latest, Math.trunc(throughSequence)))
+        sqlite
+          .prepare(
+            `insert into session_read_state (
+               session_id, reader_id, last_seen_sequence, manually_unread, updated_at
+             ) values (?, 'owner', ?, 0, ?)
+             on conflict(session_id, reader_id) do update set
+               last_seen_sequence = max(last_seen_sequence, excluded.last_seen_sequence),
+               manually_unread = 0,
+               updated_at = excluded.updated_at`
+          )
+          .run(id, requested, isoTimestamp())
+        return getSession(id)
+      }),
+    markSessionUnread: (rawId) =>
+      attempt("markSessionUnread", () => {
+        const id = canonicalUuid(rawId)
+        getSession(id)
+        sqlite
+          .prepare(
+            `insert into session_read_state (
+               session_id, reader_id, last_seen_sequence, manually_unread, updated_at
+             ) values (?, 'owner', 0, 1, ?)
+             on conflict(session_id, reader_id) do update set
+               manually_unread = 1,
+               updated_at = excluded.updated_at`
+          )
+          .run(id, isoTimestamp())
+        return getSession(id)
+      }),
+    clearSessionPlanApproval: (rawId) =>
+      attempt("clearSessionPlanApproval", () => {
+        const id = canonicalUuid(rawId)
+        getSession(id)
+        ensureSessionAttentionState(sqlite, id)
+        sqlite
+          .prepare(
+            "update session_attention_state set pending_plan_approval = 0 where session_id = ?"
+          )
+          .run(id)
+        return getSession(id)
+      }),
     getSessionDetail: (rawId) =>
       attempt("getSessionDetail", () => {
         const id = canonicalUuid(rawId)
@@ -2963,6 +3359,7 @@ const createService = (
           promptQueue: listPromptQueueSync(sqlite, id),
           eventCursor: Number(state.cursor),
           ...(pendingQuestion === undefined ? {} : { pendingQuestion }),
+          pendingPlanApproval: session.pendingPlanApproval === true,
           backgroundTasks,
           ...(goal === undefined ? {} : { goal })
         }
@@ -3029,6 +3426,7 @@ const createService = (
           hasMore,
           eventCursor: Number(state.cursor),
           ...(pendingQuestion === undefined ? {} : { pendingQuestion }),
+          pendingPlanApproval: session.pendingPlanApproval === true,
           backgroundTasks,
           ...(goal === undefined ? {} : { goal }),
           usage: session.usage
@@ -4131,6 +4529,17 @@ const sessionFromRow = (row: SessionRow, folderPath: string | undefined): Sessio
     ...(Object.keys(configSelections).length === 0 ? {} : { configSelections }),
     createdAt: row.created_at,
     ...(row.updated_at === null ? {} : { updatedAt: row.updated_at }),
+    latestAttentionSequence: row.attention_latest_sequence,
+    lastSeenAttentionSequence: row.attention_last_seen_sequence,
+    unreadCount: row.attention_unread_count,
+    hasUnreadError: row.attention_has_unread_error === 1,
+    actionRequired: row.pending_question !== null || row.pending_plan_approval === 1,
+    ...(row.pending_question !== null
+      ? { actionRequiredKind: "question" as const }
+      : row.pending_plan_approval === 1
+        ? { actionRequiredKind: "planApproval" as const }
+        : {}),
+    pendingPlanApproval: row.pending_plan_approval === 1,
     usage: {
       ...(row.usage_used === null ? {} : { used: row.usage_used }),
       ...(row.usage_size === null ? {} : { size: row.usage_size }),

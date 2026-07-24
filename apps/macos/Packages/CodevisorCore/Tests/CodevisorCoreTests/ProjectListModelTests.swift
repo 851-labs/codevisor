@@ -130,6 +130,55 @@ struct ProjectListModelTests {
         }
     }
 
+    @Test("Visible-session read advances through a newer server tip than the sidebar cache")
+    func visibleSessionReadUsesServerTip() async throws {
+        let project = Project.fromFolder(URL(fileURLWithPath: "/tmp/visible-read"))
+        let session = ChatSession(
+            id: UUID(),
+            projectId: project.id,
+            harnessId: "codex",
+            title: "Visible"
+        )
+        let fakeServer = FakeServerClient(
+            projects: [serverProject(from: project)],
+            sessions: [serverSession(from: session)]
+        )
+        let model = ProjectListModel(
+            projectRepository: DefaultProjectRepository(store: InMemoryStore()),
+            sessionRepository: DefaultSessionRepository(store: InMemoryStore()),
+            serverClient: fakeServer
+        )
+        try await waitUntil {
+            model.sessions.first(where: { $0.id == session.id })?.latestAttentionSequence == 0
+        }
+
+        // Reproduce the production ordering: the scoped terminal event reaches
+        // the visible chat before the global sidebar refresh carrying sequence
+        // 1. The local cache is still 0 while the server tip is already 1.
+        await fakeServer.setSessionAttention(
+            id: session.id,
+            latestSequence: 1,
+            lastSeenSequence: 0
+        )
+        model.markSessionRead(session.id, serverId: session.serverId)
+
+        try await waitUntilAsync {
+            await fakeServer.snapshot().readRequests.count == 1
+        }
+        try await waitUntil {
+            guard let updated = model.sessions.first(where: { $0.id == session.id }) else {
+                return false
+            }
+            return updated.latestAttentionSequence == 1
+                && updated.lastSeenAttentionSequence == 1
+                && updated.unreadCount == 0
+        }
+
+        let request = await fakeServer.snapshot().readRequests.first
+        #expect(request?.sessionId == session.id)
+        #expect(request?.throughSequence == nil)
+    }
+
     @Test("Server refresh replaces stale local records without pushing them back")
     func serverRefreshUsesServerAuthority() async throws {
         let (model, _, _) = makeModel()
@@ -718,6 +767,12 @@ private struct FakeServerSnapshot: Sendable {
     var upsertedSessionIDs: [String]
     var deletedProjectIDs: [String]
     var deletedSessionIDs: [String]
+    var readRequests: [FakeReadRequest]
+}
+
+private struct FakeReadRequest: Equatable, Sendable {
+    var sessionId: UUID
+    var throughSequence: Int?
 }
 
 private actor FakeServerClient: CodevisorServerClienting {
@@ -727,6 +782,7 @@ private actor FakeServerClient: CodevisorServerClienting {
     private var upsertedSessionIDs: [String] = []
     private var deletedProjectIDs: [String] = []
     private var deletedSessionIDs: [String] = []
+    private var readRequests: [FakeReadRequest] = []
     /// When set, `listProjects` suspends on this first — lets tests hold a
     /// "network" call in flight while the app state changes underneath it.
     private var listDelay: (@Sendable () async -> Void)?
@@ -802,6 +858,37 @@ private actor FakeServerClient: CodevisorServerClienting {
         try await upsertSession(session)
     }
 
+    func setSessionAttention(
+        id: UUID,
+        latestSequence: Int,
+        lastSeenSequence: Int
+    ) {
+        guard let index = sessions.firstIndex(where: { $0.id == id.uuidString }) else {
+            return
+        }
+        sessions[index].latestAttentionSequence = latestSequence
+        sessions[index].lastSeenAttentionSequence = lastSeenSequence
+        sessions[index].unreadCount = max(0, latestSequence - lastSeenSequence)
+    }
+
+    func markSessionRead(id: UUID, throughSequence: Int?) async throws -> ServerSession? {
+        readRequests.append(FakeReadRequest(sessionId: id, throughSequence: throughSequence))
+        guard let index = sessions.firstIndex(where: { $0.id == id.uuidString }) else {
+            return nil
+        }
+        let latest = sessions[index].latestAttentionSequence ?? 0
+        let requested = min(latest, max(0, throughSequence ?? latest))
+        sessions[index].lastSeenAttentionSequence = max(
+            sessions[index].lastSeenAttentionSequence ?? 0,
+            requested
+        )
+        sessions[index].unreadCount = max(
+            0,
+            latest - (sessions[index].lastSeenAttentionSequence ?? 0)
+        )
+        return sessions[index]
+    }
+
     func deleteSession(id: UUID) async throws {
         deletedSessionIDs.append(id.uuidString)
         sessions.removeAll { $0.id == id.uuidString }
@@ -828,7 +915,8 @@ private actor FakeServerClient: CodevisorServerClienting {
             upsertedProjectIDs: upsertedProjectIDs,
             upsertedSessionIDs: upsertedSessionIDs,
             deletedProjectIDs: deletedProjectIDs,
-            deletedSessionIDs: deletedSessionIDs
+            deletedSessionIDs: deletedSessionIDs,
+            readRequests: readRequests
         )
     }
 }

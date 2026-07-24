@@ -1097,7 +1097,19 @@ export const SessionSummary = Schema.Struct({
   configSelections: Schema.optional(Schema.Record(Schema.String, Schema.String)),
   createdAt: Schema.String,
   updatedAt: Schema.optional(Schema.String),
-  usage: Schema.optional(SessionUsage)
+  usage: Schema.optional(SessionUsage),
+  /** Monotonic server-owned attention cursor. Optional for compatibility with
+   * servers that predate durable cross-device read state. */
+  latestAttentionSequence: Schema.optional(Schema.Number),
+  /** The latest attention sequence read by the owner on any device. */
+  lastSeenAttentionSequence: Schema.optional(Schema.Number),
+  unreadCount: Schema.optional(Schema.Number),
+  hasUnreadError: Schema.optional(Schema.Boolean),
+  /** Intrinsic blocking state; reading the session does not clear it. */
+  actionRequired: Schema.optional(Schema.Boolean),
+  actionRequiredKind: Schema.optional(Schema.Literals(["question", "planApproval"])),
+  /** Durable form of Codex's synthetic post-plan approval prompt. */
+  pendingPlanApproval: Schema.optional(Schema.Boolean)
 })
 export type SessionSummary = typeof SessionSummary.Type
 
@@ -1180,6 +1192,9 @@ export const TranscriptPage = Schema.Struct({
   /** Current blocking question, snapshotted at the same revision as
    * `eventCursor` so a reconnect cannot skip the event that created it. */
   pendingQuestion: Schema.optional(QuestionPayload),
+  /** Always emitted by current servers. Optional in the decoder so clients
+   * can still open sessions hosted by a pre-attention-state server. */
+  pendingPlanApproval: Schema.optional(Schema.Boolean),
   backgroundTasks: Schema.optional(Schema.Array(BackgroundTask)),
   /** Latest durable goal snapshot at the same revision as `eventCursor`. */
   goal: Schema.optional(SessionGoal),
@@ -1213,6 +1228,9 @@ export const SessionDetail = Schema.Struct({
   promptQueue: Schema.Array(PromptQueueItem),
   eventCursor: Schema.Number,
   pendingQuestion: Schema.optional(QuestionPayload),
+  /** Always emitted by current servers; optional only for rolling-upgrade
+   * compatibility with servers that predate durable plan approval. */
+  pendingPlanApproval: Schema.optional(Schema.Boolean),
   backgroundTasks: Schema.optional(Schema.Array(BackgroundTask)),
   goal: Schema.optional(SessionGoal)
 })
@@ -1253,6 +1271,13 @@ export const UpdateSessionRequest = Schema.Struct({
   updatedAt: Schema.optional(Schema.String)
 })
 export type UpdateSessionRequest = typeof UpdateSessionRequest.Type
+
+export const MarkSessionReadRequest = Schema.Struct({
+  /** Advance through exactly the state the client rendered. Omit only when a
+   * client is actively viewing the session and wants the current server tip. */
+  throughSequence: Schema.optional(Schema.Number)
+})
+export type MarkSessionReadRequest = typeof MarkSessionReadRequest.Type
 
 /// One-round-trip chat open: ensure the project and session records exist and
 /// return the first transcript page together. Replaces the discrete
@@ -1424,6 +1449,7 @@ export const EventKind = Schema.Literals([
   "workspace.notes.updated",
   "session.created",
   "session.updated",
+  "session.attention.updated",
   "session.archived",
   "session.deleted",
   "session.output",

@@ -365,6 +365,91 @@ public final class ProjectListModel {
         }
     }
 
+    /// Shares read state through the server so opening a chat on one device
+    /// clears it everywhere. A nil sequence means the session is actively
+    /// visible and the server should acknowledge its current attention tip.
+    /// An explicit sequence is reserved for clients acknowledging a particular
+    /// rendered snapshot without consuming newer unseen activity.
+    ///
+    /// The optimistic local mutation uses the newest sequence cached by the
+    /// sidebar, but that cache must not replace nil in the request: the
+    /// terminal event can reach an open chat before the global attention
+    /// snapshot refreshes, leaving the cached value one sequence behind.
+    public func markSessionRead(
+        _ sessionId: UUID,
+        serverId: String,
+        throughSequence: Int? = nil
+    ) {
+        guard let index = sessions.firstIndex(where: {
+            $0.serverId == serverId && $0.id == sessionId
+        }) else { return }
+        let rendered = throughSequence ?? sessions[index].latestAttentionSequence
+        sessions[index].lastSeenAttentionSequence = max(
+            sessions[index].lastSeenAttentionSequence,
+            rendered
+        )
+        sessions[index].unreadCount = max(
+            0,
+            sessions[index].latestAttentionSequence - sessions[index].lastSeenAttentionSequence
+        )
+        if sessions[index].unreadCount == 0 {
+            sessions[index].hasUnreadError = false
+        }
+        persistSessions()
+        guard let serverClient, serverId == selectedServerId else { return }
+        Task {
+            do {
+                if let remote = try await serverClient.markSessionRead(
+                    id: sessionId,
+                    throughSequence: throughSequence
+                ) {
+                    applyAttention(remote, serverId: serverId)
+                }
+            } catch {
+                Log.sync.error(
+                    "Failed to mark session \(sessionId.uuidString, privacy: .public) read: \(String(describing: error), privacy: .public)"
+                )
+                await refreshFromServer()
+            }
+        }
+    }
+
+    public func markSessionUnread(_ sessionId: UUID, serverId: String) {
+        guard let index = sessions.firstIndex(where: {
+            $0.serverId == serverId && $0.id == sessionId
+        }) else { return }
+        sessions[index].unreadCount = max(1, sessions[index].unreadCount)
+        persistSessions()
+        guard let serverClient, serverId == selectedServerId else { return }
+        Task {
+            do {
+                if let remote = try await serverClient.markSessionUnread(id: sessionId) {
+                    applyAttention(remote, serverId: serverId)
+                }
+            } catch {
+                Log.sync.error(
+                    "Failed to mark session \(sessionId.uuidString, privacy: .public) unread: \(String(describing: error), privacy: .public)"
+                )
+                await refreshFromServer()
+            }
+        }
+    }
+
+    private func applyAttention(_ remote: ServerSession, serverId: String) {
+        guard let id = UUID(uuidString: remote.id),
+              let index = sessions.firstIndex(where: {
+                  $0.serverId == serverId && $0.id == id
+              }) else { return }
+        sessions[index].latestAttentionSequence = remote.latestAttentionSequence ?? 0
+        sessions[index].lastSeenAttentionSequence = remote.lastSeenAttentionSequence ?? 0
+        sessions[index].unreadCount = remote.unreadCount ?? 0
+        sessions[index].hasUnreadError = remote.hasUnreadError ?? false
+        sessions[index].actionRequired = remote.actionRequired ?? false
+        sessions[index].actionRequiredKind = remote.actionRequiredKind
+        sessions[index].pendingPlanApproval = remote.pendingPlanApproval ?? false
+        persistSessions()
+    }
+
     /// Records the worktree a draft session ended up running in. The session
     /// record is created before the worktree exists (the session page opens
     /// while setup streams progress), so the name/cwd land here afterwards.

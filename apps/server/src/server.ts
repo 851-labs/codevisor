@@ -43,6 +43,7 @@ import {
   SetNativeMcpEnabledRequest as SetNativeMcpEnabledRequestSchema,
   SyncSkillsRequest as SyncSkillsRequestSchema,
   MakeSkillGlobalRequest as MakeSkillGlobalRequestSchema,
+  MarkSessionReadRequest as MarkSessionReadRequestSchema,
   SetSkillInstalledRequest as SetSkillInstalledRequestSchema,
   CreateHarnessAccountRequest as CreateHarnessAccountRequestSchema,
   CreateSessionRequest as CreateSessionRequestSchema,
@@ -2295,6 +2296,31 @@ const routeSessions = async (
     return true
   }
 
+  const readSessionId = matchRoute(url.pathname, "/v1/sessions/:id/read")
+  if (readSessionId !== undefined && request.method === "POST") {
+    const payload = await readSchema(request, MarkSessionReadRequestSchema)
+    const session = await run(services.db.markSessionRead(readSessionId, payload.throughSequence))
+    await appendAndPublish(services.db, fanout, "session.attention.updated", session.id, session)
+    writeJson(response, 200, session)
+    return true
+  }
+
+  const unreadSessionId = matchRoute(url.pathname, "/v1/sessions/:id/unread")
+  if (unreadSessionId !== undefined && request.method === "POST") {
+    const session = await run(services.db.markSessionUnread(unreadSessionId))
+    await appendAndPublish(services.db, fanout, "session.attention.updated", session.id, session)
+    writeJson(response, 200, session)
+    return true
+  }
+
+  const planApprovalSessionId = matchRoute(url.pathname, "/v1/sessions/:id/plan-approval")
+  if (planApprovalSessionId !== undefined && request.method === "DELETE") {
+    const session = await run(services.db.clearSessionPlanApproval(planApprovalSessionId))
+    await appendAndPublish(services.db, fanout, "session.attention.updated", session.id, session)
+    writeJson(response, 204, undefined)
+    return true
+  }
+
   const sessionId = matchRoute(url.pathname, "/v1/sessions/:id")
   if (sessionId !== undefined && request.method === "GET") {
     writeJson(response, 200, await run(services.db.getSessionDetail(sessionId)))
@@ -3659,10 +3685,36 @@ const appendAndPublish = async (
   subjectId: string,
   payload: unknown
 ): Promise<EventEnvelope> => {
+  const affectsAttention =
+    kind === "session.output" ||
+    kind === "session.updated" ||
+    kind === "session.error" ||
+    kind === "session.authRequired"
+  const before = affectsAttention ? await run(db.getSessionSummary(subjectId)) : undefined
   const event = await run(db.appendEvent(kind, subjectId, payload))
   await run(fanout.publish(event))
+  if (before !== undefined) {
+    const after = await run(db.getSessionSummary(subjectId))
+    if (sessionAttentionSignature(before) !== sessionAttentionSignature(after)) {
+      const attentionEvent = await run(
+        db.appendEvent("session.attention.updated", subjectId, after)
+      )
+      await run(fanout.publish(attentionEvent))
+    }
+  }
   return event
 }
+
+const sessionAttentionSignature = (session: SessionSummary): string =>
+  JSON.stringify([
+    session.latestAttentionSequence,
+    session.lastSeenAttentionSequence,
+    session.unreadCount,
+    session.hasUnreadError,
+    session.actionRequired,
+    session.actionRequiredKind,
+    session.pendingPlanApproval
+  ])
 
 const readSchema = async <S extends Schema.ConstraintDecoder<unknown>>(
   request: IncomingMessage,

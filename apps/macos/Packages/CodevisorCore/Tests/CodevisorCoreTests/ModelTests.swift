@@ -5,6 +5,23 @@ import ACPKit
 
 @Suite("Domain models")
 struct ModelTests {
+    @Test("Transcript pages preserve plan approval and accept older server payloads")
+    func transcriptPagePlanApprovalCompatibility() throws {
+        let legacy = try JSONDecoder().decode(
+            ServerTranscriptPage.self,
+            from: Data(#"{"items":[],"hasMore":false,"eventCursor":5}"#.utf8)
+        )
+        let current = try JSONDecoder().decode(
+            ServerTranscriptPage.self,
+            from: Data(
+                #"{"items":[],"hasMore":false,"eventCursor":6,"pendingPlanApproval":true}"#.utf8
+            )
+        )
+
+        #expect(legacy.pendingPlanApproval == false)
+        #expect(current.pendingPlanApproval == true)
+    }
+
     @Test("Harness auth terminal prefers its attach key and supports older servers")
     func harnessAuthTerminalAttachKey() throws {
         let current = try JSONDecoder().decode(

@@ -3449,6 +3449,111 @@ describe("@codevisor/server", () => {
     expect(agents.loads).toContainEqual(["codex", legacySession.id, legacyWorkspaceFolder])
   })
 
+  it("shares session read and action-required state through the HTTP API", async () => {
+    const { server, services } = await start()
+    const project = await run(
+      services.db.createProject({ folderPath: "/tmp/server-session-attention" })
+    )
+    const session = await run(
+      services.db.createSession({ projectId: project.id, harnessId: "codex" })
+    )
+    await run(
+      services.db.appendEvent("session.updated", session.id, {
+        initiatedBy: "user",
+        turnId: "turn-1",
+        turnState: "started"
+      })
+    )
+    await run(
+      services.db.appendEvent("session.updated", session.id, {
+        initiatedBy: "user",
+        stopReason: "end_turn",
+        turnId: "turn-1",
+        turnState: "ended"
+      })
+    )
+
+    expect((await jsonRequest(server, "/v1/sessions")).body).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: session.id,
+          latestAttentionSequence: 1,
+          lastSeenAttentionSequence: 0,
+          unreadCount: 1
+        })
+      ])
+    )
+    expect(
+      (
+        await jsonRequest(server, `/v1/sessions/${session.id}/read`, {
+          body: JSON.stringify({ throughSequence: 1 }),
+          method: "POST"
+        })
+      ).body
+    ).toMatchObject({ lastSeenAttentionSequence: 1, unreadCount: 0 })
+    expect(
+      (
+        await jsonRequest(server, `/v1/sessions/${session.id}/unread`, {
+          method: "POST"
+        })
+      ).body
+    ).toMatchObject({ unreadCount: 1 })
+
+    await run(services.db.appendEvent("session.updated", session.id, { modeId: "plan" }))
+    await run(
+      services.db.appendEvent("session.updated", session.id, {
+        initiatedBy: "user",
+        turnId: "turn-plan",
+        turnState: "started"
+      })
+    )
+    await run(
+      services.db.appendEvent("session.output", session.id, {
+        markdown: "# Plan\n\nBuild it.",
+        sessionUpdate: "plan_document"
+      })
+    )
+    await run(
+      services.db.appendEvent("session.updated", session.id, {
+        initiatedBy: "user",
+        stopReason: "end_turn",
+        turnId: "turn-plan",
+        turnState: "ended"
+      })
+    )
+    expect(await jsonRequest(server, `/v1/sessions/${session.id}`)).toMatchObject({
+      body: {
+        pendingPlanApproval: true,
+        session: {
+          actionRequired: true,
+          actionRequiredKind: "planApproval",
+          pendingPlanApproval: true
+        }
+      }
+    })
+    expect(
+      (
+        await jsonRequest(server, `/v1/sessions/${session.id}/plan-approval`, {
+          method: "DELETE"
+        })
+      ).status
+    ).toBe(204)
+    expect(await jsonRequest(server, `/v1/sessions/${session.id}`)).toMatchObject({
+      body: {
+        session: {
+          actionRequired: false,
+          pendingPlanApproval: false
+        }
+      }
+    })
+
+    expect(
+      (await run(services.db.listEvents(0))).filter(
+        (event) => event.kind === "session.attention.updated"
+      )
+    ).toHaveLength(3)
+  })
+
   it("deduplicates concurrent client session creation while creation is pending", async () => {
     const { agents, services } = await makeServices("server-a")
     const server = await startWithApp(services)
@@ -3510,7 +3615,7 @@ describe("@codevisor/server", () => {
     expect(opened.status).toBe(200)
     expect(opened.body).toMatchObject({
       session: { id: "open-session-1", projectId: "open-project-1", title: "Open flow" },
-      transcript: { hasMore: false, items: [] }
+      transcript: { hasMore: false, items: [], pendingPlanApproval: false }
     })
     expect(agents.creations).toEqual([["codex", workspaceFolder]])
 

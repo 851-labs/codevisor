@@ -58,6 +58,14 @@ public struct ChatSession: Identifiable, Sendable, Codable, Equatable {
     public var configSelections: [String: String]?
     public var createdAt: Date
     public var updatedAt: Date?
+    /// Server-owned attention state shared by every client of this session.
+    public var latestAttentionSequence: Int
+    public var lastSeenAttentionSequence: Int
+    public var unreadCount: Int
+    public var hasUnreadError: Bool
+    public var actionRequired: Bool
+    public var actionRequiredKind: String?
+    public var pendingPlanApproval: Bool
 
     public init(
         id: UUID = UUID(),
@@ -73,7 +81,14 @@ public struct ChatSession: Identifiable, Sendable, Codable, Equatable {
         cwd: String? = nil,
         configSelections: [String: String]? = nil,
         createdAt: Date = Date(),
-        updatedAt: Date? = nil
+        updatedAt: Date? = nil,
+        latestAttentionSequence: Int = 0,
+        lastSeenAttentionSequence: Int = 0,
+        unreadCount: Int = 0,
+        hasUnreadError: Bool = false,
+        actionRequired: Bool = false,
+        actionRequiredKind: String? = nil,
+        pendingPlanApproval: Bool = false
     ) {
         self.id = id
         self.projectId = projectId
@@ -89,11 +104,20 @@ public struct ChatSession: Identifiable, Sendable, Codable, Equatable {
         self.configSelections = configSelections
         self.createdAt = createdAt
         self.updatedAt = updatedAt
+        self.latestAttentionSequence = latestAttentionSequence
+        self.lastSeenAttentionSequence = lastSeenAttentionSequence
+        self.unreadCount = unreadCount
+        self.hasUnreadError = hasUnreadError
+        self.actionRequired = actionRequired
+        self.actionRequiredKind = actionRequiredKind
+        self.pendingPlanApproval = pendingPlanApproval
     }
 
     private enum Keys: String, CodingKey {
         case id, projectId, serverId, harnessId, harnessAccountId, agentSessionId, title, origin, isArchived
         case worktreeName, cwd, configSelections, createdAt, updatedAt
+        case latestAttentionSequence, lastSeenAttentionSequence, unreadCount, hasUnreadError
+        case actionRequired, actionRequiredKind, pendingPlanApproval
         /// Pre-rename persisted sessions used this key for `projectId`.
         case workspaceId
     }
@@ -119,6 +143,13 @@ public struct ChatSession: Identifiable, Sendable, Codable, Equatable {
         configSelections = try container.decodeIfPresent([String: String].self, forKey: .configSelections)
         createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
         updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt)
+        latestAttentionSequence = try container.decodeIfPresent(Int.self, forKey: .latestAttentionSequence) ?? 0
+        lastSeenAttentionSequence = try container.decodeIfPresent(Int.self, forKey: .lastSeenAttentionSequence) ?? 0
+        unreadCount = try container.decodeIfPresent(Int.self, forKey: .unreadCount) ?? 0
+        hasUnreadError = try container.decodeIfPresent(Bool.self, forKey: .hasUnreadError) ?? false
+        actionRequired = try container.decodeIfPresent(Bool.self, forKey: .actionRequired) ?? false
+        actionRequiredKind = try container.decodeIfPresent(String.self, forKey: .actionRequiredKind)
+        pendingPlanApproval = try container.decodeIfPresent(Bool.self, forKey: .pendingPlanApproval) ?? false
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -137,5 +168,12 @@ public struct ChatSession: Identifiable, Sendable, Codable, Equatable {
         try container.encodeIfPresent(configSelections, forKey: .configSelections)
         try container.encode(createdAt, forKey: .createdAt)
         try container.encodeIfPresent(updatedAt, forKey: .updatedAt)
+        try container.encode(latestAttentionSequence, forKey: .latestAttentionSequence)
+        try container.encode(lastSeenAttentionSequence, forKey: .lastSeenAttentionSequence)
+        try container.encode(unreadCount, forKey: .unreadCount)
+        try container.encode(hasUnreadError, forKey: .hasUnreadError)
+        try container.encode(actionRequired, forKey: .actionRequired)
+        try container.encodeIfPresent(actionRequiredKind, forKey: .actionRequiredKind)
+        try container.encode(pendingPlanApproval, forKey: .pendingPlanApproval)
     }
 }
