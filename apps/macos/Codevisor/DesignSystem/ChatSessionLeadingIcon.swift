@@ -21,7 +21,7 @@ struct ChatSessionLeadingIcon: View {
             } else if let store, store.unreadCount(session) > 0 {
                 UnreadBadge(color: notificationColor)
             } else {
-                HarnessIcon(harnessId: session.harnessId, fallbackSymbolName: "bubble.left.fill")
+                HarnessIcon(harnessId: session.harnessId, fallbackSymbolName: "bubble.and.pencil")
             }
         }
         .frame(width: 18)
