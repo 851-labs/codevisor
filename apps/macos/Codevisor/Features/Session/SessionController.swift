@@ -352,6 +352,12 @@ final class SessionController {
     /// Set only while a promoted new-chat draft is waiting for a successful
     /// agent connection. Failed setup rolls it back without counting a chat.
     private var pendingNewChatAnalytics = false
+    /// The in-flight eager connect, owned by the controller so a pane remount
+    /// (whose SwiftUI task dies with the view) cannot cancel it mid-flight.
+    /// Callers of `connectIfNeeded()` join this attempt instead of racing the
+    /// `.connecting` status guard. Cancelled only by an explicit supersede
+    /// (`reconnect()`).
+    @ObservationIgnored private var connectAttempt: Task<Void, Never>?
     /// Usage snapshots are cumulative for a session; retain the previous one
     /// so turn events report coarse deltas instead of cumulative totals.
     private var analyticsUsageBaseline: SessionUsage?
@@ -1529,6 +1535,19 @@ final class SessionController {
     /// (softened past 5s) and only surface the failure banner — with its
     /// Restart remedy — after 10s without contact.
     func connectIfNeeded() async {
+        // The connect attempt is CONTROLLER-owned, not a child of the view
+        // task that called this. Controllers are cached beyond any single
+        // mount, and the first open of a remotely created chat re-hosts its
+        // pane mid-connect (the container's workspace/tab fix-up bumps the
+        // layout): a view-owned attempt died with that remount — after
+        // painting the transcript and then UN-publishing it in the runtime
+        // catch — while the remounted view's retry bounced off the stale
+        // `.connecting` status below, leaving the chat permanently empty.
+        // Joining the surviving attempt fixes both halves of that race.
+        if let attempt = connectAttempt {
+            await attempt.value
+            return
+        }
         guard model == nil, !isConnecting, let serverSession else { return }
         let persistedHarnessId = serverSession.harnessId
         let harnessId = persistedHarnessId.isEmpty ? selectedHarness?.id : persistedHarnessId
@@ -1537,6 +1556,13 @@ final class SessionController {
         // A worktree draft has no cwd until the worktree is created on first
         // send; connecting now would pin the agent to the project folder.
         guard !wantsNewWorktree || sessionCwdOverride != nil else { return }
+        let attempt = Task { await self.runConnectAttempt(harnessId: harnessId, harnessName: harnessName) }
+        connectAttempt = attempt
+        await attempt.value
+    }
+
+    private func runConnectAttempt(harnessId: String, harnessName: String) async {
+        defer { connectAttempt = nil }
         status = .connecting("Starting \(harnessName)…")
         defer { serverWaitMessage = nil }
         let clock = ContinuousClock()
@@ -1547,14 +1573,14 @@ final class SessionController {
                 status = .idle
                 return
             } catch {
-                // The eager connect rides the chat view's `.task`; a mid-flight
-                // cancellation (pane re-hosted, controller replaced during
-                // workspace restore) is lifecycle noise, not a failure — the
-                // remount reconnects. Reset to `.idle` so the remount's
-                // `connectIfNeeded()` passes the `!isConnecting` guard and
-                // actually retries — leaving `.connecting` would wedge the
-                // controller forever (and `SessionStore` would never evict it,
-                // since `.connecting` counts as running).
+                // View remounts no longer cancel this controller-owned
+                // attempt; cancellation now means an explicit supersede
+                // (`reconnect()` tearing down a stale attempt) and is
+                // lifecycle noise, not a failure. Reset to `.idle` so the
+                // successor passes the `!isConnecting` guard — leaving
+                // `.connecting` would wedge the controller forever (and
+                // `SessionStore` would never evict it, since `.connecting`
+                // counts as running).
                 guard !isTaskCancellation(error) else {
                     if case .connecting = status { status = .idle }
                     return
@@ -1567,10 +1593,12 @@ final class SessionController {
                         didFinishExistingRuntimeConfiguration = true
                         existingConfigurationError = message
                         updateConfigurationValidationState()
-                        finishInitialHistoryLoading(
-                            sessionId: serverSession.id,
-                            outcome: "failed"
-                        )
+                        if let sessionId = serverSession?.id {
+                            finishInitialHistoryLoading(
+                                sessionId: sessionId,
+                                outcome: "failed"
+                            )
+                        }
                     }
                     status = .failed(message)
                     return
@@ -1626,6 +1654,13 @@ final class SessionController {
     /// Tears down any connection and reconnects — used when the harness or
     /// project changes on the new-chat page.
     func reconnect() async {
+        // Supersede a controller-owned eager connect explicitly: cancel it and
+        // wait for it to settle so its failure handling cannot clobber the
+        // fresh attempt's status/model below.
+        if let attempt = connectAttempt {
+            attempt.cancel()
+            await attempt.value
+        }
         model = nil
         status = .idle
         await connectIfNeeded()
