@@ -122,6 +122,14 @@ struct NewWorkspaceView: View {
         ) {
             create(in: project)
         }
+        .contextMenu {
+            Button {
+                environment.projectList.archive(project)
+            } label: {
+                Label("Archive", systemImage: "archivebox")
+                    .labelStyle(.titleAndIcon)
+            }
+        }
     }
 
     /// Routes through the quick-create page (`.newChat(project.id)` →
