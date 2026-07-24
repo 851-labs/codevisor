@@ -77,7 +77,7 @@ private final class FakeStatusServerClient: CodevisorServerClienting, @unchecked
         )
     }
 
-    func updateInfo() async throws -> ServerUpdateInfo {
+    func updateInfo(refresh: Bool) async throws -> ServerUpdateInfo {
         ServerUpdateInfo(
             currentVersion: "0.1.0",
             latestVersion: "0.2.0",

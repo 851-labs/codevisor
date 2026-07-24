@@ -90,7 +90,7 @@ private final class AgentSessionsFakeClient: CodevisorServerClienting, @unchecke
     func listHarnesses() async throws -> [ServerHarness] { [] }
     func health() async throws -> ServerHealth { ServerHealth(ok: true, version: "0", database: "ready") }
     func info() async throws -> ServerInfo { fatalError("unused") }
-    func updateInfo() async throws -> ServerUpdateInfo { fatalError("unused") }
+    func updateInfo(refresh: Bool) async throws -> ServerUpdateInfo { fatalError("unused") }
     func issuePairingToken() async throws -> ServerPairingToken { fatalError("unused") }
     func capabilities(cwd: String) async throws -> ServerCapabilities { ServerCapabilities(harnesses: []) }
     func setHarnessEnabled(id: String, enabled: Bool) async throws -> ServerHarness { fatalError("unused") }

@@ -12,7 +12,11 @@ import type {
 import { isoTimestamp } from "@codevisor/api"
 import { execFileSync } from "node:child_process"
 import { randomUUID } from "node:crypto"
+import { readFileSync } from "node:fs"
+import { homedir } from "node:os"
+import { join } from "node:path"
 import { Effect } from "effect"
+import { parse as parseToml } from "smol-toml"
 import {
   listCodexAgentSessions,
   preferHarnessSessionTitles,
@@ -77,6 +81,9 @@ export interface CodexProviderConfig {
   readonly scanAgentSessions?: () => Promise<ReadonlyArray<AgentSessionSummary>>
   /// Injectable for tests: reads a resolved Codex binary's version.
   readonly versionReader?: (command: string, env: NodeJS.ProcessEnv) => string | undefined
+  /// Injectable for tests: reads the codex home's `config.toml` text, or
+  /// `undefined` when the file is missing or unreadable.
+  readonly configFileReader?: (path: string) => string | undefined
   /// When set, command executions mirror their streamed output
   /// (`item/commandExecution/outputDelta`) into server-owned terminals;
   /// commands that outlive the promotion delay surface as terminal tabs.
@@ -327,6 +334,7 @@ export const makeCodexProvider = (
   const connector = config.connector ?? spawnCodexClient
   const scanAgentSessions = config.scanAgentSessions ?? (() => listCodexAgentSessions())
   const versionReader = config.versionReader ?? readCodexVersion
+  const readConfigFile = config.configFileReader ?? defaultConfigFileReader
 
   // PATH first, then fallbackPaths. When both the user CLI and Codex.app
   // bundle are present, compare resolved binary versions and run the newer
@@ -451,6 +459,19 @@ export const makeCodexProvider = (
     toolGateway?: ToolGatewayConfig
   ): Promise<CodexSession> => {
     const client = await connect(definition, cwd, account, toolGateway)
+    // Disable stubs may only name servers the machine's config.toml already
+    // defines: overrides deep-merge into it, and a bare `{ enabled: false }`
+    // for an undefined server creates a transport-less entry the app-server
+    // rejects at config load ("invalid transport in `mcp_servers.…`").
+    // Machines without the Codex desktop app have no such entries — and
+    // nothing to disable.
+    const configuredServers =
+      toolGateway === undefined
+        ? undefined
+        : configuredMcpServerNames({ ...environment.env, ...account?.env }, readConfigFile)
+    const nativeAutomationDisables = NATIVE_AUTOMATION_MCP_SERVERS.filter(
+      (name) => configuredServers?.has(name) ?? false
+    )
     const threadConfig =
       toolGateway === undefined
         ? undefined
@@ -474,12 +495,9 @@ export const makeCodexProvider = (
               in_app_browser: false
             },
             mcp_servers: {
-              node_repl: {
-                enabled: false
-              },
-              "computer-use": {
-                enabled: false
-              },
+              ...Object.fromEntries(
+                nativeAutomationDisables.map((name) => [name, { enabled: false }])
+              ),
               [toolGateway.name]: {
                 url: toolGateway.url,
                 bearer_token_env_var: "CODEVISOR_MCP_GATEWAY_TOKEN",
@@ -922,6 +940,45 @@ export const makeCodexProvider = (
         ? { state: "ready" }
         : { detail: "CLI not found on PATH", state: "unavailable" }
     }
+  }
+}
+
+/// Codex's own bundled automation servers (written into the user's
+/// `config.toml` by the Codex desktop app). Codevisor turns them off inside
+/// its threads so automation routes through the Codevisor tool gateway.
+const NATIVE_AUTOMATION_MCP_SERVERS = ["node_repl", "computer-use"] as const
+
+const defaultConfigFileReader = (path: string): string | undefined => {
+  try {
+    return readFileSync(path, "utf8")
+  } catch {
+    return undefined
+  }
+}
+
+/// Server names defined under `[mcp_servers]` in the codex home's
+/// `config.toml`. Thread-config overrides deep-merge into that file, so an
+/// `{ enabled: false }` stub is only valid for servers that already exist
+/// there — a stub without a base entry becomes a transport-less server that
+/// the Codex app-server rejects at config load ("invalid transport").
+const configuredMcpServerNames = (
+  env: NodeJS.ProcessEnv,
+  readConfigFile: (path: string) => string | undefined
+): ReadonlySet<string> => {
+  const codexHome =
+    env.CODEX_HOME !== undefined && env.CODEX_HOME.trim() !== ""
+      ? env.CODEX_HOME
+      : join(homedir(), ".codex")
+  const content = readConfigFile(join(codexHome, "config.toml"))
+  if (content === undefined) return new Set()
+  try {
+    const parsed: unknown = parseToml(content)
+    if (!isRecord(parsed) || !isRecord(parsed.mcp_servers)) return new Set()
+    return new Set(Object.keys(parsed.mcp_servers))
+  } catch {
+    // An unparseable config fails codex's own load loudly; nothing to
+    // disable from here.
+    return new Set()
   }
 }
 

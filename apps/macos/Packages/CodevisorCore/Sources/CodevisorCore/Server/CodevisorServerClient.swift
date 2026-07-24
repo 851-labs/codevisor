@@ -93,7 +93,9 @@ public func serverErrorMessage(_ error: any Error) -> String {
 public protocol CodevisorServerClienting: Sendable {
     func health() async throws -> ServerHealth
     func info() async throws -> ServerInfo
-    func updateInfo() async throws -> ServerUpdateInfo
+    /// `refresh` bypasses the server's update-check cache (older servers
+    /// ignore the flag).
+    func updateInfo(refresh: Bool) async throws -> ServerUpdateInfo
     func issuePairingToken() async throws -> ServerPairingToken
     /// The machine's stable connection token (unchanged across restarts and
     /// updates until rotated). Preferred over `issuePairingToken` for showing
@@ -305,6 +307,12 @@ public protocol CodevisorServerClienting: Sendable {
 }
 
 public extension CodevisorServerClienting {
+    /// Cached-read default so existing call sites keep compiling; pass
+    /// `refresh: true` when the result is shown to the user right away.
+    func updateInfo() async throws -> ServerUpdateInfo {
+        try await updateInfo(refresh: false)
+    }
+
     /// Compatibility fallback for test doubles and older transports. The HTTP
     /// client overrides this with the server-side filtered request.
     func capabilities(cwd: String, harnessId: String) async throws -> ServerCapabilities {
@@ -2088,8 +2096,11 @@ public final class CodevisorServerClient: CodevisorServerClienting, @unchecked S
         try await get("/v1/info")
     }
 
-    public func updateInfo() async throws -> ServerUpdateInfo {
-        try await get("/v1/update")
+    /// `refresh` bypasses the server's update-check cache so a banner shown
+    /// while the user is looking at a machine reflects the live release
+    /// state. Older servers ignore the query parameter.
+    public func updateInfo(refresh: Bool = false) async throws -> ServerUpdateInfo {
+        try await get(refresh ? "/v1/update?refresh=1" : "/v1/update")
     }
 
     public func issuePairingToken() async throws -> ServerPairingToken {

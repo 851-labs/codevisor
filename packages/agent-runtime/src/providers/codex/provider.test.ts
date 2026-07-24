@@ -199,12 +199,24 @@ class FakeCodexClient implements CodexClient {
   }
 }
 
+/// The shape the Codex desktop app writes into `~/.codex/config.toml`: its
+/// bundled automation servers are defined with real transports.
+const DEFAULT_CODEX_CONFIG_TOML = `
+[mcp_servers.node_repl]
+command = "/Applications/ChatGPT.app/node_repl"
+
+[mcp_servers."computer-use"]
+command = "/Applications/ChatGPT.app/computer-use"
+`
+
 const setup = async (
   options: {
     failResume?: boolean
     resume?: string
     startModel?: string
     toolGateway?: ToolGatewayConfig
+    /// `null` models a machine with no codex config.toml at all.
+    codexConfigToml?: string | null
   } = {}
 ) => {
   const client = new FakeCodexClient()
@@ -215,7 +227,11 @@ const setup = async (
     connector: async (request) => {
       spawns.push(request)
       return client
-    }
+    },
+    configFileReader: () =>
+      options.codexConfigToml === null
+        ? undefined
+        : (options.codexConfigToml ?? DEFAULT_CODEX_CONFIG_TOML)
   })
   const events: Array<RuntimeEvent> = []
   const emit = async (event: RuntimeEvent): Promise<void> => {
@@ -516,6 +532,69 @@ describe("CodexProvider", () => {
     expect(resume?.params).toMatchObject({
       config: expectedConfig
     })
+  })
+
+  it("omits native automation disables when the codex config does not define those servers", async () => {
+    // A machine without the Codex desktop app (typical headless remote) has
+    // no node_repl/computer-use entries in config.toml. Sending bare
+    // `{ enabled: false }` stubs there creates transport-less servers that
+    // the app-server rejects at config load with "invalid transport".
+    const toolGateway: ToolGatewayConfig = {
+      name: "codevisor",
+      url: "http://127.0.0.1:49361/mcp/gateway?gateway=test",
+      bearerToken: "secret"
+    }
+    const { client } = await setup({ toolGateway, codexConfigToml: null })
+    const start = client.requests.find((request) => request.method === "thread/start")
+    const config = start?.params as { config: { mcp_servers: Record<string, unknown> } }
+    expect(config.config.mcp_servers).toEqual({
+      codevisor: {
+        url: toolGateway.url,
+        bearer_token_env_var: "CODEVISOR_MCP_GATEWAY_TOKEN",
+        default_tools_approval_mode: "approve"
+      }
+    })
+  })
+
+  it("disables only the native automation servers the codex config defines", async () => {
+    const toolGateway: ToolGatewayConfig = {
+      name: "codevisor",
+      url: "http://127.0.0.1:49361/mcp/gateway?gateway=test",
+      bearerToken: "secret"
+    }
+    const { client } = await setup({
+      toolGateway,
+      codexConfigToml: '[mcp_servers.node_repl]\ncommand = "node_repl"\n'
+    })
+    const start = client.requests.find((request) => request.method === "thread/start")
+    const config = start?.params as { config: { mcp_servers: Record<string, unknown> } }
+    expect(Object.keys(config.config.mcp_servers).sort()).toEqual(["codevisor", "node_repl"])
+    expect(config.config.mcp_servers.node_repl).toEqual({ enabled: false })
+  })
+
+  it("reads mcp server names from the CODEX_HOME config.toml when set", async () => {
+    const toolGateway: ToolGatewayConfig = {
+      name: "codevisor",
+      url: "http://127.0.0.1:49361/mcp/gateway?gateway=test",
+      bearerToken: "secret"
+    }
+    const reads: Array<string> = []
+    const client = new FakeCodexClient()
+    client.startModel = "gpt-5.2-codex"
+    const provider = makeCodexProvider(
+      { ...environment, env: { ...environment.env, CODEX_HOME: "/custom/codex-home" } },
+      {
+        connector: async () => client,
+        configFileReader: (path) => {
+          reads.push(path)
+          return undefined
+        }
+      }
+    )
+    await run(
+      provider.createSession(definition, "/tmp/project", async () => {}, undefined, toolGateway)
+    )
+    expect(reads).toEqual(["/custom/codex-home/config.toml"])
   })
 
   it("normalizes malformed thread model ids before exposing config options", async () => {

@@ -751,7 +751,7 @@ private actor FakeServerClient: CodevisorServerClienting {
 
     func info() async throws -> ServerInfo { fatalError("unused") }
 
-    func updateInfo() async throws -> ServerUpdateInfo { fatalError("unused") }
+    func updateInfo(refresh: Bool) async throws -> ServerUpdateInfo { fatalError("unused") }
 
     func issuePairingToken() async throws -> ServerPairingToken { fatalError("unused") }
 

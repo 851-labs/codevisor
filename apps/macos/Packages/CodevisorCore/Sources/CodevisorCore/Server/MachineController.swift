@@ -432,7 +432,7 @@ public final class MachineController {
             let info = try await client.info()
             statusByMachineId[id] = MachineStatus(isReachable: true, label: "\(info.name) \(info.version)")
             do {
-                updateInfoByMachineId[id] = try await client.updateInfo()
+                updateInfoByMachineId[id] = try await client.updateInfo(refresh: true)
             } catch {
                 updateInfoByMachineId[id] = nil
                 Log.machines.debug("Update info probe for \(id, privacy: .public) failed: \(String(describing: error), privacy: .public)")

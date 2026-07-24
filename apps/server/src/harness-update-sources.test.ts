@@ -34,6 +34,31 @@ describe("isNewerVersion", () => {
     expect(isNewerVersion("1.2.1", "1.2")).toBe(true)
     expect(isNewerVersion("1.2", "1.2.1")).toBe(false)
   })
+
+  it("ranks a release above pre-releases of the same core", () => {
+    // A server installed from an rc/alpha must still be offered its stable.
+    expect(isNewerVersion("0.1.94", "0.1.94-rc.37")).toBe(true)
+    expect(isNewerVersion("0.1.94", "0.1.94-alpha.42")).toBe(true)
+    expect(isNewerVersion("0.1.94-rc.37", "0.1.94")).toBe(false)
+    // But a pre-release of the NEXT core is newer than the current stable.
+    expect(isNewerVersion("0.1.95-alpha.1", "0.1.94")).toBe(true)
+  })
+
+  it("orders pre-release identifiers per semver", () => {
+    expect(isNewerVersion("0.1.94-rc.2", "0.1.94-rc.1")).toBe(true)
+    expect(isNewerVersion("0.1.94-rc.10", "0.1.94-rc.9")).toBe(true)
+    expect(isNewerVersion("0.1.94-rc.9", "0.1.94-rc.10")).toBe(false)
+    expect(isNewerVersion("0.1.94-rc.1", "0.1.94-alpha.50")).toBe(true)
+    expect(isNewerVersion("0.1.94-alpha.50", "0.1.94-rc.1")).toBe(false)
+    expect(isNewerVersion("0.1.94-alpha.50", "0.1.94-alpha.50")).toBe(false)
+    // Numeric identifiers rank below alphanumeric; longer lists win on ties.
+    expect(isNewerVersion("1.0.0-alpha.1", "1.0.0-alpha")).toBe(true)
+    expect(isNewerVersion("1.0.0-alpha", "1.0.0-alpha.1")).toBe(false)
+    expect(isNewerVersion("1.0.0-alpha", "1.0.0-1")).toBe(true)
+    expect(isNewerVersion("1.0.0-1", "1.0.0-alpha")).toBe(false)
+    // Build metadata is ignored.
+    expect(isNewerVersion("1.2.3+build.5", "1.2.3")).toBe(false)
+  })
 })
 
 describe("latest-version checkers", () => {

@@ -131,10 +131,11 @@ export interface CodevisorServerAuthConfig {
 }
 
 /// Lets the host process implement self-updating: `check` refreshes and
-/// returns the update state, `apply` installs the newer release and restarts
-/// the server process. Wired up in main.ts; absent in tests and embedded runs.
+/// returns the update state (`force` bypasses any host-side cache), `apply`
+/// installs the newer release and restarts the server process. Wired up in
+/// main.ts; absent in tests and embedded runs.
 export interface CodevisorServerUpdater {
-  readonly check: () => Promise<UpdateInfo>
+  readonly check: (options?: { readonly force?: boolean }) => Promise<UpdateInfo>
   readonly apply: () => Promise<void>
 }
 
@@ -783,7 +784,11 @@ const handleRequest = async (
 
     if (request.method === "GET" && url.pathname === "/v1/update") {
       if (config.updater !== undefined) {
-        writeJson(response, 200, await config.updater.check())
+        // `refresh=1` bypasses the updater's check cache: clients force it
+        // when the user is looking at a machine so the banner reflects a
+        // release cut minutes ago, not the last background probe.
+        const force = url.searchParams.get("refresh") === "1"
+        writeJson(response, 200, await config.updater.check({ force }))
         return
       }
       writeJson(response, 200, await run(services.db.getUpdateInfo))
@@ -801,7 +806,9 @@ const handleRequest = async (
         writeJson(response, 200, { accepted: false, reason: "busy" })
         return
       }
-      const info = await config.updater.check()
+      // Forced: the decision to restart the server must rest on the live
+      // release state, never a stale cache entry.
+      const info = await config.updater.check({ force: true })
       if (!info.updateAvailable) {
         writeJson(response, 200, { accepted: false, targetVersion: info.currentVersion })
         return

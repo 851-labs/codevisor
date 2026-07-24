@@ -479,7 +479,7 @@ private final class RescanCountingClient: CodevisorServerClienting, @unchecked S
     }
 
     func listHarnesses() async throws -> [ServerHarness] { [] }
-    func updateInfo() async throws -> ServerUpdateInfo {
+    func updateInfo(refresh: Bool) async throws -> ServerUpdateInfo {
         ServerUpdateInfo(
             currentVersion: "0.1.0", latestVersion: "0.1.0", updateAvailable: false,
             channel: "stable", checkedAt: nil, migrationState: "idle"
@@ -601,7 +601,7 @@ private final class SyncFakeServerClient: CodevisorServerClienting, @unchecked S
         }
         return ServerInfo(id: "local", name: "Local", kind: "local", version: version, platform: "darwin", bindHost: "127.0.0.1")
     }
-    func updateInfo() async throws -> ServerUpdateInfo {
+    func updateInfo(refresh: Bool) async throws -> ServerUpdateInfo {
         lock.withLock {
             ServerUpdateInfo(
                 currentVersion: currentVersion,

@@ -58,7 +58,10 @@ import {
 } from "./release-source.js"
 
 const SERVER_PROCESS_TITLE = "codevisor-server"
-const SERVER_UPDATE_CHECK_TTL_MS = 6 * 60 * 60 * 1_000
+/// Background cache only: clients checking on the user's behalf pass
+/// `force` (GET /v1/update?refresh=1) and bypass this entirely. Six hours
+/// here made remote machines deny fresh releases for most of a day.
+const SERVER_UPDATE_CHECK_TTL_MS = 15 * 60 * 1_000
 
 const failureMessage = (cause: unknown): string => {
   if (!(cause instanceof Error)) return String(cause)
@@ -267,8 +270,12 @@ const makeSelfUpdater = (options: {
       }
     | undefined
 
-  const check = async (): Promise<UpdateInfo> => {
-    if (cached !== undefined && Date.now() - cached.at < SERVER_UPDATE_CHECK_TTL_MS) {
+  const check = async (checkOptions?: { readonly force?: boolean }): Promise<UpdateInfo> => {
+    if (
+      checkOptions?.force !== true &&
+      cached !== undefined &&
+      Date.now() - cached.at < SERVER_UPDATE_CHECK_TTL_MS
+    ) {
       return cached.info
     }
     let latestVersion = options.currentVersion

@@ -2304,7 +2304,7 @@ describe("@codevisor/server", () => {
     expect(shutdownRequests).toBe(1)
 
     // Servers with an updater report fresh update state and apply on request.
-    const updaterState = { available: true, applyCalls: 0, applyFails: false }
+    const updaterState = { available: true, applyCalls: 0, applyFails: false, forcedChecks: 0 }
     const updatable = await run(
       startCodevisorServer(
         services,
@@ -2318,14 +2318,19 @@ describe("@codevisor/server", () => {
                 throw new Error("apply failed")
               }
             },
-            check: async () => ({
-              channel: "stable",
-              checkedAt: "2026-06-30T00:00:00.000Z",
-              currentVersion: "0.1.0",
-              latestVersion: updaterState.available ? "0.2.0" : "0.1.0",
-              migrationState: "idle" as const,
-              updateAvailable: updaterState.available
-            })
+            check: async (options?: { readonly force?: boolean }) => {
+              if (options?.force === true) {
+                updaterState.forcedChecks += 1
+              }
+              return {
+                channel: "stable",
+                checkedAt: "2026-06-30T00:00:00.000Z",
+                currentVersion: "0.1.0",
+                latestVersion: updaterState.available ? "0.2.0" : "0.1.0",
+                migrationState: "idle" as const,
+                updateAvailable: updaterState.available
+              }
+            }
           }
         })
       )
@@ -2336,9 +2341,18 @@ describe("@codevisor/server", () => {
       latestVersion: "0.2.0",
       updateAvailable: true
     })
+    // A plain check may serve the updater's cache; refresh=1 must not.
+    expect(updaterState.forcedChecks).toBe(0)
+    expect((await jsonRequest(updatable, "/v1/update?refresh=1")).body).toMatchObject({
+      latestVersion: "0.2.0",
+      updateAvailable: true
+    })
+    expect(updaterState.forcedChecks).toBe(1)
     const applied = await jsonRequest(updatable, "/v1/update/apply", { method: "POST" })
     expect(applied.status).toBe(202)
     expect(applied.body).toMatchObject({ accepted: true, targetVersion: "0.2.0" })
+    // Applying always re-checks with force so the restart decision is live.
+    expect(updaterState.forcedChecks).toBe(2)
     await waitFor(() => updaterState.applyCalls === 1)
 
     // A failing apply is swallowed after the 202 acknowledgement.
