@@ -12,22 +12,32 @@ import Foundation
 /// and supplies the tab's title/icon.
 public struct WorkspaceTab: Codable, Sendable, Equatable, Identifiable {
     public let id: UUID
+    /// User-pinned label for this layout. Nil keeps the browser-style title
+    /// following whichever split is active inside the tab.
+    public var customTitle: String?
     public var root: SplitNode
     public var activeLeafId: UUID
 
-    public init(id: UUID = UUID(), root: SplitNode, activeLeafId: UUID? = nil) {
+    public init(
+        id: UUID = UUID(),
+        customTitle: String? = nil,
+        root: SplitNode,
+        activeLeafId: UUID? = nil
+    ) {
         self.id = id
+        self.customTitle = customTitle
         self.root = root
         self.activeLeafId = activeLeafId.flatMap { root.group(id: $0) != nil ? $0 : nil }
             ?? root.allGroups.first?.id
             ?? UUID()
     }
 
-    private enum CodingKeys: String, CodingKey { case id, root, activeLeafId }
+    private enum CodingKeys: String, CodingKey { case id, customTitle, root, activeLeafId }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(UUID.self, forKey: .id)
+        customTitle = try container.decodeIfPresent(String.self, forKey: .customTitle)
         let decodedRoot = try container.decode(SplitNode.self, forKey: .root)
         root = decodedRoot
         let decoded = try container.decodeIfPresent(UUID.self, forKey: .activeLeafId)

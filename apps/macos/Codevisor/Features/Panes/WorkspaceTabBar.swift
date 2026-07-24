@@ -13,10 +13,13 @@ struct WorkspaceTabBar: View {
     let onSelect: (UUID) -> Void
     let onClose: (UUID) -> Void
     let onMove: (UUID, UUID) -> Void
+    let onRename: (UUID, String?) -> Void
     let onNew: () -> Void
 
     @Environment(\.theme) private var theme
     @Environment(\.colorScheme) private var colorScheme
+    @State private var renamingTabId: UUID?
+    @State private var renameText = ""
 
     private let barHeight: CGFloat = 28
     private let minimumTabWidth: CGFloat = 100
@@ -64,6 +67,15 @@ struct WorkspaceTabBar: View {
                                         onMove: onMove
                                     )
                                 )
+                                .contextMenu {
+                                    Button {
+                                        renameText = title(tab)
+                                        renamingTabId = tab.id
+                                    } label: {
+                                        Label("Rename", systemImage: "pencil")
+                                            .labelStyle(.titleAndIcon)
+                                    }
+                                }
                             }
                         }
                         .frame(width: stripWidth, height: barHeight, alignment: .leading)
@@ -104,6 +116,21 @@ struct WorkspaceTabBar: View {
         .padding(.vertical, 6)
         .frame(maxWidth: .infinity)
         .overlay(alignment: .bottom) { Divider() }
+        .alert(
+            "Rename Tab",
+            isPresented: Binding(
+                get: { renamingTabId != nil },
+                set: { if !$0 { renamingTabId = nil } }
+            ),
+            presenting: renamingTabId
+        ) { tabId in
+            TextField("Title", text: $renameText)
+            Button("Rename") {
+                let trimmed = renameText.trimmingCharacters(in: .whitespacesAndNewlines)
+                onRename(tabId, trimmed.isEmpty ? nil : trimmed)
+            }
+            Button("Cancel", role: .cancel) {}
+        }
     }
 }
 

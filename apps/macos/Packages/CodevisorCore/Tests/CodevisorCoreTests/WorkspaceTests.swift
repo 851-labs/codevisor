@@ -418,6 +418,27 @@ struct WorkspaceRepositoryTests {
         #expect(decoded.centerTabs[0].root.allGroups[0].state.selectedPane?.cwdOverride == "/tmp/project")
     }
 
+    @Test("Workspace tab custom titles persist and older tabs remain automatic")
+    func workspaceTabCustomTitlePersistence() throws {
+        let tab = WorkspaceTab(
+            customTitle: "Pinned Layout",
+            root: .leaf(.centerInitial(sessionId: UUID()))
+        )
+        let encoded = try JSONEncoder().encode(tab)
+        let decoded = try JSONDecoder().decode(WorkspaceTab.self, from: encoded)
+        #expect(decoded.customTitle == "Pinned Layout")
+        #expect(decoded.root == tab.root)
+        #expect(decoded.activeLeafId == tab.activeLeafId)
+
+        var legacyJSON = try JSONSerialization.jsonObject(with: encoded) as! [String: Any]
+        legacyJSON.removeValue(forKey: "customTitle")
+        let legacy = try JSONDecoder().decode(
+            WorkspaceTab.self,
+            from: JSONSerialization.data(withJSONObject: legacyJSON)
+        )
+        #expect(legacy.customTitle == nil)
+    }
+
     @Test("Automatic names follow new worktrees but explicit names stay pinned")
     func automaticNameUpdates() {
         let repository = DefaultWorkspaceRepository(store: InMemoryStore())

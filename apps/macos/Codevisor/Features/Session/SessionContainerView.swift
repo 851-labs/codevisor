@@ -277,6 +277,7 @@ struct SessionContainerView: View {
                             onSelect: selectCenterTab,
                             onClose: closeCenterTab,
                             onMove: moveCenterTab,
+                            onRename: renameCenterTab,
                             onNew: addCenterTab
                         )
                     }
@@ -355,6 +356,9 @@ struct SessionContainerView: View {
     }
 
     private func workspaceTabTitle(_ tab: WorkspaceTab) -> String {
+        if let customTitle = tab.customTitle {
+            return customTitle
+        }
         guard let descriptor = workspaceTabDescriptor(tab) else { return "New Tab" }
         return paneTitle(descriptor)
     }
@@ -402,6 +406,17 @@ struct SessionContainerView: View {
               let target = workspace.centerTabs.firstIndex(where: { $0.id == targetId }) else { return }
         let tab = workspace.centerTabs.remove(at: source)
         workspace.centerTabs.insert(tab, at: target)
+        environment.workspaces.save(workspace)
+        workspaceRevision += 1
+    }
+
+    private func renameCenterTab(_ tabId: UUID, to customTitle: String?) {
+        var workspace = store.workspace(for: session, project: project)
+        guard let index = workspace.centerTabs.firstIndex(where: { $0.id == tabId }) else { return }
+        let trimmed = customTitle?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalized = trimmed.flatMap { $0.isEmpty ? nil : $0 }
+        guard workspace.centerTabs[index].customTitle != normalized else { return }
+        workspace.centerTabs[index].customTitle = normalized
         environment.workspaces.save(workspace)
         workspaceRevision += 1
     }
