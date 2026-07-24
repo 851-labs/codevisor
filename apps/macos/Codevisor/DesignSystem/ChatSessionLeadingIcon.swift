@@ -16,7 +16,7 @@ struct ChatSessionLeadingIcon: View {
                 ErrorUnreadBadge(color: theme.statusError)
             } else if store?.isWaitingOnUser(session) == true {
                 ActionRequiredIndicator(color: theme.statusError)
-            } else if store?.isRunning(session) == true {
+            } else if store?.isInProgress(session) == true {
                 AgentActivityIndicator()
             } else if let store, store.unreadCount(session) > 0 {
                 UnreadBadge(color: notificationColor)

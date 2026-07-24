@@ -442,19 +442,14 @@ final class SessionStore {
         content.data(using: .utf8).flatMap { try? JSONDecoder().decode(AttributedString.self, from: $0) }
     }
 
-    /// Whether the session with this id is showing activity: generating a
-    /// response, connecting its agent, running pre-chat setup (worktree
-    /// creation, agent start), or waiting on background work it will return to
-    /// on its own — everything the sidebar spinner covers.
-    func isRunning(_ session: ChatSession) -> Bool {
-        guard let controller = controllers[SessionKey(session)] else { return false }
-        return Self.isInProgress(controller) || controller.isConnecting
-    }
-
-    /// Whether the session is doing work represented by the sidebar spinner,
-    /// excluding the short connection pulse caused by opening a session.
-    /// Sidebar ordering uses this narrower signal so selecting an idle row
-    /// cannot make it jump temporarily while its transcript connects.
+    /// Whether the session is doing work the user should see as activity:
+    /// generating a response, running pre-chat setup (worktree creation, agent
+    /// start), or waiting on background work it will return to on its own.
+    ///
+    /// Deliberately excludes the connection pulse from opening a session —
+    /// connecting is loading, not activity, so the leading icon keeps showing
+    /// the harness icon and sidebar ordering does not make an idle row jump
+    /// while its transcript connects.
     func isInProgress(_ session: ChatSession) -> Bool {
         guard let controller = controllers[SessionKey(session)] else { return false }
         return Self.isInProgress(controller)
