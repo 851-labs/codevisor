@@ -125,6 +125,18 @@ struct ComputerUseApplicationIdentity: Equatable {
     let path: String
 }
 
+func computerUseApplicationIsProtected(_ identity: ComputerUseApplicationIdentity) -> Bool {
+    let normalized = [identity.displayName, identity.id, identity.path]
+        .joined(separator: " ")
+        .lowercased()
+        .replacingOccurrences(of: " ", with: "")
+    let protected = [
+        "1password", "com.agilebits", "bitwarden", "lastpass",
+        "dashlane", "keeper", "keychainaccess", "com.apple.passwords"
+    ]
+    return protected.contains(where: normalized.contains)
+}
+
 /// Native Computer Use accepts a display name, bundle identifier, or full app
 /// path. Keep that matching logic independent from NSWorkspace so installed
 /// and running app resolution cannot drift apart.
@@ -935,7 +947,6 @@ public final class ComputerUseBridge: @unchecked Sendable {
         NSWorkspace.shared.runningApplications.filter {
             !$0.isTerminated
                 && $0.activationPolicy == .regular
-                && $0.processIdentifier != ProcessInfo.processInfo.processIdentifier
         }
     }
 
@@ -1256,23 +1267,12 @@ public final class ComputerUseBridge: @unchecked Sendable {
     }
 
     private func requireUnprotected(_ identity: ComputerUseApplicationIdentity) throws {
-        let normalized = [identity.displayName, identity.id, identity.path]
-            .joined(separator: " ")
-            .lowercased()
-            .replacingOccurrences(of: " ", with: "")
-        let protected = [
-            "codevisor", "1password", "com.agilebits", "bitwarden", "lastpass",
-            "dashlane", "keeper", "keychainaccess", "com.apple.passwords"
-        ]
-        if protected.contains(where: normalized.contains) {
+        if computerUseApplicationIsProtected(identity) {
             throw BridgeError("That app is protected and cannot be controlled by Computer Use")
         }
     }
 
     private func requireUnprotected(_ app: NSRunningApplication) throws -> NSRunningApplication {
-        if app.processIdentifier == ProcessInfo.processInfo.processIdentifier {
-            throw BridgeError("That app is protected and cannot be controlled by Computer Use")
-        }
         try requireUnprotected(runningIdentity(app))
         return app
     }

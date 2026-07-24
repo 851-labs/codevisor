@@ -255,7 +255,6 @@ def installed_app_match_score(query, app):
 def require_unprotected_identity(*values):
     normalized = " ".join(str(value or "") for value in values).lower().replace(" ", "")
     protected = (
-        "codevisor",
         "1password",
         "bitwarden",
         "lastpass",

@@ -35,6 +35,20 @@ struct ComputerUseBridgeTests {
         ) == nil)
     }
 
+    @Test("Allows Codevisor while continuing to protect credential managers")
+    func protectedApplicationIdentities() {
+        #expect(!computerUseApplicationIsProtected(ComputerUseApplicationIdentity(
+            id: "com.851labs.Codevisor.Development",
+            displayName: "Codevisor Dev",
+            path: "/Applications/Codevisor Dev.app"
+        )))
+        #expect(computerUseApplicationIsProtected(ComputerUseApplicationIdentity(
+            id: "com.1password.1password",
+            displayName: "1Password",
+            path: "/Applications/1Password.app"
+        )))
+    }
+
     @Test("Searches system, global, and user application directories")
     func installedApplicationRoots() {
         let home = URL(fileURLWithPath: "/Users/example", isDirectory: true)
