@@ -3551,6 +3551,65 @@ describe("@codevisor/server", () => {
     ).toBe(404)
   })
 
+  it("treats differently-cased session ids as one session instead of minting a case-twin", async () => {
+    const { server } = await start()
+    const projectRoot = mkdtempSync(join(tmpdir(), "codevisor-server-case-"))
+    tempDirs.push(projectRoot)
+    const workspaceFolder = join(projectRoot, "workspace")
+    mkdirSync(workspaceFolder)
+
+    // A chat created by a Node client stores the canonical lowercase uuid.
+    const lowerId = "ab12cd34-ef56-4789-a012-3456789abcde"
+    const upperId = lowerId.toUpperCase()
+    const project = (
+      await jsonRequest(server, "/v1/projects", {
+        body: JSON.stringify({ folderPath: workspaceFolder, id: "case-project" }),
+        method: "POST"
+      })
+    ).body as { readonly id: string }
+    const created = await jsonRequest(server, "/v1/sessions", {
+      body: JSON.stringify({
+        id: lowerId,
+        projectId: project.id,
+        harnessId: "codex",
+        title: "Created remotely"
+      }),
+      method: "POST"
+    })
+    expect(created.status).toBe(201)
+
+    // Opening it with Swift's uppercase rendering must return the existing
+    // row — this exact path used to insert a case-twin duplicate session,
+    // which every client then showed as a second sidebar entry.
+    const opened = await jsonRequest(server, `/v1/sessions/${upperId}/open`, {
+      body: JSON.stringify({
+        session: {
+          harnessId: "codex",
+          id: upperId,
+          projectId: project.id.toUpperCase(),
+          title: "Created remotely"
+        }
+      }),
+      method: "POST"
+    })
+    expect(opened.status).toBe(200)
+    expect(opened.body).toMatchObject({ session: { id: lowerId, title: "Created remotely" } })
+
+    // Updates addressed with the uppercase id land on the same single row.
+    const renamed = await jsonRequest(server, `/v1/sessions/${upperId}`, {
+      body: JSON.stringify({ title: "Renamed from the Mac" }),
+      method: "PATCH"
+    })
+    expect(renamed.status).toBe(200)
+    const sessions = (await jsonRequest(server, "/v1/sessions")).body as ReadonlyArray<{
+      readonly id: string
+      readonly title: string
+    }>
+    const twins = sessions.filter((session) => session.id.toLowerCase() === lowerId)
+    expect(twins).toHaveLength(1)
+    expect(twins[0]).toMatchObject({ id: lowerId, title: "Renamed from the Mac" })
+  })
+
   it("serves pane workspaces with idempotent PUTs and change events", async () => {
     const { server, services } = await start()
     const workspaceRoot = mkdtempSync(join(tmpdir(), "codevisor-server-workspaces-"))

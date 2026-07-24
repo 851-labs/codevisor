@@ -437,6 +437,17 @@ interface Migration {
   readonly run?: (sqlite: Database.Database, config: CodevisorDatabaseConfig) => void
 }
 
+/// UUIDs are case-insensitive identifiers, but they live in TEXT columns (and
+/// in-memory maps) compared byte-wise — and clients disagree on rendering:
+/// Swift's `UUID.uuidString` is uppercase, Node's `randomUUID()` lowercase.
+/// Stored ids are canonically lowercase (createProject/createSession + the
+/// "canonical lowercase uuid ids" migration); normalize uuid-shaped ids once
+/// at the service boundary instead of `collate nocase` per query, which would
+/// bypass the primary-key index. Non-uuid identifiers (harness ids, client
+/// action tokens) pass through untouched.
+const UUID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+export const canonicalUuid = (id: string): string => (UUID_SHAPE.test(id) ? id.toLowerCase() : id)
+
 const migrations: ReadonlyArray<Migration> = [
   {
     id: 1,
@@ -1096,6 +1107,144 @@ const migrations: ReadonlyArray<Migration> = [
       alter table files add column storage_state text not null default 'sqlite'
         check(storage_state in ('sqlite', 'dual', 'disk'));
     `
+  },
+  {
+    id: 30,
+    name: "canonical lowercase uuid ids",
+    // UUID ids are compared byte-wise in TEXT columns, but clients disagree on
+    // rendering (Swift uppercases, Node lowercases). Sessions never got the
+    // lowercase canonicalization projects received, so opening a remotely
+    // created (lowercase) session from the macOS app (uppercase paths) missed
+    // the existing row and create-if-missing minted a case-twin duplicate —
+    // the "duplicate agents/workspaces in the sidebar" bug. This migration
+    // makes lowercase canonical everywhere and repairs the damage:
+    //  1. Case-twin session groups are merged: twins without any transcript
+    //     are phantom forks and are deleted outright; twins that were
+    //     genuinely prompted are kept under a fresh lowercase id and archived
+    //     so no data is lost but the duplicate leaves the sidebar.
+    //  2. Session ids (and their child-table references) are lowercased.
+    //  3. Project/worktree/workspace ids and uuid-shaped event subjects are
+    //     lowercased where no differently-cased twin row blocks the rename.
+    sql: "",
+    run: (sqlite) => {
+      const sessionChildTables = [
+        "conversation_items",
+        "session_actions",
+        "prompt_queue_items",
+        "transcript_items",
+        "transcript_projection_state",
+        "transcript_routes",
+        "chat_items",
+        "session_chat_state",
+        "chat_item_routes",
+        "session_events",
+        "session_mcp_settings"
+      ]
+      const rekeySessionChildren = (from: string, to: string): void => {
+        for (const table of sessionChildTables) {
+          sqlite.prepare(`update ${table} set session_id = ? where session_id = ?`).run(to, from)
+        }
+        sqlite.prepare("update events set subject_id = ? where subject_id = ?").run(to, from)
+      }
+      const hasTranscript = (sessionId: string): boolean =>
+        ["chat_items", "transcript_items", "conversation_items"].some(
+          (table) =>
+            sqlite.prepare(`select 1 from ${table} where session_id = ? limit 1`).get(sessionId) !==
+            undefined
+        )
+
+      // 1. Merge case-twin sessions. The canonical survivor is the most
+      // recently active twin that actually has a transcript (falling back to
+      // plain recency when none do).
+      const twinGroups = sqlite
+        .prepare("select lower(id) as lid from sessions group by lower(id) having count(*) > 1")
+        .all() as ReadonlyArray<{ readonly lid: string }>
+      for (const group of twinGroups) {
+        const rows = sqlite
+          .prepare(
+            `select id from sessions where lower(id) = ?
+             order by coalesce(updated_at, created_at) desc`
+          )
+          .all(group.lid) as ReadonlyArray<{ readonly id: string }>
+        const canonical = (rows.find((row) => hasTranscript(row.id)) ?? rows[0]!).id
+        for (const row of rows) {
+          if (row.id === canonical) {
+            continue
+          }
+          if (!hasTranscript(row.id)) {
+            // A phantom fork: created by a case-missed lookup and never
+            // prompted. Dropping it (and its bookkeeping rows) is lossless.
+            for (const table of sessionChildTables) {
+              sqlite.prepare(`delete from ${table} where session_id = ?`).run(row.id)
+            }
+            sqlite.prepare("delete from sessions where id = ?").run(row.id)
+            continue
+          }
+          // Both twins were prompted, so their transcripts genuinely forked.
+          // Keep the loser's data under a fresh id, archived, instead of
+          // guessing how to interleave two histories.
+          const fresh = randomUUID()
+          rekeySessionChildren(row.id, fresh)
+          sqlite
+            .prepare("update sessions set id = ?, is_archived = 1 where id = ?")
+            .run(fresh, row.id)
+        }
+      }
+
+      // 2. Lowercase session ids and every child reference. Safe after the
+      // merge above: no two remaining sessions share a lowercase id.
+      for (const table of sessionChildTables) {
+        sqlite.exec(
+          `update ${table} set session_id = lower(session_id) where session_id != lower(session_id)`
+        )
+      }
+      sqlite.exec("update sessions set id = lower(id) where id != lower(id)")
+
+      // 3. Projects, worktrees, and workspaces: lowercase ids where no
+      // differently-cased twin already claims the lowercase spelling (twins
+      // are still served correctly by the nocase project lookups), then align
+      // the columns referencing them.
+      sqlite.exec(`
+        update projects set id = lower(id)
+          where id != lower(id)
+            and not exists (select 1 from projects twin where twin.id = lower(projects.id));
+        update worktrees set id = lower(id)
+          where id != lower(id)
+            and not exists (select 1 from worktrees twin where twin.id = lower(worktrees.id));
+        update workspaces set id = lower(id)
+          where id != lower(id)
+            and not exists (select 1 from workspaces twin where twin.id = lower(workspaces.id));
+        update project_locations set project_id = lower(project_id)
+          where project_id != lower(project_id)
+            and exists (select 1 from projects where projects.id = lower(project_locations.project_id));
+        update worktrees set project_id = lower(project_id)
+          where project_id != lower(project_id)
+            and exists (select 1 from projects where projects.id = lower(worktrees.project_id));
+        update workspaces set project_id = lower(project_id)
+          where project_id != lower(project_id)
+            and exists (select 1 from projects where projects.id = lower(workspaces.project_id));
+        update sessions set project_id = lower(project_id)
+          where project_id != lower(project_id)
+            and exists (select 1 from projects where projects.id = lower(sessions.project_id));
+        update sessions set workspace_id = lower(workspace_id)
+          where workspace_id is not null and workspace_id != lower(workspace_id)
+            and exists (select 1 from workspaces where workspaces.id = lower(sessions.workspace_id));
+        update workspace_notes set workspace_id = lower(workspace_id)
+          where workspace_id != lower(workspace_id)
+            and exists (select 1 from workspaces where workspaces.id = lower(workspace_notes.workspace_id))
+            and not exists (select 1 from workspace_notes twin where twin.workspace_id = lower(workspace_notes.workspace_id));
+        update project_mcp_settings set project_id = lower(project_id)
+          where project_id != lower(project_id)
+            and not exists (
+              select 1 from project_mcp_settings twin
+              where twin.project_id = lower(project_mcp_settings.project_id)
+                and twin.mcp_server_id = project_mcp_settings.mcp_server_id
+            );
+        update events set subject_id = lower(subject_id)
+          where subject_id != lower(subject_id)
+            and subject_id like '________-____-____-____-____________';
+      `)
+    }
   }
 ]
 
@@ -2367,9 +2516,12 @@ const createService = (
 
   const appendEvent = Effect.fn("CodevisorDatabase.appendEvent")(function* (
     kind: EventKind,
-    subjectId: string,
+    rawSubjectId: string,
     payload: unknown
   ) {
+    // Subjects are usually uuid resource ids (sessions, projects); harness
+    // ids and other non-uuid subjects pass through canonicalUuid untouched.
+    const subjectId = canonicalUuid(rawSubjectId)
     return yield* attempt("appendEvent", () => {
       const createdAt = isoTimestamp()
       return sqlite.transaction(() => {
@@ -2440,7 +2592,10 @@ const createService = (
     return projectFromRow(row, locationRowsFor(row.id))
   }
 
-  const getSession = (id: string): SessionSummary => {
+  const getSession = (rawId: string): SessionSummary => {
+    // Stored session ids are canonically lowercase; tolerate uppercase ids
+    // from Swift clients by normalizing the argument (see canonicalUuid).
+    const id = canonicalUuid(rawId)
     const row = sqlite.prepare("select * from sessions where id = ?").get(id) as
       | SessionRow
       | undefined
@@ -2565,7 +2720,12 @@ const createService = (
   ) {
     return yield* attempt("createSession", () => {
       const now = isoTimestamp()
-      const id = request.id ?? randomUUID()
+      // UUIDs are case-insensitive identifiers. Canonicalize to lowercase on
+      // write (mirroring createProject) so ids stay consistent no matter
+      // which client created the session (Swift uppercases, Node lowercases)
+      // — a case-only difference must not spawn a duplicate session row for
+      // the same chat.
+      const id = (request.id ?? randomUUID()).toLowerCase()
       sqlite
         .prepare(
           `insert into sessions (
@@ -2575,7 +2735,7 @@ const createService = (
         )
         .run(
           id,
-          request.projectId,
+          canonicalUuid(request.projectId),
           config.serverId,
           request.harnessId,
           request.harnessAccountId ?? null,
@@ -2584,7 +2744,7 @@ const createService = (
           request.origin ?? "codevisor",
           (request.isArchived ?? false) ? 1 : 0,
           request.worktreeName ?? null,
-          request.workspaceId ?? null,
+          request.workspaceId == null ? null : canonicalUuid(request.workspaceId),
           request.createdAt ?? now,
           request.updatedAt ?? null
         )
@@ -2625,11 +2785,12 @@ const createService = (
           throw new Error(`Project not found: ${id}`)
         }
       }),
-    createWorktree: (projectId, name, branch, id) =>
+    createWorktree: (rawProjectId, name, branch, id) =>
       attempt("createWorktree", () => {
+        const projectId = canonicalUuid(rawProjectId)
         getProject(projectId)
         const worktree: Worktree = {
-          id: id ?? randomUUID(),
+          id: (id ?? randomUUID()).toLowerCase(),
           projectId,
           serverId: config.serverId,
           name,
@@ -2651,12 +2812,12 @@ const createService = (
         (
           sqlite
             .prepare("select * from worktrees where project_id = ? order by created_at asc")
-            .all(projectId) as ReadonlyArray<WorktreeRow>
+            .all(canonicalUuid(projectId)) as ReadonlyArray<WorktreeRow>
         ).map(worktreeFromRow)
       ),
     deleteWorktree: (id) =>
       attempt("deleteWorktree", () => {
-        sqlite.prepare("delete from worktrees where id = ?").run(id)
+        sqlite.prepare("delete from worktrees where id = ?").run(canonicalUuid(id))
       }),
     listWorkspaces: attempt("listWorkspaces", () =>
       (
@@ -2667,9 +2828,10 @@ const createService = (
     ),
     upsertWorkspace: (request) =>
       attempt("upsertWorkspace", () => {
-        getProject(request.projectId)
+        const projectId = canonicalUuid(request.projectId)
+        getProject(projectId)
         const now = isoTimestamp()
-        const id = request.id ?? randomUUID()
+        const id = (request.id ?? randomUUID()).toLowerCase()
         sqlite
           .prepare(
             `insert into workspaces (
@@ -2688,7 +2850,7 @@ const createService = (
           .run(
             id,
             config.serverId,
-            request.projectId,
+            projectId,
             request.name,
             request.hasCustomName ? 1 : 0,
             request.symbolName ?? null,
@@ -2703,7 +2865,7 @@ const createService = (
       }),
     deleteWorkspace: (id) =>
       attempt("deleteWorkspace", () => {
-        const result = sqlite.prepare("delete from workspaces where id = ?").run(id)
+        const result = sqlite.prepare("delete from workspaces where id = ?").run(canonicalUuid(id))
         if (result.changes === 0) {
           throw new Error(`Workspace not found: ${id}`)
         }
@@ -2712,11 +2874,12 @@ const createService = (
       attempt("getWorkspaceNotes", () => {
         const row = sqlite
           .prepare("select * from workspace_notes where workspace_id = ?")
-          .get(workspaceId) as WorkspaceNotesRow | undefined
+          .get(canonicalUuid(workspaceId)) as WorkspaceNotesRow | undefined
         return row === undefined ? undefined : workspaceNotesFromRow(row)
       }),
-    saveWorkspaceNotes: (request) =>
+    saveWorkspaceNotes: (rawRequest) =>
       attempt("saveWorkspaceNotes", () => {
+        const request = { ...rawRequest, workspaceId: canonicalUuid(rawRequest.workspaceId) }
         const workspace = sqlite
           .prepare("select id from workspaces where id = ?")
           .get(request.workspaceId) as { id: string } | undefined
@@ -2750,7 +2913,7 @@ const createService = (
       attempt("setSessionWorkspace", () => {
         const result = sqlite
           .prepare("update sessions set workspace_id = ? where id = ?")
-          .run(workspaceId, sessionId)
+          .run(workspaceId == null ? null : canonicalUuid(workspaceId), canonicalUuid(sessionId))
         if (result.changes === 0) {
           throw new Error(`Session not found: ${sessionId}`)
         }
@@ -2768,8 +2931,9 @@ const createService = (
         )
     ),
     getSessionSummary: (id) => attempt("getSessionSummary", () => getSession(id)),
-    getSessionDetail: (id) =>
+    getSessionDetail: (rawId) =>
       attempt("getSessionDetail", () => {
+        const id = canonicalUuid(rawId)
         const session = getSession(id)
         const state = sqlite
           .prepare(
@@ -2803,8 +2967,9 @@ const createService = (
           ...(goal === undefined ? {} : { goal })
         }
       }),
-    getTranscriptPage: (sessionId, before, limit) =>
+    getTranscriptPage: (rawSessionId, before, limit) =>
       attempt("getTranscriptPage", () => {
+        const sessionId = canonicalUuid(rawSessionId)
         const session = getSession(sessionId)
         const bounded = Math.max(1, Math.min(64, Math.trunc(limit)))
         const rows = sqlite
@@ -2869,8 +3034,9 @@ const createService = (
           usage: session.usage
         }
       }),
-    getTranscriptItemDetails: (sessionId, itemId) =>
+    getTranscriptItemDetails: (rawSessionId, itemId) =>
       attempt("getTranscriptItemDetails", () => {
+        const sessionId = canonicalUuid(rawSessionId)
         const item = sqlite
           .prepare("select revision from chat_items where session_id = ? and id = ?")
           .get(sessionId, itemId) as { revision: number } | undefined
@@ -2885,8 +3051,9 @@ const createService = (
         ).map(sessionEventFromRow)
         return { itemId, revision: item.revision, events }
       }),
-    getSessionConfigSelections: (id) =>
+    getSessionConfigSelections: (rawId) =>
       attempt("getSessionConfigSelections", () => {
+        const id = canonicalUuid(rawId)
         const row = sqlite
           .prepare("select config_selections from sessions where id = ?")
           .get(id) as { readonly config_selections: string } | undefined
@@ -2897,8 +3064,9 @@ const createService = (
     // tracks conversation activity (chat events stamp it as items
     // land, the last being the finished assistant response), so opening or
     // renaming a session must not reshuffle the sidebar.
-    updateSession: (id, request) =>
+    updateSession: (rawId, request) =>
       attempt("updateSession", () => {
+        const id = canonicalUuid(rawId)
         const current = getSession(id)
         sqlite
           .prepare(
@@ -2926,8 +3094,9 @@ const createService = (
           )
         return getSession(id)
       }),
-    replaceSessionConfigSelections: (id, selections) =>
+    replaceSessionConfigSelections: (rawId, selections) =>
       attempt("replaceSessionConfigSelections", () => {
+        const id = canonicalUuid(rawId)
         getSession(id)
         sqlite
           .prepare("update sessions set config_selections = ? where id = ?")
@@ -2935,8 +3104,9 @@ const createService = (
       }),
     // This condition lives in the UPDATE itself so a user rename and a
     // harness title arriving concurrently cannot pass a stale read/check.
-    updateSessionTitleFromHarness: (id, title) =>
+    updateSessionTitleFromHarness: (rawId, title) =>
       attempt("updateSessionTitleFromHarness", () => {
+        const id = canonicalUuid(rawId)
         const result = sqlite
           .prepare(
             `update sessions set title = ?
@@ -2951,17 +3121,19 @@ const createService = (
         }
         return getSession(id)
       }),
-    archiveSession: (id) =>
+    archiveSession: (rawId) =>
       attempt("archiveSession", () => {
+        const id = canonicalUuid(rawId)
         sqlite.prepare("update sessions set is_archived = 1 where id = ?").run(id)
         return getSession(id)
       }),
-    deleteSession: (id) =>
+    deleteSession: (rawId) =>
       attempt("deleteSession", () => {
-        sqlite.prepare("delete from sessions where id = ?").run(id)
+        sqlite.prepare("delete from sessions where id = ?").run(canonicalUuid(rawId))
       }),
-    appendConversationItem: (sessionId, role, messageId, text, isGenerating, attachments) =>
+    appendConversationItem: (rawSessionId, role, messageId, text, isGenerating, attachments) =>
       attempt("appendConversationItem", () => {
+        const sessionId = canonicalUuid(rawSessionId)
         const now = isoTimestamp()
         // Streamed messages arrive as token-sized chunks sharing a messageId.
         // Extend the newest item in place when the chunk continues it —
@@ -3016,8 +3188,9 @@ const createService = (
           .all(since)
           .map((row) => eventFromRow(row as EventRow))
       ),
-    listSubjectEvents: (subjectId, since = 0) =>
+    listSubjectEvents: (rawSubjectId, since = 0) =>
       attempt("listSubjectEvents", () => {
+        const subjectId = canonicalUuid(rawSubjectId)
         const isSession =
           sqlite.prepare("select 1 from sessions where id = ?").get(subjectId) !== undefined
         return isSession
@@ -3033,8 +3206,12 @@ const createService = (
               .all(subjectId, since)
               .map((row) => eventFromRow(row as EventRow))
       }),
-    createPromptQueueItem: (sessionId, text, attachments, id) =>
+    // Queue-item ids are deliberately NOT canonicalized: a client-supplied id
+    // doubles as the client's optimistic-message token and must echo back
+    // byte-identical for identity reconciliation.
+    createPromptQueueItem: (rawSessionId, text, attachments, id) =>
       attempt("createPromptQueueItem", () => {
+        const sessionId = canonicalUuid(rawSessionId)
         getSession(sessionId)
         const now = isoTimestamp()
         const item: PromptQueueItem = {
@@ -3181,13 +3358,15 @@ const createService = (
           }
         }
       }),
-    listPromptQueue: (sessionId) =>
+    listPromptQueue: (rawSessionId) =>
       attempt("listPromptQueue", () => {
+        const sessionId = canonicalUuid(rawSessionId)
         getSession(sessionId)
         return listPromptQueueSync(sqlite, sessionId)
       }),
-    updatePromptQueueItem: (sessionId, queueItemId, text) =>
+    updatePromptQueueItem: (rawSessionId, queueItemId, text) =>
       attempt("updatePromptQueueItem", () => {
+        const sessionId = canonicalUuid(rawSessionId)
         const now = isoTimestamp()
         const result = sqlite
           .prepare(
@@ -3203,17 +3382,18 @@ const createService = (
             .get(sessionId, queueItemId) as PromptQueueRow
         )
       }),
-    deletePromptQueueItem: (sessionId, queueItemId) =>
+    deletePromptQueueItem: (rawSessionId, queueItemId) =>
       attempt("deletePromptQueueItem", () => {
         const result = sqlite
           .prepare("delete from prompt_queue_items where session_id = ? and id = ?")
-          .run(sessionId, queueItemId)
+          .run(canonicalUuid(rawSessionId), queueItemId)
         if (result.changes === 0) {
           throw new Error(`Prompt queue item not found: ${queueItemId}`)
         }
       }),
-    claimPromptQueueItem: (sessionId) =>
+    claimPromptQueueItem: (rawSessionId) =>
       attempt("claimPromptQueueItem", () => {
+        const sessionId = canonicalUuid(rawSessionId)
         const transaction = sqlite.transaction(() => {
           const row = sqlite
             .prepare(
@@ -3233,16 +3413,17 @@ const createService = (
         })
         return transaction()
       }),
-    completePromptQueueItem: (sessionId, queueItemId) =>
+    completePromptQueueItem: (rawSessionId, queueItemId) =>
       attempt("completePromptQueueItem", () => {
         sqlite
           .prepare(
             "delete from prompt_queue_items where session_id = ? and id = ? and state = 'processing'"
           )
-          .run(sessionId, queueItemId)
+          .run(canonicalUuid(rawSessionId), queueItemId)
       }),
-    listProcessingPromptQueue: (sessionId) =>
+    listProcessingPromptQueue: (rawSessionId) =>
       attempt("listProcessingPromptQueue", () => {
+        const sessionId = canonicalUuid(rawSessionId)
         getSession(sessionId)
         return listPromptQueueSync(sqlite, sessionId, "processing")
       }),
@@ -3251,7 +3432,7 @@ const createService = (
         Boolean(
           sqlite
             .prepare("select 1 from chat_items where session_id = ? and message_id = ? limit 1")
-            .get(sessionId, messageId)
+            .get(canonicalUuid(sessionId), messageId)
         )
       ),
     hasTerminalAssistantAfterMessage: (sessionId, messageId) =>
@@ -3269,11 +3450,12 @@ const createService = (
                where input.session_id = ? and input.message_id = ?
                limit 1`
             )
-            .get(sessionId, messageId)
+            .get(canonicalUuid(sessionId), messageId)
         )
       ),
-    failStaleAssistantChatItems: (sessionId, stopDetail, excludeItemId) =>
+    failStaleAssistantChatItems: (rawSessionId, stopDetail, excludeItemId) =>
       attempt("failStaleAssistantChatItems", () => {
+        const sessionId = canonicalUuid(rawSessionId)
         getSession(sessionId)
         return sqlite.transaction(() => {
           const stale = sqlite
@@ -3313,7 +3495,7 @@ const createService = (
       attempt("getSessionActionResult", () => {
         const row = sqlite
           .prepare("select * from session_actions where session_id = ? and client_action_id = ?")
-          .get(sessionId, clientActionId) as SessionActionRow | undefined
+          .get(canonicalUuid(sessionId), clientActionId) as SessionActionRow | undefined
         return row === undefined ? undefined : (JSON.parse(row.response) as unknown)
       }),
     saveSessionActionResult: (sessionId, clientActionId, actionKind, response) =>
@@ -3325,7 +3507,13 @@ const createService = (
             ) values (?, ?, ?, ?, ?)
             on conflict(session_id, client_action_id) do nothing`
           )
-          .run(sessionId, clientActionId, actionKind, JSON.stringify(response), isoTimestamp())
+          .run(
+            canonicalUuid(sessionId),
+            clientActionId,
+            actionKind,
+            JSON.stringify(response),
+            isoTimestamp()
+          )
       }),
     setHarnessEnabled: (harnessId, enabled) =>
       attempt("setHarnessEnabled", () => {
@@ -3411,7 +3599,7 @@ const createService = (
             `insert into project_mcp_settings (project_id, mcp_server_id, enabled) values (?, ?, ?)
              on conflict(project_id, mcp_server_id) do update set enabled = excluded.enabled`
           )
-          .run(projectId, mcpServerId, enabled ? 1 : 0)
+          .run(canonicalUuid(projectId), mcpServerId, enabled ? 1 : 0)
       }),
     setSessionMcpEnabled: (sessionId, mcpServerId, enabled) =>
       attempt("setSessionMcpEnabled", () => {
@@ -3420,7 +3608,7 @@ const createService = (
             `insert into session_mcp_settings (session_id, mcp_server_id, enabled) values (?, ?, ?)
              on conflict(session_id, mcp_server_id) do update set enabled = excluded.enabled`
           )
-          .run(sessionId, mcpServerId, enabled ? 1 : 0)
+          .run(canonicalUuid(sessionId), mcpServerId, enabled ? 1 : 0)
       }),
     resolveMcpServers: (projectId, sessionId) =>
       attempt("resolveMcpServers", () => {
@@ -3433,7 +3621,10 @@ const createService = (
                     .prepare(
                       "select mcp_server_id, enabled from project_mcp_settings where project_id = ?"
                     )
-                    .all(projectId) as ReadonlyArray<{ mcp_server_id: string; enabled: number }>
+                    .all(canonicalUuid(projectId)) as ReadonlyArray<{
+                    mcp_server_id: string
+                    enabled: number
+                  }>
                 ).map((row) => [row.mcp_server_id, row.enabled === 1] as const)
               )
         const sessionSettings =
@@ -3445,7 +3636,10 @@ const createService = (
                     .prepare(
                       "select mcp_server_id, enabled from session_mcp_settings where session_id = ?"
                     )
-                    .all(sessionId) as ReadonlyArray<{ mcp_server_id: string; enabled: number }>
+                    .all(canonicalUuid(sessionId)) as ReadonlyArray<{
+                    mcp_server_id: string
+                    enabled: number
+                  }>
                 ).map((row) => [row.mcp_server_id, row.enabled === 1] as const)
               )
         return (

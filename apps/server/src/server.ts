@@ -1498,7 +1498,9 @@ const routeWorkspaces = async (
   const workspaceId = matchRoute(url.pathname, "/v1/workspaces/:id")
   if (workspaceId !== undefined && request.method === "PUT") {
     const payload = await readSchema(request, UpsertWorkspaceRequestSchema)
-    if (payload.id !== undefined && payload.id !== workspaceId) {
+    // UUID comparison is case-insensitive: the path id is canonicalized to
+    // lowercase while Swift clients send uppercase body ids.
+    if (payload.id !== undefined && payload.id.toLowerCase() !== workspaceId.toLowerCase()) {
       throw new HttpFailure(
         400,
         `Workspace id in the body (${payload.id}) does not match the path (${workspaceId})`
@@ -2365,8 +2367,13 @@ const createSessionIfMissing = async (
   fanout: EventFanout,
   routeState: RouteState,
   config: CodevisorServerConfig,
-  payload: CreateSessionRequest
+  rawPayload: CreateSessionRequest
 ): Promise<{ readonly session: SessionSummary; readonly created: boolean }> => {
+  // Session ids are canonically lowercase; a client-supplied uppercase id
+  // (Swift renders uuids uppercase) must find the existing row — and share
+  // the in-flight-create key — rather than minting a case-twin duplicate.
+  const payload: CreateSessionRequest =
+    rawPayload.id === undefined ? rawPayload : { ...rawPayload, id: rawPayload.id.toLowerCase() }
   if (payload.id !== undefined) {
     const existing = await findSession(services.db, payload.id)
     if (existing !== undefined) {
@@ -3761,6 +3768,19 @@ const parseRequestUrl = (request: IncomingMessage): URL => {
   return new URL(request.url ?? "/", `http://${request.headers.host ?? "127.0.0.1"}`)
 }
 
+/// Resources whose ids are canonically lowercase uuids (Swift clients render
+/// the same uuid uppercase). Their path parameters are normalized at the
+/// routing boundary so one chat can never split into case-twin database rows,
+/// in-memory transport keys, or event subjects. Other path parameters
+/// (queue-item ids, question ids, MCP ids, ...) are opaque client tokens and
+/// pass through byte-identical.
+const canonicalIdResources = new Set(["sessions", "projects", "workspaces", "worktrees"])
+
+const canonicalRouteCapture = (previousPatternPart: string | undefined, value: string): string =>
+  previousPatternPart !== undefined && canonicalIdResources.has(previousPatternPart)
+    ? value.toLowerCase()
+    : value
+
 const matchRoute = (pathname: string, pattern: string): string | undefined => {
   const pathParts = pathname.split("/").filter(Boolean)
   const patternParts = pattern.split("/").filter(Boolean)
@@ -3772,7 +3792,7 @@ const matchRoute = (pathname: string, pattern: string): string | undefined => {
     const patternPart = patternParts[index] as string
     const pathPart = pathParts[index] as string
     if (patternPart.startsWith(":")) {
-      captured = decodeURIComponent(pathPart)
+      captured = canonicalRouteCapture(patternParts[index - 1], decodeURIComponent(pathPart))
     } else if (patternPart !== pathPart) {
       return undefined
     }
@@ -3794,7 +3814,10 @@ const matchRouteParams = (
     const patternPart = patternParts[index] as string
     const pathPart = pathParts[index] as string
     if (patternPart.startsWith(":")) {
-      params[patternPart.slice(1)] = decodeURIComponent(pathPart)
+      params[patternPart.slice(1)] = canonicalRouteCapture(
+        patternParts[index - 1],
+        decodeURIComponent(pathPart)
+      )
     } else if (patternPart !== pathPart) {
       return undefined
     }
