@@ -924,7 +924,7 @@ const launchManagedBrowser = async (
   processHandle.once("error", (cause) => {
     launchError = cause
   })
-  const deadline = Date.now() + 15_000
+  const deadline = Date.now() + 30_000
   while (Date.now() < deadline) {
     if (launchError !== undefined) throw launchError
     if (processHandle.exitCode !== null) {

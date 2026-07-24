@@ -407,7 +407,7 @@ describe("Browser Use tool contract", () => {
         const navigated = await provider.invoke(context, "navigate", {
           url: `http://127.0.0.1:${address.port}/`
         })
-        expect(navigated.isError).not.toBe(true)
+        expect(navigated.isError, JSON.stringify(navigated.content)).not.toBe(true)
 
         const first = await provider.invoke(context, "snapshot", {})
         const firstText = first.content.find((block) => block.type === "text")
