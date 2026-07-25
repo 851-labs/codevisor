@@ -280,6 +280,7 @@ public final class AppEnvironment {
     /// and re-triggers onboarding. Does not touch the harnesses' own sessions.
     public func deleteAllData() {
         AnalyticsClient.shared.setEnabled(false)
+        DiagnosticsClient.shared.setEnabled(false)
         projectList.removeAll()
         configCache.clear()
         composerDefaults.clear()
@@ -294,6 +295,13 @@ public final class AppEnvironment {
     public func setShareAnalytics(_ enabled: Bool) {
         settings.setShareAnalytics(enabled)
         AnalyticsClient.shared.setEnabled(enabled)
+    }
+
+    /// Persists native diagnostics consent and applies it immediately. Sentry
+    /// remains completely uninitialized until this preference is enabled.
+    public func setShareCrashReports(_ enabled: Bool) {
+        settings.setShareCrashReports(enabled)
+        DiagnosticsClient.shared.setEnabled(enabled)
     }
 
     /// Changes update channels immediately; the Settings view follows this
@@ -397,7 +405,10 @@ public final class AppEnvironment {
         projectRepository.save(seedProjects)
         sessionRepository.save(seedSessions)
         let settings = AppSettingsModel(store: InMemoryStore())
-        if hasOnboarded { settings.completeOnboarding(importExternalSessions: false) }
+        if hasOnboarded {
+            settings.completeOnboarding(importExternalSessions: false)
+            settings.setShareCrashReports(false)
+        }
         return AppEnvironment(
             projectRepository: projectRepository,
             sessionRepository: sessionRepository,

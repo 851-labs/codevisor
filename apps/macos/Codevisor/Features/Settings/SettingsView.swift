@@ -541,8 +541,19 @@ struct GeneralSettingsView: View {
             Section {
                 Toggle(isOn: shareAnalytics) {
                     VStack(alignment: .leading, spacing: 3) {
-                        Text("Share Codevisor analytics")
-                        Text("Share anonymous usage and diagnostic data to help improve Codevisor. Prompts, responses, code, file paths, project names, and terminal commands are never included.")
+                        Text("Share usage analytics")
+                        Text("Share anonymous feature, model, and coding-agent usage to help improve Codevisor.")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .toggleStyle(.switch)
+
+                Toggle(isOn: shareCrashReports) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Send crash and error reports")
+                        Text("Share privacy-filtered stack traces, the Codevisor version, and basic Mac system information when something goes wrong.")
                             .font(.callout)
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
@@ -551,6 +562,8 @@ struct GeneralSettingsView: View {
                 .toggleStyle(.switch)
             } header: {
                 Text("Privacy")
+            } footer: {
+                Text("Prompts, responses, code, file paths, project names, browser content, and terminal commands are never included.")
             }
 
             Section {
@@ -610,6 +623,13 @@ struct GeneralSettingsView: View {
         Binding(
             get: { environment.settings.shareAnalytics },
             set: { environment.setShareAnalytics($0) }
+        )
+    }
+
+    private var shareCrashReports: Binding<Bool> {
+        Binding(
+            get: { environment.settings.shareCrashReports },
+            set: { environment.setShareCrashReports($0) }
         )
     }
 

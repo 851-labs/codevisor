@@ -62,9 +62,25 @@ public final class ErrorReporter {
         scheduleDismissal(of: entry.id)
     }
 
+    /// Reports the same user-facing banner while sending only a closed,
+    /// content-free issue identifier and capture-site stack to diagnostics.
+    public func report(
+        _ issue: DiagnosticIssueName,
+        title: String,
+        message: String? = nil
+    ) {
+        DiagnosticsClient.shared.capture(issue)
+        report(title, message: message)
+    }
+
     /// Reports an underlying error beneath a human-readable headline. The
     /// detail line prefers the error's own user-facing description.
     public func report(_ title: String, error: any Error) {
+        report(title, message: Self.userFacingMessage(for: error))
+    }
+
+    public func report(_ issue: DiagnosticIssueName, title: String, error: any Error) {
+        DiagnosticsClient.shared.capture(issue)
         report(title, message: Self.userFacingMessage(for: error))
     }
 

@@ -6,7 +6,7 @@ import os
 
 /// First-launch onboarding, presented as a short paginated flow:
 /// 1. Welcome, 2. Choose your harnesses, 3. Choose your projects,
-/// 4. Choose analytics sharing.
+/// 4. Choose analytics and crash-report sharing.
 /// The project step is a multi-select over suggested folders; completing it
 /// adds every selected folder as a project and opens a new chat in the first.
 struct OnboardingView: View {
@@ -61,6 +61,7 @@ struct OnboardingView: View {
     /// Sharing is selected initially, but nothing is persisted or sent until
     /// the user continues past the final onboarding step.
     @State private var shareAnalytics = true
+    @State private var shareCrashReports = true
 
     private var installedHarnesses: [ServerHarness] { harnesses.filter(\.isReady) }
     private var notInstalledHarnesses: [ServerHarness] { harnesses.filter { !$0.isReady } }
@@ -187,10 +188,10 @@ struct OnboardingView: View {
         .frame(maxWidth: .infinity)
     }
 
-    // MARK: - Analytics
+    // MARK: - Privacy
 
-    /// A compact final-step consent card. The user can turn sharing off before
-    /// Continue persists and applies the preference.
+    /// A compact final-step consent card. Both choices start selected, remain
+    /// independent, and are not persisted until the user continues.
     private var analyticsStep: some View {
         VStack(spacing: 0) {
             Image(systemName: "chart.line.uptrend.xyaxis")
@@ -203,15 +204,30 @@ struct OnboardingView: View {
                 .font(.system(size: 28, weight: .bold))
                 .padding(.top, 18)
 
-            VStack(alignment: .leading, spacing: 10) {
-                Toggle("Share anonymous metrics", isOn: $shareAnalytics)
-                    .toggleStyle(.checkbox)
-                    .fontWeight(.semibold)
+            VStack(alignment: .leading, spacing: 16) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Toggle("Share anonymous usage metrics", isOn: $shareAnalytics)
+                        .toggleStyle(.checkbox)
+                        .fontWeight(.semibold)
 
-                Text("Help improve Codevisor by sharing which features, models, and coding agents you use. Your prompts, responses, code, file and project names, paths, and terminal commands are never included.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                    Text("Shares anonymous product usage so we can understand what’s useful and what to improve.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Divider()
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Toggle("Send crash and error reports", isOn: $shareCrashReports)
+                        .toggleStyle(.checkbox)
+                        .fontWeight(.semibold)
+
+                    Text("Shares technical details when Codevisor crashes or encounters an error.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
             .padding(18)
             .frame(maxWidth: 420, alignment: .leading)
@@ -220,6 +236,29 @@ struct OnboardingView: View {
                     .fill(theme.cardBackground)
             )
             .padding(.top, 24)
+
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: "lock.shield.fill")
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Your work stays private")
+                        .font(.callout.weight(.semibold))
+
+                    Text("Neither option includes prompts, responses, code, file paths, project names, browser content, or terminal commands.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .padding(12)
+            .frame(maxWidth: 420, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(Color.primary.opacity(0.05))
+            )
+            .padding(.top, 12)
 
             Text("You can change this at any time in Settings → General.")
                 .font(.callout)
@@ -649,6 +688,7 @@ struct OnboardingView: View {
             step = .analytics
         case .analytics:
             environment.setShareAnalytics(shareAnalytics)
+            environment.setShareCrashReports(shareCrashReports)
             finish()
         }
     }

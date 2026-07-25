@@ -17,7 +17,8 @@ let package = Package(
         .library(name: "CodevisorCore", targets: ["CodevisorCore"])
     ],
     dependencies: [
-        .package(url: "https://github.com/PostHog/posthog-ios.git", exact: "3.59.3")
+        .package(url: "https://github.com/PostHog/posthog-ios.git", exact: "3.59.3"),
+        .package(url: "https://github.com/getsentry/sentry-cocoa.git", exact: "9.23.0")
     ],
     targets: [
         // MARK: CodevisorTheming (VSCode/Shiki theme parsing, normalization,
@@ -82,14 +83,19 @@ let package = Package(
             dependencies: [
                 "ACPKit",
                 "CodevisorTheming",
-                .product(name: "PostHog", package: "posthog-ios")
+                .product(name: "PostHog", package: "posthog-ios"),
+                .product(name: "Sentry", package: "sentry-cocoa")
             ],
             path: "CodevisorCore/Sources/CodevisorCore",
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),
         .testTarget(
             name: "CodevisorCoreTests",
-            dependencies: ["CodevisorCore", "ACPKit"],
+            dependencies: [
+                "CodevisorCore",
+                "ACPKit",
+                .product(name: "Sentry", package: "sentry-cocoa")
+            ],
             path: "CodevisorCore/Tests/CodevisorCoreTests",
             swiftSettings: [.swiftLanguageMode(.v6)]
         )

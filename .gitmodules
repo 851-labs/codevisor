@@ -119,3 +119,6 @@
 [submodule ".repos/Sparkle"]
 	path = .repos/Sparkle
 	url = https://github.com/sparkle-project/Sparkle.git
+[submodule ".repos/sentry-cocoa"]
+	path = .repos/sentry-cocoa
+	url = https://github.com/getsentry/sentry-cocoa.git

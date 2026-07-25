@@ -36,7 +36,11 @@ func handleCorruptPayload(
     Log.persistence.fault("Corrupt persisted payload for \(key, privacy: .public); kept a backup: \(String(describing: error), privacy: .public)")
     guard let reportTitle else { return }
     Task { @MainActor in
-        ErrorReporter.shared.report(reportTitle, message: reportMessage)
+        ErrorReporter.shared.report(
+            .corruptPersistedData,
+            title: reportTitle,
+            message: reportMessage
+        )
     }
 }
 
@@ -95,7 +99,8 @@ public final class FileSystemStore: PersistenceStore, @unchecked Sendable {
                 Log.persistence.fault("Application Support is unavailable; falling back to the temporary directory: \(String(describing: error), privacy: .public)")
                 Task { @MainActor in
                     ErrorReporter.shared.report(
-                        "Codevisor Can't Access Its Data Folder",
+                        .dataDirectoryUnavailable,
+                        title: "Codevisor Can't Access Its Data Folder",
                         message: "Changes made now may not be saved after you quit."
                     )
                 }
@@ -204,7 +209,8 @@ public final class FileSystemStore: PersistenceStore, @unchecked Sendable {
         guard isFirstForKey else { return }
         Task { @MainActor in
             ErrorReporter.shared.report(
-                "Couldn't Save Your Data",
+                .persistenceWriteFailed,
+                title: "Couldn't Save Your Data",
                 message: "Codevisor couldn't write “\(key)” to its data folder, so recent changes may be lost. Check that your disk isn't full."
             )
         }

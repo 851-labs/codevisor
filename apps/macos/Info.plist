@@ -30,6 +30,9 @@
 	<string>$(CODEVISOR_POSTHOG_PROJECT_TOKEN)</string>
 	<key>CodevisorPostHogHost</key>
 	<string>$(CODEVISOR_POSTHOG_HOST)</string>
+	<!-- Public crash-event ingestion configuration; this DSN cannot read Sentry data. -->
+	<key>CodevisorSentryDSN</key>
+	<string>$(CODEVISOR_SENTRY_DSN)</string>
 	<!--
 	  codevisor:// deeplinks (codevisor-dev:// in Debug so the dev app and
 	  the installed production app never race for the same handler). Used by

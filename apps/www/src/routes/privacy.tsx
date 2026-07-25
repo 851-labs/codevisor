@@ -7,7 +7,7 @@ export const Route = createFileRoute("/privacy")({
       {
         name: "description",
         content:
-          "How Codevisor and its Chrome extension handle browser data when you use Browser Use."
+          "How Codevisor handles local data, Browser Use, optional analytics, and diagnostics."
       }
     ]
   }),
@@ -22,9 +22,9 @@ const sections = [
       <>
         <p>
           This policy describes how the Codevisor Chrome extension and the Codevisor desktop
-          application handle information when you use Browser Use. The extension’s single purpose is
-          to connect Codevisor to your existing Chrome session so an agent can complete browser
-          tasks you request.
+          application handle information, including optional product analytics and crash
+          diagnostics. The extension’s single purpose is to connect Codevisor to your existing
+          Chrome session so an agent can complete browser tasks you request.
         </p>
         <p>
           Browser Use is optional. The extension does not operate as a standalone service and
@@ -83,6 +83,49 @@ const sections = [
     )
   },
   {
+    id: "analytics",
+    title: "Optional usage analytics",
+    body: (
+      <>
+        <p>
+          If you enable usage analytics, Codevisor sends a small, fixed set of product events to
+          PostHog, such as opening the app, creating a chat, sending a message, selecting a model or
+          coding agent, and whether a turn completed. These events may include the Codevisor
+          version, macOS version, processor architecture, and coarse usage ranges.
+        </p>
+        <p>
+          Analytics events do not include prompts, responses, code, file or project names, paths,
+          browser content, terminal commands, or a user profile. IP-based geolocation is disabled.
+        </p>
+      </>
+    )
+  },
+  {
+    id: "diagnostics",
+    title: "Optional crash and error reports",
+    body: (
+      <>
+        <p>
+          If you enable crash and error reporting, Codevisor uses Sentry to receive native crash
+          stack traces and a fixed allowlist of internal error identifiers. Reports may include the
+          Codevisor version and build, macOS name and version, processor architecture, loaded binary
+          identifiers needed for symbolication, and technical stack frames.
+        </p>
+        <p>
+          Codevisor disables Sentry’s session recording, screenshots, view hierarchy capture,
+          network breadcrumbs, failed-request capture, performance tracing, file-I/O tracing,
+          application-hang tracking, logs, metrics, and user identification. Before a report leaves
+          the Mac, Codevisor removes exception messages, user and request fields, breadcrumbs,
+          arbitrary context, and directory components from binary and stack-frame paths.
+        </p>
+        <p>
+          Reports are designed not to include prompts, responses, code, file paths, project names,
+          browser content, terminal commands, or account identifiers.
+        </p>
+      </>
+    )
+  },
+  {
     id: "sharing",
     title: "Sharing and limited use",
     body: (
@@ -103,6 +146,11 @@ const sections = [
           Codevisor’s use and transfer of information received from Google APIs complies with the
           Chrome Web Store User Data Policy, including its Limited Use requirements.
         </p>
+        <p>
+          When you enable the corresponding privacy choices, PostHog processes product analytics and
+          Sentry processes crash and error reports on Codevisor’s behalf. They may not use this
+          information for advertising or sell it.
+        </p>
       </>
     )
   },
@@ -119,6 +167,10 @@ const sections = [
           Codevisor stores chat history and associated tool results locally until you remove them.
           AI model providers and websites involved in a task may retain information according to
           their own policies.
+        </p>
+        <p>
+          Optional analytics and diagnostic events are retained only as long as reasonably needed to
+          understand product usage, investigate reliability problems, and improve Codevisor.
         </p>
       </>
     )
@@ -144,6 +196,10 @@ const sections = [
       <>
         <p>You can stop or limit Browser Use at any time:</p>
         <ul>
+          <li>
+            Turn usage analytics or crash and error reporting on or off independently in Codevisor
+            Settings → General → Privacy.
+          </li>
           <li>Stop Browser Use from Codevisor.</li>
           <li>Choose Codevisor’s separate managed browser instead of your Chrome session.</li>
           <li>Disable or uninstall the Codevisor extension in Chrome.</li>
@@ -161,7 +217,7 @@ const sections = [
     body: (
       <>
         <p>
-          We may update this policy as Browser Use changes. The effective date above identifies the
+          We may update this policy as Codevisor changes. The effective date above identifies the
           current version.
         </p>
         <p>
@@ -191,14 +247,14 @@ function PrivacyPolicy() {
       <main className="mx-auto max-w-5xl px-6 py-16 sm:py-24">
         <div className="border-b border-hairline pb-12">
           <p className="text-xs font-medium tracking-[0.18em] text-muted uppercase">
-            Legal · Effective July 23, 2026
+            Legal · Effective July 24, 2026
           </p>
           <h1 className="mt-5 max-w-3xl text-4xl font-semibold tracking-[-0.035em] text-text sm:text-6xl">
             Privacy, in plain language.
           </h1>
           <p className="mt-5 max-w-2xl text-lg leading-relaxed text-muted">
-            Browser Use works with the pages and information you choose. This policy explains what
-            moves through the Chrome extension, where it goes, and how you stay in control.
+            Codevisor keeps your work local by default. This policy explains what the app and
+            optional browser extension handle, what can be shared, and how you stay in control.
           </p>
         </div>
 

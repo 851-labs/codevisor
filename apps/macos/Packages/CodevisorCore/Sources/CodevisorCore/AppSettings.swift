@@ -10,10 +10,13 @@ public struct AppSettings: Sendable, Codable, Equatable {
 
     public var hasCompletedOnboarding: Bool
     public var importExternalSessions: Bool
-    /// Whether this device may send anonymous product usage and diagnostic
-    /// events. Content such as prompts, responses, code, paths, and terminal
-    /// commands must never be included in those events.
+    /// Whether this device may send anonymous product usage events. Content
+    /// such as prompts, responses, code, paths, and terminal commands must
+    /// never be included in those events.
     public var shareAnalytics: Bool
+    /// Whether this installation may send privacy-filtered native crash and
+    /// allowlisted internal error reports to Sentry.
+    public var shareCrashReports: Bool
     /// Opts this installation into signed Alpha builds in addition to Stable.
     public var alphaUpdatesEnabled: Bool
     /// Harness ids the user has explicitly turned off. A harness is "enabled"
@@ -40,6 +43,7 @@ public struct AppSettings: Sendable, Codable, Equatable {
         hasCompletedOnboarding: Bool = false,
         importExternalSessions: Bool = false,
         shareAnalytics: Bool = false,
+        shareCrashReports: Bool = false,
         alphaUpdatesEnabled: Bool = false,
         disabledHarnessIds: Set<String> = [],
         themeMode: ThemeMode = .system,
@@ -54,6 +58,7 @@ public struct AppSettings: Sendable, Codable, Equatable {
         self.hasCompletedOnboarding = hasCompletedOnboarding
         self.importExternalSessions = importExternalSessions
         self.shareAnalytics = shareAnalytics
+        self.shareCrashReports = shareCrashReports
         self.alphaUpdatesEnabled = alphaUpdatesEnabled
         self.disabledHarnessIds = disabledHarnessIds
         self.themeMode = themeMode
@@ -67,7 +72,8 @@ public struct AppSettings: Sendable, Codable, Equatable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case hasCompletedOnboarding, importExternalSessions, shareAnalytics, alphaUpdatesEnabled
+        case hasCompletedOnboarding, importExternalSessions, shareAnalytics
+        case shareCrashReports, alphaUpdatesEnabled
         /// Read-only migration key written by the former custom updater.
         case betaUpdatesEnabled
         case disabledHarnessIds
@@ -85,6 +91,9 @@ public struct AppSettings: Sendable, Codable, Equatable {
         // remain disabled until the final onboarding step is completed.
         shareAnalytics = try container.decodeIfPresent(Bool.self, forKey: .shareAnalytics)
             ?? hasCompletedOnboarding
+        // Native diagnostics are a separate data class. Never extend an older
+        // analytics choice to Sentry without a new, explicit decision.
+        shareCrashReports = try container.decodeIfPresent(Bool.self, forKey: .shareCrashReports) ?? false
         alphaUpdatesEnabled =
             try container.decodeIfPresent(Bool.self, forKey: .alphaUpdatesEnabled)
             ?? container.decodeIfPresent(Bool.self, forKey: .betaUpdatesEnabled)
@@ -111,6 +120,7 @@ public struct AppSettings: Sendable, Codable, Equatable {
         try container.encode(hasCompletedOnboarding, forKey: .hasCompletedOnboarding)
         try container.encode(importExternalSessions, forKey: .importExternalSessions)
         try container.encode(shareAnalytics, forKey: .shareAnalytics)
+        try container.encode(shareCrashReports, forKey: .shareCrashReports)
         try container.encode(alphaUpdatesEnabled, forKey: .alphaUpdatesEnabled)
         try container.encode(disabledHarnessIds, forKey: .disabledHarnessIds)
         try container.encode(themeMode, forKey: .themeMode)
@@ -156,6 +166,7 @@ public final class AppSettingsModel {
     public var hasCompletedOnboarding: Bool { settings.hasCompletedOnboarding }
     public var importExternalSessions: Bool { settings.importExternalSessions }
     public var shareAnalytics: Bool { settings.shareAnalytics }
+    public var shareCrashReports: Bool { settings.shareCrashReports }
     public var alphaUpdatesEnabled: Bool { settings.alphaUpdatesEnabled }
 
     /// Whether a harness is enabled (not turned off by the user).
@@ -193,6 +204,12 @@ public final class AppSettingsModel {
     /// Updates the privacy preference used as the single gate for analytics.
     public func setShareAnalytics(_ value: Bool) {
         settings.shareAnalytics = value
+        persist()
+    }
+
+    /// Updates the privacy preference used as the single gate for diagnostics.
+    public func setShareCrashReports(_ value: Bool) {
+        settings.shareCrashReports = value
         persist()
     }
 

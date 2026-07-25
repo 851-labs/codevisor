@@ -24,6 +24,7 @@ struct CodevisorApp: App {
             : nil
         AnalyticsClient.shared.configureFromMainBundle(enabled: environment.settings.shareAnalytics)
         AnalyticsClient.shared.captureAppOpenedOnce()
+        DiagnosticsClient.shared.configureFromMainBundle(enabled: environment.settings.shareCrashReports)
         _environment = State(initialValue: environment)
         _serverAgent = State(initialValue: serverAgent)
         _sparkleUpdater = State(initialValue: sparkleUpdater)
@@ -117,6 +118,7 @@ struct RootView: View {
         // App-level fallback surface for errors with no natural home in the
         // UI (background sync, persistence).
         .overlay { ErrorBannerLayer() }
+        .overlay { DiagnosticsBannerLayer() }
         .onGeometryChange(for: CGFloat.self) { proxy in
             proxy.size.width
         } action: { width in

@@ -847,7 +847,11 @@ public final class ProjectListModel {
                 Log.sync.error(
                     "Failed to sync project \(project.id.uuidString, privacy: .public) to the server: \(String(describing: error), privacy: .public)"
                 )
-                ErrorReporter.shared.report("Couldn't Sync the Project to the Server", error: error)
+                ErrorReporter.shared.report(
+                    .projectSyncFailed,
+                    title: "Couldn't Sync the Project to the Server",
+                    error: error
+                )
             }
         }
     }
@@ -909,7 +913,8 @@ public final class ProjectListModel {
             }
             if failureCount > 0 {
                 ErrorReporter.shared.report(
-                    "Couldn't Sync to the Server",
+                    .bulkSyncFailed,
+                    title: "Couldn't Sync to the Server",
                     message: "Some items couldn't be uploaded. They'll be retried the next time they change."
                 )
             }
@@ -992,7 +997,8 @@ public final class ProjectListModel {
     /// fails for several records.
     private func reportServerDeleteFailure() {
         ErrorReporter.shared.report(
-            "Couldn't Delete on the Server",
+            .serverDeleteFailed,
+            title: "Couldn't Delete on the Server",
             message: "It may reappear the next time the list refreshes."
         )
     }

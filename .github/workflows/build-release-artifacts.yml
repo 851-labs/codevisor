@@ -355,6 +355,24 @@ jobs:
             scripts/release/build-macos-app.sh "${{ inputs.version }}" dist/release
           wait "$download_pid"
           trap - EXIT
+      - name: Upload macOS debug symbols to Sentry
+        shell: bash
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+        run: |
+          if [[ -z "$SENTRY_AUTH_TOKEN" ]]; then
+            echo "::warning::SENTRY_AUTH_TOKEN is not configured; skipping Sentry debug-symbol upload."
+            exit 0
+          fi
+          symbols_path="dist/release/DerivedData/Build/Products/Release/Codevisor.app.dSYM"
+          if [[ ! -d "$symbols_path" ]]; then
+            echo "Expected macOS debug symbols at $symbols_path." >&2
+            exit 1
+          fi
+          bunx @sentry/cli@3.6.2 debug-files upload \
+            --org 851-labs \
+            --project codevisor-macos \
+            "$symbols_path"
       - name: Restore unsigned app before caching DerivedData
         shell: bash
         run: |

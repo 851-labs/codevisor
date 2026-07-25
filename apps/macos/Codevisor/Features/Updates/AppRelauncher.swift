@@ -33,7 +33,8 @@ enum AppRelauncher {
             )
             Task { @MainActor in
                 ErrorReporter.shared.report(
-                    "Couldn't Restart Codevisor",
+                    .appRelaunchFailed,
+                    title: "Couldn't Restart Codevisor",
                     message: "Quit and reopen Codevisor manually."
                 )
             }
