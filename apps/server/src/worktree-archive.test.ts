@@ -311,6 +311,37 @@ describe("chooseRestoreName", () => {
   })
 })
 
+describe("snapshot identity", () => {
+  it("archives on a machine with no git identity configured", async () => {
+    const { repo, root } = makeRepo()
+    const path = await makeDirtyWorktree(repo, root, "gnocchi")
+
+    // Exactly a fresh CI runner: no user.name/user.email anywhere. The
+    // snapshot commit must supply its own identity, or `commit-tree` aborts
+    // with "Author identity unknown" and archiving is impossible.
+    const identityless: NodeJS.ProcessEnv = {
+      ...process.env,
+      GIT_CONFIG_GLOBAL: "/dev/null",
+      GIT_CONFIG_SYSTEM: "/dev/null",
+      GIT_AUTHOR_NAME: undefined,
+      GIT_AUTHOR_EMAIL: undefined,
+      GIT_COMMITTER_NAME: undefined,
+      GIT_COMMITTER_EMAIL: undefined
+    }
+
+    const snapshot = await snapshotWorktree(repo, path, "wt-11", identityless)
+    expect(await snapshotExists(repo, snapshot.snapshotRef, identityless)).toBe(true)
+
+    // The commit is attributed to Codevisor, not to whoever ran the app.
+    const author = execFileSync("git", ["show", "-s", "--format=%an <%ae>", snapshot.snapshotSha], {
+      cwd: repo,
+      encoding: "utf8",
+      env: identityless
+    }).trim()
+    expect(author).toBe("Codevisor <noreply@codevisor.app>")
+  })
+})
+
 describe("restoreWorktree name exhaustion", () => {
   it("fails loudly rather than restoring under an unrelated name", async () => {
     const { repo, root } = makeRepo()

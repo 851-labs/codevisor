@@ -24,6 +24,9 @@ import {
 export const snapshotRefFor = (worktreeId: string): string =>
   `refs/codevisor/archived/${worktreeId}`
 
+const snapshotIdentityName = "Codevisor"
+const snapshotIdentityEmail = "noreply@codevisor.app"
+
 export interface WorktreeSnapshot {
   /// The commit the worktree was sitting on. Restore checks out from here, so
   /// it is the piece that must survive even if the branch moves or is deleted.
@@ -90,7 +93,20 @@ export const snapshotWorktree = async (
   // shared GIT_INDEX_FILE would let them corrupt each other's staging.
   const scratchDir = await mkdtemp(join(tmpdir(), "codevisor-archive-"))
   const indexFile = join(scratchDir, "index")
-  const scratchEnv: NodeJS.ProcessEnv = { ...(env ?? process.env), GIT_INDEX_FILE: indexFile }
+  const scratchEnv: NodeJS.ProcessEnv = {
+    ...(env ?? process.env),
+    GIT_INDEX_FILE: indexFile,
+    // The snapshot is a machine-written commit, so it carries its own
+    // identity rather than borrowing the user's. That keeps authorship
+    // honest, and — the reason this is not merely cosmetic — makes
+    // `commit-tree` work on a machine with no git identity configured at
+    // all, where it would otherwise abort with "Author identity unknown"
+    // and make archiving impossible.
+    GIT_AUTHOR_NAME: snapshotIdentityName,
+    GIT_AUTHOR_EMAIL: snapshotIdentityEmail,
+    GIT_COMMITTER_NAME: snapshotIdentityName,
+    GIT_COMMITTER_EMAIL: snapshotIdentityEmail
+  }
   try {
     // Seed the scratch index from HEAD so `add -A` records deletions of
     // tracked files rather than treating the tree as empty.
