@@ -270,6 +270,7 @@
 		0C0000000000000111000000 /* Debug configuration for PBXNativeTarget "Codevisor" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CODEVISOR_IOS_BUNDLE_IDENTIFIER = com.dylanplayer.codevisor.ios;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_PREVIEWS = YES;
@@ -284,7 +285,7 @@
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.dylanplayer.codevisor.ios;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(CODEVISOR_IOS_BUNDLE_IDENTIFIER)";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;

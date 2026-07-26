@@ -35,3 +35,7 @@ apps/desktop/src-tauri/resources/server/*
 # Colocated dev/test build & server state (see scripts/dev.mjs)
 tmp/
 .codevisor/
+
+# Generated per-worktree iOS dev icon (scripts/dev-ios.mjs)
+apps/ios/Codevisor/Resources/AppIconDevGenerated.icon/
+apps/macos/Codevisor/Resources/AppIconDevGenerated.icon/

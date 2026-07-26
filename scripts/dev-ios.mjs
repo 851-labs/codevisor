@@ -4,7 +4,7 @@
 // app is built or launched — the iOS app is a pure client of the dev remote.
 import { createHash } from "node:crypto"
 import { spawn } from "node:child_process"
-import { access, mkdir, realpath } from "node:fs/promises"
+import { access, cp, mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises"
 import { createServer } from "node:net"
 import { basename, join } from "node:path"
 import process from "node:process"
@@ -20,7 +20,14 @@ const derivedDataPath = join(tmpRoot, "DerivedData-iOS")
 // "Dev Remote" machine (same data, same stable token) either way.
 const remoteDataDirectory = join(tmpRoot, "codevisor-remote")
 const remoteName = `Dev Remote (${worktreeName})`
-const bundleIdentifier = "com.dylanplayer.codevisor.ios"
+// Same hash → hue derivation as scripts/dev.mjs, so a worktree's iOS icon
+// color matches its macOS icon color.
+const worktreeHash = createHash("sha256").update(worktreeName).digest("hex")
+const developmentIconColor = colorFromHash(worktreeHash)
+const appDisplayName = `Codevisor (${worktreeName})`
+// Per-worktree bundle id so several worktrees' dev builds coexist on one
+// simulator/device, mirroring the macOS dev instance identifiers.
+const bundleIdentifier = `com.dylanplayer.codevisor.ios.${instanceHash}`
 const simulatorName = process.env.CODEVISOR_IOS_SIMULATOR ?? "iPhone 17 Pro"
 
 const preferredPort = 51_000 + (Number.parseInt(instanceHash.slice(0, 8), 16) % 10_000)
@@ -34,6 +41,8 @@ console.log(`Codevisor iOS development instance: ${worktreeName}`)
 console.log(`  server:    ${serverURL}  (${remoteName})`)
 console.log(`  data:      ${remoteDataDirectory}`)
 console.log(`  simulator: ${simulatorName}`)
+console.log(`  app:       ${appDisplayName} (${bundleIdentifier})`)
+console.log(`  icon:      ${developmentIconColor.hex}`)
 
 if (!(await pathExists(join(repoRoot, "node_modules", ".bin", "tsc")))) {
   await run("bun", ["install", "--frozen-lockfile"])
@@ -110,19 +119,28 @@ try {
   simulatorUdid = simulator.udid
   console.log(`  device:    ${simulator.name} (${simulator.runtime}) ${simulator.udid}`)
 
-  await run("xcodebuild", [
-    "-project",
-    "apps/ios/Codevisor.xcodeproj",
-    "-scheme",
-    "Codevisor",
-    "-configuration",
-    "Debug",
-    "-destination",
-    `platform=iOS Simulator,id=${simulator.udid}`,
-    "-derivedDataPath",
-    derivedDataPath,
-    "build"
-  ])
+  const generatedIconDirectory = await createDevelopmentAppIcon()
+  try {
+    await run("xcodebuild", [
+      "-project",
+      "apps/ios/Codevisor.xcodeproj",
+      "-scheme",
+      "Codevisor",
+      "-configuration",
+      "Debug",
+      "-destination",
+      `platform=iOS Simulator,id=${simulator.udid}`,
+      "-derivedDataPath",
+      derivedDataPath,
+      `CODEVISOR_IOS_BUNDLE_IDENTIFIER=${bundleIdentifier}`,
+      `INFOPLIST_KEY_CFBundleDisplayName=${appDisplayName}`,
+      "ASSETCATALOG_COMPILER_APPICON_NAME=AppIconDevGenerated",
+      "INFOPLIST_KEY_CFBundleIconName=AppIconDevGenerated",
+      "build"
+    ])
+  } finally {
+    await rm(generatedIconDirectory, { recursive: true, force: true })
+  }
 
   await waitForHealth(remotePort, server)
   const token = await readConnectionToken()
@@ -184,6 +202,65 @@ async function openSimulatorUserInterface() {
   console.warn(
     "No simulator UI app (Simulator.app or DeviceHub.app) was found in the selected Xcode; the app is running headless. Open the simulator UI manually to see it."
   )
+}
+
+function colorFromHash(hash) {
+  const hue = Number.parseInt(hash.slice(0, 8), 16) % 360
+  const saturation = 0.68
+  const lightness = 0.5
+  const chroma = (1 - Math.abs(2 * lightness - 1)) * saturation
+  const section = hue / 60
+  const x = chroma * (1 - Math.abs((section % 2) - 1))
+  const [red, green, blue] =
+    section < 1
+      ? [chroma, x, 0]
+      : section < 2
+        ? [x, chroma, 0]
+        : section < 3
+          ? [0, chroma, x]
+          : section < 4
+            ? [0, x, chroma]
+            : section < 5
+              ? [x, 0, chroma]
+              : [chroma, 0, x]
+  const match = lightness - chroma / 2
+  const channels = [red + match, green + match, blue + match]
+  const bytes = channels.map((channel) => Math.round(channel * 255))
+  return {
+    hex: `#${bytes.map((byte) => byte.toString(16).padStart(2, "0")).join("")}`,
+    composer: `extended-srgb:${channels.map((channel) => channel.toFixed(5)).join(",")},1.00000`
+  }
+}
+
+// Same worktree-colored Icon Composer icon as the macOS dev build, generated
+// from the shared template into the iOS target's Resources.
+async function createDevelopmentAppIcon() {
+  const templateDirectory = join(
+    repoRoot,
+    "apps",
+    "macos",
+    "Codevisor",
+    "Resources",
+    "AppIconDev.icon"
+  )
+  const generatedDirectory = join(
+    repoRoot,
+    "apps",
+    "ios",
+    "Codevisor",
+    "Resources",
+    "AppIconDevGenerated.icon"
+  )
+  await rm(generatedDirectory, { recursive: true, force: true })
+  await mkdir(join(generatedDirectory, "Assets"), { recursive: true })
+  const manifest = JSON.parse(await readFile(join(templateDirectory, "icon.json"), "utf8"))
+  manifest.fill = { "automatic-gradient": developmentIconColor.composer }
+  await writeFile(join(generatedDirectory, "icon.json"), `${JSON.stringify(manifest, null, 2)}\n`)
+  await cp(
+    join(templateDirectory, "Assets", "icon-v2.svg"),
+    join(generatedDirectory, "Assets", "icon-v2.svg")
+  )
+  return generatedDirectory
 }
 
 async function selectSimulator(name) {
