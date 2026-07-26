@@ -159,7 +159,7 @@ public extension AssistantTurn {
     /// demotion) are never the answer — while streaming, this is what lets the
     /// live candidate render final-styled from its first chunk and demote the
     /// moment a provider proves it was narration.
-    var finalText: TranscriptEntry? {
+    public var finalText: TranscriptEntry? {
         guard let index = finalTextIndex else { return nil }
         return entries[index]
     }
@@ -193,7 +193,7 @@ public extension AssistantTurn {
     /// renders its own running shimmer, so the turn-level activity indicator
     /// defers to it (an in-progress Agent tool stays unsettled while its
     /// subagent runs, which is what keeps this true for background work).
-    var hasRunningToolCall: Bool {
+    public var hasRunningToolCall: Bool {
         toolCalls.contains { !$0.isSettled }
     }
 
@@ -211,7 +211,7 @@ public extension AssistantTurn {
     /// knife-edge signal cleared by the first non-thought chunk and only ever
     /// re-armed by another thought chunk (so harnesses that don't stream
     /// thinking, or any lull between tool calls, would otherwise show nothing).
-    var showsActivityIndicator: Bool {
+    public var showsActivityIndicator: Bool {
         guard isGenerating else { return false }
         if isThinking { return true }
         return finalText == nil && !hasRunningToolCall

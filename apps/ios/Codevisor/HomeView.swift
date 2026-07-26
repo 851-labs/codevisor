@@ -62,7 +62,7 @@ struct HomeView: View {
                 ToolbarItem(placement: .topBarTrailing) { filterMenu }
             }
             .navigationDestination(for: UUID.self) { sessionId in
-                SessionPlaceholderView(sessionId: sessionId)
+                SessionScreen(sessionId: sessionId)
             }
             .refreshable {
                 await projectList.refreshFromServer()
@@ -227,41 +227,6 @@ private struct SessionRow: View {
             Circle().fill(.blue).frame(width: 8, height: 8)
         } else {
             Circle().fill(.clear).frame(width: 8, height: 8)
-        }
-    }
-}
-
-/// Placeholder detail screen until the Phase 4 transcript lands.
-private struct SessionPlaceholderView: View {
-    @Environment(AppEnvironment.self) private var environment
-    let sessionId: UUID
-
-    private var session: ChatSession? {
-        environment.projectList.sessions.first { $0.id == sessionId }
-    }
-
-    var body: some View {
-        if let session {
-            List {
-                Section("Chat") {
-                    LabeledContent("Title", value: session.title.isEmpty ? "New Chat" : session.title)
-                    LabeledContent("Harness", value: session.harnessId)
-                    if let cwd = session.cwd {
-                        LabeledContent("Directory", value: cwd)
-                    }
-                    if let worktree = session.worktreeName {
-                        LabeledContent("Worktree", value: worktree)
-                    }
-                }
-                Section {
-                    Text("The transcript arrives with the Phase 4 chat screen.")
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .navigationTitle(session.title.isEmpty ? "New Chat" : session.title)
-            .navigationBarTitleDisplayMode(.inline)
-        } else {
-            ContentUnavailableView("Chat Not Found", systemImage: "questionmark.bubble")
         }
     }
 }
