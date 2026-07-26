@@ -164,7 +164,7 @@ public final class AppEnvironment {
         archiveSession(session)
 
         guard let workspaceId = workspaces.workspaceId(forSession: session.id),
-              var workspace = workspaces.workspace(id: workspaceId),
+              let workspace = workspaces.workspace(id: workspaceId),
               !workspace.isArchived else { return false }
 
         let hasActiveChat = projectList.sessions.contains { candidate in
@@ -174,23 +174,52 @@ public final class AppEnvironment {
         }
         guard !hasActiveChat else { return false }
 
-        workspace.isArchived = true
-        workspaces.save(workspace)
+        setWorkspaceArchived(workspace, true)
         return true
     }
 
     /// Archives a workspace and every active chat that belongs to it while
     /// retaining its pane layout for a later restore.
     public func archiveWorkspace(_ workspace: Workspace) {
-        var archived = workspace
-        archived.isArchived = true
-        workspaces.save(archived)
+        setWorkspaceArchived(workspace, true)
 
         for session in projectList.sessions where
             session.serverId == workspace.serverId
                 && !session.isArchived
                 && workspaces.workspaceId(forSession: session.id) == workspace.id {
             projectList.archiveSession(session)
+        }
+    }
+
+    /// Restores a workspace. Its chats are revived by the server's cascade
+    /// (it archived them, so it owns un-archiving them); locally we clear the
+    /// flag so the row reappears immediately rather than after a refresh.
+    public func unarchiveWorkspace(_ workspace: Workspace) {
+        setWorkspaceArchived(workspace, false)
+    }
+
+    /// Writes the archived flag locally AND mirrors it to the server.
+    ///
+    /// The local write is what the sidebar reads, so it stays first and
+    /// unconditional — the archive must work offline. The upload is
+    /// best-effort and fire-and-forget: without it the flag never left this
+    /// machine, so other devices kept showing the workspace and the server
+    /// never cascaded the archive to its chats.
+    private func setWorkspaceArchived(_ workspace: Workspace, _ isArchived: Bool) {
+        var updated = workspace
+        updated.isArchived = isArchived
+        workspaces.save(updated)
+
+        guard workspace.serverId == machines.selectedMachineId else { return }
+        let client = serverClient
+        Task {
+            do {
+                try await client.setWorkspaceArchived(id: workspace.id, isArchived: isArchived)
+            } catch {
+                Log.sync.error(
+                    "Failed to sync workspace archive state: \(String(describing: error), privacy: .public)"
+                )
+            }
         }
     }
 

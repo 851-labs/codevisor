@@ -49,6 +49,42 @@ private struct SidebarSessionListItem: Identifiable {
     var id: UUID { session.id }
 }
 
+/// How many archived chats one page reveals.
+private let archivedPageSize = 10
+
+/// A pending "restore this?" confirmation. Clicking an archived row asks
+/// before acting: the row looks exactly like a live one, so an unguarded click
+/// would silently un-archive whatever the user was only trying to read.
+private struct ArchivedRestoreRequest: Identifiable {
+    enum Target {
+        case project(Project)
+        case session(ChatSession)
+    }
+
+    let target: Target
+
+    var id: UUID {
+        switch target {
+        case let .project(project): project.id
+        case let .session(session): session.id
+        }
+    }
+
+    var name: String {
+        switch target {
+        case let .project(project): project.name
+        case let .session(session): session.title
+        }
+    }
+
+    var kind: String {
+        switch target {
+        case .project: "project"
+        case .session: "chat"
+        }
+    }
+}
+
 /// A workspace row in either workspace-based mode. Its tabs and primary
 /// session/project are resolved from the live session list so status and
 /// activation reuse the session machinery.
@@ -117,6 +153,15 @@ struct SidebarView: View {
     @AppStorage("sidebar.manualSessionOrder") private var manualSessionOrderRaw = ""
     @AppStorage("sidebar.expandedProjects") private var expandedProjectsRaw = ""
     @AppStorage("sidebar.expandedWorkspaces") private var expandedWorkspacesRaw = ""
+    /// Collapsed by default: the archive is a place you go looking for
+    /// something, not something that should crowd the live list.
+    @AppStorage("sidebar.archivedExpanded") private var archivedExpanded = false
+    /// Page state is deliberately NOT persisted: reopening the archive should
+    /// start at the newest page rather than restoring a deep scroll.
+    @State private var archivedVisibleCount = archivedPageSize
+    @State private var isLoadingMoreArchived = false
+    /// The item a click is asking to restore, driving the confirmation alert.
+    @State private var restoreRequest: ArchivedRestoreRequest?
     @AppStorage("update.skippedVersion") private var skippedUpdateVersion = ""
     @AppStorage("update.skippedServerVersion") private var skippedServerUpdate = ""
 
@@ -352,6 +397,8 @@ struct SidebarView: View {
                             .padding(.vertical, 4)
                     }
 
+                    archivedSection
+
                 }
                 .padding(.horizontal, 8)
                 .padding(.bottom, 8)
@@ -360,6 +407,10 @@ struct SidebarView: View {
                 .animation(Motion.listReflow(reduceMotion: reduceMotion), value: visibleProjects.map(\.id))
                 .animation(Motion.listReflow(reduceMotion: reduceMotion), value: expanded)
                 .animation(Motion.listReflow(reduceMotion: reduceMotion), value: expandedWorkspaces)
+                // Same reflow the project/workspace disclosures use, so the
+                // archive opens and closes with the rest of the sidebar.
+                .animation(Motion.listReflow(reduceMotion: reduceMotion), value: archivedExpanded)
+                .animation(Motion.listReflow(reduceMotion: reduceMotion), value: archivedVisibleCount)
             }
             .scrollContentBackground(.hidden)
             .scrollBounceBehavior(.basedOnSize)
@@ -423,6 +474,30 @@ struct SidebarView: View {
                 workspaceRevision += 1
             }
             Button("Cancel", role: .cancel) {}
+        }
+        // Archived rows are visually identical to live ones, so a click is
+        // just as likely to be exploratory as intentional. Confirm before
+        // pulling the item back into the sidebar.
+        .alert(
+            restoreRequest.map { "Restore \($0.kind)?" } ?? "Restore?",
+            isPresented: Binding(
+                get: { restoreRequest != nil },
+                set: { if !$0 { restoreRequest = nil } }
+            ),
+            presenting: restoreRequest
+        ) { request in
+            Button("Restore") { performRestore(request) }
+            Button("Cancel", role: .cancel) {}
+        } message: { request in
+            Text("“\(request.name)” will move back into the sidebar.")
+        }
+        // Collapsing resets paging so reopening starts at the newest page
+        // instead of restoring a deep scroll the user has forgotten about.
+        .onChange(of: archivedExpanded) { _, isExpanded in
+            if !isExpanded {
+                archivedVisibleCount = archivedPageSize
+                isLoadingMoreArchived = false
+            }
         }
         // Entering a workspace-based mode (or sessions changing while in it)
         // sweeps the visible chats so every one has an owning workspace.
@@ -693,7 +768,11 @@ struct SidebarView: View {
         }
     }
 
-    private func projectRow(_ project: Project, isDragPreview: Bool = false) -> some View {
+    private func projectRow(
+        _ project: Project,
+        isDragPreview: Bool = false,
+        isArchivedEntry: Bool = false
+    ) -> some View {
         HoverableRow(
             isHoverEnabled: !isReordering,
             isHoverForced: isDragPreview
@@ -704,19 +783,27 @@ struct SidebarView: View {
                 // the hover new-chat button can never also flip the collapse
                 // state — a row-level tap gesture used to fire for those clicks.
                 Button {
-                    toggle(project.id)
+                    // An archived project has no chats to disclose; the click
+                    // offers to bring it back instead.
+                    if isArchivedEntry {
+                        restoreRequest = ArchivedRestoreRequest(target: .project(project))
+                    } else {
+                        toggle(project.id)
+                    }
                 } label: {
                     HStack(spacing: 6) {
                         // On hover the project icon becomes a disclosure chevron.
                         ZStack {
                             Image(systemName: FilledSymbol.preferred(project.symbolName))
                                 .foregroundStyle(.secondary)
-                                .opacity(isHovered ? 0 : 1)
+                                .opacity(isHovered && !isArchivedEntry ? 0 : 1)
                             Image(systemName: "chevron.right")
                                 .font(.caption2.weight(.semibold))
                                 .foregroundStyle(.secondary)
                                 .rotationEffect(.degrees(isProjectVisuallyExpanded(project.id) ? 90 : 0))
-                                .opacity(isHovered ? 1 : 0)
+                                // Archived rows keep their project icon: there
+                                // is no disclosure behind them to hint at.
+                                .opacity(isHovered && !isArchivedEntry ? 1 : 0)
                         }
                         .frame(width: 18)
                         Text(project.name)
@@ -730,7 +817,9 @@ struct SidebarView: View {
                 }
                 .buttonStyle(.plain)
 
-                if isHovered {
+                // Starting a chat in an archived project would resurrect it by
+                // a side door, so that affordance is dropped here.
+                if isHovered, !isArchivedEntry {
                     // Only open the new chat — never touch the disclosure
                     // state; the label button owns collapse/expand.
                     Button {
@@ -749,11 +838,20 @@ struct SidebarView: View {
         }
         .help(project.folderURL.path)
         .contextMenu {
-            Button("New workspace here") { selection = .newChat(project.id) }
-            Button("Change icon") { iconEditing = project }
-            Button { list.archive(project) } label: {
-                Label("Archive", systemImage: "archivebox")
-                    .labelStyle(.titleAndIcon)
+            if isArchivedEntry {
+                Button {
+                    restoreRequest = ArchivedRestoreRequest(target: .project(project))
+                } label: {
+                    Label("Restore", systemImage: "arrow.uturn.backward")
+                        .labelStyle(.titleAndIcon)
+                }
+            } else {
+                Button("New workspace here") { selection = .newChat(project.id) }
+                Button("Change icon") { iconEditing = project }
+                Button { list.archive(project) } label: {
+                    Label("Archive", systemImage: "archivebox")
+                        .labelStyle(.titleAndIcon)
+                }
             }
         }
     }
@@ -784,12 +882,173 @@ struct SidebarView: View {
         .onTapGesture(perform: toggle)
     }
 
+    /// Archived projects and chats, kept in one collapsed disclosure at the
+    /// bottom of the sidebar rather than a separate screen — restoring stays a
+    /// two-click operation in the place the user already is.
+    ///
+    /// Archived chats of an ARCHIVED project are intentionally omitted: they
+    /// appear nested under that project once it is restored. Listing them at
+    /// this level too would show the same chat twice.
+    @ViewBuilder
+    private var archivedSection: some View {
+        let projects = list.archivedProjects
+        // Chats archived inside an ARCHIVED project are omitted: they come
+        // back with that project, and listing them here as well would show
+        // the same chat in two places.
+        let archivedProjectIDs = Set(projects.map(\.id))
+        let chats = list.archivedSessions.compactMap { session -> SidebarSessionListItem? in
+            guard !archivedProjectIDs.contains(session.projectId),
+                  let project = list.projects.first(where: {
+                      $0.serverId == session.serverId && $0.id == session.projectId
+                  })
+            else { return nil }
+            return SidebarSessionListItem(session: session, project: project)
+        }
+        if !projects.isEmpty || !chats.isEmpty {
+            archivedHeader
+            if archivedExpanded {
+                ForEach(projects) { project in
+                    archivedProjectRow(project)
+                        .transition(Motion.unfold(reduceMotion: reduceMotion))
+                }
+                // Paged: a long archive would otherwise make every sidebar
+                // reflow lay out hundreds of rows it never shows.
+                ForEach(chats.prefix(archivedVisibleCount)) { item in
+                    archivedSessionRow(item.session, project: item.project)
+                        .transition(Motion.unfold(reduceMotion: reduceMotion))
+                }
+                if chats.count > archivedVisibleCount {
+                    showMoreArchivedRow(remaining: chats.count - archivedVisibleCount)
+                        .transition(Motion.unfold(reduceMotion: reduceMotion))
+                }
+            }
+        }
+    }
+
+    /// Reveals the next page of archived chats.
+    ///
+    /// The rows themselves are already in memory, so the spinner is not hiding
+    /// a fetch — it acknowledges the click and covers the layout pass for the
+    /// added rows, which is the part that can actually stutter on a large
+    /// archive. Keeping it on screen for a beat also stops a rapid double
+    /// click from jumping two pages before the first has drawn.
+    private func showMoreArchivedRow(remaining: Int) -> some View {
+        HStack(spacing: 6) {
+            if isLoadingMoreArchived {
+                ProgressView()
+                    .controlSize(.small)
+                    .frame(width: 18)
+            } else {
+                Image(systemName: "ellipsis.circle")
+                    .frame(width: 18)
+                    .foregroundStyle(.secondary)
+            }
+            Text(isLoadingMoreArchived ? "Loading…" : "Show \(min(remaining, archivedPageSize)) more")
+                .font(itemTitleFont)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
+        .sidebarRowHover(isEnabled: !isLoadingMoreArchived)
+        .onTapGesture {
+            guard !isLoadingMoreArchived else { return }
+            isLoadingMoreArchived = true
+            Task {
+                // One runloop hop so the spinner actually renders before the
+                // rows are added and SwiftUI re-lays out the list.
+                try? await Task.sleep(for: .milliseconds(180))
+                withAnimation(Motion.listReflow(reduceMotion: reduceMotion)) {
+                    archivedVisibleCount += archivedPageSize
+                }
+                isLoadingMoreArchived = false
+            }
+        }
+        .accessibilityLabel("Show more archived chats")
+        .accessibilityAddTraits(.isButton)
+    }
+
+    /// Matches `projectsHeader` exactly — same font, color, and padding — so
+    /// "Archived" reads as a peer of the Agents/Workspaces/Projects label
+    /// rather than as another row in the list. The only addition is the
+    /// disclosure chevron, since unlike that header this one collapses.
+    private var archivedHeader: some View {
+        HStack(spacing: 6) {
+            Text("Archived")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.secondary)
+            // The same chevron the transcript disclosures use: its rotation is
+            // scoped to Motion.indicator so it leads the content reveal rather
+            // than interpolating alongside the rows shifting beneath it.
+            TranscriptDisclosureChevron(expanded: archivedExpanded)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 10)
+        .padding(.top, 12)
+        .padding(.bottom, 4)
+        .contentShape(Rectangle())
+        .onTapGesture { archivedExpanded.toggle() }
+        .accessibilityLabel("Archived")
+        .accessibilityAddTraits(.isButton)
+    }
+
+    /// Archived rows deliberately reuse the live row builders rather than
+    /// defining their own look: an archived chat should be visually identical
+    /// to an active one in whichever organization is selected, so the archive
+    /// reads as the same list rather than a separate widget. `isArchivedEntry`
+    /// only swaps the row's behavior (click asks to restore, and the archive
+    /// affordances are dropped), never its styling.
+    private func archivedProjectRow(_ project: Project) -> some View {
+        projectRow(project, isArchivedEntry: true)
+    }
+
+    @ViewBuilder
+    private func archivedSessionRow(_ session: ChatSession, project: Project) -> some View {
+        switch organization {
+        case .compact:
+            // The Agents list pairs each chat with its project subtitle.
+            chronologicalSessionRow(session, project: project, isArchivedEntry: true)
+        case .byProject, .byWorkspace:
+            // Both nest chats under a heading, so the compact row is the match.
+            sessionRow(session, isArchivedEntry: true)
+        }
+    }
+
+    /// Restores a chat and revives its workspace, mirroring the archive
+    /// policy in reverse (`archiveSessionAndWorkspaceIfEmpty`).
+    private func restoreChat(_ session: ChatSession) {
+        list.unarchiveSession(session)
+        if let workspaceId = environment.workspaces.workspaceId(forSession: session.id),
+           let workspace = environment.workspaces.workspace(id: workspaceId),
+           workspace.isArchived {
+            environment.unarchiveWorkspace(workspace)
+        }
+        workspaceRevision += 1
+    }
+
+    /// Applies a confirmed restore and opens the chat, which is what the user
+    /// was reaching into the archive for.
+    private func performRestore(_ request: ArchivedRestoreRequest) {
+        switch request.target {
+        case let .project(project):
+            list.unarchive(project)
+        case let .session(session):
+            restoreChat(session)
+            activateSession(session)
+        }
+    }
+
     private func sessionRow(
         _ session: ChatSession,
         isDragPreview: Bool = false,
-        hierarchyDepth: Int = 0
+        hierarchyDepth: Int = 0,
+        isArchivedEntry: Bool = false
     ) -> some View {
         let isSelected = !isDragPreview
+            && !isArchivedEntry
             && selection == .session(serverId: session.serverId, id: session.id)
         return HoverableRow(
             isSelected: isSelected,
@@ -808,7 +1067,9 @@ struct SidebarView: View {
                     Spacer(minLength: 6)
                 }
 
-                sessionStatus(session, isHovered: isHovered)
+                // An archived chat has nothing left to archive, so the hover
+                // affordance is suppressed rather than offering a no-op.
+                sessionStatus(session, isHovered: isHovered && !isArchivedEntry)
             }
             .padding(.horizontal, 8)
             .padding(.leading, CGFloat(hierarchyDepth) * hierarchyIndent)
@@ -818,31 +1079,47 @@ struct SidebarView: View {
             // A zero-distance drag begins on mouse-down, unlike a tap gesture,
             // which waits for mouse-up. Child controls (the hover archive
             // button) retain gesture precedence over this row gesture.
-            .gesture(sessionActivationGesture(session), including: order == .none ? .none : .all)
+            .gesture(
+                sessionActivationGesture(session),
+                including: isArchivedEntry || order == .none ? .none : .all
+            )
             .onTapGesture {
+                if isArchivedEntry {
+                    restoreRequest = ArchivedRestoreRequest(target: .session(session))
+                    return
+                }
                 guard order == .none else { return }
                 activateSession(session)
             }
             .foregroundStyle(isSelected ? Color.primary : .secondary)
         }
         .contextMenu {
-            Button {
-                renameTitle = session.title
-                renamingSession = session
-            } label: {
-                Label("Rename", systemImage: "pencil")
-                    .labelStyle(.titleAndIcon)
-            }
-            Button { archiveChat(session) } label: {
-                Label("Archive", systemImage: "archivebox")
-                    .labelStyle(.titleAndIcon)
-            }
-            Button {
-                store?.markUnread(session)
-                if selection == .session(serverId: session.serverId, id: session.id) { selection = .newChat(nil) }
-            } label: {
-                Label("Mark as unread", systemImage: "message.badge")
-                    .labelStyle(.titleAndIcon)
+            if isArchivedEntry {
+                Button {
+                    restoreRequest = ArchivedRestoreRequest(target: .session(session))
+                } label: {
+                    Label("Restore", systemImage: "arrow.uturn.backward")
+                        .labelStyle(.titleAndIcon)
+                }
+            } else {
+                Button {
+                    renameTitle = session.title
+                    renamingSession = session
+                } label: {
+                    Label("Rename", systemImage: "pencil")
+                        .labelStyle(.titleAndIcon)
+                }
+                Button { archiveChat(session) } label: {
+                    Label("Archive", systemImage: "archivebox")
+                        .labelStyle(.titleAndIcon)
+                }
+                Button {
+                    store?.markUnread(session)
+                    if selection == .session(serverId: session.serverId, id: session.id) { selection = .newChat(nil) }
+                } label: {
+                    Label("Mark as unread", systemImage: "message.badge")
+                        .labelStyle(.titleAndIcon)
+                }
             }
         }
     }
@@ -1008,9 +1285,11 @@ struct SidebarView: View {
     private func chronologicalSessionRow(
         _ session: ChatSession,
         project: Project,
-        isDragPreview: Bool = false
+        isDragPreview: Bool = false,
+        isArchivedEntry: Bool = false
     ) -> some View {
         let isSelected = !isDragPreview
+            && !isArchivedEntry
             && selection == .session(serverId: session.serverId, id: session.id)
         // Manual-order chat rows attach this gesture alongside their native
         // drag source so activation does not prevent drag-to-reorder.
@@ -1034,7 +1313,7 @@ struct SidebarView: View {
                         .lineLimit(1)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                sessionStatus(session, isHovered: isHovered)
+                sessionStatus(session, isHovered: isHovered && !isArchivedEntry)
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 5)
@@ -1043,31 +1322,44 @@ struct SidebarView: View {
             .foregroundStyle(isSelected ? Color.primary : .secondary)
             .gesture(
                 sessionActivationGesture(session),
-                including: activatesOnMouseDown ? .all : .none
+                including: !isArchivedEntry && activatesOnMouseDown ? .all : .none
             )
             .onTapGesture {
+                if isArchivedEntry {
+                    restoreRequest = ArchivedRestoreRequest(target: .session(session))
+                    return
+                }
                 guard !activatesOnMouseDown else { return }
                 activateSession(session)
             }
         }
         .contextMenu {
-            Button {
-                renameTitle = session.title
-                renamingSession = session
-            } label: {
-                Label("Rename", systemImage: "pencil")
-                    .labelStyle(.titleAndIcon)
-            }
-            Button { archiveChat(session) } label: {
-                Label("Archive", systemImage: "archivebox")
-                    .labelStyle(.titleAndIcon)
-            }
-            Button {
-                store?.markUnread(session)
-                if selection == .session(serverId: session.serverId, id: session.id) { selection = .newChat(nil) }
-            } label: {
-                Label("Mark as unread", systemImage: "message.badge")
-                    .labelStyle(.titleAndIcon)
+            if isArchivedEntry {
+                Button {
+                    restoreRequest = ArchivedRestoreRequest(target: .session(session))
+                } label: {
+                    Label("Restore", systemImage: "arrow.uturn.backward")
+                        .labelStyle(.titleAndIcon)
+                }
+            } else {
+                Button {
+                    renameTitle = session.title
+                    renamingSession = session
+                } label: {
+                    Label("Rename", systemImage: "pencil")
+                        .labelStyle(.titleAndIcon)
+                }
+                Button { archiveChat(session) } label: {
+                    Label("Archive", systemImage: "archivebox")
+                        .labelStyle(.titleAndIcon)
+                }
+                Button {
+                    store?.markUnread(session)
+                    if selection == .session(serverId: session.serverId, id: session.id) { selection = .newChat(nil) }
+                } label: {
+                    Label("Mark as unread", systemImage: "message.badge")
+                        .labelStyle(.titleAndIcon)
+                }
             }
         }
     }
@@ -1104,12 +1396,13 @@ struct SidebarView: View {
 
     private func activateSession(_ session: ChatSession) {
         // Restoring/opening a chat whose workspace was archived revives the
-        // workspace — layout intact.
+        // workspace — layout intact. Routed through the environment so the
+        // revival reaches the server too; a bare local save left other
+        // devices (and the server's cascade) believing it was still archived.
         if let workspaceId = environment.workspaces.workspaceId(forSession: session.id),
-           var workspace = environment.workspaces.workspace(id: workspaceId),
+           let workspace = environment.workspaces.workspace(id: workspaceId),
            workspace.isArchived {
-            workspace.isArchived = false
-            environment.workspaces.save(workspace)
+            environment.unarchiveWorkspace(workspace)
             workspaceRevision += 1
         }
         let target = SidebarSelection.session(serverId: session.serverId, id: session.id)

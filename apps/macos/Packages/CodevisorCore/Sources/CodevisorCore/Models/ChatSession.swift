@@ -45,6 +45,12 @@ public struct ChatSession: Identifiable, Sendable, Codable, Equatable {
     public var title: String
     public var origin: SessionOrigin
     public var isArchived: Bool
+    /// When the chat was archived, so the archived list can order by archive
+    /// recency. `updatedAt` cannot stand in for this: it tracks conversation
+    /// activity, so a chat archived just now would sort below one that was
+    /// archived last week but replied to more recently. Nil when active, and
+    /// on rows archived before this field existed.
+    public var archivedAt: Date?
     /// Set when the session runs in a git worktree instead of the project
     /// folder. The worktree lives at ~/codevisor/{projectId}/{worktreeName} on
     /// the session's server.
@@ -77,6 +83,7 @@ public struct ChatSession: Identifiable, Sendable, Codable, Equatable {
         title: String = "New Session",
         origin: SessionOrigin = .codevisor,
         isArchived: Bool = false,
+        archivedAt: Date? = nil,
         worktreeName: String? = nil,
         cwd: String? = nil,
         configSelections: [String: String]? = nil,
@@ -99,6 +106,7 @@ public struct ChatSession: Identifiable, Sendable, Codable, Equatable {
         self.title = title
         self.origin = origin
         self.isArchived = isArchived
+        self.archivedAt = archivedAt
         self.worktreeName = worktreeName
         self.cwd = cwd
         self.configSelections = configSelections
@@ -114,7 +122,7 @@ public struct ChatSession: Identifiable, Sendable, Codable, Equatable {
     }
 
     private enum Keys: String, CodingKey {
-        case id, projectId, serverId, harnessId, harnessAccountId, agentSessionId, title, origin, isArchived
+        case id, projectId, serverId, harnessId, harnessAccountId, agentSessionId, title, origin, isArchived, archivedAt
         case worktreeName, cwd, configSelections, createdAt, updatedAt
         case latestAttentionSequence, lastSeenAttentionSequence, unreadCount, hasUnreadError
         case actionRequired, actionRequiredKind, pendingPlanApproval
@@ -138,6 +146,7 @@ public struct ChatSession: Identifiable, Sendable, Codable, Equatable {
         title = try container.decodeIfPresent(String.self, forKey: .title) ?? "Session"
         origin = try container.decodeIfPresent(SessionOrigin.self, forKey: .origin) ?? .codevisor
         isArchived = try container.decodeIfPresent(Bool.self, forKey: .isArchived) ?? false
+        archivedAt = try container.decodeIfPresent(Date.self, forKey: .archivedAt)
         worktreeName = try container.decodeIfPresent(String.self, forKey: .worktreeName)
         cwd = try container.decodeIfPresent(String.self, forKey: .cwd)
         configSelections = try container.decodeIfPresent([String: String].self, forKey: .configSelections)
@@ -163,6 +172,7 @@ public struct ChatSession: Identifiable, Sendable, Codable, Equatable {
         try container.encode(title, forKey: .title)
         try container.encode(origin, forKey: .origin)
         try container.encode(isArchived, forKey: .isArchived)
+        try container.encodeIfPresent(archivedAt, forKey: .archivedAt)
         try container.encodeIfPresent(worktreeName, forKey: .worktreeName)
         try container.encodeIfPresent(cwd, forKey: .cwd)
         try container.encodeIfPresent(configSelections, forKey: .configSelections)

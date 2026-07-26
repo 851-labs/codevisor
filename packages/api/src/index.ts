@@ -841,6 +841,10 @@ export const Project = Schema.Struct({
   id: Schema.String,
   name: Schema.String,
   isArchived: Schema.Boolean,
+  /// When the row was archived. `isArchived` is the derived mirror kept for
+  /// clients predating the archived-sections release; new UI should sort and
+  /// label from this timestamp.
+  archivedAt: Schema.optional(Schema.String),
   symbolName: Schema.String,
   origin: SessionOrigin,
   createdAt: Schema.String,
@@ -920,6 +924,9 @@ export type FsListResponse = typeof FsListResponse.Type
 
 export const UpdateProjectRequest = Schema.Struct({
   name: Schema.optional(Schema.String),
+  /// Archiving a project cascades to its workspaces and sessions; unarchiving
+  /// revives only the children that same cascade archived. See
+  /// `archive_cascade_from` in @codevisor/db.
   isArchived: Schema.optional(Schema.Boolean),
   symbolName: Schema.optional(Schema.String)
 })
@@ -938,10 +945,24 @@ export const Workspace = Schema.Struct({
   symbolName: Schema.optional(Schema.String),
   rootDirectory: Schema.optional(Schema.String),
   isArchived: Schema.Boolean,
+  archivedAt: Schema.optional(Schema.String),
   createdAt: Schema.String,
   updatedAt: Schema.optional(Schema.String)
 })
 export type Workspace = typeof Workspace.Type
+
+/// Partial workspace update. Exists alongside the full `PUT` upsert so a client
+/// can archive a workspace without resending (and racing on) its whole record.
+export const UpdateWorkspaceRequest = Schema.Struct({
+  name: Schema.optional(Schema.String),
+  hasCustomName: Schema.optional(Schema.Boolean),
+  symbolName: Schema.optional(Schema.String),
+  rootDirectory: Schema.optional(Schema.String),
+  /// Archiving a workspace cascades to its sessions while retaining pane
+  /// layout; unarchiving revives only the sessions that cascade archived.
+  isArchived: Schema.optional(Schema.Boolean)
+})
+export type UpdateWorkspaceRequest = typeof UpdateWorkspaceRequest.Type
 
 export const UpsertWorkspaceRequest = Schema.Struct({
   /// Optional because the route path carries the id; when both are present
@@ -989,6 +1010,25 @@ export const Worktree = Schema.Struct({
   createdAt: Schema.String
 })
 export type Worktree = typeof Worktree.Type
+
+/// A worktree whose files have been removed, with its contents preserved as a
+/// git snapshot commit under `refs/codevisor/archived/<id>`. Deliberately a
+/// separate record from `Worktree`: archiving deletes the `worktrees` row so
+/// the (finite, ~500-name) food name pool is freed immediately, so restore is
+/// keyed by id and treats `originalName` only as the name it prefers to
+/// reclaim. `parentSha` is the commit the snapshot was taken against — the
+/// restore target when the original branch has moved or been deleted.
+export const ArchivedWorktree = Schema.Struct({
+  id: Schema.String,
+  projectId: Schema.String,
+  serverId: Schema.String,
+  originalName: Schema.String,
+  branch: Schema.String,
+  parentSha: Schema.String,
+  snapshotRef: Schema.String,
+  createdAt: Schema.String
+})
+export type ArchivedWorktree = typeof ArchivedWorktree.Type
 
 export const CreateWorktreeRequest = Schema.Struct({
   /// Client-supplied worktree id so callers can follow `worktree.setup` events
@@ -1086,6 +1126,7 @@ export const SessionSummary = Schema.Struct({
   title: Schema.String,
   origin: SessionOrigin,
   isArchived: Schema.Boolean,
+  archivedAt: Schema.optional(Schema.String),
   worktreeName: Schema.optional(Schema.String),
   /// The pane workspace this session belongs to, when a client has assigned
   /// one. Optional for sessions created before workspaces existed.
@@ -1451,6 +1492,11 @@ export const EventKind = Schema.Literals([
   "session.updated",
   "session.attention.updated",
   "session.archived",
+  /// Emitted when a chat leaves the archive. Distinct from `session.updated`
+  /// because clients must move the row between sidebar sections and may need
+  /// to re-resolve its cwd: restore can hand back a different worktree name
+  /// when the original was reclaimed while the chat sat archived.
+  "session.unarchived",
   "session.deleted",
   "session.output",
   "session.queue.updated",

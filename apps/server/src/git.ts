@@ -57,6 +57,16 @@ const gitRaw = (
     )
   })
 
+/// Escape hatch for callers that need plumbing commands this module does not
+/// wrap individually (see worktree-archive.ts). Shares `git`'s GitError
+/// contract so failures classify identically.
+export const runGit = (
+  operation: string,
+  args: ReadonlyArray<string>,
+  cwd: string,
+  env?: NodeJS.ProcessEnv
+): Promise<string> => git(operation, args, cwd, env)
+
 export const isGitWorkTree = async (dir: string): Promise<boolean> => {
   try {
     return (await git("rev-parse", ["rev-parse", "--is-inside-work-tree"], dir)) === "true"

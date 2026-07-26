@@ -24,6 +24,7 @@ import type {
   SessionSummary,
   TerminalClientFrame,
   UpdateInfo,
+  Workspace,
   Worktree,
   WorktreeSetupUpdate,
   FsListResponse,
@@ -69,18 +70,22 @@ import {
   UpdateBrowserUseConfigurationRequest as UpdateBrowserUseConfigurationRequestSchema,
   UpdateProjectRequest as UpdateProjectRequestSchema,
   UpdateSessionRequest as UpdateSessionRequestSchema,
+  UpdateWorkspaceRequest as UpdateWorkspaceRequestSchema,
   UpsertWorkspaceNotesRequest as UpsertWorkspaceNotesRequestSchema,
   UpsertWorkspaceRequest as UpsertWorkspaceRequestSchema,
   decode,
+  isoTimestamp,
   makeOpenApiDocument
 } from "@codevisor/api"
 import {
   AttachmentStoreError,
   DatabaseError,
   managedRepoPath,
+  worktreePath,
   type AttachmentStore,
   type CodevisorDatabaseService
 } from "@codevisor/db"
+import { archiveWorktreeFiles, deleteSnapshot, restoreWorktree } from "./worktree-archive.js"
 import type { TerminalManagerService } from "@codevisor/terminal"
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http"
 import {
@@ -869,7 +874,7 @@ const handleRequest = async (
     if (await routeProjects(services, config, fanout, request, response, url)) {
       return
     }
-    if (await routeWorkspaces(services, fanout, request, response, url)) {
+    if (await routeWorkspaces(services, fanout, config, request, response, url)) {
       return
     }
     if (await routeHarnesses(services, request, response, url)) {
@@ -1334,10 +1339,19 @@ const routeProjects = async (
 
   const projectId = matchRoute(url.pathname, "/v1/projects/:id")
   if (projectId !== undefined && request.method === "PATCH") {
-    const project = await run(
-      services.db.updateProject(projectId, await readSchema(request, UpdateProjectRequestSchema))
-    )
+    const payload = await readSchema(request, UpdateProjectRequestSchema)
+    // Captured before the write so the cascade's effects can be replayed for
+    // exactly the children whose state changed.
+    const sessionsBefore =
+      payload.isArchived === undefined ? [] : await run(services.db.listSessions)
+    const workspacesBefore =
+      payload.isArchived === undefined ? [] : await run(services.db.listWorkspaces)
+    const project = await run(services.db.updateProject(projectId, payload))
     await appendAndPublish(services.db, fanout, "project.updated", project.id, project)
+    if (payload.isArchived !== undefined) {
+      await publishChangedWorkspaces(services, fanout, workspacesBefore)
+      await applyCascadedSessionEffects(services, fanout, config, sessionsBefore)
+    }
     writeJson(response, 200, await probeProject(serverId, project))
     return true
   }
@@ -1483,6 +1497,7 @@ const routeProjects = async (
 const routeWorkspaces = async (
   services: CodevisorServerServices,
   fanout: EventFanout,
+  config: CodevisorServerConfig,
   request: IncomingMessage,
   response: ServerResponse,
   url: URL
@@ -1524,8 +1539,25 @@ const routeWorkspaces = async (
         `Workspace id in the body (${payload.id}) does not match the path (${workspaceId})`
       )
     }
+    const sessionsBefore = await run(services.db.listSessions)
     const workspace = await run(services.db.upsertWorkspace({ ...payload, id: workspaceId }))
     await appendAndPublish(services.db, fanout, "workspace.updated", workspace.id, workspace)
+    // A PUT can flip the archive bit exactly like the PATCH below, so it owes
+    // the same teardown/restore.
+    await applyCascadedSessionEffects(services, fanout, config, sessionsBefore)
+    writeJson(response, 200, workspace)
+    return true
+  }
+
+  if (workspaceId !== undefined && request.method === "PATCH") {
+    const payload = await readSchema(request, UpdateWorkspaceRequestSchema)
+    const sessionsBefore =
+      payload.isArchived === undefined ? [] : await run(services.db.listSessions)
+    const workspace = await run(services.db.updateWorkspace(workspaceId, payload))
+    await appendAndPublish(services.db, fanout, "workspace.updated", workspace.id, workspace)
+    if (payload.isArchived !== undefined) {
+      await applyCascadedSessionEffects(services, fanout, config, sessionsBefore)
+    }
     writeJson(response, 200, workspace)
     return true
   }
@@ -2452,15 +2484,41 @@ const applySessionUpdate = async (
   sessionId: string,
   payload: UpdateSessionRequest
 ): Promise<SessionSummary> => {
-  const session = await run(services.db.updateSession(sessionId, payload))
-  if (session.isArchived) {
+  const before = await findSession(services.db, sessionId)
+  const wasArchived = before?.isArchived === true
+  let session = await run(services.db.updateSession(sessionId, payload))
+
+  if (session.isArchived && !wasArchived) {
     await archiveSessionRuntime(services, session)
-    await removeArchivedSessionWorktree(services, config.id, session)
+    const ignored = await archiveSessionWorktree(services, config.id, session)
+    if (ignored.length > 0) {
+      // Gitignored files are deliberately not snapshotted (they can hold
+      // secrets and are usually regenerable). Tell the client which ones went
+      // away with the worktree rather than losing them silently.
+      await appendAndPublish(services.db, fanout, "session.updated", session.id, {
+        ...session,
+        archiveDroppedIgnoredPaths: ignored
+      })
+    }
+  } else if (!session.isArchived && wasArchived) {
+    const restored = await restoreSessionWorktree(services, config.id, session)
+    session = restored.session
+    if (!restored.restoredFiles) {
+      await appendAndPublish(services.db, fanout, "session.updated", session.id, {
+        ...session,
+        archiveRestoreIncomplete: true
+      })
+    }
   }
+
   await appendAndPublish(
     services.db,
     fanout,
-    session.isArchived ? "session.archived" : "session.updated",
+    session.isArchived
+      ? "session.archived"
+      : wasArchived
+        ? "session.unarchived"
+        : "session.updated",
     session.id,
     session
   )
@@ -2548,19 +2606,25 @@ const archiveSessionRuntime = async (
   }
 }
 
-/// Deletes an archived session's git worktree from disk once no other active
-/// session on this server still relies on that worktree: it detaches the git
-/// registration, removes the working directory, and drops the tracking row.
-/// The just-archived session is already flagged archived here, so it never
-/// counts itself as an active user.
-const removeArchivedSessionWorktree = async (
+/// Retires an archived session's git worktree once no other active session on
+/// this server still relies on it. The files are captured as a snapshot commit
+/// first, so archiving is lossless: uncommitted and untracked work survives in
+/// `refs/codevisor/archived/<worktreeId>` and can be restored on unarchive.
+///
+/// The `worktrees` row and the branch are both dropped, which is what returns
+/// the (finite) worktree name to the pool. The `archived_worktrees` record is
+/// what restore navigates by.
+///
+/// Sessions in non-git projects carry no worktree name and return immediately:
+/// their cwd is the user's own project folder, which we must never touch.
+const archiveSessionWorktree = async (
   services: CodevisorServerServices,
   serverId: string,
   session: SessionSummary
-): Promise<void> => {
+): Promise<ReadonlyArray<string>> => {
   const worktreeName = session.worktreeName
   if (worktreeName === undefined) {
-    return
+    return []
   }
   const stillInUse = (await run(services.db.listSessions)).some(
     (candidate) =>
@@ -2569,19 +2633,166 @@ const removeArchivedSessionWorktree = async (
       candidate.worktreeName === worktreeName
   )
   if (stillInUse) {
-    return
+    return []
   }
   const worktree = (await run(services.db.listWorktrees(session.projectId))).find(
     (candidate) => candidate.serverId === serverId && candidate.name === worktreeName
   )
   if (worktree === undefined) {
-    return
+    return []
   }
   const project = await getProjectOrFail(services.db, session.projectId)
   const location = localLocationOrFail(serverId, project)
   const environment = await (services.resolveGitEnvironment?.() ?? Promise.resolve(process.env))
-  await removeWorktree(location.folderPath, worktree.path, environment)
+  const snapshot = await archiveWorktreeFiles(
+    location.folderPath,
+    worktree.path,
+    worktree.id,
+    worktree.branch,
+    removeWorktree,
+    environment
+  )
+  await run(
+    services.db.createArchivedWorktree({
+      id: worktree.id,
+      projectId: worktree.projectId,
+      serverId: worktree.serverId,
+      originalName: worktree.name,
+      branch: worktree.branch,
+      parentSha: snapshot.parentSha,
+      snapshotRef: snapshot.snapshotRef,
+      createdAt: isoTimestamp()
+    })
+  )
   await run(services.db.deleteWorktree(worktree.id))
+  return snapshot.ignoredPaths
+}
+
+/// Rebuilds an unarchived session's worktree from its snapshot.
+///
+/// Restore may hand back a DIFFERENT worktree name than the session had: the
+/// original is freed at archive time and can legitimately be claimed while the
+/// chat sits archived. The session's `worktree_name` is rewritten to match, as
+/// is every other archived session that shared that worktree, so they all
+/// still resolve to one directory if they are later restored too.
+const restoreSessionWorktree = async (
+  services: CodevisorServerServices,
+  serverId: string,
+  session: SessionSummary
+): Promise<{ readonly session: SessionSummary; readonly restoredFiles: boolean }> => {
+  const worktreeName = session.worktreeName
+  if (worktreeName === undefined) {
+    return { session, restoredFiles: true }
+  }
+  // Our own snapshot wins over any worktree that merely shares the name.
+  // Archiving frees the name, so an unrelated worktree can be created under
+  // it in the meantime; treating that as "already live" would silently point
+  // the chat at a stranger's files and strand the snapshot forever.
+  const archived = await run(
+    services.db.findArchivedWorktree(session.projectId, serverId, worktreeName)
+  )
+  if (archived === undefined) {
+    // No snapshot of our own: either another session in this worktree was
+    // unarchived first (reattach to it), or the archive predates snapshots,
+    // in which case the chat still unarchives but its cwd may not exist.
+    const existing = (await run(services.db.listWorktrees(session.projectId))).find(
+      (candidate) => candidate.serverId === serverId && candidate.name === worktreeName
+    )
+    return { session, restoredFiles: existing !== undefined }
+  }
+  const project = await getProjectOrFail(services.db, session.projectId)
+  const location = localLocationOrFail(serverId, project)
+  const environment = await (services.resolveGitEnvironment?.() ?? Promise.resolve(process.env))
+  const taken = new Set(
+    (await run(services.db.listWorktrees(session.projectId)))
+      .filter((candidate) => candidate.serverId === serverId)
+      .map((candidate) => candidate.name)
+  )
+  const restored = await restoreWorktree({
+    repoDir: location.folderPath,
+    worktreePathFor: (name) => worktreePath(session.projectId, name),
+    originalName: archived.originalName,
+    parentSha: archived.parentSha,
+    snapshotRef: archived.snapshotRef,
+    takenNames: taken,
+    env: environment
+  })
+  await run(
+    services.db.createWorktree(session.projectId, restored.name, restored.branch, archived.id)
+  )
+  await run(services.db.deleteArchivedWorktree(archived.id))
+  await deleteSnapshot(location.folderPath, archived.id, environment)
+
+  let updated = session
+  if (restored.name !== worktreeName) {
+    for (const candidate of await run(services.db.listSessions)) {
+      if (candidate.projectId !== session.projectId || candidate.worktreeName !== worktreeName) {
+        continue
+      }
+      const next = await run(
+        services.db.updateSession(candidate.id, { worktreeName: restored.name })
+      )
+      if (candidate.id === session.id) {
+        updated = next
+      }
+    }
+  }
+  return { session: updated, restoredFiles: restored.restoredFromSnapshot }
+}
+
+/// Archiving a project or workspace flips its sessions' flags inside one
+/// database transaction, but the runtime consequences live outside it: agent
+/// processes to stop, background terminals to kill, worktrees to snapshot and
+/// remove. This replays those effects for exactly the sessions whose archived
+/// state actually changed, and fans out a per-session event so clients can
+/// move the rows between sidebar sections.
+///
+/// Worktree bookkeeping falls out naturally: the cascade has already flagged
+/// every session archived, so the first one reaching `archiveSessionWorktree`
+/// finds no active user and takes the snapshot; the rest short-circuit.
+/// Fans out `workspace.updated` for workspaces a cascade archived or revived,
+/// so a client's archived section stays in step without a full refetch.
+const publishChangedWorkspaces = async (
+  services: CodevisorServerServices,
+  fanout: EventFanout,
+  before: ReadonlyArray<Workspace>
+): Promise<void> => {
+  const previous = new Map(before.map((workspace) => [workspace.id, workspace.isArchived]))
+  for (const workspace of await run(services.db.listWorkspaces)) {
+    if (previous.get(workspace.id) === workspace.isArchived) {
+      continue
+    }
+    await appendAndPublish(services.db, fanout, "workspace.updated", workspace.id, workspace)
+  }
+}
+
+const applyCascadedSessionEffects = async (
+  services: CodevisorServerServices,
+  fanout: EventFanout,
+  config: CodevisorServerConfig,
+  before: ReadonlyArray<SessionSummary>
+): Promise<void> => {
+  const previous = new Map(before.map((session) => [session.id, session.isArchived]))
+  for (const current of await run(services.db.listSessions)) {
+    const wasArchived = previous.get(current.id)
+    if (wasArchived === undefined || wasArchived === current.isArchived) {
+      continue
+    }
+    let session = current
+    if (session.isArchived) {
+      await archiveSessionRuntime(services, session)
+      await archiveSessionWorktree(services, config.id, session)
+    } else {
+      session = (await restoreSessionWorktree(services, config.id, session)).session
+    }
+    await appendAndPublish(
+      services.db,
+      fanout,
+      session.isArchived ? "session.archived" : "session.unarchived",
+      session.id,
+      session
+    )
+  }
 }
 
 const findSession = async (

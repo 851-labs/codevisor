@@ -241,6 +241,188 @@ describe("@codevisor/db", () => {
     await run(reopened.close)
   })
 
+  it("cascades project archive to workspaces and sessions, and reverses only what it archived", async () => {
+    const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
+    const project = await run(db.createProject({ folderPath: "/tmp/cascade" }))
+    const workspace = await run(
+      db.upsertWorkspace({ projectId: project.id, name: "main", hasCustomName: false })
+    )
+    const cascaded = await run(db.createSession({ projectId: project.id, harnessId: "codex" }))
+    const handArchived = await run(db.createSession({ projectId: project.id, harnessId: "codex" }))
+
+    // The user archives one chat by hand, well before the project is archived.
+    await run(db.updateSession(handArchived.id, { isArchived: true }))
+    const handStamp = (await run(db.getSessionSummary(handArchived.id))).archivedAt
+    expect(handStamp).toBeDefined()
+
+    await run(db.updateProject(project.id, { isArchived: true }))
+    expect((await run(db.getSessionSummary(cascaded.id))).isArchived).toBe(true)
+    expect((await run(db.listWorkspaces)).find((w) => w.id === workspace.id)?.isArchived).toBe(true)
+    // The hand-archived chat keeps its original moment: the cascade must not
+    // restamp rows it did not archive.
+    expect((await run(db.getSessionSummary(handArchived.id))).archivedAt).toBe(handStamp)
+
+    await run(db.updateProject(project.id, { isArchived: false }))
+    expect((await run(db.getSessionSummary(cascaded.id))).isArchived).toBe(false)
+    expect((await run(db.listWorkspaces)).find((w) => w.id === workspace.id)?.isArchived).toBe(
+      false
+    )
+    // The whole point of provenance: this one stays archived.
+    expect((await run(db.getSessionSummary(handArchived.id))).isArchived).toBe(true)
+    await run(db.close)
+  })
+
+  it("cascades workspace archive to its sessions without touching siblings", async () => {
+    const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
+    const project = await run(db.createProject({ folderPath: "/tmp/ws-cascade" }))
+    const workspace = await run(
+      db.upsertWorkspace({ projectId: project.id, name: "feature", hasCustomName: false })
+    )
+    const inside = await run(db.createSession({ projectId: project.id, harnessId: "codex" }))
+    const outside = await run(db.createSession({ projectId: project.id, harnessId: "codex" }))
+    await run(db.setSessionWorkspace(inside.id, workspace.id))
+
+    await run(db.updateWorkspace(workspace.id, { isArchived: true }))
+    expect((await run(db.getSessionSummary(inside.id))).isArchived).toBe(true)
+    expect((await run(db.getSessionSummary(outside.id))).isArchived).toBe(false)
+
+    await run(db.updateWorkspace(workspace.id, { isArchived: false }))
+    expect((await run(db.getSessionSummary(inside.id))).isArchived).toBe(false)
+    await run(db.close)
+  })
+
+  it("cascades through a full workspace upsert, not just a patch", async () => {
+    // The macOS client writes workspaces with PUT, so the upsert path owes
+    // the same cascade a PATCH does — otherwise archiving from that client
+    // would hide the workspace while leaving its chats in the sidebar.
+    const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
+    const project = await run(db.createProject({ folderPath: "/tmp/ws-upsert-cascade" }))
+    const workspace = await run(
+      db.upsertWorkspace({ projectId: project.id, name: "feature", hasCustomName: false })
+    )
+    const session = await run(db.createSession({ projectId: project.id, harnessId: "codex" }))
+    await run(db.setSessionWorkspace(session.id, workspace.id))
+
+    await run(
+      db.upsertWorkspace({
+        id: workspace.id,
+        projectId: project.id,
+        name: "feature",
+        hasCustomName: false,
+        isArchived: true
+      })
+    )
+    expect((await run(db.getSessionSummary(session.id))).isArchived).toBe(true)
+
+    await run(
+      db.upsertWorkspace({
+        id: workspace.id,
+        projectId: project.id,
+        name: "feature",
+        hasCustomName: false,
+        isArchived: false
+      })
+    )
+    expect((await run(db.getSessionSummary(session.id))).isArchived).toBe(false)
+    await run(db.close)
+  })
+
+  it("preserves untouched workspace fields and the original archived moment", async () => {
+    const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
+    const project = await run(db.createProject({ folderPath: "/tmp/ws-partial" }))
+    const workspace = await run(
+      db.upsertWorkspace({ projectId: project.id, name: "pinned", hasCustomName: true })
+    )
+    await run(db.updateWorkspace(workspace.id, { isArchived: true }))
+    const firstStamp = (await run(db.listWorkspaces)).find(
+      (candidate) => candidate.id === workspace.id
+    )?.archivedAt
+
+    // A rename that says nothing about naming or archiving must not silently
+    // clear the custom-name pin or re-stamp the archive moment.
+    const renamed = await run(db.updateWorkspace(workspace.id, { name: "still pinned" }))
+
+    expect(renamed.name).toBe("still pinned")
+    expect(renamed.hasCustomName).toBe(true)
+    expect(renamed.isArchived).toBe(true)
+    expect(renamed.archivedAt).toBe(firstStamp)
+    await run(db.close)
+  })
+
+  it("re-archiving an already archived workspace does not cascade again", async () => {
+    const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
+    const project = await run(db.createProject({ folderPath: "/tmp/ws-rearchive" }))
+    const workspace = await run(
+      db.upsertWorkspace({ projectId: project.id, name: "feature", hasCustomName: false })
+    )
+    const session = await run(db.createSession({ projectId: project.id, harnessId: "codex" }))
+    await run(db.setSessionWorkspace(session.id, workspace.id))
+    await run(db.updateWorkspace(workspace.id, { isArchived: true }))
+
+    // Restore the chat by hand, then re-archive the already-archived
+    // workspace: the no-op transition must not drag the chat back down.
+    await run(db.updateSession(session.id, { isArchived: false }))
+    await run(db.updateWorkspace(workspace.id, { isArchived: true }))
+
+    expect((await run(db.getSessionSummary(session.id))).isArchived).toBe(false)
+    await run(db.close)
+  })
+
+  it("rejects updating a workspace that does not exist", async () => {
+    const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
+    await expect(
+      run(db.updateWorkspace("6f1d5f9e-1c2b-4a3d-8e5f-0a1b2c3d4e5f", { isArchived: true }))
+    ).rejects.toThrow(/Workspace not found/)
+    await run(db.close)
+  })
+
+  it("keeps the original archived moment when an archived row is updated again", async () => {
+    const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
+    const project = await run(db.createProject({ folderPath: "/tmp/stamp" }))
+    const session = await run(db.createSession({ projectId: project.id, harnessId: "codex" }))
+
+    await run(db.updateSession(session.id, { isArchived: true }))
+    const first = (await run(db.getSessionSummary(session.id))).archivedAt
+    // An unrelated field changes while the chat stays archived.
+    await run(db.updateSession(session.id, { title: "renamed while archived" }))
+    const after = await run(db.getSessionSummary(session.id))
+    expect(after.archivedAt).toBe(first)
+    expect(after.title).toBe("renamed while archived")
+
+    // Unarchiving clears the stamp entirely.
+    await run(db.updateSession(session.id, { isArchived: false }))
+    expect((await run(db.getSessionSummary(session.id))).archivedAt).toBeUndefined()
+    await run(db.close)
+  })
+
+  it("stores archived worktrees keyed by id so the name returns to the pool", async () => {
+    const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
+    const project = await run(db.createProject({ folderPath: "/tmp/archived-worktrees" }))
+    const worktree = await run(db.createWorktree(project.id, "sushi", "codevisor/sushi"))
+    const record = await run(
+      db.createArchivedWorktree({
+        id: worktree.id,
+        projectId: project.id,
+        serverId: "local",
+        originalName: "sushi",
+        branch: "codevisor/sushi",
+        parentSha: "a".repeat(40),
+        snapshotRef: `refs/codevisor/archived/${worktree.id}`,
+        createdAt: "2026-07-01T00:00:00.000Z"
+      })
+    )
+    await run(db.deleteWorktree(worktree.id))
+
+    // The live row is gone (name is free again) but the snapshot record remains.
+    expect(await run(db.listWorktrees(project.id))).toEqual([])
+    expect(await run(db.findArchivedWorktree(project.id, "local", "sushi"))).toEqual(record)
+    expect((await run(db.listArchivedWorktrees(project.id))).length).toBe(1)
+
+    await run(db.deleteArchivedWorktree(worktree.id))
+    expect(await run(db.findArchivedWorktree(project.id, "local", "sushi"))).toBeUndefined()
+    await run(db.close)
+  })
+
   it("persists harness accounts, selection, auth state, and session bindings", async () => {
     const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
     const project = await run(db.createProject({ name: "Auth", folderPath: "/tmp/auth" }))
@@ -990,6 +1172,35 @@ describe("@codevisor/db", () => {
     expect((await run(db.getTranscriptPage(session.id, undefined, 8))).goal).toBeUndefined()
     expect((await run(db.getSessionDetail(session.id))).goal).toBeUndefined()
     await Effect.runPromise(db.close)
+  })
+
+  it("backfills archived timestamps for rows archived before the column existed", async () => {
+    const filename = tempDatabase()
+    buildV4Fixture(filename)
+    // Mark the pre-existing rows archived the way the old schema could: a bare
+    // boolean with no moment attached.
+    const legacy = new Database(filename)
+    legacy.exec(`
+      update sessions set is_archived = 1 where id = 'sess-1';
+      update workspaces set is_archived = 1 where id = 'ws-1';
+    `)
+    legacy.close()
+
+    const db = await run(makeDatabase({ filename, serverId: "machine-a" }))
+
+    const session = await run(db.getSessionSummary("sess-1"))
+    expect(session.isArchived).toBe(true)
+    // A timestamp must exist so the row can be sorted and labelled in the
+    // archived section rather than sinking to the bottom forever...
+    expect(session.archivedAt).toBeDefined()
+    // ...but it must not claim the chat was archived at migration time.
+    expect(session.archivedAt?.startsWith("2026-06-01")).toBe(true)
+
+    const project = (await run(db.listProjects)).find((candidate) => candidate.id === "ws-1")
+    expect(project?.isArchived).toBe(true)
+    expect(project?.archivedAt).toBeDefined()
+
+    await run(db.close)
   })
 
   it("migrates a v4 database to projects without losing session children", async () => {

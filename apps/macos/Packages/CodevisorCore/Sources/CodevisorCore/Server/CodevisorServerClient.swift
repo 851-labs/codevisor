@@ -232,6 +232,9 @@ public protocol CodevisorServerClienting: Sendable {
     func workspaceNotes(workspaceId: UUID) async throws -> ServerWorkspaceNotes?
     /// Uploads a workspace's notes (last-write-wins by `updatedAt`).
     func saveWorkspaceNotes(workspaceId: UUID, content: String, updatedAt: Date) async throws
+    /// Mirrors a workspace's archived flag so other devices — and the
+    /// server's own cascade to the workspace's chats — see it.
+    func setWorkspaceArchived(id: UUID, isArchived: Bool) async throws
     func createWorktree(projectId: UUID, name: String?) async throws -> ServerWorktree
     /// Creates a worktree with a client-supplied id so the caller can follow
     /// the server's `worktree.setup` progress events (subjectId = worktree id)
@@ -653,6 +656,10 @@ public extension CodevisorServerClienting {
     /// Notes sync is best-effort; fakes/older servers act notes-less.
     func workspaceNotes(workspaceId: UUID) async throws -> ServerWorkspaceNotes? { nil }
     func saveWorkspaceNotes(workspaceId: UUID, content: String, updatedAt: Date) async throws {}
+
+    /// Workspace archive sync is best-effort for the same reason: a fake or a
+    /// server predating the route leaves the local flag authoritative.
+    func setWorkspaceArchived(id: UUID, isArchived: Bool) async throws {}
 
     func createWorktree(projectId: UUID, name: String?) async throws -> ServerWorktree {
         throw CodevisorServerClientError.invalidResponse
@@ -1924,6 +1931,8 @@ public struct ServerSession: Decodable, Equatable, Sendable {
     public var title: String
     public var origin: SessionOrigin
     public var isArchived: Bool
+    /// Optional so a server predating archive timestamps still decodes.
+    public var archivedAt: String? = nil
     public var worktreeName: String?
     public var cwd: String?
     public var configSelections: [String: String]? = nil
@@ -1958,6 +1967,9 @@ public struct ServerSession: Decodable, Equatable, Sendable {
             title: title,
             origin: origin,
             isArchived: isArchived,
+            // Tolerated rather than thrown on: an unparseable archive stamp
+            // should cost ordering precision, not drop the whole chat.
+            archivedAt: archivedAt.flatMap { try? ServerDateCoding.date(from: $0) },
             worktreeName: worktreeName,
             cwd: cwd,
             configSelections: configSelections,
@@ -3054,6 +3066,32 @@ public final class CodevisorServerClient: CodevisorServerClienting, @unchecked S
         )
     }
 
+    /// Mirrors a workspace's archived flag to the server.
+    ///
+    /// Archive state used to live only in this machine's `workspaces.json`,
+    /// so a workspace archived here stayed active everywhere else and the
+    /// server never cascaded the archive to its chats. PATCH is a partial
+    /// update by design: sending the whole record via PUT would race a
+    /// concurrent rename or icon change from another device.
+    ///
+    /// A 404 means the server has no row for this workspace yet (it is
+    /// created lazily), and a 405 means the server predates the PATCH route.
+    /// Neither is worth surfacing: the local flag is already correct, so the
+    /// archive still works on this machine.
+    public func setWorkspaceArchived(id: UUID, isArchived: Bool) async throws {
+        do {
+            try await sendNoResponse(
+                "/v1/workspaces/\(id.uuidString)",
+                method: "PATCH",
+                body: UpdateWorkspaceBody(isArchived: isArchived)
+            )
+        } catch CodevisorServerClientError.httpStatus(404, _) {
+            return
+        } catch CodevisorServerClientError.httpStatus(405, _) {
+            return
+        }
+    }
+
     public func uploadFile(name: String, mimeType: String, data: Data) async throws -> ServerFileMetadata {
         // Conservative encoding: percent-encode everything non-alphanumeric so
         // names with `&`, `+`, or `=` survive the query round-trip.
@@ -3401,6 +3439,12 @@ private struct WorkspaceNotesBody: Encodable {
     var content: String
     var format = "attributed-string-v1"
     var updatedAt: String
+}
+
+/// Only the archived flag: every other field is omitted so the server keeps
+/// whatever it already has (see `UpdateWorkspaceRequest`).
+private struct UpdateWorkspaceBody: Encodable {
+    var isArchived: Bool
 }
 
 private struct PromptBody: Encodable {

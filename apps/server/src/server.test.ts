@@ -4289,6 +4289,171 @@ describe("@codevisor/server", () => {
     }
   })
 
+  it("cascades archive across projects, workspaces, and chats with provenance", async () => {
+    const { server } = await start()
+    const folder = mkdtempSync(join(tmpdir(), "codevisor-cascade-"))
+    tempDirs.push(folder)
+    await jsonRequest(server, "/v1/projects", {
+      body: JSON.stringify({ folderPath: folder, id: "cascade-project" }),
+      method: "POST"
+    })
+    // A workspace in an unrelated project, present for every cascade below: it
+    // must never be republished, or clients would move rows that never changed.
+    const otherFolder = mkdtempSync(join(tmpdir(), "codevisor-cascade-other-"))
+    tempDirs.push(otherFolder)
+    await jsonRequest(server, "/v1/projects", {
+      body: JSON.stringify({ folderPath: otherFolder, id: "bystander-project" }),
+      method: "POST"
+    })
+    await jsonRequest(server, "/v1/workspaces/bystander-workspace", {
+      body: JSON.stringify({
+        projectId: "bystander-project",
+        name: "bystander",
+        hasCustomName: false
+      }),
+      method: "PUT"
+    })
+    const workspace = (
+      await jsonRequest(server, "/v1/workspaces/cascade-workspace", {
+        body: JSON.stringify({
+          projectId: "cascade-project",
+          name: "main",
+          hasCustomName: false
+        }),
+        method: "PUT"
+      })
+    ).body as { readonly id: string }
+
+    const makeSession = async (id: string) =>
+      (
+        await jsonRequest(server, "/v1/sessions", {
+          body: JSON.stringify({ id, projectId: "cascade-project", harnessId: "codex" }),
+          method: "POST"
+        })
+      ).body as { readonly id: string }
+    const cascaded = await makeSession("cascade-chat")
+    const handArchived = await makeSession("hand-archived-chat")
+
+    // The user archives one chat themselves, before any cascade runs.
+    await jsonRequest(server, `/v1/sessions/${handArchived.id}`, {
+      body: JSON.stringify({ isArchived: true }),
+      method: "PATCH"
+    })
+
+    const archivedStateOf = async (id: string) =>
+      (
+        (await jsonRequest(server, "/v1/sessions")).body as ReadonlyArray<{
+          readonly id: string
+          readonly isArchived: boolean
+        }>
+      ).find((session) => session.id === id)?.isArchived
+    const workspaceArchived = async () =>
+      (
+        (await jsonRequest(server, "/v1/workspaces")).body as ReadonlyArray<{
+          readonly id: string
+          readonly isArchived: boolean
+        }>
+      ).find((candidate) => candidate.id === workspace.id)?.isArchived
+
+    await jsonRequest(server, "/v1/projects/cascade-project", {
+      body: JSON.stringify({ isArchived: true }),
+      method: "PATCH"
+    })
+    expect(await archivedStateOf(cascaded.id)).toBe(true)
+    expect(await workspaceArchived()).toBe(true)
+
+    await jsonRequest(server, "/v1/projects/cascade-project", {
+      body: JSON.stringify({ isArchived: false }),
+      method: "PATCH"
+    })
+    expect(await archivedStateOf(cascaded.id)).toBe(false)
+    expect(await workspaceArchived()).toBe(false)
+    // Provenance: the chat the user archived by hand is NOT resurrected by
+    // unarchiving the project around it.
+    expect(await archivedStateOf(handArchived.id)).toBe(true)
+
+    // A workspace PATCH cascades one level down, to its own chats only.
+    const inWorkspace = (
+      await jsonRequest(server, "/v1/sessions", {
+        body: JSON.stringify({
+          id: "workspace-chat",
+          projectId: "cascade-project",
+          harnessId: "codex",
+          workspaceId: workspace.id
+        }),
+        method: "POST"
+      })
+    ).body as { readonly id: string }
+
+    await jsonRequest(server, `/v1/workspaces/${workspace.id}`, {
+      body: JSON.stringify({ isArchived: true }),
+      method: "PATCH"
+    })
+    expect(await archivedStateOf(inWorkspace.id)).toBe(true)
+    // A sibling chat outside the workspace is untouched.
+    expect(await archivedStateOf(cascaded.id)).toBe(false)
+
+    await jsonRequest(server, `/v1/workspaces/${workspace.id}`, {
+      body: JSON.stringify({ isArchived: false }),
+      method: "PATCH"
+    })
+    expect(await archivedStateOf(inWorkspace.id)).toBe(false)
+
+    const bystander = (
+      (await jsonRequest(server, "/v1/workspaces")).body as ReadonlyArray<{
+        readonly id: string
+        readonly isArchived: boolean
+      }>
+    ).find((candidate) => candidate.id === "bystander-workspace")
+    expect(bystander?.isArchived).toBe(false)
+
+    // A PATCH that says nothing about archiving skips the cascade entirely
+    // rather than republishing every session as unchanged.
+    const renamed = await jsonRequest(server, `/v1/workspaces/${workspace.id}`, {
+      body: JSON.stringify({ name: "renamed" }),
+      method: "PATCH"
+    })
+    expect(renamed.status).toBe(200)
+    expect(renamed.body).toMatchObject({ name: "renamed", isArchived: false })
+    expect(await archivedStateOf(inWorkspace.id)).toBe(false)
+  })
+
+  it("archives a chat with no worktree without touching the filesystem", async () => {
+    // Non-git projects never get a worktree, so archiving is a pure flag flip
+    // — the snapshot machinery must not engage at all.
+    const { server } = await start()
+    const folder = mkdtempSync(join(tmpdir(), "codevisor-plain-archive-"))
+    tempDirs.push(folder)
+    await jsonRequest(server, "/v1/projects", {
+      body: JSON.stringify({ folderPath: folder, id: "plain-archive-project" }),
+      method: "POST"
+    })
+    const session = (
+      await jsonRequest(server, "/v1/sessions", {
+        body: JSON.stringify({
+          projectId: "plain-archive-project",
+          harnessId: "test",
+          deferAgentSession: true
+        }),
+        method: "POST"
+      })
+    ).body as { readonly id: string }
+
+    const archived = await jsonRequest(server, `/v1/sessions/${session.id}`, {
+      body: JSON.stringify({ isArchived: true }),
+      method: "PATCH"
+    })
+    expect(archived.body).toMatchObject({ isArchived: true })
+
+    // Restoring finds no snapshot record and still succeeds.
+    const restored = await jsonRequest(server, `/v1/sessions/${session.id}`, {
+      body: JSON.stringify({ isArchived: false }),
+      method: "PATCH"
+    })
+    expect(restored.body).toMatchObject({ isArchived: false })
+    expect(existsSync(folder)).toBe(true)
+  })
+
   it("addresses projects by id case-insensitively", async () => {
     const { server } = await start()
     const lowerId = "0d604f39-364b-4a17-8fd8-21bddd8c1399"
@@ -4614,6 +4779,184 @@ describe("@codevisor/server", () => {
           })
         ).status
       ).toBe(200)
+
+      // Unarchiving rebuilds the worktree from its snapshot and reclaims the
+      // freed name, so the restored chat resolves to the same cwd as before.
+      const restored = (
+        await jsonRequest(server, `/v1/sessions/${sharer.id}`, {
+          body: JSON.stringify({ isArchived: false }),
+          method: "PATCH"
+        })
+      ).body as {
+        readonly worktreeName: string
+        readonly cwd: string
+        readonly isArchived: boolean
+      }
+      expect(restored.isArchived).toBe(false)
+      expect(restored.worktreeName).toBe(solo.name)
+      expect(existsSync(solo.path)).toBe(true)
+      expect(await worktreeNames()).toContain(solo.name)
+      expect(restored.cwd).toBe(solo.path)
+
+      // The restore is announced as its own event kind: clients must move the
+      // row between sidebar sections, not just repaint it.
+      const restoreHistory = (await jsonRequest(server, `/v1/sessions/${sharer.id}/events`))
+        .body as ReadonlyArray<{ readonly kind: string }>
+      expect(restoreHistory.some((event) => event.kind === "session.unarchived")).toBe(true)
+
+      // The other session that shared the worktree is still archived, and
+      // unarchiving it now simply reattaches to the live worktree.
+      const rejoined = (
+        await jsonRequest(server, `/v1/sessions/${soloSession.id}`, {
+          body: JSON.stringify({ isArchived: false }),
+          method: "PATCH"
+        })
+      ).body as { readonly worktreeName: string; readonly cwd: string }
+      expect(rejoined.worktreeName).toBe(solo.name)
+      expect(rejoined.cwd).toBe(solo.path)
+      expect(await worktreeNames()).toContain(solo.name)
+
+      // Gitignored files are not snapshotted — putting a .env into a git
+      // object that may later be pushed is worse than losing it — so the
+      // client is told exactly what went away with the worktree.
+      const ignoredTree = (
+        await jsonRequest(server, "/v1/projects/git-project/worktrees", {
+          body: JSON.stringify({ name: "with ignored" }),
+          method: "POST"
+        })
+      ).body as { readonly id: string; readonly name: string; readonly path: string }
+      writeFileSync(join(ignoredTree.path, ".gitignore"), ".env\n")
+      writeFileSync(join(ignoredTree.path, ".env"), "SECRET=1\n")
+      const ignoredSession = (
+        await jsonRequest(server, "/v1/sessions", {
+          body: JSON.stringify({
+            projectId: "git-project",
+            harnessId: "codex",
+            worktreeName: ignoredTree.name
+          }),
+          method: "POST"
+        })
+      ).body as { readonly id: string }
+      // A second chat in the same worktree: when the restore has to rename,
+      // every chat pointing at the old name must follow it, not just the one
+      // being unarchived.
+      const ignoredSibling = (
+        await jsonRequest(server, "/v1/sessions", {
+          body: JSON.stringify({
+            projectId: "git-project",
+            harnessId: "codex",
+            worktreeName: ignoredTree.name
+          }),
+          method: "POST"
+        })
+      ).body as { readonly id: string }
+      await jsonRequest(server, `/v1/sessions/${ignoredSibling.id}`, {
+        body: JSON.stringify({ isArchived: true }),
+        method: "PATCH"
+      })
+      await jsonRequest(server, `/v1/sessions/${ignoredSession.id}`, {
+        body: JSON.stringify({ isArchived: true }),
+        method: "PATCH"
+      })
+      const ignoredHistory = (await jsonRequest(server, `/v1/sessions/${ignoredSession.id}/events`))
+        .body as ReadonlyArray<{
+        readonly kind: string
+        readonly payload?: { readonly archiveDroppedIgnoredPaths?: ReadonlyArray<string> }
+      }>
+      expect(
+        ignoredHistory.some((event) =>
+          event.payload?.archiveDroppedIgnoredPaths?.some((path) => path.endsWith(".env"))
+        )
+      ).toBe(true)
+
+      // The freed name is taken by a new worktree before the restore, so the
+      // chat comes back under a suffixed name rather than colliding.
+      const squatter = (
+        await jsonRequest(server, "/v1/projects/git-project/worktrees", {
+          body: JSON.stringify({ name: ignoredTree.name }),
+          method: "POST"
+        })
+      ).body as { readonly name: string; readonly path: string }
+      expect(squatter.name).toBe(ignoredTree.name)
+      const suffixed = (
+        await jsonRequest(server, `/v1/sessions/${ignoredSession.id}`, {
+          body: JSON.stringify({ isArchived: false }),
+          method: "PATCH"
+        })
+      ).body as { readonly worktreeName: string; readonly cwd: string }
+      // Restored under its own name plus a suffix, and — critically — into
+      // its own directory rather than adopting the squatter's.
+      expect(suffixed.worktreeName).not.toBe(ignoredTree.name)
+      expect(suffixed.worktreeName.startsWith(ignoredTree.name)).toBe(true)
+      expect(suffixed.cwd).not.toBe(squatter.path)
+      expect(existsSync(suffixed.cwd)).toBe(true)
+      // The sibling's pointer was rewritten too, so unarchiving it later finds
+      // the worktree under its new name instead of a name nobody owns.
+      const siblingAfterRename = (await jsonRequest(server, `/v1/sessions/${ignoredSibling.id}`))
+        .body as { readonly session: { readonly worktreeName: string } }
+      expect(siblingAfterRename.session.worktreeName).toBe(suffixed.worktreeName)
+
+      // A snapshot that has gone missing (an archive predating snapshots, or a
+      // pruned ref) still unarchives — the chat is what matters — but says so
+      // rather than pretending the files came back.
+      const orphanTree = (
+        await jsonRequest(server, "/v1/projects/git-project/worktrees", {
+          body: JSON.stringify({ name: "orphan" }),
+          method: "POST"
+        })
+      ).body as { readonly id: string; readonly name: string }
+      const orphanSession = (
+        await jsonRequest(server, "/v1/sessions", {
+          body: JSON.stringify({
+            projectId: "git-project",
+            harnessId: "codex",
+            worktreeName: orphanTree.name
+          }),
+          method: "POST"
+        })
+      ).body as { readonly id: string }
+      await jsonRequest(server, `/v1/sessions/${orphanSession.id}`, {
+        body: JSON.stringify({ isArchived: true }),
+        method: "PATCH"
+      })
+      await Effect.runPromise(services.db.deleteArchivedWorktree(orphanTree.id))
+      const orphanRestored = await jsonRequest(server, `/v1/sessions/${orphanSession.id}`, {
+        body: JSON.stringify({ isArchived: false }),
+        method: "PATCH"
+      })
+      expect(orphanRestored.body).toMatchObject({ isArchived: false })
+      const orphanHistory = (await jsonRequest(server, `/v1/sessions/${orphanSession.id}/events`))
+        .body as ReadonlyArray<{
+        readonly payload?: { readonly archiveRestoreIncomplete?: boolean }
+      }>
+      expect(orphanHistory.some((event) => event.payload?.archiveRestoreIncomplete === true)).toBe(
+        true
+      )
+
+      // A chat pointing at a worktree row that no longer exists archives
+      // cleanly: there is nothing to snapshot, so it is a plain flag flip.
+      const strayTree = (
+        await jsonRequest(server, "/v1/projects/git-project/worktrees", {
+          body: JSON.stringify({ name: "stray" }),
+          method: "POST"
+        })
+      ).body as { readonly id: string; readonly name: string }
+      const straySession = (
+        await jsonRequest(server, "/v1/sessions", {
+          body: JSON.stringify({
+            projectId: "git-project",
+            harnessId: "codex",
+            worktreeName: strayTree.name
+          }),
+          method: "POST"
+        })
+      ).body as { readonly id: string }
+      await Effect.runPromise(services.db.deleteWorktree(strayTree.id))
+      const strayArchived = await jsonRequest(server, `/v1/sessions/${straySession.id}`, {
+        body: JSON.stringify({ isArchived: true }),
+        method: "PATCH"
+      })
+      expect(strayArchived.body).toMatchObject({ isArchived: true })
 
       // Archiving a session that never had a worktree leaves worktrees intact.
       const plainSession = (

@@ -201,4 +201,37 @@ struct AppEnvironmentTests {
         #expect(environment.projectList.sessions.first?.isArchived == true)
     }
 
+    @Test("Restoring a workspace clears its archived flag")
+    func unarchivingWorkspaceRestoresIt() {
+        let project = Project.fromFolder(URL(fileURLWithPath: "/tmp/unarchive-workspace"))
+        let session = ChatSession(projectId: project.id, harnessId: "codex", title: "Chat")
+        let environment = AppEnvironment.preview(seedProjects: [project], seedSessions: [session])
+        let workspace = environment.workspaces.ensureWorkspace(
+            for: WorkspaceSessionSeed(
+                sessionId: session.id,
+                initialName: project.name,
+                serverId: session.serverId,
+                projectId: session.projectId,
+                rootDirectory: project.folderURL.path
+            ),
+            legacyGroups: nil
+        )
+
+        environment.archiveWorkspace(workspace)
+        #expect(environment.workspaces.workspace(id: workspace.id)?.isArchived == true)
+
+        guard let archived = environment.workspaces.workspace(id: workspace.id) else {
+            Issue.record("Workspace vanished after archiving")
+            return
+        }
+        environment.unarchiveWorkspace(archived)
+
+        // Pane layout is retained across the round trip — restoring must give
+        // back the same surface, not a fresh empty one.
+        let restored = environment.workspaces.workspace(id: workspace.id)
+        #expect(restored?.isArchived == false)
+        #expect(restored?.id == workspace.id)
+        #expect(restored?.name == workspace.name)
+    }
+
 }

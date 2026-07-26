@@ -1,4 +1,5 @@
 import type {
+  ArchivedWorktree,
   AttachmentKind,
   AttachmentRef,
   BackgroundTask,
@@ -31,6 +32,7 @@ import type {
   HarnessUpdateInfo,
   UpdateProjectRequest,
   UpdateSessionRequest,
+  UpdateWorkspaceRequest,
   UpdateInfo,
   UpsertWorkspaceNotesRequest,
   UpsertWorkspaceRequest,
@@ -78,10 +80,22 @@ interface ProjectRow {
   readonly id: string
   readonly name: string
   readonly is_archived: number
+  readonly archived_at: string | null
   readonly symbol_name: string
   readonly origin: Project["origin"]
   readonly created_at: string
   readonly repo_url: string | null
+}
+
+interface ArchivedWorktreeRow {
+  readonly id: string
+  readonly project_id: string
+  readonly server_id: string
+  readonly original_name: string
+  readonly branch: string
+  readonly parent_sha: string
+  readonly snapshot_ref: string
+  readonly created_at: string
 }
 
 interface ProjectLocationRow {
@@ -110,6 +124,8 @@ interface WorkspaceRow {
   readonly symbol_name: string | null
   readonly root_directory: string | null
   readonly is_archived: number
+  readonly archived_at: string | null
+  readonly archive_cascade_from: string | null
   readonly created_at: string
   readonly updated_at: string | null
 }
@@ -132,6 +148,8 @@ interface SessionRow {
   readonly title_is_user_set: number
   readonly origin: SessionSummary["origin"]
   readonly is_archived: number
+  readonly archived_at: string | null
+  readonly archive_cascade_from: string | null
   readonly worktree_name: string | null
   readonly workspace_id: string | null
   readonly created_at: string
@@ -1313,6 +1331,59 @@ const migrations: ReadonlyArray<Migration> = [
         on conflict(session_id) do update set current_mode_id = excluded.current_mode_id;
       `)
     }
+  },
+  {
+    id: 32,
+    name: "archive timestamps and worktree snapshots",
+    /// `is_archived` becomes a derived mirror of `archived_at`: writers set both
+    /// so a client from an older release still reads a correct flag, while the
+    /// timestamp drives ordering ("archived 2d ago") and cascade provenance.
+    ///
+    /// `archive_cascade_from` records WHY a row was archived. Unarchiving a
+    /// project must revive only the children that same cascade archived — a
+    /// chat the user archived by hand weeks earlier stays archived.
+    ///
+    /// `archived_worktrees` outlives the `worktrees` row on purpose: archiving
+    /// frees the worktree name back into the pool immediately, so restore is
+    /// keyed by worktree id and remembers the name it would *like* to reclaim.
+    sql: `
+      alter table projects add column archived_at text;
+      alter table workspaces add column archived_at text;
+      alter table sessions add column archived_at text;
+
+      alter table workspaces add column archive_cascade_from text;
+      alter table sessions add column archive_cascade_from text;
+
+      create table if not exists archived_worktrees (
+        id text primary key,
+        project_id text not null references projects(id) on delete cascade,
+        server_id text not null,
+        original_name text not null,
+        branch text not null,
+        parent_sha text not null,
+        snapshot_ref text not null,
+        created_at text not null
+      );
+
+      create index if not exists archived_worktrees_project_idx
+        on archived_worktrees(project_id, server_id, original_name);
+
+      create index if not exists sessions_archived_idx
+        on sessions(project_id, archived_at);
+    `,
+    run: (sqlite) => {
+      // Rows archived before this migration have no recorded moment. Stamp them
+      // with the repo's oldest meaningful timestamp rather than "now" so the
+      // archived list does not claim a years-old chat was archived today.
+      sqlite.exec(`
+        update projects set archived_at = coalesce(created_at, '1970-01-01T00:00:00.000Z')
+          where is_archived = 1 and archived_at is null;
+        update workspaces set archived_at = coalesce(created_at, '1970-01-01T00:00:00.000Z')
+          where is_archived = 1 and archived_at is null;
+        update sessions set archived_at = coalesce(updated_at, created_at, '1970-01-01T00:00:00.000Z')
+          where is_archived = 1 and archived_at is null;
+      `)
+    }
   }
 ]
 
@@ -1322,6 +1393,21 @@ const migrations: ReadonlyArray<Migration> = [
 // newest row so a single oversized answer can still be reached.
 const maxInitialTranscriptPageCharacters = 24_000
 const maxOlderTranscriptPageCharacters = 64_000
+
+/// Resolves the `archived_at` value for a write that may or may not be
+/// changing the archived state. Re-archiving an already-archived row keeps the
+/// original moment rather than refreshing it, so "archived 3 weeks ago" does
+/// not reset to "just now" when an unrelated field is updated in the same
+/// PATCH.
+const archivedStamp = (
+  requested: boolean | undefined,
+  currentlyArchived: boolean,
+  currentStamp: string | undefined
+): string | null => {
+  const next = requested ?? currentlyArchived
+  if (!next) return null
+  return currentStamp ?? isoTimestamp()
+}
 
 type JsonRecord = Record<string, unknown>
 
@@ -2450,9 +2536,30 @@ export interface CodevisorDatabaseService {
     projectId: string
   ) => Effect.Effect<ReadonlyArray<Worktree>, DatabaseError>
   readonly deleteWorktree: (id: string) => Effect.Effect<void, DatabaseError>
+  /// Records a worktree whose files were snapshotted and removed. The matching
+  /// `worktrees` row is deleted by the caller in the same flow, which is what
+  /// releases the name back into the pool.
+  readonly createArchivedWorktree: (
+    record: ArchivedWorktree
+  ) => Effect.Effect<ArchivedWorktree, DatabaseError>
+  readonly findArchivedWorktree: (
+    projectId: string,
+    serverId: string,
+    originalName: string
+  ) => Effect.Effect<ArchivedWorktree | undefined, DatabaseError>
+  readonly listArchivedWorktrees: (
+    projectId: string
+  ) => Effect.Effect<ReadonlyArray<ArchivedWorktree>, DatabaseError>
+  readonly deleteArchivedWorktree: (id: string) => Effect.Effect<void, DatabaseError>
   readonly listWorkspaces: Effect.Effect<ReadonlyArray<Workspace>, DatabaseError>
   readonly upsertWorkspace: (
     request: UpsertWorkspaceRequest
+  ) => Effect.Effect<Workspace, DatabaseError>
+  /// Partial update. Flipping `isArchived` cascades to the workspace's
+  /// sessions with provenance; see `archive_cascade_from`.
+  readonly updateWorkspace: (
+    id: string,
+    request: UpdateWorkspaceRequest
   ) => Effect.Effect<Workspace, DatabaseError>
   readonly deleteWorkspace: (id: string) => Effect.Effect<void, DatabaseError>
   readonly getWorkspaceNotes: (
@@ -2943,6 +3050,65 @@ const createService = (
     return sessionFromRow(row, localLocationFor(row.project_id)?.folder_path)
   }
 
+  /// Archiving a container archives the children that were still active, and
+  /// stamps each with the container id that did it. Children already archived
+  /// on their own are left completely untouched — including their original
+  /// `archived_at` — so the later unarchive can tell the two groups apart.
+  ///
+  /// Callers must already hold a transaction (see updateProject).
+  const cascadeArchiveProject = (projectId: string, stamp: string): void => {
+    sqlite
+      .prepare(
+        `update workspaces set is_archived = 1, archived_at = ?, archive_cascade_from = ?
+         where project_id = ? collate nocase and is_archived = 0`
+      )
+      .run(stamp, projectId, projectId)
+    sqlite
+      .prepare(
+        `update sessions set is_archived = 1, archived_at = ?, archive_cascade_from = ?
+         where project_id = ? collate nocase and is_archived = 0`
+      )
+      .run(stamp, projectId, projectId)
+  }
+
+  /// The exact inverse: revive only rows whose provenance names this project.
+  /// A chat the user archived by hand before the project was archived has a
+  /// null (or workspace-scoped) `archive_cascade_from` and stays archived.
+  const cascadeUnarchiveProject = (projectId: string): void => {
+    sqlite
+      .prepare(
+        `update workspaces set is_archived = 0, archived_at = null, archive_cascade_from = null
+         where project_id = ? collate nocase and archive_cascade_from = ? collate nocase`
+      )
+      .run(projectId, projectId)
+    sqlite
+      .prepare(
+        `update sessions set is_archived = 0, archived_at = null, archive_cascade_from = null
+         where project_id = ? collate nocase and archive_cascade_from = ? collate nocase`
+      )
+      .run(projectId, projectId)
+  }
+
+  /// Same contract as the project cascade, one level down. Pane layout is kept
+  /// (the workspace row survives) so restoring revives the surface intact.
+  const cascadeArchiveWorkspace = (workspaceId: string, stamp: string): void => {
+    sqlite
+      .prepare(
+        `update sessions set is_archived = 1, archived_at = ?, archive_cascade_from = ?
+         where workspace_id = ? collate nocase and is_archived = 0`
+      )
+      .run(stamp, workspaceId, workspaceId)
+  }
+
+  const cascadeUnarchiveWorkspace = (workspaceId: string): void => {
+    sqlite
+      .prepare(
+        `update sessions set is_archived = 0, archived_at = null, archive_cascade_from = null
+         where workspace_id = ? collate nocase and archive_cascade_from = ? collate nocase`
+      )
+      .run(workspaceId, workspaceId)
+  }
+
   const createProject = Effect.fn("CodevisorDatabase.createProject")(function* (
     request: CreateProjectRequest
   ) {
@@ -3103,18 +3269,36 @@ const createService = (
     updateProject: (id, request) =>
       attempt("updateProject", () => {
         const current = getProject(id)
-        const updated: Project = {
-          ...current,
-          name: request.name ?? current.name,
-          isArchived: request.isArchived ?? current.isArchived,
-          symbolName: request.symbolName ?? current.symbolName
-        }
-        sqlite
-          .prepare(
-            "update projects set name = ?, is_archived = ?, symbol_name = ? where id = ? collate nocase"
-          )
-          .run(updated.name, updated.isArchived ? 1 : 0, updated.symbolName, id)
-        return updated
+        // `archivedStamp` returns a moment exactly when the row ends up
+        // archived, so the stamp carries the resulting state too: deriving
+        // the flag and both transitions from it keeps them consistent by
+        // construction rather than by three parallel conditions.
+        const stamp = archivedStamp(request.isArchived, current.isArchived, current.archivedAt)
+        const archiving = stamp !== null && !current.isArchived
+        const unarchiving = stamp === null && current.isArchived
+        // One transaction so a cascade can never half-apply: a project that
+        // reads as archived while its sessions still read as active would
+        // strand those chats in no sidebar section at all.
+        sqlite.transaction(() => {
+          sqlite
+            .prepare(
+              `update projects set name = ?, is_archived = ?, archived_at = ?, symbol_name = ?
+               where id = ? collate nocase`
+            )
+            .run(
+              request.name ?? current.name,
+              stamp === null ? 0 : 1,
+              stamp,
+              request.symbolName ?? current.symbolName,
+              id
+            )
+          if (stamp !== null && archiving) {
+            cascadeArchiveProject(id, stamp)
+          } else if (unarchiving) {
+            cascadeUnarchiveProject(id)
+          }
+        })()
+        return getProject(id)
       }),
     deleteProject: (id) =>
       attempt("deleteProject", () => {
@@ -3157,6 +3341,66 @@ const createService = (
       attempt("deleteWorktree", () => {
         sqlite.prepare("delete from worktrees where id = ?").run(canonicalUuid(id))
       }),
+    createArchivedWorktree: (record) =>
+      attempt("createArchivedWorktree", () => {
+        const id = canonicalUuid(record.id)
+        sqlite
+          .prepare(
+            `insert into archived_worktrees (
+               id, project_id, server_id, original_name, branch, parent_sha, snapshot_ref, created_at
+             ) values (?, ?, ?, ?, ?, ?, ?, ?)
+             on conflict(id) do update set
+               original_name = excluded.original_name,
+               branch = excluded.branch,
+               parent_sha = excluded.parent_sha,
+               snapshot_ref = excluded.snapshot_ref`
+          )
+          .run(
+            id,
+            canonicalUuid(record.projectId),
+            record.serverId,
+            record.originalName,
+            record.branch,
+            record.parentSha,
+            record.snapshotRef,
+            record.createdAt
+          )
+        return archivedWorktreeFromRow(
+          sqlite
+            .prepare("select * from archived_worktrees where id = ?")
+            .get(id) as ArchivedWorktreeRow
+        )
+      }),
+    /// Restore looks up by (project, server, name) because that is all an
+    /// archived session carries — `worktree_name` is the only link left once
+    /// the `worktrees` row is gone.
+    findArchivedWorktree: (rawProjectId, serverId, originalName) =>
+      attempt("findArchivedWorktree", () => {
+        const row = sqlite
+          .prepare(
+            `select * from archived_worktrees
+             where project_id = ? collate nocase and server_id = ? and original_name = ?
+             order by created_at desc limit 1`
+          )
+          .get(canonicalUuid(rawProjectId), serverId, originalName) as
+          | ArchivedWorktreeRow
+          | undefined
+        return row === undefined ? undefined : archivedWorktreeFromRow(row)
+      }),
+    listArchivedWorktrees: (rawProjectId) =>
+      attempt("listArchivedWorktrees", () =>
+        (
+          sqlite
+            .prepare(
+              "select * from archived_worktrees where project_id = ? collate nocase order by created_at desc"
+            )
+            .all(canonicalUuid(rawProjectId)) as ReadonlyArray<ArchivedWorktreeRow>
+        ).map(archivedWorktreeFromRow)
+      ),
+    deleteArchivedWorktree: (id) =>
+      attempt("deleteArchivedWorktree", () => {
+        sqlite.prepare("delete from archived_worktrees where id = ?").run(canonicalUuid(id))
+      }),
     listWorkspaces: attempt("listWorkspaces", () =>
       (
         sqlite
@@ -3170,33 +3414,100 @@ const createService = (
         getProject(projectId)
         const now = isoTimestamp()
         const id = (request.id ?? randomUUID()).toLowerCase()
-        sqlite
-          .prepare(
-            `insert into workspaces (
-               id, server_id, project_id, name, has_custom_name, symbol_name,
-               root_directory, is_archived, created_at, updated_at
-             ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, null)
-             on conflict(id) do update set
-               project_id = excluded.project_id,
-               name = excluded.name,
-               has_custom_name = excluded.has_custom_name,
-               symbol_name = excluded.symbol_name,
-               root_directory = excluded.root_directory,
-               is_archived = excluded.is_archived,
-               updated_at = ?`
-          )
-          .run(
-            id,
-            config.serverId,
-            projectId,
-            request.name,
-            request.hasCustomName ? 1 : 0,
-            request.symbolName ?? null,
-            request.rootDirectory ?? null,
-            (request.isArchived ?? false) ? 1 : 0,
-            request.createdAt ?? now,
-            now
-          )
+        const existing = sqlite.prepare("select * from workspaces where id = ?").get(id) as
+          | WorkspaceRow
+          | undefined
+        const stamp = archivedStamp(
+          request.isArchived,
+          existing?.is_archived === 1,
+          existing?.archived_at ?? undefined
+        )
+        const wasArchived = existing?.is_archived === 1
+        sqlite.transaction(() => {
+          sqlite
+            .prepare(
+              `insert into workspaces (
+                 id, server_id, project_id, name, has_custom_name, symbol_name,
+                 root_directory, is_archived, archived_at, created_at, updated_at
+               ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, null)
+               on conflict(id) do update set
+                 project_id = excluded.project_id,
+                 name = excluded.name,
+                 has_custom_name = excluded.has_custom_name,
+                 symbol_name = excluded.symbol_name,
+                 root_directory = excluded.root_directory,
+                 is_archived = excluded.is_archived,
+                 archived_at = excluded.archived_at,
+                 updated_at = ?`
+            )
+            .run(
+              id,
+              config.serverId,
+              projectId,
+              request.name,
+              request.hasCustomName ? 1 : 0,
+              request.symbolName ?? null,
+              request.rootDirectory ?? null,
+              stamp === null ? 0 : 1,
+              stamp,
+              request.createdAt ?? now,
+              now
+            )
+          // A full upsert can flip the archive bit just like a PATCH, so it
+          // owes the same cascade — otherwise archiving via PUT would leave
+          // the workspace's chats visible under a hidden workspace.
+          if (stamp !== null && !wasArchived) {
+            cascadeArchiveWorkspace(id, stamp)
+          } else if (stamp === null && wasArchived) {
+            cascadeUnarchiveWorkspace(id)
+          }
+        })()
+        return workspaceFromRow(
+          sqlite.prepare("select * from workspaces where id = ?").get(id) as WorkspaceRow
+        )
+      }),
+    updateWorkspace: (rawId, request) =>
+      attempt("updateWorkspace", () => {
+        const id = canonicalUuid(rawId)
+        const existing = sqlite.prepare("select * from workspaces where id = ?").get(id) as
+          | WorkspaceRow
+          | undefined
+        if (existing === undefined) {
+          throw new Error(`Workspace not found: ${id}`)
+        }
+        const wasArchived = existing.is_archived === 1
+        // `archivedStamp` returns a moment exactly when the row ends up
+        // archived, so the stamp doubles as the archived flag — deriving both
+        // from it keeps them from ever disagreeing.
+        const stamp = archivedStamp(
+          request.isArchived,
+          wasArchived,
+          existing.archived_at ?? undefined
+        )
+        sqlite.transaction(() => {
+          sqlite
+            .prepare(
+              `update workspaces set
+                 name = ?, has_custom_name = ?, symbol_name = ?, root_directory = ?,
+                 is_archived = ?, archived_at = ?, updated_at = ?
+               where id = ?`
+            )
+            .run(
+              request.name ?? existing.name,
+              (request.hasCustomName ?? existing.has_custom_name === 1) ? 1 : 0,
+              request.symbolName ?? existing.symbol_name,
+              request.rootDirectory ?? existing.root_directory,
+              stamp === null ? 0 : 1,
+              stamp,
+              isoTimestamp(),
+              id
+            )
+          if (stamp !== null && !wasArchived) {
+            cascadeArchiveWorkspace(id, stamp)
+          } else if (stamp === null && wasArchived) {
+            cascadeUnarchiveWorkspace(id)
+          }
+        })()
         return workspaceFromRow(
           sqlite.prepare("select * from workspaces where id = ?").get(id) as WorkspaceRow
         )
@@ -3474,7 +3785,15 @@ const createService = (
                 when ? is not null and ? <> title then 1
                 else title_is_user_set
               end,
-              is_archived = ?, agent_session_id = ?, worktree_name = ?,
+              is_archived = ?,
+              archived_at = ?,
+              -- A direct archive/unarchive is a user act on this one chat, so
+              -- it clears cascade provenance: a later project unarchive must
+              -- not drag this row back with it. Updates that do NOT touch the
+              -- archive bit (a rename, a worktree remap) must leave provenance
+              -- alone, or restoring one chat would strand its siblings.
+              archive_cascade_from = case when ? = 1 then null else archive_cascade_from end,
+              agent_session_id = ?, worktree_name = ?,
               harness_id = ?, harness_account_id = ?, updated_at = ?
              where id = ?`
           )
@@ -3483,6 +3802,8 @@ const createService = (
             request.title ?? null,
             request.title ?? null,
             (request.isArchived ?? current.isArchived) ? 1 : 0,
+            archivedStamp(request.isArchived, current.isArchived, current.archivedAt),
+            request.isArchived === undefined ? 0 : 1,
             request.agentSessionId ?? current.agentSessionId ?? null,
             request.worktreeName ?? current.worktreeName ?? null,
             request.harnessId ?? current.harnessId,
@@ -4473,11 +4794,23 @@ const projectFromRow = (
   id: row.id,
   name: row.name,
   isArchived: row.is_archived === 1,
+  ...(row.archived_at === null ? {} : { archivedAt: row.archived_at }),
   symbolName: row.symbol_name,
   origin: row.origin,
   createdAt: row.created_at,
   locations: locations.map(projectLocationFromRow),
   ...(row.repo_url === null ? {} : { repoUrl: row.repo_url })
+})
+
+const archivedWorktreeFromRow = (row: ArchivedWorktreeRow): ArchivedWorktree => ({
+  id: row.id,
+  projectId: row.project_id,
+  serverId: row.server_id,
+  originalName: row.original_name,
+  branch: row.branch,
+  parentSha: row.parent_sha,
+  snapshotRef: row.snapshot_ref,
+  createdAt: row.created_at
 })
 
 const worktreeFromRow = (row: WorktreeRow): Worktree => ({
@@ -4499,6 +4832,7 @@ const workspaceFromRow = (row: WorkspaceRow): Workspace => ({
   ...(row.symbol_name === null ? {} : { symbolName: row.symbol_name }),
   ...(row.root_directory === null ? {} : { rootDirectory: row.root_directory }),
   isArchived: row.is_archived === 1,
+  ...(row.archived_at === null ? {} : { archivedAt: row.archived_at }),
   createdAt: row.created_at,
   ...(row.updated_at === null ? {} : { updatedAt: row.updated_at })
 })
@@ -4523,6 +4857,7 @@ const sessionFromRow = (row: SessionRow, folderPath: string | undefined): Sessio
     title: row.title,
     origin: row.origin,
     isArchived: row.is_archived === 1,
+    ...(row.archived_at === null ? {} : { archivedAt: row.archived_at }),
     ...(row.worktree_name === null ? {} : { worktreeName: row.worktree_name }),
     ...(row.workspace_id === null ? {} : { workspaceId: row.workspace_id }),
     ...(cwd === undefined ? {} : { cwd }),
