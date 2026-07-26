@@ -3,6 +3,7 @@ import AppKit
 import CodevisorCore
 import StreamMarkdown
 import SwiftUI
+import CodevisorUI
 
 /// Renders a single conversation item: a user prompt bubble or an assistant turn.
 struct ConversationItemView: View {

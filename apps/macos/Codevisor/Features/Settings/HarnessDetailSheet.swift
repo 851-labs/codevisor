@@ -1,5 +1,6 @@
 import SwiftUI
 import CodevisorCore
+import CodevisorUI
 
 /// Read-only per-harness detail sheet: identity, detected binary path, and
 /// probed version. Deliberately one flat surface — later lifecycle phases add

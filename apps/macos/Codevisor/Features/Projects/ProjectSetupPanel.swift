@@ -1,6 +1,7 @@
 import SwiftUI
 import UniformTypeIdentifiers
 import CodevisorCore
+import CodevisorUI
 
 // MARK: - Model
 

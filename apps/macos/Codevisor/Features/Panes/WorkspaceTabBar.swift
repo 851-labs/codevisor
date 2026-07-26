@@ -1,6 +1,7 @@
 import SwiftUI
 import UniformTypeIdentifiers
 import CodevisorCore
+import CodevisorUI
 
 /// The workspace's browser-style ownership layer rendered in the same
 /// native capsule strip used by the previous pane tabs. Each item now owns

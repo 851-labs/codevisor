@@ -1,6 +1,7 @@
 import AppKit
 import CodevisorCore
 import SwiftUI
+import CodevisorUI
 
 struct OpenCodeProviderAuthenticationView: View {
     @Environment(AppEnvironment.self) private var environment

@@ -2,6 +2,7 @@ import AppKit
 import CodevisorCore
 import QuartzCore
 import SwiftUI
+import CodevisorUI
 
 /// Stable rows consumed by the native transcript virtualizer. Message rows
 /// carry immutable settled snapshots; the active row reads the controller from

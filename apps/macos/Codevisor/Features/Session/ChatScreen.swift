@@ -10,6 +10,7 @@
 import SwiftUI
 import CodevisorCore
 import ACPKit
+import CodevisorUI
 
 struct ChatScreen: View {
     private static let composerBottomMargin: CGFloat = 16

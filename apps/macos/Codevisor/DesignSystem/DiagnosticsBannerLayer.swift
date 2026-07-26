@@ -1,5 +1,6 @@
 import SwiftUI
 import CodevisorCore
+import CodevisorUI
 
 /// A transparent notice after an opted-in run crashes.
 struct DiagnosticsBannerLayer: View {

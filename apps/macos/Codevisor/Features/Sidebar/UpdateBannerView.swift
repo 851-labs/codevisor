@@ -1,5 +1,6 @@
 import SwiftUI
 import CodevisorCore
+import CodevisorUI
 
 /// The "new version available" banner pinned to the top of the sidebar.
 /// Non-modal and dismissible per HIG: it states what's available, offers a

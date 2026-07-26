@@ -7,6 +7,7 @@
 import SwiftUI
 import AppKit
 import CodevisorCore
+import CodevisorUI
 
 struct WorkspaceSplitView: View {
     let node: SplitNode

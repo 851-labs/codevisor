@@ -3,6 +3,7 @@ import CodeHighlighter
 import CodevisorCore
 import StreamMarkdown
 import SwiftUI
+import CodevisorUI
 
 /// Computed rows + highlights for recently rendered diffs. DiffView's
 /// `@State` dies whenever its row is unmounted (session switches rebuild the

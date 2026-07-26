@@ -2,6 +2,7 @@ import SwiftUI
 import AppKit
 import CodevisorCore
 import ACPKit
+import CodevisorUI
 
 /// The question-mode content hosted by `ComposerCard`. This view intentionally
 /// owns no background, border, padding, or transition: those belong to the

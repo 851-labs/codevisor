@@ -1,5 +1,6 @@
 import SwiftUI
 import CodevisorCore
+import CodevisorUI
 
 /// Add/edit form for a user-defined custom ACP harness, with an ACP
 /// handshake "Test Connection" probe. The server persists entries in the

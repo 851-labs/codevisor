@@ -4,6 +4,7 @@ import CodevisorCore
 import os
 import UniformTypeIdentifiers
 import UserNotifications
+import CodevisorUI
 
 enum SettingsTab: String {
     case general

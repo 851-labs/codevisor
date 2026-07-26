@@ -3,6 +3,7 @@ import AppKit
 import AVFoundation
 import UniformTypeIdentifiers
 import CodevisorCore
+import CodevisorUI
 
 // MARK: - Image loading
 
@@ -100,14 +101,8 @@ extension Attachment {
     var hasVisualPreview: Bool { kind == .image || isPDF || isVideo }
 }
 
-func attachmentIsVideo(name: String, mimeType: String) -> Bool {
-    if mimeType.lowercased().hasPrefix("video/") { return true }
-    let pathExtension = (name as NSString).pathExtension
-    guard !pathExtension.isEmpty, let type = UTType(filenameExtension: pathExtension) else {
-        return false
-    }
-    return type.conforms(to: .movie)
-}
+// attachmentIsVideo lives in CodevisorCore (Session/SessionController.swift's
+// module) so shared attachment logic and these views agree on what "video" is.
 
 /// Decodes images/PDFs directly and asks AVFoundation for an early frame of a
 /// video. AVFoundation needs a file URL, so video bytes are materialized only

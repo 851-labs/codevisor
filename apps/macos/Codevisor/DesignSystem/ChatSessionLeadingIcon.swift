@@ -1,5 +1,6 @@
 import SwiftUI
 import CodevisorCore
+import CodevisorUI
 
 /// The shared chat identity/status slot used by the sidebar and split headers.
 /// Attention states replace the harness icon in the same priority order

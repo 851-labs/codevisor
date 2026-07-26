@@ -1,5 +1,6 @@
 import SwiftUI
 import CodevisorCore
+import CodevisorUI
 
 /// Renders `ErrorReporter` entries as transient banners in the window's
 /// top-trailing corner. Used only for errors with no better home; errors tied

@@ -3,6 +3,7 @@ import AppKit
 import CodevisorCore
 import StreamMarkdown
 import SwiftUI
+import CodevisorUI
 
 /// A single tool call as a one-line title that expands to a content card
 /// (terminal output, diff, or text) with a status badge. The title shimmers

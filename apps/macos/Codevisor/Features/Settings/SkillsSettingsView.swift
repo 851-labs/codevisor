@@ -1,6 +1,7 @@
 import AppKit
 import CodevisorCore
 import SwiftUI
+import CodevisorUI
 
 /// Settings ▸ Skills: global skills in the canonical ~/.agents/skills store
 /// (shared across every harness) on top, plus a collapsed section of skills

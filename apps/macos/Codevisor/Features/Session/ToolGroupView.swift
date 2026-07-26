@@ -1,6 +1,7 @@
 import SwiftUI
 import ACPKit
 import CodevisorCore
+import CodevisorUI
 
 /// A collapsed group of consecutive tool calls, summarized as one row
 /// (e.g. "Searched code, ran 2 commands") that expands to the individual calls.

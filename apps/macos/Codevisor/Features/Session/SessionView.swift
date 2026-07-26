@@ -1,6 +1,7 @@
 import SwiftUI
 import CodevisorCore
 import ACPKit
+import CodevisorUI
 
 /// The active session screen: hosts the center pane group (the chat pane —
 /// see ChatScreen — plus any terminals beside it) over the ⌘J bottom panel,

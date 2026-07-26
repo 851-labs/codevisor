@@ -111,7 +111,8 @@ final class SessionStore {
         let controller = SessionController(
             project: project,
             configCache: environment.configCache,
-            serverClient: environment.machines.client(for: session.serverId)
+            serverClient: environment.machines.client(for: session.serverId),
+            notificationDelivery: notificationDelivery
         )
         controller.configureExistingSession(session)
         controller.onAgentSessionCreated = { [weak projectList = environment.projectList] agentSessionId in
@@ -158,7 +159,8 @@ final class SessionStore {
             project: restoredProject,
             configCache: environment.configCache,
             composerDefaults: environment.composerDefaults,
-            serverClient: environment.serverClient
+            serverClient: environment.serverClient,
+            notificationDelivery: notificationDelivery
         )
         controller.applyComposerDefaults()
         if let persisted { controller.restoreDraft(persisted) }
@@ -201,7 +203,8 @@ final class SessionStore {
             project: project,
             configCache: environment.configCache,
             composerDefaults: environment.composerDefaults,
-            serverClient: environment.serverClient
+            serverClient: environment.serverClient,
+            notificationDelivery: notificationDelivery
         )
         controller.applyComposerDefaults()
         // A session created eagerly INTO a worktree (the New tab page's

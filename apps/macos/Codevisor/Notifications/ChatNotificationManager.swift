@@ -3,45 +3,9 @@ import CodevisorCore
 import os
 import UserNotifications
 
-enum ChatAttentionKind: String, Sendable {
-    case finished
-    case actionRequired
-
-    var notificationTitle: String {
-        switch self {
-        case .finished: "Chat finished"
-        case .actionRequired: "Action required"
-        }
-    }
-}
-
-struct ChatAttentionEvent: Sendable {
-    let id: UUID
-    let sessionId: UUID
-    let serverId: String
-    let sessionTitle: String
-    let kind: ChatAttentionKind
-
-    init(
-        id: UUID = UUID(),
-        sessionId: UUID,
-        serverId: String,
-        sessionTitle: String,
-        kind: ChatAttentionKind
-    ) {
-        self.id = id
-        self.sessionId = sessionId
-        self.serverId = serverId
-        self.sessionTitle = sessionTitle
-        self.kind = kind
-    }
-}
-
-@MainActor
-protocol ChatNotificationDelivering: AnyObject {
-    func deliver(_ event: ChatAttentionEvent, sessionIsOpen: Bool)
-    func clearNotifications(for sessionId: UUID)
-}
+// ChatAttentionKind, ChatAttentionEvent, and ChatNotificationDelivering live
+// in CodevisorCore (Notifications/ChatAttention.swift) so shared session code
+// can request notification behavior; this file is the macOS delivery.
 
 extension Notification.Name {
     static let codevisorOpenChatNotification = Notification.Name("CodevisorOpenChatNotification")
@@ -364,5 +328,3 @@ final class ChatNotificationManager: NSObject, ChatNotificationDelivering, UNUse
         )
     }
 }
-
-extension ChatAttentionKind: CaseIterable {}

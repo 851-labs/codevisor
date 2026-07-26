@@ -1,5 +1,6 @@
 import SwiftUI
 import CodevisorCore
+import CodevisorUI
 
 /// A "not installed" harness row: icon, name, readiness detail, and — when
 /// the server can run an installer — a one-click Install button with a

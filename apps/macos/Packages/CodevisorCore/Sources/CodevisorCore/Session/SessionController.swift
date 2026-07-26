@@ -1,104 +1,156 @@
 import Foundation
 import Observation
-import CodevisorCore
 import ACPKit
 import UniformTypeIdentifiers
 import os
 
 /// A file staged in the composer: bytes held locally for instant thumbnails,
 /// uploaded eagerly so send only has to collect the server refs.
-struct ComposerAttachment: Identifiable, Equatable {
-    enum State: Equatable {
+public struct ComposerAttachment: Identifiable, Equatable {
+    public enum State: Equatable {
         case uploading
         case uploaded(ServerAttachmentRef)
         case failed(String)
     }
 
-    let id: UUID
-    var name: String
-    var mimeType: String
-    var kind: Attachment.Kind
-    var localData: Data
-    var state: State
+    public let id: UUID
+    public var name: String
+    public var mimeType: String
+    public var kind: Attachment.Kind
+    public var localData: Data
+    public var state: State
 
-    var isImage: Bool { kind == .image }
+    public var isImage: Bool { kind == .image }
 
-    var isPDF: Bool {
+    public var isPDF: Bool {
         mimeType == "application/pdf" || name.lowercased().hasSuffix(".pdf")
     }
 
-    var isVideo: Bool { attachmentIsVideo(name: name, mimeType: mimeType) }
+    public var isVideo: Bool { attachmentIsVideo(name: name, mimeType: mimeType) }
 
     /// Images, PDFs, and videos render as visual previews; everything else is a chip.
-    var hasVisualPreview: Bool { isImage || isPDF || isVideo }
+    public var hasVisualPreview: Bool { isImage || isPDF || isVideo }
+}
+
+/// Whether an attachment is a video, by MIME type first and filename
+/// extension (via UTType) as fallback. Shared by the composer model and the
+/// attachment views.
+public func attachmentIsVideo(name: String, mimeType: String) -> Bool {
+    if mimeType.lowercased().hasPrefix("video/") { return true }
+    let pathExtension = (name as NSString).pathExtension
+    guard !pathExtension.isEmpty, let type = UTType(filenameExtension: pathExtension) else {
+        return false
+    }
+    return type.conforms(to: .movie)
 }
 
 /// One measured settled-row height. The revision prevents a stale height from
 /// being reused if the row's content changed while it was offscreen.
-struct SessionMeasuredRow: Equatable {
-    var height: CGFloat
-    var revision: Int
+public struct SessionMeasuredRow: Equatable {
+    public var height: CGFloat
+    public var revision: Int
+
+    public init(height: CGFloat, revision: Int) {
+        self.height = height
+        self.revision = revision
+    }
 }
 
 /// Text layout depends on the actual row width and the app's typography. Keep
 /// those dimensions in the cache key so a sidebar resize cannot poison a later
 /// restoration at another width.
-struct SessionMeasurementCacheKey: Hashable {
+public struct SessionMeasurementCacheKey: Hashable {
     /// Effective row width in half-point buckets. Sub-pixel window jitter does
     /// not create a new cache, while a real reflow does.
-    var rowWidthHalfPoints: Int
-    var layoutFingerprint: Int
+    public var rowWidthHalfPoints: Int
+    public var layoutFingerprint: Int
+
+    public init(rowWidthHalfPoints: Int, layoutFingerprint: Int) {
+        self.rowWidthHalfPoints = rowWidthHalfPoints
+        self.layoutFingerprint = layoutFingerprint
+    }
 }
 
 /// The mounted virtual window saved alongside a transcript coordinate. This
 /// mirrors ChatGPT's `renderedWindow`: restoration mounts the same neighborhood
 /// before any estimates are allowed to choose a different part of the thread.
-struct SessionRenderedTranscriptWindow: Equatable {
-    var anchorKey: String
-    var count: Int
+public struct SessionRenderedTranscriptWindow: Equatable {
+    public var anchorKey: String
+    public var count: Int
+
+    public init(anchorKey: String, count: Int) {
+        self.anchorKey = anchorKey
+        self.count = count
+    }
 }
 
 /// Virtualizer-owned restore data. The height map is the exact geometry that
 /// produced the saved coordinate; the regular LRU remains the longer-lived
 /// cache used across width changes.
-struct SessionVirtualTranscriptRestoreState: Equatable {
-    var measurementCacheKey: SessionMeasurementCacheKey?
-    var rowHeightsByKey: [String: CGFloat]
+public struct SessionVirtualTranscriptRestoreState: Equatable {
+    public var measurementCacheKey: SessionMeasurementCacheKey?
+    public var rowHeightsByKey: [String: CGFloat]
     /// Revisions for the settled subset of `rowHeightsByKey`. Restore applies
     /// a settled row's saved height only when its revision still matches the
     /// current transcript — content can change while a pane is closed (e.g. a
     /// background subagent streaming into an already-ended turn).
-    var settledRowsByKey: [String: SessionMeasuredRow] = [:]
-    var renderedWindow: SessionRenderedTranscriptWindow?
+    public var settledRowsByKey: [String: SessionMeasuredRow] = [:]
+    public var renderedWindow: SessionRenderedTranscriptWindow?
+
+    public init(
+        measurementCacheKey: SessionMeasurementCacheKey?,
+        rowHeightsByKey: [String: CGFloat],
+        settledRowsByKey: [String: SessionMeasuredRow] = [:],
+        renderedWindow: SessionRenderedTranscriptWindow? = nil
+    ) {
+        self.measurementCacheKey = measurementCacheKey
+        self.rowHeightsByKey = rowHeightsByKey
+        self.settledRowsByKey = settledRowsByKey
+        self.renderedWindow = renderedWindow
+    }
 }
 
 /// User intent for how the transcript should react to future content. This is
 /// deliberately independent from viewport geometry: restoring or remeasuring
 /// rows can move the viewport a few points without meaning that the user chose
 /// to stop following the latest turn.
-enum SessionTranscriptFollowMode: Equatable {
+public enum SessionTranscriptFollowMode: Equatable {
     case staticPosition
     case followingLatest
 
-    var followsLatest: Bool { self == .followingLatest }
+    public var followsLatest: Bool { self == .followingLatest }
 }
 
 /// Where the transcript was scrolled when the user last looked at a session,
 /// kept on the cached controller so navigating away and back reopens the
 /// transcript at the same place instead of pinned to the bottom.
-struct SessionScrollState {
+public struct SessionScrollState {
     /// The single persisted viewport coordinate, matching ChatGPT's thread
     /// scroll model. Zero means the latest content is visible.
-    var distanceFromBottom: CGFloat
+    public var distanceFromBottom: CGFloat
     /// A tiny, bounded LRU of exact settled-row measurements. Dictionary
     /// snapshots are copy-on-write, so publishing scroll state remains O(1).
-    var measurementCaches: [SessionMeasurementCacheKey: [String: SessionMeasuredRow]]
-    var measurementCacheLRU: [SessionMeasurementCacheKey]
+    public var measurementCaches: [SessionMeasurementCacheKey: [String: SessionMeasuredRow]]
+    public var measurementCacheLRU: [SessionMeasurementCacheKey]
     /// Exact virtual window and row geometry from the last mounted view.
-    var virtualTranscript: SessionVirtualTranscriptRestoreState?
+    public var virtualTranscript: SessionVirtualTranscriptRestoreState?
     /// Follow intent is persisted separately from the viewport coordinate.
-    var followMode: SessionTranscriptFollowMode
-    var isAtBottom: Bool { distanceFromBottom <= 2 }
+    public var followMode: SessionTranscriptFollowMode
+    public var isAtBottom: Bool { distanceFromBottom <= 2 }
+
+    public init(
+        distanceFromBottom: CGFloat,
+        measurementCaches: [SessionMeasurementCacheKey: [String: SessionMeasuredRow]],
+        measurementCacheLRU: [SessionMeasurementCacheKey],
+        virtualTranscript: SessionVirtualTranscriptRestoreState? = nil,
+        followMode: SessionTranscriptFollowMode
+    ) {
+        self.distanceFromBottom = distanceFromBottom
+        self.measurementCaches = measurementCaches
+        self.measurementCacheLRU = measurementCacheLRU
+        self.virtualTranscript = virtualTranscript
+        self.followMode = followMode
+    }
 }
 
 /// The facade for a session screen. Holds the composer text and harness
@@ -106,8 +158,8 @@ struct SessionScrollState {
 /// then forwards to the live `SessionModel`.
 @MainActor
 @Observable
-final class SessionController {
-    enum Status: Equatable {
+final public class SessionController {
+    public enum Status: Equatable {
         case idle
         case connecting(String)
         case failed(String)
@@ -116,7 +168,7 @@ final class SessionController {
     /// Loading, an authoritative empty result, and a request failure are
     /// distinct UI states. An empty harness array alone cannot represent all
     /// three without briefly claiming that no agent is installed.
-    enum PreparationState: Equatable {
+    public enum PreparationState: Equatable {
         case loading
         case ready
         case failed
@@ -125,86 +177,86 @@ final class SessionController {
     /// Validation of a resumed chat's persisted composer configuration. The
     /// transcript is deliberately independent of this state; only actions
     /// that depend on current harness metadata wait for it.
-    enum ConfigurationValidationState: Equatable {
+    public enum ConfigurationValidationState: Equatable {
         case ready
         case connecting
         case failed(String)
     }
 
-    var composerText: String = "" { didSet { draftDidChange() } }
-    private(set) var composerAttachments: [ComposerAttachment] = [] { didSet { draftDidChange() } }
+    public var composerText: String = "" { didSet { draftDidChange() } }
+    public private(set) var composerAttachments: [ComposerAttachment] = [] { didSet { draftDidChange() } }
     /// Attachments shown with the optimistic first message while connecting.
-    private(set) var pendingUserAttachments: [Attachment] = []
+    public private(set) var pendingUserAttachments: [Attachment] = []
     private var uploadTasks: [UUID: Task<Void, Never>] = [:]
-    private(set) var harnesses: [ServerHarness] = []
-    private(set) var preparationState: PreparationState = .loading
-    private(set) var configurationValidationState: ConfigurationValidationState = .ready
+    public private(set) var harnesses: [ServerHarness] = []
+    public private(set) var preparationState: PreparationState = .loading
+    public private(set) var configurationValidationState: ConfigurationValidationState = .ready
     /// Non-nil when reconnecting replaced a persisted value that the harness
     /// no longer advertises.
-    private(set) var configurationAdjustmentMessage: String?
+    public private(set) var configurationAdjustmentMessage: String?
     /// The first transcript page has its own state so an existing empty model
     /// never presents as an unexplained blank screen.
-    private(set) var isLoadingInitialHistory = false
+    public private(set) var isLoadingInitialHistory = false
     private var initialHistoryLoadStartedAt: TimeInterval?
-    var selectedHarnessId: String? { didSet { draftDidChange() } }
-    private(set) var model: SessionModel?
-    private(set) var status: Status = .idle
+    public var selectedHarnessId: String? { didSet { draftDidChange() } }
+    public private(set) var model: SessionModel?
+    public private(set) var status: Status = .idle
     /// Calm progress message shown while the eager connect waits for an
     /// unreachable server to come back (e.g. the managed server rebooting
     /// right after an app update). Non-nil only during that wait; the
     /// transcript renders it as a shimmer row instead of an error banner.
-    private(set) var serverWaitMessage: String?
+    public private(set) var serverWaitMessage: String?
     /// The first prompt, held while the session record/agent are being created
     /// so the UI can show it optimistically the instant the user sends.
-    private(set) var pendingUserText: String?
+    public private(set) var pendingUserText: String?
     /// The transcript scroll position, updated on every scroll tick and read
     /// back when the session screen remounts. Observation-ignored so the
     /// high-frequency writes don't invalidate views observing the controller.
-    @ObservationIgnored var scrollState: SessionScrollState? {
+    @ObservationIgnored public var scrollState: SessionScrollState? {
         didSet { onScrollStateChange?(scrollState) }
     }
     /// SessionStore mirrors viewport state independently from the heavier
     /// controller LRU, so browsing many chats can evict transcript models
     /// without forgetting where the user was reading.
-    @ObservationIgnored var onScrollStateChange: ((SessionScrollState?) -> Void)?
+    @ObservationIgnored public var onScrollStateChange: ((SessionScrollState?) -> Void)?
     /// Whether the pinned unfinished todo checklist is expanded. SessionStore
     /// mirrors this independently so navigation and controller eviction
     /// preserve the last state the user chose for each chat.
-    var isTodosExpanded = true {
+    public var isTodosExpanded = true {
         didSet { onTodosExpandedChange?(isTodosExpanded) }
     }
-    @ObservationIgnored var onTodosExpandedChange: ((Bool) -> Void)?
+    @ObservationIgnored public var onTodosExpandedChange: ((Bool) -> Void)?
     /// User-toggled expand/collapse state for transcript rows, hoisted out of
     /// per-row `@State` so it survives lazy unmounts.
-    @ObservationIgnored let disclosure = TranscriptDisclosureStore()
+    @ObservationIgnored public let disclosure = TranscriptDisclosureStore()
     /// Bumped on every user send; the session screen observes it to re-pin
     /// the transcript to the bottom (sending means "show me the newest").
-    private(set) var userSendSignal = 0
+    public private(set) var userSendSignal = 0
     /// A fresh, monotonic request for the transcript to animate the next user
     /// row out of the bottom chrome. Direct sends trigger it immediately;
     /// queued sends trigger it only when the server promotes them into the
     /// transcript, not when they first enter the queue.
-    private(set) var userSendAnimationSignal = 0
-    private(set) var userSendAnimationRequestedAt: TimeInterval = 0
+    public private(set) var userSendAnimationSignal = 0
+    public private(set) var userSendAnimationRequestedAt: TimeInterval = 0
 
     /// The project whose folder is used as the agent cwd. Settable so the
     /// new-chat page can change projects before the first send.
-    var project: Project { didSet { draftDidChange() } }
+    public var project: Project { didSet { draftDidChange() } }
     /// Called once, on the first send — used by the new-chat page to create and
     /// register the real session and navigate to it.
-    var onFirstSend: (() -> Void)?
+    public var onFirstSend: (() -> Void)?
     /// Called when first-send setup fails after the draft was promoted. The
     /// owner reattaches the original draft persistence without deleting the
     /// durable chat session or its workspace.
-    var onSetupFailed: (() -> Void)?
+    public var onSetupFailed: (() -> Void)?
     /// The agent session to resume (existing session); nil for a brand-new chat.
-    var resumeAgentSessionId: String?
+    public var resumeAgentSessionId: String?
     /// The durable Codevisor session mirrored by the server. Nil for a draft until first send.
-    var serverSession: ChatSession?
+    public var serverSession: ChatSession?
     /// When true, the draft runs in a new git worktree created on the first
     /// send. Until the worktree exists there is no cwd to connect with, so the
     /// eager pre-connect is skipped.
-    var wantsNewWorktree = false {
+    public var wantsNewWorktree = false {
         didSet {
             // A worktree kept alive from a reverted first send only makes
             // sense while worktree mode stays on; turning it off must drop the
@@ -217,14 +269,14 @@ final class SessionController {
         }
     }
     /// The worktree created for this draft on first send (server-assigned slug).
-    private(set) var worktreeName: String?
+    public private(set) var worktreeName: String?
     /// The created worktree's path; overrides the project folder as the agent cwd.
-    private(set) var sessionCwdOverride: String?
+    public private(set) var sessionCwdOverride: String?
 
     /// Where the draft runs, as the composer's context picker sees it: the
     /// project root, an EXISTING worktree (no creation on send), or a new
     /// worktree materialized on first send.
-    enum RunContextSelection: Equatable {
+    public enum RunContextSelection: Equatable {
         case projectRoot
         case existingWorktree(name: String, path: String)
         case newWorktree
@@ -233,7 +285,7 @@ final class SessionController {
     /// Derived from the worktree fields — `wantsNewWorktree` wins because a
     /// reverted first send can leave a live worktree behind while the mode
     /// stays on (retry reuses it).
-    var runContext: RunContextSelection {
+    public var runContext: RunContextSelection {
         if wantsNewWorktree { return .newWorktree }
         if let path = sessionCwdOverride, let name = worktreeName {
             return .existingWorktree(name: name, path: path)
@@ -250,7 +302,7 @@ final class SessionController {
     /// onto `serverSession` — the same move `createWorktree` makes when a new
     /// worktree materializes. The next connect upserts it; the server resolves
     /// the authoritative cwd from the worktree name.
-    func setRunContext(_ context: RunContextSelection) {
+    public func setRunContext(_ context: RunContextSelection) {
         switch context {
         case .projectRoot:
             // didSet clears the override and name.
@@ -277,7 +329,7 @@ final class SessionController {
     /// project-directory/new-worktree part the default for future composers.
     /// Existing worktrees remain specific to this draft and are never stored
     /// as a machine-wide path.
-    func selectRunContext(_ context: RunContextSelection) {
+    public func selectRunContext(_ context: RunContextSelection) {
         setRunContext(context)
         let remembered: ComposerDefaultsStore.RunLocation?
         switch context {
@@ -297,50 +349,53 @@ final class SessionController {
     }
     /// Pre-chat setup steps (worktree creation, agent start) shown in the
     /// transcript immediately after the optimistic first user message.
-    private(set) var setupPhases: [SessionSetupPhase] = []
+    public private(set) var setupPhases: [SessionSetupPhase] = []
     /// A failed first-send setup returns to the centered New Chat treatment
     /// without deleting its durable session or workspace.
-    private(set) var showsNewChatAfterSetupFailure = false
+    public private(set) var showsNewChatAfterSetupFailure = false
     /// Presentation state for an eagerly-created chat. Harness preparation may
     /// connect an agent before the user sends, so connection state cannot tell
     /// the container when to leave the centered New Chat treatment.
-    var shouldShowNewChatComposer: Bool {
+    public var shouldShowNewChatComposer: Bool {
         showsNewChatAfterSetupFailure || (!hasSentFirst && onFirstSend != nil)
     }
     /// The first send is accepted synchronously before worktree or agent setup
     /// begins, allowing the pane to enter the transcript without waiting for
     /// either asynchronous operation.
-    var hasAcceptedFirstSend: Bool { hasSentFirst }
+    public var hasAcceptedFirstSend: Bool { hasSentFirst }
     /// True from the moment a send is accepted until the first-send navigation
     /// has happened — the window where the new-chat composer shows a spinner
     /// and disables input.
-    private(set) var isSubmitting = false
+    public private(set) var isSubmitting = false
     /// Covers the whole question-resolution transaction, including the mode
     /// switch that precedes accepting Claude's ExitPlanMode prompt. The picker
     /// responds immediately and duplicate answer/cancel tasks are ignored.
-    private(set) var isResolvingQuestion = false
+    public private(set) var isResolvingQuestion = false
     /// Called once the first-send worktree has been created, so the owner can
     /// patch the already-registered session record with the worktree name/cwd.
-    var onWorktreeCreated: ((ServerWorktree) -> Void)?
+    public var onWorktreeCreated: ((ServerWorktree) -> Void)?
     /// Called with the agent session id once a brand-new session is created.
-    var onAgentSessionCreated: ((String) -> Void)?
+    public var onAgentSessionCreated: ((String) -> Void)?
     /// Called each time a live turn ends — forwarded from the connected
     /// `SessionModel` so the session store can badge unopened chats.
-    var onTurnEnded: (() -> Void)?
+    public var onTurnEnded: (() -> Void)?
     /// Called for Claude runtime-state barriers so deferred attention can be
     /// released only after the overall activity epoch becomes quiescent.
-    var onRuntimeStateChanged: (() -> Void)?
+    public var onRuntimeStateChanged: (() -> Void)?
     /// Called when goal state changes so terminal goal outcomes can release a
     /// deferred unread/notification epoch.
-    var onGoalChanged: (() -> Void)?
+    public var onGoalChanged: (() -> Void)?
     /// Called when a live question pauses the agent for user input.
-    var onActionRequired: (() -> Void)?
+    public var onActionRequired: (() -> Void)?
     /// The agent session id currently connected (resumed or newly created).
-    private(set) var connectedAgentSessionId: String?
+    public private(set) var connectedAgentSessionId: String?
 
     private let configCache: ConfigOptionCache
     private let composerDefaults: ComposerDefaultsStore?
     private let serverClient: (any CodevisorServerClienting)?
+    /// Platform notification delivery; nil in previews/tests. Only used to
+    /// prepare authorization at the first send.
+    private let notificationDelivery: (any ChatNotificationDelivering)?
     private var hasSentFirst = false
     private var connectedHarnessId: String?
     /// Config changes made before connecting, applied once the agent connects.
@@ -348,7 +403,7 @@ final class SessionController {
     /// discard that harness's model, thinking, or speed selection.
     private var pendingConfigByHarness: [String: [String: String]] = [:] { didSet { draftDidChange() } }
     private var pendingModeId: String? { didSet { draftDidChange() } }
-    @ObservationIgnored var onDraftChange: ((ComposerDraftStore.Draft) -> Void)?
+    @ObservationIgnored public var onDraftChange: ((ComposerDraftStore.Draft) -> Void)?
     @ObservationIgnored private var isRestoringDraft = false
     /// Set only while a promoted new-chat draft is waiting for a successful
     /// agent connection. Failed setup rolls it back without counting a chat.
@@ -375,16 +430,18 @@ final class SessionController {
     private var didLoadExistingRuntimeConfiguration = false
     private var existingConfigurationError: String?
 
-    init(
+    public init(
         project: Project,
         configCache: ConfigOptionCache,
         composerDefaults: ComposerDefaultsStore? = nil,
-        serverClient: (any CodevisorServerClienting)? = nil
+        serverClient: (any CodevisorServerClienting)? = nil,
+        notificationDelivery: (any ChatNotificationDelivering)? = nil
     ) {
         self.project = project
         self.configCache = configCache
         self.composerDefaults = composerDefaults
         self.serverClient = serverClient
+        self.notificationDelivery = notificationDelivery
         if seedFromCachedServerCapabilities() {
             preparationState = .ready
         }
@@ -393,7 +450,7 @@ final class SessionController {
     /// Binds a persisted chat to this controller and paints its last accepted
     /// selections over cached option definitions. The values remain
     /// provisional until the live session reconnect validates them.
-    func configureExistingSession(_ session: ChatSession) {
+    public func configureExistingSession(_ session: ChatSession) {
         let identityChanged = serverSession?.id != session.id
             || resumeAgentSessionId != session.agentSessionId
         serverSession = session
@@ -471,11 +528,11 @@ final class SessionController {
             || serverSession?.agentSessionId?.isEmpty == false
     }
 
-    var isConnectingToHarness: Bool {
+    public var isConnectingToHarness: Bool {
         configurationValidationState == .connecting
     }
 
-    var configurationValidationError: String? {
+    public var configurationValidationError: String? {
         guard case let .failed(message) = configurationValidationState else { return nil }
         return message
     }
@@ -496,7 +553,7 @@ final class SessionController {
         }
     }
 
-    func draftSnapshot() -> ComposerDraftStore.Draft {
+    public func draftSnapshot() -> ComposerDraftStore.Draft {
         ComposerDraftStore.Draft(
             projectId: project.id,
             composerText: composerText,
@@ -523,7 +580,7 @@ final class SessionController {
         )
     }
 
-    func restoreDraft(_ draft: ComposerDraftStore.Draft) {
+    public func restoreDraft(_ draft: ComposerDraftStore.Draft) {
         isRestoringDraft = true
         composerText = draft.composerText
         composerAttachments = draft.attachments.map {
@@ -587,12 +644,12 @@ final class SessionController {
         onDraftChange(draftSnapshot())
     }
 
-    var isPrepared: Bool { preparationState == .ready }
+    public var isPrepared: Bool { preparationState == .ready }
 
     /// The directory the agent runs in: the session's server-resolved cwd
     /// (project folder or worktree), a just-created worktree, or the project
     /// folder for plain drafts.
-    var sessionCwdURL: URL {
+    public var sessionCwdURL: URL {
         if let cwd = serverSession?.cwd { return URL(fileURLWithPath: cwd) }
         if let sessionCwdOverride { return URL(fileURLWithPath: sessionCwdOverride) }
         return project.folderURL
@@ -600,92 +657,92 @@ final class SessionController {
 
     // MARK: - Derived state
 
-    var conversation: [ConversationItem] { model?.conversation ?? [] }
+    public var conversation: [ConversationItem] { model?.conversation ?? [] }
     /// Split accessors for the transcript: bodies that iterate rows read the
     /// settled list; ONLY the dedicated active-row child view reads
     /// `activeItem`, so token flushes invalidate one bubble instead of the
     /// whole transcript. `hasActiveItem` is boundary-guarded for containers
     /// that need existence without per-flush invalidation.
-    var settledConversation: [ConversationItem] { model?.settledConversation ?? [] }
-    var activeItem: ConversationItem? { model?.activeItem }
-    var activeItemRevision: UInt64 { model?.activeItemRevision ?? 0 }
-    var hasActiveItem: Bool { model?.hasActiveItem ?? false }
-    var hasOlderHistory: Bool { model?.hasOlderHistory ?? false }
-    var isLoadingOlderHistory: Bool { model?.isLoadingOlderHistory ?? false }
-    var queuedPrompts: [ServerPromptQueueItem] { model?.queuedPrompts ?? [] }
-    var availableCommands: [AvailableCommand] { model?.availableCommands ?? [] }
-    var isConnected: Bool { model != nil }
+    public var settledConversation: [ConversationItem] { model?.settledConversation ?? [] }
+    public var activeItem: ConversationItem? { model?.activeItem }
+    public var activeItemRevision: UInt64 { model?.activeItemRevision ?? 0 }
+    public var hasActiveItem: Bool { model?.hasActiveItem ?? false }
+    public var hasOlderHistory: Bool { model?.hasOlderHistory ?? false }
+    public var isLoadingOlderHistory: Bool { model?.isLoadingOlderHistory ?? false }
+    public var queuedPrompts: [ServerPromptQueueItem] { model?.queuedPrompts ?? [] }
+    public var availableCommands: [AvailableCommand] { model?.availableCommands ?? [] }
+    public var isConnected: Bool { model != nil }
     /// Whether the harness can still be chosen: only a draft that hasn't sent
     /// anything yet. An empty conversation alone isn't enough — during the
     /// new-chat → session handoff the promoted controller is still connecting
     /// and its conversation is momentarily empty, which made the session
     /// composer's inline picker flash in briefly. The pending/connecting/
     /// session checks keep it hidden through that window.
-    var canChooseHarness: Bool {
+    public var canChooseHarness: Bool {
         conversation.isEmpty
             && pendingUserText == nil
             && !isConnecting
             && serverSession?.agentSessionId == nil
             && resumeAgentSessionId == nil
     }
-    var modeState: SessionModeState? {
+    public var modeState: SessionModeState? {
         if let live = model?.modeState { return live }
         guard let selectedHarnessId, var state = modeStateByHarness[selectedHarnessId] else { return nil }
         if let pendingModeId { state.currentModeId = pendingModeId }
         return state
     }
-    var errorMessage: String? { model?.errorMessage }
-    var errorRequiresHarnessAuthentication: Bool {
+    public var errorMessage: String? { model?.errorMessage }
+    public var errorRequiresHarnessAuthentication: Bool {
         model?.errorRequiresHarnessAuthentication == true
     }
     /* Usage state only feeds the temporarily disabled usage gauge and popover.
-    var usage: SessionUsage? { model?.usage }
-    var usageLimits: ServerHarnessUsageLimits? { model?.usageLimits }
-    var isLoadingUsageLimits: Bool { model?.isLoadingUsageLimits == true }
-    var usageLimitsError: String? { model?.usageLimitsError }
+    public var usage: SessionUsage? { model?.usage }
+    public var usageLimits: ServerHarnessUsageLimits? { model?.usageLimits }
+    public var isLoadingUsageLimits: Bool { model?.isLoadingUsageLimits == true }
+    public var usageLimitsError: String? { model?.usageLimitsError }
 
-    func loadUsageLimits(force: Bool = false) async {
+    public func loadUsageLimits(force: Bool = false) async {
         await model?.loadUsageLimits(force: force)
     }
     */
 
-    func loadOlderHistory() async {
+    public func loadOlderHistory() async {
         await model?.loadOlderHistory()
     }
 
     @discardableResult
-    func loadTranscriptDetails(_ itemId: String) async -> Bool {
+    public func loadTranscriptDetails(_ itemId: String) async -> Bool {
         await model?.loadTranscriptDetails(itemId: itemId) ?? false
     }
 
     /// The harness this chat is (or will be) running on: the connected
     /// agent's harness once a session exists, the picker selection before.
-    var activeHarnessId: String? { connectedHarnessId ?? selectedHarnessId }
+    public var activeHarnessId: String? { connectedHarnessId ?? selectedHarnessId }
 
     // MARK: - Goals
 
     /// The session's persistent goal, when the harness supports goal mode.
-    var goal: SessionGoal? { model?.goal }
+    public var goal: SessionGoal? { model?.goal }
 
     /// Whether the selected harness supports goals at all — gates every goal
     /// affordance; harnesses without support show nothing.
-    var supportsGoals: Bool {
+    public var supportsGoals: Bool {
         guard let harnessId = connectedHarnessId ?? selectedHarnessId else { return false }
         return supportsGoalsByHarness[harnessId] ?? false
     }
 
     /// The goal affordance shows whenever the harness supports goals; a goal
     /// set before the first send is held and applied once the agent connects.
-    var canEditGoal: Bool { supportsGoals }
+    public var canEditGoal: Bool { supportsGoals }
 
     /// Goal-input mode: when armed, submitting the composer sets the text as
     /// the session goal instead of sending a prompt.
-    var isGoalComposerArmed = false { didSet { draftDidChange() } }
+    public var isGoalComposerArmed = false { didSet { draftDidChange() } }
 
     /// The pencil-edit flow: the composer strips down to a dedicated
     /// "Edit goal" editor and the banner hides. Plain ⌖-armed goal setting
     /// keeps the normal composer look.
-    var isGoalEditing = false { didSet { draftDidChange() } }
+    public var isGoalEditing = false { didSet { draftDidChange() } }
 
     /// Editing an existing goal temporarily replaces the visible chat draft.
     /// Keep the draft here so cancelling or finishing the edit cannot destroy
@@ -695,7 +752,7 @@ final class SessionController {
     /// A goal captured before the session connected, applied on connect.
     private var pendingGoal: String?
 
-    func toggleGoalComposer() {
+    public func toggleGoalComposer() {
         if isGoalComposerArmed {
             exitGoalComposer()
         } else {
@@ -710,7 +767,7 @@ final class SessionController {
 
     /// Leaves goal mode without mutating an ordinary composer draft. Editing
     /// an existing goal restores the chat draft that the edit displaced.
-    func exitGoalComposer() {
+    public func exitGoalComposer() {
         isGoalComposerArmed = false
         isGoalEditing = false
         if let composerTextBeforeGoalEdit {
@@ -721,7 +778,7 @@ final class SessionController {
 
     /// Loads the current goal into the composer in edit mode — submitting
     /// replaces the objective.
-    func editGoal() {
+    public func editGoal() {
         guard let objective = (goal ?? draftGoal)?.objective else { return }
         composerTextBeforeGoalEdit = composerText
         composerText = objective
@@ -733,7 +790,7 @@ final class SessionController {
     /// On a new chat this mirrors `send()`: navigate to the session page,
     /// create the worktree/session, connect the agent — with the goal applied
     /// on connect instead of a prompt.
-    func submitGoalFromComposer() async {
+    public func submitGoalFromComposer() async {
         let objective = composerText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !objective.isEmpty, !isConnecting, !isSubmitting else { return }
 
@@ -802,7 +859,7 @@ final class SessionController {
         }
     }
 
-    func setGoal(objective: String? = nil, status: GoalStatus? = nil) async {
+    public func setGoal(objective: String? = nil, status: GoalStatus? = nil) async {
         if let model {
             await model.setGoal(objective: objective, status: status)
         } else if let objective {
@@ -813,7 +870,7 @@ final class SessionController {
     /// The pre-connect goal shown in the banner before the session exists.
     /// Kept visible until the live goal replaces it, so the banner doesn't
     /// flicker out during the connect handshake.
-    var draftGoal: SessionGoal? {
+    public var draftGoal: SessionGoal? {
         guard model?.goal == nil, let pendingGoal else { return nil }
         return SessionGoal(objective: pendingGoal, status: .active)
     }
@@ -827,10 +884,10 @@ final class SessionController {
         }
     }
 
-    func pauseGoal() async { await model?.pauseGoal() }
-    func resumeGoal() async { await model?.resumeGoal() }
+    public func pauseGoal() async { await model?.pauseGoal() }
+    public func resumeGoal() async { await model?.resumeGoal() }
 
-    func clearGoal() async {
+    public func clearGoal() async {
         if model == nil {
             pendingGoal = nil
         } else {
@@ -841,11 +898,11 @@ final class SessionController {
     // MARK: - Todos
 
     /// The session's latest todo checklist, pinned above the composer.
-    var todos: Plan? { model?.sessionPlan }
+    public var todos: Plan? { model?.sessionPlan }
 
     /// Completed checklists stay in the transcript but no longer occupy the
     /// persistent composer chrome.
-    var visibleTodos: Plan? {
+    public var visibleTodos: Plan? {
         guard let todos,
               todos.entries.contains(where: { $0.status != .completed }) else {
             return nil
@@ -855,7 +912,7 @@ final class SessionController {
 
     /// Restores the per-session disclosure preference after controller
     /// creation or LRU eviction.
-    func restoreTodoDisclosure(isExpanded: Bool) {
+    public func restoreTodoDisclosure(isExpanded: Bool) {
         isTodosExpanded = isExpanded
     }
 
@@ -864,12 +921,12 @@ final class SessionController {
     /// The question the composer renders as a picker: a real blocking agent
     /// question, or codex's client-side plan approval (below) when neither the
     /// server nor a tool drives it.
-    var activeQuestion: QuestionRequest? { pendingQuestion ?? planApprovalRequest }
+    public var activeQuestion: QuestionRequest? { pendingQuestion ?? planApprovalRequest }
 
     /// The blocking agent question the composer renders as a picker.
-    var pendingQuestion: QuestionRequest? { model?.pendingQuestion }
+    public var pendingQuestion: QuestionRequest? { model?.pendingQuestion }
 
-    func answerQuestion(answers: [String: QuestionAnswerEntry]) async {
+    public func answerQuestion(answers: [String: QuestionAnswerEntry]) async {
         guard !isResolvingQuestion else { return }
         isResolvingQuestion = true
         defer { isResolvingQuestion = false }
@@ -890,7 +947,7 @@ final class SessionController {
         await model?.answerQuestion(answers: answers)
     }
 
-    func cancelQuestion() async {
+    public func cancelQuestion() async {
         guard !isResolvingQuestion else { return }
         isResolvingQuestion = true
         defer { isResolvingQuestion = false }
@@ -909,7 +966,7 @@ final class SessionController {
     /// Opens one browser-extension setup destination without resolving the
     /// blocking agent question. These are utility actions, so the composer
     /// must remain mounted while Chrome or Finder opens.
-    func performBrowserExtensionSetupAction(_ action: String) async {
+    public func performBrowserExtensionSetupAction(_ action: String) async {
         guard let serverClient else { return }
         do {
             switch action {
@@ -929,14 +986,14 @@ final class SessionController {
         }
     }
 
-    func browserExtensionArchive() async throws -> URL {
+    public func browserExtensionArchive() async throws -> URL {
         guard let serverClient else {
             throw CodevisorServerClientError.invalidResponse
         }
         return try await serverClient.browserExtensionArchive()
     }
 
-    func browserExtensionIcon() async throws -> URL {
+    public func browserExtensionIcon() async throws -> URL {
         guard let serverClient else {
             throw CodevisorServerClientError.invalidResponse
         }
@@ -950,7 +1007,7 @@ final class SessionController {
     /// client-side prompt. Answering it messages the model (there is no held
     /// tool to resolve) — mirroring codex CLI's approve = leave-plan-mode +
     /// "Implement the plan." user turn.
-    private(set) var pendingPlanApproval = false
+    public private(set) var pendingPlanApproval = false
 
     /// Only harnesses that propose plans without a blocking approval tool use
     /// this post-turn prompt (Claude's ExitPlanMode already drives its own).
@@ -1010,7 +1067,7 @@ final class SessionController {
 
     /// Selectable config options: live when connected, otherwise the cached
     /// (stale) options for the selected harness with any pending edits applied.
-    var configOptions: [SessionConfigOption] {
+    public var configOptions: [SessionConfigOption] {
         if let model, !model.configOptions.isEmpty || !isConnectingToHarness {
             return model.configOptions
         }
@@ -1044,30 +1101,30 @@ final class SessionController {
     ]
 
     /// The model choice shown in the combined model dropdown.
-    var modelOption: SessionConfigOption? {
+    public var modelOption: SessionConfigOption? {
         configOptions.first { $0.category == SessionConfigOption.Category.model && !$0.options.isEmpty }
     }
 
     /// Thinking/reasoning controls shown in the combined model dropdown.
     /// Some agents expose more than one (for example, Thinking plus Effort).
-    var thoughtLevelOptions: [SessionConfigOption] {
+    public var thoughtLevelOptions: [SessionConfigOption] {
         configOptions.filter { $0.category == SessionConfigOption.Category.thoughtLevel && !$0.options.isEmpty }
     }
 
     /// The speed (standard/fast) shown in the combined model dropdown; only
     /// present when the agent/model pair supports a fast tier.
-    var speedOption: SessionConfigOption? {
+    public var speedOption: SessionConfigOption? {
         configOptions.first { $0.category == SessionConfigOption.Category.speed && !$0.options.isEmpty }
     }
 
-    var hasModelMenu: Bool {
+    public var hasModelMenu: Bool {
         modelOption != nil || !thoughtLevelOptions.isEmpty || speedOption != nil
     }
 
     /// Resumed chats intentionally avoid painting generic fresh-session
     /// defaults while their runtime metadata loads. Reserve the model picker's
     /// place with a spinner during that gap instead of popping it in later.
-    var isLoadingModelMenu: Bool {
+    public var isLoadingModelMenu: Bool {
         guard !hasModelMenu else { return false }
         if isConnecting || isConnectingToHarness { return true }
         guard model == nil, serverSession?.agentSessionId?.isEmpty == false else { return false }
@@ -1079,7 +1136,7 @@ final class SessionController {
     /// config, unknown categories), in a sensible order. Mode options are
     /// excluded entirely: the composer's plan toggle is the only mode control
     /// (everything else runs in the harness's full-access/build default).
-    var pickerOptions: [SessionConfigOption] {
+    public var pickerOptions: [SessionConfigOption] {
         let order = [SessionConfigOption.Category.modelConfig]
         return configOptions
             .filter { option in
@@ -1096,7 +1153,7 @@ final class SessionController {
             }
     }
 
-    func setConfigOption(_ configId: String, _ value: String) async {
+    public func setConfigOption(_ configId: String, _ value: String) async {
         guard !isConnectingToHarness else { return }
         let optionBeforeChange = configOptions.first { $0.id == configId }
         let previousValue = optionBeforeChange?.currentValue
@@ -1151,7 +1208,7 @@ final class SessionController {
 
     /// Seeds a new-chat draft from the last explicit selections on this
     /// machine. Called once by `SessionStore` when a draft is made.
-    func applyComposerDefaults() {
+    public func applyComposerDefaults() {
         guard let composerDefaults, isDraft else { return }
         if let harnessId = composerDefaults.lastHarnessId(forServer: project.serverId),
            !harnessId.isEmpty,
@@ -1217,45 +1274,45 @@ final class SessionController {
         return Dictionary(values) { _, last in last }
     }
 
-    var selectedHarness: ServerHarness? {
+    public var selectedHarness: ServerHarness? {
         harnesses.first { $0.id == selectedHarnessId }
     }
 
-    var isConnecting: Bool {
+    public var isConnecting: Bool {
         if case .connecting = status { return true }
         return false
     }
 
     /// Whether the session is actively generating a response.
-    var isSending: Bool { model?.isSending ?? false }
-    var isCancelling: Bool { model?.isCancelling ?? false }
+    public var isSending: Bool { model?.isSending ?? false }
+    public var isCancelling: Bool { model?.isCancelling ?? false }
 
-    var isBusy: Bool {
+    public var isBusy: Bool {
         isConnecting || isSending
     }
 
     /// Background tasks the agent is running (backgrounded shells, subagents).
-    var backgroundTasks: [BackgroundTaskInfo] { model?.backgroundTasks ?? [] }
+    public var backgroundTasks: [BackgroundTaskInfo] { model?.backgroundTasks ?? [] }
 
     /// Whether any background-task snapshot has arrived (see SessionModel).
-    var hasBackgroundTaskSnapshot: Bool { model?.hasBackgroundTaskSnapshot ?? false }
+    public var hasBackgroundTaskSnapshot: Bool { model?.hasBackgroundTaskSnapshot ?? false }
 
     /// Background tasks with no attachable terminal — the ones the waiting
     /// indicator describes. Terminal-backed tasks surface as terminal tabs.
-    var waitingBackgroundTasks: [BackgroundTaskInfo] { model?.waitingBackgroundTasks ?? [] }
+    public var waitingBackgroundTasks: [BackgroundTaskInfo] { model?.waitingBackgroundTasks ?? [] }
 
     /// True when the turn ended but the agent still owns background work — the
     /// chat isn't stuck; the agent will come back on its own.
-    var isWaitingOnBackgroundTasks: Bool { model?.isWaitingOnBackgroundTasks ?? false }
-    var isRuntimeIdle: Bool { model?.isRuntimeIdle ?? true }
-    var lastTurnInitiator: SessionTurnInitiator { model?.lastTurnInitiator ?? .user }
-    var lastTurnEndedWithError: Bool { model?.lastTurnEndedWithError ?? false }
+    public var isWaitingOnBackgroundTasks: Bool { model?.isWaitingOnBackgroundTasks ?? false }
+    public var isRuntimeIdle: Bool { model?.isRuntimeIdle ?? true }
+    public var lastTurnInitiator: SessionTurnInitiator { model?.lastTurnInitiator ?? .user }
+    public var lastTurnEndedWithError: Bool { model?.lastTurnEndedWithError ?? false }
 
     /// Harness name while the server holds this chat's prompts during an
     /// update — drives the ephemeral "Waiting for X to finish updating…" row.
-    var waitingHarnessUpdateName: String? { model?.updateGateHarnessName }
+    public var waitingHarnessUpdateName: String? { model?.updateGateHarnessName }
 
-    var waitingBackgroundTaskDescription: String? {
+    public var waitingBackgroundTaskDescription: String? {
         guard isWaitingOnBackgroundTasks else { return nil }
         let task = waitingBackgroundTasks.first
         let extra = waitingBackgroundTasks.count - 1
@@ -1267,9 +1324,9 @@ final class SessionController {
     /// Tool-call ids of subagents still running in the background (see
     /// SessionModel). Injected into the transcript so settled turns keep their
     /// subagent sections open and shimmering until the work finishes.
-    var runningSubagentToolCallIds: Set<String> { model?.runningSubagentToolCallIds ?? [] }
+    public var runningSubagentToolCallIds: Set<String> { model?.runningSubagentToolCallIds ?? [] }
 
-    var canSend: Bool {
+    public var canSend: Bool {
         (!composerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             || !composerAttachments.isEmpty)
             && !isConnecting
@@ -1279,9 +1336,9 @@ final class SessionController {
 
     // MARK: - Attachments
 
-    static let maxAttachments = 10
+    static public let maxAttachments = 10
 
-    func attachFileURLs(_ urls: [URL]) {
+    public func attachFileURLs(_ urls: [URL]) {
         for url in urls {
             attachFileURL(url)
         }
@@ -1318,18 +1375,18 @@ final class SessionController {
         }
     }
 
-    func attachImageData(_ data: Data, suggestedName: String? = nil) {
+    public func attachImageData(_ data: Data, suggestedName: String? = nil) {
         let name = suggestedName ?? "Pasted image \(Self.pastedImageFormatter.string(from: Date())).png"
         stageAttachment(name: name, mimeType: "image/png", kind: .image, data: data)
     }
 
-    func removeAttachment(id: UUID) {
+    public func removeAttachment(id: UUID) {
         uploadTasks[id]?.cancel()
         uploadTasks[id] = nil
         composerAttachments.removeAll { $0.id == id }
     }
 
-    func retryAttachment(id: UUID) {
+    public func retryAttachment(id: UUID) {
         guard let index = composerAttachments.firstIndex(where: { $0.id == id }),
               case .failed = composerAttachments[index].state else { return }
         composerAttachments[index].state = .uploading
@@ -1339,7 +1396,7 @@ final class SessionController {
     /// Fetches stored attachment bytes through this session's server client —
     /// History thumbnails and Quick Look load through here so auth carries
     /// over for remote servers.
-    func fileData(id: String) async throws -> Data {
+    public func fileData(id: String) async throws -> Data {
         guard let serverClient else { throw SessionControllerError.serverUnavailable }
         return try await serverClient.fileData(id: id)
     }
@@ -1431,7 +1488,7 @@ final class SessionController {
     /// chat the list honors the user's enabled set (falling back to all ready
     /// harnesses if they've disabled everything); a resumed session always
     /// keeps its own harness.
-    func prepare() async {
+    public func prepare() async {
         guard let serverClient else {
             preparationState = .failed
             return
@@ -1450,7 +1507,7 @@ final class SessionController {
     /// The live resumed-session metadata remains authoritative; this snapshot
     /// supplies fresh picker definitions and the compatibility fallback for
     /// servers that do not yet return runtime metadata from `/connect`.
-    func prepareExistingSessionCapabilities() async {
+    public func prepareExistingSessionCapabilities() async {
         let harnessId = serverSession?.harnessId ?? selectedHarnessId ?? ""
         guard hasExistingAgentSession, let serverClient, !harnessId.isEmpty else { return }
         let startedAt = ProcessInfo.processInfo.systemUptime
@@ -1498,7 +1555,7 @@ final class SessionController {
         }
     }
 
-    func retryExistingSessionCapabilities() async {
+    public func retryExistingSessionCapabilities() async {
         didLoadExistingHarnessCapabilities = false
         existingConfigurationError = nil
         updateConfigurationValidationState()
@@ -1508,7 +1565,7 @@ final class SessionController {
     /// Reloads the authoritative harness catalog after authentication or
     /// enablement changes. Unlike `prepare()`, this deliberately bypasses the
     /// stale cache because the caller is responding to an explicit mutation.
-    func refreshHarnessCapabilities() async {
+    public func refreshHarnessCapabilities() async {
         guard let serverClient else {
             preparationState = .failed
             return
@@ -1533,7 +1590,7 @@ final class SessionController {
     /// again. Unreachable errors therefore retry behind a calm loading state
     /// (softened past 5s) and only surface the failure banner — with its
     /// Restart remedy — after 10s without contact.
-    func connectIfNeeded() async {
+    public func connectIfNeeded() async {
         // The connect attempt is CONTROLLER-owned, not a child of the view
         // task that called this. Controllers are cached beyond any single
         // mount, and the first open of a remotely created chat re-hosts its
@@ -1615,7 +1672,7 @@ final class SessionController {
     }
 
     /// Selects a different harness (user action) and reconnects.
-    func selectHarness(_ id: String) async {
+    public func selectHarness(_ id: String) async {
         guard id != selectedHarnessId else { return }
         let previousHarnessId = selectedHarnessId
         selectedHarnessId = id
@@ -1637,7 +1694,7 @@ final class SessionController {
     }
 
     /// Changes the project (user action) and reconnects.
-    func selectProject(_ project: Project) async {
+    public func selectProject(_ project: Project) async {
         guard project.id != self.project.id else { return }
         self.project = project
         // A worktree kept from a reverted first send belongs to the old
@@ -1652,7 +1709,7 @@ final class SessionController {
 
     /// Tears down any connection and reconnects — used when the harness or
     /// project changes on the new-chat page.
-    func reconnect() async {
+    public func reconnect() async {
         // Supersede a controller-owned eager connect explicitly: cancel it and
         // wait for it to settle so its failure handling cannot clobber the
         // fresh attempt's status/model below.
@@ -1667,7 +1724,7 @@ final class SessionController {
 
     /// Sends the composer text, transitioning immediately into the transcript.
     /// Worktree and agent setup render after the optimistic first user message.
-    func send() async {
+    public func send() async {
         let text = composerText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty || !composerAttachments.isEmpty,
               !isConnecting,
@@ -1679,7 +1736,9 @@ final class SessionController {
         // Ask at the first moment notifications become useful instead of at
         // launch: the user just started work that may finish while they are in
         // another app. The task is intentionally nonblocking for the send.
-        Task { await ChatNotificationManager.shared.prepareAuthorizationIfNeeded() }
+        if let notificationDelivery {
+            Task { await notificationDelivery.prepareAuthorizationIfNeeded() }
+        }
         // Sending expresses "take me to the newest content": the transcript
         // re-pins to the bottom on every send, even if the user had scrolled
         // up to read history.
@@ -1786,7 +1845,7 @@ final class SessionController {
     /// Re-submits the user prompt that owns an exhausted retryable assistant
     /// turn. Automatic retries remain provider-owned; this is the explicit
     /// user choice offered after they give up.
-    func retryTurn(_ assistantID: UUID) async {
+    public func retryTurn(_ assistantID: UUID) async {
         guard let model, !model.isSending, !isConnecting, !isSubmitting else { return }
         guard let assistantIndex = model.conversation.firstIndex(where: { item in
             if case let .assistant(message) = item { return message.id == assistantID }
@@ -1902,19 +1961,19 @@ final class SessionController {
         return error
     }
 
-    func stop() async {
+    public func stop() async {
         await model?.cancel()
     }
 
-    func updateQueuedPrompt(id: String, text: String) async {
+    public func updateQueuedPrompt(id: String, text: String) async {
         await model?.updateQueuedPrompt(id: id, text: text)
     }
 
-    func deleteQueuedPrompt(id: String) async {
+    public func deleteQueuedPrompt(id: String) async {
         await model?.deleteQueuedPrompt(id: id)
     }
 
-    func setMode(_ modeId: String) async {
+    public func setMode(_ modeId: String) async {
         if let model {
             await model.setMode(modeId)
         } else {
@@ -1968,9 +2027,9 @@ final class SessionController {
 
     /// Whether the composer shows the plan toggle at all — needs a plan mode
     /// and a build/full-access mode to come back to.
-    var hasPlanMode: Bool { planControl != nil }
+    public var hasPlanMode: Bool { planControl != nil }
 
-    var isPlanModeOn: Bool {
+    public var isPlanModeOn: Bool {
         if let pendingPlanModeOn { return pendingPlanModeOn }
         switch planControl {
         case let .sessionMode(planId, _):
@@ -1982,9 +2041,9 @@ final class SessionController {
         }
     }
 
-    var isPlanModeUpdatePending: Bool { pendingPlanModeOn != nil }
+    public var isPlanModeUpdatePending: Bool { pendingPlanModeOn != nil }
 
-    func togglePlanMode() async {
+    public func togglePlanMode() async {
         // The button is disabled while pending too, but keep the guard here so
         // multiple click tasks queued before SwiftUI redraws cannot submit the
         // same transition more than once.
@@ -2006,7 +2065,7 @@ final class SessionController {
         }
     }
 
-    func retry() async {
+    public func retry() async {
         status = .idle
         if hasExistingAgentSession {
             if model == nil {
@@ -2532,7 +2591,7 @@ final class SessionController {
     }
 }
 
-enum SessionControllerError: Error {
+public enum SessionControllerError: Error {
     /// Sessions run through the Codevisor server; without it there is nothing to
     /// connect to.
     case serverUnavailable
@@ -2541,7 +2600,7 @@ enum SessionControllerError: Error {
 #if DEBUG
 extension SessionController {
     /// A controller pre-populated for previews.
-    static func preview(
+    static public func preview(
         project: Project = Project.fromFolder(URL(fileURLWithPath: "/tmp/shepherd")),
         model: SessionModel? = nil,
         harnesses: [ServerHarness] = SessionController.previewHarnesses
@@ -2570,7 +2629,7 @@ extension SessionController {
         return controller
     }
 
-    nonisolated static var previewHarnesses: [ServerHarness] {
+    nonisolated static public var previewHarnesses: [ServerHarness] {
         [
             ServerHarness(
                 id: "claude-code", name: "Claude Code", symbolName: "sparkle", source: "registry",

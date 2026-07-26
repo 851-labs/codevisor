@@ -28,6 +28,24 @@ CodevisorTheming), `bun run dev:ios` starts the Dev Remote server and boots the
 app in the simulator, and the Xcode MCP tooling loop (build/run/tap/logs) is
 verified.
 
+Progress:
+
+- **Phase 1: done.** `CodevisorCoreMac` target holds the local server /
+  computer use / Process code behind the `LocalServerControlling` seam;
+  `CodevisorCore` builds and links on iOS; `swift:build:ios` is part of
+  `bun run check`.
+- **Phase 2: in progress.** Done: `SessionController` (publicized) moved into
+  `CodevisorCore` with an injected `ChatNotificationDelivering` seam
+  (`ChatAttention*` types now shared); new `CodevisorUI` target with `Theme`
+  (platform-forked system colors), `Motion`, `MarkdownThemeAdapter`,
+  `CodeHighlightTheme`, `TranscriptEnvironment`; `StreamMarkdown` compiles for
+  iOS (AppKit view layer gated, interim pure-SwiftUI renderers for text
+  runs/tables/code scroll). Remaining: UIKit/TextKit 2 counterparts for the
+  StreamMarkdown views, row-view migration into `CodevisorUI`, and the
+  pane-factory seam that would unstrand `SessionStore`/`PaneGroupModel`
+  (deliberately deferred — `SessionStore` stays app-side until Phase 6's pane
+  model works lands).
+
 ---
 
 ## Phase 1 — Platform-neutral core (no UI, no behavior change)

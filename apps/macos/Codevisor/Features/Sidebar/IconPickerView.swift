@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import CodevisorUI
 
 /// A sheet for choosing an SF Symbol icon for a project. Presents a searchable
 /// grid of system symbols; selecting one applies it immediately.

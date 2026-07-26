@@ -3,6 +3,7 @@ import AppKit
 import CodevisorCore
 import StreamMarkdown
 import SwiftUI
+import CodevisorUI
 
 /// Which chronological slice of a settled assistant turn this row owns.
 /// Active turns use `.complete`; settled plan turns split into planning and

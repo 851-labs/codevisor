@@ -1,3 +1,7 @@
+// The AppKit/TextKit rendering layer. iOS gets a UIKit/TextKit 2
+// counterpart in the iOS transcript work; the parser, model, and theme
+// halves of StreamMarkdown are platform-neutral.
+#if canImport(AppKit)
 import AppKit
 import SwiftUI
 
@@ -676,3 +680,5 @@ final class TextKitTextMeasurer {
         return cachedNaturalWidth
     }
 }
+
+#endif

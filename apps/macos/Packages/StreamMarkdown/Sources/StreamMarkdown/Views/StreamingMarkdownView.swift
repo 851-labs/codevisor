@@ -86,7 +86,11 @@ private struct MarkdownSegmentView: View, Equatable {
     var body: some View {
         switch segment {
         case let .textRun(runBlocks):
+            #if canImport(AppKit)
             MarkdownTextRunView(blocks: runBlocks, foregroundColor: foregroundColor)
+            #else
+            MarkdownPortableTextRunView(blocks: runBlocks, foregroundColor: foregroundColor)
+            #endif
         case let .block(block):
             MarkdownBlockView(block: block, foregroundColor: foregroundColor)
         }
@@ -105,7 +109,11 @@ struct MarkdownBlockView: View {
             // Normally coalesced into a MarkdownTextRunView by
             // MarkdownSegmentsView; render standalone blocks the same way so
             // they stay selectable.
+            #if canImport(AppKit)
             MarkdownTextRunView(blocks: [block], foregroundColor: foregroundColor)
+            #else
+            MarkdownPortableTextRunView(blocks: [block], foregroundColor: foregroundColor)
+            #endif
 
         case let .codeBlock(language, code, isComplete):
             CodeBlockView(language: language, code: code, isComplete: isComplete)
@@ -120,7 +128,11 @@ struct MarkdownBlockView: View {
             .fixedSize(horizontal: false, vertical: true)
 
         case let .table(headers, alignments, rows):
+            #if canImport(AppKit)
             MarkdownTableView(headers: headers, alignments: alignments, rows: rows)
+            #else
+            MarkdownPortableTableView(headers: headers, alignments: alignments, rows: rows)
+            #endif
 
         case .thematicBreak:
             Divider()

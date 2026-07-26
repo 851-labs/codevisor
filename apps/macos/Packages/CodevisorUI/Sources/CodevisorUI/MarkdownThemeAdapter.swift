@@ -19,7 +19,7 @@ extension ThemeManager {
     /// The theme document driving code-block highlighting for a scheme: the
     /// selected theme itself (its full JSON, tokenColors included), or the
     /// bundled GitHub themes for the system entries.
-    func highlightTheme(for scheme: ThemeDescriptor.SchemeType) -> (key: String, json: String)? {
+    public func highlightTheme(for scheme: ThemeDescriptor.SchemeType) -> (key: String, json: String)? {
         let id = themeId(for: scheme)
         let effectiveId =
             ThemeCatalog.isSystemTheme(id: id)
@@ -37,7 +37,7 @@ extension ThemeManager {
 }
 
 /// Builds the MarkdownTheme for the active app theme.
-func makeMarkdownTheme(theme: Theme, highlight: (key: String, json: String)?) -> MarkdownTheme {
+public func makeMarkdownTheme(theme: Theme, highlight: (key: String, json: String)?) -> MarkdownTheme {
     var markdown = MarkdownTheme.default
     markdown.textForeground = theme.textPrimary
     markdown.secondaryTextForeground = theme.textSecondary
@@ -81,7 +81,7 @@ private func attributedCode(_ lines: [[CodeHighlighter.Token]]) -> AttributedStr
 /// One highlighted token line as an attributed string; uncolored tokens
 /// inherit the surrounding text color. Shared with the diff viewer, which
 /// styles rows line-by-line.
-func attributedLine(_ line: [CodeHighlighter.Token]) -> AttributedString {
+public func attributedLine(_ line: [CodeHighlighter.Token]) -> AttributedString {
     var result = AttributedString()
     for token in line {
         var piece = AttributedString(token.content)

@@ -3,6 +3,7 @@ import CodevisorTheming
 import SwiftUI
 import UniformTypeIdentifiers
 import os
+import CodevisorUI
 
 /// The Settings ▸ Appearance tab: color mode, per-scheme theme pickers over
 /// the System/Pierre/Shiki/Custom catalog, a live preview, and custom theme

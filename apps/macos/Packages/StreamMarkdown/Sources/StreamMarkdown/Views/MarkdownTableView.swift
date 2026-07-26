@@ -1,3 +1,6 @@
+// AppKit/TextKit table rendering; an iOS counterpart arrives with the
+// iOS transcript work.
+#if canImport(AppKit)
 import SwiftUI
 #if canImport(AppKit)
 import AppKit
@@ -874,3 +877,5 @@ enum MarkdownTableRenderer {
     .padding()
     .frame(width: 420)
 }
+
+#endif

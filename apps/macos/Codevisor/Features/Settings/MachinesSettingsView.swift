@@ -3,6 +3,7 @@ import AppKit
 import CodevisorCore
 import CodevisorCoreMac
 import os
+import CodevisorUI
 
 /// A failed machine action (add/rename/remove), pending display in an alert.
 private struct MachineActionError: Identifiable {

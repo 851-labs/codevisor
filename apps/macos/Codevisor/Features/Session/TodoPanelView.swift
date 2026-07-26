@@ -1,5 +1,6 @@
 import SwiftUI
 import ACPKit
+import CodevisorUI
 
 /// The session's todo checklist, pinned above the composer (codex-CLI style)
 /// for every harness — codex `update_plan`, Claude TodoWrite, ACP plans.

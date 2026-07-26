@@ -2,6 +2,7 @@ import CodevisorCore
 import CodevisorTheming
 import StreamMarkdown
 import SwiftUI
+import CodevisorUI
 
 private struct TerminalThemeUpdate: Equatable {
     let palette: TerminalPalette?

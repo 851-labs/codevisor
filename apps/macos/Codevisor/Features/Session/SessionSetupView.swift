@@ -2,6 +2,7 @@ import AppKit
 import CodevisorCore
 import StreamMarkdown
 import SwiftUI
+import CodevisorUI
 
 /// The pre-chat setup sections shown after the first user message:
 /// "Setting up worktree…" / "Starting Claude Code…" rows styled like the

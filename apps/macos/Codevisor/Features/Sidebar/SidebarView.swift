@@ -3,6 +3,7 @@ import UniformTypeIdentifiers
 import CodevisorCore
 import CodevisorTheming
 import os
+import CodevisorUI
 
 private enum SidebarOrganization: String, CaseIterable {
     case compact

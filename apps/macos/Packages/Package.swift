@@ -16,7 +16,8 @@ let package = Package(
         .library(name: "CodevisorTheming", targets: ["CodevisorTheming"]),
         .library(name: "CodeHighlighter", targets: ["CodeHighlighter"]),
         .library(name: "CodevisorCore", targets: ["CodevisorCore"]),
-        .library(name: "CodevisorCoreMac", targets: ["CodevisorCoreMac"])
+        .library(name: "CodevisorCoreMac", targets: ["CodevisorCoreMac"]),
+        .library(name: "CodevisorUI", targets: ["CodevisorUI"])
     ],
     dependencies: [
         .package(url: "https://github.com/PostHog/posthog-ios.git", exact: "3.59.3"),
@@ -111,6 +112,21 @@ let package = Package(
             path: "CodevisorCoreMac/Sources/CodevisorCoreMac",
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),
+        // MARK: CodevisorUI (shared SwiftUI: theme tokens, motion, markdown/
+        // highlight adapters, transcript environment plumbing — platform-
+        // neutral views shared by the macOS and iOS apps)
+        .target(
+            name: "CodevisorUI",
+            dependencies: [
+                "CodevisorCore",
+                "CodevisorTheming",
+                "StreamMarkdown",
+                "CodeHighlighter"
+            ],
+            path: "CodevisorUI/Sources/CodevisorUI",
+            swiftSettings: [.swiftLanguageMode(.v6)]
+        ),
+
         .testTarget(
             name: "CodevisorCoreMacTests",
             dependencies: [

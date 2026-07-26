@@ -2,6 +2,7 @@ import SwiftUI
 import AppKit
 import CodevisorCore
 import ACPKit
+import CodevisorUI
 
 extension EnvironmentValues {
     /// True while an app self-update or a selected-server update is installing.

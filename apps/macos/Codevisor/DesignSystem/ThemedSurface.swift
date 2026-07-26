@@ -1,4 +1,5 @@
 import SwiftUI
+import CodevisorUI
 
 /// Chrome-surface roles for themed "glass". Content surfaces (editor,
 /// terminal, diff, composer) stay exact opaque theme colors; these CHROME

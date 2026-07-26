@@ -1,4 +1,5 @@
 import SwiftUI
+import CodevisorUI
 
 /// A disclosure row for settings panes where the ENTIRE row is the toggle
 /// target, not just the chevron — the native `DisclosureGroup` in a `Form`

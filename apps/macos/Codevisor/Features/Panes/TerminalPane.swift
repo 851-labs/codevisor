@@ -8,6 +8,7 @@ import Observation
 import SwiftUI
 import CodevisorCore
 import os
+import CodevisorUI
 
 @MainActor
 @Observable

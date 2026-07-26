@@ -3,6 +3,7 @@ import AppKit
 import CodevisorCore
 import CodevisorCoreMac
 import QuickLook
+import CodevisorUI
 
 @main
 struct CodevisorApp: App {

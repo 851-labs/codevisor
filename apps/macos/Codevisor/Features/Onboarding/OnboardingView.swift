@@ -3,6 +3,7 @@ import AppKit
 import CodevisorCore
 import UniformTypeIdentifiers
 import os
+import CodevisorUI
 
 /// First-launch onboarding, presented as a short paginated flow:
 /// 1. Welcome, 2. Choose your harnesses, 3. Choose your projects,

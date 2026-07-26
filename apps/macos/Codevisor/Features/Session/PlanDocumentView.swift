@@ -1,5 +1,6 @@
 import SwiftUI
 import StreamMarkdown
+import CodevisorUI
 
 /// The "Proposed Plan" card: a free-form markdown plan the agent produced in
 /// plan mode (Claude ExitPlanMode, codex plan items), rendered with the same

@@ -1,5 +1,6 @@
 import SwiftUI
 import CodevisorCore
+import CodevisorUI
 
 /// The compact, always-available machine selector in the window toolbar.
 /// Its glyph mirrors the selected machine's saved appearance and inherits the

@@ -1,5 +1,6 @@
 import SwiftUI
 import CodevisorCore
+import CodevisorUI
 
 /// The workspace creation page — what the window shows on a fresh launch and
 /// behind the sidebar's "New workspace". Just a project picker: click a

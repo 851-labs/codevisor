@@ -5,6 +5,7 @@
 import AppKit
 import SwiftUI
 import CodevisorCore
+import CodevisorUI
 
 struct WorkspaceSplitDropResolution: Equatable {
     let targetLeafId: UUID

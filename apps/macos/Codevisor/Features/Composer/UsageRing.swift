@@ -6,6 +6,7 @@
 import SwiftUI
 import ACPKit
 import CodevisorCore
+import CodevisorUI
 
 /// Formatting for cost/usage figures (moved from the removed SessionStatusBar).
 enum UsageFormatting {

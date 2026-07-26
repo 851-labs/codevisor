@@ -17,6 +17,7 @@ import Foundation
 import AppKit
 import SwiftUI
 import CodevisorCore
+import CodevisorUI
 
 /// Identifies a drop-capable group: the ⌘J bottom panel or a center-tree
 /// leaf.

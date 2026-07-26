@@ -55,10 +55,22 @@ struct CodeBlockView: View {
 
             Divider()
 
+            #if canImport(AppKit)
             HorizontalCodeScrollView(
                 text: highlighted ?? settledCacheProbe ?? plainMemo.attributed(for: code),
                 foreground: theme.codeForeground
             )
+            #else
+            // Interim pure-SwiftUI code surface for platforms without the
+            // AppKit TextKit layer (no selection); replaced by the UIKit
+            // counterpart with the iOS transcript work.
+            ScrollView(.horizontal, showsIndicators: false) {
+                Text(highlighted ?? settledCacheProbe ?? plainMemo.attributed(for: code))
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundStyle(theme.codeForeground)
+                    .padding(10)
+            }
+            #endif
         }
         .background(theme.codeBackground)
         .clipShape(RoundedRectangle(cornerRadius: 8))

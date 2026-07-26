@@ -1,5 +1,6 @@
 import SwiftUI
 import CodevisorCore
+import CodevisorUI
 
 /// Slim update banner for the *selected* harness, shown with the composer:
 /// "Codex 0.145.0 is available · Update · ✕". Follows the UpdateBannerView

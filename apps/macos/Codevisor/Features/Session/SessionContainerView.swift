@@ -1,5 +1,6 @@
 import SwiftUI
 import CodevisorCore
+import CodevisorUI
 
 /// Hosts a session: resolves its cached `SessionController` from the store
 /// and shows the session screen below the native toolbar (which carries the

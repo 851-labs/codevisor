@@ -10,6 +10,7 @@
 		0C0000000000000200000002 /* ACPKit in Frameworks */ = {isa = PBXBuildFile; productRef = 0C0000000000000200000001 /* ACPKit */; };
 		0C0000000000000200000004 /* CodevisorTheming in Frameworks */ = {isa = PBXBuildFile; productRef = 0C0000000000000200000003 /* CodevisorTheming */; };
 		0C0000000000000200000006 /* CodevisorCore in Frameworks */ = {isa = PBXBuildFile; productRef = 0C0000000000000200000005 /* CodevisorCore */; };
+		0C0000000000000200000008 /* CodevisorUI in Frameworks */ = {isa = PBXBuildFile; productRef = 0C0000000000000200000007 /* CodevisorUI */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -31,6 +32,7 @@
 				0C0000000000000200000002 /* ACPKit in Frameworks */,
 				0C0000000000000200000004 /* CodevisorTheming in Frameworks */,
 				0C0000000000000200000006 /* CodevisorCore in Frameworks */,
+				0C0000000000000200000008 /* CodevisorUI in Frameworks */,
 			);
 		};
 /* End PBXFrameworksBuildPhase section */
@@ -73,6 +75,7 @@
 				0C0000000000000200000001 /* ACPKit */,
 				0C0000000000000200000003 /* CodevisorTheming */,
 				0C0000000000000200000005 /* CodevisorCore */,
+				0C0000000000000200000007 /* CodevisorUI */,
 			);
 			productName = Codevisor;
 			productReference = 0C0000000000000000000120 /* Codevisor.app */;
@@ -358,6 +361,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 0C0000000000000200000000 /* XCLocalSwiftPackageReference "../macos/Packages" */;
 			productName = CodevisorCore;
+		};
+		0C0000000000000200000007 /* CodevisorUI */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 0C0000000000000200000000 /* XCLocalSwiftPackageReference "../macos/Packages" */;
+			productName = CodevisorUI;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

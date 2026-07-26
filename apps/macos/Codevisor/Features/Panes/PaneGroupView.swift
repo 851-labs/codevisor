@@ -13,6 +13,7 @@
 import SwiftUI
 import AppKit
 import CodevisorCore
+import CodevisorUI
 
 /// The tab bar: pane tabs + "new terminal" button on the left and, for the
 /// bottom panel, the panel toggle on the right.

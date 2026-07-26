@@ -2,6 +2,7 @@ import SwiftUI
 import AppKit
 import UniformTypeIdentifiers
 import CodevisorCore
+import CodevisorUI
 
 /// The new-chat page: a centered "What should we build in <project>?" title with
 /// an inline project dropdown, and the composer. The session is created only

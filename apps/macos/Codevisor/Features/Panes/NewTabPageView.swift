@@ -5,6 +5,7 @@
 
 import SwiftUI
 import CodevisorCore
+import CodevisorUI
 
 struct NewTabPageView: View {
     @Environment(\.theme) private var theme

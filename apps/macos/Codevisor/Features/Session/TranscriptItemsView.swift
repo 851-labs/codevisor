@@ -2,6 +2,7 @@ import ACPKit
 import CodevisorCore
 import StreamMarkdown
 import SwiftUI
+import CodevisorUI
 
 /// Renders a list of worked items — reasoning text, tool groups, and subagent
 /// sections. Shared by the top-level turn transcript and each nested subagent
