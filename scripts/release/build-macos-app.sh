@@ -275,6 +275,26 @@ done
 codesign "${sign_args[@]}" --preserve-metadata=entitlements "$sparkle_framework"
 codesign --verify --deep --strict "$sparkle_framework"
 
+# Every other embedded framework needs the same treatment for a simpler
+# reason: a binary xcframework (Sentry) ships completely unsigned, and Xcode
+# embeds it with signing disabled, so nothing ever seals it. Signing the app
+# does not reach it either — that is a shallow signature by design.
+#
+# An unsigned nested bundle only surfaces at the per-architecture packaging
+# step far below, which holds this script's first deep verification of the
+# app, and it surfaces as "code has no resources but signature indicates they
+# must be present" — a message that describes the enclosing app rather than
+# the framework that is actually unsigned. Seal them here, next to the reason.
+#
+# Deliberately a sweep rather than a name: the next vendored framework should
+# not reintroduce a failure that lands minutes later under a misleading error.
+while IFS= read -r framework; do
+  [[ -n "$framework" ]] || continue
+  [[ "$(basename "$framework")" != "Sparkle.framework" ]] || continue
+  codesign "${sign_args[@]}" --preserve-metadata=entitlements "$framework"
+  codesign --verify --deep --strict "$framework"
+done < <(find "$app_path/Contents/Frameworks" -maxdepth 1 -name "*.framework" -type d 2>/dev/null)
+
 # Sign every Mach-O in the bundled server runtimes. Detection is batched
 # through one xargs/file pipeline: the runtimes hold ~21k files but only ~14
 # Mach-O binaries, and the previous per-file `file` invocation spent ~4
