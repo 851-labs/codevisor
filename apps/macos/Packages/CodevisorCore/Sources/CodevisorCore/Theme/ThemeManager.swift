@@ -1,4 +1,6 @@
+#if canImport(AppKit)
 import AppKit
+#endif
 import Foundation
 import CodevisorTheming
 import Observation
@@ -143,12 +145,16 @@ public final class ThemeManager {
     /// (menus, alerts, window materials) matches the theme; `.system` restores
     /// OS-following behavior. No-ops when no NSApplication exists (unit tests).
     public func applyAppearanceOverride() {
+        #if canImport(AppKit)
         guard let app = NSApp else { return }
         switch mode {
         case .light: app.appearance = NSAppearance(named: .aqua)
         case .dark: app.appearance = NSAppearance(named: .darkAqua)
         case .system: app.appearance = nil
         }
+        #endif
+        // On iOS the appearance override is applied at the scene/window layer
+        // by the app (UIUserInterfaceStyle), not by a process-global toggle.
     }
 
     /// The default location for imported theme files:

@@ -38,7 +38,7 @@ final class MacServerAgentController {
         try await current.unregister()
     }
 
-    func prepareForAppUpdate(localServer: LocalCodevisorServer?) async {
+    func prepareForAppUpdate(localServer: (any LocalServerControlling)?) async {
         if let localServer {
             _ = await localServer.prepareForAppUpdate()
         } else {

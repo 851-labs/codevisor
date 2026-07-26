@@ -118,7 +118,11 @@ public final class DiagnosticsClient {
         // repeated deliberately so an SDK upgrade cannot quietly broaden the
         // data surface.
         options.enableCrashHandler = true
+        #if os(macOS)
+        // macOS-only Sentry option; iOS reports uncaught exceptions through
+        // the crash handler itself.
         options.enableUncaughtNSExceptionReporting = false
+        #endif
         options.enableSigtermReporting = false
         options.enableAutoSessionTracking = false
         options.enableWatchdogTerminationTracking = false

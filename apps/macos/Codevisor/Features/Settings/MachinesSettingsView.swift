@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import CodevisorCore
+import CodevisorCoreMac
 import os
 
 /// A failed machine action (add/rename/remove), pending display in an alert.

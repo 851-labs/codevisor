@@ -27,7 +27,10 @@ public enum ProjectRecommender {
     public static func recommend(
         from sessions: [ImportedSession],
         limit: Int = 12,
-        managedWorktreesRoot: URL = FileManager.default.homeDirectoryForCurrentUser
+        // NSHomeDirectory (not homeDirectoryForCurrentUser) so this compiles
+        // on iOS too; there it resolves to the sandbox home, which is fine —
+        // recommendations only ever describe paths on the paired machine.
+        managedWorktreesRoot: URL = URL(fileURLWithPath: NSHomeDirectory())
             .appendingPathComponent("codevisor", isDirectory: true),
         directoryExists: (String) -> Bool = { path in
             var isDirectory: ObjCBool = false

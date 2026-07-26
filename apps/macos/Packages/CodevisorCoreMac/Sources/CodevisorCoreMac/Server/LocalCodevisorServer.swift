@@ -1,12 +1,6 @@
+import CodevisorCore
 import Foundation
 import Observation
-
-public enum LocalCodevisorServerState: Equatable, Sendable {
-    case idle
-    case alreadyRunning
-    case started
-    case unavailable(String)
-}
 
 public struct LocalCodevisorServerLaunchRequest: Equatable, Sendable {
     public var nodeExecutable: URL
@@ -22,68 +16,14 @@ public struct LocalCodevisorServerLaunchRequest: Equatable, Sendable {
     public var dataUpgradeStatusURL: URL? = nil
 }
 
-public struct LocalDataUpgradeProgress: Codable, Equatable, Sendable {
-    public var state: String
-    public var id: String
-    public var name: String
-    public var completed: Int
-    public var total: Int
-    public var error: String?
-    public var bootId: String?
-    public var pid: Int?
-    public var updatedAt: String?
-
-    public init(
-        state: String,
-        id: String,
-        name: String,
-        completed: Int,
-        total: Int,
-        error: String? = nil,
-        bootId: String? = nil,
-        pid: Int? = nil,
-        updatedAt: String? = nil
-    ) {
-        self.state = state
-        self.id = id
-        self.name = name
-        self.completed = completed
-        self.total = total
-        self.error = error
-        self.bootId = bootId
-        self.pid = pid
-        self.updatedAt = updatedAt
-    }
-
-    public var fractionCompleted: Double? {
-        guard total > 0 else { return nil }
-        return min(1, max(0, Double(completed) / Double(total)))
-    }
-}
-
 struct LocalCodevisorServerProcessConfiguration: Equatable {
     var executableURL: URL
     var arguments: [String]
 }
 
-/// Platform-owned lifecycle hooks. The macOS app supplies an SMAppService
-/// LaunchAgent; tests and development omit it and keep the direct child path.
-public struct LocalCodevisorManagedService {
-    public var start: @MainActor () async throws -> Void
-    public var stop: @MainActor () async throws -> Void
-
-    public init(
-        start: @escaping @MainActor () async throws -> Void,
-        stop: @escaping @MainActor () async throws -> Void
-    ) {
-        self.start = start
-        self.stop = stop
-    }
-}
-
 @MainActor
 @Observable
-public final class LocalCodevisorServer {
+public final class LocalCodevisorServer: LocalServerControlling {
     public typealias Launcher = @MainActor (LocalCodevisorServerLaunchRequest) throws -> Process
     public typealias ServerEnvironmentProvider = @MainActor () async -> [String: String]
     public typealias ListenerTerminator = @MainActor (Int) async -> Void

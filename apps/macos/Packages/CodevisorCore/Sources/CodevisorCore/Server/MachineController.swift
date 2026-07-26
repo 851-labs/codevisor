@@ -131,7 +131,7 @@ public final class MachineController {
 
     private let store: any PersistenceStore
     private let projectList: ProjectListModel
-    private let localServer: LocalCodevisorServer?
+    private let localServer: (any LocalServerControlling)?
     private let clientFactory: ClientFactory
     private let key = "machines"
     /// How long to wait between reachability probes while the remote server
@@ -148,7 +148,7 @@ public final class MachineController {
     public init(
         store: any PersistenceStore,
         projectList: ProjectListModel,
-        localServer: LocalCodevisorServer? = nil,
+        localServer: (any LocalServerControlling)? = nil,
         clientFactory: ClientFactory? = nil,
         updatePollInterval: Duration = .seconds(2),
         updatePollAttempts: Int = 90

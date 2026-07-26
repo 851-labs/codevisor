@@ -438,49 +438,11 @@ struct MachineControllerTests {
         Issue.record("Timed out waiting for sync condition")
     }
 
-    @Test("prepareSelectedMachine rescans harnesses on an already-running local server")
-    func rescanOnAlreadyRunningServer() async throws {
-        let client = RescanCountingClient()
-        // A healthy durable server: ensureRunning resolves .alreadyRunning
-        // without launching, which must trigger exactly one PATH rescan (the
-        // durable server's PATH is frozen at its original launch).
-        let localServer = LocalCodevisorServer(
-            client: client,
-            entrypoint: URL(fileURLWithPath: "/tmp/main.js"),
-            launcher: { _ in Process() }
-        )
-        let (controller, _, _) = makeController(client: client, localServer: localServer)
-
-        await controller.prepareSelectedMachine()
-        try await waitForSync { client.rescans == 1 }
-        controller.stopEventSync()
-
-        #expect(localServer.state == .alreadyRunning)
-        #expect(client.rescans == 1)
-    }
-
-    @Test("prepareSelectedMachine skips the rescan when it launches the server fresh")
-    func noRescanOnFreshLaunch() async throws {
-        // First health probe fails (no durable server); the post-launch poll
-        // succeeds. A fresh launch already resolved PATH — no rescan needed.
-        let client = RescanCountingClient(failFirstHealth: true)
-        let localServer = LocalCodevisorServer(
-            client: client,
-            entrypoint: URL(fileURLWithPath: "/tmp/main.js"),
-            launcher: { request in
-                client.acceptBoot(request.bootId)
-                return Process()
-            }
-        )
-        let (controller, _, _) = makeController(client: client, localServer: localServer)
-
-        await controller.prepareSelectedMachine()
-        try await Task.sleep(nanoseconds: 30_000_000)
-        controller.stopEventSync()
-
-        #expect(localServer.state == .started)
-        #expect(client.rescans == 0)
-    }
+    // The prepareSelectedMachine + LocalCodevisorServer integration tests
+    // (rescan-on-already-running / no-rescan-on-fresh-launch) live in
+    // CodevisorCoreMacTests/MachineControllerLocalServerTests.swift: they
+    // construct the concrete macOS local server, which is no longer part of
+    // this platform-neutral module.
 
     private func makeController(store: InMemoryStore = InMemoryStore()) -> (
         controller: MachineController,
@@ -495,27 +457,6 @@ struct MachineControllerTests {
         return (controller, projectList, store)
     }
 
-    private func makeController(
-        client: any CodevisorServerClienting,
-        localServer: LocalCodevisorServer
-    ) -> (
-        controller: MachineController,
-        projectList: ProjectListModel,
-        store: InMemoryStore
-    ) {
-        let store = InMemoryStore()
-        let projectList = ProjectListModel(
-            projectRepository: DefaultProjectRepository(store: InMemoryStore()),
-            sessionRepository: DefaultSessionRepository(store: InMemoryStore())
-        )
-        let controller = MachineController(
-            store: store,
-            projectList: projectList,
-            localServer: localServer,
-            clientFactory: { _ in client }
-        )
-        return (controller, projectList, store)
-    }
 }
 
 /// Counts rescan calls; healthy by default so `ensureRunning` sees a durable

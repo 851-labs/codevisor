@@ -2,6 +2,7 @@ import Foundation
 import Testing
 import ACPKit
 @testable import CodevisorCore
+@testable import CodevisorCoreMac
 
 @MainActor
 @Suite("LocalCodevisorServer")

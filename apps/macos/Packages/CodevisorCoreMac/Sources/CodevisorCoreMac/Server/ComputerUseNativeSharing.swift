@@ -1,3 +1,4 @@
+import CodevisorCore
 import CoreMedia
 import Foundation
 import ScreenCaptureKit

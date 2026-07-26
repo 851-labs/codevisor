@@ -7,14 +7,14 @@ import Sparkle
 @MainActor
 final class SparkleUpdateController: NSObject, SPUUpdaterDelegate {
     private let model: AppUpdateModel
-    private weak var localServer: LocalCodevisorServer?
+    private weak var localServer: (any LocalServerControlling)?
     private let serverAgent: MacServerAgentController
     private var updater: SPUUpdater!
     private var driver: UnattendedUserDriver!
 
     init(
         model: AppUpdateModel,
-        localServer: LocalCodevisorServer?,
+        localServer: (any LocalServerControlling)?,
         serverAgent: MacServerAgentController
     ) {
         self.model = model

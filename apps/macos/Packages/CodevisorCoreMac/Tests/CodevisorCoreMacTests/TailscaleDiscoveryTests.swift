@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 @testable import CodevisorCore
+@testable import CodevisorCoreMac
 
 @Suite("Tailscale discovery")
 struct TailscaleDiscoveryTests {

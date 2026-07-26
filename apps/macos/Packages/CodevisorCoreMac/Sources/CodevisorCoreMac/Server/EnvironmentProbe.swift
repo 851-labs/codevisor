@@ -1,3 +1,4 @@
+import CodevisorCore
 import Foundation
 
 /// Checks whether files exist and are executable.

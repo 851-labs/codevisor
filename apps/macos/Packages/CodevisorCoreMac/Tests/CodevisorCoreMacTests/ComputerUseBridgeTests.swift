@@ -2,6 +2,7 @@ import AppKit
 import CoreGraphics
 import Testing
 @testable import CodevisorCore
+@testable import CodevisorCoreMac
 
 @Suite("Computer Use coordinates")
 struct ComputerUseBridgeTests {

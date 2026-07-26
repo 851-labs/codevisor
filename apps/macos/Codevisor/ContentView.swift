@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import CodevisorCore
+import CodevisorCoreMac
 import QuickLook
 
 @main

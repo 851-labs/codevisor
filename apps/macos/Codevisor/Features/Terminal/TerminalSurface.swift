@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import CodevisorCore
+import CodevisorCoreMac
 
 /// Everything needed to launch a terminal surface. The terminal renderer is local
 /// Ghostty, but the command always runs the Codevisor proxy, which connects to the

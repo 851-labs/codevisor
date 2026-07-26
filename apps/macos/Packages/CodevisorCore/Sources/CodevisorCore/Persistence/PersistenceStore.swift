@@ -70,7 +70,7 @@ public final class FileSystemStore: PersistenceStore, @unchecked Sendable {
     /// Keys whose failed writes were already surfaced to the user this run,
     /// so a repeatedly failing save logs every time but banners once.
     private var reportedWriteFailures: Set<String> = []
-    private var terminationObserver: (any NSObjectProtocol)?
+    private var terminationObservers: [any NSObjectProtocol] = []
     /// Called (on the write queue) when a queued disk write fails. When nil,
     /// the failure is surfaced through `ErrorReporter` on the main actor.
     private let onWriteFailure: (@Sendable (String, any Error) -> Void)?
@@ -115,19 +115,31 @@ public final class FileSystemStore: PersistenceStore, @unchecked Sendable {
 
         // Drain queued writes before the process exits so a state change
         // made just before quitting isn't lost. Name-based so this Foundation
-        // package needs no AppKit import; the store lives for the app's
-        // lifetime, so the retained closure is fine.
-        terminationObserver = NotificationCenter.default.addObserver(
-            forName: Notification.Name("NSApplicationWillTerminateNotification"),
-            object: nil,
-            queue: nil
-        ) { [weak self] _ in
-            self?.flushPendingWrites()
+        // package needs no AppKit/UIKit import; the store lives for the app's
+        // lifetime, so the retained closures are fine. iOS additionally
+        // flushes on backgrounding — iOS apps are usually jetsammed from the
+        // background without ever seeing a terminate notification.
+        #if os(macOS)
+        let flushNotificationNames = ["NSApplicationWillTerminateNotification"]
+        #else
+        let flushNotificationNames = [
+            "UIApplicationWillTerminateNotification",
+            "UIApplicationDidEnterBackgroundNotification"
+        ]
+        #endif
+        terminationObservers = flushNotificationNames.map { name in
+            NotificationCenter.default.addObserver(
+                forName: Notification.Name(name),
+                object: nil,
+                queue: nil
+            ) { [weak self] _ in
+                self?.flushPendingWrites()
+            }
         }
     }
 
     deinit {
-        if let terminationObserver {
+        for terminationObserver in terminationObservers {
             NotificationCenter.default.removeObserver(terminationObserver)
         }
         flushPendingWrites()

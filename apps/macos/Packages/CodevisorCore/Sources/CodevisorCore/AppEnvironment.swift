@@ -16,7 +16,7 @@ public final class AppEnvironment {
     public let settings: AppSettingsModel
     public let theme: ThemeManager
     public let machines: MachineController
-    public let localServer: LocalCodevisorServer?
+    public let localServer: (any LocalServerControlling)?
     public let appUpdate: AppUpdateModel
     /// Persists each session's pane-group state (terminal tabs, selection,
     /// panel visibility/height) so panes reattach to their shells after
@@ -62,7 +62,7 @@ public final class AppEnvironment {
         paneGroups: any PaneGroupRepository = DefaultPaneGroupRepository(store: InMemoryStore()),
         workspaces: any WorkspaceRepository = DefaultWorkspaceRepository(store: InMemoryStore()),
         scratchpads: any ScratchpadRepository = DefaultScratchpadRepository(store: InMemoryStore()),
-        localServer: LocalCodevisorServer? = nil,
+        localServer: (any LocalServerControlling)? = nil,
         appUpdate: AppUpdateModel? = nil,
         customThemesDirectory: URL? = nil,
         harnessService: (any HarnessServicing)? = nil,
@@ -387,39 +387,6 @@ public final class AppEnvironment {
     public func finishOnboarding(projectFolder: URL) async -> Project {
         // The array overload always returns a project for a non-empty list.
         await finishOnboarding(projectFolders: [projectFolder])!
-    }
-
-    public static func live() -> AppEnvironment {
-        CodevisorAppVariant.migrateLegacyApplicationSupportIfNeeded()
-        let store = FileSystemStore(directory: CodevisorAppVariant.applicationSupportURL())
-        let settings = AppSettingsModel(store: store)
-        let serverClient = CodevisorServerClient(config: .localDefault)
-        let localServer = LocalCodevisorServer(
-            client: serverClient,
-            computerUseBridge: ComputerUseBridge(
-                supportDirectory: CodevisorAppVariant.serverDataDirectoryURL()
-            )
-        )
-        return AppEnvironment(
-            projectRepository: DefaultProjectRepository(store: store),
-            sessionRepository: DefaultSessionRepository(store: store),
-            configCache: ConfigOptionCache(store: store),
-            composerDefaults: ComposerDefaultsStore(store: store),
-            composerDrafts: ComposerDraftStore(store: store),
-            settings: settings,
-            machineStore: store,
-            legacyCacheMigrationStore: store,
-            paneGroups: DefaultPaneGroupRepository(store: store),
-            workspaces: DefaultWorkspaceRepository(store: store),
-            scratchpads: DefaultScratchpadRepository(store: store),
-            localServer: localServer,
-            appUpdate: AppUpdateModel(
-                currentVersion: AppUpdateModel.bundleVersion(),
-                currentBuildNumber: AppUpdateModel.bundleBuildNumber(),
-                allowsAlphaUpdates: settings.alphaUpdatesEnabled
-            ),
-            customThemesDirectory: ThemeManager.defaultCustomThemesDirectory()
-        )
     }
 
     /// An in-memory environment seeded with sample data for previews and tests.

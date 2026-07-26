@@ -116,7 +116,7 @@ public enum CodevisorAppVariant: Sendable {
             )
         }
         let base = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-            ?? fileManager.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support")
+            ?? Self.homeDirectory(fileManager: fileManager).appendingPathComponent("Library/Application Support")
         return createdDirectory(
             at: base.appendingPathComponent(applicationSupportDirectoryName, isDirectory: true),
             fileManager: fileManager
@@ -131,7 +131,7 @@ public enum CodevisorAppVariant: Sendable {
     public static func migrateLegacyApplicationSupportIfNeeded(fileManager: FileManager = .default) {
         guard !isDevelopment else { return }
         let base = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-            ?? fileManager.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support")
+            ?? Self.homeDirectory(fileManager: fileManager).appendingPathComponent("Library/Application Support")
         migrateLegacyApplicationSupport(
             from: base.appendingPathComponent("HerdMan", isDirectory: true),
             to: applicationSupportURL(fileManager: fileManager),
@@ -162,7 +162,7 @@ public enum CodevisorAppVariant: Sendable {
     public static func serverDataDirectoryURL(fileManager: FileManager = .default) -> URL {
         guard !isDevelopment else { return applicationSupportURL(fileManager: fileManager) }
         return createdDirectory(
-            at: fileManager.homeDirectoryForCurrentUser
+            at: Self.homeDirectory(fileManager: fileManager)
                 .appendingPathComponent(".codevisor/data", isDirectory: true),
             fileManager: fileManager
         )
@@ -171,10 +171,21 @@ public enum CodevisorAppVariant: Sendable {
     public static func serverLogsDirectoryURL(fileManager: FileManager = .default) -> URL {
         guard !isDevelopment else { return applicationSupportURL(fileManager: fileManager) }
         return createdDirectory(
-            at: fileManager.homeDirectoryForCurrentUser
+            at: Self.homeDirectory(fileManager: fileManager)
                 .appendingPathComponent(".codevisor/logs", isDirectory: true),
             fileManager: fileManager
         )
+    }
+
+    /// `homeDirectoryForCurrentUser` is macOS-only; on iOS the sandbox home
+    /// from `NSHomeDirectory()` is the equivalent (and these paths are only
+    /// fallbacks/dev layouts there — iOS has no local server).
+    private static func homeDirectory(fileManager: FileManager) -> URL {
+        #if os(macOS)
+        fileManager.homeDirectoryForCurrentUser
+        #else
+        URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
+        #endif
     }
 
     private static func createdDirectory(at directory: URL, fileManager: FileManager) -> URL {

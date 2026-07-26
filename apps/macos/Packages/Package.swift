@@ -7,14 +7,16 @@ import PackageDescription
 let package = Package(
     name: "CodevisorKit",
     platforms: [
-        .macOS("26.0")
+        .macOS("26.0"),
+        .iOS("26.0")
     ],
     products: [
         .library(name: "ACPKit", targets: ["ACPKit"]),
         .library(name: "StreamMarkdown", targets: ["StreamMarkdown"]),
         .library(name: "CodevisorTheming", targets: ["CodevisorTheming"]),
         .library(name: "CodeHighlighter", targets: ["CodeHighlighter"]),
-        .library(name: "CodevisorCore", targets: ["CodevisorCore"])
+        .library(name: "CodevisorCore", targets: ["CodevisorCore"]),
+        .library(name: "CodevisorCoreMac", targets: ["CodevisorCoreMac"])
     ],
     dependencies: [
         .package(url: "https://github.com/PostHog/posthog-ios.git", exact: "3.59.3"),
@@ -97,6 +99,26 @@ let package = Package(
                 .product(name: "Sentry", package: "sentry-cocoa")
             ],
             path: "CodevisorCore/Tests/CodevisorCoreTests",
+            swiftSettings: [.swiftLanguageMode(.v6)]
+        ),
+
+        // MARK: CodevisorCoreMac (macOS-only halves of CodevisorCore: the
+        // app-managed local server process, command running, computer use.
+        // iOS apps depend on CodevisorCore only; never link this on iOS.)
+        .target(
+            name: "CodevisorCoreMac",
+            dependencies: ["CodevisorCore"],
+            path: "CodevisorCoreMac/Sources/CodevisorCoreMac",
+            swiftSettings: [.swiftLanguageMode(.v6)]
+        ),
+        .testTarget(
+            name: "CodevisorCoreMacTests",
+            dependencies: [
+                "CodevisorCoreMac",
+                "CodevisorCore",
+                "ACPKit"
+            ],
+            path: "CodevisorCoreMac/Tests/CodevisorCoreMacTests",
             swiftSettings: [.swiftLanguageMode(.v6)]
         )
     ]

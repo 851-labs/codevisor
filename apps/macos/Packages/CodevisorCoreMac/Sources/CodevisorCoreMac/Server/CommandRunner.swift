@@ -1,3 +1,4 @@
+import CodevisorCore
 import Foundation
 
 /// The result of running a command to completion.

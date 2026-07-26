@@ -11,6 +11,7 @@
 		FC8A03212FF3634D00689171 /* ACPKit in Frameworks */ = {isa = PBXBuildFile; productRef = FC8A03202FF3634D00689171 /* ACPKit */; };
 		FC8A03232FF3634D00689171 /* StreamMarkdown in Frameworks */ = {isa = PBXBuildFile; productRef = FC8A03222FF3634D00689171 /* StreamMarkdown */; };
 		FCE74E8D2FF368F000B42227 /* CodevisorCore in Frameworks */ = {isa = PBXBuildFile; productRef = FCE74E8C2FF368F000B42227 /* CodevisorCore */; };
+		FCE74E922FF368F000B42227 /* CodevisorCoreMac in Frameworks */ = {isa = PBXBuildFile; productRef = FCE74E932FF368F000B42227 /* CodevisorCoreMac */; };
 		FCE74E8E2FF368F000B42227 /* CodevisorTheming in Frameworks */ = {isa = PBXBuildFile; productRef = FCE74E8F2FF368F000B42227 /* CodevisorTheming */; };
 		FCE74E902FF368F000B42227 /* CodeHighlighter in Frameworks */ = {isa = PBXBuildFile; productRef = FCE74E912FF368F000B42227 /* CodeHighlighter */; };
 /* End PBXBuildFile section */
@@ -35,6 +36,7 @@
 				FC8A03212FF3634D00689171 /* ACPKit in Frameworks */,
 				FC8A03232FF3634D00689171 /* StreamMarkdown in Frameworks */,
 				FCE74E8D2FF368F000B42227 /* CodevisorCore in Frameworks */,
+				FCE74E922FF368F000B42227 /* CodevisorCoreMac in Frameworks */,
 				FCE74E8E2FF368F000B42227 /* CodevisorTheming in Frameworks */,
 				FCE74E902FF368F000B42227 /* CodeHighlighter in Frameworks */,
 			);
@@ -88,6 +90,7 @@
 				FC8A03202FF3634D00689171 /* ACPKit */,
 				FC8A03222FF3634D00689171 /* StreamMarkdown */,
 				FCE74E8C2FF368F000B42227 /* CodevisorCore */,
+				FCE74E932FF368F000B42227 /* CodevisorCoreMac */,
 				FCE74E8F2FF368F000B42227 /* CodevisorTheming */,
 				FCE74E912FF368F000B42227 /* CodeHighlighter */,
 			);
@@ -530,6 +533,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = FC8A031D2FF3634D00689171 /* XCLocalSwiftPackageReference "Packages" */;
 			productName = CodevisorCore;
+		};
+		FCE74E932FF368F000B42227 /* CodevisorCoreMac */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = FC8A031D2FF3634D00689171 /* XCLocalSwiftPackageReference "Packages" */;
+			productName = CodevisorCoreMac;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

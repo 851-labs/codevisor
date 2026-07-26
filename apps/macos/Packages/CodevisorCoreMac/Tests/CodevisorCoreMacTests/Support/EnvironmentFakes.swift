@@ -1,5 +1,6 @@
 import Foundation
 @testable import CodevisorCore
+@testable import CodevisorCoreMac
 
 enum FakeEnvironmentError: Error { case boom }
 

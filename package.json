@@ -9,6 +9,7 @@
   ],
   "scripts": {
     "dev": "bun scripts/dev.mjs",
+    "dev:ios": "bun scripts/dev-ios.mjs",
     "build": "turbo run build",
     "typecheck": "turbo run typecheck",
     "lint": "oxlint --disable-nested-config --ignore-pattern '.repos/**' --ignore-pattern 'tmp/**' --ignore-pattern '.codevisor/**' .",
@@ -17,7 +18,7 @@
     "test": "turbo run test",
     "test:coverage": "turbo run test:coverage",
     "check:js": "bun run format:check && bun run lint && bun run typecheck && bun run test:coverage && bun run release:scripts:test",
-    "check": "bun run check:js && bun run swift:test",
+    "check": "bun run check:js && bun run swift:test && bun run swift:build:ios",
     "dev:web": "bun run --cwd apps/www dev",
     "dev:tauri-web": "bun run --cwd apps/web dev",
     "dev:desktop": "turbo run build --filter=@codevisor/server && bun run --cwd apps/desktop dev",
@@ -30,6 +31,7 @@
     "release:macos": "scripts/release/build-macos-app.sh",
     "release:tap": "node scripts/release/update-homebrew-tap.mjs",
     "swift:test": "swift test --package-path apps/macos/Packages",
+    "swift:build:ios": "xcodebuild -project apps/ios/Codevisor.xcodeproj -scheme Codevisor -destination 'generic/platform=iOS Simulator' -derivedDataPath tmp/DerivedData-iOS-check -quiet build",
     "xcode:list": "xcodebuild -list -project apps/macos/Codevisor.xcodeproj"
   },
   "devDependencies": {

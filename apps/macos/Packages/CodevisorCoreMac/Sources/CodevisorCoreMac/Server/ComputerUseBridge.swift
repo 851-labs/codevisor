@@ -1,5 +1,6 @@
 import AppKit
 import ApplicationServices
+import CodevisorCore
 import Darwin
 import Foundation
 import ScreenCaptureKit

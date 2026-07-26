@@ -1,3 +1,4 @@
+import CodevisorCore
 import Foundation
 
 /// A machine on the user's tailnet, decoded from `tailscale status --json`.
