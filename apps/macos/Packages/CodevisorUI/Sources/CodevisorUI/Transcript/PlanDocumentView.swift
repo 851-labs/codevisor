@@ -1,16 +1,19 @@
 import SwiftUI
 import StreamMarkdown
-import CodevisorUI
 
 /// The "Proposed Plan" card: a free-form markdown plan the agent produced in
 /// plan mode (Claude ExitPlanMode, codex plan items), rendered with the same
 /// markdown pipeline as the final answer — the codex CLI's "Proposed Plan"
 /// cell equivalent.
-struct PlanDocumentView: View {
+public struct PlanDocumentView: View {
     let markdown: String
+
+    public init(markdown: String) {
+        self.markdown = markdown
+    }
     @Environment(\.theme) private var theme
 
-    var body: some View {
+    public var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 5) {
                 Image(systemName: "list.bullet.clipboard")

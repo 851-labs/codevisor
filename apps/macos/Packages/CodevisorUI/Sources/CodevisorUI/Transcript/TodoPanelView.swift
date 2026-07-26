@@ -1,15 +1,20 @@
 import SwiftUI
 import ACPKit
-import CodevisorUI
 
 /// The session's todo checklist, pinned above the composer (codex-CLI style)
 /// for every harness — codex `update_plan`, Claude TodoWrite, ACP plans.
 /// Collapsible: the header always shows progress and the current step; the
 /// body lists every step.
-struct TodoPanelView: View {
+public struct TodoPanelView: View {
     let plan: Plan
     @Binding var isExpanded: Bool
     var glassNamespace: Namespace.ID? = nil
+
+    public init(plan: Plan, isExpanded: Binding<Bool>, glassNamespace: Namespace.ID? = nil) {
+        self.plan = plan
+        self._isExpanded = isExpanded
+        self.glassNamespace = glassNamespace
+    }
     @Environment(\.theme) private var theme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -21,7 +26,7 @@ struct TodoPanelView: View {
         plan.entries.first { $0.status == .inProgress } ?? plan.entries.first { $0.status == .pending }
     }
 
-    var body: some View {
+    public var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Button {
                 // The measured reveal below owns the animation transaction.

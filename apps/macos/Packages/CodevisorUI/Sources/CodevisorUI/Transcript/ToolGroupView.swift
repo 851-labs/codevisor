@@ -1,16 +1,21 @@
 import SwiftUI
 import ACPKit
 import CodevisorCore
-import CodevisorUI
 
 /// A collapsed group of consecutive tool calls, summarized as one row
 /// (e.g. "Searched code, ran 2 commands") that expands to the individual calls.
-struct ToolGroupView: View {
+public struct ToolGroupView: View {
     let calls: [ToolCall]
     var isTurnActive: Bool = false
     /// Kept open while the model is still working through this group (no text
     /// has followed it yet); collapses when the model moves on to prose.
     var autoExpanded: Bool = false
+
+    public init(calls: [ToolCall], isTurnActive: Bool = false, autoExpanded: Bool = false) {
+        self.calls = calls
+        self.isTurnActive = isTurnActive
+        self.autoExpanded = autoExpanded
+    }
     @Environment(\.transcriptDisclosure) private var disclosureStore
     @Environment(\.transcriptPerformAnchoredDisclosureChange) private var performAnchoredDisclosureChange
 
@@ -23,7 +28,7 @@ struct ToolGroupView: View {
     private var disclosureKey: TranscriptDisclosureStore.Key { .toolGroup(calls.first?.toolCallId ?? "") }
     private var isExpanded: Bool { store.isExpanded(disclosureKey, default: autoExpanded) }
 
-    var body: some View {
+    public var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 8) {
                 // Pinned to the first call's icon — a group's icon flipping

@@ -7,14 +7,20 @@ import SwiftUI
 /// competing with the objective as a badge. Mounted above the composer whenever
 /// the session has a goal; hidden entirely on harnesses without goal support.
 /// Goals are created/replaced through the composer's goal-mode toggle.
-struct GoalBannerView: View {
+public struct GoalBannerView: View {
     @Bindable var controller: SessionController
     let goal: SessionGoal
     var glassNamespace: Namespace.ID? = nil
 
+    public init(controller: SessionController, goal: SessionGoal, glassNamespace: Namespace.ID? = nil) {
+        self.controller = controller
+        self.goal = goal
+        self.glassNamespace = glassNamespace
+    }
+
     @State private var isClearConfirmationPresented = false
 
-    var body: some View {
+    public var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
             Image(systemName: "target")
                 .font(.caption)

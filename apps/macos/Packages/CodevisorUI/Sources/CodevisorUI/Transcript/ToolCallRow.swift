@@ -1,17 +1,23 @@
 import ACPKit
+#if canImport(AppKit)
 import AppKit
+#endif
 import CodevisorCore
 import StreamMarkdown
 import SwiftUI
-import CodevisorUI
 
 /// A single tool call as a one-line title that expands to a content card
 /// (terminal output, diff, or text) with a status badge. The title shimmers
 /// while the call is running, and edit calls carry an animated +N/−N counter
 /// that rolls as streamed diff stats arrive.
-struct ToolCallRow: View {
+public struct ToolCallRow: View {
     let call: ToolCall
     var isTurnActive: Bool = false
+
+    public init(call: ToolCall, isTurnActive: Bool = false) {
+        self.call = call
+        self.isTurnActive = isTurnActive
+    }
     @Environment(\.theme) private var theme
     @Environment(\.transcriptDisclosure) private var disclosureStore
     @Environment(\.transcriptPerformAnchoredDisclosureChange) private var performAnchoredDisclosureChange
@@ -42,7 +48,7 @@ struct ToolCallRow: View {
     private var disclosureKey: TranscriptDisclosureStore.Key { .toolCall(call.toolCallId) }
     private var isExpanded: Bool { store.isExpanded(disclosureKey, default: false) }
 
-    var body: some View {
+    public var body: some View {
         let totals = counterTotals
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 6) {
@@ -122,12 +128,16 @@ private final class DiffTotalsCache {
 
 /// The +N/−N added/removed-lines counter. Digits roll up and down via
 /// `numericText` as streamed diff stats update the totals.
-struct DiffCounter: View {
+public struct DiffCounter: View {
     let totals: LineDiff.Totals
+
+    public init(totals: LineDiff.Totals) {
+        self.totals = totals
+    }
     @Environment(\.theme) private var theme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    var body: some View {
+    public var body: some View {
         HStack(spacing: 4) {
             Text("+\(totals.added)")
                 .foregroundStyle(theme.diffAddedFg)
@@ -143,11 +153,11 @@ struct DiffCounter: View {
 
 /// The expanded content of a tool call: a labeled card with the output and a
 /// success/failure badge.
-struct ToolCallContentCard: View {
+public struct ToolCallContentCard: View {
     let call: ToolCall
     @Environment(\.theme) private var theme
 
-    var body: some View {
+    public var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text(label)
@@ -178,6 +188,7 @@ struct ToolCallContentCard: View {
         case let .content(block):
             switch block {
             case let .text(text, _):
+                #if canImport(AppKit)
                 SelectableTextView(
                     text,
                     font: .monospacedSystemFont(
@@ -188,6 +199,15 @@ struct ToolCallContentCard: View {
                     fillsWidth: true
                 )
                 .frame(maxWidth: .infinity, alignment: .leading)
+                #else
+                // Interim pure-SwiftUI output text (no selection) until the
+                // UIKit TextKit counterpart lands with the iOS transcript.
+                Text(text)
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundStyle(theme.textPrimary)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                #endif
             // Web-search sources arrive as resource_link blocks; render each as
             // a tappable title over its host.
             case let .resourceLink(link):
@@ -241,7 +261,7 @@ struct ToolCallContentCard: View {
 /// One web-search source: a tappable title over its host domain, opened in the
 /// default browser. Falls back to the raw URI as the label when there's no
 /// title and to plain text when the URI won't parse.
-struct ToolSourceLinkView: View {
+public struct ToolSourceLinkView: View {
     let link: ResourceLink
     @Environment(\.theme) private var theme
 
@@ -250,7 +270,7 @@ struct ToolSourceLinkView: View {
         return title.isEmpty ? link.uri : title
     }
 
-    var body: some View {
+    public var body: some View {
         if let url = URL(string: link.uri) {
             Link(destination: url) {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {

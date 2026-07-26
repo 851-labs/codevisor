@@ -1,5 +1,4 @@
 import SwiftUI
-import CodevisorUI
 
 /// Chrome-surface roles for themed "glass". Content surfaces (editor,
 /// terminal, diff, composer) stay exact opaque theme colors; these CHROME
@@ -10,7 +9,7 @@ import CodevisorUI
 /// system-mode rendering the call site had before theming — which must stay
 /// pixel-identical, hence three roles where the themed behavior alone would
 /// need two.
-enum ThemedSurfaceRole {
+public enum ThemedSurfaceRole {
     /// Sidebar / inspector panel surfaces. System: regular material.
     case sidebar
     /// Popover content. System: the opaque popover fallback color
@@ -27,7 +26,7 @@ enum ThemedSurfaceRole {
 ///   - custom theme + Reduce Transparency → the opaque palette color (the
 ///     pre-glass themed look), live, via the environment value that tracks
 ///     NSWorkspace.accessibilityDisplayShouldReduceTransparency.
-struct ThemedSurfaceModifier<S: Shape>: ViewModifier {
+public struct ThemedSurfaceModifier<S: Shape>: ViewModifier {
     @Environment(\.theme) private var theme
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
@@ -38,7 +37,7 @@ struct ThemedSurfaceModifier<S: Shape>: ViewModifier {
     /// chrome (floating drawers) stays in its own bounds.
     let ignoresSafeArea: Bool
 
-    func body(content: Content) -> some View {
+    public func body(content: Content) -> some View {
         if theme.isSystem {
             switch role {
             case .sidebar:
@@ -85,14 +84,14 @@ struct ThemedSurfaceModifier<S: Shape>: ViewModifier {
 
 extension View {
     /// Full-bleed chrome surface (sidebar column, popover body, sheet bands).
-    func themedSurface(_ role: ThemedSurfaceRole) -> some View {
+    public func themedSurface(_ role: ThemedSurfaceRole) -> some View {
         modifier(ThemedSurfaceModifier(role: role, shape: Rectangle(), ignoresSafeArea: true))
     }
 
     /// Shaped chrome surface (floating drawers). The caller keeps its own
     /// clipShape/shadow, exactly as with the ShapeStyle background this
     /// replaces.
-    func themedSurface(_ role: ThemedSurfaceRole, in shape: some Shape) -> some View {
+    public func themedSurface(_ role: ThemedSurfaceRole, in shape: some Shape) -> some View {
         modifier(ThemedSurfaceModifier(role: role, shape: shape, ignoresSafeArea: false))
     }
 
@@ -100,7 +99,7 @@ extension View {
     /// CSS blur ≈ 2× SwiftUI radius). Applied only when themed — flat theme
     /// surfaces need the depth cue that native materials carry intrinsically,
     /// while system mode must stay pixel-identical to the unthemed app.
-    func themedCardShadow(_ theme: Theme) -> some View {
+    public func themedCardShadow(_ theme: Theme) -> some View {
         shadow(color: .black.opacity(theme.isSystem ? 0 : 0.07), radius: 8, y: 8)
             .shadow(color: .black.opacity(theme.isSystem ? 0 : 0.05), radius: 2, y: 2)
     }

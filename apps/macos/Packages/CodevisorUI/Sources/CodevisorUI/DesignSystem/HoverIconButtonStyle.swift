@@ -5,8 +5,8 @@ import SwiftUI
 /// fill while hovered, and a slight dim while pressed — matching the stop
 /// button's hover treatment. Composer icon buttons use the circular fill;
 /// transcript buttons the rounded rectangle; menu chips the chip variant.
-struct HoverIconButtonStyle: ButtonStyle {
-    enum HighlightShape {
+public struct HoverIconButtonStyle: ButtonStyle {
+    public enum HighlightShape {
         case circle
         case roundedRectangle
         /// Text chips: the hover fill bleeds a few points past the label on
@@ -17,7 +17,11 @@ struct HoverIconButtonStyle: ButtonStyle {
 
     var shape: HighlightShape = .circle
 
-    func makeBody(configuration: Configuration) -> some View {
+    public init(shape: HighlightShape = .circle) {
+        self.shape = shape
+    }
+
+    public func makeBody(configuration: Configuration) -> some View {
         HoverIconButtonBody(configuration: configuration, shape: shape)
     }
 }
@@ -27,7 +31,7 @@ private struct HoverIconButtonBody: View {
     let shape: HoverIconButtonStyle.HighlightShape
     @State private var isHovered = false
 
-    var body: some View {
+    public var body: some View {
         configuration.label
             // Breathing room between the glyph and the hover fill's edge.
             // Circle buttons skip it: their 26pt label frames already are the

@@ -1,9 +1,10 @@
+#if canImport(AppKit)
 import AppKit
+#endif
 import CodeHighlighter
 import CodevisorCore
 import StreamMarkdown
 import SwiftUI
-import CodevisorUI
 
 /// Computed rows + highlights for recently rendered diffs. DiffView's
 /// `@State` dies whenever its row is unmounted (session switches rebuild the
@@ -11,7 +12,7 @@ import CodevisorUI
 /// re-ran the Myers diff and re-highlighted on each revisit. Keyed by full
 /// content (not hashes) so a collision can never render the wrong diff.
 @MainActor
-final class DiffRenderCache {
+public final class DiffRenderCache {
     struct Key: Hashable {
         let path: String
         let oldText: String?
@@ -62,7 +63,7 @@ final class DiffRenderCache {
 /// Shared indentation is stripped (edit snippets carry the source's full
 /// nesting) and rows are Shiki-highlighted asynchronously via the path's
 /// language.
-struct DiffView: View {
+public struct DiffView: View {
     let path: String
     let oldText: String?
     let newText: String
@@ -90,7 +91,7 @@ struct DiffView: View {
         return hasher.finalize()
     }
 
-    var body: some View {
+    public var body: some View {
         // No header: the tool-call title already carries the filename and
         // +N/−N counters, so the card is just the code. Long diffs scroll
         // inside it instead of laying the whole file change out on the page.
@@ -158,10 +159,18 @@ struct DiffView: View {
                 .foregroundStyle(tint(for: row.kind))
             // Removed lines keep full syntax colors (pierre does not dim or
             // strike them); the row tint alone marks the deletion.
+            #if canImport(AppKit)
             SelectableTextView(
                 attributedText: rowText(row, highlights: highlights),
                 fillsWidth: false
             )
+            #else
+            // Interim pure-SwiftUI diff row (no cross-row selection) until
+            // the UIKit TextKit counterpart lands with the iOS transcript.
+            Text(portableRowText(row, highlights: highlights))
+                .font(.system(.caption, design: .monospaced))
+                .lineLimit(nil)
+            #endif
             Spacer(minLength: 0)
         }
         .font(.caption.monospaced())
@@ -180,6 +189,30 @@ struct DiffView: View {
         }
     }
 
+    #if !canImport(AppKit)
+    /// AttributedString flavor of `rowText` for the SwiftUI fallback path.
+    private func portableRowText(
+        _ row: LineDiff.Row,
+        highlights: [Int: AttributedString]
+    ) -> AttributedString {
+        guard let highlighted = highlights[row.id], !row.text.isEmpty else {
+            var plain = AttributedString(row.text.isEmpty ? " " : row.text)
+            plain.foregroundColor = theme.textPrimary
+            return plain
+        }
+        var result = AttributedString()
+        for run in highlighted.runs {
+            var piece = AttributedString(highlighted[run.range])
+            if piece.foregroundColor == nil {
+                piece.foregroundColor = theme.textPrimary
+            }
+            result += piece
+        }
+        return result
+    }
+    #endif
+
+    #if canImport(AppKit)
     /// Row text: Shiki-highlighted when the path's language and the theme
     /// allow it, plain otherwise. Blank lines render a space to keep height.
     private func rowText(
@@ -214,6 +247,7 @@ struct DiffView: View {
         }
         return result
     }
+    #endif
 
     /// Recomputes the diff rows (when the content changed) and re-highlights.
     /// The Myers diff runs off the main actor: streamed edits rewrite

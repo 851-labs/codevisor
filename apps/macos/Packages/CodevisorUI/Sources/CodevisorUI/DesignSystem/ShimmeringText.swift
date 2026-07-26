@@ -9,10 +9,10 @@ import SwiftUI
 /// turn several rows shimmer at once; per-frame SwiftUI work stacked onto the
 /// streaming updates was measurable main-thread cost for a purely cosmetic
 /// effect.
-struct ShimmerModifier: ViewModifier {
+public struct ShimmerModifier: ViewModifier {
     var active: Bool
 
-    func body(content: Content) -> some View {
+    public func body(content: Content) -> some View {
         content.overlay {
             // A fresh subview per activation: its `@State phase` starts at 0 and
             // its `.onAppear` kicks the sweep, so re-activating shimmer always
@@ -34,7 +34,7 @@ struct ShimmerModifier: ViewModifier {
 private struct ShimmerSweep<Shape: View>: View {
     let shape: Shape
 
-    var body: some View {
+    public var body: some View {
         GeometryReader { proxy in
             let width = proxy.size.width
             ShimmerBand(width: width)
@@ -52,7 +52,7 @@ private struct ShimmerBand: View {
     let width: CGFloat
     @State private var sweptToEnd = false
 
-    var body: some View {
+    public var body: some View {
         // A bright glint with a soft, center-peaked core: brightest at the
         // middle and easing out through a gradient to the edges, so it reads as
         // a defined highlight (not a hard bar, not a broad wash) sweeping across.
@@ -85,18 +85,23 @@ private struct ShimmerBand: View {
 
 extension View {
     /// Sweeps a shimmer across the view while `active` is true.
-    func shimmering(_ active: Bool = true) -> some View {
+    public func shimmering(_ active: Bool = true) -> some View {
         modifier(ShimmerModifier(active: active))
     }
 }
 
 /// A text label with a horizontal shimmer sweep, used for ephemeral agent
 /// status while the agent is working.
-struct ShimmeringText: View {
+public struct ShimmeringText: View {
     var text: String = "Thinking..."
     var font: Font = .callout
 
-    var body: some View {
+    public init(text: String = "Thinking...", font: Font = .callout) {
+        self.text = text
+        self.font = font
+    }
+
+    public var body: some View {
         Text(text)
             .font(font)
             .foregroundStyle(.secondary)
@@ -106,36 +111,41 @@ struct ShimmeringText: View {
 }
 
 extension ShimmeringText {
-    static var thinking: ShimmeringText {
+    public static var thinking: ShimmeringText {
         ShimmeringText(text: "Thinking...")
     }
 
-    static var startingAgent: ShimmeringText {
+    public static var startingAgent: ShimmeringText {
         ShimmeringText(text: "Starting agent...")
     }
 
-    static var compactingContext: ShimmeringText {
+    public static var compactingContext: ShimmeringText {
         ShimmeringText(text: "Compacting context...")
     }
 
     /// The turn is over but the agent still owns background work and will
     /// start a new turn on its own when it settles.
-    static func waitingOnBackgroundTask(_ description: String) -> ShimmeringText {
+    public static func waitingOnBackgroundTask(_ description: String) -> ShimmeringText {
         ShimmeringText(text: "Waiting on \(description)...")
     }
 
     /// The user's prompt is held server-side while the harness updates and
     /// dispatches automatically once the update finishes.
-    static func waitingOnHarnessUpdate(_ harnessName: String) -> ShimmeringText {
+    public static func waitingOnHarnessUpdate(_ harnessName: String) -> ShimmeringText {
         ShimmeringText(text: "Waiting for \(harnessName) to finish updating...")
     }
 }
 
-struct AgentStatusText: View {
+public struct AgentStatusText: View {
     var text: String
     var font: Font = .callout
 
-    var body: some View {
+    public init(text: String, font: Font = .callout) {
+        self.text = text
+        self.font = font
+    }
+
+    public var body: some View {
         Text(text)
             .font(font)
             .foregroundStyle(.secondary)
@@ -144,7 +154,7 @@ struct AgentStatusText: View {
 }
 
 extension AgentStatusText {
-    static var contextCompacted: AgentStatusText {
+    public static var contextCompacted: AgentStatusText {
         AgentStatusText(text: "Context compacted")
     }
 }

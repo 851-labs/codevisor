@@ -1,9 +1,8 @@
 import SwiftUI
-import AppKit
 
 /// A small icon button shown below a transcript message that copies the
 /// message text to the clipboard, flashing a checkmark as confirmation.
-struct MessageCopyButton: View {
+public struct MessageCopyButton: View {
     let text: String
     var help: String = "Copy message"
     /// The reveal state of the row that owns this button. Leaving the row
@@ -12,10 +11,15 @@ struct MessageCopyButton: View {
     var isRevealed: Bool = true
     @State private var didCopy = false
 
-    var body: some View {
+    public init(text: String, help: String = "Copy message", isRevealed: Bool = true) {
+        self.text = text
+        self.help = help
+        self.isRevealed = isRevealed
+    }
+
+    public var body: some View {
         Button {
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(text, forType: .string)
+            PlatformPasteboard.copy(text)
             didCopy = true
             Task {
                 try? await Task.sleep(for: .seconds(1.5))

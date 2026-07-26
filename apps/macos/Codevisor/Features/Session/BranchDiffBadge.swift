@@ -1,4 +1,5 @@
 import SwiftUI
+import CodevisorUI
 import CodevisorCore
 import CoreServices
 
