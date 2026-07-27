@@ -539,6 +539,8 @@ private struct ComposerTextView: UIViewRepresentable {
         view.adjustsFontForContentSizeCategory = true
         view.textContainerInset = UIEdgeInsets(top: 4, left: 0, bottom: 4, right: 0)
         view.textContainer.lineFragmentPadding = 0
+        // Prompts are code-adjacent — no auto-capitalized first letters.
+        view.autocapitalizationType = .none
         view.delegate = context.coordinator
         view.setContentHuggingPriority(.defaultLow, for: .horizontal)
         view.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
