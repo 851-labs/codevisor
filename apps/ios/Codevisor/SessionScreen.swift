@@ -111,7 +111,13 @@ private struct SessionTranscriptView: View {
         .scrollDismissesKeyboard(.interactively)
         .background(Color(.systemGroupedBackground))
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            ComposerBar(controller: controller)
+            VStack(spacing: 6) {
+                if let question = controller.activeQuestion {
+                    QuestionCardView(controller: controller, request: question)
+                        .id(question.questionId)
+                }
+                ComposerBar(controller: controller)
+            }
         }
     }
 }
@@ -136,6 +142,11 @@ private struct ComposerBar: View {
             }
             .buttonStyle(HoverIconButtonStyle(shape: .circle))
             .disabled(true)
+
+            if let modeState = controller.modeState,
+               modeState.availableModes.count > 1 {
+                ModePickerChip(controller: controller, modeState: modeState)
+            }
 
             TextField("Message the agent", text: $controller.composerText, axis: .vertical)
                 .lineLimit(1...6)
@@ -276,5 +287,44 @@ private enum TurnSegment: Identifiable {
         case let .tools(id, _): id
         case let .compaction(id): "compaction:\(id)"
         }
+    }
+}
+
+
+/// The composer's mode chip: current mode name, tap for the mode menu —
+/// switching runs the shared SessionController.setMode path.
+private struct ModePickerChip: View {
+    @Bindable var controller: SessionController
+    let modeState: SessionModeState
+
+    private var currentName: String {
+        modeState.availableModes.first { $0.id == modeState.currentModeId }?.name
+            ?? modeState.currentModeId
+    }
+
+    var body: some View {
+        Menu {
+            ForEach(modeState.availableModes) { mode in
+                Button {
+                    Task { await controller.setMode(mode.id) }
+                } label: {
+                    if mode.id == modeState.currentModeId {
+                        Label(mode.name, systemImage: "checkmark")
+                    } else if let description = mode.description, !description.isEmpty {
+                        Text("\(mode.name)\n\(description)")
+                    } else {
+                        Text(mode.name)
+                    }
+                }
+            }
+        } label: {
+            Text(currentName)
+                .font(.caption.weight(.medium))
+                .lineLimit(1)
+                .padding(.horizontal, 9)
+                .padding(.vertical, 8)
+                .background(Capsule().fill(Color.secondary.opacity(0.12)))
+        }
+        .buttonStyle(.plain)
     }
 }
