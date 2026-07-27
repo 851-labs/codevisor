@@ -37,21 +37,8 @@ struct SettingsSheet: View {
                     } label: {
                         Label("Machines", systemImage: "desktopcomputer")
                     }
-                    NavigationLink {
-                        HarnessesSettingsScreen()
-                    } label: {
-                        Label("Harnesses", systemImage: "cpu")
-                    }
-                    NavigationLink {
-                        McpSettingsScreen()
-                    } label: {
-                        Label("MCPs", systemImage: "puzzlepiece.extension")
-                    }
-                    NavigationLink {
-                        SkillsSettingsScreen()
-                    } label: {
-                        Label("Skills", systemImage: "book.closed")
-                    }
+                } footer: {
+                    Text("Harnesses, MCPs, and skills live on each machine — open a machine to manage them.")
                 }
             }
             .navigationTitle("Settings")
@@ -72,18 +59,8 @@ private struct GeneralSettingsScreen: View {
     @Environment(AppEnvironment.self) private var environment
     @State private var isConfirmingDelete = false
 
-    private var machine: CodevisorMachine { environment.machines.selectedMachine }
-
     var body: some View {
         List {
-            Section("Server") {
-                LabeledContent("Machine", value: machine.name)
-                LabeledContent("Endpoint", value: machine.baseURL.absoluteString)
-                LabeledContent(
-                    "Status",
-                    value: environment.machines.statusByMachineId[machine.id]?.label ?? "Connecting…"
-                )
-            }
             Section {
                 Toggle(
                     "Share usage analytics",
@@ -220,13 +197,11 @@ private struct NotificationsSettingsScreen: View {
 // MARK: - Machines
 
 /// Machine management: the paired remote machines (never the on-device
-/// "local" pseudo-machine — this client has no local server), selection,
-/// pairing, renaming, and removal.
-private struct MachinesSettingsScreen: View {
+/// "local" pseudo-machine — this client has no local server). Each machine
+/// nests its own scoped settings: status, harnesses, MCPs, skills.
+struct MachinesSettingsScreen: View {
     @Environment(AppEnvironment.self) private var environment
     @State private var isAddingMachine = false
-    @State private var renamingMachine: CodevisorMachine?
-    @State private var renameText = ""
 
     private var machines: MachineController { environment.machines }
 
@@ -238,7 +213,25 @@ private struct MachinesSettingsScreen: View {
         List {
             Section {
                 ForEach(remoteMachines, id: \.id) { machine in
-                    machineRow(machine)
+                    NavigationLink {
+                        MachineDetailScreen(machineId: machine.id)
+                    } label: {
+                        HStack(spacing: 10) {
+                            Image(systemName: machine.resolvedAppearance.symbolName)
+                                .foregroundStyle(.secondary)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(machine.name)
+                                Text(machines.statusByMachineId[machine.id]?.label ?? machine.baseURL.absoluteString)
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            if machine.id == machines.selectedMachineId {
+                                Image(systemName: "checkmark")
+                                    .foregroundStyle(.tint)
+                            }
+                        }
+                    }
                 }
             } footer: {
                 Text("Run `codevisor setup` on a machine to print its address and token.")
@@ -256,55 +249,79 @@ private struct MachinesSettingsScreen: View {
         .sheet(isPresented: $isAddingMachine) {
             AddMachineSheet()
         }
-        .alert("Rename Machine", isPresented: Binding(
-            get: { renamingMachine != nil },
-            set: { if !$0 { renamingMachine = nil } }
-        )) {
+    }
+}
+
+/// One machine's page: connection info and the settings scoped to it —
+/// harnesses, MCPs, and skills all live on the machine, so they're nested
+/// here rather than floating at the top level.
+private struct MachineDetailScreen: View {
+    @Environment(AppEnvironment.self) private var environment
+    @Environment(\.dismiss) private var dismiss
+    let machineId: String
+
+    @State private var isRenaming = false
+    @State private var renameText = ""
+
+    private var machines: MachineController { environment.machines }
+    private var machine: CodevisorMachine? { machines.machine(for: machineId) }
+
+    var body: some View {
+        List {
+            if let machine {
+                Section {
+                    LabeledContent("Endpoint", value: machine.baseURL.absoluteString)
+                    LabeledContent(
+                        "Status",
+                        value: machines.statusByMachineId[machine.id]?.label ?? "Connecting…"
+                    )
+                    if machine.id != machines.selectedMachineId {
+                        Button("Use This Machine") {
+                            machines.selectMachine(machine.id)
+                            Task { await environment.prepareSelectedMachine() }
+                        }
+                    }
+                }
+                Section("On This Machine") {
+                    NavigationLink {
+                        HarnessesSettingsScreen(client: machines.client(for: machine.id))
+                    } label: {
+                        Label("Harnesses", systemImage: "cpu")
+                    }
+                    NavigationLink {
+                        McpSettingsScreen(client: machines.client(for: machine.id))
+                    } label: {
+                        Label("MCPs", systemImage: "puzzlepiece.extension")
+                    }
+                    NavigationLink {
+                        SkillsSettingsScreen(client: machines.client(for: machine.id))
+                    } label: {
+                        Label("Skills", systemImage: "book.closed")
+                    }
+                }
+                Section {
+                    Button("Rename…") {
+                        renameText = machine.name
+                        isRenaming = true
+                    }
+                    Button("Remove Machine…", role: .destructive) {
+                        try? machines.removeMachine(machine.id)
+                        dismiss()
+                    }
+                } footer: {
+                    Text("Codevisor forgets this machine. Nothing on the machine itself is changed.")
+                }
+            }
+        }
+        .navigationTitle(machine?.name ?? "Machine")
+        .navigationBarTitleDisplayMode(.inline)
+        .alert("Rename Machine", isPresented: $isRenaming) {
             TextField("Name", text: $renameText)
             Button("Rename") {
-                if let machine = renamingMachine {
-                    try? machines.renameMachine(machine.id, to: renameText)
-                }
-                renamingMachine = nil
+                try? machines.renameMachine(machineId, to: renameText)
+                isRenaming = false
             }
-            Button("Cancel", role: .cancel) { renamingMachine = nil }
-        }
-    }
-
-    private func machineRow(_ machine: CodevisorMachine) -> some View {
-        Button {
-            machines.selectMachine(machine.id)
-            Task { await environment.prepareSelectedMachine() }
-        } label: {
-            HStack(spacing: 10) {
-                Image(systemName: machine.resolvedAppearance.symbolName)
-                    .foregroundStyle(.secondary)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(machine.name)
-                        .foregroundStyle(.primary)
-                    Text(machines.statusByMachineId[machine.id]?.label ?? machine.baseURL.absoluteString)
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-                if machine.id == machines.selectedMachineId {
-                    Image(systemName: "checkmark")
-                        .foregroundStyle(.tint)
-                }
-            }
-        }
-        .contextMenu {
-            Button {
-                renameText = machine.name
-                renamingMachine = machine
-            } label: {
-                Label("Rename…", systemImage: "pencil")
-            }
-            Button(role: .destructive) {
-                try? machines.removeMachine(machine.id)
-            } label: {
-                Label("Remove…", systemImage: "trash")
-            }
+            Button("Cancel", role: .cancel) { isRenaming = false }
         }
     }
 }
@@ -380,7 +397,7 @@ private struct AddMachineSheet: View {
 // MARK: - Harnesses
 
 private struct HarnessesSettingsScreen: View {
-    @Environment(AppEnvironment.self) private var environment
+    let client: any CodevisorServerClienting
     @State private var harnesses: [ServerHarness] = []
     @State private var isLoading = true
     @State private var errorMessage: String?
@@ -453,7 +470,7 @@ private struct HarnessesSettingsScreen: View {
                     get: { harness.enabled },
                     set: { enabled in
                         Task {
-                            _ = try? await environment.serverClient.setHarnessEnabled(
+                            _ = try? await client.setHarnessEnabled(
                                 id: harness.id, enabled: enabled
                             )
                             await load()
@@ -467,7 +484,7 @@ private struct HarnessesSettingsScreen: View {
 
     private func load() async {
         do {
-            harnesses = try await environment.serverClient.listHarnesses()
+            harnesses = try await client.listHarnesses()
             errorMessage = nil
         } catch {
             errorMessage = ErrorReporter.userFacingMessage(for: error)
@@ -479,7 +496,7 @@ private struct HarnessesSettingsScreen: View {
 // MARK: - MCPs
 
 private struct McpSettingsScreen: View {
-    @Environment(AppEnvironment.self) private var environment
+    let client: any CodevisorServerClienting
     @State private var servers: [ServerMcpServer] = []
     @State private var isLoading = true
     @State private var errorMessage: String?
@@ -530,7 +547,7 @@ private struct McpSettingsScreen: View {
                     get: { server.enabled },
                     set: { enabled in
                         Task {
-                            _ = try? await environment.serverClient.setMcpServerEnabled(
+                            _ = try? await client.setMcpServerEnabled(
                                 id: server.id, enabled: enabled
                             )
                             await load()
@@ -544,7 +561,7 @@ private struct McpSettingsScreen: View {
             if server.canRemove != false {
                 Button(role: .destructive) {
                     Task {
-                        try? await environment.serverClient.removeMcpServer(id: server.id)
+                        try? await client.removeMcpServer(id: server.id)
                         await load()
                     }
                 } label: {
@@ -556,7 +573,7 @@ private struct McpSettingsScreen: View {
 
     private func load() async {
         do {
-            servers = try await environment.serverClient.listMcpServers()
+            servers = try await client.listMcpServers()
             errorMessage = nil
         } catch {
             errorMessage = ErrorReporter.userFacingMessage(for: error)
@@ -568,7 +585,7 @@ private struct McpSettingsScreen: View {
 // MARK: - Skills
 
 private struct SkillsSettingsScreen: View {
-    @Environment(AppEnvironment.self) private var environment
+    let client: any CodevisorServerClienting
     @State private var scan: ServerSkillsScan?
     @State private var isLoading = true
     @State private var errorMessage: String?
@@ -601,7 +618,7 @@ private struct SkillsSettingsScreen: View {
             ToolbarItem(placement: .topBarTrailing) {
                 Button("Sync") {
                     Task {
-                        scan = try? await environment.serverClient.syncSkills(directoryNames: nil)
+                        scan = try? await client.syncSkills(directoryNames: nil)
                     }
                 }
             }
@@ -622,7 +639,7 @@ private struct SkillsSettingsScreen: View {
         .contextMenu {
             Button(role: .destructive) {
                 Task {
-                    scan = try? await environment.serverClient.removeSkill(directoryName: skill.directoryName)
+                    scan = try? await client.removeSkill(directoryName: skill.directoryName)
                 }
             } label: {
                 Label("Remove…", systemImage: "trash")
@@ -632,7 +649,7 @@ private struct SkillsSettingsScreen: View {
 
     private func load() async {
         do {
-            scan = try await environment.serverClient.listSkills()
+            scan = try await client.listSkills()
             errorMessage = nil
         } catch {
             errorMessage = ErrorReporter.userFacingMessage(for: error)

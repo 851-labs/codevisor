@@ -40,10 +40,10 @@ final class WorkspacePaneStore {
     }
 }
 
-/// Safari-style pane previews: the visible pane is snapshotted when the grid
-/// opens (and when switching away), so the grid shows real content for panes
-/// you've visited. In-memory only — placeholders return after relaunch until
-/// a pane is shown again.
+/// Safari-style tab previews: the visible pane is snapshotted (with the app's
+/// own navigation chrome cropped off) when the grid opens, so the grid shows
+/// real content for panes you've visited. In-memory only — placeholders
+/// return after relaunch until a pane is shown again.
 @MainActor
 final class PaneSnapshotCache {
     static let shared = PaneSnapshotCache()
@@ -56,26 +56,45 @@ final class PaneSnapshotCache {
             let window = scene.keyWindow
         else { return }
         let renderer = UIGraphicsImageRenderer(bounds: window.bounds)
-        images[paneId] = renderer.image { _ in
+        let full = renderer.image { _ in
             window.drawHierarchy(in: window.bounds, afterScreenUpdates: false)
+        }
+        // Crop the status bar and nav-bar band so the preview shows only the
+        // pane's content, like Safari's tab pictures.
+        let topChrome = window.safeAreaInsets.top + 44
+        let scale = full.scale
+        let cropRect = CGRect(
+            x: 0,
+            y: topChrome * scale,
+            width: full.size.width * scale,
+            height: (full.size.height - topChrome) * scale
+        )
+        if let cgImage = full.cgImage?.cropping(to: cropRect) {
+            images[paneId] = UIImage(cgImage: cgImage, scale: scale, orientation: .up)
+        } else {
+            images[paneId] = full
         }
     }
 }
 
 // MARK: - Workspace screen
 
-/// A workspace: one full-screen pane at a time (chat, terminals), with a
-/// Safari-style grid to switch, add, and close panes. The nav bar shows the
-/// active pane's title between a sidebar button (back to the workspace list)
-/// and the pane-grid button.
+/// A workspace: one full-screen pane (tab) at a time — chats, terminals, and
+/// the new-tab page — with a Safari-style grid to switch, add, and close
+/// them. The nav bar shows the active pane's title between a sidebar button
+/// (back to the workspace list) and the tab-grid button; chat panes hide
+/// their title so the transcript scrolls clear off the top.
 struct WorkspaceScreen: View {
     @Environment(AppEnvironment.self) private var environment
     @Environment(\.dismiss) private var dismiss
     let sessionId: UUID
 
-    @State private var controller: SessionController?
+    /// One controller per chat session shown in this workspace (macOS allows
+    /// several chats per workspace; so do we).
+    @State private var controllers: [UUID: SessionController] = [:]
     @State private var missing = false
     @State private var serverConfig: CodevisorServerConfig?
+    @State private var project: Project?
     @State private var paneState: PaneGroupState?
     @State private var showsGrid = false
 
@@ -87,29 +106,40 @@ struct WorkspaceScreen: View {
         panes.selectedPane ?? panes.panes.first
     }
 
-    private var session: ChatSession? {
-        environment.projectList.sessions.first { $0.id == sessionId }
+    private func session(for id: UUID) -> ChatSession? {
+        environment.projectList.sessions.first { $0.id == id }
     }
 
-    private var activePaneTitle: String {
-        guard let pane = activePane else { return "Workspace" }
-        if pane.kind == .chat {
-            let title = session?.title ?? pane.name
+    private var rootSession: ChatSession? { session(for: sessionId) }
+
+    private func title(for pane: PaneDescriptorState) -> String {
+        switch pane.kind {
+        case .chat:
+            let title = session(for: pane.chatSessionId ?? sessionId)?.title ?? pane.name
             return title.isEmpty ? "New Chat" : title
+        case .newTab:
+            return "New Tab"
+        case .terminal:
+            return pane.name
         }
-        return pane.name
+    }
+
+    /// Chat panes ask for a hidden nav title so the transcript can scroll
+    /// all the way off the top; other panes keep theirs.
+    private var hidesTitle: Bool {
+        activePane?.kind == .chat
     }
 
     private var workspaceCwd: String {
-        session?.cwd
-            ?? controller?.project.folderURL.path
+        rootSession?.cwd
+            ?? project?.folderURL.path
             ?? ""
     }
 
     var body: some View {
         Group {
-            if let controller, let pane = activePane {
-                paneContent(pane, controller: controller)
+            if let pane = activePane, project != nil {
+                paneContent(pane)
                     .id(pane.id)
             } else if missing {
                 ContentUnavailableView("Chat Not Found", systemImage: "questionmark.bubble")
@@ -118,7 +148,7 @@ struct WorkspaceScreen: View {
             }
         }
         .navigationBarBackButtonHidden(true)
-        .navigationTitle(activePaneTitle)
+        .navigationTitle(hidesTitle ? "" : (activePane.map(title(for:)) ?? "Workspace"))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
@@ -135,31 +165,51 @@ struct WorkspaceScreen: View {
                 } label: {
                     Image(systemName: "square.on.square")
                 }
-                .accessibilityLabel("Show panes")
+                .accessibilityLabel("Show tabs")
             }
         }
         .fullScreenCover(isPresented: $showsGrid) {
             PaneGridView(
-                sessionId: sessionId,
-                sessionTitle: session?.title ?? "Chat",
+                titleFor: { title(for: $0) },
                 cwd: workspaceCwd,
-                paneState: Binding(
-                    get: { panes },
-                    set: { newValue in
-                        paneState = newValue
-                        WorkspacePaneStore.shared.save(newValue, for: sessionId)
-                    }
-                )
+                paneState: paneBinding
             )
         }
         .task { await prepare() }
     }
 
+    private var paneBinding: Binding<PaneGroupState> {
+        Binding(
+            get: { panes },
+            set: { newValue in
+                var state = newValue
+                // macOS behavior: a group never goes empty — closing the last
+                // pane leaves a New Tab page in its place.
+                if state.panes.isEmpty {
+                    state.addNewTabPane(inheritedCwd: workspaceCwd)
+                }
+                paneState = state
+                WorkspacePaneStore.shared.save(state, for: sessionId)
+            }
+        )
+    }
+
     @ViewBuilder
-    private func paneContent(_ pane: PaneDescriptorState, controller: SessionController) -> some View {
+    private func paneContent(_ pane: PaneDescriptorState) -> some View {
         switch pane.kind {
-        case .chat, .newTab:
-            SessionTranscriptView(controller: controller, serverConfig: serverConfig)
+        case .chat:
+            if let controller = controllers[pane.chatSessionId ?? sessionId] {
+                SessionTranscriptView(controller: controller, serverConfig: serverConfig)
+            } else {
+                ProgressView()
+                    .task { await connectChat(sessionId: pane.chatSessionId ?? sessionId) }
+            }
+        case .newTab:
+            NewTabPaneView(
+                projectName: project?.name ?? "",
+                onNewChat: { convertToChat(pane) },
+                onNewTerminal: { convertToTerminal(pane) }
+            )
         case .terminal:
             if let serverConfig {
                 TerminalPaneView(
@@ -173,6 +223,28 @@ struct WorkspaceScreen: View {
         }
     }
 
+    /// The macOS new-tab conversion: the placeholder becomes a real pane in
+    /// place. Chats are created eagerly as deferred sessions (the agent
+    /// spawns on first send), exactly like the New Workspace flow.
+    private func convertToChat(_ pane: PaneDescriptorState) {
+        guard let project else { return }
+        let chat = environment.projectList.newSession(in: project, title: "New Chat")
+        var state = panes
+        state.convertNewTabPane(id: pane.id, to: .chat, sessionId: sessionId, chatSessionId: chat.id)
+        paneBinding.wrappedValue = state
+    }
+
+    private func convertToTerminal(_ pane: PaneDescriptorState) {
+        var state = panes
+        state.convertNewTabPane(
+            id: pane.id,
+            to: .terminal,
+            sessionId: sessionId,
+            cwd: pane.cwdOverride ?? workspaceCwd
+        )
+        paneBinding.wrappedValue = state
+    }
+
     private func openGrid() {
         if let pane = activePane {
             PaneSnapshotCache.shared.captureKeyWindow(for: pane.id)
@@ -184,15 +256,24 @@ struct WorkspaceScreen: View {
         if paneState == nil {
             paneState = WorkspacePaneStore.shared.state(for: sessionId)
         }
-        guard controller == nil else { return }
-        guard let session = environment.projectList.sessions.first(where: { $0.id == sessionId }),
+        guard controllers[sessionId] == nil else { return }
+        guard let session = rootSession,
               let project = environment.projectList.projects.first(where: { $0.id == session.projectId })
         else {
             missing = true
             return
         }
+        self.project = project
         serverConfig = environment.machines.machine(for: session.serverId)?.serverConfig
             ?? environment.machines.selectedMachine.serverConfig
+        await connectChat(sessionId: sessionId)
+    }
+
+    private func connectChat(sessionId chatId: UUID) async {
+        guard controllers[chatId] == nil,
+              let session = session(for: chatId),
+              let project = environment.projectList.projects.first(where: { $0.id == session.projectId })
+        else { return }
         let controller = SessionController(
             project: project,
             configCache: environment.configCache,
@@ -200,7 +281,7 @@ struct WorkspaceScreen: View {
             serverClient: environment.machines.client(for: session.serverId)
         )
         controller.configureExistingSession(session)
-        self.controller = controller
+        controllers[chatId] = controller
         if session.agentSessionId?.isEmpty != false {
             // A fresh chat: no agent exists yet. Load harness capabilities so
             // the composer validates; the agent spawns on the first send.
@@ -211,14 +292,73 @@ struct WorkspaceScreen: View {
     }
 }
 
-// MARK: - Pane grid
+// MARK: - New tab page
 
-/// The Safari-style pane switcher: a two-column grid of pane previews with
-/// close buttons, plus a bottom bar to add a terminal and dismiss.
+/// The iOS take on macOS's new-tab page: pick what this tab becomes. The
+/// placeholder converts in place, so the tab keeps its slot in the grid.
+private struct NewTabPaneView: View {
+    let projectName: String
+    let onNewChat: () -> Void
+    let onNewTerminal: () -> Void
+
+    var body: some View {
+        VStack(spacing: 14) {
+            Spacer()
+            newTabOption(
+                title: "New Chat",
+                subtitle: "Start an agent in \(projectName)",
+                systemImage: "bubble.left.and.bubble.right",
+                action: onNewChat
+            )
+            newTabOption(
+                title: "New Terminal",
+                subtitle: "Open a shell on the machine",
+                systemImage: "terminal",
+                action: onNewTerminal
+            )
+            Spacer()
+        }
+        .padding(.horizontal, 24)
+        .frame(maxWidth: .infinity)
+        .background(Color(.systemGroupedBackground))
+    }
+
+    private func newTabOption(
+        title: String,
+        subtitle: String,
+        systemImage: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: 14) {
+                Image(systemName: systemImage)
+                    .font(.title3)
+                    .frame(width: 34)
+                    .foregroundStyle(.tint)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(.primary)
+                    Text(subtitle)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+            }
+            .padding(16)
+            .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16))
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+// MARK: - Tab grid
+
+/// The Safari-style tab switcher: a two-column grid of pane previews with
+/// close buttons, plus + for an instant new tab.
 private struct PaneGridView: View {
     @Environment(\.dismiss) private var dismiss
-    let sessionId: UUID
-    let sessionTitle: String
+    let titleFor: (PaneDescriptorState) -> String
     let cwd: String
     @Binding var paneState: PaneGroupState
 
@@ -234,9 +374,8 @@ private struct PaneGridView: View {
                     ForEach(paneState.panes) { pane in
                         PaneCard(
                             pane: pane,
-                            title: title(for: pane),
+                            title: titleFor(pane),
                             isActive: pane.id == paneState.selectedPaneId,
-                            canClose: closablePane(pane),
                             onSelect: { select(pane) },
                             onClose: { close(pane) }
                         )
@@ -245,36 +384,22 @@ private struct PaneGridView: View {
                 .padding(16)
             }
             .background(Color(.systemGroupedBackground))
-            .navigationTitle("\(paneState.panes.count) Pane\(paneState.panes.count == 1 ? "" : "s")")
+            .navigationTitle("\(paneState.panes.count) Tab\(paneState.panes.count == 1 ? "" : "s")")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Menu {
-                        Button {
-                            addTerminal()
-                        } label: {
-                            Label("New Terminal", systemImage: "terminal")
-                        }
+                    Button {
+                        addTab()
                     } label: {
                         Image(systemName: "plus")
                     }
-                    .accessibilityLabel("Add pane")
+                    .accessibilityLabel("New tab")
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }
                 }
             }
         }
-    }
-
-    private func title(for pane: PaneDescriptorState) -> String {
-        pane.kind == .chat ? (sessionTitle.isEmpty ? "New Chat" : sessionTitle) : pane.name
-    }
-
-    /// The workspace's chat pane is its anchor — it can't be closed here
-    /// (archiving a chat is a workspace-list action, as on macOS).
-    private func closablePane(_ pane: PaneDescriptorState) -> Bool {
-        pane.kind != .chat
     }
 
     private func select(_ pane: PaneDescriptorState) {
@@ -284,6 +409,8 @@ private struct PaneGridView: View {
         dismiss()
     }
 
+    /// Any tab can close — chats included, as on macOS. The binding's owner
+    /// backfills a New Tab page if the last one goes.
     private func close(_ pane: PaneDescriptorState) {
         var state = paneState
         state.panes.removeAll { $0.id == pane.id }
@@ -294,9 +421,11 @@ private struct PaneGridView: View {
         PaneSnapshotCache.shared.images[pane.id] = nil
     }
 
-    private func addTerminal() {
+    /// Instant new tab, macOS-style: no menu — the page itself offers what
+    /// the tab becomes.
+    private func addTab() {
         var state = paneState
-        state.addTerminalPane(sessionId: sessionId, cwdOverride: cwd)
+        state.addNewTabPane(inheritedCwd: cwd)
         paneState = state
         dismiss()
     }
@@ -308,7 +437,6 @@ private struct PaneCard: View {
     let pane: PaneDescriptorState
     let title: String
     let isActive: Bool
-    let canClose: Bool
     let onSelect: () -> Void
     let onClose: () -> Void
 
@@ -317,48 +445,57 @@ private struct PaneCard: View {
     }
 
     private var symbolName: String {
-        pane.kind == .terminal ? "terminal" : "bubble.left.and.bubble.right"
+        switch pane.kind {
+        case .terminal: "terminal"
+        case .chat: "bubble.left.and.bubble.right"
+        case .newTab: "plus.square.on.square"
+        }
     }
 
     var body: some View {
         VStack(spacing: 8) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 18)
+            ZStack(alignment: .top) {
+                RoundedRectangle(cornerRadius: 16)
                     .fill(pane.kind == .terminal ? Color.black : Color(.secondarySystemGroupedBackground))
                 if let snapshot {
                     Image(uiImage: snapshot)
                         .resizable()
                         .aspectRatio(contentMode: .fill)
+                        .frame(maxWidth: .infinity)
                 } else {
-                    Image(systemName: symbolName)
-                        .font(.system(size: 30, weight: .light))
-                        .foregroundStyle(pane.kind == .terminal ? Color.white.opacity(0.6) : Color.secondary)
+                    VStack {
+                        Spacer()
+                        Image(systemName: symbolName)
+                            .font(.system(size: 28, weight: .light))
+                            .foregroundStyle(pane.kind == .terminal ? Color.white.opacity(0.6) : Color.secondary)
+                        Spacer()
+                    }
                 }
             }
-            .aspectRatio(0.62, contentMode: .fit)
-            .clipShape(RoundedRectangle(cornerRadius: 18))
+            // Shorter Safari-like cards: previews are pictures, not the
+            // whole screen.
+            .aspectRatio(0.78, contentMode: .fit)
+            .clipShape(RoundedRectangle(cornerRadius: 16))
             .overlay(
-                RoundedRectangle(cornerRadius: 18)
+                RoundedRectangle(cornerRadius: 16)
                     .strokeBorder(
                         isActive ? Color.accentColor : Color.primary.opacity(0.1),
                         lineWidth: isActive ? 2.5 : 1
                     )
             )
             .overlay(alignment: .topTrailing) {
-                if canClose {
-                    Button(action: onClose) {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 11, weight: .bold))
-                            .foregroundStyle(.primary)
-                            .frame(width: 26, height: 26)
-                            .background(.regularMaterial, in: Circle())
-                    }
-                    .buttonStyle(.plain)
-                    .padding(7)
-                    .accessibilityLabel("Close \(title)")
+                Button(action: onClose) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(.primary)
+                        .frame(width: 26, height: 26)
+                        .background(.regularMaterial, in: Circle())
                 }
+                .buttonStyle(.plain)
+                .padding(7)
+                .accessibilityLabel("Close \(title)")
             }
-            .contentShape(RoundedRectangle(cornerRadius: 18))
+            .contentShape(RoundedRectangle(cornerRadius: 16))
             .onTapGesture { onSelect() }
 
             HStack(spacing: 5) {
@@ -371,7 +508,7 @@ private struct PaneCard: View {
             }
         }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(title) pane")
+        .accessibilityLabel("\(title) tab")
         .accessibilityAddTraits(.isButton)
     }
 }

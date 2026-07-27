@@ -47,6 +47,7 @@ struct HomeView: View {
     @AppStorage("sidebar.order") private var orderRaw = HomeOrder.updated.rawValue
     @AppStorage("sidebar.manualSessionOrder") private var manualSessionOrder = ""
     @State private var isShowingSettings = false
+    @State private var isManagingMachines = false
     @State private var isStartingWorkspace = false
     @State private var path: [UUID] = []
 
@@ -110,7 +111,12 @@ struct HomeView: View {
             }
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) { settingsButton }
+                // One glass group on the left: settings, then the machine
+                // picker, mirroring the macOS toolbar's machine menu.
+                ToolbarItemGroup(placement: .topBarLeading) {
+                    settingsButton
+                    machineMenu
+                }
                 ToolbarItem(placement: .topBarTrailing) { organizeMenu }
             }
             .safeAreaInset(edge: .bottom) { newWorkspaceButton }
@@ -122,6 +128,17 @@ struct HomeView: View {
             }
             .sheet(isPresented: $isShowingSettings) {
                 SettingsSheet()
+            }
+            .sheet(isPresented: $isManagingMachines) {
+                NavigationStack {
+                    MachinesSettingsScreen()
+                        .toolbar {
+                            ToolbarItem(placement: .confirmationAction) {
+                                Button("Done") { isManagingMachines = false }
+                            }
+                        }
+                }
+                .presentationDragIndicator(.visible)
             }
             .sheet(isPresented: $isStartingWorkspace) {
                 NewWorkspaceSheet { session in
@@ -203,6 +220,34 @@ struct HomeView: View {
             Image(systemName: "gearshape")
         }
         .accessibilityLabel("Settings")
+    }
+
+    /// The machine picker, as on macOS: paired machines with the selection
+    /// checked, then Manage Machines at the bottom.
+    private var machineMenu: some View {
+        Menu {
+            ForEach(machines.machines.filter { !$0.isLocal }) { machine in
+                Button {
+                    machines.selectMachine(machine.id)
+                    Task { await environment.prepareSelectedMachine() }
+                } label: {
+                    if machine.id == machines.selectedMachineId {
+                        Label(machine.name, systemImage: "checkmark")
+                    } else {
+                        Text(machine.name)
+                    }
+                }
+            }
+            Divider()
+            Button {
+                isManagingMachines = true
+            } label: {
+                Label("Manage Machines…", systemImage: "desktopcomputer")
+            }
+        } label: {
+            Image(systemName: machines.selectedMachine.resolvedAppearance.symbolName)
+        }
+        .accessibilityLabel("Machine: \(machines.selectedMachine.name)")
     }
 
     /// The macOS sidebar's organize menu: Organization and Order pickers,
