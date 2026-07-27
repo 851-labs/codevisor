@@ -44,21 +44,14 @@ struct SessionTranscriptView: View {
 
     var body: some View {
         Group {
-            if let model = controller.model {
-                transcript(model)
-            } else if case let .failed(message) = controller.status {
+            if controller.model == nil, case let .failed(message) = controller.status {
                 ContentUnavailableView {
                     Label("Couldn't Connect", systemImage: "bolt.slash")
                 } description: {
                     Text(message)
                 }
             } else {
-                // No model yet: a draft (new-worktree chats deliberately
-                // don't connect until first send) or a connect in flight.
-                // Either way the composer stays usable and any connecting
-                // state reads as an inline hint, like the macOS new-chat
-                // page — never a full-screen mode change.
-                draft
+                chat
             }
         }
         .onAppear {
@@ -72,57 +65,25 @@ struct SessionTranscriptView: View {
         .environment(\.attachmentImages, attachmentImages)
     }
 
-    /// The model-less chat: brand mark centered in the visible area, the
-    /// composer ready at the bottom, and a small status line while a connect
-    /// attempt runs.
-    private var draft: some View {
-        ZStack(alignment: .bottom) {
-            Image("hunk")
-                .resizable()
-                .renderingMode(.template)
-                .scaledToFit()
-                .frame(width: 130)
-                .foregroundStyle(Color.primary.opacity(0.08))
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-                .padding(.bottom, composerHeight + 20)
-                .allowsHitTesting(false)
-
-            VStack(spacing: 8) {
-                if case let .connecting(message) = controller.status {
-                    HStack(spacing: 6) {
-                        ProgressView()
-                            .controlSize(.small)
-                        Text(message)
-                    }
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                }
-                ComposerBar(
-                    controller: controller,
-                    maxHeight: availableHeight - 88,
-                    collapsedHeight: $composerHeight
-                )
-            }
-            .padding(.horizontal, 10)
-            .padding(.bottom, 6)
-        }
-        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
-            availableHeight = height
-        }
-        .onChange(of: composerHeight, initial: true) { _, height in
-            PaneSnapshotCache.shared.activeBottomChrome = height + 6
-        }
-        .background(Color(.systemGroupedBackground))
+    /// The watermark shows while there's nothing to read: a model-less draft
+    /// (new-worktree chats deliberately don't connect until first send) or an
+    /// empty conversation.
+    private var showsWatermark: Bool {
+        guard let model = controller.model else { return true }
+        return model.settledConversation.isEmpty && model.activeItem == nil
     }
 
-    private func transcript(_ model: SessionModel) -> some View {
+    /// One chat surface for every connection state. The composer is mounted
+    /// exactly once — reconnects (run-location changes, harness switches)
+    /// swap only the content behind it, so drafts keep their text, focus,
+    /// and attachments, just like the macOS composer. Connecting reads as an
+    /// inline status line, never a screen takeover.
+    private var chat: some View {
         // Deliberately not wrapped in a GeometryReader: that opts the subtree
         // out of SwiftUI's keyboard avoidance, which left the composer sitting
         // underneath the keyboard.
         ZStack(alignment: .bottom) {
-            // The brand mark sits faintly behind an empty chat and leaves as
-            // soon as there's any history.
-            if model.settledConversation.isEmpty, model.activeItem == nil {
+            if showsWatermark {
                 Image("hunk")
                     .resizable()
                     .renderingMode(.template)
@@ -137,10 +98,21 @@ struct SessionTranscriptView: View {
                     .allowsHitTesting(false)
                     .transition(.opacity)
             }
-            transcriptScroll(model)
+            if let model = controller.model {
+                transcriptScroll(model)
+            }
 
             VStack(spacing: 8) {
-                if !isAtBottom {
+                if controller.model == nil, case let .connecting(message) = controller.status {
+                    HStack(spacing: 6) {
+                        ProgressView()
+                            .controlSize(.small)
+                        Text(message)
+                    }
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                }
+                if controller.model != nil, !isAtBottom {
                     HStack {
                         Spacer()
                         scrollToBottomButton
@@ -150,11 +122,11 @@ struct SessionTranscriptView: View {
                     QuestionCardView(controller: controller, request: question)
                         .id(question.questionId)
                 }
-                    ComposerBar(
-                        controller: controller,
-                        maxHeight: availableHeight - 88,
-                        collapsedHeight: $composerHeight
-                    )
+                ComposerBar(
+                    controller: controller,
+                    maxHeight: availableHeight - 88,
+                    collapsedHeight: $composerHeight
+                )
             }
             .padding(.horizontal, 10)
             .padding(.bottom, 6)
