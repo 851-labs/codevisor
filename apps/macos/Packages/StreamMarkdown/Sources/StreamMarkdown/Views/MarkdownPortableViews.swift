@@ -12,11 +12,12 @@ struct MarkdownPortableTextRunView: View {
     @Environment(\.markdownTheme) private var theme
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: theme.blockSpacing) {
             ForEach(Array(blocks.enumerated()), id: \.element.id) { _, block in
                 blockView(block)
             }
         }
+        .lineSpacing(theme.lineSpacing)
         .foregroundStyle(foregroundColor)
     }
 
@@ -28,13 +29,13 @@ struct MarkdownPortableTextRunView: View {
                 .font(headingFont(level))
                 .bold()
         case let .paragraph(text):
-            Text(InlineMarkdown.attributedString(from: text, theme: theme))
+            portableInlineText(text, theme: theme)
         case let .bulletList(items):
             VStack(alignment: .leading, spacing: 4) {
                 ForEach(Array(items.enumerated()), id: \.offset) { _, item in
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
                         Text("•")
-                        Text(InlineMarkdown.attributedString(from: item, theme: theme))
+                        portableInlineText(item, theme: theme)
                     }
                 }
             }
@@ -44,7 +45,7 @@ struct MarkdownPortableTextRunView: View {
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
                         Text("\(item.number).")
                             .monospacedDigit()
-                        Text(InlineMarkdown.attributedString(from: item.text, theme: theme))
+                        portableInlineText(item.text, theme: theme)
                     }
                 }
             }

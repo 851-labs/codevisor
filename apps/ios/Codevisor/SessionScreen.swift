@@ -199,7 +199,7 @@ struct SessionTranscriptView: View {
     private func transcriptScroll(_ model: SessionModel) -> some View {
         ScrollViewReader { scroller in
             ScrollView {
-            LazyVStack(alignment: .leading, spacing: 16) {
+            LazyVStack(alignment: .leading, spacing: 20) {
                 if model.hasOlderHistory {
                     // Older pages load themselves as the top scrolls into
                     // view, matching the macOS transcript's near-top trigger.
@@ -253,6 +253,10 @@ struct SessionTranscriptView: View {
             viewportHeight = height
         }
         .scrollPosition($scrollPosition)
+        // The lazy stack's estimated row heights make the indicator grow and
+        // shrink as content materializes; hide it until the virtualizer
+        // provides stable content sizing.
+        .scrollIndicators(.hidden)
         .defaultScrollAnchor(.bottom)
         .scrollDismissesKeyboard(.interactively)
         .environment(\.transcriptDisclosure, disclosure)

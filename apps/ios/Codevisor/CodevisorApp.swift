@@ -16,6 +16,9 @@ struct CodevisorApp: App {
     var body: some Scene {
         WindowGroup {
             HomeView()
+                // Order matters: ThemedRoot reads AppEnvironment, so the
+                // environment injection must wrap it (i.e. come after).
+                .modifier(ThemedRoot())
                 .environment(environment)
                 .preferredColorScheme(colorScheme)
                 .task { await bootstrap() }
