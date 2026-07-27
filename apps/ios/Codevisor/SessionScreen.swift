@@ -83,6 +83,13 @@ private struct SessionTranscriptView: View {
     /// so a short conversation starts at the top instead of floating at the
     /// bottom of the viewport.
     @State private var viewportHeight: CGFloat = 0
+    /// Fetches and caches transcript attachment previews via the controller's
+    /// authenticated client.
+    @State private var attachmentImages: AttachmentImageStore?
+    /// Edge-based scrolling for follow mode: unlike ScrollViewReader's
+    /// id-targeted scrollTo, scrolling to an edge works even when the bottom
+    /// rows haven't been laid out by the lazy stack yet.
+    @State private var scrollPosition = ScrollPosition()
 
     var body: some View {
         Group {
@@ -105,6 +112,15 @@ private struct SessionTranscriptView: View {
         }
         .navigationTitle(controller.serverSession?.title ?? "Chat")
         .navigationBarTitleDisplayMode(.inline)
+        .onAppear {
+            if attachmentImages == nil {
+                attachmentImages = AttachmentImageStore { [weak controller] fileId in
+                    guard let controller else { throw SessionControllerError.serverUnavailable }
+                    return try await controller.fileData(id: fileId)
+                }
+            }
+        }
+        .environment(\.attachmentImages, attachmentImages)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
@@ -207,18 +223,18 @@ private struct SessionTranscriptView: View {
             ScrollView {
             LazyVStack(alignment: .leading, spacing: 16) {
                 if model.hasOlderHistory {
-                    Button {
-                        Task { await model.loadOlderHistory() }
-                    } label: {
-                        if model.isLoadingOlderHistory {
-                            ProgressView()
-                        } else {
-                            Text("Load Earlier")
-                                .font(.footnote)
-                        }
+                    // Older pages load themselves as the top scrolls into
+                    // view, matching the macOS transcript's near-top trigger.
+                    HStack {
+                        Spacer()
+                        ProgressView()
+                        Spacer()
                     }
-                    .frame(maxWidth: .infinity)
-                    .buttonStyle(.bordered)
+                    .frame(height: 36)
+                    .onScrollVisibilityChange(threshold: 0.1) { visible in
+                        guard visible else { return }
+                        loadOlderHistory(model, scroller)
+                    }
                 }
 
                 ForEach(model.settledConversation) { item in
@@ -248,6 +264,7 @@ private struct SessionTranscriptView: View {
         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
             viewportHeight = height
         }
+        .scrollPosition($scrollPosition)
         .defaultScrollAnchor(.bottom)
         .scrollDismissesKeyboard(.interactively)
         .environment(\.transcriptDisclosure, disclosure)
@@ -271,6 +288,21 @@ private struct SessionTranscriptView: View {
         }
     }
 
+    /// Fetches the next page of history and re-anchors the previously-topmost
+    /// item to the top of the viewport, so the prepended rows land above the
+    /// fold instead of shoving the visible content down (and so the sentinel
+    /// scrolls out of view rather than chain-loading every page).
+    private func loadOlderHistory(_ model: SessionModel, _ scroller: ScrollViewProxy) {
+        guard model.hasOlderHistory, !model.isLoadingOlderHistory else { return }
+        let anchorId = model.settledConversation.first?.id
+        Task {
+            await model.loadOlderHistory()
+            if let anchorId {
+                scroller.scrollTo(anchorId, anchor: .top)
+            }
+        }
+    }
+
     private func scrollToBottomIfFollowing(_ scroller: ScrollViewProxy) {
         guard followsLatest else { return }
         scrollToBottom(scroller, animated: true)
@@ -279,10 +311,10 @@ private struct SessionTranscriptView: View {
     private func scrollToBottom(_ scroller: ScrollViewProxy, animated: Bool) {
         if animated {
             withAnimation(.snappy(duration: 0.25)) {
-                scroller.scrollTo(Self.bottomAnchor, anchor: .bottom)
+                scrollPosition.scrollTo(edge: .bottom)
             }
         } else {
-            scroller.scrollTo(Self.bottomAnchor, anchor: .bottom)
+            scrollPosition.scrollTo(edge: .bottom)
         }
     }
 }
@@ -300,16 +332,21 @@ private struct ConversationItemRow: View {
         case let .user(message):
             HStack {
                 Spacer(minLength: 40)
-                VStack(alignment: .trailing, spacing: 6) {
+                VStack(alignment: .trailing, spacing: 8) {
                     if !message.attachments.isEmpty {
-                        Text("\(message.attachments.count) attachment\(message.attachments.count == 1 ? "" : "s")")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
+                        // Thumbnails above the bubble, as on macOS.
+                        HStack(spacing: 8) {
+                            ForEach(message.attachments) { attachment in
+                                AttachmentThumbnailView(attachment: attachment)
+                            }
+                        }
                     }
-                    Text(message.text)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 9)
-                        .background(theme.bubbleBackground, in: RoundedRectangle(cornerRadius: 18))
+                    if !message.text.isEmpty {
+                        Text(message.text)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 9)
+                            .background(theme.bubbleBackground, in: RoundedRectangle(cornerRadius: 18))
+                    }
                 }
             }
         case let .assistant(message):

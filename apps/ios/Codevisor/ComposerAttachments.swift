@@ -139,14 +139,14 @@ private struct ComposerAttachmentChip: View {
             guard attachment.hasVisualPreview, thumbnail == nil else { return }
             let data = attachment.localData
             thumbnail = await Task.detached(priority: .userInitiated) {
-                UIImage(data: data)?.preparingThumbnail(of: CGSize(width: 120, height: 120))
+                UIImage(data: data)?.preparingThumbnail(of: CGSize(width: 320, height: 320))
             }.value
         }
     }
 
     private var thumbnailView: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 8)
+            RoundedRectangle(cornerRadius: 16)
                 .fill(Color.secondary.opacity(0.12))
             if let thumbnail {
                 Image(uiImage: thumbnail)
@@ -154,11 +154,12 @@ private struct ComposerAttachmentChip: View {
                     .aspectRatio(contentMode: .fill)
             } else {
                 Image(systemName: attachment.isVideo ? "video" : "photo")
+                    .font(.title3)
                     .foregroundStyle(.tertiary)
             }
         }
-        .frame(width: 44, height: 44)
-        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .frame(width: 96, height: 96)
+        .clipShape(RoundedRectangle(cornerRadius: 16))
         .opacity(isFailed ? 0.5 : 1)
         .accessibilityLabel(attachment.name)
     }
@@ -183,13 +184,16 @@ private struct ComposerAttachmentChip: View {
 
     private var removeButton: some View {
         Button(action: onRemove) {
-            Image(systemName: "xmark.circle.fill")
-                .font(.system(size: 15))
-                .symbolRenderingMode(.palette)
-                .foregroundStyle(Color.white, Color.black.opacity(0.55))
+            Image(systemName: "xmark")
+                .font(.system(size: 11, weight: .bold))
+                .foregroundStyle(.black)
+                .frame(width: 26, height: 26)
+                .background(Circle().fill(.white))
+                .shadow(color: .black.opacity(0.25), radius: 3, y: 1)
         }
         .buttonStyle(.plain)
-        .offset(x: 5, y: -5)
+        .padding(attachment.hasVisualPreview ? 6 : 0)
+        .offset(attachment.hasVisualPreview ? .zero : CGSize(width: 5, height: -5))
         .accessibilityLabel("Remove \(attachment.name)")
     }
 }
