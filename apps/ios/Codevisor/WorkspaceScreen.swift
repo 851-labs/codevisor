@@ -108,7 +108,10 @@ struct WorkspaceScreen: View {
     /// grows it out of its card (and shrinks it back), exactly like Photos
     /// and the App Store — no hand-rolled motion.
     @State private var showsPane = false
-    @State private var hasAutoPresentedPane = false
+    /// Entering from the workspaces list is plain navigation: the pane
+    /// renders inline so the push is the standard slide. The grid becomes
+    /// the base (and the pane a zoom cover) only once tabs are opened.
+    @State private var baseShowsGrid = false
     @Namespace private var paneZoom
 
     private let columns = [
@@ -154,12 +157,16 @@ struct WorkspaceScreen: View {
                 ContentUnavailableView("Chat Not Found", systemImage: "questionmark.bubble")
             } else if project == nil {
                 ProgressView()
-            } else {
+            } else if baseShowsGrid {
                 grid
+            } else if let pane = activePane {
+                // Entry mode: the pane inline, riding the normal push slide.
+                paneContent(pane)
+                    .id(pane.id)
             }
         }
         .navigationBarBackButtonHidden(true)
-        .navigationTitle("\(panes.panes.count) Tab\(panes.panes.count == 1 ? "" : "s")")
+        .navigationTitle(baseTitle)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
@@ -171,18 +178,36 @@ struct WorkspaceScreen: View {
                 .accessibilityLabel("Workspaces")
             }
             ToolbarItem(placement: .topBarTrailing) {
-                Button {
-                    addTab()
-                } label: {
-                    Image(systemName: "plus")
+                if baseShowsGrid {
+                    Button {
+                        addTab()
+                    } label: {
+                        Image(systemName: "plus")
+                    }
+                    .accessibilityLabel("New tab")
+                } else {
+                    Button {
+                        if let pane = activePane { showGridFromInline(pane) }
+                    } label: {
+                        Image(systemName: "square.on.square")
+                    }
+                    .accessibilityLabel("Show tabs")
                 }
-                .accessibilityLabel("New tab")
             }
         }
         .fullScreenCover(isPresented: $showsPane) {
             paneCover
         }
         .task { await prepare() }
+    }
+
+    private var baseTitle: String {
+        if baseShowsGrid {
+            return "\(panes.panes.count) Tab\(panes.panes.count == 1 ? "" : "s")"
+        }
+        guard let pane = activePane else { return "" }
+        // Chat panes hide the title so the transcript scrolls off the top.
+        return pane.kind == .chat ? "" : title(for: pane)
     }
 
     // MARK: - Tab grid (the workspace's base)
@@ -331,6 +356,28 @@ struct WorkspaceScreen: View {
         showsPane = false
     }
 
+    /// First grid opening from the inline (entry) pane: swap the grid in
+    /// underneath and re-host the pane as the zoom cover in one un-animated
+    /// step — the screen doesn't change — then dismiss the cover so the
+    /// system zoom shrinks the pane into its card.
+    private func showGridFromInline(_ pane: PaneDescriptorState) {
+        PaneSnapshotCache.shared.captureKeyWindow(
+            for: pane.id,
+            bottomChrome: pane.kind == .chat ? PaneSnapshotCache.shared.activeBottomChrome : 0
+        )
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            baseShowsGrid = true
+            showsPane = true
+        }
+        Task { @MainActor in
+            // Let the cover attach before asking it to animate away.
+            try? await Task.sleep(for: .milliseconds(80))
+            showsPane = false
+        }
+    }
+
     /// Back to the workspaces list: drop the pane cover without animation so
     /// the pop reads as one motion.
     private func leaveWorkspace() {
@@ -378,14 +425,6 @@ struct WorkspaceScreen: View {
             self.project = project
             serverConfig = environment.machines.machine(for: session.serverId)?.serverConfig
                 ?? environment.machines.selectedMachine.serverConfig
-        }
-        // Entering the workspace lands in its last-open tab, not the grid;
-        // the grid is one tap away. No animation: this rides the push.
-        if !hasAutoPresentedPane, activePane != nil {
-            hasAutoPresentedPane = true
-            var transaction = Transaction()
-            transaction.disablesAnimations = true
-            withTransaction(transaction) { showsPane = true }
         }
         await connectChat(sessionId: sessionId)
     }
