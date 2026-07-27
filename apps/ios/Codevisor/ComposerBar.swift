@@ -54,9 +54,9 @@ struct ComposerBar: View {
     /// visible handle — the whole card is draggable too.
     private var grabStrip: some View {
         Color.clear
-            .frame(height: 8)
+            .frame(height: 14)
             .frame(maxWidth: .infinity)
-            .contentShape(Rectangle().inset(by: -12))
+            .contentShape(Rectangle())
             .highPriorityGesture(expansionDrag)
             .accessibilityLabel(isExpanded ? "Collapse composer" : "Expand composer")
             .accessibilityAddTraits(.isButton)
@@ -87,7 +87,6 @@ struct ComposerBar: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            grabStrip
             if !controller.composerAttachments.isEmpty {
                 ComposerAttachmentStrip(controller: controller)
             }
@@ -151,8 +150,10 @@ struct ComposerBar: View {
             .font(.callout)
         }
         .padding(.horizontal, 14)
-        .padding(.top, 14)
-        .padding(.bottom, 12)
+        .padding(.vertical, 12)
+        // The drag strip overlays the card's top edge instead of sitting in
+        // the stack, so it costs no vertical space above the text.
+        .overlay(alignment: .top) { grabStrip }
         .composerGlassSurface(cornerRadius: ComposerGlassStyle.composerCornerRadius)
         // Resizing the card shouldn't ripple layout out into the transcript
         // behind it.
