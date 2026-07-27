@@ -104,7 +104,17 @@ struct WorkspaceScreen: View {
     @State private var serverConfig: CodevisorServerConfig?
     @State private var project: Project?
     @State private var paneState: PaneGroupState?
-    @State private var showsGrid = false
+    /// The active pane presents over the grid; the system zoom transition
+    /// grows it out of its card (and shrinks it back), exactly like Photos
+    /// and the App Store — no hand-rolled motion.
+    @State private var showsPane = false
+    @State private var hasAutoPresentedPane = false
+    @Namespace private var paneZoom
+
+    private let columns = [
+        GridItem(.flexible(), spacing: 14),
+        GridItem(.flexible(), spacing: 14)
+    ]
 
     private var panes: PaneGroupState {
         paneState ?? WorkspacePaneStore.shared.state(for: sessionId)
@@ -132,12 +142,6 @@ struct WorkspaceScreen: View {
         }
     }
 
-    /// Chat panes ask for a hidden nav title so the transcript can scroll
-    /// all the way off the top; other panes keep theirs.
-    private var hidesTitle: Bool {
-        activePane?.kind == .chat
-    }
-
     private var workspaceCwd: String {
         rootSession?.cwd
             ?? project?.folderURL.path
@@ -146,17 +150,16 @@ struct WorkspaceScreen: View {
 
     var body: some View {
         Group {
-            if let pane = activePane, project != nil {
-                paneContent(pane)
-                    .id(pane.id)
-            } else if missing {
+            if missing {
                 ContentUnavailableView("Chat Not Found", systemImage: "questionmark.bubble")
-            } else {
+            } else if project == nil {
                 ProgressView()
+            } else {
+                grid
             }
         }
         .navigationBarBackButtonHidden(true)
-        .navigationTitle(hidesTitle ? "" : (activePane.map(title(for:)) ?? "Workspace"))
+        .navigationTitle("\(panes.panes.count) Tab\(panes.panes.count == 1 ? "" : "s")")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
@@ -169,27 +172,75 @@ struct WorkspaceScreen: View {
             }
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
-                    openGrid()
+                    addTab()
                 } label: {
-                    Image(systemName: "square.on.square")
+                    Image(systemName: "plus")
                 }
-                .accessibilityLabel("Show tabs")
+                .accessibilityLabel("New tab")
             }
         }
-        // A cover with the system slide disabled: the grid animates its own
-        // Safari-style zoom (in from the active tab, out into the tapped
-        // one). Structural transitions inside the pushed view itself corrupt
-        // NavigationStack's transaction and pop the workspace.
-        .fullScreenCover(isPresented: $showsGrid) {
-            PaneGridView(
-                titleFor: { title(for: $0) },
-                cwd: workspaceCwd,
-                paneState: paneBinding,
-                onDismiss: { closeGrid() }
-            )
-            .presentationBackground(.clear)
+        .fullScreenCover(isPresented: $showsPane) {
+            paneCover
         }
         .task { await prepare() }
+    }
+
+    // MARK: - Tab grid (the workspace's base)
+
+    /// The Safari-style tab switcher: a two-column grid of pane previews with
+    /// close buttons. Each card is the zoom transition's source, so opening a
+    /// tab grows it out of its card.
+    private var grid: some View {
+        ScrollView {
+            LazyVGrid(columns: columns, spacing: 18) {
+                ForEach(panes.panes) { pane in
+                    PaneCard(
+                        pane: pane,
+                        title: title(for: pane),
+                        isActive: pane.id == panes.selectedPaneId,
+                        onSelect: { select(pane) },
+                        onClose: { close(pane) }
+                    )
+                    .matchedTransitionSource(id: pane.id, in: paneZoom)
+                }
+            }
+            .padding(16)
+        }
+        .background(Color(.systemGroupedBackground))
+    }
+
+    /// The presented pane: its own navigation bar (sidebar back, title,
+    /// tab-grid button), zooming from the selected card. Chat panes hide the
+    /// title so the transcript scrolls clear off the top.
+    @ViewBuilder
+    private var paneCover: some View {
+        if let pane = activePane {
+            NavigationStack {
+                paneContent(pane)
+                    .id(pane.id)
+                    .navigationTitle(pane.kind == .chat ? "" : title(for: pane))
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .topBarLeading) {
+                            Button {
+                                leaveWorkspace()
+                            } label: {
+                                Image(systemName: "sidebar.left")
+                            }
+                            .accessibilityLabel("Workspaces")
+                        }
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button {
+                                showGrid(from: pane)
+                            } label: {
+                                Image(systemName: "square.on.square")
+                            }
+                            .accessibilityLabel("Show tabs")
+                        }
+                    }
+            }
+            .navigationTransition(.zoom(sourceID: pane.id, in: paneZoom))
+        }
     }
 
     private var paneBinding: Binding<PaneGroupState> {
@@ -237,6 +288,58 @@ struct WorkspaceScreen: View {
         }
     }
 
+    // MARK: - Tab actions
+
+    private func select(_ pane: PaneDescriptorState) {
+        var state = panes
+        state.selectedPaneId = pane.id
+        paneBinding.wrappedValue = state
+        showsPane = true
+    }
+
+    /// Any tab can close — chats included, as on macOS. The binding's setter
+    /// backfills a New Tab page if the last one goes.
+    private func close(_ pane: PaneDescriptorState) {
+        var state = panes
+        state.panes.removeAll { $0.id == pane.id }
+        if state.selectedPaneId == pane.id {
+            state.selectedPaneId = state.panes.first?.id
+        }
+        paneBinding.wrappedValue = state
+        PaneSnapshotCache.shared.images[pane.id] = nil
+    }
+
+    /// Instant new tab, macOS-style: the page itself offers what the tab
+    /// becomes. Presented on the next tick so its card exists as the zoom
+    /// source.
+    private func addTab() {
+        var state = panes
+        state.addNewTabPane(inheritedCwd: workspaceCwd)
+        paneBinding.wrappedValue = state
+        Task { @MainActor in
+            showsPane = true
+        }
+    }
+
+    /// Snapshot the pane for its card, then let the system zoom shrink the
+    /// pane back into the grid.
+    private func showGrid(from pane: PaneDescriptorState) {
+        PaneSnapshotCache.shared.captureKeyWindow(
+            for: pane.id,
+            bottomChrome: pane.kind == .chat ? PaneSnapshotCache.shared.activeBottomChrome : 0
+        )
+        showsPane = false
+    }
+
+    /// Back to the workspaces list: drop the pane cover without animation so
+    /// the pop reads as one motion.
+    private func leaveWorkspace() {
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) { showsPane = false }
+        dismiss()
+    }
+
     /// The macOS new-tab conversion: the placeholder becomes a real pane in
     /// place. Chats are created eagerly as deferred sessions (the agent
     /// spawns on first send), exactly like the New Workspace flow.
@@ -259,38 +362,31 @@ struct WorkspaceScreen: View {
         paneBinding.wrappedValue = state
     }
 
-    private func openGrid() {
-        if let pane = activePane {
-            PaneSnapshotCache.shared.captureKeyWindow(
-                for: pane.id,
-                bottomChrome: pane.kind == .chat ? PaneSnapshotCache.shared.activeBottomChrome : 0
-            )
-        }
-        var transaction = Transaction()
-        transaction.disablesAnimations = true
-        withTransaction(transaction) { showsGrid = true }
-    }
-
-    private func closeGrid() {
-        var transaction = Transaction()
-        transaction.disablesAnimations = true
-        withTransaction(transaction) { showsGrid = false }
-    }
+    // MARK: - Connection
 
     private func prepare() async {
         if paneState == nil {
             paneState = WorkspacePaneStore.shared.state(for: sessionId)
         }
-        guard controllers[sessionId] == nil else { return }
-        guard let session = rootSession,
-              let project = environment.projectList.projects.first(where: { $0.id == session.projectId })
-        else {
-            missing = true
-            return
+        if controllers[sessionId] == nil {
+            guard let session = rootSession,
+                  let project = environment.projectList.projects.first(where: { $0.id == session.projectId })
+            else {
+                missing = true
+                return
+            }
+            self.project = project
+            serverConfig = environment.machines.machine(for: session.serverId)?.serverConfig
+                ?? environment.machines.selectedMachine.serverConfig
         }
-        self.project = project
-        serverConfig = environment.machines.machine(for: session.serverId)?.serverConfig
-            ?? environment.machines.selectedMachine.serverConfig
+        // Entering the workspace lands in its last-open tab, not the grid;
+        // the grid is one tap away. No animation: this rides the push.
+        if !hasAutoPresentedPane, activePane != nil {
+            hasAutoPresentedPane = true
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) { showsPane = true }
+        }
         await connectChat(sessionId: sessionId)
     }
 
@@ -374,129 +470,6 @@ private struct NewTabPaneView: View {
             .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16))
         }
         .buttonStyle(.plain)
-    }
-}
-
-// MARK: - Tab grid
-
-/// The Safari-style tab switcher: a two-column grid of pane previews with
-/// close buttons, plus + for an instant new tab.
-private struct PaneGridView: View {
-    let titleFor: (PaneDescriptorState) -> String
-    let cwd: String
-    @Binding var paneState: PaneGroupState
-    /// Called once the leave animation finishes; the parent drops the cover
-    /// without a system animation.
-    let onDismiss: () -> Void
-
-    /// Card centers in global space, for the zoom-out anchor.
-    @State private var cardFrames: [UUID: CGRect] = [:]
-    /// The grid's own Safari-style motion: scales in from slightly zoomed on
-    /// appear, and zooms out into the chosen card on leave.
-    @State private var entered = false
-    @State private var exitAnchor: UnitPoint = .center
-    @State private var exiting = false
-
-    private let columns = [
-        GridItem(.flexible(), spacing: 14),
-        GridItem(.flexible(), spacing: 14)
-    ]
-
-    var body: some View {
-        zoomContainer
-            .onAppear {
-                withAnimation(.easeOut(duration: 0.22)) { entered = true }
-            }
-    }
-
-    private var zoomContainer: some View {
-        gridNavigation
-            .scaleEffect(exiting ? 2.3 : (entered ? 1 : 1.08), anchor: exiting ? exitAnchor : .center)
-            .opacity(exiting ? 0 : (entered ? 1 : 0))
-    }
-
-    private var gridNavigation: some View {
-        NavigationStack {
-            ScrollView {
-                LazyVGrid(columns: columns, spacing: 18) {
-                    ForEach(paneState.panes) { pane in
-                        PaneCard(
-                            pane: pane,
-                            title: titleFor(pane),
-                            isActive: pane.id == paneState.selectedPaneId,
-                            onSelect: { select(pane) },
-                            onClose: { close(pane) }
-                        )
-                        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame in
-                            cardFrames[pane.id] = frame
-                        }
-                    }
-                }
-                .padding(16)
-            }
-            .background(Color(.systemGroupedBackground))
-            .navigationTitle("\(paneState.panes.count) Tab\(paneState.panes.count == 1 ? "" : "s")")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button {
-                        addTab()
-                    } label: {
-                        Image(systemName: "plus")
-                    }
-                    .accessibilityLabel("New tab")
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { leave(toward: anchor(for: paneState.selectedPaneId)) }
-                }
-            }
-        }
-    }
-
-    private func anchor(for paneId: UUID?) -> UnitPoint? {
-        guard let paneId, let frame = cardFrames[paneId],
-              let screen = UIApplication.shared.connectedScenes
-                  .compactMap({ ($0 as? UIWindowScene)?.screen.bounds }).first
-        else { return nil }
-        return UnitPoint(x: frame.midX / screen.width, y: frame.midY / screen.height)
-    }
-
-    /// Zooms the grid out into the chosen card, then hands off to the parent.
-    private func leave(toward anchor: UnitPoint?) {
-        exitAnchor = anchor ?? .center
-        withAnimation(.easeIn(duration: 0.26)) { exiting = true }
-        Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(280))
-            onDismiss()
-        }
-    }
-
-    private func select(_ pane: PaneDescriptorState) {
-        var state = paneState
-        state.selectedPaneId = pane.id
-        paneState = state
-        leave(toward: anchor(for: pane.id))
-    }
-
-    /// Any tab can close — chats included, as on macOS. The binding's owner
-    /// backfills a New Tab page if the last one goes.
-    private func close(_ pane: PaneDescriptorState) {
-        var state = paneState
-        state.panes.removeAll { $0.id == pane.id }
-        if state.selectedPaneId == pane.id {
-            state.selectedPaneId = state.panes.first?.id
-        }
-        paneState = state
-        PaneSnapshotCache.shared.images[pane.id] = nil
-    }
-
-    /// Instant new tab, macOS-style: no menu — the page itself offers what
-    /// the tab becomes.
-    private func addTab() {
-        var state = paneState
-        state.addNewTabPane(inheritedCwd: cwd)
-        paneState = state
-        leave(toward: nil)
     }
 }
 
