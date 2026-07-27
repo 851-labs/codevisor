@@ -34,17 +34,34 @@ Progress:
   computer use / Process code behind the `LocalServerControlling` seam;
   `CodevisorCore` builds and links on iOS; `swift:build:ios` is part of
   `bun run check`.
-- **Phase 2: in progress.** Done: `SessionController` (publicized) moved into
-  `CodevisorCore` with an injected `ChatNotificationDelivering` seam
-  (`ChatAttention*` types now shared); new `CodevisorUI` target with `Theme`
-  (platform-forked system colors), `Motion`, `MarkdownThemeAdapter`,
-  `CodeHighlightTheme`, `TranscriptEnvironment`; `StreamMarkdown` compiles for
-  iOS (AppKit view layer gated, interim pure-SwiftUI renderers for text
-  runs/tables/code scroll). Remaining: UIKit/TextKit 2 counterparts for the
-  StreamMarkdown views, row-view migration into `CodevisorUI`, and the
+- **Phase 2: mostly done.** `SessionController` (publicized) lives in
+  `CodevisorCore` with an injected `ChatNotificationDelivering` seam;
+  `CodevisorUI` holds `Theme` (platform-forked system colors), `Motion`, the
+  markdown/highlight adapters, transcript environment keys, the transcript row
+  views (`ToolCallRow`, `ToolGroupView`, `DiffView`, `PlanDocumentView`,
+  `TodoPanelView`, `GoalBannerView`, `MessageCopyButton`, disclosure chrome)
+  and their design-system foundations; `PlatformShims` provides
+  `OSColor`/`OSFont`/`OSImage`/`PlatformPasteboard`. `StreamMarkdown` compiles
+  for iOS (AppKit view layer gated; interim pure-SwiftUI renderers).
+  Remaining: UIKit/TextKit 2 counterparts for the StreamMarkdown views;
+  `AssistantTurnView`/`TranscriptItemsView`/attachment stack migration; the
   pane-factory seam that would unstrand `SessionStore`/`PaneGroupModel`
-  (deliberately deferred — `SessionStore` stays app-side until Phase 6's pane
-  model works lands).
+  (deferred to Phase 6).
+- **Phase 3: mostly done.** Machine picker, manual pairing (validated),
+  `codevisor://` deeplink handling, dev auto-pair from the launch environment,
+  the touch-native home screen (Agents/Projects grouping, status accents,
+  live event sync, pull-to-refresh), and worktree dev parity (per-worktree
+  bundle id, display name, and hash-colored springboard icon matching the
+  macOS derivation). Remaining: QR scanning, richer filters, settings v1,
+  Keychain token storage.
+- **Phase 4: read path shipped.** `SessionScreen` renders real transcripts
+  through the shared engine (verified against a live claude-code run on the
+  dev remote). Remaining: the `VirtualTranscriptLayout`-backed virtualizer,
+  worked-section collapsing, attachments/lightbox.
+- **Phase 5: core loop shipped.** Bottom-docked keyboard-riding composer with
+  shared send/stop/draft handling; verified prompt round-trip from the phone.
+  Remaining: attachments, model/mode pickers, question picker cards, the
+  swipe-up expanded editor, usage ring, new-chat flow.
 
 ---
 
