@@ -2,25 +2,25 @@ import CodevisorCore
 import SwiftTerm
 import SwiftUI
 
-/// The session terminal: the shell runs in the server's TerminalManager on
-/// the paired machine (surviving disconnects with scrollback replay); this
-/// screen is a renderer speaking the shared TerminalTransport protocol.
-/// SwiftTerm is the interim emulator surface — the GhosttyKit-for-iOS spike
-/// (plan Phase 7, Track A) can replace the view without touching transport.
-struct TerminalScreen: View {
-    let sessionId: String
+/// A terminal pane: the shell runs in the server's TerminalManager on the
+/// paired machine (surviving disconnects with scrollback replay); this view is
+/// a renderer speaking the shared TerminalTransport protocol. The terminal key
+/// follows the shared pane scheme (`sessionId` for the first terminal,
+/// `"<sessionUuid>:<paneUuid>"` for later panes), matching macOS. SwiftTerm is
+/// the interim emulator surface — the GhosttyKit-for-iOS spike (plan Phase 7,
+/// Track A) can replace the view without touching transport.
+struct TerminalPaneView: View {
+    let terminalKey: String
     let cwd: String
     let config: CodevisorServerConfig
 
     @State private var status: String?
 
     var body: some View {
-        TerminalHostView(sessionId: sessionId, cwd: cwd, config: config) { status in
+        TerminalHostView(terminalKey: terminalKey, cwd: cwd, config: config) { status in
             self.status = status
         }
         .ignoresSafeArea(.container, edges: .bottom)
-        .navigationTitle("Terminal")
-        .navigationBarTitleDisplayMode(.inline)
         .overlay(alignment: .bottom) {
             if let status {
                 Text(status)
@@ -36,7 +36,7 @@ struct TerminalScreen: View {
 }
 
 private struct TerminalHostView: UIViewRepresentable {
-    let sessionId: String
+    let terminalKey: String
     let cwd: String
     let config: CodevisorServerConfig
     let onStatus: (String?) -> Void
@@ -54,7 +54,7 @@ private struct TerminalHostView: UIViewRepresentable {
     func updateUIView(_ uiView: SwiftTerm.TerminalView, context: Context) {}
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(sessionId: sessionId, cwd: cwd, config: config, onStatus: onStatus)
+        Coordinator(terminalKey: terminalKey, cwd: cwd, config: config, onStatus: onStatus)
     }
 
     static func dismantleUIView(_ uiView: SwiftTerm.TerminalView, coordinator: Coordinator) {
@@ -64,7 +64,7 @@ private struct TerminalHostView: UIViewRepresentable {
 
     @MainActor
     final class Coordinator: NSObject, TerminalViewDelegate {
-        private let sessionId: String
+        private let terminalKey: String
         private let cwd: String
         private let config: CodevisorServerConfig
         private let onStatus: (String?) -> Void
@@ -72,8 +72,8 @@ private struct TerminalHostView: UIViewRepresentable {
         private weak var terminalView: SwiftTerm.TerminalView?
         private var opened = false
 
-        init(sessionId: String, cwd: String, config: CodevisorServerConfig, onStatus: @escaping (String?) -> Void) {
-            self.sessionId = sessionId
+        init(terminalKey: String, cwd: String, config: CodevisorServerConfig, onStatus: @escaping (String?) -> Void) {
+            self.terminalKey = terminalKey
             self.cwd = cwd
             self.config = config
             self.onStatus = onStatus
@@ -92,7 +92,7 @@ private struct TerminalHostView: UIViewRepresentable {
             let rows = max(2, terminal.rows)
             Task {
                 do {
-                    try await transport.open(sessionId: sessionId, cwd: cwd, cols: cols, rows: rows)
+                    try await transport.open(sessionId: terminalKey, cwd: cwd, cols: cols, rows: rows)
                     self.onStatus(nil)
                 } catch {
                     self.onStatus("Couldn't open \(config.baseURL.absoluteString): \(error.localizedDescription)")

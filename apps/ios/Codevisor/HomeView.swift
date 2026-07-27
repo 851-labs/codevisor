@@ -65,7 +65,7 @@ struct HomeView: View {
                 ToolbarItem(placement: .topBarTrailing) { filterMenu }
             }
             .navigationDestination(for: UUID.self) { sessionId in
-                SessionScreen(sessionId: sessionId)
+                WorkspaceScreen(sessionId: sessionId)
             }
             .refreshable {
                 await projectList.refreshFromServer()

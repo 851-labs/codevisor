@@ -4,69 +4,15 @@ import CodevisorUI
 import StreamMarkdown
 import SwiftUI
 
-/// The iOS chat screen (read path, Phase 4 first slice): connects an existing
-/// session through the shared SessionController/SessionModel engine and
-/// renders the transcript with the shared row views. A plain bottom-anchored
-/// LazyVStack for now; the VirtualTranscriptLayout-backed virtualizer replaces
-/// the scroll host as this phase completes. Composer arrives with Phase 5.
-struct SessionScreen: View {
-    @Environment(AppEnvironment.self) private var environment
-    let sessionId: UUID
-
-    @State private var controller: SessionController?
-    @State private var missing = false
-    /// Resolved once from the session's machine: the controller's
-    /// `serverSession` is replaced by server-echoed payloads during connect,
-    /// so its serverId is not a reliable lookup key later on.
-    @State private var serverConfig: CodevisorServerConfig?
-
-    var body: some View {
-        Group {
-            if let controller {
-                SessionTranscriptView(controller: controller, serverConfig: serverConfig)
-            } else if missing {
-                ContentUnavailableView("Chat Not Found", systemImage: "questionmark.bubble")
-            } else {
-                ProgressView()
-            }
-        }
-        .task { await prepare() }
-    }
-
-    private func prepare() async {
-        guard controller == nil else { return }
-        guard let session = environment.projectList.sessions.first(where: { $0.id == sessionId }),
-              let project = environment.projectList.projects.first(where: { $0.id == session.projectId })
-        else {
-            missing = true
-            return
-        }
-        serverConfig = environment.machines.machine(for: session.serverId)?.serverConfig
-            ?? environment.machines.selectedMachine.serverConfig
-        let controller = SessionController(
-            project: project,
-            configCache: environment.configCache,
-            composerDefaults: environment.composerDefaults,
-            serverClient: environment.machines.client(for: session.serverId)
-        )
-        controller.configureExistingSession(session)
-        self.controller = controller
-        if session.agentSessionId?.isEmpty != false {
-            // A fresh chat: no agent exists yet. Load harness capabilities so
-            // the composer validates; the agent spawns on the first send.
-            await controller.prepare()
-            controller.applyComposerDefaults()
-        }
-        await controller.connectIfNeeded()
-    }
-}
-
-/// The transcript body for a connected controller.
-private struct SessionTranscriptView: View {
+/// The chat pane body: connects an existing session through the shared
+/// SessionController/SessionModel engine and renders the transcript with the
+/// shared row views. Hosted by WorkspaceScreen, which owns the navigation
+/// chrome; the VirtualTranscriptLayout-backed virtualizer replaces the scroll
+/// host as Phase 4 completes.
+struct SessionTranscriptView: View {
     @Bindable var controller: SessionController
     let serverConfig: CodevisorServerConfig?
     @State private var disclosure = TranscriptDisclosureStore()
-    @State private var showsTerminal = false
     /// The composer's resting height, used to size the transcript's bottom
     /// spacer and the mask that sits under the card.
     @State private var composerHeight: CGFloat = 96
@@ -110,8 +56,6 @@ private struct SessionTranscriptView: View {
                 }
             }
         }
-        .navigationTitle(controller.serverSession?.title ?? "Chat")
-        .navigationBarTitleDisplayMode(.inline)
         .onAppear {
             if attachmentImages == nil {
                 attachmentImages = AttachmentImageStore { [weak controller] fileId in
@@ -121,25 +65,6 @@ private struct SessionTranscriptView: View {
             }
         }
         .environment(\.attachmentImages, attachmentImages)
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button {
-                    showsTerminal = true
-                } label: {
-                    Image(systemName: "terminal")
-                }
-                .disabled(controller.serverSession == nil || serverConfig == nil)
-            }
-        }
-        .navigationDestination(isPresented: $showsTerminal) {
-            if let session = controller.serverSession, let serverConfig {
-                TerminalScreen(
-                    sessionId: session.id.uuidString,
-                    cwd: session.cwd ?? controller.project.folderURL.path,
-                    config: serverConfig
-                )
-            }
-        }
     }
 
     private func transcript(_ model: SessionModel) -> some View {
