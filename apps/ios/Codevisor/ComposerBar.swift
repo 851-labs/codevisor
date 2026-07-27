@@ -27,13 +27,11 @@ struct ComposerBar: View {
     /// Measured height of the text itself, used for the collapsed size and as
     /// the starting point of a drag.
     @State private var measuredTextHeight: CGFloat = 0
-    /// Explicit editor height while dragging or expanded; nil = collapsed.
-    @State private var editorHeightOverride: CGFloat?
-    @State private var dragStartHeight: CGFloat?
-    @State private var dragStartExpanded = false
-    @State private var collapseTask: Task<Void, Never>?
     @State private var isExpanded = false
-    @State private var isDragging = false
+    /// Live drag offset. GestureState resets itself when the gesture ends or is
+    /// cancelled, so the height can't be left stale by a race, and dragging
+    /// doesn't write view state on every frame.
+    @GestureState private var dragTranslation: CGFloat = 0
     @State private var photoItems: [PhotosPickerItem] = []
     @State private var isPickingPhotos = false
     @State private var isPickingFiles = false
@@ -50,20 +48,6 @@ struct ComposerBar: View {
             && controller.configurationValidationState == .ready
     }
 
-    /// An invisible strip across the top of the card that owns the expand
-    /// gesture, so dragging never fights the editor's own scrolling. No
-    /// visible handle — the whole card is draggable too.
-    private var grabStrip: some View {
-        Color.clear
-            .frame(height: 20)
-            .frame(maxWidth: .infinity)
-            .contentShape(Rectangle())
-            .highPriorityGesture(expansionDrag)
-            .accessibilityLabel(isExpanded ? "Collapse composer" : "Expand composer")
-            .accessibilityAddTraits(.isButton)
-            .accessibilityAction { setExpanded(!isExpanded) }
-    }
-
     private static let minEditorHeight: CGFloat = 22
     private static let collapsedMaxEditorHeight: CGFloat = 132
     /// Chrome around the editor inside the card: paddings, toolbar row, and
@@ -78,8 +62,13 @@ struct ComposerBar: View {
         max(Self.collapsedMaxEditorHeight, maxHeight - Self.cardChromeHeight)
     }
 
+    /// Where the card rests when no drag is in flight.
+    private var baseEditorHeight: CGFloat {
+        isExpanded ? maxEditorHeight : collapsedEditorHeight
+    }
+
     private var editorHeight: CGFloat {
-        editorHeightOverride ?? collapsedEditorHeight
+        min(maxEditorHeight, max(collapsedEditorHeight, baseEditorHeight - dragTranslation))
     }
 
     private var placeholder: String {
@@ -120,6 +109,8 @@ struct ComposerBar: View {
                         .disabled(controller.isSubmitting || controller.isResolvingQuestion)
                         .frame(maxWidth: .infinity, alignment: .topLeading)
                 }
+                // Scrolling stays off unless the text really overflows, so a
+                // drag on the card is never swallowed by the editor.
                 .scrollDisabled(editorHeight >= measuredTextHeight)
                 .frame(height: editorHeight)
 
@@ -149,21 +140,23 @@ struct ComposerBar: View {
                 }
             }
             .font(.callout)
-            .contentShape(Rectangle())
-            .gesture(expansionDrag)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
-        // The drag strip overlays the card's top edge instead of sitting in
-        // the stack, so it costs no vertical space above the text.
-        .overlay(alignment: .top) { grabStrip }
         .composerGlassSurface(cornerRadius: ComposerGlassStyle.composerCornerRadius)
+        .contentShape(Rectangle())
+        // A single owner for the whole card: dragging works anywhere on it,
+        // and no two recognizers can fight over one touch.
+        .simultaneousGesture(expansionDrag)
+        .accessibilityAction(named: isExpanded ? "Collapse composer" : "Expand composer") {
+            setExpanded(!isExpanded)
+        }
         // Resizing the card shouldn't ripple layout out into the transcript
         // behind it.
         .geometryGroup()
         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
             // Publish only the resting size; see `collapsedHeight`.
-            if editorHeightOverride == nil { collapsedHeight = height }
+            if !isExpanded, dragTranslation == 0 { collapsedHeight = height }
         }
         .onAppear { text = controller.composerText }
         .onDisappear { controller.composerText = text }
@@ -195,46 +188,31 @@ struct ComposerBar: View {
         }
     }
 
-    /// Drag the card open and closed: the top edge follows the finger, and
-    /// release snaps to fully expanded or collapsed based on where the
-    /// gesture was heading.
+    /// Drag the card open and closed from anywhere on it: the top edge
+    /// follows the finger, and releasing snaps to fully expanded or collapsed
+    /// based on where the gesture was heading.
     private var expansionDrag: some Gesture {
-        DragGesture(minimumDistance: 10)
-            .onChanged { value in
-                let start = dragStartHeight ?? editorHeight
-                if dragStartHeight == nil {
-                    collapseTask?.cancel()
-                    collapseTask = nil
-                    dragStartHeight = start
-                    dragStartExpanded = isExpanded
-                    isDragging = true
-                }
-                editorHeightOverride = min(
-                    maxEditorHeight,
-                    max(collapsedEditorHeight, start - value.translation.height)
-                )
+        DragGesture(minimumDistance: 8)
+            .updating($dragTranslation) { value, translation, _ in
+                translation = value.translation.height
             }
             .onEnded { value in
-                let start = dragStartHeight ?? editorHeight
-                dragStartHeight = nil
-                isDragging = false
+                let base = baseEditorHeight
                 let height = min(
                     maxEditorHeight,
-                    max(collapsedEditorHeight, start - value.translation.height)
+                    max(collapsedEditorHeight, base - value.translation.height)
                 )
                 // A flick commits on velocity alone; otherwise a short pull
-                // away from the current state is enough. Both are measured
-                // against where the drag started, so neither direction needs a
-                // long drag to take effect.
+                // away from the resting state is enough.
                 let velocity = value.velocity.height
-                let travelled = height - start
+                let travelled = height - base
                 let commitDistance: CGFloat = 56
                 let shouldExpand: Bool
                 if velocity < -220 {
                     shouldExpand = true
                 } else if velocity > 220 {
                     shouldExpand = false
-                } else if dragStartExpanded {
+                } else if isExpanded {
                     shouldExpand = travelled > -commitDistance
                 } else {
                     shouldExpand = travelled > commitDistance
@@ -244,20 +222,8 @@ struct ComposerBar: View {
     }
 
     private func setExpanded(_ expand: Bool) {
-        isExpanded = expand
         withAnimation(.snappy(duration: 0.28)) {
-            editorHeightOverride = expand ? maxEditorHeight : collapsedEditorHeight
-        }
-        collapseTask?.cancel()
-        if !expand {
-            // Hand sizing back to the content once the collapse lands, so the
-            // card resumes growing with the text. Cancelled if another drag
-            // starts first, so it can't clear a height mid-gesture.
-            collapseTask = Task {
-                try? await Task.sleep(for: .milliseconds(300))
-                guard !Task.isCancelled, !isExpanded else { return }
-                editorHeightOverride = nil
-            }
+            isExpanded = expand
         }
     }
 
@@ -304,8 +270,7 @@ struct ComposerBar: View {
             text = ""
             controller.composerText = outgoing
             isFocused = false
-            isExpanded = false
-            withAnimation(.snappy(duration: 0.25)) { editorHeightOverride = nil }
+            setExpanded(false)
             Task { await controller.send() }
         } label: {
             Image(systemName: "arrow.up")
