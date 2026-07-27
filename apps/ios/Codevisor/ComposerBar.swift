@@ -1,6 +1,7 @@
 import ACPKit
 import CodevisorCore
 import CodevisorUI
+import PhotosUI
 import SwiftUI
 
 /// The iOS composer, matching the macOS composer's structure: the input on its
@@ -16,13 +17,17 @@ struct ComposerBar: View {
     @Bindable var controller: SessionController
     @FocusState private var isFocused: Bool
     @State private var text = ""
+    @State private var photoItems: [PhotosPickerItem] = []
+    @State private var isPickingPhotos = false
+    @State private var isPickingFiles = false
+    @State private var isCapturingPhoto = false
 
     private var trimmed: String {
         text.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private var canSend: Bool {
-        !trimmed.isEmpty
+        (!trimmed.isEmpty || !controller.composerAttachments.isEmpty)
             && !controller.isSubmitting
             && !controller.isConnecting
             && controller.configurationValidationState == .ready
@@ -34,6 +39,9 @@ struct ComposerBar: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
+            if !controller.composerAttachments.isEmpty {
+                ComposerAttachmentStrip(controller: controller)
+            }
             if let message = controller.configurationValidationError {
                 Label(message, systemImage: "exclamationmark.triangle")
                     .font(.caption)
@@ -82,14 +90,59 @@ struct ComposerBar: View {
         .composerGlassSurface(cornerRadius: ComposerGlassStyle.composerCornerRadius)
         .onAppear { text = controller.composerText }
         .onDisappear { controller.composerText = text }
+        .photosPicker(
+            isPresented: $isPickingPhotos,
+            selection: $photoItems,
+            maxSelectionCount: remainingAttachmentSlots,
+            matching: .any(of: [.images, .videos])
+        )
+        .onChange(of: photoItems) { _, items in
+            guard !items.isEmpty else { return }
+            let picked = items
+            photoItems = []
+            Task { await ComposerAttachmentStaging.stage(photoItems: picked, into: controller) }
+        }
+        .fileImporter(
+            isPresented: $isPickingFiles,
+            allowedContentTypes: [.item],
+            allowsMultipleSelection: true
+        ) { result in
+            guard case let .success(urls) = result else { return }
+            ComposerAttachmentStaging.stage(pickedURLs: urls, into: controller)
+        }
+        .fullScreenCover(isPresented: $isCapturingPhoto) {
+            CameraPicker { image in
+                ComposerAttachmentStaging.stage(cameraImage: image, into: controller)
+            }
+            .ignoresSafeArea()
+        }
     }
 
     // MARK: - Controls
 
+    private var remainingAttachmentSlots: Int {
+        max(0, SessionController.maxAttachments - controller.composerAttachments.count)
+    }
+
     private var attachButton: some View {
-        Button {
-            // Photo library / camera / Files picking lands with the
-            // attachments slice; the affordance holds its place in the row.
+        Menu {
+            Button {
+                isPickingPhotos = true
+            } label: {
+                Label("Photo Library", systemImage: "photo.on.rectangle")
+            }
+            if UIImagePickerController.isSourceTypeAvailable(.camera) {
+                Button {
+                    isCapturingPhoto = true
+                } label: {
+                    Label("Take Photo", systemImage: "camera")
+                }
+            }
+            Button {
+                isPickingFiles = true
+            } label: {
+                Label("Choose Files", systemImage: "folder")
+            }
         } label: {
             Image(systemName: "paperclip")
                 .font(.system(size: 15, weight: .medium))
@@ -98,7 +151,7 @@ struct ComposerBar: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .disabled(true)
+        .disabled(remainingAttachmentSlots == 0)
         .accessibilityLabel("Attach files")
     }
 
