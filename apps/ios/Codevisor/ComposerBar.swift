@@ -192,8 +192,16 @@ struct ComposerBar: View {
     /// follows the finger, and releasing snaps to fully expanded or collapsed
     /// based on where the gesture was heading.
     private var expansionDrag: some Gesture {
-        DragGesture(minimumDistance: 8)
-            .updating($dragTranslation) { value, translation, _ in
+        // Global coordinates, not the default local space: the gesture is
+        // attached to the view it resizes, so measuring in the card's own
+        // space fed its growth back into the reported translation and the
+        // card chased its own tail.
+        DragGesture(minimumDistance: 8, coordinateSpace: .global)
+            .updating($dragTranslation) { value, translation, transaction in
+                // Direct manipulation: the card matches the touch exactly.
+                // Any inherited animation would make it chase the finger and
+                // settle, which reads as jitter.
+                transaction.disablesAnimations = true
                 translation = value.translation.height
             }
             .onEnded { value in
