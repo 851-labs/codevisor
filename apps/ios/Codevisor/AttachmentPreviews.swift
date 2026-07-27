@@ -151,6 +151,7 @@ struct AttachmentThumbnailView: View {
         .sheet(item: $quickLookURL) { item in
             QuickLookPreview(url: item.url)
                 .ignoresSafeArea()
+                .presentationDragIndicator(.visible)
         }
     }
 
@@ -254,17 +255,24 @@ private struct QuickLookURL: Identifiable {
 }
 
 /// QLPreviewController wrapper: images, PDFs, and videos all preview (with
-/// video playback) without per-type code.
+/// video playback) without per-type code. Wrapped in a navigation controller
+/// so Quick Look's native Done and share chrome appears in the sheet.
 private struct QuickLookPreview: UIViewControllerRepresentable {
     let url: URL
+    @Environment(\.dismiss) private var dismiss
 
-    func makeUIViewController(context: Context) -> QLPreviewController {
+    func makeUIViewController(context: Context) -> UINavigationController {
         let controller = QLPreviewController()
         controller.dataSource = context.coordinator
-        return controller
+        let dismiss = self.dismiss
+        controller.navigationItem.leftBarButtonItem = UIBarButtonItem(
+            systemItem: .close,
+            primaryAction: UIAction { _ in dismiss() }
+        )
+        return UINavigationController(rootViewController: controller)
     }
 
-    func updateUIViewController(_ uiViewController: QLPreviewController, context: Context) {}
+    func updateUIViewController(_ uiViewController: UINavigationController, context: Context) {}
 
     func makeCoordinator() -> Coordinator { Coordinator(url: url) }
 

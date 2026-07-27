@@ -170,9 +170,10 @@ private struct SessionTranscriptView: View {
                     // its gradient starting exactly at the card's top edge and
                     // fully opaque well before the card's bottom. As a
                     // background it inherits the card's live size, so it
-                    // tracks a resize drag frame-for-frame. Negative padding
-                    // stretches it to the screen edges so text can't peek out
-                    // beside or below the card.
+                    // tracks a resize drag frame-for-frame. It stays exactly
+                    // the card's width — only the bottom extends, covering the
+                    // gap to the screen edge — so it can't wash out content
+                    // beside the card.
                     .background {
                         VStack(spacing: 0) {
                             LinearGradient(
@@ -187,7 +188,6 @@ private struct SessionTranscriptView: View {
                             Rectangle()
                                 .fill(Color(.systemGroupedBackground))
                         }
-                        .padding(.horizontal, -10)
                         .padding(.bottom, -60)
                         .allowsHitTesting(false)
                     }
