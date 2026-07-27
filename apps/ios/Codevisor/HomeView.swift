@@ -339,17 +339,17 @@ private struct SessionRow: View {
         HStack(spacing: 10) {
             statusDot
             RoundedRectangle(cornerRadius: 9)
-                .fill(Color.accentColor.opacity(0.14))
+                .fill(Color(.tertiarySystemFill))
                 .frame(width: 38, height: 38)
                 .overlay {
                     // The same bundled brand glyphs as the macOS harness
-                    // picker, tinted like the tile.
+                    // picker, kept quiet like Mail's sender avatars.
                     HarnessIconView(
                         harnessId: session.harnessId,
                         fallbackSymbolName: harnessSymbol,
                         size: 20
                     )
-                    .foregroundStyle(.tint)
+                    .foregroundStyle(.secondary)
                 }
             VStack(alignment: .leading, spacing: 2) {
                 Text(session.title.isEmpty ? "New Chat" : session.title)

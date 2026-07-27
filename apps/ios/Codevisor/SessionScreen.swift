@@ -87,6 +87,10 @@ struct SessionTranscriptView: View {
                     .frame(width: 130)
                     .foregroundStyle(Color.primary.opacity(0.08))
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                    // Center in the space the user can actually see — above
+                    // the composer — and let keyboard avoidance (which
+                    // shrinks this ZStack) float it upward, Grok-style.
+                    .padding(.bottom, composerHeight + 20)
                     .allowsHitTesting(false)
                     .transition(.opacity)
             }

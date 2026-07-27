@@ -22,7 +22,6 @@ struct ComposerBar: View {
     /// heights would re-measure the transcript on every gesture frame.
     @Binding var collapsedHeight: CGFloat
 
-    @FocusState private var isFocused: Bool
     @State private var text = ""
     /// Measured height of the text itself, used for the collapsed size and as
     /// the starting point of a drag.
@@ -51,12 +50,14 @@ struct ComposerBar: View {
             && controller.configurationValidationState == .ready
     }
 
-    private static let minEditorHeight: CGFloat = 22
-    private static let collapsedMaxEditorHeight: CGFloat = 132
+    private static let minEditorHeight: CGFloat = 30
+    private static let collapsedMaxEditorHeight: CGFloat = 148
     /// Chrome around the editor inside the card: paddings, toolbar row, and
     /// the spacing between them.
     private static let cardChromeHeight: CGFloat = 96
 
+    /// `measuredTextHeight` is the text view's own content height (insets
+    /// included), reported by the UIKit editor — no mirror, no guessing.
     private var collapsedEditorHeight: CGFloat {
         min(max(measuredTextHeight, Self.minEditorHeight), Self.collapsedMaxEditorHeight)
     }
@@ -146,33 +147,24 @@ struct ComposerBar: View {
             }
 
             ZStack(alignment: .topLeading) {
-                // Mirrors the editor's text to measure its natural height, so
-                // the collapsed size tracks content and a drag starts from
-                // exactly where the card already is.
-                Text(text.isEmpty ? " " : text)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
-                        measuredTextHeight = height
-                    }
-                    .opacity(0)
-                    .accessibilityHidden(true)
-
-                // TextEditor, not a vertical TextField: return must insert a
-                // newline, and vertical TextFields treat it as submit.
-                TextEditor(text: $text)
-                    .textEditorStyle(.plain)
-                    .scrollContentBackground(.hidden)
-                    .contentMargins(.all, 0, for: .scrollContent)
-                    .focused($isFocused)
-                    .disabled(controller.isSubmitting || controller.isResolvingQuestion)
+                // A UIKit text view: return inserts newlines, the content
+                // height comes straight from the text view (no mirror), and
+                // the last line renders — SwiftUI's TextEditor drops it when
+                // scrolling is disabled inside a fixed frame.
+                ComposerTextView(
+                    text: $text,
+                    isEditable: !(controller.isSubmitting || controller.isResolvingQuestion),
                     // Scrolling stays off unless the text really overflows,
                     // so a drag on the card is never swallowed by the editor.
-                    .scrollDisabled(editorHeight >= measuredTextHeight)
-                    .frame(height: editorHeight)
+                    isScrollEnabled: editorHeight < measuredTextHeight,
+                    contentHeight: $measuredTextHeight
+                )
+                .frame(height: editorHeight)
 
                 if text.isEmpty {
                     Text(placeholder)
                         .foregroundStyle(.tertiary)
+                        .padding(.top, 4)
                         .allowsHitTesting(false)
                 }
             }
@@ -410,7 +402,9 @@ struct ComposerBar: View {
             let outgoing = text
             text = ""
             controller.composerText = outgoing
-            isFocused = false
+            UIApplication.shared.sendAction(
+                #selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil
+            )
             setExpanded(false)
             Task { await controller.send() }
         } label: {
@@ -517,3 +511,67 @@ private struct ConfigChip: View {
     }
 }
 
+
+/// The composer's text engine: UITextView under SwiftUI. Newlines on return,
+/// exact content-height reporting (insets included), scroll only on overflow.
+private struct ComposerTextView: UIViewRepresentable {
+    @Binding var text: String
+    var isEditable: Bool
+    var isScrollEnabled: Bool
+    @Binding var contentHeight: CGFloat
+
+    func makeUIView(context: Context) -> UITextView {
+        let view = UITextView()
+        view.backgroundColor = .clear
+        view.font = .preferredFont(forTextStyle: .body)
+        view.adjustsFontForContentSizeCategory = true
+        view.textContainerInset = UIEdgeInsets(top: 4, left: 0, bottom: 4, right: 0)
+        view.textContainer.lineFragmentPadding = 0
+        view.delegate = context.coordinator
+        view.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        view.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        return view
+    }
+
+    func updateUIView(_ view: UITextView, context: Context) {
+        if view.text != text {
+            view.text = text
+        }
+        view.isEditable = isEditable
+        if view.isScrollEnabled != isScrollEnabled {
+            view.isScrollEnabled = isScrollEnabled
+        }
+        context.coordinator.reportHeight(of: view, to: $contentHeight)
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(text: $text)
+    }
+
+    final class Coordinator: NSObject, UITextViewDelegate {
+        private let text: Binding<String>
+        private var lastReported: CGFloat = 0
+
+        init(text: Binding<String>) {
+            self.text = text
+        }
+
+        func textViewDidChange(_ textView: UITextView) {
+            text.wrappedValue = textView.text
+        }
+
+        func reportHeight(of view: UITextView, to binding: Binding<CGFloat>) {
+            let width = view.bounds.width
+            guard width > 0 else { return }
+            let height = view.sizeThatFits(
+                CGSize(width: width, height: .greatestFiniteMagnitude)
+            ).height
+            guard abs(height - lastReported) > 0.5 else { return }
+            lastReported = height
+            // Defer: updateUIView runs inside a view update.
+            Task { @MainActor in
+                binding.wrappedValue = height
+            }
+        }
+    }
+}
