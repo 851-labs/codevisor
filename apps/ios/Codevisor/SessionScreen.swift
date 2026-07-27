@@ -110,6 +110,73 @@ private struct SessionTranscriptView: View {
         .defaultScrollAnchor(.bottom)
         .scrollDismissesKeyboard(.interactively)
         .background(Color(.systemGroupedBackground))
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            ComposerBar(controller: controller)
+        }
+    }
+}
+
+/// The iOS composer, first slice: always docked at the bottom of the chat
+/// panel, rides the keyboard via the safe-area inset, grows with its text.
+/// Attachment/model pickers and the swipe-up expanded editor arrive as
+/// Phase 5 continues; send/stop already run the shared controller paths.
+private struct ComposerBar: View {
+    @Bindable var controller: SessionController
+    @FocusState private var isFocused: Bool
+
+    var body: some View {
+        HStack(alignment: .bottom, spacing: 8) {
+            // Attachment entry point (photo library / camera / files) lands
+            // with the attachment slice; the affordance anchors the layout.
+            Button {
+            } label: {
+                Image(systemName: "plus")
+                    .font(.system(size: 17, weight: .medium))
+                    .frame(width: 34, height: 34)
+            }
+            .buttonStyle(HoverIconButtonStyle(shape: .circle))
+            .disabled(true)
+
+            TextField("Message the agent", text: $controller.composerText, axis: .vertical)
+                .lineLimit(1...6)
+                .textFieldStyle(.plain)
+                .focused($isFocused)
+                .padding(.vertical, 7)
+
+            sendOrStopButton
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .composerGlassSurface(cornerRadius: ComposerGlassStyle.composerCornerRadius)
+        .padding(.horizontal, 10)
+        .padding(.bottom, 6)
+    }
+
+    @ViewBuilder private var sendOrStopButton: some View {
+        if controller.isSending {
+            Button {
+                Task { await controller.stop() }
+            } label: {
+                Image(systemName: "stop.fill")
+                    .font(.system(size: 15, weight: .semibold))
+                    .frame(width: 34, height: 34)
+                    .foregroundStyle(.white)
+                    .background(Circle().fill(.red))
+            }
+            .buttonStyle(.plain)
+        } else {
+            Button {
+                Task { await controller.send() }
+            } label: {
+                Image(systemName: "arrow.up")
+                    .font(.system(size: 15, weight: .semibold))
+                    .frame(width: 34, height: 34)
+                    .foregroundStyle(.white)
+                    .background(Circle().fill(controller.canSend ? Color.accentColor : Color.secondary.opacity(0.4)))
+            }
+            .buttonStyle(.plain)
+            .disabled(!controller.canSend)
+        }
     }
 }
 
