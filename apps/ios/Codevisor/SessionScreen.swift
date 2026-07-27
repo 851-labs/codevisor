@@ -257,6 +257,7 @@ struct SessionTranscriptView: View {
         .scrollDismissesKeyboard(.interactively)
         .environment(\.transcriptDisclosure, disclosure)
         .environment(\.transcriptController, controller)
+        .environment(\.runningSubagentToolCallIds, controller.runningSubagentToolCallIds)
         // Streaming tokens, settled turns, and sends all re-pin while
         // following; a send always returns to the newest content.
         .onChange(of: model.activeItemRevision) { _, _ in
@@ -357,55 +358,60 @@ private struct ConversationItemRow: View {
                 }
             }
         case let .assistant(message):
-            AssistantTurnBody(turn: message.turn, isActive: isActive, turnId: message.id)
+            AssistantTurnBody(turn: message.turn, turnId: message.id)
         }
     }
 }
 
+/// The macOS assistant turn, ported: live "Working for Ns" sections that
+/// stay open while streaming (chevron-less, like macOS), auto-collapse into
+/// "Worked for Ns" when the turn ends, plan document between the planning
+/// and implementation sections, recursive subagent sections, and the final
+/// answer streaming below. Driven entirely by the turn's own state, so a
+/// mid-stream turn loaded from history renders live too.
 private struct AssistantTurnBody: View {
     @Environment(\.transcriptDisclosure) private var disclosureStore
     @Environment(\.transcriptController) private var transcriptController
+    @Environment(\.runningSubagentToolCallIds) private var runningSubagents
     let turn: AssistantTurn
-    let isActive: Bool
     /// Stable identity for the turn's disclosure keys (the message id).
     let turnId: UUID
 
-    private var isStreaming: Bool { isActive && turn.isGenerating }
     private var store: TranscriptDisclosureStore { disclosureStore ?? .previews }
+    private var isGenerating: Bool { turn.isGenerating }
+
+    /// A subagent that outlives its turn keeps the worked section open and
+    /// its shimmer running, exactly like macOS.
+    private var hasRunningSubagent: Bool {
+        !runningSubagents.isDisjoint(with: turn.subagents.keys)
+    }
+
+    private var settled: Bool { !isGenerating && !hasRunningSubagent }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            if isStreaming {
-                // Stream in strict arrival order; text and tool groups must
-                // never reorder around each other mid-turn.
-                ForEach(turn.streamingItems) { item in
-                    workedItemView(item, dimmed: false)
-                }
-            } else {
-                workedSection(
-                    items: turn.workedItemsBeforePlan,
-                    key: .turn(turnId),
-                    allowsDeferred: true
-                )
-                if let planDocument = turn.planDocument {
-                    PlanDocumentView(markdown: planDocument)
-                }
-                // Deferred detail hydrates through the first section only; this
-                // one appears once real post-plan items exist.
-                workedSection(
-                    items: turn.workedItemsAfterPlan,
-                    key: .turnImplementation(turnId),
-                    allowsDeferred: false
-                )
-                if case let .text(_, markdown) = turn.finalText {
-                    StreamingMarkdownView(markdown)
-                }
-            }
-            if isStreaming, let planDocument = turn.planDocument {
+            workedSection(
+                items: turn.workedItemsBeforePlan,
+                key: .turn(turnId),
+                showsTimer: turn.planBoundary == nil,
+                allowsDeferred: true
+            )
+            if let planDocument = turn.planDocument {
                 PlanDocumentView(markdown: planDocument)
             }
-            if isActive, turn.showsActivityIndicator {
+            // Deferred detail hydrates through the first section only; this
+            // one appears once real post-plan items exist.
+            workedSection(
+                items: turn.workedItemsAfterPlan,
+                key: .turnImplementation(turnId),
+                showsTimer: true,
+                allowsDeferred: false
+            )
+            if isGenerating, turn.showsActivityIndicator {
                 ShimmeringText.thinking
+            }
+            if case let .text(_, markdown) = turn.finalText {
+                StreamingMarkdownView(markdown, isComplete: !isGenerating)
             }
             if let stopDetail = turn.stopDetail {
                 Label(stopDetail, systemImage: "exclamationmark.triangle")
@@ -414,30 +420,41 @@ private struct AssistantTurnBody: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        // The macOS auto-collapse: sections fold into their summary line the
+        // moment the turn (and its last background subagent) finishes.
+        .onChange(of: settled) { _, isSettled in
+            guard isSettled else { return }
+            store.setExpanded(.turn(turnId), false)
+            store.setExpanded(.turnImplementation(turnId), false)
+        }
     }
 
-    /// A settled "Worked" disclosure: summary line collapsed, the full
-    /// reasoning/tool trail on expand — the shared reveal machinery drives the
-    /// animation exactly as on macOS.
+    /// One worked section: open with a live timer while streaming (not
+    /// user-collapsible, as on macOS), a tappable "Worked for Ns" summary
+    /// once settled.
     @ViewBuilder
     private func workedSection(
         items: [WorkedItem],
         key: TranscriptDisclosureStore.Key,
+        showsTimer: Bool,
         allowsDeferred: Bool
     ) -> some View {
         if !items.isEmpty || (allowsDeferred && turn.hasDeferredWorkedDetails) {
-            let isExpanded = store.isExpanded(key, default: false)
+            let isExpanded = store.isExpanded(key, default: !settled)
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 6) {
-                    Text(workedLabel)
+                    sectionLabel(showsTimer: showsTimer)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
-                    TranscriptDisclosureChevron(expanded: isExpanded)
+                    if settled {
+                        TranscriptDisclosureChevron(expanded: isExpanded)
+                    }
                     Spacer(minLength: 0)
                 }
                 .contentShape(Rectangle())
                 .onTapGesture {
-                    store.toggle(key, default: false)
+                    guard settled else { return }
+                    store.toggle(key, default: !settled)
                 }
 
                 TranscriptDisclosureContentReveal(isExpanded: isExpanded) {
@@ -447,9 +464,7 @@ private struct AssistantTurnBody: View {
                            let transcriptController {
                             DeferredWorkedDetails(controller: transcriptController, itemId: itemId)
                         } else {
-                            ForEach(items) { item in
-                                workedItemView(item, dimmed: true)
-                            }
+                            TurnItemsView(items: items, turn: turn, depth: 0, isTurnActive: isGenerating)
                         }
                     }
                     .padding(.top, 2)
@@ -458,32 +473,136 @@ private struct AssistantTurnBody: View {
         }
     }
 
-    private var workedLabel: String {
-        if let duration = turn.duration, duration >= 1 {
-            return "Worked for \(Self.durationFormatter.string(from: duration) ?? "a moment")"
+    /// "Working for 12s" (live) while streaming; "Planned" for the planning
+    /// section once a plan boundary exists; "Worked for 12s" settled.
+    @ViewBuilder
+    private func sectionLabel(showsTimer: Bool) -> some View {
+        if isGenerating, showsTimer {
+            TimelineView(.periodic(from: turn.startedAt ?? Date(), by: 1)) { context in
+                Text("Working for \(Self.format(elapsedSeconds(to: context.date)))")
+            }
+        } else if !showsTimer {
+            Text("Planned")
+        } else {
+            Text(workedTitle)
         }
-        return "Worked"
     }
 
-    private static let durationFormatter: DateComponentsFormatter = {
-        let formatter = DateComponentsFormatter()
-        formatter.allowedUnits = [.hour, .minute, .second]
-        formatter.unitsStyle = .abbreviated
-        return formatter
-    }()
+    private var workedTitle: String {
+        guard let duration = turn.duration, duration >= 1 else { return "Worked for a moment" }
+        return "Worked for \(Self.format(Int(duration.rounded())))"
+    }
 
-    @ViewBuilder
-    private func workedItemView(_ item: WorkedItem, dimmed: Bool) -> some View {
-        switch item {
-        case let .text(_, markdown):
-            StreamingMarkdownView(markdown, isComplete: !isStreaming)
-                .opacity(dimmed ? 0.85 : 1)
-        case let .toolGroup(_, calls):
-            ToolGroupView(calls: calls, isTurnActive: isStreaming)
-        case let .subagent(_, call):
-            ToolCallRow(call: call, isTurnActive: isStreaming)
-        case .contextCompaction:
-            AgentStatusText.contextCompacted
+    private func elapsedSeconds(to date: Date) -> Int {
+        guard let started = turn.startedAt else { return 0 }
+        return max(0, Int(date.timeIntervalSince(started)))
+    }
+
+    private static func format(_ seconds: Int) -> String {
+        seconds < 60 ? "\(seconds)s" : "\(seconds / 60)m \(seconds % 60)s"
+    }
+}
+
+/// The macOS TranscriptItemsView: worked items in stream order, recursing
+/// into subagent sections.
+private struct TurnItemsView: View {
+    let items: [WorkedItem]
+    let turn: AssistantTurn
+    let depth: Int
+    let isTurnActive: Bool
+
+    private static let maxNestingDepth = 3
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            ForEach(items) { item in
+                switch item {
+                case let .text(_, markdown):
+                    StreamingMarkdownView(markdown, isComplete: !isTurnActive)
+                        .opacity(0.85)
+                case let .toolGroup(_, calls):
+                    ToolGroupView(
+                        calls: calls,
+                        isTurnActive: isTurnActive,
+                        // Follow the work: the trailing group on the main
+                        // thread opens itself while streaming.
+                        autoExpanded: depth == 0 && isTurnActive
+                            && (calls.last.map { turn.isTrailingToolGroup(lastToolCallId: $0.toolCallId) } ?? false)
+                    )
+                case let .subagent(_, call):
+                    if depth + 1 < Self.maxNestingDepth {
+                        SubagentSection(call: call, turn: turn, depth: depth, isTurnActive: isTurnActive)
+                    } else {
+                        ToolCallRow(call: call, isTurnActive: isTurnActive)
+                    }
+                case .contextCompaction:
+                    AgentStatusText.contextCompacted
+                }
+            }
+        }
+    }
+}
+
+/// The macOS SubagentSectionView: a wand header shimmering while the
+/// subagent runs, its transcript recursing beneath.
+private struct SubagentSection: View {
+    @Environment(\.transcriptDisclosure) private var disclosureStore
+    @Environment(\.runningSubagentToolCallIds) private var runningSubagents
+    let call: ToolCall
+    let turn: AssistantTurn
+    let depth: Int
+    let isTurnActive: Bool
+
+    private var store: TranscriptDisclosureStore { disclosureStore ?? .previews }
+    private var key: TranscriptDisclosureStore.Key { .subagent(call.toolCallId) }
+
+    private var isRunning: Bool {
+        (isTurnActive && !call.isSettled) || runningSubagents.contains(call.toolCallId)
+    }
+
+    private var items: [WorkedItem] { turn.subagentItems(call.toolCallId) }
+
+    var body: some View {
+        let isExpanded = store.isExpanded(key, default: isRunning)
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 8) {
+                Image(systemName: "wand.and.sparkles")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .frame(width: 16)
+                Text(call.displayTitle(diffTotals: nil))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .shimmering(isRunning)
+                if call.status == .failed {
+                    Image(systemName: "xmark.circle")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                TranscriptDisclosureChevron(expanded: isExpanded)
+                Spacer(minLength: 0)
+            }
+            .font(.callout)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                store.toggle(key, default: isRunning)
+            }
+
+            TranscriptDisclosureContentReveal(isExpanded: isExpanded) {
+                VStack(alignment: .leading, spacing: 10) {
+                    TurnItemsView(items: items, turn: turn, depth: depth + 1, isTurnActive: isTurnActive)
+                    if isRunning, items.isEmpty {
+                        ShimmeringText.startingAgent
+                    }
+                }
+                .padding(.leading, 24)
+                .padding(.top, 8)
+            }
+        }
+        .onChange(of: isRunning) { _, running in
+            if !running {
+                store.setExpanded(key, false)
+            }
         }
     }
 }

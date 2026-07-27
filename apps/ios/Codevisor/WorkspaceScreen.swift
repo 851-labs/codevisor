@@ -288,11 +288,29 @@ struct WorkspaceScreen: View {
     private func paneContent(_ pane: PaneDescriptorState) -> some View {
         switch pane.kind {
         case .chat:
-            if let controller = controllers[pane.chatSessionId ?? sessionId] {
+            let chatId = pane.chatSessionId ?? sessionId
+            if let controller = controllers[chatId] {
                 SessionTranscriptView(controller: controller, serverConfig: serverConfig)
+                    // Attention: the visible chat is the open one — clear its
+                    // unread state now and keep it clear as turns finish.
+                    .onAppear {
+                        guard let session = session(for: chatId) else { return }
+                        ChatControllerCache.shared.noteOpened(
+                            sessionId: chatId,
+                            serverId: session.serverId,
+                            projectList: environment.projectList
+                        )
+                    }
+                    .onDisappear {
+                        guard let session = session(for: chatId) else { return }
+                        ChatControllerCache.shared.noteClosed(
+                            sessionId: chatId,
+                            serverId: session.serverId
+                        )
+                    }
             } else {
                 ProgressView()
-                    .task { await connectChat(sessionId: pane.chatSessionId ?? sessionId) }
+                    .task { await connectChat(sessionId: chatId) }
             }
         case .newTab:
             NewTabPaneView(
@@ -434,14 +452,15 @@ struct WorkspaceScreen: View {
               let session = session(for: chatId),
               let project = environment.projectList.projects.first(where: { $0.id == session.projectId })
         else { return }
-        let controller = SessionController(
+        // App-wide cache: revisiting a chat rebinds the SAME controller, so a
+        // stream that kept flowing while we were away renders immediately.
+        let controller = ChatControllerCache.shared.controller(
+            for: session,
             project: project,
-            configCache: environment.configCache,
-            composerDefaults: environment.composerDefaults,
-            serverClient: environment.machines.client(for: session.serverId)
+            environment: environment
         )
-        controller.configureExistingSession(session)
         controllers[chatId] = controller
+        guard controller.model == nil, !controller.isConnecting else { return }
         if session.agentSessionId?.isEmpty != false {
             // A fresh chat: no agent exists yet. Load harness capabilities so
             // the composer validates; the agent spawns on the first send.
