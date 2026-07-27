@@ -79,6 +79,10 @@ private struct SessionTranscriptView: View {
     @State private var scrollRequest = 0
     /// Height available to the chat area, used to cap composer expansion.
     @State private var availableHeight: CGFloat = 600
+    /// The scroll view's own height: the transcript fills at least this much
+    /// so a short conversation starts at the top instead of floating at the
+    /// bottom of the viewport.
+    @State private var viewportHeight: CGFloat = 0
 
     var body: some View {
         Group {
@@ -235,6 +239,10 @@ private struct SessionTranscriptView: View {
             }
             .padding(.horizontal, 16)
             .padding(.top, 12)
+            .frame(minHeight: viewportHeight, alignment: .top)
+        }
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
+            viewportHeight = height
         }
         .defaultScrollAnchor(.bottom)
         .scrollDismissesKeyboard(.interactively)
