@@ -67,9 +67,18 @@ private struct SessionTranscriptView: View {
     let serverConfig: CodevisorServerConfig?
     @State private var disclosure = TranscriptDisclosureStore()
     @State private var showsTerminal = false
-    /// The composer's resting height, used to inset the transcript and size
-    /// the fade that sits under the card.
+    /// The composer's resting height, used to size the transcript's bottom
+    /// spacer and the mask that sits under the card.
     @State private var composerHeight: CGFloat = 96
+    /// True while the transcript is parked at the newest content; drives both
+    /// auto-scroll and the scroll-to-bottom button, mirroring the macOS
+    /// transcript's follow mode.
+    @State private var followsLatest = true
+    @State private var isAtBottom = true
+    /// Bumped to ask the scroll view to return to the newest content.
+    @State private var scrollRequest = 0
+    /// Height available to the chat area, used to cap composer expansion.
+    @State private var availableHeight: CGFloat = 600
 
     var body: some View {
         Group {
@@ -114,15 +123,16 @@ private struct SessionTranscriptView: View {
     }
 
     private func transcript(_ model: SessionModel) -> some View {
-        GeometryReader { proxy in
-            ZStack(alignment: .bottom) {
-                // The transcript runs underneath the composer; content rests
-                // about three quarters of the way down the card so the newest
-                // line stays readable while the rest slides beneath it.
-                transcriptScroll(model)
-                    .safeAreaPadding(.bottom, max(0, composerHeight * 0.75))
+        // Deliberately not wrapped in a GeometryReader: that opts the subtree
+        // out of SwiftUI's keyboard avoidance, which left the composer sitting
+        // underneath the keyboard.
+        ZStack(alignment: .bottom) {
+            transcriptScroll(model)
 
-                // Fades the transcript out as it passes behind the composer.
+            // Hides the transcript behind the composer: a short fade above
+                // the card, then fully opaque from the card's top edge all the
+                // way past the screen's bottom edge.
+            VStack(spacing: 0) {
                 LinearGradient(
                     colors: [
                         Color(.systemGroupedBackground).opacity(0),
@@ -131,29 +141,62 @@ private struct SessionTranscriptView: View {
                     startPoint: .top,
                     endPoint: .bottom
                 )
-                .frame(height: composerHeight + 36)
+                .frame(height: 28)
+                Rectangle()
+                    .fill(Color(.systemGroupedBackground))
+            }
+                // Extra slack runs the opaque part past the screen's bottom
+                // edge, including the home indicator area.
+                .frame(height: 28 + composerHeight + 60)
                 .allowsHitTesting(false)
+                .ignoresSafeArea(.container, edges: .bottom)
 
-                VStack(spacing: 8) {
-                    if let question = controller.activeQuestion {
-                        QuestionCardView(controller: controller, request: question)
-                            .id(question.questionId)
+            VStack(spacing: 8) {
+                if !isAtBottom {
+                    HStack {
+                        Spacer()
+                        scrollToBottomButton
                     }
+                }
+                if let question = controller.activeQuestion {
+                    QuestionCardView(controller: controller, request: question)
+                        .id(question.questionId)
+                }
                     ComposerBar(
                         controller: controller,
-                        maxHeight: proxy.size.height - 88,
+                        maxHeight: availableHeight - 88,
                         collapsedHeight: $composerHeight
                     )
-                }
-                .padding(.horizontal, 10)
-                .padding(.bottom, 6)
             }
+            .padding(.horizontal, 10)
+            .padding(.bottom, 6)
+        }
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
+            availableHeight = height
         }
         .background(Color(.systemGroupedBackground))
     }
 
+    private var scrollToBottomButton: some View {
+        Button {
+            followsLatest = true
+            scrollRequest &+= 1
+        } label: {
+            Image(systemName: "arrow.down")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 36, height: 36)
+                .background(.regularMaterial, in: Circle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Scroll to bottom")
+    }
+
+    private static let bottomAnchor = "transcript-bottom"
+
     private func transcriptScroll(_ model: SessionModel) -> some View {
-        ScrollView {
+        ScrollViewReader { scroller in
+            ScrollView {
             LazyVStack(alignment: .leading, spacing: 16) {
                 if model.hasOlderHistory {
                     Button {
@@ -179,14 +222,56 @@ private struct SessionTranscriptView: View {
                 if controller.isLoadingInitialHistory {
                     HStack { Spacer(); ProgressView(); Spacer() }
                 }
+
+                // Breathing room past the composer so the newest content can
+                // clear it — the same trick the macOS transcript uses.
+                Color.clear
+                    .frame(height: composerHeight + 24)
+                    .id(Self.bottomAnchor)
+                    .onScrollVisibilityChange(threshold: 0.05) { visible in
+                        isAtBottom = visible
+                        followsLatest = visible
+                    }
             }
             .padding(.horizontal, 16)
-            .padding(.vertical, 12)
+            .padding(.top, 12)
         }
         .defaultScrollAnchor(.bottom)
         .scrollDismissesKeyboard(.interactively)
         .environment(\.transcriptDisclosure, disclosure)
         .environment(\.transcriptController, controller)
+        // Streaming tokens, settled turns, and sends all re-pin while
+        // following; a send always returns to the newest content.
+        .onChange(of: model.activeItemRevision) { _, _ in
+            scrollToBottomIfFollowing(scroller)
+        }
+        .onChange(of: model.settledConversation.count) { _, _ in
+            scrollToBottomIfFollowing(scroller)
+        }
+        .onChange(of: controller.userSendSignal) { _, _ in
+            followsLatest = true
+            scrollToBottom(scroller, animated: true)
+        }
+        .onChange(of: scrollRequest) { _, _ in
+            scrollToBottom(scroller, animated: true)
+        }
+        .onAppear { scrollToBottom(scroller, animated: false) }
+        }
+    }
+
+    private func scrollToBottomIfFollowing(_ scroller: ScrollViewProxy) {
+        guard followsLatest else { return }
+        scrollToBottom(scroller, animated: true)
+    }
+
+    private func scrollToBottom(_ scroller: ScrollViewProxy, animated: Bool) {
+        if animated {
+            withAnimation(.snappy(duration: 0.25)) {
+                scroller.scrollTo(Self.bottomAnchor, anchor: .bottom)
+            }
+        } else {
+            scroller.scrollTo(Self.bottomAnchor, anchor: .bottom)
+        }
     }
 }
 
