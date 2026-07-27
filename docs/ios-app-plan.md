@@ -293,6 +293,19 @@ Exit gate: create a workspace from iPhone, add a second chat pane and a
 scratchpad, switch panes via the navigator, delete a pane — state stays
 consistent with what the macOS app shows for the same machine.
 
+Status (2026-07-27): first slice shipped. WorkspaceScreen renders one pane at
+a time behind a Safari-style pane grid (square.on.square, snapshot previews,
+close/add, active ring) with sidebar.left back navigation; pane state
+persists client-side via the shared `PaneGroupState` (macOS terminal-key
+scheme, one PTY per pane). New Workspace CTA on the home screen → project
+picker → instant workspace with a deferred chat pane; harness + run-location
+capsule under the composer. Settings sheet holds General / Appearance /
+Notifications / Machines / Harnesses / MCPs / Skills. Still open: second chat
+panes + scratchpads, remote directory browser / clone in project picker,
+pane rename, swipe between panes, zoom transition, deep settings flows
+(harness sign-in, MCP add/edit + OAuth, skill import/create, custom themes,
+notification sounds).
+
 ---
 
 ## Phase 7 — Terminal
