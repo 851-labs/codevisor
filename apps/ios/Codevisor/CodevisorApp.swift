@@ -1,4 +1,5 @@
 import CodevisorCore
+import CodevisorTheming
 import CodevisorUI
 import SwiftUI
 import os
@@ -16,10 +17,20 @@ struct CodevisorApp: App {
         WindowGroup {
             HomeView()
                 .environment(environment)
+                .preferredColorScheme(colorScheme)
                 .task { await bootstrap() }
                 .onOpenURL { url in
                     handleDeeplink(url)
                 }
+        }
+    }
+
+    /// Applies the Appearance setting; `.system` follows the device.
+    private var colorScheme: ColorScheme? {
+        switch environment.settings.settings.themeMode {
+        case .light: .light
+        case .dark: .dark
+        case .system: nil
         }
     }
 

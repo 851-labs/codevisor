@@ -2,50 +2,101 @@ import CodevisorCore
 import CodevisorUI
 import SwiftUI
 
-/// How the home list groups chats — the iOS expression of the macOS sidebar's
-/// organization filter.
+/// How the workspace list groups chats — the same organization options as the
+/// macOS sidebar. Workspaces on this client are 1:1 with chats today, so the
+/// workspace grouping renders the same rows as Agents until multi-chat
+/// workspaces sync.
 private enum HomeOrganization: String, CaseIterable {
-    case agents
+    case compact
+    case byWorkspace
     case byProject
 
     var title: String {
         switch self {
-        case .agents: "Agents"
+        case .compact: "Agents"
+        case .byWorkspace: "Workspaces"
         case .byProject: "Projects"
-        }
-    }
-
-    var symbolName: String {
-        switch self {
-        case .agents: "sparkles"
-        case .byProject: "folder"
         }
     }
 }
 
-/// The main screen: every agent chat on the selected machine, grouped flat
-/// (recency) or by project, with a machine picker and a filter menu. The iOS
-/// counterpart of the macOS sidebar, laid out for touch.
+/// Ordering, matching the macOS sidebar: manual (drag), priority + recency,
+/// or creation time.
+private enum HomeOrder: String, CaseIterable {
+    case none
+    case updated
+    case created
+
+    var title: String {
+        switch self {
+        case .none: "None"
+        case .updated: "Last updated"
+        case .created: "Created"
+        }
+    }
+}
+
+/// The workspaces navigation screen: every workspace on the paired machine,
+/// organized and ordered like the macOS sidebar, with settings at the top
+/// left, the organize menu at the top right, and a fixed New Workspace call
+/// to action at the bottom.
 struct HomeView: View {
     @Environment(AppEnvironment.self) private var environment
 
-    @AppStorage("home.organization") private var organizationRaw = HomeOrganization.agents.rawValue
-    @State private var isAddingMachine = false
-    @State private var isStartingChat = false
+    @AppStorage("sidebar.organization") private var organizationRaw = HomeOrganization.compact.rawValue
+    @AppStorage("sidebar.order") private var orderRaw = HomeOrder.updated.rawValue
+    @AppStorage("sidebar.manualSessionOrder") private var manualSessionOrder = ""
+    @State private var isShowingSettings = false
+    @State private var isStartingWorkspace = false
     @State private var path: [UUID] = []
 
     private var organization: HomeOrganization {
-        HomeOrganization(rawValue: organizationRaw) ?? .agents
+        HomeOrganization(rawValue: organizationRaw) ?? .compact
+    }
+
+    private var order: HomeOrder {
+        HomeOrder(rawValue: orderRaw) ?? .updated
     }
 
     private var machines: MachineController { environment.machines }
     private var projectList: ProjectListModel { environment.projectList }
 
-    /// Active chats on the selected machine, newest activity first.
+    /// Active chats on the selected machine, in the chosen order.
     private var visibleSessions: [ChatSession] {
-        projectList.sessions
+        let sessions = projectList.sessions
             .filter { $0.serverId == machines.selectedMachineId && !$0.isArchived }
-            .sorted { ($0.updatedAt ?? $0.createdAt) > ($1.updatedAt ?? $1.createdAt) }
+        switch order {
+        case .updated:
+            // Priority first (errors, waiting, unread), then recency — the
+            // macOS sidebar's default.
+            return sessions.sorted { lhs, rhs in
+                let lp = priority(for: lhs)
+                let rp = priority(for: rhs)
+                if lp != rp { return lp < rp }
+                return (lhs.updatedAt ?? lhs.createdAt) > (rhs.updatedAt ?? rhs.createdAt)
+            }
+        case .created:
+            return sessions.sorted { $0.createdAt > $1.createdAt }
+        case .none:
+            let ordered = manualSessionOrder
+                .split(separator: "\n")
+                .compactMap { UUID(uuidString: String($0)) }
+            var index: [UUID: Int] = [:]
+            for (position, id) in ordered.enumerated() { index[id] = position }
+            return sessions.sorted { lhs, rhs in
+                let li = index[lhs.id] ?? Int.max
+                let ri = index[rhs.id] ?? Int.max
+                if li != ri { return li < ri }
+                return (lhs.updatedAt ?? lhs.createdAt) > (rhs.updatedAt ?? rhs.createdAt)
+            }
+        }
+    }
+
+    private func priority(for session: ChatSession) -> Int {
+        if session.hasUnreadError { return 0 }
+        if session.actionRequired || session.pendingPlanApproval { return 1 }
+        if session.unreadCount > 0 { return 2 }
+        return 3
     }
 
     var body: some View {
@@ -57,24 +108,23 @@ struct HomeView: View {
                     sessionList
                 }
             }
-            .navigationTitle("Codevisor")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) { machineMenu }
-                ToolbarItem(placement: .topBarTrailing) { newChatButton }
-                ToolbarItem(placement: .topBarTrailing) { filterMenu }
+                ToolbarItem(placement: .topBarLeading) { settingsButton }
+                ToolbarItem(placement: .topBarTrailing) { organizeMenu }
             }
+            .safeAreaInset(edge: .bottom) { newWorkspaceButton }
             .navigationDestination(for: UUID.self) { sessionId in
                 WorkspaceScreen(sessionId: sessionId)
             }
             .refreshable {
                 await projectList.refreshFromServer()
             }
-            .sheet(isPresented: $isAddingMachine) {
-                AddMachineSheet()
+            .sheet(isPresented: $isShowingSettings) {
+                SettingsSheet()
             }
-            .sheet(isPresented: $isStartingChat) {
-                NewChatSheet { session in
+            .sheet(isPresented: $isStartingWorkspace) {
+                NewWorkspaceSheet { session in
                     path.append(session.id)
                 }
             }
@@ -86,19 +136,23 @@ struct HomeView: View {
     private var sessionList: some View {
         List {
             switch organization {
-            case .agents:
+            case .compact, .byWorkspace:
                 Section {
                     ForEach(visibleSessions) { session in
                         NavigationLink(value: session.id) {
                             SessionRow(session: session, projectName: projectName(for: session))
                         }
                     }
-                } header: {
-                    machineStatusHeader
+                    .onMove { source, destination in
+                        // Drag-to-reorder only means something in manual
+                        // order; other orders recompute on the next change.
+                        guard order == .none else { return }
+                        moveSessions(from: source, to: destination)
+                    }
                 }
             case .byProject:
                 ForEach(projectList.activeProjects) { project in
-                    let sessions = projectList.sessions(in: project).filter { !$0.isArchived }
+                    let sessions = visibleSessions.filter { $0.projectId == project.id }
                     if !sessions.isEmpty {
                         Section {
                             ForEach(sessions) { session in
@@ -114,6 +168,15 @@ struct HomeView: View {
             }
         }
         .listStyle(.insetGrouped)
+        // Room for the floating call to action so the last row can scroll
+        // clear of it.
+        .contentMargins(.bottom, 64, for: .scrollContent)
+    }
+
+    private func moveSessions(from source: IndexSet, to destination: Int) {
+        var ids = visibleSessions.map(\.id)
+        ids.move(fromOffsets: source, toOffset: destination)
+        manualSessionOrder = ids.map(\.uuidString).joined(separator: "\n")
     }
 
     private func projectName(for session: ChatSession) -> String? {
@@ -122,77 +185,64 @@ struct HomeView: View {
 
     private var emptyState: some View {
         ContentUnavailableView {
-            Label("No Chats Yet", systemImage: "bubble.left.and.bubble.right")
+            Label("No Workspaces Yet", systemImage: "bubble.left.and.bubble.right")
         } description: {
-            Text("Pair a machine, then your agents, workspaces, and projects appear here.")
+            Text("Pair a machine in Settings, then your agents, workspaces, and projects appear here.")
         } actions: {
-            Button("Add Machine") { isAddingMachine = true }
+            Button("Open Settings") { isShowingSettings = true }
                 .buttonStyle(.borderedProminent)
         }
     }
 
     // MARK: - Toolbar
 
-    private var machineMenu: some View {
-        Menu {
-            ForEach(machines.machines) { machine in
-                Button {
-                    machines.selectMachine(machine.id)
-                    Task { await environment.prepareSelectedMachine() }
-                } label: {
-                    if machine.id == machines.selectedMachineId {
-                        Label(machine.name, systemImage: "checkmark")
-                    } else {
-                        Text(machine.name)
-                    }
-                }
-            }
-            Divider()
-            Button {
-                isAddingMachine = true
-            } label: {
-                Label("Add Machine…", systemImage: "plus")
-            }
-        } label: {
-            Label(
-                machines.selectedMachine.name,
-                systemImage: machines.selectedMachine.resolvedAppearance.symbolName
-            )
-            .labelStyle(.titleAndIcon)
-        }
-    }
-
-    private var newChatButton: some View {
+    private var settingsButton: some View {
         Button {
-            isStartingChat = true
+            isShowingSettings = true
         } label: {
-            Image(systemName: "square.and.pencil")
+            Image(systemName: "gearshape")
         }
+        .accessibilityLabel("Settings")
     }
 
-    private var filterMenu: some View {
+    /// The macOS sidebar's organize menu: Organization and Order pickers,
+    /// plus reset when manually ordered.
+    private var organizeMenu: some View {
         Menu {
-            Picker("Group By", selection: $organizationRaw) {
+            Picker("Organization", selection: $organizationRaw) {
                 ForEach(HomeOrganization.allCases, id: \.rawValue) { organization in
-                    Label(organization.title, systemImage: organization.symbolName)
-                        .tag(organization.rawValue)
+                    Text(organization.title).tag(organization.rawValue)
                 }
+            }
+            .pickerStyle(.menu)
+            Picker("Order by", selection: $orderRaw) {
+                ForEach(HomeOrder.allCases, id: \.rawValue) { order in
+                    Text(order.title).tag(order.rawValue)
+                }
+            }
+            .pickerStyle(.menu)
+            if order == .none {
+                Divider()
+                Button("Reset manual order") { manualSessionOrder = "" }
             }
         } label: {
             Image(systemName: "line.3.horizontal.decrease")
         }
+        .accessibilityLabel("Organize workspaces")
     }
 
-    private var machineStatusHeader: some View {
-        HStack(spacing: 6) {
-            let status = machines.statusByMachineId[machines.selectedMachineId]
-            Circle()
-                .fill(status?.isReachable == true ? .green : .orange)
-                .frame(width: 7, height: 7)
-            Text(status?.label ?? "Connecting…")
+    private var newWorkspaceButton: some View {
+        Button {
+            isStartingWorkspace = true
+        } label: {
+            Label("New workspace", systemImage: "plus")
+                .font(.body.weight(.semibold))
+                .padding(.horizontal, 18)
+                .padding(.vertical, 4)
         }
-        .font(.footnote)
-        .textCase(nil)
+        .buttonStyle(.glassProminent)
+        .padding(.bottom, 8)
+        .accessibilityLabel("New workspace")
     }
 }
 
@@ -243,74 +293,6 @@ private struct SessionRow: View {
             Circle().fill(.blue).frame(width: 8, height: 8)
         } else {
             Circle().fill(.clear).frame(width: 8, height: 8)
-        }
-    }
-}
-
-/// Manual pairing: address + token, validated against the server before the
-/// machine is saved. The QR/deeplink flow covers the common path; this is the
-/// fallback for typing coordinates from `codevisor setup`.
-private struct AddMachineSheet: View {
-    @Environment(AppEnvironment.self) private var environment
-    @Environment(\.dismiss) private var dismiss
-
-    @State private var host = ""
-    @State private var name = ""
-    @State private var token = ""
-    @State private var isAdding = false
-    @State private var errorMessage: String?
-
-    var body: some View {
-        NavigationStack {
-            Form {
-                Section {
-                    TextField("Address (host or host:port)", text: $host)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .keyboardType(.URL)
-                    TextField("Name (optional)", text: $name)
-                    SecureField("Connection token", text: $token)
-                } footer: {
-                    Text("Run `codevisor setup` on the machine to print its address and token.")
-                }
-                if let errorMessage {
-                    Section {
-                        Text(errorMessage)
-                            .foregroundStyle(.red)
-                    }
-                }
-            }
-            .navigationTitle("Add Machine")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Add") { add() }
-                        .disabled(host.isEmpty || isAdding)
-                }
-            }
-        }
-    }
-
-    private func add() {
-        isAdding = true
-        errorMessage = nil
-        Task {
-            do {
-                let machine = try await environment.machines.addRemoteValidating(
-                    host: host,
-                    name: name.isEmpty ? nil : name,
-                    token: token.isEmpty ? nil : token
-                )
-                environment.machines.selectMachine(machine.id)
-                await environment.prepareSelectedMachine()
-                dismiss()
-            } catch {
-                errorMessage = ErrorReporter.userFacingMessage(for: error)
-                isAdding = false
-            }
         }
     }
 }

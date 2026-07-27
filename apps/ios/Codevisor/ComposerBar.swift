@@ -82,6 +82,59 @@ struct ComposerBar: View {
     }
 
     var body: some View {
+        VStack(spacing: 8) {
+            card
+            // A brand-new chat mirrors the macOS new-chat page: harness and
+            // run-location pickers in their own capsule row under the card.
+            if controller.canChooseHarness {
+                HStack(spacing: 10) {
+                    harnessChip
+                    Divider().frame(height: 14)
+                    runLocationChip
+                }
+                .font(.footnote)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .composerGlassSurface(cornerRadius: 22)
+            }
+        }
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
+            // Publish only the resting size; see `collapsedHeight`.
+            if !isExpanded, dragTranslation == 0, releaseHeight == nil {
+                collapsedHeight = height
+            }
+        }
+        .onAppear { text = controller.composerText }
+        .onDisappear { controller.composerText = text }
+        .photosPicker(
+            isPresented: $isPickingPhotos,
+            selection: $photoItems,
+            maxSelectionCount: remainingAttachmentSlots,
+            matching: .any(of: [.images, .videos])
+        )
+        .onChange(of: photoItems) { _, items in
+            guard !items.isEmpty else { return }
+            let picked = items
+            photoItems = []
+            Task { await ComposerAttachmentStaging.stage(photoItems: picked, into: controller) }
+        }
+        .fileImporter(
+            isPresented: $isPickingFiles,
+            allowedContentTypes: [.item],
+            allowsMultipleSelection: true
+        ) { result in
+            guard case let .success(urls) = result else { return }
+            ComposerAttachmentStaging.stage(pickedURLs: urls, into: controller)
+        }
+        .fullScreenCover(isPresented: $isCapturingPhoto) {
+            CameraPicker { image in
+                ComposerAttachmentStaging.stage(cameraImage: image, into: controller)
+            }
+            .ignoresSafeArea()
+        }
+    }
+
+    private var card: some View {
         VStack(alignment: .leading, spacing: 10) {
             if !controller.composerAttachments.isEmpty {
                 ComposerAttachmentStrip(controller: controller)
@@ -160,40 +213,6 @@ struct ComposerBar: View {
         // Resizing the card shouldn't ripple layout out into the transcript
         // behind it.
         .geometryGroup()
-        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
-            // Publish only the resting size; see `collapsedHeight`.
-            if !isExpanded, dragTranslation == 0, releaseHeight == nil {
-                collapsedHeight = height
-            }
-        }
-        .onAppear { text = controller.composerText }
-        .onDisappear { controller.composerText = text }
-        .photosPicker(
-            isPresented: $isPickingPhotos,
-            selection: $photoItems,
-            maxSelectionCount: remainingAttachmentSlots,
-            matching: .any(of: [.images, .videos])
-        )
-        .onChange(of: photoItems) { _, items in
-            guard !items.isEmpty else { return }
-            let picked = items
-            photoItems = []
-            Task { await ComposerAttachmentStaging.stage(photoItems: picked, into: controller) }
-        }
-        .fileImporter(
-            isPresented: $isPickingFiles,
-            allowedContentTypes: [.item],
-            allowsMultipleSelection: true
-        ) { result in
-            guard case let .success(urls) = result else { return }
-            ComposerAttachmentStaging.stage(pickedURLs: urls, into: controller)
-        }
-        .fullScreenCover(isPresented: $isCapturingPhoto) {
-            CameraPicker { image in
-                ComposerAttachmentStaging.stage(cameraImage: image, into: controller)
-            }
-            .ignoresSafeArea()
-        }
     }
 
     /// Drag the card open and closed from anywhere on it: the top edge
@@ -250,6 +269,107 @@ struct ComposerBar: View {
     private func setExpanded(_ expand: Bool) {
         withAnimation(.snappy(duration: 0.28)) {
             isExpanded = expand
+        }
+    }
+
+    // MARK: - New-chat pickers
+
+    /// Harness choice for a chat whose agent hasn't spawned yet — the iOS
+    /// twin of the macOS HarnessPickerMenu.
+    private var harnessChip: some View {
+        Menu {
+            ForEach(controller.harnesses, id: \.id) { harness in
+                Button {
+                    Task { await controller.selectHarness(harness.id) }
+                } label: {
+                    if harness.id == controller.selectedHarnessId {
+                        Label(harness.name, systemImage: "checkmark")
+                    } else {
+                        Text(harness.name)
+                    }
+                }
+            }
+        } label: {
+            chipLabel(
+                controller.selectedHarness?.name ?? "Agent",
+                systemImage: "cpu"
+            )
+        }
+        .accessibilityLabel("Agent")
+    }
+
+    /// Where the chat's commands run: the project root or a fresh worktree —
+    /// the macOS run-location picker, reduced to the contexts this client
+    /// knows about.
+    private var runLocationChip: some View {
+        Menu {
+            Button {
+                selectRunContext(.projectRoot)
+            } label: {
+                menuRow(
+                    controller.project.name,
+                    systemImage: "folder.fill",
+                    isSelected: controller.runContext == .projectRoot
+                )
+            }
+            if case let .existingWorktree(name, path) = controller.runContext {
+                Button {
+                    selectRunContext(.existingWorktree(name: name, path: path))
+                } label: {
+                    menuRow(name, systemImage: "arrow.triangle.branch", isSelected: true)
+                }
+            }
+            if controller.project.isGitRepository {
+                Divider()
+                Button {
+                    selectRunContext(.newWorktree)
+                } label: {
+                    menuRow(
+                        "New worktree",
+                        systemImage: "arrow.triangle.branch",
+                        isSelected: controller.runContext == .newWorktree
+                    )
+                }
+            }
+        } label: {
+            chipLabel(runContextTitle, systemImage: runContextSymbol)
+        }
+        .accessibilityLabel("Run location")
+    }
+
+    private var runContextTitle: String {
+        switch controller.runContext {
+        case .projectRoot: controller.project.name
+        case let .existingWorktree(name, _): name
+        case .newWorktree: "New worktree"
+        }
+    }
+
+    private var runContextSymbol: String {
+        controller.runContext == .projectRoot ? "folder.fill" : "arrow.triangle.branch"
+    }
+
+    private func selectRunContext(_ context: SessionController.RunContextSelection) {
+        controller.selectRunContext(context)
+        Task { await controller.reconnect() }
+    }
+
+    private func chipLabel(_ title: String, systemImage: String) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: systemImage)
+                .font(.caption)
+            Text(title)
+                .lineLimit(1)
+        }
+        .foregroundStyle(.secondary)
+    }
+
+    @ViewBuilder
+    private func menuRow(_ title: String, systemImage: String, isSelected: Bool) -> some View {
+        if isSelected {
+            Label(title, systemImage: "checkmark")
+        } else {
+            Label(title, systemImage: systemImage)
         }
     }
 
