@@ -58,6 +58,7 @@ struct SessionScreen: View {
 /// The transcript body for a connected controller.
 private struct SessionTranscriptView: View {
     @Bindable var controller: SessionController
+    @State private var disclosure = TranscriptDisclosureStore()
 
     var body: some View {
         Group {
@@ -116,6 +117,8 @@ private struct SessionTranscriptView: View {
         .defaultScrollAnchor(.bottom)
         .scrollDismissesKeyboard(.interactively)
         .background(Color(.systemGroupedBackground))
+        .environment(\.transcriptDisclosure, disclosure)
+        .environment(\.transcriptController, controller)
         .safeAreaInset(edge: .bottom, spacing: 0) {
             VStack(spacing: 6) {
                 if let question = controller.activeQuestion {
@@ -223,50 +226,51 @@ private struct ConversationItemRow: View {
                 }
             }
         case let .assistant(message):
-            AssistantTurnBody(turn: message.turn, isActive: isActive)
+            AssistantTurnBody(turn: message.turn, isActive: isActive, turnId: message.id)
         }
     }
 }
 
 private struct AssistantTurnBody: View {
+    @Environment(\.transcriptDisclosure) private var disclosureStore
+    @Environment(\.transcriptController) private var transcriptController
     let turn: AssistantTurn
     let isActive: Bool
+    /// Stable identity for the turn's disclosure keys (the message id).
+    let turnId: UUID
 
-    /// Adjacent tool entries grouped into runs so consecutive calls share one
-    /// ToolGroupView card, mirroring the macOS turn layout.
-    private var segments: [TurnSegment] {
-        var segments: [TurnSegment] = []
-        for entry in turn.entries {
-            switch entry {
-            case let .text(id, markdown):
-                segments.append(.text(id: id, markdown: markdown))
-            case let .tool(call):
-                if case var .tools(id, calls) = segments.last {
-                    calls.append(call)
-                    segments[segments.count - 1] = .tools(id: id, calls: calls)
-                } else {
-                    segments.append(.tools(id: "tools:\(call.toolCallId)", calls: [call]))
-                }
-            case let .contextCompaction(id, _):
-                segments.append(.compaction(id: id))
-            }
-        }
-        return segments
-    }
+    private var isStreaming: Bool { isActive && turn.isGenerating }
+    private var store: TranscriptDisclosureStore { disclosureStore ?? .previews }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            ForEach(segments) { segment in
-                switch segment {
-                case let .text(_, markdown):
-                    StreamingMarkdownView(markdown, isComplete: !isActive)
-                case let .tools(_, calls):
-                    ToolGroupView(calls: calls, isTurnActive: isActive && turn.isGenerating)
-                case .compaction:
-                    AgentStatusText.contextCompacted
+            if isStreaming {
+                // Stream in strict arrival order; text and tool groups must
+                // never reorder around each other mid-turn.
+                ForEach(turn.streamingItems) { item in
+                    workedItemView(item, dimmed: false)
+                }
+            } else {
+                workedSection(
+                    items: turn.workedItemsBeforePlan,
+                    key: .turn(turnId),
+                    allowsDeferred: true
+                )
+                if let planDocument = turn.planDocument {
+                    PlanDocumentView(markdown: planDocument)
+                }
+                // Deferred detail hydrates through the first section only; this
+                // one appears once real post-plan items exist.
+                workedSection(
+                    items: turn.workedItemsAfterPlan,
+                    key: .turnImplementation(turnId),
+                    allowsDeferred: false
+                )
+                if case let .text(_, markdown) = turn.finalText {
+                    StreamingMarkdownView(markdown)
                 }
             }
-            if let planDocument = turn.planDocument {
+            if isStreaming, let planDocument = turn.planDocument {
                 PlanDocumentView(markdown: planDocument)
             }
             if isActive, turn.showsActivityIndicator {
@@ -280,22 +284,78 @@ private struct AssistantTurnBody: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
-}
 
-private enum TurnSegment: Identifiable {
-    case text(id: String, markdown: String)
-    case tools(id: String, calls: [ToolCall])
-    case compaction(id: String)
+    /// A settled "Worked" disclosure: summary line collapsed, the full
+    /// reasoning/tool trail on expand — the shared reveal machinery drives the
+    /// animation exactly as on macOS.
+    @ViewBuilder
+    private func workedSection(
+        items: [WorkedItem],
+        key: TranscriptDisclosureStore.Key,
+        allowsDeferred: Bool
+    ) -> some View {
+        if !items.isEmpty || (allowsDeferred && turn.hasDeferredWorkedDetails) {
+            let isExpanded = store.isExpanded(key, default: false)
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 6) {
+                    Text(workedLabel)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                    TranscriptDisclosureChevron(expanded: isExpanded)
+                    Spacer(minLength: 0)
+                }
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    store.toggle(key, default: false)
+                }
 
-    var id: String {
-        switch self {
-        case let .text(id, _): "text:\(id)"
-        case let .tools(id, _): id
-        case let .compaction(id): "compaction:\(id)"
+                TranscriptDisclosureContentReveal(isExpanded: isExpanded) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        if allowsDeferred, turn.hasDeferredWorkedDetails,
+                           let itemId = turn.deferredDetailItemId,
+                           let transcriptController {
+                            DeferredWorkedDetails(controller: transcriptController, itemId: itemId)
+                        } else {
+                            ForEach(items) { item in
+                                workedItemView(item, dimmed: true)
+                            }
+                        }
+                    }
+                    .padding(.top, 2)
+                }
+            }
+        }
+    }
+
+    private var workedLabel: String {
+        if let duration = turn.duration, duration >= 1 {
+            return "Worked for \(Self.durationFormatter.string(from: duration) ?? "a moment")"
+        }
+        return "Worked"
+    }
+
+    private static let durationFormatter: DateComponentsFormatter = {
+        let formatter = DateComponentsFormatter()
+        formatter.allowedUnits = [.hour, .minute, .second]
+        formatter.unitsStyle = .abbreviated
+        return formatter
+    }()
+
+    @ViewBuilder
+    private func workedItemView(_ item: WorkedItem, dimmed: Bool) -> some View {
+        switch item {
+        case let .text(_, markdown):
+            StreamingMarkdownView(markdown, isComplete: !isStreaming)
+                .opacity(dimmed ? 0.85 : 1)
+        case let .toolGroup(_, calls):
+            ToolGroupView(calls: calls, isTurnActive: isStreaming)
+        case let .subagent(_, call):
+            ToolCallRow(call: call, isTurnActive: isStreaming)
+        case .contextCompaction:
+            AgentStatusText.contextCompacted
         }
     }
 }
-
 
 /// The composer's mode chip: current mode name, tap for the mode menu —
 /// switching runs the shared SessionController.setMode path.
@@ -332,5 +392,34 @@ private struct ModePickerChip: View {
                 .background(Capsule().fill(Color.secondary.opacity(0.12)))
         }
         .buttonStyle(.plain)
+    }
+}
+
+/// Historical turns arrive without their worked detail; expanding the section
+/// hydrates just that turn's bounded event set through the shared controller.
+private struct DeferredWorkedDetails: View {
+    let controller: SessionController
+    let itemId: String
+    @State private var failed = false
+
+    var body: some View {
+        Group {
+            if failed {
+                Button("Retry loading worked details") { failed = false }
+                    .font(.footnote)
+            } else {
+                HStack(spacing: 8) {
+                    ProgressView()
+                    Text("Loading worked details…")
+                        .foregroundStyle(.secondary)
+                }
+                .font(.footnote)
+                .task {
+                    if await !controller.loadTranscriptDetails(itemId) {
+                        failed = true
+                    }
+                }
+            }
+        }
     }
 }

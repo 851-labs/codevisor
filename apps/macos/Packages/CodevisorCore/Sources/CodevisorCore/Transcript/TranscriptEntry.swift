@@ -246,7 +246,7 @@ public extension AssistantTurn {
     }
 
     /// Wall-clock duration of the turn, once finished.
-    var duration: TimeInterval? {
+    public var duration: TimeInterval? {
         guard let startedAt, let endedAt else { return nil }
         return max(0, endedAt.timeIntervalSince(startedAt))
     }
