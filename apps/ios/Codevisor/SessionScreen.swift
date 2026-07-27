@@ -133,28 +133,6 @@ private struct SessionTranscriptView: View {
         ZStack(alignment: .bottom) {
             transcriptScroll(model)
 
-            // Hides the transcript behind the composer: a short fade above
-                // the card, then fully opaque from the card's top edge all the
-                // way past the screen's bottom edge.
-            VStack(spacing: 0) {
-                LinearGradient(
-                    colors: [
-                        Color(.systemGroupedBackground).opacity(0),
-                        Color(.systemGroupedBackground)
-                    ],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-                .frame(height: 28)
-                Rectangle()
-                    .fill(Color(.systemGroupedBackground))
-            }
-                // Extra slack runs the opaque part past the screen's bottom
-                // edge, including the home indicator area.
-                .frame(height: 28 + composerHeight + 60)
-                .allowsHitTesting(false)
-                .ignoresSafeArea(.container, edges: .bottom)
-
             VStack(spacing: 8) {
                 if !isAtBottom {
                     HStack {
@@ -171,6 +149,32 @@ private struct SessionTranscriptView: View {
                         maxHeight: availableHeight - 88,
                         collapsedHeight: $composerHeight
                     )
+                    // The transcript fades where it slides underneath the
+                    // card, not above it: this backdrop sits behind the glass,
+                    // its gradient starting exactly at the card's top edge and
+                    // fully opaque well before the card's bottom. As a
+                    // background it inherits the card's live size, so it
+                    // tracks a resize drag frame-for-frame. Negative padding
+                    // stretches it to the screen edges so text can't peek out
+                    // beside or below the card.
+                    .background {
+                        VStack(spacing: 0) {
+                            LinearGradient(
+                                colors: [
+                                    Color(.systemGroupedBackground).opacity(0),
+                                    Color(.systemGroupedBackground)
+                                ],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                            .frame(height: 28)
+                            Rectangle()
+                                .fill(Color(.systemGroupedBackground))
+                        }
+                        .padding(.horizontal, -10)
+                        .padding(.bottom, -60)
+                        .allowsHitTesting(false)
+                    }
             }
             .padding(.horizontal, 10)
             .padding(.bottom, 6)
