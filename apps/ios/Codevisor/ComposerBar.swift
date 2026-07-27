@@ -31,6 +31,7 @@ struct ComposerBar: View {
     @State private var editorHeightOverride: CGFloat?
     @State private var dragStartHeight: CGFloat?
     @State private var dragStartExpanded = false
+    @State private var collapseTask: Task<Void, Never>?
     @State private var isExpanded = false
     @State private var isDragging = false
     @State private var photoItems: [PhotosPickerItem] = []
@@ -54,7 +55,7 @@ struct ComposerBar: View {
     /// visible handle — the whole card is draggable too.
     private var grabStrip: some View {
         Color.clear
-            .frame(height: 14)
+            .frame(height: 20)
             .frame(maxWidth: .infinity)
             .contentShape(Rectangle())
             .highPriorityGesture(expansionDrag)
@@ -148,6 +149,8 @@ struct ComposerBar: View {
                 }
             }
             .font(.callout)
+            .contentShape(Rectangle())
+            .gesture(expansionDrag)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
@@ -158,8 +161,6 @@ struct ComposerBar: View {
         // Resizing the card shouldn't ripple layout out into the transcript
         // behind it.
         .geometryGroup()
-        .contentShape(Rectangle())
-        .simultaneousGesture(expansionDrag)
         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
             // Publish only the resting size; see `collapsedHeight`.
             if editorHeightOverride == nil { collapsedHeight = height }
@@ -202,6 +203,8 @@ struct ComposerBar: View {
             .onChanged { value in
                 let start = dragStartHeight ?? editorHeight
                 if dragStartHeight == nil {
+                    collapseTask?.cancel()
+                    collapseTask = nil
                     dragStartHeight = start
                     dragStartExpanded = isExpanded
                     isDragging = true
@@ -245,12 +248,15 @@ struct ComposerBar: View {
         withAnimation(.snappy(duration: 0.28)) {
             editorHeightOverride = expand ? maxEditorHeight : collapsedEditorHeight
         }
+        collapseTask?.cancel()
         if !expand {
             // Hand sizing back to the content once the collapse lands, so the
-            // card resumes growing with the text.
-            Task {
+            // card resumes growing with the text. Cancelled if another drag
+            // starts first, so it can't clear a height mid-gesture.
+            collapseTask = Task {
                 try? await Task.sleep(for: .milliseconds(300))
-                if !isExpanded { editorHeightOverride = nil }
+                guard !Task.isCancelled, !isExpanded else { return }
+                editorHeightOverride = nil
             }
         }
     }
