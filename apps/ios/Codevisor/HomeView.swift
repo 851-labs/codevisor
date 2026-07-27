@@ -224,7 +224,8 @@ struct HomeView: View {
         projectList.activeProjects.first { $0.id == session.projectId }?.name
     }
 
-    /// The harness's SF symbol from the machine's cached capabilities.
+    /// Fallback SF symbol from the machine's cached capabilities, for
+    /// harnesses without a bundled brand icon.
     private func harnessSymbol(for session: ChatSession) -> String {
         environment.configCache.capabilities(forServer: session.serverId)
             .first { $0.harness.id == session.harnessId }?
@@ -341,9 +342,14 @@ private struct SessionRow: View {
                 .fill(Color.accentColor.opacity(0.14))
                 .frame(width: 38, height: 38)
                 .overlay {
-                    Image(systemName: harnessSymbol)
-                        .font(.system(size: 16, weight: .medium))
-                        .foregroundStyle(.tint)
+                    // The same bundled brand glyphs as the macOS harness
+                    // picker, tinted like the tile.
+                    HarnessIconView(
+                        harnessId: session.harnessId,
+                        fallbackSymbolName: harnessSymbol,
+                        size: 20
+                    )
+                    .foregroundStyle(.tint)
                 }
             VStack(alignment: .leading, spacing: 2) {
                 Text(session.title.isEmpty ? "New Chat" : session.title)

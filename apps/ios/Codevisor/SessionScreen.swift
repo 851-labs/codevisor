@@ -36,6 +36,11 @@ struct SessionTranscriptView: View {
     /// id-targeted scrollTo, scrolling to an edge works even when the bottom
     /// rows haven't been laid out by the lazy stack yet.
     @State private var scrollPosition = ScrollPosition()
+    /// The macOS send animation: a sent message rides the scroll up to the
+    /// top of the viewport, with the trailing spacer stretched so there's
+    /// room for the response to stream in below it.
+    @State private var awaitingSendScroll = false
+    @State private var sendPinActive = false
 
     var body: some View {
         Group {
@@ -72,6 +77,19 @@ struct SessionTranscriptView: View {
         // out of SwiftUI's keyboard avoidance, which left the composer sitting
         // underneath the keyboard.
         ZStack(alignment: .bottom) {
+            // The brand mark sits faintly behind an empty chat and leaves as
+            // soon as there's any history.
+            if model.settledConversation.isEmpty, model.activeItem == nil {
+                Image("hunk")
+                    .resizable()
+                    .renderingMode(.template)
+                    .scaledToFit()
+                    .frame(width: 130)
+                    .foregroundStyle(Color.primary.opacity(0.08))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
+            }
             transcriptScroll(model)
 
             VStack(spacing: 8) {
@@ -90,32 +108,6 @@ struct SessionTranscriptView: View {
                         maxHeight: availableHeight - 88,
                         collapsedHeight: $composerHeight
                     )
-                    // The transcript fades where it slides underneath the
-                    // card, not above it: this backdrop sits behind the glass,
-                    // its gradient starting exactly at the card's top edge and
-                    // fully opaque well before the card's bottom. As a
-                    // background it inherits the card's live size, so it
-                    // tracks a resize drag frame-for-frame. It stays exactly
-                    // the card's width — only the bottom extends, covering the
-                    // gap to the screen edge — so it can't wash out content
-                    // beside the card.
-                    .background {
-                        VStack(spacing: 0) {
-                            LinearGradient(
-                                colors: [
-                                    Color(.systemGroupedBackground).opacity(0),
-                                    Color(.systemGroupedBackground)
-                                ],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
-                            .frame(height: 28)
-                            Rectangle()
-                                .fill(Color(.systemGroupedBackground))
-                        }
-                        .padding(.bottom, -60)
-                        .allowsHitTesting(false)
-                    }
             }
             .padding(.horizontal, 10)
             .padding(.bottom, 6)
@@ -178,13 +170,20 @@ struct SessionTranscriptView: View {
                 }
 
                 // Breathing room past the composer so the newest content can
-                // clear it — the same trick the macOS transcript uses.
+                // clear it. While a send is pinned to the top (macOS-style),
+                // the spacer stretches to nearly a viewport so the response
+                // has room to stream in below the sent message.
                 Color.clear
-                    .frame(height: composerHeight + 24)
+                    .frame(
+                        height: sendPinActive
+                            ? max(composerHeight + 24, viewportHeight - 140)
+                            : composerHeight + 24
+                    )
                     .id(Self.bottomAnchor)
                     .onScrollVisibilityChange(threshold: 0.05) { visible in
                         isAtBottom = visible
                         followsLatest = visible
+                        if visible { sendPinActive = false }
                     }
             }
             .padding(.horizontal, 16)
@@ -205,11 +204,16 @@ struct SessionTranscriptView: View {
             scrollToBottomIfFollowing(scroller)
         }
         .onChange(of: model.settledConversation.count) { _, _ in
-            scrollToBottomIfFollowing(scroller)
+            if awaitingSendScroll {
+                pinSentMessageToTop(model, scroller)
+            } else {
+                scrollToBottomIfFollowing(scroller)
+            }
         }
         .onChange(of: controller.userSendSignal) { _, _ in
-            followsLatest = true
-            scrollToBottom(scroller, animated: true)
+            awaitingSendScroll = true
+            sendPinActive = true
+            pinSentMessageToTop(model, scroller)
         }
         .onChange(of: scrollRequest) { _, _ in
             scrollToBottom(scroller, animated: true)
@@ -230,6 +234,20 @@ struct SessionTranscriptView: View {
             if let anchorId {
                 scroller.scrollTo(anchorId, anchor: .top)
             }
+        }
+    }
+
+    /// The sent message animates from the composer up to the top of the
+    /// viewport — the same motion as the macOS transcript's send handoff.
+    private func pinSentMessageToTop(_ model: SessionModel, _ scroller: ScrollViewProxy) {
+        guard case .user = model.settledConversation.last else { return }
+        guard let id = model.settledConversation.last?.id else { return }
+        awaitingSendScroll = false
+        // The response streams in below the pinned message; following the
+        // tail would immediately yank the view back down.
+        followsLatest = false
+        withAnimation(.snappy(duration: 0.45)) {
+            scroller.scrollTo(id, anchor: .top)
         }
     }
 

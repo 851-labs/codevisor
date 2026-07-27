@@ -82,7 +82,18 @@ struct ComposerBar: View {
     }
 
     var body: some View {
-        card
+        VStack(alignment: .leading, spacing: 8) {
+            // Where a brand-new chat runs (project root / worktree) floats
+            // above the card, like the macOS new-chat configuration row.
+            if controller.canChooseHarness {
+                runLocationChip
+                    .font(.footnote)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 7)
+                    .composerGlassSurface(cornerRadius: 18)
+            }
+            card
+        }
         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
             // Publish only the resting size; see `collapsedHeight`.
             if !isExpanded, dragTranslation == 0, releaseHeight == nil {
@@ -121,15 +132,6 @@ struct ComposerBar: View {
 
     private var card: some View {
         VStack(alignment: .leading, spacing: 10) {
-            // Where a brand-new chat runs (project root / worktree) sits at
-            // the top of the card; the harness rides the model sheet.
-            if controller.canChooseHarness {
-                HStack {
-                    runLocationChip
-                        .font(.footnote)
-                    Spacer(minLength: 0)
-                }
-            }
             if !controller.composerAttachments.isEmpty {
                 ComposerAttachmentStrip(controller: controller)
             }
@@ -155,17 +157,18 @@ struct ComposerBar: View {
                     .opacity(0)
                     .accessibilityHidden(true)
 
-                ScrollView {
-                    TextField("", text: $text, axis: .vertical)
-                        .textFieldStyle(.plain)
-                        .focused($isFocused)
-                        .disabled(controller.isSubmitting || controller.isResolvingQuestion)
-                        .frame(maxWidth: .infinity, alignment: .topLeading)
-                }
-                // Scrolling stays off unless the text really overflows, so a
-                // drag on the card is never swallowed by the editor.
-                .scrollDisabled(editorHeight >= measuredTextHeight)
-                .frame(height: editorHeight)
+                // TextEditor, not a vertical TextField: return must insert a
+                // newline, and vertical TextFields treat it as submit.
+                TextEditor(text: $text)
+                    .textEditorStyle(.plain)
+                    .scrollContentBackground(.hidden)
+                    .contentMargins(.all, 0, for: .scrollContent)
+                    .focused($isFocused)
+                    .disabled(controller.isSubmitting || controller.isResolvingQuestion)
+                    // Scrolling stays off unless the text really overflows,
+                    // so a drag on the card is never swallowed by the editor.
+                    .scrollDisabled(editorHeight >= measuredTextHeight)
+                    .frame(height: editorHeight)
 
                 if text.isEmpty {
                     Text(placeholder)
@@ -197,6 +200,28 @@ struct ComposerBar: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
         .composerGlassSurface(cornerRadius: ComposerGlassStyle.composerCornerRadius)
+        // The transcript fades where it slides underneath the card: this
+        // backdrop sits behind the glass, its gradient starting exactly at
+        // the card's top edge and fully opaque well before the card's
+        // bottom. It tracks a resize drag frame-for-frame and only extends
+        // downward, covering the gap to the screen edge.
+        .background {
+            VStack(spacing: 0) {
+                LinearGradient(
+                    colors: [
+                        Color(.systemGroupedBackground).opacity(0),
+                        Color(.systemGroupedBackground)
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .frame(height: 28)
+                Rectangle()
+                    .fill(Color(.systemGroupedBackground))
+            }
+            .padding(.bottom, -60)
+            .allowsHitTesting(false)
+        }
         .contentShape(Rectangle())
         // A single owner for the whole card: dragging works anywhere on it,
         // and no two recognizers can fight over one touch.

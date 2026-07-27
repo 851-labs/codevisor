@@ -92,14 +92,14 @@ struct ModelPickerSheet: View {
             ForEach(groups) { group in
                 let values = matchingValues(in: group)
                 if !values.isEmpty {
-                    Section(group.name) {
+                    Section {
                         ForEach(values) { value in
                             Button {
                                 choose(model: value.value, in: group)
                             } label: {
                                 HStack {
                                     Text(value.name)
-                                        .foregroundStyle(.primary)
+                                        .foregroundStyle(Color.primary)
                                     Spacer()
                                     if isCurrent(value, in: group) {
                                         Image(systemName: "checkmark")
@@ -113,6 +113,11 @@ struct ModelPickerSheet: View {
                             }
                             .disabled(isSwitchingHarness)
                         }
+                    } header: {
+                        HStack(spacing: 6) {
+                            HarnessIconView(harnessId: group.id, size: 14)
+                            Text(group.name)
+                        }
                     }
                 }
             }
@@ -121,6 +126,8 @@ struct ModelPickerSheet: View {
             }
         }
         .searchable(text: $search, placement: .navigationBarDrawer(displayMode: .always))
+        .textInputAutocapitalization(.never)
+        .autocorrectionDisabled()
     }
 
     private func matchingValues(in group: HarnessGroup) -> [SessionConfigSelectOption] {
@@ -144,7 +151,7 @@ struct ModelPickerSheet: View {
                             choose(option: option, value: value.value, next: .speed)
                         } label: {
                             HStack {
-                                Text(value.name).foregroundStyle(.primary)
+                                Text(value.name).foregroundStyle(Color.primary)
                                 Spacer()
                                 if option.currentValue == value.value {
                                     Image(systemName: "checkmark").foregroundStyle(.tint)
@@ -166,7 +173,7 @@ struct ModelPickerSheet: View {
                             choose(option: option, value: value.value, next: nil)
                         } label: {
                             HStack {
-                                Text(value.name).foregroundStyle(.primary)
+                                Text(value.name).foregroundStyle(Color.primary)
                                 Spacer()
                                 if option.currentValue == value.value {
                                     Image(systemName: "checkmark").foregroundStyle(.tint)
