@@ -48,8 +48,15 @@ final class WorkspacePaneStore {
 final class PaneSnapshotCache {
     static let shared = PaneSnapshotCache()
     var images: [UUID: UIImage] = [:]
+    /// The visible chat pane's composer-stack height, written by the pane
+    /// body so captures can crop it. (Plain storage, not a SwiftUI
+    /// preference: preferences fed back into navigation state cancel
+    /// in-flight push transitions.)
+    var activeBottomChrome: CGFloat = 0
 
-    func captureKeyWindow(for paneId: UUID) {
+    /// `bottomChrome` is the height of pane-owned chrome above the safe area
+    /// (the chat composer) to exclude, so previews show only content.
+    func captureKeyWindow(for paneId: UUID, bottomChrome: CGFloat = 0) {
         guard
             let scene = UIApplication.shared.connectedScenes
                 .compactMap({ $0 as? UIWindowScene }).first,
@@ -59,15 +66,16 @@ final class PaneSnapshotCache {
         let full = renderer.image { _ in
             window.drawHierarchy(in: window.bounds, afterScreenUpdates: false)
         }
-        // Crop the status bar and nav-bar band so the preview shows only the
-        // pane's content, like Safari's tab pictures.
+        // Crop the status/nav band and any bottom chrome so the preview
+        // shows only the pane's content, like Safari's tab pictures.
         let topChrome = window.safeAreaInsets.top + 44
+        let bottomCrop = bottomChrome > 0 ? bottomChrome + window.safeAreaInsets.bottom : 0
         let scale = full.scale
         let cropRect = CGRect(
             x: 0,
             y: topChrome * scale,
             width: full.size.width * scale,
-            height: (full.size.height - topChrome) * scale
+            height: max(1, (full.size.height - topChrome - bottomCrop)) * scale
         )
         if let cgImage = full.cgImage?.cropping(to: cropRect) {
             images[paneId] = UIImage(cgImage: cgImage, scale: scale, orientation: .up)
@@ -168,12 +176,18 @@ struct WorkspaceScreen: View {
                 .accessibilityLabel("Show tabs")
             }
         }
+        // A cover with the system slide disabled: the grid animates its own
+        // Safari-style zoom (in from the active tab, out into the tapped
+        // one). Structural transitions inside the pushed view itself corrupt
+        // NavigationStack's transaction and pop the workspace.
         .fullScreenCover(isPresented: $showsGrid) {
             PaneGridView(
                 titleFor: { title(for: $0) },
                 cwd: workspaceCwd,
-                paneState: paneBinding
+                paneState: paneBinding,
+                onDismiss: { closeGrid() }
             )
+            .presentationBackground(.clear)
         }
         .task { await prepare() }
     }
@@ -247,9 +261,20 @@ struct WorkspaceScreen: View {
 
     private func openGrid() {
         if let pane = activePane {
-            PaneSnapshotCache.shared.captureKeyWindow(for: pane.id)
+            PaneSnapshotCache.shared.captureKeyWindow(
+                for: pane.id,
+                bottomChrome: pane.kind == .chat ? PaneSnapshotCache.shared.activeBottomChrome : 0
+            )
         }
-        showsGrid = true
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) { showsGrid = true }
+    }
+
+    private func closeGrid() {
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) { showsGrid = false }
     }
 
     private func prepare() async {
@@ -357,10 +382,20 @@ private struct NewTabPaneView: View {
 /// The Safari-style tab switcher: a two-column grid of pane previews with
 /// close buttons, plus + for an instant new tab.
 private struct PaneGridView: View {
-    @Environment(\.dismiss) private var dismiss
     let titleFor: (PaneDescriptorState) -> String
     let cwd: String
     @Binding var paneState: PaneGroupState
+    /// Called once the leave animation finishes; the parent drops the cover
+    /// without a system animation.
+    let onDismiss: () -> Void
+
+    /// Card centers in global space, for the zoom-out anchor.
+    @State private var cardFrames: [UUID: CGRect] = [:]
+    /// The grid's own Safari-style motion: scales in from slightly zoomed on
+    /// appear, and zooms out into the chosen card on leave.
+    @State private var entered = false
+    @State private var exitAnchor: UnitPoint = .center
+    @State private var exiting = false
 
     private let columns = [
         GridItem(.flexible(), spacing: 14),
@@ -368,6 +403,19 @@ private struct PaneGridView: View {
     ]
 
     var body: some View {
+        zoomContainer
+            .onAppear {
+                withAnimation(.easeOut(duration: 0.22)) { entered = true }
+            }
+    }
+
+    private var zoomContainer: some View {
+        gridNavigation
+            .scaleEffect(exiting ? 2.3 : (entered ? 1 : 1.08), anchor: exiting ? exitAnchor : .center)
+            .opacity(exiting ? 0 : (entered ? 1 : 0))
+    }
+
+    private var gridNavigation: some View {
         NavigationStack {
             ScrollView {
                 LazyVGrid(columns: columns, spacing: 18) {
@@ -379,6 +427,9 @@ private struct PaneGridView: View {
                             onSelect: { select(pane) },
                             onClose: { close(pane) }
                         )
+                        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame in
+                            cardFrames[pane.id] = frame
+                        }
                     }
                 }
                 .padding(16)
@@ -396,9 +447,27 @@ private struct PaneGridView: View {
                     .accessibilityLabel("New tab")
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }
+                    Button("Done") { leave(toward: anchor(for: paneState.selectedPaneId)) }
                 }
             }
+        }
+    }
+
+    private func anchor(for paneId: UUID?) -> UnitPoint? {
+        guard let paneId, let frame = cardFrames[paneId],
+              let screen = UIApplication.shared.connectedScenes
+                  .compactMap({ ($0 as? UIWindowScene)?.screen.bounds }).first
+        else { return nil }
+        return UnitPoint(x: frame.midX / screen.width, y: frame.midY / screen.height)
+    }
+
+    /// Zooms the grid out into the chosen card, then hands off to the parent.
+    private func leave(toward anchor: UnitPoint?) {
+        exitAnchor = anchor ?? .center
+        withAnimation(.easeIn(duration: 0.26)) { exiting = true }
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(280))
+            onDismiss()
         }
     }
 
@@ -406,7 +475,7 @@ private struct PaneGridView: View {
         var state = paneState
         state.selectedPaneId = pane.id
         paneState = state
-        dismiss()
+        leave(toward: anchor(for: pane.id))
     }
 
     /// Any tab can close — chats included, as on macOS. The binding's owner
@@ -427,7 +496,7 @@ private struct PaneGridView: View {
         var state = paneState
         state.addNewTabPane(inheritedCwd: cwd)
         paneState = state
-        dismiss()
+        leave(toward: nil)
     }
 }
 
@@ -458,10 +527,14 @@ private struct PaneCard: View {
                 RoundedRectangle(cornerRadius: 16)
                     .fill(pane.kind == .terminal ? Color.black : Color(.secondarySystemGroupedBackground))
                 if let snapshot {
-                    Image(uiImage: snapshot)
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
-                        .frame(maxWidth: .infinity)
+                    // Top-aligned fill inside the fixed card, overflow clipped
+                    // by the card shape.
+                    Color.clear
+                        .overlay(alignment: .top) {
+                            Image(uiImage: snapshot)
+                                .resizable()
+                                .aspectRatio(contentMode: .fill)
+                        }
                 } else {
                     VStack {
                         Spacer()
@@ -472,9 +545,9 @@ private struct PaneCard: View {
                     }
                 }
             }
-            // Shorter Safari-like cards: previews are pictures, not the
-            // whole screen.
-            .aspectRatio(0.78, contentMode: .fit)
+            // Fixed Safari-like height: every card matches regardless of
+            // how tall its snapshot is.
+            .frame(height: 205)
             .clipShape(RoundedRectangle(cornerRadius: 16))
             .overlay(
                 RoundedRectangle(cornerRadius: 16)

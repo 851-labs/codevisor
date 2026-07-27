@@ -114,8 +114,8 @@ struct HomeView: View {
                 // One glass group on the left: settings, then the machine
                 // picker, mirroring the macOS toolbar's machine menu.
                 ToolbarItemGroup(placement: .topBarLeading) {
-                    settingsButton
                     machineMenu
+                    settingsButton
                 }
                 ToolbarItem(placement: .topBarTrailing) { organizeMenu }
             }
@@ -157,7 +157,19 @@ struct HomeView: View {
                 Section {
                     ForEach(visibleSessions) { session in
                         NavigationLink(value: session.id) {
-                            SessionRow(session: session, projectName: projectName(for: session))
+                            SessionRow(
+                                session: session,
+                                projectName: projectName(for: session),
+                                harnessSymbol: harnessSymbol(for: session)
+                            )
+                        }
+                        .swipeActions(edge: .trailing) {
+                            Button {
+                                _ = environment.archiveSessionAndWorkspaceIfEmpty(session)
+                            } label: {
+                                Label("Archive", systemImage: "archivebox")
+                            }
+                            .tint(.orange)
                         }
                     }
                     .onMove { source, destination in
@@ -174,7 +186,19 @@ struct HomeView: View {
                         Section {
                             ForEach(sessions) { session in
                                 NavigationLink(value: session.id) {
-                                    SessionRow(session: session, projectName: nil)
+                                    SessionRow(
+                                        session: session,
+                                        projectName: nil,
+                                        harnessSymbol: harnessSymbol(for: session)
+                                    )
+                                }
+                                .swipeActions(edge: .trailing) {
+                                    Button {
+                                        _ = environment.archiveSessionAndWorkspaceIfEmpty(session)
+                                    } label: {
+                                        Label("Archive", systemImage: "archivebox")
+                                    }
+                                    .tint(.orange)
                                 }
                             }
                         } header: {
@@ -198,6 +222,13 @@ struct HomeView: View {
 
     private func projectName(for session: ChatSession) -> String? {
         projectList.activeProjects.first { $0.id == session.projectId }?.name
+    }
+
+    /// The harness's SF symbol from the machine's cached capabilities.
+    private func harnessSymbol(for session: ChatSession) -> String {
+        environment.configCache.capabilities(forServer: session.serverId)
+            .first { $0.harness.id == session.harnessId }?
+            .harness.symbolName ?? "cpu"
     }
 
     private var emptyState: some View {
@@ -291,10 +322,13 @@ struct HomeView: View {
     }
 }
 
-/// One chat row: status accent, title, project/worktree context, activity time.
+/// One chat row, Mail-style: unread/status dot on the far left, the
+/// harness's icon, then the title over "workspace · worktree". No timestamp —
+/// ordering already tells recency.
 private struct SessionRow: View {
     let session: ChatSession
     let projectName: String?
+    let harnessSymbol: String
 
     private var needsAttention: Bool { session.actionRequired || session.pendingPlanApproval }
     private var hasError: Bool { session.hasUnreadError }
@@ -303,6 +337,14 @@ private struct SessionRow: View {
     var body: some View {
         HStack(spacing: 10) {
             statusDot
+            RoundedRectangle(cornerRadius: 9)
+                .fill(Color.accentColor.opacity(0.14))
+                .frame(width: 38, height: 38)
+                .overlay {
+                    Image(systemName: harnessSymbol)
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundStyle(.tint)
+                }
             VStack(alignment: .leading, spacing: 2) {
                 Text(session.title.isEmpty ? "New Chat" : session.title)
                     .lineLimit(1)
@@ -320,13 +362,8 @@ private struct SessionRow: View {
                 .lineLimit(1)
             }
             Spacer(minLength: 4)
-            if let updatedAt = session.updatedAt {
-                Text(updatedAt, format: .relative(presentation: .named, unitsStyle: .abbreviated))
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
-            }
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, 3)
     }
 
     @ViewBuilder private var statusDot: some View {

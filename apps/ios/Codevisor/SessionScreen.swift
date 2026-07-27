@@ -123,6 +123,10 @@ struct SessionTranscriptView: View {
         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
             availableHeight = height
         }
+        // Tab snapshots crop the composer out so previews show only content.
+        .onChange(of: composerHeight, initial: true) { _, height in
+            PaneSnapshotCache.shared.activeBottomChrome = height + 6
+        }
         .background(Color(.systemGroupedBackground))
     }
 

@@ -82,22 +82,7 @@ struct ComposerBar: View {
     }
 
     var body: some View {
-        VStack(spacing: 8) {
-            card
-            // A brand-new chat mirrors the macOS new-chat page: harness and
-            // run-location pickers in their own capsule row under the card.
-            if controller.canChooseHarness {
-                HStack(spacing: 10) {
-                    harnessChip
-                    Divider().frame(height: 14)
-                    runLocationChip
-                }
-                .font(.footnote)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 8)
-                .composerGlassSurface(cornerRadius: 22)
-            }
-        }
+        card
         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
             // Publish only the resting size; see `collapsedHeight`.
             if !isExpanded, dragTranslation == 0, releaseHeight == nil {
@@ -136,6 +121,15 @@ struct ComposerBar: View {
 
     private var card: some View {
         VStack(alignment: .leading, spacing: 10) {
+            // Where a brand-new chat runs (project root / worktree) sits at
+            // the top of the card; the harness rides the model sheet.
+            if controller.canChooseHarness {
+                HStack {
+                    runLocationChip
+                        .font(.footnote)
+                    Spacer(minLength: 0)
+                }
+            }
             if !controller.composerAttachments.isEmpty {
                 ComposerAttachmentStrip(controller: controller)
             }
@@ -273,30 +267,6 @@ struct ComposerBar: View {
     }
 
     // MARK: - New-chat pickers
-
-    /// Harness choice for a chat whose agent hasn't spawned yet — the iOS
-    /// twin of the macOS HarnessPickerMenu.
-    private var harnessChip: some View {
-        Menu {
-            ForEach(controller.harnesses, id: \.id) { harness in
-                Button {
-                    Task { await controller.selectHarness(harness.id) }
-                } label: {
-                    if harness.id == controller.selectedHarnessId {
-                        Label(harness.name, systemImage: "checkmark")
-                    } else {
-                        Text(harness.name)
-                    }
-                }
-            }
-        } label: {
-            chipLabel(
-                controller.selectedHarness?.name ?? "Agent",
-                systemImage: "cpu"
-            )
-        }
-        .accessibilityLabel("Agent")
-    }
 
     /// Where the chat's commands run: the project root or a fresh worktree —
     /// the macOS run-location picker, reduced to the contexts this client
@@ -451,10 +421,11 @@ struct ComposerBar: View {
     }
 }
 
-/// The model / thinking-level chip — "Sonnet High" — opening the same model,
-/// thinking, and speed sections the macOS menu shows.
+/// The model / thinking-level chip — "Sonnet High" — opening the searchable
+/// model sheet (model → thinking → speed, grouped by harness for new chats).
 private struct ModelConfigChip: View {
     @Bindable var controller: SessionController
+    @State private var showsPicker = false
 
     private var isFastSpeed: Bool { controller.speedOption?.currentValue == "fast" }
 
@@ -463,16 +434,8 @@ private struct ModelConfigChip: View {
             ProgressView()
                 .controlSize(.small)
         } else if controller.hasModelMenu {
-            Menu {
-                if let option = controller.modelOption {
-                    section("Model", option)
-                }
-                ForEach(controller.thoughtLevelOptions) { option in
-                    section(option.name, option)
-                }
-                if let option = controller.speedOption {
-                    section("Speed", option)
-                }
+            Button {
+                showsPicker = true
             } label: {
                 HStack(spacing: 5) {
                     if isFastSpeed {
@@ -494,20 +457,9 @@ private struct ModelConfigChip: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Model settings")
-        }
-    }
-
-    private func section(_ title: String, _ option: SessionConfigOption) -> some View {
-        Section(title) {
-            Picker(title, selection: Binding(
-                get: { controller.configOptions.first { $0.id == option.id }?.currentValue ?? option.currentValue },
-                set: { value in Task { await controller.setConfigOption(option.id, value) } }
-            )) {
-                ForEach(option.options) { value in
-                    Text(value.name).tag(value.value)
-                }
+            .sheet(isPresented: $showsPicker) {
+                ModelPickerSheet(controller: controller)
             }
-            .pickerStyle(.inline)
         }
     }
 }
