@@ -53,12 +53,12 @@ struct SessionTranscriptView: View {
                     Text(message)
                 }
             } else {
-                VStack(spacing: 10) {
-                    ProgressView()
-                    Text("Connecting…")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
+                // No model yet: a draft (new-worktree chats deliberately
+                // don't connect until first send) or a connect in flight.
+                // Either way the composer stays usable and any connecting
+                // state reads as an inline hint, like the macOS new-chat
+                // page — never a full-screen mode change.
+                draft
             }
         }
         .onAppear {
@@ -70,6 +70,49 @@ struct SessionTranscriptView: View {
             }
         }
         .environment(\.attachmentImages, attachmentImages)
+    }
+
+    /// The model-less chat: brand mark centered in the visible area, the
+    /// composer ready at the bottom, and a small status line while a connect
+    /// attempt runs.
+    private var draft: some View {
+        ZStack(alignment: .bottom) {
+            Image("hunk")
+                .resizable()
+                .renderingMode(.template)
+                .scaledToFit()
+                .frame(width: 130)
+                .foregroundStyle(Color.primary.opacity(0.08))
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                .padding(.bottom, composerHeight + 20)
+                .allowsHitTesting(false)
+
+            VStack(spacing: 8) {
+                if case let .connecting(message) = controller.status {
+                    HStack(spacing: 6) {
+                        ProgressView()
+                            .controlSize(.small)
+                        Text(message)
+                    }
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                }
+                ComposerBar(
+                    controller: controller,
+                    maxHeight: availableHeight - 88,
+                    collapsedHeight: $composerHeight
+                )
+            }
+            .padding(.horizontal, 10)
+            .padding(.bottom, 6)
+        }
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
+            availableHeight = height
+        }
+        .onChange(of: composerHeight, initial: true) { _, height in
+            PaneSnapshotCache.shared.activeBottomChrome = height + 6
+        }
+        .background(Color(.systemGroupedBackground))
     }
 
     private func transcript(_ model: SessionModel) -> some View {
