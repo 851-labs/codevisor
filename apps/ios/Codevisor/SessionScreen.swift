@@ -111,6 +111,22 @@ private struct SessionTranscriptView: View {
     }
 
     private func transcript(_ model: SessionModel) -> some View {
+        VStack(spacing: 0) {
+            transcriptScroll(model)
+            if let question = controller.activeQuestion {
+                QuestionCardView(controller: controller, request: question)
+                    .id(question.questionId)
+                    .padding(.horizontal, 10)
+                    .padding(.bottom, 6)
+            }
+            ComposerBar(controller: controller)
+                .padding(.horizontal, 10)
+                .padding(.bottom, 6)
+        }
+        .background(Color(.systemGroupedBackground))
+    }
+
+    private func transcriptScroll(_ model: SessionModel) -> some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 16) {
                 if model.hasOlderHistory {
@@ -143,87 +159,8 @@ private struct SessionTranscriptView: View {
         }
         .defaultScrollAnchor(.bottom)
         .scrollDismissesKeyboard(.interactively)
-        .background(Color(.systemGroupedBackground))
         .environment(\.transcriptDisclosure, disclosure)
         .environment(\.transcriptController, controller)
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            VStack(spacing: 6) {
-                if let question = controller.activeQuestion {
-                    QuestionCardView(controller: controller, request: question)
-                        .id(question.questionId)
-                }
-                ComposerBar(controller: controller)
-            }
-        }
-    }
-}
-
-/// The iOS composer, first slice: always docked at the bottom of the chat
-/// panel, rides the keyboard via the safe-area inset, grows with its text.
-/// Attachment/model pickers and the swipe-up expanded editor arrive as
-/// Phase 5 continues; send/stop already run the shared controller paths.
-private struct ComposerBar: View {
-    @Bindable var controller: SessionController
-    @FocusState private var isFocused: Bool
-
-    var body: some View {
-        HStack(alignment: .bottom, spacing: 8) {
-            // Attachment entry point (photo library / camera / files) lands
-            // with the attachment slice; the affordance anchors the layout.
-            Button {
-            } label: {
-                Image(systemName: "plus")
-                    .font(.system(size: 17, weight: .medium))
-                    .frame(width: 34, height: 34)
-            }
-            .buttonStyle(HoverIconButtonStyle(shape: .circle))
-            .disabled(true)
-
-            if let modeState = controller.modeState,
-               modeState.availableModes.count > 1 {
-                ModePickerChip(controller: controller, modeState: modeState)
-            }
-
-            TextField("Message the agent", text: $controller.composerText, axis: .vertical)
-                .lineLimit(1...6)
-                .textFieldStyle(.plain)
-                .focused($isFocused)
-                .padding(.vertical, 7)
-
-            sendOrStopButton
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
-        .composerGlassSurface(cornerRadius: ComposerGlassStyle.composerCornerRadius)
-        .padding(.horizontal, 10)
-        .padding(.bottom, 6)
-    }
-
-    @ViewBuilder private var sendOrStopButton: some View {
-        if controller.isSending {
-            Button {
-                Task { await controller.stop() }
-            } label: {
-                Image(systemName: "stop.fill")
-                    .font(.system(size: 15, weight: .semibold))
-                    .frame(width: 34, height: 34)
-                    .foregroundStyle(.white)
-                    .background(Circle().fill(.red))
-            }
-            .buttonStyle(.plain)
-        } else {
-            Button {
-                Task { await controller.send() }
-            } label: {
-                Image(systemName: "arrow.up")
-                    .font(.system(size: 15, weight: .semibold))
-                    .frame(width: 34, height: 34)
-                    .foregroundStyle(.white)
-                    .background(Circle().fill(controller.canSend ? Color.accentColor : Color.secondary.opacity(0.4)))
-            }
-            .buttonStyle(.plain)
-            .disabled(!controller.canSend)
-        }
     }
 }
 
@@ -381,44 +318,6 @@ private struct AssistantTurnBody: View {
         case .contextCompaction:
             AgentStatusText.contextCompacted
         }
-    }
-}
-
-/// The composer's mode chip: current mode name, tap for the mode menu —
-/// switching runs the shared SessionController.setMode path.
-private struct ModePickerChip: View {
-    @Bindable var controller: SessionController
-    let modeState: SessionModeState
-
-    private var currentName: String {
-        modeState.availableModes.first { $0.id == modeState.currentModeId }?.name
-            ?? modeState.currentModeId
-    }
-
-    var body: some View {
-        Menu {
-            ForEach(modeState.availableModes) { mode in
-                Button {
-                    Task { await controller.setMode(mode.id) }
-                } label: {
-                    if mode.id == modeState.currentModeId {
-                        Label(mode.name, systemImage: "checkmark")
-                    } else if let description = mode.description, !description.isEmpty {
-                        Text("\(mode.name)\n\(description)")
-                    } else {
-                        Text(mode.name)
-                    }
-                }
-            }
-        } label: {
-            Text(currentName)
-                .font(.caption.weight(.medium))
-                .lineLimit(1)
-                .padding(.horizontal, 9)
-                .padding(.vertical, 8)
-                .background(Capsule().fill(Color.secondary.opacity(0.12)))
-        }
-        .buttonStyle(.plain)
     }
 }
 
