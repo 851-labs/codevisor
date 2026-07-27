@@ -209,10 +209,11 @@ private struct SessionTranscriptView: View {
             Image(systemName: "arrow.down")
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(.secondary)
-                .frame(width: 36, height: 36)
-                .background(.regularMaterial, in: Circle())
         }
-        .buttonStyle(.plain)
+        // The same Liquid Glass treatment as the macOS transcript's button.
+        .buttonStyle(.glass)
+        .buttonBorderShape(.circle)
+        .controlSize(.large)
         .accessibilityLabel("Scroll to bottom")
     }
 

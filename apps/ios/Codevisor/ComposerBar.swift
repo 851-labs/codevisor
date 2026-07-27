@@ -32,6 +32,9 @@ struct ComposerBar: View {
     /// cancelled, so the height can't be left stale by a race, and dragging
     /// doesn't write view state on every frame.
     @GestureState private var dragTranslation: CGFloat = 0
+    /// The height at the moment the finger lifted, pinned for the settle
+    /// animation so release doesn't flash back to the old resting height.
+    @State private var releaseHeight: CGFloat?
     @State private var photoItems: [PhotosPickerItem] = []
     @State private var isPickingPhotos = false
     @State private var isPickingFiles = false
@@ -68,7 +71,10 @@ struct ComposerBar: View {
     }
 
     private var editorHeight: CGFloat {
-        min(maxEditorHeight, max(collapsedEditorHeight, baseEditorHeight - dragTranslation))
+        if dragTranslation != 0 {
+            return min(maxEditorHeight, max(collapsedEditorHeight, baseEditorHeight - dragTranslation))
+        }
+        return releaseHeight ?? baseEditorHeight
     }
 
     private var placeholder: String {
@@ -156,7 +162,9 @@ struct ComposerBar: View {
         .geometryGroup()
         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
             // Publish only the resting size; see `collapsedHeight`.
-            if !isExpanded, dragTranslation == 0 { collapsedHeight = height }
+            if !isExpanded, dragTranslation == 0, releaseHeight == nil {
+                collapsedHeight = height
+            }
         }
         .onAppear { text = controller.composerText }
         .onDisappear { controller.composerText = text }
@@ -225,7 +233,17 @@ struct ComposerBar: View {
                 } else {
                     shouldExpand = travelled > commitDistance
                 }
-                setExpanded(shouldExpand)
+                // GestureState zeroes itself the instant the gesture ends,
+                // which would snap the card back to its old resting height for
+                // a frame before the settle animation started. Pin the release
+                // height un-animated first, then animate that override away
+                // toward the new resting state, so the settle starts exactly
+                // where the finger let go.
+                var pin = Transaction()
+                pin.disablesAnimations = true
+                withTransaction(pin) { releaseHeight = height }
+                isExpanded = shouldExpand
+                withAnimation(.snappy(duration: 0.28)) { releaseHeight = nil }
             }
     }
 
