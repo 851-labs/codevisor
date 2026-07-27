@@ -15,11 +15,15 @@ struct SessionScreen: View {
 
     @State private var controller: SessionController?
     @State private var missing = false
+    /// Resolved once from the session's machine: the controller's
+    /// `serverSession` is replaced by server-echoed payloads during connect,
+    /// so its serverId is not a reliable lookup key later on.
+    @State private var serverConfig: CodevisorServerConfig?
 
     var body: some View {
         Group {
             if let controller {
-                SessionTranscriptView(controller: controller)
+                SessionTranscriptView(controller: controller, serverConfig: serverConfig)
             } else if missing {
                 ContentUnavailableView("Chat Not Found", systemImage: "questionmark.bubble")
             } else {
@@ -37,6 +41,8 @@ struct SessionScreen: View {
             missing = true
             return
         }
+        serverConfig = environment.machines.machine(for: session.serverId)?.serverConfig
+            ?? environment.machines.selectedMachine.serverConfig
         let controller = SessionController(
             project: project,
             configCache: environment.configCache,
@@ -58,7 +64,9 @@ struct SessionScreen: View {
 /// The transcript body for a connected controller.
 private struct SessionTranscriptView: View {
     @Bindable var controller: SessionController
+    let serverConfig: CodevisorServerConfig?
     @State private var disclosure = TranscriptDisclosureStore()
+    @State private var showsTerminal = false
 
     var body: some View {
         Group {
@@ -81,6 +89,25 @@ private struct SessionTranscriptView: View {
         }
         .navigationTitle(controller.serverSession?.title ?? "Chat")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    showsTerminal = true
+                } label: {
+                    Image(systemName: "terminal")
+                }
+                .disabled(controller.serverSession == nil || serverConfig == nil)
+            }
+        }
+        .navigationDestination(isPresented: $showsTerminal) {
+            if let session = controller.serverSession, let serverConfig {
+                TerminalScreen(
+                    sessionId: session.id.uuidString,
+                    cwd: session.cwd ?? controller.project.folderURL.path,
+                    config: serverConfig
+                )
+            }
+        }
     }
 
     private func transcript(_ model: SessionModel) -> some View {

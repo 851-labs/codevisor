@@ -11,6 +11,7 @@
 		0C0000000000000200000004 /* CodevisorTheming in Frameworks */ = {isa = PBXBuildFile; productRef = 0C0000000000000200000003 /* CodevisorTheming */; };
 		0C0000000000000200000006 /* CodevisorCore in Frameworks */ = {isa = PBXBuildFile; productRef = 0C0000000000000200000005 /* CodevisorCore */; };
 		0C0000000000000200000008 /* CodevisorUI in Frameworks */ = {isa = PBXBuildFile; productRef = 0C0000000000000200000007 /* CodevisorUI */; };
+		0C0000000000000200000010 /* SwiftTerm in Frameworks */ = {isa = PBXBuildFile; productRef = 0C0000000000000200000009 /* SwiftTerm */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -46,6 +47,7 @@
 				0C0000000000000200000004 /* CodevisorTheming in Frameworks */,
 				0C0000000000000200000006 /* CodevisorCore in Frameworks */,
 				0C0000000000000200000008 /* CodevisorUI in Frameworks */,
+				0C0000000000000200000010 /* SwiftTerm in Frameworks */,
 			);
 		};
 /* End PBXFrameworksBuildPhase section */
@@ -89,6 +91,7 @@
 				0C0000000000000200000003 /* CodevisorTheming */,
 				0C0000000000000200000005 /* CodevisorCore */,
 				0C0000000000000200000007 /* CodevisorUI */,
+				0C0000000000000200000009 /* SwiftTerm */,
 			);
 			productName = Codevisor;
 			productReference = 0C0000000000000000000120 /* Codevisor.app */;
@@ -119,6 +122,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				0C0000000000000200000000 /* XCLocalSwiftPackageReference "../macos/Packages" */,
+				0C0000000000000200000011 /* XCRemoteSwiftPackageReference "SwiftTerm" */,
 			);
 			preferredProjectObjectVersion = 90;
 			productRefGroup = 0C0000000000000000000020 /* Products */;
@@ -358,6 +362,17 @@
 		};
 /* End XCLocalSwiftPackageReference section */
 
+/* Begin XCRemoteSwiftPackageReference section */
+		0C0000000000000200000011 /* XCRemoteSwiftPackageReference "SwiftTerm" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/migueldeicaza/SwiftTerm.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.2.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
 /* Begin XCSwiftPackageProductDependency section */
 		0C0000000000000200000001 /* ACPKit */ = {
 			isa = XCSwiftPackageProductDependency;
@@ -378,6 +393,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 0C0000000000000200000000 /* XCLocalSwiftPackageReference "../macos/Packages" */;
 			productName = CodevisorUI;
+		};
+		0C0000000000000200000009 /* SwiftTerm */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 0C0000000000000200000011 /* XCRemoteSwiftPackageReference "SwiftTerm" */;
+			productName = SwiftTerm;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
