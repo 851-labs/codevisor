@@ -85,8 +85,10 @@ struct ComposerBar: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             // Where a brand-new chat runs (project root / worktree) floats
-            // above the card, like the macOS new-chat configuration row.
-            if controller.canChooseHarness {
+            // above the card, like the macOS new-chat configuration row —
+            // but only when there's actually a choice: a non-git project
+            // with no worktree has exactly one place to run.
+            if controller.canChooseHarness, hasMultipleRunLocations {
                 runLocationChip
                     .font(.footnote)
                     .padding(.horizontal, 12)
@@ -284,6 +286,16 @@ struct ComposerBar: View {
     }
 
     // MARK: - New-chat pickers
+
+    /// Whether there's more than one place this chat could run. Git projects
+    /// offer New Worktree; a session already bound to a worktree offers it
+    /// back. Otherwise the project root is the only option and the picker
+    /// hides.
+    private var hasMultipleRunLocations: Bool {
+        if controller.project.isGitRepository { return true }
+        if case .existingWorktree = controller.runContext { return true }
+        return false
+    }
 
     /// Where the chat's commands run: the project root or a fresh worktree —
     /// the macOS run-location picker, reduced to the contexts this client
