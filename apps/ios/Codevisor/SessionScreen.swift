@@ -69,8 +69,17 @@ struct SessionTranscriptView: View {
     /// (new-worktree chats deliberately don't connect until first send) or an
     /// empty conversation.
     private var showsWatermark: Bool {
+        guard controller.pendingUserText == nil, controller.setupPhases.isEmpty else { return false }
         guard let model = controller.model else { return true }
         return model.settledConversation.isEmpty && model.activeItem == nil
+    }
+
+    /// The first send, before a model exists: the optimistic user message
+    /// with the live setup phases beneath it — worktree creation and agent
+    /// start render in the chat history exactly like macOS.
+    private var showsPendingSetup: Bool {
+        controller.model == nil
+            && (controller.pendingUserText != nil || !controller.setupPhases.isEmpty)
     }
 
     /// One chat surface for every connection state. The composer is mounted
@@ -100,6 +109,8 @@ struct SessionTranscriptView: View {
             }
             if let model = controller.model {
                 transcriptScroll(model)
+            } else if showsPendingSetup {
+                pendingSetupColumn
             }
 
             VStack(spacing: 8) {
@@ -159,6 +170,32 @@ struct SessionTranscriptView: View {
 
     private static let bottomAnchor = "transcript-bottom"
 
+    /// The model-less first send: optimistic user bubble, then either the
+    /// setup phases or a "Starting agent…" shimmer until the first phase
+    /// arrives.
+    private var pendingSetupColumn: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                if let text = controller.pendingUserText {
+                    OptimisticUserRow(text: text, attachments: controller.pendingUserAttachments)
+                }
+                if controller.setupPhases.isEmpty {
+                    Text("Starting agent…")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .shimmering()
+                } else {
+                    SessionSetupView(phases: controller.setupPhases)
+                }
+                Color.clear.frame(height: composerHeight + 24)
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .scrollDismissesKeyboard(.interactively)
+    }
+
     private func transcriptScroll(_ model: SessionModel) -> some View {
         ScrollViewReader { scroller in
             ScrollView {
@@ -180,6 +217,9 @@ struct SessionTranscriptView: View {
 
                 ForEach(model.settledConversation) { item in
                     ConversationItemRow(item: item, isActive: false)
+                }
+                if !controller.setupPhases.isEmpty {
+                    SessionSetupView(phases: controller.setupPhases)
                 }
                 if let active = model.activeItem {
                     ConversationItemRow(item: active, isActive: true)
@@ -471,6 +511,35 @@ private struct DeferredWorkedDetails: View {
                     if await !controller.loadTranscriptDetails(itemId) {
                         failed = true
                     }
+                }
+            }
+        }
+    }
+}
+
+/// The just-sent message, rendered before the server echoes it back — the
+/// same trailing bubble as a settled user row.
+private struct OptimisticUserRow: View {
+    @Environment(\.theme) private var theme
+    let text: String
+    let attachments: [Attachment]
+
+    var body: some View {
+        HStack {
+            Spacer(minLength: 40)
+            VStack(alignment: .trailing, spacing: 8) {
+                if !attachments.isEmpty {
+                    HStack(spacing: 8) {
+                        ForEach(attachments) { attachment in
+                            AttachmentThumbnailView(attachment: attachment)
+                        }
+                    }
+                }
+                if !text.isEmpty {
+                    Text(text)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 9)
+                        .background(theme.bubbleBackground, in: RoundedRectangle(cornerRadius: 18))
                 }
             }
         }
