@@ -67,6 +67,9 @@ private struct SessionTranscriptView: View {
     let serverConfig: CodevisorServerConfig?
     @State private var disclosure = TranscriptDisclosureStore()
     @State private var showsTerminal = false
+    /// The composer's resting height, used to inset the transcript and size
+    /// the fade that sits under the card.
+    @State private var composerHeight: CGFloat = 96
 
     var body: some View {
         Group {
@@ -111,17 +114,40 @@ private struct SessionTranscriptView: View {
     }
 
     private func transcript(_ model: SessionModel) -> some View {
-        VStack(spacing: 0) {
-            transcriptScroll(model)
-            if let question = controller.activeQuestion {
-                QuestionCardView(controller: controller, request: question)
-                    .id(question.questionId)
-                    .padding(.horizontal, 10)
-                    .padding(.bottom, 6)
-            }
-            ComposerBar(controller: controller)
+        GeometryReader { proxy in
+            ZStack(alignment: .bottom) {
+                // The transcript runs underneath the composer; content rests
+                // about three quarters of the way down the card so the newest
+                // line stays readable while the rest slides beneath it.
+                transcriptScroll(model)
+                    .safeAreaPadding(.bottom, max(0, composerHeight * 0.75))
+
+                // Fades the transcript out as it passes behind the composer.
+                LinearGradient(
+                    colors: [
+                        Color(.systemGroupedBackground).opacity(0),
+                        Color(.systemGroupedBackground)
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .frame(height: composerHeight + 36)
+                .allowsHitTesting(false)
+
+                VStack(spacing: 8) {
+                    if let question = controller.activeQuestion {
+                        QuestionCardView(controller: controller, request: question)
+                            .id(question.questionId)
+                    }
+                    ComposerBar(
+                        controller: controller,
+                        maxHeight: proxy.size.height - 88,
+                        collapsedHeight: $composerHeight
+                    )
+                }
                 .padding(.horizontal, 10)
                 .padding(.bottom, 6)
+            }
         }
         .background(Color(.systemGroupedBackground))
     }

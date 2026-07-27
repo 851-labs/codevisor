@@ -15,8 +15,22 @@ import SwiftUI
 /// the whole bottom-anchored scroll view to re-measure every character.
 struct ComposerBar: View {
     @Bindable var controller: SessionController
+    /// The tallest the whole card may grow to when dragged open.
+    let maxHeight: CGFloat
+    /// Reported back so the transcript can inset its content and place the
+    /// fade. Only the collapsed height is published — publishing live drag
+    /// heights would re-measure the transcript on every gesture frame.
+    @Binding var collapsedHeight: CGFloat
+
     @FocusState private var isFocused: Bool
     @State private var text = ""
+    /// Measured height of the text itself, used for the collapsed size and as
+    /// the starting point of a drag.
+    @State private var measuredTextHeight: CGFloat = 0
+    /// Explicit editor height while dragging or expanded; nil = collapsed.
+    @State private var editorHeightOverride: CGFloat?
+    @State private var dragStartHeight: CGFloat?
+    @State private var isExpanded = false
     @State private var photoItems: [PhotosPickerItem] = []
     @State private var isPickingPhotos = false
     @State private var isPickingFiles = false
@@ -33,12 +47,57 @@ struct ComposerBar: View {
             && controller.configurationValidationState == .ready
     }
 
+    /// The drag handle: a slim strip across the top of the card that owns the
+    /// expand gesture, so dragging never fights the editor's own scrolling.
+    private var grabber: some View {
+        Capsule()
+            .fill(Color.secondary.opacity(isExpanded ? 0.45 : 0.28))
+            .frame(width: 36, height: 4)
+            .frame(maxWidth: .infinity)
+            .padding(.bottom, 2)
+            .contentShape(Rectangle().inset(by: -14))
+            .highPriorityGesture(expansionDrag)
+            .accessibilityLabel(isExpanded ? "Collapse composer" : "Expand composer")
+            .accessibilityAddTraits(.isButton)
+            .onTapGesture {
+                withAnimation(.snappy(duration: 0.3)) {
+                    isExpanded.toggle()
+                    editorHeightOverride = isExpanded ? maxEditorHeight : collapsedEditorHeight
+                }
+                if !isExpanded {
+                    Task {
+                        try? await Task.sleep(for: .milliseconds(320))
+                        if !isExpanded { editorHeightOverride = nil }
+                    }
+                }
+            }
+    }
+
+    private static let minEditorHeight: CGFloat = 22
+    private static let collapsedMaxEditorHeight: CGFloat = 132
+    /// Chrome around the editor inside the card: paddings, toolbar row, and
+    /// the spacing between them.
+    private static let cardChromeHeight: CGFloat = 96
+
+    private var collapsedEditorHeight: CGFloat {
+        min(max(measuredTextHeight, Self.minEditorHeight), Self.collapsedMaxEditorHeight)
+    }
+
+    private var maxEditorHeight: CGFloat {
+        max(Self.collapsedMaxEditorHeight, maxHeight - Self.cardChromeHeight)
+    }
+
+    private var editorHeight: CGFloat {
+        editorHeightOverride ?? collapsedEditorHeight
+    }
+
     private var placeholder: String {
         controller.isSending ? "Reply while it works" : "Ask for follow-up changes"
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
+            grabber
             if !controller.composerAttachments.isEmpty {
                 ComposerAttachmentStrip(controller: controller)
             }
@@ -53,11 +112,27 @@ struct ComposerBar: View {
             }
 
             ZStack(alignment: .topLeading) {
-                TextField("", text: $text, axis: .vertical)
-                    .textFieldStyle(.plain)
-                    .lineLimit(1...8)
-                    .focused($isFocused)
-                    .disabled(controller.isSubmitting || controller.isResolvingQuestion)
+                // Mirrors the editor's text to measure its natural height, so
+                // the collapsed size tracks content and a drag starts from
+                // exactly where the card already is.
+                Text(text.isEmpty ? " " : text)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
+                        measuredTextHeight = height
+                    }
+                    .opacity(0)
+                    .accessibilityHidden(true)
+
+                ScrollView {
+                    TextField("", text: $text, axis: .vertical)
+                        .textFieldStyle(.plain)
+                        .focused($isFocused)
+                        .disabled(controller.isSubmitting || controller.isResolvingQuestion)
+                        .frame(maxWidth: .infinity, alignment: .topLeading)
+                }
+                .scrollDisabled(editorHeight >= measuredTextHeight)
+                .frame(height: editorHeight)
+
                 if text.isEmpty {
                     Text(placeholder)
                         .foregroundStyle(.tertiary)
@@ -86,8 +161,15 @@ struct ComposerBar: View {
             .font(.callout)
         }
         .padding(.horizontal, 14)
-        .padding(.vertical, 12)
+        .padding(.top, 14)
+        .padding(.bottom, 12)
         .composerGlassSurface(cornerRadius: ComposerGlassStyle.composerCornerRadius)
+        .contentShape(Rectangle())
+        .simultaneousGesture(expansionDrag)
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
+            // Publish only the resting size; see `collapsedHeight`.
+            if editorHeightOverride == nil { collapsedHeight = height }
+        }
         .onAppear { text = controller.composerText }
         .onDisappear { controller.composerText = text }
         .photosPicker(
@@ -116,6 +198,40 @@ struct ComposerBar: View {
             }
             .ignoresSafeArea()
         }
+    }
+
+    /// Drag the card open and closed: the top edge follows the finger, and
+    /// release snaps to fully expanded or collapsed based on where the
+    /// gesture was heading.
+    private var expansionDrag: some Gesture {
+        DragGesture(minimumDistance: 10)
+            .onChanged { value in
+                let start = dragStartHeight ?? editorHeight
+                if dragStartHeight == nil { dragStartHeight = start }
+                editorHeightOverride = min(
+                    maxEditorHeight,
+                    max(collapsedEditorHeight, start - value.translation.height)
+                )
+            }
+            .onEnded { value in
+                let start = dragStartHeight ?? editorHeight
+                dragStartHeight = nil
+                let projected = start - value.predictedEndTranslation.height
+                let midpoint = (collapsedEditorHeight + maxEditorHeight) / 2
+                let shouldExpand = projected >= midpoint
+                isExpanded = shouldExpand
+                withAnimation(.snappy(duration: 0.3)) {
+                    editorHeightOverride = shouldExpand ? maxEditorHeight : collapsedEditorHeight
+                }
+                if !shouldExpand {
+                    // Hand sizing back to the content once the collapse lands,
+                    // so the card resumes growing with the text.
+                    Task {
+                        try? await Task.sleep(for: .milliseconds(320))
+                        if !isExpanded { editorHeightOverride = nil }
+                    }
+                }
+            }
     }
 
     // MARK: - Controls
@@ -161,6 +277,8 @@ struct ComposerBar: View {
             text = ""
             controller.composerText = outgoing
             isFocused = false
+            isExpanded = false
+            withAnimation(.snappy(duration: 0.25)) { editorHeightOverride = nil }
             Task { await controller.send() }
         } label: {
             Image(systemName: "arrow.up")
