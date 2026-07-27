@@ -31,6 +31,8 @@ struct HomeView: View {
 
     @AppStorage("home.organization") private var organizationRaw = HomeOrganization.agents.rawValue
     @State private var isAddingMachine = false
+    @State private var isStartingChat = false
+    @State private var path: [UUID] = []
 
     private var organization: HomeOrganization {
         HomeOrganization(rawValue: organizationRaw) ?? .agents
@@ -47,7 +49,7 @@ struct HomeView: View {
     }
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             Group {
                 if visibleSessions.isEmpty && projectList.activeProjects.isEmpty {
                     emptyState
@@ -59,6 +61,7 @@ struct HomeView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) { machineMenu }
+                ToolbarItem(placement: .topBarTrailing) { newChatButton }
                 ToolbarItem(placement: .topBarTrailing) { filterMenu }
             }
             .navigationDestination(for: UUID.self) { sessionId in
@@ -69,6 +72,11 @@ struct HomeView: View {
             }
             .sheet(isPresented: $isAddingMachine) {
                 AddMachineSheet()
+            }
+            .sheet(isPresented: $isStartingChat) {
+                NewChatSheet { session in
+                    path.append(session.id)
+                }
             }
         }
     }
@@ -151,6 +159,14 @@ struct HomeView: View {
                 systemImage: machines.selectedMachine.resolvedAppearance.symbolName
             )
             .labelStyle(.titleAndIcon)
+        }
+    }
+
+    private var newChatButton: some View {
+        Button {
+            isStartingChat = true
+        } label: {
+            Image(systemName: "square.and.pencil")
         }
     }
 

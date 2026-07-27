@@ -45,6 +45,12 @@ struct SessionScreen: View {
         )
         controller.configureExistingSession(session)
         self.controller = controller
+        if session.agentSessionId?.isEmpty != false {
+            // A fresh chat: no agent exists yet. Load harness capabilities so
+            // the composer validates; the agent spawns on the first send.
+            await controller.prepare()
+            controller.applyComposerDefaults()
+        }
         await controller.connectIfNeeded()
     }
 }
