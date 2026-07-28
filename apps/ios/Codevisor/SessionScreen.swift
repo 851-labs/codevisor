@@ -457,6 +457,11 @@ private struct AssistantTurnBody: View {
                     store.toggle(key, default: !settled)
                 }
 
+                // As on macOS: the divider belongs to the disclosure header,
+                // not its revealed contents, so a rendered Worked section
+                // keeps the line collapsed and expanded alike.
+                Divider()
+
                 TranscriptDisclosureContentReveal(isExpanded: isExpanded) {
                     VStack(alignment: .leading, spacing: 10) {
                         if allowsDeferred, turn.hasDeferredWorkedDetails,
