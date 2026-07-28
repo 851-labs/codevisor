@@ -441,7 +441,14 @@ private struct AssistantTurnBody: View {
     ) -> some View {
         if !items.isEmpty || (allowsDeferred && turn.hasDeferredWorkedDetails) {
             let isExpanded = store.isExpanded(key, default: !settled)
-            VStack(alignment: .leading, spacing: 8) {
+            // Spacing 0, on purpose: the reveal stays mounted at zero height
+            // through the collapse animation, and a spaced VStack would keep
+            // one spacing slot for it below the divider until the delayed
+            // unmount — a visible jump after the animation settles (the same
+            // bug the macOS disclosures once had). The gap above the revealed
+            // content lives INSIDE the reveal instead, so it shrinks away
+            // with the height.
+            VStack(alignment: .leading, spacing: 0) {
                 HStack(spacing: 6) {
                     sectionLabel(showsTimer: showsTimer)
                         .font(.subheadline)
@@ -456,6 +463,7 @@ private struct AssistantTurnBody: View {
                     guard settled else { return }
                     store.toggle(key, default: !settled)
                 }
+                .padding(.bottom, 8)
 
                 // As on macOS: the divider belongs to the disclosure header,
                 // not its revealed contents, so a rendered Worked section
@@ -472,7 +480,7 @@ private struct AssistantTurnBody: View {
                             TurnItemsView(items: items, turn: turn, depth: 0, isTurnActive: isGenerating)
                         }
                     }
-                    .padding(.top, 2)
+                    .padding(.top, 10)
                 }
             }
         }
