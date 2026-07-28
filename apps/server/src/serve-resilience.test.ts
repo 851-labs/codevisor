@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from "vitest"
-import { initializeOptionalServerFeature, initializeOptionalServerFeatureAsync } from "./serve.js"
+import {
+  initializeOptionalServerFeature,
+  initializeOptionalServerFeatureAsync,
+  stabilizeServerWorkingDirectory
+} from "./serve.js"
 
 describe("optional server feature initialization", () => {
   it("keeps synchronous feature failures inside their feature boundary", () => {
@@ -36,5 +40,21 @@ describe("optional server feature initialization", () => {
     await expect(initializeOptionalServerFeatureAsync("Skills", async () => feature)).resolves.toBe(
       feature
     )
+  })
+})
+
+describe("server working directory", () => {
+  it("anchors the daemon beside its durable database before child processes start", () => {
+    const mkdir = vi.fn()
+    const chdir = vi.fn()
+
+    const stable = stabilizeServerWorkingDirectory("/Users/test/.codevisor/data/server.sqlite", {
+      mkdir,
+      chdir
+    })
+
+    expect(stable).toBe("/Users/test/.codevisor/data")
+    expect(mkdir).toHaveBeenCalledWith("/Users/test/.codevisor/data")
+    expect(chdir).toHaveBeenCalledWith("/Users/test/.codevisor/data")
   })
 })

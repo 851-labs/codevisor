@@ -1,5 +1,7 @@
 import CodevisorCore
+import CodevisorCoreMac
 import Foundation
+import os
 import ServiceManagement
 
 /// Registers the bundled server with launchd. The service is per-user,
@@ -7,6 +9,7 @@ import ServiceManagement
 @MainActor
 final class MacServerAgentController {
     static let plistName = "com.851labs.Codevisor.ServerAgent.plist"
+    private let legacyJobs = LegacyServerJobRetirer()
 
     private var service: SMAppService {
         SMAppService.agent(plistName: Self.plistName)
@@ -14,12 +17,21 @@ final class MacServerAgentController {
 
     var managedService: LocalCodevisorManagedService {
         LocalCodevisorManagedService(
+            prepare: { [weak self] in try await self?.retireLegacyJobs() },
             start: { [weak self] in try await self?.ensureRegistered() },
             stop: { [weak self] in try await self?.unregister() }
         )
     }
 
+    private func retireLegacyJobs() async throws {
+        try await legacyJobs.retire()
+    }
+
     func ensureRegistered() async throws {
+        // Submitted KeepAlive jobs from the pre-Sparkle updater otherwise
+        // restart as soon as the lifecycle controller shuts their process
+        // down, racing the current ServerAgent for port 49361 forever.
+        try await retireLegacyJobs()
         let current = service
         // This closure is reached only when no matching service is healthy.
         // Re-register an enabled-but-dead job so launchd resolves BundleProgram
@@ -38,11 +50,27 @@ final class MacServerAgentController {
         try await current.unregister()
     }
 
-    func prepareForAppUpdate(localServer: (any LocalServerControlling)?) async {
+    func prepareForAppUpdate(localServer: (any LocalServerControlling)?) async -> Bool {
+        do {
+            try await retireLegacyJobs()
+        } catch {
+            Log.server.error(
+                "Legacy server cleanup failed before update: \(String(describing: error), privacy: .public)"
+            )
+            return false
+        }
         if let localServer {
-            _ = await localServer.prepareForAppUpdate()
+            return await localServer.prepareForAppUpdate()
         } else {
-            try? await unregister()
+            do {
+                try await unregister()
+                return true
+            } catch {
+                Log.server.error(
+                    "ServerAgent unregister failed before update: \(String(describing: error), privacy: .public)"
+                )
+                return false
+            }
         }
     }
 }

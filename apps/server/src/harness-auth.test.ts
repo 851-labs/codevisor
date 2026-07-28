@@ -3,7 +3,7 @@ import type { Harness } from "@codevisor/api"
 import { makeDatabase, type CodevisorDatabaseService } from "@codevisor/db"
 import type { TerminalManagerService } from "@codevisor/terminal"
 import { Effect } from "effect"
-import { mkdtempSync, rmSync } from "node:fs"
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, describe, expect, it, vi } from "vitest"
@@ -196,5 +196,100 @@ describe("OpenCode profile authentication", () => {
       "opencode",
       expect.objectContaining({ id: account.id, profilePath: profile })
     )
+  })
+})
+
+describe("Claude authentication probing", () => {
+  const setup = async (
+    execute: NonNullable<Parameters<typeof makeHarnessAuthManager>[0]["execFile"]>
+  ) => {
+    const directory = mkdtempSync(join(tmpdir(), "codevisor-claude-auth-"))
+    directories.push(directory)
+    const binary = join(directory, "claude")
+    writeFileSync(binary, "#!/bin/sh\nexit 0\n")
+    chmodSync(binary, 0o700)
+    const db = await run(
+      makeDatabase({ filename: join(directory, "codevisor.sqlite"), serverId: "test" })
+    )
+    databases.push(db)
+    const account = await run(
+      db.saveHarnessAccount({
+        id: "claude-account",
+        harnessId: "claude-code",
+        profileKind: "default",
+        label: "Existing Claude Code account",
+        authState: "checking",
+        canLogin: true,
+        canLogout: false
+      })
+    )
+    const manager = makeHarnessAuthManager({
+      agents: {} as AgentRuntimeService,
+      dataDir: directory,
+      db,
+      terminal: {} as TerminalManagerService,
+      execFile: execute,
+      resolveEnv: () => Promise.resolve({ HOME: directory, PATH: directory })
+    })
+    return { account, directory, manager }
+  }
+
+  it("runs status from the account's durable home instead of the daemon cwd", async () => {
+    const execute = vi.fn(async () => ({
+      stdout: JSON.stringify({
+        loggedIn: true,
+        authMethod: "claude.ai",
+        email: "person@example.com"
+      }),
+      stderr: ""
+    }))
+    const { account, directory, manager } = await setup(execute)
+
+    await expect(manager.probeAccount(account.id, true)).resolves.toMatchObject({
+      authState: "authenticated",
+      canLogout: true
+    })
+    expect(execute).toHaveBeenCalledWith(
+      join(directory, "claude"),
+      ["auth", "status", "--json"],
+      expect.objectContaining({ cwd: directory })
+    )
+  })
+
+  it("reports an execution failure as an error instead of signed out", async () => {
+    const execute = vi.fn(async () => {
+      throw Object.assign(new Error("spawn failed"), {
+        code: 1,
+        stdout: "",
+        stderr: "ENOENT: current working directory no longer exists"
+      })
+    })
+    const { account, manager } = await setup(execute)
+
+    await expect(manager.probeAccount(account.id, true)).resolves.toMatchObject({
+      authState: "error",
+      canLogout: false,
+      detail: "Unable to check Claude sign-in (Claude exited with status 1)"
+    })
+  })
+
+  it("still recognizes Claude's explicit signed-out response", async () => {
+    const execute = vi.fn(async () => {
+      throw Object.assign(new Error("signed out"), {
+        code: 1,
+        stdout: `{
+  "loggedIn": false,
+  "authMethod": "none",
+  "apiProvider": "firstParty"
+}`,
+        stderr: ""
+      })
+    })
+    const { account, manager } = await setup(execute)
+
+    await expect(manager.probeAccount(account.id, true)).resolves.toMatchObject({
+      authState: "unauthenticated",
+      canLogout: false
+    })
   })
 })

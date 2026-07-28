@@ -118,6 +118,19 @@ public final class LocalCodevisorServer: LocalServerControlling {
                 "Computer Use bridge failed to start: \(String(describing: error), privacy: .public)"
             )
         }
+        if let managedService {
+            do {
+                // Platform migrations must run before the first health probe:
+                // a legacy KeepAlive job can otherwise answer that probe and
+                // restart faster than the stale-listener shutdown path.
+                try await managedService.prepare()
+            } catch {
+                state = .unavailable(
+                    "Codevisor could not prepare its background service: \(String(describing: error))"
+                )
+                return state
+            }
+        }
         if let health = await currentHealth() {
             if let activeBootId, health.bootId == activeBootId {
                 dataUpgradeProgress = nil

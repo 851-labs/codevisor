@@ -54,13 +54,16 @@ public struct LocalDataUpgradeProgress: Codable, Equatable, Sendable {
 /// Platform-owned lifecycle hooks. The macOS app supplies an SMAppService
 /// LaunchAgent; tests and development omit it and keep the direct child path.
 public struct LocalCodevisorManagedService {
+    public var prepare: @MainActor () async throws -> Void
     public var start: @MainActor () async throws -> Void
     public var stop: @MainActor () async throws -> Void
 
     public init(
+        prepare: @escaping @MainActor () async throws -> Void = {},
         start: @escaping @MainActor () async throws -> Void,
         stop: @escaping @MainActor () async throws -> Void
     ) {
+        self.prepare = prepare
         self.start = start
         self.stop = stop
     }

@@ -321,6 +321,13 @@ struct HarnessAuthenticationView: View {
                 await finishAuthentication(accountId: accountId)
                 return
             }
+            if account.authState == "error" {
+                let message = account.detail ?? "Couldn't verify sign-in."
+                await cancelFlow()
+                await load()
+                errorMessage = message
+                return
+            }
         }
     }
 

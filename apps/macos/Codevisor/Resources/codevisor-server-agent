@@ -22,6 +22,10 @@ if [[ ! -x "$node_bin" || ! -f "$entrypoint" ]]; then
 fi
 
 mkdir -p "$data_dir" "$logs_dir"
+# The LaunchAgent can be resolved from a Sparkle installation bundle that is
+# moved or deleted after startup. Keep the daemon and every child process
+# anchored in durable application data instead of that transient bundle.
+cd "$data_dir"
 login_path="$(/bin/zsh -lic 'printf %s "$PATH"' 2>/dev/null || true)"
 if [[ -n "$login_path" ]]; then
   export PATH="$login_path"

@@ -28,7 +28,7 @@ import { hostname, tmpdir } from "node:os"
 import { installRuntime, planRestart, resolveInstallRoot } from "./self-update.js"
 import { Readable } from "node:stream"
 import { pipeline } from "node:stream/promises"
-import { dirname, join } from "node:path"
+import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { startBackgroundTerminalHost, wrapBackgroundCommand } from "./background-terminal-host.js"
 import { canonicalDatabasePaths, codevisorRoot, defaultDatabasePath } from "./data-dir.js"
@@ -63,6 +63,27 @@ const SERVER_PROCESS_TITLE = "codevisor-server"
 /// `force` (GET /v1/update?refresh=1) and bypass this entirely. Six hours
 /// here made remote machines deny fresh releases for most of a day.
 const SERVER_UPDATE_CHECK_TTL_MS = 15 * 60 * 1_000
+
+interface ServerWorkingDirectoryOps {
+  readonly mkdir: (path: string) => void
+  readonly chdir: (path: string) => void
+}
+
+/// Detaches the daemon from whichever bundle, shell, or updater staging
+/// directory launched it. Long-lived servers outlive app-bundle swaps, so no
+/// subprocess may inherit a cwd that Sparkle can later remove.
+export const stabilizeServerWorkingDirectory = (
+  databasePath: string,
+  ops: ServerWorkingDirectoryOps = {
+    mkdir: (path) => mkdirSync(path, { recursive: true }),
+    chdir: (path) => process.chdir(path)
+  }
+): string => {
+  const dataDirectory = dirname(databasePath)
+  ops.mkdir(dataDirectory)
+  ops.chdir(dataDirectory)
+  return dataDirectory
+}
 
 const failureMessage = (cause: unknown): string => {
   if (!(cause instanceof Error)) return String(cause)
@@ -539,7 +560,16 @@ export const runServe = (args: Record<string, string>): Promise<void> => {
       .split(",")
       .map((origin) => origin.trim())
       .filter((origin) => origin.length > 0)
-    const databasePath = args.db ?? defaultDatabasePath()
+    // Resolve caller-provided paths before changing cwd below. This preserves
+    // the CLI's relative-path semantics while ensuring every later consumer
+    // sees an absolute path.
+    const launchDirectory = process.cwd()
+    const databasePath = resolve(launchDirectory, args.db ?? defaultDatabasePath())
+    const requestedUpgradeStatusPath = args["upgrade-status"]
+    const upgradeStatusPath =
+      requestedUpgradeStatusPath === undefined
+        ? join(dirname(databasePath), "data-upgrade.json")
+        : resolve(launchDirectory, requestedUpgradeStatusPath)
     const bootId = args["boot-id"] ?? randomUUID()
     const serviceManaged = args["service-managed"] === "1"
     const appOwned = args["app-owned"] === "1" || serviceManaged
@@ -549,8 +579,10 @@ export const runServe = (args: Record<string, string>): Promise<void> => {
     }
     const buildMetadata = bundledBuildMetadata()
     // The canonical ~/.codevisor/data directory does not exist on first start
-    // (unlike the old tmpdir default, which always did).
-    mkdirSync(dirname(databasePath), { recursive: true })
+    // (unlike the old tmpdir default, which always did). It is also the
+    // daemon's lifetime-stable cwd: an app-hosted server may outlive the
+    // Sparkle staging bundle that launched it.
+    stabilizeServerWorkingDirectory(databasePath)
     const lease = yield* Effect.tryPromise(() =>
       acquireServerLease(databasePath, {
         bootId,
@@ -560,8 +592,6 @@ export const runServe = (args: Record<string, string>): Promise<void> => {
     )
     startupLease = lease
     stopOwnerMonitor = ownerPid === undefined ? undefined : monitorAppOwner({ ownerPid, lease })
-    const upgradeStatusPath =
-      args["upgrade-status"] ?? join(dirname(databasePath), "data-upgrade.json")
     // Standalone installs used to default the database into the OS temp
     // directory; relocate that data the first time we start against a canonical
     // data-dir path (the systemd units pass --db explicitly, so an explicit flag

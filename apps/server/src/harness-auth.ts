@@ -45,7 +45,37 @@ const CLAUDE_AUTH_OVERRIDE_ENV_VARS = [
   "CLAUDE_CODE_API_KEY_FILE_DESCRIPTOR"
 ] as const
 
+interface HarnessAuthExecOptions {
+  readonly cwd?: string
+  readonly env?: NodeJS.ProcessEnv
+  readonly timeout?: number
+  readonly maxBuffer?: number
+}
+
+type HarnessAuthExec = (
+  command: string,
+  args: ReadonlyArray<string>,
+  options: HarnessAuthExecOptions
+) => Promise<{ readonly stdout: string; readonly stderr: string }>
+
 type AuthEventKind = "harness.auth.updated" | "harness.account.updated" | "harness.authFlow.updated"
+
+interface ClaudeAuthStatus {
+  readonly loggedIn?: boolean
+  readonly authMethod?: string
+  readonly apiKeySource?: string
+  readonly email?: string
+  readonly orgId?: string
+}
+
+const parseClaudeAuthStatus = (output: string | undefined): ClaudeAuthStatus | undefined => {
+  if (output === undefined || output.trim().length === 0) return undefined
+  try {
+    return JSON.parse(output) as ClaudeAuthStatus
+  } catch {
+    return undefined
+  }
+}
 
 export interface HarnessAuthEvent {
   readonly kind: AuthEventKind
@@ -61,6 +91,8 @@ export interface HarnessAuthManagerConfig {
   readonly preferDeviceCode?: boolean
   /// Overrides the login-shell environment resolver in tests and embedded hosts.
   readonly resolveEnv?: () => Promise<NodeJS.ProcessEnv>
+  /// Overrides non-interactive authentication commands in tests.
+  readonly execFile?: HarnessAuthExec
   /// The effective harness catalog (builtins + user-defined entries).
   /// Defaults to `agents.catalog`, falling back to the builtin catalog for
   /// hosts/tests that stub the runtime.
@@ -135,6 +167,13 @@ export const makeHarnessAuthManager = (config: HarnessAuthManagerConfig): Harnes
   const terminalLogins = new Map<string, TerminalLoginEntry>()
   const acpLoginMethods = new Map<string, ReadonlyArray<HarnessAuthMethod>>()
   let environmentPromise: Promise<NodeJS.ProcessEnv> | undefined
+  const runExecFile: HarnessAuthExec =
+    config.execFile ??
+    ((command, args, options) =>
+      execFileAsync(command, [...args], options) as Promise<{
+        stdout: string
+        stderr: string
+      }>)
 
   const emit = (event: HarnessAuthEvent): void => {
     for (const listener of listeners) listener(event)
@@ -236,6 +275,16 @@ export const makeHarnessAuthManager = (config: HarnessAuthManagerConfig): Harnes
     return { ...base, ...accountContext.env }
   }
 
+  const accountCommand = async (
+    account: HarnessAccountRecord
+  ): Promise<{ readonly cwd: string; readonly env: NodeJS.ProcessEnv }> => {
+    const env = await accountEnv(account)
+    return {
+      cwd: profilePath(account) ?? env.HOME ?? config.dataDir,
+      env
+    }
+  }
+
   const openCodeAuth = makeOpenCodeAuthManager({
     profile: async (accountId) => {
       const account = await run(config.db.getHarnessAccount(accountId))
@@ -312,18 +361,14 @@ export const makeHarnessAuthManager = (config: HarnessAuthManagerConfig): Harnes
   const probeClaude = async (account: HarnessAccountRecord): Promise<HarnessAccount> => {
     const command = await executable("claude-code")
     try {
-      const result = await execFileAsync(command, ["auth", "status", "--json"], {
-        env: await accountEnv(account),
+      const execution = await accountCommand(account)
+      const result = await runExecFile(command, ["auth", "status", "--json"], {
+        cwd: execution.cwd,
+        env: execution.env,
         timeout: 10_000,
         maxBuffer: 1024 * 1024
       })
-      const status = JSON.parse(result.stdout) as {
-        loggedIn?: boolean
-        authMethod?: string
-        apiKeySource?: string
-        email?: string
-        orgId?: string
-      }
+      const status = JSON.parse(result.stdout) as ClaudeAuthStatus
       if (status.loggedIn !== true) {
         return persistProbe(account, {
           authState: "unauthenticated",
@@ -349,13 +394,23 @@ export const makeHarnessAuthManager = (config: HarnessAuthManagerConfig): Harnes
     } catch (cause) {
       const error = cause as { stdout?: string; stderr?: string; code?: number | string }
       const output = `${error.stdout ?? ""}${error.stderr ?? ""}`.toLowerCase()
+      const status = parseClaudeAuthStatus(error.stdout)
       const signedOut =
-        error.code === 1 || output.includes("not logged in") || output.includes('loggedin":false')
+        status?.loggedIn === false ||
+        output.includes("not logged in") ||
+        /"loggedin"\s*:\s*false/.test(output)
       return persistProbe(account, {
         authState: signedOut ? "unauthenticated" : "error",
+        ...(status?.authMethod === undefined ? {} : { authMethod: status.authMethod }),
+        ...(status?.email === undefined ? {} : { email: status.email }),
+        ...(status?.orgId === undefined ? {} : { organizationId: status.orgId }),
         canLogin: true,
         canLogout: false,
-        detail: signedOut ? null : "Unable to check Claude sign-in"
+        detail: signedOut
+          ? null
+          : `Unable to check Claude sign-in${
+              error.code === undefined ? "" : ` (Claude exited with status ${error.code})`
+            }`
       })
     }
   }
@@ -897,8 +952,10 @@ export const makeHarnessAuthManager = (config: HarnessAuthManagerConfig): Harnes
       }
     } else if (account.harnessId === "claude-code") {
       const command = await executable("claude-code")
-      await execFileAsync(command, ["auth", "logout"], {
-        env: await accountEnv(account),
+      const execution = await accountCommand(account)
+      await runExecFile(command, ["auth", "logout"], {
+        cwd: execution.cwd,
+        env: execution.env,
         timeout: 30_000
       })
     } else {

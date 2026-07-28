@@ -117,7 +117,12 @@ final class SparkleUpdateController: NSObject, SPUUpdaterDelegate {
                 installHandler()
                 return
             }
-            await self.serverAgent.prepareForAppUpdate(localServer: self.localServer)
+            guard await self.serverAgent.prepareForAppUpdate(localServer: self.localServer) else {
+                self.model.reportFailure(
+                    "The Codevisor server could not be stopped safely. Restart Codevisor and try the update again."
+                )
+                return
+            }
             installHandler()
         }
         return true

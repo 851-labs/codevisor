@@ -69,6 +69,7 @@ struct LocalCodevisorServerTests {
             .failure(TestError()),
             .success(managed)
         ])
+        var prepares = 0
         var starts = 0
         var directLaunches = 0
         let server = LocalCodevisorServer(
@@ -81,12 +82,14 @@ struct LocalCodevisorServerTests {
         )
         server.configureManagedService(
             LocalCodevisorManagedService(
+                prepare: { prepares += 1 },
                 start: { starts += 1 },
                 stop: {}
             )
         )
 
         #expect(await server.ensureRunning() == .started)
+        #expect(prepares == 1)
         #expect(starts == 1)
         #expect(directLaunches == 0)
     }
