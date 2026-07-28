@@ -4,38 +4,66 @@ import Testing
 
 @Suite("LegacyServerJobRetirer")
 struct LegacyServerJobRetirerTests {
-    @Test("Removes and verifies every updater-era launchd job")
+    @Test("Boots out every updater-era launchd job")
     func removesEveryLegacyJob() async throws {
-        let runner = RecordingLaunchctlRunner(printExitCode: 113)
+        let runner = RecordingLaunchctlRunner(result: .success)
         let retirer = LegacyServerJobRetirer(runner: runner, userID: 501)
 
         try await retirer.retire()
 
         let invocations = await runner.invocations
-        #expect(invocations.count == LegacyServerJobRetirer.labels.count * 2)
+        #expect(invocations.count == LegacyServerJobRetirer.labels.count)
         for label in LegacyServerJobRetirer.labels {
-            #expect(invocations.contains(["remove", label]))
-            #expect(invocations.contains(["print", "gui/501/\(label)"]))
+            #expect(invocations.contains(["bootout", "gui/501/\(label)"]))
         }
     }
 
-    @Test("Fails when launchd still reports a legacy job")
-    func reportsJobThatSurvivedRemoval() async {
-        let runner = RecordingLaunchctlRunner(printExitCode: 0)
+    @Test("Treats an already-absent job as retired")
+    func acceptsMissingJobs() async throws {
+        let runner = RecordingLaunchctlRunner(result: .missing)
+        let retirer = LegacyServerJobRetirer(runner: runner, userID: 501)
+
+        try await retirer.retire()
+
+        #expect(await runner.invocations.count == LegacyServerJobRetirer.labels.count)
+    }
+
+    @Test("Surfaces real bootout failures")
+    func reportsBootoutFailure() async {
+        let runner = RecordingLaunchctlRunner(result: .failure)
         let retirer = LegacyServerJobRetirer(runner: runner, userID: 501)
 
         await #expect(throws: LegacyServerJobRetirementError.self) {
             try await retirer.retire()
         }
     }
+
+    @Test("Times out a cleanup command instead of pinning startup")
+    func timesOutHangingCleanup() async {
+        let retirer = LegacyServerJobRetirer(
+            runner: HangingLaunchctlRunner(),
+            userID: 501,
+            commandTimeout: .milliseconds(25)
+        )
+
+        await #expect(throws: CommandRunnerError.self) {
+            try await retirer.retire()
+        }
+    }
 }
 
 private actor RecordingLaunchctlRunner: CommandRunner {
-    let printExitCode: Int32
+    enum Result {
+        case success
+        case missing
+        case failure
+    }
+
+    let result: Result
     private(set) var invocations: [[String]] = []
 
-    init(printExitCode: Int32) {
-        self.printExitCode = printExitCode
+    init(result: Result) {
+        self.result = result
     }
 
     func run(
@@ -44,10 +72,49 @@ private actor RecordingLaunchctlRunner: CommandRunner {
         environment: [String: String]?
     ) async throws -> CommandResult {
         invocations.append(arguments)
-        return CommandResult(
-            standardOutput: "",
-            standardError: "",
-            exitCode: arguments.first == "print" ? printExitCode : 0
-        )
+        switch result {
+        case .success:
+            return CommandResult(standardOutput: "", standardError: "", exitCode: 0)
+        case .missing:
+            return CommandResult(
+                standardOutput: "",
+                standardError: "Boot-out failed: 3: No such process",
+                exitCode: 3
+            )
+        case .failure:
+            return CommandResult(
+                standardOutput: "",
+                standardError: "Boot-out failed: 1: Operation not permitted",
+                exitCode: 1
+            )
+        }
+    }
+}
+
+private actor HangingLaunchctlRunner: CommandRunner {
+    func run(
+        executableURL: URL,
+        arguments: [String],
+        environment: [String: String]?
+    ) async throws -> CommandResult {
+        try await Task.sleep(for: .seconds(5))
+        return CommandResult(standardOutput: "", standardError: "", exitCode: 0)
+    }
+}
+
+@Suite("ProcessCommandRunner")
+struct ProcessCommandRunnerTests {
+    @Test("Terminates a child process when its deadline expires")
+    func terminatesTimedOutProcess() async {
+        let runner = ProcessCommandRunner()
+
+        await #expect(throws: CommandRunnerError.self) {
+            try await runner.run(
+                executableURL: URL(fileURLWithPath: "/bin/sleep"),
+                arguments: ["5"],
+                environment: nil,
+                timeout: .milliseconds(25)
+            )
+        }
     }
 }

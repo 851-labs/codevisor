@@ -28,10 +28,6 @@ final class MacServerAgentController {
     }
 
     func ensureRegistered() async throws {
-        // Submitted KeepAlive jobs from the pre-Sparkle updater otherwise
-        // restart as soon as the lifecycle controller shuts their process
-        // down, racing the current ServerAgent for port 49361 forever.
-        try await retireLegacyJobs()
         let current = service
         // This closure is reached only when no matching service is healthy.
         // Re-register an enabled-but-dead job so launchd resolves BundleProgram
