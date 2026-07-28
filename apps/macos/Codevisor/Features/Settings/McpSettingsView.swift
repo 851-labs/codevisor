@@ -514,7 +514,11 @@ struct McpSettingsView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             if server.kind == "browserUse", let browserConfiguration {
                 Menu {
-                    if browserConfiguration.chromeAvailable {
+                    // Remote machines never offer Chrome: the extension
+                    // handshake needs someone at that machine's desktop, so
+                    // Browser Use always runs the managed browser there.
+                    if browserConfiguration.chromeAvailable,
+                       browserConfiguration.supportsExtensionFlow {
                         Button {
                             Task { await setPreferredBrowser("chrome") }
                         } label: {
@@ -535,6 +539,7 @@ struct McpSettingsView: View {
                         }
                     }
                     if browserConfiguration.chromeAvailable,
+                       browserConfiguration.supportsExtensionFlow,
                        !browserConfiguration.chromeConnected,
                        browserConfiguration.developmentExtensionPath != nil {
                         Divider()
@@ -649,6 +654,9 @@ struct McpSettingsView: View {
     }
 
     private func preferredBrowserLabel(_ configuration: ServerBrowserUseConfiguration) -> String {
+        // Whatever an old preference says, a server without the extension
+        // flow always runs the managed browser.
+        if !configuration.supportsExtensionFlow { return "Codevisor Browser" }
         switch configuration.preferredBrowser {
         case "chrome": return configuration.chromeConnected ? "Chrome" : "Chrome · Setup"
         case "managed": return "Codevisor Browser"

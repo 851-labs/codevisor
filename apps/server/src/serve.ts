@@ -663,13 +663,16 @@ export const runServe = (args: Record<string, string>): Promise<void> => {
         : { extraHarnesses: customHarnesses.definitions }),
       resolveEnv: () => resolveShellEnv()
     })
+    // The same inference defaultServerConfig() applies below: an explicit
+    // --kind wins, otherwise a network bind means this is a remote server.
+    const resolvedKind = kind ?? (host === "127.0.0.1" ? "local" : "remote")
     const auth = initializeOptionalServerFeature("Harness authentication", () =>
       makeHarnessAuthManager({
         dataDir: dirname(databasePath),
         db,
         agents,
         terminal,
-        preferDeviceCode: (kind ?? (host === "127.0.0.1" ? "local" : "remote")) === "remote"
+        preferDeviceCode: resolvedKind === "remote"
       })
     )
     const skills = initializeOptionalServerFeature("Skills", () => makeSkillsManager({ agents }))
@@ -677,6 +680,7 @@ export const runServe = (args: Record<string, string>): Promise<void> => {
       makeMcpManager({
         db,
         dataDir: dirname(databasePath),
+        serverKind: resolvedKind,
         ...(skills === undefined ? {} : { syncManagedSkills: skills.syncManaged })
       })
     )
@@ -749,7 +753,7 @@ export const runServe = (args: Record<string, string>): Promise<void> => {
         id: serverId,
         // The app launches its own server bound to 0.0.0.0 so remote clients
         // can connect; --kind lets it stay "local" despite the network bind.
-        kind: kind ?? (host === "127.0.0.1" ? "local" : "remote"),
+        kind: resolvedKind,
         // Network-bound servers advertise the machine's hostname so client
         // machine lists and tailnet discovery show something recognizable,
         // not the default "local" server id.

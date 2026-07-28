@@ -55,10 +55,21 @@ const rejection = (answer: QuestionAnswer): Error => {
   )
 }
 
+export interface BrowserSetupBrokerOptions {
+  /// False on remote-kind servers: the Chrome-extension handshake needs a
+  /// person at this machine's desktop (drag the extension into Chrome here),
+  /// which remote clients — a phone, or a desktop app pointed at another
+  /// machine — can never satisfy. Setup then skips every question and
+  /// resolves straight to the managed Codevisor Browser.
+  readonly extensionFlowSupported?: boolean
+}
+
 export const makeBrowserSetupBroker = (
   db: CodevisorDatabaseService,
-  provider: BrowserUseProvider
+  provider: BrowserUseProvider,
+  options: BrowserSetupBrokerOptions = {}
 ): BrowserSetupBroker => {
+  const extensionFlowSupported = options.extensionFlowSupported ?? true
   const sinks = new Map<string, RuntimeEventSink>()
   const pending = new Map<string, PendingQuestion>()
   const active = new Map<string, Promise<BrowserBackend>>()
@@ -220,6 +231,13 @@ export const makeBrowserSetupBroker = (
     sessionId: string,
     requested?: BrowserBackend
   ): Promise<BrowserBackend> => {
+    if (!extensionFlowSupported) {
+      // No interactive extension flow on this server: even an explicit
+      // "extension" request resolves to the managed browser rather than
+      // stranding the session in a handshake nobody can complete.
+      provider.setSessionBackend(sessionId, "managed")
+      return "managed"
+    }
     const session = provider.sessionBackend(sessionId)
     if (
       session !== undefined &&

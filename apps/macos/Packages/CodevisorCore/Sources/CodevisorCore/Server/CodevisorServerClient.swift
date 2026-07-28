@@ -1059,19 +1059,28 @@ public struct ServerBrowserUseConfiguration: Codable, Equatable, Sendable {
     public var chromeAvailable: Bool
     public var chromeConnected: Bool
     public var managedAvailable: Bool
+    /// Nil on servers that predate the field; treat as supported. False on
+    /// remote-kind servers, where no desktop user can complete the Chrome
+    /// extension handshake and Browser Use always runs the managed browser.
+    public var extensionFlowSupported: Bool?
     public var developmentExtensionPath: String?
+
+    /// Whether clients should offer the Chrome/extension options at all.
+    public var supportsExtensionFlow: Bool { extensionFlowSupported ?? true }
 
     public init(
         preferredBrowser: String? = nil,
         chromeAvailable: Bool,
         chromeConnected: Bool,
         managedAvailable: Bool,
+        extensionFlowSupported: Bool? = nil,
         developmentExtensionPath: String? = nil
     ) {
         self.preferredBrowser = preferredBrowser
         self.chromeAvailable = chromeAvailable
         self.chromeConnected = chromeConnected
         self.managedAvailable = managedAvailable
+        self.extensionFlowSupported = extensionFlowSupported
         self.developmentExtensionPath = developmentExtensionPath
     }
 }

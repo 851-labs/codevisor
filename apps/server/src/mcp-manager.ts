@@ -295,6 +295,10 @@ export interface McpManager {
 export interface McpManagerConfig {
   readonly db: CodevisorDatabaseService
   readonly dataDir: string
+  /// The server's --kind. Remote-kind servers have no desktop user at the
+  /// machine, so the Chrome-extension browser flow is disabled and Browser
+  /// Use resolves straight to the managed browser. Defaults to "local".
+  readonly serverKind?: "local" | "remote"
   readonly syncManagedSkills?: (skills: ReadonlyArray<ManagedSkillSpec>) => Promise<void>
   readonly makeBrowserProvider?: (() => BrowserUseProvider) | undefined
   readonly makeComputerProvider?:
@@ -709,7 +713,10 @@ export const makeMcpManager = (config: McpManagerConfig): McpManager => {
     [browserProvider.id, browserProvider],
     [computerProvider.id, computerProvider]
   ])
-  const browserSetupBroker = makeBrowserSetupBroker(config.db, browserProvider)
+  const extensionFlowSupported = config.serverKind !== "remote"
+  const browserSetupBroker = makeBrowserSetupBroker(config.db, browserProvider, {
+    extensionFlowSupported
+  })
   const builtinProviderState = (
     id: "browser" | "computer",
     enabled: boolean
@@ -2000,6 +2007,7 @@ export const makeMcpManager = (config: McpManagerConfig): McpManager => {
         chromeAvailable: status.chromeAvailable,
         chromeConnected: status.extensionConnected,
         managedAvailable: status.backend !== "missing",
+        extensionFlowSupported,
         ...(status.developmentExtensionPath === undefined
           ? {}
           : { developmentExtensionPath: status.developmentExtensionPath })

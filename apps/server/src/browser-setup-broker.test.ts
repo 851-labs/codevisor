@@ -13,6 +13,7 @@ const fixture = (
     connected?: boolean
     preference?: string
     setupMode?: "development" | "webStore"
+    extensionFlowSupported?: boolean
   } = {}
 ) => {
   let preference = options.preference
@@ -49,7 +50,13 @@ const fixture = (
     openExtensionWebStore: openWebStore
   } as unknown as BrowserUseProvider
   const events: RuntimeEvent[] = []
-  const broker = makeBrowserSetupBroker(db, provider)
+  const broker = makeBrowserSetupBroker(
+    db,
+    provider,
+    options.extensionFlowSupported === undefined
+      ? {}
+      : { extensionFlowSupported: options.extensionFlowSupported }
+  )
   broker.setSink("session", async (event) => {
     events.push(event)
   })
@@ -110,6 +117,22 @@ describe("browser setup broker", () => {
     await expect(explicit.broker.resolveBackend("session", "managed")).resolves.toBe("managed")
     expect(explicit.events).toHaveLength(0)
     expect(explicit.preference()).toBeUndefined()
+  })
+
+  it("auto-selects the managed browser when the extension flow is unsupported", async () => {
+    // A remote-kind server: Chrome may exist on the machine, but no desktop
+    // user is there to complete the extension handshake — no questions, no
+    // persisted preference, even for an explicit extension request.
+    const remote = fixture({ connected: true, extensionFlowSupported: false })
+    await expect(remote.broker.resolveBackend("session")).resolves.toBe("managed")
+    await expect(remote.broker.resolveBackend("session", "extension")).resolves.toBe("managed")
+    expect(remote.events).toHaveLength(0)
+    expect(remote.preference()).toBeUndefined()
+
+    const savedChrome = fixture({ preference: "chrome", extensionFlowSupported: false })
+    await expect(savedChrome.broker.resolveBackend("session")).resolves.toBe("managed")
+    expect(savedChrome.events).toHaveLength(0)
+    expect(savedChrome.preference()).toBe("chrome")
   })
 
   it("treats an explicit Chrome request as a session override", async () => {
