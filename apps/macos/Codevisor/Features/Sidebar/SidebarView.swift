@@ -154,6 +154,9 @@ struct SidebarView: View {
     @AppStorage("sidebar.manualSessionOrder") private var manualSessionOrderRaw = ""
     @AppStorage("sidebar.expandedProjects") private var expandedProjectsRaw = ""
     @AppStorage("sidebar.expandedWorkspaces") private var expandedWorkspacesRaw = ""
+    /// Archived content is hidden until explicitly enabled from the sidebar
+    /// filter menu, and the choice survives relaunches.
+    @AppStorage("sidebar.showArchived") private var showArchived = false
     /// Collapsed by default: the archive is a place you go looking for
     /// something, not something that should crowd the live list.
     @AppStorage("sidebar.archivedExpanded") private var archivedExpanded = false
@@ -398,7 +401,9 @@ struct SidebarView: View {
                             .padding(.vertical, 4)
                     }
 
-                    archivedSection
+                    if showArchived {
+                        archivedSection
+                    }
 
                 }
                 .padding(.horizontal, 8)
@@ -410,11 +415,15 @@ struct SidebarView: View {
                 .animation(Motion.listReflow(reduceMotion: reduceMotion), value: expandedWorkspaces)
                 // Same reflow the project/workspace disclosures use, so the
                 // archive opens and closes with the rest of the sidebar.
+                .animation(Motion.listReflow(reduceMotion: reduceMotion), value: showArchived)
                 .animation(Motion.listReflow(reduceMotion: reduceMotion), value: archivedExpanded)
                 .animation(Motion.listReflow(reduceMotion: reduceMotion), value: archivedVisibleCount)
             }
             .scrollContentBackground(.hidden)
             .scrollBounceBehavior(.basedOnSize)
+            .contextMenu {
+                sidebarFilterMenuContent
+            }
 
         }
         .themedSurface(.sidebar)
@@ -643,28 +652,7 @@ struct SidebarView: View {
                 .foregroundStyle(.secondary)
             Spacer()
             Menu {
-                Picker("Organization", selection: Binding(
-                    get: { organization },
-                    set: { organizationRaw = $0.rawValue }
-                )) {
-                    ForEach(SidebarOrganization.allCases, id: \.self) { option in
-                        Text(option.title).tag(option)
-                    }
-                }
-                Picker("Order by", selection: Binding(
-                    get: { order },
-                    set: { setOrder($0) }
-                )) {
-                    ForEach(SidebarOrder.allCases, id: \.self) { option in
-                        Text(option.title).tag(option)
-                    }
-                }
-                if order == .none {
-                    Divider()
-                    Button("Reset manual order") {
-                        resetManualOrder()
-                    }
-                }
+                sidebarFilterMenuContent
             } label: {
                 Image(systemName: "line.3.horizontal.decrease")
                     .font(.callout.weight(.semibold))
@@ -672,12 +660,42 @@ struct SidebarView: View {
             }
             .menuStyle(.button)
             .buttonStyle(.plain)
-            .help("Organize sidebar")
-            .accessibilityLabel("Organize sidebar")
+            .help("Organize and filter sidebar")
+            .accessibilityLabel("Organize and filter sidebar")
         }
         .padding(.horizontal, 10)
         .padding(.top, 12)
         .padding(.bottom, 4)
+    }
+
+    /// Shared by the filter button and the empty-space sidebar context menu so
+    /// both entry points always expose the same organization and filter state.
+    @ViewBuilder
+    private var sidebarFilterMenuContent: some View {
+        Picker("Organization", selection: Binding(
+            get: { organization },
+            set: { organizationRaw = $0.rawValue }
+        )) {
+            ForEach(SidebarOrganization.allCases, id: \.self) { option in
+                Text(option.title).tag(option)
+            }
+        }
+        Picker("Order by", selection: Binding(
+            get: { order },
+            set: { setOrder($0) }
+        )) {
+            ForEach(SidebarOrder.allCases, id: \.self) { option in
+                Text(option.title).tag(option)
+            }
+        }
+        Divider()
+        Toggle("Show Archived", isOn: $showArchived)
+        if order == .none {
+            Divider()
+            Button("Reset manual order") {
+                resetManualOrder()
+            }
+        }
     }
 
     // MARK: - Project rows
