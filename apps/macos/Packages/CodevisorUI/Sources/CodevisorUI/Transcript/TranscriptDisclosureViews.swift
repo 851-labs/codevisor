@@ -77,7 +77,12 @@ public struct TranscriptDisclosureContentReveal<Content: View>: View {
                             .opacity(presentedOpacity)
                             .frame(height: presentedHeight, alignment: .top)
                     }
-                    .clipped()
+                    // Clip the height animation only. A full .clipped() also
+                    // cut horizontal glyph side-bearings: SF Symbols wider
+                    // than their fixed icon column (hammer.and.wrench at
+                    // iOS's 16pt callout) overhang a couple of points past
+                    // the content's leading edge and lost their left side.
+                    .clipShape(VerticalOnlyClipShape())
                     .allowsHitTesting(phase == .expanded)
             }
         }
@@ -175,5 +180,20 @@ private struct DisclosureContentHeightKey: PreferenceKey {
 
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
         value = max(value, nextValue())
+    }
+}
+
+/// A clip that bounds only the vertical axis: the rect's height, extended far
+/// past both horizontal edges. The reveal animates height, so that's all it
+/// must mask — glyphs whose natural width overhangs a fixed icon column keep
+/// their side-bearings instead of losing them at the content's leading edge.
+private struct VerticalOnlyClipShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        Path(CGRect(
+            x: rect.minX - 1000,
+            y: rect.minY,
+            width: rect.width + 2000,
+            height: rect.height
+        ))
     }
 }
