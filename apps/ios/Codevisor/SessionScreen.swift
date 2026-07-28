@@ -129,10 +129,6 @@ struct SessionTranscriptView: View {
                         scrollToBottomButton
                     }
                 }
-                if let question = controller.activeQuestion {
-                    QuestionCardView(controller: controller, request: question)
-                        .id(question.questionId)
-                }
                 ComposerBar(
                     controller: controller,
                     maxHeight: availableHeight - 88,

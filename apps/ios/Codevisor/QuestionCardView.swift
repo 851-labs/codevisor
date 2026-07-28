@@ -3,12 +3,14 @@ import CodevisorCore
 import CodevisorUI
 import SwiftUI
 
-/// A blocking agent question above the composer — the macOS
-/// QuestionPickerCard's behavior on a phone: one question at a time with
-/// arrow pagination, selections and notes accumulated across questions and
+/// A blocking agent question as the composer card's content — the macOS
+/// QuestionPickerContent on a phone: the composer's one glass card morphs
+/// into this while a question is active. One question at a time with arrow
+/// pagination, selections and notes accumulated across questions and
 /// submitted once, an "Other" row backed by a note field, and skipping
 /// allowed (only Other demands text). The common case — one single-select
-/// question — answers on a single tap.
+/// question — answers on a single tap. The hosting ComposerBar owns the
+/// glass surface and the "Submitting response…" overlay.
 struct QuestionCardView: View {
     @Bindable var controller: SessionController
     let request: QuestionRequest
@@ -68,25 +70,6 @@ struct QuestionCardView: View {
 
             footer
         }
-        .padding(12)
-        .composerGlassSurface(cornerRadius: ComposerGlassStyle.accessoryCornerRadius)
-        .padding(.horizontal, 10)
-        .overlay {
-            if controller.isResolvingQuestion {
-                RoundedRectangle(cornerRadius: ComposerGlassStyle.accessoryCornerRadius)
-                    .fill(Color(.systemGroupedBackground).opacity(0.72))
-                    .overlay {
-                        HStack(spacing: 8) {
-                            ProgressView()
-                            Text("Submitting response…")
-                                .font(.footnote)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                    .padding(.horizontal, 10)
-            }
-        }
-        .disabled(controller.isResolvingQuestion)
     }
 
     private var header: some View {

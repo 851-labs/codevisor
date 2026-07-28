@@ -22,6 +22,8 @@ struct ComposerBar: View {
     /// heights would re-measure the transcript on every gesture frame.
     @Binding var collapsedHeight: CGFloat
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     @State private var text = ""
     /// Measured height of the text itself, used for the collapsed size and as
     /// the starting point of a drag.
@@ -133,7 +135,86 @@ struct ComposerBar: View {
         }
     }
 
+    /// The one Liquid Glass card. Its content morphs, macOS-style: a blocking
+    /// agent question replaces the composer inside the same surface (no
+    /// second card stacked above it), then unfolds back when resolved.
     private var card: some View {
+        Group {
+            if let question = controller.activeQuestion {
+                QuestionCardView(controller: controller, request: question)
+                    .id(question.questionId)
+                    .transition(Motion.unfold(reduceMotion: reduceMotion, anchor: .bottom))
+            } else {
+                composerContent
+                    .transition(Motion.unfold(reduceMotion: reduceMotion, anchor: .bottom))
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .composerGlassSurface(cornerRadius: ComposerGlassStyle.composerCornerRadius)
+        // Submission blanket over the whole card, exactly like the macOS
+        // composer shell.
+        .overlay {
+            if controller.activeQuestion != nil, controller.isResolvingQuestion {
+                RoundedRectangle(cornerRadius: ComposerGlassStyle.composerCornerRadius)
+                    .fill(Color(.systemGroupedBackground).opacity(0.72))
+                    .overlay {
+                        HStack(spacing: 8) {
+                            ProgressView()
+                            Text("Submitting response…")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("Submitting response")
+            }
+        }
+        .disabled(controller.isResolvingQuestion)
+        // The transcript fades where it slides underneath the card: this
+        // backdrop sits behind the glass, its gradient starting exactly at
+        // the card's top edge and fully opaque well before the card's
+        // bottom. It tracks a resize drag frame-for-frame and only extends
+        // downward, covering the gap to the screen edge.
+        .background {
+            VStack(spacing: 0) {
+                LinearGradient(
+                    colors: [
+                        Color(.systemGroupedBackground).opacity(0),
+                        Color(.systemGroupedBackground)
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .frame(height: 28)
+                Rectangle()
+                    .fill(Color(.systemGroupedBackground))
+            }
+            .padding(.bottom, -60)
+            .allowsHitTesting(false)
+        }
+        .contentShape(Rectangle())
+        // A single owner for the whole card: dragging works anywhere on it,
+        // and no two recognizers can fight over one touch. While a question
+        // holds the card, the expand drag stands down (`.subviews` routes
+        // touches to the option rows only).
+        .simultaneousGesture(
+            expansionDrag,
+            including: controller.activeQuestion == nil ? .all : .subviews
+        )
+        .accessibilityAction(named: isExpanded ? "Collapse composer" : "Expand composer") {
+            setExpanded(!isExpanded)
+        }
+        // Resizing the card shouldn't ripple layout out into the transcript
+        // behind it.
+        .geometryGroup()
+        .animation(
+            Motion.quick(reduceMotion: reduceMotion),
+            value: controller.activeQuestion?.questionId
+        )
+    }
+
+    private var composerContent: some View {
         VStack(alignment: .leading, spacing: 10) {
             if !controller.composerAttachments.isEmpty {
                 ComposerAttachmentStrip(controller: controller)
@@ -191,41 +272,6 @@ struct ComposerBar: View {
             }
             .font(.callout)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
-        .composerGlassSurface(cornerRadius: ComposerGlassStyle.composerCornerRadius)
-        // The transcript fades where it slides underneath the card: this
-        // backdrop sits behind the glass, its gradient starting exactly at
-        // the card's top edge and fully opaque well before the card's
-        // bottom. It tracks a resize drag frame-for-frame and only extends
-        // downward, covering the gap to the screen edge.
-        .background {
-            VStack(spacing: 0) {
-                LinearGradient(
-                    colors: [
-                        Color(.systemGroupedBackground).opacity(0),
-                        Color(.systemGroupedBackground)
-                    ],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-                .frame(height: 28)
-                Rectangle()
-                    .fill(Color(.systemGroupedBackground))
-            }
-            .padding(.bottom, -60)
-            .allowsHitTesting(false)
-        }
-        .contentShape(Rectangle())
-        // A single owner for the whole card: dragging works anywhere on it,
-        // and no two recognizers can fight over one touch.
-        .simultaneousGesture(expansionDrag)
-        .accessibilityAction(named: isExpanded ? "Collapse composer" : "Expand composer") {
-            setExpanded(!isExpanded)
-        }
-        // Resizing the card shouldn't ripple layout out into the transcript
-        // behind it.
-        .geometryGroup()
     }
 
     /// Drag the card open and closed from anywhere on it: the top edge
