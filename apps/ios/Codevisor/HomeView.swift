@@ -155,6 +155,9 @@ struct HomeView: View {
             .sheet(isPresented: $isShowingSettings) {
                 SettingsSheet()
             }
+            .onReceive(NotificationCenter.default.publisher(for: .codevisorOpenSettings)) { _ in
+                isShowingSettings = true
+            }
             .sheet(isPresented: $isManagingMachines) {
                 NavigationStack {
                     MachinesSettingsScreen()

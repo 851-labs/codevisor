@@ -1814,12 +1814,27 @@ const projectChatEvent = (sqlite: Database.Database, event: SessionEventRow): vo
   } else if (event.kind === "session.output") {
     const conversation = conversationEventPayload(payload)
     if (conversation?.role === "user" || conversation?.role === "system") {
-      itemId = createChatItem(sqlite, sessionId, conversation.role, event.created_at, {
-        text: conversation.text,
-        ...(conversation.messageId === undefined ? {} : { messageId: conversation.messageId }),
-        status: "complete",
-        ...(conversation.attachments === undefined ? {} : { attachments: conversation.attachments })
-      })
+      // A response retry reuses the original user message id. The provider
+      // still receives a continuation prompt, but the semantic transcript
+      // keeps the user's instruction exactly once.
+      const existingUser =
+        conversation.role === "user" && conversation.messageId !== undefined
+          ? (sqlite
+              .prepare(
+                "select id from chat_items where session_id = ? and role = 'user' and message_id = ? limit 1"
+              )
+              .get(sessionId, conversation.messageId) as { readonly id: string } | undefined)
+          : undefined
+      itemId =
+        existingUser?.id ??
+        createChatItem(sqlite, sessionId, conversation.role, event.created_at, {
+          text: conversation.text,
+          ...(conversation.messageId === undefined ? {} : { messageId: conversation.messageId }),
+          status: "complete",
+          ...(conversation.attachments === undefined
+            ? {}
+            : { attachments: conversation.attachments })
+        })
     } else if (conversation?.role === "assistant") {
       itemId = ensureAssistantChatItem(sqlite, sessionId, event.created_at)
       sqlite

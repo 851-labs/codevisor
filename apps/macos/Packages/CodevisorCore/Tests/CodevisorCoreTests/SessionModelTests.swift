@@ -53,6 +53,36 @@ struct SessionModelTests {
         #expect(userMessages(model).first?.text == "run pwd")
     }
 
+    @Test("Retry starts a new assistant attempt without duplicating the user message")
+    func retryResponseDoesNotDuplicateUserMessage() async {
+        let sessionId = UUID()
+        let client = FakeSessionServerClient(sessionId: sessionId)
+        let model = SessionModel(
+            serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
+            sessionId: sessionId.uuidString
+        )
+
+        await model.send("finish the change")
+        await settleUntil { !model.isSending }
+        let original = try! #require(userMessages(model).first)
+        await model.retryResponse(to: original)
+        await settleUntil { !model.isSending }
+
+        #expect(client.promptedTexts == [
+            "finish the change",
+            "Continue from the failed attempt without repeating completed work."
+        ])
+        #expect(client.promptedMessageIds == [
+            original.id.uuidString.lowercased(),
+            original.id.uuidString.lowercased()
+        ])
+        #expect(userMessages(model).map(\.text) == ["finish the change"])
+        #expect(model.conversation.filter {
+            if case .assistant = $0 { return true }
+            return false
+        }.count == 2)
+    }
+
     @Test("A user echo after an agent restart never duplicates the message")
     func echoAfterAgentRestartDedupes() async {
         let sessionId = UUID()
@@ -458,6 +488,72 @@ struct SessionModelTests {
         #expect(message.turn.isGenerating == false)
         #expect(model.lastTurnInitiator == .agent)
         #expect(model.lastTurnEndedWithError)
+    }
+
+    @Test("A retryable session error stays attached to the failed turn")
+    func retryableSessionErrorSurfacesOnTurn() async {
+        let sessionId = UUID()
+        let client = FakeSessionServerClient(sessionId: sessionId)
+        client.echoOnPrompt = false
+        let model = SessionModel(
+            serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
+            sessionId: sessionId.uuidString
+        )
+
+        await model.send("do work")
+        client.emit(ServerEventEnvelope(
+            id: 1, serverId: "local", kind: "session.error",
+            subjectId: sessionId.uuidString, createdAt: "2026-06-30T00:00:00.000Z",
+            payload: .object([
+                "message": .string("The provider connection failed."),
+                "retryable": .bool(true)
+            ])
+        ))
+        await settleUntil { model.isSending == false }
+
+        guard case let .assistant(message) = model.conversation.last else {
+            Issue.record("expected assistant")
+            return
+        }
+        #expect(message.turn.stopDetail == "The provider connection failed.")
+        #expect(message.turn.retryable)
+        #expect(model.errorMessage == "The provider connection failed.")
+    }
+
+    @Test("A restored-runtime failure preserves history and its recovery kind")
+    func restoredRuntimeFailurePreservesHistory() async {
+        let sessionId = UUID()
+        let client = FakeSessionServerClient(sessionId: sessionId)
+        client.initialTranscriptPage = ServerTranscriptPage(
+            items: [ServerTranscriptItem(
+                id: UUID().uuidString,
+                sessionId: sessionId.uuidString,
+                sequence: 0,
+                role: .user,
+                text: "Keep this message visible.",
+                createdAt: "2026-06-30T00:00:00.000Z",
+                updatedAt: "2026-06-30T00:00:00.000Z",
+                isGenerating: false,
+                hasDetails: false,
+                revision: 1
+            )],
+            hasMore: false,
+            eventCursor: 0
+        )
+        let model = SessionModel(
+            serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
+            sessionId: sessionId.uuidString
+        )
+
+        await model.loadHistory()
+        model.recordSessionFailure(
+            "Select a signed-in harness account before continuing this session",
+            requiresHarnessAuthentication: true
+        )
+
+        #expect(userMessages(model).map(\.text) == ["Keep this message visible."])
+        #expect(model.errorRequiresHarnessAuthentication)
+        #expect(model.errorMessage == "Select a signed-in harness account before continuing this session")
     }
 
     @Test("A transient retry surfaces on the active turn and clears on new content")

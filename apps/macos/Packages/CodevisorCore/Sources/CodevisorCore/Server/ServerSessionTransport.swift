@@ -56,7 +56,7 @@ public enum ServerSessionStreamEvent: Equatable, Sendable {
     /// updates; `waiting: false` releases the marker. Replaceable: the
     /// latest event wins.
     case updateGate(waiting: Bool, harnessName: String)
-    case failed(String)
+    case failed(String, retryable: Bool = false)
     /// The harness rejected its credentials. Kept distinct from generic
     /// failures so clients can offer the relevant authentication settings.
     case authenticationRequired(String)
@@ -466,7 +466,10 @@ public struct ServerSessionTransport: Sendable {
             }
             return metadataUpdates(from: event.payload).map(ServerSessionStreamEvent.update)
         case "session.error":
-            return [.failed(errorMessage(from: event.payload))]
+            return [.failed(
+                errorMessage(from: event.payload),
+                retryable: event.payload["retryable"]?.boolValue == true
+            )]
         case "session.authRequired":
             return [.authenticationRequired(
                 event.payload["detail"]?.stringValue

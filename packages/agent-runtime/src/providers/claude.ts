@@ -845,6 +845,7 @@ export const makeClaudeProvider = (
     emitBackgroundTasks(created)
 
     const pump = async (): Promise<void> => {
+      let streamFailure: string | undefined
       try {
         for await (const message of q) {
           if (message.type === "system" && message.subtype === "init") {
@@ -858,13 +859,19 @@ export const makeClaudeProvider = (
         }
       } catch (cause) {
         const failure = cause instanceof Error ? cause.message : String(cause)
-        created.pendingPrompt?.reject(runtimeError("prompt", cause))
-        created.pendingPrompt = undefined
-        void created.emit({
-          kind: "session.error",
-          payload: { message: failure },
-          subjectId: created.key
-        })
+        streamFailure = failure
+        // A live turn is closed below through the normal terminal event so
+        // the failure is attached durably to that assistant response. Only a
+        // stream failure outside a turn remains a session-level error.
+        if (!created.turnActive) {
+          created.pendingPrompt?.reject(runtimeError("prompt", cause))
+          created.pendingPrompt = undefined
+          void created.emit({
+            kind: "session.error",
+            payload: { message: failure },
+            subjectId: created.key
+          })
+        }
       } finally {
         // The SDK stream ended (query closed, aborted, or threw) with a turn
         // still in flight and no final `result` to close it. Without this the
@@ -872,7 +879,16 @@ export const makeClaudeProvider = (
         // prompt would never settle. End the turn defensively so state can't
         // get wedged.
         if (created.turnActive) {
-          finishActiveTurn(created, created.interruptRequested ? "cancelled" : "end_turn")
+          if (created.interruptRequested) {
+            finishActiveTurn(created, "cancelled")
+          } else {
+            finishActiveTurn(
+              created,
+              "end_turn",
+              streamFailure ?? "The Claude connection ended unexpectedly.",
+              true
+            )
+          }
         }
       }
     }

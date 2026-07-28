@@ -174,25 +174,6 @@ struct ComposerCard: View {
                 if !controller.composerAttachments.isEmpty {
                     ComposerAttachmentRow(controller: controller)
                 }
-                if let message = controller.configurationValidationError {
-                    HStack(spacing: 8) {
-                        Label(message, systemImage: "exclamationmark.triangle")
-                            .font(.caption)
-                            .foregroundStyle(.red)
-                        Spacer(minLength: 0)
-                        Button("Retry") {
-                            Task { await controller.retryExistingSessionCapabilities() }
-                        }
-                        .buttonStyle(.plain)
-                        .font(.caption.weight(.medium))
-                    }
-                    .accessibilityElement(children: .combine)
-                } else if let message = controller.configurationAdjustmentMessage {
-                    Label(message, systemImage: "exclamationmark.triangle")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .accessibilityLabel(message)
-                }
 
                 ZStack(alignment: .topLeading) {
                     ChatInputEditor(

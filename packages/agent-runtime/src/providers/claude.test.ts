@@ -1634,7 +1634,13 @@ describe("ClaudeProvider", () => {
     expect(result.stopReason).toBe("end_turn")
 
     const payloads = events.map((event) => event.payload as Record<string, unknown>)
-    expect(payloads).toContainEqual(expect.objectContaining({ turnState: "ended" }))
+    expect(payloads).toContainEqual(
+      expect.objectContaining({
+        retryable: true,
+        stopDetail: "The Claude connection ended unexpectedly.",
+        turnState: "ended"
+      })
+    )
     expect(payloads).toContainEqual(
       expect.objectContaining({
         sessionUpdate: "tool_call_update",

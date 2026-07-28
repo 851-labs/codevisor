@@ -208,15 +208,6 @@ struct ComposerBar: View {
             if !controller.composerAttachments.isEmpty {
                 ComposerAttachmentStrip(controller: controller)
             }
-            if let message = controller.configurationValidationError {
-                Label(message, systemImage: "exclamationmark.triangle")
-                    .font(.caption)
-                    .foregroundStyle(.red)
-            } else if let message = controller.configurationAdjustmentMessage {
-                Label(message, systemImage: "exclamationmark.triangle")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
 
             ZStack(alignment: .topLeading) {
                 // A UIKit text view: return inserts newlines, the content

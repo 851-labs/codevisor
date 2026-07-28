@@ -323,13 +323,13 @@ struct ChatScreen: View {
                 estimatedHeight: 32
             ))
         }
-        if let error = controller.errorMessage {
+        if let error = controller.sessionErrorMessage {
             result.append(.init(id: .error, content: .error(error), estimatedHeight: 56))
         }
         // Failures land in the chat history, right where the turn they broke
         // would have appeared — not detached beneath the composer (HIG: show
         // errors close to where the problem occurred).
-        if case let .failed(message) = controller.status, message != controller.errorMessage {
+        if case let .failed(message) = controller.status, message != controller.sessionErrorMessage {
             result.append(.init(id: .statusError, content: .error(message), estimatedHeight: 56))
         }
         result.append(.init(
@@ -429,38 +429,25 @@ struct ChatScreen: View {
                 }
             }
         case .initialLoading:
-            HStack(spacing: 8) {
-                ProgressView()
-                    .controlSize(.small)
-                Text("Loading conversation…")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                Spacer(minLength: 0)
-            }
+            ChatActivityRow("Loading conversation…")
         case let .backgroundTask(description):
-            HStack(spacing: 8) {
-                Image(systemName: "clock.arrow.circlepath")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                ShimmeringText.waitingOnBackgroundTask(description)
-                Spacer(minLength: 0)
-            }
+            ChatActivityRow(
+                "Waiting on \(description)...",
+                systemImage: "clock.arrow.circlepath",
+                shimmers: true
+            )
         case let .updateGate(harnessName):
-            HStack(spacing: 8) {
-                Image(systemName: "arrow.down.circle")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                ShimmeringText.waitingOnHarnessUpdate(harnessName)
-                Spacer(minLength: 0)
-            }
+            ChatActivityRow(
+                "Waiting for \(harnessName) to finish updating...",
+                systemImage: "arrow.down.circle",
+                shimmers: true
+            )
         case let .serverWait(message):
-            HStack(spacing: 8) {
-                Image(systemName: "arrow.triangle.2.circlepath")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                ShimmeringText(text: message)
-                Spacer(minLength: 0)
-            }
+            ChatActivityRow(
+                message,
+                systemImage: "arrow.triangle.2.circlepath",
+                shimmers: true
+            )
         case let .error(message):
             errorBanner(message)
         case let .bottomSpacer(height):
@@ -501,6 +488,7 @@ struct ChatScreen: View {
                     glassNamespace: composerGlassNamespace
                 )
             }
+            composerNoticeRail
             // ComposerCard owns all of its states, including blocking agent
             // questions and plan approvals, so they share one stable glass
             // identity while the content and surface geometry change.
@@ -546,6 +534,26 @@ struct ChatScreen: View {
         .animation(Motion.quick(reduceMotion: reduceMotion), value: isQueueExpanded)
     }
 
+    @ViewBuilder
+    private var composerNoticeRail: some View {
+        if let message = controller.configurationValidationError {
+            ComposerNoticeRail(
+                message,
+                kind: .error,
+                actionTitle: "Retry",
+                action: {
+                    Task { await controller.retryExistingSessionCapabilities() }
+                }
+            )
+        } else if let message = controller.configurationAdjustmentMessage {
+            ComposerNoticeRail(
+                message,
+                kind: .warning,
+                onDismiss: { controller.dismissConfigurationAdjustment() }
+            )
+        }
+    }
+
     private var visibleComposerGlassElements: [ComposerGlassElement] {
         var elements: [ComposerGlassElement] = []
         if controller.visibleTodos != nil {
@@ -562,33 +570,30 @@ struct ChatScreen: View {
         return elements
     }
 
+    @ViewBuilder
     private func errorBanner(_ message: String) -> some View {
-        HStack(spacing: 12) {
-            Label(message, systemImage: "exclamationmark.triangle.fill")
-                .font(.callout)
-                .foregroundStyle(theme.statusError)
-            Spacer(minLength: 0)
-            // A dead server has one remedy: relaunching the app restarts the
-            // managed server too. Offer it right where the error appears.
-            if message == serverUnreachableErrorMessage {
-                Button("Restart") { AppRelauncher.relaunch() }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    .help("Restart Codevisor and its server")
-            } else if controller.errorRequiresHarnessAuthentication {
-                Button("Open Harness Settings") {
+        if message == serverUnreachableErrorMessage {
+            ChatErrorRow(
+                message,
+                actionTitle: "Restart",
+                action: { AppRelauncher.relaunch() }
+            )
+        } else if controller.errorRequiresHarnessAuthentication {
+            ChatErrorRow(
+                message,
+                actionTitle: "Open Harness Settings",
+                action: {
                     SettingsRouter.shared.selectedTab = .harnesses
                     openSettings()
                 }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .help("Open Harnesses settings to sign in")
-            }
+            )
+        } else {
+            ChatErrorRow(
+                message,
+                actionTitle: "Retry",
+                action: { Task { await controller.retrySessionFailure() } }
+            )
         }
-        .padding(10)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 8).fill(theme.statusError.opacity(0.1)))
-        .accessibilityElement(children: .combine)
     }
 }
 

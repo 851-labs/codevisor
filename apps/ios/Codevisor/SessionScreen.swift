@@ -4,6 +4,10 @@ import CodevisorUI
 import StreamMarkdown
 import SwiftUI
 
+extension Notification.Name {
+    static let codevisorOpenSettings = Notification.Name("codevisor.open-settings")
+}
+
 /// The chat pane body: connects an existing session through the shared
 /// SessionController/SessionModel engine and renders the transcript with the
 /// shared row views. Hosted by WorkspaceScreen, which owns the navigation
@@ -43,18 +47,8 @@ struct SessionTranscriptView: View {
     @State private var sendPinActive = false
 
     var body: some View {
-        Group {
-            if controller.model == nil, case let .failed(message) = controller.status {
-                ContentUnavailableView {
-                    Label("Couldn't Connect", systemImage: "bolt.slash")
-                } description: {
-                    Text(message)
-                }
-            } else {
-                chat
-            }
-        }
-        .onAppear {
+        chat
+        .onAppear { [controller] in
             if attachmentImages == nil {
                 attachmentImages = AttachmentImageStore { [weak controller] fileId in
                     guard let controller else { throw SessionControllerError.serverUnavailable }
@@ -69,6 +63,7 @@ struct SessionTranscriptView: View {
     /// (new-worktree chats deliberately don't connect until first send) or an
     /// empty conversation.
     private var showsWatermark: Bool {
+        guard !showsModelLessStatus else { return false }
         guard controller.pendingUserText == nil, controller.setupPhases.isEmpty else { return false }
         guard let model = controller.model else { return true }
         return model.settledConversation.isEmpty && model.activeItem == nil
@@ -80,6 +75,15 @@ struct SessionTranscriptView: View {
     private var showsPendingSetup: Bool {
         controller.model == nil
             && (controller.pendingUserText != nil || !controller.setupPhases.isEmpty)
+    }
+
+    private var showsModelLessStatus: Bool {
+        guard controller.model == nil, !showsPendingSetup else { return false }
+        if controller.isLoadingInitialHistory || controller.serverWaitMessage != nil { return true }
+        switch controller.status {
+        case .idle: return false
+        case .connecting, .failed: return true
+        }
     }
 
     /// One chat surface for every connection state. The composer is mounted
@@ -111,24 +115,18 @@ struct SessionTranscriptView: View {
                 transcriptScroll(model)
             } else if showsPendingSetup {
                 pendingSetupColumn
+            } else if showsModelLessStatus {
+                modelLessStatusColumn
             }
 
             VStack(spacing: 8) {
-                if controller.model == nil, case let .connecting(message) = controller.status {
-                    HStack(spacing: 6) {
-                        ProgressView()
-                            .controlSize(.small)
-                        Text(message)
-                    }
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                }
                 if controller.model != nil, !isAtBottom {
                     HStack {
                         Spacer()
                         scrollToBottomButton
                     }
                 }
+                composerNoticeRail
                 ComposerBar(
                     controller: controller,
                     maxHeight: availableHeight - 88,
@@ -146,6 +144,58 @@ struct SessionTranscriptView: View {
             PaneSnapshotCache.shared.activeBottomChrome = height + 6
         }
         .background(Color(.systemGroupedBackground))
+    }
+
+    private var modelLessStatusColumn: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                modelLessStatusContent
+                Color.clear.frame(height: composerHeight + 24)
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 12)
+        }
+    }
+
+    @ViewBuilder
+    private var modelLessStatusContent: some View {
+        if case let .failed(message) = controller.status {
+            ChatErrorRow(
+                message,
+                actionTitle: "Retry",
+                action: { Task { await controller.retry() } }
+            )
+        } else if let message = controller.serverWaitMessage {
+            ChatActivityRow(
+                message,
+                systemImage: "arrow.triangle.2.circlepath",
+                shimmers: true
+            )
+        } else if controller.isLoadingInitialHistory {
+            ChatActivityRow("Loading conversation…")
+        } else if case let .connecting(message) = controller.status {
+            ChatActivityRow(message)
+        }
+    }
+
+    @ViewBuilder
+    private var composerNoticeRail: some View {
+        if let message = controller.configurationValidationError {
+            ComposerNoticeRail(
+                message,
+                kind: .error,
+                actionTitle: "Retry",
+                action: {
+                    Task { await controller.retryExistingSessionCapabilities() }
+                }
+            )
+        } else if let message = controller.configurationAdjustmentMessage {
+            ComposerNoticeRail(
+                message,
+                kind: .warning,
+                onDismiss: { controller.dismissConfigurationAdjustment() }
+            )
+        }
     }
 
     private var scrollToBottomButton: some View {
@@ -221,7 +271,25 @@ struct SessionTranscriptView: View {
                     ConversationItemRow(item: active, isActive: true)
                 }
                 if controller.isLoadingInitialHistory {
-                    HStack { Spacer(); ProgressView(); Spacer() }
+                    ChatActivityRow("Loading conversation…")
+                }
+                if let message = controller.serverWaitMessage {
+                    ChatActivityRow(
+                        message,
+                        systemImage: "arrow.triangle.2.circlepath",
+                        shimmers: true
+                    )
+                }
+                if let message = controller.sessionErrorMessage {
+                    sessionErrorRow(message)
+                }
+                if case let .failed(message) = controller.status,
+                   message != controller.sessionErrorMessage {
+                    ChatErrorRow(
+                        message,
+                        actionTitle: "Retry",
+                        action: { Task { await controller.retry() } }
+                    )
                 }
 
                 // Breathing room past the composer so the newest content can
@@ -279,6 +347,25 @@ struct SessionTranscriptView: View {
             scrollToBottom(scroller, animated: true)
         }
         .onAppear { scrollToBottom(scroller, animated: false) }
+        }
+    }
+
+    @ViewBuilder
+    private func sessionErrorRow(_ message: String) -> some View {
+        if controller.errorRequiresHarnessAuthentication {
+            ChatErrorRow(
+                message,
+                actionTitle: "Open Settings",
+                action: {
+                    NotificationCenter.default.post(name: .codevisorOpenSettings, object: nil)
+                }
+            )
+        } else {
+            ChatErrorRow(
+                message,
+                actionTitle: "Retry",
+                action: { Task { await controller.retrySessionFailure() } }
+            )
         }
     }
 
@@ -407,16 +494,16 @@ private struct AssistantTurnBody: View {
                 showsTimer: true,
                 allowsDeferred: false
             )
-            if isGenerating, turn.showsActivityIndicator {
+            if isGenerating, let retry = turn.retryStatus {
+                ChatActivityRow(retryLabel(retry))
+            } else if isGenerating, turn.showsActivityIndicator {
                 ShimmeringText.thinking
             }
             if case let .text(_, markdown) = turn.finalText {
                 StreamingMarkdownView(markdown, isComplete: !isGenerating)
             }
             if let stopDetail = turn.stopDetail {
-                Label(stopDetail, systemImage: "exclamationmark.triangle")
-                    .font(.footnote)
-                    .foregroundStyle(.orange)
+                turnErrorRow(stopDetail)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -427,6 +514,35 @@ private struct AssistantTurnBody: View {
             store.setExpanded(.turn(turnId), false)
             store.setExpanded(.turnImplementation(turnId), false)
         }
+    }
+
+    @ViewBuilder
+    private func turnErrorRow(_ message: String) -> some View {
+        if let transcriptController,
+           transcriptController.errorRequiresHarnessAuthentication,
+           transcriptController.errorMessage == message {
+            ChatErrorRow(
+                message,
+                actionTitle: "Open Settings",
+                action: {
+                    NotificationCenter.default.post(name: .codevisorOpenSettings, object: nil)
+                }
+            )
+        } else if let transcriptController,
+                  transcriptController.canRetryTurn(turnId) {
+            ChatErrorRow(
+                message,
+                actionTitle: "Retry response",
+                action: { Task { await transcriptController.retryTurn(turnId) } }
+            )
+        } else {
+            ChatErrorRow(message)
+        }
+    }
+
+    private func retryLabel(_ retry: RetryStatus) -> String {
+        guard let attempt = retry.attempt, let of = retry.of else { return retry.message }
+        return "\(retry.message) \(attempt)/\(of)"
     }
 
     /// One worked section: open with a live timer while streaming (not

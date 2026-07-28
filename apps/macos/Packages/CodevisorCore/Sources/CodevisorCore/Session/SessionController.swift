@@ -577,6 +577,16 @@ final public class SessionController {
         return state
     }
     public var errorMessage: String? { model?.errorMessage }
+    /// Session-level failures only. A runtime failure that already lives on
+    /// the active assistant turn must not also render as a detached banner.
+    public var sessionErrorMessage: String? {
+        guard let error = model?.errorMessage else { return nil }
+        if case let .assistant(message)? = model?.activeItem,
+           message.turn.stopDetail == error {
+            return nil
+        }
+        return error
+    }
     public var errorRequiresHarnessAuthentication: Bool {
         model?.errorRequiresHarnessAuthentication == true
     }
@@ -1056,6 +1066,7 @@ final public class SessionController {
            optionBeforeChange?.category == SessionConfigOption.Category.model,
            previousValue != value {
             captureModelSelected(modelId: value, previousModelId: previousValue)
+            configurationAdjustmentMessage = nil
         }
         // Explicit picker actions become the next composer's defaults
         // immediately, including in an unsent draft. Persist the resulting
@@ -1172,6 +1183,30 @@ final public class SessionController {
     public var isRuntimeIdle: Bool { model?.isRuntimeIdle ?? true }
     public var lastTurnInitiator: SessionTurnInitiator { model?.lastTurnInitiator ?? .user }
     public var lastTurnEndedWithError: Bool { model?.lastTurnEndedWithError ?? false }
+
+    public func canRetryTurn(_ id: UUID) -> Bool {
+        guard !isSending else { return false }
+        return conversation.reversed().first(where: {
+            if case .assistant = $0 { return true }
+            return false
+        }).flatMap { item in
+            guard case let .assistant(message) = item else { return nil }
+            return message.id == id && message.turn.retryable
+        } ?? false
+    }
+
+    public func retrySessionFailure() async {
+        if case .failed = status, hasExistingAgentSession {
+            let failedModel = model
+            model = nil
+            failedModel?.shutdown()
+            await retry()
+        } else if let model {
+            await model.retrySessionFailure()
+        } else {
+            await retry()
+        }
+    }
 
     /// Harness name while the server holds this chat's prompts during an
     /// update — drives the ephemeral "Waiting for X to finish updating…" row.
@@ -1427,6 +1462,10 @@ final public class SessionController {
         await prepareExistingSessionCapabilities()
     }
 
+    public func dismissConfigurationAdjustment() {
+        configurationAdjustmentMessage = nil
+    }
+
     /// Reloads the authoritative harness catalog after authentication or
     /// enablement changes. Unlike `prepare()`, this deliberately bypasses the
     /// stale cache because the caller is responding to an explicit mutation.
@@ -1678,9 +1717,9 @@ final public class SessionController {
         userSendAnimationRequestedAt = ProcessInfo.processInfo.systemUptime
     }
 
-    /// Re-submits the user prompt that owns an exhausted retryable assistant
-    /// turn. Automatic retries remain provider-owned; this is the explicit
-    /// user choice offered after they give up.
+    /// Continues the failed response in place. Automatic retries remain
+    /// provider-owned; this explicit recovery starts a new assistant attempt
+    /// under the original user message without duplicating that message.
     public func retryTurn(_ assistantID: UUID) async {
         guard let model, !model.isSending, !isConnecting, !isSubmitting else { return }
         guard let assistantIndex = model.conversation.firstIndex(where: { item in
@@ -1691,8 +1730,7 @@ final public class SessionController {
             if case let .user(message) = item { return message }
             return nil
         }).first else { return }
-        userSendSignal &+= 1
-        await model.send(prompt.text, attachments: prompt.attachments)
+        await model.retryResponse(to: prompt)
     }
 
     /// Failed first-send setup returns to the centered composer with its prompt
@@ -1953,6 +1991,7 @@ final public class SessionController {
             self?.onGoalChanged?()
         }
         model.onPromptAccepted = { [weak self, weak model] attachmentCount, isQueued in
+            self?.configurationAdjustmentMessage = nil
             self?.captureMessageSent(model: model, attachmentCount: attachmentCount, isQueued: isQueued)
         }
         model.onQueuedPromptPromoted = { [weak self] in
@@ -2032,14 +2071,19 @@ final public class SessionController {
                 startedAt: runtimeConnectStartedAt
             )
             didFinishExistingRuntimeConfiguration = runtimeConnect != nil
-            existingConfigurationError = serverErrorMessage(error)
+            let message = serverErrorMessage(error)
+            existingConfigurationError = message
             updateConfigurationValidationState()
-            // The transcript may already have painted, but the runtime never
-            // came up. Return to the fully disconnected state so the caller's
-            // failure handling (status banner, remount retry, reconnect)
-            // starts from scratch instead of finding a half-connected model.
-            if self.model === model { self.model = nil }
-            model.shutdown()
+            // History is durable and useful even when the live harness cannot
+            // be restored. Keep the loaded model published so reopening a chat
+            // never replaces its transcript with an empty error screen.
+            model.recordSessionFailure(
+                message,
+                requiresHarnessAuthentication: message.localizedCaseInsensitiveContains(
+                    "signed-in harness account"
+                )
+            )
+            if self.model == nil { self.model = model }
             throw error
         }
 

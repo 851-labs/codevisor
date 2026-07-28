@@ -458,8 +458,40 @@ public final class SessionModel {
             await drain()
         } catch {
             await drain()
-            errorMessage = serverErrorMessage(error)
-            finish(stopReason: nil, outcome: .failed)
+            let message = serverErrorMessage(error)
+            errorMessage = message
+            finish(stopReason: nil, outcome: .failed, stopDetail: message, retryable: true)
+            lastTurnInitiator = .user
+            lastTurnEndedWithError = true
+            endTurn()
+        }
+    }
+
+    /// Starts another assistant attempt for a failed turn without adding a
+    /// duplicate user message to the visible conversation. The original
+    /// message id is reused so live event replay and canonical history both
+    /// reconcile the provider continuation with the existing user row.
+    public func retryResponse(to prompt: UserMessage) async {
+        guard !isSending else { return }
+
+        errorMessage = nil
+        harnessAuthenticationErrorMessage = nil
+        settleActiveItem()
+        startActiveBubble()
+        isSending = true
+        await startConsumer()
+
+        do {
+            _ = try await transport.prompt(
+                "Continue from the failed attempt without repeating completed work.",
+                messageId: prompt.id.uuidString.lowercased()
+            )
+            await drain()
+        } catch {
+            await drain()
+            let message = serverErrorMessage(error)
+            errorMessage = message
+            finish(stopReason: nil, outcome: .failed, stopDetail: message, retryable: true)
             lastTurnInitiator = .user
             lastTurnEndedWithError = true
             endTurn()
@@ -505,6 +537,24 @@ public final class SessionModel {
             if !isSending { return }
         }
         await reconcileFromServer()
+    }
+
+    public func retrySessionFailure() async {
+        errorMessage = nil
+        harnessAuthenticationErrorMessage = nil
+        await reconcileFromServer()
+    }
+
+    /// Surfaces a failure that happened while restoring the live harness
+    /// runtime after persisted history has already loaded. Keeping this state
+    /// on the model lets the transcript remain visible while the chat offers
+    /// the appropriate recovery action.
+    public func recordSessionFailure(
+        _ message: String,
+        requiresHarnessAuthentication: Bool = false
+    ) {
+        errorMessage = message
+        harnessAuthenticationErrorMessage = requiresHarnessAuthentication ? message : nil
     }
 
     private func reconcileFromServer() async {
@@ -841,7 +891,11 @@ public final class SessionModel {
                     turn.stopDetail = detail
                     turn.retryable = retryable
                     turn.isGenerating = false
-                case let .failed(message), let .authenticationRequired(message):
+                case let .failed(message, retryable):
+                    turn.stopDetail = message
+                    turn.retryable = retryable
+                    turn.isGenerating = false
+                case let .authenticationRequired(message):
                     turn.stopDetail = message
                     turn.isGenerating = false
                 case .userMessage, .queueUpdated, .retrying, .backgroundTasks, .runtimeState,
@@ -1071,16 +1125,21 @@ public final class SessionModel {
             lastTurnEndedWithError = stopDetail != nil
                 || (stopReason != .endTurn && stopReason != .cancelled)
             endTurn()
-        case let .failed(message):
+        case let .failed(message, retryable):
             errorMessage = message
-            finish(stopReason: nil, outcome: .failed, stopDetail: nil)
+            finish(
+                stopReason: nil,
+                outcome: .failed,
+                stopDetail: message,
+                retryable: retryable
+            )
             lastTurnInitiator = .user
             lastTurnEndedWithError = true
             endTurn()
         case let .authenticationRequired(message):
             errorMessage = message
             harnessAuthenticationErrorMessage = message
-            finish(stopReason: nil, outcome: .failed, stopDetail: nil)
+            finish(stopReason: nil, outcome: .failed, stopDetail: message)
             lastTurnInitiator = .user
             lastTurnEndedWithError = true
             endTurn()

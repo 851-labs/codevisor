@@ -1838,6 +1838,34 @@ describe("@codevisor/db", () => {
     expect(await run(db.getTranscriptItemDetails(session.id, "missing"))).toBeUndefined()
   })
 
+  it("reuses the original user transcript row when a response retry echoes its message id", async () => {
+    const filename = tempDatabase()
+    const db = await run(makeDatabase({ filename, serverId: "local" }))
+    const project = await run(db.createProject({ folderPath: "/tmp/retry-transcript" }))
+    const session = await run(db.createSession({ projectId: project.id, harnessId: "codex" }))
+
+    await run(
+      db.appendEvent("session.output", session.id, {
+        role: "user",
+        messageId: "original-message",
+        text: "Fix the issue"
+      })
+    )
+    await run(
+      db.appendEvent("session.output", session.id, {
+        role: "user",
+        messageId: "original-message",
+        text: "Continue from the failed attempt without repeating completed work."
+      })
+    )
+
+    const transcript = await run(db.getTranscriptPage(session.id, undefined, 32))
+    expect(transcript.items.filter((item) => item.role === "user")).toMatchObject([
+      { text: "Fix the issue" }
+    ])
+    await run(db.close)
+  })
+
   it("backfills transcript pages from an older event log", async () => {
     const filename = tempDatabase()
     buildV4Fixture(filename)

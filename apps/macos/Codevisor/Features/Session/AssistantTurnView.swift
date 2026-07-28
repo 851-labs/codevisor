@@ -39,6 +39,7 @@ struct AssistantTurnView: View {
     @Environment(\.transcriptPerformAnchoredDisclosureChange) private var performAnchoredDisclosureChange
     @Environment(\.transcriptInvalidateRowMeasurement) private var invalidateRowMeasurement
     @Environment(\.theme) private var theme
+    @Environment(\.openSettings) private var openSettings
     /// Transient one-shot guard for the finish/assert auto-collapse. Stays
     /// `@State`: it only matters while the turn is generating/settling, which
     /// is the mounted active row. A settled remount resets it harmlessly.
@@ -135,14 +136,7 @@ struct AssistantTurnView: View {
             // instead of the plain "Thinking…" so the chat isn't a silent freeze.
             if presentation.showsResult,
                !isWaitingOnUser, turn.isGenerating, let retry = turn.retryStatus {
-                HStack(spacing: 8) {
-                    ProgressView()
-                        .controlSize(.small)
-                    Text(retryLabel(retry))
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                }
-                .accessibilityElement(children: .combine)
+                ChatActivityRow(retryLabel(retry))
             } else if postResponseGoalActivity == nil, presentation.showsResult,
                       !isWaitingOnUser, turn.showsActivityIndicator,
                       turn.contextCompactionStatus != .started {
@@ -197,36 +191,7 @@ struct AssistantTurnView: View {
             // stopDetail and render nothing.
             if presentation.showsResult,
                !turn.isGenerating, let stopDetail = turn.stopDetail {
-                HStack(alignment: .top, spacing: 8) {
-                    Image(systemName: "exclamationmark.triangle")
-                        .font(.caption)
-                    VStack(alignment: .leading, spacing: 8) {
-                        SelectableTextView(
-                            stopDetail,
-                            font: .preferredFont(
-                                forTextStyle: turn.finalText == nil ? .callout : .caption1
-                            ),
-                            foregroundColor: NSColor(theme.statusError)
-                        )
-                        if turn.retryable, let transcriptController {
-                            Button {
-                                Task { await transcriptController.retryTurn(turnID) }
-                            } label: {
-                                Label("Keep retrying", systemImage: "arrow.counterclockwise")
-                            }
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
-                            .disabled(transcriptController.model?.isSending == true)
-                        }
-                    }
-                }
-                .foregroundStyle(theme.statusError)
-                .padding(turn.retryable ? 10 : 0)
-                .background(
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(theme.statusError.opacity(turn.retryable ? 0.08 : 0))
-                )
-                .frame(maxWidth: .infinity, alignment: .leading)
+                turnErrorRow(stopDetail)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -261,6 +226,31 @@ struct AssistantTurnView: View {
     private func retryLabel(_ retry: RetryStatus) -> String {
         guard let attempt = retry.attempt, let of = retry.of else { return retry.message }
         return "\(retry.message) \(attempt)/\(of)"
+    }
+
+    @ViewBuilder
+    private func turnErrorRow(_ message: String) -> some View {
+        if let transcriptController,
+           transcriptController.errorRequiresHarnessAuthentication,
+           transcriptController.errorMessage == message {
+            ChatErrorRow(
+                message,
+                actionTitle: "Open Harness Settings",
+                action: {
+                    SettingsRouter.shared.selectedTab = .harnesses
+                    openSettings()
+                }
+            )
+        } else if let transcriptController,
+                  transcriptController.canRetryTurn(turnID) {
+            ChatErrorRow(
+                message,
+                actionTitle: "Retry response",
+                action: { Task { await transcriptController.retryTurn(turnID) } }
+            )
+        } else {
+            ChatErrorRow(message)
+        }
     }
 
     private func goalActivityLabel(_ activity: GoalActivity) -> String {
