@@ -232,10 +232,6 @@ public protocol CodevisorServerClienting: Sendable {
     func updateProject(_ project: Project) async throws -> ServerProject
     func deleteProject(id: UUID) async throws
     func listWorktrees(projectId: UUID) async throws -> [ServerWorktree]
-    /// A workspace's synced scratchpad notes; nil when none exist yet.
-    func workspaceNotes(workspaceId: UUID) async throws -> ServerWorkspaceNotes?
-    /// Uploads a workspace's notes (last-write-wins by `updatedAt`).
-    func saveWorkspaceNotes(workspaceId: UUID, content: String, updatedAt: Date) async throws
     /// Mirrors a workspace's archived flag so other devices — and the
     /// server's own cascade to the workspace's chats — see it.
     func setWorkspaceArchived(id: UUID, isArchived: Bool) async throws
@@ -690,8 +686,6 @@ public extension CodevisorServerClienting {
     func listWorktrees(projectId: UUID) async throws -> [ServerWorktree] { [] }
 
     /// Notes sync is best-effort; fakes/older servers act notes-less.
-    func workspaceNotes(workspaceId: UUID) async throws -> ServerWorkspaceNotes? { nil }
-    func saveWorkspaceNotes(workspaceId: UUID, content: String, updatedAt: Date) async throws {}
 
     /// Workspace archive sync is best-effort for the same reason: a fake or a
     /// server predating the route leaves the local flag authoritative.
@@ -1921,20 +1915,6 @@ public struct ServerProject: Decodable, Equatable, Sendable {
     }
 }
 
-/// A workspace's synced scratchpad record. `content` is an opaque encoded
-/// rich-text document (AttributedString Codable JSON, format-tagged).
-public struct ServerWorkspaceNotes: Decodable, Equatable, Sendable {
-    public var workspaceId: String
-    public var content: String
-    public var format: String
-    public var updatedAt: String
-
-    /// The LWW stamp as a date (nil if the server sent an unparseable one).
-    public var updatedAtDate: Date? {
-        try? ServerDateCoding.date(from: updatedAt)
-    }
-}
-
 public struct ServerWorktree: Decodable, Equatable, Sendable {
     public var id: String
     public var projectId: String
@@ -3134,25 +3114,6 @@ public final class CodevisorServerClient: CodevisorServerClienting, @unchecked S
         )
     }
 
-    public func workspaceNotes(workspaceId: UUID) async throws -> ServerWorkspaceNotes? {
-        do {
-            return try await get("/v1/workspaces/\(workspaceId.uuidString)/notes")
-        } catch CodevisorServerClientError.httpStatus(404, _) {
-            return nil
-        }
-    }
-
-    public func saveWorkspaceNotes(workspaceId: UUID, content: String, updatedAt: Date) async throws {
-        try await sendNoResponse(
-            "/v1/workspaces/\(workspaceId.uuidString)/notes",
-            method: "PUT",
-            body: WorkspaceNotesBody(
-                content: content,
-                updatedAt: ServerDateCoding.string(from: updatedAt)
-            )
-        )
-    }
-
     /// Mirrors a workspace's archived flag to the server.
     ///
     /// Archive state used to live only in this machine's `workspaces.json`,
@@ -3543,12 +3504,6 @@ private enum ServerDateCoding {
 }
 
 private struct EmptyBody: Encodable {}
-
-private struct WorkspaceNotesBody: Encodable {
-    var content: String
-    var format = "attributed-string-v1"
-    var updatedAt: String
-}
 
 /// Only the archived flag: every other field is omitted so the server keeps
 /// whatever it already has (see `UpdateWorkspaceRequest`).

@@ -236,11 +236,11 @@ final class SubmittingTextView: NSTextView {
     /// dropzone (`AttachmentDropModifier`) and the file attaches instead.
     override var acceptableDragTypes: [NSPasteboard.PasteboardType] { [.string] }
 
-    /// The app-level Format menu (⌘B/⌘I, alignment, …) exists for the
-    /// scratchpad's rich editor. The composer is plain text, but NSTextView
-    /// still honors alignment (a paragraph attribute) and font-manager trait
-    /// changes (which restyle the WHOLE box in plain-text mode) — so every
-    /// formatting action is refused here: the menu items disable while the
+    /// The composer is plain text, but NSTextView still honors alignment (a
+    /// paragraph attribute) and font-manager trait changes (which restyle the
+    /// WHOLE box in plain-text mode). The app ships no Format menu today, so
+    /// nothing routes these here — the refusal stays as a guard in case rich-
+    /// text formatting commands are reintroduced: the items disable while the
     /// composer has focus, and the actions are no-ops if invoked anyway.
     private static let blockedFormatActions: Set<Selector> = [
         #selector(NSText.alignLeft(_:)),

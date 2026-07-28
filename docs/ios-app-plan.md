@@ -280,18 +280,15 @@ Work items:
    _model_ is identical across platforms; iOS just renders one pane at a time.
 2. **Pane navigator**: top-right toolbar button in a workspace opens a
    navigation surface (Liquid Glass sheet/menu) listing the workspace's panes —
-   open, add (chat/terminal/scratchpad), rename where applicable, delete;
+   open, add (chat/terminal), rename where applicable, delete;
    badge for active/streaming panes. Optional: horizontal swipe between sibling
    panes.
 3. Workspace creation flow (`NewWorkspaceView`/`WorkspaceCreation` logic
    shared): pick project/repo, base branch, worktree creation on the remote
    machine; `RemoteDirectoryBrowserModel` reused for path pickers.
-4. Scratchpad pane (shared `ScratchpadModel` + markdown editor on the Phase 2
-   text stack).
-
-Exit gate: create a workspace from iPhone, add a second chat pane and a
-scratchpad, switch panes via the navigator, delete a pane — state stays
-consistent with what the macOS app shows for the same machine.
+Exit gate: create a workspace from iPhone, add a second chat pane, switch
+panes via the navigator, delete a pane — state stays consistent with what the
+macOS app shows for the same machine.
 
 Status (2026-07-27): first slice shipped. WorkspaceScreen renders one pane at
 a time behind a Safari-style pane grid (square.on.square, snapshot previews,
@@ -301,7 +298,7 @@ scheme, one PTY per pane). New Workspace CTA on the home screen → project
 picker → instant workspace with a deferred chat pane; harness + run-location
 capsule under the composer. Settings sheet holds General / Appearance /
 Notifications / Machines / Harnesses / MCPs / Skills. Still open: second chat
-panes + scratchpads, remote directory browser / clone in project picker,
+panes, remote directory browser / clone in project picker,
 pane rename, swipe between panes, zoom transition, deep settings flows
 (harness sign-in, MCP add/edit + OAuth, skill import/create, custom themes,
 notification sounds).

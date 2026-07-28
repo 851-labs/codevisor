@@ -50,8 +50,7 @@ struct CodevisorApp: App {
             settings: AppSettingsModel(store: store),
             machineStore: store,
             paneGroups: DefaultPaneGroupRepository(store: store),
-            workspaces: DefaultWorkspaceRepository(store: store),
-            scratchpads: DefaultScratchpadRepository(store: store)
+            workspaces: DefaultWorkspaceRepository(store: store)
         )
     }
 

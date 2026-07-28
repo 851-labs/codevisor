@@ -28,7 +28,6 @@ extension AppEnvironment {
             legacyCacheMigrationStore: store,
             paneGroups: DefaultPaneGroupRepository(store: store),
             workspaces: DefaultWorkspaceRepository(store: store),
-            scratchpads: DefaultScratchpadRepository(store: store),
             localServer: localServer,
             appUpdate: AppUpdateModel(
                 currentVersion: AppUpdateModel.bundleVersion(),

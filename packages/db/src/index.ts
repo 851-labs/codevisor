@@ -34,10 +34,8 @@ import type {
   UpdateSessionRequest,
   UpdateWorkspaceRequest,
   UpdateInfo,
-  UpsertWorkspaceNotesRequest,
   UpsertWorkspaceRequest,
   Workspace,
-  WorkspaceNotes,
   Worktree
 } from "@codevisor/api"
 import { isoTimestamp, SessionGoal as SessionGoalSchema } from "@codevisor/api"
@@ -128,13 +126,6 @@ interface WorkspaceRow {
   readonly archive_cascade_from: string | null
   readonly created_at: string
   readonly updated_at: string | null
-}
-
-interface WorkspaceNotesRow {
-  readonly workspace_id: string
-  readonly content: string
-  readonly format: string
-  readonly updated_at: string
 }
 
 interface SessionRow {
@@ -1253,10 +1244,6 @@ const migrations: ReadonlyArray<Migration> = [
         update sessions set workspace_id = lower(workspace_id)
           where workspace_id is not null and workspace_id != lower(workspace_id)
             and exists (select 1 from workspaces where workspaces.id = lower(sessions.workspace_id));
-        update workspace_notes set workspace_id = lower(workspace_id)
-          where workspace_id != lower(workspace_id)
-            and exists (select 1 from workspaces where workspaces.id = lower(workspace_notes.workspace_id))
-            and not exists (select 1 from workspace_notes twin where twin.workspace_id = lower(workspace_notes.workspace_id));
         update project_mcp_settings set project_id = lower(project_id)
           where project_id != lower(project_id)
             and not exists (
@@ -1384,6 +1371,22 @@ const migrations: ReadonlyArray<Migration> = [
           where is_archived = 1 and archived_at is null;
       `)
     }
+  },
+  {
+    id: 33,
+    name: "drop workspace notes",
+    /// The scratchpad feature (a per-workspace notes panel in the macOS
+    /// inspector) is gone, so its storage goes with it. Migrations 22 and 30
+    /// stay untouched — they already ran on existing installs, and a fresh
+    /// database still creates the table there before this migration drops it.
+    ///
+    /// The stale `workspace.notes.updated` rows are purged too: the event kind
+    /// has left the API vocabulary, and the log is replayed to clients from a
+    /// cursor, so leaving them would fan out a kind nothing understands.
+    sql: `
+      drop table if exists workspace_notes;
+      delete from events where kind = 'workspace.notes.updated';
+    `
   }
 ]
 
@@ -2577,12 +2580,6 @@ export interface CodevisorDatabaseService {
     request: UpdateWorkspaceRequest
   ) => Effect.Effect<Workspace, DatabaseError>
   readonly deleteWorkspace: (id: string) => Effect.Effect<void, DatabaseError>
-  readonly getWorkspaceNotes: (
-    workspaceId: string
-  ) => Effect.Effect<WorkspaceNotes | undefined, DatabaseError>
-  readonly saveWorkspaceNotes: (
-    request: UpsertWorkspaceNotesRequest & { readonly workspaceId: string }
-  ) => Effect.Effect<WorkspaceNotes, DatabaseError>
   readonly setSessionWorkspace: (
     sessionId: string,
     workspaceId: string | null
@@ -3533,45 +3530,6 @@ const createService = (
         if (result.changes === 0) {
           throw new Error(`Workspace not found: ${id}`)
         }
-      }),
-    getWorkspaceNotes: (workspaceId) =>
-      attempt("getWorkspaceNotes", () => {
-        const row = sqlite
-          .prepare("select * from workspace_notes where workspace_id = ?")
-          .get(canonicalUuid(workspaceId)) as WorkspaceNotesRow | undefined
-        return row === undefined ? undefined : workspaceNotesFromRow(row)
-      }),
-    saveWorkspaceNotes: (rawRequest) =>
-      attempt("saveWorkspaceNotes", () => {
-        const request = { ...rawRequest, workspaceId: canonicalUuid(rawRequest.workspaceId) }
-        const workspace = sqlite
-          .prepare("select id from workspaces where id = ?")
-          .get(request.workspaceId) as { id: string } | undefined
-        if (workspace === undefined) {
-          throw new Error(`Workspace not found: ${request.workspaceId}`)
-        }
-        // Last write wins at the row level: the newest save replaces the
-        // whole scratchpad, keeping the client's own edit stamp when sent.
-        sqlite
-          .prepare(
-            `insert into workspace_notes (workspace_id, content, format, updated_at)
-             values (?, ?, ?, ?)
-             on conflict(workspace_id) do update set
-               content = excluded.content,
-               format = excluded.format,
-               updated_at = excluded.updated_at`
-          )
-          .run(
-            request.workspaceId,
-            request.content,
-            request.format ?? "attributed-string-v1",
-            request.updatedAt ?? isoTimestamp()
-          )
-        return workspaceNotesFromRow(
-          sqlite
-            .prepare("select * from workspace_notes where workspace_id = ?")
-            .get(request.workspaceId) as WorkspaceNotesRow
-        )
       }),
     setSessionWorkspace: (sessionId, workspaceId) =>
       attempt("setSessionWorkspace", () => {
@@ -4850,13 +4808,6 @@ const workspaceFromRow = (row: WorkspaceRow): Workspace => ({
   ...(row.archived_at === null ? {} : { archivedAt: row.archived_at }),
   createdAt: row.created_at,
   ...(row.updated_at === null ? {} : { updatedAt: row.updated_at })
-})
-
-const workspaceNotesFromRow = (row: WorkspaceNotesRow): WorkspaceNotes => ({
-  workspaceId: row.workspace_id,
-  content: row.content,
-  format: row.format,
-  updatedAt: row.updated_at
 })
 
 const sessionFromRow = (row: SessionRow, folderPath: string | undefined): SessionSummary => {

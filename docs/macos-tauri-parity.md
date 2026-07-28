@@ -19,8 +19,7 @@ coverage references, but they do not establish runtime parity by themselves.
 | Priority | Area               | Missing in Tauri                                                   |
 | -------- | ------------------ | ------------------------------------------------------------------ |
 | P1       | Transcript scale   | Paginated history, row virtualization, and bounded initial loading |
-| P1       | Session inspector  | Info/usage panel and persistent per-session scratchpad             |
-| P1       | Compact windows    | Adaptive sidebar and inspector drawers with width hysteresis       |
+| P1       | Compact windows    | Adaptive sidebar drawer with width hysteresis                      |
 | P2       | Historical details | On-demand hydration of collapsed worked/tool content               |
 | P2       | Disclosures        | Animated reveals and explicit viewport anchoring                   |
 | P2       | Attachments        | Preview behavior for generic, non-image files                      |
@@ -67,45 +66,11 @@ Acceptance criteria:
 - Add an end-to-end fixture large enough to prove that the mounted row count is
   bounded independently of total transcript length.
 
-### 2. Session inspector and scratchpad
+### 2. Adaptive compact-window layout
 
-The native app has a resizable session inspector with Info and Notes tabs. The
-Notes tab is a rich-text scratchpad persisted per session, including its open
-state. Tauri has no runtime equivalent; similar controls only appear as static
-examples in the internal storybook.
-
-Evidence:
-
-- Inspector composition: `SessionInspectorView` and `SessionInfoPanel` in
-  `apps/macos/Codevisor/Features/Scratchpad/SessionInspectorView.swift`.
-- Notes editor: `ScratchpadNotesView` in
-  `apps/macos/Codevisor/Features/Scratchpad/ScratchpadNotesView.swift`.
-- Persistence: `ScratchpadModel` and `ScratchpadRepository` under
-  `apps/macos/Packages/CodevisorCore/Sources/CodevisorCore/Scratchpad` and
-  `Persistence`.
-- Presentation and saved width: `SessionContainerView` in
-  `apps/macos/Codevisor/Features/Session/SessionContainerView.swift`.
-- No corresponding scratchpad, inspector, or notes persistence exists under
-  `apps/web/src`.
-
-Impact: Tauri users cannot inspect usage/cost in the side panel or keep
-session-specific notes.
-
-Acceptance criteria:
-
-- Add an Info/Notes inspector reachable from an active session.
-- Persist note content and open state per session.
-- Persist the selected inspector tab and user-selected docked width.
-- Provide keyboard and toolbar access equivalent to native.
-- Define a shared persistence contract if notes must follow a session across
-  clients; otherwise document that storage is intentionally client-local.
-
-### 3. Adaptive compact-window layout
-
-The native app collapses the inspector below 960 px and the sidebar below
-720 px, with separate restore thresholds to prevent flicker. Collapsed panels
-become dismissible overlay drawers. Tauri always reserves a fixed 270 px
-sidebar and has no inspector drawer.
+The native app collapses the sidebar below 720 px, with a separate restore
+threshold to prevent flicker. The collapsed sidebar becomes a dismissible
+overlay drawer. Tauri always reserves a fixed 270 px sidebar.
 
 Evidence:
 
@@ -117,20 +82,19 @@ Evidence:
 - Fixed Tauri shell: `ShellLayout` in `apps/web/src/routes/_shell.tsx`.
 
 Impact: narrow Tauri windows compress the primary session surface instead of
-protecting its usable width. Adding the missing inspector without an adaptive
-layout would make this worse.
+protecting its usable width.
 
 Acceptance criteria:
 
-- Collapse the trailing inspector before collapsing the leading sidebar.
-- Expose collapsed panels through toolbar buttons and edge-aligned drawers.
-- Dismiss drawers via backdrop, Escape, route change, and explicit toggle.
+- Expose the collapsed sidebar through a toolbar button and an edge-aligned
+  drawer.
+- Dismiss the drawer via backdrop, Escape, route change, and explicit toggle.
 - Use hysteresis or an equivalent stable breakpoint strategy.
-- Verify at 640, 720, 960, 1000, and 1280 px window widths.
+- Verify at 640, 720, 760, and 1280 px window widths.
 
 ## P2 gaps
 
-### 4. Deferred historical transcript details
+### 3. Deferred historical transcript details
 
 Paginated native transcript rows can represent collapsed worked content without
 loading all nested details. Expanding the section fetches its details once and
@@ -154,7 +118,7 @@ Acceptance criteria:
 - Deduplicate concurrent requests and retain hydrated details for the session.
 - Show loading and retry states without collapsing the disclosure.
 
-### 5. Disclosure animation and viewport anchoring
+### 4. Disclosure animation and viewport anchoring
 
 Native worked sections and tool rows animate measured height and opacity while
 committing row geometry immediately. The virtualized transcript records an
@@ -183,7 +147,7 @@ Acceptance criteria:
 - Keep live auto-collapse behavior and persisted disclosure state unchanged.
 - Test disclosures above, within, and below the viewport in a long transcript.
 
-### 6. Generic attachment preview
+### 5. Generic attachment preview
 
 Native Quick Look opens image, PDF, text, source, archive, and other file chips
 from both staged composer attachments and transcript messages. Tauri's custom
@@ -210,7 +174,7 @@ Acceptance criteria:
   local file and make that behavior explicit in the UI.
 - Keep download as a separate action rather than overloading preview.
 
-### 7. Sidebar state and session actions
+### 6. Sidebar state and session actions
 
 Native session rows distinguish running, waiting-on-user, and unread states,
 including an unread count. Their context menus support Rename, Archive, and
@@ -241,7 +205,7 @@ Acceptance criteria:
 
 ## P3 gaps
 
-### 8. Worked-section divider
+### 7. Worked-section divider
 
 The native worked-section divider belongs to the disclosure header and remains
 visible when the section is collapsed. Tauri puts the top border inside the
@@ -259,7 +223,7 @@ Acceptance criteria:
 - Keep the separator visible in collapsed and expanded states.
 - Confirm spacing against the internal parity fixture in both themes.
 
-### 9. Pointer-down session activation
+### 8. Pointer-down session activation
 
 Native session rows change selection as soon as the primary pointer goes down.
 Tauri uses router links and changes route on click, after pointer-up.
@@ -297,8 +261,7 @@ Acceptance criteria:
 1. Implement paginated transcript transport, deferred detail hydration, and a
    virtualized transcript together. They are one data/rendering architecture
    change and should share fixtures and scroll tests.
-2. Add the adaptive panel system, then implement the inspector and scratchpad
-   on top of it.
+2. Add the adaptive panel system for the compact-window sidebar drawer.
 3. Close attachment preview and sidebar state/action gaps.
 4. Match disclosure animation/anchoring and the remaining P3 interaction and
    visual details.

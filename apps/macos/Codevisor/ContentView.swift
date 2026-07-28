@@ -66,12 +66,7 @@ struct CodevisorApp: App {
             MachineCommands(machines: environment.machines)
             TerminalCommands()
             WorkspaceLayoutCommands()
-            ScratchpadCommands()
             DebugOverlayCommands()
-            // Provides the Format menu (⌘B/⌘I etc.) for the scratchpad's
-            // rich TextEditor; only acts on focused rich-text views, so the
-            // plain-text composer is unaffected.
-            TextFormattingCommands()
         }
 
         Settings {

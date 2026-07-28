@@ -4,13 +4,8 @@ import CodevisorUI
 
 /// Hosts a session: resolves its cached `SessionController` from the store
 /// and shows the session screen below the native toolbar (which carries the
-/// editable workspace name, the diff badge, and the inspector toggle).
+/// editable workspace name and the diff badge).
 struct SessionContainerView: View {
-    /// Inspector width limits, shared by the column-width modifier and the
-    /// persistence clamp below.
-    private static let inspectorMinWidth: CGFloat = 220
-    private static let inspectorMaxWidth: CGFloat = 480
-
     let session: ChatSession
     let project: Project
     let store: SessionStore
@@ -21,7 +16,6 @@ struct SessionContainerView: View {
     var onFocusedChatChanged: ((UUID) -> Void)? = nil
     @Environment(AppEnvironment.self) private var environment
     @Environment(\.theme) private var theme
-    @Environment(AdaptivePanelLayout.self) private var panelLayout
     @State private var controller: SessionController?
     /// Global geometry + pointer state for rearranging split leaves inside
     /// the selected top tab by dragging their headers.
@@ -30,19 +24,6 @@ struct SessionContainerView: View {
     /// every center leaf's chat content — any group can host chats — wires
     /// against the same instance.
     @State private var sessionFocus = TerminalFocusController()
-    /// Last user-chosen inspector width, persisted across the detail
-    /// subtree's `.id(session.id)` resets and app relaunches.
-    @AppStorage("inspector.width") private var inspectorWidth: Double = 300
-    /// The width mid-resize-drag (nil when idle), and the drag's anchor.
-    @State private var liveInspectorWidth: CGFloat?
-    @State private var inspectorDragStartWidth: CGFloat?
-
-    /// The session's cached scratchpad (cheap dictionary lookup). Holds the
-    /// inspector's per-session open state, so it survives the `.id(session.id)`
-    /// identity reset in `RootView` and app restarts.
-    private var scratchpad: ScratchpadModel {
-        store.scratchpad(for: session)
-    }
 
     /// The workspace's LIVE center tree (the repository isn't observable):
     /// seeded per session, updated by divider drags so the layout re-renders
@@ -59,23 +40,8 @@ struct SessionContainerView: View {
     /// Suppresses per-leaf dissolve while a whole top tab is closing.
     @State private var closingCenterTabId: UUID?
 
-    private var inspectorVisible: Bool {
-        panelLayout.docksInspector && scratchpad.isVisible
-    }
-
     var body: some View {
-        // The inspector is an APP-OWNED trailing column (not the system
-        // `.inspector`, whose open animation only fires on the first
-        // presentation per mount), so open and close both animate with our
-        // one chrome curve.
-        HStack(spacing: 0) {
-            contentColumn
-            if inspectorVisible {
-                inspectorColumn
-                    .transition(.move(edge: .trailing))
-            }
-        }
-        .animation(.snappy(duration: 0.25), value: inspectorVisible)
+        contentColumn
         // The NATIVE toolbar names the workspace — editable inline, like a
         // document title. Edits pin the name (it stops tracking the primary
         // chat's title).
@@ -90,31 +56,7 @@ struct SessionContainerView: View {
                 }
                 .sharedBackgroundVisibility(.hidden)
             }
-            ToolbarItem {
-                Button {
-                    toggleScratchpad()
-                } label: {
-                    Image(systemName: "sidebar.trailing")
-                }
-                .help("Toggle Scratchpad (⌥⌘I)")
-                .accessibilityLabel("Toggle Scratchpad")
-            }
         }
-        .overlay {
-            AdaptiveDrawerLayer(
-                isPresented: !panelLayout.docksInspector && panelLayout.activeDrawer == .trailing,
-                edge: .trailing,
-                width: compactInspectorWidth
-            ) {
-                SessionInspectorView(controller: controller, scratchpad: scratchpad)
-                    .themedSurface(.sidebar, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    .shadow(color: .black.opacity(0.22), radius: 18, y: 6)
-            }
-        }
-        .focusedSceneValue(\.scratchpadToggle, ScratchpadToggleAction(sessionId: session.id) {
-            toggleScratchpad()
-        })
         .focusedSceneValue(
             \.workspaceLayoutActions,
             WorkspaceLayoutActions(
@@ -310,7 +252,7 @@ struct SessionContainerView: View {
         // alike. Custom palettes paint their own page color.
         .background(theme.isSystem ? Color.clear : theme.windowBackground)
         // The hairline under the top bar: drawn by the CENTER panel's top
-        // edge (the inspector and sidebar stay seamless under the toolbar).
+        // edge (the sidebar stays seamless under the toolbar).
         .overlay(alignment: .top) {
             theme.separator
                 .frame(height: 1)
@@ -1032,71 +974,6 @@ struct SessionContainerView: View {
         }
     }
 
-    /// The app-owned inspector column: hairline divider, resizable width.
-    /// Sits below the native toolbar like the rest of the content.
-    private var inspectorColumn: some View {
-        SessionInspectorView(controller: controller, scratchpad: scratchpad)
-            .frame(width: currentInspectorWidth)
-            .frame(maxHeight: .infinity, alignment: .top)
-            // Extends under the toolbar (the themed surface ignores the safe
-            // area) — intentional: the toolbar tints over the panel exactly
-            // like it does over the native left sidebar. NO hairline on the
-            // boundary for the same reason: the left sidebar separates by
-            // background alone.
-            .themedSurface(.sidebar)
-            .overlay(alignment: .leading) { inspectorResizeHandle }
-    }
-
-    /// The divider's resize grip: an 8pt strip showing the horizontal-resize
-    /// cursor; drags adjust and persist the width (clamped like the native
-    /// inspector column).
-    private var inspectorResizeHandle: some View {
-        Color.clear
-            .frame(width: 8)
-            .frame(maxHeight: .infinity)
-            .contentShape(Rectangle())
-            .onHover { hovering in
-                if hovering {
-                    NSCursor.resizeLeftRight.push()
-                } else {
-                    NSCursor.pop()
-                }
-            }
-            .gesture(
-                DragGesture(minimumDistance: 1, coordinateSpace: .global)
-                    .onChanged { value in
-                        let start = inspectorDragStartWidth ?? currentInspectorWidth
-                        inspectorDragStartWidth = start
-                        liveInspectorWidth = min(
-                            max(start - value.translation.width, Self.inspectorMinWidth),
-                            Self.inspectorMaxWidth
-                        )
-                    }
-                    .onEnded { _ in
-                        if let liveInspectorWidth {
-                            inspectorWidth = Double(liveInspectorWidth)
-                        }
-                        liveInspectorWidth = nil
-                        inspectorDragStartWidth = nil
-                    }
-            )
-    }
-
-    private var currentInspectorWidth: CGFloat {
-        liveInspectorWidth ?? min(
-            max(CGFloat(inspectorWidth), Self.inspectorMinWidth),
-            Self.inspectorMaxWidth
-        )
-    }
-
-
-    private var compactInspectorWidth: CGFloat {
-        min(
-            max(CGFloat(inspectorWidth), Self.inspectorMinWidth),
-            min(Self.inspectorMaxWidth, panelLayout.windowWidth - 16)
-        )
-    }
-
     /// Every chat in the workspace with a live cached controller, routed
     /// session included. Controllers are never MINTED here (pure reads) —
     /// a chat whose controller isn't cached contributes nothing, and its
@@ -1132,17 +1009,6 @@ struct SessionContainerView: View {
                 owner: chatId,
                 pruneEnded: controller.hasBackgroundTaskSnapshot
             )
-        }
-    }
-
-    private func toggleScratchpad() {
-        // NOTE: no withAnimation here — the system `.inspector` presentation
-        // manages its own motion, and a custom transaction makes it stall
-        // then snap open. (The transient drawer animates internally.)
-        if panelLayout.docksInspector {
-            scratchpad.toggle()
-        } else {
-            panelLayout.toggleDrawer(.trailing)
         }
     }
 

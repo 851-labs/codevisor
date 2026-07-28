@@ -136,6 +136,12 @@ const buildV4Fixture = (filename: string): void => {
     insert into events (server_id, kind, subject_id, created_at, payload)
       values ('local', 'session.created', 'sess-1', '2026-06-01T01:00:00.000Z',
         '{"id":"sess-1","origin":"herdman"}');
+    -- A scratchpad event from before the notes feature was removed. Migration
+    -- 33 must purge it: the kind has left the API vocabulary, so replaying it
+    -- to clients would fan out something nothing understands.
+    insert into events (server_id, kind, subject_id, created_at, payload)
+      values ('local', 'workspace.notes.updated', 'ws-1', '2026-06-01T01:00:30.000Z',
+        '{"workspaceId":"ws-1","content":"{}"}');
     insert into conversation_items (id, session_id, role, text, created_at, is_generating, message_id)
       values ('conv-1', 'sess-1', 'user', 'hello', '2026-06-01T01:01:00.000Z', 0, 'user-1');
     insert into prompt_queue_items (id, session_id, text, created_at, updated_at)
@@ -1273,10 +1279,20 @@ describe("@codevisor/db", () => {
     expect(workspaceColumns).toContain("project_id")
     expect(workspaceColumns).not.toContain("folder_path")
     expect(sqlite.prepare("select count(*) as count from workspaces").get()).toEqual({ count: 0 })
-    // Migration 22 adds the workspace scratchpad table alongside them.
-    expect(sqlite.prepare("select count(*) as count from workspace_notes").get()).toEqual({
-      count: 0
-    })
+    // Migration 22 added the workspace scratchpad table; migration 33 dropped
+    // it again when the notes feature was removed. A fresh migrate run still
+    // creates it on the way through, so only the end state matters here — the
+    // table is gone and its already-logged events went with it.
+    expect(
+      sqlite
+        .prepare("select name from sqlite_master where type = 'table' and name = 'workspace_notes'")
+        .get()
+    ).toBeUndefined()
+    expect(
+      sqlite
+        .prepare("select count(*) as count from events where kind = 'workspace.notes.updated'")
+        .get()
+    ).toEqual({ count: 0 })
     expect(
       (sqlite.pragma("table_info(sessions)") as ReadonlyArray<{ readonly name: string }>).map(
         (column) => column.name
@@ -1633,73 +1649,6 @@ describe("@codevisor/db", () => {
     await run(db.deleteProject(project.id))
     expect(await run(db.listWorkspaces)).toEqual([])
     await expect(run(db.getSessionSummary(session.id))).rejects.toBeInstanceOf(DatabaseError)
-    await Effect.runPromise(db.close)
-  })
-
-  it("stores workspace notes with row-level last-write-wins", async () => {
-    const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "machine-a" }))
-    const project = await run(db.createProject({ folderPath: "/tmp/workspace-notes" }))
-    const workspace = await run(
-      db.upsertWorkspace({
-        id: "workspace-1",
-        projectId: project.id,
-        name: "Main",
-        hasCustomName: false
-      })
-    )
-
-    // No scratchpad exists until the first save.
-    expect(await run(db.getWorkspaceNotes(workspace.id))).toBeUndefined()
-
-    // The first save creates the row, keeping the client's own edit stamp so
-    // last-write-wins comparisons stay faithful to the editing device.
-    const created = await run(
-      db.saveWorkspaceNotes({
-        workspaceId: workspace.id,
-        content: '{"runs":[{"text":"hello"}]}',
-        updatedAt: "2026-07-10T00:00:00.000Z"
-      })
-    )
-    expect(created).toEqual({
-      workspaceId: workspace.id,
-      content: '{"runs":[{"text":"hello"}]}',
-      format: "attributed-string-v1",
-      updatedAt: "2026-07-10T00:00:00.000Z"
-    })
-
-    // A later save replaces the whole row — no merging — and an omitted stamp
-    // is generated server-side.
-    const replaced = await run(
-      db.saveWorkspaceNotes({
-        workspaceId: workspace.id,
-        content: '{"runs":[{"text":"replaced"}]}',
-        format: "markdown-v1"
-      })
-    )
-    expect(replaced).toMatchObject({
-      workspaceId: workspace.id,
-      content: '{"runs":[{"text":"replaced"}]}',
-      format: "markdown-v1"
-    })
-    expect(replaced.updatedAt).not.toBe("2026-07-10T00:00:00.000Z")
-    expect(Date.parse(replaced.updatedAt)).not.toBeNaN()
-    expect(await run(db.getWorkspaceNotes(workspace.id))).toEqual(replaced)
-
-    // Notes cannot exist without their workspace.
-    await expect(
-      run(db.saveWorkspaceNotes({ workspaceId: "missing", content: "{}" }))
-    ).rejects.toBeInstanceOf(DatabaseError)
-
-    // Deleting the workspace cascades its notes away; a project delete does
-    // the same through the workspace cascade.
-    const scratch = await run(
-      db.upsertWorkspace({ projectId: project.id, name: "Scratch", hasCustomName: false })
-    )
-    await run(db.saveWorkspaceNotes({ workspaceId: scratch.id, content: "{}" }))
-    await run(db.deleteWorkspace(scratch.id))
-    expect(await run(db.getWorkspaceNotes(scratch.id))).toBeUndefined()
-    await run(db.deleteProject(project.id))
-    expect(await run(db.getWorkspaceNotes(workspace.id))).toBeUndefined()
     await Effect.runPromise(db.close)
   })
 

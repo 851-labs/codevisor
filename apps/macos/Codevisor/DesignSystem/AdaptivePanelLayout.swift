@@ -3,35 +3,24 @@ import CodevisorUI
 
 enum AdaptiveDrawer: Equatable {
     case leading
-    case trailing
 }
 
-/// Window-scoped presentation state for the navigation sidebar and session
-/// inspector. Docking is derived from window width; the drawer is transient,
-/// so responsive changes never overwrite the user's saved visibility choices.
+/// Window-scoped presentation state for the navigation sidebar. Docking is
+/// derived from window width; the drawer is transient, so responsive changes
+/// never overwrite the user's saved visibility choices.
 @MainActor
 @Observable
 final class AdaptivePanelLayout {
-    private static let inspectorCollapseWidth: CGFloat = 960
-    private static let inspectorRestoreWidth: CGFloat = 1_000
     private static let sidebarCollapseWidth: CGFloat = 720
     private static let sidebarRestoreWidth: CGFloat = 760
 
     private(set) var windowWidth: CGFloat = 1_280
     private(set) var docksSidebar = true
-    private(set) var docksInspector = true
     private(set) var activeDrawer: AdaptiveDrawer?
 
     func updateWindowWidth(_ width: CGFloat) {
         guard width.isFinite, width > 0, abs(width - windowWidth) > 0.5 else { return }
         windowWidth = width
-
-        if docksInspector, width < Self.inspectorCollapseWidth {
-            docksInspector = false
-        } else if !docksInspector, width > Self.inspectorRestoreWidth {
-            docksInspector = true
-            if activeDrawer == .trailing { activeDrawer = nil }
-        }
 
         if docksSidebar, width < Self.sidebarCollapseWidth {
             docksSidebar = false

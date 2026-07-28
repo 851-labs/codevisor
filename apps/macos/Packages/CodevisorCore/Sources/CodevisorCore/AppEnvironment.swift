@@ -23,8 +23,6 @@ public final class AppEnvironment {
     /// app restarts.
     public let paneGroups: any PaneGroupRepository
     public let workspaces: any WorkspaceRepository
-    /// Persists each session's scratchpad (inspector notes + open state).
-    public let scratchpads: any ScratchpadRepository
     /// Overrides server-backed harness discovery (previews/tests only).
     private let harnessServiceOverride: (any HarnessServicing)?
     /// Monotonic, per-machine invalidation tokens for consumers that keep a
@@ -61,7 +59,6 @@ public final class AppEnvironment {
         legacyCacheMigrationStore: (any PersistenceStore)? = nil,
         paneGroups: any PaneGroupRepository = DefaultPaneGroupRepository(store: InMemoryStore()),
         workspaces: any WorkspaceRepository = DefaultWorkspaceRepository(store: InMemoryStore()),
-        scratchpads: any ScratchpadRepository = DefaultScratchpadRepository(store: InMemoryStore()),
         localServer: (any LocalServerControlling)? = nil,
         appUpdate: AppUpdateModel? = nil,
         customThemesDirectory: URL? = nil,
@@ -71,7 +68,6 @@ public final class AppEnvironment {
         self.harnessServiceOverride = harnessService
         self.paneGroups = paneGroups
         self.workspaces = workspaces
-        self.scratchpads = scratchpads
         self.theme = ThemeManager(
             settings: settings,
             catalog: ThemeCatalog(

@@ -10,7 +10,7 @@ import SwiftUI
 /// pixel-identical, hence three roles where the themed behavior alone would
 /// need two.
 public enum ThemedSurfaceRole {
-    /// Sidebar / inspector panel surfaces. System: regular material.
+    /// Sidebar panel surfaces. System: regular material.
     case sidebar
     /// Popover content. System: the opaque popover fallback color
     /// (windowBackgroundColor), matching the pre-glass rendering.

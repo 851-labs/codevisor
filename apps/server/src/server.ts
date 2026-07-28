@@ -71,7 +71,6 @@ import {
   UpdateProjectRequest as UpdateProjectRequestSchema,
   UpdateSessionRequest as UpdateSessionRequestSchema,
   UpdateWorkspaceRequest as UpdateWorkspaceRequestSchema,
-  UpsertWorkspaceNotesRequest as UpsertWorkspaceNotesRequestSchema,
   UpsertWorkspaceRequest as UpsertWorkspaceRequestSchema,
   decode,
   isoTimestamp,
@@ -1505,9 +1504,6 @@ const routeProjects = async (
 /// Pane workspaces are client-authored identity records, so writes are
 /// idempotent PUTs keyed by the client's workspace id. Creates and updates
 /// share one `workspace.updated` event to keep client mirroring simple.
-/// Workspace notes follow the same shape: one PUT-replaced row per workspace
-/// whose `workspace.notes.updated` event carries the full record so clients
-/// can live-apply it without a refetch.
 const routeWorkspaces = async (
   services: CodevisorServerServices,
   fanout: EventFanout,
@@ -1518,27 +1514,6 @@ const routeWorkspaces = async (
 ): Promise<boolean> => {
   if (request.method === "GET" && url.pathname === "/v1/workspaces") {
     writeJson(response, 200, await run(services.db.listWorkspaces))
-    return true
-  }
-
-  const notesWorkspaceId = matchRoute(url.pathname, "/v1/workspaces/:id/notes")
-  if (notesWorkspaceId !== undefined && request.method === "GET") {
-    const notes = await run(services.db.getWorkspaceNotes(notesWorkspaceId))
-    if (notes === undefined) {
-      // Clients treat this 404 as "no notes yet" rather than an error.
-      throw new HttpFailure(404, `Workspace notes not found: ${notesWorkspaceId}`)
-    }
-    writeJson(response, 200, notes)
-    return true
-  }
-
-  if (notesWorkspaceId !== undefined && request.method === "PUT") {
-    const payload = await readSchema(request, UpsertWorkspaceNotesRequestSchema)
-    const notes = await run(
-      services.db.saveWorkspaceNotes({ ...payload, workspaceId: notesWorkspaceId })
-    )
-    await appendAndPublish(services.db, fanout, "workspace.notes.updated", notesWorkspaceId, notes)
-    writeJson(response, 200, notes)
     return true
   }
 

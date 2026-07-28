@@ -42,7 +42,6 @@ final class SessionStore {
         let groupId: UUID
     }
     private var centerLeafGroups: [CenterLeafKey: PaneGroupModel] = [:]
-    private var scratchpads: [SessionKey: ScratchpadModel] = [:]
     /// One live unsent new-chat draft per machine, mirrored to disk by
     /// `ComposerDraftStore`. A controller permanently owns the server client
     /// it was created with, so reusing a draft after a machine switch can send
@@ -380,60 +379,6 @@ final class SessionStore {
         centerLeafGroups[CenterLeafKey(workspaceId: workspaceId, groupId: leafId)] = nil
     }
 
-    /// Returns the cached scratchpad for a session's WORKSPACE, creating it
-    /// (seeded from the repository) on first use. Workspace-scoped: the
-    /// inspector's notes and open state belong to the workspace — focus-
-    /// following between sibling chats must not swap notes or slam the
-    /// panel shut. Notes written before workspace scoping (keyed by chat)
-    /// are adopted into the workspace record on first access.
-    func scratchpad(for session: ChatSession) -> ScratchpadModel {
-        let workspaceId = environment.workspaces.workspaceId(forSession: session.id)
-        let key = SessionKey(serverId: session.serverId, sessionId: workspaceId ?? session.id)
-        if let existing = scratchpads[key] { return existing }
-        let model = ScratchpadModel(
-            sessionId: workspaceId ?? session.id,
-            legacyId: workspaceId == nil ? nil : session.id,
-            repository: environment.scratchpads
-        )
-        scratchpads[key] = model
-        // SERVER MIRROR (workspace-scoped notes reach other clients —
-        // mobile included). Push: every debounced text save uploads with
-        // its LWW stamp. Pull: one fetch on model creation applies a newer
-        // server copy. Both best-effort — notes never block the UI, and a
-        // failed upload retries on the next edit.
-        if let workspaceId {
-            let client = environment.machines.client(for: session.serverId)
-            model.onContentSaved = { state in
-                guard let content = Self.encodeNotes(state.text) else { return }
-                Task {
-                    try? await client.saveWorkspaceNotes(
-                        workspaceId: workspaceId,
-                        content: content,
-                        updatedAt: state.updatedAt ?? Date()
-                    )
-                }
-            }
-            Task { [weak model] in
-                guard let notes = try? await client.workspaceNotes(workspaceId: workspaceId),
-                      notes.format == "attributed-string-v1",
-                      let text = Self.decodeNotes(notes.content),
-                      let stamp = notes.updatedAtDate else { return }
-                model?.applyRemote(text: text, updatedAt: stamp)
-            }
-        }
-        return model
-    }
-
-    /// The notes wire format: AttributedString Codable JSON (the same
-    /// encoding the local scratchpad files use), UTF-8 in a string field.
-    private static func encodeNotes(_ text: AttributedString) -> String? {
-        (try? JSONEncoder().encode(text)).flatMap { String(data: $0, encoding: .utf8) }
-    }
-
-    private static func decodeNotes(_ content: String) -> AttributedString? {
-        content.data(using: .utf8).flatMap { try? JSONDecoder().decode(AttributedString.self, from: $0) }
-    }
-
     /// Whether the session is doing work the user should see as activity:
     /// generating a response, running pre-chat setup (worktree creation, agent
     /// start), or waiting on background work it will return to on its own.
@@ -649,15 +594,6 @@ final class SessionStore {
         enableDraftPersistence(for: controller)
     }
 
-    /// Flushes and evicts the session's WORKSPACE scratchpad (the map is
-    /// workspace-keyed; a session-keyed lookup would silently miss).
-    private func flushScratchpad(for session: ChatSession) {
-        let workspaceId = environment.workspaces.workspaceId(forSession: session.id)
-        let key = SessionKey(serverId: session.serverId, sessionId: workspaceId ?? session.id)
-        scratchpads[key]?.flush()
-        scratchpads[key] = nil
-    }
-
     /// Detaches and evicts the session's workspace bottom-panel model.
     private func detachBottomGroup(for session: ChatSession) {
         guard let workspaceId = environment.workspaces.workspaceId(forSession: session.id) else { return }
@@ -681,7 +617,6 @@ final class SessionStore {
         controllers[key] = nil
         detachBottomGroup(for: session)
         detachCenterLeaves(for: session)
-        flushScratchpad(for: session)
         pendingAttentionErrors[key] = nil
         scrollStates[key] = nil
         todoExpansionStates[key] = nil
