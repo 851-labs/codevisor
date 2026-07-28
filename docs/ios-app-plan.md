@@ -286,9 +286,9 @@ Work items:
 3. Workspace creation flow (`NewWorkspaceView`/`WorkspaceCreation` logic
    shared): pick project/repo, base branch, worktree creation on the remote
    machine; `RemoteDirectoryBrowserModel` reused for path pickers.
-Exit gate: create a workspace from iPhone, add a second chat pane, switch
-panes via the navigator, delete a pane — state stays consistent with what the
-macOS app shows for the same machine.
+   Exit gate: create a workspace from iPhone, add a second chat pane, switch
+   panes via the navigator, delete a pane — state stays consistent with what the
+   macOS app shows for the same machine.
 
 Status (2026-07-27): first slice shipped. WorkspaceScreen renders one pane at
 a time behind a Safari-style pane grid (square.on.square, snapshot previews,
