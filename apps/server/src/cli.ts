@@ -12,7 +12,7 @@ import { mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from "node:f
 import { hostname } from "node:os"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
-import { setupCommand, type SetupDeps } from "./cli/setup.js"
+import { qrCommand, setupCommand, type SetupDeps } from "./cli/setup.js"
 import {
   logsCommand,
   restartCommand,
@@ -247,9 +247,27 @@ const setup = Command.make("setup", { port: portFlag }, ({ port }) =>
   Command.withDescription("Onboard this machine: pick connectivity and issue a connection token")
 )
 
+const qr = Command.make(
+  "qr",
+  {
+    port: portFlag,
+    host: optionalString(
+      "host",
+      "Address clients should use to reach this machine (defaults to Tailscale detection)"
+    )
+  },
+  ({ port, host }) =>
+    runCli((deps) =>
+      qrCommand(
+        { ...deps, hostname: hostname() },
+        { port: Option.getOrUndefined(port), host: Option.getOrUndefined(host) }
+      )
+    )
+).pipe(Command.withDescription("Print the pairing QR code for the Codevisor phone app"))
+
 const root = Command.make("codevisor").pipe(
   Command.withDescription("Control the Codevisor server on this machine"),
-  Command.withSubcommands([serve, setup, start, stop, restart, status, token, update, logs])
+  Command.withSubcommands([serve, setup, qr, start, stop, restart, status, token, update, logs])
 )
 
 const program = Command.run(root, {

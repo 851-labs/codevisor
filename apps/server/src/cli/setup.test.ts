@@ -3,6 +3,8 @@ import {
   addMachineDeeplink,
   detectPublicIp,
   detectTailscale,
+  qrCommand,
+  renderQr,
   setupCommand,
   type SelectChoice,
   type SetupDeps
@@ -200,7 +202,53 @@ describe("codevisor setup", () => {
     expect(output).toContain(
       "codevisor://add-machine?host=box.tail.net&port=49361&token=hm_setup&name=build-box"
     )
+    // The same deeplink is printed as a terminal QR for the phone camera.
+    expect(output).toContain("Scan this QR code")
+    expect(output).toContain("▄")
     expect(output).not.toContain("Firewall")
+  })
+
+  it("renders the deeplink as scannable terminal QR lines", () => {
+    const lines = renderQr("codevisor://add-machine?host=box.tail.net&port=49361&token=hm_setup")
+    expect(lines.length).toBeGreaterThan(10)
+    expect(lines.some((line) => line.includes("█"))).toBe(true)
+  })
+
+  it("prints the pairing QR non-interactively with a detected tailscale host", async () => {
+    const world = makeWorld({
+      exec: { "tailscale status --json": tailscaleStatus({ dnsName: "box.tail.net." }) },
+      http: { [pairing]: [tokenResponse] }
+    })
+    expect(await qrCommand(world.deps)).toBe(0)
+    const output = world.logs.join("\n")
+    expect(output).toContain("Scan with your phone's camera")
+    expect(output).toContain("▄")
+    expect(output).toContain(
+      "codevisor://add-machine?host=box.tail.net&port=49361&token=hm_setup&name=build-box"
+    )
+  })
+
+  it("prefers an explicit --host over tailscale detection", async () => {
+    const world = makeWorld({
+      exec: { "tailscale status --json": tailscaleStatus({ dnsName: "box.tail.net." }) },
+      http: { [pairing]: [tokenResponse] }
+    })
+    expect(await qrCommand(world.deps, { host: "203.0.113.7" })).toBe(0)
+    expect(world.logs.join("\n")).toContain(
+      "codevisor://add-machine?host=203.0.113.7&port=49361&token=hm_setup&name=build-box"
+    )
+  })
+
+  it("fails cleanly without a token or without a resolvable host", async () => {
+    const noToken = makeWorld({
+      exec: { "tailscale status --json": tailscaleStatus() }
+    })
+    expect(await qrCommand(noToken.deps)).toBe(1)
+    expect(noToken.errors.join("\n")).toContain("is the server running?")
+
+    const noHost = makeWorld({ http: { [pairing]: [tokenResponse] } })
+    expect(await qrCommand(noHost.deps)).toBe(1)
+    expect(noHost.errors.join("\n")).toContain("codevisor qr --host")
   })
 
   it("onboards over a detected public ip with a firewall note", async () => {

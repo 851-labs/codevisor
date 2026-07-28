@@ -55,6 +55,8 @@ struct HomeView: View {
     @State private var isManagingMachines = false
     @State private var isStartingWorkspace = false
     @State private var path: [UUID] = []
+    @State private var pendingDeeplink: MachineDeeplink?
+    @State private var deeplinkError: String?
 
     private var organization: HomeOrganization {
         HomeOrganization(rawValue: organizationRaw) ?? .compact
@@ -71,8 +73,10 @@ struct HomeView: View {
         machines.machines.contains { !$0.isLocal }
     }
 
-    /// Onboarding presents itself whenever no machine is paired, unless the
-    /// user chose Set Up Later — the empty state can re-arm it.
+    /// Onboarding presents itself whenever no machine is paired. There is no
+    /// in-flow skip (the app is useless without a machine); the dismissed
+    /// flag only records programmatic closes — e.g. pairing while the cover
+    /// is up — and the empty state re-arms it.
     private var showsOnboarding: Binding<Bool> {
         Binding(
             get: { readyForOnboarding && !onboardingDismissed && !hasRemoteMachines },
@@ -178,10 +182,58 @@ struct HomeView: View {
                 onboardingStart = .welcome
             } content: {
                 OnboardingView(start: onboardingStart)
+                    // The QR flow lands here: alerts must present over the
+                    // cover, so it carries its own copy of the deeplink
+                    // alerts, active while it is the visible context.
+                    .modifier(
+                        MachineDeeplinkAlerts(
+                            pending: $pendingDeeplink,
+                            error: $deeplinkError,
+                            isActive: true,
+                            confirm: confirmDeeplink
+                        )
+                    )
             }
+            // `codevisor://add-machine` deeplinks — the QR that `codevisor
+            // setup`/`codevisor qr` prints, or the camera-scanned banner.
+            // Never auto-add: the token grants full agent access, so an
+            // explicit confirmation always sits between the link and the
+            // machine list (same contract as macOS).
+            .onOpenURL { url in
+                guard let link = MachineDeeplink.parse(url) else { return }
+                pendingDeeplink = link
+            }
+            .modifier(
+                MachineDeeplinkAlerts(
+                    pending: $pendingDeeplink,
+                    error: $deeplinkError,
+                    isActive: !showsOnboarding.wrappedValue,
+                    confirm: confirmDeeplink
+                )
+            )
             .task {
                 try? await Task.sleep(for: .milliseconds(300))
                 readyForOnboarding = true
+            }
+        }
+    }
+
+    /// Validated add from a confirmed deeplink: unreachable hosts and
+    /// rejected tokens surface in the error alert instead of as a broken
+    /// machine. Success selects the machine, which also closes onboarding.
+    private func confirmDeeplink(_ link: MachineDeeplink) {
+        pendingDeeplink = nil
+        Task {
+            do {
+                let machine = try await environment.machines.addRemoteValidating(
+                    host: link.hostWithPort,
+                    name: link.name,
+                    token: link.token
+                )
+                environment.machines.selectMachine(machine.id)
+                await environment.prepareSelectedMachine()
+            } catch {
+                deeplinkError = ErrorReporter.userFacingMessage(for: error)
             }
         }
     }
@@ -270,8 +322,8 @@ struct HomeView: View {
             .harness.symbolName ?? "cpu"
     }
 
-    /// No machine paired (fresh install after Set Up Later, or all machines
-    /// removed): everything routes back into the onboarding connect page.
+    /// No machine paired (all machines removed): everything routes back
+    /// into the onboarding connect page.
     private var noMachineState: some View {
         ContentUnavailableView {
             Label {
@@ -471,6 +523,54 @@ private struct SessionRow: View {
         } else {
             Circle().fill(.clear).frame(width: 8, height: 8)
         }
+    }
+}
+
+// MARK: - Machine deeplink alerts
+
+/// The confirm + error alerts for `codevisor://add-machine` deeplinks,
+/// mirroring the macOS handler. Applied twice — to the home content and to
+/// the onboarding cover — with `isActive` selecting whichever is the visible
+/// presentation context, so the same pending state presents in exactly one
+/// place.
+private struct MachineDeeplinkAlerts: ViewModifier {
+    @Binding var pending: MachineDeeplink?
+    @Binding var error: String?
+    let isActive: Bool
+    let confirm: (MachineDeeplink) -> Void
+
+    func body(content: Content) -> some View {
+        content
+            .alert(
+                "Add Remote Machine?",
+                isPresented: Binding(
+                    get: { isActive && pending != nil },
+                    set: { if !$0 { pending = nil } }
+                ),
+                presenting: pending
+            ) { deeplink in
+                Button("Add \(deeplink.displayName)") { confirm(deeplink) }
+                Button("Cancel", role: .cancel) { pending = nil }
+            } message: { deeplink in
+                Text(
+                    """
+                    “\(deeplink.displayName)” (\(deeplink.hostWithPort)) will be added to your \
+                    machines. Codevisor will be able to run agents and read files on it.
+                    """
+                )
+            }
+            .alert(
+                "Couldn't Add Machine",
+                isPresented: Binding(
+                    get: { isActive && error != nil },
+                    set: { if !$0 { error = nil } }
+                ),
+                presenting: error
+            ) { _ in
+                Button("OK", role: .cancel) { error = nil }
+            } message: { message in
+                Text(message)
+            }
     }
 }
 

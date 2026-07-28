@@ -93,6 +93,10 @@ public func serverErrorMessage(_ error: any Error) -> String {
 public protocol CodevisorServerClienting: Sendable {
     func health() async throws -> ServerHealth
     func info() async throws -> ServerInfo
+    /// The machine's view of its tailnet, for clients that can't enumerate
+    /// peers themselves (iOS). `available` is false when the machine has no
+    /// running Tailscale.
+    func tailnetPeers() async throws -> ServerTailnetPeers
     /// `refresh` bypasses the server's update-check cache; `channel` selects
     /// which release feed the server consults (older servers ignore both).
     func updateInfo(refresh: Bool, channel: ServerUpdateChannel) async throws -> ServerUpdateInfo
@@ -323,6 +327,12 @@ public extension CodevisorServerClienting {
     /// Stable-channel default for callers without a channel preference.
     func applyServerUpdate() async throws -> ServerUpdateApplied {
         try await applyServerUpdate(channel: .stable)
+    }
+
+    /// Compatibility fallback for test doubles and pre-tailnet servers: no
+    /// discovery. The HTTP client overrides this with the real request.
+    func tailnetPeers() async throws -> ServerTailnetPeers {
+        ServerTailnetPeers(available: false, peers: [])
     }
 
     /// Compatibility fallback for test doubles and older transports. The HTTP
@@ -739,6 +749,44 @@ public struct ServerInfo: Decodable, Equatable, Sendable {
     public var platform: String
     public var bindHost: String
     public var features: [String]?
+}
+
+/// A device on a paired machine's tailnet, from `GET /v1/tailnet/peers`.
+/// Sandboxed clients (iOS) can't enumerate tailnet peers themselves, so a
+/// paired machine's server reports its view and the client probes the peers'
+/// tokenless /v1/discovery manifests from its own side.
+public struct ServerTailnetPeer: Decodable, Equatable, Sendable {
+    public var hostName: String
+    /// MagicDNS name with the trailing dot stripped; preferred over the IP
+    /// because it survives IP reassignment.
+    public var dnsName: String?
+    public var ip: String?
+    public var os: String?
+    public var online: Bool
+
+    public init(hostName: String, dnsName: String? = nil, ip: String? = nil, os: String? = nil, online: Bool) {
+        self.hostName = hostName
+        self.dnsName = dnsName
+        self.ip = ip
+        self.os = os
+        self.online = online
+    }
+
+    /// The address a client should dial: MagicDNS name, else the tailnet IP.
+    public var host: String? {
+        dnsName ?? ip
+    }
+}
+
+public struct ServerTailnetPeers: Decodable, Equatable, Sendable {
+    /// False when Tailscale isn't installed or running on the machine.
+    public var available: Bool
+    public var peers: [ServerTailnetPeer]
+
+    public init(available: Bool, peers: [ServerTailnetPeer]) {
+        self.available = available
+        self.peers = peers
+    }
 }
 
 /// Which release feed a server update check follows. `alpha` sees alpha AND
@@ -2204,6 +2252,10 @@ public final class CodevisorServerClient: CodevisorServerClienting, @unchecked S
 
     public func info() async throws -> ServerInfo {
         try await get("/v1/info")
+    }
+
+    public func tailnetPeers() async throws -> ServerTailnetPeers {
+        try await get("/v1/tailnet/peers")
     }
 
     /// `refresh` bypasses the server's update-check cache so a banner shown

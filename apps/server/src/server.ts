@@ -117,6 +117,7 @@ import { connect, type AddressInfo, type Socket } from "node:net"
 import { Context, Effect, Layer, PubSub, Schema } from "effect"
 import { WebSocket, WebSocketServer } from "ws"
 import { CODEVISOR_BROWSER_EXTENSION_ID } from "./browser-extension-relay.js"
+import { readTailnetPeers } from "./tailnet.js"
 import type { ServerUpdateChannel } from "./release-source.js"
 import type { HarnessAuthManager } from "./harness-auth.js"
 import type { HarnessLifecycleManager } from "./harness-lifecycle.js"
@@ -771,6 +772,19 @@ const handleRequest = async (
     }
 
     await authorize(services.db, config, request)
+
+    // The machine's view of its tailnet, for clients that can't enumerate
+    // peers themselves (iOS). Authenticated: the peer list names every device
+    // on the user's tailnet, which is far more than /v1/discovery reveals.
+    if (request.method === "GET" && url.pathname === "/v1/tailnet/peers") {
+      const peers = await readTailnetPeers()
+      writeJson(
+        response,
+        200,
+        peers === undefined ? { available: false, peers: [] } : { available: true, peers }
+      )
+      return
+    }
 
     if (request.method === "GET" && url.pathname === "/v1/info") {
       writeJson(response, 200, {

@@ -3,6 +3,7 @@
 /// connection token, and print the exact steps plus a codevisor:// deeplink.
 /// Logic lives behind the same injectable seam as the other CLI commands; the
 /// real prompt implementations are wired in cli.ts.
+import qrcode from "qrcode-terminal"
 import {
   DEFAULT_PORT,
   resolvePort,
@@ -179,13 +180,71 @@ export const setupCommand = async (
     deps.log(`  e.g. sudo ufw allow ${port}/tcp`)
     deps.log("")
   }
+  const deeplink = addMachineDeeplink({ host: connection.host, port, token, name })
+  deps.log("Connect from Codevisor on your phone:")
+  deps.log("  Scan this QR code with the camera — the app pairs automatically.")
+  deps.log("")
+  for (const line of renderQr(deeplink)) {
+    deps.log(`  ${line}`)
+  }
+  deps.log("")
   deps.log("Connect from Codevisor on your Mac:")
   deps.log("  1. Open Settings → Machines → Add Remote Machine")
   deps.log("  2. Enter the Name, Host, and Connection token shown above")
   deps.log("")
   deps.log("Or open this link on your Mac to add the machine automatically:")
-  deps.log(`  ${addMachineDeeplink({ host: connection.host, port, token, name })}`)
+  deps.log(`  ${deeplink}`)
   deps.log("")
   deps.log("Keep the token private — anyone with it can run agents on this machine.")
+  return 0
+}
+
+/// The pairing deeplink as terminal half-block QR lines. qrcode-terminal's
+/// generate callback is synchronous; the capture keeps our injectable
+/// line-logger seam instead of printing straight to stdout.
+export const renderQr = (text: string): string[] => {
+  let output = ""
+  qrcode.generate(text, { small: true }, (qr) => {
+    output = qr
+  })
+  return output.split("\n")
+}
+
+export interface QrDeps extends CliDeps {
+  readonly hostname: string
+}
+
+export interface QrOptions extends CommandOptions {
+  readonly host?: string | undefined
+}
+
+/// `codevisor qr` — reprint the pairing QR without rerunning the interactive
+/// setup flow. Non-interactive: the address comes from `--host` or Tailscale
+/// detection, and the token from the already-running server.
+export const qrCommand = async (deps: QrDeps, options: QrOptions = {}): Promise<number> => {
+  const port = await resolvePort(deps, options.port)
+  const response = await deps.fetchJson(`http://127.0.0.1:${port}/v1/auth/connection-token`)
+  const token = (response?.body as { readonly token?: string } | undefined)?.token
+  if (response === undefined || response.status !== 200 || token === undefined) {
+    deps.error("Could not read the connection token; is the server running? (codevisor status)")
+    return 1
+  }
+  const host = options.host ?? (await detectTailscale(deps).then((t) => t?.dnsName ?? t?.ip))
+  if (host === undefined || host.length === 0) {
+    deps.error("Could not determine this machine's address (no Tailscale detected).")
+    deps.error("Pass one explicitly: codevisor qr --host <ip-or-hostname>")
+    return 1
+  }
+  const deeplink = addMachineDeeplink({ host, port, token, name: deps.hostname })
+  deps.log("")
+  deps.log("Scan with your phone's camera to pair Codevisor:")
+  deps.log("")
+  for (const line of renderQr(deeplink)) {
+    deps.log(`  ${line}`)
+  }
+  deps.log("")
+  deps.log(`  ${deeplink}`)
+  deps.log("")
+  deps.log("Keep it private — anyone who scans it can run agents on this machine.")
   return 0
 }

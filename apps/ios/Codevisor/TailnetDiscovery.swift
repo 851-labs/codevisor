@@ -119,3 +119,114 @@ enum TailnetDiscovery {
         return data
     }
 }
+
+/// Automatic tailnet discovery, the iOS analog of the macOS "On Your
+/// Network" section. iOS can't enumerate tailnet peers itself, but a paired
+/// machine's server can (`GET /v1/tailnet/peers` runs the Tailscale CLI
+/// there) — so this asks a paired machine for the peer list, then probes
+/// each online peer's tokenless `/v1/discovery` from the phone, which also
+/// proves the address works from this device before it gets registered.
+@MainActor
+@Observable
+final class TailnetMachineDiscovery {
+    struct Discovered: Identifiable, Equatable, Sendable {
+        /// The server's stable machine identity.
+        var id: String
+        var name: String
+        var host: String
+        var version: String
+    }
+
+    private(set) var discovered: [Discovered] = []
+    private(set) var isRefreshing = false
+
+    /// One discovery pass. Quiet on every failure path — no paired machine
+    /// reachable, no Tailscale anywhere, nothing found — the section simply
+    /// stays hidden.
+    func refresh(machines: MachineController) async {
+        guard !isRefreshing else { return }
+        isRefreshing = true
+        defer { isRefreshing = false }
+
+        // The phone must be on the tailnet itself, or probing peers (and
+        // dialing any machine we'd find) could never succeed.
+        guard await TailnetDiscovery.detectTailscale() != nil else {
+            discovered = []
+            return
+        }
+
+        let remotes = machines.machines.filter { !$0.isLocal }
+        let registeredHosts = Set(remotes.compactMap { $0.baseURL.host()?.lowercased() })
+
+        // First paired machine whose server knows its tailnet wins; their
+        // views are the same tailnet, so one answer is enough.
+        var peers: [ServerTailnetPeer] = []
+        for machine in remotes {
+            guard let response = try? await machines.client(for: machine.id).tailnetPeers(),
+                  response.available
+            else { continue }
+            peers = response.peers
+            break
+        }
+
+        let candidates = peers.filter { peer in
+            guard peer.online, let host = peer.host else { return false }
+            if registeredHosts.contains(host.lowercased()) { return false }
+            if let ip = peer.ip, registeredHosts.contains(ip.lowercased()) { return false }
+            if let dnsName = peer.dnsName, registeredHosts.contains(dnsName.lowercased()) { return false }
+            return true
+        }
+
+        // Bounded fan-out, mirroring the macOS discovery service: enough
+        // parallelism to finish a big tailnet in a couple of timeouts.
+        var found: [Discovered] = []
+        for chunk in candidates.chunked(into: 8) {
+            let results = await withTaskGroup(of: Discovered?.self) { group in
+                for peer in chunk {
+                    group.addTask {
+                        guard let host = peer.host,
+                              let machine = await TailnetDiscovery.probe(host)
+                        else { return nil }
+                        return Discovered(
+                            id: machine.manifest.machineId,
+                            name: Self.displayName(manifest: machine.manifest, peer: peer),
+                            host: host,
+                            version: machine.manifest.version
+                        )
+                    }
+                }
+                var collected: [Discovered] = []
+                for await result in group {
+                    if let result {
+                        collected.append(result)
+                    }
+                }
+                return collected
+            }
+            found.append(contentsOf: results)
+        }
+        discovered = found.sorted {
+            $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+        }
+    }
+
+    /// Servers that predate the hostname default advertise the generic
+    /// "local" id; the machine's hostname reads much better in a picker.
+    private nonisolated static func displayName(
+        manifest: TailnetDiscovery.Manifest,
+        peer: ServerTailnetPeer
+    ) -> String {
+        if manifest.name != "local" && manifest.name != "Local Codevisor" {
+            return manifest.name
+        }
+        return manifest.hostname.isEmpty ? peer.hostName : manifest.hostname
+    }
+}
+
+extension Array {
+    fileprivate func chunked(into size: Int) -> [[Element]] {
+        stride(from: 0, to: count, by: size).map {
+            Array(self[$0..<Swift.min($0 + size, count)])
+        }
+    }
+}

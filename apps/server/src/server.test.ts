@@ -58,6 +58,11 @@ import {
 } from "./server.js"
 import type { HarnessAuthManager } from "./harness-auth.js"
 import type { CodevisorServerServices } from "./server.js"
+import { readTailnetPeers } from "./tailnet.js"
+
+// The tailnet route shells out to the machine's Tailscale CLI; mock the
+// reader so the route's two shapes are deterministic on any test machine.
+vi.mock("./tailnet.js", () => ({ readTailnetPeers: vi.fn() }))
 import { NativeMcpError } from "./native-mcp-manager.js"
 import { SkillsError } from "./skills-manager.js"
 import { productionFoodWorktreeNames } from "./worktree-names.js"
@@ -2207,6 +2212,29 @@ describe("@codevisor/server", () => {
         (event) => event.kind === "session.error"
       )
     )
+  })
+
+  it("serves tailnet peers from the mocked tailscale reader", async () => {
+    const { server } = await start()
+
+    vi.mocked(readTailnetPeers).mockResolvedValueOnce(undefined)
+    expect((await jsonRequest(server, "/v1/tailnet/peers")).body).toEqual({
+      available: false,
+      peers: []
+    })
+
+    const peer = {
+      hostName: "studio",
+      dnsName: "studio.tail1234.ts.net",
+      ip: "100.64.0.2",
+      os: "macOS",
+      online: true
+    }
+    vi.mocked(readTailnetPeers).mockResolvedValueOnce([peer])
+    expect((await jsonRequest(server, "/v1/tailnet/peers")).body).toEqual({
+      available: true,
+      peers: [peer]
+    })
   })
 
   it("serves health, info, OpenAPI, update state, pairing, and auth", async () => {

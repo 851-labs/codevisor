@@ -1466,6 +1466,28 @@ export const DiscoveryInfo = Schema.Struct({
 })
 export type DiscoveryInfo = typeof DiscoveryInfo.Type
 
+/// A device on the machine's tailnet, read from `tailscale status --json`.
+/// Served to paired clients (iOS has no way to enumerate tailnet peers
+/// itself) so they can probe peers' /v1/discovery and offer them for adding.
+export const TailnetPeer = Schema.Struct({
+  hostName: Schema.String,
+  /// MagicDNS name with the trailing dot stripped; preferred over the IP
+  /// because it survives IP reassignment.
+  dnsName: Schema.optional(Schema.String),
+  ip: Schema.optional(Schema.String),
+  os: Schema.optional(Schema.String),
+  online: Schema.Boolean
+})
+export type TailnetPeer = typeof TailnetPeer.Type
+
+export const TailnetPeersResponse = Schema.Struct({
+  /// False when Tailscale isn't installed or isn't running on the machine —
+  /// clients hide tailnet discovery entirely.
+  available: Schema.Boolean,
+  peers: Schema.Array(TailnetPeer)
+})
+export type TailnetPeersResponse = typeof TailnetPeersResponse.Type
+
 export const UpdateInfo = Schema.Struct({
   currentVersion: Schema.String,
   latestVersion: Schema.String,

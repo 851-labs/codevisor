@@ -28,6 +28,7 @@
     "jsonc-parser": "3.3.1",
     "playwright": "1.62.0-alpha-1783623505000",
     "proper-lockfile": "4.1.2",
+    "qrcode-terminal": "0.12.0",
     "quickjs-emscripten": "0.31.0",
     "smol-toml": "1.7.0",
     "sucrase": "3.35.1",
@@ -37,6 +38,7 @@
   },
   "devDependencies": {
     "@types/proper-lockfile": "4.1.4",
+    "@types/qrcode-terminal": "^0.12.2",
     "@types/ws": "8.5.13",
     "vitest": "4.1.6"
   }

@@ -159,11 +159,15 @@ try {
   await run("xcrun", ["simctl", "install", simulator.udid, appBundle])
   spawn("xcrun", ["simctl", "terminate", simulator.udid, bundleIdentifier], { stdio: "ignore" })
   await delay(500)
+  // Same contract as the macOS dev app (CodevisorAppVariant.developmentRemote):
+  // the app offers this remote as a one-tap quick add in onboarding and
+  // Settings → Machines, instead of pairing automatically.
   await runWithEnvironment("xcrun", ["simctl", "launch", simulator.udid, bundleIdentifier], {
     ...process.env,
-    SIMCTL_CHILD_CODEVISOR_DEV_SERVER_URL: serverURL,
-    SIMCTL_CHILD_CODEVISOR_DEV_SERVER_TOKEN: token,
-    SIMCTL_CHILD_CODEVISOR_DEV_SERVER_NAME: remoteName
+    SIMCTL_CHILD_CODEVISOR_DEV_REMOTE_HOST: "127.0.0.1",
+    SIMCTL_CHILD_CODEVISOR_DEV_REMOTE_PORT: String(remotePort),
+    SIMCTL_CHILD_CODEVISOR_DEV_REMOTE_TOKEN: token,
+    SIMCTL_CHILD_CODEVISOR_DEV_REMOTE_NAME: remoteName
   })
 
   console.log("")

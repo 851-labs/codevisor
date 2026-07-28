@@ -202,6 +202,10 @@ private struct NotificationsSettingsScreen: View {
 struct MachinesSettingsScreen: View {
     @Environment(AppEnvironment.self) private var environment
     @State private var isAddingMachine = false
+    @State private var isAddingDevelopmentMachine = false
+    @State private var developmentError: String?
+    @State private var discovery = TailnetMachineDiscovery()
+    @State private var discoveredTarget: TailnetMachineDiscovery.Discovered?
 
     private var machines: MachineController { environment.machines }
 
@@ -234,7 +238,18 @@ struct MachinesSettingsScreen: View {
                     }
                 }
             } footer: {
-                Text("Run `codevisor setup` on a machine to print its address and token.")
+                InlineCodeText("Run `codevisor setup` on a machine to print its address and token.")
+            }
+            if !discovery.discovered.isEmpty {
+                Section {
+                    ForEach(discovery.discovered) { machine in
+                        discoveredRow(machine)
+                    }
+                } header: {
+                    Text("On Your Tailnet")
+                } footer: {
+                    Text("Codevisor servers found on your tailnet. Adding one still needs its connection token.")
+                }
             }
             Section {
                 Button {
@@ -243,11 +258,100 @@ struct MachinesSettingsScreen: View {
                     Label("Add Machine…", systemImage: "plus")
                 }
             }
+            if let devRemote = CodevisorAppVariant.developmentRemote,
+               developmentMachine(devRemote) == nil {
+                developmentSection(devRemote)
+            }
         }
         .navigationTitle("Machines")
         .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $isAddingMachine) {
             AddMachineSheet()
+        }
+        .sheet(item: $discoveredTarget) { machine in
+            AddMachineSheet(initialHost: machine.host, initialName: machine.name)
+        }
+        // Discover only while this screen is on screen — no background polling.
+        .task {
+            while !Task.isCancelled {
+                await discovery.refresh(machines: machines)
+                try? await Task.sleep(for: .seconds(30))
+            }
+        }
+        // A removed machine may be discoverable again (and a just-added one
+        // must leave the list) — refresh whenever the machine list changes.
+        .onChange(of: machines.machines.map(\.id)) { _, _ in
+            Task { await discovery.refresh(machines: machines) }
+        }
+    }
+
+    private func discoveredRow(_ machine: TailnetMachineDiscovery.Discovered) -> some View {
+        Button {
+            discoveredTarget = machine
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "desktopcomputer")
+                    .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(machine.name)
+                        .foregroundStyle(.primary)
+                    Text("\(machine.host) · Codevisor \(machine.version)")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Image(systemName: "plus.circle.fill")
+                    .foregroundStyle(.tint)
+            }
+        }
+    }
+
+    /// Dev-only shortcut, as on macOS: one tap adds the dev remote that
+    /// `bun run dev:ios` started, no token entry. Hidden once it's paired —
+    /// remove it like any other machine from its detail page.
+    private func developmentSection(_ remote: CodevisorAppVariant.DevelopmentRemote) -> some View {
+        Section {
+            Button {
+                Task { await addDevelopmentMachine(remote) }
+            } label: {
+                Label("Add Development Machine", systemImage: "bolt.fill")
+            }
+            .disabled(isAddingDevelopmentMachine)
+        } header: {
+            Text("Development")
+        } footer: {
+            if let developmentError {
+                Text(developmentError)
+                    .foregroundStyle(.red)
+            } else {
+                Text("\(remote.name) at \(remote.hostWithPort), started by bun run dev:ios.")
+            }
+        }
+    }
+
+    /// The registered machine matching the dev remote (by host + port), if
+    /// it has been added — the section hides itself once paired.
+    private func developmentMachine(_ remote: CodevisorAppVariant.DevelopmentRemote) -> CodevisorMachine? {
+        machines.machines.first { machine in
+            machine.baseURL.host() == remote.host
+                && (machine.baseURL.port ?? CodevisorAppVariant.productionPort) == remote.port
+        }
+    }
+
+    private func addDevelopmentMachine(_ remote: CodevisorAppVariant.DevelopmentRemote) async {
+        isAddingDevelopmentMachine = true
+        developmentError = nil
+        defer { isAddingDevelopmentMachine = false }
+        do {
+            let added = try await machines.addRemoteValidating(
+                host: remote.hostWithPort,
+                name: remote.name,
+                token: remote.token
+            )
+            machines.selectMachine(added.id)
+            await environment.prepareSelectedMachine()
+        } catch {
+            developmentError = ErrorReporter.userFacingMessage(for: error)
         }
     }
 }
@@ -327,30 +431,52 @@ private struct MachineDetailScreen: View {
 }
 
 /// Manual pairing: address + token, validated against the server before the
-/// machine is saved. The QR/deeplink flow covers the common path; this is the
-/// fallback for typing coordinates from `codevisor setup`.
-private struct AddMachineSheet: View {
+/// machine is saved (the iOS mirror of the macOS Add Remote Machine form).
+/// Styled like the system "Join Wi-Fi Network" sheet: circular close/confirm
+/// buttons, a centered tinted glyph, a leading large title, and label-led
+/// form rows. The QR/deeplink flow covers the common path; this is the
+/// fallback for typing coordinates from `codevisor setup`. Shared with
+/// onboarding.
+struct AddMachineSheet: View {
     @Environment(AppEnvironment.self) private var environment
     @Environment(\.dismiss) private var dismiss
 
-    @State private var host = ""
-    @State private var name = ""
+    @State private var host: String
+    @State private var name: String
     @State private var token = ""
     @State private var isAdding = false
     @State private var errorMessage: String?
 
+    /// Prefill support for the tailnet-discovery rows; the manual add flow
+    /// uses the empty defaults.
+    init(initialHost: String = "", initialName: String = "") {
+        _host = State(initialValue: initialHost)
+        _name = State(initialValue: initialName)
+    }
+
     var body: some View {
-        NavigationStack {
+        VStack(spacing: 0) {
+            header
             Form {
                 Section {
-                    TextField("Address (host or host:port)", text: $host)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .keyboardType(.URL)
-                    TextField("Name (optional)", text: $name)
-                    SecureField("Connection token", text: $token)
+                    labeledField("Address") {
+                        TextField("Host or host:port", text: $host)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .keyboardType(.URL)
+                    }
+                }
+                Section {
+                    labeledField("Name") {
+                        TextField("Optional", text: $name)
+                    }
+                    labeledField("Token") {
+                        SecureField("Connection token", text: $token)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                    }
                 } footer: {
-                    Text("Run `codevisor setup` on the machine to print its address and token.")
+                    InlineCodeText("Run `codevisor token` on the machine, or copy it from the `codevisor setup` output.")
                 }
                 if let errorMessage {
                     Section {
@@ -359,17 +485,63 @@ private struct AddMachineSheet: View {
                     }
                 }
             }
-            .navigationTitle("Add Machine")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+            .scrollContentBackground(.hidden)
+        }
+        .background(Color(.systemGroupedBackground))
+    }
+
+    /// The Join-Wi-Fi-style top area: X and ✓ in circles, a centered tinted
+    /// glyph, and the leading large title.
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Button {
+                    dismiss()
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.title3.weight(.semibold))
+                        .frame(width: 22, height: 22)
                 }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Add") { add() }
-                        .disabled(host.isEmpty || isAdding)
+                .buttonStyle(.glass)
+                .buttonBorderShape(.circle)
+                .accessibilityLabel("Cancel")
+                Spacer()
+                Button {
+                    add()
+                } label: {
+                    Group {
+                        if isAdding {
+                            ProgressView()
+                        } else {
+                            Image(systemName: "checkmark")
+                                .font(.title3.weight(.semibold))
+                        }
+                    }
+                    .frame(width: 22, height: 22)
                 }
+                .buttonStyle(.glass)
+                .buttonBorderShape(.circle)
+                .disabled(host.isEmpty || isAdding)
+                .accessibilityLabel("Add")
             }
+            Image(systemName: "desktopcomputer")
+                .font(.system(size: 52))
+                .foregroundStyle(.tint)
+                .frame(maxWidth: .infinity)
+                .padding(.top, 36)
+            Text("Add Machine")
+                .font(.title.bold())
+                .padding(.top, 28)
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, 16)
+    }
+
+    /// A native settings form row: leading label, then the field inline.
+    private func labeledField(_ label: String, @ViewBuilder field: () -> some View) -> some View {
+        HStack(spacing: 16) {
+            Text(label)
+            field()
         }
     }
 
@@ -655,5 +827,66 @@ private struct SkillsSettingsScreen: View {
             errorMessage = ErrorReporter.userFacingMessage(for: error)
         }
         isLoading = false
+    }
+}
+
+// MARK: - Inline code styling
+
+/// Styles the backticked runs of a hint string like chat history's inline
+/// code chips — monospaced over a soft rounded background — so commands read
+/// as code instead of just a font change. Uses the same TextRenderer
+/// technique as StreamMarkdown's portable chip painter.
+struct InlineCodeText: View {
+    let text: String
+
+    init(_ text: String) {
+        self.text = text
+    }
+
+    /// Marks the code-span glyph runs so the renderer can find them.
+    private struct ChipMarker: TextAttribute {}
+
+    /// Paints a rounded chip behind every marked run, then draws the text.
+    private struct ChipRenderer: TextRenderer {
+        func draw(layout: Text.Layout, in context: inout GraphicsContext) {
+            for line in layout {
+                var chipRect: CGRect?
+                func flush() {
+                    if let rect = chipRect {
+                        context.fill(
+                            Path(roundedRect: rect.insetBy(dx: -3, dy: -1), cornerRadius: 5),
+                            with: .color(Color.secondary.opacity(0.18))
+                        )
+                    }
+                    chipRect = nil
+                }
+                for run in line {
+                    if run[ChipMarker.self] != nil {
+                        let rect = run.typographicBounds.rect
+                        chipRect = chipRect.map { $0.union(rect) } ?? rect
+                    } else {
+                        flush()
+                    }
+                }
+                flush()
+            }
+            for line in layout {
+                context.draw(line)
+            }
+        }
+    }
+
+    var body: some View {
+        Array(text.components(separatedBy: "`").enumerated())
+            .reduce(Text("")) { result, piece in
+                if piece.offset.isMultiple(of: 2) {
+                    return result + Text(piece.element)
+                }
+                return result
+                    + Text(piece.element)
+                        .font(.footnote.monospaced())
+                        .customAttribute(ChipMarker())
+            }
+            .textRenderer(ChipRenderer())
     }
 }
