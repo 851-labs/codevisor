@@ -24,6 +24,15 @@ struct CodevisorApp: App {
                 serverAgent: serverAgent
             )
             : nil
+        if !CodevisorAppVariant.isDevelopment && !AppPreview.isRunning {
+            // Keep the bundled CLI (`codevisor` etc.) linked into
+            // ~/.local/bin: DMG drag-installs run no installer script, so
+            // launch is the only chance to put the CLI on PATH; install.sh
+            // and the Homebrew cask create the same links up front.
+            Task.detached(priority: .utility) {
+                CommandLineTools.ensureInstalled()
+            }
+        }
         AnalyticsClient.shared.configureFromMainBundle(enabled: environment.settings.shareAnalytics)
         AnalyticsClient.shared.captureAppOpenedOnce()
         DiagnosticsClient.shared.configureFromMainBundle(enabled: environment.settings.shareCrashReports)

@@ -3,14 +3,15 @@
 #
 #   curl -fsSL https://www.codevisor.dev/install.sh | sh
 #
-# macOS  : installs the Codevisor app into /Applications.
+# macOS  : installs the Codevisor app into /Applications and links the bundled
+#          codevisor CLI onto your PATH.
 # Linux  : installs codevisor-server and sets it up as a systemd service so the
 #          Codevisor app on your Mac can connect to this machine.
 #
 # Options (environment variables):
 #   CODEVISOR_VERSION      install a specific version instead of the latest
 #   CODEVISOR_INSTALL_DIR  Linux server install dir   (default: ~/.codevisor/server, /opt/codevisor as root)
-#   CODEVISOR_BIN_DIR      Linux symlink dir          (default: ~/.local/bin, /usr/local/bin as root)
+#   CODEVISOR_BIN_DIR      CLI symlink dir            (default: ~/.local/bin; /usr/local/bin as root on Linux)
 #   CODEVISOR_PORT         Linux server port          (default: 49361)
 #   CODEVISOR_DATA_DIR     Linux server data dir      (default: ~/.codevisor/data, /var/lib/codevisor/data as root)
 #   CODEVISOR_NO_SERVICE   set to 1 to skip systemd setup on Linux
@@ -110,6 +111,32 @@ install_macos() {
   if [ "$kind" = "dmg" ]; then
     hdiutil detach -quiet "$mount_point" >/dev/null 2>&1 || true
     trap cleanup EXIT
+  fi
+
+  # Mirror the Linux install: link the CLI launchers bundled inside the app
+  # onto PATH so `codevisor` works from a terminal. The launchers resolve
+  # symlinks before locating the runtime root, so linking straight into the
+  # bundle is safe, and the app updates itself in place so the links stay
+  # valid across updates.
+  bin_dir="${CODEVISOR_BIN_DIR:-${HERDMAN_BIN_DIR:-$HOME/.local/bin}}"
+  runtime_bin=""
+  for runtime_target in "darwin-$app_arch" darwin-arm64 darwin-x64; do
+    [ -x "$app_dest/Contents/Resources/server/$runtime_target/bin/codevisor" ] || continue
+    runtime_bin="$app_dest/Contents/Resources/server/$runtime_target/bin"
+    break
+  done
+  if [ -n "$runtime_bin" ]; then
+    mkdir -p "$bin_dir"
+    ln -sf "$runtime_bin/codevisor" "$bin_dir/codevisor"
+    ln -sf "$runtime_bin/codevisor-server" "$bin_dir/codevisor-server"
+    ln -sf "$runtime_bin/codevisor-terminal-proxy" "$bin_dir/codevisor-terminal-proxy"
+    say "Linked codevisor into $bin_dir"
+    case ":$PATH:" in
+      *":$bin_dir:"*) ;;
+      *) note "note: $bin_dir is not on your PATH" ;;
+    esac
+  else
+    note "note: bundled CLI not found in the app; skipping PATH setup"
   fi
 
   say "Codevisor $version installed"

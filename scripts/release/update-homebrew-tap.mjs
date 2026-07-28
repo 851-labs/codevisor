@@ -46,12 +46,12 @@ const updateRenameFile = (filename, oldName, newName) => {
 
 // Split releases publish per-architecture app zips; the cask then selects by
 // CPU via Homebrew's arch stanza. Pre-split releases keep the single
-// universal artifact form.
+// universal artifact form. The arch stanza is emitted unconditionally: the
+// binary stanzas below need it to pick the bundle's per-CPU runtime even when
+// the app artifact itself is universal.
 const caskArtifactStanza =
   armZip !== undefined && intelZip !== undefined
-    ? `arch arm: "arm64", intel: "x64"
-
-  version "${version}"
+    ? `version "${version}"
   sha256 arm:   "${sha256(armZip)}",
          intel: "${sha256(intelZip)}"
 
@@ -64,6 +64,8 @@ const caskArtifactStanza =
 writeFileSync(
   join(tapDir, "Casks", "codevisor.rb"),
   `cask "codevisor" do
+  arch arm: "arm64", intel: "x64"
+
   ${caskArtifactStanza}
   name "Codevisor"
   desc "ACP chat client and local Codevisor server"
@@ -74,6 +76,19 @@ writeFileSync(
   auto_updates true
 
   app "Codevisor.app"
+
+  # The app bundles the server runtime with its CLI launchers; link them onto
+  # PATH so \`codevisor\` works from a terminal, matching the Linux server
+  # install. The launchers resolve symlinks before locating the runtime root,
+  # so linking straight into the installed bundle is safe, and in-place app
+  # updates keep the links valid.
+  binary "#{appdir}/Codevisor.app/Contents/Resources/server/darwin-#{arch}/bin/codevisor"
+  binary "#{appdir}/Codevisor.app/Contents/Resources/server/darwin-#{arch}/bin/codevisor-server"
+  binary "#{appdir}/Codevisor.app/Contents/Resources/server/darwin-#{arch}/bin/codevisor-terminal-proxy"
+
+  # The codevisor-server formula links the same launcher names; installing
+  # both would collide in \$HOMEBREW_PREFIX/bin.
+  conflicts_with formula: "851-labs/tap/codevisor-server"
 
   # Quit a running app before the bundle is swapped. The preflight covers
   # upgrades from cask versions that predate the uninstall stanza; the guard
