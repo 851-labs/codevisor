@@ -10,6 +10,7 @@ enum SettingsTab: String {
     case general
     case appearance
     case notifications
+    case shortcuts
     case machines
     case harnesses
     case mcps
@@ -43,6 +44,9 @@ struct SettingsView: View {
             NotificationsSettingsView()
                 .tabItem { Label("Notifications", systemImage: "bell") }
                 .tag(SettingsTab.notifications)
+            ShortcutsSettingsView()
+                .tabItem { Label("Shortcuts", systemImage: "keyboard") }
+                .tag(SettingsTab.shortcuts)
             MachinesSettingsView()
                 .tabItem { Label("Machines", systemImage: "desktopcomputer") }
                 .tag(SettingsTab.machines)

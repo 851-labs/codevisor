@@ -156,7 +156,7 @@ private struct DebugMetricsOverlay: View {
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(.white.opacity(0.72))
                 Spacer()
-                Text("⌘` to hide")
+                Text("\(ShortcutCatalog.display(for: .toggleDebugOverlay)) to hide")
                     .font(.system(size: 10, weight: .medium, design: .monospaced))
                     .foregroundStyle(.white.opacity(0.42))
             }
@@ -378,8 +378,7 @@ private struct DebugOverlayMenuItem: View {
     @FocusedValue(\.debugOverlayToggle) private var action
 
     var body: some View {
-        Button("Toggle Debug Overlay") { action?.toggle() }
-            .keyboardShortcut("`", modifiers: .command)
+        ShortcutButton(.toggleDebugOverlay) { action?.toggle() }
             .disabled(action == nil)
     }
 }

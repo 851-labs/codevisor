@@ -105,7 +105,7 @@ struct WorkspaceTabBar: View {
                 }
                 .buttonStyle(.plain)
                 .glassEffect(.regular.interactive(), in: Circle())
-                .help("New tab (⌘T)")
+                .help("New tab (\(ShortcutCatalog.display(for: .newTab)))")
                 .accessibilityLabel("New tab")
 
                 Spacer(minLength: 0)

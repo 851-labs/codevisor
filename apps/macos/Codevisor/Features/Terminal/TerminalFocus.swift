@@ -323,7 +323,8 @@ final class TerminalFocusController {
     /// Workspace commands while the chat (or anything that isn't a terminal)
     /// holds focus. Focused terminals route the same shortcuts through their
     /// active leaf model via its key-equivalent handler
-    /// (GhosttyTerminalSurfaceAdapter), whose matching this mirrors.
+    /// (GhosttyTerminalSurfaceAdapter); both match against `ShortcutCatalog`,
+    /// so the two paths and the menu share one definition of each shortcut.
     private func handleTabCommand(_ event: NSEvent) -> Bool {
         guard let centerGroup,
               let window = hostWindow ?? composerTextView?.window,
@@ -334,72 +335,12 @@ final class TerminalFocusController {
               // Focused terminals (either group) route their own commands.
               !(window.firstResponder is Ghostty.SurfaceView)
         else { return false }
-        // Arrow keys carry implicit .function/.numericPad flags — strip them
-        // or the exact-modifier comparisons below never match.
-        let mods = event.modifierFlags
-            .intersection(.deviceIndependentFlagsMask)
-            .subtracting([.function, .numericPad])
-        if mods == [.command, .option] {
-            if event.specialKey == .leftArrow {
-                centerGroup.handleCommand(.focusSplit(.leading))
-                return true
-            }
-            if event.specialKey == .rightArrow {
-                centerGroup.handleCommand(.focusSplit(.trailing))
-                return true
-            }
-            if event.specialKey == .upArrow {
-                centerGroup.handleCommand(.focusSplit(.top))
-                return true
-            }
-            if event.specialKey == .downArrow {
-                centerGroup.handleCommand(.focusSplit(.bottom))
-                return true
-            }
-        }
-        if mods == [.command, .shift], let chars = event.charactersIgnoringModifiers?.lowercased() {
-            // AppKit preserves Shift in charactersIgnoringModifiers for
-            // punctuation, yielding braces for the bracket keys.
-            if chars == "[" || chars == "{" {
-                centerGroup.handleCommand(.previousTab)
-                return true
-            }
-            if chars == "]" || chars == "}" {
-                centerGroup.handleCommand(.nextTab)
-                return true
-            }
-            if chars == "d" {
-                centerGroup.handleCommand(.split(.bottom))
-                return true
-            }
-        }
-        if mods == .command, let chars = event.charactersIgnoringModifiers?.lowercased() {
-            if chars == "[" {
-                centerGroup.handleCommand(.previousSplit)
-                return true
-            }
-            if chars == "]" {
-                centerGroup.handleCommand(.nextSplit)
-                return true
-            }
-            if chars == "t" {
-                centerGroup.handleCommand(.newTab)
-                return true
-            }
-            if chars == "d" {
-                centerGroup.handleCommand(.split(.trailing))
-                return true
-            }
-            if chars == "w" {
-                centerGroup.handleCommand(.closeTab)
-                return true
-            }
-            if chars.count == 1, let digit = Int(chars), (1...9).contains(digit) {
-                centerGroup.handleCommand(.selectTab(digit - 1))
-                return true
-            }
-        }
-        return false
+        // ⌘J is deliberately excluded: with focus outside a terminal the
+        // SwiftUI menu command handles it, and claiming it here would
+        // double-fire the toggle.
+        guard let command = ShortcutCatalog.paneCommand(for: event) else { return false }
+        centerGroup.handleCommand(command)
+        return true
     }
 
     func stopTypeToFocus() {
@@ -629,8 +570,7 @@ private struct TerminalToggleMenuItem: View {
     @FocusedValue(\.terminalToggle) private var action
 
     var body: some View {
-        Button("Toggle Bottom Panel") { action?.toggle() }
-            .keyboardShortcut("j", modifiers: .command)
+        ShortcutButton(.toggleBottomPanel) { action?.toggle() }
             .disabled(action == nil)
     }
 }

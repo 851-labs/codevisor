@@ -437,7 +437,7 @@ struct PaneGroupBar: View {
                             // ⌘N hint, shown while this bar is the
                             // shortcuts' target (⌘1-9 reach the first nine).
                             shortcutHint: showsShortcutHints && index < 9
-                                ? "⌘\(index + 1)" : nil,
+                                ? ShortcutCatalog.tabSelectionHint(index: index) : nil,
                             onSelect: {
                                 group.select(id: pane.id)
                                 group.focusSelectedPane()
@@ -732,7 +732,7 @@ struct PaneGroupBar: View {
             }
             .buttonStyle(.plain)
             .glassEffect(.regular.interactive(), in: Circle())
-            .help("New tab (⌘T)")
+            .help("New tab (\(ShortcutCatalog.display(for: .newTab)))")
             .accessibilityLabel("New tab")
         } else {
             Button {
@@ -777,9 +777,12 @@ struct PaneGroupBar: View {
         }
         .buttonStyle(.plain)
         .glassEffect(.regular.interactive(), in: Circle())
-        .help("Toggle bottom panel (⌘J)")
+        .help("Toggle bottom panel (\(ShortcutCatalog.display(for: .toggleBottomPanel)))")
         .accessibilityLabel("Toggle bottom panel")
-        .accessibilityHint("Keyboard shortcut: Command-J")
+        .accessibilityHint(
+            ShortcutCatalog.combo(for: .toggleBottomPanel)
+                .map { "Keyboard shortcut: \($0.accessibilityDescription)" } ?? ""
+        )
     }
 
     // MARK: - Resize

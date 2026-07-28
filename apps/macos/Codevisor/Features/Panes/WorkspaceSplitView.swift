@@ -291,7 +291,7 @@ private struct SplitLeafHeader: View {
                 Label(closeTitle, systemImage: closeTitle == "Archive" ? "archivebox" : "xmark")
                     .labelStyle(.titleAndIcon)
             }
-            .keyboardShortcut("w", modifiers: .command)
+            .shortcut(.closeSplit)
         } label: {
             Image(systemName: "ellipsis")
                 .font(.system(size: 13, weight: .semibold))
@@ -306,21 +306,13 @@ private struct SplitLeafHeader: View {
         .accessibilityLabel("Pane actions")
     }
 
-    @ViewBuilder
     private func splitMenuItem(_ name: String, icon: String, edge: SplitEdge) -> some View {
-        let button = Button { onSplit(edge) } label: {
+        Button { onSplit(edge) } label: {
             Label(name, systemImage: icon)
                 .labelStyle(.titleAndIcon)
         }
-
-        switch edge {
-        case .trailing:
-            button.keyboardShortcut("d", modifiers: .command)
-        case .bottom:
-            button.keyboardShortcut("d", modifiers: [.command, .shift])
-        case .leading, .top:
-            button
-        }
+        // Leading and top have no key equivalent; `shortcut(_:)` no-ops there.
+        .shortcut(.split(towards: edge))
     }
 }
 

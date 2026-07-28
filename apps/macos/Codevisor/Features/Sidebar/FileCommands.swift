@@ -59,13 +59,12 @@ private struct NewChatMenuItem: View {
     @FocusedValue(\.newChatComposerFocus) private var composerFocus
 
     var body: some View {
-        Button("New Chat") {
+        ShortcutButton(.newChat) {
             actions?.newChat()
             // Already on the new-chat page: navigation is a no-op, so move
             // focus into the composer directly.
             composerFocus?.focus()
         }
-        .keyboardShortcut("n", modifiers: .command)
         .disabled(actions == nil)
     }
 }
@@ -74,8 +73,7 @@ private struct NewProjectMenuItem: View {
     @FocusedValue(\.sidebarActions) private var actions
 
     var body: some View {
-        Button("New Project…") { actions?.newProject() }
-            .keyboardShortcut("n", modifiers: [.command, .shift])
+        ShortcutButton(.newProject) { actions?.newProject() }
             .disabled(actions == nil)
     }
 }

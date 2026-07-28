@@ -34,60 +34,48 @@ struct WorkspaceLayoutCommands: Commands {
 
     var body: some Commands {
         CommandMenu("Tabs & Splits") {
-            Button("New Tab") { actions?.newTab() }
-                .keyboardShortcut("t", modifiers: .command)
+            ShortcutButton(.newTab) { actions?.newTab() }
                 .disabled(actions == nil)
 
-            Button("Close Split") { actions?.closeSplit() }
-                .keyboardShortcut("w", modifiers: .command)
+            ShortcutButton(.closeSplit) { actions?.closeSplit() }
                 .disabled(actions == nil)
-            Button("Close Tab") { actions?.closeTab() }
+            ShortcutButton(.closeTab) { actions?.closeTab() }
                 .disabled(actions == nil)
 
             Divider()
 
-            Button("Previous Tab") { actions?.previousTab() }
-                .keyboardShortcut("[", modifiers: [.command, .shift])
+            ShortcutButton(.previousTab) { actions?.previousTab() }
                 .disabled(actions == nil)
-            Button("Next Tab") { actions?.nextTab() }
-                .keyboardShortcut("]", modifiers: [.command, .shift])
+            ShortcutButton(.nextTab) { actions?.nextTab() }
                 .disabled(actions == nil)
 
             Divider()
 
-            Button("Previous Split") { actions?.previousSplit() }
-                .keyboardShortcut("[", modifiers: .command)
+            ShortcutButton(.previousSplit) { actions?.previousSplit() }
                 .disabled(actions == nil)
-            Button("Next Split") { actions?.nextSplit() }
-                .keyboardShortcut("]", modifiers: .command)
+            ShortcutButton(.nextSplit) { actions?.nextSplit() }
                 .disabled(actions == nil)
 
             Divider()
 
-            Button("Split Left") { actions?.split(.leading) }
+            ShortcutButton(.splitLeft) { actions?.split(.leading) }
                 .disabled(actions == nil)
-            Button("Split Right") { actions?.split(.trailing) }
-                .keyboardShortcut("d", modifiers: .command)
+            ShortcutButton(.splitRight) { actions?.split(.trailing) }
                 .disabled(actions == nil)
-            Button("Split Up") { actions?.split(.top) }
+            ShortcutButton(.splitUp) { actions?.split(.top) }
                 .disabled(actions == nil)
-            Button("Split Down") { actions?.split(.bottom) }
-                .keyboardShortcut("d", modifiers: [.command, .shift])
+            ShortcutButton(.splitDown) { actions?.split(.bottom) }
                 .disabled(actions == nil)
 
             Divider()
 
-            Button("Focus Split Left") { actions?.focus(.leading) }
-                .keyboardShortcut(.leftArrow, modifiers: [.command, .option])
+            ShortcutButton(.focusSplitLeft) { actions?.focus(.leading) }
                 .disabled(actions == nil)
-            Button("Focus Split Right") { actions?.focus(.trailing) }
-                .keyboardShortcut(.rightArrow, modifiers: [.command, .option])
+            ShortcutButton(.focusSplitRight) { actions?.focus(.trailing) }
                 .disabled(actions == nil)
-            Button("Focus Split Above") { actions?.focus(.top) }
-                .keyboardShortcut(.upArrow, modifiers: [.command, .option])
+            ShortcutButton(.focusSplitAbove) { actions?.focus(.top) }
                 .disabled(actions == nil)
-            Button("Focus Split Below") { actions?.focus(.bottom) }
-                .keyboardShortcut(.downArrow, modifiers: [.command, .option])
+            ShortcutButton(.focusSplitBelow) { actions?.focus(.bottom) }
                 .disabled(actions == nil)
         }
     }

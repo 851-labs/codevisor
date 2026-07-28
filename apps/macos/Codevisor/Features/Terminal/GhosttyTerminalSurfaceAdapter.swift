@@ -100,81 +100,15 @@ private final class CodevisorGhosttySurfaceView: Ghostty.SurfaceView {
     /// first-responder relationship — not the published `focused` flag, which
     /// can go stale and would eat composer/menu key equivalents.
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
-        if event.type == .keyDown, window?.firstResponder === self, let onPaneCommand {
-            // Arrow keys carry implicit .function/.numericPad flags — strip
-            // them or the exact-modifier comparisons below never match.
-            let mods = event.modifierFlags
-                .intersection(.deviceIndependentFlagsMask)
-                .subtracting([.function, .numericPad])
-            if mods == [.command, .option] {
-                if event.specialKey == .leftArrow {
-                    onPaneCommand(.focusSplit(.leading))
-                    return true
-                }
-                if event.specialKey == .rightArrow {
-                    onPaneCommand(.focusSplit(.trailing))
-                    return true
-                }
-                if event.specialKey == .upArrow {
-                    onPaneCommand(.focusSplit(.top))
-                    return true
-                }
-                if event.specialKey == .downArrow {
-                    onPaneCommand(.focusSplit(.bottom))
-                    return true
-                }
-            }
-            if mods == [.command, .shift], let chars = event.charactersIgnoringModifiers?.lowercased() {
-                // AppKit preserves Shift in charactersIgnoringModifiers for
-                // punctuation, yielding braces for the bracket keys.
-                if chars == "[" || chars == "{" {
-                    onPaneCommand(.previousTab)
-                    return true
-                }
-                if chars == "]" || chars == "}" {
-                    onPaneCommand(.nextTab)
-                    return true
-                }
-                if chars == "d" {
-                    onPaneCommand(.split(.bottom))
-                    return true
-                }
-            }
-            if mods == .command, let chars = event.charactersIgnoringModifiers?.lowercased() {
-                if chars == "[" {
-                    onPaneCommand(.previousSplit)
-                    return true
-                }
-                if chars == "]" {
-                    onPaneCommand(.nextSplit)
-                    return true
-                }
-                if chars == "t" {
-                    onPaneCommand(.newTab)
-                    return true
-                }
-                if chars == "d" {
-                    onPaneCommand(.split(.trailing))
-                    return true
-                }
-                // ⌘J toggles the panel. Handled here rather than relying on
-                // the menu command: the SwiftUI focused-scene value is not
-                // reliably published while an AppKit view is first responder.
-                if chars == "j" {
-                    onPaneCommand(.togglePanel)
-                    return true
-                }
-                // ⌘W closes the selected tab while a pane is focused; with
-                // focus elsewhere the window's normal ⌘W applies.
-                if chars == "w" {
-                    onPaneCommand(.closeTab)
-                    return true
-                }
-                if chars.count == 1, let digit = Int(chars), (1...9).contains(digit) {
-                    onPaneCommand(.selectTab(digit - 1))
-                    return true
-                }
-            }
+        if event.type == .keyDown, window?.firstResponder === self, let onPaneCommand,
+           // ⌘J is claimed here rather than left to the menu command: the
+           // SwiftUI focused-scene value backing it is not reliably published
+           // while an AppKit view is first responder. ⌘W likewise closes the
+           // selected tab while a pane is focused; with focus elsewhere the
+           // window's normal ⌘W applies.
+           let command = ShortcutCatalog.paneCommand(for: event, includingPanelToggle: true) {
+            onPaneCommand(command)
+            return true
         }
         return super.performKeyEquivalent(with: event)
     }
