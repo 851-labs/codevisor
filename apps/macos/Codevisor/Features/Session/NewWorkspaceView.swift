@@ -28,6 +28,9 @@ struct NewWorkspaceView: View {
     /// The project whose worktree is being created (or failed); non-nil swaps
     /// the form for the setup-progress panel.
     @State private var creatingProject: Project?
+    /// Whether the creation-log disclosure on the progress panel is open.
+    @State private var showsCreationLog = false
+    @State private var creationLogHeight: CGFloat = 0
 
     private var projects: [Project] {
         environment.projectList.activeProjectsByWorkspaceRecency(
@@ -181,25 +184,25 @@ struct NewWorkspaceView: View {
     }
 
     /// A plain, centered loading state while the worktree materializes: a
-    /// spinner, a quiet caption, and a dim tail of the streamed setup logs
-    /// (git output, checkout hooks). Only a failure expands into detail —
-    /// the setup-phase row (error + full logs) with retry/back.
+    /// spinner, a quiet caption, and the streamed setup logs (git output,
+    /// checkout hooks) tucked behind a disclosure whose label doubles as the
+    /// subtitle. Only a failure expands into detail — the setup-phase row
+    /// (error + full logs) with retry/back.
     @ViewBuilder
     private var worktreeProgress: some View {
         if worktreeCreator.phase?.failureMessage == nil {
             VStack(spacing: 14) {
-                ProgressView()
-                    .controlSize(.large)
-                Text("Creating workspace…")
-                    .font(.headline)
-                Text("Setting up a git worktree in \(creatingProject?.name ?? "the project")")
-                    .font(.callout)
-                    .foregroundStyle(theme.textSecondary)
-                worktreeLogTail
+                VStack(spacing: 14) {
+                    ProgressView()
+                        .controlSize(.large)
+                    Text("Creating workspace…")
+                        .font(.headline)
+                }
+                .accessibilityElement(children: .combine)
+                worktreeLogDisclosure
             }
             .padding(24)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .accessibilityElement(children: .combine)
         } else {
             VStack(spacing: 20) {
                 VStack(spacing: 6) {
@@ -230,34 +233,82 @@ struct NewWorkspaceView: View {
         }
     }
 
-    /// The last few streamed setup lines, console-quiet: dim monospace on a
-    /// card, newest at the bottom. Progress stays legible without turning
-    /// the loading state into a log viewer; the failure state shows the
-    /// full log.
+    /// The subtitle doubles as the disclosure label for the streamed setup
+    /// logs: it shimmers while the worktree is created, and once log lines
+    /// stream in a chevron appears — expanding reveals the full log panel
+    /// instead of turning the loading state into a permanent log viewer.
     @ViewBuilder
-    private var worktreeLogTail: some View {
-        let lines = (worktreeCreator.phase?.logs ?? []).suffix(6)
-        if !lines.isEmpty {
+    private var worktreeLogDisclosure: some View {
+        let hasLogs = !(worktreeCreator.phase?.logs ?? []).isEmpty
+        VStack(spacing: 0) {
+            if hasLogs {
+                Button {
+                    showsCreationLog.toggle()
+                } label: {
+                    worktreeLogLabel(showsChevron: true)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            } else {
+                worktreeLogLabel(showsChevron: false)
+            }
+            TranscriptDisclosureContentReveal(isExpanded: showsCreationLog && hasLogs) {
+                creationLogPanel
+                    // Keep the label gap inside the measured reveal so the
+                    // collapsed state doesn't hold a phantom spacer.
+                    .padding(.top, 10)
+            }
+        }
+    }
+
+    private func worktreeLogLabel(showsChevron: Bool) -> some View {
+        HStack(spacing: 6) {
+            Text("Setting up a git worktree in \(creatingProject?.name ?? "the project")")
+                .font(.callout)
+                .foregroundStyle(theme.textSecondary)
+                .shimmering(worktreeCreator.isRunning)
+            if showsChevron {
+                TranscriptDisclosureChevron(expanded: showsCreationLog)
+            }
+        }
+        // Keep the label stable while the shared disclosure primitives
+        // animate only the chevron and the revealed content.
+        .transaction { transaction in
+            transaction.animation = nil
+        }
+    }
+
+    /// Tallest the log panel grows before it scrolls (~12 rows).
+    private static let creationLogMaxHeight: CGFloat = 200
+
+    /// The full streamed log, console-quiet: dim monospace on a card, sized
+    /// to the content until it overflows, then scrolling pinned to the
+    /// newest line.
+    private var creationLogPanel: some View {
+        ScrollView {
             VStack(alignment: .leading, spacing: 2) {
-                ForEach(Array(lines)) { line in
+                ForEach(worktreeCreator.phase?.logs ?? []) { line in
                     Text(line.text)
                         .font(.system(size: 11, design: .monospaced))
-                        .foregroundStyle(theme.textSecondary)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
+                        .foregroundStyle(
+                            line.stream == "stderr" ? theme.textSecondary : theme.textTertiary
+                        )
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 10)
-            .frame(maxWidth: 460, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: 10)
-                    .fill(theme.cardQuietBackground)
-            )
-            .padding(.top, 6)
-            .animation(.easeOut(duration: 0.15), value: worktreeCreator.phase?.logs.count)
-            .accessibilityHidden(true)
+            .textSelection(.enabled)
+            .padding(10)
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: {
+                creationLogHeight = $0
+            }
         }
+        .frame(height: min(creationLogHeight, Self.creationLogMaxHeight))
+        .defaultScrollAnchor(.bottom)
+        .frame(maxWidth: 460)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(theme.cardQuietBackground)
+        )
     }
 
     private func projectCard(_ project: Project) -> some View {
