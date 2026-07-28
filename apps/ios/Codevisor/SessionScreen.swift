@@ -589,7 +589,9 @@ private struct SubagentSection: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 8) {
                 Image(systemName: "wand.and.sparkles")
-                    .font(.callout)
+                    // One notch under the callout label, like the tool group
+                    // icon — the macOS transcript's icon-under-text ratio.
+                    .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .frame(width: 16)
                 Text(call.displayTitle(diffTotals: nil))

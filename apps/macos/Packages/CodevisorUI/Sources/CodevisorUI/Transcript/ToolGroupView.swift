@@ -24,6 +24,14 @@ public struct ToolGroupView: View {
     // The seed default IS `autoExpanded`, so before any user tap the group
     // follows the work; the auto transition below writes through, and settled
     // groups thereafter change only by user tap.
+    private static var iconFont: Font {
+        #if os(iOS)
+        .subheadline
+        #else
+        .callout
+        #endif
+    }
+
     private var store: TranscriptDisclosureStore { disclosureStore ?? .previews }
     private var disclosureKey: TranscriptDisclosureStore.Key { .toolGroup(calls.first?.toolCallId ?? "") }
     private var isExpanded: Bool { store.isExpanded(disclosureKey, default: autoExpanded) }
@@ -34,7 +42,10 @@ public struct ToolGroupView: View {
                 // Pinned to the first call's icon — a group's icon flipping
                 // as more calls stream in reads as UI churn.
                 Image(systemName: ToolCallSummary.symbol(calls.first.map { [$0] } ?? []))
-                    .font(.callout)
+                    // One notch under the row label on both platforms: macOS
+                    // pairs a 12pt callout icon with 13pt body text; iOS rows
+                    // label at callout 16, so the icon sits at subheadline 15.
+                    .font(Self.iconFont)
                     .foregroundStyle(.secondary)
                     .frame(width: 16)
                 Text(ToolCallSummary.describe(calls))
