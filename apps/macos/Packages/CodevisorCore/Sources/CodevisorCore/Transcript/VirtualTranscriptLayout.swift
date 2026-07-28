@@ -61,6 +61,68 @@ public struct VirtualTranscriptLayout: Sendable, Equatable {
         }
     }
 
+    /// Memberwise init for incremental copies — see `updatingHeight`.
+    private init(
+        keys: [String],
+        heights: [CGFloat],
+        topOffsets: [CGFloat],
+        bottomOffsets: [CGFloat],
+        totalHeight: CGFloat,
+        indexByKey: [String: Int]
+    ) {
+        self.keys = keys
+        self.heights = heights
+        self.topOffsets = topOffsets
+        self.bottomOffsets = bottomOffsets
+        self.totalHeight = totalHeight
+        self.indexByKey = indexByKey
+    }
+
+    /// A copy of this layout with one row's height replaced and every offset
+    /// reconciled. This is the streaming hot path — the active row's height
+    /// changes on nearly every flush — and the full initializer's cost is
+    /// dominated by re-hashing every key into `indexByKey` (plus, at the call
+    /// site, re-materializing every key string). Here `keys`/`indexByKey` are
+    /// shared and the numeric arrays take one memcpy + a linear float pass:
+    /// no hashing, no string work, no per-row allocation.
+    ///
+    /// Offset math (bottom-anchored): with `delta = newHeight - oldHeight`,
+    /// rows after the change shift their top offsets by `delta`; rows before
+    /// it move `delta` farther from the bottom; the changed row's own bottom
+    /// offset and every other value are unchanged.
+    ///
+    /// Returns nil when `key` is absent — the caller must fall back to a full
+    /// rebuild (row set changed).
+    public func updatingHeight(forKey key: String, to height: CGFloat) -> VirtualTranscriptLayout? {
+        guard let index = indexByKey[key] else { return nil }
+        let clamped = max(1, height)
+        let delta = clamped - heights[index]
+        guard delta != 0 else { return self }
+
+        var heights = self.heights
+        var topOffsets = self.topOffsets
+        var bottomOffsets = self.bottomOffsets
+        heights[index] = clamped
+        if index + 1 < topOffsets.count {
+            for next in (index + 1)..<topOffsets.count {
+                topOffsets[next] += delta
+            }
+        }
+        if index > 0 {
+            for previous in 0..<index {
+                bottomOffsets[previous] += delta
+            }
+        }
+        return VirtualTranscriptLayout(
+            keys: keys,
+            heights: heights,
+            topOffsets: topOffsets,
+            bottomOffsets: bottomOffsets,
+            totalHeight: totalHeight + delta,
+            indexByKey: indexByKey
+        )
+    }
+
     public var isEmpty: Bool { keys.isEmpty }
 
     public func frame(at index: Int) -> CGRect {

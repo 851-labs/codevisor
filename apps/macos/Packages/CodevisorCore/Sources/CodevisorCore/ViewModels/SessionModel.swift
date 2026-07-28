@@ -82,7 +82,14 @@ public final class SessionModel {
     /// Background tasks the agent is running (backgrounded shells, subagents),
     /// replaced wholesale on every server snapshot. Non-empty after a turn ends
     /// means the agent will come back on its own once the work settles.
-    public private(set) var backgroundTasks: [BackgroundTaskInfo] = []
+    public private(set) var backgroundTasks: [BackgroundTaskInfo] = [] {
+        didSet {
+            let ids = Set(backgroundTasks.compactMap { $0.taskType == "subagent" ? $0.toolUseId : nil })
+            if ids != runningSubagentToolCallIds {
+                runningSubagentToolCallIds = ids
+            }
+        }
+    }
     /// Whether any snapshot has arrived yet. Terminal-tab pruning waits for
     /// this: before the first snapshot, an empty `backgroundTasks` just means
     /// history hasn't replayed, not that every task ended.
@@ -121,9 +128,10 @@ public final class SessionModel {
     /// `toolUseId` with the spawning call id). A subagent's turn can end while
     /// it keeps working in the background; the transcript reads this to keep its
     /// section open and its label shimmering until it leaves the snapshot.
-    public var runningSubagentToolCallIds: Set<String> {
-        Set(backgroundTasks.compactMap { $0.taskType == "subagent" ? $0.toolUseId : nil })
-    }
+    /// Stored (maintained by `backgroundTasks.didSet`) because it is read in
+    /// several view bodies per flush — computing it allocated a fresh Set per
+    /// read, and only real membership changes should invalidate observers.
+    public private(set) var runningSubagentToolCallIds: Set<String> = []
 
     /// The session's persistent goal, when the harness supports goal mode.
     /// Snapshots are idempotent full state — each update replaces the last.
@@ -206,6 +214,21 @@ public final class SessionModel {
     /// set this to zero so their yield-based settling needs no wall-clock wait.
     static var eventFlushInterval: Duration = .milliseconds(16)
 
+    /// Flush cadence while no transcript view is mounted for this session.
+    /// Events still apply in order and every lifecycle callback still fires —
+    /// just on a coarser tick, so N backgrounded streams stop costing N×60
+    /// main-actor reduce/CoW passes per second for pixels nobody can see.
+    /// `viewDidAppear()` flushes immediately, so returning to a chat shows a
+    /// fully caught-up transcript on its first visible frame.
+    static var backgroundEventFlushInterval: Duration = .milliseconds(300)
+
+    /// Number of mounted transcript views currently showing this model — a
+    /// count, not a Bool, because one session can be on screen in several
+    /// windows/splits at once. Deliberately not observable: visibility only
+    /// tunes flush cadence, it must never invalidate views.
+    @ObservationIgnored private var visibleViewCount = 0
+    private var isViewVisible: Bool { visibleViewCount > 0 }
+
     public init(
         serverTransport: ServerSessionTransport,
         sessionId: String,
@@ -265,15 +288,36 @@ public final class SessionModel {
         }
     }
 
+    /// A transcript view for this session became visible. Applies everything
+    /// buffered while hidden in one synchronous pass so the first visible
+    /// frame is current, then restores the per-frame cadence.
+    public func viewDidAppear() {
+        visibleViewCount += 1
+        if visibleViewCount == 1 {
+            flushPendingEvents()
+        }
+    }
+
+    public func viewDidDisappear() {
+        visibleViewCount = max(0, visibleViewCount - 1)
+    }
+
     /// Schedules one buffered flush. The cadence stretches as transcript text
-    /// grows, keeping stream updates smooth without monopolizing the main actor.
+    /// grows, keeping stream updates smooth without monopolizing the main
+    /// actor — and stretches much further when no view is mounted at all.
     private func scheduleFlush() {
         guard !isFlushScheduled else { return }
         isFlushScheduled = true
-        let interval = Self.flushInterval(
-            base: Self.eventFlushInterval,
-            streamedBytes: transcriptStreamBytes
-        )
+        let interval: Duration = if isViewVisible || Self.eventFlushInterval == .zero {
+            // Zero base means a test drives settling by yielding; never make
+            // it wait out the background cadence.
+            Self.flushInterval(
+                base: Self.eventFlushInterval,
+                streamedBytes: transcriptStreamBytes
+            )
+        } else {
+            Self.backgroundEventFlushInterval
+        }
         Task { @MainActor [weak self] in
             if interval > .zero {
                 try? await Task.sleep(for: interval)

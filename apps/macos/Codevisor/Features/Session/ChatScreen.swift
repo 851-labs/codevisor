@@ -100,10 +100,12 @@ struct ChatScreen: View {
         .onAppear {
             autoFollow = controller.scrollState?.followMode.followsLatest ?? true
             isAtBottom = controller.scrollState?.isAtBottom ?? true
+            controller.transcriptViewDidAppear()
         }
         .onDisappear {
             historyLoadTask?.cancel()
             historyLoadTask = nil
+            controller.transcriptViewDidDisappear()
         }
         // Every chat pane loads its own history: only the ROUTED session's
         // controller is prepared by the container, but a workspace can show

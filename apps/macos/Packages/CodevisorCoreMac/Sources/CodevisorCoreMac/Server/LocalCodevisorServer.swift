@@ -46,6 +46,10 @@ public final class LocalCodevisorServer: LocalServerControlling {
     private var activeBootId: String?
     private var managedService: LocalCodevisorManagedService?
     private var updateRequestMonitor: Task<Void, Never>?
+    /// Event-driven replacement for the old 1 Hz stat poll; watches the
+    /// request file's directory. The Task above survives only as the
+    /// fallback when the directory can't be opened for events.
+    private var updateRequestSource: (any DispatchSourceFileSystemObject)?
     /// In-flight `ensureRunning()`; concurrent callers (onboarding and the
     /// root view both prepare the machine on first launch) join it instead of
     /// racing past `currentHealth()` and double-launching the server.
@@ -247,6 +251,8 @@ public final class LocalCodevisorServer: LocalServerControlling {
     public func prepareForAppUpdate() async -> Bool {
         updateRequestMonitor?.cancel()
         updateRequestMonitor = nil
+        updateRequestSource?.cancel()
+        updateRequestSource = nil
         try? await managedService?.stop()
         return await shutdown()
     }
@@ -298,17 +304,47 @@ public final class LocalCodevisorServer: LocalServerControlling {
     }
 
     private func startUpdateRequestMonitor() {
-        guard managedService != nil, updateRequestMonitor == nil else { return }
+        guard managedService != nil, updateRequestMonitor == nil, updateRequestSource == nil else { return }
         let requestURL = Self.defaultAppUpdateRequestURL()
-        updateRequestMonitor = Task { [weak self] in
-            while !Task.isCancelled {
-                if FileManager.default.fileExists(atPath: requestURL.path) {
-                    try? FileManager.default.removeItem(at: requestURL)
-                    self?.onUpdateRequested?()
+        // Consume a request written while nothing was watching, then watch
+        // the directory for writes. The previous 1 Hz `stat` loop kept the
+        // process waking every second for its entire lifetime — the kind of
+        // permanent timer that blocks App Nap and shows up in powermetrics
+        // as a never-quiet baseline.
+        consumePendingUpdateRequest(at: requestURL)
+        let directory = requestURL.deletingLastPathComponent()
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let descriptor = open(directory.path, O_EVTONLY)
+        guard descriptor >= 0 else {
+            // Fall back to the old poll (should not happen once the directory
+            // above exists) at a gentler cadence.
+            updateRequestMonitor = Task { @MainActor [weak self] in
+                while !Task.isCancelled {
+                    self?.consumePendingUpdateRequest(at: requestURL)
+                    try? await Task.sleep(for: .seconds(5))
                 }
-                try? await Task.sleep(for: .seconds(1))
+            }
+            return
+        }
+        let source = DispatchSource.makeFileSystemObjectSource(
+            fileDescriptor: descriptor,
+            eventMask: .write,
+            queue: .main
+        )
+        source.setEventHandler { [weak self] in
+            MainActor.assumeIsolated {
+                self?.consumePendingUpdateRequest(at: requestURL)
             }
         }
+        source.setCancelHandler { close(descriptor) }
+        source.resume()
+        updateRequestSource = source
+    }
+
+    private func consumePendingUpdateRequest(at requestURL: URL) {
+        guard FileManager.default.fileExists(atPath: requestURL.path) else { return }
+        try? FileManager.default.removeItem(at: requestURL)
+        onUpdateRequested?()
     }
 
     /// Watches the launched server for the update-handoff exit status, hopping

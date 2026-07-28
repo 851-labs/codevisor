@@ -251,6 +251,10 @@ public final class FileSystemStore: PersistenceStore, @unchecked Sendable {
     /// Synchronously drains all queued writes. Called on app termination and
     /// available to tests.
     public func flushPendingWrites() {
+        // Repository saves encode on a background stage before their bytes
+        // reach this store — drain that stage first, so a save issued moments
+        // before app termination is durably included in this flush.
+        PersistenceEncoding.drain()
         writeQueue.sync { }
     }
 }

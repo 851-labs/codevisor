@@ -135,22 +135,33 @@ final class StreamingSegmenter {
     }
 
     /// The suffix of `text` after `prefix`, or nil when `text` does not start
-    /// with `prefix`. Byte-wise on the UTF-8 views: `String.hasPrefix` walks
-    /// grapheme clusters over the entire prefix — a large constant on a path
-    /// that runs against the full accumulated text every flush.
+    /// with `prefix`. Verified with one `memcmp` over contiguous UTF-8:
+    /// `String.hasPrefix` walks grapheme clusters and the previous hand-rolled
+    /// byte loop paid a bounds-checked index step per byte — both large
+    /// constants on a path that runs against the full accumulated text every
+    /// flush. `memcmp` runs at memory bandwidth, so verification stays
+    /// exact (a rewrite is still detected anywhere in the text) at negligible
+    /// cost.
     static func utf8Suffix(of text: String, after prefix: String) -> String? {
-        let textBytes = text.utf8
-        let prefixBytes = prefix.utf8
-        guard textBytes.count >= prefixBytes.count else { return nil }
-        var textIndex = textBytes.startIndex
-        for byte in prefixBytes {
-            guard textBytes[textIndex] == byte else { return nil }
-            textIndex = textBytes.index(after: textIndex)
+        var text = text
+        var prefix = prefix
+        return text.withUTF8 { textBytes -> String? in
+            prefix.withUTF8 { prefixBytes -> String? in
+                guard textBytes.count >= prefixBytes.count else { return nil }
+                if !prefixBytes.isEmpty,
+                   memcmp(textBytes.baseAddress!, prefixBytes.baseAddress!, prefixBytes.count) != 0 {
+                    return nil
+                }
+                // Decoding from a byte offset is safe even when a chunk
+                // boundary split a grapheme cluster: `prefix` is itself a
+                // valid String, so the cut is at a scalar boundary, and
+                // appending the suffix to `pendingTail` re-forms any split
+                // cluster.
+                return String(
+                    decoding: UnsafeBufferPointer(rebasing: textBytes[prefixBytes.count...]),
+                    as: UTF8.self
+                )
+            }
         }
-        // Decoding from a byte offset is safe even when a chunk boundary
-        // split a grapheme cluster: `prefix` is itself a valid String, so the
-        // cut is at a scalar boundary, and appending the suffix to
-        // `pendingTail` re-forms any split cluster.
-        return String(decoding: textBytes[textIndex...], as: UTF8.self)
     }
 }

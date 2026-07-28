@@ -293,17 +293,48 @@ public class TranscriptSelectableTextView: NSTextView {
 
     public override func updateTrackingAreas() {
         super.updateTrackingAreas()
-        if let linkHoverTrackingArea {
+        // Install the hover tracking area ONLY when there is a link to hover.
+        // AppKit calls this after every layout/scroll pass for every mounted
+        // text view; unconditionally removing and re-adding an area forced a
+        // structural tracking-region rebuild per view per scroll tick, and a
+        // `.mouseMoved` area on link-free text ran a TextKit hit test at
+        // pointer-move rate for nothing. The area uses `.inVisibleRect`, so
+        // once installed it needs no per-layout refresh at all.
+        if textStorageContainsLinks {
+            guard linkHoverTrackingArea == nil else { return }
+            let area = NSTrackingArea(
+                rect: .zero,
+                options: [.activeInKeyWindow, .inVisibleRect, .mouseMoved, .mouseEnteredAndExited],
+                owner: self,
+                userInfo: nil
+            )
+            addTrackingArea(area)
+            linkHoverTrackingArea = area
+        } else if let linkHoverTrackingArea {
             removeTrackingArea(linkHoverTrackingArea)
+            self.linkHoverTrackingArea = nil
+            updateLinkHover(at: nil)
         }
-        let area = NSTrackingArea(
-            rect: .zero,
-            options: [.activeInKeyWindow, .inVisibleRect, .mouseMoved, .mouseEnteredAndExited],
-            owner: self,
-            userInfo: nil
-        )
-        addTrackingArea(area)
-        linkHoverTrackingArea = area
+    }
+
+    /// Whether the current content has any `.link` run. Early-exits at the
+    /// first link; link-free text (the vast majority of a transcript) costs
+    /// one bounded attribute-run walk, far cheaper than the tracking-region
+    /// rebuild it replaces.
+    private var textStorageContainsLinks: Bool {
+        guard let textStorage, textStorage.length > 0 else { return false }
+        var found = false
+        textStorage.enumerateAttribute(
+            .link,
+            in: NSRange(location: 0, length: textStorage.length),
+            options: [.longestEffectiveRangeNotRequired]
+        ) { value, _, stop in
+            if value != nil {
+                found = true
+                stop.pointee = true
+            }
+        }
+        return found
     }
 
     public override func mouseMoved(with event: NSEvent) {

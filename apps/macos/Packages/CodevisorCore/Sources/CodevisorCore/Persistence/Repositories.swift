@@ -27,6 +27,10 @@ public struct CodableRepository<Element: Codable & Sendable>: Sendable {
     }
 
     public func load() -> [Element] {
+        // Read-your-writes: saves encode on the shared serial queue, so drain
+        // it before reading. Loads happen at startup/model construction, so
+        // this barrier waits on at most a couple of in-flight encodes.
+        PersistenceEncoding.drain()
         guard let data = store.loadData(forKey: key) else { return [] }
         do {
             return try JSONDecoder().decode([Element].self, from: data)
@@ -44,11 +48,36 @@ public struct CodableRepository<Element: Codable & Sendable>: Sendable {
     }
 
     public func save(_ elements: [Element]) {
-        do {
-            try store.saveData(JSONEncoder().encode(elements), forKey: key)
-        } catch {
-            Log.persistence.error("Failed to save \(key, privacy: .public): \(String(describing: error), privacy: .public)")
+        // Encode off the caller's thread. Session/project mutations persist
+        // from dozens of main-actor call sites — several times per second
+        // during server event bursts — and the full-array encode was the only
+        // main-thread piece left (the store already coalesces disk writes).
+        // The serial queue preserves save ordering per key; the store's
+        // per-key pending slot then keeps only the newest bytes.
+        let store = store
+        let key = key
+        PersistenceEncoding.queue.async {
+            do {
+                try store.saveData(PersistenceEncoding.encoder.encode(elements), forKey: key)
+            } catch {
+                Log.persistence.error("Failed to save \(key, privacy: .public): \(String(describing: error), privacy: .public)")
+            }
         }
+    }
+}
+
+/// Shared off-main encode context for repository saves. A single serial queue
+/// keeps cross-repository ordering deterministic and one reused encoder
+/// avoids a fresh `JSONEncoder` allocation per save. The encoder is only ever
+/// touched from this queue.
+enum PersistenceEncoding {
+    static let queue = DispatchQueue(label: "com.codevisor.persistence-encode", qos: .utility)
+    static let encoder = JSONEncoder()
+
+    /// Blocks until every save enqueued so far has handed its bytes to the
+    /// store, restoring the synchronous save→load contract for readers.
+    static func drain() {
+        queue.sync {}
     }
 }
 
@@ -76,6 +105,9 @@ public struct DefaultProjectRepository: ProjectRepository {
               let legacy = try? JSONDecoder().decode([Project].self, from: data),
               !legacy.isEmpty else { return [] }
         repository.save(legacy)
+        // One-time migration: make the new key visible to direct store reads
+        // before returning, preserving the old synchronous save semantics.
+        PersistenceEncoding.drain()
         return legacy
     }
 

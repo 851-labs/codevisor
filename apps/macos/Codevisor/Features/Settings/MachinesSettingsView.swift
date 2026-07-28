@@ -18,6 +18,7 @@ private struct MachineActionError: Identifiable {
 struct MachinesSettingsView: View {
     @Environment(AppEnvironment.self) private var environment
     @Environment(\.theme) private var theme
+    @Environment(\.controlActiveState) private var controlActiveState
 
     @State private var showingAdd = false
     @State private var discovery = MachineDiscoveryService()
@@ -29,6 +30,17 @@ struct MachinesSettingsView: View {
     @State private var actionError: MachineActionError?
 
     private var machines: MachineController { environment.machines }
+
+    /// The polls below run ONLY while this pane can actually be seen: the
+    /// Machines tab is selected and the Settings window is key/active. The
+    /// Settings scene retains rendered tabs, so an unguarded `.task` here
+    /// kept a `tailscale status` subprocess (30s) and a serial per-machine
+    /// HTTP probe (10s) running for the rest of the app's lifetime — even
+    /// with the window closed. `.task(id:)` restarts the loops (with an
+    /// immediate refresh) the moment the pane becomes visible again.
+    private var isPollingActive: Bool {
+        controlActiveState != .inactive && SettingsRouter.shared.selectedTab == .machines
+    }
 
     var body: some View {
         Form {
@@ -59,21 +71,15 @@ struct MachinesSettingsView: View {
             }
         }
         .settingsPaneFormStyle(theme)
-        // Discover only while this pane is on screen; no background polling.
-        .task {
+        // Discover only while this pane is visible; no background polling.
+        // Keying on `isPollingActive` both stops the loop when the pane can't
+        // be seen and restarts it (immediate refresh included) when the tab
+        // is re-selected or the window comes back.
+        .task(id: isPollingActive) {
+            guard isPollingActive else { return }
             while !Task.isCancelled {
                 await discovery.refresh(registeredHosts: registeredHosts)
                 try? await Task.sleep(for: .seconds(30))
-            }
-        }
-        // The Settings window persists, so `.task` only runs once. Refetch
-        // whenever this tab is (re)selected — e.g. via "Manage Machines" — and
-        // whenever the machine list changes, so discovery reflects reality.
-        .onChange(of: SettingsRouter.shared.selectedTab) { _, tab in
-            guard tab == .machines else { return }
-            Task {
-                await discovery.refresh(registeredHosts: registeredHosts)
-                await refreshStatuses()
             }
         }
         .onChange(of: machines.machines.map(\.id)) { _, _ in
@@ -138,8 +144,10 @@ struct MachinesSettingsView: View {
         }
         // Keep statuses honest while the pane is open: a machine that was mid
         // restart (or briefly offline) when first probed recovers on the next
-        // pass instead of staying stuck on "Unreachable".
-        .task {
+        // pass instead of staying stuck on "Unreachable". Gated exactly like
+        // discovery above — no probes while nobody is looking.
+        .task(id: isPollingActive) {
+            guard isPollingActive else { return }
             while !Task.isCancelled {
                 await refreshStatuses()
                 try? await Task.sleep(for: .seconds(10))

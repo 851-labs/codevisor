@@ -39,14 +39,42 @@ private final class CodevisorGhosttySurfaceView: Ghostty.SurfaceView {
         return accepted
     }
 
+    /// The size last forwarded into libghostty, plus a one-per-runloop-turn
+    /// coalescer. A libghostty resize is a full screen/scrollback reflow and
+    /// SIGWINCHes the proxy PTY (a JSON frame over the WebSocket, a
+    /// `node-pty.resize` on the server) — and a split-divider drag delivers
+    /// frame changes at pointer-event rate to every terminal in the branch,
+    /// with SwiftUI layout often setting the same frame several times per
+    /// pass. Coalescing defers the reflow by at most one runloop turn.
+    private var lastForwardedSize: NSSize = .zero
+    private var pendingSizeUpdate = false
+
     override func setFrameSize(_ newSize: NSSize) {
         super.setFrameSize(newSize)
-        sizeDidChange(newSize)
+        guard newSize != lastForwardedSize else { return }
+        lastForwardedSize = newSize
+        scheduleSizeUpdate()
+    }
+
+    private func scheduleSizeUpdate() {
+        guard !pendingSizeUpdate else { return }
+        pendingSizeUpdate = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.pendingSizeUpdate = false
+            // Read the frame at fire time so a burst of drag deltas resolves
+            // to a single reflow at the latest geometry.
+            self.lastForwardedSize = self.frame.size
+            self.sizeDidChange(self.frame.size)
+        }
     }
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         guard window != nil else { return }
+        // Synchronous on purpose: the backing scale can change with the same
+        // frame size, and first attach must size the surface before it draws.
+        lastForwardedSize = frame.size
         sizeDidChange(frame.size)
     }
 

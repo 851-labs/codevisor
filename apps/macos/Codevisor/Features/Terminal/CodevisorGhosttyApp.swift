@@ -39,6 +39,15 @@ final class CodevisorGhosttyApp {
     /// Live surface views that receive config updates on theme switches.
     private let surfaces = NSHashTable<Ghostty.SurfaceView>.weakObjects()
 
+    /// True while a main-queue app tick is already enqueued. libghostty fires
+    /// `wakeup` per renderer/PTY event — hundreds per second under heavy
+    /// terminal output — and enqueuing a `ghostty_app_tick` for each floods
+    /// the main queue with hops that compete with SwiftUI rendering. One
+    /// pending tick drains any number of wakeups; a wakeup that lands during
+    /// the tick itself (flag already cleared) enqueues the next one, so no
+    /// wakeup is ever lost.
+    nonisolated let pendingWakeupTick = OSAllocatedUnfairLock(initialState: false)
+
     // MARK: - Theme
 
     /// The active terminal theme. Seeded by ThemedRoot before `prewarm()` runs
@@ -361,8 +370,20 @@ final class CodevisorGhosttyApp {
 
     nonisolated static func wakeup(_ userdata: UnsafeMutableRawPointer?) {
         let host = hostApp(from: userdata)
-        // Wakeup can be called from any thread; tick on main.
-        DispatchQueue.main.async { host.appTick() }
+        // Wakeup can be called from any thread; tick on main — but coalesce:
+        // all wakeups arriving while one tick is queued collapse into it.
+        let alreadyPending = host.pendingWakeupTick.withLock { pending -> Bool in
+            if pending { return true }
+            pending = true
+            return false
+        }
+        guard !alreadyPending else { return }
+        DispatchQueue.main.async {
+            // Clear BEFORE ticking so a wakeup fired mid-tick schedules the
+            // follow-up tick it asked for.
+            host.pendingWakeupTick.withLock { $0 = false }
+            host.appTick()
+        }
     }
 
     nonisolated static func closeSurface(_ userdata: UnsafeMutableRawPointer?, processAlive: Bool) {

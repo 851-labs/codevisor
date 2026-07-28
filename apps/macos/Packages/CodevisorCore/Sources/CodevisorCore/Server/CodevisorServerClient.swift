@@ -311,6 +311,12 @@ public protocol CodevisorServerClienting: Sendable {
     func eventStream(since: Int) -> AsyncThrowingStream<ServerEventEnvelope, any Error>
     /// Project/session metadata changes after a freshly loaded shell snapshot.
     func shellEventStream() -> AsyncThrowingStream<ServerEventEnvelope, any Error>
+    /// `shellEventStream()`, but events whose kind is not in `handledKinds`
+    /// are dropped inside the stream's own (non-main) task. The global socket
+    /// carries every `session.output` token chunk of every session; without
+    /// this filter each one is fully decoded and hopped onto the consumer's
+    /// actor just to be discarded.
+    func shellEventStream(handledKinds: Set<String>) -> AsyncThrowingStream<ServerEventEnvelope, any Error>
     /// Session-scoped sequence and replay. Unlike the machine stream, `since`
     /// is meaningful only within this session.
     func sessionEventStream(id: UUID, since: Int) -> AsyncThrowingStream<ServerEventEnvelope, any Error>
@@ -377,6 +383,26 @@ public extension CodevisorServerClienting {
     func shellEventStream() -> AsyncThrowingStream<ServerEventEnvelope, any Error> {
         // Test doubles and old transports preserve their existing behavior.
         eventStream(since: 0)
+    }
+
+    /// Default for fakes/older transports: filter the unfiltered stream in a
+    /// detached task so unhandled kinds never reach the caller's actor. The
+    /// HTTP client overrides this to also skip payload decoding.
+    func shellEventStream(handledKinds: Set<String>) -> AsyncThrowingStream<ServerEventEnvelope, any Error> {
+        let source = shellEventStream()
+        return AsyncThrowingStream { continuation in
+            let task = Task {
+                do {
+                    for try await event in source where handledKinds.contains(event.kind) {
+                        continuation.yield(event)
+                    }
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+            continuation.onTermination = { _ in task.cancel() }
+        }
     }
 
     func sessionEventStream(id: UUID, since: Int) -> AsyncThrowingStream<ServerEventEnvelope, any Error> {
@@ -3259,13 +3285,27 @@ public final class CodevisorServerClient: CodevisorServerClienting, @unchecked S
         makeEventStream(path: "/v1/events/socket", since: Int.max)
     }
 
+    public func shellEventStream(handledKinds: Set<String>) -> AsyncThrowingStream<ServerEventEnvelope, any Error> {
+        makeEventStream(path: "/v1/events/socket", since: Int.max, handledKinds: handledKinds)
+    }
+
     public func sessionEventStream(id: UUID, since: Int) -> AsyncThrowingStream<ServerEventEnvelope, any Error> {
         makeEventStream(path: "/v1/sessions/\(id.uuidString)/events/socket", since: since)
     }
 
+    /// Just enough of the envelope to advance the cursor and decide whether
+    /// the full payload is worth decoding. `session.output` chunks dominate
+    /// the global socket during streaming; skipping their `JSONValue` tree
+    /// build here is the difference between O(tokens) and O(handled events).
+    private struct ServerEventKindProbe: Decodable {
+        var id: Int
+        var kind: String
+    }
+
     private func makeEventStream(
         path: String,
-        since: Int
+        since: Int,
+        handledKinds: Set<String>? = nil
     ) -> AsyncThrowingStream<ServerEventEnvelope, any Error> {
         AsyncThrowingStream { continuation in
             let task = Task {
@@ -3283,6 +3323,14 @@ public final class CodevisorServerClient: CodevisorServerClienting, @unchecked S
                         while !Task.isCancelled {
                             let message = try await socket.receive()
                             guard let data = Self.data(from: message) else { continue }
+                            if let handledKinds {
+                                let probe = try decoder.decode(ServerEventKindProbe.self, from: data)
+                                // Filtered events still advance the cursor so a
+                                // reconnect never replays the skipped volume.
+                                cursor = cursor == Int.max ? probe.id : max(cursor, probe.id)
+                                failures = 0
+                                guard handledKinds.contains(probe.kind) else { continue }
+                            }
                             let event = try decoder.decode(ServerEventEnvelope.self, from: data)
                             // Int.max requests a live-only subscription. Once the
                             // first event arrives, retain its real cursor so a

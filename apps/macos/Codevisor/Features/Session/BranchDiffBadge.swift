@@ -46,9 +46,13 @@ struct BranchDiffBadge: View {
         }
         .task(id: directory) {
             // Event-driven refresh: recompute when the working tree actually
-            // changes. The stream's latency window coalesces edit bursts.
+            // changes. The stream's latency window coalesces edit bursts, and
+            // `bufferingNewest(1)` guarantees at most ONE recompute is queued
+            // no matter how many callbacks land while a sweep is running —
+            // the default unbounded buffer turned an agent's edit storm into
+            // an equal-length queue of sequential full git sweeps.
             guard !AppPreview.isRunning else { return }
-            let changes = AsyncStream<Void> { continuation in
+            let changes = AsyncStream<Void>(bufferingPolicy: .bufferingNewest(1)) { continuation in
                 let watcher = DirectoryChangeWatcher(directory: directory) {
                     continuation.yield()
                 }
@@ -56,6 +60,11 @@ struct BranchDiffBadge: View {
             }
             for await _ in changes {
                 totals = await GitBranchDiff.totals(in: directory)
+                // Floor between event-driven sweeps while events keep coming;
+                // everything arriving during the pause collapses into the one
+                // buffered event consumed next, so the final state is never
+                // missed — just batched.
+                try? await Task.sleep(for: .seconds(2))
             }
         }
     }
@@ -98,6 +107,16 @@ private final class DirectoryChangeWatcher: @unchecked Sendable {
             FSEventStreamCreateFlags(kFSEventStreamCreateFlagUseCFTypes | kFSEventStreamCreateFlagIgnoreSelf)
         ) else { return nil }
         self.stream = stream
+        // Prune the two universally-irrelevant subtrees at the kernel level
+        // instead of waking up to filter their paths in the callback. `.git`
+        // never changes the working-tree diff by itself (and is also filtered
+        // above); `node_modules` is gitignored everywhere and dominates event
+        // volume during installs. Anything else (build dirs a repo might
+        // track) still flows through normally.
+        FSEventStreamSetExclusionPaths(stream, [
+            directory.appendingPathComponent(".git").path,
+            directory.appendingPathComponent("node_modules").path,
+        ] as CFArray)
         FSEventStreamSetDispatchQueue(stream, queue)
         FSEventStreamStart(stream)
     }
@@ -138,12 +157,32 @@ enum GitBranchDiff {
 
     static func totals(in directory: URL) async -> LineDiff.Totals? {
         await Task.detached(priority: .utility) {
-            guard output(["rev-parse", "--is-inside-work-tree"], in: directory) == "true" else {
-                return nil
+            let repoKey = directory.path
+            // "Is a work tree" can only flip false→true (git init); a
+            // vanished repo just makes the later git calls fail to nil. So a
+            // positive answer is cached forever and a negative one re-probes.
+            if !(await Cache.shared.isKnownWorkTree(repoKey)) {
+                guard output(["rev-parse", "--is-inside-work-tree"], in: directory) == "true" else {
+                    return nil
+                }
+                await Cache.shared.markWorkTree(repoKey)
             }
-            let base = baseRefs.lazy
-                .compactMap { output(["merge-base", "HEAD", $0], in: directory) }
-                .first { !$0.isEmpty } ?? "HEAD"
+            // The merge-base can only move when HEAD moves — or when a fetch
+            // updates the default branch, which the short TTL covers. This
+            // replaces up to five `git merge-base` spawns per sweep with one
+            // `rev-parse` in the steady state.
+            let head = output(["rev-parse", "HEAD"], in: directory) ?? ""
+            let base: String
+            if !head.isEmpty, let cached = await Cache.shared.base(for: repoKey, head: head) {
+                base = cached
+            } else {
+                base = baseRefs.lazy
+                    .compactMap { output(["merge-base", "HEAD", $0], in: directory) }
+                    .first { !$0.isEmpty } ?? "HEAD"
+                if !head.isEmpty {
+                    await Cache.shared.setBase(base, for: repoKey, head: head)
+                }
+            }
             // Base → working tree, so committed branch work and uncommitted
             // edits both count.
             guard let numstat = output(["diff", "--numstat", base], in: directory) else {
@@ -153,12 +192,83 @@ enum GitBranchDiff {
             // `git diff` skips untracked files, but brand-new files are most
             // of what agent sessions produce — count their lines as additions.
             if let untracked = output(["ls-files", "--others", "--exclude-standard", "-z"], in: directory) {
-                for path in untracked.split(separator: "\u{0}") {
-                    totals.added += lineCount(of: directory.appendingPathComponent(String(path)))
-                }
+                let paths = untracked.split(separator: "\u{0}").map(String.init)
+                totals.added += await Cache.shared.untrackedLineTotal(
+                    directory: directory,
+                    repoKey: repoKey,
+                    paths: paths
+                )
             }
             return totals
         }.value
+    }
+
+    /// Per-repo memo shared by every badge and sweep. Everything cached here
+    /// is verifiable staleness-free (work-tree flag, stat-keyed line counts)
+    /// or bounded by a short TTL (merge-base after a fetch moves the default
+    /// branch without HEAD moving).
+    private actor Cache {
+        static let shared = Cache()
+
+        private struct BaseEntry {
+            let head: String
+            let base: String
+            let resolvedAt: ContinuousClock.Instant
+        }
+
+        private struct LineCountEntry {
+            let modified: Date
+            let size: Int
+            let lines: Int
+        }
+
+        private var knownWorkTrees: Set<String> = []
+        private var bases: [String: BaseEntry] = [:]
+        /// Keyed repo → untracked path → stat-fingerprinted count. Replaced
+        /// wholesale per sweep, so files that stop being untracked fall out.
+        private var lineCounts: [String: [String: LineCountEntry]] = [:]
+
+        private static let baseTTL: Duration = .seconds(60)
+
+        func isKnownWorkTree(_ key: String) -> Bool { knownWorkTrees.contains(key) }
+        func markWorkTree(_ key: String) { knownWorkTrees.insert(key) }
+
+        func base(for key: String, head: String) -> String? {
+            guard let entry = bases[key],
+                  entry.head == head,
+                  ContinuousClock.now - entry.resolvedAt < Self.baseTTL else { return nil }
+            return entry.base
+        }
+
+        func setBase(_ base: String, for key: String, head: String) {
+            bases[key] = BaseEntry(head: head, base: base, resolvedAt: .now)
+        }
+
+        /// Sums line counts for the untracked set, re-reading only files whose
+        /// (mtime, size) fingerprint moved since the last sweep — one `stat`
+        /// instead of an mmap + full byte scan per unchanged file.
+        func untrackedLineTotal(directory: URL, repoKey: String, paths: [String]) -> Int {
+            let previous = lineCounts[repoKey] ?? [:]
+            var fresh: [String: LineCountEntry] = [:]
+            fresh.reserveCapacity(paths.count)
+            var total = 0
+            for path in paths {
+                let url = directory.appendingPathComponent(path)
+                let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)
+                let modified = attributes?[.modificationDate] as? Date ?? .distantPast
+                let size = (attributes?[.size] as? NSNumber)?.intValue ?? -1
+                if let entry = previous[path], entry.modified == modified, entry.size == size {
+                    fresh[path] = entry
+                    total += entry.lines
+                } else {
+                    let lines = GitBranchDiff.lineCount(of: url)
+                    fresh[path] = LineCountEntry(modified: modified, size: size, lines: lines)
+                    total += lines
+                }
+            }
+            lineCounts[repoKey] = fresh
+            return total
+        }
     }
 
     /// Lines in an untracked file; binary-looking or oversized files count as

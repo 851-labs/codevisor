@@ -21,6 +21,9 @@ struct TranscriptItemsView: View {
     private static let maxNestingDepth = 3
 
     var body: some View {
+        // One reverse scan per body evaluation; probing per group made this
+        // O(groups × entries) on every streaming flush.
+        let trailingToolCallIds = depth == 0 && isTurnActive ? turn.trailingToolCallIds : []
         ForEach(items) { item in
             switch item {
             case let .text(_, markdown):
@@ -39,7 +42,7 @@ struct TranscriptItemsView: View {
                     // Follow-the-work auto-expansion tracks the main thread
                     // only; nested groups stay manual to keep sections calm.
                     autoExpanded: depth == 0 && isTurnActive
-                        && (calls.last.map { turn.isTrailingToolGroup(lastToolCallId: $0.toolCallId) } ?? false)
+                        && (calls.last.map { trailingToolCallIds.contains($0.toolCallId) } ?? false)
                 )
             case let .contextCompaction(_, status):
                 switch status {

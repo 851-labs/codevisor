@@ -356,6 +356,18 @@ public final class MachineController {
 
     // MARK: - Live sync
 
+    /// The only event kinds `handleSyncEvent` acts on. Everything else on the
+    /// global socket — most of it per-token `session.output` chunks from every
+    /// streaming session — is filtered inside the client's stream task so it
+    /// never pays a main-actor hop just to hit the `default:` case below.
+    static let shellSyncEventKinds: Set<String> = [
+        "project.created", "project.updated", "project.deleted",
+        "worktree.created",
+        "session.created", "session.updated", "session.deleted",
+        "session.attention.updated", "session.archived",
+        "harness.lifecycle.updated",
+    ]
+
     /// Follows the selected server's event stream so projects and sessions
     /// stay in sync across every client connected to that server. Replaces any
     /// previous subscription (e.g. after switching machines).
@@ -369,7 +381,7 @@ public final class MachineController {
                     // The project/session lists above are the shell snapshot.
                     // Subscribe live-only after it instead of replaying the
                     // server's lifetime global log on every app launch.
-                    for try await event in client.shellEventStream() {
+                    for try await event in client.shellEventStream(handledKinds: Self.shellSyncEventKinds) {
                         guard let self, !Task.isCancelled else { return }
                         self.handleSyncEvent(event, serverId: serverId)
                     }

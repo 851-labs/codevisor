@@ -106,11 +106,14 @@ struct AssistantTurnView: View {
     var body: some View {
         let beforePlan = turn.workedItemsBeforePlan
         let afterPlan = turn.workedItemsAfterPlan
+        // Hoisted: `finalText` re-scans the turn's entries per read, and this
+        // body runs on every streaming flush.
+        let finalText = turn.finalText
         // Goal planning can begin before the assistant has said anything. In
         // that phase the ordinary Thinking…/tool activity remains the single
         // progress signal. The goal-specific label appears only once there is
         // a response for it to follow in transcript order.
-        let postResponseGoalActivity = turn.finalText == nil ? nil : goalActivity
+        let postResponseGoalActivity = finalText == nil ? nil : goalActivity
         VStack(alignment: .leading, spacing: 14) {
             // Planning/exploration collapses into the first "Worked for…"
             // section, above the proposed plan.
@@ -150,7 +153,7 @@ struct AssistantTurnView: View {
             // newer text span starts — codex tags messages up front, so its
             // candidate never demotes.
             if presentation.showsResult,
-               let final = turn.finalText, case let .text(_, markdown) = final {
+               let final = finalText, case let .text(_, markdown) = final {
                 // Selection lives inside each native TextKit run. Keeping it
                 // there avoids a selection modifier on the segment VStack and
                 // keeps first-click geometry identical to display geometry.

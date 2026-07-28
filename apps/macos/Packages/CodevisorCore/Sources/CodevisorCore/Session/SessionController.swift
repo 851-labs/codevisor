@@ -199,7 +199,18 @@ final public class SessionController {
     public private(set) var isLoadingInitialHistory = false
     private var initialHistoryLoadStartedAt: TimeInterval?
     public var selectedHarnessId: String? { didSet { draftDidChange() } }
-    public private(set) var model: SessionModel?
+    public private(set) var model: SessionModel? {
+        didSet {
+            // A model connected while its transcript is already on screen
+            // must start at the visible flush cadence, not the background one.
+            guard let model, model !== oldValue else { return }
+            for _ in 0..<visibleTranscriptViews { model.viewDidAppear() }
+        }
+    }
+    /// Mounted transcript views for this session, mirrored into the model so
+    /// its stream-flush cadence matches whether anyone can actually see it.
+    /// Kept here too because views can appear before the model connects.
+    @ObservationIgnored private var visibleTranscriptViews = 0
     public private(set) var status: Status = .idle
     /// Calm progress message shown while the eager connect waits for an
     /// unreachable server to come back (e.g. the managed server rebooting
@@ -564,11 +575,30 @@ final public class SessionController {
     /// composer's inline picker flash in briefly. The pending/connecting/
     /// session checks keep it hidden through that window.
     public var canChooseHarness: Bool {
-        conversation.isEmpty
+        // Deliberately NOT `conversation.isEmpty`: that allocates the merged
+        // array and registers Observation on `activeItem`, re-evaluating the
+        // composer's picker on every token flush. These two reads are
+        // boundary-guarded and allocation-free.
+        settledConversation.isEmpty
+            && !hasActiveItem
             && pendingUserText == nil
             && !isConnecting
             && serverSession?.agentSessionId == nil
             && resumeAgentSessionId == nil
+    }
+
+    /// Transcript-view lifecycle, forwarded to the model to tune its stream
+    /// flush cadence. Reference-counted: a session can be visible in several
+    /// windows or splits at once.
+    public func transcriptViewDidAppear() {
+        visibleTranscriptViews += 1
+        model?.viewDidAppear()
+    }
+
+    public func transcriptViewDidDisappear() {
+        guard visibleTranscriptViews > 0 else { return }
+        visibleTranscriptViews -= 1
+        model?.viewDidDisappear()
     }
     public var modeState: SessionModeState? {
         if let live = model?.modeState { return live }

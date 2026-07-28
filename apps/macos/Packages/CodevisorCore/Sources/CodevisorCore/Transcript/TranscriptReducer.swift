@@ -113,9 +113,7 @@ public enum TranscriptReducer {
             let id = "acp:\(messageId)"
             guard !newText.isEmpty else { return id }
             if let index = textIndex(id, in: entries) {
-                if case let .text(_, existing) = entries[index] {
-                    entries[index] = .text(id: id, markdown: existing + newText)
-                }
+                appendInPlace(newText, toTextEntryAt: index, in: &entries)
             } else {
                 entries.append(.text(id: id, markdown: newText))
             }
@@ -123,8 +121,8 @@ public enum TranscriptReducer {
         }
 
         guard !newText.isEmpty else { return nil }
-        if case let .text(id, existing) = entries.last {
-            entries[entries.count - 1] = .text(id: id, markdown: existing + newText)
+        if case let .text(id, _) = entries.last {
+            appendInPlace(newText, toTextEntryAt: entries.count - 1, in: &entries)
             return id
         } else {
             let id = "t\(nextTextId)"
@@ -132,6 +130,22 @@ public enum TranscriptReducer {
             entries.append(.text(id: id, markdown: newText))
             return id
         }
+    }
+
+    /// Appends to a text entry without copying the accumulated run.
+    /// `existing + newText` re-copies everything streamed so far on every
+    /// flush — O(turn²) over a long answer. Taking the string out of the
+    /// entry first makes its storage uniquely referenced, so `+=` extends it
+    /// in place at amortized O(newText).
+    private static func appendInPlace(
+        _ newText: String,
+        toTextEntryAt index: Int,
+        in entries: inout [TranscriptEntry]
+    ) {
+        guard case .text(let id, var existing) = entries[index] else { return }
+        entries[index] = .text(id: id, markdown: "")
+        existing += newText
+        entries[index] = .text(id: id, markdown: existing)
     }
 
     private static func textIndex(_ id: String, in entries: [TranscriptEntry]) -> Int? {

@@ -480,11 +480,19 @@ public struct ServerSessionTransport: Sendable {
         }
     }
 
+    /// Shared coders for the `JSONValue` → typed-model bridge below. These
+    /// run per streamed event — one per token chunk on the hot path — and a
+    /// fresh `JSONEncoder`/`JSONDecoder` allocation per call is measurable
+    /// under several concurrent streams. Sharing is safe: both types create
+    /// all mutable state per `encode`/`decode` call.
+    private static let bridgeEncoder = JSONEncoder()
+    private static let bridgeDecoder = JSONDecoder()
+
     private static func promptQueue(from payload: JSONValue) -> [ServerPromptQueueItem] {
         guard let queue = payload["queue"]?.arrayValue else { return [] }
         do {
-            let data = try JSONEncoder().encode(JSONValue.array(queue))
-            return try JSONDecoder().decode([ServerPromptQueueItem].self, from: data)
+            let data = try bridgeEncoder.encode(JSONValue.array(queue))
+            return try bridgeDecoder.decode([ServerPromptQueueItem].self, from: data)
         } catch {
             Log.session.error(
                 "Failed to decode prompt-queue payload: \(String(describing: error), privacy: .public)"
@@ -496,8 +504,8 @@ public struct ServerSessionTransport: Sendable {
     private static func decodeRawSessionUpdate(_ payload: JSONValue) -> SessionUpdate? {
         guard payload["sessionUpdate"] != nil else { return nil }
         do {
-            let data = try JSONEncoder().encode(payload)
-            return try JSONDecoder().decode(SessionUpdate.self, from: data)
+            let data = try bridgeEncoder.encode(payload)
+            return try bridgeDecoder.decode(SessionUpdate.self, from: data)
         } catch {
             Log.session.error(
                 "Failed to decode session-update payload: \(String(describing: error), privacy: .public)"
@@ -530,8 +538,8 @@ public struct ServerSessionTransport: Sendable {
     private static func attachments(from payload: JSONValue) -> [Attachment] {
         guard let raw = payload["attachments"]?.arrayValue else { return [] }
         do {
-            let data = try JSONEncoder().encode(JSONValue.array(raw))
-            return try JSONDecoder().decode([ServerAttachmentRef].self, from: data).map(\.attachment)
+            let data = try bridgeEncoder.encode(JSONValue.array(raw))
+            return try bridgeDecoder.decode([ServerAttachmentRef].self, from: data).map(\.attachment)
         } catch {
             Log.session.error(
                 "Failed to decode attachments payload: \(String(describing: error), privacy: .public)"
@@ -559,8 +567,8 @@ public struct ServerSessionTransport: Sendable {
     private static func decodeGoal(_ value: JSONValue?) -> SessionGoal? {
         guard let value else { return nil }
         do {
-            let data = try JSONEncoder().encode(value)
-            return try JSONDecoder().decode(SessionGoal.self, from: data)
+            let data = try bridgeEncoder.encode(value)
+            return try bridgeDecoder.decode(SessionGoal.self, from: data)
         } catch {
             // Lenient like the other decoders: an unknown status or malformed
             // snapshot degrades to skipping the update.
@@ -588,8 +596,8 @@ public struct ServerSessionTransport: Sendable {
     private static func backgroundTasks(from payload: JSONValue) -> [BackgroundTaskInfo]? {
         guard let raw = payload["backgroundTasks"]?.arrayValue else { return nil }
         do {
-            let data = try JSONEncoder().encode(JSONValue.array(raw))
-            return try JSONDecoder().decode([BackgroundTaskInfo].self, from: data)
+            let data = try bridgeEncoder.encode(JSONValue.array(raw))
+            return try bridgeDecoder.decode([BackgroundTaskInfo].self, from: data)
         } catch {
             Log.session.error(
                 "Failed to decode background-tasks payload: \(String(describing: error), privacy: .public)"
@@ -605,8 +613,8 @@ public struct ServerSessionTransport: Sendable {
     private static func decodeConfigOptions(_ value: JSONValue?) -> [SessionConfigOption]? {
         guard let value else { return nil }
         do {
-            let data = try JSONEncoder().encode(value)
-            return try JSONDecoder().decode([SessionConfigOption].self, from: data)
+            let data = try bridgeEncoder.encode(value)
+            return try bridgeDecoder.decode([SessionConfigOption].self, from: data)
         } catch {
             Log.session.error(
                 "Failed to decode config-options payload: \(String(describing: error), privacy: .public)"

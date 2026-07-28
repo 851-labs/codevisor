@@ -72,7 +72,7 @@ public struct WorkspaceSessionSeed: Sendable {
 /// a version marker, the workspaces, and a session→workspace index (how
 /// "by chat" routes to the owning workspace).
 public final class DefaultWorkspaceRepository: WorkspaceRepository, @unchecked Sendable {
-    private struct Payload: Codable {
+    private struct Payload: Codable, Sendable {
         var version: Int
         var workspaces: [Workspace]
         var sessionIndex: [UUID: UUID]
@@ -224,6 +224,10 @@ public final class DefaultWorkspaceRepository: WorkspaceRepository, @unchecked S
 
     private func payload() -> Payload {
         if let cached = lock.withLock({ cache }) { return cached }
+        // Cold read (fresh instance): drain in-flight async encodes first so
+        // a save issued moments ago is visible, matching the old synchronous
+        // behavior. Warm reads hit the cache above and never pay this.
+        PersistenceEncoding.drain()
         var loaded: Payload
         if let data = store.loadData(forKey: key) {
             do {
@@ -272,11 +276,19 @@ public final class DefaultWorkspaceRepository: WorkspaceRepository, @unchecked S
     }
 
     private func persist(_ payload: Payload) {
+        // The cache is the read path and updates synchronously; only the
+        // whole-corpus encode moves off the caller's thread. Pane mutations
+        // (including several per tab-reorder drag) persist from the main
+        // actor, and this encode walks every workspace, tab, and split tree.
         lock.withLock { cache = payload }
-        do {
-            try store.saveData(JSONEncoder().encode(payload), forKey: key)
-        } catch {
-            Log.persistence.error("Failed to save \(self.key, privacy: .public): \(String(describing: error), privacy: .public)")
+        let store = store
+        let key = key
+        PersistenceEncoding.queue.async {
+            do {
+                try store.saveData(PersistenceEncoding.encoder.encode(payload), forKey: key)
+            } catch {
+                Log.persistence.error("Failed to save \(key, privacy: .public): \(String(describing: error), privacy: .public)")
+            }
         }
     }
 }
