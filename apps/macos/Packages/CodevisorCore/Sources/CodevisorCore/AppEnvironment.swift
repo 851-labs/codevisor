@@ -106,6 +106,21 @@ public final class AppEnvironment {
         machines.onHarnessLifecycleChanged = { [weak self] serverId in
             self?.harnessCatalogDidChange(onServer: serverId)
         }
+        // One-time split of pre-"1 workspace == 1 directory" workspaces whose
+        // chats live in different worktrees. Runs before any window renders
+        // (no workspace models are cached yet); sessions load synchronously
+        // in ProjectListModel.init, so the grouping inputs are complete.
+        // In-memory repositories (previews, iOS) no-op via the marker.
+        WorkspaceWorktreeSplitMigration.runIfNeeded(
+            workspaces: workspaces,
+            sessions: projectList.sessions.map {
+                .init(sessionId: $0.id, worktreeName: $0.worktreeName, cwd: $0.cwd)
+            },
+            projectNames: Dictionary(
+                projectList.projects.map { ($0.id, $0.name) },
+                uniquingKeysWith: { first, _ in first }
+            )
+        )
     }
 
     /// Refetches sessions from all harnesses and merges them in.

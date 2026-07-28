@@ -509,20 +509,6 @@ public final class ProjectListModel {
         persistSessions()
     }
 
-    /// Records the worktree a draft session ended up running in. The session
-    /// record is created before the worktree exists (the session page opens
-    /// while setup streams progress), so the name/cwd land here afterwards.
-    /// Local only: the draft hasn't been synced yet, and the first connect
-    /// upserts the session carrying this worktree name.
-    public func setWorktree(name: String, cwd: String, for sessionId: UUID, serverId: String) {
-        guard let index = sessions.firstIndex(where: {
-            $0.serverId == serverId && $0.id == sessionId
-        }) else { return }
-        sessions[index].worktreeName = name
-        sessions[index].cwd = cwd
-        persistSessions()
-    }
-
     /// Records the agent-side session id once a brand-new session is created.
     public func setAgentSessionId(_ agentSessionId: String, for sessionId: UUID, serverId: String) {
         guard let index = sessions.firstIndex(where: {
@@ -627,17 +613,15 @@ public final class ProjectListModel {
 
     /// Fills in an eagerly created session's first-send details. Workspace
     /// "New Chat" tabs register their session at CREATION (so the sidebar
-    /// shows them immediately) but keep the new-chat composer until the
-    /// first message — which is when the title, chosen harness, and
-    /// worktree/cwd become known. A manual rename before the first message
-    /// wins over the prompt-derived title.
+    /// shows them immediately, already stamped with the workspace's
+    /// worktree/cwd) but keep the new-chat composer until the first message —
+    /// which is when the title and chosen harness become known. A manual
+    /// rename before the first message wins over the prompt-derived title.
     @discardableResult
     public func updateSessionForFirstSend(
         _ session: ChatSession,
         title: String,
-        harnessId: String?,
-        worktreeName: String?,
-        cwd: String?
+        harnessId: String?
     ) -> ChatSession? {
         guard let index = sessions.firstIndex(where: {
             $0.serverId == session.serverId && $0.id == session.id
@@ -647,12 +631,6 @@ public final class ProjectListModel {
         }
         if let harnessId {
             sessions[index].harnessId = harnessId
-        }
-        if let worktreeName {
-            sessions[index].worktreeName = worktreeName
-        }
-        if let cwd {
-            sessions[index].cwd = cwd
         }
         persistSessions()
         syncSession(sessions[index])

@@ -25,12 +25,6 @@ public final class ComposerDraftStore {
         public var composerText: String
         public var attachments: [DraftAttachment]
         public var selectedHarnessId: String?
-        public var runInWorktree: Bool
-        /// An EXISTING worktree the draft targets (mutually exclusive with
-        /// `runInWorktree`, which means "create a new one on send").
-        public var worktreeName: String?
-        /// The existing worktree's path; nil when the draft runs at the root.
-        public var worktreeCwd: String?
         public var configByHarness: [String: [String: String]]
         public var modeId: String?
         public var isGoalComposerArmed: Bool
@@ -42,9 +36,6 @@ public final class ComposerDraftStore {
             composerText: String = "",
             attachments: [DraftAttachment] = [],
             selectedHarnessId: String? = nil,
-            runInWorktree: Bool = false,
-            worktreeName: String? = nil,
-            worktreeCwd: String? = nil,
             configByHarness: [String: [String: String]] = [:],
             modeId: String? = nil,
             isGoalComposerArmed: Bool = false,
@@ -55,9 +46,6 @@ public final class ComposerDraftStore {
             self.composerText = composerText
             self.attachments = attachments
             self.selectedHarnessId = selectedHarnessId
-            self.runInWorktree = runInWorktree
-            self.worktreeName = worktreeName
-            self.worktreeCwd = worktreeCwd
             self.configByHarness = configByHarness
             self.modeId = modeId
             self.isGoalComposerArmed = isGoalComposerArmed
@@ -78,10 +66,6 @@ public final class ComposerDraftStore {
         var composerText: String
         var attachments: [PersistedAttachment]
         var selectedHarnessId: String?
-        var runInWorktree: Bool
-        // Optionals decode as nil from pre-existing payloads.
-        var worktreeName: String?
-        var worktreeCwd: String?
         var configByHarness: [String: [String: String]]
         var modeId: String?
         var isGoalComposerArmed: Bool
@@ -152,9 +136,6 @@ public final class ComposerDraftStore {
                 )
             },
             selectedHarnessId: persisted.selectedHarnessId,
-            runInWorktree: persisted.runInWorktree,
-            worktreeName: persisted.worktreeName,
-            worktreeCwd: persisted.worktreeCwd,
             configByHarness: persisted.configByHarness,
             modeId: persisted.modeId,
             isGoalComposerArmed: persisted.isGoalComposerArmed,
@@ -171,9 +152,6 @@ public final class ComposerDraftStore {
                 PersistedAttachment(id: $0.id, name: $0.name, mimeType: $0.mimeType, kind: $0.kind)
             },
             selectedHarnessId: draft.selectedHarnessId,
-            runInWorktree: draft.runInWorktree,
-            worktreeName: draft.worktreeName,
-            worktreeCwd: draft.worktreeCwd,
             configByHarness: draft.configByHarness,
             modeId: draft.modeId,
             isGoalComposerArmed: draft.isGoalComposerArmed,

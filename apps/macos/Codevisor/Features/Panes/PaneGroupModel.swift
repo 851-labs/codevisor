@@ -58,11 +58,6 @@ final class PaneGroupModel: Identifiable {
     /// new tab, adopted drop) — the container tracks the workspace's ACTIVE
     /// group with it, which is where keyboard tab commands route.
     @ObservationIgnored var onActivated: (() -> Void)?
-    /// The directory a context-free spawn (⌘T, bar "+") inherits: the
-    /// focused pane's chat/terminal context, falling back to the workspace
-    /// root. Wired by the container; nil (previews) leaves spawns on the
-    /// anchor session's cwd resolution.
-    @ObservationIgnored var defaultSpawnCwd: (() -> String?)?
     /// Center leaves hand workspace-level tab/split commands to their
     /// container. Returning true means the command was consumed. Bottom
     /// panel models leave this nil and retain their local tab behavior.
@@ -234,14 +229,12 @@ final class PaneGroupModel: Identifiable {
     // MARK: - Operations
 
     /// Adds a terminal tab, selects it, opens the group, and returns the live
-    /// pane (so callers can focus it). The shell opens in the focused pane's
-    /// context (cwd follows focus).
+    /// pane (so callers can focus it). The shell opens in the workspace's
+    /// working directory.
     @discardableResult
     func addTerminalPane() -> any Pane {
         let previouslySelected = selectedPane
-        let descriptor = state.addTerminalPane(
-            sessionId: sessionId, cwdOverride: defaultSpawnCwd?()
-        )
+        let descriptor = state.addTerminalPane(sessionId: sessionId)
         persist()
         onActivated?()
         previouslySelected?.visibilityChanged(false)
@@ -295,11 +288,10 @@ final class PaneGroupModel: Identifiable {
 
     /// Adds the "New tab" placeholder — spawned by the container when this
     /// group's last real pane closes and the group is the workspace's last.
-    /// Carries the focused pane's context so the page preselects it.
     @discardableResult
     func addNewTabPane() -> any Pane {
         let previouslySelected = selectedPane
-        let descriptor = state.addNewTabPane(inheritedCwd: defaultSpawnCwd?())
+        let descriptor = state.addNewTabPane()
         persist()
         onActivated?()
         previouslySelected?.visibilityChanged(false)
@@ -315,12 +307,11 @@ final class PaneGroupModel: Identifiable {
         id: UUID,
         to kind: PaneKind,
         chatSessionId: UUID? = nil,
-        name: String? = nil,
-        cwd: String? = nil
+        name: String? = nil
     ) {
         guard let converted = state.convertNewTabPane(
             id: id, to: kind, sessionId: sessionId,
-            chatSessionId: chatSessionId, name: name, cwd: cwd
+            chatSessionId: chatSessionId, name: name
         ) else { return }
         // The placeholder's live host dies with the descriptor.
         live[id] = nil

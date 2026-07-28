@@ -53,10 +53,17 @@ public struct Workspace: Codable, Sendable, Equatable, Identifiable {
     /// follow a newly-created worktree; an explicit rename pins the name.
     public var name: String
     public var hasCustomName: Bool
-    /// The workspace's anchor directory (project checkout or worktree). Every
-    /// chat/terminal in the workspace runs at or under this root. Nil when
-    /// the backing session hasn't resolved its directory yet.
+    /// The workspace's one, authoritative working directory (project checkout
+    /// or worktree), fixed at creation. Every chat/terminal in the workspace
+    /// runs at this root. Nil when the backing session hasn't resolved its
+    /// directory yet.
     public var rootDirectory: String?
+    /// The git worktree this workspace lives in, when it was created with the
+    /// "start in a new worktree" option. Nil means the workspace runs at the
+    /// project root. New sessions in the workspace are stamped with this name
+    /// so the server derives their cwd. Decoded leniently: payloads written
+    /// before this field existed load as nil.
+    public var worktreeName: String?
     /// The workspace's SF Symbol, seeded from its project's icon at
     /// creation; the user can change it later. Nil (pre-icon workspaces)
     /// falls back to the project's icon in the UI.
@@ -78,7 +85,7 @@ public struct Workspace: Codable, Sendable, Equatable, Identifiable {
     public var isArchived: Bool
 
     private enum CodingKeys: String, CodingKey {
-        case id, name, hasCustomName, rootDirectory, symbolName, serverId
+        case id, name, hasCustomName, rootDirectory, worktreeName, symbolName, serverId
         case projectId, centerTabs, selectedCenterTabId, bottomGroup, createdAt, isArchived
         /// Version-1 workspaces stored one tree whose leaves were tab groups.
         case centerTree
@@ -90,13 +97,14 @@ public struct Workspace: Codable, Sendable, Equatable, Identifiable {
         name = try container.decode(String.self, forKey: .name)
         hasCustomName = try container.decode(Bool.self, forKey: .hasCustomName)
         rootDirectory = try container.decodeIfPresent(String.self, forKey: .rootDirectory)
+        worktreeName = try container.decodeIfPresent(String.self, forKey: .worktreeName)
         symbolName = try container.decodeIfPresent(String.self, forKey: .symbolName)
         serverId = try container.decode(String.self, forKey: .serverId)
         projectId = try container.decode(UUID.self, forKey: .projectId)
         if let decodedTabs = try container.decodeIfPresent([WorkspaceTab].self, forKey: .centerTabs) {
             if decodedTabs.isEmpty {
                 var state = PaneGroupState()
-                _ = state.addNewTabPane(inheritedCwd: rootDirectory)
+                _ = state.addNewTabPane()
                 let replacement = WorkspaceTab(root: .leaf(state))
                 centerTabs = [replacement]
                 selectedCenterTabId = replacement.id
@@ -125,6 +133,7 @@ public struct Workspace: Codable, Sendable, Equatable, Identifiable {
         try container.encode(name, forKey: .name)
         try container.encode(hasCustomName, forKey: .hasCustomName)
         try container.encodeIfPresent(rootDirectory, forKey: .rootDirectory)
+        try container.encodeIfPresent(worktreeName, forKey: .worktreeName)
         try container.encodeIfPresent(symbolName, forKey: .symbolName)
         try container.encode(serverId, forKey: .serverId)
         try container.encode(projectId, forKey: .projectId)
@@ -140,6 +149,7 @@ public struct Workspace: Codable, Sendable, Equatable, Identifiable {
         name: String,
         hasCustomName: Bool = false,
         rootDirectory: String?,
+        worktreeName: String? = nil,
         symbolName: String? = nil,
         serverId: String,
         projectId: UUID,
@@ -152,6 +162,7 @@ public struct Workspace: Codable, Sendable, Equatable, Identifiable {
         self.name = name
         self.hasCustomName = hasCustomName
         self.rootDirectory = rootDirectory
+        self.worktreeName = worktreeName
         self.symbolName = symbolName
         self.serverId = serverId
         self.projectId = projectId
@@ -168,6 +179,7 @@ public struct Workspace: Codable, Sendable, Equatable, Identifiable {
         name: String,
         hasCustomName: Bool = false,
         rootDirectory: String?,
+        worktreeName: String? = nil,
         symbolName: String? = nil,
         serverId: String,
         projectId: UUID,
@@ -182,6 +194,7 @@ public struct Workspace: Codable, Sendable, Equatable, Identifiable {
         self.name = name
         self.hasCustomName = hasCustomName
         self.rootDirectory = rootDirectory
+        self.worktreeName = worktreeName
         self.symbolName = symbolName
         self.serverId = serverId
         self.projectId = projectId

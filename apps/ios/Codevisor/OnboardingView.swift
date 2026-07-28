@@ -73,10 +73,11 @@ private struct WelcomeStep: View {
             } label: {
                 Text("Get Started")
                     .font(.body.weight(.semibold))
+                    .foregroundStyle(.white)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 6)
             }
-            .buttonStyle(.glassProminent)
+            .buttonStyle(.borderedProminent)
             Button("Set Up Later") { dismiss() }
                 .font(.footnote)
                 .foregroundStyle(.secondary)

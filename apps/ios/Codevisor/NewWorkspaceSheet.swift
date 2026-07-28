@@ -2,15 +2,29 @@ import CodevisorCore
 import CodevisorUI
 import SwiftUI
 
-/// The New Workspace flow, matching macOS: pick a project and the workspace
-/// opens immediately with a fresh chat pane — or browse the remote machine's
-/// filesystem, Files-style, to turn any folder into a new project first.
+/// The New Workspace flow, matching macOS: a form — select a project
+/// (checkmark, like the add-projects screens), optionally flip "Create New
+/// Worktree", and confirm with the Create Workspace button. Browsing the
+/// remote filesystem turns any folder into a new project and selects it.
+/// The worktree choice is remembered per machine (like the last-used
+/// harness) and seeds the next form; the chosen directory is the
+/// workspace's one working directory for life.
 struct NewWorkspaceSheet: View {
     @Environment(AppEnvironment.self) private var environment
     @Environment(\.dismiss) private var dismiss
 
     /// Called with the created session so the caller can navigate into it.
     let onCreated: (ChatSession) -> Void
+
+    @State private var navigationPath = NavigationPath()
+    @State private var selectedProjectId: UUID?
+    /// Whether Create Workspace materializes a fresh worktree for the
+    /// selected (git) project instead of using the project folder.
+    @State private var createInWorktree = false
+    @State private var worktreeCreator = WorktreeCreator()
+    /// The project whose worktree is being created (or failed); non-nil swaps
+    /// the picker for the setup-progress view.
+    @State private var creatingProject: Project?
 
     private var projects: [Project] {
         // Recency: projects whose chats were touched most recently first —
@@ -28,70 +42,206 @@ struct NewWorkspaceSheet: View {
         }
     }
 
+    private var selectedProject: Project? {
+        projects.first { $0.id == selectedProjectId } ?? projects.first
+    }
+
+    /// Worktrees only apply to git projects (as probed by the server).
+    private var worktreeAvailable: Bool {
+        selectedProject?.isGitRepository ?? false
+    }
+
     var body: some View {
-        NavigationStack {
-            List {
-                if !projects.isEmpty {
-                    Section("Projects") {
-                        ForEach(projects) { project in
-                            Button {
-                                create(in: project)
-                            } label: {
-                                projectRow(project)
-                            }
-                        }
-                    }
-                }
-                Section {
-                    NavigationLink(value: RemoteDirectory.home) {
-                        Label {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("New Project…")
-                                    .foregroundStyle(.primary)
-                                Text("Choose a folder on \(environment.machines.selectedMachine.name)")
-                                    .font(.footnote)
-                                    .foregroundStyle(.secondary)
-                            }
-                        } icon: {
-                            Image(systemName: "folder.badge.plus")
-                        }
-                    }
+        NavigationStack(path: $navigationPath) {
+            Group {
+                if creatingProject != nil {
+                    worktreeProgress
+                } else {
+                    form
                 }
             }
             .navigationTitle("New Workspace")
             .navigationBarTitleDisplayMode(.inline)
             .navigationDestination(for: RemoteDirectory.self) { directory in
                 RemoteDirectoryScreen(directory: directory) { path in
-                    createProject(at: path)
+                    addProject(at: path)
                 }
             }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
+                        .disabled(worktreeCreator.isRunning)
                 }
             }
             .task {
                 await environment.projectList.refreshFromServer()
             }
+            // Start from the last workspace's worktree choice on this
+            // machine — the same "last used" policy as the harness default.
+            .task {
+                createInWorktree = environment.composerDefaults
+                    .prefersWorktreeForNewWorkspaces(
+                        forServer: environment.machines.selectedMachineId
+                    )
+            }
         }
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
+        .interactiveDismissDisabled(worktreeCreator.isRunning)
+    }
+
+    private var form: some View {
+        List {
+            if !projects.isEmpty {
+                Section("Projects") {
+                    ForEach(projects) { project in
+                        Button {
+                            selectedProjectId = project.id
+                        } label: {
+                            projectRow(project)
+                        }
+                    }
+                }
+            }
+            Section {
+                NavigationLink(value: RemoteDirectory.home) {
+                    Label("New Project…", systemImage: "folder.badge.plus")
+                        .foregroundStyle(.primary)
+                }
+            }
+        }
+        // The form's decision + confirmation live together in a fixed bottom
+        // bar, HIG sheet-style: a plain toggle row above a full-width
+        // prominent action button.
+        .safeAreaInset(edge: .bottom) {
+            VStack(spacing: 14) {
+                if !projects.isEmpty {
+                    Toggle("Create New Worktree", isOn: $createInWorktree)
+                        .disabled(!worktreeAvailable)
+                }
+                Button {
+                    guard let project = selectedProject else { return }
+                    create(in: project)
+                } label: {
+                    Text("Create Workspace")
+                        .font(.headline)
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .disabled(selectedProject == nil)
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 14)
+            .padding(.bottom, 8)
+            .background(.bar)
+        }
+    }
+
+    /// A plain, centered loading state while the worktree materializes: a
+    /// spinner and a quiet caption. Only a failure expands into detail — the
+    /// setup-phase row (error + streamed git logs) with retry/back.
+    @ViewBuilder
+    private var worktreeProgress: some View {
+        if worktreeCreator.phase?.failureMessage == nil {
+            VStack(spacing: 12) {
+                ProgressView()
+                    .controlSize(.large)
+                Text("Creating Workspace…")
+                    .font(.headline)
+                Text("Setting up a git worktree in \(creatingProject?.name ?? "the project")")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                worktreeLogTail
+            }
+            .padding(20)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .accessibilityElement(children: .combine)
+        } else {
+            ScrollView {
+                VStack(spacing: 20) {
+                    VStack(spacing: 4) {
+                        Text("Couldn't Create Workspace")
+                            .font(.headline)
+                        Text("The worktree could not be created")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                    if let phase = worktreeCreator.phase {
+                        SessionSetupView(phases: [phase])
+                    }
+                    HStack(spacing: 12) {
+                        Button("Back") {
+                            worktreeCreator.reset()
+                            creatingProject = nil
+                        }
+                        .buttonStyle(.bordered)
+                        Button("Try Again") {
+                            guard let project = creatingProject else { return }
+                            Task { await createWorktreeWorkspace(in: project) }
+                        }
+                        .buttonStyle(.borderedProminent)
+                    }
+                }
+                .padding(20)
+                .frame(maxWidth: .infinity)
+            }
+        }
+    }
+
+    /// The last few streamed setup lines, console-quiet: dim monospace on a
+    /// card, newest at the bottom. The failure state shows the full log.
+    @ViewBuilder
+    private var worktreeLogTail: some View {
+        let lines = (worktreeCreator.phase?.logs ?? []).suffix(6)
+        if !lines.isEmpty {
+            VStack(alignment: .leading, spacing: 2) {
+                ForEach(Array(lines)) { line in
+                    Text(line.text)
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(Color(.secondarySystemGroupedBackground))
+            )
+            .padding(.horizontal, 24)
+            .padding(.top, 6)
+            .animation(.easeOut(duration: 0.15), value: worktreeCreator.phase?.logs.count)
+            .accessibilityHidden(true)
+        }
     }
 
     private func projectRow(_ project: Project) -> some View {
-        Label {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(project.name)
-                    .foregroundStyle(.primary)
-                Text(abbreviatedPath(project.folderURL.path))
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.head)
+        let isSelected = project.id == selectedProject?.id
+        return HStack {
+            Label {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(project.name)
+                        .foregroundStyle(.primary)
+                    Text(abbreviatedPath(project.folderURL.path))
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.head)
+                }
+            } icon: {
+                Image(systemName: project.symbolName)
             }
-        } icon: {
-            Image(systemName: project.symbolName)
+            Spacer()
+            Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                .foregroundStyle(isSelected ? AnyShapeStyle(.tint) : AnyShapeStyle(.quaternary))
+                .contentTransition(.symbolEffect(.replace))
+                .accessibilityHidden(true)
         }
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
     private func abbreviatedPath(_ path: String) -> String {
@@ -102,20 +252,58 @@ struct NewWorkspaceSheet: View {
         return path
     }
 
-    /// Same as macOS `createWorkspaceSession(in:)`: mint the deferred session
-    /// now (the agent spawns server-side on the first send) and jump straight
-    /// into its chat pane.
+    /// Confirms the form — same as macOS `createWorkspaceSession(in:)`: mint
+    /// the deferred session now (the agent spawns server-side on the first
+    /// send) and jump straight into its chat pane. Worktree workspaces
+    /// create their worktree eagerly, right here, and only exist once it
+    /// materializes. Either way, the worktree choice becomes the machine's
+    /// default for the next workspace.
     private func create(in project: Project) {
-        let session = environment.projectList.newSession(in: project, title: "New Chat")
-        dismiss()
-        onCreated(session)
+        let createsWorktree = createInWorktree && project.isGitRepository
+        environment.composerDefaults.rememberNewWorkspaceWorktreePreference(
+            serverId: project.serverId,
+            createsWorktree: createsWorktree
+        )
+        guard createsWorktree else {
+            let session = environment.projectList.newSession(in: project, title: "New Chat")
+            dismiss()
+            onCreated(session)
+            return
+        }
+        Task { await createWorktreeWorkspace(in: project) }
     }
 
-    /// The browsed folder becomes a project, then a workspace in it —
-    /// macOS's Browse-machine add-project flow in one step.
-    private func createProject(at path: String) {
+    private func createWorktreeWorkspace(in project: Project) async {
+        guard !worktreeCreator.isRunning else { return }
+        creatingProject = project
+        switch await worktreeCreator.create(
+            projectId: project.id,
+            client: environment.serverClient
+        ) {
+        case let .success(worktree):
+            let session = environment.projectList.newSession(
+                in: project,
+                title: "New Chat",
+                worktreeName: worktree.name,
+                cwd: worktree.path
+            )
+            worktreeCreator.reset()
+            creatingProject = nil
+            dismiss()
+            onCreated(session)
+        case .failure:
+            // The failed phase (message + logs) stays on screen with
+            // Try Again/Back; no session was created.
+            break
+        }
+    }
+
+    /// The browsed folder becomes a project and the form's selection; the
+    /// user confirms with Create Workspace like any other pick.
+    private func addProject(at path: String) {
         let project = environment.projectList.addProject(folderURL: URL(fileURLWithPath: path))
-        create(in: project)
+        selectedProjectId = project.id
+        navigationPath = NavigationPath()
     }
 }
 
@@ -173,10 +361,12 @@ private struct RemoteDirectoryScreen: View {
                 } label: {
                     Label("Add “\(directory.name)” as Project", systemImage: "folder.badge.plus")
                         .font(.body.weight(.semibold))
+                        .foregroundStyle(.white)
                         .padding(.horizontal, 14)
                         .padding(.vertical, 4)
                 }
-                .buttonStyle(.glassProminent)
+                .buttonStyle(.borderedProminent)
+                .buttonBorderShape(.capsule)
                 .padding(.bottom, 8)
             }
         }

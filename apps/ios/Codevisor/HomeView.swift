@@ -289,10 +289,12 @@ struct HomeView: View {
             } label: {
                 Text("Connect a Machine")
                     .font(.body.weight(.semibold))
+                    .foregroundStyle(.white)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 4)
             }
-            .buttonStyle(.glassProminent)
+            .buttonStyle(.borderedProminent)
+            .buttonBorderShape(.capsule)
         }
     }
 
@@ -316,10 +318,12 @@ struct HomeView: View {
             } label: {
                 Label("New Workspace", systemImage: "plus")
                     .font(.body.weight(.semibold))
+                    .foregroundStyle(.white)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 4)
             }
-            .buttonStyle(.glassProminent)
+            .buttonStyle(.borderedProminent)
+            .buttonBorderShape(.capsule)
         }
     }
 
@@ -394,10 +398,12 @@ struct HomeView: View {
         } label: {
             Label("New workspace", systemImage: "plus")
                 .font(.body.weight(.semibold))
+                .foregroundStyle(.white)
                 .padding(.horizontal, 18)
                 .padding(.vertical, 4)
         }
-        .buttonStyle(.glassProminent)
+        .buttonStyle(.borderedProminent)
+        .buttonBorderShape(.capsule)
         .padding(.bottom, 8)
         .accessibilityLabel("New workspace")
     }

@@ -210,11 +210,6 @@ struct SessionContainerView: View {
                 _ = configuredCenterModel(leafId: firstLeaf)
                 activateLeaf(firstLeaf)
             }
-            // Bottom-panel spawns from its local + action follow the focused
-            // center context too.
-            store.paneGroup(for: session, project: project).defaultSpawnCwd = {
-                focusedSpawnCwd()
-            }
             store.paneGroup(for: session, project: project).workspaceCommandHandler = { command in
                 switch command {
                 case .newTab, .previousTab, .nextTab, .selectTab, .split, .focusSplit,
@@ -390,7 +385,7 @@ struct SessionContainerView: View {
             }
         }
         var state = PaneGroupState()
-        _ = state.addNewTabPane(inheritedCwd: focusedSpawnCwd())
+        _ = state.addNewTabPane()
         let tab = WorkspaceTab(root: .leaf(state))
         workspace.centerTabs.append(tab)
         workspace.selectedCenterTabId = tab.id
@@ -448,7 +443,7 @@ struct SessionContainerView: View {
         workspace.centerTabs.remove(at: refreshedIndex)
         if workspace.centerTabs.isEmpty {
             var state = PaneGroupState()
-            _ = state.addNewTabPane(inheritedCwd: workspace.rootDirectory)
+            _ = state.addNewTabPane()
             let replacement = WorkspaceTab(root: .leaf(state))
             workspace.centerTabs = [replacement]
             workspace.selectedCenterTabId = replacement.id
@@ -534,9 +529,8 @@ struct SessionContainerView: View {
         guard let tabIndex = workspace.centerTabs.firstIndex(where: {
             $0.root.group(id: leafId) != nil
         }) else { return }
-        let inheritedCwd = spawnCwd(for: leafId, in: workspace)
         var state = PaneGroupState()
-        _ = state.addNewTabPane(inheritedCwd: inheritedCwd)
+        _ = state.addNewTabPane()
         let newLeafId = UUID()
         workspace.centerTabs[tabIndex].root = workspace.centerTabs[tabIndex].root.splitting(
             groupId: leafId,
@@ -735,9 +729,6 @@ struct SessionContainerView: View {
         model.workspaceCommandHandler = { command in
             handleWorkspaceCommand(command)
         }
-        // cwd follows focus: ⌘T / bar "+" spawns inherit the focused pane's
-        // context (a worktree chat's terminal opens in the worktree).
-        model.defaultSpawnCwd = { focusedSpawnCwd() }
         // Selecting a chat tab focuses ITS composer — keyed and deferred,
         // since switching tabs remounts the chat and the composer registers
         // a tick later. ONLY chat panes: any other selected kind (New Tab
@@ -801,14 +792,8 @@ struct SessionContainerView: View {
                 return AnyView(NewTabPageView(
                     paneId: descriptor.id,
                     group: model,
-                    contexts: workspaceRunContexts(),
-                    inheritedPath: descriptor.cwdOverride,
-                    onNewChat: { [weak model] context in
-                        createChat(
-                            convertingPlaceholder: descriptor.id,
-                            in: model,
-                            context: context
-                        )
+                    onNewChat: { [weak model] in
+                        createChat(convertingPlaceholder: descriptor.id, in: model)
                     }
                 ))
             }
@@ -819,66 +804,21 @@ struct SessionContainerView: View {
         return model
     }
 
-    /// The cwd a new top tab, split, or bottom-panel spawn inherits: the active
-    /// center group's selected pane's context — a chat's live session cwd,
-    /// a terminal's own override — falling back to the workspace root.
-    /// Root is returned EXPLICITLY (not nil) so a root-context spawn stays
-    /// at root even when the group's anchor session runs in a worktree.
-    private func focusedSpawnCwd() -> String? {
-        let workspace = store.workspace(for: session, project: project)
-        return spawnCwd(for: activeLeafId, in: workspace)
-    }
-
-    private func spawnCwd(for leafId: UUID?, in workspace: Workspace) -> String? {
-        let root = workspace.rootDirectory ?? project.folderURL.path
-        guard let leafId else { return root }
-        let selected = store.centerGroup(
-            leafId: leafId, workspace: workspace, session: session, project: project
-        ).state.selectedPane
-        switch selected?.kind {
-        case .chat:
-            guard let chatId = selected?.chatSessionId,
-                  let chat = environment.projectList.sessions.first(where: {
-                      $0.serverId == session.serverId && $0.id == chatId
-                  }),
-                  let cwd = chat.cwd else { return root }
-            return cwd
-        case .terminal:
-            return selected?.cwdOverride ?? root
-        default:
-            return root
-        }
-    }
-
-    /// The run locations a New tab can open in: the project root plus the
-    /// worktrees created by the workspace's chats (archived chats excluded
-    /// — their worktrees aren't part of the working set).
-    private func workspaceRunContexts() -> [WorkspaceRunContext] {
-        WorkspaceRunContexts.contexts(
-            workspace: store.workspace(for: session, project: project),
-            project: project,
-            sessions: environment.projectList.sessions.filter {
-                $0.serverId == session.serverId
-            }
-        )
-    }
-
     /// "New Chat" from a New tab page: creates the SESSION eagerly — a real
     /// chat from birth (sidebar row, archive-on-close, focus-follow), not a
-    /// deferred draft — running in the picked context (project root or a
-    /// sibling chat's worktree) with the default harness, then converts the
-    /// placeholder in place.
+    /// deferred draft — in the workspace's one working directory with the
+    /// default harness, then converts the placeholder in place.
     private func createChat(
         convertingPlaceholder paneId: UUID,
-        in model: PaneGroupModel?,
-        context: WorkspaceRunContext
+        in model: PaneGroupModel?
     ) {
         guard let model else { return }
+        let workspace = store.workspace(for: session, project: project)
         let created = environment.projectList.newSession(
             in: project,
             title: "New Chat",
-            worktreeName: context.worktreeName,
-            cwd: context.path
+            worktreeName: workspace.worktreeName,
+            cwd: workspace.rootDirectory
         )
         model.convertNewTabPane(
             id: paneId, to: .chat,
@@ -919,7 +859,7 @@ struct SessionContainerView: View {
             workspace.centerTabs.remove(at: tabIndex)
             if workspace.centerTabs.isEmpty {
                 var state = PaneGroupState()
-                _ = state.addNewTabPane(inheritedCwd: workspace.rootDirectory)
+                _ = state.addNewTabPane()
                 let replacement = WorkspaceTab(root: .leaf(state))
                 workspace.centerTabs = [replacement]
                 workspace.selectedCenterTabId = replacement.id

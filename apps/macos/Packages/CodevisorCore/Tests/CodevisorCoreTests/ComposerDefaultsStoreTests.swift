@@ -9,7 +9,6 @@ struct ComposerDefaultsStoreTests {
     func startsEmpty() {
         let defaults = ComposerDefaultsStore(store: InMemoryStore())
         #expect(defaults.lastHarnessId(forServer: "local") == nil)
-        #expect(defaults.runLocation(forServer: "local") == nil)
         #expect(defaults.configSelections(forHarness: "claude-code", onServer: "local").isEmpty)
     }
 
@@ -24,22 +23,20 @@ struct ComposerDefaultsStoreTests {
         #expect(ComposerDefaultsStore(store: store).lastHarnessId(forServer: "local") == "claude-code")
     }
 
-    @Test("An explicit run-location selection is remembered immediately")
-    func remembersRunLocationImmediately() {
+    @Test("The new-workspace worktree choice is remembered per machine")
+    func remembersWorkspaceWorktreePreference() {
         let store = InMemoryStore()
         let defaults = ComposerDefaultsStore(store: store)
+        #expect(!defaults.prefersWorktreeForNewWorkspaces(forServer: "local"))
 
-        defaults.rememberRunLocationSelection(
-            serverId: "local", runLocation: .newWorktree
-        )
+        defaults.rememberNewWorkspaceWorktreePreference(serverId: "local", createsWorktree: true)
 
-        #expect(defaults.runLocation(forServer: "local") == .newWorktree)
-        #expect(ComposerDefaultsStore(store: store).runLocation(forServer: "local") == .newWorktree)
-
-        defaults.rememberRunLocationSelection(
-            serverId: "local", runLocation: .projectDirectory
-        )
-        #expect(defaults.runLocation(forServer: "local") == .projectDirectory)
+        #expect(defaults.prefersWorktreeForNewWorkspaces(forServer: "local"))
+        #expect(!defaults.prefersWorktreeForNewWorkspaces(forServer: "remote-a"))
+        // Survives a reload, and an explicit project-folder choice wins later.
+        #expect(ComposerDefaultsStore(store: store).prefersWorktreeForNewWorkspaces(forServer: "local"))
+        defaults.rememberNewWorkspaceWorktreePreference(serverId: "local", createsWorktree: false)
+        #expect(!defaults.prefersWorktreeForNewWorkspaces(forServer: "local"))
     }
 
     @Test("Keeps every harness configuration independent")
@@ -101,7 +98,6 @@ struct ComposerDefaultsStoreTests {
         )
 
         #expect(defaults.lastHarnessId(forServer: "local") == "claude-code")
-        #expect(defaults.runLocation(forServer: "local") == nil)
         #expect(defaults.configSelections(forHarness: "claude-code", onServer: "local") == [
             "model": "opus"
         ])
@@ -116,7 +112,6 @@ struct ComposerDefaultsStoreTests {
         let defaults = ComposerDefaultsStore(store: store)
 
         #expect(defaults.lastHarnessId(forServer: "local") == "claude-code")
-        #expect(defaults.runLocation(forServer: "local") == .newWorktree)
         #expect(defaults.configSelections(forHarness: "claude-code", onServer: "local") == [
             "model": "opus", "effort": "high", "speed": "fast"
         ])
@@ -126,7 +121,6 @@ struct ComposerDefaultsStoreTests {
         #expect(defaults.configSelections(forHarness: "codex", onServer: "remote-a") == [
             "model": "remote-model", "effort": "medium"
         ])
-        #expect(defaults.runLocation(forServer: "remote-a") == .projectDirectory)
         #expect(store.loadData(forKey: "composer-defaults-pre-v3-backup") == legacyData)
 
         let migrated = try #require(store.loadData(forKey: "composer-defaults"))
@@ -135,7 +129,6 @@ struct ComposerDefaultsStoreTests {
         #expect(object["workspaces"] == nil)
         let machines = try #require(object["machines"] as? [String: Any])
         let local = try #require(machines["local"] as? [String: Any])
-        #expect(local["lastRunLocation"] as? String == "newWorktree")
         #expect(local["runInWorktree"] == nil)
     }
 
@@ -153,25 +146,17 @@ struct ComposerDefaultsStoreTests {
         #expect(store.loadData(forKey: "composer-defaults-pre-v3-backup") == legacyData)
     }
 
-    @Test("Recovers run location for users who already passed through early V3")
-    func recoversRunLocationFromV3Backup() {
-        let current = #"{"machines":{"local":{"lastHarnessId":"codex","configSelections":{"codex":{"model":"newer-model"}}},"remote-a":{"lastHarnessId":"claude-code","lastRunLocation":"projectDirectory","configSelections":{}}},"version":3}"#
-        let backup = #"{"machines":{"local":{"lastHarnessId":"claude-code","runInWorktree":true,"configSelections":{"claude-code":{"model":"older-model"}}},"remote-a":{"lastHarnessId":"codex","runInWorktree":true,"configSelections":{}}},"workspaces":{}}"#
-        let store = InMemoryStore(storage: [
-            "composer-defaults": Data(current.utf8),
-            "composer-defaults-pre-v3-backup": Data(backup.utf8)
-        ])
+    @Test("A V3 payload with the retired lastRunLocation field still decodes")
+    func decodesRetiredRunLocationField() {
+        let current = #"{"machines":{"local":{"lastHarnessId":"codex","lastRunLocation":"newWorktree","configSelections":{"codex":{"model":"newer-model"}}}},"version":3}"#
+        let store = InMemoryStore(storage: ["composer-defaults": Data(current.utf8)])
 
         let defaults = ComposerDefaultsStore(store: store)
 
-        // Only the missing location is recovered. Newer V3 choices win, and
-        // an explicitly stored V3 location is never replaced by the backup.
-        #expect(defaults.runLocation(forServer: "local") == .newWorktree)
         #expect(defaults.lastHarnessId(forServer: "local") == "codex")
         #expect(defaults.configSelections(forHarness: "codex", onServer: "local") == [
             "model": "newer-model"
         ])
-        #expect(defaults.runLocation(forServer: "remote-a") == .projectDirectory)
     }
 
     @Test("Migrates the pre-workspace machines-only format")
@@ -182,7 +167,6 @@ struct ComposerDefaultsStoreTests {
         let defaults = ComposerDefaultsStore(store: store)
 
         #expect(defaults.lastHarnessId(forServer: "local") == "claude-code")
-        #expect(defaults.runLocation(forServer: "local") == .newWorktree)
         #expect(defaults.configSelections(forHarness: "claude-code", onServer: "local") == [
             "model": "opus", "speed": "fast"
         ])
@@ -196,7 +180,6 @@ struct ComposerDefaultsStoreTests {
         let defaults = ComposerDefaultsStore(store: store)
 
         #expect(defaults.lastHarnessId(forServer: "local") == "claude-code")
-        #expect(defaults.runLocation(forServer: "local") == .newWorktree)
         #expect(defaults.configSelections(forHarness: "claude-code", onServer: "local") == [
             "model": "opus", "effort": "high", "speed": "fast"
         ])
@@ -213,7 +196,6 @@ struct ComposerDefaultsStoreTests {
         let defaults = ComposerDefaultsStore(store: store)
 
         #expect(defaults.lastHarnessId(forServer: "local") == nil)
-        #expect(defaults.runLocation(forServer: "local") == .newWorktree)
         let migrated = try #require(store.loadData(forKey: "composer-defaults"))
         let object = try #require(JSONSerialization.jsonObject(with: migrated) as? [String: Any])
         #expect(object["version"] as? Int == 3)
@@ -224,7 +206,6 @@ struct ComposerDefaultsStoreTests {
         let store = InMemoryStore()
         let defaults = ComposerDefaultsStore(store: store)
         defaults.rememberHarnessSelection(serverId: "local", harnessId: "codex")
-        defaults.rememberRunLocationSelection(serverId: "local", runLocation: .newWorktree)
         defaults.rememberConfigSelections(
             serverId: "local",
             harnessId: "codex",
@@ -234,7 +215,6 @@ struct ComposerDefaultsStoreTests {
         let reopened = ComposerDefaultsStore(store: store)
 
         #expect(reopened.lastHarnessId(forServer: "local") == "codex")
-        #expect(reopened.runLocation(forServer: "local") == .newWorktree)
         #expect(reopened.configSelections(forHarness: "codex", onServer: "local") == [
             "model": "gpt-5.6", "effort": "xhigh", "speed": "fast"
         ])
@@ -251,7 +231,6 @@ struct ComposerDefaultsStoreTests {
         defaults.clear()
 
         #expect(defaults.lastHarnessId(forServer: "local") == nil)
-        #expect(defaults.runLocation(forServer: "local") == nil)
         #expect(defaults.configSelections(forHarness: "codex", onServer: "local").isEmpty)
         #expect(store.loadData(forKey: "composer-defaults-pre-v3-backup") == nil)
     }
@@ -279,7 +258,6 @@ struct ComposerDefaultsStoreTests {
         let store = InMemoryStore()
         let defaults = ComposerDefaultsStore(store: store)
         defaults.rememberHarnessSelection(serverId: "local", harnessId: "claude-code")
-        defaults.rememberRunLocationSelection(serverId: "local", runLocation: .newWorktree)
         defaults.rememberConfigSelections(
             serverId: "local",
             harnessId: "claude-code",
@@ -288,27 +266,23 @@ struct ComposerDefaultsStoreTests {
         let data = try #require(store.loadData(forKey: "composer-defaults"))
         let object = try JSONSerialization.jsonObject(with: data)
         let canonical = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
-        #expect(String(decoding: canonical, as: UTF8.self) == #"{"machines":{"local":{"configSelections":{"claude-code":{"effort":"high","model":"opus"}},"lastHarnessId":"claude-code","lastRunLocation":"newWorktree"}},"version":3}"#)
+        #expect(String(decoding: canonical, as: UTF8.self) == #"{"machines":{"local":{"configSelections":{"claude-code":{"effort":"high","model":"opus"}},"lastHarnessId":"claude-code"}},"version":3}"#)
     }
 
     @Test("Never shares composer choices between machines")
     func machineIsolation() {
         let defaults = ComposerDefaultsStore(store: InMemoryStore())
         defaults.rememberHarnessSelection(serverId: "remote-a", harnessId: "codex")
-        defaults.rememberRunLocationSelection(serverId: "remote-a", runLocation: .newWorktree)
         defaults.rememberConfigSelections(
             serverId: "remote-a", harnessId: "codex", configValues: ["model": "model-a"]
         )
         defaults.rememberHarnessSelection(serverId: "remote-b", harnessId: "claude-code")
-        defaults.rememberRunLocationSelection(serverId: "remote-b", runLocation: .projectDirectory)
         defaults.rememberConfigSelections(
             serverId: "remote-b", harnessId: "claude-code", configValues: ["model": "model-b"]
         )
 
         #expect(defaults.lastHarnessId(forServer: "remote-a") == "codex")
         #expect(defaults.lastHarnessId(forServer: "remote-b") == "claude-code")
-        #expect(defaults.runLocation(forServer: "remote-a") == .newWorktree)
-        #expect(defaults.runLocation(forServer: "remote-b") == .projectDirectory)
         #expect(defaults.configSelections(forHarness: "codex", onServer: "remote-a") == [
             "model": "model-a"
         ])

@@ -24,12 +24,10 @@ struct PaneContext {
     let attachOnly: Bool
     /// The machine (server URL + auth) the pane's backing resources live on.
     let machine: CodevisorMachine
-    /// Source data for working-directory resolution.
+    /// Source data for working-directory resolution: the anchor session's cwd
+    /// (the workspace's one working directory), else the project folder.
     let session: ChatSession
     let project: Project
-    /// Explicit per-pane working directory (see
-    /// `PaneDescriptorState.cwdOverride`); wins over the session's cwd.
-    var cwdOverride: String? = nil
 }
 
 /// Group-level commands a focused pane can emit from keyboard shortcuts

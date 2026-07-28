@@ -170,12 +170,18 @@ final class SessionStore {
     }
 
     /// Creates a workspace around a fresh eager chat session. The workspace
-    /// begins with the project's name and directory. Worktrees are per-chat
-    /// contexts chosen later in the composer.
-    func createWorkspaceSession(in project: Project) -> ChatSession {
-        let session = environment.projectList.newSession(in: project, title: "New Chat")
+    /// begins rooted at the project folder, or — when a freshly created
+    /// worktree is passed — at that worktree, which then fixes the working
+    /// directory for every chat/terminal the workspace ever hosts.
+    func createWorkspaceSession(in project: Project, worktree: ServerWorktree? = nil) -> ChatSession {
+        let session = environment.projectList.newSession(
+            in: project,
+            title: "New Chat",
+            worktreeName: worktree?.name,
+            cwd: worktree?.path
+        )
         var created = workspace(for: session, project: project)
-        created.name = project.name
+        created.name = worktree?.name ?? project.name
         created.hasCustomName = false
         created.symbolName = project.symbolName
         environment.workspaces.save(created)
@@ -207,16 +213,6 @@ final class SessionStore {
             notificationDelivery: notificationDelivery
         )
         controller.applyComposerDefaults()
-        // A session created eagerly INTO a worktree (the New tab page's
-        // directory pick) seeds the composer with that context — otherwise
-        // the picker would show the project root and the first send would
-        // wipe the recorded worktree. Seed BEFORE the draft restore: a
-        // persisted draft carries the user's later choice and must win.
-        if let preCreatedSession,
-           let name = preCreatedSession.worktreeName,
-           let cwd = preCreatedSession.cwd {
-            controller.setRunContext(.existingWorktree(name: name, path: cwd))
-        }
         if let persisted = environment.composerDrafts.paneDraft(forPane: paneId) {
             controller.restoreDraft(persisted)
         }
@@ -295,7 +291,8 @@ final class SessionStore {
                 initialName: session.worktreeName ?? project.name,
                 serverId: session.serverId,
                 projectId: project.id,
-                rootDirectory: session.cwd ?? project.folderURL.path
+                rootDirectory: session.cwd ?? project.folderURL.path,
+                worktreeName: session.worktreeName
             ),
             legacyGroups: environment.paneGroups
         )
@@ -352,11 +349,10 @@ final class SessionStore {
             repository: repository,
             makeContext: { [weak projectList = environment.projectList] descriptor in
                 // Panes are built lazily, so this cached closure can outlive
-                // the snapshot passed in above: a fresh worktree session
-                // starts with cwd == nil and only learns its worktree path
-                // once setup finishes (ProjectListModel.setWorktree). Resolve
-                // the live session at pane-creation time so terminals open in
-                // the worktree, not the project folder.
+                // the snapshot passed in above: a fresh worktree session may
+                // not have synced its cwd yet. Resolve the live session at
+                // pane-creation time so terminals open in the worktree, not
+                // the project folder.
                 let liveSession = projectList?.sessions.first {
                     $0.serverId == session.serverId && $0.id == session.id
                 } ?? session
@@ -367,8 +363,7 @@ final class SessionStore {
                     attachOnly: descriptor.attachOnly,
                     machine: machine,
                     session: liveSession,
-                    project: project,
-                    cwdOverride: descriptor.cwdOverride
+                    project: project
                 )
             }
         )

@@ -27,6 +27,11 @@ public protocol WorkspaceRepository: Sendable {
         for seed: WorkspaceSessionSeed,
         legacyGroups: (any PaneGroupRepository)?
     ) -> Workspace
+    /// Whether the one-time migration identified by `key` has already run
+    /// against this store.
+    func hasPerformedMigration(_ key: String) -> Bool
+    /// Records that the one-time migration identified by `key` has run.
+    func markMigrationPerformed(_ key: String)
 }
 
 /// Everything the backfill needs to know about a session to give it a
@@ -42,19 +47,24 @@ public struct WorkspaceSessionSeed: Sendable {
     public let projectId: UUID
     /// The session's working directory (worktree or project folder).
     public let rootDirectory: String?
+    /// The session's git worktree, when it lives in one. Stamped onto the
+    /// workspace so future sessions inherit it.
+    public let worktreeName: String?
 
     public init(
         sessionId: UUID,
         initialName: String,
         serverId: String,
         projectId: UUID,
-        rootDirectory: String?
+        rootDirectory: String?,
+        worktreeName: String? = nil
     ) {
         self.sessionId = sessionId
         self.initialName = initialName
         self.serverId = serverId
         self.projectId = projectId
         self.rootDirectory = rootDirectory
+        self.worktreeName = worktreeName
     }
 }
 
@@ -66,8 +76,40 @@ public final class DefaultWorkspaceRepository: WorkspaceRepository, @unchecked S
         var version: Int
         var workspaces: [Workspace]
         var sessionIndex: [UUID: UUID]
+        /// Keys of one-time migrations that have already run against this
+        /// store. Decoded leniently: payloads written before this field
+        /// existed load as empty.
+        var performedMigrations: Set<String>
 
-        static let empty = Payload(version: 2, workspaces: [], sessionIndex: [:])
+        static let empty = Payload(
+            version: 2, workspaces: [], sessionIndex: [:], performedMigrations: []
+        )
+
+        private enum CodingKeys: String, CodingKey {
+            case version, workspaces, sessionIndex, performedMigrations
+        }
+
+        init(
+            version: Int,
+            workspaces: [Workspace],
+            sessionIndex: [UUID: UUID],
+            performedMigrations: Set<String>
+        ) {
+            self.version = version
+            self.workspaces = workspaces
+            self.sessionIndex = sessionIndex
+            self.performedMigrations = performedMigrations
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            version = try container.decode(Int.self, forKey: .version)
+            workspaces = try container.decode([Workspace].self, forKey: .workspaces)
+            sessionIndex = try container.decode([UUID: UUID].self, forKey: .sessionIndex)
+            performedMigrations = try container.decodeIfPresent(
+                Set<String>.self, forKey: .performedMigrations
+            ) ?? []
+        }
     }
 
     private let store: any PersistenceStore
@@ -137,6 +179,7 @@ public final class DefaultWorkspaceRepository: WorkspaceRepository, @unchecked S
             var changed = false
             if existing.rootDirectory == nil, let root = seed.rootDirectory {
                 existing.rootDirectory = root
+                existing.worktreeName = seed.worktreeName
                 changed = true
             }
             if changed { save(existing) }
@@ -158,6 +201,7 @@ public final class DefaultWorkspaceRepository: WorkspaceRepository, @unchecked S
         let workspace = Workspace(
             name: seed.initialName.isEmpty ? "Workspace" : seed.initialName,
             rootDirectory: seed.rootDirectory,
+            worktreeName: seed.worktreeName,
             serverId: seed.serverId,
             projectId: seed.projectId,
             centerTree: .leaf(center),
@@ -165,6 +209,17 @@ public final class DefaultWorkspaceRepository: WorkspaceRepository, @unchecked S
         )
         save(workspace)
         return workspace
+    }
+
+    public func hasPerformedMigration(_ key: String) -> Bool {
+        payload().performedMigrations.contains(key)
+    }
+
+    public func markMigrationPerformed(_ key: String) {
+        var payload = payload()
+        guard !payload.performedMigrations.contains(key) else { return }
+        payload.performedMigrations.insert(key)
+        persist(payload)
     }
 
     private func payload() -> Payload {

@@ -84,11 +84,6 @@ struct ComposerDraftStoreTests {
                 )
             ],
             selectedHarnessId: "codex",
-            runInWorktree: false,
-            // An existing-worktree selection (mutually exclusive with
-            // runInWorktree) must survive the roundtrip too.
-            worktreeName: "ada-lovelace",
-            worktreeCwd: "/tmp/worktrees/ada-lovelace",
             configByHarness: [
                 "codex": ["model": "gpt-5.5", "thought_level": "high"]
             ],

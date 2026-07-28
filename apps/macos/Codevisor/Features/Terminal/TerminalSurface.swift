@@ -24,15 +24,12 @@ struct TerminalLaunchDescriptor: Equatable {
         project: Project,
         machine: CodevisorMachine,
         terminalKey: String,
-        attachOnly: Bool = false,
-        cwdOverride: String? = nil
+        attachOnly: Bool = false
     ) -> TerminalLaunchDescriptor {
-        // Precedence: an explicit per-pane directory (a chat's worktree
-        // picked on the New tab page), else the session's cwd (worktree
-        // sessions open in the worktree), else the project folder. The
-        // proxy passes the folder along via --cwd.
-        let sessionFolder = cwdOverride.map(URL.init(fileURLWithPath:))
-            ?? session.cwd.map(URL.init(fileURLWithPath:))
+        // The session's cwd IS the workspace's one working directory
+        // (worktree sessions open in the worktree), else the project
+        // folder. The proxy passes the folder along via --cwd.
+        let sessionFolder = session.cwd.map(URL.init(fileURLWithPath:))
             ?? project.folderURL
         return TerminalLaunchDescriptor(
             terminalKey: terminalKey,

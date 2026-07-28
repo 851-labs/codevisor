@@ -5,7 +5,8 @@ import CodevisorCore
 /// here"): creates a workspace immediately with the project name — rooted at
 /// the project folder, opening on its eager chat's composer — and routes
 /// into it. Creation is local and synchronous; nothing to watch, nothing to
-/// configure. Worktrees are chosen later, in the composer.
+/// configure. Worktree workspaces are created from the New Workspace page,
+/// which materializes the worktree before the workspace exists.
 struct QuickWorkspaceCreationView: View {
     let project: Project
     let store: SessionStore

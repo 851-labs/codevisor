@@ -276,7 +276,7 @@ struct WorkspaceScreen: View {
                 // macOS behavior: a group never goes empty — closing the last
                 // pane leaves a New Tab page in its place.
                 if state.panes.isEmpty {
-                    state.addNewTabPane(inheritedCwd: workspaceCwd)
+                    state.addNewTabPane()
                 }
                 paneState = state
                 WorkspacePaneStore.shared.save(state, for: sessionId)
@@ -322,7 +322,7 @@ struct WorkspaceScreen: View {
             if let serverConfig {
                 TerminalPaneView(
                     terminalKey: pane.terminalKey,
-                    cwd: pane.cwdOverride ?? workspaceCwd,
+                    cwd: workspaceCwd,
                     config: serverConfig
                 )
             } else {
@@ -357,7 +357,7 @@ struct WorkspaceScreen: View {
     /// source.
     private func addTab() {
         var state = panes
-        state.addNewTabPane(inheritedCwd: workspaceCwd)
+        state.addNewTabPane()
         paneBinding.wrappedValue = state
         Task { @MainActor in
             showsPane = true
@@ -407,10 +407,17 @@ struct WorkspaceScreen: View {
 
     /// The macOS new-tab conversion: the placeholder becomes a real pane in
     /// place. Chats are created eagerly as deferred sessions (the agent
-    /// spawns on first send), exactly like the New Workspace flow.
+    /// spawns on first send), exactly like the New Workspace flow. New chats
+    /// inherit the workspace's one working directory: the root session's
+    /// worktree (or project folder) stamps every sub-chat at creation.
     private func convertToChat(_ pane: PaneDescriptorState) {
         guard let project else { return }
-        let chat = environment.projectList.newSession(in: project, title: "New Chat")
+        let chat = environment.projectList.newSession(
+            in: project,
+            title: "New Chat",
+            worktreeName: rootSession?.worktreeName,
+            cwd: rootSession?.cwd
+        )
         var state = panes
         state.convertNewTabPane(id: pane.id, to: .chat, sessionId: sessionId, chatSessionId: chat.id)
         paneBinding.wrappedValue = state
@@ -418,12 +425,7 @@ struct WorkspaceScreen: View {
 
     private func convertToTerminal(_ pane: PaneDescriptorState) {
         var state = panes
-        state.convertNewTabPane(
-            id: pane.id,
-            to: .terminal,
-            sessionId: sessionId,
-            cwd: pane.cwdOverride ?? workspaceCwd
-        )
+        state.convertNewTabPane(id: pane.id, to: .terminal, sessionId: sessionId)
         paneBinding.wrappedValue = state
     }
 

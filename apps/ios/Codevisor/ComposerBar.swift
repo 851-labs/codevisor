@@ -86,17 +86,6 @@ struct ComposerBar: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            // Where a brand-new chat runs (project root / worktree) floats
-            // above the card, like the macOS new-chat configuration row —
-            // but only when there's actually a choice: a non-git project
-            // with no worktree has exactly one place to run.
-            if controller.canChooseHarness, hasMultipleRunLocations {
-                runLocationChip
-                    .font(.footnote)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 7)
-                    .composerGlassSurface(cornerRadius: 18)
-            }
             card
         }
         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
@@ -328,93 +317,6 @@ struct ComposerBar: View {
     private func setExpanded(_ expand: Bool) {
         withAnimation(.snappy(duration: 0.28)) {
             isExpanded = expand
-        }
-    }
-
-    // MARK: - New-chat pickers
-
-    /// Whether there's more than one place this chat could run. Git projects
-    /// offer New Worktree; a session already bound to a worktree offers it
-    /// back. Otherwise the project root is the only option and the picker
-    /// hides.
-    private var hasMultipleRunLocations: Bool {
-        if controller.project.isGitRepository { return true }
-        if case .existingWorktree = controller.runContext { return true }
-        return false
-    }
-
-    /// Where the chat's commands run: the project root or a fresh worktree —
-    /// the macOS run-location picker, reduced to the contexts this client
-    /// knows about.
-    private var runLocationChip: some View {
-        Menu {
-            Button {
-                selectRunContext(.projectRoot)
-            } label: {
-                menuRow(
-                    controller.project.name,
-                    systemImage: "folder.fill",
-                    isSelected: controller.runContext == .projectRoot
-                )
-            }
-            if case let .existingWorktree(name, path) = controller.runContext {
-                Button {
-                    selectRunContext(.existingWorktree(name: name, path: path))
-                } label: {
-                    menuRow(name, systemImage: "arrow.triangle.branch", isSelected: true)
-                }
-            }
-            if controller.project.isGitRepository {
-                Divider()
-                Button {
-                    selectRunContext(.newWorktree)
-                } label: {
-                    menuRow(
-                        "New worktree",
-                        systemImage: "arrow.triangle.branch",
-                        isSelected: controller.runContext == .newWorktree
-                    )
-                }
-            }
-        } label: {
-            chipLabel(runContextTitle, systemImage: runContextSymbol)
-        }
-        .accessibilityLabel("Run location")
-    }
-
-    private var runContextTitle: String {
-        switch controller.runContext {
-        case .projectRoot: controller.project.name
-        case let .existingWorktree(name, _): name
-        case .newWorktree: "New worktree"
-        }
-    }
-
-    private var runContextSymbol: String {
-        controller.runContext == .projectRoot ? "folder.fill" : "arrow.triangle.branch"
-    }
-
-    private func selectRunContext(_ context: SessionController.RunContextSelection) {
-        controller.selectRunContext(context)
-        Task { await controller.reconnect() }
-    }
-
-    private func chipLabel(_ title: String, systemImage: String) -> some View {
-        HStack(spacing: 4) {
-            Image(systemName: systemImage)
-                .font(.caption)
-            Text(title)
-                .lineLimit(1)
-        }
-        .foregroundStyle(.secondary)
-    }
-
-    @ViewBuilder
-    private func menuRow(_ title: String, systemImage: String, isSelected: Bool) -> some View {
-        if isSelected {
-            Label(title, systemImage: "checkmark")
-        } else {
-            Label(title, systemImage: systemImage)
         }
     }
 

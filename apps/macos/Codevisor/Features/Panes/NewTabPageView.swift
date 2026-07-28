@@ -2,6 +2,7 @@
 //  pane closes. The empty state IS a tab (the strip never lies about what's
 //  open); this page offers what to open in its place — choosing converts
 //  the placeholder pane in place, so the tab slot and selection carry over.
+//  Everything opens in the workspace's one working directory.
 
 import SwiftUI
 import CodevisorCore
@@ -13,32 +14,10 @@ struct NewTabPageView: View {
     let paneId: UUID
     /// The owning group; conversion happens through it.
     let group: PaneGroupModel?
-    /// Run locations the new pane can open in: the project root plus the
-    /// worktrees of the workspace's (unarchived) chats. The picker only
-    /// shows when there is an actual choice.
-    var contexts: [WorkspaceRunContext] = []
-    /// The directory this placeholder was spawned FROM (the focused pane's
-    /// context at ⌘T time). Preselects the matching context so a tab opened
-    /// beside a worktree chat defaults into that worktree.
-    var inheritedPath: String? = nil
     /// Creates the chat SESSION eagerly and converts the placeholder into
     /// an established chat pane (wired by the container, which owns session
     /// creation). Nil (previews) falls back to a draft conversion.
-    var onNewChat: ((WorkspaceRunContext) -> Void)? = nil
-
-    @State private var selectedContextId: String?
-
-    private var selectedContext: WorkspaceRunContext? {
-        if let selectedContextId,
-           let picked = contexts.first(where: { $0.id == selectedContextId }) {
-            return picked
-        }
-        if let inheritedPath,
-           let inherited = contexts.first(where: { $0.path == inheritedPath }) {
-            return inherited
-        }
-        return contexts.first
-    }
+    var onNewChat: (() -> Void)? = nil
 
     var body: some View {
         // Scrolls when the pane is too short for the (possibly stacked)
@@ -60,9 +39,6 @@ struct NewTabPageView: View {
                             optionCards
                         }
                     }
-                    if contexts.count > 1 {
-                        contextPicker
-                    }
                 }
                 .padding(20)
                 .frame(maxWidth: .infinity)
@@ -78,42 +54,6 @@ struct NewTabPageView: View {
         })
     }
 
-    /// Where the new tab opens — the same menu idiom as the composer's
-    /// pickers: native checkmarks, a chip label showing the context NAME
-    /// (project or worktree), with the ~-abbreviated path as a menu-row
-    /// subtitle.
-    private var contextPicker: some View {
-        Menu {
-            ForEach(contexts) { context in
-                Toggle(isOn: Binding(
-                    get: { context.id == selectedContext?.id },
-                    set: { isOn in
-                        guard isOn else { return }
-                        selectedContextId = context.id
-                    }
-                )) {
-                    Label {
-                        Text(context.name)
-                        Text(context.displayPath)
-                    } icon: {
-                        MenuSymbolIcon(systemName: context.symbolName)
-                    }
-                }
-            }
-        } label: {
-            PickerChip(text: selectedContext?.name ?? "") {
-                Image(systemName: selectedContext?.symbolName ?? "folder.fill")
-                    .font(.system(size: 12))
-            }
-        }
-        .menuStyle(.button)
-        .buttonStyle(HoverIconButtonStyle(shape: .chip))
-        .menuIndicator(.hidden)
-        .fixedSize()
-        .accessibilityLabel("Directory for the new tab")
-        .accessibilityValue(selectedContext?.name ?? "")
-    }
-
     @ViewBuilder
     private var optionCards: some View {
         NewTabOptionCard(
@@ -121,29 +61,19 @@ struct NewTabPageView: View {
             subtitle: "Start another chat in this workspace",
             systemImage: "text.bubble"
         ) {
-            if let onNewChat, let selectedContext {
-                onNewChat(selectedContext)
+            if let onNewChat {
+                onNewChat()
             } else {
                 group?.convertNewTabPane(id: paneId, to: .chat)
             }
         }
         NewTabOptionCard(
             title: "New Terminal",
-            subtitle: terminalSubtitle,
+            subtitle: "Open a shell in this workspace",
             systemImage: "terminal"
         ) {
-            group?.convertNewTabPane(
-                id: paneId, to: .terminal, cwd: selectedContext?.path
-            )
+            group?.convertNewTabPane(id: paneId, to: .terminal)
         }
-    }
-
-    /// Names the actual destination, not a generic "workspace directory".
-    private var terminalSubtitle: String {
-        if let selectedContext {
-            return "Open a shell in \(selectedContext.name)"
-        }
-        return "Open a shell in this workspace"
     }
 }
 
@@ -196,18 +126,7 @@ private struct NewTabOptionCard: View {
 #Preview {
     NewTabPageView(
         paneId: UUID(),
-        group: nil,
-        contexts: [
-            WorkspaceRunContext(
-                kind: .projectRoot, name: "molina",
-                path: "/Users/preview/dev/molina", worktreeName: nil
-            ),
-            WorkspaceRunContext(
-                kind: .worktree, name: "ada-lovelace",
-                path: "/Users/preview/codevisor/molina/ada-lovelace",
-                worktreeName: "ada-lovelace"
-            ),
-        ]
+        group: nil
     )
     .frame(width: 700, height: 480)
 }

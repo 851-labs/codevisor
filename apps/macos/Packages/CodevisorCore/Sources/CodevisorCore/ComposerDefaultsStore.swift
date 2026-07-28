@@ -1,9 +1,9 @@
 import Foundation
 
-/// Persists explicit composer selections for the next new chat. Harness and
-/// run-location choices are remembered per machine, while
-/// model/reasoning/speed values are remembered independently for every harness
-/// on that machine.
+/// Persists explicit composer and workspace-creation selections. The harness
+/// choice and the new-workspace worktree preference are remembered per
+/// machine, while model/reasoning/speed values are remembered independently
+/// for every harness on that machine.
 ///
 /// Picker actions update this store immediately. Session creation is not a
 /// persistence boundary: abandoning an unsent chat does not undo an explicit
@@ -14,16 +14,11 @@ public final class ComposerDefaultsStore {
     nonisolated private static let schemaVersion = 3
     nonisolated private static let legacyServerId = "local"
 
-    public enum RunLocation: String, Codable, Sendable {
-        case projectDirectory
-        case newWorktree
-    }
-
     private struct MachineDefaults: Codable {
         var lastHarnessId: String?
-        /// Existing worktree paths are deliberately not remembered: they are
-        /// scoped to one project/draft and can disappear independently.
-        var lastRunLocation: RunLocation?
+        /// Whether the last workspace created on this machine used a fresh
+        /// git worktree — seeds the New Workspace form's toggle.
+        var newWorkspaceInWorktree: Bool?
         /// Config option selections keyed by harness id, then option id.
         /// Keeping every harness here is important: changing harnesses should
         /// restore that harness's own model/reasoning/speed selections.
@@ -46,6 +41,7 @@ public final class ComposerDefaultsStore {
 
     private struct MachineDefaultsV2: Decodable {
         var lastHarnessId: String?
+        /// Legacy field, decode-only: run location is no longer remembered.
         var runInWorktree: Bool?
         var configSelections: [String: [String: String]]?
     }
@@ -85,7 +81,6 @@ public final class ComposerDefaultsStore {
         if let current = try? decoder.decode(Defaults.self, from: data),
            current.version == Self.schemaVersion {
             defaults = current
-            recoverRunLocationsFromMigrationBackup(using: decoder)
             return
         }
 
@@ -94,9 +89,6 @@ public final class ComposerDefaultsStore {
                 machines: scoped.machines.mapValues { machine in
                     MachineDefaults(
                         lastHarnessId: machine.lastHarnessId,
-                        lastRunLocation: machine.runInWorktree.map {
-                            $0 ? .newWorktree : .projectDirectory
-                        },
                         configSelections: machine.configSelections ?? [:]
                     )
                 }
@@ -109,9 +101,6 @@ public final class ComposerDefaultsStore {
             defaults = Defaults(machines: [
                 Self.legacyServerId: MachineDefaults(
                     lastHarnessId: flat.lastHarnessId,
-                    lastRunLocation: flat.runInWorktree.map {
-                        $0 ? .newWorktree : .projectDirectory
-                    },
                     configSelections: flat.configSelections ?? [:]
                 )
             ])
@@ -131,12 +120,6 @@ public final class ComposerDefaultsStore {
         defaults.machines[serverId]?.lastHarnessId
     }
 
-    /// The project-directory/new-worktree choice most recently made in a
-    /// composer on this machine. Nil means the user has not chosen one yet.
-    public func runLocation(forServer serverId: String) -> RunLocation? {
-        defaults.machines[serverId]?.lastRunLocation
-    }
-
     /// The remembered option ids and values for one harness on this machine.
     public func configSelections(
         forHarness harnessId: String,
@@ -154,10 +137,22 @@ public final class ComposerDefaultsStore {
         persist()
     }
 
-    /// Records an explicit run-location picker action immediately.
-    public func rememberRunLocationSelection(serverId: String, runLocation: RunLocation) {
+    /// Whether the last workspace created on this machine used a fresh git
+    /// worktree. Seeds the New Workspace form's toggle; false until a
+    /// workspace has been created.
+    public func prefersWorktreeForNewWorkspaces(forServer serverId: String) -> Bool {
+        defaults.machines[serverId]?.newWorkspaceInWorktree ?? false
+    }
+
+    /// Records the worktree choice a workspace was created with, so the next
+    /// New Workspace form starts from it — same policy as the last-used
+    /// harness.
+    public func rememberNewWorkspaceWorktreePreference(
+        serverId: String,
+        createsWorktree: Bool
+    ) {
         var machine = defaults.machines[serverId] ?? MachineDefaults()
-        machine.lastRunLocation = runLocation
+        machine.newWorkspaceInWorktree = createsWorktree
         defaults.machines[serverId] = machine
         persist()
     }
@@ -200,34 +195,6 @@ public final class ComposerDefaultsStore {
             }
         }
         persist()
-    }
-
-    /// Early V3 builds removed `runInWorktree` before the sticky replacement
-    /// was added. Recover just that field from the one-time migration backup,
-    /// without replacing newer harness or config selections.
-    private func recoverRunLocationsFromMigrationBackup(using decoder: JSONDecoder) {
-        guard let backup = store.loadData(forKey: migrationBackupKey) else { return }
-        var changed = false
-
-        if let scoped = try? decoder.decode(ScopedDefaultsV2.self, from: backup) {
-            for (serverId, legacy) in scoped.machines {
-                guard defaults.machines[serverId]?.lastRunLocation == nil,
-                      let runInWorktree = legacy.runInWorktree else { continue }
-                var machine = defaults.machines[serverId] ?? MachineDefaults()
-                machine.lastRunLocation = runInWorktree ? .newWorktree : .projectDirectory
-                defaults.machines[serverId] = machine
-                changed = true
-            }
-        } else if let flat = try? decoder.decode(FlatDefaultsV1.self, from: backup),
-                  let runInWorktree = flat.runInWorktree,
-                  defaults.machines[Self.legacyServerId]?.lastRunLocation == nil {
-            var machine = defaults.machines[Self.legacyServerId] ?? MachineDefaults()
-            machine.lastRunLocation = runInWorktree ? .newWorktree : .projectDirectory
-            defaults.machines[Self.legacyServerId] = machine
-            changed = true
-        }
-
-        if changed { persist() }
     }
 
     private func persist() {

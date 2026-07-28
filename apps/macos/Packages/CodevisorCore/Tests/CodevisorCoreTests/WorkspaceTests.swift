@@ -415,7 +415,6 @@ struct WorkspaceRepositoryTests {
         #expect(decoded.centerTabs.count == 1)
         #expect(decoded.selectedCenterTabId == decoded.centerTabs[0].id)
         #expect(decoded.centerTabs[0].root.allGroups[0].state.selectedPane?.kind == .newTab)
-        #expect(decoded.centerTabs[0].root.allGroups[0].state.selectedPane?.cwdOverride == "/tmp/project")
     }
 
     @Test("Workspace tab custom titles persist and older tabs remain automatic")
