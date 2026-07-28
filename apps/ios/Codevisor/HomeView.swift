@@ -115,6 +115,12 @@ struct HomeView: View {
         }
     }
 
+    /// Sort tier for a chat row. Every state checked here is visible on the
+    /// row as `SessionRow.statusDot` in the same precedence (error →
+    /// attention → unread); keep the two in sync. If sorting ever consults a
+    /// state the dot doesn't show (the macOS sidebar once sorted a spinning
+    /// chat by its hidden unread count), opening a chat reorders the list
+    /// with no visible state change.
     private func priority(for session: ChatSession) -> Int {
         if session.hasUnreadError { return 0 }
         if session.actionRequired || session.pendingPlanApproval { return 1 }

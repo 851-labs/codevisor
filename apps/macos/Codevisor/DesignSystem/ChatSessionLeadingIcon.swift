@@ -12,6 +12,11 @@ struct ChatSessionLeadingIcon: View {
     @Environment(\.theme) private var theme
 
     var body: some View {
+        // This precedence (error → waiting → in progress → unread) is
+        // mirrored by the sidebar's `sessionPriority(for:)` classification.
+        // Keep the two in sync: if they diverge, a row can sort by a state
+        // its icon doesn't show, and merely opening the chat reorders the
+        // sidebar with no visible state change.
         Group {
             if store?.hasUnreadError(session) == true {
                 ErrorUnreadBadge(color: theme.statusError)

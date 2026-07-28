@@ -34,7 +34,10 @@ private enum SidebarOrder: String, CaseIterable {
 }
 
 /// State groups used ahead of recency when the sidebar is ordered by last
-/// updated. Lower values appear first.
+/// updated. Lower values appear first: unread (finished, reviewable) chats
+/// rank above in-progress (nothing to act on yet) ones. Note the tier a
+/// session is *classified* into follows the leading icon's precedence, not
+/// this rank order — see `sessionPriority(for:)`.
 private enum SidebarSessionPriority: Int {
     case errored
     case waitingForUser
@@ -1574,11 +1577,18 @@ struct SidebarView: View {
             ?? .idle
     }
 
+    /// Classifies a session into its sort tier. The checks MUST mirror
+    /// `ChatSessionLeadingIcon`'s precedence (error → waiting → in progress →
+    /// unread): a mid-run agent with buffered unread turns shows the spinner,
+    /// not the badge, so it must sort as in progress too. Classifying it as
+    /// unread made opening it silently drop it a tier — the row slid down on
+    /// click with no visible state change. Rank order across tiers is
+    /// `SidebarSessionPriority`; only classification follows the icon.
     private func sessionPriority(for session: ChatSession) -> SidebarSessionPriority {
         if store?.hasUnreadError(session) == true { return .errored }
         if store?.isWaitingOnUser(session) == true { return .waitingForUser }
-        if unreadCount(for: session) != nil { return .unread }
         if store?.isInProgress(session) == true { return .inProgress }
+        if unreadCount(for: session) != nil { return .unread }
         return .idle
     }
 
