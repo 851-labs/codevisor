@@ -451,7 +451,11 @@ private struct AssistantTurnBody: View {
             VStack(alignment: .leading, spacing: 0) {
                 HStack(spacing: 6) {
                     sectionLabel(showsTimer: showsTimer)
-                        .font(.subheadline)
+                        // One chrome size everywhere: the worked label, tool
+                        // group headers, and subagent headers all sit at
+                        // .callout, a notch under the body prose — the same
+                        // relationship the macOS transcript has.
+                        .font(.callout)
                         .foregroundStyle(.secondary)
                     if settled {
                         TranscriptDisclosureChevron(expanded: isExpanded)
@@ -553,6 +557,11 @@ private struct TurnItemsView: View {
                 }
             }
         }
+        // Ambient size for worked-section chrome that doesn't set its own
+        // font (tool group headers, tool row titles): .callout, matching the
+        // worked and subagent labels. Markdown commentary is unaffected — it
+        // takes its sizes from the markdown theme.
+        .font(.callout)
     }
 }
 
