@@ -46,6 +46,11 @@ struct HomeView: View {
     @AppStorage("sidebar.organization") private var organizationRaw = HomeOrganization.compact.rawValue
     @AppStorage("sidebar.order") private var orderRaw = HomeOrder.updated.rawValue
     @AppStorage("sidebar.manualSessionOrder") private var manualSessionOrder = ""
+    @AppStorage("ios.onboarding.dismissed") private var onboardingDismissed = false
+    @State private var onboardingStart = OnboardingView.Step.welcome
+    // Bootstrap adds the dev machine a beat after first render; the grace
+    // period keeps onboarding from flashing over an already-paired install.
+    @State private var readyForOnboarding = false
     @State private var isShowingSettings = false
     @State private var isManagingMachines = false
     @State private var isStartingWorkspace = false
@@ -61,6 +66,19 @@ struct HomeView: View {
 
     private var machines: MachineController { environment.machines }
     private var projectList: ProjectListModel { environment.projectList }
+
+    private var hasRemoteMachines: Bool {
+        machines.machines.contains { !$0.isLocal }
+    }
+
+    /// Onboarding presents itself whenever no machine is paired, unless the
+    /// user chose Set Up Later — the empty state can re-arm it.
+    private var showsOnboarding: Binding<Bool> {
+        Binding(
+            get: { readyForOnboarding && !onboardingDismissed && !hasRemoteMachines },
+            set: { if !$0 { onboardingDismissed = true } }
+        )
+    }
 
     /// Active chats on the selected machine, in the chosen order.
     private var visibleSessions: [ChatSession] {
@@ -103,7 +121,9 @@ struct HomeView: View {
     var body: some View {
         NavigationStack(path: $path) {
             Group {
-                if visibleSessions.isEmpty && projectList.activeProjects.isEmpty {
+                if !hasRemoteMachines {
+                    noMachineState
+                } else if visibleSessions.isEmpty {
                     emptyState
                 } else {
                     sessionList
@@ -119,7 +139,13 @@ struct HomeView: View {
                 }
                 ToolbarItem(placement: .topBarTrailing) { organizeMenu }
             }
-            .safeAreaInset(edge: .bottom) { newWorkspaceButton }
+            .safeAreaInset(edge: .bottom) {
+                // The empty states carry their own single call to action; a
+                // second floating button would just compete with it.
+                if hasRemoteMachines && !visibleSessions.isEmpty {
+                    newWorkspaceButton
+                }
+            }
             .navigationDestination(for: UUID.self) { sessionId in
                 WorkspaceScreen(sessionId: sessionId)
             }
@@ -144,6 +170,15 @@ struct HomeView: View {
                 NewWorkspaceSheet { session in
                     path.append(session.id)
                 }
+            }
+            .fullScreenCover(isPresented: showsOnboarding) {
+                onboardingStart = .welcome
+            } content: {
+                OnboardingView(start: onboardingStart)
+            }
+            .task {
+                try? await Task.sleep(for: .milliseconds(300))
+                readyForOnboarding = true
             }
         }
     }
@@ -232,14 +267,59 @@ struct HomeView: View {
             .harness.symbolName ?? "cpu"
     }
 
+    /// No machine paired (fresh install after Set Up Later, or all machines
+    /// removed): everything routes back into the onboarding connect page.
+    private var noMachineState: some View {
+        ContentUnavailableView {
+            Label {
+                Text("No Machine Connected")
+            } icon: {
+                Image("hunk")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 52, height: 52)
+                    .foregroundStyle(.tertiary)
+            }
+        } description: {
+            Text("Codevisor runs coding agents on your own Mac or Linux machine and streams them here.")
+        } actions: {
+            Button {
+                onboardingStart = .connect
+                onboardingDismissed = false
+            } label: {
+                Text("Connect a Machine")
+                    .font(.body.weight(.semibold))
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 4)
+            }
+            .buttonStyle(.glassProminent)
+        }
+    }
+
+    /// A machine is paired but has no active workspaces yet.
     private var emptyState: some View {
         ContentUnavailableView {
-            Label("No Workspaces Yet", systemImage: "bubble.left.and.bubble.right")
+            Label {
+                Text("No Workspaces")
+            } icon: {
+                Image("hunk")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 52, height: 52)
+                    .foregroundStyle(.tertiary)
+            }
         } description: {
-            Text("Pair a machine in Settings, then your agents, workspaces, and projects appear here.")
+            Text("Workspaces are where agents work on \(machines.selectedMachine.name). Start your first one.")
         } actions: {
-            Button("Open Settings") { isShowingSettings = true }
-                .buttonStyle(.borderedProminent)
+            Button {
+                isStartingWorkspace = true
+            } label: {
+                Label("New Workspace", systemImage: "plus")
+                    .font(.body.weight(.semibold))
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 4)
+            }
+            .buttonStyle(.glassProminent)
         }
     }
 

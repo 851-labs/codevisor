@@ -4,6 +4,18 @@
 <dict>
 	<key>CFBundleIconName</key>
 	<string>AppIcon</string>
+	<!-- Codevisor servers are self-hosted and speak plain HTTP on tailnet
+	     (100.64/10, *.ts.net) and LAN addresses, where transport security is
+	     WireGuard or the local network — hostnames ATS can't be scoped to in
+	     advance. NSAllowsLocalNetworking does NOT cover CGNAT tailnet IPs
+	     (verified: quad-100 requests fail -1022 with it), and adding any
+	     targeted key makes iOS ignore NSAllowsArbitraryLoads, so the blanket
+	     key must stand alone. Revisit for App Store review. -->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsArbitraryLoads</key>
+		<true/>
+	</dict>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
