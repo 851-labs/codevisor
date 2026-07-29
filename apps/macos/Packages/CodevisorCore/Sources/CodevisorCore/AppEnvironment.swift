@@ -18,6 +18,11 @@ public final class AppEnvironment {
     public let machines: MachineController
     public let localServer: (any LocalServerControlling)?
     public let appUpdate: AppUpdateModel
+    /// Set at launch when an already-onboarded install is missing the system
+    /// permissions Computer Use needs (typically right after an update).
+    /// While true, the root view presents the blocking permissions gate
+    /// instead of the main split. Cleared when the gate completes.
+    public var requiresPermissionsReview = false
     /// Persists each session's pane-group state (terminal tabs, selection,
     /// panel visibility/height) so panes reattach to their shells after
     /// app restarts.

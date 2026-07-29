@@ -35,8 +35,13 @@ The methods and arguments above intentionally match native Computer Use. `app` m
 ## Operating rules
 
 - Call `get_app_state` immediately before an action. Element indices belong to the latest state and expire when the UI changes.
-- Prefer `element_index` for accessible controls. Use screenshot `x`/`y` only for custom-drawn UI with no useful accessibility element. Coordinates are pixels in that state’s screenshot.
+- Prefer `element_index` for accessible controls. Use screenshot `x`/`y` only for custom-drawn UI with no useful accessibility element. Coordinates are pixels in that state’s screenshot; on macOS the state's `scaleFactor` reports the screenshot-pixels-per-display-point ratio (2 on Retina displays) and `screenWindowBounds` is display points, while `windowBounds`/`screenshotSize` share the screenshot's pixel space.
 - Action methods resolve without a value, matching native Computer Use. After each action, call `get_app_state` again and inspect `state.text`; do not assume the action succeeded.
+- When `screenshot.available` is false, read `screenshot.reason`: a window on another Space is brought forward by simply calling `get_app_state` again, while a missing Screen Recording permission means the accessibility tree is your only view and coordinates cannot be read from pixels.
+- When `modalSheetPresent` is true, a dialog owns the window: complete or dismiss it (its buttons are in the tree) before touching any other control.
+- An action that opens a window (⌘N and friends) does not move the session: check `windows` in the next state, and pass `window_id` to work in the new one. Never repeat a keystroke because the state looks unchanged — you will just open more windows.
+- If the app is running with no window at all, `windows` is empty and there is no screenshot; `press_key` still reaches the app, so open one with `cmd+n` and re-read the state.
+- Action tools return the delivery verdict only. `verified: false` means the event was sent but its effect is unconfirmed — confirm it in the next `get_app_state`, and if nothing changed retry once with `delivery_mode: "foreground"`.
 - Tool failures reject the promise. Do not discard an error with `.catch(() => ...)` and then report success.
 - For text formatting, select the exact malformed substring with `select_text`, then issue the formatting shortcut. Do not use unsupported arguments such as `mode: "all"`; selection types are `text`, `cursor_before`, and `cursor_after`.
 - Use `drag` for pointer drag gestures. For exact text selection in an accessible editor, prefer `select_text` because it is deterministic.

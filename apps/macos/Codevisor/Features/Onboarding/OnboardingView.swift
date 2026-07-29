@@ -1,13 +1,14 @@
 import SwiftUI
 import AppKit
 import CodevisorCore
+import CodevisorCoreMac
 import UniformTypeIdentifiers
 import os
 import CodevisorUI
 
 /// First-launch onboarding, presented as a short paginated flow:
-/// 1. Welcome, 2. Choose your harnesses, 3. Choose your projects,
-/// 4. Choose analytics and crash-report sharing.
+/// 1. Welcome, 2. Choose your harnesses, 3. System permissions,
+/// 4. Choose your projects, 5. Choose analytics and crash-report sharing.
 /// The project step is a multi-select over suggested folders; completing it
 /// adds every selected folder as a project and opens a new chat in the first.
 struct OnboardingView: View {
@@ -26,7 +27,7 @@ struct OnboardingView: View {
     var onComplete: (Project?) -> Void
 
     enum Step: Int, CaseIterable {
-        case welcome, harnesses, project, analytics
+        case welcome, harnesses, permissions, project, analytics
     }
 
     /// Where harness detection stands. Distinguishes "the server isn't up
@@ -38,12 +39,23 @@ struct OnboardingView: View {
         case loaded
     }
 
-    init(onComplete: @escaping (Project?) -> Void, debugInitialStep: Step = .welcome) {
+    init(
+        initialStep: Step = .welcome,
+        onComplete: @escaping (Project?) -> Void
+    ) {
         self.onComplete = onComplete
-        _step = State(initialValue: debugInitialStep)
+        _step = State(initialValue: initialStep)
+    }
+
+    /// Where onboarding should open: the step a mid-flow relaunch left off
+    /// on, or the beginning.
+    static func resumeStep(from settings: AppSettingsModel) -> Step {
+        settings.onboardingStep.flatMap(Step.init(rawValue:)) ?? .welcome
     }
 
     @State private var step: Step
+    /// Which way the current step change is travelling, so the slide matches.
+    @State private var isNavigatingBack = false
     /// The full catalog — installed harnesses get toggles, the rest get
     /// install hints.
     @State private var harnesses: [ServerHarness] = []
@@ -63,6 +75,11 @@ struct OnboardingView: View {
     /// the user continues past the final onboarding step.
     @State private var shareAnalytics = true
     @State private var shareCrashReports = true
+    /// Computer Use permission status; previews auto-grant so the flow is
+    /// navigable without touching real TCC state.
+    @State private var permissions = ComputerUsePermissionsModel(
+        probes: AppPreview.isRunning ? .granted : .live
+    )
 
     private var installedHarnesses: [ServerHarness] { harnesses.filter(\.isReady) }
     private var notInstalledHarnesses: [ServerHarness] { harnesses.filter { !$0.isReady } }
@@ -76,10 +93,7 @@ struct OnboardingView: View {
                         content
                             .frame(maxWidth: contentMaxWidth)
                             .padding(.horizontal, 40)
-                            .transition(.asymmetric(
-                                insertion: .move(edge: .trailing).combined(with: .opacity),
-                                removal: .move(edge: .leading).combined(with: .opacity)
-                            ))
+                            .transition(stepTransition)
                             .id(step)
                         Spacer(minLength: 0)
                     }
@@ -154,16 +168,47 @@ struct OnboardingView: View {
         step == .project ? 560 : 460
     }
 
+    /// Steps slide the way the user is travelling: forward pulls the next
+    /// step in from the trailing edge, Back pulls the previous one in from
+    /// the leading edge.
+    private var stepTransition: AnyTransition {
+        let incoming: Edge = isNavigatingBack ? .leading : .trailing
+        let outgoing: Edge = isNavigatingBack ? .trailing : .leading
+        return .asymmetric(
+            insertion: .move(edge: incoming).combined(with: .opacity),
+            removal: .move(edge: outgoing).combined(with: .opacity)
+        )
+    }
+
     // MARK: - Content
 
     @ViewBuilder
     private var content: some View {
         switch step {
         case .welcome: welcomeStep
+        case .permissions: permissionsStep
         case .analytics: analyticsStep
         case .harnesses: harnessesStep
         case .project: projectStep
         }
+    }
+
+    // MARK: - Permissions
+
+    /// Continue unlocks when both Computer Use permissions are granted;
+    /// "Set Up Later" skips and turns Computer Use off until the user
+    /// re-enters setup from the Computer Use toggle in Settings.
+    private var permissionsStep: some View {
+        VStack(spacing: 20) {
+            stepHeader(
+                symbol: "lock.shield",
+                title: "Allow Computer Use",
+                subtitle: "Codevisor uses these to operate apps when you ask."
+            )
+
+            ComputerUsePermissionRowsView(model: permissions)
+        }
+        .frame(maxWidth: .infinity)
     }
 
     // MARK: - Welcome
@@ -608,11 +653,13 @@ struct OnboardingView: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
-                primaryButton
+                trailingAction
             }
             .frame(maxWidth: .infinity)
         }
         .frame(maxWidth: .infinity)
+        // Swap Set Up Later → Continue in place as the last permission lands.
+        .animation(.snappy(duration: 0.2), value: permissions.allGranted)
     }
 
     private var pageDots: some View {
@@ -626,6 +673,21 @@ struct OnboardingView: View {
         .animation(.smooth(duration: 0.3), value: step)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Step \(step.rawValue + 1) of \(Step.allCases.count)")
+    }
+
+    /// One button occupies the trailing slot. Until both permissions are
+    /// granted the only way forward is to skip, so that action sits there in
+    /// a secondary style; granting them promotes Continue back into place.
+    @ViewBuilder
+    private var trailingAction: some View {
+        if step == .permissions, !permissions.allGranted {
+            Button("Set Up Later") { skipPermissions() }
+                .buttonStyle(.bordered)
+                .controlSize(.large)
+                .frame(minWidth: 96)
+        } else {
+            primaryButton
+        }
     }
 
     private var primaryButton: some View {
@@ -655,6 +717,7 @@ struct OnboardingView: View {
     private var primaryTitle: String {
         switch step {
         case .welcome: return "Get Started"
+        case .permissions: return "Continue"
         case .harnesses: return "Continue"
         case .project: return "Continue"
         case .analytics: return "Continue"
@@ -665,6 +728,7 @@ struct OnboardingView: View {
         if isFinishing { return true }
         switch step {
         case .welcome: return false
+        case .permissions: return !permissions.allGranted
         case .harnesses: return detection == .connecting
         case .project: return projectSetup.selectedFolders.isEmpty
         case .analytics: return false
@@ -673,17 +737,40 @@ struct OnboardingView: View {
 
     // MARK: - Navigation
 
+    /// SwiftUI removes the outgoing step with the transition it was last
+    /// rendered with, so the direction has to land one render before `step`
+    /// changes. Setting both at once would slide the old step out forwards
+    /// while the new one came in backwards.
+    private func navigate(to next: Step, back: Bool) {
+        guard next != step else { return }
+        isNavigatingBack = back
+        // Granting Screen Recording asks for a relaunch mid-flow; remember
+        // the position so the app comes back here rather than at step one.
+        environment.settings.setOnboardingStep(next.rawValue)
+        DispatchQueue.main.async { step = next }
+    }
+
     private func goBack() {
         guard let previous = Step(rawValue: step.rawValue - 1) else { return }
-        step = previous
+        navigate(to: previous, back: true)
+    }
+
+    /// "Set Up Later": Computer Use turns off so nothing half-works, and the
+    /// Computer Use toggle in Settings re-enters this setup inline.
+    private func skipPermissions() {
+        environment.settings.setPermissionsSetupSkipped(true)
+        Task {
+            try? await environment.serverClient.setMcpServerEnabled(id: "computer", enabled: false)
+        }
+        navigate(to: .project, back: false)
     }
 
     private func advance() {
         switch step {
         case .welcome:
-            step = .harnesses
+            navigate(to: .harnesses, back: false)
         case .harnesses:
-            step = .project
+            navigate(to: .permissions, back: false)
             // The catalog is already loaded, so make the first new-chat picker
             // available immediately. The capability warm below replaces this
             // provisional seed with model/mode metadata when it finishes.
@@ -692,11 +779,18 @@ struct OnboardingView: View {
                 forServer: environment.machines.selectedMachineId
             )
             // Capability inspection starts agents to discover models/modes and
-            // can take a few seconds. Hide that latency behind project choice;
-            // onboarding remains interactive and never waits on this warm.
+            // can take a few seconds. Hide that latency behind the permissions
+            // and project steps; onboarding never waits on this warm.
             Task { await environment.warmHarnessCapabilities() }
+        case .permissions:
+            // Both permissions are granted (Continue is disabled otherwise);
+            // record it so an update never re-shows the standalone gate for
+            // this version.
+            environment.settings.setPermissionsReviewedVersion(AppUpdateModel.bundleVersion())
+            environment.settings.setPermissionsSetupSkipped(false)
+            navigate(to: .project, back: false)
         case .project:
-            step = .analytics
+            navigate(to: .analytics, back: false)
         case .analytics:
             environment.setShareAnalytics(shareAnalytics)
             environment.setShareCrashReports(shareCrashReports)
@@ -731,19 +825,19 @@ struct OnboardingView: View {
 }
 
 #Preview("Harnesses") {
-    OnboardingView(onComplete: { _ in }, debugInitialStep: .harnesses)
+    OnboardingView(initialStep: .harnesses) { _ in }
         .environment(AppEnvironment.preview(hasOnboarded: false))
         .frame(width: 900, height: 700)
 }
 
 #Preview("Analytics") {
-    OnboardingView(onComplete: { _ in }, debugInitialStep: .analytics)
+    OnboardingView(initialStep: .analytics) { _ in }
         .environment(AppEnvironment.preview(hasOnboarded: false))
         .frame(width: 900, height: 700)
 }
 
 #Preview("Project") {
-    OnboardingView(onComplete: { _ in }, debugInitialStep: .project)
+    OnboardingView(initialStep: .project) { _ in }
         .environment(AppEnvironment.preview(hasOnboarded: false))
         .frame(width: 900, height: 700)
 }

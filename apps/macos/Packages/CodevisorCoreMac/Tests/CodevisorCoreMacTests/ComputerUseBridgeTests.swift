@@ -423,6 +423,78 @@ struct ComputerUseBridgeTests {
         #expect(paintedByteCounts[1] > paintedByteCounts[0] * 3)
     }
 
+    @Test("Maps clicks through a snapshot only when it captured the target window")
+    func snapshotWindowIdentity() {
+        #expect(computerUseSnapshotMatchesWindow(snapshotWindowID: 42, targetWindowID: 42))
+        #expect(!computerUseSnapshotMatchesWindow(snapshotWindowID: 42, targetWindowID: 43))
+        // Unknown identity on either side keeps the permissive legacy behavior.
+        #expect(computerUseSnapshotMatchesWindow(snapshotWindowID: nil, targetWindowID: 42))
+        #expect(computerUseSnapshotMatchesWindow(snapshotWindowID: 42, targetWindowID: nil))
+        #expect(computerUseSnapshotMatchesWindow(snapshotWindowID: nil, targetWindowID: nil))
+    }
+
+    @Test("Derives Retina pixel sizes so snapshotless clicks never assume 1x")
+    func derivedScreenshotPixelSize() {
+        let frame = CGRect(x: 500, y: 77, width: 656, height: 422)
+
+        #expect(computerUseDerivedScreenshotPixelSize(
+            windowFrame: frame,
+            pointPixelScale: 2
+        ) == CGSize(width: 1_312, height: 844))
+        #expect(computerUseDerivedScreenshotPixelSize(
+            windowFrame: frame,
+            pointPixelScale: 0.5
+        ) == CGSize(width: 656, height: 422))
+
+        // The derived size must round-trip through the shared conversion the
+        // same way a real capture at that scale would.
+        let point = computerUseScreenshotPoint(
+            x: 656,
+            y: 422,
+            screenshotPixelSize: computerUseDerivedScreenshotPixelSize(
+                windowFrame: frame,
+                pointPixelScale: 2
+            ),
+            windowFrame: frame
+        )
+        #expect(point == CGPoint(x: 828, y: 288))
+    }
+
+    @Test("Assigns each session a stable cursor color and avoids live collisions")
+    @MainActor
+    func cursorColorAssignment() {
+        let paletteCount = ComputerUseCursorPalette.colors.count
+        let preferred = computerUseCursorColorIndex(
+            sessionID: "session-a",
+            takenIndices: [],
+            paletteCount: paletteCount
+        )
+
+        // Deterministic: the same session always prefers the same color.
+        #expect(preferred == computerUseCursorColorIndex(
+            sessionID: "session-a",
+            takenIndices: [],
+            paletteCount: paletteCount
+        ))
+        #expect((0..<paletteCount).contains(preferred))
+
+        // A concurrent session holding that color pushes this one elsewhere.
+        let probed = computerUseCursorColorIndex(
+            sessionID: "session-a",
+            takenIndices: [preferred],
+            paletteCount: paletteCount
+        )
+        #expect(probed != preferred)
+        #expect((0..<paletteCount).contains(probed))
+
+        // With every color in use, stability wins over uniqueness.
+        #expect(computerUseCursorColorIndex(
+            sessionID: "session-a",
+            takenIndices: Set(0..<paletteCount),
+            paletteCount: paletteCount
+        ) == preferred)
+    }
+
     @Test("Centers menu-bar content with one chip and one matching hit width")
     func statusItemGeometry() {
         let width = ComputerUseStatusMetrics.width(appCount: 1)

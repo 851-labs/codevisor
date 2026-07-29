@@ -34,6 +34,17 @@ const nativeElementProperty = {
   type: "number",
   description: "Element index from the latest get_app_state result"
 }
+const windowProperty = {
+  type: "number",
+  description:
+    "windowId from the app state's windows list. Switches the session to that window; omit to stay on the current one."
+}
+const deliveryProperty = {
+  type: "string",
+  enum: ["background", "foreground"],
+  description:
+    "background (default) leaves your app in front; foreground activates the target app first, which is the retry when a background event has no effect."
+}
 
 export const computerUseTools: ReadonlyArray<Tool> = [
   tool(
@@ -46,6 +57,7 @@ export const computerUseTools: ReadonlyArray<Tool> = [
     objectSchema(
       {
         app: appProperty,
+        window_id: windowProperty,
         disableDiff: {
           type: "boolean",
           description: "Native Computer Use option. true always returns the complete state."
@@ -65,7 +77,9 @@ export const computerUseTools: ReadonlyArray<Tool> = [
         x: { type: "number" },
         y: { type: "number" },
         mouse_button: { type: "string", enum: ["left", "right", "middle", "l", "r", "m"] },
-        click_count: { type: "number", minimum: 1, maximum: 2 }
+        click_count: { type: "number", minimum: 1, maximum: 2 },
+        window_id: windowProperty,
+        delivery_mode: deliveryProperty
       },
       required: ["app"],
       additionalProperties: false
@@ -80,7 +94,9 @@ export const computerUseTools: ReadonlyArray<Tool> = [
         from_x: { type: "number" },
         from_y: { type: "number" },
         to_x: { type: "number" },
-        to_y: { type: "number" }
+        to_y: { type: "number" },
+        window_id: windowProperty,
+        delivery_mode: deliveryProperty
       },
       ["app", "from_x", "from_y", "to_x", "to_y"]
     )
@@ -103,7 +119,9 @@ export const computerUseTools: ReadonlyArray<Tool> = [
     objectSchema(
       {
         app: appProperty,
-        key: { type: "string" }
+        key: { type: "string" },
+        window_id: windowProperty,
+        delivery_mode: deliveryProperty
       },
       ["app", "key"]
     )
@@ -116,7 +134,9 @@ export const computerUseTools: ReadonlyArray<Tool> = [
         app: appProperty,
         element_index: nativeElementProperty,
         direction: { type: "string", enum: ["up", "down", "left", "right", "u", "d", "l", "r"] },
-        pages: { type: "number" }
+        pages: { type: "number" },
+        window_id: windowProperty,
+        delivery_mode: deliveryProperty
       },
       ["app", "element_index", "direction"]
     )
@@ -159,7 +179,9 @@ export const computerUseTools: ReadonlyArray<Tool> = [
     objectSchema(
       {
         app: appProperty,
-        text: { type: "string" }
+        text: { type: "string" },
+        window_id: windowProperty,
+        delivery_mode: deliveryProperty
       },
       ["app", "text"]
     )
@@ -175,6 +197,7 @@ interface PendingRequest {
 interface HelperClient {
   readonly request: (payload: Readonly<Record<string, unknown>>) => Promise<CallToolResult>
   readonly close: () => Promise<void>
+  readonly isClosed: () => boolean
 }
 
 const jsonLineClient = (
@@ -233,7 +256,8 @@ const jsonLineClient = (
     close: async () => {
       failAll()
       await closeTransport()
-    }
+    },
+    isClosed: () => closed !== undefined
   }
 }
 
@@ -344,13 +368,40 @@ const connectLinuxHelper = async (): Promise<HelperClient> => {
   )
 }
 
+/// The action verdict plus just enough context to notice that the app moved
+/// underneath the caller (a new window, a dialog) without resending the whole
+/// snapshot the next get_app_state will provide anyway.
+const actionOutcome = (result: CallToolResult): CallToolResult => {
+  const text = result.content?.find((entry) => entry.type === "text")?.text
+  if (typeof text !== "string") return { content: [] }
+  try {
+    const state = JSON.parse(text) as Record<string, unknown>
+    const outcome: Record<string, unknown> = { ...(state.action as object | undefined) }
+    for (const key of ["windowId", "focusedWindowId", "modalSheetPresent", "next"] as const) {
+      if (state[key] !== undefined) outcome[key] = state[key]
+    }
+    const windows = state.windows
+    if (Array.isArray(windows) && windows.length > 1) outcome.windowCount = windows.length
+    if (Object.keys(outcome).length === 0) return { content: [] }
+    return { content: [{ type: "text", text: JSON.stringify(outcome) }] }
+  } catch {
+    return { content: [] }
+  }
+}
+
 export const makeComputerUseProvider = (
   dataDir: string
 ): AutomationToolProvider & {
   readonly ensureSetup: () => Promise<void>
   readonly status: () => Readonly<Record<string, unknown>>
 } => {
-  let helper: Promise<HelperClient> | undefined
+  // On macOS each session gets its own bridge connection: the bridge serves
+  // every connection concurrently but strictly serializes requests within one,
+  // so a shared socket would force simultaneous agents to take turns. The
+  // Linux helper is a spawned subprocess, so it stays shared there.
+  const perSessionConnections = process.platform === "darwin"
+  const helpers = new Map<string, Promise<HelperClient>>()
+  const helperKey = (sessionId: string): string => (perSessionConnections ? sessionId : "shared")
   const cachedLinuxStatus = process.platform === "linux" ? linuxHelperStatus() : undefined
   const platformStatus = (): { readonly available: boolean; readonly detail?: string } => {
     if (process.platform === "darwin") {
@@ -361,29 +412,51 @@ export const makeComputerUseProvider = (
     if (cachedLinuxStatus !== undefined) return cachedLinuxStatus
     return { available: false, detail: `Computer Use is unavailable on ${process.platform}` }
   }
-  const connect = (): Promise<HelperClient> => {
-    if (helper !== undefined) return helper
+  const connect = async (sessionId: string): Promise<HelperClient> => {
+    const key = helperKey(sessionId)
+    const existing = helpers.get(key)
+    if (existing !== undefined) {
+      const client = await existing
+      // A dead transport (native app restarted, helper exited) would
+      // otherwise stay memoized and fail every future request.
+      if (!client.isClosed()) return client
+      if (helpers.get(key) === existing) helpers.delete(key)
+      return connect(sessionId)
+    }
     const created = (
       process.platform === "darwin"
         ? connectMacHelper(dataDir)
         : process.platform === "linux"
           ? connectLinuxHelper()
           : Promise.reject(new Error(`Computer Use is unavailable on ${process.platform}`))
-    ).catch((cause) => {
-      helper = undefined
+    ).catch((cause: unknown) => {
+      if (helpers.get(key) === created) helpers.delete(key)
       throw cause
     })
-    helper = created
+    helpers.set(key, created)
     return created
+  }
+  const release = async (sessionId: string): Promise<void> => {
+    const key = helperKey(sessionId)
+    const pending = helpers.get(key)
+    if (pending === undefined) return
+    helpers.delete(key)
+    const active = await pending.catch(() => undefined)
+    await active?.close().catch(() => undefined)
   }
 
   return {
     id: "computer",
     tools: computerUseTools,
     ensureSetup: async () => {
-      await (
-        await connect()
-      ).request({ type: "tool", sessionId: "setup", tool: "list_apps", arguments: {} })
+      const client = await connect("setup")
+      try {
+        await client.request({ type: "tool", sessionId: "setup", tool: "list_apps", arguments: {} })
+      } finally {
+        // The probe connection has no session behind it; keeping it open
+        // would hold a bridge serving slot for nothing.
+        if (perSessionConnections) await release("setup")
+      }
     },
     status: () => ({ platform: process.platform, ...platformStatus() }),
     invoke: async (context, toolName, args) => {
@@ -392,7 +465,7 @@ export const makeComputerUseProvider = (
       }
       try {
         const result = await (
-          await connect()
+          await connect(context.sessionId)
         ).request({
           type: "tool",
           sessionId: context.sessionId,
@@ -400,22 +473,32 @@ export const makeComputerUseProvider = (
           tool: toolName,
           arguments: args
         })
-        // Native Computer Use action methods resolve void. The bridge still
-        // snapshots after each action for presentation and fresh index state,
-        // but callers observe that state through get_app_state just like sky.
-        return toolName === "list_apps" || toolName === "get_app_state" ? result : { content: [] }
+        // Native Computer Use action methods resolve void, and the full
+        // post-action snapshot (tree + screenshot) is observed through
+        // get_app_state. Returning nothing at all, though, hid whether the
+        // event was delivered and whether the app changed — an ignored click
+        // was indistinguishable from a real one. Keep the payload out, keep
+        // the verdict in.
+        if (toolName === "list_apps" || toolName === "get_app_state") return result
+        return actionOutcome(result)
       } catch (cause) {
         return textToolResult(cause instanceof Error ? cause.message : String(cause), true)
       }
     },
     closeSession: async (sessionId) => {
-      const active = await helper?.catch(() => undefined)
+      const active = await helpers.get(helperKey(sessionId))?.catch(() => undefined)
       await active?.request({ type: "closeSession", sessionId }).catch(() => undefined)
+      if (perSessionConnections) await release(sessionId)
     },
     close: async () => {
-      const active = await helper?.catch(() => undefined)
-      helper = undefined
-      await active?.close().catch(() => undefined)
+      const pending = [...helpers.values()]
+      helpers.clear()
+      await Promise.all(
+        pending.map(async (candidate) => {
+          const active = await candidate.catch(() => undefined)
+          await active?.close().catch(() => undefined)
+        })
+      )
     }
   }
 }

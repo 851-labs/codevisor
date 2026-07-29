@@ -4,8 +4,51 @@ public enum CodevisorAppVariant: Sendable {
     public static let productionPort = 49_361
     public static let developmentPort = 49_362
 
+    private static let stashedEnvironmentKey = "dev.launchEnvironment"
+
+    /// A development instance is configured entirely through CODEVISOR_*
+    /// launch environment from `bun run dev`. Relaunches that bypass the
+    /// runner — macOS's own "Quit & Reopen" after a Screen Recording grant,
+    /// the Dock, Finder — start with none of it, which would silently point
+    /// the app at a different instance's data. Stash the configuration under
+    /// this bundle id (dev bundle ids are per-worktree, so per-instance) on
+    /// every configured launch, and restore it on bare ones.
+    private static let resolvedEnvironment: [String: String] = {
+        let live = ProcessInfo.processInfo.environment
+        guard isDevelopment else { return live }
+        let resolution = resolvedDevelopmentEnvironment(
+            live: live,
+            stashed: UserDefaults.standard.dictionary(forKey: stashedEnvironmentKey)
+                as? [String: String]
+        )
+        if let stash = resolution.stash {
+            UserDefaults.standard.set(stash, forKey: stashedEnvironmentKey)
+        }
+        return resolution.environment
+    }()
+
+    /// Pure resolution: a configured launch wins and refreshes the stash; a
+    /// bare launch inherits the stashed configuration; anything the live
+    /// environment does define keeps precedence.
+    static func resolvedDevelopmentEnvironment(
+        live: [String: String],
+        stashed: [String: String]?
+    ) -> (environment: [String: String], stash: [String: String]?) {
+        let devPrefixes = ["CODEVISOR_", "HERDMAN_"]
+        let isConfigured = live["CODEVISOR_DEV_INSTANCE_ID"] != nil
+            || live["HERDMAN_DEV_INSTANCE_ID"] != nil
+        if isConfigured {
+            let stash = live.filter { pair in
+                devPrefixes.contains { pair.key.hasPrefix($0) }
+            }
+            return (live, stash)
+        }
+        guard let stashed, !stashed.isEmpty else { return (live, nil) }
+        return (live.merging(stashed) { liveValue, _ in liveValue }, nil)
+    }
+
     private static var environment: [String: String] {
-        ProcessInfo.processInfo.environment
+        resolvedEnvironment
     }
 
     public static var isDevelopment: Bool {

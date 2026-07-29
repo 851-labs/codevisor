@@ -345,6 +345,24 @@ public final class ComputerUseBridge: @unchecked Sendable {
         let windowFrame: CGRect
     }
 
+    /// Why a snapshot has no image. A bare `null` left the model unable to
+    /// tell "nothing to see" from "blind", so every failure carries a reason
+    /// the model can act on.
+    private enum ScreenshotOutcome {
+        case captured(ScreenshotCapture)
+        case unavailable(String)
+
+        var capture: ScreenshotCapture? {
+            if case let .captured(capture) = self { return capture }
+            return nil
+        }
+
+        var reason: String? {
+            if case let .unavailable(reason) = self { return reason }
+            return nil
+        }
+    }
+
     private let listenerQueue = DispatchQueue(
         label: "com.codevisor.computer-use.listener",
         qos: .userInitiated
@@ -553,8 +571,16 @@ public final class ComputerUseBridge: @unchecked Sendable {
         guard let appName = arguments["app"] as? String else {
             throw BridgeError("app is required")
         }
+        let requestedWindowID = (arguments["windowId"] ?? arguments["window_id"])
+            .flatMap { int($0) }
+            .map { CGWindowID($0) }
         if tool == "get_app_state" {
-            return try appState(sessionID: sessionID, agentLabel: agentLabel, app: appName)
+            return try appState(
+                sessionID: sessionID,
+                agentLabel: agentLabel,
+                app: appName,
+                requestedWindowID: requestedWindowID
+            )
         }
         try requireAccessibility(prompt: true)
         let app = try resolveApp(appName)
@@ -563,11 +589,97 @@ public final class ComputerUseBridge: @unchecked Sendable {
             pid: app.processIdentifier
         )
         let application = AXUIElementCreateApplication(app.processIdentifier)
-        let (window, windowID) = try sessionWindow(
+        if let requestedWindowID {
+            try selectSessionWindow(
+                sessionID: sessionID,
+                application: application,
+                requestedWindowID: requestedWindowID
+            )
+        }
+        // Keyboard input addresses the process, so it stays available when the
+        // app has no window — which is the only way to reopen one (⌘N).
+        let addressesProcess = tool == "press_key" || tool == "type_text"
+        let resolvedWindow: (element: AXUIElement, windowID: CGWindowID?)?
+        do {
+            resolvedWindow = try sessionWindow(
+                sessionID: sessionID,
+                application: application,
+                pid: app.processIdentifier
+            )
+        } catch {
+            guard addressesProcess else { throw error }
+            resolvedWindow = nil
+        }
+        if let resolvedWindow {
+            return try handleWindowedTool(
+                tool: tool,
+                arguments: arguments,
+                sessionID: sessionID,
+                agentLabel: agentLabel,
+                appName: appName,
+                app: app,
+                application: application,
+                window: resolvedWindow.element,
+                windowID: resolvedWindow.windowID
+            )
+        }
+        return try handleWindowlessKeyboardTool(
+            tool: tool,
+            arguments: arguments,
             sessionID: sessionID,
-            application: application,
-            pid: app.processIdentifier
+            agentLabel: agentLabel,
+            appName: appName,
+            app: app
         )
+    }
+
+    /// Keyboard-only path for an app with no window: activate it so the keys
+    /// land, post them to the process, then report the (still windowless or
+    /// now recovered) state.
+    private func handleWindowlessKeyboardTool(
+        tool: String,
+        arguments: [String: Any],
+        sessionID: String,
+        agentLabel: String?,
+        appName: String,
+        app: NSRunningApplication
+    ) throws -> [String: Any] {
+        _ = app.activate(options: [.activateAllWindows])
+        Thread.sleep(forTimeInterval: 0.2)
+        switch tool {
+        case "press_key":
+            guard let key = arguments["key"] as? String else { throw BridgeError("key is required") }
+            try keyPress(key, pid: app.processIdentifier, global: true)
+        case "type_text":
+            guard let text = arguments["text"] as? String else { throw BridgeError("text is required") }
+            try typeText(text, pid: app.processIdentifier, global: true)
+        default:
+            throw BridgeError("The app has no accessible window")
+        }
+        Thread.sleep(forTimeInterval: 0.4)
+        return try appState(
+            sessionID: sessionID,
+            agentLabel: agentLabel,
+            app: appName,
+            action: actionResultMetadata(
+                kind: tool,
+                path: "cgevent_global_windowless",
+                deliveryMode: "foreground"
+            )
+        )
+    }
+
+    private func handleWindowedTool(
+        tool: String,
+        arguments: [String: Any],
+        sessionID: String,
+        agentLabel: String?,
+        appName: String,
+        app: NSRunningApplication,
+        application: AXUIElement,
+        window: AXUIElement,
+        windowID: CGWindowID?
+    ) throws -> [String: Any] {
         let target = try targetElement(sessionID: sessionID, arguments: arguments)
         activatePresentation(
             sessionID: sessionID,
@@ -611,22 +723,29 @@ public final class ComputerUseBridge: @unchecked Sendable {
                 let accessibilityAction = try performAccessibilityClick(
                     target: target,
                     button: button,
-                    clickCount: clickCount
+                    clickCount: clickCount,
+                    pid: app.processIdentifier
                 )
                 let path: String
                 if accessibilityAction != nil {
                     path = "accessibility"
                 } else if let targetFrame = target.frame {
-                    let windowFrame = frame(of: window)
+                    let point = CGPoint(x: targetFrame.midX, y: targetFrame.midY)
+                    let delivery = deliveryTarget(
+                        point: point,
+                        window: window,
+                        windowID: windowID,
+                        windowFrame: frame(of: window)
+                    )
                     let deliveryMode = try deliveryMode(arguments, windowID: windowID)
                     let performClick = {
                         try self.mouseClick(
-                            CGPoint(x: targetFrame.midX, y: targetFrame.midY),
+                            point,
                             count: clickCount,
                             button: button,
                             pid: app.processIdentifier,
-                            windowID: windowID,
-                            windowFrame: windowFrame,
+                            windowID: delivery.windowID,
+                            windowFrame: delivery.windowFrame,
                             chromium: computerUseUsesChromiumInput(
                                 appName: app.localizedName,
                                 bundleIdentifier: app.bundleIdentifier,
@@ -670,11 +789,17 @@ public final class ComputerUseBridge: @unchecked Sendable {
             case .pixel:
                 let point = try screenPoint(
                     window: window,
+                    windowID: windowID,
                     target: nil,
                     sessionID: sessionID,
                     arguments: arguments
                 )
-                let windowFrame = frame(of: window)
+                let delivery = deliveryTarget(
+                    point: point,
+                    window: window,
+                    windowID: windowID,
+                    windowFrame: frame(of: window)
+                )
                 let deliveryMode = try deliveryMode(arguments, windowID: windowID)
                 ComputerUsePresentation.moveCursor(sessionID: sessionID, to: point)
                 let performClick = {
@@ -683,8 +808,8 @@ public final class ComputerUseBridge: @unchecked Sendable {
                         count: clickCount,
                         button: button,
                         pid: app.processIdentifier,
-                        windowID: windowID,
-                        windowFrame: windowFrame,
+                        windowID: delivery.windowID,
+                        windowFrame: delivery.windowFrame,
                         chromium: computerUseUsesChromiumInput(
                             appName: app.localizedName,
                             bundleIdentifier: app.bundleIdentifier,
@@ -733,12 +858,14 @@ public final class ComputerUseBridge: @unchecked Sendable {
             let start = try dragPoint(
                 prefix: "from",
                 window: window,
+                windowID: windowID,
                 sessionID: sessionID,
                 arguments: arguments
             )
             let end = try dragPoint(
                 prefix: "to",
                 window: window,
+                windowID: windowID,
                 sessionID: sessionID,
                 arguments: arguments
             )
@@ -772,7 +899,7 @@ public final class ComputerUseBridge: @unchecked Sendable {
                 )
             }
             guard let element = target?.element, let action = arguments["action"] as? String,
-                  AXUIElementPerformAction(element, action as CFString) == .success
+                  axPerformAction(element, action as CFString, pid: app.processIdentifier) == .success
             else { throw BridgeError("That accessibility action is unavailable") }
             if let targetFrame = target?.frame {
                 ComputerUsePresentation.moveCursor(
@@ -843,7 +970,12 @@ public final class ComputerUseBridge: @unchecked Sendable {
                     to: CGPoint(x: targetFrame.midX, y: targetFrame.midY)
                 )
             }
-            guard AXUIElementSetAttributeValue(element, kAXValueAttribute as CFString, value as CFTypeRef) == .success
+            guard axSetAttribute(
+                element,
+                kAXValueAttribute as CFString,
+                value as CFTypeRef,
+                pid: app.processIdentifier
+            ) == .success
             else { throw BridgeError("The element is not settable") }
             let verified = copyAttribute(element, kAXValueAttribute).map {
                 String(describing: $0)
@@ -854,7 +986,9 @@ public final class ComputerUseBridge: @unchecked Sendable {
                 verified: verified
             )
         case "type_text":
-            if let element = target?.element { try focus(element: element, application: application) }
+            if let element = target?.element {
+                try focus(element: element, application: application, pid: app.processIdentifier)
+            }
             guard let text = arguments["text"] as? String else { throw BridgeError("text is required") }
             if let targetFrame = target?.frame {
                 ComputerUsePresentation.moveCursor(
@@ -889,7 +1023,12 @@ public final class ComputerUseBridge: @unchecked Sendable {
             let selectedRange = try textSelectionRange(element: element, arguments: arguments)
             var range = selectedRange
             guard let value = AXValueCreate(.cfRange, &range),
-                  AXUIElementSetAttributeValue(element, kAXSelectedTextRangeAttribute as CFString, value) == .success
+                  axSetAttribute(
+                      element,
+                      kAXSelectedTextRangeAttribute as CFString,
+                      value,
+                      pid: app.processIdentifier
+                  ) == .success
             else { throw BridgeError("The element does not support text selection") }
             let actualRange = selectedTextRange(element)
             let verified = actualRange?.location == selectedRange.location
@@ -1016,20 +1155,44 @@ public final class ComputerUseBridge: @unchecked Sendable {
         sessionID: String,
         agentLabel: String?,
         app name: String,
+        requestedWindowID: CGWindowID? = nil,
         action: [String: Any]? = nil
     ) throws -> [String: Any] {
         try requireAccessibility(prompt: true)
         let app = try resolveApp(name)
+        // Observing is the deliberate act that resumes an interrupted share.
         try ComputerUsePresentation.requireControlAllowed(
             sessionID: sessionID,
-            pid: app.processIdentifier
+            pid: app.processIdentifier,
+            resuming: true
         )
         let application = AXUIElementCreateApplication(app.processIdentifier)
-        let (window, windowID) = try sessionWindow(
-            sessionID: sessionID,
-            application: application,
-            pid: app.processIdentifier
-        )
+        if let requestedWindowID {
+            try selectSessionWindow(
+                sessionID: sessionID,
+                application: application,
+                requestedWindowID: requestedWindowID
+            )
+        }
+        let resolved: (element: AXUIElement, windowID: CGWindowID?)
+        do {
+            resolved = try sessionWindow(
+                sessionID: sessionID,
+                application: application,
+                pid: app.processIdentifier
+            )
+        } catch {
+            // A running app with every window closed (or on a Space that will
+            // not come forward) has nothing to snapshot, but it is still
+            // driveable: ⌘N is exactly how a person reopens a window. Report
+            // that state instead of failing the call outright.
+            return try windowlessAppState(
+                app: app,
+                name: name,
+                detail: String(describing: error)
+            )
+        }
+        let (window, windowID) = resolved
         activatePresentation(
             sessionID: sessionID,
             agentLabel: agentLabel,
@@ -1041,8 +1204,20 @@ public final class ComputerUseBridge: @unchecked Sendable {
         var records: [String: ElementRecord] = [:]
         var lines: [String] = []
         let accessibilityWindowFrame = frame(of: window)
-        let capture = screenshot(windowID: windowID, fallbackFrame: accessibilityWindowFrame)
-        let windowFrame = capture?.windowFrame ?? accessibilityWindowFrame
+        // A window on another Space cannot be captured at all, which leaves
+        // the model working blind. Bring it forward for the capture the same
+        // way action delivery does, then let withAppFronted restore whatever
+        // was in front before.
+        let outcome: ScreenshotOutcome
+        if let windowID, !windowIsOnVisibleSpace(windowID) {
+            outcome = (try? withAppFronted(app: app, window: window, windowID: windowID) {
+                screenshot(windowID: windowID, fallbackFrame: frame(of: window))
+            }) ?? screenshot(windowID: windowID, fallbackFrame: accessibilityWindowFrame)
+        } else {
+            outcome = screenshot(windowID: windowID, fallbackFrame: accessibilityWindowFrame)
+        }
+        let capture = outcome.capture
+        let windowFrame = capture?.windowFrame ?? frame(of: window) ?? accessibilityWindowFrame
         snapshotTree(
             window,
             depth: 0,
@@ -1068,6 +1243,11 @@ public final class ComputerUseBridge: @unchecked Sendable {
             latestSnapshotIDs[sessionID] = snapshotID
         }
         let accessibilityText = lines.joined(separator: "\n")
+        let screenshotMetadata: [String: Any] = if capture == nil {
+            ["available": false, "reason": outcome.reason ?? "No screenshot was produced."]
+        } else {
+            ["available": true]
+        }
         var metadata: [String: Any] = [
             "snapshotId": snapshotID,
             "app": name,
@@ -1080,8 +1260,27 @@ public final class ComputerUseBridge: @unchecked Sendable {
             ],
             "text": accessibilityText,
             "accessibilityTree": accessibilityText,
-            "screenshot": capture == nil ? NSNull() : ["available": true]
+            "screenshot": screenshotMetadata
         ]
+        // A modal sheet blocks every other control in the window, so say so
+        // rather than leaving the model to infer it from the tree.
+        let sheets = sheetElements(of: window)
+        if !sheets.isEmpty {
+            metadata["modalSheetPresent"] = true
+            metadata["next"] = "A modal dialog is open; dismiss or complete it before using other controls."
+        }
+        // The session follows one window. Publishing the rest is what makes an
+        // action that opened a new window (⌘N) visible instead of looking like
+        // it did nothing; windowId here can be passed back as window_id.
+        let windows = windowInventory(application: application, pinnedWindowID: windowID)
+        metadata["windows"] = windows
+        if windows.count > 1,
+           let focused = windows.first(where: { $0["isFocused"] as? Bool == true }),
+           focused["isSessionWindow"] as? Bool != true,
+           let focusedID = focused["windowId"] {
+            metadata["focusedWindowId"] = focusedID
+            metadata["next"] = "This app's focused window is not the one being inspected. Pass window_id \(focusedID) to switch to it."
+        }
         if let windowID {
             metadata["windowId"] = Int(windowID)
             metadata["isOnActiveSpace"] = windowIsOnVisibleSpace(windowID)
@@ -1100,6 +1299,11 @@ public final class ComputerUseBridge: @unchecked Sendable {
                 "width": pixelSize.width,
                 "height": pixelSize.height
             ]
+            // windowBounds/screenshotSize are pixels while screenWindowBounds
+            // is display points; publish the ratio so consumers can convert.
+            if let windowFrame, windowFrame.width > 0 {
+                metadata["scaleFactor"] = Double(pixelSize.width / windowFrame.width)
+            }
         }
         var content: [[String: Any]] = [["type": "text", "text": try json(metadata)]]
         if let capture {
@@ -1110,6 +1314,35 @@ public final class ComputerUseBridge: @unchecked Sendable {
             ])
         }
         return ["content": content]
+    }
+
+    /// State for a running app that currently exposes no window. Keyboard
+    /// tools still work (they address the process), so this is a recoverable
+    /// state rather than an error.
+    private func windowlessAppState(
+        app: NSRunningApplication,
+        name: String,
+        detail: String
+    ) throws -> [String: Any] {
+        let metadata: [String: Any] = [
+            "app": name,
+            "resolvedApp": [
+                "id": app.bundleIdentifier ?? app.bundleURL?.path ?? name,
+                "name": app.localizedName ?? name,
+                "path": app.bundleURL?.path ?? "",
+                "pid": app.processIdentifier,
+                "isRunning": true
+            ],
+            "text": "",
+            "accessibilityTree": "",
+            "windows": [],
+            "screenshot": [
+                "available": false,
+                "reason": "This app has no open window to capture. \(detail)"
+            ],
+            "next": "The app is running with no window. Press a key such as cmd+n to open one, then call get_app_state again."
+        ]
+        return ["content": [["type": "text", "text": try json(metadata)]]]
     }
 
     private func snapshotTree(
@@ -1128,11 +1361,18 @@ public final class ComputerUseBridge: @unchecked Sendable {
             ?? ""
         let value = role.localizedCaseInsensitiveContains("secure")
             ? "<redacted>"
-            : (stringAttribute(element, kAXValueAttribute) ?? "")
+            : (stringAttribute(element, kAXValueAttribute)
+                ?? selectionDescription(of: element, role: role)
+                ?? "")
         let elementFrame = frame(of: element)
         records[id] = ElementRecord(element: element, frame: elementFrame)
         var line = "\(String(repeating: "\t", count: depth + 1))\(id) \(role) \(title)"
+        // Menu containers report a placeholder frame (zero-sized, far offscreen)
+        // while their items are correct. Publishing it invites a click into
+        // nowhere, so only emit a frame that could actually be aimed at.
         if let elementFrame,
+           elementFrame.width > 0,
+           elementFrame.height > 0,
            let screenshotFrame = computerUseScreenshotFrame(
                screenFrame: elementFrame,
                screenshotPixelSize: screenshotPixelSize,
@@ -1294,12 +1534,30 @@ public final class ComputerUseBridge: @unchecked Sendable {
     /// Keep a session attached to one composited window even if another Space
     /// changes the app's focused/main window. If that window closes, fall back
     /// to the app's current main window and establish a new identity.
+    /// Re-pins the session to a caller-chosen window from the inventory, so a
+    /// multi-window app can actually be navigated.
+    private func selectSessionWindow(
+        sessionID: String,
+        application: AXUIElement,
+        requestedWindowID: CGWindowID
+    ) throws {
+        guard elementsAttribute(application, kAXWindowsAttribute).contains(where: {
+            computerUseWindowID(for: $0) == requestedWindowID
+        }) else {
+            throw BridgeError(
+                "That window does not belong to this app. Use a windowId from the app state's windows list."
+            )
+        }
+        lock.withLock { windowIDBySession[sessionID] = requestedWindowID }
+    }
+
     private func sessionWindow(
         sessionID: String,
         application: AXUIElement,
         pid: pid_t
     ) throws -> (element: AXUIElement, windowID: CGWindowID?) {
         var lastError: Error?
+        var broughtForward = false
         // A successful LaunchServices completion only means the process is
         // running. Native Computer Use waits for the first accessible window
         // before returning state, so allow normal app startup to settle here.
@@ -1312,10 +1570,21 @@ public final class ComputerUseBridge: @unchecked Sendable {
                 )
             } catch {
                 lastError = error
+                // An app whose windows all sit on another Space publishes no
+                // accessible window at all, so this would otherwise fail with
+                // a misleading "no accessible window". Activating it brings
+                // that Space forward; try once, then keep waiting.
+                if !broughtForward, attempt >= 1 {
+                    broughtForward = true
+                    NSRunningApplication(processIdentifier: pid)?
+                        .activate(options: [.activateAllWindows])
+                }
                 if attempt < 79 { Thread.sleep(forTimeInterval: 0.1) }
             }
         }
-        throw lastError ?? BridgeError("The app has no accessible window")
+        throw lastError ?? BridgeError(
+            "The app has no accessible window. If its windows are on another Space, switch to that Space and try again."
+        )
     }
 
     private func availableSessionWindow(
@@ -1324,11 +1593,18 @@ public final class ComputerUseBridge: @unchecked Sendable {
         pid: pid_t
     ) throws -> (element: AXUIElement, windowID: CGWindowID?) {
         let pinnedID = lock.withLock { windowIDBySession[sessionID] }
-        if let pinnedID,
-           let pinned = elementsAttribute(application, kAXWindowsAttribute).first(where: {
-               computerUseWindowID(for: $0) == pinnedID
-           }) {
-            return (pinned, pinnedID)
+        if let pinnedID {
+            // AXWindows comes back empty while the app's windows are on
+            // another Space, which would silently drop the pin and re-resolve
+            // to whatever is focused. The focused/main windows still resolve
+            // then, so search those too.
+            let candidates = elementsAttribute(application, kAXWindowsAttribute) + [
+                elementAttribute(application, kAXFocusedWindowAttribute),
+                elementAttribute(application, kAXMainWindowAttribute)
+            ].compactMap { $0 }
+            if let pinned = candidates.first(where: { computerUseWindowID(for: $0) == pinnedID }) {
+                return (pinned, pinnedID)
+            }
         }
 
         let window = try mainWindow(application)
@@ -1359,6 +1635,7 @@ public final class ComputerUseBridge: @unchecked Sendable {
 
     private func screenPoint(
         window: AXUIElement,
+        windowID: CGWindowID?,
         target: ElementRecord?,
         sessionID: String,
         arguments: [String: Any]
@@ -1371,11 +1648,18 @@ public final class ComputerUseBridge: @unchecked Sendable {
             y: y,
             fallbackWindowFrame: frame,
             sessionID: sessionID,
+            windowID: windowID,
             snapshotID: (arguments["snapshotId"] ?? arguments["snapshot_id"]) as? String
         )
     }
 
-    private func dragPoint(prefix: String, window: AXUIElement, sessionID: String, arguments: [String: Any]) throws -> CGPoint {
+    private func dragPoint(
+        prefix: String,
+        window: AXUIElement,
+        windowID: CGWindowID?,
+        sessionID: String,
+        arguments: [String: Any]
+    ) throws -> CGPoint {
         let camelKey = prefix + "ElementId"
         let snakeKey = prefix + "_element_index"
         if let rawID = arguments[camelKey] ?? arguments[snakeKey] {
@@ -1396,6 +1680,7 @@ public final class ComputerUseBridge: @unchecked Sendable {
             y: y,
             fallbackWindowFrame: frame,
             sessionID: sessionID,
+            windowID: windowID,
             snapshotID: (arguments["snapshotId"] ?? arguments["snapshot_id"]) as? String
         )
     }
@@ -1405,6 +1690,7 @@ public final class ComputerUseBridge: @unchecked Sendable {
         y: Double,
         fallbackWindowFrame: CGRect,
         sessionID: String,
+        windowID: CGWindowID?,
         snapshotID: String?
     ) -> CGPoint {
         let snapshot = snapshotID.flatMap { id in
@@ -1412,13 +1698,54 @@ public final class ComputerUseBridge: @unchecked Sendable {
         } ?? lock.withLock {
             latestSnapshotIDs[sessionID].flatMap { snapshots[sessionID]?[$0] }
         }
-        let windowFrame = snapshot?.windowFrame ?? fallbackWindowFrame
+        // Coordinates are pixels in a specific snapshot's screenshot. A
+        // snapshot of a different window cannot map this action's coordinates.
+        if let snapshot,
+           computerUseSnapshotMatchesWindow(
+               snapshotWindowID: snapshot.windowID,
+               targetWindowID: windowID
+           ) {
+            // A nil pixel size here means the snapshot's accessibility frames
+            // were reported unscaled (no screenshot), so 1x is correct.
+            return computerUseScreenshotPoint(
+                x: x,
+                y: y,
+                screenshotPixelSize: snapshot.screenshotPixelSize,
+                windowFrame: snapshot.windowFrame ?? fallbackWindowFrame
+            )
+        }
+        // Without a trustworthy snapshot the coordinates still originate from
+        // a screenshot in device pixels. Assuming 1x would double every offset
+        // on Retina displays, so derive the window's real display scale.
         return computerUseScreenshotPoint(
             x: x,
             y: y,
-            screenshotPixelSize: snapshot?.screenshotPixelSize,
-            windowFrame: windowFrame
+            screenshotPixelSize: computerUseDerivedScreenshotPixelSize(
+                windowFrame: fallbackWindowFrame,
+                pointPixelScale: displayPointPixelScale(for: fallbackWindowFrame)
+            ),
+            windowFrame: fallbackWindowFrame
         )
+    }
+
+    /// Point-to-pixel scale of the display that shows most of `frame`, in the
+    /// same global top-left coordinate space CG windows use. Falls back to the
+    /// main display so an offscreen frame still resolves to a real scale.
+    private func displayPointPixelScale(for frame: CGRect) -> CGFloat {
+        var displays = [CGDirectDisplayID](repeating: 0, count: 16)
+        var matched: UInt32 = 0
+        var resolved = CGMainDisplayID()
+        if CGGetDisplaysWithRect(frame, UInt32(displays.count), &displays, &matched) == .success,
+           matched > 0 {
+            resolved = displays.prefix(Int(matched)).max { lhs, rhs in
+                let lhsOverlap = CGDisplayBounds(lhs).intersection(frame)
+                let rhsOverlap = CGDisplayBounds(rhs).intersection(frame)
+                return lhsOverlap.width * lhsOverlap.height
+                    < rhsOverlap.width * rhsOverlap.height
+            } ?? resolved
+        }
+        guard let mode = CGDisplayCopyDisplayMode(resolved), mode.width > 0 else { return 1 }
+        return max(1, CGFloat(mode.pixelWidth) / CGFloat(mode.width))
     }
 
     private func activatePresentation(
@@ -1439,10 +1766,61 @@ public final class ComputerUseBridge: @unchecked Sendable {
         )
     }
 
+    /// AX requests that target our own process run their side effects on the
+    /// calling thread — a bridge worker, not main. A SwiftUI action invoked
+    /// there trips main-actor isolation and kills the app, and an agent
+    /// driving Codevisor itself (same pid) is a real, supported flow. Marshal
+    /// those mutations onto the main thread; other processes are unaffected.
+    /// The AX C types predate Sendable; this crossing is a synchronous hop to
+    /// the main thread with the caller blocked, so nothing races.
+    private struct UncheckedAXPayload<Value>: @unchecked Sendable {
+        let value: Value
+    }
+
+    /// Dispatched, never `sync`: a self-targeted action can open a menu or
+    /// sheet, and AppKit runs those in a nested tracking loop that would not
+    /// return until the user dismissed it — blocking this worker (and the
+    /// whole helper socket) for the duration. The effect is reported through
+    /// the post-action snapshot instead of an AXError.
+    private func axPerformAction(
+        _ element: AXUIElement,
+        _ action: CFString,
+        pid: pid_t
+    ) -> AXError {
+        guard pid == ProcessInfo.processInfo.processIdentifier, !Thread.isMainThread else {
+            return AXUIElementPerformAction(element, action)
+        }
+        let payload = UncheckedAXPayload(value: (element, action))
+        DispatchQueue.main.async {
+            _ = AXUIElementPerformAction(payload.value.0, payload.value.1)
+        }
+        // Give the main thread a beat to apply it before the caller snapshots.
+        Thread.sleep(forTimeInterval: 0.1)
+        return .success
+    }
+
+    private func axSetAttribute(
+        _ element: AXUIElement,
+        _ attribute: CFString,
+        _ value: CFTypeRef,
+        pid: pid_t
+    ) -> AXError {
+        guard pid == ProcessInfo.processInfo.processIdentifier, !Thread.isMainThread else {
+            return AXUIElementSetAttributeValue(element, attribute, value)
+        }
+        let payload = UncheckedAXPayload(value: (element, attribute, value))
+        DispatchQueue.main.async {
+            _ = AXUIElementSetAttributeValue(payload.value.0, payload.value.1, payload.value.2)
+        }
+        Thread.sleep(forTimeInterval: 0.1)
+        return .success
+    }
+
     private func performAccessibilityClick(
         target: ElementRecord,
         button: String,
-        clickCount: Int
+        clickCount: Int,
+        pid: pid_t
     ) throws -> String? {
         let desired: [String]
         switch button.lowercased() {
@@ -1467,13 +1845,33 @@ public final class ComputerUseBridge: @unchecked Sendable {
             return nil
         }
         for attempt in 0..<max(clickCount, 1) {
-            guard AXUIElementPerformAction(target.element, action as CFString) == .success else {
+            guard axPerformAction(target.element, action as CFString, pid: pid) == .success else {
                 throw BridgeError("The selected element rejected \(action)")
             }
             if attempt < clickCount - 1 { Thread.sleep(forTimeInterval: 0.05) }
         }
         Thread.sleep(forTimeInterval: 0.08)
         return action
+    }
+
+    /// Pop-up buttons do not always publish AXValue — a freshly built sheet
+    /// often reports nothing — which leaves the model unable to read the
+    /// current selection. Recover it from the selected child or the button's
+    /// own label instead of showing an empty control.
+    private func selectionDescription(of element: AXUIElement, role: String) -> String? {
+        guard role == "AXPopUpButton" || role == "AXComboBox" else { return nil }
+        if let selected = elementsAttribute(element, kAXSelectedChildrenAttribute).first,
+           let title = stringAttribute(selected, kAXTitleAttribute) ?? stringAttribute(selected, kAXValueAttribute),
+           !title.isEmpty {
+            return title
+        }
+        for child in elementsAttribute(element, kAXChildrenAttribute) {
+            if let text = stringAttribute(child, kAXValueAttribute)
+                ?? stringAttribute(child, kAXTitleAttribute), !text.isEmpty {
+                return text
+            }
+        }
+        return nil
     }
 
     private func actionNames(of element: AXUIElement) -> [String] {
@@ -1488,19 +1886,21 @@ public final class ComputerUseBridge: @unchecked Sendable {
             && settable.boolValue
     }
 
-    private func focus(element: AXUIElement, application: AXUIElement) throws {
+    private func focus(element: AXUIElement, application: AXUIElement, pid: pid_t) throws {
         if isSettable(element, attribute: kAXFocusedAttribute),
-           AXUIElementSetAttributeValue(
+           axSetAttribute(
                element,
                kAXFocusedAttribute as CFString,
-               kCFBooleanTrue
+               kCFBooleanTrue,
+               pid: pid
            ) == .success {
             return
         }
-        guard AXUIElementSetAttributeValue(
+        guard axSetAttribute(
             application,
             kAXFocusedUIElementAttribute as CFString,
-            element
+            element,
+            pid: pid
         ) == .success else {
             throw BridgeError("The selected element could not receive keyboard focus")
         }
@@ -1698,6 +2098,60 @@ public final class ComputerUseBridge: @unchecked Sendable {
             return text
         }.joined(separator: "\n")
         return foundFormatting ? rendered : nil
+    }
+
+    /// Modal sheets attached to a window. Apps are inconsistent about the
+    /// `AXSheets` attribute — Chess leaves it empty and exposes the sheet as
+    /// a plain child — so fall back to a role scan of the children.
+    /// Every window the app currently exposes, so a caller can see that an
+    /// action opened a new one (⌘N in a document app) instead of silently
+    /// staring at the window the session happens to be pinned to.
+    private func windowInventory(
+        application: AXUIElement,
+        pinnedWindowID: CGWindowID?
+    ) -> [[String: Any]] {
+        let focusedID = elementAttribute(application, kAXFocusedWindowAttribute)
+            .flatMap { computerUseWindowID(for: $0) }
+        return elementsAttribute(application, kAXWindowsAttribute).compactMap { candidate in
+            guard let id = computerUseWindowID(for: candidate) else { return nil }
+            var entry: [String: Any] = [
+                "windowId": Int(id),
+                "isSessionWindow": id == pinnedWindowID,
+                "isFocused": id == focusedID,
+                "hasModalSheet": !sheetElements(of: candidate).isEmpty,
+                "isOnActiveSpace": windowIsOnVisibleSpace(id)
+            ]
+            if let title = stringAttribute(candidate, kAXTitleAttribute), !title.isEmpty {
+                entry["title"] = title
+            }
+            if let frame = frame(of: candidate) { entry["screenBounds"] = frameObject(frame) }
+            return entry
+        }
+    }
+
+    private func sheetElements(of window: AXUIElement) -> [AXUIElement] {
+        let declared = elementsAttribute(window, "AXSheets")
+        if !declared.isEmpty { return declared }
+        return elementsAttribute(window, kAXChildrenAttribute).filter {
+            stringAttribute($0, kAXRoleAttribute) == "AXSheet"
+        }
+    }
+
+    /// A sheet is its own WindowServer window sitting inside its parent's
+    /// bounds, and it is app-modal: events stamped with the parent's window
+    /// id are refused while it is up. Resolve the window that actually owns
+    /// the point so pointer events reach the dialog.
+    private func deliveryTarget(
+        point: CGPoint,
+        window: AXUIElement,
+        windowID: CGWindowID?,
+        windowFrame: CGRect?
+    ) -> (windowID: CGWindowID?, windowFrame: CGRect?) {
+        for sheet in sheetElements(of: window) {
+            guard let sheetFrame = frame(of: sheet), sheetFrame.contains(point) else { continue }
+            return (computerUseWindowID(for: sheet) ?? windowID, sheetFrame)
+        }
+        return (windowID, windowFrame)
     }
 
     private func matchingWindowID(pid: pid_t, frame: CGRect) -> CGWindowID? {
@@ -2078,10 +2532,17 @@ public final class ComputerUseBridge: @unchecked Sendable {
     private func screenshot(
         windowID: CGWindowID?,
         fallbackFrame: CGRect?
-    ) -> ScreenshotCapture? {
-        guard CGPreflightScreenCaptureAccess() || CGRequestScreenCaptureAccess() else { return nil }
+    ) -> ScreenshotOutcome {
+        guard CGPreflightScreenCaptureAccess() || CGRequestScreenCaptureAccess() else {
+            return .unavailable(
+                "Screen Recording permission is not granted to Codevisor; the accessibility tree is the only view of this app."
+            )
+        }
         guard let windowID else {
-            return fallbackFrame.flatMap { screenshotRegion(frame: $0) }
+            if let capture = fallbackFrame.flatMap({ screenshotRegion(frame: $0) }) {
+                return .captured(capture)
+            }
+            return .unavailable("The app exposes no capturable window.")
         }
         let semaphore = DispatchSemaphore(value: 0)
         let box = ScreenshotBox()
@@ -2120,12 +2581,19 @@ public final class ComputerUseBridge: @unchecked Sendable {
             }
         }
         _ = semaphore.wait(timeout: .now() + 10)
-        if let capture = box.capture { return capture }
+        if let capture = box.capture { return .captured(capture) }
         // A region fallback is valid only when the target is on the current
         // Space. Otherwise it would return pixels belonging to whichever
         // unrelated window happens to occupy the same coordinates.
-        guard windowIsOnVisibleSpace(windowID) else { return nil }
-        return fallbackFrame.flatMap { screenshotRegion(frame: $0) }
+        guard windowIsOnVisibleSpace(windowID) else {
+            return .unavailable(
+                "The target window is on another Space, minimized, or hidden, so it cannot be captured. Retry this call to bring it forward, or use deliveryMode foreground."
+            )
+        }
+        if let capture = fallbackFrame.flatMap({ screenshotRegion(frame: $0) }) {
+            return .captured(capture)
+        }
+        return .unavailable("Screen capture failed for the target window.")
     }
 
     private func screenshotRegion(frame: CGRect) -> ScreenshotCapture? {
@@ -2182,6 +2650,29 @@ func computerUseScreenshotPoint(
             windowFrame.maxY - 0.5,
             max(windowFrame.minY + 0.5, windowFrame.minY + y * yScale)
         )
+    )
+}
+
+/// A snapshot can only map screenshot coordinates onto the window it captured.
+/// Unknown identity on either side keeps the previous permissive behavior.
+func computerUseSnapshotMatchesWindow(
+    snapshotWindowID: CGWindowID?,
+    targetWindowID: CGWindowID?
+) -> Bool {
+    guard let snapshotWindowID, let targetWindowID else { return true }
+    return snapshotWindowID == targetWindowID
+}
+
+/// The pixel size a screenshot of `windowFrame` would have on a display with
+/// `pointPixelScale`, mirroring the capture configuration in `screenshot`.
+func computerUseDerivedScreenshotPixelSize(
+    windowFrame: CGRect,
+    pointPixelScale: CGFloat
+) -> CGSize {
+    let scale = max(1, pointPixelScale)
+    return CGSize(
+        width: (windowFrame.width * scale).rounded(),
+        height: (windowFrame.height * scale).rounded()
     )
 }
 

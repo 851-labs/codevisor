@@ -38,15 +38,27 @@ describe("Computer Use tool contract", () => {
   it("keeps the public method and argument surface aligned with native Computer Use", () => {
     const expected = new Map<string, string[]>([
       ["list_apps", []],
-      ["get_app_state", ["app", "disableDiff"]],
-      ["click", ["app", "element_index", "x", "y", "mouse_button", "click_count"]],
-      ["drag", ["app", "from_x", "from_y", "to_x", "to_y"]],
+      ["get_app_state", ["app", "window_id", "disableDiff"]],
+      [
+        "click",
+        [
+          "app",
+          "element_index",
+          "x",
+          "y",
+          "mouse_button",
+          "click_count",
+          "window_id",
+          "delivery_mode"
+        ]
+      ],
+      ["drag", ["app", "from_x", "from_y", "to_x", "to_y", "window_id", "delivery_mode"]],
       ["perform_secondary_action", ["app", "element_index", "action"]],
-      ["press_key", ["app", "key"]],
-      ["scroll", ["app", "element_index", "direction", "pages"]],
+      ["press_key", ["app", "key", "window_id", "delivery_mode"]],
+      ["scroll", ["app", "element_index", "direction", "pages", "window_id", "delivery_mode"]],
       ["select_text", ["app", "element_index", "text", "prefix", "suffix", "selection_type"]],
       ["set_value", ["app", "element_index", "value"]],
-      ["type_text", ["app", "text"]]
+      ["type_text", ["app", "text", "window_id", "delivery_mode"]]
     ])
 
     expect(computerUseTools.map((candidate) => candidate.name)).toEqual([...expected.keys()])
@@ -73,8 +85,13 @@ describe("Computer Use tool contract", () => {
       "x",
       "y",
       "mouse_button",
-      "click_count"
+      "click_count",
+      "window_id",
+      "delivery_mode"
     ])
+    // A window can open under the agent, and a background event can be
+    // ignored: both recoveries have to be callable, not just documented.
+    expect(schema.properties.delivery_mode!.enum).toEqual(["background", "foreground"])
     expect(schema.properties.mouse_button!.enum).toEqual(["left", "right", "middle", "l", "r", "m"])
     expect(schema.required).toEqual(["app"])
     expect(schema.additionalProperties).toBe(false)

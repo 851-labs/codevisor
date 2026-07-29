@@ -7,13 +7,28 @@ import QuartzCore
 /// lifecycle. Pointer movement is rendered in a separate, click-through
 /// window and never changes the user's hardware cursor position.
 enum ComputerUsePresentation {
-    static func requireControlAllowed(sessionID: String, pid: pid_t) throws {
+    /// - Parameter resuming: true when the caller is deliberately re-observing
+    ///   the app (`get_app_state`), which clears a transient stop so the agent
+    ///   can carry on. Actions never clear it: a click fired at a stopped app
+    ///   must fail loudly rather than silently resurrect the session.
+    static func requireControlAllowed(
+        sessionID: String,
+        pid: pid_t,
+        resuming: Bool = false
+    ) throws {
         let key = ComputerUseShareKey(sessionID: sessionID, pid: pid)
-        if ComputerUseRevocations.shared.contains(key) {
+        guard ComputerUseRevocations.shared.contains(key) else { return }
+        if ComputerUseRevocations.shared.isPermanent(key) {
             throw ComputerUsePresentationError(
-                "Computer Use for this app was stopped from the macOS sharing control"
+                "Computer Use for this app was stopped from the Codevisor menu bar. Start a new session to control it again."
             )
         }
+        guard resuming else {
+            throw ComputerUsePresentationError(
+                "Computer Use sharing for this app was interrupted. Call get_app_state to resume, then retry."
+            )
+        }
+        ComputerUseRevocations.shared.clearTransient(key)
     }
 
     static func activate(
@@ -76,6 +91,59 @@ enum ComputerUseCursorMetrics {
     static let tipAnchor = CGPoint(x: 60.35, y: 70.3)
     static let pointerSize = CGSize(width: 15, height: 17)
     static let artworkRotation = 32 * CGFloat.pi / 180
+}
+
+/// Saturated mid-tones that stay legible over both light and dark app content
+/// while remaining distinguishable from one another at pointer size.
+enum ComputerUseCursorPalette {
+    static let colors: [NSColor] = [
+        NSColor(calibratedRed: 0.35, green: 0.34, blue: 0.84, alpha: 1), // indigo
+        NSColor(calibratedRed: 0.83, green: 0.32, blue: 0.31, alpha: 1), // coral
+        NSColor(calibratedRed: 0.13, green: 0.55, blue: 0.45, alpha: 1), // teal
+        NSColor(calibratedRed: 0.80, green: 0.47, blue: 0.13, alpha: 1), // amber
+        NSColor(calibratedRed: 0.61, green: 0.31, blue: 0.73, alpha: 1), // purple
+        NSColor(calibratedRed: 0.17, green: 0.47, blue: 0.82, alpha: 1), // blue
+        NSColor(calibratedRed: 0.78, green: 0.31, blue: 0.60, alpha: 1), // magenta
+        NSColor(calibratedRed: 0.42, green: 0.56, blue: 0.14, alpha: 1)  // olive
+    ]
+
+    static func color(at index: Int) -> NSColor {
+        guard !colors.isEmpty else { return .black }
+        return colors[((index % colors.count) + colors.count) % colors.count]
+    }
+}
+
+/// FNV-1a; deterministic across launches so the same session prefers the same
+/// cursor color every time it appears.
+func computerUseStableHash(_ value: String) -> UInt32 {
+    var hash: UInt32 = 2_166_136_261
+    for byte in value.utf8 {
+        hash ^= UInt32(byte)
+        hash = hash &* 16_777_619
+    }
+    return hash
+}
+
+/// Deterministic palette assignment: a session always prefers the index its
+/// hash selects, and only probes forward when a *concurrently active* session
+/// already occupies that color. With every color taken, stability wins over
+/// uniqueness so the session keeps its own hash color.
+func computerUseCursorColorIndex(
+    sessionID: String,
+    takenIndices: Set<Int>,
+    paletteCount: Int = ComputerUseCursorPalette.colors.count
+) -> Int {
+    guard paletteCount > 0 else { return 0 }
+    let preferred = Int(computerUseStableHash(sessionID) % UInt32(paletteCount))
+    guard takenIndices.contains(preferred), takenIndices.count < paletteCount else {
+        return preferred
+    }
+    var candidate = preferred
+    for _ in 0..<paletteCount {
+        candidate = (candidate + 1) % paletteCount
+        if !takenIndices.contains(candidate) { return candidate }
+    }
+    return preferred
 }
 
 /// Keep the cursor's visual hotspot at the exact event coordinate. The
@@ -192,6 +260,7 @@ final class ComputerUsePresentationState: NSObject {
         var targetWindowID: CGWindowID?
         var cursorPanel: ComputerUseCursorPanel
         var cursorView: ComputerUseCursorView
+        var colorIndex: Int
         var displayedTip: CGPoint?
         var idleTimer: Timer?
         var idlePhase: CGFloat
@@ -200,6 +269,7 @@ final class ComputerUsePresentationState: NSObject {
     private let cursorSize = ComputerUseCursorMetrics.windowSize
     private let cursorTipAnchor = ComputerUseCursorMetrics.tipAnchor
     private var sessions: [String: SessionPresentation] = [:]
+    private var colorIndexBySession: [String: Int] = [:]
     private var visibilityTimer: Timer?
 
     private override init() {
@@ -216,6 +286,14 @@ final class ComputerUsePresentationState: NSObject {
             name: NSWorkspace.didActivateApplicationNotification,
             object: nil
         )
+        // Without this, a controlled app that quits leaves its menu-bar entry,
+        // cursor panel, and 4 Hz visibility poll behind forever.
+        NSWorkspace.shared.notificationCenter.addObserver(
+            self,
+            selector: #selector(applicationDidTerminate(_:)),
+            name: NSWorkspace.didTerminateApplicationNotification,
+            object: nil
+        )
     }
 
     func activate(
@@ -228,10 +306,21 @@ final class ComputerUsePresentationState: NSObject {
     ) {
         guard !sessionID.isEmpty else { return }
         let targetWindowID = windowID ?? matchingWindow(pid: pid, frame: windowFrame)
+        let colorIndex = colorIndex(for: sessionID)
 
         if var presentation = sessions[sessionID] {
+            if presentation.pid != pid {
+                // The session re-attached to a different process (a rebuilt
+                // dev app is the common case). Retire the old pid's menu-bar
+                // entry and sharing key or they would linger as duplicates.
+                let staleKey = ComputerUseShareKey(sessionID: sessionID, pid: presentation.pid)
+                ComputerUseControlStatusItem.shared.remove(key: staleKey)
+                ComputerUseNativeSharing.shared.retire(key: staleKey)
+            }
             presentation.pid = pid
             presentation.targetWindowID = targetWindowID
+            presentation.colorIndex = colorIndex
+            presentation.cursorView.tint = ComputerUseCursorPalette.color(at: colorIndex)
             sessions[sessionID] = presentation
         } else {
             let panel = ComputerUseCursorPanel(
@@ -243,12 +332,14 @@ final class ComputerUsePresentationState: NSObject {
             configureCursorPanel(panel)
             let view = ComputerUseCursorView(frame: CGRect(origin: .zero, size: cursorSize))
             view.autoresizingMask = [.width, .height]
+            view.tint = ComputerUseCursorPalette.color(at: colorIndex)
             panel.contentView = view
             sessions[sessionID] = SessionPresentation(
                 pid: pid,
                 targetWindowID: targetWindowID,
                 cursorPanel: panel,
                 cursorView: view,
+                colorIndex: colorIndex,
                 displayedTip: nil,
                 idleTimer: nil,
                 idlePhase: 0
@@ -258,7 +349,8 @@ final class ComputerUsePresentationState: NSObject {
         ComputerUseControlStatusItem.shared.activate(
             key: ComputerUseShareKey(sessionID: sessionID, pid: pid),
             appName: appName,
-            agentLabel: agentLabel
+            agentLabel: agentLabel,
+            colorIndex: colorIndex
         )
 
         ComputerUseNativeSharing.shared.activate(
@@ -293,6 +385,14 @@ final class ComputerUsePresentationState: NSObject {
             presentation.cursorView.clickProgress = 0
             place(presentation: presentation, tip: target, rotation: 0, bodyOffset: .zero)
         }
+        // The animations above pump the run loop, so another session's work —
+        // or this session's own end/stop — may have run reentrantly. Writing
+        // the stale copy back would resurrect a removed session's cursor.
+        guard sessions[sessionID] != nil else {
+            presentation.idleTimer?.invalidate()
+            presentation.cursorPanel.orderOut(nil)
+            return
+        }
         presentation.displayedTip = target
         sessions[sessionID] = presentation
         if targetIsVisible {
@@ -310,20 +410,33 @@ final class ComputerUsePresentationState: NSObject {
         stopVisibilityMonitoringIfNeeded()
     }
 
-    func stopUsing(pid: pid_t) {
-        let keys = ComputerUseControlStatusItem.shared.keys(for: pid)
-        keys.forEach { ComputerUseRevocations.shared.insert($0) }
-        let matchingSessionIDs = sessions.compactMap { sessionID, presentation in
-            presentation.pid == pid ? sessionID : nil
+    /// The user chose "Stop Using …" for one agent's control of one app.
+    /// Revokes exactly that session/app pairing; other agents keep going.
+    func stopUsing(key: ComputerUseShareKey) {
+        ComputerUseRevocations.shared.insert(key)
+        if let presentation = sessions[key.sessionID], presentation.pid == key.pid {
+            presentation.idleTimer?.invalidate()
+            presentation.cursorPanel.orderOut(nil)
+            sessions.removeValue(forKey: key.sessionID)
         }
-        for sessionID in matchingSessionIDs {
+        ComputerUseControlStatusItem.shared.remove(key: key)
+        ComputerUseNativeSharing.shared.retire(key: key)
+        stopVisibilityMonitoringIfNeeded()
+    }
+
+    /// The controlled app exited. Unlike `stopUsing`, nothing is revoked: the
+    /// quit was not a user decision about Computer Use, and the same session
+    /// may legitimately control a relaunched instance.
+    func targetTerminated(pid: pid_t) {
+        let sessionIDs = sessions.filter { $0.value.pid == pid }.map(\.key)
+        for sessionID in sessionIDs {
             if let presentation = sessions.removeValue(forKey: sessionID) {
                 presentation.idleTimer?.invalidate()
                 presentation.cursorPanel.orderOut(nil)
             }
         }
         ComputerUseControlStatusItem.shared.remove(pid: pid)
-        ComputerUseNativeSharing.shared.stopUsing(pid: pid)
+        ComputerUseNativeSharing.shared.targetTerminated(pid: pid)
         stopVisibilityMonitoringIfNeeded()
     }
 
@@ -332,6 +445,7 @@ final class ComputerUsePresentationState: NSObject {
             presentation.idleTimer?.invalidate()
             presentation.cursorPanel.orderOut(nil)
         }
+        colorIndexBySession.removeValue(forKey: sessionID)
         ComputerUseControlStatusItem.shared.remove(sessionID: sessionID)
         ComputerUseNativeSharing.shared.end(sessionID: sessionID)
         stopVisibilityMonitoringIfNeeded()
@@ -343,10 +457,21 @@ final class ComputerUsePresentationState: NSObject {
             presentation.cursorPanel.orderOut(nil)
         }
         sessions.removeAll()
+        colorIndexBySession.removeAll()
         visibilityTimer?.invalidate()
         visibilityTimer = nil
         ComputerUseControlStatusItem.shared.removeAll()
         ComputerUseNativeSharing.shared.endAll()
+    }
+
+    /// Keeps the assignment stable for a session's whole lifetime while
+    /// steering concurrent sessions away from one another's colors.
+    private func colorIndex(for sessionID: String) -> Int {
+        if let existing = colorIndexBySession[sessionID] { return existing }
+        let taken = Set(sessions.keys.compactMap { colorIndexBySession[$0] })
+        let index = computerUseCursorColorIndex(sessionID: sessionID, takenIndices: taken)
+        colorIndexBySession[sessionID] = index
+        return index
     }
 
     private func animateMove(
@@ -369,7 +494,7 @@ final class ComputerUsePresentationState: NSObject {
         let direction = CGVector(dx: target.x - start.x, dy: target.y - start.y)
         let unit = CGVector(dx: direction.dx / distance, dy: direction.dy / distance)
         let normal = CGVector(dx: -unit.dy, dy: unit.dx)
-        let side: CGFloat = stableHash(sessionID) & 1 == 0 ? 1 : -1
+        let side: CGFloat = computerUseStableHash(sessionID) & 1 == 0 ? 1 : -1
         let arc = min(86, max(18, distance * 0.16)) * side
         let control1 = CGPoint(
             x: start.x + direction.dx * 0.34 + normal.dx * arc,
@@ -518,7 +643,21 @@ final class ComputerUsePresentationState: NSObject {
         refreshCursorVisibility()
     }
 
+    @objc private func applicationDidTerminate(_ notification: Notification) {
+        guard let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey]
+            as? NSRunningApplication else { return }
+        targetTerminated(pid: app.processIdentifier)
+    }
+
     private func refreshCursorVisibility() {
+        guard !sessions.isEmpty else { return }
+        // Backstop for a termination that predates this observer or slipped
+        // past the notification: a dead pid can never become visible again.
+        let deadPIDs = Set(sessions.values.map(\.pid)).filter { pid in
+            guard let app = NSRunningApplication(processIdentifier: pid) else { return true }
+            return app.isTerminated
+        }
+        for pid in deadPIDs { targetTerminated(pid: pid) }
         guard !sessions.isEmpty else { return }
         let visibleWindows = onScreenWindowInfo()
         var sessionsToRestart: [String] = []
@@ -634,15 +773,6 @@ final class ComputerUsePresentationState: NSObject {
             ] as? NSNumber else { return nil }
             return (CGDisplayBounds(CGDirectDisplayID(number.uint32Value)), screen.frame)
         }
-    }
-
-    private func stableHash(_ value: String) -> UInt32 {
-        var hash: UInt32 = 2_166_136_261
-        for byte in value.utf8 {
-            hash ^= UInt32(byte)
-            hash = hash &* 16_777_619
-        }
-        return hash
     }
 
     private func cubicBezier(
@@ -846,6 +976,11 @@ private final class ComputerUseCursorView: NSView {
     var rotationAroundCenter = false
     var bodyOffset: CGVector = .zero
     var clickProgress: CGFloat = 0
+    /// Per-agent accent. The pointer body and glow derive from this color so
+    /// concurrent sessions are visually distinguishable at a glance.
+    var tint: NSColor = .black {
+        didSet { needsDisplay = true }
+    }
 
     override var isOpaque: Bool { false }
 
@@ -861,10 +996,14 @@ private final class ComputerUseCursorView: NSView {
             y: bounds.midY + bodyOffset.dy * 0.15
         )
         let radius: CGFloat = 28 + clickProgress * 1.0
+        // Soften the accent toward the original neutral fog so the glow reads
+        // as a subtle halo in the agent's color rather than a saturated blob.
+        let fog = tint.blended(withFraction: 0.55, of: NSColor(calibratedWhite: 0.42, alpha: 1))
+            ?? tint
         let colors = [
-            NSColor(calibratedRed: 0.38, green: 0.36, blue: 0.35, alpha: 0.32 + clickProgress * 0.02).cgColor,
-            NSColor(calibratedRed: 0.43, green: 0.41, blue: 0.40, alpha: 0.20 + clickProgress * 0.015).cgColor,
-            NSColor(calibratedRed: 0.46, green: 0.44, blue: 0.43, alpha: 0.07).cgColor,
+            fog.withAlphaComponent(0.32 + clickProgress * 0.02).cgColor,
+            fog.withAlphaComponent(0.20 + clickProgress * 0.015).cgColor,
+            fog.withAlphaComponent(0.07).cgColor,
             NSColor.clear.cgColor
         ] as CFArray
         if let gradient = CGGradient(
@@ -925,7 +1064,7 @@ private final class ComputerUseCursorView: NSView {
         path.fill()
         NSGraphicsContext.restoreGraphicsState()
 
-        NSColor.black.withAlphaComponent(0.94).setFill()
+        tint.withAlphaComponent(0.94).setFill()
         path.fill()
         NSColor(calibratedWhite: 0.90, alpha: 0.92).setStroke()
         path.lineWidth = 1.25
@@ -947,6 +1086,11 @@ private final class ComputerUseStatusView: NSView {
         didSet { needsDisplay = true }
     }
     var isActive = false {
+        didSet { needsDisplay = true }
+    }
+    /// Matches the single active agent's cursor color; neutral when several
+    /// agents share the chip.
+    var cursorColor = NSColor(calibratedWhite: 0.94, alpha: 1) {
         didSet { needsDisplay = true }
     }
     var onActivate: (() -> Void)?
@@ -999,7 +1143,7 @@ private final class ComputerUseStatusView: NSView {
         shadow.shadowOffset = CGSize(width: 0, height: -0.3)
         shadow.shadowColor = NSColor.black.withAlphaComponent(0.16)
         shadow.set()
-        NSColor(calibratedWhite: 0.94, alpha: 1).setFill()
+        cursorColor.setFill()
         cursorPath.fill()
         NSGraphicsContext.restoreGraphicsState()
     }
@@ -1012,23 +1156,22 @@ private final class ComputerUseControlStatusItem: NSObject {
     private struct Entry {
         let appName: String
         let icon: NSImage
+        let agentLabel: String?
+        let colorIndex: Int
     }
 
     private var entries: [ComputerUseShareKey: Entry] = [:]
     private var statusItem: NSStatusItem?
     private var statusView: ComputerUseStatusView?
 
-    func activate(key: ComputerUseShareKey, appName: String, agentLabel: String?) {
+    func activate(key: ComputerUseShareKey, appName: String, agentLabel: String?, colorIndex: Int) {
         entries[key] = Entry(
             appName: appName,
-            icon: applicationIcon(pid: key.pid)
+            icon: applicationIcon(pid: key.pid),
+            agentLabel: agentLabel,
+            colorIndex: colorIndex
         )
-        _ = agentLabel
         refresh()
-    }
-
-    func keys(for pid: pid_t) -> [ComputerUseShareKey] {
-        entries.keys.filter { $0.pid == pid }
     }
 
     func remove(key: ComputerUseShareKey) {
@@ -1051,7 +1194,19 @@ private final class ComputerUseControlStatusItem: NSObject {
         refresh()
     }
 
+    /// Backstop against stale rows: a pid with no live process can never be
+    /// controlled again, so its entries must not survive in the menu bar.
+    private func pruneTerminatedApps() {
+        let deadPIDs = Set(entries.keys.map(\.pid)).filter { pid in
+            guard let app = NSRunningApplication(processIdentifier: pid) else { return true }
+            return app.isTerminated
+        }
+        guard !deadPIDs.isEmpty else { return }
+        entries = entries.filter { !deadPIDs.contains($0.key.pid) }
+    }
+
     private func refresh() {
+        pruneTerminatedApps()
         guard !entries.isEmpty else {
             if let statusItem {
                 NSStatusBar.system.removeStatusItem(statusItem)
@@ -1090,21 +1245,41 @@ private final class ComputerUseControlStatusItem: NSObject {
         if let statusView {
             statusView.frame.size = CGSize(width: width, height: NSStatusBar.system.thickness)
             statusView.icons = visibleApps.map(\.icon)
+            statusView.cursorColor = entries.count == 1
+                ? ComputerUseCursorPalette.color(at: entries.values.first?.colorIndex ?? 0)
+                : NSColor(calibratedWhite: 0.94, alpha: 1)
         }
     }
 
     private func showMenu() {
+        pruneTerminatedApps()
+        refresh()
         guard let statusView else { return }
         let menu = NSMenu()
         menu.autoenablesItems = false
-        for (pid, entry) in controlledApps() {
+        // One row per agent/app pairing so stopping one agent's control never
+        // tears down another agent that shares the same app.
+        for (key, entry) in sortedEntries() {
+            let title = "Stop Using \(entry.appName)"
+                + (entry.agentLabel.map { " — \($0)" } ?? "")
             let menuItem = NSMenuItem(
-                title: "Stop Using \(entry.appName)",
+                title: title,
                 action: #selector(stopUsing(_:)),
                 keyEquivalent: ""
             )
+            let attributedTitle = NSMutableAttributedString(
+                string: "● ",
+                attributes: [
+                    .foregroundColor: ComputerUseCursorPalette.color(at: entry.colorIndex)
+                ]
+            )
+            attributedTitle.append(NSAttributedString(
+                string: title,
+                attributes: [.foregroundColor: NSColor.labelColor]
+            ))
+            menuItem.attributedTitle = attributedTitle
             menuItem.target = self
-            menuItem.representedObject = NSNumber(value: pid)
+            menuItem.representedObject = ComputerUseShareKeyBox(key: key)
             menuItem.image = entry.icon
             menuItem.image?.size = CGSize(width: 18, height: 18)
             menu.addItem(menuItem)
@@ -1128,9 +1303,17 @@ private final class ComputerUseControlStatusItem: NSObject {
         }
     }
 
+    private func sortedEntries() -> [(ComputerUseShareKey, Entry)] {
+        entries.sorted { lhs, rhs in
+            let appOrder = lhs.value.appName.localizedCaseInsensitiveCompare(rhs.value.appName)
+            if appOrder != .orderedSame { return appOrder == .orderedAscending }
+            return (lhs.value.agentLabel ?? "") < (rhs.value.agentLabel ?? "")
+        }
+    }
+
     @objc private func stopUsing(_ sender: NSMenuItem) {
-        guard let pid = (sender.representedObject as? NSNumber)?.int32Value else { return }
-        ComputerUsePresentationState.shared.stopUsing(pid: pid)
+        guard let box = sender.representedObject as? ComputerUseShareKeyBox else { return }
+        ComputerUsePresentationState.shared.stopUsing(key: box.key)
     }
 
     private func applicationIcon(pid: pid_t) -> NSImage {
@@ -1146,6 +1329,13 @@ private final class ComputerUseControlStatusItem: NSObject {
         ) ?? NSImage(size: CGSize(width: 18, height: 18))
     }
 
+}
+
+/// NSMenuItem.representedObject round-trips through Objective-C, so the value
+/// key is carried in a small reference box rather than a bare Swift struct.
+private final class ComputerUseShareKeyBox: NSObject {
+    let key: ComputerUseShareKey
+    init(key: ComputerUseShareKey) { self.key = key }
 }
 
 private struct ComputerUsePresentationError: LocalizedError, CustomStringConvertible {

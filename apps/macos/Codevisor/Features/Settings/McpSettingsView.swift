@@ -1,5 +1,6 @@
 import AppKit
 import CodevisorCore
+import CodevisorCoreMac
 import SwiftUI
 import CodevisorUI
 
@@ -29,6 +30,13 @@ struct McpSettingsView: View {
     @State private var nativeActionError: String?
     @State private var expandedNativeHarnesses: Set<String> = []
     @State private var browserConfiguration: ServerBrowserUseConfiguration?
+    /// Computer Use permission status for the inline setup under its row.
+    /// While either permission is missing, the setup rows stay visible there
+    /// and the enable toggle is disabled; granting both collapses the rows
+    /// and unlocks the toggle.
+    @State private var computerPermissions = ComputerUsePermissionsModel(
+        probes: AppPreview.isRunning ? .granted : .live
+    )
 
     var body: some View {
         content
@@ -494,6 +502,25 @@ struct McpSettingsView: View {
     }
 
     private func serverRow(_ server: ServerMcpServer) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            serverRowContent(server)
+            if server.kind == "computerUse" {
+                // Always visible, in every state: these rows are the live
+                // status of what Computer Use depends on, and they carry the
+                // poll that notices a permission revoked in System Settings.
+                ComputerUsePermissionRowsView(model: computerPermissions, embedded: true)
+                    .padding(.leading, 30)
+                    .onChange(of: computerPermissions.allGranted) { _, granted in
+                        // Revoked underneath a running Computer Use: turn it
+                        // off so the row never claims to work when it can't.
+                        guard !granted, server.enabled else { return }
+                        Task { await setEnabled(server, enabled: false) }
+                    }
+            }
+        }
+    }
+
+    private func serverRowContent(_ server: ServerMcpServer) -> some View {
         HStack(spacing: 10) {
             Image(systemName: statusSymbol(server))
                 .foregroundStyle(statusStyle(server))
@@ -569,6 +596,13 @@ struct McpSettingsView: View {
                 .labelsHidden()
                 .toggleStyle(.switch)
                 .controlSize(.small)
+                // Computer Use can't turn on without its permissions; the
+                // rows right below unlock this. Turning it off stays allowed.
+                .disabled(
+                    server.kind == "computerUse"
+                        && !server.enabled
+                        && !computerPermissions.allGranted
+                )
             }
             Menu {
                 Button("Show Details…") { selectedServer = server }
@@ -648,6 +682,9 @@ struct McpSettingsView: View {
         } catch {
             errorMessage = ErrorReporter.userFacingMessage(for: error)
         }
+        // The inline setup visibility and the toggle's disabled state derive
+        // from this model; make sure it is current whenever the pane loads.
+        computerPermissions.refresh()
         // Native discovery is best-effort: older servers (404/501) or scan
         // failures simply hide the sections instead of surfacing an error.
         nativeScan = try? await environment.serverClient.listNativeMcps()
@@ -688,6 +725,14 @@ struct McpSettingsView: View {
     }
 
     private func setEnabled(_ server: ServerMcpServer, enabled: Bool) async {
+        if server.kind == "computerUse", enabled {
+            computerPermissions.refresh()
+            // The toggle is disabled while permissions are missing; this
+            // guard just keeps a stale press from half-enabling.
+            guard computerPermissions.allGranted else { return }
+            environment.settings.setPermissionsSetupSkipped(false)
+            environment.settings.setPermissionsReviewedVersion(AppUpdateModel.bundleVersion())
+        }
         replace(server, with: serverWithEnabled(server, enabled))
         do {
             let updated = try await environment.serverClient.setMcpServerEnabled(id: server.id, enabled: enabled)

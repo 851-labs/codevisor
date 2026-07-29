@@ -11,18 +11,28 @@ enum AppRelauncher {
         let bundleURL = Bundle.main.bundleURL
         let helper = Process()
         helper.executableURL = URL(fileURLWithPath: "/bin/sh")
+        // A development instance is configured entirely through CODEVISOR_*
+        // launch environment (data directory, instance id, ports). `open`
+        // starts a fresh process that would not inherit it, so the relaunched
+        // app would read a different instance's state. Production has none of
+        // these set, so this reduces to a plain reopen.
+        let environmentArguments = ProcessInfo.processInfo.environment
+            .filter { $0.key.hasPrefix("CODEVISOR_") }
+            .sorted { $0.key < $1.key }
+            .flatMap { ["--env", "\($0.key)=\($0.value)"] }
         helper.arguments = [
             "-c",
             """
             owner_pid="$1"
             bundle_path="$2"
+            shift 2
             while /bin/kill -0 "$owner_pid" 2>/dev/null; do /bin/sleep 0.1; done
-            exec /usr/bin/open -n "$bundle_path"
+            exec /usr/bin/open -n "$@" "$bundle_path"
             """,
             "codevisor-relauncher",
             String(ProcessInfo.processInfo.processIdentifier),
             bundleURL.path
-        ]
+        ] + environmentArguments
         do {
             try helper.run()
         } catch {

@@ -9,6 +9,24 @@ public struct AppSettings: Sendable, Codable, Equatable {
     public static let defaultNotificationSoundPath = "/System/Library/Sounds/Glass.aiff"
 
     public var hasCompletedOnboarding: Bool
+    /// The app version whose launch last confirmed (or walked the user
+    /// through) the system permissions Computer Use needs. When an update
+    /// arrives and permissions are missing, the standalone permissions gate
+    /// shows once for the new version.
+    public var permissionsReviewedVersion: String?
+    /// The user chose "Set Up Later": Computer Use is disabled and no launch
+    /// gate nags again. Cleared when permissions setup completes (from the
+    /// MCP settings inline flow or a later onboarding pass).
+    public var permissionsSetupSkipped: Bool
+    /// How far onboarding got, so a restart part-way through (granting
+    /// Screen Recording asks for one) resumes on the same step instead of
+    /// starting over. Cleared when onboarding completes.
+    public var onboardingStep: Int?
+    /// The permissions review was presented and the user has not finished it
+    /// yet. Granting Screen Recording restarts the app mid-review, so the
+    /// dialog has to come back — even once everything is granted — until the
+    /// user actually closes it. Cleared by Continue or Set Up Later.
+    public var permissionsReviewInProgress: Bool
     public var importExternalSessions: Bool
     /// Whether this device may send anonymous product usage events. Content
     /// such as prompts, responses, code, paths, and terminal commands must
@@ -41,6 +59,10 @@ public struct AppSettings: Sendable, Codable, Equatable {
 
     public init(
         hasCompletedOnboarding: Bool = false,
+        permissionsReviewedVersion: String? = nil,
+        permissionsSetupSkipped: Bool = false,
+        onboardingStep: Int? = nil,
+        permissionsReviewInProgress: Bool = false,
         importExternalSessions: Bool = false,
         shareAnalytics: Bool = false,
         shareCrashReports: Bool = false,
@@ -56,6 +78,10 @@ public struct AppSettings: Sendable, Codable, Equatable {
         actionRequiredSoundPath: String = AppSettings.defaultNotificationSoundPath
     ) {
         self.hasCompletedOnboarding = hasCompletedOnboarding
+        self.permissionsReviewedVersion = permissionsReviewedVersion
+        self.permissionsSetupSkipped = permissionsSetupSkipped
+        self.onboardingStep = onboardingStep
+        self.permissionsReviewInProgress = permissionsReviewInProgress
         self.importExternalSessions = importExternalSessions
         self.shareAnalytics = shareAnalytics
         self.shareCrashReports = shareCrashReports
@@ -72,7 +98,9 @@ public struct AppSettings: Sendable, Codable, Equatable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case hasCompletedOnboarding, importExternalSessions, shareAnalytics
+        case hasCompletedOnboarding, permissionsReviewedVersion, permissionsSetupSkipped
+        case onboardingStep, permissionsReviewInProgress
+        case importExternalSessions, shareAnalytics
         case shareCrashReports, alphaUpdatesEnabled
         /// Read-only migration key written by the former custom updater.
         case betaUpdatesEnabled
@@ -85,6 +113,13 @@ public struct AppSettings: Sendable, Codable, Equatable {
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         hasCompletedOnboarding = try container.decodeIfPresent(Bool.self, forKey: .hasCompletedOnboarding) ?? false
+        permissionsReviewedVersion = try container.decodeIfPresent(String.self, forKey: .permissionsReviewedVersion)
+        permissionsSetupSkipped = try container.decodeIfPresent(Bool.self, forKey: .permissionsSetupSkipped) ?? false
+        onboardingStep = try container.decodeIfPresent(Int.self, forKey: .onboardingStep)
+        permissionsReviewInProgress = try container.decodeIfPresent(
+            Bool.self,
+            forKey: .permissionsReviewInProgress
+        ) ?? false
         importExternalSessions = try container.decodeIfPresent(Bool.self, forKey: .importExternalSessions) ?? false
         // Existing installations completed onboarding before this preference
         // existed. Enable analytics for that migration cohort; fresh installs
@@ -118,6 +153,10 @@ public struct AppSettings: Sendable, Codable, Equatable {
     public func encode(to encoder: any Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(hasCompletedOnboarding, forKey: .hasCompletedOnboarding)
+        try container.encodeIfPresent(permissionsReviewedVersion, forKey: .permissionsReviewedVersion)
+        try container.encode(permissionsSetupSkipped, forKey: .permissionsSetupSkipped)
+        try container.encodeIfPresent(onboardingStep, forKey: .onboardingStep)
+        try container.encode(permissionsReviewInProgress, forKey: .permissionsReviewInProgress)
         try container.encode(importExternalSessions, forKey: .importExternalSessions)
         try container.encode(shareAnalytics, forKey: .shareAnalytics)
         try container.encode(shareCrashReports, forKey: .shareCrashReports)
@@ -164,6 +203,10 @@ public final class AppSettingsModel {
     }
 
     public var hasCompletedOnboarding: Bool { settings.hasCompletedOnboarding }
+    public var permissionsReviewedVersion: String? { settings.permissionsReviewedVersion }
+    public var permissionsSetupSkipped: Bool { settings.permissionsSetupSkipped }
+    public var onboardingStep: Int? { settings.onboardingStep }
+    public var permissionsReviewInProgress: Bool { settings.permissionsReviewInProgress }
     public var importExternalSessions: Bool { settings.importExternalSessions }
     public var shareAnalytics: Bool { settings.shareAnalytics }
     public var shareCrashReports: Bool { settings.shareCrashReports }
@@ -193,6 +236,32 @@ public final class AppSettingsModel {
     public func completeOnboarding(importExternalSessions: Bool) {
         settings.hasCompletedOnboarding = true
         settings.importExternalSessions = importExternalSessions
+        settings.onboardingStep = nil
+        persist()
+    }
+
+    /// Records that the given app version confirmed (or walked the user
+    /// through) the Computer Use system permissions.
+    public func setPermissionsReviewedVersion(_ version: String) {
+        settings.permissionsReviewedVersion = version
+        persist()
+    }
+
+    public func setPermissionsSetupSkipped(_ value: Bool) {
+        settings.permissionsSetupSkipped = value
+        persist()
+    }
+
+    /// Remembers how far onboarding got so a mid-flow restart resumes there.
+    public func setOnboardingStep(_ step: Int?) {
+        settings.onboardingStep = step
+        persist()
+    }
+
+    /// Marks the permissions review open (the dialog returns after a restart)
+    /// or finished (the user pressed Continue or Set Up Later).
+    public func setPermissionsReviewInProgress(_ value: Bool) {
+        settings.permissionsReviewInProgress = value
         persist()
     }
 

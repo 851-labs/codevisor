@@ -91,10 +91,13 @@ final class ComputerUseNativeSharing: NSObject,
         super.init()
         let picker = SCContentSharingPicker.shared
         picker.add(self)
-        // A sharing stream must originate from an active Computer Use session;
-        // Control Center may manage existing streams but cannot create an
-        // unowned one that has no session or permission policy behind it.
-        picker.maximumStreamCount = 0
+        // Streams only ever originate from an active Computer Use session:
+        // the picker is never presented, so nothing can create an unowned
+        // one. A cap of 0 used to enforce that, but the system counts our own
+        // per-window streams against it and stops them as if the user had —
+        // which permanently revoked healthy sessions. Allow enough headroom
+        // for one stream per controlled window.
+        picker.maximumStreamCount = 32
     }
 
     deinit {
@@ -145,13 +148,19 @@ final class ComputerUseNativeSharing: NSObject,
         deactivatePickerIfIdle()
     }
 
-    func stopUsing(pid: pid_t) {
+    /// Detaches one session/app pairing without touching revocations; the
+    /// caller decides whether the stop was a user decision worth revoking.
+    func retire(key: ComputerUseShareKey) {
+        detach(key: key, intentional: true)
+        deactivatePickerIfIdle()
+    }
+
+    /// The controlled app exited. Non-revoking: the same session may control
+    /// a relaunched instance under a new pid.
+    func targetTerminated(pid: pid_t) {
         let keys = Set(windowIDByKey.keys.filter { $0.pid == pid })
             .union(pendingWindowIDByKey.keys.filter { $0.pid == pid })
-        for key in keys {
-            ComputerUseRevocations.shared.insert(key)
-            detach(key: key, intentional: true)
-        }
+        keys.forEach { detach(key: $0, intentional: true) }
         deactivatePickerIfIdle()
     }
 
@@ -367,14 +376,23 @@ final class ComputerUseNativeSharing: NSObject,
 
             entry.keys.forEach { windowIDByKey.removeValue(forKey: $0) }
             if userStopped {
+                // Transient: the system reports its own stream teardown the
+                // same way it reports a Control Center stop, so this cannot
+                // be treated as a lasting decision.
                 for key in entry.keys {
-                    ComputerUseRevocations.shared.insert(key)
+                    ComputerUseRevocations.shared.insertTransient(key)
                     ComputerUsePresentationState.shared.systemStopped(key: key)
                 }
             } else {
+                // The window vanished (target quit or closed the shared
+                // window). Tear the presentation and menu-bar entry down, but
+                // do not revoke: a fresh window may be reattached later.
                 Log.computerUse.error(
                     "Native sharing stopped unexpectedly for window \(windowID, privacy: .public): \(error.localizedDescription, privacy: .public)"
                 )
+                for key in entry.keys {
+                    ComputerUsePresentationState.shared.systemStopped(key: key)
+                }
             }
             deactivatePickerIfIdle()
         }
@@ -427,25 +445,56 @@ final class ComputerUseNativeSharing: NSObject,
     }
 }
 
+/// Which session/app pairings may not be controlled right now.
+///
+/// Two kinds, because they mean different things. Choosing "Stop Using X" in
+/// the menu bar is an unambiguous decision and holds for the session. A
+/// ScreenCaptureKit stream ending is not: the system stops streams for its
+/// own reasons (window churn, stream limits), and treating that as a decision
+/// stranded healthy sessions with no way back. Those are transient — the next
+/// deliberate `get_app_state` clears them, so an agent that follows the error
+/// message recovers, while an action fired blindly still fails.
 final class ComputerUseRevocations: @unchecked Sendable {
     static let shared = ComputerUseRevocations()
 
     private let lock = NSLock()
-    private var keys: Set<ComputerUseShareKey> = []
+    private var permanent: Set<ComputerUseShareKey> = []
+    private var transient: Set<ComputerUseShareKey> = []
 
     func contains(_ key: ComputerUseShareKey) -> Bool {
-        lock.withLock { keys.contains(key) }
+        lock.withLock { permanent.contains(key) || transient.contains(key) }
     }
 
+    func isPermanent(_ key: ComputerUseShareKey) -> Bool {
+        lock.withLock { permanent.contains(key) }
+    }
+
+    /// The user chose to stop this app from the menu bar.
     func insert(_ key: ComputerUseShareKey) {
-        _ = lock.withLock { keys.insert(key) }
+        _ = lock.withLock { permanent.insert(key) }
+    }
+
+    /// The system stopped the sharing stream; recoverable on re-observation.
+    func insertTransient(_ key: ComputerUseShareKey) {
+        _ = lock.withLock { transient.insert(key) }
+    }
+
+    /// Called when a session deliberately re-observes the app.
+    func clearTransient(_ key: ComputerUseShareKey) {
+        _ = lock.withLock { transient.remove(key) }
     }
 
     func clear(sessionID: String) {
-        lock.withLock { keys = keys.filter { $0.sessionID != sessionID } }
+        lock.withLock {
+            permanent = permanent.filter { $0.sessionID != sessionID }
+            transient = transient.filter { $0.sessionID != sessionID }
+        }
     }
 
     func clearAll() {
-        lock.withLock { keys.removeAll() }
+        lock.withLock {
+            permanent.removeAll()
+            transient.removeAll()
+        }
     }
 }

@@ -33,6 +33,30 @@ struct CodevisorApp: App {
                 CommandLineTools.ensureInstalled()
             }
         }
+        if !AppPreview.isRunning {
+            let probes = ComputerUsePermissionProbes.live
+            let allGranted = probes.isAccessibilityGranted() && probes.isScreenRecordingGranted()
+            let needsReview = computerUsePermissionsGateNeeded(
+                hasCompletedOnboarding: environment.settings.hasCompletedOnboarding,
+                permissionsReviewedVersion: environment.settings.permissionsReviewedVersion,
+                setupSkipped: environment.settings.permissionsSetupSkipped,
+                reviewInProgress: environment.settings.permissionsReviewInProgress,
+                currentVersion: AppUpdateModel.bundleVersion(),
+                allGranted: allGranted
+            )
+            environment.requiresPermissionsReview = needsReview
+            if needsReview {
+                // Survives the restart that granting Screen Recording asks
+                // for; the dialog's own buttons clear it.
+                environment.settings.setPermissionsReviewInProgress(true)
+            } else if allGranted,
+                      environment.settings.permissionsReviewedVersion
+                        != AppUpdateModel.bundleVersion() {
+                // Everything already granted and no review open: count this
+                // version reviewed so a later revoke does not re-gate it.
+                environment.settings.setPermissionsReviewedVersion(AppUpdateModel.bundleVersion())
+            }
+        }
         AnalyticsClient.shared.configureFromMainBundle(enabled: environment.settings.shareAnalytics)
         AnalyticsClient.shared.captureAppOpenedOnce()
         DiagnosticsClient.shared.configureFromMainBundle(enabled: environment.settings.shareCrashReports)
@@ -101,7 +125,11 @@ struct RootView: View {
             } else if environment.settings.hasCompletedOnboarding {
                 mainSplit
             } else {
-                OnboardingView { project in
+                // Resumes where a mid-flow relaunch left off (granting Screen
+                // Recording asks for one) instead of restarting the flow.
+                OnboardingView(
+                    initialStep: OnboardingView.resumeStep(from: environment.settings)
+                ) { project in
                     preferredProjectId = project?.id
                     // Land on the new-workspace page (picker) rather than the
                     // quick-create fast path — the user should name/configure
@@ -150,6 +178,38 @@ struct RootView: View {
                   let serverId = note.userInfo?["serverId"] as? String else { return }
             Task { await openNotificationSession(sessionId, serverId: serverId) }
         }
+        .task { await reconcileSkippedPermissions() }
+        // An update arrived and the Computer Use permissions are not set up:
+        // ask once per version, as a dialog over the app rather than a
+        // takeover. An overlay rather than a sheet — see the gate view; a
+        // modal sheet would block the "Quit & Reopen" that granting Screen
+        // Recording ends in.
+        .overlay {
+            if environment.requiresPermissionsReview {
+                ComputerUsePermissionsGateView {
+                    environment.settings.setPermissionsReviewedVersion(
+                        AppUpdateModel.bundleVersion()
+                    )
+                    environment.settings.setPermissionsSetupSkipped(false)
+                    environment.settings.setPermissionsReviewInProgress(false)
+                    environment.requiresPermissionsReview = false
+                } onSkip: {
+                    // Computer Use turns off so nothing half-works; the
+                    // Computer Use toggle in Settings re-enters setup.
+                    environment.settings.setPermissionsSetupSkipped(true)
+                    environment.settings.setPermissionsReviewInProgress(false)
+                    Task {
+                        try? await environment.serverClient.setMcpServerEnabled(
+                            id: "computer",
+                            enabled: false
+                        )
+                    }
+                    environment.requiresPermissionsReview = false
+                }
+                .transition(.opacity)
+            }
+        }
+        .animation(.smooth(duration: 0.2), value: environment.requiresPermissionsReview)
         .task {
             if store == nil {
                 store = SessionStore(environment: environment)
@@ -203,6 +263,35 @@ struct RootView: View {
                     return
                 }
                 await environment.machines.refreshSelectedServerUpdate()
+            }
+        }
+    }
+
+    /// Heals a half-applied "Set Up Later": the skip choice persists locally
+    /// but the Computer Use disable is a server call that can be lost (the
+    /// app may quit before it lands). Skipped + permissions missing means
+    /// Computer Use must be off; skipped + permissions granted means the
+    /// skip is obsolete.
+    private func reconcileSkippedPermissions() async {
+        guard !AppPreview.isRunning, environment.settings.permissionsSetupSkipped else { return }
+        let probes = ComputerUsePermissionProbes.live
+        if probes.isAccessibilityGranted() && probes.isScreenRecordingGranted() {
+            environment.settings.setPermissionsSetupSkipped(false)
+            return
+        }
+        for attempt in 0..<30 {
+            if let servers = try? await environment.serverClient.listMcpServers(),
+               let computer = servers.first(where: { $0.kind == "computerUse" }) {
+                if computer.enabled {
+                    _ = try? await environment.serverClient.setMcpServerEnabled(
+                        id: "computer",
+                        enabled: false
+                    )
+                }
+                return
+            }
+            if attempt < 29 {
+                try? await Task.sleep(for: .seconds(2))
             }
         }
     }
