@@ -1,8 +1,25 @@
 name: Publish Alpha
 
 on:
-  schedule:
-    - cron: "15 * * * *"
+  workflow_call:
+    inputs:
+      run_id:
+        description: Workflow run containing the immutable Alpha artifacts.
+        required: true
+        type: string
+      source_sha:
+        description: Exact main revision represented by the Alpha artifacts.
+        required: true
+        type: string
+    secrets:
+      CLOUDFLARE_R2_ACCESS_KEY_ID:
+        required: true
+      CLOUDFLARE_R2_S3_API_ENDPOINT:
+        required: true
+      CLOUDFLARE_R2_SECRET_ACCESS_KEY:
+        required: true
+      SPARKLE_PRIVATE_KEY:
+        required: true
   workflow_dispatch:
 
 permissions:
@@ -24,7 +41,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          ref: main
+          ref: ${{ inputs.source_sha || 'main' }}
           fetch-depth: 0
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
@@ -33,13 +50,18 @@ jobs:
         id: alpha
         env:
           GH_TOKEN: ${{ github.token }}
+          ALPHA_RUN_ID: ${{ inputs.run_id }}
+          ALPHA_SOURCE_SHA: ${{ inputs.source_sha }}
         shell: bash
         run: |
-          source_sha="$(git rev-parse HEAD)"
-          run_id="$(gh run list --workflow release-candidate.yml --branch main \
-            --commit "$source_sha" --status success --limit 20 \
-            --json databaseId,headSha \
-            --jq 'map(select(.headSha == "'"$source_sha"'"))[0].databaseId // empty')"
+          source_sha="${ALPHA_SOURCE_SHA:-$(git rev-parse HEAD)}"
+          run_id="$ALPHA_RUN_ID"
+          if [[ -z "$run_id" ]]; then
+            run_id="$(gh run list --workflow release-candidate.yml --branch main \
+              --commit "$source_sha" --status success --limit 20 \
+              --json databaseId,headSha \
+              --jq 'map(select(.headSha == "'"$source_sha"'"))[0].databaseId // empty')"
+          fi
           if [[ -z "$run_id" ]]; then
             echo "No successful Alpha build exists for current main $source_sha."
             echo "publish=false" >> "$GITHUB_OUTPUT"
