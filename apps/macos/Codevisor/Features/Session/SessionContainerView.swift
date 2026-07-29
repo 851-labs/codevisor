@@ -4,7 +4,7 @@ import CodevisorUI
 
 /// Hosts a session: resolves its cached `SessionController` from the store
 /// and shows the session screen below the native toolbar (which carries the
-/// editable workspace name and the diff badge).
+/// editable workspace name).
 struct SessionContainerView: View {
     let session: ChatSession
     let project: Project
@@ -46,17 +46,6 @@ struct SessionContainerView: View {
         // document title. Edits pin the name (it stops tracking the primary
         // chat's title).
         .navigationTitle(workspaceName)
-        .toolbar {
-            if let diffDirectory {
-                // A passive counter, not a control: keep it OFF the shared
-                // glass platter (otherwise it claims a dead slot in the
-                // toggle's capsule — visibly so while the diff is empty).
-                ToolbarItem {
-                    BranchDiffBadge(directory: diffDirectory)
-                }
-                .sharedBackgroundVisibility(.hidden)
-            }
-        }
         .focusedSceneValue(
             \.workspaceLayoutActions,
             WorkspaceLayoutActions(
@@ -1022,12 +1011,4 @@ struct SessionContainerView: View {
         }
     }
 
-    /// The directory whose git state the top-bar diff reflects: the session's
-    /// cwd (worktree or project folder). Local machines only — a remote
-    /// session's paths don't exist on this Mac.
-    private var diffDirectory: URL? {
-        guard (environment.machines.machine(for: session.serverId) ?? .local).isLocal else { return nil }
-        if let cwd = session.cwd { return URL(fileURLWithPath: cwd) }
-        return project.folderURL
-    }
 }
