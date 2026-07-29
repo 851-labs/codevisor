@@ -1207,18 +1207,10 @@ public final class ComputerUseBridge: @unchecked Sendable {
         var records: [String: ElementRecord] = [:]
         var lines: [String] = []
         let accessibilityWindowFrame = frame(of: window)
-        // A window on another Space cannot be captured at all, which leaves
-        // the model working blind. Bring it forward for the capture the same
-        // way action delivery does, then let withAppFronted restore whatever
-        // was in front before.
-        let outcome: ScreenshotOutcome
-        if let windowID, !windowIsOnVisibleSpace(windowID) {
-            outcome = (try? withAppFronted(app: app, window: window, windowID: windowID) {
-                screenshot(windowID: windowID, fallbackFrame: frame(of: window))
-            }) ?? screenshot(windowID: windowID, fallbackFrame: accessibilityWindowFrame)
-        } else {
-            outcome = screenshot(windowID: windowID, fallbackFrame: accessibilityWindowFrame)
-        }
+        // Never fronts the app: ScreenCaptureKit composites a window on
+        // another Space perfectly well, so looking at an app must not steal
+        // the user's focus or drag them between desktops.
+        let outcome = screenshot(windowID: windowID, fallbackFrame: accessibilityWindowFrame)
         let capture = outcome.capture
         let windowFrame = capture?.windowFrame ?? frame(of: window) ?? accessibilityWindowFrame
         // An app that publishes its content upside down would otherwise send
@@ -1587,10 +1579,11 @@ public final class ComputerUseBridge: @unchecked Sendable {
         pid: pid_t
     ) throws -> (element: AXUIElement, windowID: CGWindowID?) {
         var lastError: Error?
-        var broughtForward = false
         // A successful LaunchServices completion only means the process is
         // running. Native Computer Use waits for the first accessible window
         // before returning state, so allow normal app startup to settle here.
+        // Windows on another Space are still published, so this never needs to
+        // activate the app to find them.
         for attempt in 0..<80 {
             do {
                 return try availableSessionWindow(
@@ -1600,21 +1593,10 @@ public final class ComputerUseBridge: @unchecked Sendable {
                 )
             } catch {
                 lastError = error
-                // An app whose windows all sit on another Space publishes no
-                // accessible window at all, so this would otherwise fail with
-                // a misleading "no accessible window". Activating it brings
-                // that Space forward; try once, then keep waiting.
-                if !broughtForward, attempt >= 1 {
-                    broughtForward = true
-                    NSRunningApplication(processIdentifier: pid)?
-                        .activate(options: [.activateAllWindows])
-                }
                 if attempt < 79 { Thread.sleep(forTimeInterval: 0.1) }
             }
         }
-        throw lastError ?? BridgeError(
-            "The app has no accessible window. If its windows are on another Space, switch to that Space and try again."
-        )
+        throw lastError ?? BridgeError("The app has no accessible window")
     }
 
     private func availableSessionWindow(
@@ -2686,40 +2668,51 @@ public final class ComputerUseBridge: @unchecked Sendable {
             }
             return .unavailable("The app exposes no capturable window.")
         }
+        // Structured concurrency rather than nested completion handlers: the
+        // callback form delivers on a queue this worker may itself be
+        // blocking, which silently turned every capture into a ten-second
+        // timeout and looked like "macOS cannot capture this window".
         let semaphore = DispatchSemaphore(value: 0)
         let box = ScreenshotBox()
-        SCShareableContent.getExcludingDesktopWindows(false, onScreenWindowsOnly: false) {
-            content, _ in
-            guard let window = content?.windows.first(where: { $0.windowID == windowID }) else {
-                semaphore.signal()
-                return
-            }
-            let filter = SCContentFilter(desktopIndependentWindow: window)
-            let configuration = SCStreamConfiguration()
-            let capturedWindowFrame = window.frame
-            let scale = max(1, CGFloat(filter.pointPixelScale))
-            configuration.width = max(2, Int((capturedWindowFrame.width * scale).rounded()))
-            configuration.height = max(2, Int((capturedWindowFrame.height * scale).rounded()))
-            configuration.scalesToFit = true
-            configuration.showsCursor = false
-            configuration.ignoreShadowsSingleWindow = true
-            configuration.ignoreGlobalClipSingleWindow = true
-            SCScreenshotManager.captureImage(
-                contentFilter: filter,
-                configuration: configuration
-            ) { image, _ in
-                if let image,
-                   let data = NSBitmapImageRep(cgImage: image).representation(
-                       using: .png,
-                       properties: [:]
-                   ) {
-                    box.capture = ScreenshotCapture(
-                        data: data,
-                        pixelSize: CGSize(width: image.width, height: image.height),
-                        windowFrame: capturedWindowFrame
-                    )
+        Task {
+            defer { semaphore.signal() }
+            do {
+                let content = try await SCShareableContent.excludingDesktopWindows(
+                    false,
+                    onScreenWindowsOnly: false
+                )
+                guard let window = content.windows.first(where: { $0.windowID == windowID }) else {
+                    box.failure = "The window is no longer shareable."
+                    return
                 }
-                semaphore.signal()
+                let filter = SCContentFilter(desktopIndependentWindow: window)
+                let configuration = SCStreamConfiguration()
+                let capturedWindowFrame = window.frame
+                let scale = max(1, CGFloat(filter.pointPixelScale))
+                configuration.width = max(2, Int((capturedWindowFrame.width * scale).rounded()))
+                configuration.height = max(2, Int((capturedWindowFrame.height * scale).rounded()))
+                configuration.scalesToFit = true
+                configuration.showsCursor = false
+                configuration.ignoreShadowsSingleWindow = true
+                configuration.ignoreGlobalClipSingleWindow = true
+                let image = try await SCScreenshotManager.captureImage(
+                    contentFilter: filter,
+                    configuration: configuration
+                )
+                guard let data = NSBitmapImageRep(cgImage: image).representation(
+                    using: .png,
+                    properties: [:]
+                ) else {
+                    box.failure = "The captured image could not be encoded."
+                    return
+                }
+                box.capture = ScreenshotCapture(
+                    data: data,
+                    pixelSize: CGSize(width: image.width, height: image.height),
+                    windowFrame: capturedWindowFrame
+                )
+            } catch {
+                box.failure = error.localizedDescription
             }
         }
         _ = semaphore.wait(timeout: .now() + 10)
@@ -2729,13 +2722,15 @@ public final class ComputerUseBridge: @unchecked Sendable {
         // unrelated window happens to occupy the same coordinates.
         guard windowIsOnVisibleSpace(windowID) else {
             return .unavailable(
-                "The target window is on another Space, minimized, or hidden, so it cannot be captured. Retry this call to bring it forward, or use deliveryMode foreground."
+                "The window could not be captured: \(box.failure ?? "the capture timed out")."
             )
         }
         if let capture = fallbackFrame.flatMap({ screenshotRegion(frame: $0) }) {
             return .captured(capture)
         }
-        return .unavailable("Screen capture failed for the target window.")
+        return .unavailable(
+            "Screen capture failed for the target window: \(box.failure ?? "the capture timed out")."
+        )
     }
 
     private func screenshotRegion(frame: CGRect) -> ScreenshotCapture? {
@@ -2858,6 +2853,9 @@ func computerUseScreenshotFrame(
 
 private final class ScreenshotBox: @unchecked Sendable {
     var capture: ComputerUseBridge.ScreenshotCapture?
+    /// Why the capture produced nothing, so the caller can say so instead of
+    /// reporting a bare absence.
+    var failure: String?
 }
 private struct BridgeError: LocalizedError, CustomStringConvertible {
     let message: String
