@@ -1,5 +1,6 @@
 import type { ChildProcessWithoutNullStreams } from "node:child_process"
 import type { Readable, Writable } from "node:stream"
+import { summarizeProcessFailure } from "../process-failure.js"
 
 /// The subset of a spawned child process a stdio transport needs. An
 /// interface rather than ChildProcess itself so lifecycle RACES are unit
@@ -112,9 +113,11 @@ export const makeNdjsonTransport = (
   })
 
   endpoint.onExit((error) => {
+    // The captured tail is raw CLI output — often minified bundle text and
+    // stack frames — and this error surfaces to the user, so condense it.
     fail(
       error ??
-        new Error(stderrTail.length > 0 ? stderrTail : (options.exitMessage ?? "process exited"))
+        new Error(summarizeProcessFailure(stderrTail, options.exitMessage ?? "process exited"))
     )
   })
 

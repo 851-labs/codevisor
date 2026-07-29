@@ -150,6 +150,9 @@ struct HarnessAuthenticationView: View {
                 Text(accountStatus(account))
                     .font(.callout)
                     .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                    .truncationMode(.tail)
+                    .help(accountStatus(account))
             }
             Spacer()
             if account.authState == "authenticated" || account.authState == "notRequired" {
@@ -238,7 +241,9 @@ struct HarnessAuthenticationView: View {
         case "notRequired": return "No sign-in required"
         case "checking": return "Checking sign-in…"
         case "expired": return "Sign-in expired"
-        case "error": return account.detail ?? "Couldn't check sign-in"
+        // Plain language, never the probe's `detail` — that carries a crashed
+        // CLI's stderr. The cause is summarized and persisted server-side.
+        case "error": return "Something went wrong starting the CLI"
         default: return "Not signed in"
         }
     }
@@ -322,7 +327,9 @@ struct HarnessAuthenticationView: View {
                 return
             }
             if account.authState == "error" {
-                let message = account.detail ?? "Couldn't verify sign-in."
+                // Friendly text only — `detail` carries the probe's technical
+                // cause (up to a crashed CLI's stderr) and never reaches the UI.
+                let message = "Couldn't verify sign-in."
                 await cancelFlow()
                 await load()
                 errorMessage = message

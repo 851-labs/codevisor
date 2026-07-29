@@ -30,6 +30,7 @@ import { pathToFileURL } from "node:url"
 import { Effect } from "effect"
 import type { BackgroundTerminalIntegration } from "../background-terminals.js"
 import { diffStatsFromTexts } from "../diff-stats.js"
+import { clampFailureDetail, summarizeProcessFailure } from "../process-failure.js"
 import type { AgentSessionSummary } from "../agent-sessions.js"
 import type { DiffStat } from "@codevisor/api"
 import { makeAcpTerminalHost, type AcpTerminalHost } from "./acp-terminals.js"
@@ -652,7 +653,12 @@ export const makeStdioAcpConnector = (
       child.once("exit", () => {
         cancelQuestions(undefined)
         terminals?.closeAll()
-        connection.close(new Error(stderr()))
+        // A CLI that dies at startup can emit megabytes of minified bundle and
+        // stack frames; this message reaches the UI, so summarize rather than
+        // forward the captured tail verbatim.
+        connection.close(
+          new Error(summarizeProcessFailure(stderr(), `${request.command} exited unexpectedly`))
+        )
       })
       let initialized: acp.InitializeResponse
       try {
@@ -673,7 +679,16 @@ export const makeStdioAcpConnector = (
           `ACP initialize timed out after ${connectTimeoutMs}ms`
         )
       } catch (cause) {
-        const error = cause instanceof Error ? cause : new Error(String(cause))
+        const raw = cause instanceof Error ? cause : new Error(String(cause))
+        // A CLI that dies during startup surfaces here, not in `probeAuth`: the
+        // SDK sees EOF on the pipes and rejects this request with a bare "ACP
+        // connection closed" that says nothing about the cause. The child's
+        // stderr does, so wait for it to flush and summarize that instead.
+        let error = raw
+        if (isGenericConnectionClose(raw.message)) {
+          await settleStderr(child)
+          error = new Error(summarizeProcessFailure(stderr(), raw.message))
+        }
         closeConnection(error)
         terminate()
         throw error
@@ -999,11 +1014,24 @@ const sdkConnection = (
               canLogout: auth.canLogout
             }
           }
+          // `detail` is rendered as the harness row's subtitle during
+          // onboarding, so it must stay a single short sentence even when the
+          // underlying CLI crashed and its stderr leaked into the message.
+          //
+          // When a CLI dies on launch the SDK sees EOF on the pipes and rejects
+          // pending requests with a bare "ACP connection closed", which races
+          // ahead of our own close error and says nothing about the cause. The
+          // process's stderr does, so prefer it whenever the message is that
+          // generic placeholder.
+          const message = cause instanceof Error ? cause.message : String(cause)
+          const detail = clampFailureDetail(
+            isGenericConnectionClose(message) ? summarizeProcessFailure(stderr(), message) : message
+          )
           return {
             state: "error" as const,
             methods: auth.methods,
             canLogout: auth.canLogout,
-            detail: cause instanceof Error ? cause.message : String(cause)
+            ...(detail === undefined ? {} : { detail })
           }
         }
       }),
@@ -1197,7 +1225,7 @@ const sdkConnection = (
             })
         }),
     close: runtimeEffect("close", () => {
-      connection.close(new Error(stderr()))
+      connection.close(new Error(summarizeProcessFailure(stderr(), "agent connection closed")))
       terminate()
     })
   }
@@ -1801,6 +1829,35 @@ const withDiffStats = (update: { readonly content?: unknown }): Record<string, u
     ? (update as Record<string, unknown>)
     : { ...(update as Record<string, unknown>), diffStats: stats }
 }
+
+/// The ACP SDK's placeholder rejection for a connection that ended without a
+/// specific reason (`@agentclientprotocol/sdk`'s `jsonrpc` close path). It
+/// carries no diagnostic value, so callers substitute the child's stderr.
+const isGenericConnectionClose = (message: string): boolean =>
+  /^acp connection closed\.?$/i.test(message.trim())
+
+/// Waits for a dying child's stderr to finish arriving, capped so a process
+/// that keeps its pipe open can't stall a probe. The SDK rejects pending
+/// requests the moment stdout hits EOF, which can beat the final stderr chunks
+/// through the event loop — summarizing before this settles risks reading an
+/// empty or half-written buffer.
+const settleStderr = (child: ChildProcessWithoutNullStreams, timeoutMs = 250): Promise<void> =>
+  new Promise((resolve) => {
+    if (child.stderr.readableEnded) {
+      resolve()
+      return
+    }
+    const finish = (): void => {
+      clearTimeout(timer)
+      child.stderr.off("end", finish)
+      child.stderr.off("close", finish)
+      resolve()
+    }
+    const timer = setTimeout(finish, timeoutMs)
+    timer.unref?.()
+    child.stderr.once("end", finish)
+    child.stderr.once("close", finish)
+  })
 
 const captureStderr = (child: ChildProcessWithoutNullStreams): (() => string) => {
   let buffer = ""

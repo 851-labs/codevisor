@@ -1,4 +1,5 @@
 import {
+  clampFailureDetail,
   harnessCatalog,
   locateExecutableOnPath,
   resolveShellEnv,
@@ -304,7 +305,14 @@ export const makeHarnessAuthManager = (config: HarnessAuthManagerConfig): Harnes
     account: HarnessAccountRecord,
     update: UpdateHarnessAccountAuthRequest
   ): Promise<HarnessAccount> => {
-    const saved = await run(config.db.updateHarnessAccountAuth(account.id, update))
+    // Single choke point for every probe path (codex, claude, ACP, and the
+    // catch-all below). A crashing CLI's stderr must never reach the database
+    // or the wire at full length — the UI renders this as a one-line subtitle.
+    const clamped: UpdateHarnessAccountAuthRequest =
+      typeof update.detail === "string"
+        ? { ...update, detail: clampFailureDetail(update.detail) ?? null }
+        : update
+    const saved = await run(config.db.updateHarnessAccountAuth(account.id, clamped))
     const value = publicAccount(saved)
     emit({ kind: "harness.account.updated", subjectId: account.harnessId, payload: value })
     emit({ kind: "harness.auth.updated", subjectId: account.harnessId, payload: value })

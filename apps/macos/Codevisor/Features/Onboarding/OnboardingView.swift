@@ -428,9 +428,15 @@ struct OnboardingView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(harness.name)
                     .fontWeight(.medium)
+                // One line, exactly like every other harness row — an errored
+                // probe must not make this row taller than its neighbours. The
+                // full text stays reachable as a tooltip.
                 Text(authStatus(harness))
                     .font(.callout)
                     .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .help(authStatus(harness))
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -464,7 +470,11 @@ struct OnboardingView: View {
         case "notRequired": return "No sign-in required"
         case "checking": return "Checking sign-in…"
         case "expired": return "Sign-in expired"
-        case "error": return account?.detail ?? "Couldn't check sign-in"
+        // Deliberately plain language, and deliberately not the probe's
+        // `detail`: that carries a crashed CLI's stderr, which was rendering
+        // here as kilobytes of minified JavaScript. The technical cause is
+        // still summarized and persisted server-side for diagnosis.
+        case "error": return "Something went wrong starting the CLI"
         default: return "Not signed in"
         }
     }

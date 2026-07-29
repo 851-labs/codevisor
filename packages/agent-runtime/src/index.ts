@@ -87,6 +87,11 @@ export { spawnCodexClient } from "./providers/codex/client.js"
 export type { CodexClient, CodexConnector, CodexSpawnRequest } from "./providers/codex/client.js"
 export { makeVersionProber, parseVersionOutput } from "./version-probe.js"
 export type { VersionProber, VersionProberOptions } from "./version-probe.js"
+export {
+  clampFailureDetail,
+  maxFailureDetailLength,
+  summarizeProcessFailure
+} from "./process-failure.js"
 
 export interface AgentRuntimeConfig {
   readonly env?: NodeJS.ProcessEnv

@@ -877,6 +877,9 @@ struct HarnessesSettingsView: View {
                     Text(rowSubtitle(harness))
                         .font(.callout)
                         .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                        .truncationMode(.tail)
+                        .help(rowSubtitle(harness))
                 }
             }
             Spacer()
@@ -985,7 +988,9 @@ struct HarnessesSettingsView: View {
         case "notRequired": return "No sign-in required"
         case "checking": return "Checking sign-in…"
         case "expired": return "Sign-in expired"
-        case "error": return account?.detail ?? "Couldn't check sign-in"
+        // Plain language, never the probe's `detail` — that carries a crashed
+        // CLI's stderr. The cause is summarized and persisted server-side.
+        case "error": return "Something went wrong starting the CLI"
         default: return "Not signed in"
         }
     }
