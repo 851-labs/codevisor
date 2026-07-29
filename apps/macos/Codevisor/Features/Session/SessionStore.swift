@@ -134,6 +134,7 @@ final class SessionStore {
         controller.onTurnEnded = { [weak self] in self?.noteTurnEnded(for: key) }
         controller.onRuntimeStateChanged = { [weak self] in self?.noteRuntimeStateChanged(for: key) }
         controller.onGoalChanged = { [weak self] in self?.noteGoalChanged(for: key) }
+        controller.onQueuedPromptsChanged = { [weak self] in self?.noteQueuedPromptsChanged(for: key) }
         controller.onActionRequired = { [weak self] in self?.noteActionRequired(for: key) }
         controllers[key] = controller
         return controller
@@ -512,6 +513,10 @@ final class SessionStore {
         deliverPendingAttentionIfQuiescent(for: key)
     }
 
+    private func noteQueuedPromptsChanged(for key: SessionKey) {
+        deliverPendingAttentionIfQuiescent(for: key)
+    }
+
     private func deliverPendingAttentionIfQuiescent(for key: SessionKey) {
         guard var failed = pendingAttentionErrors[key], let controller = controllers[key] else { return }
         // Active goals can contain many individually-ended turns. The epoch is
@@ -520,6 +525,12 @@ final class SessionStore {
         // Subagents/poll-and-resume tasks keep the epoch open. Terminal-backed
         // work (for example a dev server) is excluded by the controller.
         guard !controller.isWaitingOnBackgroundTasks, controller.isRuntimeIdle else { return }
+        // Prompts the user queued mid-stream are turns they already committed
+        // to, so the batch is one epoch: hold until the queue drains rather
+        // than notifying at every seam between queued turns. The server
+        // publishes the claim before running it, so only the last turn in a
+        // batch observes an empty queue.
+        guard controller.queuedPrompts.isEmpty else { return }
 
         failed = failed || goalNeedsErrorAttention(controller.goal)
         pendingAttentionErrors[key] = nil
@@ -577,6 +588,7 @@ final class SessionStore {
         controller.onTurnEnded = { [weak self] in self?.noteTurnEnded(for: key) }
         controller.onRuntimeStateChanged = { [weak self] in self?.noteRuntimeStateChanged(for: key) }
         controller.onGoalChanged = { [weak self] in self?.noteGoalChanged(for: key) }
+        controller.onQueuedPromptsChanged = { [weak self] in self?.noteQueuedPromptsChanged(for: key) }
         controller.onActionRequired = { [weak self] in self?.noteActionRequired(for: key) }
         controllers[key] = controller
         if draftsByServer[controller.project.serverId] === controller {

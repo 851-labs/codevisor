@@ -180,6 +180,10 @@ public final class SessionModel {
     /// a user transcript row. The stable server message id distinguishes this
     /// handoff from queue edits/deletions and unrelated remote messages.
     public var onQueuedPromptPromoted: (() -> Void)?
+    /// Fires on every prompt-queue snapshot. A non-empty queue means more user
+    /// turns are already committed, so attention consumers hold their epoch
+    /// open until the queue drains (or the user clears it).
+    public var onQueuedPromptsChanged: (() -> Void)?
 
     private let transport: ServerSessionTransport
     private let sessionId: String
@@ -1199,6 +1203,7 @@ public final class SessionModel {
         case let .queueUpdated(queue):
             rememberRemovedQueueItems(in: queue)
             queuedPrompts = queue
+            onQueuedPromptsChanged?()
         case let .updateGate(waiting, harnessName):
             updateGateHarnessName = waiting ? harnessName : nil
         case let .backgroundTasks(tasks):

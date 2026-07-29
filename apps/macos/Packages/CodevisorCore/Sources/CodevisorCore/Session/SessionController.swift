@@ -302,6 +302,9 @@ final public class SessionController {
     /// Called when goal state changes so terminal goal outcomes can release a
     /// deferred unread/notification epoch.
     public var onGoalChanged: (() -> Void)?
+    /// Called when the prompt queue changes so a deferred attention epoch can
+    /// be released once the last queued prompt is claimed or removed.
+    public var onQueuedPromptsChanged: (() -> Void)?
     /// Called when a live question pauses the agent for user input.
     public var onActionRequired: (() -> Void)?
     /// The agent session id currently connected (resumed or newly created).
@@ -2026,6 +2029,9 @@ final public class SessionController {
         }
         model.onQueuedPromptPromoted = { [weak self] in
             self?.requestUserSendAnimation()
+        }
+        model.onQueuedPromptsChanged = { [weak self] in
+            self?.onQueuedPromptsChanged?()
         }
         model.onActionRequired = { [weak self] in
             self?.onActionRequired?()
