@@ -700,9 +700,11 @@ export const makeAgentRuntime = (config: AgentRuntimeConfig = {}): AgentRuntimeS
     const gate = new Promise<void>((resolvePromise) => {
       release = resolvePromise
     })
-    const tail = previous.catch(() => undefined).then(() => gate)
+    // Every stored tail resolves through the gate released in `finally`, so
+    // later operations can await it directly without unreachable catch paths.
+    const tail = previous.then(() => gate)
     lifecycleTails.set(sessionId, tail)
-    await previous.catch(() => undefined)
+    await previous
     try {
       return await operation()
     } finally {

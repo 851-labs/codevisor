@@ -803,10 +803,34 @@ describe("@codevisor/agent-runtime", () => {
     // Closing a session that is not loaded is a no-op (archives of sessions
     // never opened this server-lifetime have nothing to tear down).
     await run(runtime.closeAgentSession("missing"))
+    await expect(run(runtime.cancel("missing"))).rejects.toMatchObject({
+      operation: "cancel"
+    })
     expect(connector.connections[0]?.closeCount).toBe(0)
 
     await run(runtime.closeAgentSession(sessionId))
     expect(connector.connections[0]?.closeCount).toBe(1)
+    await expect(run(runtime.prompt(sessionId, "hello"))).rejects.toMatchObject({
+      operation: "sessionFor"
+    })
+  })
+
+  it("forgets a session even when closing its handle fails", async () => {
+    const connector = makeConnector()
+    const runtime = makeAgentRuntime({
+      connector,
+      env: { PATH: "/bin" },
+      executableExists: (name) => name === "gemini",
+      locateExecutable: (name) => `/bin/${name}`
+    })
+    const sessionId = await run(
+      runtime.createAgentSession("gemini", "/tmp/fail-close", () => undefined)
+    )
+
+    await expect(run(runtime.closeAgentSession(sessionId))).rejects.toMatchObject({
+      message: "close failed",
+      operation: "closeAgentSession"
+    })
     await expect(run(runtime.prompt(sessionId, "hello"))).rejects.toMatchObject({
       operation: "sessionFor"
     })
@@ -1334,6 +1358,96 @@ describe("@codevisor/agent-runtime", () => {
     await run(runtime.cancel(sessionId))
     expect(closeCount).toBe(1)
   })
+
+  it("forgets a retired session even when closing its handle fails", async () => {
+    const sessionId = "retire-close-failure"
+    const handle = {
+      cancel: Effect.succeed({ runtimeState: "retire" as const }),
+      close: Effect.fail(new Error("retired close failed")),
+      prompt: () => Effect.succeed({ stopReason: "end_turn" }),
+      setConfigOption: () => Effect.succeed([]),
+      setMode: () => Effect.void
+    }
+    const custom = {
+      createSession: () =>
+        Effect.succeed({
+          handle,
+          metadata: { configOptions: [], sessionId }
+        }),
+      id: "claude" as const,
+      loadSession: () => Effect.die("unused"),
+      readiness: () => ({ state: "ready" }) as const
+    }
+    const runtime = makeAgentRuntime({
+      env: { PATH: "/bin" },
+      executableExists: () => true,
+      locateExecutable: (name) => `/bin/${name}`,
+      providers: { claude: custom as never }
+    })
+    await run(runtime.createAgentSession("claude-code", "/tmp/project", () => undefined))
+
+    await expect(run(runtime.cancel(sessionId))).rejects.toMatchObject({
+      message: "retired close failed",
+      operation: "cancel"
+    })
+    await expect(run(runtime.prompt(sessionId, "hello"))).rejects.toMatchObject({
+      operation: "sessionFor"
+    })
+  })
+
+  it.each(["cancel", "closeAgentSession"] as const)(
+    "keeps a replacement created while %s cleans up the previous handle",
+    async (operation) => {
+      const sessionId = `replacement-during-${operation}`
+      let createCount = 0
+      let initialCloseCount = 0
+      let runtime: ReturnType<typeof makeAgentRuntime>
+      const replacementHandle = {
+        cancel: Effect.succeed({ runtimeState: "reusable" as const }),
+        close: Effect.void,
+        prompt: () => Effect.succeed({ stopReason: "replacement" }),
+        setConfigOption: () => Effect.succeed([]),
+        setMode: () => Effect.void
+      }
+      const initialHandle = {
+        cancel: Effect.succeed({ runtimeState: "retire" as const }),
+        close: Effect.promise(async () => {
+          initialCloseCount += 1
+          if (initialCloseCount === 1) {
+            await run(runtime.createAgentSession("claude-code", "/tmp/project", () => undefined))
+          }
+        }),
+        prompt: () => Effect.succeed({ stopReason: "initial" }),
+        setConfigOption: () => Effect.succeed([]),
+        setMode: () => Effect.void
+      }
+      const custom = {
+        createSession: () =>
+          Effect.sync(() => ({
+            handle: createCount++ === 0 ? initialHandle : replacementHandle,
+            metadata: { configOptions: [], sessionId }
+          })),
+        id: "claude" as const,
+        loadSession: () => Effect.die("unused"),
+        readiness: () => ({ state: "ready" }) as const
+      }
+      runtime = makeAgentRuntime({
+        claudeCancelGraceMs: 42,
+        env: { PATH: "/bin" },
+        executableExists: () => true,
+        locateExecutable: (name) => `/bin/${name}`,
+        providers: { claude: custom as never }
+      })
+      await run(runtime.createAgentSession("claude-code", "/tmp/project", () => undefined))
+
+      await run(runtime[operation](sessionId))
+
+      expect(createCount).toBe(2)
+      await expect(run(runtime.prompt(sessionId, "hello"))).resolves.toEqual({
+        stopReason: "replacement"
+      })
+    }
+  )
 
   it("materializes runtime events as envelopes", () => {
     expect(
