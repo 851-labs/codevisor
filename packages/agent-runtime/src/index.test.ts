@@ -1243,6 +1243,98 @@ describe("@codevisor/agent-runtime", () => {
     ])
   })
 
+  it("flushes and retires only the cancelled handle before loading a replacement", async () => {
+    const sessionId = "retiring-session"
+    let emit: RuntimeEmit | undefined
+    let closeCount = 0
+    let loadCount = 0
+    let terminalEntered = false
+    let releaseTerminal: (() => void) | undefined
+    let cancelSettled = false
+    const terminalGate = new Promise<void>((resolvePromise) => {
+      releaseTerminal = resolvePromise
+    })
+    const handle = (runtimeState: "reusable" | "retire") => ({
+      cancel: Effect.promise(async () => {
+        await emit?.({
+          kind: "session.updated",
+          payload: { stopReason: "cancelled", turnState: "ended" },
+          subjectId: sessionId
+        })
+        return { runtimeState }
+      }),
+      close: Effect.sync(() => {
+        closeCount += 1
+      }),
+      prompt: () => Effect.succeed({ stopReason: "end_turn" }),
+      setConfigOption: () => Effect.succeed([]),
+      setMode: () => Effect.void
+    })
+    const initialHandle = handle("retire")
+    const replacementHandle = handle("reusable")
+    const custom = {
+      createSession: (_definition: unknown, _cwd: unknown, runtimeEmit: RuntimeEmit) =>
+        Effect.sync(() => {
+          emit = runtimeEmit
+          return {
+            handle: initialHandle,
+            metadata: { configOptions: [], sessionId }
+          }
+        }),
+      id: "claude" as const,
+      loadSession: (
+        _definition: unknown,
+        loadedSessionId: string,
+        _cwd: unknown,
+        runtimeEmit: RuntimeEmit
+      ) =>
+        Effect.sync(() => {
+          loadCount += 1
+          emit = runtimeEmit
+          return { handle: replacementHandle, sessionId: loadedSessionId }
+        }),
+      readiness: () => ({ state: "ready" }) as const
+    }
+    const runtime = makeAgentRuntime({
+      env: { PATH: "/bin" },
+      executableExists: () => true,
+      locateExecutable: (name) => `/bin/${name}`,
+      providers: { claude: custom as never }
+    })
+    await run(
+      runtime.createAgentSession("claude-code", "/tmp/project", async (event) => {
+        const payload = event.payload as Record<string, unknown>
+        if (payload.turnState === "ended") {
+          terminalEntered = true
+          await terminalGate
+        }
+      })
+    )
+
+    const cancellation = run(runtime.cancel(sessionId)).then(() => {
+      cancelSettled = true
+    })
+    while (!terminalEntered)
+      await new Promise<void>((resolvePromise) => setImmediate(resolvePromise))
+    const replacement = run(
+      runtime.loadAgentSession("claude-code", sessionId, "/tmp/project", () => Promise.resolve())
+    )
+    await new Promise<void>((resolvePromise) => setImmediate(resolvePromise))
+    expect(cancelSettled).toBe(false)
+    expect(loadCount).toBe(0)
+
+    releaseTerminal?.()
+    await cancellation
+    await expect(replacement).resolves.toEqual({ configOptions: [], sessionId })
+    expect(closeCount).toBe(1)
+    expect(loadCount).toBe(1)
+
+    // The freshly loaded matching handle remains managed; stale retirement
+    // cleanup cannot remove it.
+    await run(runtime.cancel(sessionId))
+    expect(closeCount).toBe(1)
+  })
+
   it("materializes runtime events as envelopes", () => {
     expect(
       toEventEnvelope("server", 7, {

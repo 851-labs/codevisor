@@ -749,12 +749,19 @@ export const makeMcpManager = (config: McpManagerConfig): McpManager => {
   }
 
   const syncManagedAutomationSkillsFromDb = async (): Promise<void> => {
-    const records = await Promise.all(
-      BUILTIN_MCP_SERVERS.map((builtin) => run(config.db.getMcpServer(builtin.id)))
-    )
-    await syncManagedAutomationSkills(
-      records.filter((record): record is McpServerRecord => record !== undefined)
-    )
+    try {
+      const records = await Promise.all(
+        BUILTIN_MCP_SERVERS.map((builtin) => run(config.db.getMcpServer(builtin.id)))
+      )
+      await syncManagedAutomationSkills(
+        records.filter((record): record is McpServerRecord => record !== undefined)
+      )
+    } catch (cause) {
+      // Managed automation skills are optional. A missing packaged resource
+      // or unreadable user skill directory must not fail an otherwise valid
+      // MCP settings mutation or escape as an unhandled background rejection.
+      reportBackgroundFailure("Managed automation skill synchronization failed", cause)
+    }
   }
 
   const builtinsReady = Promise.all(

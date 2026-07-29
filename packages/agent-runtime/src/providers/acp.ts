@@ -305,6 +305,7 @@ export const makeAcpProvider = (
       yield* adapterPromise("cancelTurnEnd", () =>
         emit(turnLifecycleEvent(sessionId, randomUUID(), "ended", "cancelled"))
       )
+      return { runtimeState: "reusable" as const }
     }),
     setMode: (modeId) =>
       Effect.gen(function* () {

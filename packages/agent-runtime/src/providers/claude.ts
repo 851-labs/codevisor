@@ -41,6 +41,7 @@ import {
   type AgentProvider,
   type AgentRuntimeError,
   type AgentSessionHandle,
+  type CancelResult,
   type CreatedAgentSession,
   type HarnessDefinition,
   type HarnessAccountContext,
@@ -360,6 +361,9 @@ export interface ClaudeProviderConfig {
   readonly scanAgentSessions?: () => Promise<ReadonlyArray<AgentSessionSummary>>
   readonly readFile?: (path: string) => string | undefined
   readonly checkVersion?: (claudePath: string) => Promise<string>
+  /// Bounded wait for Claude to produce its normal terminal result after an
+  /// interrupt. Exposed for deterministic unit tests.
+  readonly cancelGraceMs?: number
   /// When set (and `wrapCommand` is present), background Bash commands are
   /// rewritten to tee their output through a server-owned terminal so clients
   /// can attach to the live process; foreground commands are untouched.
@@ -486,6 +490,13 @@ interface ClaudeSession {
   turnId: string
   initiatedBy: "user" | "agent"
   pendingPrompt: Deferred<{ stopReason: string }> | undefined
+  /// Resolves only after the current turn's terminal event has passed through
+  /// the ordered runtime sink. Retained after turnActive clears so a racing
+  /// cancel can still wait for durable completion.
+  turnCompletion: Deferred<void> | undefined
+  cancelInFlight: Promise<CancelResult> | undefined
+  retired: boolean
+  streamEnded: boolean
   /// Slash commands injected on the user's behalf (currently `/goal`) do not
   /// have a blocking `pendingPrompt`, but their turns still belong to the
   /// user's attention epoch rather than to autonomous background activity.
@@ -627,6 +638,7 @@ export const makeClaudeProvider = (
     })
   const checkVersion = config.checkVersion ?? runClaudeVersion
   const wrapCommand = config.backgroundTerminals?.wrapCommand
+  const cancelGraceMs = config.cancelGraceMs ?? 1_500
   const versionCache = new Map<string, string>()
 
   const locateClaude = (definition: HarnessDefinition): string => {
@@ -829,10 +841,14 @@ export const makeClaudeProvider = (
       taskToolUses: new Map(),
       tasks: new Map(),
       pendingPrompt: undefined,
+      turnCompletion: undefined,
+      cancelInFlight: undefined,
       pendingUserCommands: 0,
       currentGoal: undefined,
       pendingQuestions: new Map(),
       q,
+      retired: false,
+      streamEnded: false,
       sdkSessionId: sessionKey,
       subagentMessageIds: new Map(),
       turnActive: false,
@@ -855,7 +871,7 @@ export const makeClaudeProvider = (
             }
             continue
           }
-          handleMessage(created, message, readFile)
+          if (!created.retired) handleMessage(created, message, readFile)
         }
       } catch (cause) {
         const failure = cause instanceof Error ? cause.message : String(cause)
@@ -873,6 +889,7 @@ export const makeClaudeProvider = (
           })
         }
       } finally {
+        created.streamEnded = true
         // The SDK stream ended (query closed, aborted, or threw) with a turn
         // still in flight and no final `result` to close it. Without this the
         // client would show "working"/"Thinking…" forever and the awaited
@@ -880,9 +897,9 @@ export const makeClaudeProvider = (
         // get wedged.
         if (created.turnActive) {
           if (created.interruptRequested) {
-            finishActiveTurn(created, "cancelled")
+            await finishActiveTurn(created, "cancelled")
           } else {
-            finishActiveTurn(
+            await finishActiveTurn(
               created,
               "end_turn",
               streamFailure ?? "The Claude connection ended unexpectedly.",
@@ -1022,22 +1039,105 @@ export const makeClaudeProvider = (
 
   const handleFor = (session: ClaudeSession): AgentSessionHandle => ({
     cancel: adapterPromise("cancel", async () => {
-      session.interruptRequested = true
-      // A held question would block the SDK from processing the interrupt.
-      cancelClaudePendingQuestions(session)
+      if (session.cancelInFlight !== undefined) return session.cancelInFlight
+      const cancellation = (async (): Promise<CancelResult> => {
+        // Slash commands (notably /goal) can be queued before Claude emits
+        // the first observable message. Materialize their user turn so
+        // cancellation has a durable lifecycle to settle.
+        if (!session.turnActive && session.pendingUserCommands > 0) {
+          await ensureObservedTurnStarted(session)
+        }
+        const capturedTurnId = session.turnId
+        const capturedCompletion = session.turnCompletion
+        const questionsCancelled = cancelClaudePendingQuestions(session)
+        if (!session.turnActive) {
+          await questionsCancelled
+          await capturedCompletion?.promise
+          return { runtimeState: "reusable" }
+        }
+
+        session.interruptRequested = true
+        // A held question was cancelled above so it cannot block the SDK from
+        // processing the interrupt.
+        let timeout: ReturnType<typeof setTimeout> | undefined
+        const timedOut = new Promise<"timeout">((resolvePromise) => {
+          timeout = setTimeout(() => resolvePromise("timeout"), cancelGraceMs)
+        })
+        // Acknowledgement is not completion. Keep waiting for the captured
+        // terminal event; an interrupt rejection forces recovery immediately.
+        const interruptFailed = Promise.resolve()
+          .then(() => session.q.interrupt())
+          .then(
+            () => new Promise<never>(() => undefined),
+            () => Promise.resolve("interruptFailed" as const)
+          )
+        const settled = capturedCompletion?.promise.then(() => "settled" as const)
+        const outcome = await Promise.race([
+          ...(settled === undefined ? [] : [settled]),
+          interruptFailed,
+          timedOut
+        ])
+        if (timeout !== undefined) clearTimeout(timeout)
+        await questionsCancelled
+
+        // The SDK result may have won a same-tick race after the timeout
+        // callback fired. It is reusable only while the iterator itself
+        // remains alive; a closed stream cannot accept another prompt.
+        if (
+          outcome !== "interruptFailed" &&
+          (outcome === "settled" || !session.turnActive || session.turnId !== capturedTurnId) &&
+          !session.streamEnded
+        ) {
+          await capturedCompletion?.promise
+          return { runtimeState: "reusable" }
+        }
+
+        // No terminal result arrived. Locally finish and persist the turn
+        // before closing the poisoned query; retired sessions ignore late SDK
+        // messages, preventing an observed/phantom follow-up turn.
+        session.retired = true
+        if (session.backgroundTasks.size > 0 || session.backgroundShellKeys.size > 0) {
+          session.backgroundTasks.clear()
+          session.backgroundShellKeys.clear()
+          await emitBackgroundTasks(session)
+        }
+        await pauseGoalForForcedCancellation(session)
+        if (session.turnActive && session.turnId === capturedTurnId) {
+          await finishActiveTurn(session, "cancelled")
+        } else {
+          await capturedCompletion?.promise
+        }
+        session.input.end()
+        session.abort.abort()
+        return { runtimeState: "retire" }
+      })()
+      session.cancelInFlight = cancellation
       try {
-        await session.q.interrupt()
-      } catch {
-        // The turn may have ended between the request and the interrupt.
+        return await cancellation
+      } finally {
+        if (session.cancelInFlight === cancellation) {
+          session.cancelInFlight = undefined
+        }
       }
     }),
     close: adapterPromise("close", async () => {
-      cancelClaudePendingQuestions(session)
+      session.retired = true
+      await cancelClaudePendingQuestions(session)
       session.input.end()
       session.abort.abort()
     }),
     prompt: (input) =>
       adapterPromise("prompt", async () => {
+        const cancellation = session.cancelInFlight
+        if (cancellation !== undefined) {
+          const result = await cancellation
+          if (result.runtimeState === "retire") {
+            throw new Error("Claude runtime was retired")
+          }
+        }
+        if (session.retired) {
+          throw new Error("Claude runtime was retired")
+        }
         const pending = deferred<{ stopReason: string }>()
         session.pendingPrompt = pending
         await ensureTurnStarted(session, "user")
@@ -1545,13 +1645,12 @@ const handleSystemMessage = (
   }
 }
 
-const emitBackgroundTasks = (session: ClaudeSession): void => {
-  void session.emit({
+const emitBackgroundTasks = (session: ClaudeSession): Promise<void> =>
+  session.emit({
     kind: "session.updated",
     payload: { backgroundTasks: [...session.backgroundTasks.values()] },
     subjectId: session.key
   })
-}
 
 /// Reconciles the SDK's authoritative full task set while preserving richer
 /// edge metadata such as tool-use attribution and Codevisor's terminal key.
@@ -1856,6 +1955,18 @@ const settleGoalOnTurnEnd = (
   })
 }
 
+const pauseGoalForForcedCancellation = async (session: ClaudeSession): Promise<void> => {
+  const goal = session.currentGoal
+  if (goal === undefined || goal.status !== "active") return
+  const settled: SessionGoal = { ...goal, status: "paused", updatedAt: isoTimestamp() }
+  session.currentGoal = settled
+  await session.emit({
+    kind: "session.updated",
+    payload: { goal: settled },
+    subjectId: session.key
+  })
+}
+
 /// Sends a `/goal` slash command as a user message — the SDK forwards it to
 /// the CLI, which executes it exactly like typing it interactively (goal mode
 /// has no SDK API yet). The CLI's reply narrates the outcome in the chat.
@@ -1872,12 +1983,16 @@ const pushGoalCommand = (session: ClaudeSession, command: string): void => {
 /// Interrupts, turn results, and session close invalidate held questions:
 /// deny them (the model sees a dismissal) and emit the resolution so clients
 /// drop the picker.
-const cancelClaudePendingQuestions = (session: ClaudeSession): void => {
+const cancelClaudePendingQuestions = (session: ClaudeSession): Promise<void> => {
+  const emissions: Array<Promise<void>> = []
   for (const [questionId, pending] of [...session.pendingQuestions]) {
     session.pendingQuestions.delete(questionId)
     pending.resolve(pending.respond({ outcome: "cancelled" }))
-    void emitClaudeQuestionResolved(session, questionId, "cancelled", pending.questions, undefined)
+    emissions.push(
+      emitClaudeQuestionResolved(session, questionId, "cancelled", pending.questions, undefined)
+    )
   }
+  return Promise.all(emissions).then(() => undefined)
 }
 
 /// Emits the plan-shaped update for a plan tool's authoritative input:
@@ -2345,7 +2460,7 @@ const handleResult = (session: ClaudeSession, message: SDKMessage & { type: "res
   cancelClaudePendingQuestions(session)
   if (!isTaskNotification) settleGoalOnTurnEnd(session, message)
   void refreshClaudeSessionTitle(session)
-  finishActiveTurn(session, resolution.stopReason, resolution.stopDetail, resolution.retryable)
+  void finishActiveTurn(session, resolution.stopReason, resolution.stopDetail, resolution.retryable)
 }
 
 const claudeContextUsageFromAssistant = (
@@ -2425,15 +2540,26 @@ const finishActiveTurn = (
   stopReason: string,
   stopDetail?: string | undefined,
   retryable?: boolean | undefined
-): void => {
+): Promise<void> => {
+  const completion = session.turnCompletion
+  if (!session.turnActive) return completion?.promise ?? Promise.resolve()
+
+  // Clear the active bit before awaiting persistence. Every competing
+  // terminal path now observes the same completion instead of emitting a
+  // duplicate turn end.
+  session.turnActive = false
+  const wasInterrupted = session.interruptRequested
+  const pending = session.pendingPrompt
+  session.pendingPrompt = undefined
+  const toolEvents: Array<RuntimeEvent> = []
   // Anything still open never got a tool_result (interrupt/failure/stream end).
   for (const toolUseId of [...session.openToolCalls]) {
     session.openToolCalls.delete(toolUseId)
-    void session.emit({
+    toolEvents.push({
       kind: "session.output",
       payload: {
         sessionUpdate: "tool_call_update",
-        status: session.interruptRequested ? "cancelled" : "failed",
+        status: wasInterrupted ? "cancelled" : "failed",
         toolCallId: toolUseId
       },
       subjectId: session.key
@@ -2457,13 +2583,22 @@ const finishActiveTurn = (
     },
     subjectId: session.key
   }
-  const pending = session.pendingPrompt
-  session.pendingPrompt = undefined
-  session.turnActive = false
-  session.interruptRequested = false
-  void session.emit(ended).then(() => {
-    pending?.resolve({ stopReason })
-  })
+  const finalize = async (): Promise<void> => {
+    try {
+      for (const event of toolEvents) await session.emit(event)
+      await session.emit(ended)
+      pending?.resolve({ stopReason })
+      completion?.resolve()
+    } catch (cause) {
+      pending?.reject(cause)
+      completion?.reject(cause)
+      throw cause
+    } finally {
+      session.interruptRequested = false
+    }
+  }
+  void finalize()
+  return completion?.promise ?? Promise.resolve()
 }
 
 const ensureTurnStarted = (
@@ -2472,6 +2607,7 @@ const ensureTurnStarted = (
 ): Promise<void> => {
   if (session.turnActive) return Promise.resolve()
   session.turnActive = true
+  session.turnCompletion = deferred<void>()
   session.turnId = randomUUID()
   session.initiatedBy = initiatedBy
   // Fresh turn: reset the recovery counters (auto-recoveries keep `turnActive`

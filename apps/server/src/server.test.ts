@@ -410,6 +410,7 @@ const makeAgents = (): AgentRuntimeService & {
     cancel: (sessionId) =>
       Effect.sync(() => {
         cancellations.push(sessionId)
+        return { runtimeState: "reusable" as const }
       }),
     closeAgentSession: (sessionId) =>
       Effect.sync(() => {
@@ -1008,6 +1009,79 @@ describe("@codevisor/server", () => {
       (await jsonRequest(server, `/v1/sessions/${session.id}/connect`, { method: "POST" })).status
     ).toBe(200)
     expect(agents.loads).toEqual([["codex", "agent-before-crash", folder]])
+  })
+
+  it("returns cancel success only after the durable transcript is terminal", async () => {
+    const { agents, services } = await makeServices("server-a")
+    const errors = vi.spyOn(console, "error").mockImplementation(() => undefined)
+    const folder = mkdtempSync(join(tmpdir(), "codevisor-cancel-durable-"))
+    tempDirs.push(folder)
+    const project = await run(services.db.createProject({ folderPath: folder }))
+    const session = await run(
+      services.db.createSession({
+        projectId: project.id,
+        harnessId: "codex",
+        agentSessionId: "agent-cancel-durable"
+      })
+    )
+    let cancelCount = 0
+    const durableAgents: AgentRuntimeService = {
+      ...agents,
+      cancel: (agentSessionId) =>
+        Effect.promise(async () => {
+          cancelCount += 1
+          await agents.emit(agentSessionId, {
+            kind: "session.updated",
+            subjectId: agentSessionId,
+            payload: {
+              initiatedBy: "user",
+              stopReason: "cancelled",
+              turnId: "stuck-turn",
+              turnState: "ended"
+            }
+          })
+          return { runtimeState: "retire" as const }
+        })
+    }
+    const server = await startWithApp({ ...services, agents: durableAgents })
+    runningServers.push(server)
+    expect(
+      (
+        await jsonRequest(server, `/v1/sessions/${session.id}/connect`, {
+          method: "POST"
+        })
+      ).status
+    ).toBe(200)
+    const agentSessionId = session.agentSessionId
+    if (agentSessionId === undefined) throw new Error("expected persisted agent session id")
+    await agents.emit(agentSessionId, {
+      kind: "session.updated",
+      subjectId: agentSessionId,
+      payload: { initiatedBy: "user", turnId: "stuck-turn", turnState: "started" }
+    })
+    expect((await run(services.db.getSessionDetail(session.id))).conversation.at(-1)).toMatchObject(
+      {
+        isGenerating: true,
+        role: "assistant"
+      }
+    )
+
+    const response = await jsonRequest(server, `/v1/sessions/${session.id}/cancel`, {
+      body: JSON.stringify({ clientActionId: "durable-cancel-1" }),
+      method: "POST"
+    })
+
+    expect(response).toMatchObject({ body: { cancelled: true }, status: 202 })
+    expect(cancelCount).toBe(1)
+    expect(
+      (await run(services.db.getTranscriptPage(session.id, undefined, 8))).items.at(-1)
+    ).toMatchObject({
+      isGenerating: false,
+      role: "assistant",
+      stopReason: "cancelled"
+    })
+    expect(errors).toHaveBeenCalledWith(expect.stringContaining('"event":"agent_cancel_forced"'))
+    expect(errors).toHaveBeenCalledWith(expect.stringContaining(`"sessionId":"${session.id}"`))
   })
 
   it("persists session config and restores model before dependent reasoning and speed", async () => {

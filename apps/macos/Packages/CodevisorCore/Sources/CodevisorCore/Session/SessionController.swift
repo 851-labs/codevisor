@@ -1195,6 +1195,12 @@ final public class SessionController {
     /// Whether the session is actively generating a response.
     public var isSending: Bool { model?.isSending ?? false }
     public var isCancelling: Bool { model?.isCancelling ?? false }
+    public var isTakingLongerThanExpected: Bool {
+        model?.isTakingLongerThanExpected ?? false
+    }
+    public var providerActivityPhase: SessionProviderActivityPhase? {
+        model?.providerActivityPhase
+    }
 
     public var isBusy: Bool {
         isConnecting || isSending

@@ -3007,13 +3007,41 @@ const routeSessionActions = async (
       "cancel",
       payload,
       async () => {
+        const cancelRequestedAt = isoTimestamp()
+        const session = await run(services.db.getSessionSummary(cancelSessionId))
+        const activeItem = (
+          await run(services.db.getTranscriptPage(cancelSessionId, undefined, 1))
+        ).items.at(-1)
         const agentSession = await ensureAgentSessionFor(
           services,
           fanout,
           config.id,
           cancelSessionId
         )
-        await run(services.agents.cancel(agentSession.sessionId))
+        const outcome = await run(services.agents.cancel(agentSession.sessionId))
+        if (outcome.runtimeState === "retire") {
+          const forcedAt = isoTimestamp()
+          console.error(
+            JSON.stringify({
+              event: "agent_cancel_forced",
+              sessionId: cancelSessionId,
+              harnessId: session.harnessId,
+              agentSessionId: agentSession.sessionId,
+              turnId: activeItem?.turnId,
+              providerPhase: "cancelling",
+              lastEventType: "durable_transcript_snapshot",
+              lastEventAt: activeItem?.updatedAt,
+              cancelRequestedAt,
+              forcedAt,
+              runtimeRetired: true,
+              bootId: config.bootId,
+              processId: config.processId,
+              version: config.version,
+              buildNumber: config.buildNumber,
+              sourceRevision: config.sourceRevision
+            })
+          )
+        }
         return { cancelled: true }
       }
     )

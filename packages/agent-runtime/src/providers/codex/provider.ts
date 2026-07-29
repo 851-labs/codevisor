@@ -713,7 +713,7 @@ export const makeCodexProvider = (
   const handleFor = (session: CodexSession): AgentSessionHandle => ({
     cancel: adapterPromise("cancel", async () => {
       const turnId = session.activeTurnId
-      if (turnId === undefined) return
+      if (turnId === undefined) return { runtimeState: "reusable" as const }
       session.interruptRequested = true
       // A held question would block the interrupt from ever completing.
       cancelPendingQuestions(session)
@@ -725,6 +725,7 @@ export const makeCodexProvider = (
       } catch {
         // The turn may already be over.
       }
+      return { runtimeState: "reusable" as const }
     }),
     close: adapterPromise("close", async () => {
       // Deliberate closes skip the client's onClose handlers (no spurious

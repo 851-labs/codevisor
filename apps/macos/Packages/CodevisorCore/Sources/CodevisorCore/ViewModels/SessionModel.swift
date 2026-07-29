@@ -2,6 +2,26 @@ import Foundation
 import Observation
 import ACPKit
 
+public enum SessionProviderActivityPhase: String, Equatable, Sendable {
+    case modelStream
+    case toolInputStream
+    case toolExecution
+    case retryBackoff
+    case waitingForQuestion
+    case cancelling
+
+    public var label: String {
+        switch self {
+        case .modelStream: "model response"
+        case .toolInputStream: "tool input"
+        case .toolExecution: "tool execution"
+        case .retryBackoff: "provider retry"
+        case .waitingForQuestion: "your answer"
+        case .cancelling: "cancellation"
+        }
+    }
+}
+
 /// Drives a single chat session: sends prompts, consumes the streamed
 /// `SessionUpdate`s, and exposes an observable conversation for the UI.
 @MainActor
@@ -15,6 +35,10 @@ public final class SessionModel {
     /// the combined open call and hand the result to `loadHistory(preloaded:)`.
     public static let initialTranscriptPageSize = 8
     private static let olderTranscriptPageSize = 16
+    /// Grace for a live terminal event after the cancel request completes.
+    /// Internal mutability keeps reconciliation tests fast without changing
+    /// the production two-second defense-in-depth window.
+    static var cancellationTerminalEventWaitDelay: Duration = .milliseconds(100)
     /// Conversation items no longer receiving stream updates. Transcript
     /// containers should iterate THIS (plus a dedicated child view for
     /// `activeItem`), never `conversation`: the settled list changes only at
@@ -53,6 +77,9 @@ public final class SessionModel {
     }
     public private(set) var isSending = false
     public private(set) var isCancelling = false
+    public private(set) var isTakingLongerThanExpected = false
+    public private(set) var providerActivityPhase: SessionProviderActivityPhase?
+    public private(set) var lastProviderActivityAt: Date?
     public private(set) var queuedPrompts: [ServerPromptQueueItem] = []
     /// Set while the server holds this session's prompts during a harness
     /// update ("Waiting for Codex to finish updating…"); nil once released.
@@ -188,6 +215,7 @@ public final class SessionModel {
     private let transport: ServerSessionTransport
     private let sessionId: String
     private let now: @Sendable () -> Date
+    private let stalledTurnQuietInterval: Duration
     private var serverEventCursor: Int?
     /// History contains complete config-option snapshots from the runtime that
     /// originally created the chat. During replay, retain only their selected
@@ -200,6 +228,7 @@ public final class SessionModel {
     /// delivers updates continuously — including agent-initiated turns with no
     /// prompt in flight — so one consumer runs for the model's lifetime.
     private var consumerTask: Task<Void, Never>?
+    @ObservationIgnored private var stalledTurnTask: Task<Void, Never>?
 
     /// Stream events waiting for the next per-frame flush. Deliberately not
     /// observable: buffering must not invalidate views — only applying does.
@@ -238,13 +267,15 @@ public final class SessionModel {
         sessionId: String,
         modeState: SessionModeState? = nil,
         configOptions: [SessionConfigOption] = [],
-        now: @escaping @Sendable () -> Date = { Date() }
+        now: @escaping @Sendable () -> Date = { Date() },
+        stalledTurnQuietInterval: Duration = .seconds(90)
     ) {
         self.transport = serverTransport
         self.sessionId = sessionId
         self.modeState = modeState
         self.configOptions = configOptions
         self.now = now
+        self.stalledTurnQuietInterval = stalledTurnQuietInterval
     }
 
     /// Starts the single long-lived event consumer (idempotent).
@@ -488,6 +519,7 @@ public final class SessionModel {
         appendSettled(.user(message))
         startActiveBubble()
         isSending = true
+        noteProviderActivity(.modelStream)
 
         // Events are consumed by the long-lived consumer (started here if it
         // isn't already), so every prompt — first and follow-ups — streams.
@@ -527,6 +559,7 @@ public final class SessionModel {
         settleActiveItem()
         startActiveBubble()
         isSending = true
+        noteProviderActivity(.modelStream)
         await startConsumer()
 
         do {
@@ -568,6 +601,7 @@ public final class SessionModel {
     public func cancel() async {
         guard isSending, !isCancelling else { return }
         isCancelling = true
+        noteProviderActivity(.cancelling)
         defer { isCancelling = false }
         do {
             try await transport.cancel()
@@ -580,11 +614,15 @@ public final class SessionModel {
         // was already missed (for example while the event socket was down),
         // rebuild from durable history instead of leaving a false Stop state.
         for _ in 0..<20 {
-            try? await Task.sleep(for: .milliseconds(100))
+            try? await Task.sleep(for: Self.cancellationTerminalEventWaitDelay)
             flushPendingEvents()
             if !isSending { return }
         }
         await reconcileFromServer()
+        if isSending {
+            errorMessage =
+                "Cancellation was accepted, but the server still reports this turn as running. Reconnect the chat and try Stop again."
+        }
     }
 
     public func retrySessionFailure() async {
@@ -745,6 +783,7 @@ public final class SessionModel {
             }
             goal = page.goal
             isSending = lastTurnIsGenerating
+            if isSending { noteProviderActivity(.modelStream) }
             transcriptStreamBytes = Self.transcriptByteEstimate(of: conversation)
             serverEventCursor = page.eventCursor
             do {
@@ -833,6 +872,7 @@ public final class SessionModel {
                 configOptions = restoredOptions
                 await restoreRuntimeConfigSelections(from: runtimeOptions, to: restoredOptions)
                 isSending = lastTurnIsGenerating
+                if isSending { noteProviderActivity(.modelStream) }
                 serverEventCursor = history.cursor ?? snapshot.eventCursor
             }
             transcriptStreamBytes = Self.transcriptByteEstimate(of: conversation)
@@ -1154,6 +1194,9 @@ public final class SessionModel {
     }
 
     private func apply(_ event: ServerSessionStreamEvent) {
+        if !isReplayingHistory, let phase = providerActivityPhase(for: event) {
+            noteProviderActivity(phase)
+        }
         switch event {
         case let .update(update):
             apply(update)
@@ -1259,7 +1302,56 @@ public final class SessionModel {
     private func endTurn() {
         let wasSending = isSending
         isSending = false
+        stalledTurnTask?.cancel()
+        stalledTurnTask = nil
+        isTakingLongerThanExpected = false
+        providerActivityPhase = nil
         if wasSending { onTurnEnded?() }
+    }
+
+    private func noteProviderActivity(_ phase: SessionProviderActivityPhase) {
+        providerActivityPhase = phase
+        lastProviderActivityAt = now()
+        isTakingLongerThanExpected = false
+        stalledTurnTask?.cancel()
+        let quietInterval = stalledTurnQuietInterval
+        stalledTurnTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: quietInterval)
+            guard let self, !Task.isCancelled, self.isSending else { return }
+            self.isTakingLongerThanExpected = true
+        }
+    }
+
+    private func providerActivityPhase(
+        for event: ServerSessionStreamEvent
+    ) -> SessionProviderActivityPhase? {
+        switch event {
+        case let .update(update):
+            switch update {
+            case .agentMessageChunk, .agentThoughtChunk, .plan, .planDocument:
+                return .modelStream
+            case .toolCall:
+                return .toolInputStream
+            case .toolCallUpdate:
+                return .toolExecution
+            case .question:
+                return .waitingForQuestion
+            case .questionResolved:
+                return .toolExecution
+            case .contextCompaction:
+                return .modelStream
+            case .userMessageChunk, .availableCommandsUpdate, .currentModeUpdate,
+                 .configOptionUpdate, .usageUpdate, .goalUpdate, .goalCleared:
+                return nil
+            }
+        case .retrying:
+            return .retryBackoff
+        case .userMessage:
+            return .modelStream
+        case .finished, .failed, .authenticationRequired, .queueUpdated, .updateGate,
+             .backgroundTasks, .runtimeState, .planApprovalRequired:
+            return nil
+        }
     }
 
     private func enqueueWhileSending(_ text: String, attachments: [Attachment] = []) async {

@@ -22,6 +22,7 @@ import {
   type AgentProvider,
   type AgentSessionHandle,
   type AgentSessionMetadata,
+  type CancelResult,
   type HarnessDefinition,
   type HarnessAccountContext,
   type HarnessAuthInspection,
@@ -100,6 +101,9 @@ export interface AgentRuntimeConfig {
   readonly connector?: AcpConnector
   readonly acpAuthProbeTimeoutMs?: number
   readonly harnessInspectionTimeoutMs?: number
+  /// Claude interrupt grace before a stuck query is force-ended and retired.
+  /// Primarily injectable for deterministic integration tests.
+  readonly claudeCancelGraceMs?: number
   /// Server-owned terminals for agent background processes; providers surface
   /// long-running agent commands through it as attachable terminal tabs.
   /// Absent (tests, embedded runtimes), providers keep the plain behavior.
@@ -175,7 +179,7 @@ export interface AgentRuntimeService {
     sessionId: string,
     input: string | PromptInput
   ) => Effect.Effect<PromptResult, AgentRuntimeError>
-  readonly cancel: (sessionId: string) => Effect.Effect<void, AgentRuntimeError>
+  readonly cancel: (sessionId: string) => Effect.Effect<CancelResult, AgentRuntimeError>
   /// Closes a loaded agent session and its process (background shells
   /// included). No-op when the session is not loaded — archiving a session
   /// that was never opened this server-lifetime has nothing to tear down.
@@ -668,12 +672,46 @@ export const makeAgentRuntime = (config: AgentRuntimeConfig = {}): AgentRuntimeS
         : { authProbeTimeoutMs: config.acpAuthProbeTimeoutMs })
     })
   )
-  providers.set("claude", makeClaudeProvider(environment, backgroundTerminals))
+  providers.set(
+    "claude",
+    makeClaudeProvider(environment, {
+      ...backgroundTerminals,
+      ...(config.claudeCancelGraceMs === undefined
+        ? {}
+        : { cancelGraceMs: config.claudeCancelGraceMs })
+    })
+  )
   providers.set("codex", makeCodexProvider(environment, backgroundTerminals))
   for (const provider of Object.values(config.providers ?? {})) {
     providers.set(provider.id, provider)
   }
   const sessions = new Map<string, ManagedSession>()
+  const lifecycleTails = new Map<string, Promise<void>>()
+
+  /// Serializes load/cancel/close for one durable provider session. In
+  /// particular, a new load cannot observe a handle while an earlier forced
+  /// cancellation is still flushing and retiring it.
+  const withSessionLifecycle = async <A>(
+    sessionId: string,
+    operation: () => Promise<A>
+  ): Promise<A> => {
+    const previous = lifecycleTails.get(sessionId) ?? Promise.resolve()
+    let release: (() => void) | undefined
+    const gate = new Promise<void>((resolvePromise) => {
+      release = resolvePromise
+    })
+    const tail = previous.catch(() => undefined).then(() => gate)
+    lifecycleTails.set(sessionId, tail)
+    await previous.catch(() => undefined)
+    try {
+      return await operation()
+    } finally {
+      release?.()
+      if (lifecycleTails.get(sessionId) === tail) {
+        lifecycleTails.delete(sessionId)
+      }
+    }
+  }
 
   /// All session output funnels through here. Events append to the owning
   /// session's serial promise chain so the sink observes them in arrival
@@ -914,50 +952,81 @@ export const makeAgentRuntime = (config: AgentRuntimeConfig = {}): AgentRuntimeS
         return created.metadata
       }),
     loadAgentSession: (harnessId, agentSessionId, cwd, sink, account, toolGateway) =>
-      Effect.gen(function* () {
-        const existing = sessions.get(agentSessionId)
-        if (
-          existing !== undefined &&
-          existing.harnessId === harnessId &&
-          existing.cwd === cwd &&
-          existing.harnessAccountId === account?.id
-        ) {
-          // Reconnects re-bind the sink (e.g. a restarted client re-loading a
-          // live session) without tearing down the agent process.
-          existing.sink = sink
-          return existing.metadata
-        }
-        const { definition, provider } = yield* definitionFor(harnessId)
-        const loaded = yield* provider.loadSession(
-          definition,
-          agentSessionId,
-          cwd,
-          dispatch,
-          account,
-          toolGateway
-        )
-        const metadata = loaded.metadata ?? { configOptions: [], sessionId: loaded.sessionId }
-        return manageSession(harnessId, metadata, cwd, loaded.handle, sink, account)
-      }),
+      adapterPromise("loadAgentSession", () =>
+        withSessionLifecycle(agentSessionId, async () => {
+          const existing = sessions.get(agentSessionId)
+          if (
+            existing !== undefined &&
+            existing.harnessId === harnessId &&
+            existing.cwd === cwd &&
+            existing.harnessAccountId === account?.id
+          ) {
+            // Reconnects re-bind the sink (e.g. a restarted client re-loading
+            // a live session) without tearing down the agent process.
+            existing.sink = sink
+            return existing.metadata
+          }
+          const { definition, provider } = await Effect.runPromise(definitionFor(harnessId))
+          const loaded = await Effect.runPromise(
+            provider.loadSession(definition, agentSessionId, cwd, dispatch, account, toolGateway)
+          )
+          const metadata = loaded.metadata ?? { configOptions: [], sessionId: loaded.sessionId }
+          return manageSession(harnessId, metadata, cwd, loaded.handle, sink, account)
+        })
+      ),
     prompt: (sessionId, input) =>
       Effect.gen(function* () {
         const session = yield* sessionFor(sessionId)
         return yield* session.handle.prompt(input)
       }),
     cancel: (sessionId) =>
-      Effect.gen(function* () {
-        const session = yield* sessionFor(sessionId)
-        return yield* session.handle.cancel
-      }),
+      adapterPromise("cancel", () =>
+        withSessionLifecycle(sessionId, async () => {
+          const session = sessions.get(sessionId)
+          if (session === undefined) {
+            throw new Error(`Agent session is not loaded: ${sessionId}`)
+          }
+          const result = await Effect.runPromise(session.handle.cancel)
+          await session.chain
+          if (result.runtimeState !== "retire" || sessions.get(sessionId) !== session) {
+            return result
+          }
+          let closeFailure: unknown
+          try {
+            await Effect.runPromise(session.handle.close)
+          } catch (cause) {
+            closeFailure = cause
+          } finally {
+            await session.chain
+            // Matching-handle check prevents stale cancellation cleanup from
+            // deleting a replacement installed by another lifecycle path.
+            if (sessions.get(sessionId) === session) {
+              sessions.delete(sessionId)
+            }
+          }
+          if (closeFailure !== undefined) throw closeFailure
+          return result
+        })
+      ),
     closeAgentSession: (sessionId) =>
-      Effect.gen(function* () {
-        const session = sessions.get(sessionId)
-        if (session === undefined) {
-          return
-        }
-        sessions.delete(sessionId)
-        yield* session.handle.close
-      }),
+      adapterPromise("closeAgentSession", () =>
+        withSessionLifecycle(sessionId, async () => {
+          const session = sessions.get(sessionId)
+          if (session === undefined) return
+          let closeFailure: unknown
+          try {
+            await Effect.runPromise(session.handle.close)
+          } catch (cause) {
+            closeFailure = cause
+          } finally {
+            await session.chain
+            if (sessions.get(sessionId) === session) {
+              sessions.delete(sessionId)
+            }
+          }
+          if (closeFailure !== undefined) throw closeFailure
+        })
+      ),
     setMode: (sessionId, modeId) =>
       Effect.gen(function* () {
         const session = yield* sessionFor(sessionId)

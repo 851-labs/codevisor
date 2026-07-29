@@ -599,6 +599,13 @@ describe("MCP manager", () => {
     expect(errors).toHaveBeenCalledWith(
       "Built-in MCP initialization failed: managed skill directory is read-only"
     )
+    await expect(manager.update("computer", { enabled: false })).resolves.toMatchObject({
+      enabled: false,
+      id: "computer"
+    })
+    expect(errors).toHaveBeenCalledWith(
+      "Managed automation skill synchronization failed: managed skill directory is read-only"
+    )
   })
 
   it("accepts harness redials: fresh initialize handshakes reuse the same gateway", async () => {

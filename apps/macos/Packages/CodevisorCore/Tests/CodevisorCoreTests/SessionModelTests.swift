@@ -11,6 +11,7 @@ struct SessionModelTests {
         // tests settle with `Task.yield()` loops that never advance the wall
         // clock, so flush on the next main-actor turn instead.
         SessionModel.eventFlushInterval = .zero
+        SessionModel.cancellationTerminalEventWaitDelay = .zero
     }
 
     @Test("The prompt carries the optimistic message id; the echo reconciles by identity")
@@ -171,6 +172,74 @@ struct SessionModelTests {
         #expect(client.cancelCount == 1)
         #expect(model.isSending == false)
         #expect(model.isCancelling == false)
+    }
+
+    @Test("Missed live cancellation terminal reconciles from durable history")
+    func cancellationReconcilesFromDurableHistory() async {
+        let sessionId = UUID()
+        let client = FakeSessionServerClient(sessionId: sessionId)
+        client.echoOnPrompt = false
+        let model = SessionModel(
+            serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
+            sessionId: sessionId.uuidString
+        )
+        await model.send("keep working")
+        #expect(model.isSending)
+        client.initialTranscriptPage = cancellationTranscriptPage(
+            sessionId: sessionId,
+            isGenerating: false,
+            stopReason: "cancelled"
+        )
+
+        await model.cancel()
+
+        #expect(client.cancelCount == 1)
+        #expect(model.isSending == false)
+        #expect(model.errorMessage == nil)
+    }
+
+    @Test("Successful cancellation with a generating snapshot surfaces recovery")
+    func cancellationGeneratingSnapshotSurfacesRecovery() async {
+        let sessionId = UUID()
+        let client = FakeSessionServerClient(sessionId: sessionId)
+        client.echoOnPrompt = false
+        let model = SessionModel(
+            serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
+            sessionId: sessionId.uuidString
+        )
+        await model.send("keep working")
+        client.initialTranscriptPage = cancellationTranscriptPage(
+            sessionId: sessionId,
+            isGenerating: true,
+            stopReason: nil
+        )
+
+        await model.cancel()
+
+        #expect(model.isSending)
+        #expect(model.errorMessage?.contains("server still reports this turn as running") == true)
+    }
+
+    @Test("Quiet turns surface a non-destructive stalled state")
+    func quietTurnSurfacesStalledState() async {
+        let sessionId = UUID()
+        let client = FakeSessionServerClient(sessionId: sessionId)
+        client.echoOnPrompt = false
+        let model = SessionModel(
+            serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
+            sessionId: sessionId.uuidString,
+            stalledTurnQuietInterval: .zero
+        )
+
+        await model.send("wait quietly")
+        await settleUntil { model.isTakingLongerThanExpected }
+
+        #expect(model.isSending)
+        #expect(model.providerActivityPhase == .modelStream)
+        client.emit(stopEnvelope(id: 10, sessionId: sessionId, stopReason: "end_turn"))
+        await settleUntil { !model.isSending }
+        #expect(model.isTakingLongerThanExpected == false)
+        #expect(model.providerActivityPhase == nil)
     }
 
     @Test("Server-backed sessions prompt through the server and consume event stream output")
@@ -2324,6 +2393,36 @@ struct SessionModelTests {
             subjectId: sessionId.uuidString,
             createdAt: "2026-06-30T00:00:01.000Z",
             payload: .object(["stopReason": .string(stopReason)])
+        )
+    }
+
+    private func cancellationTranscriptPage(
+        sessionId: UUID,
+        isGenerating: Bool,
+        stopReason: String?
+    ) -> ServerTranscriptPage {
+        ServerTranscriptPage(
+            items: [ServerTranscriptItem(
+                id: UUID().uuidString,
+                sessionId: sessionId.uuidString,
+                sequence: 1,
+                role: .assistant,
+                text: "",
+                createdAt: "2026-07-29T00:00:00.000Z",
+                updatedAt: "2026-07-29T00:00:01.000Z",
+                isGenerating: isGenerating,
+                hasDetails: false,
+                turnId: "cancel-turn",
+                startedAt: "2026-07-29T00:00:00.000Z",
+                endedAt: isGenerating ? nil : "2026-07-29T00:00:01.000Z",
+                stopReason: stopReason,
+                stopDetail: nil,
+                planDocument: nil,
+                attachments: nil,
+                revision: 2
+            )],
+            hasMore: false,
+            eventCursor: 2
         )
     }
 

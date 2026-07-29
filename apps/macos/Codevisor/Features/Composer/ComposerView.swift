@@ -206,6 +206,29 @@ struct ComposerCard: View {
                 }
             }
 
+            if controller.isTakingLongerThanExpected {
+                HStack(spacing: 6) {
+                    Image(systemName: "clock.badge.exclamationmark")
+                    Text(
+                        "Taking longer than expected"
+                            + (controller.providerActivityPhase.map { " during \($0.label)" } ?? "")
+                    )
+                    Spacer(minLength: 0)
+                    Button("Stop and reconnect") {
+                        Task {
+                            await controller.stop()
+                            if !controller.isSending {
+                                await controller.reconnect()
+                            }
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.primary)
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+
             HStack(spacing: 10) {
                 if controller.isGoalEditing {
                     // Editing a goal strips the chrome down to back + send;

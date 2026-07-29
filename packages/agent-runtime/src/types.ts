@@ -35,6 +35,13 @@ export interface PromptResult {
   readonly stopReason: string
 }
 
+/// Provider cancellation outcome. A forced provider-side recovery can
+/// terminalize the durable turn while leaving the underlying process/query
+/// unsafe for another prompt; the runtime manager must retire that handle.
+export interface CancelResult {
+  readonly runtimeState: "reusable" | "retire"
+}
+
 /// One attachment resolved by the server before the prompt reaches a
 /// provider: inline bytes for providers that embed content, plus a
 /// materialized temp-file path for providers that reference files on disk.
@@ -274,7 +281,7 @@ export interface HarnessAuthInspection {
 /// flows through the `RuntimeEmit` the handle was created with.
 export interface AgentSessionHandle {
   readonly prompt: (input: string | PromptInput) => Effect.Effect<PromptResult, AgentRuntimeError>
-  readonly cancel: Effect.Effect<void, AgentRuntimeError>
+  readonly cancel: Effect.Effect<CancelResult, AgentRuntimeError>
   readonly setMode: (modeId: string) => Effect.Effect<void, AgentRuntimeError>
   readonly setConfigOption: (
     configId: string,
