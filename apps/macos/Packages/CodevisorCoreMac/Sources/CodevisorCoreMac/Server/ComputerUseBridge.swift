@@ -379,6 +379,9 @@ public final class ComputerUseBridge: @unchecked Sendable {
     private var snapshots: [String: [String: SnapshotRecord]] = [:]
     private var latestSnapshotIDs: [String: String] = [:]
     private var windowIDBySession: [String: CGWindowID] = [:]
+    /// Windows whose element frames are published upside down, established
+    /// once per window because the answer cannot change while it lives.
+    private var flippedContentWindows: [CGWindowID: Bool] = [:]
 
     public init(supportDirectory: URL = CodevisorAppVariant.serverDataDirectoryURL()) {
         self.supportDirectory = supportDirectory
@@ -1218,11 +1221,31 @@ public final class ComputerUseBridge: @unchecked Sendable {
         }
         let capture = outcome.capture
         let windowFrame = capture?.windowFrame ?? frame(of: window) ?? accessibilityWindowFrame
+        // An app that publishes its content upside down would otherwise send
+        // every coordinate — tree frames, the cursor, pointer events — to the
+        // mirror image of the control that was named.
+        let contentIsFlipped = windowFrame.map {
+            windowContentIsFlipped(
+                application: application,
+                window: window,
+                windowID: windowID,
+                windowFrame: $0
+            )
+        } ?? false
         snapshotTree(
             window,
             depth: 0,
             screenshotWindowFrame: windowFrame,
             screenshotPixelSize: capture?.pixelSize,
+            correctFrame: { element, reported in
+                guard contentIsFlipped, let windowFrame else { return reported }
+                return correctedFrame(
+                    of: element,
+                    reported: reported,
+                    application: application,
+                    windowFrame: windowFrame
+                )
+            },
             records: &records,
             lines: &lines
         )
@@ -1264,6 +1287,11 @@ public final class ComputerUseBridge: @unchecked Sendable {
         ]
         // A modal sheet blocks every other control in the window, so say so
         // rather than leaving the model to infer it from the tree.
+        if contentIsFlipped {
+            // Say so: the coordinates here will not match the app's own
+            // accessibility inspector output.
+            metadata["frameOrientationCorrected"] = true
+        }
         let sheets = sheetElements(of: window)
         if !sheets.isEmpty {
             metadata["modalSheetPresent"] = true
@@ -1350,6 +1378,7 @@ public final class ComputerUseBridge: @unchecked Sendable {
         depth: Int,
         screenshotWindowFrame: CGRect?,
         screenshotPixelSize: CGSize?,
+        correctFrame: (AXUIElement, CGRect) -> CGRect = { _, frame in frame },
         records: inout [String: ElementRecord],
         lines: inout [String]
     ) {
@@ -1364,7 +1393,7 @@ public final class ComputerUseBridge: @unchecked Sendable {
             : (stringAttribute(element, kAXValueAttribute)
                 ?? selectionDescription(of: element, role: role)
                 ?? "")
-        let elementFrame = frame(of: element)
+        let elementFrame = frame(of: element).map { correctFrame(element, $0) }
         records[id] = ElementRecord(element: element, frame: elementFrame)
         var line = "\(String(repeating: "\t", count: depth + 1))\(id) \(role) \(title)"
         // Menu containers report a placeholder frame (zero-sized, far offscreen)
@@ -1409,6 +1438,7 @@ public final class ComputerUseBridge: @unchecked Sendable {
                 depth: depth + 1,
                 screenshotWindowFrame: screenshotWindowFrame,
                 screenshotPixelSize: screenshotPixelSize,
+                correctFrame: correctFrame,
                 records: &records,
                 lines: &lines
             )
@@ -2103,6 +2133,118 @@ public final class ComputerUseBridge: @unchecked Sendable {
     /// Modal sheets attached to a window. Apps are inconsistent about the
     /// `AXSheets` attribute — Chess leaves it empty and exposes the sheet as
     /// a plain child — so fall back to a role scan of the children.
+    /// The element the system reports at a screen point, which is the only
+    /// authority on where a control really is.
+    private func elementAtPosition(
+        application: AXUIElement,
+        point: CGPoint
+    ) -> AXUIElement? {
+        var hit: AXUIElement?
+        guard AXUIElementCopyElementAtPosition(
+            application,
+            Float(point.x),
+            Float(point.y),
+            &hit
+        ) == .success else { return nil }
+        return hit
+    }
+
+    private func leafElements(
+        of element: AXUIElement,
+        limit: Int,
+        depth: Int = 0,
+        found: inout [AXUIElement]
+    ) {
+        guard found.count < limit, depth <= 8 else { return }
+        let children = elementsAttribute(element, kAXChildrenAttribute)
+        guard !children.isEmpty else {
+            if let box = frame(of: element), box.width > 8, box.height > 8 {
+                found.append(element)
+            }
+            return
+        }
+        for child in children {
+            leafElements(of: child, limit: limit, depth: depth + 1, found: &found)
+        }
+    }
+
+    /// Whether this window publishes upside-down content, established once per
+    /// window by hit-testing a sample of its controls. Chess is the case in
+    /// the wild: its SceneKit board reports view-space coordinates, so every
+    /// piece resolves to its mirror image.
+    private func windowContentIsFlipped(
+        application: AXUIElement,
+        window: AXUIElement,
+        windowID: CGWindowID?,
+        windowFrame: CGRect
+    ) -> Bool {
+        if let windowID, let cached = lock.withLock({ flippedContentWindows[windowID] }) {
+            return cached
+        }
+        var samples: [AXUIElement] = []
+        leafElements(of: window, limit: 12, found: &samples)
+        var direct = 0
+        var mirrored = 0
+        for sample in samples {
+            guard let box = frame(of: sample) else { continue }
+            if let hit = elementAtPosition(
+                application: application,
+                point: CGPoint(x: box.midX, y: box.midY)
+            ), CFEqual(hit, sample) {
+                direct += 1
+                continue
+            }
+            let mirroredBox = computerUseMirroredFrame(box, in: windowFrame)
+            if let hit = elementAtPosition(
+                application: application,
+                point: CGPoint(x: mirroredBox.midX, y: mirroredBox.midY)
+            ), CFEqual(hit, sample) {
+                mirrored += 1
+            }
+        }
+        let flipped = computerUseFramesAreFlipped(
+            directHits: direct,
+            mirroredHits: mirrored,
+            samples: samples.count
+        )
+        if flipped {
+            Log.computerUse.log(
+                "Window \(windowID.map(String.init) ?? "?", privacy: .public) publishes flipped element frames (\(mirrored, privacy: .public)/\(samples.count, privacy: .public) samples); correcting"
+            )
+        }
+        if let windowID { lock.withLock { flippedContentWindows[windowID] = flipped } }
+        return flipped
+    }
+
+    /// Corrects one element's frame in a flipped window. Per element, because
+    /// the flip is not window-wide: Chess reports its title bar correctly and
+    /// only its board upside down, so anything that already resolves to
+    /// itself is left untouched.
+    private func correctedFrame(
+        of element: AXUIElement,
+        reported: CGRect,
+        application: AXUIElement,
+        windowFrame: CGRect
+    ) -> CGRect {
+        if let hit = elementAtPosition(
+            application: application,
+            point: CGPoint(x: reported.midX, y: reported.midY)
+        ), CFEqual(hit, element) {
+            return reported
+        }
+        let mirrored = computerUseMirroredFrame(reported, in: windowFrame)
+        if let hit = elementAtPosition(
+            application: application,
+            point: CGPoint(x: mirrored.midX, y: mirrored.midY)
+        ), CFEqual(hit, element) {
+            return mirrored
+        }
+        // Neither position resolves to this element (occluded, or a container
+        // whose hit-test lands on a child). Reporting the app's own value
+        // beats inventing one.
+        return reported
+    }
+
     /// Every window the app currently exposes, so a caller can see that an
     /// action opened a new one (⌘N in a document app) instead of silently
     /// staring at the window the session happens to be pinned to.
@@ -2651,6 +2793,28 @@ func computerUseScreenshotPoint(
             max(windowFrame.minY + 0.5, windowFrame.minY + y * yScale)
         )
     )
+}
+
+/// Mirrors a frame vertically inside its window. Some apps publish their
+/// content in view space (bottom-left origin) instead of screen space, so a
+/// control near the bottom is reported near the top; this is the correction.
+func computerUseMirroredFrame(_ frame: CGRect, in windowFrame: CGRect) -> CGRect {
+    CGRect(
+        x: frame.minX,
+        y: windowFrame.minY + windowFrame.maxY - frame.maxY,
+        width: frame.width,
+        height: frame.height
+    )
+}
+
+/// Whether a window's contents are published upside down, decided by asking
+/// the system what is actually at each reported position. Only a decisive
+/// majority counts: apps whose hit-testing resolves to something else
+/// entirely (web views) score neither way and must be left alone rather than
+/// "corrected" into nonsense.
+func computerUseFramesAreFlipped(directHits: Int, mirroredHits: Int, samples: Int) -> Bool {
+    guard samples >= 3, mirroredHits >= 3 else { return false }
+    return mirroredHits > directHits * 2
 }
 
 /// A snapshot can only map screenshot coordinates onto the window it captured.

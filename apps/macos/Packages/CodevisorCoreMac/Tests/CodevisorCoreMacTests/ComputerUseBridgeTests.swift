@@ -495,6 +495,44 @@ struct ComputerUseBridgeTests {
         ) == preferred)
     }
 
+    @Test("Mirrors an upside-down frame back onto the control it names")
+    func mirrorsFlippedFrames() {
+        // Chess's window, and the pawn it claims sits near the top while the
+        // system reports that position belongs to the piece opposite it.
+        let window = CGRect(x: 2_540, y: 30, width: 1_300, height: 1_007)
+        let reported = CGRect(x: 955, y: 317.5, width: 77, height: 74.86)
+        let corrected = computerUseMirroredFrame(reported, in: window)
+
+        #expect(corrected.minX == reported.minX)
+        #expect(corrected.width == reported.width)
+        #expect(corrected.height == reported.height)
+        // A centre reflects about the window's own centre line.
+        #expect(abs(corrected.midY - (window.minY + window.maxY - reported.midY)) < 0.001)
+        // Which moves this control out of the half it was wrongly reported in:
+        // measured against the live app, its real centre is y ≈ 712, not 355.
+        #expect(reported.midY < window.midY)
+        #expect(corrected.midY > window.midY)
+        #expect(abs(corrected.midY - 712.07) < 0.5)
+        // Mirroring twice is the identity, so a correct frame stays correct.
+        let round = computerUseMirroredFrame(corrected, in: window)
+        #expect(abs(round.minY - reported.minY) < 0.001)
+    }
+
+    @Test("Only corrects orientation when the evidence is decisive")
+    func flippedFrameVerdict() {
+        // Chess: every sample resolved to its mirror.
+        #expect(computerUseFramesAreFlipped(directHits: 0, mirroredHits: 14, samples: 14))
+        // A healthy app resolves where it says it is.
+        #expect(!computerUseFramesAreFlipped(directHits: 8, mirroredHits: 0, samples: 8))
+        // Web-view apps resolve to neither; correcting them would invent
+        // coordinates, so ambiguity must mean "leave it alone".
+        #expect(!computerUseFramesAreFlipped(directHits: 0, mirroredHits: 0, samples: 6))
+        // Nor is a thin majority enough.
+        #expect(!computerUseFramesAreFlipped(directHits: 3, mirroredHits: 4, samples: 10))
+        // Too few samples to conclude anything.
+        #expect(!computerUseFramesAreFlipped(directHits: 0, mirroredHits: 2, samples: 2))
+    }
+
     @Test("Centers menu-bar content with one chip and one matching hit width")
     func statusItemGeometry() {
         let width = ComputerUseStatusMetrics.width(appCount: 1)
