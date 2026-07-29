@@ -42,9 +42,9 @@ struct MarkdownTableView: View {
             ),
             renderMemo: renderMemo
         )
-            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .clipShape(RoundedRectangle(cornerRadius: MarkdownTableMetrics.cornerRadius))
             .overlay(
-                RoundedRectangle(cornerRadius: 8)
+                RoundedRectangle(cornerRadius: MarkdownTableMetrics.cornerRadius)
                     .strokeBorder(theme.tableBorderColor, lineWidth: 1)
             )
     }
@@ -595,7 +595,13 @@ final class MarkdownTableRenderCache {
 enum MarkdownTableRenderer {
     struct PreparedCell {
         let attributedString: NSAttributedString
+        /// The single-line, unwrapped width of the cell.
         let naturalWidth: CGFloat
+        /// The min-content width: the widest fragment that cannot wrap (the
+        /// longest word). A column is never squeezed below this, mirroring CSS
+        /// auto table layout, so short cells like "Swift" or "560" are never
+        /// shredded into one-character-wide vertical stacks.
+        let minimumWidth: CGFloat
     }
 
     struct PreparedTable {
@@ -603,10 +609,11 @@ enum MarkdownTableRenderer {
         let headers: [PreparedCell]
         let rows: [[PreparedCell]]
         let columnContentWidths: [CGFloat]
+        let columnMinimumWidths: [CGFloat]
     }
 
-    private static let horizontalPadding: CGFloat = 12
-    private static let verticalPadding: CGFloat = 7
+    private static let horizontalPadding = MarkdownTableMetrics.horizontalPadding
+    private static let verticalPadding = MarkdownTableMetrics.verticalPadding
 
     /// - Parameter width: the width to fill (columns are scaled to it). Nil lays
     ///   the table out at its natural content width — used by tests.
@@ -653,16 +660,19 @@ enum MarkdownTableRenderer {
                 columnCount: 0,
                 headers: [],
                 rows: [],
-                columnContentWidths: []
+                columnContentWidths: [],
+                columnMinimumWidths: []
             )
         }
 
         var contentWidths = [CGFloat](repeating: 1, count: columnCount)
+        var minimumWidths = [CGFloat](repeating: 1, count: columnCount)
         func prepareRow(_ values: [String], isHeader: Bool) -> [PreparedCell] {
             (0..<columnCount).map { column in
                 let markdown = column < values.count ? values[column] : ""
                 let cell = cellProvider(markdown, isHeader, theme)
                 contentWidths[column] = max(contentWidths[column], cell.naturalWidth)
+                minimumWidths[column] = max(minimumWidths[column], cell.minimumWidth)
                 return cell
             }
         }
@@ -673,7 +683,8 @@ enum MarkdownTableRenderer {
             columnCount: columnCount,
             headers: preparedHeaders,
             rows: preparedRows,
-            columnContentWidths: contentWidths
+            columnContentWidths: contentWidths,
+            columnMinimumWidths: minimumWidths
         )
     }
 
@@ -684,10 +695,36 @@ enum MarkdownTableRenderer {
         theme: MarkdownTheme
     ) -> PreparedCell {
         let attributed = inlineAttributed(markdown, isHeader: isHeader, theme: theme)
+        let naturalWidth = max(1, ceil(attributed.size().width))
         return PreparedCell(
             attributedString: attributed,
-            naturalWidth: max(1, ceil(attributed.size().width))
+            naturalWidth: naturalWidth,
+            minimumWidth: min(minimumContentWidth(of: attributed), naturalWidth)
         )
+    }
+
+    /// The widest whitespace-free fragment of the cell — the width below which
+    /// word wrapping runs out and TextKit starts breaking mid-word. Whitespace
+    /// is where table cells actually wrap; other break opportunities (hyphens,
+    /// CJK) only make this an overestimate, which errs toward keeping a column
+    /// readable.
+    private static func minimumContentWidth(of attributed: NSAttributedString) -> CGFloat {
+        let string = attributed.string
+        var widest: CGFloat = 1
+        var index = string.startIndex
+        while index < string.endIndex {
+            if string[index].isWhitespace {
+                index = string.index(after: index)
+                continue
+            }
+            let start = index
+            while index < string.endIndex, !string[index].isWhitespace {
+                index = string.index(after: index)
+            }
+            let fragment = attributed.attributedSubstring(from: NSRange(start..<index, in: string))
+            widest = max(widest, fragment.size().width)
+        }
+        return ceil(widest)
     }
 
     @MainActor
@@ -698,8 +735,9 @@ enum MarkdownTableRenderer {
         width: CGFloat? = nil
     ) -> NSAttributedString {
         guard prepared.columnCount > 0 else { return NSAttributedString() }
-        let columnWidths = distribute(
+        let columnWidths = MarkdownTableMetrics.distribute(
             contentWidths: prepared.columnContentWidths,
+            minimumWidths: prepared.columnMinimumWidths,
             toFit: width
         )
 
@@ -712,7 +750,9 @@ enum MarkdownTableRenderer {
         // are separated by hairlines in the theme's border color. The last row
         // gets none — the SwiftUI rounded border closes off the bottom.
         let separatorColor = NSColor(theme.tableBorderColor)
-        let headerBackground = NSColor.labelColor.withAlphaComponent(0.05)
+        let headerBackground = NSColor.labelColor.withAlphaComponent(
+            MarkdownTableMetrics.headerBackgroundOpacity
+        )
         let lastRowIndex = prepared.rows.count
 
         let result = NSMutableAttributedString()
@@ -788,22 +828,6 @@ enum MarkdownTableRenderer {
             )
             result.append(cell)
         }
-    }
-
-    /// Scales the natural column widths so the table fills `width` (columns keep
-    /// their relative proportions, wrapping when squeezed). Nil width → natural
-    /// widths unchanged.
-    private static func distribute(contentWidths: [CGFloat], toFit width: CGFloat?) -> [CGFloat] {
-        guard let width, width.isFinite, width > 0 else {
-            return contentWidths.map { max(1, $0) }
-        }
-        let paddingTotal = horizontalPadding * 2 * CGFloat(contentWidths.count)
-        let rawTotal = max(1, contentWidths.reduce(0, +))
-        // Never let the content budget vanish: keep at least 1pt per column even
-        // when the proposed width is smaller than the padding alone.
-        let contentBudget = max(CGFloat(contentWidths.count), width - paddingTotal)
-        let scale = contentBudget / rawTotal
-        return contentWidths.map { max(1, $0 * scale) }
     }
 
     /// Styles one cell's inline markdown. Fonts resolve from the semantic text

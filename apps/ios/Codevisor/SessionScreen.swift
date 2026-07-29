@@ -326,6 +326,10 @@ struct SessionTranscriptView: View {
         .environment(\.transcriptDisclosure, disclosure)
         .environment(\.transcriptController, controller)
         .environment(\.runningSubagentToolCallIds, controller.runningSubagentToolCallIds)
+        // Too-wide tables bleed their horizontal scroller through the
+        // transcript's 16pt text gutter to the screen edges (text keeps the
+        // gutter; a resting table stays aligned with it).
+        .environment(\.markdownTableBleed, 16)
         // Streaming tokens, settled turns, and sends all re-pin while
         // following; a send always returns to the newest content.
         .onChange(of: model.activeItemRevision) { _, _ in

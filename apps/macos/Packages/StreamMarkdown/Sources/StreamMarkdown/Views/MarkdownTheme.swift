@@ -110,6 +110,24 @@ private struct MarkdownThemeKey: EnvironmentKey {
     static let defaultValue = MarkdownTheme.default
 }
 
+private struct MarkdownTableBleedKey: EnvironmentKey {
+    static let defaultValue: CGFloat = 0
+}
+
+public extension EnvironmentValues {
+    /// The horizontal padding the host lays around markdown content, which a
+    /// too-wide table's horizontal scroller may bleed through (iOS): the
+    /// table rests aligned with the text column, but its scroll viewport
+    /// extends `markdownTableBleed` points past each side, so scrolling
+    /// carries the table all the way to the screen edges instead of stopping
+    /// at the text gutter. Zero (the default) keeps tables inside the text
+    /// column. Text and every other block keep the host padding untouched.
+    var markdownTableBleed: CGFloat {
+        get { self[MarkdownTableBleedKey.self] }
+        set { self[MarkdownTableBleedKey.self] = newValue }
+    }
+}
+
 public extension EnvironmentValues {
     var markdownTheme: MarkdownTheme {
         get { self[MarkdownThemeKey.self] }

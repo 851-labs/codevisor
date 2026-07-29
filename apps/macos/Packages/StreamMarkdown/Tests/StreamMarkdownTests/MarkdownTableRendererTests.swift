@@ -59,6 +59,106 @@ struct MarkdownTableRendererTests {
         #expect(width >= 780)
     }
 
+    /// The width assigned to each column of a rendered table, by column index.
+    private func columnWidths(_ attributed: NSAttributedString) -> [Int: CGFloat] {
+        var result: [Int: CGFloat] = [:]
+        let full = NSRange(location: 0, length: attributed.length)
+        attributed.enumerateAttribute(.paragraphStyle, in: full) { value, _, _ in
+            guard let style = value as? NSParagraphStyle,
+                let block = style.textBlocks.first as? NSTextTableBlock
+            else { return }
+            result[block.startingColumn] = block.value(for: .width)
+        }
+        return result
+    }
+
+    @Test("A long prose column never crushes short columns below min-content")
+    func shortColumnsKeepMinContentWidth() {
+        // Regression: one dominant column used to shrink the scale factor so
+        // far that "Swift"-sized columns got ~5pt and wrapped per character.
+        let prose = String(
+            repeating: "a fairly long description of the repository and what it does ",
+            count: 8
+        )
+        let attributed = MarkdownTableRenderer.make(
+            headers: ["Repo", "Lang", "What it is"], alignments: [],
+            rows: [["zats/permiso", "Swift", prose]], theme: .default, width: 800
+        )
+        let widths = columnWidths(attributed)
+        let repoMin = MarkdownTableRenderer.prepareCell(
+            "zats/permiso", isHeader: false, theme: .default
+        ).minimumWidth
+        let langMin = MarkdownTableRenderer.prepareCell(
+            "Swift", isHeader: false, theme: .default
+        ).minimumWidth
+        // Sanity: the min-content measurement is real, not a degenerate 1pt.
+        #expect(repoMin > 20)
+        #expect(langMin > 20)
+        #expect(widths[0] ?? 0 >= repoMin)
+        #expect(widths[1] ?? 0 >= langMin)
+        // The prose column absorbs the squeeze (and wraps) instead.
+        #expect(widths[2] ?? 0 > (widths[0] ?? 0) + (widths[1] ?? 0))
+    }
+
+    @Test("distribute keeps every column at its minimum and spends the budget")
+    func distributeRespectsMinimums() {
+        let widths = MarkdownTableMetrics.distribute(
+            contentWidths: [60, 40, 2000],
+            minimumWidths: [60, 40, 120],
+            toFit: 500
+        )
+        // Zero-slack columns keep their natural width exactly.
+        #expect(widths[0] >= 60)
+        #expect(widths[1] >= 40)
+        #expect(widths[2] >= 120)
+        // The content budget (width minus 12pt padding per cell edge) is spent.
+        let contentBudget: CGFloat = 500 - 12 * 2 * 3
+        #expect(abs(widths.reduce(0, +) - contentBudget) < 1)
+    }
+
+    @Test("distribute degrades gracefully when even minimums cannot fit")
+    func distributeOverconstrained() {
+        let widths = MarkdownTableMetrics.distribute(
+            contentWidths: [300, 300],
+            minimumWidths: [200, 200],
+            toFit: 120
+        )
+        #expect(widths.allSatisfy { $0 >= 1 })
+        // Minimums shrink proportionally, so equal minimums stay equal.
+        #expect(abs(widths[0] - widths[1]) < 0.001)
+    }
+
+    @Test("distribute without compression keeps min-content and overflows")
+    func distributeOverflowsInsteadOfCompressing() {
+        // The iOS renderer's mode: a wide table on a narrow phone keeps every
+        // column at min-content (readable, horizontally scrollable) rather
+        // than shredding columns below their widest word.
+        let widths = MarkdownTableMetrics.distribute(
+            contentWidths: [300, 300],
+            minimumWidths: [200, 180],
+            toFit: 120,
+            compressesBelowMinimums: false
+        )
+        #expect(widths == [200, 180])
+    }
+
+    @Test("A cell's minimum width is its widest word, not its full line")
+    func minimumWidthIsWidestWord() {
+        let cell = MarkdownTableRenderer.prepareCell(
+            "several ordinary words in a sentence", isHeader: false, theme: .default
+        )
+        #expect(cell.minimumWidth < cell.naturalWidth)
+        let word = MarkdownTableRenderer.prepareCell(
+            "ordinary", isHeader: false, theme: .default
+        )
+        // The widest word here is "ordinary"/"sentence"-sized, far below the
+        // full unwrapped line.
+        #expect(cell.minimumWidth < word.naturalWidth * 2)
+        #expect(cell.minimumWidth >= word.naturalWidth * 0.8)
+        // A single word cannot wrap at all: its minimum is its natural width.
+        #expect(word.minimumWidth == word.naturalWidth)
+    }
+
     @Test("Every cell becomes a paragraph pinned to its row and column")
     func cellGrid() {
         let attributed = MarkdownTableRenderer.make(
