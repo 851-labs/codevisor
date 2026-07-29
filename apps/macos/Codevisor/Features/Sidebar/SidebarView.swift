@@ -1135,13 +1135,27 @@ struct SidebarView: View {
                     Label("Archive", systemImage: "archivebox")
                         .labelStyle(.titleAndIcon)
                 }
-                Button {
-                    store?.markUnread(session)
-                    if selection == .session(serverId: session.serverId, id: session.id) { selection = .newChat(nil) }
-                } label: {
-                    Label("Mark as unread", systemImage: "message.badge")
-                        .labelStyle(.titleAndIcon)
-                }
+                unreadToggleButton(session)
+            }
+        }
+    }
+
+    /// Flips between marking a chat unread and clearing an existing unread
+    /// badge, so the menu never offers the state the row is already in.
+    @ViewBuilder
+    private func unreadToggleButton(_ session: ChatSession) -> some View {
+        if isUnread(session) {
+            Button { store?.markRead(session) } label: {
+                Label("Mark as read", systemImage: "message")
+                    .labelStyle(.titleAndIcon)
+            }
+        } else {
+            Button {
+                store?.markUnread(session)
+                if selection == .session(serverId: session.serverId, id: session.id) { selection = .newChat(nil) }
+            } label: {
+                Label("Mark as unread", systemImage: "message.badge")
+                    .labelStyle(.titleAndIcon)
             }
         }
     }
@@ -1375,13 +1389,7 @@ struct SidebarView: View {
                     Label("Archive", systemImage: "archivebox")
                         .labelStyle(.titleAndIcon)
                 }
-                Button {
-                    store?.markUnread(session)
-                    if selection == .session(serverId: session.serverId, id: session.id) { selection = .newChat(nil) }
-                } label: {
-                    Label("Mark as unread", systemImage: "message.badge")
-                        .labelStyle(.titleAndIcon)
-                }
+                unreadToggleButton(session)
             }
         }
     }
@@ -1597,6 +1605,11 @@ struct SidebarView: View {
     private func unreadCount(for session: ChatSession) -> Int? {
         guard let count = store?.unreadCount(session), count > 0 else { return nil }
         return count
+    }
+
+    /// Whether the row is currently badged as unread, by either count or error.
+    private func isUnread(_ session: ChatSession) -> Bool {
+        unreadCount(for: session) != nil || store?.hasUnreadError(session) == true
     }
 
     private func timestamp(for session: ChatSession) -> Date {

@@ -242,11 +242,16 @@ private struct SplitLeafHeader: View {
             }
     }
 
+    /// The chat this pane is showing, once its record has loaded. Nil for
+    /// terminal/new-tab panes, so chat-only menu items can opt out.
+    private var chatSession: ChatSession? {
+        guard pane?.kind == .chat, let sessionId = pane?.chatSessionId else { return nil }
+        return environment.projectList.sessions.first(where: { $0.id == sessionId })
+    }
+
     @ViewBuilder
     private var leadingIcon: some View {
-        if pane?.kind == .chat,
-           let sessionId = pane?.chatSessionId,
-           let session = environment.projectList.sessions.first(where: { $0.id == sessionId }) {
+        if let session = chatSession {
             ChatSessionLeadingIcon(session: session, store: sessionStore)
         } else {
             Image(systemName: iconName)
@@ -281,11 +286,13 @@ private struct SplitLeafHeader: View {
                 renameText = pane.map(title) ?? "New Tab"
                 showingRename = true
             } label: {
-                    Label("Rename", systemImage: "pencil")
+                Label("Rename", systemImage: "pencil")
                     .labelStyle(.titleAndIcon)
             }
 
-            Divider()
+            if let session = chatSession {
+                unreadToggleButton(session)
+            }
 
             Button(role: .destructive, action: onClose) {
                 Label(closeTitle, systemImage: closeTitle == "Archive" ? "archivebox" : "xmark")
@@ -304,6 +311,28 @@ private struct SplitLeafHeader: View {
         .fixedSize()
         .help("Pane actions")
         .accessibilityLabel("Pane actions")
+    }
+
+    /// Flips between marking the pane's chat unread and clearing an existing
+    /// unread badge, so the menu never offers the state the chat is already in.
+    @ViewBuilder
+    private func unreadToggleButton(_ session: ChatSession) -> some View {
+        if isUnread(session) {
+            Button { sessionStore?.markRead(session) } label: {
+                Label("Mark as read", systemImage: "message")
+                    .labelStyle(.titleAndIcon)
+            }
+        } else {
+            Button { sessionStore?.markUnread(session) } label: {
+                Label("Mark as unread", systemImage: "message.badge")
+                    .labelStyle(.titleAndIcon)
+            }
+        }
+    }
+
+    private func isUnread(_ session: ChatSession) -> Bool {
+        guard let sessionStore else { return false }
+        return sessionStore.unreadCount(session) > 0 || sessionStore.hasUnreadError(session)
     }
 
     private func splitMenuItem(_ name: String, icon: String, edge: SplitEdge) -> some View {

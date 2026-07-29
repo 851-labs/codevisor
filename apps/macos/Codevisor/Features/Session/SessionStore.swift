@@ -459,6 +459,13 @@ final class SessionStore {
         environment.projectList.markSessionUnread(session.id, serverId: session.serverId)
     }
 
+    /// Manually clears a session's unread badge (sidebar context menu) without
+    /// making it the on-screen session.
+    func markRead(_ session: ChatSession) {
+        environment.projectList.markSessionRead(session.id, serverId: session.serverId)
+        notificationDelivery.clearNotifications(for: session.id)
+    }
+
     /// Marks a session as the one on screen and clears its unread badge.
     func markOpened(_ sessionId: UUID, serverId: String) {
         let key = SessionKey(serverId: serverId, sessionId: sessionId)
