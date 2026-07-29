@@ -2,56 +2,13 @@ import SwiftUI
 import AppKit
 import CodevisorCore
 
-/// The Machines menu: switch the connected machine and jump to the Machines
-/// settings tab. Also adds "Copy Connection Token" to the app menu next to
-/// Settings.
+/// Adds "Copy Connection Token" to the app menu next to Settings.
 struct MachineCommands: Commands {
     let machines: MachineController
 
     var body: some Commands {
-        CommandMenu("Machines") {
-            MachinePickerItems(machines: machines)
-            Divider()
-            ManageMachinesMenuItem()
-        }
-
         CommandGroup(after: .appSettings) {
             CopyConnectionTokenMenuItem(machines: machines)
-        }
-    }
-}
-
-/// One checkable item per known machine; picking one connects to it. The
-/// selection reset to the new-chat page happens in RootView, which watches the
-/// selected machine id.
-private struct MachinePickerItems: View {
-    let machines: MachineController
-
-    var body: some View {
-        ForEach(machines.machines) { machine in
-            Toggle(isOn: Binding(
-                get: { machines.selectedMachineId == machine.id },
-                set: { isOn in
-                    if isOn { machines.selectMachine(machine.id) }
-                }
-            )) {
-                Label {
-                    Text(machine.name)
-                } icon: {
-                    MenuSymbolIcon(systemName: machine.resolvedAppearance.symbolName)
-                }
-            }
-        }
-    }
-}
-
-private struct ManageMachinesMenuItem: View {
-    @Environment(\.openSettings) private var openSettings
-
-    var body: some View {
-        Button("Manage Machines…") {
-            SettingsRouter.shared.selectedTab = .machines
-            openSettings()
         }
     }
 }
