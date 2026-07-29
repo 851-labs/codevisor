@@ -155,6 +155,16 @@ final class ComputerUseNativeSharing: NSObject,
         deactivatePickerIfIdle()
     }
 
+    /// Stops sharing for a session that has gone idle. Unlike `end`, the
+    /// session is not over — revocations stand, and the next tool call
+    /// re-attaches — so this must not clear them.
+    func release(sessionID: String) {
+        let keys = Set(windowIDByKey.keys.filter { $0.sessionID == sessionID })
+            .union(pendingWindowIDByKey.keys.filter { $0.sessionID == sessionID })
+        keys.forEach { detach(key: $0, intentional: true) }
+        deactivatePickerIfIdle()
+    }
+
     /// The controlled app exited. Non-revoking: the same session may control
     /// a relaunched instance under a new pid.
     func targetTerminated(pid: pid_t) {

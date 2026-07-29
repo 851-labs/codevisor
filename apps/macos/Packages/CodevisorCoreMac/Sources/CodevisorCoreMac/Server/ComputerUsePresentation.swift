@@ -1,4 +1,5 @@
 import AppKit
+import CodevisorCore
 import CoreGraphics
 import Foundation
 import QuartzCore
@@ -111,6 +112,30 @@ enum ComputerUseCursorPalette {
         guard !colors.isEmpty else { return .black }
         return colors[((index % colors.count) + colors.count) % colors.count]
     }
+}
+
+/// How long a session may sit without issuing a tool call before its screen
+/// sharing, cursor and menu bar entry are dropped.
+///
+/// Attachment used to last as long as the chat did, so a conversation left
+/// open kept a window shared — indicator lit, cursor parked on screen — long
+/// after the agent stopped working. Re-attaching costs the model nothing (it
+/// happens implicitly on the next call, off the critical path), so the only
+/// thing a longer window buys is fewer indicator blinks. A minute clears the
+/// gaps between tool calls within a turn while still ending an idle share
+/// promptly.
+public let computerUseIdleReleaseAfter: TimeInterval = 60
+
+/// Sessions whose last tool call is older than the idle window.
+func computerUseIdleSessions(
+    lastActivity: [String: Date],
+    now: Date,
+    releaseAfter: TimeInterval = computerUseIdleReleaseAfter
+) -> [String] {
+    lastActivity
+        .filter { now.timeIntervalSince($0.value) >= releaseAfter }
+        .map(\.key)
+        .sorted()
 }
 
 /// FNV-1a; deterministic across launches so the same session prefers the same
@@ -270,6 +295,8 @@ final class ComputerUsePresentationState: NSObject {
     private let cursorTipAnchor = ComputerUseCursorMetrics.tipAnchor
     private var sessions: [String: SessionPresentation] = [:]
     private var colorIndexBySession: [String: Int] = [:]
+    /// When each session last drove the app, for idle release.
+    private var lastActivityBySession: [String: Date] = [:]
     private var visibilityTimer: Timer?
 
     private override init() {
@@ -305,6 +332,7 @@ final class ComputerUsePresentationState: NSObject {
         windowFrame: CGRect
     ) {
         guard !sessionID.isEmpty else { return }
+        lastActivityBySession[sessionID] = Date()
         let targetWindowID = windowID ?? matchingWindow(pid: pid, frame: windowFrame)
         let colorIndex = colorIndex(for: sessionID)
 
@@ -364,6 +392,7 @@ final class ComputerUsePresentationState: NSObject {
     }
 
     func moveCursor(sessionID: String, to screenStatePoint: CGPoint, pulse: Bool) {
+        lastActivityBySession[sessionID] = Date()
         guard var presentation = sessions[sessionID] else { return }
         presentation.idleTimer?.invalidate()
         presentation.idleTimer = nil
@@ -406,6 +435,7 @@ final class ComputerUsePresentationState: NSObject {
             presentation.idleTimer?.invalidate()
             presentation.cursorPanel.orderOut(nil)
             sessions.removeValue(forKey: key.sessionID)
+            lastActivityBySession.removeValue(forKey: key.sessionID)
         }
         stopVisibilityMonitoringIfNeeded()
     }
@@ -418,6 +448,7 @@ final class ComputerUsePresentationState: NSObject {
             presentation.idleTimer?.invalidate()
             presentation.cursorPanel.orderOut(nil)
             sessions.removeValue(forKey: key.sessionID)
+            lastActivityBySession.removeValue(forKey: key.sessionID)
         }
         ComputerUseControlStatusItem.shared.remove(key: key)
         ComputerUseNativeSharing.shared.retire(key: key)
@@ -434,10 +465,37 @@ final class ComputerUsePresentationState: NSObject {
                 presentation.idleTimer?.invalidate()
                 presentation.cursorPanel.orderOut(nil)
             }
+            lastActivityBySession.removeValue(forKey: sessionID)
         }
         ComputerUseControlStatusItem.shared.remove(pid: pid)
         ComputerUseNativeSharing.shared.targetTerminated(pid: pid)
         stopVisibilityMonitoringIfNeeded()
+    }
+
+    /// Drops the share, cursor and menu bar entry of a session that has gone
+    /// quiet, without ending it: the next tool call re-attaches implicitly,
+    /// keeping the same cursor colour, and any revocation still stands.
+    private func releaseIdle(sessionID: String) {
+        if let presentation = sessions.removeValue(forKey: sessionID) {
+            presentation.idleTimer?.invalidate()
+            presentation.cursorPanel.orderOut(nil)
+        }
+        lastActivityBySession.removeValue(forKey: sessionID)
+        ComputerUseControlStatusItem.shared.remove(sessionID: sessionID)
+        ComputerUseNativeSharing.shared.release(sessionID: sessionID)
+        stopVisibilityMonitoringIfNeeded()
+    }
+
+    private func releaseIdleSessions() {
+        for sessionID in computerUseIdleSessions(
+            lastActivity: lastActivityBySession,
+            now: Date()
+        ) {
+            Log.computerUse.log(
+                "Releasing idle Computer Use attachment for session \(sessionID, privacy: .public)"
+            )
+            releaseIdle(sessionID: sessionID)
+        }
     }
 
     func end(sessionID: String) {
@@ -446,6 +504,7 @@ final class ComputerUsePresentationState: NSObject {
             presentation.cursorPanel.orderOut(nil)
         }
         colorIndexBySession.removeValue(forKey: sessionID)
+        lastActivityBySession.removeValue(forKey: sessionID)
         ComputerUseControlStatusItem.shared.remove(sessionID: sessionID)
         ComputerUseNativeSharing.shared.end(sessionID: sessionID)
         stopVisibilityMonitoringIfNeeded()
@@ -458,6 +517,7 @@ final class ComputerUsePresentationState: NSObject {
         }
         sessions.removeAll()
         colorIndexBySession.removeAll()
+        lastActivityBySession.removeAll()
         visibilityTimer?.invalidate()
         visibilityTimer = nil
         ComputerUseControlStatusItem.shared.removeAll()
@@ -632,6 +692,7 @@ final class ComputerUsePresentationState: NSObject {
     }
 
     @objc private func visibilityTimerFired(_ timer: Timer) {
+        releaseIdleSessions()
         refreshCursorVisibility()
     }
 

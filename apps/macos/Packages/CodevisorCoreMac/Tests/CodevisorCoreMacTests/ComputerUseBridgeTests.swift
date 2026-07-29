@@ -495,6 +495,24 @@ struct ComputerUseBridgeTests {
         ) == preferred)
     }
 
+    @Test("Releases a session's share only once it has actually gone quiet")
+    func idleSessionRelease() {
+        let now = Date()
+        let lastActivity = [
+            "working": now.addingTimeInterval(-2),
+            "thinking": now.addingTimeInterval(-computerUseIdleReleaseAfter + 5),
+            "finished": now.addingTimeInterval(-computerUseIdleReleaseAfter - 1),
+            "abandoned": now.addingTimeInterval(-3_600)
+        ]
+        let idle = computerUseIdleSessions(lastActivity: lastActivity, now: now)
+
+        // A gap between tool calls inside a turn must not drop the share, or
+        // the sharing indicator would blink through normal work.
+        #expect(idle == ["abandoned", "finished"])
+        // The threshold is long enough to span a model's thinking pause.
+        #expect(computerUseIdleReleaseAfter >= 30)
+    }
+
     @Test("Mirrors an upside-down frame back onto the control it names")
     func mirrorsFlippedFrames() {
         // Chess's window, and the pawn it claims sits near the top while the
