@@ -194,6 +194,12 @@ struct SessionContainerView: View {
         }
     }
 
+    /// Whether the center tab strip is on screen. Read by `contentColumn` to
+    /// decide whether the top hairline is still needed.
+    private var isShowingCenterTabBar: Bool {
+        store.workspace(for: session, project: project).centerTabs.count > 1
+    }
+
     /// The session content: a browser-style tab bar above the selected
     /// tab's split layout.
     /// The EXPLICIT page fill matters: the bare NavigationSplitView detail
@@ -252,11 +258,15 @@ struct SessionContainerView: View {
         // alike. Custom palettes paint their own page color.
         .background(theme.isSystem ? Color.clear : theme.windowBackground)
         // The hairline under the top bar: drawn by the CENTER panel's top
-        // edge (the sidebar stays seamless under the toolbar).
+        // edge (the sidebar stays seamless under the toolbar). Suppressed
+        // when the tab bar is showing — the tab strip already has its own
+        // bottom divider, and two rules 28pt apart box the tabs in.
         .overlay(alignment: .top) {
-            theme.separator
-                .frame(height: 1)
-                .frame(maxWidth: .infinity)
+            if !isShowingCenterTabBar {
+                theme.separator
+                    .frame(height: 1)
+                    .frame(maxWidth: .infinity)
+            }
         }
     }
 

@@ -114,7 +114,9 @@ struct WorkspaceTabBar: View {
         }
         .frame(height: barHeight)
         .padding(.horizontal, 10)
-        .padding(.vertical, 6)
+        // No top inset: the strip sits flush against the title bar, which no
+        // longer draws a separator above it.
+        .padding(.bottom, 6)
         .frame(maxWidth: .infinity)
         .overlay(alignment: .bottom) { Divider() }
         .alert(

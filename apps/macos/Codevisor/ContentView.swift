@@ -243,6 +243,9 @@ struct RootView: View {
                 }
             }
             .themedToolbarBackground(theme, role: .content)
+            // The pane tab bar draws its own bottom divider; a system hairline
+            // above it would box the tab strip in between two rules.
+            .hidesTitlebarSeparator()
         }
         .overlay {
             AdaptiveDrawerLayer(
