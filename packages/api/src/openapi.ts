@@ -91,6 +91,7 @@ export const endpoints = [
   "GET /v1/projects",
   "POST /v1/projects",
   "POST /v1/projects/from-git",
+  "POST /v1/projects/scratch",
   "PATCH /v1/projects/:id",
   "DELETE /v1/projects/:id",
   "GET /v1/projects/:id/worktrees",

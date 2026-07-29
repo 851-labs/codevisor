@@ -34,6 +34,32 @@ public protocol WorkspaceRepository: Sendable {
     func markMigrationPerformed(_ key: String)
 }
 
+public extension WorkspaceRepository {
+    /// A stand-in workspace for a chat that is NO LONGER ACTIVE and has no
+    /// persisted workspace (the archive that removed the chat deleted it,
+    /// index entry included). Shaped exactly like the record
+    /// `ensureWorkspace` would mint — but NEVER saved: the still-mounted
+    /// screen of a just-archived chat keeps rendering during its teardown
+    /// without resurrecting the deleted workspace behind the sidebar's back.
+    func ephemeralWorkspace(for seed: WorkspaceSessionSeed) -> Workspace {
+        var center = PaneGroupState.centerInitial(sessionId: seed.sessionId)
+        for index in center.panes.indices where center.panes[index].kind == .chat {
+            if center.panes[index].chatSessionId == nil {
+                center.panes[index].chatSessionId = seed.sessionId
+            }
+        }
+        return Workspace(
+            name: seed.initialName.isEmpty ? "Workspace" : seed.initialName,
+            rootDirectory: seed.rootDirectory,
+            worktreeName: seed.worktreeName,
+            serverId: seed.serverId,
+            projectId: seed.projectId,
+            centerTree: .leaf(center),
+            bottomGroup: .initial(sessionId: seed.sessionId)
+        )
+    }
+}
+
 /// Everything the backfill needs to know about a session to give it a
 /// workspace. Deliberately a plain bag: Core never sees the app's session
 /// types.

@@ -401,36 +401,29 @@ struct RootView: View {
                 .id("\(session.serverId):\((environment.workspaces.workspaceId(forSession: session.id) ?? session.id).uuidString)")
                 .onAppear { preferredProjectId = project.id }
             } else {
-                newWorkspace(store)
+                // The routed session can't be resolved (machine switch,
+                // deletion): fall back to the new-chat page.
+                newChat(store, projectId: nil)
             }
         case let .newChat(projectId):
-            if let projectId,
-               let project = environment.projectList.projects.first(where: {
-                   $0.serverId == environment.machines.selectedMachineId && $0.id == projectId
-               }) {
-                // The project is already chosen ("New workspace here"):
-                // skip the picker — create the workspace and land inside
-                // it on the eager chat composer.
-                QuickWorkspaceCreationView(
-                    project: project,
-                    store: store,
-                    selection: $selection
-                )
-            } else {
-                newWorkspace(store)
-            }
+            newChat(store, projectId: projectId)
         case .none:
-            newWorkspace(store)
+            newChat(store, projectId: nil)
         }
     }
 
-    /// The workspace creation page: a project/directory picker. Everything
-    /// conversational (harness, worktree, first message) happens INSIDE the
-    /// created workspace via its eager chat composer.
-    private func newWorkspace(_ store: SessionStore) -> some View {
-        NewWorkspaceView(store: store, selection: $selection)
-            .navigationTitle("New workspace")
-            .id(environment.machines.selectedMachineId)
+    /// The standalone new-chat page. Creates NOTHING until the first message
+    /// is sent — sending resolves the picked directory (project folder or a
+    /// fresh worktree) and materializes the workspace around the started
+    /// chat. A sidebar per-project button preselects that project.
+    private func newChat(_ store: SessionStore, projectId: UUID?) -> some View {
+        NewChatView(
+            store: store,
+            selection: $selection,
+            preferredProjectId: projectId,
+            explicitProjectId: projectId
+        )
+        .id(environment.machines.selectedMachineId)
     }
 }
 

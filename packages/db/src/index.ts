@@ -56,6 +56,8 @@ export {
   managedRepoPath,
   managedReposRoot,
   resolveSessionCwd,
+  scratchWorkspacePath,
+  scratchWorkspacesRoot,
   worktreePath,
   worktreesRoot
 } from "./paths.js"
@@ -3766,7 +3768,7 @@ const createService = (
               -- archive bit (a rename, a worktree remap) must leave provenance
               -- alone, or restoring one chat would strand its siblings.
               archive_cascade_from = case when ? = 1 then null else archive_cascade_from end,
-              agent_session_id = ?, worktree_name = ?,
+              agent_session_id = ?, worktree_name = ?, project_id = ?,
               harness_id = ?, harness_account_id = ?, updated_at = ?
              where id = ?`
           )
@@ -3778,7 +3780,13 @@ const createService = (
             archivedStamp(request.isArchived, current.isArchived, current.archivedAt),
             request.isArchived === undefined ? 0 : 1,
             request.agentSessionId ?? current.agentSessionId ?? null,
-            request.worktreeName ?? current.worktreeName ?? null,
+            // A project move re-homes the session's directory: a stale
+            // worktree name from the old project must not survive it, so the
+            // move applies exactly the worktree the request names (or none).
+            request.projectId === undefined
+              ? (request.worktreeName ?? current.worktreeName ?? null)
+              : (request.worktreeName ?? null),
+            request.projectId === undefined ? current.projectId : canonicalUuid(request.projectId),
             request.harnessId ?? current.harnessId,
             request.harnessAccountId ?? current.harnessAccountId ?? null,
             request.updatedAt ?? current.updatedAt ?? null,

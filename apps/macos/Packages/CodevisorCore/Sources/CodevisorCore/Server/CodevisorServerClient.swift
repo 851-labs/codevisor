@@ -231,6 +231,15 @@ public protocol CodevisorServerClienting: Sendable {
     func upsertProject(_ project: Project) async throws -> ServerProject
     func updateProject(_ project: Project) async throws -> ServerProject
     func deleteProject(id: UUID) async throws
+    /// Creates the hidden backing project for a brand-new scratch workspace:
+    /// the server allocates a memorable name, creates its empty folder under
+    /// ~/codevisor/workspaces, and registers a project pointing at it. The
+    /// client-supplied id makes creation idempotent per workspace.
+    func createScratchProject(id: UUID) async throws -> ServerProject
+    /// Moves a not-yet-started session to another project (and optionally a
+    /// worktree of it). Only valid while the session's agent hasn't started;
+    /// the server re-derives the session cwd from the new project.
+    func moveSession(id: UUID, projectId: UUID, worktreeName: String?) async throws -> ServerSession
     func listWorktrees(projectId: UUID) async throws -> [ServerWorktree]
     /// Mirrors a workspace's archived flag so other devices — and the
     /// server's own cascade to the workspace's chats — see it.
@@ -714,6 +723,16 @@ public extension CodevisorServerClienting {
     }
 
     func createProjectFromGit(id: UUID, url: String, name: String?) async throws -> ServerProject {
+        throw CodevisorServerClientError.invalidResponse
+    }
+
+    /// Defaults so fakes and older transports keep compiling; the HTTP client
+    /// overrides these with the real scratch-workspace endpoints.
+    func createScratchProject(id: UUID) async throws -> ServerProject {
+        throw CodevisorServerClientError.invalidResponse
+    }
+
+    func moveSession(id: UUID, projectId: UUID, worktreeName: String?) async throws -> ServerSession {
         throw CodevisorServerClientError.invalidResponse
     }
 }
@@ -1884,6 +1903,9 @@ public struct ServerProject: Decodable, Equatable, Sendable {
     /// The git remote this project was cloned from, for projects added via
     /// clone-from-git. Absent on older servers and directory-based projects.
     public var repoUrl: String? = nil
+    /// True for the hidden backing project of a scratch workspace (folder
+    /// under ~/codevisor/workspaces). Absent on older servers.
+    public var isScratch: Bool? = nil
 
     public func project(serverId: String = "local") throws -> Project {
         guard let uuid = UUID(uuidString: id) else {
@@ -1910,7 +1932,8 @@ public struct ServerProject: Decodable, Equatable, Sendable {
                     folderPath: location.folderPath,
                     isGitRepository: location.isGitRepository
                 )
-            }
+            },
+            isScratch: isScratch ?? false
         )
     }
 }
@@ -2909,6 +2932,22 @@ public final class CodevisorServerClient: CodevisorServerClienting, @unchecked S
         try await sendNoResponse("/v1/projects/\(id.uuidString)", method: "DELETE")
     }
 
+    public func createScratchProject(id: UUID) async throws -> ServerProject {
+        try await send(
+            "/v1/projects/scratch",
+            method: "POST",
+            body: CreateScratchProjectBody(id: id.uuidString)
+        )
+    }
+
+    public func moveSession(id: UUID, projectId: UUID, worktreeName: String?) async throws -> ServerSession {
+        try await send(
+            "/v1/sessions/\(id.uuidString)",
+            method: "PATCH",
+            body: MoveSessionBody(projectId: projectId.uuidString, worktreeName: worktreeName)
+        )
+    }
+
     public func listWorktrees(projectId: UUID) async throws -> [ServerWorktree] {
         try await get("/v1/projects/\(projectId.uuidString)/worktrees")
     }
@@ -3710,6 +3749,19 @@ private struct UpdateSessionBody: Encodable {
 
 private struct TouchSessionBody: Encodable {
     var updatedAt: String
+}
+
+private struct CreateScratchProjectBody: Encodable {
+    var id: String
+}
+
+/// Moves a not-yet-started session to another project/worktree. Deliberately
+/// its own body (not `UpdateSessionBody`): sending `projectId` makes the
+/// server treat the PATCH as a directory move, which is refused once the
+/// agent has started — routine updates must never carry it.
+private struct MoveSessionBody: Encodable {
+    var projectId: String
+    var worktreeName: String?
 }
 
 private struct MarkSessionReadBody: Encodable {

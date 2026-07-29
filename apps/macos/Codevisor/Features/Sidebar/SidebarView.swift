@@ -210,6 +210,19 @@ struct SidebarView: View {
         return manuallyOrdered(active, ids: projectOrder, id: \.id)
     }
 
+    /// Projects shown as folders in "by project": scratch backing projects
+    /// (the single-use folder behind a no-project chat) are not projects —
+    /// their chats render at the list root instead.
+    private var projectSectionProjects: [Project] {
+        visibleProjects.filter { !$0.isScratch }
+    }
+
+    /// Workspaces whose chats sit at the root of the "by project" list:
+    /// scratch-backed ones, plus any whose project no longer resolves.
+    private var looseWorkspaceItems: [SidebarWorkspaceListItem] {
+        workspaceItems.filter { $0.project?.isScratch != false }
+    }
+
     private var chronologicalSessions: [SidebarSessionListItem] {
         let sessions = visibleProjects
             .flatMap { project in
@@ -356,7 +369,7 @@ struct SidebarView: View {
                     developmentWorktreeRow
                 }
 
-                actionRow("New workspace", systemImage: "plus.square.on.square") {
+                actionRow("New chat", systemImage: "square.and.pencil") {
                     selection = .newChat(nil)
                 }
 
@@ -370,8 +383,15 @@ struct SidebarView: View {
                 // content mid-bounce, which reads as random overscroll snaps.
                 VStack(alignment: .leading, spacing: 1) {
                     if organization == .byProject {
-                        ForEach(visibleProjects) { project in
+                        ForEach(projectSectionProjects) { project in
                             projectFolder(project)
+                        }
+                        // Chats without a real project (scratch-backed
+                        // workspaces) sit at the root as plain chat rows —
+                        // a single-use folder is not a project.
+                        ForEach(looseWorkspaceItems) { item in
+                            workspaceFolder(item, hierarchyDepth: 0)
+                                .transition(.identity)
                         }
                     } else if organization == .byWorkspace {
                         ForEach(workspaceItems) { item in
@@ -384,7 +404,8 @@ struct SidebarView: View {
                                 .transition(.identity)
                         }
                     }
-                    if organization == .byProject && visibleProjects.isEmpty {
+                    if organization == .byProject && projectSectionProjects.isEmpty
+                        && looseWorkspaceItems.isEmpty {
                         Text("No projects yet")
                             .font(.caption)
                             .foregroundStyle(.tertiary)
@@ -851,8 +872,8 @@ struct SidebarView: View {
                     }
                     .buttonStyle(.plain)
                     .foregroundStyle(.secondary)
-                    .help("New workspace in \(project.name)")
-                    .accessibilityLabel("New workspace in \(project.name)")
+                    .help("New chat in \(project.name)")
+                    .accessibilityLabel("New chat in \(project.name)")
                 }
             }
             .padding(.horizontal, 8)
@@ -868,7 +889,7 @@ struct SidebarView: View {
                         .labelStyle(.titleAndIcon)
                 }
             } else {
-                Button("New workspace here") { selection = .newChat(project.id) }
+                Button("New chat here") { selection = .newChat(project.id) }
                 Button("Change icon") { iconEditing = project }
                 Button { list.archive(project) } label: {
                     Label("Archive", systemImage: "archivebox")
@@ -1152,7 +1173,9 @@ struct SidebarView: View {
         } else {
             Button {
                 store?.markUnread(session)
-                if selection == .session(serverId: session.serverId, id: session.id) { selection = .newChat(nil) }
+                if selection == .session(serverId: session.serverId, id: session.id) {
+                    selectNextChat(excluding: [session.id], serverId: session.serverId)
+                }
             } label: {
                 Label("Mark as unread", systemImage: "message.badge")
                     .labelStyle(.titleAndIcon)
@@ -1281,13 +1304,34 @@ struct SidebarView: View {
     }
 
     private func archiveWorkspace(_ workspace: Workspace) {
-        environment.archiveWorkspace(workspace)
+        // Whether the selection lives in this workspace, decided BEFORE the
+        // archive (a scratch workspace's discard also drops its session
+        // index, which this lookup depends on).
+        let selectionLeaves: Bool
         if case let .session(serverId, sessionId) = selection,
            serverId == workspace.serverId,
            environment.workspaces.workspaceId(forSession: sessionId) == workspace.id {
-            selection = .newChat(nil)
+            selectionLeaves = true
+        } else {
+            selectionLeaves = false
+        }
+        environment.archiveWorkspace(workspace)
+        if selectionLeaves {
+            // Land on the most recent remaining chat; only an empty machine
+            // falls through to creating a fresh scratch workspace.
+            selectNextChat(excluding: [], serverId: workspace.serverId)
         }
         workspaceRevision += 1
+    }
+
+    /// Moves the selection off a chat that is leaving the screen (archive,
+    /// mark-as-unread) to the most recent OTHER active chat. Only when none
+    /// remain does the empty fallback create a fresh scratch workspace.
+    private func selectNextChat(excluding excluded: Set<UUID>, serverId: String) {
+        let next = environment.projectList.sessions
+            .filter { $0.serverId == serverId && !$0.isArchived && !excluded.contains($0.id) }
+            .max { ($0.updatedAt ?? $0.createdAt) < ($1.updatedAt ?? $1.createdAt) }
+        selection = next.map { .session(serverId: $0.serverId, id: $0.id) }
     }
 
     /// The workspace's own icon; a workspace born before icons existed
@@ -1535,7 +1579,7 @@ struct SidebarView: View {
     private func archiveChat(_ session: ChatSession) {
         let archivedWorkspace = environment.archiveSessionAndWorkspaceIfEmpty(session)
         if selection == .session(serverId: session.serverId, id: session.id) {
-            selection = .newChat(nil)
+            selectNextChat(excluding: [session.id], serverId: session.serverId)
         }
         if archivedWorkspace {
             workspaceRevision += 1

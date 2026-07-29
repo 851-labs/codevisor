@@ -51,6 +51,12 @@ public struct Project: Identifiable, Sendable, Codable, Equatable {
     public var createdAt: Date
     /// Per-server folders for this project.
     public var locations: [ProjectLocation]
+    /// True for the hidden backing project of a scratch workspace — the empty
+    /// folder a brand-new chat starts in (under ~/codevisor/workspaces on its
+    /// machine). Server-derived from the folder location on every response.
+    /// Scratch projects are hidden from project pickers; sessions keep
+    /// working through them until the workspace locks a real project in.
+    public var isScratch: Bool
 
     public init(
         id: UUID = UUID(),
@@ -60,7 +66,8 @@ public struct Project: Identifiable, Sendable, Codable, Equatable {
         symbolName: String = Project.defaultSymbolName,
         origin: SessionOrigin = .codevisor,
         createdAt: Date = Date(),
-        locations: [ProjectLocation] = []
+        locations: [ProjectLocation] = [],
+        isScratch: Bool = false
     ) {
         self.id = id
         self.serverId = serverId
@@ -70,6 +77,7 @@ public struct Project: Identifiable, Sendable, Codable, Equatable {
         self.origin = origin
         self.createdAt = createdAt
         self.locations = locations
+        self.isScratch = isScratch
     }
 
     public func location(for serverId: String) -> ProjectLocation? {
@@ -111,6 +119,7 @@ public struct Project: Identifiable, Sendable, Codable, Equatable {
 
     private enum Keys: String, CodingKey {
         case id, serverId, name, folderURL, isArchived, symbolName, origin, createdAt, locations
+        case isScratch
     }
 
     // Custom decoding tolerates records persisted before locations existed
@@ -124,6 +133,7 @@ public struct Project: Identifiable, Sendable, Codable, Equatable {
         symbolName = try container.decodeIfPresent(String.self, forKey: .symbolName) ?? Project.defaultSymbolName
         origin = try container.decodeIfPresent(SessionOrigin.self, forKey: .origin) ?? .codevisor
         createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
+        isScratch = try container.decodeIfPresent(Bool.self, forKey: .isScratch) ?? false
         if let locations = try container.decodeIfPresent([ProjectLocation].self, forKey: .locations) {
             self.locations = locations
         } else if let legacyFolderURL = try container.decodeIfPresent(URL.self, forKey: .folderURL) {
@@ -145,5 +155,6 @@ public struct Project: Identifiable, Sendable, Codable, Equatable {
         try container.encode(origin, forKey: .origin)
         try container.encode(createdAt, forKey: .createdAt)
         try container.encode(locations, forKey: .locations)
+        try container.encode(isScratch, forKey: .isScratch)
     }
 }

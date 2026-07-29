@@ -38,7 +38,7 @@ private enum HomeOrder: String, CaseIterable {
 
 /// The workspaces navigation screen: every workspace on the paired machine,
 /// organized and ordered like the macOS sidebar, with settings at the top
-/// left, the organize menu at the top right, and a fixed New Workspace call
+/// left, the organize menu at the top right, and a fixed New Chat call
 /// to action at the bottom.
 struct HomeView: View {
     @Environment(AppEnvironment.self) private var environment
@@ -53,7 +53,7 @@ struct HomeView: View {
     @State private var readyForOnboarding = false
     @State private var isShowingSettings = false
     @State private var isManagingMachines = false
-    @State private var isStartingWorkspace = false
+    @State private var isComposingNewChat = false
     @State private var path: [UUID] = []
     @State private var pendingDeeplink: MachineDeeplink?
     @State private var deeplinkError: String?
@@ -153,7 +153,7 @@ struct HomeView: View {
                 // The empty states carry their own single call to action; a
                 // second floating button would just compete with it.
                 if hasRemoteMachines && !visibleSessions.isEmpty {
-                    newWorkspaceButton
+                    newChatButton
                 }
             }
             .navigationDestination(for: UUID.self) { sessionId in
@@ -179,9 +179,14 @@ struct HomeView: View {
                 }
                 .presentationDragIndicator(.visible)
             }
-            .sheet(isPresented: $isStartingWorkspace) {
-                NewWorkspaceSheet { session in
-                    path.append(session.id)
+            .navigationDestination(isPresented: $isComposingNewChat) {
+                NewChatScreen { session in
+                    isComposingNewChat = false
+                    // Swap the compose page for the started chat once the pop
+                    // has settled; pushing mid-dismissal drops the push.
+                    Task { @MainActor in
+                        path.append(session.id)
+                    }
                 }
             }
             .fullScreenCover(isPresented: showsOnboarding) {
@@ -276,7 +281,7 @@ struct HomeView: View {
                     }
                 }
             case .byProject:
-                ForEach(projectList.activeProjects) { project in
+                ForEach(projectList.activeProjects.filter { !$0.isScratch }) { project in
                     let sessions = visibleSessions.filter { $0.projectId == project.id }
                     if !sessions.isEmpty {
                         Section {
@@ -299,6 +304,34 @@ struct HomeView: View {
                             }
                         } header: {
                             Label(project.name, systemImage: project.symbolName)
+                        }
+                    }
+                }
+                // Chats without a real project (scratch-backed) are not a
+                // project: they sit in one headerless section at the root.
+                let looseSessions = visibleSessions.filter { session in
+                    projectList.activeProjects.first {
+                        $0.id == session.projectId
+                    }?.isScratch != false
+                }
+                if !looseSessions.isEmpty {
+                    Section {
+                        ForEach(looseSessions) { session in
+                            NavigationLink(value: session.id) {
+                                SessionRow(
+                                    session: session,
+                                    projectName: nil,
+                                    harnessSymbol: harnessSymbol(for: session)
+                                )
+                            }
+                            .swipeActions(edge: .trailing) {
+                                Button {
+                                    _ = environment.archiveSessionAndWorkspaceIfEmpty(session)
+                                } label: {
+                                    Label("Archive", systemImage: "archivebox")
+                                }
+                                .tint(.orange)
+                            }
                         }
                     }
                 }
@@ -375,9 +408,9 @@ struct HomeView: View {
             Text("Workspaces are where agents work on \(machines.selectedMachine.name). Start your first one.")
         } actions: {
             Button {
-                isStartingWorkspace = true
+                isComposingNewChat = true
             } label: {
-                Label("New Workspace", systemImage: "plus")
+                Label("New Chat", systemImage: "plus")
                     .font(.body.weight(.semibold))
                     .foregroundStyle(.white)
                     .padding(.horizontal, 14)
@@ -453,11 +486,11 @@ struct HomeView: View {
         .accessibilityLabel("Organize workspaces")
     }
 
-    private var newWorkspaceButton: some View {
+    private var newChatButton: some View {
         Button {
-            isStartingWorkspace = true
+            isComposingNewChat = true
         } label: {
-            Label("New workspace", systemImage: "plus")
+            Label("New chat", systemImage: "plus")
                 .font(.body.weight(.semibold))
                 .foregroundStyle(.white)
                 .padding(.horizontal, 18)
@@ -466,7 +499,7 @@ struct HomeView: View {
         .buttonStyle(.borderedProminent)
         .buttonBorderShape(.capsule)
         .padding(.bottom, 8)
-        .accessibilityLabel("New workspace")
+        .accessibilityLabel("New chat")
     }
 }
 

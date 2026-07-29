@@ -262,11 +262,34 @@ final public class SessionController {
     public var onSetupFailed: (() -> Void)?
     /// The agent session to resume (existing session); nil for a brand-new chat.
     public var resumeAgentSessionId: String?
-    /// The durable Codevisor session mirrored by the server. Nil for a draft until first send.
-    /// A session's working directory is its WORKSPACE's one working
-    /// directory, stamped at creation (worktreeName/cwd) — never chosen or
-    /// changed from the composer.
+    /// The durable Codevisor session mirrored by the server. Nil for a draft
+    /// until first send. A session's working directory is decided by the
+    /// new-chat pickers at first send and never changes afterward: the
+    /// workspace created around it owns that one directory for life.
     public var serverSession: ChatSession?
+    /// When true, the draft runs in a new git worktree created on the first
+    /// send. Until the worktree exists there is no cwd to connect with, so
+    /// the eager pre-connect is skipped.
+    public var wantsNewWorktree = false {
+        didSet {
+            // A worktree kept alive from a reverted first send only makes
+            // sense while worktree mode stays on; turning it off must drop
+            // the override or the next send would still run in the worktree.
+            if !wantsNewWorktree {
+                sessionCwdOverride = nil
+                worktreeName = nil
+            }
+            draftDidChange()
+        }
+    }
+    /// The worktree created for this draft on first send (server-assigned slug).
+    public private(set) var worktreeName: String?
+    /// The created worktree's path; overrides the project folder as the agent cwd.
+    public private(set) var sessionCwdOverride: String?
+    /// Called once the first-send worktree has been created, so the owner can
+    /// patch the already-registered session and workspace records with the
+    /// worktree name/cwd.
+    public var onWorktreeCreated: ((ServerWorktree) -> Void)?
     /// Pre-chat setup steps (worktree creation, agent start) shown in the
     /// transcript immediately after the optimistic first user message.
     public private(set) var setupPhases: [SessionSetupPhase] = []
@@ -551,6 +574,7 @@ final public class SessionController {
     /// or the project folder for plain drafts.
     public var sessionCwdURL: URL {
         if let cwd = serverSession?.cwd { return URL(fileURLWithPath: cwd) }
+        if let sessionCwdOverride { return URL(fileURLWithPath: sessionCwdOverride) }
         return project.folderURL
     }
 
@@ -755,6 +779,16 @@ final public class SessionController {
             composerText = objective
             pendingGoal = nil
             isGoalComposerArmed = true
+        }
+
+        // Materialize the worktree before the agent exists, exactly like a
+        // first prompt send (see send()).
+        if wantsNewWorktree, sessionCwdOverride == nil {
+            if let failure = await createWorktree(showsSetupPhase: showsSetupPhases) {
+                restoreComposer()
+                handleSetupFailure(failure, returnsToNewChat: showsSetupPhases)
+                return
+            }
         }
 
         guard let harness = selectedHarness else {
@@ -1548,6 +1582,9 @@ final public class SessionController {
             return
         }
         guard model == nil, !isConnecting, let serverSession else { return }
+        // A worktree draft has no cwd until the worktree is created on first
+        // send; connecting now would pin the agent to the project folder.
+        guard !wantsNewWorktree || sessionCwdOverride != nil else { return }
         let persistedHarnessId = serverSession.harnessId
         let harnessId = persistedHarnessId.isEmpty ? selectedHarness?.id : persistedHarnessId
         guard let harnessId, !harnessId.isEmpty else { return }
@@ -1633,8 +1670,22 @@ final public class SessionController {
         await reconnect()
     }
 
-    /// Tears down any connection and reconnects — used when the harness
-    /// changes on the new-chat page.
+    /// Changes the project (new-chat picker) and reconnects.
+    public func selectProject(_ project: Project) async {
+        guard project.id != self.project.id else { return }
+        self.project = project
+        // A worktree kept from a reverted first send belongs to the old
+        // project; the new project gets its own on the next send.
+        sessionCwdOverride = nil
+        worktreeName = nil
+        if seedFromCachedServerCapabilities() {
+            preparationState = .ready
+        }
+        await reconnect()
+    }
+
+    /// Tears down any connection and reconnects — used when the harness or
+    /// project changes on the new-chat page.
     public func reconnect() async {
         // Supersede a controller-owned eager connect explicitly: cancel it and
         // wait for it to settle so its failure handling cannot clobber the
@@ -1721,6 +1772,17 @@ final public class SessionController {
             pendingUserAttachments = []
         }
 
+        // Materialize the worktree before the agent exists, so it is born
+        // with the worktree cwd. Progress (including checkout-hook output)
+        // streams into the "Setting up worktree…" section.
+        if wantsNewWorktree, sessionCwdOverride == nil {
+            if let failure = await createWorktree(showsSetupPhase: showsSetupPhases) {
+                restoreComposer()
+                handleSetupFailure(failure, returnsToNewChat: showsSetupPhases)
+                return
+            }
+        }
+
         if let model {
             pendingUserText = nil
             pendingUserAttachments = []
@@ -1770,6 +1832,69 @@ final public class SessionController {
             return nil
         }).first else { return }
         await model.retryResponse(to: prompt)
+    }
+
+    /// Asks the server to create a git worktree for this draft. The server
+    /// owns the fixed location (~/codevisor/{projectId}/{name}) and picks a
+    /// random memorable name; the app never computes either. The worktree id
+    /// is generated client-side so the server's `worktree.setup` events (git
+    /// output, checkout hooks, failures) can be followed live into the setup
+    /// section while the request is in flight. Returns the failure message on
+    /// error (nil on success); the caller either continues the transcript
+    /// transition or restores New Chat.
+    private func createWorktree(showsSetupPhase: Bool) async -> String? {
+        guard let serverClient else {
+            return "Worktrees need the Codevisor server. Start it and try again."
+        }
+        let worktreeId = UUID().uuidString.lowercased()
+        if showsSetupPhase { beginSetupPhase(.worktree()) }
+        status = .connecting("Setting up worktree…")
+        // Best-effort live tail: the WebSocket usually opens well before git
+        // (and any long checkout hooks) produce output. Terminal state comes
+        // from the HTTP response, not from these events.
+        let follow = Task { [weak self] in
+            do {
+                for try await envelope in serverClient.eventStream(
+                    since: ServerSessionTransport.liveOnlyEventCursor
+                ) {
+                    guard case let .log(stream, line) = WorktreeSetupEvent.from(
+                        envelope, worktreeId: worktreeId
+                    ) else { continue }
+                    self?.mutateSetupPhase(id: SessionSetupPhase.worktreePhaseId) {
+                        $0.appendLog(stream: stream, line: line)
+                    }
+                }
+            } catch {
+                // The stream is cosmetic; a drop just stops the live tail.
+                Log.session.debug("worktree setup log tail dropped: \(String(describing: error), privacy: .public)")
+            }
+        }
+        defer { follow.cancel() }
+        do {
+            let worktree = try await serverClient.createWorktree(
+                projectId: project.id,
+                id: worktreeId,
+                name: nil
+            )
+            sessionCwdOverride = worktree.path
+            worktreeName = worktree.name
+            // The session record was registered before the worktree existed;
+            // carry the name/cwd onto it so the first connect (and terminals)
+            // run in the worktree.
+            if var session = serverSession {
+                session.worktreeName = worktree.name
+                session.cwd = worktree.path
+                serverSession = session
+            }
+            onWorktreeCreated?(worktree)
+            mutateSetupPhase(id: SessionSetupPhase.worktreePhaseId) { $0.succeed() }
+            status = .idle
+            return nil
+        } catch let CodevisorServerClientError.httpStatus(_, message) {
+            return WorktreeCreator.failureMessage(from: message)
+        } catch {
+            return serverErrorMessage(error)
+        }
     }
 
     /// Failed first-send setup returns to the centered composer with its prompt

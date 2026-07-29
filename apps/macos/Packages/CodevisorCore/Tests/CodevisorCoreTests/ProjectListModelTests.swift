@@ -261,6 +261,51 @@ struct ProjectListModelTests {
         #expect(model.sessions(in: project).isEmpty)
     }
 
+    @Test("Stale server refresh cannot resurrect an optimistically deleted project")
+    func serverRefreshHonorsProjectDeleteTombstone() async throws {
+        let project = Project.fromFolder(URL(fileURLWithPath: "/tmp/one-time-chat"))
+        let session = ChatSession(
+            projectId: project.id,
+            harnessId: "codex",
+            title: "One-time chat"
+        )
+        let fakeServer = FakeServerClient(
+            projects: [serverProject(from: project)],
+            sessions: [serverSession(from: session)]
+        )
+        let model = ProjectListModel(
+            projectRepository: DefaultProjectRepository(store: InMemoryStore()),
+            sessionRepository: DefaultSessionRepository(store: InMemoryStore()),
+            serverClient: fakeServer
+        )
+        try await waitUntil { model.sessions.contains { $0.id == session.id } }
+
+        // Hold the server DELETE in flight so a refresh can return the older
+        // snapshot that still lists the project and its chat (archiving a
+        // scratch chat triggers exactly this interleaving).
+        let deleteUpload = Latch()
+        await fakeServer.setDeleteDelay { await deleteUpload.wait() }
+        let local = try #require(model.projects.first { $0.id == project.id })
+        model.removeProject(local)
+        #expect(!model.projects.contains { $0.id == project.id })
+        #expect(!model.sessions.contains { $0.id == session.id })
+
+        await model.refreshFromServer()
+        #expect(!model.projects.contains { $0.id == project.id })
+        #expect(!model.sessions.contains { $0.id == session.id })
+
+        // Once the DELETE lands, the next snapshot confirms the deletion and
+        // the tombstone retires with it.
+        await deleteUpload.open()
+        try await waitUntilAsync {
+            let snapshot = await fakeServer.snapshot()
+            return snapshot.deletedProjectIDs.contains(project.id.uuidString)
+        }
+        await model.refreshFromServer()
+        #expect(!model.projects.contains { $0.id == project.id })
+        #expect(!model.sessions.contains { $0.id == session.id })
+    }
+
     @Test("Unarchiving a chat survives the next server refresh")
     func unarchiveClearsPendingArchiveMarker() async throws {
         let project = Project.fromFolder(URL(fileURLWithPath: "/tmp/unarchive"))
@@ -893,6 +938,9 @@ private actor FakeServerClient: CodevisorServerClienting {
     /// "network" call in flight while the app state changes underneath it.
     private var listDelay: (@Sendable () async -> Void)?
     private var sessionUpsertDelay: (@Sendable () async -> Void)?
+    /// When set, deleteProject/deleteSession suspend on this first — lets
+    /// tests hold the server DELETE in flight while refreshes race it.
+    private var deleteDelay: (@Sendable () async -> Void)?
 
     init(projects: [ServerProject] = [], sessions: [ServerSession] = []) {
         self.projects = projects
@@ -905,6 +953,10 @@ private actor FakeServerClient: CodevisorServerClienting {
 
     func setSessionUpsertDelay(_ delay: @escaping @Sendable () async -> Void) {
         sessionUpsertDelay = delay
+    }
+
+    func setDeleteDelay(_ delay: @escaping @Sendable () async -> Void) {
+        deleteDelay = delay
     }
 
     func health() async throws -> ServerHealth {
@@ -941,6 +993,7 @@ private actor FakeServerClient: CodevisorServerClienting {
     }
 
     func deleteProject(id: UUID) async throws {
+        if let deleteDelay { await deleteDelay() }
         deletedProjectIDs.append(id.uuidString)
         projects.removeAll { $0.id == id.uuidString }
     }
@@ -996,6 +1049,7 @@ private actor FakeServerClient: CodevisorServerClienting {
     }
 
     func deleteSession(id: UUID) async throws {
+        if let deleteDelay { await deleteDelay() }
         deletedSessionIDs.append(id.uuidString)
         sessions.removeAll { $0.id == id.uuidString }
     }

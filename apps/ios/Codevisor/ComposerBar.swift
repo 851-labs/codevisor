@@ -21,6 +21,9 @@ struct ComposerBar: View {
     /// fade. Only the collapsed height is published — publishing live drag
     /// heights would re-measure the transcript on every gesture frame.
     @Binding var collapsedHeight: CGFloat
+    /// The new-chat page shows the project/run-location chips above the
+    /// card; established chats never do (their directory is fixed).
+    var showsRunPickers: Bool = false
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -40,6 +43,8 @@ struct ComposerBar: View {
     @State private var isPickingPhotos = false
     @State private var isPickingFiles = false
     @State private var isCapturingPhoto = false
+    @State private var isAddingProject = false
+    @Environment(AppEnvironment.self) private var environment
 
     private var trimmed: String {
         text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -86,7 +91,24 @@ struct ComposerBar: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
+            // The new-chat page chooses where the chat will work from the
+            // composer: a project and, for git projects, project directory
+            // vs a new worktree. The chips float above the card in one glass
+            // group, like the macOS new-chat row; the choice is fixed the
+            // moment the first message creates the workspace.
+            if showsRunPickers {
+                runTargetChips
+                    .font(.footnote)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 7)
+                    .composerGlassSurface(cornerRadius: 18)
+            }
             card
+        }
+        .sheet(isPresented: $isAddingProject) {
+            AddProjectSheet { project in
+                selectTargetProject(project)
+            }
         }
         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
             // Publish only the resting size; see `collapsedHeight`.
@@ -308,6 +330,126 @@ struct ComposerBar: View {
     private func setExpanded(_ expand: Bool) {
         withAnimation(.snappy(duration: 0.28)) {
             isExpanded = expand
+        }
+    }
+
+    // MARK: - Run chips (new-chat page only)
+
+    /// Projects offered by the picker (scratch backing projects, when a
+    /// server has any, are internal and never listed).
+    private var pickerProjects: [Project] {
+        environment.projectList.activeProjects.filter { !$0.isScratch }
+    }
+
+    /// The live project record. The controller holds a snapshot from when
+    /// the project was picked; the server's git probe lands on the list
+    /// afterwards, and the worktree chip must follow the probed value.
+    private var liveProject: Project {
+        environment.projectList.projects.first {
+            $0.serverId == controller.project.serverId && $0.id == controller.project.id
+        } ?? controller.project
+    }
+
+    private var runTargetChips: some View {
+        HStack(spacing: 10) {
+            projectChip
+            if liveProject.isGitRepository {
+                Divider()
+                    .frame(height: 14)
+                    .accessibilityHidden(true)
+                runLocationChip
+            }
+        }
+    }
+
+    private var projectChip: some View {
+        Menu {
+            ForEach(pickerProjects) { project in
+                Button {
+                    selectTargetProject(project)
+                } label: {
+                    menuRow(
+                        project.name,
+                        systemImage: project.symbolName,
+                        isSelected: controller.project.id == project.id
+                    )
+                }
+            }
+            Divider()
+            Button {
+                isAddingProject = true
+            } label: {
+                Label("New Project…", systemImage: "folder.badge.plus")
+            }
+        } label: {
+            chipLabel(controller.project.name, systemImage: controller.project.symbolName)
+        }
+        .accessibilityLabel("Project")
+        .accessibilityValue(controller.project.name)
+    }
+
+    private var runLocationChip: some View {
+        let newWorktree = controller.wantsNewWorktree
+        return Menu {
+            Button {
+                selectRunLocation(newWorktree: false)
+            } label: {
+                menuRow("Project Directory", systemImage: "folder.fill", isSelected: !newWorktree)
+            }
+            Button {
+                selectRunLocation(newWorktree: true)
+            } label: {
+                menuRow("New Worktree", systemImage: "arrow.triangle.branch", isSelected: newWorktree)
+            }
+        } label: {
+            chipLabel(
+                newWorktree ? "New Worktree" : "Project Directory",
+                systemImage: newWorktree ? "arrow.triangle.branch" : "folder.fill"
+            )
+        }
+        .accessibilityLabel("Run location")
+        .accessibilityValue(newWorktree ? "New Worktree" : "Project Directory")
+    }
+
+    /// A picked project carries the machine's remembered worktree preference
+    /// (worktrees only make sense for git projects).
+    func selectTargetProject(_ project: Project) {
+        let prefersWorktree = project.isGitRepository
+            && environment.composerDefaults.prefersWorktreeForNewWorkspaces(
+                forServer: project.serverId
+            )
+        Task {
+            await controller.selectProject(project)
+            controller.wantsNewWorktree = prefersWorktree
+        }
+        // Re-probe git capability so the run-location chip tracks fresh data.
+        Task { await environment.projectList.refreshFromServer() }
+    }
+
+    private func selectRunLocation(newWorktree: Bool) {
+        environment.composerDefaults.rememberNewWorkspaceWorktreePreference(
+            serverId: controller.project.serverId,
+            createsWorktree: newWorktree
+        )
+        controller.wantsNewWorktree = newWorktree
+    }
+
+    private func chipLabel(_ title: String, systemImage: String) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: systemImage)
+                .font(.caption)
+            Text(title)
+                .lineLimit(1)
+        }
+        .foregroundStyle(.secondary)
+    }
+
+    @ViewBuilder
+    private func menuRow(_ title: String, systemImage: String, isSelected: Bool) -> some View {
+        if isSelected {
+            Label(title, systemImage: "checkmark")
+        } else {
+            Label(title, systemImage: systemImage)
         }
     }
 

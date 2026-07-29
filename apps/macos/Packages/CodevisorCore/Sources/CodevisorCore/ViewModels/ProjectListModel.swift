@@ -47,6 +47,14 @@ public final class ProjectListModel {
             persistPendingArchivedSessions()
         }
     }
+    /// Project deletions are optimistic too: the rows leave immediately
+    /// while the server DELETE is in flight. A refresh snapshot fetched in
+    /// that window (an archive PATCH fans out events that trigger one) still
+    /// lists the project and its sessions — merging it back resurrected a
+    /// just-discarded scratch chat, and the sidebar then even minted a fresh
+    /// workspace for it. Tombstone the id until a snapshot confirms the
+    /// deletion (the project is absent) or the DELETE fails.
+    private var pendingDeletedProjectIds: Set<ScopedSessionID> = []
 
     private static let pendingServerSessionsKey = "pending-server-sessions-v1"
     private static let pendingArchivedSessionsKey = "pending-archived-sessions-v1"
@@ -253,6 +261,9 @@ public final class ProjectListModel {
     }
 
     public func removeProject(_ project: Project) {
+        pendingDeletedProjectIds.insert(
+            ScopedSessionID(serverId: project.serverId, id: project.id)
+        )
         let removedSessionIDs = sessions
             .filter { $0.serverId == project.serverId && $0.projectId == project.id }
             .map(\.id)
@@ -506,6 +517,20 @@ public final class ProjectListModel {
         sessions[index].actionRequired = remote.actionRequired ?? false
         sessions[index].actionRequiredKind = remote.actionRequiredKind
         sessions[index].pendingPlanApproval = remote.pendingPlanApproval ?? false
+        persistSessions()
+    }
+
+    /// Records the worktree a draft session ended up running in. The session
+    /// record is created before the worktree exists (the session page opens
+    /// while setup streams progress), so the name/cwd land here afterwards.
+    /// Local only: the draft hasn't been synced yet, and the first connect
+    /// upserts the session carrying this worktree name.
+    public func setWorktree(name: String, cwd: String, for sessionId: UUID, serverId: String) {
+        guard let index = sessions.firstIndex(where: {
+            $0.serverId == serverId && $0.id == sessionId
+        }) else { return }
+        sessions[index].worktreeName = name
+        sessions[index].cwd = cwd
         persistSessions()
     }
 
@@ -835,10 +860,30 @@ public final class ProjectListModel {
 
     private func mergeProjects(local: [Project], remote: [Project], serverId: String) -> [Project] {
         let otherServers = local.filter { $0.serverId != serverId }
-        return (otherServers + remote).sorted { $0.createdAt > $1.createdAt }
+        // A snapshot that no longer lists a tombstoned project confirms the
+        // deletion; one that still does was fetched before the DELETE landed
+        // and must not resurrect the row.
+        let remoteIds = Set(remote.map { ScopedSessionID(serverId: serverId, id: $0.id) })
+        pendingDeletedProjectIds = pendingDeletedProjectIds.filter {
+            $0.serverId != serverId || remoteIds.contains($0)
+        }
+        let surviving = remote.filter {
+            !pendingDeletedProjectIds.contains(ScopedSessionID(serverId: serverId, id: $0.id))
+        }
+        return (otherServers + surviving).sorted { $0.createdAt > $1.createdAt }
     }
 
-    private func mergeSessions(local: [ChatSession], remote: [ChatSession], serverId: String) -> [ChatSession] {
+    private func mergeSessions(local rawLocal: [ChatSession], remote rawRemote: [ChatSession], serverId: String) -> [ChatSession] {
+        // Sessions of a tombstoned (optimistically deleted) project go down
+        // with it — a pre-DELETE snapshot must not bring them back either.
+        let remote = rawRemote.filter {
+            !pendingDeletedProjectIds.contains(ScopedSessionID(serverId: serverId, id: $0.projectId))
+        }
+        let local = rawLocal.filter {
+            !pendingDeletedProjectIds.contains(
+                ScopedSessionID(serverId: $0.serverId, id: $0.projectId)
+            )
+        }
         let remoteIds = Set(remote.map { ScopedSessionID(serverId: serverId, id: $0.id) })
         // Seeing the row in a snapshot is the durable acknowledgement. A
         // later refresh can now treat the server copy as fully authoritative.
@@ -994,6 +1039,12 @@ public final class ProjectListModel {
                 try await serverClient.deleteProject(id: projectID)
             } catch {
                 didFail = true
+                // The project survived on the server; drop the tombstone so
+                // the next snapshot restores the truth instead of holding an
+                // optimistic deletion forever.
+                pendingDeletedProjectIds.remove(
+                    ScopedSessionID(serverId: serverId, id: projectID)
+                )
                 Log.sync.error(
                     "Failed to delete project \(projectID.uuidString, privacy: .public) on the server: \(String(describing: error), privacy: .public)"
                 )

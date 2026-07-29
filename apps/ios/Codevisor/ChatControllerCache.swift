@@ -73,6 +73,27 @@ final class ChatControllerCache {
         return controller
     }
 
+    /// Adopts a draft controller under its freshly created session id (the
+    /// new-chat page's first send), so the workspace screen rebinds the SAME
+    /// controller — mid-flight worktree setup, optimistic message and all —
+    /// instead of minting a fresh one.
+    func register(
+        _ controller: SessionController,
+        for session: ChatSession,
+        projectList: ProjectListModel
+    ) {
+        let key = Key(serverId: session.serverId, id: session.id)
+        noteAccess(key)
+        controllers[key] = controller
+        let markReadIfOpen = { [weak self, weak projectList] in
+            guard let self, self.openKey == key else { return }
+            projectList?.markSessionRead(key.id, serverId: key.serverId)
+        }
+        controller.onTurnEnded = markReadIfOpen
+        controller.onActionRequired = markReadIfOpen
+        evictIfNeeded()
+    }
+
     /// Marks a chat as the open one and clears its unread state — the iOS
     /// counterpart of the macOS store's markOpened.
     func noteOpened(sessionId: UUID, serverId: String, projectList: ProjectListModel) {

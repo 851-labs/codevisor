@@ -163,29 +163,43 @@ final class SessionStore {
             notificationDelivery: notificationDelivery
         )
         controller.applyComposerDefaults()
+        // Fresh drafts start from the machine's remembered run-location
+        // choice (worktrees only apply to git projects). Retained drafts
+        // returned above keep whatever the user toggled.
+        controller.wantsNewWorktree = restoredProject.isGitRepository
+            && environment.composerDefaults.prefersWorktreeForNewWorkspaces(
+                forServer: restoredProject.serverId
+            )
         if let persisted { controller.restoreDraft(persisted) }
         enableDraftPersistence(for: controller)
         draftsByServer[project.serverId] = controller
         return controller
     }
 
-    /// Creates a workspace around a fresh eager chat session. The workspace
-    /// begins rooted at the project folder, or — when a freshly created
-    /// worktree is passed — at that worktree, which then fixes the working
-    /// directory for every chat/terminal the workspace ever hosts.
-    func createWorkspaceSession(in project: Project, worktree: ServerWorktree? = nil) -> ChatSession {
-        let session = environment.projectList.newSession(
-            in: project,
-            title: "New Chat",
-            worktreeName: worktree?.name,
-            cwd: worktree?.path
-        )
+    /// Wraps a just-sent new chat in its workspace: the record is rooted at
+    /// the session's directory (the project folder until a first-send
+    /// worktree finishes creating — `applyWorktree` moves it then), named
+    /// after the project, and carries the project's icon.
+    @discardableResult
+    func createWorkspace(for session: ChatSession, project: Project) -> Workspace {
         var created = workspace(for: session, project: project)
-        created.name = worktree?.name ?? project.name
+        created.name = session.worktreeName ?? project.name
         created.hasCustomName = false
         created.symbolName = project.symbolName
         environment.workspaces.save(created)
-        return session
+        return created
+    }
+
+    /// The first-send worktree materialized after the workspace was created:
+    /// move the workspace onto it — directory, worktree name, and (automatic)
+    /// display name.
+    func applyWorktree(_ worktree: ServerWorktree, toWorkspaceOf sessionId: UUID) {
+        guard let workspaceId = environment.workspaces.workspaceId(forSession: sessionId),
+              var workspace = environment.workspaces.workspace(id: workspaceId) else { return }
+        workspace.rootDirectory = worktree.path
+        workspace.worktreeName = worktree.name
+        environment.workspaces.save(workspace)
+        environment.workspaces.setAutomaticName(worktree.name, forWorkspace: workspaceId)
     }
 
     /// The cached controller for a session WITHOUT creating one — a pure
@@ -285,18 +299,38 @@ final class SessionStore {
     /// The workspace owning this session's chat, created (backfilled from
     /// the session + any pre-workspace pane state) on first access.
     func workspace(for session: ChatSession, project: Project) -> Workspace {
-        environment.workspaces.ensureWorkspace(
-            for: WorkspaceSessionSeed(
-                sessionId: session.id,
-                initialName: session.worktreeName ?? project.name,
-                serverId: session.serverId,
-                projectId: project.id,
-                rootDirectory: session.cwd ?? project.folderURL.path,
-                worktreeName: session.worktreeName
-            ),
+        let seed = WorkspaceSessionSeed(
+            sessionId: session.id,
+            initialName: session.worktreeName ?? project.name,
+            serverId: session.serverId,
+            projectId: project.id,
+            rootDirectory: session.cwd ?? project.folderURL.path,
+            worktreeName: session.worktreeName
+        )
+        // A chat that is no longer active and has NO persisted workspace must
+        // not mint one: archiving a scratch chat deletes its workspace (index
+        // entry included), and the chat's still-mounted screen re-evaluates
+        // during the teardown transition — persisting here resurrected the
+        // just-deleted workspace as a zombie sidebar row. Hand such screens a
+        // stable ephemeral stand-in instead.
+        if environment.workspaces.workspaceId(forSession: session.id) == nil,
+           !environment.projectList.sessions.contains(where: {
+               $0.serverId == session.serverId && $0.id == session.id && !$0.isArchived
+           }) {
+            if let cached = ephemeralWorkspaces[session.id] { return cached }
+            let ephemeral = environment.workspaces.ephemeralWorkspace(for: seed)
+            ephemeralWorkspaces[session.id] = ephemeral
+            return ephemeral
+        }
+        return environment.workspaces.ensureWorkspace(
+            for: seed,
             legacyGroups: environment.paneGroups
         )
     }
+
+    /// Stand-in workspaces for chats mid-teardown (see `workspace(for:)`);
+    /// cached so repeated body evaluations see one stable identity.
+    @ObservationIgnored private var ephemeralWorkspaces: [UUID: Workspace] = [:]
 
     /// Persists a divider drag: the workspace's center tree with updated
     /// fractions (same topology).
@@ -634,6 +668,7 @@ final class SessionStore {
         let key = SessionKey(session)
         controllers[key]?.model?.shutdown()
         controllers[key] = nil
+        ephemeralWorkspaces[session.id] = nil
         detachBottomGroup(for: session)
         detachCenterLeaves(for: session)
         pendingAttentionErrors[key] = nil

@@ -33,6 +33,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
   rmSync,
   statSync,
   symlinkSync,
@@ -5082,6 +5083,127 @@ describe("@codevisor/server", () => {
       const match = /^(.*)-(\d{4})$/.exec(name)
       expect(match).not.toBeNull()
       expect(foodWorktreeNames).toContain(match?.[1])
+
+      // Scratch workspace folders draw from the same development pool.
+      const scratch = await jsonRequest(server, "/v1/projects/scratch", {
+        body: JSON.stringify({}),
+        method: "POST"
+      })
+      expect(scratch.status).toBe(201)
+      const scratchName = (scratch.body as { readonly name: string }).name
+      const scratchMatch = /^(.*)-(\d{4})$/.exec(scratchName)
+      expect(scratchMatch).not.toBeNull()
+      expect(foodWorktreeNames).toContain(scratchMatch?.[1])
+    } finally {
+      delete process.env["CODEVISOR_WORKTREES_ROOT"]
+    }
+  })
+
+  it("creates scratch workspace projects and re-homes their sessions before the agent starts", async () => {
+    const worktreesRoot = mkdtempSync(join(tmpdir(), "codevisor-scratch-root-"))
+    tempDirs.push(worktreesRoot)
+    process.env["CODEVISOR_WORKTREES_ROOT"] = worktreesRoot
+    try {
+      const { server } = await start()
+
+      const created = await jsonRequest(server, "/v1/projects/scratch", {
+        body: JSON.stringify({ id: "scratch-project" }),
+        method: "POST"
+      })
+      expect(created.status).toBe(201)
+      const scratch = created.body as {
+        readonly id: string
+        readonly name: string
+        readonly isScratch?: boolean
+        readonly locations: ReadonlyArray<{ readonly folderPath: string }>
+      }
+      expect(scratch.id).toBe("scratch-project")
+      expect(scratch.isScratch).toBe(true)
+      const scratchFolder = scratch.locations[0]?.folderPath as string
+      expect(scratchFolder).toBe(join(worktreesRoot, "workspaces", scratch.name))
+      expect(existsSync(scratchFolder)).toBe(true)
+
+      // Idempotent per client-supplied id: replaying returns the existing
+      // project instead of allocating a second folder.
+      const replay = await jsonRequest(server, "/v1/projects/scratch", {
+        body: JSON.stringify({ id: "scratch-project" }),
+        method: "POST"
+      })
+      expect(replay.status).toBe(200)
+      expect((replay.body as { readonly id: string }).id).toBe("scratch-project")
+      expect(readdirSync(join(worktreesRoot, "workspaces"))).toHaveLength(1)
+
+      // Without a client id the server mints one — and a fresh folder.
+      const anonymous = await jsonRequest(server, "/v1/projects/scratch", {
+        body: JSON.stringify({}),
+        method: "POST"
+      })
+      expect(anonymous.status).toBe(201)
+      expect((anonymous.body as { readonly isScratch?: boolean }).isScratch).toBe(true)
+      expect(readdirSync(join(worktreesRoot, "workspaces"))).toHaveLength(2)
+
+      // An ordinary project is not flagged as scratch.
+      const plainFolder = mkdtempSync(join(tmpdir(), "codevisor-plain-"))
+      tempDirs.push(plainFolder)
+      const plain = await jsonRequest(server, "/v1/projects", {
+        body: JSON.stringify({ folderPath: plainFolder, id: "plain-project" }),
+        method: "POST"
+      })
+      expect(plain.status).toBe(201)
+      expect((plain.body as { readonly isScratch?: boolean }).isScratch).toBeUndefined()
+
+      // A deferred session starts life in the scratch folder…
+      const sessionResponse = await jsonRequest(server, "/v1/sessions", {
+        body: JSON.stringify({
+          id: "scratch-session",
+          projectId: "scratch-project",
+          harnessId: "codex",
+          deferAgentSession: true
+        }),
+        method: "POST"
+      })
+      expect(sessionResponse.status).toBe(201)
+      expect((sessionResponse.body as { readonly cwd?: string }).cwd).toBe(scratchFolder)
+
+      // …and can be re-homed to a real project while the agent hasn't started.
+      const moved = await jsonRequest(server, "/v1/sessions/scratch-session", {
+        body: JSON.stringify({ projectId: "plain-project" }),
+        method: "PATCH"
+      })
+      expect(moved.status).toBe(200)
+      expect(moved.body).toMatchObject({ projectId: "plain-project", cwd: plainFolder })
+
+      // Moving to a project with no folder on this machine is refused up front.
+      expect(
+        (
+          await jsonRequest(server, "/v1/sessions/scratch-session", {
+            body: JSON.stringify({ projectId: "missing-project" }),
+            method: "PATCH"
+          })
+        ).status
+      ).toBe(404)
+
+      // Once an agent session exists the move is refused.
+      const startedResponse = await jsonRequest(server, "/v1/sessions", {
+        body: JSON.stringify({ projectId: "plain-project", harnessId: "codex" }),
+        method: "POST"
+      })
+      expect(startedResponse.status).toBe(201)
+      const startedId = (startedResponse.body as { readonly id: string }).id
+      expect(
+        (
+          await jsonRequest(server, `/v1/sessions/${startedId}`, {
+            body: JSON.stringify({ projectId: "scratch-project" }),
+            method: "PATCH"
+          })
+        ).status
+      ).toBe(409)
+
+      // Deleting the scratch project retires its (still empty) folder.
+      expect(
+        (await jsonRequest(server, "/v1/projects/scratch-project", { method: "DELETE" })).status
+      ).toBe(204)
+      expect(existsSync(scratchFolder)).toBe(false)
     } finally {
       delete process.env["CODEVISOR_WORKTREES_ROOT"]
     }

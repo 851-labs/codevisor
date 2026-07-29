@@ -33,6 +33,7 @@ import type {
 import {
   CreateProjectFromGitRequest as CreateProjectFromGitRequestSchema,
   CreateProjectRequest as CreateProjectRequestSchema,
+  CreateScratchProjectRequest as CreateScratchProjectRequestSchema,
   CreateMcpServerRequest as CreateMcpServerRequestSchema,
   CreateSkillRequest as CreateSkillRequestSchema,
   DetectMcpAuthRequest as DetectMcpAuthRequestSchema,
@@ -80,6 +81,8 @@ import {
   AttachmentStoreError,
   DatabaseError,
   managedRepoPath,
+  scratchWorkspacePath,
+  scratchWorkspacesRoot,
   worktreePath,
   type AttachmentStore,
   type CodevisorDatabaseService
@@ -93,6 +96,7 @@ import {
   readFileSync,
   readdirSync,
   rmSync,
+  rmdirSync,
   statSync,
   writeFileSync
 } from "node:fs"
@@ -1350,6 +1354,55 @@ const routeProjects = async (
     return true
   }
 
+  if (request.method === "POST" && url.pathname === "/v1/projects/scratch") {
+    const payload = await readSchema(request, CreateScratchProjectRequestSchema)
+    // Idempotency: re-posting a client-supplied id returns the existing
+    // project instead of allocating a second folder for the same workspace.
+    const requestedId = payload.id
+    if (requestedId !== undefined) {
+      const existing = (await run(services.db.listProjects)).find(
+        (candidate) => candidate.id.toLowerCase() === requestedId.toLowerCase()
+      )
+      if (existing !== undefined) {
+        writeJson(response, 200, await probeProject(serverId, existing))
+        return true
+      }
+    }
+    mkdirSync(scratchWorkspacesRoot(), { recursive: true })
+    // Folder allocation doubles as the name reservation: a plain (non
+    // recursive) mkdir fails on a name already claimed by any other server or
+    // an earlier crash, so the loop simply draws again.
+    const taken = new Set(readdirSync(scratchWorkspacesRoot()))
+    let name: string | undefined
+    for (let attempt = 0; attempt < 100 && name === undefined; attempt += 1) {
+      const candidate =
+        config.worktreeNameStyle === "development"
+          ? availableDevelopmentWorktreeName(taken)
+          : availableProductionWorktreeName(taken)
+      try {
+        mkdirSync(scratchWorkspacePath(candidate))
+        name = candidate
+      } catch {
+        /* v8 ignore next -- requires another process to claim the random candidate between the directory scan and mkdir. */
+        taken.add(candidate)
+      }
+    }
+    /* v8 ignore next 3 -- 100 straight collisions needs an exhausted name pool; the loop bound is a backstop. */
+    if (name === undefined) {
+      throw new HttpFailure(500, "Could not allocate a scratch workspace folder")
+    }
+    const project = await run(
+      services.db.createProject({
+        ...(payload.id === undefined ? {} : { id: payload.id }),
+        folderPath: scratchWorkspacePath(name),
+        name
+      })
+    )
+    await appendAndPublish(services.db, fanout, "project.created", project.id, project)
+    writeJson(response, 201, await probeProject(serverId, project))
+    return true
+  }
+
   const projectId = matchRoute(url.pathname, "/v1/projects/:id")
   if (projectId !== undefined && request.method === "PATCH") {
     const payload = await readSchema(request, UpdateProjectRequestSchema)
@@ -1370,10 +1423,26 @@ const routeProjects = async (
   }
 
   if (projectId !== undefined && request.method === "DELETE") {
+    const target = (await run(services.db.listProjects)).find(
+      (candidate) => candidate.id.toLowerCase() === projectId.toLowerCase()
+    )
     await run(services.db.deleteProject(projectId))
     await appendAndPublish(services.db, fanout, "project.deleted", projectId, {
       id: projectId
     })
+    // Deleting a scratch project retires its workspace folder too — but only
+    // when the folder is still empty. Anything the user put there stays on
+    // disk rather than vanishing with the row.
+    const folderPath = target?.locations.find(
+      (location) => location.serverId === serverId
+    )?.folderPath
+    if (folderPath !== undefined && dirname(folderPath) === scratchWorkspacesRoot()) {
+      try {
+        rmdirSync(folderPath)
+      } catch {
+        // Non-empty or already gone: leave it.
+      }
+    }
     writeJson(response, 204, undefined)
     return true
   }
@@ -1749,7 +1818,9 @@ const makeWorktreeSetupPublisher = (
 }
 
 /// Annotates this server's locations with whether their folder is a git
-/// repository so clients can decide if the worktree option is available.
+/// repository so clients can decide if the worktree option is available, and
+/// marks scratch-workspace backing projects (folder under
+/// ~/codevisor/workspaces) so clients can hide them from project pickers.
 const probeProject = async (serverId: string, project: Project): Promise<Project> => ({
   ...project,
   locations: await Promise.all(
@@ -1758,7 +1829,10 @@ const probeProject = async (serverId: string, project: Project): Promise<Project
         ? { ...location, isGitRepository: await isGitWorkTree(location.folderPath) }
         : location
     )
-  )
+  ),
+  ...(project.locations.some((location) => dirname(location.folderPath) === scratchWorkspacesRoot())
+    ? { isScratch: true }
+    : {})
 })
 
 const routeHarnesses = async (
@@ -2350,6 +2424,21 @@ const routeSessions = async (
 
   if (sessionId !== undefined && request.method === "PATCH") {
     const payload = await readSchema(request, UpdateSessionRequestSchema)
+    if (payload.projectId !== undefined) {
+      // A project move re-homes the session's working directory, which is
+      // only safe while the agent hasn't started (its cwd binds at spawn).
+      const before = await run(services.db.getSessionSummary(sessionId))
+      if (before.agentSessionId !== undefined && before.agentSessionId !== "") {
+        throw new HttpFailure(
+          409,
+          "Session agent already started; its working directory can no longer move"
+        )
+      }
+      const project = await getProjectOrFail(services.db, payload.projectId)
+      // Fail the move up front if the destination doesn't resolve on this
+      // machine (missing folder, unknown worktree) rather than at first send.
+      await resolveSessionCwdOrFail(services, config.id, project, payload.worktreeName)
+    }
     const session = await applySessionUpdate(services, fanout, config, sessionId, payload)
     writeJson(response, 200, session)
     return true

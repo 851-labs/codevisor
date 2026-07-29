@@ -11,6 +11,8 @@ import {
   makeDatabase,
   managedRepoPath,
   managedReposRoot,
+  scratchWorkspacePath,
+  scratchWorkspacesRoot,
   worktreePath
 } from "./index.js"
 
@@ -164,6 +166,53 @@ describe("@codevisor/db", () => {
     } else {
       process.env["CODEVISOR_REPOS_ROOT"] = previous
     }
+  })
+
+  it("derives scratch workspace paths beside the worktrees root", () => {
+    const previous = process.env["CODEVISOR_WORKTREES_ROOT"]
+    delete process.env["CODEVISOR_WORKTREES_ROOT"]
+    expect(scratchWorkspacesRoot()).toBe(join(homedir(), "codevisor", "workspaces"))
+    process.env["CODEVISOR_WORKTREES_ROOT"] = "/tmp/custom-worktrees"
+    expect(scratchWorkspacePath("meatball")).toBe("/tmp/custom-worktrees/workspaces/meatball")
+    if (previous === undefined) {
+      delete process.env["CODEVISOR_WORKTREES_ROOT"]
+    } else {
+      process.env["CODEVISOR_WORKTREES_ROOT"] = previous
+    }
+  })
+
+  it("re-homes a session to another project, dropping stale worktree names", async () => {
+    const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
+    const origin = await run(db.createProject({ folderPath: "/tmp/move-origin" }))
+    const destination = await run(db.createProject({ folderPath: "/tmp/move-destination" }))
+    await run(db.createWorktree(origin.id, "fix-auth", "codevisor/fix-auth"))
+    const session = await run(
+      db.createSession({
+        projectId: origin.id,
+        harnessId: "codex",
+        worktreeName: "fix-auth"
+      })
+    )
+
+    // A project move re-homes the session's directory: the old project's
+    // worktree name must not survive it.
+    const moved = await run(db.updateSession(session.id, { projectId: destination.id }))
+    expect(moved.projectId).toBe(destination.id)
+    expect(moved.worktreeName).toBeUndefined()
+    expect(moved.cwd).toBe("/tmp/move-destination")
+
+    // A move can carry the destination worktree explicitly, and Swift's
+    // uppercase ids canonicalize like every other write.
+    await run(db.createWorktree(destination.id, "spry-otter", "codevisor/spry-otter"))
+    const movedBack = await run(
+      db.updateSession(session.id, {
+        projectId: destination.id.toUpperCase(),
+        worktreeName: "spry-otter"
+      })
+    )
+    expect(movedBack.projectId).toBe(destination.id)
+    expect(movedBack.worktreeName).toBe("spry-otter")
+    expect(movedBack.cwd).toBe(worktreePath(destination.id, "spry-otter"))
   })
 
   it("round-trips the git remote a project was cloned from", async () => {

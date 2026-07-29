@@ -135,9 +135,25 @@ struct NewChatView: View {
                                     focusChatId: preCreatedSession?.id,
                                     glassNamespace: composerGlassNamespace
                                 )
-                                if controller.canChooseHarness {
+                                if controller.canChooseHarness || showsRunPickers {
                                     HStack(spacing: 4) {
-                                        HarnessPickerMenu(controller: controller)
+                                        if controller.canChooseHarness {
+                                            HarnessPickerMenu(controller: controller)
+                                        }
+                                        if showsRunPickers {
+                                            if controller.canChooseHarness {
+                                                Divider()
+                                                    .frame(height: 14)
+                                                    .accessibilityHidden(true)
+                                            }
+                                            projectPicker(controller)
+                                            if liveProject(for: controller).isGitRepository {
+                                                Divider()
+                                                    .frame(height: 14)
+                                                    .accessibilityHidden(true)
+                                                runLocationPicker(controller)
+                                            }
+                                        }
                                     }
                                     .font(.callout)
                                     .padding(.horizontal, 8)
@@ -199,10 +215,15 @@ struct NewChatView: View {
             }
         }
         .attachmentDropTarget(controller)
-        // Same add-project flow as the sidebar's +.
+        // Same add-project flow as the sidebar's +. On the page the fresh
+        // project simply becomes the picker's selection.
         .addProjectFlow(addProjectFlow) { project in
-            selectedProjectId = project.id
-            selection = .newChat(project.id)
+            if let controller, showsRunPickers {
+                selectTargetProject(project, controller: controller)
+            } else {
+                selectedProjectId = project.id
+                selection = .newChat(project.id)
+            }
         }
         // Stale-while-revalidate: the persisted project snapshot renders the
         // page immediately, then the server re-probes folder capabilities in
@@ -238,6 +259,138 @@ struct NewChatView: View {
         .focusedSceneValue(\.newChatComposerFocus, NewChatComposerFocus(
             focus: { focus.focusComposer() }
         ))
+    }
+
+    // MARK: - Run pickers (standalone new-chat page only)
+
+    /// The pickers only exist on the standalone page: they decide the
+    /// workspace's one working directory, which is fixed the moment the
+    /// first message creates it. Drafts inside an existing workspace always
+    /// run in that workspace's directory.
+    private var showsRunPickers: Bool { paneDraftId == nil }
+
+    /// Projects offered by the picker (scratch backing projects, when a
+    /// server has any, are internal and never listed).
+    private var pickerProjects: [Project] {
+        projects.filter { !$0.isScratch }
+    }
+
+    /// The live project record. The controller holds a snapshot from when
+    /// the project was picked; the server's git probe lands on the list
+    /// afterwards, and the worktree picker must follow the probed value.
+    private func liveProject(for controller: SessionController) -> Project {
+        projects.first { $0.id == controller.project.id } ?? controller.project
+    }
+
+    /// Choose the project the chat (and the workspace created around it on
+    /// first send) will work in.
+    private func projectPicker(_ controller: SessionController) -> some View {
+        let selected = controller.project
+        return Menu {
+            // Toggle for the native selected checkmark; MenuSymbolIcon
+            // because AppKit menus drop plain SF Symbol images.
+            ForEach(pickerProjects) { project in
+                Toggle(isOn: Binding(
+                    get: { selected.id == project.id },
+                    set: { isOn in
+                        guard isOn else { return }
+                        selectTargetProject(project, controller: controller)
+                        // Re-probe git capability so the run-location picker
+                        // appears/disappears with fresh data.
+                        Task { await environment.projectList.refreshFromServer() }
+                    }
+                )) {
+                    Label { Text(project.name) } icon: {
+                        MenuSymbolIcon(systemName: FilledSymbol.preferred(project.symbolName))
+                    }
+                }
+            }
+            Divider()
+            Button {
+                addProjectFlow.begin()
+            } label: {
+                Label { Text("New project…") } icon: {
+                    MenuSymbolIcon(systemName: "folder.badge.plus")
+                }
+            }
+        } label: {
+            PickerChip(text: selected.name) {
+                Image(systemName: FilledSymbol.preferred(selected.symbolName))
+                    .font(.system(size: 12))
+            }
+        }
+        .menuStyle(.button)
+        .buttonStyle(HoverIconButtonStyle(shape: .chip))
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("Choose where this chat works")
+        .accessibilityLabel("Project")
+        .accessibilityValue(selected.name)
+    }
+
+    /// "Project directory" vs "New worktree" for where the chat (and its
+    /// workspace) runs. Only rendered for git projects; the worktree itself
+    /// is created on the first send.
+    private func runLocationPicker(_ controller: SessionController) -> some View {
+        let newWorktree = controller.wantsNewWorktree
+        return Menu {
+            Toggle(isOn: Binding(
+                get: { !newWorktree },
+                set: { isOn in
+                    guard isOn else { return }
+                    selectRunLocation(newWorktree: false, controller: controller)
+                }
+            )) {
+                Label { Text("Project directory") } icon: {
+                    MenuSymbolIcon(systemName: "folder.fill")
+                }
+            }
+            Toggle(isOn: Binding(
+                get: { newWorktree },
+                set: { isOn in
+                    guard isOn else { return }
+                    selectRunLocation(newWorktree: true, controller: controller)
+                }
+            )) {
+                Label { Text("New worktree") } icon: {
+                    MenuSymbolIcon(systemName: "arrow.triangle.branch")
+                }
+            }
+        } label: {
+            PickerChip(text: newWorktree ? "New worktree" : "Project directory") {
+                Image(systemName: newWorktree ? "arrow.triangle.branch" : "folder.fill")
+                    .font(.system(size: 12))
+            }
+        }
+        .menuStyle(.button)
+        .buttonStyle(HoverIconButtonStyle(shape: .chip))
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("Where this chat's commands run")
+        .accessibilityLabel("Run location")
+        .accessibilityValue(newWorktree ? "New worktree" : "Project directory")
+    }
+
+    /// A picked project carries the machine's remembered worktree preference
+    /// (worktrees only make sense for git projects).
+    private func selectTargetProject(_ project: Project, controller: SessionController) {
+        selectedProjectId = project.id
+        let prefersWorktree = project.isGitRepository
+            && environment.composerDefaults.prefersWorktreeForNewWorkspaces(
+                forServer: project.serverId
+            )
+        Task {
+            await controller.selectProject(project)
+            controller.wantsNewWorktree = prefersWorktree
+        }
+    }
+
+    private func selectRunLocation(newWorktree: Bool, controller: SessionController) {
+        environment.composerDefaults.rememberNewWorkspaceWorktreePreference(
+            serverId: controller.project.serverId,
+            createsWorktree: newWorktree
+        )
+        controller.wantsNewWorktree = newWorktree
     }
 
     // MARK: - Title
@@ -315,8 +468,17 @@ struct NewChatView: View {
             // composer state the user left.
             selectedProjectId = controller.project.id
         }
+        // An explicit entry point ("New chat here") re-points even a retained
+        // draft at that project; the generic entry follows the draft.
+        if paneDraftId == nil,
+           let explicitProjectId,
+           controller.project.id != explicitProjectId,
+           let explicit = projects.first(where: { $0.id == explicitProjectId }) {
+            selectTargetProject(explicit, controller: controller)
+        }
         controller.onFirstSend = { [weak controller] in
-            guard let controller, let project = selectedProject else { return }
+            guard let controller else { return }
+            let project = controller.project
             let title = Self.title(from: controller.composerText)
             let session: ChatSession
             if let preCreatedSession,
@@ -330,8 +492,10 @@ struct NewChatView: View {
                 // first send fills in what's now known.
                 session = updated
             } else {
-                // The workspace's one working directory stamps every session
-                // it creates.
+                // Page mode: the session is born in the picked project. A
+                // worktree draft has no directory yet — the worktree
+                // materializes right after this and lands on the records via
+                // onWorktreeCreated below; the workspace inherits it too.
                 let workspace = hostWorkspaceId.flatMap {
                     environment.workspaces.workspace(id: $0)
                 }
@@ -339,12 +503,21 @@ struct NewChatView: View {
                     in: project,
                     title: title,
                     harnessId: controller.selectedHarnessId,
-                    worktreeName: workspace?.worktreeName,
-                    cwd: workspace?.rootDirectory,
+                    worktreeName: workspace?.worktreeName ?? controller.worktreeName,
+                    cwd: workspace?.rootDirectory ?? controller.sessionCwdOverride,
                     syncToServer: false
                 )
             }
             controller.serverSession = session
+            controller.onWorktreeCreated = { [weak projectList = environment.projectList, weak store] worktree in
+                projectList?.setWorktree(
+                    name: worktree.name,
+                    cwd: worktree.path,
+                    for: session.id,
+                    serverId: session.serverId
+                )
+                store?.applyWorktree(worktree, toWorkspaceOf: session.id)
+            }
             // The eager connection may already hold an agent session id; persist
             // it, and capture any future-created id too.
             if let agentSessionId = controller.connectedAgentSessionId {
@@ -385,6 +558,9 @@ struct NewChatView: View {
                 store.removePaneDraft(paneId: paneDraftId)
                 onCreatedInPane(session)
             } else {
+                // The workspace materializes AROUND the sent chat: rooted in
+                // the picked directory, fixed for every tab it ever hosts.
+                store.createWorkspace(for: session, project: project)
                 selection = .session(serverId: session.serverId, id: session.id)
             }
         }

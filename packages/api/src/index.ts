@@ -856,7 +856,12 @@ export const Project = Schema.Struct({
   /// The git remote this project was cloned from (projects added via
   /// /v1/projects/from-git). Machine-independent by design: any machine can
   /// materialize the same project by cloning the same remote.
-  repoUrl: Schema.optional(Schema.String)
+  repoUrl: Schema.optional(Schema.String),
+  /// True for the hidden backing project of a scratch workspace (its folder
+  /// lives under ~/codevisor/workspaces). Derived from the folder location by
+  /// the server on every response, never stored, so clients can filter these
+  /// out of project pickers without a schema migration.
+  isScratch: Schema.optional(Schema.Boolean)
 })
 export type Project = typeof Project.Type
 
@@ -871,6 +876,15 @@ export const CreateProjectRequest = Schema.Struct({
   repoUrl: Schema.optional(Schema.String)
 })
 export type CreateProjectRequest = typeof CreateProjectRequest.Type
+
+/// Create the hidden backing project for a brand-new scratch workspace: the
+/// server allocates a memorable name, creates an empty folder for it under
+/// ~/codevisor/workspaces, and registers a project pointing at that folder.
+export const CreateScratchProjectRequest = Schema.Struct({
+  /// Client-supplied project id so creation is idempotent per workspace.
+  id: Schema.optional(Schema.String)
+})
+export type CreateScratchProjectRequest = typeof CreateScratchProjectRequest.Type
 
 /// Clone a git remote into the machine's managed repos directory and register
 /// the checkout as a project. The client-supplied id lets callers follow the
@@ -1285,6 +1299,10 @@ export const UpdateSessionRequest = Schema.Struct({
   isArchived: Schema.optional(Schema.Boolean),
   title: Schema.optional(Schema.String),
   worktreeName: Schema.optional(Schema.String),
+  /// Move the session to another project before its agent starts. Used when a
+  /// scratch workspace locks in its real project on the first send; the server
+  /// rejects the move once an agent session exists (the cwd is already bound).
+  projectId: Schema.optional(Schema.String),
   /// Sessions created EAGERLY (before the composer chose a harness) carry
   /// harnessId "" — the first send patches the real choice here so the
   /// deferred agent starts under the right harness/account.

@@ -471,6 +471,7 @@ struct WorkspaceScreen: View {
         }
         await controller.connectIfNeeded()
     }
+
 }
 
 // MARK: - New tab page
