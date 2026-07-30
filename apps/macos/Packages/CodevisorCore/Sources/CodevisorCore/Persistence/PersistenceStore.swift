@@ -17,8 +17,8 @@ extension PersistenceStore {
 }
 
 /// Shared handling for a persisted payload that failed to decode: quarantines
-/// the on-disk file (keeping a backup instead of letting the next save
-/// overwrite it), logs a fault, and optionally surfaces a banner. Empty
+/// the durable bytes (keeping a backup instead of letting the next save
+/// overwrite them), logs a fault, and optionally surfaces a banner. Empty
 /// payloads are logged but not quarantined — there is nothing to back up.
 func handleCorruptPayload(
     store: any PersistenceStore,

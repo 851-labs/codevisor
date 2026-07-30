@@ -21,6 +21,7 @@ public protocol WorkspaceRepository: Sendable {
     /// by the user.
     func setAutomaticName(_ name: String, forWorkspace workspaceId: UUID)
     func delete(id: UUID)
+    func removeAll()
     /// Returns the workspace owning this session's chat, creating it from
     /// the seed (and any legacy per-session pane-group states) on first call.
     func ensureWorkspace(
@@ -35,6 +36,12 @@ public protocol WorkspaceRepository: Sendable {
 }
 
 public extension WorkspaceRepository {
+    func removeAll() {
+        for workspace in loadAll() {
+            delete(id: workspace.id)
+        }
+    }
+
     /// A stand-in workspace for a chat that is NO LONGER ACTIVE and has no
     /// persisted workspace (the archive that removed the chat deleted it,
     /// index entry included). Shaped exactly like the record
@@ -192,6 +199,10 @@ public final class DefaultWorkspaceRepository: WorkspaceRepository, @unchecked S
         payload.workspaces.removeAll { $0.id == id }
         payload.sessionIndex = payload.sessionIndex.filter { $0.value != id }
         persist(payload)
+    }
+
+    public func removeAll() {
+        persist(.empty)
     }
 
     /// A nil root fills in once the session's directory resolves. Automatic

@@ -114,7 +114,7 @@ struct HarnessInstallPopover: View {
     let methods: [ServerHarnessInstallMethod]
     let onInstall: (String) -> Void
 
-    @AppStorage private var preferredMethodId: String
+    @ClientPreference private var preferredMethodId: String
     @State private var selectedMethodId: String
 
     init(
@@ -125,9 +125,10 @@ struct HarnessInstallPopover: View {
         self.harness = harness
         self.methods = methods
         self.onInstall = onInstall
-        let storage = AppStorage(
-            wrappedValue: methods.first(where: \.recommended)?.id ?? methods.first?.id ?? "",
-            "harnessInstallMethod.\(harness.id)"
+        let defaultMethod = methods.first(where: \.recommended)?.id ?? methods.first?.id ?? ""
+        let storage = ClientPreference(
+            "harnessInstallMethod.\(harness.id)",
+            default: defaultMethod
         )
         _preferredMethodId = storage
         _selectedMethodId = State(initialValue: storage.wrappedValue)

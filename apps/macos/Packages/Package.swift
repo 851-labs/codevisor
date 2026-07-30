@@ -90,7 +90,11 @@ let package = Package(
                 .product(name: "Sentry", package: "sentry-cocoa")
             ],
             path: "CodevisorCore/Sources/CodevisorCore",
-            swiftSettings: [.swiftLanguageMode(.v6)]
+            swiftSettings: [.swiftLanguageMode(.v6)],
+            linkerSettings: [
+                .linkedLibrary("sqlite3"),
+                .linkedFramework("Security")
+            ]
         ),
         .testTarget(
             name: "CodevisorCoreTests",

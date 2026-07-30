@@ -72,6 +72,45 @@ struct MachineControllerTests {
         #expect(CodevisorMachine.local.serverConfig.bearerToken == nil)
     }
 
+    @Test("Live credential storage keeps tokens out of the machine registry")
+    func remoteTokensUseCredentialStore() throws {
+        let store = InMemoryStore()
+        let credentials = InMemoryMachineCredentialStore()
+        let first = MachineController(
+            store: store,
+            projectList: ProjectListModel(
+                projectRepository: DefaultProjectRepository(store: InMemoryStore()),
+                sessionRepository: DefaultSessionRepository(store: InMemoryStore())
+            ),
+            credentialStore: credentials
+        )
+
+        let remote = try first.addRemote(
+            host: "mac-mini.tailnet.ts.net",
+            token: "device-secret"
+        )
+        #expect(try credentials.token(forMachineID: remote.id) == "device-secret")
+
+        let persisted = try JSONDecoder().decode(
+            MachineRegistry.self,
+            from: #require(store.loadData(forKey: "machines"))
+        )
+        #expect(persisted.remoteMachines.first?.token == nil)
+
+        let second = MachineController(
+            store: store,
+            projectList: ProjectListModel(
+                projectRepository: DefaultProjectRepository(store: InMemoryStore()),
+                sessionRepository: DefaultSessionRepository(store: InMemoryStore())
+            ),
+            credentialStore: credentials
+        )
+        #expect(second.machine(for: remote.id)?.token == "device-secret")
+
+        try second.removeMachine(remote.id)
+        #expect(try credentials.token(forMachineID: remote.id) == nil)
+    }
+
     @Test("Remotes can be named on add and renamed later, persisted")
     func namedAndRenamedRemote() throws {
         let store = InMemoryStore()

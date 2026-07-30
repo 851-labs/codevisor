@@ -53,10 +53,14 @@ private enum HomeOrder: String, CaseIterable {
 struct HomeView: View {
     @Environment(AppEnvironment.self) private var environment
 
-    @AppStorage("sidebar.organization") private var organizationRaw = HomeOrganization.compact.rawValue
-    @AppStorage("sidebar.order") private var orderRaw = HomeOrder.updated.rawValue
-    @AppStorage("sidebar.manualSessionOrder") private var manualSessionOrder = ""
-    @AppStorage("ios.onboarding.dismissed") private var onboardingDismissed = false
+    @ClientPreference("sidebar.organization", default: HomeOrganization.compact.rawValue)
+    private var organizationRaw
+    @ClientPreference("sidebar.order", default: HomeOrder.updated.rawValue)
+    private var orderRaw
+    @ClientPreference("sidebar.manualSessionOrder", default: "")
+    private var manualSessionOrder
+    @ClientPreference("ios.onboarding.dismissed", default: false)
+    private var onboardingDismissed
     @State private var onboardingStart = OnboardingView.Step.welcome
     // Bootstrap adds the dev machine a beat after first render; the grace
     // period keeps onboarding from flashing over an already-paired install.

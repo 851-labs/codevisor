@@ -485,6 +485,10 @@ struct ComposerBar: View {
     /// A picked project carries the machine's remembered worktree preference
     /// (worktrees only make sense for git projects).
     func selectTargetProject(_ project: Project) {
+        environment.composerDefaults.rememberNewWorkspaceProject(
+            serverId: project.serverId,
+            projectId: project.id
+        )
         let prefersWorktree = project.isGitRepository
             && environment.composerDefaults.prefersWorktreeForNewWorkspaces(
                 forServer: project.serverId

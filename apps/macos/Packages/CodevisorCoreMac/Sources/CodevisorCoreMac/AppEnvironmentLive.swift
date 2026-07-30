@@ -2,13 +2,16 @@ import CodevisorCore
 import Foundation
 
 extension AppEnvironment {
-    /// The macOS composition root: durable file-system stores plus the
+    /// The macOS composition root: durable SQLite storage plus the
     /// app-managed local server (with its computer-use bridge). iOS builds its
     /// own `live` variant without a local server — that is why this lives in
     /// CodevisorCoreMac rather than the shared module.
-    public static func live() -> AppEnvironment {
-        CodevisorAppVariant.migrateLegacyApplicationSupportIfNeeded()
-        let store = FileSystemStore(directory: CodevisorAppVariant.applicationSupportURL())
+    public static func live() throws -> AppEnvironment {
+        let storage = try ClientStorageBootstrap.open(
+            directory: CodevisorAppVariant.applicationSupportURL(),
+            credentials: KeychainMachineCredentialStore.shared
+        )
+        let store = storage.store
         let settings = AppSettingsModel(store: store)
         let serverClient = CodevisorServerClient(config: .localDefault)
         let localServer = LocalCodevisorServer(
@@ -25,6 +28,7 @@ extension AppEnvironment {
             composerDrafts: ComposerDraftStore(store: store),
             settings: settings,
             machineStore: store,
+            machineCredentialStore: KeychainMachineCredentialStore.shared,
             legacyCacheMigrationStore: store,
             paneGroups: DefaultPaneGroupRepository(store: store),
             workspaces: DefaultWorkspaceRepository(store: store),

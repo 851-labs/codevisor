@@ -93,6 +93,21 @@ final class SessionStore {
     /// Returns the cached controller for a session, creating + configuring it
     /// (resume id, harness, persistence callback) if needed.
     func controller(for session: ChatSession, project: Project) -> SessionController {
+        // A New Chat chosen from an in-workspace placeholder gets a durable
+        // session record before its first send, but its live configuration
+        // still belongs to the pane draft. Reuse (or create) that exact
+        // controller here. Minting an ordinary session controller would seed
+        // it from the harness default and let focus routing overwrite the
+        // workspace profile before the draft composer appears.
+        if session.agentSessionId?.isEmpty != false,
+           let location = paneDraftLocation(for: session) {
+            return paneDraft(
+                paneId: location.paneId,
+                project: project,
+                preCreatedSession: session,
+                workspaceId: location.workspaceId
+            )
+        }
         let key = SessionKey(session)
         noteAccess(key)
         if let existing = controllers[key] {
@@ -107,9 +122,14 @@ final class SessionStore {
             }
             return existing
         }
+        let workspaceId = environment.workspaces.workspaceId(forSession: session.id)
         let controller = SessionController(
             project: project,
             configCache: environment.configCache,
+            composerDefaults: workspaceId == nil ? nil : environment.composerDefaults,
+            composerDefaultsScope: workspaceId.map {
+                .workspace(id: $0, serverId: session.serverId)
+            },
             serverClient: environment.machines.client(for: session.serverId),
             notificationDelivery: notificationDelivery
         )
@@ -154,11 +174,21 @@ final class SessionStore {
             environment.projectList.projects.first {
                 $0.serverId == project.serverId && $0.id == saved.projectId
             }
+        } ?? environment.composerDefaults.lastProjectId(forServer: project.serverId).flatMap {
+            rememberedId in
+            environment.projectList.activeProjects.first {
+                $0.serverId == project.serverId && $0.id == rememberedId
+            }
         } ?? project
+        environment.composerDefaults.rememberNewWorkspaceProject(
+            serverId: restoredProject.serverId,
+            projectId: restoredProject.id
+        )
         let controller = SessionController(
             project: restoredProject,
             configCache: environment.configCache,
             composerDefaults: environment.composerDefaults,
+            composerDefaultsScope: .newWorkspace(serverId: restoredProject.serverId),
             serverClient: environment.serverClient,
             notificationDelivery: notificationDelivery
         )
@@ -202,11 +232,35 @@ final class SessionStore {
         environment.workspaces.setAutomaticName(worktree.name, forWorkspace: workspaceId)
     }
 
-    /// The cached controller for a session WITHOUT creating one — a pure
-    /// read, safe in view bodies (deciding whether an unstarted chat still
-    /// shows its new-chat composer must not mint controllers).
+    /// The live controller for a session WITHOUT creating one — a pure read,
+    /// safe in view bodies. For an eagerly-created unsent chat this is its
+    /// pane-draft controller, not a second generic session controller.
     func activeController(for session: ChatSession) -> SessionController? {
-        controllers[SessionKey(session)]
+        if let controller = controllers[SessionKey(session)] {
+            return controller
+        }
+        guard session.agentSessionId?.isEmpty != false,
+              let location = paneDraftLocation(for: session) else { return nil }
+        return paneDrafts[location.paneId]
+    }
+
+    /// The live draft selected in an unbound chat pane. Split/tab inheritance
+    /// uses this when the focused pane has no eager session record.
+    func paneDraftController(forPane paneId: UUID) -> SessionController? {
+        paneDrafts[paneId]
+    }
+
+    /// Resolves an eagerly-created unsent session back to the pane that owns
+    /// its draft controller.
+    private func paneDraftLocation(
+        for session: ChatSession
+    ) -> (workspaceId: UUID, paneId: UUID)? {
+        guard let workspaceId = environment.workspaces.workspaceId(forSession: session.id),
+              let workspace = environment.workspaces.workspace(id: workspaceId) else {
+            return nil
+        }
+        let paneId = workspace.pane(containingChat: session.id)?.id
+        return paneId.map { (workspaceId, $0) }
     }
 
     /// The draft controller behind an in-workspace draft chat pane (created
@@ -216,13 +270,18 @@ final class SessionStore {
     func paneDraft(
         paneId: UUID,
         project: Project,
-        preCreatedSession: ChatSession? = nil
+        preCreatedSession: ChatSession? = nil,
+        workspaceId: UUID
     ) -> SessionController {
         if let existing = paneDrafts[paneId] { return existing }
         let controller = SessionController(
             project: project,
             configCache: environment.configCache,
             composerDefaults: environment.composerDefaults,
+            composerDefaultsScope: .workspace(
+                id: workspaceId,
+                serverId: project.serverId
+            ),
             serverClient: environment.serverClient,
             notificationDelivery: notificationDelivery
         )

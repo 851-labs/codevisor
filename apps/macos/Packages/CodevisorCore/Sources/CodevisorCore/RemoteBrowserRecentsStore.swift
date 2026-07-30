@@ -8,10 +8,10 @@ public final class RemoteBrowserRecentsStore {
     private static let key = "remoteBrowserRecents"
     private static let capacity = 6
 
-    private let defaults: UserDefaults
+    private let preferences: ClientPreferences
 
-    public init(defaults: UserDefaults = .standard) {
-        self.defaults = defaults
+    public init(preferences: ClientPreferences = .shared) {
+        self.preferences = preferences
     }
 
     public func recents(forMachine machine: String) -> [String] {
@@ -24,7 +24,7 @@ public final class RemoteBrowserRecentsStore {
         paths.removeAll { $0 == path }
         paths.insert(path, at: 0)
         byMachine[machine] = Array(paths.prefix(Self.capacity))
-        defaults.set(byMachine, forKey: Self.key)
+        preferences.set(byMachine, forKey: Self.key)
     }
 
     public func remove(_ path: String, forMachine machine: String) {
@@ -32,10 +32,10 @@ public final class RemoteBrowserRecentsStore {
         var paths = byMachine[machine] ?? []
         paths.removeAll { $0 == path }
         byMachine[machine] = paths.isEmpty ? nil : paths
-        defaults.set(byMachine, forKey: Self.key)
+        preferences.set(byMachine, forKey: Self.key)
     }
 
     private func all() -> [String: [String]] {
-        defaults.dictionary(forKey: Self.key) as? [String: [String]] ?? [:]
+        preferences.value(forKey: Self.key, default: [:])
     }
 }

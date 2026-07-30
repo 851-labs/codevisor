@@ -9,7 +9,11 @@ struct ComposerDefaultsStoreTests {
     func startsEmpty() {
         let defaults = ComposerDefaultsStore(store: InMemoryStore())
         #expect(defaults.lastHarnessId(forServer: "local") == nil)
+        #expect(defaults.lastProjectId(forServer: "local") == nil)
         #expect(defaults.configSelections(forHarness: "claude-code", onServer: "local").isEmpty)
+        #expect(defaults.lastHarnessId(
+            for: .workspace(id: UUID(), serverId: "local")
+        ) == nil)
     }
 
     @Test("An explicit harness selection is remembered immediately")
@@ -37,6 +41,21 @@ struct ComposerDefaultsStoreTests {
         #expect(ComposerDefaultsStore(store: store).prefersWorktreeForNewWorkspaces(forServer: "local"))
         defaults.rememberNewWorkspaceWorktreePreference(serverId: "local", createsWorktree: false)
         #expect(!defaults.prefersWorktreeForNewWorkspaces(forServer: "local"))
+    }
+
+    @Test("The standalone New Chat project is remembered per machine")
+    func remembersNewWorkspaceProject() {
+        let store = InMemoryStore()
+        let defaults = ComposerDefaultsStore(store: store)
+        let localProject = UUID()
+        let remoteProject = UUID()
+
+        defaults.rememberNewWorkspaceProject(serverId: "local", projectId: localProject)
+        defaults.rememberNewWorkspaceProject(serverId: "remote-a", projectId: remoteProject)
+
+        let reopened = ComposerDefaultsStore(store: store)
+        #expect(reopened.lastProjectId(forServer: "local") == localProject)
+        #expect(reopened.lastProjectId(forServer: "remote-a") == remoteProject)
     }
 
     @Test("Keeps every harness configuration independent")
@@ -103,7 +122,7 @@ struct ComposerDefaultsStoreTests {
         ])
     }
 
-    @Test("Migrates scoped V2 data without losing any harness configuration")
+    @Test("Migrates scoped V2 data without losing machine or workspace configuration")
     func migratesScopedV2() throws {
         let legacy = #"{"machines":{"local":{"lastHarnessId":"claude-code","runInWorktree":true,"configSelections":{"claude-code":{"model":"opus","effort":"high","speed":"fast"},"codex":{"model":"gpt-5.6","effort":"xhigh","speed":"standard"}}},"remote-a":{"lastHarnessId":"codex","runInWorktree":false,"configSelections":{"codex":{"model":"remote-model","effort":"medium"}}}},"workspaces":{"00000000-0000-0000-0000-000000000001":{"lastHarnessId":"codex","configSelections":{"codex":{"model":"older-workspace-model","speed":"fast"}}}}}"#
         let legacyData = Data(legacy.utf8)
@@ -121,12 +140,23 @@ struct ComposerDefaultsStoreTests {
         #expect(defaults.configSelections(forHarness: "codex", onServer: "remote-a") == [
             "model": "remote-model", "effort": "medium"
         ])
-        #expect(store.loadData(forKey: "composer-defaults-pre-v3-backup") == legacyData)
+        let workspaceId = try #require(UUID(
+            uuidString: "00000000-0000-0000-0000-000000000001"
+        ))
+        let workspaceScope = ComposerDefaultsStore.Scope.workspace(
+            id: workspaceId,
+            serverId: "local"
+        )
+        #expect(defaults.lastHarnessId(for: workspaceScope) == "codex")
+        #expect(defaults.configSelections(forHarness: "codex", in: workspaceScope) == [
+            "model": "older-workspace-model", "speed": "fast"
+        ])
+        #expect(store.loadData(forKey: "composer-defaults-pre-v4-backup") == legacyData)
 
         let migrated = try #require(store.loadData(forKey: "composer-defaults"))
         let object = try #require(JSONSerialization.jsonObject(with: migrated) as? [String: Any])
-        #expect(object["version"] as? Int == 3)
-        #expect(object["workspaces"] == nil)
+        #expect(object["version"] as? Int == 4)
+        #expect(object["workspaces"] != nil)
         let machines = try #require(object["machines"] as? [String: Any])
         let local = try #require(machines["local"] as? [String: Any])
         #expect(local["runInWorktree"] == nil)
@@ -143,11 +173,11 @@ struct ComposerDefaultsStoreTests {
         _ = ComposerDefaultsStore(store: store)
 
         #expect(store.loadData(forKey: "composer-defaults") == migrated)
-        #expect(store.loadData(forKey: "composer-defaults-pre-v3-backup") == legacyData)
+        #expect(store.loadData(forKey: "composer-defaults-pre-v4-backup") == legacyData)
     }
 
-    @Test("A V3 payload with the retired lastRunLocation field still decodes")
-    func decodesRetiredRunLocationField() {
+    @Test("Migrates V3 while retaining its machine defaults")
+    func migratesV3() throws {
         let current = #"{"machines":{"local":{"lastHarnessId":"codex","lastRunLocation":"newWorktree","configSelections":{"codex":{"model":"newer-model"}}}},"version":3}"#
         let store = InMemoryStore(storage: ["composer-defaults": Data(current.utf8)])
 
@@ -156,6 +186,33 @@ struct ComposerDefaultsStoreTests {
         #expect(defaults.lastHarnessId(forServer: "local") == "codex")
         #expect(defaults.configSelections(forHarness: "codex", onServer: "local") == [
             "model": "newer-model"
+        ])
+        let migrated = try #require(store.loadData(forKey: "composer-defaults"))
+        let object = try #require(JSONSerialization.jsonObject(with: migrated) as? [String: Any])
+        #expect(object["version"] as? Int == 4)
+    }
+
+    @Test("A V3 upgrade recovers V2 workspace snapshots from the safety backup")
+    func recoversV2WorkspaceBackup() throws {
+        let workspaceId = try #require(UUID(
+            uuidString: "00000000-0000-0000-0000-000000000001"
+        ))
+        let version3 = #"{"machines":{"local":{"lastHarnessId":"codex","configSelections":{"codex":{"model":"global-model"}}}},"version":3}"#
+        let version2 = #"{"machines":{"local":{"lastHarnessId":"codex","configSelections":{"codex":{"model":"global-model"}}}},"workspaces":{"00000000-0000-0000-0000-000000000001":{"lastHarnessId":"opencode","configSelections":{"opencode":{"model":"big-pickle"}}}}}"#
+        let store = InMemoryStore(storage: [
+            "composer-defaults": Data(version3.utf8),
+            "composer-defaults-pre-v3-backup": Data(version2.utf8)
+        ])
+
+        let defaults = ComposerDefaultsStore(store: store)
+        let scope = ComposerDefaultsStore.Scope.workspace(
+            id: workspaceId,
+            serverId: "local"
+        )
+
+        #expect(defaults.lastHarnessId(for: scope) == "opencode")
+        #expect(defaults.configSelections(forHarness: "opencode", in: scope) == [
+            "model": "big-pickle"
         ])
     }
 
@@ -198,10 +255,10 @@ struct ComposerDefaultsStoreTests {
         #expect(defaults.lastHarnessId(forServer: "local") == nil)
         let migrated = try #require(store.loadData(forKey: "composer-defaults"))
         let object = try #require(JSONSerialization.jsonObject(with: migrated) as? [String: Any])
-        #expect(object["version"] as? Int == 3)
+        #expect(object["version"] as? Int == 4)
     }
 
-    @Test("Persists the V3 format across instances without creating a migration backup")
+    @Test("Persists the V4 format across instances without creating a migration backup")
     func persistsCurrentFormat() {
         let store = InMemoryStore()
         let defaults = ComposerDefaultsStore(store: store)
@@ -218,7 +275,7 @@ struct ComposerDefaultsStoreTests {
         #expect(reopened.configSelections(forHarness: "codex", onServer: "local") == [
             "model": "gpt-5.6", "effort": "xhigh", "speed": "fast"
         ])
-        #expect(store.loadData(forKey: "composer-defaults-pre-v3-backup") == nil)
+        #expect(store.loadData(forKey: "composer-defaults-pre-v4-backup") == nil)
     }
 
     @Test("Clear resets active defaults and removes the migration backup")
@@ -226,12 +283,13 @@ struct ComposerDefaultsStoreTests {
         let legacy = #"{"machines":{"local":{"lastHarnessId":"codex","configSelections":{"codex":{"model":"gpt-5.6"}}}},"workspaces":{}}"#
         let store = InMemoryStore(storage: ["composer-defaults": Data(legacy.utf8)])
         let defaults = ComposerDefaultsStore(store: store)
-        #expect(store.loadData(forKey: "composer-defaults-pre-v3-backup") != nil)
+        #expect(store.loadData(forKey: "composer-defaults-pre-v4-backup") != nil)
 
         defaults.clear()
 
         #expect(defaults.lastHarnessId(forServer: "local") == nil)
         #expect(defaults.configSelections(forHarness: "codex", onServer: "local").isEmpty)
+        #expect(store.loadData(forKey: "composer-defaults-pre-v4-backup") == nil)
         #expect(store.loadData(forKey: "composer-defaults-pre-v3-backup") == nil)
     }
 
@@ -252,7 +310,7 @@ struct ComposerDefaultsStoreTests {
     }
 
     /// Schema tripwire: changing this string requires a decoder fixture for
-    /// this exact V3 shape before the golden value is updated.
+    /// this exact V4 shape before the golden value is updated.
     @Test("Persisted wire format is stable — schema changes require a migration")
     func wireFormatIsStable() throws {
         let store = InMemoryStore()
@@ -266,7 +324,49 @@ struct ComposerDefaultsStoreTests {
         let data = try #require(store.loadData(forKey: "composer-defaults"))
         let object = try JSONSerialization.jsonObject(with: data)
         let canonical = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
-        #expect(String(decoding: canonical, as: UTF8.self) == #"{"machines":{"local":{"configSelections":{"claude-code":{"effort":"high","model":"opus"}},"lastHarnessId":"claude-code"}},"version":3}"#)
+        #expect(String(decoding: canonical, as: UTF8.self) == #"{"machines":{"local":{"configSelections":{"claude-code":{"effort":"high","model":"opus"}},"lastHarnessId":"claude-code"}},"version":4,"workspaces":{}}"#)
+    }
+
+    @Test("Workspace inheritance is isolated and follows the last focused chat")
+    func workspaceInheritance() {
+        let store = InMemoryStore()
+        let defaults = ComposerDefaultsStore(store: store)
+        let workspaceA = UUID()
+        let workspaceB = UUID()
+
+        defaults.rememberFocusedChat(
+            workspaceId: workspaceA,
+            serverId: "local",
+            harnessId: "opencode",
+            configValues: ["model": "big-pickle", "effort": "high"]
+        )
+        defaults.rememberFocusedChat(
+            workspaceId: workspaceB,
+            serverId: "local",
+            harnessId: "codex",
+            configValues: ["model": "gpt-5.6"]
+        )
+        // Focusing another chat in A replaces, rather than merges with, the
+        // prior chat's exact selected-harness snapshot.
+        defaults.rememberFocusedChat(
+            workspaceId: workspaceA,
+            serverId: "local",
+            harnessId: "opencode",
+            configValues: ["model": "small-pickle"]
+        )
+
+        let reopened = ComposerDefaultsStore(store: store)
+        let scopeA = ComposerDefaultsStore.Scope.workspace(id: workspaceA, serverId: "local")
+        let scopeB = ComposerDefaultsStore.Scope.workspace(id: workspaceB, serverId: "local")
+        #expect(reopened.lastHarnessId(for: scopeA) == "opencode")
+        #expect(reopened.configSelections(forHarness: "opencode", in: scopeA) == [
+            "model": "small-pickle"
+        ])
+        #expect(reopened.lastHarnessId(for: scopeB) == "codex")
+        #expect(reopened.configSelections(forHarness: "codex", in: scopeB) == [
+            "model": "gpt-5.6"
+        ])
+        #expect(reopened.lastHarnessId(forServer: "local") == nil)
     }
 
     @Test("Never shares composer choices between machines")

@@ -130,6 +130,10 @@ public final class MachineController {
     public typealias ClientFactory = @MainActor (CodevisorMachine) -> any CodevisorServerClienting
 
     private let store: any PersistenceStore
+    /// Live apps keep bearer tokens in Keychain. Nil preserves the embedded
+    /// token behavior for isolated previews/tests that do not have a device
+    /// credential store.
+    private let credentialStore: (any MachineCredentialStore)?
     private let projectList: ProjectListModel
     private let localServer: (any LocalServerControlling)?
     private let clientFactory: ClientFactory
@@ -138,6 +142,7 @@ public final class MachineController {
     /// restarts into its updated version. Injectable so tests run fast.
     private let updatePollInterval: Duration
     private let updatePollAttempts: Int
+    @ObservationIgnored private var credentialReadFailures: Set<String> = []
     @ObservationIgnored private var eventSyncTask: Task<Void, Never>?
     @ObservationIgnored private var pendingRefreshTask: Task<Void, Never>?
     /// Invoked when a `harness.lifecycle.updated` event arrives for a machine
@@ -148,12 +153,14 @@ public final class MachineController {
     public init(
         store: any PersistenceStore,
         projectList: ProjectListModel,
+        credentialStore: (any MachineCredentialStore)? = nil,
         localServer: (any LocalServerControlling)? = nil,
         clientFactory: ClientFactory? = nil,
         updatePollInterval: Duration = .seconds(2),
         updatePollAttempts: Int = 90
     ) {
         self.store = store
+        self.credentialStore = credentialStore
         self.projectList = projectList
         self.localServer = localServer
         self.clientFactory = clientFactory ?? { CodevisorServerClient(config: $0.serverConfig) }
@@ -175,6 +182,52 @@ public final class MachineController {
             }
         } else {
             registry = MachineRegistry()
+        }
+        if let credentialStore {
+            var migratedCredentialIDs: Set<String> = []
+            for index in registry.remoteMachines.indices {
+                let id = registry.remoteMachines[index].id
+                do {
+                    if let embedded = registry.remoteMachines[index].token, !embedded.isEmpty {
+                        try credentialStore.saveToken(embedded, forMachineID: id)
+                        guard try credentialStore.token(forMachineID: id) == embedded else {
+                            throw ClientDatabaseError(
+                                operation: "credential read-back",
+                                detail: "Token for \(id) did not round-trip"
+                            )
+                        }
+                        migratedCredentialIDs.insert(id)
+                    }
+                    registry.remoteMachines[index].token =
+                        try credentialStore.token(forMachineID: id)
+                    credentialReadFailures.remove(id)
+                } catch {
+                    // A locked or temporarily unavailable Keychain must not
+                    // make a valid machine registry look corrupt or cause a
+                    // later unrelated save to delete its credential.
+                    credentialReadFailures.insert(id)
+                    Log.persistence.error(
+                        "Failed to load credential for \(id, privacy: .public): \(String(describing: error), privacy: .public)"
+                    )
+                }
+            }
+            if !migratedCredentialIDs.isEmpty {
+                do {
+                    var sanitized = registry
+                    for index in sanitized.remoteMachines.indices
+                    where migratedCredentialIDs.contains(sanitized.remoteMachines[index].id) {
+                        sanitized.remoteMachines[index].token = nil
+                    }
+                    try store.saveData(
+                        JSONEncoder().encode(sanitized.normalized()),
+                        forKey: "machines"
+                    )
+                } catch {
+                    Log.persistence.error(
+                        "Failed to sanitize machine credentials: \(String(describing: error), privacy: .public)"
+                    )
+                }
+            }
         }
         projectList.selectServer(
             serverId: selectedMachine.id,
@@ -323,12 +376,32 @@ public final class MachineController {
 
     public func removeMachine(_ id: String) throws {
         guard id != CodevisorMachine.local.id else { throw MachineControllerError.cannotRemoveLocal }
+        try credentialStore?.removeToken(forMachineID: id)
         registry.remoteMachines.removeAll { $0.id == id }
         if registry.selectedMachineId == id {
             registry.selectedMachineId = CodevisorMachine.local.id
             projectList.selectServer(serverId: CodevisorMachine.local.id, serverClient: selectedClient)
         }
         persist()
+    }
+
+    public func removeAllRemoteMachines() {
+        for machine in registry.remoteMachines {
+            do {
+                try credentialStore?.removeToken(forMachineID: machine.id)
+            } catch {
+                Log.persistence.error(
+                    "Failed to remove credential for \(machine.id, privacy: .public): \(String(describing: error), privacy: .public)"
+                )
+            }
+        }
+        credentialReadFailures.removeAll()
+        registry = MachineRegistry()
+        persist()
+        projectList.selectServer(
+            serverId: CodevisorMachine.local.id,
+            serverClient: selectedClient
+        )
     }
 
     public func prepareSelectedMachine() async {
@@ -615,7 +688,26 @@ public final class MachineController {
 
     private func persist() {
         do {
-            try store.saveData(JSONEncoder().encode(registry.normalized()), forKey: key)
+            var persisted = registry.normalized()
+            if let credentialStore {
+                for index in persisted.remoteMachines.indices {
+                    let machine = persisted.remoteMachines[index]
+                    if let token = machine.token, !token.isEmpty {
+                        try credentialStore.saveToken(token, forMachineID: machine.id)
+                        guard try credentialStore.token(forMachineID: machine.id) == token else {
+                            throw ClientDatabaseError(
+                                operation: "credential read-back",
+                                detail: "Token for \(machine.id) did not round-trip"
+                            )
+                        }
+                        credentialReadFailures.remove(machine.id)
+                    } else if !credentialReadFailures.contains(machine.id) {
+                        try credentialStore.removeToken(forMachineID: machine.id)
+                    }
+                    persisted.remoteMachines[index].token = nil
+                }
+            }
+            try store.saveData(JSONEncoder().encode(persisted), forKey: key)
         } catch {
             Log.persistence.error("Failed to save \(self.key, privacy: .public): \(String(describing: error), privacy: .public)")
         }

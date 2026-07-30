@@ -5,29 +5,43 @@ import SwiftUI
 
 @main
 struct CodevisorApp: App {
-    @State private var environment: AppEnvironment
+    @State private var environment: AppEnvironment?
+    @State private var startupError: String?
 
     init() {
-        _environment = State(initialValue: Self.makeEnvironment())
+        do {
+            _environment = State(initialValue: try Self.makeEnvironment())
+            _startupError = State(initialValue: nil)
+        } catch {
+            _environment = State(initialValue: nil)
+            _startupError = State(initialValue: error.localizedDescription)
+        }
     }
 
     var body: some Scene {
         WindowGroup {
-            HomeView()
-                // Order matters: ThemedRoot reads AppEnvironment, so the
-                // environment injection must wrap it (i.e. come after).
-                .modifier(ThemedRoot())
-                .environment(environment)
-                .preferredColorScheme(colorScheme)
-                .task { await bootstrap() }
-            // `codevisor://add-machine` deeplinks are handled inside
-            // HomeView, which owns the confirmation alerts and can present
-            // them over the onboarding cover.
+            if let environment {
+                HomeView()
+                    // Order matters: ThemedRoot reads AppEnvironment, so the
+                    // environment injection must wrap it (i.e. come after).
+                    .modifier(ThemedRoot())
+                    .environment(environment)
+                    .preferredColorScheme(colorScheme(for: environment))
+                    .task { await bootstrap(environment: environment) }
+                // `codevisor://add-machine` deeplinks are handled inside
+                // HomeView, which owns the confirmation alerts and can present
+                // them over the onboarding cover.
+            } else {
+                ClientDataStartupFailureView(
+                    message: startupError ?? "The client database could not be opened.",
+                    retry: retryStartup
+                )
+            }
         }
     }
 
     /// Applies the Appearance setting; `.system` follows the device.
-    private var colorScheme: ColorScheme? {
+    private func colorScheme(for environment: AppEnvironment) -> ColorScheme? {
         switch environment.settings.settings.themeMode {
         case .light: .light
         case .dark: .dark
@@ -35,12 +49,16 @@ struct CodevisorApp: App {
         }
     }
 
-    /// A minimal iOS composition root: durable file-system stores, no local
+    /// A minimal iOS composition root: durable SQLite storage, no local
     /// server (iOS is a pure client — `localServer` stays nil).
-    private static func makeEnvironment() -> AppEnvironment {
+    private static func makeEnvironment() throws -> AppEnvironment {
         let directory = URL.applicationSupportDirectory
             .appendingPathComponent("Codevisor", isDirectory: true)
-        let store = FileSystemStore(directory: directory)
+        let storage = try ClientStorageBootstrap.open(
+            directory: directory,
+            credentials: KeychainMachineCredentialStore.shared
+        )
+        let store = storage.store
         return AppEnvironment(
             projectRepository: DefaultProjectRepository(store: store),
             sessionRepository: DefaultSessionRepository(store: store),
@@ -49,12 +67,23 @@ struct CodevisorApp: App {
             composerDrafts: ComposerDraftStore(store: store),
             settings: AppSettingsModel(store: store),
             machineStore: store,
+            machineCredentialStore: KeychainMachineCredentialStore.shared,
+            legacyCacheMigrationStore: store,
             paneGroups: DefaultPaneGroupRepository(store: store),
             workspaces: DefaultWorkspaceRepository(store: store)
         )
     }
 
-    private func bootstrap() async {
+    private func retryStartup() {
+        do {
+            environment = try Self.makeEnvironment()
+            startupError = nil
+        } catch {
+            startupError = error.localizedDescription
+        }
+    }
+
+    private func bootstrap(environment: AppEnvironment) async {
         // Refreshes machine status, pulls projects/sessions, starts the
         // event-stream sync. On iOS the selected machine is always remote;
         // prepareSelectedMachine never starts a local server here.
@@ -62,5 +91,22 @@ struct CodevisorApp: App {
         // automatically — it shows up as a quick add in onboarding and
         // Settings → Machines (CodevisorAppVariant.developmentRemote).
         await environment.prepareSelectedMachine()
+    }
+}
+
+private struct ClientDataStartupFailureView: View {
+    let message: String
+    let retry: () -> Void
+
+    var body: some View {
+        ContentUnavailableView {
+            Label("Codevisor Couldn't Open Its Data", systemImage: "externaldrive.badge.exclamationmark")
+        } description: {
+            Text("The app stopped before loading or syncing so your existing data remains intact.\n\n\(message)")
+        } actions: {
+            Button("Try Again", action: retry)
+                .buttonStyle(.borderedProminent)
+        }
+        .padding(24)
     }
 }

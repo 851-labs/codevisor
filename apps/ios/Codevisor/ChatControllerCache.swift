@@ -35,6 +35,7 @@ final class ChatControllerCache {
     func controller(
         for session: ChatSession,
         project: Project,
+        workspaceId: UUID,
         environment: AppEnvironment
     ) -> SessionController {
         let key = Key(serverId: session.serverId, id: session.id)
@@ -52,6 +53,10 @@ final class ChatControllerCache {
             project: project,
             configCache: environment.configCache,
             composerDefaults: environment.composerDefaults,
+            composerDefaultsScope: .workspace(
+                id: workspaceId,
+                serverId: session.serverId
+            ),
             serverClient: environment.machines.client(for: session.serverId)
         )
         controller.configureExistingSession(session)
@@ -97,11 +102,21 @@ final class ChatControllerCache {
             environment.projectList.projects.first {
                 $0.serverId == serverId && $0.id == saved.projectId
             }
+        } ?? environment.composerDefaults.lastProjectId(forServer: serverId).flatMap {
+            rememberedId in
+            environment.projectList.activeProjects.first {
+                $0.serverId == serverId && $0.id == rememberedId
+            }
         } ?? preferredProject
+        environment.composerDefaults.rememberNewWorkspaceProject(
+            serverId: serverId,
+            projectId: restoredProject.id
+        )
         let controller = SessionController(
             project: restoredProject,
             configCache: environment.configCache,
             composerDefaults: environment.composerDefaults,
+            composerDefaultsScope: .newWorkspace(serverId: serverId),
             serverClient: environment.serverClient
         )
         controller.applyComposerDefaults()

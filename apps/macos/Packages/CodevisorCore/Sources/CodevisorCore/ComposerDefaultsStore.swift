@@ -1,21 +1,34 @@
 import Foundation
 
-/// Persists explicit composer and workspace-creation selections. The harness
-/// choice and the new-workspace worktree preference are remembered per
-/// machine, while model/reasoning/speed values are remembered independently
-/// for every harness on that machine.
+/// Persists explicit composer and workspace-creation selections.
 ///
-/// Picker actions update this store immediately. Session creation is not a
-/// persistence boundary: abandoning an unsent chat does not undo an explicit
-/// selection, and every subsequent composer starts from the last thing the
-/// user picked.
+/// A machine-scoped profile drives the standalone New Chat page: project,
+/// worktree choice, harness, and per-harness model/reasoning/speed values.
+/// Every workspace has a separate profile representing the last chat focused
+/// there. New chat tabs and splits inherit that profile without leaking their
+/// choices into the standalone page or another workspace.
 @MainActor
 public final class ComposerDefaultsStore {
-    nonisolated private static let schemaVersion = 3
+    nonisolated private static let schemaVersion = 4
     nonisolated private static let legacyServerId = "local"
+
+    public enum Scope: Sendable, Equatable {
+        case newWorkspace(serverId: String)
+        case workspace(id: UUID, serverId: String)
+
+        public var serverId: String {
+            switch self {
+            case let .newWorkspace(serverId), let .workspace(_, serverId):
+                serverId
+            }
+        }
+    }
 
     private struct MachineDefaults: Codable {
         var lastHarnessId: String?
+        /// The project used by the last standalone New Chat page on this
+        /// machine. UUIDs that no longer exist are ignored by callers.
+        var lastProjectId: UUID?
         /// Whether the last workspace created on this machine used a fresh
         /// git worktree — seeds the New Workspace form's toggle.
         var newWorkspaceInWorktree: Bool?
@@ -25,15 +38,35 @@ public final class ComposerDefaultsStore {
         var configSelections: [String: [String: String]] = [:]
     }
 
+    private struct WorkspaceDefaults: Codable {
+        /// Protects against a stale workspace id being interpreted under a
+        /// different machine after an import.
+        var serverId: String?
+        var lastHarnessId: String?
+        var configSelections: [String: [String: String]] = [:]
+    }
+
     private struct Defaults: Codable {
         var version = ComposerDefaultsStore.schemaVersion
         var machines: [String: MachineDefaults] = [:]
+        var workspaces: [String: WorkspaceDefaults] = [:]
     }
 
-    /// The schema shipped immediately before V3. Workspace values were
-    /// snapshots written alongside the machine value; the machine layer is
-    /// therefore already the correct global last-used value. Decode the whole
-    /// shape explicitly so an update never mistakes it for corrupt data.
+    /// The format shipped immediately before workspace-scoped inheritance.
+    private struct DefaultsV3: Decodable {
+        var version: Int?
+        var machines: [String: MachineDefaultsV3]
+    }
+
+    private struct MachineDefaultsV3: Decodable {
+        var lastHarnessId: String?
+        var newWorkspaceInWorktree: Bool?
+        var configSelections: [String: [String: String]]?
+    }
+
+    /// V2 already carried workspace snapshots. V3 retired them; V4 restores
+    /// the feature with clearer "last focused chat" semantics. Preserve V2
+    /// snapshots both on a direct upgrade and from V3's safety backup.
     private struct ScopedDefaultsV2: Decodable {
         var machines: [String: MachineDefaultsV2]
         var workspaces: [String: WorkspaceDefaultsV2]?
@@ -66,12 +99,14 @@ public final class ComposerDefaultsStore {
     private let store: any PersistenceStore
     private let key: String
     private let migrationBackupKey: String
+    private let legacyMigrationBackupKey: String
     private var defaults: Defaults
 
     public init(store: any PersistenceStore, key: String = "composer-defaults") {
         self.store = store
         self.key = key
-        migrationBackupKey = "\(key)-pre-v3-backup"
+        migrationBackupKey = "\(key)-pre-v4-backup"
+        legacyMigrationBackupKey = "\(key)-pre-v3-backup"
         guard let data = store.loadData(forKey: key) else {
             defaults = Defaults()
             return
@@ -84,6 +119,25 @@ public final class ComposerDefaultsStore {
             return
         }
 
+        if let version3 = try? decoder.decode(DefaultsV3.self, from: data),
+           version3.version == 3 {
+            let recoveredWorkspaces = store.loadData(forKey: legacyMigrationBackupKey)
+                .flatMap { try? decoder.decode(ScopedDefaultsV2.self, from: $0) }
+                .map(Self.workspaceDefaults(from:)) ?? [:]
+            defaults = Defaults(
+                machines: version3.machines.mapValues { machine in
+                    MachineDefaults(
+                        lastHarnessId: machine.lastHarnessId,
+                        newWorkspaceInWorktree: machine.newWorkspaceInWorktree,
+                        configSelections: machine.configSelections ?? [:]
+                    )
+                },
+                workspaces: recoveredWorkspaces
+            )
+            backupAndPersistMigratedPayload(data)
+            return
+        }
+
         if let scoped = try? decoder.decode(ScopedDefaultsV2.self, from: data) {
             defaults = Defaults(
                 machines: scoped.machines.mapValues { machine in
@@ -91,7 +145,8 @@ public final class ComposerDefaultsStore {
                         lastHarnessId: machine.lastHarnessId,
                         configSelections: machine.configSelections ?? [:]
                     )
-                }
+                },
+                workspaces: Self.workspaceDefaults(from: scoped)
             )
             backupAndPersistMigratedPayload(data)
             return
@@ -115,9 +170,33 @@ public final class ComposerDefaultsStore {
         handleCorruptPayload(store: store, key: key, data: data, error: error)
     }
 
+    private static func workspaceDefaults(
+        from scoped: ScopedDefaultsV2
+    ) -> [String: WorkspaceDefaults] {
+        (scoped.workspaces ?? [:]).mapValues { workspace in
+            WorkspaceDefaults(
+                lastHarnessId: workspace.lastHarnessId,
+                configSelections: workspace.configSelections ?? [:]
+            )
+        }
+    }
+
     /// The harness most recently selected in a composer on this machine.
     public func lastHarnessId(forServer serverId: String) -> String? {
-        defaults.machines[serverId]?.lastHarnessId
+        lastHarnessId(for: .newWorkspace(serverId: serverId))
+    }
+
+    /// The harness a new composer in this scope should start with.
+    public func lastHarnessId(for scope: Scope) -> String? {
+        switch scope {
+        case let .newWorkspace(serverId):
+            return defaults.machines[serverId]?.lastHarnessId
+        case let .workspace(id, serverId):
+            guard let workspace = workspaceDefaults(id: id, serverId: serverId) else {
+                return nil
+            }
+            return workspace.lastHarnessId
+        }
     }
 
     /// The remembered option ids and values for one harness on this machine.
@@ -125,14 +204,60 @@ public final class ComposerDefaultsStore {
         forHarness harnessId: String,
         onServer serverId: String
     ) -> [String: String] {
-        defaults.machines[serverId]?.configSelections[harnessId] ?? [:]
+        configSelections(
+            forHarness: harnessId,
+            in: .newWorkspace(serverId: serverId)
+        )
+    }
+
+    /// The remembered option ids and values for one harness in this scope.
+    public func configSelections(
+        forHarness harnessId: String,
+        in scope: Scope
+    ) -> [String: String] {
+        switch scope {
+        case let .newWorkspace(serverId):
+            return defaults.machines[serverId]?.configSelections[harnessId] ?? [:]
+        case let .workspace(id, serverId):
+            return workspaceDefaults(id: id, serverId: serverId)?
+                .configSelections[harnessId] ?? [:]
+        }
     }
 
     /// Records an explicit harness picker action immediately.
     public func rememberHarnessSelection(serverId: String, harnessId: String?) {
+        rememberHarnessSelection(
+            in: .newWorkspace(serverId: serverId),
+            harnessId: harnessId
+        )
+    }
+
+    /// Records an explicit harness picker action in the appropriate profile.
+    public func rememberHarnessSelection(in scope: Scope, harnessId: String?) {
         guard let harnessId, !harnessId.isEmpty else { return }
+        switch scope {
+        case let .newWorkspace(serverId):
+            var machine = defaults.machines[serverId] ?? MachineDefaults()
+            machine.lastHarnessId = harnessId
+            defaults.machines[serverId] = machine
+        case let .workspace(id, serverId):
+            var workspace = workspaceDefaults(id: id, serverId: serverId)
+                ?? WorkspaceDefaults(serverId: serverId)
+            workspace.serverId = serverId
+            workspace.lastHarnessId = harnessId
+            defaults.workspaces[id.uuidString] = workspace
+        }
+        persist()
+    }
+
+    /// The project used by the last standalone New Chat page on this machine.
+    public func lastProjectId(forServer serverId: String) -> UUID? {
+        defaults.machines[serverId]?.lastProjectId
+    }
+
+    public func rememberNewWorkspaceProject(serverId: String, projectId: UUID) {
         var machine = defaults.machines[serverId] ?? MachineDefaults()
-        machine.lastHarnessId = harnessId
+        machine.lastProjectId = projectId
         defaults.machines[serverId] = machine
         persist()
     }
@@ -165,12 +290,109 @@ public final class ComposerDefaultsStore {
         harnessId: String?,
         configValues: [String: String]
     ) {
+        rememberConfigSelections(
+            in: .newWorkspace(serverId: serverId),
+            harnessId: harnessId,
+            configValues: configValues
+        )
+    }
+
+    /// Merges explicit picker changes into the relevant profile.
+    public func rememberConfigSelections(
+        in scope: Scope,
+        harnessId: String?,
+        configValues: [String: String]
+    ) {
         guard let harnessId, !harnessId.isEmpty, !configValues.isEmpty else { return }
+        switch scope {
+        case let .newWorkspace(serverId):
+            var machine = defaults.machines[serverId] ?? MachineDefaults()
+            var selections = machine.configSelections[harnessId] ?? [:]
+            selections.merge(configValues) { _, latest in latest }
+            machine.configSelections[harnessId] = selections
+            defaults.machines[serverId] = machine
+        case let .workspace(id, serverId):
+            var workspace = workspaceDefaults(id: id, serverId: serverId)
+                ?? WorkspaceDefaults(serverId: serverId)
+            var selections = workspace.configSelections[harnessId] ?? [:]
+            selections.merge(configValues) { _, latest in latest }
+            workspace.serverId = serverId
+            workspace.configSelections[harnessId] = selections
+            defaults.workspaces[id.uuidString] = workspace
+        }
+        persist()
+    }
+
+    /// Makes one chat the workspace's inheritance source. Unlike picker
+    /// changes, focusing a different chat replaces that harness's snapshot:
+    /// hidden values from the previously focused chat must not bleed into it.
+    public func rememberFocusedChat(
+        workspaceId: UUID,
+        serverId: String,
+        harnessId: String?,
+        configValues: [String: String]
+    ) {
+        guard let harnessId, !harnessId.isEmpty else { return }
+        var workspace = workspaceDefaults(id: workspaceId, serverId: serverId)
+            ?? WorkspaceDefaults(serverId: serverId)
+        workspace.serverId = serverId
+        workspace.lastHarnessId = harnessId
+        if !configValues.isEmpty {
+            workspace.configSelections[harnessId] = configValues
+        }
+        defaults.workspaces[workspaceId.uuidString] = workspace
+        persist()
+    }
+
+    /// One-time backfill for clients that predate standalone-page project
+    /// memory. Existing explicit choices always win.
+    public func backfillNewWorkspaceDefaults(
+        serverId: String,
+        projectId: UUID,
+        createsWorktree: Bool,
+        harnessId: String?,
+        configValues: [String: String]
+    ) {
         var machine = defaults.machines[serverId] ?? MachineDefaults()
-        var selections = machine.configSelections[harnessId] ?? [:]
-        selections.merge(configValues) { _, latest in latest }
-        machine.configSelections[harnessId] = selections
+        var changed = false
+        if machine.lastProjectId == nil {
+            machine.lastProjectId = projectId
+            changed = true
+        }
+        if machine.newWorkspaceInWorktree == nil {
+            machine.newWorkspaceInWorktree = createsWorktree
+            changed = true
+        }
+        if machine.lastHarnessId == nil, let harnessId, !harnessId.isEmpty {
+            machine.lastHarnessId = harnessId
+            changed = true
+        }
+        if let harnessId, !harnessId.isEmpty,
+           machine.configSelections[harnessId] == nil,
+           !configValues.isEmpty {
+            machine.configSelections[harnessId] = configValues
+            changed = true
+        }
+        guard changed else { return }
         defaults.machines[serverId] = machine
+        persist()
+    }
+
+    /// One-time workspace backfill from the best available persisted chat.
+    /// A V2-restored or already-focused profile is never overwritten.
+    public func backfillWorkspaceDefaults(
+        workspaceId: UUID,
+        serverId: String,
+        harnessId: String?,
+        configValues: [String: String]
+    ) {
+        guard defaults.workspaces[workspaceId.uuidString] == nil,
+              let harnessId, !harnessId.isEmpty else { return }
+        defaults.workspaces[workspaceId.uuidString] = WorkspaceDefaults(
+            serverId: serverId,
+            lastHarnessId: harnessId,
+            configSelections: configValues.isEmpty ? [:] : [harnessId: configValues]
+        )
         persist()
     }
 
@@ -178,12 +400,22 @@ public final class ComposerDefaultsStore {
     /// "Delete all data").
     public func clear() {
         defaults = Defaults()
-        do {
-            try store.removeData(forKey: migrationBackupKey)
-        } catch {
-            Log.persistence.error("Failed to remove \(self.migrationBackupKey, privacy: .public): \(String(describing: error), privacy: .public)")
+        for backupKey in [migrationBackupKey, legacyMigrationBackupKey] {
+            do {
+                try store.removeData(forKey: backupKey)
+            } catch {
+                Log.persistence.error("Failed to remove \(backupKey, privacy: .public): \(String(describing: error), privacy: .public)")
+            }
         }
         persist()
+    }
+
+    private func workspaceDefaults(id: UUID, serverId: String) -> WorkspaceDefaults? {
+        guard let workspace = defaults.workspaces[id.uuidString],
+              workspace.serverId == nil || workspace.serverId == serverId else {
+            return nil
+        }
+        return workspace
     }
 
     private func backupAndPersistMigratedPayload(_ data: Data) {

@@ -160,6 +160,7 @@ struct SessionContainerView: View {
                    leaf != activeLeafId {
                     activateLeaf(leaf)
                 }
+                rememberWorkspaceDefaults(from: chatId)
                 if chatId != session.id {
                     onFocusedChatChanged?(chatId)
                 }
@@ -167,6 +168,7 @@ struct SessionContainerView: View {
             store.markOpened(session.id, serverId: session.serverId)
             let controller = store.controller(for: session, project: project)
             self.controller = controller
+            controller.rememberCurrentComposerConfiguration()
             // UNSTARTED chats (eagerly created records with no first message
             // yet) must not connect here: connecting launches an agent with
             // the DEFAULT harness, silently making the choice their new-chat
@@ -321,6 +323,12 @@ struct SessionContainerView: View {
     private func addCenterTab() {
         var workspace = store.workspace(for: session, project: project)
         if let current = workspace.selectedCenterTab {
+            rememberWorkspaceDefaults(
+                fromLeaf: activeLeafId ?? current.activeLeafId,
+                in: workspace
+            )
+        }
+        if let current = workspace.selectedCenterTab {
             for leaf in current.root.allGroups {
                 configuredCenterModel(leafId: leaf.id).selectedPane?.visibilityChanged(false)
             }
@@ -467,6 +475,7 @@ struct SessionContainerView: View {
     /// their owning leaf; keyboard/menu commands pass the active leaf.
     private func splitLeaf(_ leafId: UUID, edge: SplitEdge) {
         var workspace = store.workspace(for: session, project: project)
+        rememberWorkspaceDefaults(fromLeaf: leafId, in: workspace)
         guard let tabIndex = workspace.centerTabs.firstIndex(where: {
             $0.root.group(id: leafId) != nil
         }) else { return }
@@ -665,6 +674,9 @@ struct SessionContainerView: View {
             activateLeaf(leafId)
             if let model {
                 sessionFocus.centerGroup = model
+                if let chatId = model.state.selectedPane?.chatSessionId {
+                    rememberWorkspaceDefaults(from: chatId)
+                }
             }
         }
         model.workspaceCommandHandler = { command in
@@ -842,6 +854,37 @@ struct SessionContainerView: View {
             }
             sessionFocus.centerGroup = configuredCenterModel(leafId: leafId)
         }
+    }
+
+    /// Promotes the focused chat's live configuration into the workspace
+    /// inheritance profile. An eagerly-created unsent chat has its separate
+    /// pane-draft controller and already writes to this scope directly, so do
+    /// not mint a duplicate session controller for it.
+    private func rememberWorkspaceDefaults(fromLeaf leafId: UUID, in workspace: Workspace) {
+        guard let selected = workspace.selectedPane(inLeaf: leafId),
+              selected.kind == .chat else { return }
+        if let chatId = selected.chatSessionId {
+            rememberWorkspaceDefaults(from: chatId)
+        } else {
+            store.paneDraftController(forPane: selected.id)?
+                .rememberCurrentComposerConfiguration()
+        }
+    }
+
+    private func rememberWorkspaceDefaults(from chatId: UUID) {
+        guard let chat = environment.projectList.sessions.first(where: {
+            $0.serverId == session.serverId && $0.id == chatId
+        }) else { return }
+        if let live = store.activeController(for: chat) {
+            live.rememberCurrentComposerConfiguration()
+            return
+        }
+        guard chat.agentSessionId?.isEmpty == false,
+              let chatProject = environment.projectList.projects.first(where: {
+                  $0.serverId == chat.serverId && $0.id == chat.projectId
+              }) else { return }
+        store.controller(for: chat, project: chatProject)
+            .rememberCurrentComposerConfiguration()
     }
 
     /// Whether an established chat should use the centered New Chat treatment.

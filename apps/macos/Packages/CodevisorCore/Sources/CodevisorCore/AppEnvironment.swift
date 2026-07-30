@@ -34,6 +34,7 @@ public final class AppEnvironment {
     /// harness catalog alive (most notably an already-mounted new-chat page).
     private var harnessCatalogRevisions: [String: UInt64] = [:]
     private var harnessLifecycleByServer: [String: [ServerHarness]] = [:]
+    private let clientDataResetter: (any ClientDataResetting)?
 
     public var serverClient: any CodevisorServerClienting {
         machines.selectedClient
@@ -61,6 +62,7 @@ public final class AppEnvironment {
         composerDrafts: ComposerDraftStore? = nil,
         settings: AppSettingsModel,
         machineStore: any PersistenceStore = InMemoryStore(),
+        machineCredentialStore: (any MachineCredentialStore)? = nil,
         legacyCacheMigrationStore: (any PersistenceStore)? = nil,
         paneGroups: any PaneGroupRepository = DefaultPaneGroupRepository(store: InMemoryStore()),
         workspaces: any WorkspaceRepository = DefaultWorkspaceRepository(store: InMemoryStore()),
@@ -96,9 +98,11 @@ public final class AppEnvironment {
         self.composerDrafts = composerDrafts ?? ComposerDraftStore(store: InMemoryStore())
         self.settings = settings
         self.localServer = localServer
+        self.clientDataResetter = machineStore as? any ClientDataResetting
         self.machines = MachineController(
             store: machineStore,
             projectList: projectList,
+            credentialStore: machineCredentialStore,
             localServer: localServer,
             clientFactory: machineClientFactory
         )
@@ -122,6 +126,58 @@ public final class AppEnvironment {
                 uniquingKeysWith: { first, _ in first }
             )
         )
+        backfillComposerDefaultsFromPersistedState()
+    }
+
+    /// V4 introduced an explicit standalone-page project and restored
+    /// workspace-scoped chat inheritance. Seed missing profiles from durable
+    /// sessions once; picker/focus writes remain authoritative thereafter.
+    private func backfillComposerDefaultsFromPersistedState() {
+        var latestByServer: [String: ChatSession] = [:]
+        for session in projectList.sessions where session.origin == .codevisor {
+            let previous = latestByServer[session.serverId]
+            if previous == nil || session.createdAt > previous!.createdAt {
+                latestByServer[session.serverId] = session
+            }
+        }
+        for session in latestByServer.values {
+            composerDefaults.backfillNewWorkspaceDefaults(
+                serverId: session.serverId,
+                projectId: session.projectId,
+                createsWorktree: session.worktreeName?.isEmpty == false,
+                harnessId: session.harnessId,
+                configValues: session.configSelections ?? [:]
+            )
+        }
+
+        for workspace in workspaces.loadAll() {
+            let selectedChatId = workspace.selectedCenterTab
+                .flatMap { tab in tab.root.group(id: tab.activeLeafId) }
+                .flatMap(\.selectedPane)
+                .flatMap { $0.kind == .chat ? $0.chatSessionId : nil }
+            let candidateIds = [selectedChatId].compactMap { $0 }
+                + workspace.chatSessionIds.filter { $0 != selectedChatId }
+            let candidates = candidateIds.compactMap { id in
+                projectList.sessions.first {
+                    $0.serverId == workspace.serverId && $0.id == id
+                }
+            }
+            let source = candidates.first ?? projectList.sessions
+                .filter {
+                    $0.serverId == workspace.serverId
+                        && workspaces.workspaceId(forSession: $0.id) == workspace.id
+                }
+                .max {
+                    ($0.updatedAt ?? $0.createdAt) < ($1.updatedAt ?? $1.createdAt)
+                }
+            guard let source else { continue }
+            composerDefaults.backfillWorkspaceDefaults(
+                workspaceId: workspace.id,
+                serverId: workspace.serverId,
+                harnessId: source.harnessId,
+                configValues: source.configSelections ?? [:]
+            )
+        }
     }
 
     /// Refetches sessions from all harnesses and merges them in.
@@ -330,6 +386,17 @@ public final class AppEnvironment {
         configCache.clear()
         composerDefaults.clear()
         composerDrafts.clear()
+        paneGroups.removeAll()
+        workspaces.removeAll()
+        machines.removeAllRemoteMachines()
+        ClientPreferences.shared.removeAll()
+        do {
+            try clientDataResetter?.resetClientData()
+        } catch {
+            Log.persistence.error(
+                "Failed to clear client SQLite data: \(String(describing: error), privacy: .public)"
+            )
+        }
         settings.reset()
         appUpdate.setAllowsAlphaUpdates(settings.alphaUpdatesEnabled)
         projectList.showsImportedSessions = settings.importExternalSessions

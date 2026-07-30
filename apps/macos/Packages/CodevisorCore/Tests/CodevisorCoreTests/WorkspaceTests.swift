@@ -330,6 +330,41 @@ struct WorkspaceRepositoryTests {
         #expect(workspace.bottomGroup.panes.count == 1)
     }
 
+    @Test("Nested split leaf resolves its own selected chat")
+    func nestedSplitSelectedChatSource() {
+        let leftChat = UUID(), upperChat = UUID(), lowerChat = UUID()
+        let leftLeaf = UUID(), upperLeaf = UUID(), lowerLeaf = UUID()
+        var upper = PaneGroupState()
+        let upperPane = upper.addChatPane(sessionId: upperChat)
+        var lower = PaneGroupState()
+        let lowerPane = lower.addChatPane(sessionId: lowerChat)
+        let root = SplitNode.split(orientation: .horizontal, children: [
+            SplitChild(
+                fraction: 0.5,
+                node: .leaf(.centerInitial(sessionId: leftChat), id: leftLeaf)
+            ),
+            SplitChild(fraction: 0.5, node: .split(orientation: .vertical, children: [
+                SplitChild(fraction: 0.5, node: .leaf(upper, id: upperLeaf)),
+                SplitChild(fraction: 0.5, node: .leaf(lower, id: lowerLeaf))
+            ]))
+        ])
+        let tab = WorkspaceTab(root: root, activeLeafId: lowerLeaf)
+        let workspace = Workspace(
+            name: "Nested",
+            rootDirectory: "/tmp/project",
+            serverId: "local",
+            projectId: UUID(),
+            centerTabs: [tab],
+            bottomGroup: .initial(sessionId: leftChat)
+        )
+
+        #expect(workspace.selectedPane(inLeaf: upperLeaf)?.id == upperPane.id)
+        #expect(workspace.selectedPane(inLeaf: lowerLeaf)?.id == lowerPane.id)
+        #expect(workspace.pane(containingChat: upperChat)?.id == upperPane.id)
+        #expect(workspace.pane(containingChat: lowerChat)?.id == lowerPane.id)
+        #expect(workspace.selectedPane(inLeaf: UUID()) == nil)
+    }
+
     @Test("Backfill migrates legacy per-session pane groups")
     func backfillMigratesLegacyGroups() {
         let store = InMemoryStore()

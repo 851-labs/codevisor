@@ -22,7 +22,9 @@ final class WorkspacePaneStore {
 
     func state(for sessionId: UUID) -> PaneGroupState {
         if let cached = cache[sessionId] { return cached }
-        if let data = UserDefaults.standard.data(forKey: key(for: sessionId)),
+        if let data: Data = ClientPreferences.shared.valueIfPresent(
+            forKey: key(for: sessionId)
+        ),
            let decoded = try? JSONDecoder().decode(PaneGroupState.self, from: data) {
             cache[sessionId] = decoded
             return decoded
@@ -35,7 +37,7 @@ final class WorkspacePaneStore {
     func save(_ state: PaneGroupState, for sessionId: UUID) {
         cache[sessionId] = state
         if let data = try? JSONEncoder().encode(state) {
-            UserDefaults.standard.set(data, forKey: key(for: sessionId))
+            ClientPreferences.shared.set(data, forKey: key(for: sessionId))
         }
     }
 }
@@ -412,6 +414,7 @@ struct WorkspaceScreen: View {
                         serverId: session.serverId,
                         projectList: environment.projectList
                     )
+                    controller.rememberCurrentComposerConfiguration()
                 }
                 .onDisappear {
                     guard let chatId = pane.chatSessionId ?? activeSessionId,
@@ -471,6 +474,9 @@ struct WorkspaceScreen: View {
     /// becomes. Presented on the next tick so its card exists as the zoom
     /// source.
     private func addTab() {
+        if let sourcePane = activePane ?? panes.panes.first {
+            chatController(for: sourcePane)?.rememberCurrentComposerConfiguration()
+        }
         var state = panes
         state.addNewTabPane()
         paneBinding.wrappedValue = state
@@ -590,7 +596,7 @@ struct WorkspaceScreen: View {
             preferredProject: project,
             environment: environment
         )
-        serverConfig = environment.machines.machine(for: project.serverId)?.serverConfig
+        serverConfig = environment.machines.machine(for: controller.project.serverId)?.serverConfig
             ?? environment.machines.selectedMachine.serverConfig
         // Pin the draft's pane group NOW: `centerInitial` mints a fresh pane id
         // each call, so leaving it computed would hand the chat view a new
@@ -612,6 +618,15 @@ struct WorkspaceScreen: View {
     /// the sent message rides its lift up into the history.
     private func adoptSession(for controller: SessionController) {
         guard let project = resolvedProject else { return }
+        environment.composerDefaults.rememberNewWorkspaceProject(
+            serverId: project.serverId,
+            projectId: project.id
+        )
+        environment.composerDefaults.rememberNewWorkspaceWorktreePreference(
+            serverId: project.serverId,
+            createsWorktree: controller.wantsNewWorktree
+        )
+        controller.rememberCurrentComposerConfiguration()
         let session = environment.projectList.newSession(
             in: project,
             title: Self.chatTitle(from: controller.composerText),
@@ -633,6 +648,9 @@ struct WorkspaceScreen: View {
             controller,
             for: session,
             environment: environment
+        )
+        controller.moveComposerDefaults(
+            to: .workspace(id: session.id, serverId: session.serverId)
         )
         // Carry the draft's pane over verbatim — same pane id — and bind it to
         // the new session, so `paneContent(pane).id(pane.id)` is stable across
@@ -667,6 +685,7 @@ struct WorkspaceScreen: View {
         let controller = ChatControllerCache.shared.controller(
             for: session,
             project: project,
+            workspaceId: activeSessionId ?? chatId,
             environment: environment
         )
         controllers[chatId] = controller

@@ -126,20 +126,10 @@ struct SidebarView: View {
     @State private var addProjectFlow = AddProjectFlow()
     @State private var showingRemoteMachine = false
     @State private var pendingImport: PendingSessionImport?
-    // Seeded from UserDefaults (same key as `expandedProjectsRaw`) so
-    // per-project disclosure survives relaunch; written back via onChange
-    // using the newline-separated UUID format `sidebar.manualProjectOrder`
-    // already established.
-    @State private var expanded: Set<UUID> = Set(
-        (UserDefaults.standard.string(forKey: "sidebar.expandedProjects") ?? "")
-            .split(separator: "\n")
-            .compactMap { UUID(uuidString: String($0)) }
-    )
-    @State private var expandedWorkspaces: Set<UUID> = Set(
-        (UserDefaults.standard.string(forKey: "sidebar.expandedWorkspaces") ?? "")
-            .split(separator: "\n")
-            .compactMap { UUID(uuidString: String($0)) }
-    )
+    // Seeded from the SQLite preference after the view mounts; written back
+    // using the established newline-separated UUID representation.
+    @State private var expanded: Set<UUID> = []
+    @State private var expandedWorkspaces: Set<UUID> = []
     @State private var iconEditing: Project?
     @State private var renamingSession: ChatSession?
     @State private var renameTitle = ""
@@ -151,26 +141,32 @@ struct SidebarView: View {
     @State private var workspaceRevision = 0
     @State private var draggingProjectID: UUID?
     @State private var draggingSessionID: UUID?
-    @AppStorage("sidebar.organization") private var organizationRaw = SidebarOrganization.compact.rawValue
-    @AppStorage("sidebar.order") private var orderRaw = SidebarOrder.updated.rawValue
-    @AppStorage("sidebar.manualProjectOrder") private var manualProjectOrderRaw = ""
-    @AppStorage("sidebar.manualSessionOrder") private var manualSessionOrderRaw = ""
-    @AppStorage("sidebar.expandedProjects") private var expandedProjectsRaw = ""
-    @AppStorage("sidebar.expandedWorkspaces") private var expandedWorkspacesRaw = ""
+    @ClientPreference("sidebar.organization", default: SidebarOrganization.compact.rawValue)
+    private var organizationRaw
+    @ClientPreference("sidebar.order", default: SidebarOrder.updated.rawValue)
+    private var orderRaw
+    @ClientPreference("sidebar.manualProjectOrder", default: "")
+    private var manualProjectOrderRaw
+    @ClientPreference("sidebar.manualSessionOrder", default: "")
+    private var manualSessionOrderRaw
+    @ClientPreference("sidebar.expandedProjects", default: "")
+    private var expandedProjectsRaw
+    @ClientPreference("sidebar.expandedWorkspaces", default: "")
+    private var expandedWorkspacesRaw
     /// Archived content is hidden until explicitly enabled from the sidebar
     /// filter menu, and the choice survives relaunches.
-    @AppStorage("sidebar.showArchived") private var showArchived = false
+    @ClientPreference("sidebar.showArchived", default: false) private var showArchived
     /// Collapsed by default: the archive is a place you go looking for
     /// something, not something that should crowd the live list.
-    @AppStorage("sidebar.archivedExpanded") private var archivedExpanded = false
+    @ClientPreference("sidebar.archivedExpanded", default: false) private var archivedExpanded
     /// Page state is deliberately NOT persisted: reopening the archive should
     /// start at the newest page rather than restoring a deep scroll.
     @State private var archivedVisibleCount = archivedPageSize
     @State private var isLoadingMoreArchived = false
     /// The item a click is asking to restore, driving the confirmation alert.
     @State private var restoreRequest: ArchivedRestoreRequest?
-    @AppStorage("update.skippedVersion") private var skippedUpdateVersion = ""
-    @AppStorage("update.skippedServerVersion") private var skippedServerUpdate = ""
+    @ClientPreference("update.skippedVersion", default: "") private var skippedUpdateVersion
+    @ClientPreference("update.skippedServerVersion", default: "") private var skippedServerUpdate
 
     private var list: ProjectListModel { environment.projectList }
     private var organization: SidebarOrganization { SidebarOrganization(rawValue: organizationRaw) ?? .compact }
@@ -573,6 +569,18 @@ struct SidebarView: View {
                     return serverErrorMessage(error)
                 }
             }
+        }
+        .onAppear {
+            expanded = Set(
+                expandedProjectsRaw
+                    .split(separator: "\n")
+                    .compactMap { UUID(uuidString: String($0)) }
+            )
+            expandedWorkspaces = Set(
+                expandedWorkspacesRaw
+                    .split(separator: "\n")
+                    .compactMap { UUID(uuidString: String($0)) }
+            )
         }
         .onChange(of: expanded) { _, newValue in
             expandedProjectsRaw = newValue.map(\.uuidString).sorted().joined(separator: "\n")

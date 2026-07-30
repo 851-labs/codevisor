@@ -335,6 +335,10 @@ final public class SessionController {
 
     private let configCache: ConfigOptionCache
     private let composerDefaults: ComposerDefaultsStore?
+    /// New-workspace drafts and in-workspace chats deliberately write to
+    /// different inheritance profiles. Promotion changes this from the
+    /// machine profile to the newly-created workspace profile.
+    private var composerDefaultsScope: ComposerDefaultsStore.Scope?
     private let serverClient: (any CodevisorServerClienting)?
     /// Platform notification delivery; nil in previews/tests. Only used to
     /// prepare authorization at the first send.
@@ -377,12 +381,15 @@ final public class SessionController {
         project: Project,
         configCache: ConfigOptionCache,
         composerDefaults: ComposerDefaultsStore? = nil,
+        composerDefaultsScope: ComposerDefaultsStore.Scope? = nil,
         serverClient: (any CodevisorServerClienting)? = nil,
         notificationDelivery: (any ChatNotificationDelivering)? = nil
     ) {
         self.project = project
         self.configCache = configCache
         self.composerDefaults = composerDefaults
+        self.composerDefaultsScope = composerDefaultsScope
+            ?? composerDefaults.map { _ in .newWorkspace(serverId: project.serverId) }
         self.serverClient = serverClient
         self.notificationDelivery = notificationDelivery
         if seedFromCachedServerCapabilities() {
@@ -546,13 +553,13 @@ final public class SessionController {
         if let composerDefaults {
             for (harnessId, configValues) in draft.configByHarness {
                 composerDefaults.rememberConfigSelections(
-                    serverId: project.serverId,
+                    in: resolvedComposerDefaultsScope,
                     harnessId: harnessId,
                     configValues: configValues
                 )
             }
             composerDefaults.rememberHarnessSelection(
-                serverId: project.serverId,
+                in: resolvedComposerDefaultsScope,
                 harnessId: draft.selectedHarnessId
             )
         }
@@ -1155,12 +1162,12 @@ final public class SessionController {
            Self.rememberedConfigCategories.contains(optionBeforeChange?.category ?? ""),
            let harnessId = connectedHarnessId ?? selectedHarnessId {
             composerDefaults?.rememberConfigSelections(
-                serverId: project.serverId,
+                in: resolvedComposerDefaultsScope,
                 harnessId: harnessId,
                 configValues: rememberedConfigValues
             )
             composerDefaults?.rememberHarnessSelection(
-                serverId: project.serverId,
+                in: resolvedComposerDefaultsScope,
                 harnessId: harnessId
             )
         }
@@ -1172,11 +1179,24 @@ final public class SessionController {
     /// remembered defaults are seeded into pending config.
     private var isDraft: Bool { serverSession == nil && !hasSentFirst }
 
+    /// Eagerly-created workspace chat records still behave like drafts until
+    /// their first agent session exists. They need inherited configuration
+    /// even though `serverSession` is already non-nil.
+    private var acceptsNewChatDefaults: Bool {
+        !hasSentFirst
+            && resumeAgentSessionId?.isEmpty != false
+            && serverSession?.agentSessionId?.isEmpty != false
+    }
+
+    private var resolvedComposerDefaultsScope: ComposerDefaultsStore.Scope {
+        composerDefaultsScope ?? .newWorkspace(serverId: project.serverId)
+    }
+
     /// Seeds a new-chat draft from the last explicit selections on this
     /// machine. Called once by `SessionStore` when a draft is made.
     public func applyComposerDefaults() {
-        guard let composerDefaults, isDraft else { return }
-        if let harnessId = composerDefaults.lastHarnessId(forServer: project.serverId),
+        guard let composerDefaults, acceptsNewChatDefaults else { return }
+        if let harnessId = composerDefaults.lastHarnessId(for: resolvedComposerDefaultsScope),
            !harnessId.isEmpty,
            harnesses.isEmpty || harnesses.contains(where: { $0.id == harnessId }) {
             selectedHarnessId = harnessId
@@ -1193,7 +1213,7 @@ final public class SessionController {
         guard let composerDefaults, let harnessId = selectedHarnessId else { return }
         let remembered = composerDefaults.configSelections(
             forHarness: harnessId,
-            onServer: project.serverId
+            in: resolvedComposerDefaultsScope
         )
         guard !remembered.isEmpty else { return }
         var options = configOptionsByHarness[harnessId]
@@ -1227,6 +1247,43 @@ final public class SessionController {
             .filter { Self.rememberedConfigCategories.contains($0.category ?? "") }
             .map { ($0.id, $0.currentValue) }
         return Dictionary(values) { _, last in last }
+    }
+
+    /// Captures this chat as the inheritance source for its scope. Workspace
+    /// capture replaces the selected harness snapshot so values from a
+    /// previously focused sibling cannot leak into the next chat.
+    public func rememberCurrentComposerConfiguration() {
+        guard let composerDefaults,
+              let harnessId = connectedHarnessId ?? selectedHarnessId ?? serverSession?.harnessId,
+              !harnessId.isEmpty else { return }
+        switch resolvedComposerDefaultsScope {
+        case let .newWorkspace(serverId):
+            composerDefaults.rememberHarnessSelection(
+                in: .newWorkspace(serverId: serverId),
+                harnessId: harnessId
+            )
+            composerDefaults.rememberConfigSelections(
+                in: .newWorkspace(serverId: serverId),
+                harnessId: harnessId,
+                configValues: rememberedConfigValues
+            )
+        case let .workspace(id, serverId):
+            composerDefaults.rememberFocusedChat(
+                workspaceId: id,
+                serverId: serverId,
+                harnessId: harnessId,
+                configValues: rememberedConfigValues
+            )
+        }
+    }
+
+    /// A standalone draft becomes the first chat of a concrete workspace
+    /// before its agent is connected. Snapshot its selected configuration
+    /// into that workspace immediately so a sibling tab opened during setup
+    /// inherits the same values.
+    public func moveComposerDefaults(to scope: ComposerDefaultsStore.Scope) {
+        composerDefaultsScope = scope
+        rememberCurrentComposerConfiguration()
     }
 
     public var selectedHarness: ServerHarness? {
@@ -1690,13 +1747,13 @@ final public class SessionController {
         let previousHarnessId = selectedHarnessId
         selectedHarnessId = id
         captureHarnessSelected(harnessId: id, previousHarnessId: previousHarnessId)
-        if isDraft {
+        if acceptsNewChatDefaults {
             // Start the new harness from its own remembered selections rather
             // than pending edits made under the previous harness.
             seedRememberedConfig()
         }
         composerDefaults?.rememberHarnessSelection(
-            serverId: project.serverId,
+            in: resolvedComposerDefaultsScope,
             harnessId: id
         )
         if var serverSession {

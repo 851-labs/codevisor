@@ -172,14 +172,27 @@ public enum CodevisorAppVariant: Sendable {
     /// the old folder. Copies legacy files that don't exist at the new
     /// location yet; never overwrites, and leaves the old folder as a backup.
     public static func migrateLegacyApplicationSupportIfNeeded(fileManager: FileManager = .default) {
-        guard !isDevelopment else { return }
-        let base = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-            ?? Self.homeDirectory(fileManager: fileManager).appendingPathComponent("Library/Application Support")
+        guard let legacy = legacyApplicationSupportURL(fileManager: fileManager) else { return }
         migrateLegacyApplicationSupport(
-            from: base.appendingPathComponent("HerdMan", isDirectory: true),
+            from: legacy,
             to: applicationSupportURL(fileManager: fileManager),
             fileManager: fileManager
         )
+    }
+
+    /// Pre-rename client data location. The SQLite bootstrap imports this
+    /// directory directly and then removes its supported legacy artifacts
+    /// after validation, rather than leaving a second authoritative copy.
+    public static func legacyApplicationSupportURL(
+        fileManager: FileManager = .default
+    ) -> URL? {
+        guard !isDevelopment else { return nil }
+        let base = fileManager.urls(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask
+        ).first ?? Self.homeDirectory(fileManager: fileManager)
+            .appendingPathComponent("Library/Application Support")
+        return base.appendingPathComponent("HerdMan", isDirectory: true)
     }
 
     static func migrateLegacyApplicationSupport(from legacy: URL, to destination: URL, fileManager: FileManager) {

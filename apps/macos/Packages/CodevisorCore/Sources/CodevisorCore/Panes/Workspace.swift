@@ -238,6 +238,21 @@ public struct Workspace: Codable, Sendable, Equatable, Identifiable {
         centerTabs.first { $0.root.groupId(containingChat: sessionId) != nil }?.id
     }
 
+    /// The selected pane in a specific split leaf, across every top tab.
+    /// Keyboard/header split actions use the targeted leaf rather than the
+    /// workspace's sidebar-routed chat when choosing an inheritance source.
+    public func selectedPane(inLeaf leafId: UUID) -> PaneDescriptorState? {
+        centerTabs.lazy.compactMap { $0.root.group(id: leafId)?.selectedPane }.first
+    }
+
+    /// The pane that owns a chat session reference, if it is still open.
+    public func pane(containingChat sessionId: UUID) -> PaneDescriptorState? {
+        centerTabs.lazy
+            .flatMap { $0.root.allGroups }
+            .flatMap(\.state.panes)
+            .first { $0.kind == .chat && $0.chatSessionId == sessionId }
+    }
+
     /// Session ids of every chat pane in the workspace, reading order.
     public var chatSessionIds: [UUID] {
         centerTabs.flatMap { tab in

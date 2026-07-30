@@ -308,16 +308,13 @@ struct RemoteDirectoryBrowserModelTests {
 @MainActor
 @Suite("RemoteBrowserRecentsStore")
 struct RemoteBrowserRecentsStoreTests {
-    private func makeStore() -> (RemoteBrowserRecentsStore, UserDefaults) {
-        let suite = "codevisor-recents-tests-\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suite)!
-        defaults.removePersistentDomain(forName: suite)
-        return (RemoteBrowserRecentsStore(defaults: defaults), defaults)
+    private func makeStore() -> RemoteBrowserRecentsStore {
+        RemoteBrowserRecentsStore(preferences: ClientPreferences())
     }
 
     @Test("Records are most-recent-first, deduplicated, and capped")
     func recordOrdering() {
-        let (store, _) = makeStore()
+        let store = makeStore()
         for index in 1...8 {
             store.record("/p/\(index)", forMachine: "devbox")
         }
@@ -330,7 +327,7 @@ struct RemoteBrowserRecentsStoreTests {
 
     @Test("Recents are scoped per machine")
     func perMachineScope() {
-        let (store, _) = makeStore()
+        let store = makeStore()
         store.record("/a", forMachine: "devbox")
         store.record("/b", forMachine: "buildbox")
         #expect(store.recents(forMachine: "devbox") == ["/a"])
@@ -339,7 +336,7 @@ struct RemoteBrowserRecentsStoreTests {
 
     @Test("Remove deletes a single path")
     func removePath() {
-        let (store, _) = makeStore()
+        let store = makeStore()
         store.record("/a", forMachine: "devbox")
         store.record("/b", forMachine: "devbox")
         store.remove("/a", forMachine: "devbox")

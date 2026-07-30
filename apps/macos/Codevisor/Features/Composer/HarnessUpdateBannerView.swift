@@ -20,14 +20,14 @@ struct HarnessUpdateBannerView: View {
     @State private var startError: String?
     /// Version string the user dismissed, remembered per harness so the
     /// banner returns only when something newer appears.
-    @AppStorage private var dismissedVersion: String
+    @ClientPreference private var dismissedVersion: String
 
     init(controller: SessionController, hasRunningChats: Bool = false) {
         self.controller = controller
         self.hasRunningChats = hasRunningChats
-        _dismissedVersion = AppStorage(
-            wrappedValue: "",
-            "harnessUpdateDismissed.\(controller.activeHarnessId ?? "none")"
+        _dismissedVersion = ClientPreference(
+            "harnessUpdateDismissed.\(controller.activeHarnessId ?? "none")",
+            default: ""
         )
     }
 

@@ -375,6 +375,10 @@ struct NewChatView: View {
     /// (worktrees only make sense for git projects).
     private func selectTargetProject(_ project: Project, controller: SessionController) {
         selectedProjectId = project.id
+        environment.composerDefaults.rememberNewWorkspaceProject(
+            serverId: project.serverId,
+            projectId: project.id
+        )
         let prefersWorktree = project.isGitRepository
             && environment.composerDefaults.prefersWorktreeForNewWorkspaces(
                 forServer: project.serverId
@@ -455,14 +459,19 @@ struct NewChatView: View {
         selectedProjectId = preferredProjectId ?? projects.first?.id
         guard let project = selectedProject else { return }
         // Keep the original draft controller path: it owns both the complete
-        // per-composer snapshot and the machine-wide composer defaults.
-        let controller = paneDraftId.map {
-            store.paneDraft(
-                paneId: $0,
+        // per-composer snapshot and its correctly-scoped composer defaults.
+        let controller: SessionController
+        if let paneDraftId {
+            guard let workspaceId = hostWorkspaceId else { return }
+            controller = store.paneDraft(
+                paneId: paneDraftId,
                 project: project,
-                preCreatedSession: preCreatedSession
+                preCreatedSession: preCreatedSession,
+                workspaceId: workspaceId
             )
-        } ?? store.draft(project: project)
+        } else {
+            controller = store.draft(project: project)
+        }
         if controller.project.id != project.id {
             // Follow the draft's own project so the title matches the
             // composer state the user left.
@@ -479,6 +488,19 @@ struct NewChatView: View {
         controller.onFirstSend = { [weak controller] in
             guard let controller else { return }
             let project = controller.project
+            if paneDraftId == nil {
+                // The successful standalone creation is the durable boundary
+                // for the next New Chat page's project/run-location profile.
+                environment.composerDefaults.rememberNewWorkspaceProject(
+                    serverId: project.serverId,
+                    projectId: project.id
+                )
+                environment.composerDefaults.rememberNewWorkspaceWorktreePreference(
+                    serverId: project.serverId,
+                    createsWorktree: controller.wantsNewWorktree
+                )
+                controller.rememberCurrentComposerConfiguration()
+            }
             let title = Self.title(from: controller.composerText)
             let session: ChatSession
             if let preCreatedSession,
@@ -560,7 +582,10 @@ struct NewChatView: View {
             } else {
                 // The workspace materializes AROUND the sent chat: rooted in
                 // the picked directory, fixed for every tab it ever hosts.
-                store.createWorkspace(for: session, project: project)
+                let workspace = store.createWorkspace(for: session, project: project)
+                controller.moveComposerDefaults(
+                    to: .workspace(id: workspace.id, serverId: session.serverId)
+                )
                 selection = .session(serverId: session.serverId, id: session.id)
             }
         }

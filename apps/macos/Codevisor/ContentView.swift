@@ -7,13 +7,33 @@ import CodevisorUI
 
 @main
 struct CodevisorApp: App {
-    @State private var environment: AppEnvironment
+    @State private var environment: AppEnvironment?
     @State private var serverAgent: MacServerAgentController
     @State private var sparkleUpdater: SparkleUpdateController?
+    @State private var startupError: String?
 
     init() {
         let serverAgent = MacServerAgentController()
-        let environment = AppEnvironment.live()
+        let runtime: (environment: AppEnvironment, updater: SparkleUpdateController?)?
+        let startupError: String?
+        do {
+            runtime = try Self.makeRuntime(serverAgent: serverAgent)
+            startupError = nil
+        } catch {
+            runtime = nil
+            startupError = error.localizedDescription
+        }
+        _environment = State(initialValue: runtime?.environment)
+        _serverAgent = State(initialValue: serverAgent)
+        _sparkleUpdater = State(initialValue: runtime?.updater)
+        _startupError = State(initialValue: startupError)
+    }
+
+    @MainActor
+    private static func makeRuntime(
+        serverAgent: MacServerAgentController
+    ) throws -> (environment: AppEnvironment, updater: SparkleUpdateController?) {
+        let environment = try AppEnvironment.live()
         if !CodevisorAppVariant.isDevelopment {
             environment.localServer?.configureManagedService(serverAgent.managedService)
         }
@@ -60,23 +80,34 @@ struct CodevisorApp: App {
         AnalyticsClient.shared.configureFromMainBundle(enabled: environment.settings.shareAnalytics)
         AnalyticsClient.shared.captureAppOpenedOnce()
         DiagnosticsClient.shared.configureFromMainBundle(enabled: environment.settings.shareCrashReports)
-        _environment = State(initialValue: environment)
-        _serverAgent = State(initialValue: serverAgent)
-        _sparkleUpdater = State(initialValue: sparkleUpdater)
         ChatNotificationManager.shared.configure(settings: environment.settings)
+        return (environment, sparkleUpdater)
     }
 
     var body: some Scene {
         WindowGroup {
-            RootView()
+            if let environment {
+                RootView()
+                    .frame(minWidth: 480, minHeight: 600)
+                    .themedRoot()
+                    .modifier(DebugMetricsOverlayModifier())
+                    .environment(environment)
+                    // Deeplinks (codevisor://add-machine) should land in the
+                    // window that's already open; without this, macOS spawns a
+                    // fresh window scene for every external URL event.
+                    .handlesExternalEvents(preferring: ["*"], allowing: ["*"])
+            } else {
+                ClientDataStartupFailureView(
+                    message: startupError ?? "The client database could not be opened.",
+                    retry: retryStartup,
+                    showDataFolder: {
+                        NSWorkspace.shared.activateFileViewerSelecting([
+                            CodevisorAppVariant.applicationSupportURL()
+                        ])
+                    }
+                )
                 .frame(minWidth: 480, minHeight: 600)
-                .themedRoot()
-                .modifier(DebugMetricsOverlayModifier())
-                .environment(environment)
-                // Deeplinks (codevisor://add-machine) should land in the
-                // window that's already open; without this, macOS spawns a
-                // fresh window scene for every external URL event.
-                .handlesExternalEvents(preferring: ["*"], allowing: ["*"])
+            }
         }
         .defaultSize(width: 1280, height: 820)
         .windowResizability(.contentMinSize)
@@ -85,19 +116,65 @@ struct CodevisorApp: App {
         // AppKit still owns saving and restoring the user's previous frame.
         .windowIdealSize(.maximum)
         .commands {
-            AppUpdateCommands(appUpdate: environment.appUpdate)
-            FileCommands()
-            MachineCommands(machines: environment.machines)
-            TerminalCommands()
-            WorkspaceLayoutCommands()
-            DebugOverlayCommands()
+            if let environment {
+                AppUpdateCommands(appUpdate: environment.appUpdate)
+                FileCommands()
+                MachineCommands(machines: environment.machines)
+                TerminalCommands()
+                WorkspaceLayoutCommands()
+                DebugOverlayCommands()
+            }
         }
 
         Settings {
-            SettingsView()
-                .themedRoot()
-                .environment(environment)
+            if let environment {
+                SettingsView()
+                    .themedRoot()
+                    .environment(environment)
+            } else {
+                ClientDataStartupFailureView(
+                    message: startupError ?? "The client database could not be opened.",
+                    retry: retryStartup,
+                    showDataFolder: {
+                        NSWorkspace.shared.activateFileViewerSelecting([
+                            CodevisorAppVariant.applicationSupportURL()
+                        ])
+                    }
+                )
+            }
         }
+    }
+
+    private func retryStartup() {
+        do {
+            let runtime = try Self.makeRuntime(serverAgent: serverAgent)
+            environment = runtime.environment
+            sparkleUpdater = runtime.updater
+            startupError = nil
+        } catch {
+            startupError = error.localizedDescription
+        }
+    }
+}
+
+private struct ClientDataStartupFailureView: View {
+    let message: String
+    let retry: () -> Void
+    let showDataFolder: () -> Void
+
+    var body: some View {
+        ContentUnavailableView {
+            Label("Codevisor Couldn't Open Its Data", systemImage: "externaldrive.badge.exclamationmark")
+        } description: {
+            Text("The app stopped before loading or syncing so your existing data remains intact.\n\n\(message)")
+        } actions: {
+            HStack {
+                Button("Try Again", action: retry)
+                    .buttonStyle(.borderedProminent)
+                Button("Show Data Folder", action: showDataFolder)
+            }
+        }
+        .padding(32)
     }
 }
 
@@ -108,7 +185,7 @@ struct RootView: View {
     @Environment(\.theme) private var theme
     @Environment(\.controlActiveState) private var controlActiveState
     @State private var selection: SidebarSelection?
-    @AppStorage("sidebar.collapsed") private var sidebarCollapsed = false
+    @ClientPreference("sidebar.collapsed", default: false) private var sidebarCollapsed
     @State private var store: SessionStore?
     @State private var preferredProjectId: UUID?
     @State private var preparedMachineId: String?

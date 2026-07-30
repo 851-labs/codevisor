@@ -16,7 +16,7 @@ public protocol SessionRepository: Sendable {
 public struct CodableRepository<Element: Codable & Sendable>: Sendable {
     private let store: any PersistenceStore
     private let key: String
-    /// Banner title shown when the persisted file fails to decode; nil keeps
+    /// Banner title shown when the persisted payload fails to decode; nil keeps
     /// corruption log-and-quarantine only.
     private let corruptionTitle: String?
 

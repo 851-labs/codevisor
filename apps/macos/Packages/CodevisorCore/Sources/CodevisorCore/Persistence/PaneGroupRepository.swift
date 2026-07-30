@@ -8,6 +8,11 @@ import Foundation
 public protocol PaneGroupRepository: Sendable {
     func load(sessionId: UUID, placement: PaneGroupPlacement) -> PaneGroupState?
     func save(_ state: PaneGroupState, sessionId: UUID, placement: PaneGroupPlacement)
+    func removeAll()
+}
+
+public extension PaneGroupRepository {
+    func removeAll() {}
 }
 
 /// File/in-memory backed pane-group repository. All sessions' states live
@@ -41,6 +46,17 @@ public final class DefaultPaneGroupRepository: PaneGroupRepository, @unchecked S
             try store.saveData(JSONEncoder().encode(all), forKey: key)
         } catch {
             Log.persistence.error("Failed to save \(self.key, privacy: .public): \(String(describing: error), privacy: .public)")
+        }
+    }
+
+    public func removeAll() {
+        lock.withLock { cache = [:] }
+        do {
+            try store.removeData(forKey: key)
+        } catch {
+            Log.persistence.error(
+                "Failed to clear \(self.key, privacy: .public): \(String(describing: error), privacy: .public)"
+            )
         }
     }
 
