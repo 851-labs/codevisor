@@ -505,7 +505,7 @@ struct AssistantTurnActivityTests {
 
     @Test("A just-started turn with no output yet shows the indicator")
     func freshTurn() {
-        let turn = AssistantTurn(isGenerating: true, isThinking: true)
+        let turn = AssistantTurn(isGenerating: true, isThinking: false)
         #expect(turn.showsActivityIndicator)
     }
 

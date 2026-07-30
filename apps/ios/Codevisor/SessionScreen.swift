@@ -501,7 +501,17 @@ private struct AssistantTurnBody: View {
             if isGenerating, let retry = turn.retryStatus {
                 ChatActivityRow(retryLabel(retry))
             } else if isGenerating, turn.showsActivityIndicator {
-                ShimmeringText.thinking
+                if transcriptController?.isTakingLongerThanExpected == true {
+                    ChatActivityRow(
+                        transcriptController?.providerActivityPhase?.prolongedStatusMessage
+                            ?? "Still waiting for the agent",
+                        systemImage: "clock.badge.exclamationmark"
+                    )
+                } else if turn.isThinking {
+                    ShimmeringText.thinking
+                } else {
+                    ShimmeringText(text: "Waiting on harness...")
+                }
             }
             if case let .text(_, markdown) = turn.finalText {
                 StreamingMarkdownView(markdown, isComplete: !isGenerating)

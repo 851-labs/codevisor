@@ -180,14 +180,17 @@ const resultMessage = (subtype: "success" | "error_during_execution" = "success"
 const resultWith = (fields: {
   subtype?: "success" | "error_during_execution"
   stop_reason?: string | null
+  is_error?: boolean
+  result?: string
+  errors?: string[]
 }): SDKMessage => {
   const subtype = fields.subtype ?? "success"
   return {
     duration_ms: 10,
-    errors: subtype === "success" ? [] : ["boom"],
-    is_error: subtype !== "success",
+    errors: fields.errors ?? (subtype === "success" ? [] : ["boom"]),
+    is_error: fields.is_error ?? subtype !== "success",
     num_turns: 1,
-    result: "done",
+    result: fields.result ?? "done",
     session_id: "sdk-session-1",
     stop_reason: fields.stop_reason ?? "end_turn",
     subtype,
@@ -222,6 +225,14 @@ const assistantApiErrorMessage = (text: string): SDKMessage =>
     session_id: "sdk-session-1",
     type: "assistant",
     uuid: "00000000-0000-0000-0000-000000000003"
+  }) as never
+
+const rateLimitEvent = (rateLimitInfo: Record<string, unknown>): SDKMessage =>
+  ({
+    rate_limit_info: rateLimitInfo,
+    session_id: "sdk-session-1",
+    type: "rate_limit_event",
+    uuid: "00000000-0000-0000-0000-000000000004"
   }) as never
 
 const streamEvent = (event: unknown, parentToolUseId: string | null = null): SDKMessage =>
@@ -1859,10 +1870,21 @@ describe("ClaudeProvider", () => {
           (event.payload as Record<string, unknown>).turnState === "ended"
       )
 
-    // Backoff: not resumed yet, turn still alive, nothing surfaced.
+    // Backoff: not resumed yet and the turn stays alive, but the reason is
+    // already visible to the client.
     expect(continuations()).toHaveLength(0)
     expect(endedEvents()).toHaveLength(0)
     expect(events.some((event) => event.kind === "session.error")).toBe(false)
+    expect(events.at(-1)).toMatchObject({
+      kind: "session.updated",
+      payload: {
+        retrying: {
+          attempt: 1,
+          message: "Claude is still overloaded, restarting response",
+          of: 3
+        }
+      }
+    })
 
     // Once the backoff elapses the turn resumes automatically.
     await vi.advanceTimersByTimeAsync(1000)
@@ -1918,6 +1940,15 @@ describe("ClaudeProvider", () => {
       fake.push(resultMessage("success"))
       await settle()
       expect(retryingEvents()).toHaveLength(attempt)
+      expect(retryingEvents().at(-1)).toMatchObject({
+        payload: {
+          retrying: {
+            attempt,
+            message: "Claude is still overloaded, restarting response",
+            of: 3
+          }
+        }
+      })
       expect(endedEvents()).toHaveLength(0)
       expect(events.some((event) => event.kind === "session.error")).toBe(false)
       await vi.advanceTimersByTimeAsync(8000)
@@ -1937,6 +1968,75 @@ describe("ClaudeProvider", () => {
     expect(endedPayload?.stopDetail).toBe(errorText)
     expect(endedPayload?.retryable).toBe(true)
     expect(retryingEvents()).toHaveLength(3)
+  })
+
+  it("surfaces Claude's internal API retry before the SDK result", async () => {
+    const fake = new FakeQuery()
+    const provider = makeProvider(fake)
+    const events: Array<RuntimeEvent> = []
+    const createPromise = run(
+      provider.createSession(definition, "/tmp", async (event) => {
+        events.push(event)
+      })
+    )
+    await settle()
+    fake.push(initMessage())
+    const created = await createPromise
+
+    const promptPromise = run(created.handle.prompt("do work"))
+    await settle()
+    fake.push(
+      systemMessage("api_retry", {
+        attempt: 1,
+        error: "overloaded",
+        error_status: 529,
+        max_retries: 10,
+        retry_delay_ms: 500
+      })
+    )
+    await settle()
+
+    expect(events.at(-1)).toMatchObject({
+      kind: "session.updated",
+      payload: {
+        retrying: {
+          attempt: 1,
+          message: "Claude is overloaded, retrying",
+          of: 10
+        }
+      }
+    })
+    expect(
+      events.some(
+        (event) =>
+          event.kind === "session.updated" &&
+          (event.payload as Record<string, unknown>).turnState === "ended"
+      )
+    ).toBe(false)
+
+    fake.push(
+      systemMessage("api_retry", {
+        attempt: 2,
+        error: "unknown",
+        error_status: null,
+        max_retries: 10,
+        retry_delay_ms: 1000
+      })
+    )
+    await settle()
+    expect(events.at(-1)).toMatchObject({
+      kind: "session.updated",
+      payload: {
+        retrying: {
+          attempt: 2,
+          message: "Claude connection was interrupted, retrying",
+          of: 10
+        }
+      }
+    })
+
+    fake.push(resultMessage())
+    await promptPromise
   })
 
   it("surfaces a permanent API error immediately, with no retry", async () => {
@@ -1969,6 +2069,127 @@ describe("ClaudeProvider", () => {
       .find((payload) => payload.turnState === "ended")
     expect(endedPayload?.stopDetail).toBe("Claude authentication failed.")
     expect(events.some((event) => event.kind === "session.error")).toBe(false)
+  })
+
+  it("stops immediately with Claude's usage-limit message instead of retrying", async () => {
+    const fake = new FakeQuery()
+    const provider = makeProvider(fake)
+    const events: Array<RuntimeEvent> = []
+    const createPromise = run(
+      provider.createSession(definition, "/tmp", async (event) => {
+        events.push(event)
+      })
+    )
+    await settle()
+    fake.push(initMessage())
+    const created = await createPromise
+
+    const promptPromise = run(created.handle.prompt("do work"))
+    await settle()
+
+    const limitMessage = "You've hit your limit · resets 8pm"
+    fake.push(assistantErrorMessage("rate_limit"))
+    fake.push(
+      resultWith({
+        is_error: true,
+        result: limitMessage
+      })
+    )
+
+    const result = await promptPromise
+    expect(result.stopReason).toBe("end_turn")
+    expect(
+      fake.userMessages.filter((message) => message.message.content === "Please continue.")
+    ).toHaveLength(0)
+    expect(
+      events.filter(
+        (event) =>
+          event.kind === "session.updated" &&
+          (event.payload as Record<string, unknown>).retrying !== undefined
+      )
+    ).toHaveLength(0)
+    const endedPayload = events
+      .map((event) => event.payload as Record<string, unknown>)
+      .find((payload) => payload.turnState === "ended")
+    expect(endedPayload?.stopDetail).toBe(limitMessage)
+    expect(endedPayload?.retryable).toBeUndefined()
+  })
+
+  it("uses rejected Claude subscription state when the result omits limit copy", async () => {
+    const fake = new FakeQuery()
+    const provider = makeProvider(fake)
+    const events: Array<RuntimeEvent> = []
+    const createPromise = run(
+      provider.createSession(definition, "/tmp", async (event) => {
+        events.push(event)
+      })
+    )
+    await settle()
+    fake.push(initMessage())
+    const created = await createPromise
+
+    const promptPromise = run(created.handle.prompt("do work"))
+    await settle()
+    fake.push(
+      rateLimitEvent({
+        rateLimitType: "five_hour",
+        status: "rejected"
+      })
+    )
+    fake.push(assistantErrorMessage("rate_limit"))
+    fake.push(resultMessage("error_during_execution"))
+
+    await promptPromise
+    expect(
+      fake.userMessages.filter((message) => message.message.content === "Please continue.")
+    ).toHaveLength(0)
+    const endedPayload = events
+      .map((event) => event.payload as Record<string, unknown>)
+      .find((payload) => payload.turnState === "ended")
+    expect(endedPayload?.stopDetail).toBe(
+      "You've reached your 5-hour Claude usage limit. Try again after it resets."
+    )
+    expect(endedPayload?.retryable).toBeUndefined()
+  })
+
+  it("still retries a temporary Claude rate limit", async () => {
+    vi.useFakeTimers()
+    const fake = new FakeQuery()
+    const provider = makeProvider(fake)
+    const events: Array<RuntimeEvent> = []
+    const createPromise = run(
+      provider.createSession(definition, "/tmp", async (event) => {
+        events.push(event)
+      })
+    )
+    await settle()
+    fake.push(initMessage())
+    const created = await createPromise
+
+    const promptPromise = run(created.handle.prompt("do work"))
+    await settle()
+    fake.push(assistantErrorMessage("rate_limit"))
+    fake.push(resultMessage("error_during_execution"))
+    await settle()
+
+    expect(events.at(-1)).toMatchObject({
+      kind: "session.updated",
+      payload: {
+        retrying: {
+          attempt: 1,
+          message: "Claude is temporarily rate limited, restarting response",
+          of: 3
+        }
+      }
+    })
+    await vi.advanceTimersByTimeAsync(1000)
+    await settle()
+    expect(
+      fake.userMessages.filter((message) => message.message.content === "Please continue.")
+    ).toHaveLength(1)
+
+    fake.push(resultMessage("success"))
+    await promptPromise
   })
 
   it("doesn't resume a transient-error turn after the session closes", async () => {

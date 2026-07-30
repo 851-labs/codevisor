@@ -20,7 +20,7 @@ enum AssistantTurnPresentation: Equatable {
 
 /// Renders one assistant turn: reasoning text and tool-call groups collapse into
 /// a "Worked for…" disclosure, the final answer renders expanded at the bottom,
-/// and a shimmering "Thinking..." indicator shows while the agent is working.
+/// and a truthful activity status shows while the agent is working or waiting.
 struct AssistantTurnView: View {
     let turn: AssistantTurn
     /// Stable id of the owning assistant message — the disclosure key, stable
@@ -143,7 +143,17 @@ struct AssistantTurnView: View {
             } else if postResponseGoalActivity == nil, presentation.showsResult,
                       !isWaitingOnUser, turn.showsActivityIndicator,
                       turn.contextCompactionStatus != .started {
-                ShimmeringText.thinking
+                if transcriptController?.isTakingLongerThanExpected == true {
+                    ChatActivityRow(
+                        transcriptController?.providerActivityPhase?.prolongedStatusMessage
+                            ?? "Still waiting for the agent",
+                        systemImage: "clock.badge.exclamationmark"
+                    )
+                } else if turn.isThinking {
+                    ShimmeringText.thinking
+                } else {
+                    ShimmeringText(text: "Waiting on harness...")
+                }
             }
 
             // The final answer streams here, final-styled from its first

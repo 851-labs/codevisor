@@ -20,6 +20,19 @@ public enum SessionProviderActivityPhase: String, Equatable, Sendable {
         case .cancelling: "cancellation"
         }
     }
+
+    /// User-facing explanation shown when this phase has produced no activity
+    /// for long enough that a generic "Thinking..." label would be misleading.
+    public var prolongedStatusMessage: String {
+        switch self {
+        case .modelStream: "Still waiting for a model response"
+        case .toolInputStream: "Still waiting for tool input"
+        case .toolExecution: "A tool is taking longer than expected"
+        case .retryBackoff: "The model provider is still retrying"
+        case .waitingForQuestion: "Still waiting for your response"
+        case .cancelling: "Still stopping the agent"
+        }
+    }
 }
 
 /// Drives a single chat session: sends prompts, consumes the streamed
@@ -1479,7 +1492,9 @@ public final class SessionModel {
         errorMessage = nil
         harnessAuthenticationErrorMessage = nil
         activeItem = .assistant(AssistantMessage(
-            turn: AssistantTurn(isGenerating: true, isThinking: true, startedAt: now())
+            // Waiting for the first provider event is not itself reasoning.
+            // Explicit thought chunks flip this to true in TranscriptReducer.
+            turn: AssistantTurn(isGenerating: true, isThinking: false, startedAt: now())
         ))
         if !hasActiveItem { hasActiveItem = true }
     }

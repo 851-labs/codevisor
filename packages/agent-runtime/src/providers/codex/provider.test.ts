@@ -359,7 +359,7 @@ describe("CodexProvider", () => {
     expect(events.at(-1)?.payload).toMatchObject({
       retrying: {
         attempt: 2,
-        message: "Server is busy, reconnecting",
+        message: "Codex is overloaded, retrying",
         of: 5
       },
       turnId: "turn-overloaded"
@@ -386,6 +386,84 @@ describe("CodexProvider", () => {
       stopDetail: "The server is overloaded.",
       turnState: "ended"
     })
+  })
+
+  it("preserves Codex's usage-limit guidance instead of presenting it as a retry", async () => {
+    const { client, created, events } = await setup()
+    const prompt = run(created!.handle.prompt("try this"))
+    await Promise.resolve()
+    client.emit("turn/started", {
+      threadId: "thread-new",
+      turn: { id: "turn-usage-limit", status: "inProgress" }
+    })
+    const usageMessage =
+      "You've hit your usage limit. Visit Codex settings to purchase more credits or try again tomorrow."
+    client.emit("error", {
+      error: {
+        codexErrorInfo: "usageLimitExceeded",
+        message: usageMessage
+      },
+      threadId: "thread-new",
+      turnId: "turn-usage-limit",
+      willRetry: false
+    })
+    client.emit("turn/completed", {
+      threadId: "thread-new",
+      turn: {
+        id: "turn-usage-limit",
+        status: "failed"
+      }
+    })
+    await prompt
+
+    expect(
+      events.some(
+        (event) =>
+          event.kind === "session.updated" &&
+          (event.payload as Record<string, unknown>).retrying !== undefined
+      )
+    ).toBe(false)
+    expect(events.at(-1)?.payload).toMatchObject({
+      stopDetail: usageMessage,
+      turnState: "ended"
+    })
+    expect((events.at(-1)?.payload as Record<string, unknown>).retryable).toBeUndefined()
+  })
+
+  it("labels a retryable HTTP 429 as temporary request throttling", async () => {
+    const { client, created, events } = await setup()
+    const prompt = run(created!.handle.prompt("try this"))
+    await Promise.resolve()
+    client.emit("turn/started", {
+      threadId: "thread-new",
+      turn: { id: "turn-throttled", status: "inProgress" }
+    })
+    client.emit("error", {
+      error: {
+        codexErrorInfo: {
+          responseStreamConnectionFailed: { httpStatusCode: 429 }
+        },
+        message: "Request throttled. Retrying... 1/4"
+      },
+      threadId: "thread-new",
+      turnId: "turn-throttled",
+      willRetry: true
+    })
+
+    expect(events.at(-1)?.payload).toMatchObject({
+      retrying: {
+        attempt: 1,
+        message: "Codex is temporarily rate limited, retrying",
+        of: 4
+      },
+      turnId: "turn-throttled"
+    })
+
+    client.emit("turn/completed", {
+      threadId: "thread-new",
+      turn: { id: "turn-throttled", status: "completed" }
+    })
+    await prompt
   })
 
   it("preserves MCP arguments and results for semantic tool-call presentation", async () => {

@@ -2,6 +2,7 @@ import {
   getSessionInfo as sdkGetSessionInfo,
   listSessions as sdkListSessions,
   query as sdkQuery,
+  USAGE_LIMIT_ERROR_PREFIXES,
   type Options as ClaudeOptions,
   type Query,
   type SDKControlGetUsageResponse,
@@ -517,6 +518,16 @@ interface ClaudeSession {
   /// a transient failure that arrived as plain text rather than a structured
   /// error. Shown in the answer slot (red) if all retries are exhausted.
   lastErrorText: string | undefined
+  /// Claude's own user-facing explanation for a genuinely exhausted usage
+  /// allowance (for example "You've hit your limit · resets 8pm"). Unlike a
+  /// temporary 429, this is terminal and must never trigger an outer retry.
+  lastUsageLimitText: string | undefined
+  /// Latest claude.ai subscription-limit state observed since the previous
+  /// result. A rejected state is a structured fallback when the result omits
+  /// Claude's richer limit text.
+  latestRateLimitInfo:
+    | Extract<SDKMessage, { type: "rate_limit_event" }>["rate_limit_info"]
+    | undefined
   /// Context occupancy from the latest top-level assistant request. Claude's
   /// result usage is cumulative; the per-message input + cache buckets are the
   /// authoritative current-context count.
@@ -817,6 +828,8 @@ export const makeClaudeProvider = (
       transientRetries: 0,
       lastAssistantError: undefined,
       lastErrorText: undefined,
+      lastUsageLimitText: undefined,
+      latestRateLimitInfo: undefined,
       latestContextUsage: undefined,
       activeContextCompactionId: undefined,
       accumulators: new Map(),
@@ -1381,15 +1394,26 @@ const handleMessage = (
         // max_output_tokens) so a following error `result` can be classified
         // transient vs permanent, and a truncation can be recovered.
         const assistantError = (message as { error?: unknown }).error
+        const usageLimitText = detectUsageLimitMessage(message)
         if (typeof assistantError === "string") {
           session.lastAssistantError = assistantError
+          if (
+            usageLimitText !== undefined &&
+            (assistantError === "rate_limit" || assistantError === "billing_error")
+          ) {
+            session.lastUsageLimitText = usageLimitText
+          }
         } else {
+          if (usageLimitText !== undefined) {
+            session.lastAssistantError = "rate_limit"
+            session.lastUsageLimitText = usageLimitText
+          }
           // Some transient failures (e.g. a 529 overload) carry no structured
           // error — the CLI renders them as an assistant text message ending on
           // a stop sequence (e.g. "API Error: 529 Overloaded …"). Detect that
           // shape so the turn retries instead of surfacing the error as if it
           // were the answer.
-          const apiError = detectApiErrorMessage(message)
+          const apiError = usageLimitText === undefined ? detectApiErrorMessage(message) : undefined
           if (apiError !== undefined) {
             session.lastAssistantError = "overloaded"
             session.lastErrorText = apiError
@@ -1513,6 +1537,12 @@ const handleMessage = (
       }
       break
     }
+    case "rate_limit_event":
+      // This is subscription usage state, distinct from a transient HTTP 429.
+      // Retain it so a following `rate_limit` result can stop immediately when
+      // Claude says the account's allowance is genuinely exhausted.
+      session.latestRateLimitInfo = message.rate_limit_info
+      break
     case "result":
       handleResult(session, message)
       break
@@ -1532,6 +1562,20 @@ const handleSystemMessage = (
   message: Extract<SDKMessage, { type: "system" }>
 ): void => {
   switch (message.subtype) {
+    case "api_retry": {
+      // Claude Code retries transient API failures internally before it emits
+      // the assistant/result pair that drives Codevisor's bounded outer
+      // recovery. Surface that internal retry immediately instead of leaving
+      // the client on a stale "Thinking..." indicator for the whole backoff.
+      if (!session.turnActive) break
+      const retry = claudeInternalRetryStatus(message)
+      void session.emit({
+        kind: "session.updated",
+        payload: { retrying: retry, turnId: session.turnId },
+        subjectId: session.key
+      })
+      break
+    }
     case "status": {
       const status =
         message.compact_result === "success"
@@ -2170,13 +2214,9 @@ const findAccumulatorId = (session: ClaudeSession, _event: Record<string, unknow
   return lastKey
 }
 
-/// One resolution of an SDK `result`: either keep the same turn alive and
-/// recover (truncation continuation or transient retry), or end it — with an
-/// optional human `stopDetail` the client renders when the ending isn't clean.
-/// Extracts the CLI's error text when a transient failure arrived as a plain
-/// assistant message ending on a stop sequence (e.g. "API Error: 529 Overloaded
-/// …"). Returns the trimmed text, or undefined when it isn't that shape.
-const detectApiErrorMessage = (message: SDKMessage & { type: "assistant" }): string | undefined => {
+/// Extracts the plain text from a CLI-generated assistant stop. Claude uses
+/// this shape both for transient API errors and terminal usage-limit messages.
+const stoppedAssistantText = (message: SDKMessage & { type: "assistant" }): string | undefined => {
   const inner = message.message as { stop_reason?: unknown; content?: unknown }
   if (inner.stop_reason !== "stop_sequence") return undefined
   const content = inner.content
@@ -2186,7 +2226,72 @@ const detectApiErrorMessage = (message: SDKMessage & { type: "assistant" }): str
     .map((block) => (typeof block.text === "string" ? block.text : ""))
     .join("")
     .trim()
-  return API_ERROR_TEXT.test(text) ? text : undefined
+  return text === "" ? undefined : text
+}
+
+const usageLimitText = (value: unknown): string | undefined => {
+  if (typeof value !== "string") return undefined
+  const text = value.trim()
+  return USAGE_LIMIT_ERROR_PREFIXES.some((prefix) => text.startsWith(prefix)) ? text : undefined
+}
+
+const detectUsageLimitMessage = (message: SDKMessage & { type: "assistant" }): string | undefined =>
+  usageLimitText(stoppedAssistantText(message))
+
+const detectApiErrorMessage = (message: SDKMessage & { type: "assistant" }): string | undefined => {
+  const text = stoppedAssistantText(message)
+  return text !== undefined && API_ERROR_TEXT.test(text) ? text : undefined
+}
+
+const usageLimitTextFromResult = (message: SDKMessage & { type: "result" }): string | undefined => {
+  const raw = message as unknown as Record<string, unknown>
+  const resultText = usageLimitText(raw.result)
+  if (resultText !== undefined) return resultText
+  if (!Array.isArray(raw.errors)) return undefined
+  for (const error of raw.errors) {
+    const text = usageLimitText(error)
+    if (text !== undefined) return text
+  }
+  return undefined
+}
+
+const rejectedUsageLimitDetail = (
+  info: ClaudeSession["latestRateLimitInfo"]
+): string | undefined => {
+  if (info?.status !== "rejected") return undefined
+  switch (info.overageDisabledReason) {
+    case "out_of_credits":
+      return info.canUserPurchaseCredits === true
+        ? "You're out of Claude usage credits. Add credits in Claude to continue."
+        : "Your Claude organization is out of usage credits. Contact your administrator."
+    case "org_level_disabled":
+    case "org_level_disabled_until":
+    case "org_service_level_disabled":
+      return "Your Claude organization has disabled additional usage. Contact your administrator."
+    case "seat_tier_level_disabled":
+      return "Your Claude plan doesn't include additional usage credits."
+    case "member_level_disabled":
+    case "member_zero_credit_limit":
+    case "group_zero_credit_limit":
+    case "seat_tier_zero_credit_limit":
+      return "Your Claude usage allocation is unavailable. Contact your administrator."
+    default:
+      break
+  }
+  if (info.errorCode === "credits_required") {
+    return "Claude usage credits are required to continue."
+  }
+  switch (info.rateLimitType) {
+    case "five_hour":
+      return "You've reached your 5-hour Claude usage limit. Try again after it resets."
+    case "seven_day":
+    case "seven_day_opus":
+    case "seven_day_sonnet":
+    case "seven_day_overage_included":
+      return "You've reached your weekly Claude usage limit. Try again after it resets."
+    default:
+      return "You've reached your Claude usage limit. Try again after it resets."
+  }
 }
 
 type TurnResolution =
@@ -2216,6 +2321,26 @@ const classifyResult = (
   const subtype = message.subtype
   const stopReasonRaw = typeof message.stop_reason === "string" ? message.stop_reason : ""
   const lastError = session.lastAssistantError ?? ""
+  const resultUsageLimitText = usageLimitTextFromResult(message)
+  const usageLimitDetail =
+    resultUsageLimitText ??
+    session.lastUsageLimitText ??
+    (lastError === "rate_limit" || lastError === "billing_error"
+      ? rejectedUsageLimitDetail(session.latestRateLimitInfo)
+      : undefined)
+  const usageLimitExceeded =
+    usageLimitDetail !== undefined &&
+    (message.is_error === true ||
+      subtype !== "success" ||
+      lastError === "rate_limit" ||
+      lastError === "billing_error")
+
+  // Claude distinguishes genuine subscription/credit exhaustion from a
+  // temporary request-rate 429 through its canonical user-facing messages and
+  // rejected rate_limit_event state. Retrying cannot help in this case.
+  if (usageLimitExceeded) {
+    return { kind: "end", stopReason: "end_turn", stopDetail: usageLimitDetail }
+  }
 
   const truncated =
     (subtype === "success" && TRUNCATION_STOP_REASONS.has(stopReasonRaw)) ||
@@ -2325,14 +2450,37 @@ const scheduleRecovery = (session: ClaudeSession, delayMs: number): void => {
   }, delayMs)
 }
 
-/// Emits a visible "retrying" status so the client can show "Retrying… (n/3)"
-/// while a transient failure is being retried. The client clears it when the
-/// next output arrives or the turn ends.
-const emitRetrying = (session: ClaudeSession, attempt: number, of: number): void => {
+const claudeInternalRetryStatus = (
+  message: Extract<SDKMessage, { subtype: "api_retry"; type: "system" }>
+): { attempt?: number; message: string; of?: number } => {
+  const status = message.error_status ?? undefined
+  const retryMessage =
+    status === 529 || message.error === "overloaded"
+      ? "Claude is overloaded, retrying"
+      : status === 429 || message.error === "rate_limit"
+        ? "Claude is temporarily rate limited, retrying"
+        : status !== undefined && status >= 500
+          ? "Claude returned a server error, retrying"
+          : "Claude connection was interrupted, retrying"
+  return {
+    ...(message.attempt > 0 ? { attempt: message.attempt } : {}),
+    message: retryMessage,
+    ...(message.max_retries > 0 ? { of: message.max_retries } : {})
+  }
+}
+
+/// Emits a visible retry reason while Codevisor's outer recovery is active.
+/// The client clears it when the next output arrives or the turn ends.
+const emitRetrying = (
+  session: ClaudeSession,
+  attempt: number,
+  of: number,
+  message: string
+): void => {
   void session.emit({
     kind: "session.updated",
     payload: {
-      retrying: { attempt, message: "Server is busy, reconnecting", of },
+      retrying: { attempt, message, of },
       turnId: session.turnId
     },
     subjectId: session.key
@@ -2418,16 +2566,18 @@ const handleResult = (session: ClaudeSession, message: SDKMessage & { type: "res
   // event cannot be mistaken for unrelated autonomous activity.
   if (!session.turnActive) void ensureObservedTurnStarted(session)
 
+  const assistantError = session.lastAssistantError
   const resolution = classifyResult(session, message)
   const authFailure =
-    session.lastAssistantError === "authentication_failed" ||
-    session.lastAssistantError === "oauth_org_not_allowed"
+    assistantError === "authentication_failed" || assistantError === "oauth_org_not_allowed"
   if (process.env.CODEVISOR_DEBUG !== undefined || process.env.HERDMAN_DEBUG !== undefined) {
     logTurnEnd(session, message, resolution)
   }
   // Each `result` is classified on the assistant error seen since the previous
   // one; consume it so a stale error can't misclassify a later leg.
   session.lastAssistantError = undefined
+  session.lastUsageLimitText = undefined
+  session.latestRateLimitInfo = undefined
 
   if (resolution.kind === "continue") {
     // Output truncated — resume the same turn immediately and invisibly; the
@@ -2440,7 +2590,12 @@ const handleResult = (session: ClaudeSession, message: SDKMessage & { type: "res
     // Transient API failure — show "Retrying…", back off, then resume. The turn
     // stays alive; turnId/pendingPrompt are untouched.
     session.transientRetries += 1
-    emitRetrying(session, resolution.attempt, MAX_TRANSIENT_RETRIES)
+    emitRetrying(
+      session,
+      resolution.attempt,
+      MAX_TRANSIENT_RETRIES,
+      retryMessageForAssistantError(assistantError)
+    )
     scheduleRecovery(session, resolution.delayMs)
     return
   }
@@ -2461,6 +2616,19 @@ const handleResult = (session: ClaudeSession, message: SDKMessage & { type: "res
   if (!isTaskNotification) settleGoalOnTurnEnd(session, message)
   void refreshClaudeSessionTitle(session)
   void finishActiveTurn(session, resolution.stopReason, resolution.stopDetail, resolution.retryable)
+}
+
+const retryMessageForAssistantError = (error: string | undefined): string => {
+  switch (error) {
+    case "overloaded":
+      return "Claude is still overloaded, restarting response"
+    case "rate_limit":
+      return "Claude is temporarily rate limited, restarting response"
+    case "server_error":
+      return "Claude returned a server error, restarting response"
+    default:
+      return "Claude is unavailable, restarting response"
+  }
 }
 
 const claudeContextUsageFromAssistant = (
@@ -2616,6 +2784,7 @@ const ensureTurnStarted = (
   session.transientRetries = 0
   session.lastAssistantError = undefined
   session.lastErrorText = undefined
+  session.lastUsageLimitText = undefined
   return session.emit({
     kind: "session.updated",
     payload: { initiatedBy, turnId: session.turnId, turnState: "started" },

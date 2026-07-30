@@ -236,6 +236,12 @@ struct SessionModelTests {
 
         #expect(model.isSending)
         #expect(model.providerActivityPhase == .modelStream)
+        #expect(model.providerActivityPhase?.prolongedStatusMessage == "Still waiting for a model response")
+        guard case let .assistant(message) = model.conversation.last else {
+            Issue.record("expected assistant")
+            return
+        }
+        #expect(message.turn.isThinking == false)
         client.emit(stopEnvelope(id: 10, sessionId: sessionId, stopReason: "end_turn"))
         await settleUntil { !model.isSending }
         #expect(model.isTakingLongerThanExpected == false)
@@ -640,11 +646,19 @@ struct SessionModelTests {
         client.emit(ServerEventEnvelope(
             id: 1, serverId: "local", kind: "session.updated",
             subjectId: sessionId.uuidString, createdAt: "2026-06-30T00:00:00.000Z",
-            payload: .object(["retrying": .object(["attempt": .number(2), "of": .number(3)])])
+            payload: .object(["retrying": .object([
+                "attempt": .number(2),
+                "message": .string("Claude is overloaded, retrying"),
+                "of": .number(3),
+            ])])
         ))
         await settleUntil {
             if case let .assistant(message) = model.conversation.last {
-                return message.turn.retryStatus == RetryStatus(attempt: 2, of: 3)
+                return message.turn.retryStatus == RetryStatus(
+                    attempt: 2,
+                    of: 3,
+                    message: "Claude is overloaded, retrying"
+                )
             }
             return false
         }
