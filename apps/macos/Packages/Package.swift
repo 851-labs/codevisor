@@ -130,6 +130,15 @@ let package = Package(
             path: "CodevisorUI/Sources/CodevisorUI",
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),
+        .testTarget(
+            name: "CodevisorUITests",
+            dependencies: [
+                "CodevisorUI",
+                "ACPKit"
+            ],
+            path: "CodevisorUI/Tests/CodevisorUITests",
+            swiftSettings: [.swiftLanguageMode(.v6)]
+        ),
 
         .testTarget(
             name: "CodevisorCoreMacTests",
