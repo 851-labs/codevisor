@@ -68,6 +68,29 @@ public enum ServerSessionStreamEvent: Equatable, Sendable {
     case runtimeState(SessionRuntimeState)
     /// Durable form of Codex's synthetic post-plan approval prompt.
     case planApprovalRequired(Bool)
+    /// The harness's selected model declined the request and the turn was
+    /// re-run on a fallback model. The swap is sticky for the session, so this
+    /// is session-level state rather than a per-turn line.
+    case modelFallback(SessionModelFallback)
+}
+
+/// A refusal-driven model swap reported by the harness: the selected model's
+/// safety classifiers declined the request and another model served it.
+public struct SessionModelFallback: Sendable, Equatable {
+    /// Raw model identifiers as reported by the harness. Display names are
+    /// resolved against the live model option, which may no longer list the
+    /// original — hence raw values here rather than presentation strings.
+    public var originalModel: String
+    public var fallbackModel: String
+    /// Refusal category (`cyber`, `bio`, …). An open string on the wire: new
+    /// categories ship ahead of schema updates, so this is never parsed.
+    public var category: String?
+
+    public init(originalModel: String, fallbackModel: String, category: String? = nil) {
+        self.originalModel = originalModel
+        self.fallbackModel = fallbackModel
+        self.category = category
+    }
 }
 
 /// One in-flight background task owned by the agent process, from the
@@ -460,6 +483,9 @@ public struct ServerSessionTransport: Sendable {
             if let tasks = backgroundTasks(from: event.payload) {
                 return [.backgroundTasks(tasks)]
             }
+            if let fallback = modelFallback(from: event.payload) {
+                return [.modelFallback(fallback)]
+            }
             if let state = event.payload["runtimeState"]?.stringValue
                 .flatMap(SessionRuntimeState.init(rawValue:)) {
                 return [.runtimeState(state)]
@@ -546,6 +572,20 @@ public struct ServerSessionTransport: Sendable {
             )
             return []
         }
+    }
+
+    /// Both model ids are required: a notice that cannot name what was swapped
+    /// for what is not worth showing, so a malformed payload is skipped.
+    private static func modelFallback(from payload: JSONValue) -> SessionModelFallback? {
+        guard let value = payload["modelFallback"],
+              let originalModel = value["originalModel"]?.stringValue,
+              let fallbackModel = value["fallbackModel"]?.stringValue
+        else { return nil }
+        return SessionModelFallback(
+            originalModel: originalModel,
+            fallbackModel: fallbackModel,
+            category: value["category"]?.stringValue
+        )
     }
 
     private static func metadataUpdates(from payload: JSONValue) -> [SessionUpdate] {

@@ -1143,6 +1143,9 @@ final public class SessionController {
            previousValue != value {
             captureModelSelected(modelId: value, previousModelId: previousValue)
             configurationAdjustmentMessage = nil
+            // The user just chose a model, so a "we swapped your model" notice
+            // no longer describes the current state.
+            model?.clearModelFallback()
         }
         // Explicit picker actions become the next composer's defaults
         // immediately, including in an unsent draft. Persist the resulting
@@ -1243,6 +1246,26 @@ final public class SessionController {
     }
     public var providerActivityPhase: SessionProviderActivityPhase? {
         model?.providerActivityPhase
+    }
+
+    /// User-facing text for a refusal-driven model swap, with both model ids
+    /// resolved to display names where the live model option still lists them.
+    /// The original usually is not listed once the swap is sticky, so its raw
+    /// id is the expected fallback rather than an error case.
+    public var modelFallbackMessage: String? {
+        guard let fallback = model?.modelFallback else { return nil }
+        let names = configOptions.first {
+            $0.category == SessionConfigOption.Category.model || $0.id == "model"
+        }?.options ?? []
+        func name(_ value: String) -> String {
+            names.first { $0.value == value }?.name ?? value
+        }
+        return "\(name(fallback.originalModel)) declined this request."
+            + " Using \(name(fallback.fallbackModel)) for the rest of this chat."
+    }
+
+    public func dismissModelFallback() {
+        model?.clearModelFallback()
     }
 
     public var isBusy: Bool {
@@ -1509,12 +1532,16 @@ final public class SessionController {
                 restoring: serverSession?.configSelections,
                 from: capability.configOptions
             )
-            if !didLoadExistingRuntimeConfiguration {
-                configurationAdjustmentMessage = Self.configurationAdjustmentMessage(
-                    saved: serverSession?.configSelections,
-                    validated: validatedCapability.configOptions
-                )
-            }
+            // Deliberately NOT deriving `configurationAdjustmentMessage` here.
+            // This is a throwaway fresh-harness inspection: it runs under the
+            // harness's *active* account rather than the chat's bound one, its
+            // model list is a best-effort race that yields an empty list on
+            // timeout, and its effort/speed lists are derived from the
+            // inspection's own default model. Any of those makes the chat's
+            // saved selection look missing, and because this call beats the
+            // runtime connect (which can cold-spawn the agent), the false
+            // claim was what the user actually read. Only the resumed
+            // runtime's own snapshot can answer "is this still available".
             configCache.store(validatedCapability, forServer: project.serverId)
             applyHarnessCapabilities([validatedCapability])
             // A late generic inspection must not leave its fresh-session
@@ -2222,10 +2249,14 @@ final public class SessionController {
                     if let supportsGoals = metadata.supportsGoals {
                         supportsGoalsByHarness[harnessId] = supportsGoals
                     }
-                    configurationAdjustmentMessage = Self.configurationAdjustmentMessage(
-                        saved: session.configSelections,
-                        validated: metadata.configOptions
-                    )
+                    // Only a populated snapshot can be compared against: an
+                    // empty option list would make every saved key look lost.
+                    if !metadata.configOptions.isEmpty {
+                        configurationAdjustmentMessage = Self.configurationAdjustmentMessage(
+                            saved: session.configSelections,
+                            validated: metadata.configOptions
+                        )
+                    }
                     didLoadExistingRuntimeConfiguration = true
                     model.applyRuntimeMetadata(
                         modeState: metadata.modes,
@@ -2321,21 +2352,31 @@ final public class SessionController {
         return model
     }
 
-    private static func configurationAdjustmentMessage(
+    static func configurationAdjustmentMessage(
         saved: [String: String]?,
         validated: [SessionConfigOption]
     ) -> String? {
         guard let saved, !saved.isEmpty else { return nil }
-        let changed = saved.compactMap { configId, previousValue -> (String, SessionConfigOption?)? in
-            let option = validated.first(where: { $0.id == configId })
-            guard option?.currentValue != previousValue else { return nil }
+        // An option the snapshot does not advertise at all is not evidence of
+        // loss: several (`speed`, model-specific effort tiers) exist only for
+        // certain models, so their absence is routine. Only an option that is
+        // still present AND now reports a different value means the saved
+        // selection could not be restored.
+        let changed = saved.compactMap { configId, previousValue -> (String, SessionConfigOption)? in
+            guard let option = validated.first(where: { $0.id == configId }),
+                  option.currentValue != previousValue
+            else { return nil }
             return (previousValue, option)
         }
         guard !changed.isEmpty else { return nil }
-        if let (previousModel, model) = changed.first(where: {
-            $0.1?.category == SessionConfigOption.Category.model || $0.1?.id == "model"
-        }), let model {
-            return "\(previousModel) is no longer available. Using \(model.currentName)."
+        if let (previousValue, model) = changed.first(where: {
+            $0.1.category == SessionConfigOption.Category.model || $0.1.id == "model"
+        }) {
+            // `configSelections` persists values, not names. Resolve the display
+            // name when the value is still listed (a plain switch); a genuinely
+            // withdrawn model leaves only its raw value to show.
+            let previousName = model.options.first { $0.value == previousValue }?.name ?? previousValue
+            return "\(previousName) is no longer available. Using \(model.currentName)."
         }
         return "Some saved settings are no longer available. Current harness defaults are being used."
     }

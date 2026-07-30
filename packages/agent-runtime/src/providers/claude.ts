@@ -884,6 +884,50 @@ export const makeClaudeProvider = (
             }
             continue
           }
+          if (
+            !created.retired &&
+            message.type === "system" &&
+            message.subtype === "model_refusal_fallback"
+          ) {
+            // The selected model's safety classifiers declined the request and
+            // Claude Code re-ran the turn on a fallback model. Handled here
+            // rather than in `handleSystemMessage` for the same reason `init`
+            // is: correcting the model needs this scope's `metadataFor` and
+            // model-matching helpers.
+            //
+            // Two separate emits, deliberately: the client's `session.updated`
+            // dispatch duck-types the payload and stops at the first arm that
+            // matches, so folding the notice and the option snapshot into one
+            // payload would drop whichever arm loses.
+            applyClaudeModelFromProvider(created, message.fallback_model)
+            void created.emit({
+              kind: "session.updated",
+              payload: {
+                modelFallback: {
+                  originalModel: message.original_model,
+                  fallbackModel: created.currentModel,
+                  // Open string on the wire — new categories ship ahead of
+                  // schema updates, so this passes through untouched.
+                  category: message.api_refusal_category ?? null
+                }
+              },
+              subjectId: created.key
+            })
+            // The swap is sticky for the session, so a picker still
+            // advertising the original model would be lying for every later
+            // turn. Re-emitting the whole snapshot also refreshes the
+            // effort/speed lists, which derive from the current model.
+            void created.emit({
+              kind: "session.updated",
+              payload: {
+                configId: "model",
+                configOptions: metadataFor(created).configOptions,
+                value: created.currentModel
+              },
+              subjectId: created.key
+            })
+            continue
+          }
           if (!created.retired) handleMessage(created, message, readFile)
         }
       } catch (cause) {

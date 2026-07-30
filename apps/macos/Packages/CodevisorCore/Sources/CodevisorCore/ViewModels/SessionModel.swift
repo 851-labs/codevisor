@@ -90,6 +90,10 @@ public final class SessionModel {
     }
     public private(set) var isSending = false
     public private(set) var isCancelling = false
+    /// Set when the harness reports a refusal-driven model swap. Not cleared at
+    /// turn end: the swap is sticky for the session, so the notice stays true
+    /// until the user dismisses it or picks a model themselves.
+    public private(set) var modelFallback: SessionModelFallback?
     public private(set) var isTakingLongerThanExpected = false
     public private(set) var providerActivityPhase: SessionProviderActivityPhase?
     public private(set) var queuedPrompts: [ServerPromptQueueItem] = []
@@ -998,8 +1002,10 @@ public final class SessionModel {
                 case let .authenticationRequired(message):
                     turn.stopDetail = message
                     turn.isGenerating = false
+                // `modelFallback` is session-level state, not per-turn detail:
+                // replaying history must not resurrect a dismissed notice.
                 case .userMessage, .queueUpdated, .retrying, .backgroundTasks, .runtimeState,
-                     .planApprovalRequired, .updateGate:
+                     .planApprovalRequired, .updateGate, .modelFallback:
                     break
                 }
             }
@@ -1270,7 +1276,15 @@ public final class SessionModel {
         case let .planApprovalRequired(required):
             pendingPlanApproval = required
             onPlanApprovalChanged?(required)
+        case let .modelFallback(fallback):
+            modelFallback = fallback
         }
+    }
+
+    /// Drops the refusal-fallback notice. Called on user dismissal and when the
+    /// user selects a model themselves, which makes the notice stale.
+    public func clearModelFallback() {
+        modelFallback = nil
     }
 
     /// Seeds conversation state for previews. Not for production use.
@@ -1371,7 +1385,7 @@ public final class SessionModel {
         case .userMessage:
             return .modelStream
         case .finished, .failed, .authenticationRequired, .queueUpdated, .updateGate,
-             .backgroundTasks, .runtimeState, .planApprovalRequired:
+             .backgroundTasks, .runtimeState, .planApprovalRequired, .modelFallback:
             return nil
         }
     }

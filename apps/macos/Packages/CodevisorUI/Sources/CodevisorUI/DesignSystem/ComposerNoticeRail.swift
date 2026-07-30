@@ -10,6 +10,10 @@ public struct ComposerNoticeRail: View {
 
     private let message: String
     private let kind: Kind
+    /// Overrides the kind's default glyph. Notices that aren't about invalid
+    /// configuration read better with their own icon — a stalled turn is a
+    /// clock, not a warning triangle — while keeping one notice surface.
+    private let systemImage: String?
     private let actionTitle: String?
     private let action: (() -> Void)?
     private let onDismiss: (() -> Void)?
@@ -17,12 +21,14 @@ public struct ComposerNoticeRail: View {
     public init(
         _ message: String,
         kind: Kind,
+        systemImage: String? = nil,
         actionTitle: String? = nil,
         action: (() -> Void)? = nil,
         onDismiss: (() -> Void)? = nil
     ) {
         self.message = message
         self.kind = kind
+        self.systemImage = systemImage
         self.actionTitle = actionTitle
         self.action = action
         self.onDismiss = onDismiss
@@ -30,7 +36,7 @@ public struct ComposerNoticeRail: View {
 
     public var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Image(systemName: kind == .error ? "exclamationmark.triangle.fill" : "exclamationmark.triangle")
+            Image(systemName: systemImage ?? defaultSystemImage)
                 .font(.caption)
             Text(message)
                 .font(.caption)
@@ -59,6 +65,10 @@ public struct ComposerNoticeRail: View {
                 .fill(foregroundColor.opacity(0.08))
         )
         .accessibilityElement(children: .combine)
+    }
+
+    private var defaultSystemImage: String {
+        kind == .error ? "exclamationmark.triangle.fill" : "exclamationmark.triangle"
     }
 
     private var foregroundColor: Color {
