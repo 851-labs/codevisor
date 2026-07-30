@@ -29,11 +29,13 @@ struct HarnessIcon: View {
     /// and never tint them, so the point size and label color are both baked
     /// into a bitmap copy of the catalog image.
     private static func sizedImage(named name: String, size: CGFloat) -> NSImage? {
-        guard let image = NSImage(named: name) else { return nil }
-        return MenuIconRasterizer.labelTintedBitmap(
-            drawing: image,
-            size: NSSize(width: size, height: size)
-        )
+        MenuIconRasterizer.tinted(cacheKey: "catalog:\(name)@\(size)") {
+            guard let image = NSImage(named: name) else { return nil }
+            return MenuIconRasterizer.labelTintedBitmap(
+                drawing: image,
+                size: NSSize(width: size, height: size)
+            )
+        }
     }
 }
 
@@ -61,12 +63,14 @@ struct MenuSymbolIcon: View {
     }
 
     static func rasterizedSymbol(named name: String, size: CGFloat) -> NSImage? {
-        guard let symbol = NSImage(systemSymbolName: name, accessibilityDescription: nil),
-              let configured = symbol.withSymbolConfiguration(
-                  NSImage.SymbolConfiguration(pointSize: size - 1, weight: .medium)
-              )
-        else { return nil }
-        return MenuIconRasterizer.labelTintedBitmap(drawing: configured, size: configured.size)
+        MenuIconRasterizer.tinted(cacheKey: "symbol:\(name)@\(size)") {
+            guard let symbol = NSImage(systemSymbolName: name, accessibilityDescription: nil),
+                  let configured = symbol.withSymbolConfiguration(
+                      NSImage.SymbolConfiguration(pointSize: size - 1, weight: .medium)
+                  )
+            else { return nil }
+            return MenuIconRasterizer.labelTintedBitmap(drawing: configured, size: configured.size)
+        }
     }
 }
 
@@ -80,6 +84,39 @@ struct MenuSymbolIcon: View {
 /// usual; the baked color only shows where menus draw it literally.
 @MainActor
 enum MenuIconRasterizer {
+    /// Memoized rasterizations, keyed by the caller's stable glyph key.
+    ///
+    /// The sidebar's chat list is deliberately non-lazy, and its body is
+    /// re-evaluated whenever any cached session's activity state moves — so
+    /// every idle row used to allocate an `NSBitmapImageRep`, draw it, and
+    /// composite a fresh `NSImage` on the main actor per pass. The glyph set is
+    /// small and bounded (one per harness, plus a handful of SF Symbols at a
+    /// couple of sizes), so a plain dictionary needs no eviction policy.
+    ///
+    /// The key is supplied by the caller rather than derived from the `NSImage`:
+    /// the SF Symbol path builds a fresh `withSymbolConfiguration` copy on every
+    /// call, so an identity-derived key would miss every time *and* leak a new
+    /// entry per call. Passing the key in also lets a hit skip building that
+    /// copy at all.
+    private static var cache: [String: NSImage] = [:]
+    /// The appearance the cached pixels had their label color resolved against.
+    private static var cachedAppearance: String?
+
+    /// Returns the rasterized glyph for `cacheKey`, producing it with `make` on
+    /// a miss. The cache is dropped wholesale when the effective appearance
+    /// changes, because the label color is baked into the pixels.
+    static func tinted(cacheKey: String, make: () -> NSImage?) -> NSImage? {
+        let appearance = NSApp.effectiveAppearance.name.rawValue
+        if cachedAppearance != appearance {
+            cache.removeAll(keepingCapacity: true)
+            cachedAppearance = appearance
+        }
+        if let cached = cache[cacheKey] { return cached }
+        guard let made = make() else { return nil }
+        cache[cacheKey] = made
+        return made
+    }
+
     static func labelTintedBitmap(drawing image: NSImage, size: NSSize) -> NSImage? {
         let scale: CGFloat = 2
         guard size.width > 0, size.height > 0,

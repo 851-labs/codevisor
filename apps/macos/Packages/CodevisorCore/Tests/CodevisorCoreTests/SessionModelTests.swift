@@ -248,6 +248,63 @@ struct SessionModelTests {
         #expect(model.providerActivityPhase == nil)
     }
 
+    /// Regression guard for the observable-write guards in
+    /// `noteProviderActivity`. Those two writes are guarded so streaming stops
+    /// re-rendering the composer on every chunk — but the quiet-turn timer
+    /// underneath them must still be cancelled and re-armed per event. Guarding
+    /// the whole function on a phase change instead (the obvious refactor)
+    /// leaves the task armed by the FIRST chunk of a phase, so a turn that
+    /// streams steadily under one phase reports itself stalled mid-stream.
+    ///
+    /// Wall-clock by necessity: the bug is about *when* the timer fires, so the
+    /// quiet window has to elapse for real. Margins are ~16x the pump interval.
+    @Test("Steady same-phase activity keeps re-arming the quiet-turn timer")
+    func steadyActivityNeverReportsStalled() async {
+        let sessionId = UUID()
+        let client = FakeSessionServerClient(sessionId: sessionId)
+        client.echoOnPrompt = false
+        let quietInterval = Duration.milliseconds(200)
+        let model = SessionModel(
+            serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
+            sessionId: sessionId.uuidString,
+            stalledTurnQuietInterval: quietInterval
+        )
+
+        // `send` itself notes .modelStream activity, arming the first window.
+        await model.send("stream steadily")
+
+        // Pump chunks under the SAME phase for well past one quiet window.
+        for id in 1...16 {
+            try? await Task.sleep(for: .milliseconds(30))
+            client.emit(ServerEventEnvelope(
+                id: id,
+                serverId: "local",
+                kind: "session.output",
+                subjectId: sessionId.uuidString,
+                createdAt: "2026-06-30T00:00:02.000Z",
+                payload: .object([
+                    "sessionUpdate": .string("agent_message_chunk"),
+                    "messageId": .string("msg-1"),
+                    "content": .object(["type": .string("text"), "text": .string("chunk ")])
+                ])
+            ))
+            // Let the buffered flush apply the chunk (the suite flushes on the
+            // next main-actor turn), then check the state it produced.
+            for _ in 0..<8 { await Task.yield() }
+            #expect(
+                model.isTakingLongerThanExpected == false,
+                "a steadily streaming turn must never report itself stalled (chunk \(id))"
+            )
+        }
+
+        #expect(model.isSending)
+        #expect(model.providerActivityPhase == .modelStream)
+
+        // With activity stopped, the window is allowed to elapse as usual.
+        try? await Task.sleep(for: quietInterval + .milliseconds(150))
+        #expect(model.isTakingLongerThanExpected)
+    }
+
     @Test("Server-backed sessions prompt through the server and consume event stream output")
     func serverBackedSendStreams() async {
         let sessionId = UUID()

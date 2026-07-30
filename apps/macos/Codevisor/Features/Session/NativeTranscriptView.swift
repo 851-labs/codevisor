@@ -204,8 +204,18 @@ private final class TranscriptContentHostingController: NSHostingController<AnyV
     }
 
     private func measureAndReportHeight() {
+        // Never measure against the placeholder width. A row's content width
+        // starts at 1pt (see `TranscriptRowHost.contentWidthConstraint`) and
+        // only becomes real once the host has been positioned and laid out; a
+        // TextKit pass at 1pt wraps a message to one line fragment PER
+        // CHARACTER, which is pure waste — the result is meaningless and is
+        // always superseded. Skipping is safe: `TranscriptRowHost.layout()`
+        // re-invalidates whenever the width actually changes, so the real
+        // measurement still arrives.
+        let width = view.bounds.width
+        guard width > 1 else { return }
         let proposedSize = CGSize(
-            width: max(1, view.bounds.width),
+            width: width,
             height: .greatestFiniteMagnitude
         )
         let height = max(1, sizeThatFits(in: proposedSize).height.rounded(.up))
@@ -275,12 +285,26 @@ private final class TranscriptRowHost: NSView {
     }
 
     override func layout() {
-        let width = max(1, bounds.width)
-        if abs(contentWidthConstraint.constant - width) > 0.5 {
-            contentWidthConstraint.constant = width
+        if syncContentWidth() {
             contentController.invalidateContentSize()
         }
         super.layout()
+    }
+
+    /// Pushes the row's current width into the content constraint without
+    /// waiting for AppKit's layout pass, returning whether it moved.
+    ///
+    /// Mounting sets the host's frame and its content in the same main-actor
+    /// turn, but `frame` only marks the view as needing layout — `layout()`
+    /// runs later. The first measurement would therefore race against the 1pt
+    /// placeholder width, so mounting calls this explicitly between
+    /// positioning the host and installing its root view.
+    @discardableResult
+    func syncContentWidth() -> Bool {
+        let width = max(1, bounds.width)
+        guard abs(contentWidthConstraint.constant - width) > 0.5 else { return false }
+        contentWidthConstraint.constant = width
+        return true
     }
 
     var rootView: AnyView {
@@ -1216,10 +1240,16 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
                 host.onHeightChange = { [weak self] height in
                     self?.recordMeasuredHeight(height, for: key)
                 }
-                host.rootView = measuredRootView(for: row)
                 transcriptDocumentView.addSubview(host)
                 mountedHosts[key] = host
+                // Position (and push the resulting width into the content
+                // constraint) BEFORE installing the root view: assigning
+                // `rootView` schedules the first measurement, and it must not
+                // run against the 1pt placeholder width. `position` is pure
+                // geometry off the virtual layout, so it needs no content.
                 position(host: host, at: index)
+                host.syncContentWidth()
+                host.rootView = measuredRootView(for: row)
             }
         }
     }

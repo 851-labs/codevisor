@@ -92,7 +92,6 @@ public final class SessionModel {
     public private(set) var isCancelling = false
     public private(set) var isTakingLongerThanExpected = false
     public private(set) var providerActivityPhase: SessionProviderActivityPhase?
-    public private(set) var lastProviderActivityAt: Date?
     public private(set) var queuedPrompts: [ServerPromptQueueItem] = []
     /// Set while the server holds this session's prompts during a harness
     /// update ("Waiting for Codex to finish updating…"); nil once released.
@@ -1323,9 +1322,19 @@ public final class SessionModel {
     }
 
     private func noteProviderActivity(_ phase: SessionProviderActivityPhase) {
-        providerActivityPhase = phase
-        lastProviderActivityAt = now()
-        isTakingLongerThanExpected = false
+        // Guarded for the same reason `isSending` is in `apply(_ update:)`:
+        // `@Observable` fires on every set regardless of value, and this runs
+        // for EVERY applied stream event. The composer is the only reader of
+        // both properties, so unguarded writes re-rendered the whole composer
+        // card — text view, model/harness menus, glass surface — at stream
+        // rate, which is what made typing feel buffered while chats ran.
+        //
+        // The quiet-turn timer below is deliberately NOT part of the guard: it
+        // must be cancelled and re-armed on every activity event, or a turn
+        // that streams steadily under one phase would keep the task armed by
+        // its FIRST chunk and falsely report itself stalled mid-stream.
+        if providerActivityPhase != phase { providerActivityPhase = phase }
+        if isTakingLongerThanExpected { isTakingLongerThanExpected = false }
         stalledTurnTask?.cancel()
         let quietInterval = stalledTurnQuietInterval
         stalledTurnTask = Task { @MainActor [weak self] in

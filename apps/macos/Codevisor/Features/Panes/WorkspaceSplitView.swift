@@ -252,7 +252,12 @@ private struct SplitLeafHeader: View {
     @ViewBuilder
     private var leadingIcon: some View {
         if let session = chatSession {
-            ChatSessionLeadingIcon(session: session, store: sessionStore)
+            // Matches the tint its sibling (the non-chat pane icon) uses.
+            ChatSessionLeadingIcon(
+                session: session,
+                store: sessionStore,
+                activityColor: theme.textSecondary
+            )
         } else {
             Image(systemName: iconName)
                 .font(.system(size: 11, weight: .medium))

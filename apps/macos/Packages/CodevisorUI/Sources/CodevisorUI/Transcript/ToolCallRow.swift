@@ -95,11 +95,86 @@ public struct ToolCallRow: View {
     }
 }
 
+/// Process-level memo for the content-diff fallback of `diffTotals`, holding
+/// SETTLED results only.
+///
+/// The per-row `DiffTotalsCache` below lives in `@State`, so it dies whenever
+/// its row unmounts — a `LazyVStack` scroll past the viewport buffer, or a tab
+/// switch, which rebuilds the whole chat screen. Revisiting an expanded edit
+/// therefore re-ran a full Myers diff of the file's entire old and new text on
+/// the main thread. Same rationale (and cap) as `DiffRenderCache`.
+///
+/// Keyed by full content, never by hash alone: a collision would render the
+/// wrong +N/−N. In-progress calls are deliberately NOT stored — streaming
+/// rewrites their text every flush, so admitting intermediates would evict the
+/// settled entries that revisits actually re-encounter (the lesson already
+/// recorded on `MarkdownSegmentCache` and `CodeHighlightResultCache`).
+@MainActor
+private final class SettledDiffTotalsCache {
+    struct Block: Hashable {
+        let oldText: String?
+        let newText: String
+    }
+
+    struct Key: Hashable {
+        let status: ToolCallStatus?
+        let blocks: [Block]
+    }
+
+    static let shared = SettledDiffTotalsCache()
+
+    private var entries: [Key: LineDiff.Totals] = [:]
+    private var order: [Key] = []
+    private let limit: Int
+
+    /// Keys hold the full old/new texts, so the cap stays small.
+    init(limit: Int = 24) {
+        self.limit = max(1, limit)
+    }
+
+    func totals(for key: Key) -> LineDiff.Totals? {
+        guard let value = entries[key] else { return nil }
+        if order.last != key, let index = order.firstIndex(of: key) {
+            order.remove(at: index)
+            order.append(key)
+        }
+        return value
+    }
+
+    func store(_ value: LineDiff.Totals, for key: Key) {
+        if entries[key] == nil {
+            order.append(key)
+            if order.count > limit {
+                entries.removeValue(forKey: order.removeFirst())
+            }
+        }
+        entries[key] = value
+    }
+
+    static func key(for call: ToolCall) -> Key {
+        Key(
+            status: call.status,
+            blocks: (call.content ?? []).compactMap { block in
+                if case let .diff(_, oldText, newText) = block {
+                    // Strings are COW, so this retains rather than copies.
+                    return Block(oldText: oldText, newText: newText)
+                }
+                return nil
+            }
+        )
+    }
+}
+
 /// Memoizes `ToolCall.diffTotals` for the last-seen content. Streamed
 /// `diffStats` are a cheap sum and pass straight through; the content-diff
 /// fallback (a Myers diff over the whole file's old/new text) recomputes
 /// only when the change key — status plus each diff block's text lengths —
 /// moves, which tracks streamed edits (they grow the text) and settlement.
+///
+/// This cheap length-based key stays the first level: it costs no full-content
+/// hashing, so a streaming row that re-renders every flush without changing
+/// still short-circuits here. Only on a miss do we hash full content to consult
+/// the process-level cache, which is what survives unmount/remount.
 @MainActor
 private final class DiffTotalsCache {
     private var key: Int?
@@ -119,10 +194,30 @@ private final class DiffTotalsCache {
         }
         let newKey = hasher.finalize()
         if newKey == key { return value }
-        let computed = call.diffTotals
+
+        // A first level miss is either a real content change (streaming) or a
+        // freshly remounted row. Only the latter can hit the shared cache, and
+        // it is the case that used to re-diff whole files.
+        let sharedKey = SettledDiffTotalsCache.key(for: call)
+        let computed: LineDiff.Totals?
+        if let hit = SettledDiffTotalsCache.shared.totals(for: sharedKey) {
+            computed = hit
+        } else {
+            computed = call.diffTotals
+            if let computed, Self.isSettled(call.status) {
+                SettledDiffTotalsCache.shared.store(computed, for: sharedKey)
+            }
+        }
         key = newKey
         value = computed
         return computed
+    }
+
+    private static func isSettled(_ status: ToolCallStatus?) -> Bool {
+        switch status {
+        case .completed, .failed, .cancelled: return true
+        case .pending, .inProgress, nil: return false
+        }
     }
 }
 

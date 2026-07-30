@@ -8,6 +8,11 @@ import CodevisorUI
 struct ChatSessionLeadingIcon: View {
     let session: ChatSession
     let store: SessionStore?
+    /// The tint for the working glyph. Every other state here is a shape that
+    /// inherits the ambient foreground style, but the braille spinner is
+    /// rasterized for CoreAnimation (see `AgentActivityIndicator`), so it needs
+    /// the color its row would otherwise have applied.
+    var activityColor: Color = .secondary
 
     @Environment(\.theme) private var theme
 
@@ -23,7 +28,7 @@ struct ChatSessionLeadingIcon: View {
             } else if store?.isWaitingOnUser(session) == true {
                 ActionRequiredIndicator(color: theme.statusError)
             } else if store?.isInProgress(session) == true {
-                AgentActivityIndicator()
+                AgentActivityIndicator(color: activityColor)
             } else if let store, store.unreadCount(session) > 0 {
                 UnreadBadge(color: notificationColor)
             } else {
