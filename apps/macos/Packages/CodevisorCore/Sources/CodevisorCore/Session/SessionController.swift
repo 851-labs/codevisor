@@ -1080,6 +1080,15 @@ final public class SessionController {
     public var isLoadingModelMenu: Bool {
         guard !hasModelMenu else { return false }
         if isConnecting || isConnectingToHarness { return true }
+        // A draft with no spawned agent yet (new-chat page, deferred chats)
+        // fetching harness capabilities: hold the model chip's slot with a
+        // spinner too, instead of rendering nothing until options land.
+        // Scoped to agent-less drafts so a connected harness that simply has
+        // no model options can't spin forever on a stale preparation state.
+        if serverSession?.agentSessionId?.isEmpty != false, model == nil,
+           preparationState == .loading {
+            return true
+        }
         guard model == nil, serverSession?.agentSessionId?.isEmpty == false else { return false }
         if case .failed = status { return false }
         return true

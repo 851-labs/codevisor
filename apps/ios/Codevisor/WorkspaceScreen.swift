@@ -95,7 +95,16 @@ final class PaneSnapshotCache {
 struct WorkspaceScreen: View {
     @Environment(AppEnvironment.self) private var environment
     @Environment(\.dismiss) private var dismiss
-    let sessionId: UUID
+    /// The workspace's chat, or nil to open as a NEW chat: this screen hosts
+    /// the draft composer itself and adopts the session its first send creates.
+    ///
+    /// That adoption happens in place, without touching the navigation path,
+    /// because the alternative — a separate new-chat screen that hands off to
+    /// this one — tore down and rebuilt the chat view mid-send. Any per-view
+    /// state was silently lost across that boundary (the send animation ran a
+    /// second time because the suppression flag reset), and every fix was a
+    /// patch on one side of a seam that shouldn't exist.
+    let sessionId: UUID?
 
     /// One controller per chat session shown in this workspace (macOS allows
     /// several chats per workspace; so do we).
@@ -104,6 +113,20 @@ struct WorkspaceScreen: View {
     @State private var serverConfig: CodevisorServerConfig?
     @State private var project: Project?
     @State private var paneState: PaneGroupState?
+    /// Set when a draft's first send creates its session. From then on this
+    /// screen is that workspace — same view, same pane, same transcript.
+    @State private var startedSessionId: UUID?
+    /// The retained draft controller while `sessionId` is nil.
+    @State private var draftController: SessionController?
+    /// The draft's first send landed: the run pickers collapse away.
+    @State private var hasStarted = false
+    /// The project list's first refresh hasn't answered yet: show a spinner,
+    /// not the add-a-project empty state.
+    @State private var hasLoadedProjects = false
+    @State private var isAddingProject = false
+    /// Stands in for the session id a draft doesn't have yet, so its pane
+    /// group can exist (and keep a STABLE pane id) from the first frame.
+    @State private var draftPlaceholderId = UUID()
     /// The active pane presents over the grid; the system zoom transition
     /// grows it out of its card (and shrinks it back), exactly like Photos
     /// and the App Store — no hand-rolled motion.
@@ -119,8 +142,19 @@ struct WorkspaceScreen: View {
         GridItem(.flexible(), spacing: 14)
     ]
 
+    /// This workspace's chat: the routed one, or the one a draft's first send
+    /// created. Nil only while an unsent draft.
+    private var activeSessionId: UUID? { sessionId ?? startedSessionId }
+
+    private var isDraft: Bool { activeSessionId == nil }
+
     private var panes: PaneGroupState {
-        paneState ?? WorkspacePaneStore.shared.state(for: sessionId)
+        if let paneState { return paneState }
+        if let activeSessionId { return WorkspacePaneStore.shared.state(for: activeSessionId) }
+        // A draft's pane exists before its session does, keyed by a
+        // placeholder so its id — and therefore the chat view's identity —
+        // survives the session being adopted.
+        return PaneGroupState.centerInitial(sessionId: draftPlaceholderId)
     }
 
     private var activePane: PaneDescriptorState? {
@@ -131,12 +165,44 @@ struct WorkspaceScreen: View {
         environment.projectList.sessions.first { $0.id == id }
     }
 
-    private var rootSession: ChatSession? { session(for: sessionId) }
+    private var rootSession: ChatSession? { activeSessionId.flatMap(session(for:)) }
+
+    /// The workspace's project. `prepare()` caches it in state, but it also
+    /// resolves synchronously from the already-loaded project list, so the
+    /// first frame renders the pane instead of a spinner — arriving from a new
+    /// chat's first send must show the chat, not a placeholder.
+    private var resolvedProject: Project? {
+        project
+            ?? draftController?.project
+            ?? rootSession.flatMap { session in
+                environment.projectList.projects.first { $0.id == session.projectId }
+            }
+    }
+
+    /// The app-wide cached controller for a chat, if it already exists — no
+    /// creation, so this is safe to call straight from the view body.
+    private func cachedController(for chatId: UUID) -> SessionController? {
+        guard let session = session(for: chatId) else { return nil }
+        return ChatControllerCache.shared.existingController(
+            sessionId: chatId,
+            serverId: session.serverId
+        )
+    }
+
+    /// The controller a chat pane shows. A draft's pane is served by the
+    /// retained draft controller — the SAME controller the session adopts, so
+    /// nothing about the view changes when the send lands.
+    private func chatController(for pane: PaneDescriptorState) -> SessionController? {
+        guard let chatId = pane.chatSessionId ?? activeSessionId else { return draftController }
+        if chatId == draftPlaceholderId { return draftController }
+        return controllers[chatId] ?? cachedController(for: chatId)
+    }
 
     private func title(for pane: PaneDescriptorState) -> String {
         switch pane.kind {
         case .chat:
-            let title = session(for: pane.chatSessionId ?? sessionId)?.title ?? pane.name
+            let title = (pane.chatSessionId ?? activeSessionId)
+                .flatMap(session(for:))?.title ?? pane.name
             return title.isEmpty ? "New Chat" : title
         case .newTab:
             return "New Tab"
@@ -147,7 +213,7 @@ struct WorkspaceScreen: View {
 
     private var workspaceCwd: String {
         rootSession?.cwd
-            ?? project?.folderURL.path
+            ?? resolvedProject?.folderURL.path
             ?? ""
     }
 
@@ -155,7 +221,11 @@ struct WorkspaceScreen: View {
         Group {
             if missing {
                 ContentUnavailableView("Chat Not Found", systemImage: "questionmark.bubble")
-            } else if project == nil {
+            } else if isDraft, resolvedProject == nil, hasLoadedProjects {
+                // A machine with no projects can't start a chat yet: offer the
+                // folder browser right here.
+                needsProjectState
+            } else if resolvedProject == nil {
                 ProgressView()
             } else if baseShowsGrid {
                 grid
@@ -165,43 +235,75 @@ struct WorkspaceScreen: View {
                     .id(pane.id)
             }
         }
-        .navigationBarBackButtonHidden(true)
+        // Native navigation back to the workspaces list: the system back
+        // button and the edge swipe-to-go-back gesture. Hiding the back
+        // button for a custom sidebar button disabled the interactive pop.
         .navigationTitle(baseTitle)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
-                Button {
-                    dismiss()
-                } label: {
-                    Image(systemName: "sidebar.left")
-                }
-                .accessibilityLabel("Workspaces")
-            }
             ToolbarItem(placement: .topBarTrailing) {
-                if baseShowsGrid {
-                    Button {
-                        addTab()
-                    } label: {
-                        Image(systemName: "plus")
+                // Tabs belong to a workspace; an unsent draft has none yet.
+                if !isDraft {
+                    if baseShowsGrid {
+                        Button {
+                            addTab()
+                        } label: {
+                            Image(systemName: "plus")
+                        }
+                        .accessibilityLabel("New tab")
+                    } else {
+                        Button {
+                            if let pane = activePane { showGridFromInline(pane) }
+                        } label: {
+                            Image(systemName: "square.on.square")
+                        }
+                        .accessibilityLabel("Show tabs")
                     }
-                    .accessibilityLabel("New tab")
-                } else {
-                    Button {
-                        if let pane = activePane { showGridFromInline(pane) }
-                    } label: {
-                        Image(systemName: "square.on.square")
-                    }
-                    .accessibilityLabel("Show tabs")
                 }
             }
         }
         .fullScreenCover(isPresented: $showsPane) {
             paneCover
         }
+        .sheet(isPresented: $isAddingProject) {
+            AddProjectSheet { _ in
+                // The fresh project becomes the first active one; the draft
+                // controller setup picks it up.
+                setUpDraftIfNeeded()
+            }
+        }
         .task { await prepare() }
+        .onChange(of: environment.projectList.activeProjects.map(\.id)) { _, _ in
+            setUpDraftIfNeeded()
+        }
+    }
+
+    /// The draft's empty state when the machine has no projects to work in.
+    private var needsProjectState: some View {
+        ContentUnavailableView {
+            Label("Add a Project First", systemImage: "folder.badge.plus")
+        } description: {
+            Text("Chats work inside a project on \(environment.machines.selectedMachine.name).")
+        } actions: {
+            Button {
+                isAddingProject = true
+            } label: {
+                Label("Add Project", systemImage: "plus")
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 4)
+            }
+            .buttonStyle(.borderedProminent)
+            .buttonBorderShape(.capsule)
+        }
     }
 
     private var baseTitle: String {
+        // An unsent draft says what it is; the moment it becomes a real chat the
+        // title clears like any other chat pane, so the nav bar doesn't change
+        // shape under the send.
+        if isDraft { return hasStarted ? "" : "New Chat" }
         if baseShowsGrid {
             return "\(panes.panes.count) Tab\(panes.panes.count == 1 ? "" : "s")"
         }
@@ -279,7 +381,9 @@ struct WorkspaceScreen: View {
                     state.addNewTabPane()
                 }
                 paneState = state
-                WorkspacePaneStore.shared.save(state, for: sessionId)
+                if let activeSessionId {
+                    WorkspacePaneStore.shared.save(state, for: activeSessionId)
+                }
             }
         )
     }
@@ -288,33 +392,44 @@ struct WorkspaceScreen: View {
     private func paneContent(_ pane: PaneDescriptorState) -> some View {
         switch pane.kind {
         case .chat:
-            let chatId = pane.chatSessionId ?? sessionId
-            if let controller = controllers[chatId] {
-                SessionTranscriptView(controller: controller, serverConfig: serverConfig)
-                    // Attention: the visible chat is the open one — clear its
-                    // unread state now and keep it clear as turns finish.
-                    .onAppear {
-                        guard let session = session(for: chatId) else { return }
-                        ChatControllerCache.shared.noteOpened(
-                            sessionId: chatId,
-                            serverId: session.serverId,
-                            projectList: environment.projectList
-                        )
-                    }
-                    .onDisappear {
-                        guard let session = session(for: chatId) else { return }
-                        ChatControllerCache.shared.noteClosed(
-                            sessionId: chatId,
-                            serverId: session.serverId
-                        )
-                    }
-            } else {
+            // Resolved via the cache (and the draft controller) so an
+            // already-live chat renders on the FIRST frame — a just-sent
+            // message must never flash a spinner over itself.
+            if let controller = chatController(for: pane) {
+                SessionTranscriptView(
+                    controller: controller,
+                    // A draft picks where it will run; sending fixes that, so
+                    // the chips animate away in place.
+                    showsRunPickers: isDraft && !hasStarted
+                )
+                // Attention: the visible chat is the open one — clear its
+                // unread state now and keep it clear as turns finish.
+                .onAppear {
+                    guard let chatId = pane.chatSessionId ?? activeSessionId,
+                          let session = session(for: chatId) else { return }
+                    ChatControllerCache.shared.noteOpened(
+                        sessionId: chatId,
+                        serverId: session.serverId,
+                        projectList: environment.projectList
+                    )
+                }
+                .onDisappear {
+                    guard let chatId = pane.chatSessionId ?? activeSessionId,
+                          let session = session(for: chatId) else { return }
+                    ChatControllerCache.shared.noteClosed(
+                        sessionId: chatId,
+                        serverId: session.serverId
+                    )
+                }
+            } else if let chatId = pane.chatSessionId ?? activeSessionId {
                 ProgressView()
                     .task { await connectChat(sessionId: chatId) }
+            } else {
+                ProgressView()
             }
         case .newTab:
             NewTabPaneView(
-                projectName: project?.name ?? "",
+                projectName: resolvedProject?.name ?? "",
                 onNewChat: { convertToChat(pane) },
                 onNewTerminal: { convertToTerminal(pane) }
             )
@@ -411,7 +526,8 @@ struct WorkspaceScreen: View {
     /// inherit the workspace's one working directory: the root session's
     /// worktree (or project folder) stamps every sub-chat at creation.
     private func convertToChat(_ pane: PaneDescriptorState) {
-        guard let project else { return }
+        // Reachable only from the tab grid, which a draft doesn't have.
+        guard let project = resolvedProject, let workspaceSessionId = activeSessionId else { return }
         let chat = environment.projectList.newSession(
             in: project,
             title: "New Chat",
@@ -419,19 +535,29 @@ struct WorkspaceScreen: View {
             cwd: rootSession?.cwd
         )
         var state = panes
-        state.convertNewTabPane(id: pane.id, to: .chat, sessionId: sessionId, chatSessionId: chat.id)
+        state.convertNewTabPane(
+            id: pane.id, to: .chat, sessionId: workspaceSessionId, chatSessionId: chat.id
+        )
         paneBinding.wrappedValue = state
     }
 
     private func convertToTerminal(_ pane: PaneDescriptorState) {
+        guard let workspaceSessionId = activeSessionId else { return }
         var state = panes
-        state.convertNewTabPane(id: pane.id, to: .terminal, sessionId: sessionId)
+        state.convertNewTabPane(id: pane.id, to: .terminal, sessionId: workspaceSessionId)
         paneBinding.wrappedValue = state
     }
 
     // MARK: - Connection
 
     private func prepare() async {
+        guard let sessionId = activeSessionId else {
+            // A new chat: no session, no panes to load — just the draft.
+            await environment.projectList.refreshFromServer()
+            hasLoadedProjects = true
+            setUpDraftIfNeeded()
+            return
+        }
         if paneState == nil {
             paneState = WorkspacePaneStore.shared.state(for: sessionId)
         }
@@ -447,6 +573,88 @@ struct WorkspaceScreen: View {
                 ?? environment.machines.selectedMachine.serverConfig
         }
         await connectChat(sessionId: sessionId)
+    }
+
+    // MARK: - The draft (a new chat, before its first send)
+
+    /// Binds the app-wide retained draft controller and wires what its first
+    /// send should do. Idempotent: re-runs harmlessly as the project list
+    /// arrives.
+    private func setUpDraftIfNeeded() {
+        guard isDraft, draftController == nil,
+              let project = environment.projectList.activeProjects.first(where: { !$0.isScratch })
+        else { return }
+        // The retained draft: leaving and coming back — or relaunching —
+        // restores the unsent message, attachments, and picked run location.
+        let controller = ChatControllerCache.shared.draftController(
+            preferredProject: project,
+            environment: environment
+        )
+        serverConfig = environment.machines.machine(for: project.serverId)?.serverConfig
+            ?? environment.machines.selectedMachine.serverConfig
+        // Pin the draft's pane group NOW: `centerInitial` mints a fresh pane id
+        // each call, so leaving it computed would hand the chat view a new
+        // identity every render — remounting it constantly.
+        if paneState == nil {
+            paneState = PaneGroupState.centerInitial(sessionId: draftPlaceholderId)
+        }
+        controller.onFirstSend = { [weak controller] in
+            guard let controller else { return }
+            adoptSession(for: controller)
+        }
+        draftController = controller
+        Task { await controller.prepare() }
+    }
+
+    /// The draft's first send: create the session and become its workspace,
+    /// in place. The pane keeps its id and the transcript keeps its controller,
+    /// so the chat view is never rebuilt — the run pickers simply collapse and
+    /// the sent message rides its lift up into the history.
+    private func adoptSession(for controller: SessionController) {
+        guard let project = resolvedProject else { return }
+        let session = environment.projectList.newSession(
+            in: project,
+            title: Self.chatTitle(from: controller.composerText),
+            harnessId: controller.selectedHarnessId,
+            worktreeName: controller.worktreeName,
+            cwd: controller.sessionCwdOverride,
+            syncToServer: false
+        )
+        controller.serverSession = session
+        controller.onWorktreeCreated = { [weak projectList = environment.projectList] worktree in
+            projectList?.setWorktree(
+                name: worktree.name,
+                cwd: worktree.path,
+                for: session.id,
+                serverId: session.serverId
+            )
+        }
+        ChatControllerCache.shared.register(
+            controller,
+            for: session,
+            environment: environment
+        )
+        // Carry the draft's pane over verbatim — same pane id — and bind it to
+        // the new session, so `paneContent(pane).id(pane.id)` is stable across
+        // the adoption and nothing remounts.
+        var state = panes
+        if let index = state.panes.firstIndex(where: { $0.kind == .chat }) {
+            state.panes[index].chatSessionId = session.id
+        }
+        controllers[session.id] = controller
+        self.project = project
+        startedSessionId = session.id
+        paneState = state
+        WorkspacePaneStore.shared.save(state, for: session.id)
+        withAnimation(.snappy(duration: 0.28)) { hasStarted = true }
+    }
+
+    private static func chatTitle(from prompt: String) -> String {
+        let trimmed = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        let firstLine = trimmed.split(separator: "\n").first.map(String.init) ?? "New session"
+        return firstLine.count > 48
+            ? String(firstLine.prefix(48)) + "…"
+            : (firstLine.isEmpty ? "New session" : firstLine)
     }
 
     private func connectChat(sessionId chatId: UUID) async {

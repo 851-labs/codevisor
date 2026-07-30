@@ -22,6 +22,10 @@ struct ModelPickerSheet: View {
     @State private var step: Step = .model
     @State private var search = ""
     @State private var isSwitchingHarness = false
+    /// The model value tapped while a cross-harness switch is in flight, so
+    /// that row shows the progress spinner in its checkmark slot.
+    @State private var pendingModelValue: String?
+    @State private var pendingModelGroupId: String?
 
     private struct HarnessGroup: Identifiable {
         let id: String
@@ -87,47 +91,68 @@ struct ModelPickerSheet: View {
 
     // MARK: - Steps
 
+    @ViewBuilder
     private var modelStep: some View {
-        List {
-            ForEach(groups) { group in
-                let values = matchingValues(in: group)
-                if !values.isEmpty {
-                    Section {
-                        ForEach(values) { value in
-                            Button {
-                                choose(model: value.value, in: group)
-                            } label: {
-                                HStack {
-                                    Text(value.name)
-                                        .foregroundStyle(Color.primary)
-                                    Spacer()
-                                    if isCurrent(value, in: group) {
-                                        Image(systemName: "checkmark")
-                                            .foregroundStyle(.tint)
-                                    } else if isSwitchingHarness {
-                                        // A cross-harness pick shows progress
-                                        // while the harness loads.
-                                        EmptyView()
+        if groups.isEmpty {
+            // Resumed chats fetch their harness capabilities after the chip
+            // can already open the sheet: hold the list's place with a
+            // spinner instead of a blank screen while options load.
+            loadingStep("Loading models…")
+        } else {
+            List {
+                ForEach(groups) { group in
+                    let values = matchingValues(in: group)
+                    if !values.isEmpty {
+                        Section {
+                            ForEach(values) { value in
+                                Button {
+                                    choose(model: value.value, in: group)
+                                } label: {
+                                    HStack {
+                                        Text(value.name)
+                                            .foregroundStyle(Color.primary)
+                                        Spacer()
+                                        if isSwitchingHarness,
+                                           pendingModelValue == value.value,
+                                           pendingModelGroupId == group.id {
+                                            // A cross-harness pick shows
+                                            // progress while the harness (and
+                                            // its thinking levels) loads.
+                                            ProgressView()
+                                                .controlSize(.small)
+                                        } else if isCurrent(value, in: group) {
+                                            Image(systemName: "checkmark")
+                                                .foregroundStyle(.tint)
+                                        }
                                     }
                                 }
+                                .disabled(isSwitchingHarness)
                             }
-                            .disabled(isSwitchingHarness)
-                        }
-                    } header: {
-                        HStack(spacing: 6) {
-                            HarnessIconView(harnessId: group.id, size: 14)
-                            Text(group.name)
+                        } header: {
+                            HStack(spacing: 6) {
+                                HarnessIconView(harnessId: group.id, size: 14)
+                                Text(group.name)
+                            }
                         }
                     }
                 }
             }
-            if isSwitchingHarness {
-                HStack { Spacer(); ProgressView(); Spacer() }
-            }
+            .searchable(text: $search, placement: .navigationBarDrawer(displayMode: .always))
+            .textInputAutocapitalization(.never)
+            .autocorrectionDisabled()
         }
-        .searchable(text: $search, placement: .navigationBarDrawer(displayMode: .always))
-        .textInputAutocapitalization(.never)
-        .autocorrectionDisabled()
+    }
+
+    /// A centered spinner holding a step's place while its options load.
+    private func loadingStep(_ label: String) -> some View {
+        VStack(spacing: 12) {
+            ProgressView()
+            Text(label)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(.systemGroupedBackground))
     }
 
     private func matchingValues(in group: HarnessGroup) -> [SessionConfigSelectOption] {
@@ -142,7 +167,16 @@ struct ModelPickerSheet: View {
         group.id == controller.activeHarnessId && group.modelOption.currentValue == value.value
     }
 
+    @ViewBuilder
     private var thoughtStep: some View {
+        if controller.thoughtLevelOptions.isEmpty {
+            loadingStep("Loading thinking levels…")
+        } else {
+            thoughtList
+        }
+    }
+
+    private var thoughtList: some View {
         List {
             if let option = controller.thoughtLevelOptions.first {
                 Section(option.name) {
@@ -164,7 +198,16 @@ struct ModelPickerSheet: View {
         }
     }
 
+    @ViewBuilder
     private var speedStep: some View {
+        if controller.speedOption == nil {
+            loadingStep("Loading speeds…")
+        } else {
+            speedList
+        }
+    }
+
+    private var speedList: some View {
         List {
             if let option = controller.speedOption {
                 Section("Speed") {
@@ -192,6 +235,8 @@ struct ModelPickerSheet: View {
     /// chats only), then applies the model and walks the remaining steps.
     private func choose(model value: String, in group: HarnessGroup) {
         isSwitchingHarness = true
+        pendingModelValue = value
+        pendingModelGroupId = group.id
         Task {
             if controller.activeHarnessId != group.id, controller.canChooseHarness {
                 await controller.selectHarness(group.id)
@@ -200,6 +245,8 @@ struct ModelPickerSheet: View {
                 await controller.setConfigOption(live.id, value)
             }
             isSwitchingHarness = false
+            pendingModelValue = nil
+            pendingModelGroupId = nil
             advanceAfterModel()
         }
     }

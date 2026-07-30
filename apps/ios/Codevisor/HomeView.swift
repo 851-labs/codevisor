@@ -20,6 +20,16 @@ private enum HomeOrganization: String, CaseIterable {
     }
 }
 
+/// The screens this list pushes. One route type (rather than a `[UUID]` path
+/// plus a separate boolean destination for the compose page) so the new-chat
+/// handoff can replace the whole stack in ONE state change: a send swaps
+/// compose → workspace atomically instead of popping and then pushing, which
+/// read as two stacked slide transitions.
+private enum HomeRoute: Hashable {
+    case newChat
+    case workspace(UUID)
+}
+
 /// Ordering, matching the macOS sidebar: manual (drag), priority + recency,
 /// or creation time.
 private enum HomeOrder: String, CaseIterable {
@@ -53,8 +63,7 @@ struct HomeView: View {
     @State private var readyForOnboarding = false
     @State private var isShowingSettings = false
     @State private var isManagingMachines = false
-    @State private var isComposingNewChat = false
-    @State private var path: [UUID] = []
+    @State private var path: [HomeRoute] = []
     @State private var pendingDeeplink: MachineDeeplink?
     @State private var deeplinkError: String?
 
@@ -117,15 +126,21 @@ struct HomeView: View {
 
     /// Sort tier for a chat row. Every state checked here is visible on the
     /// row as `SessionRow.statusDot` in the same precedence (error →
-    /// attention → unread); keep the two in sync. If sorting ever consults a
-    /// state the dot doesn't show (the macOS sidebar once sorted a spinning
-    /// chat by its hidden unread count), opening a chat reorders the list
-    /// with no visible state change.
+    /// attention → in progress → unread, matching the macOS sidebar); keep
+    /// the two in sync. If sorting ever consults a state the dot doesn't
+    /// show (the macOS sidebar once sorted a spinning chat by its hidden
+    /// unread count), opening a chat reorders the list with no visible
+    /// state change.
     private func priority(for session: ChatSession) -> Int {
         if session.hasUnreadError { return 0 }
         if session.actionRequired || session.pendingPlanApproval { return 1 }
+        // Classification follows the icon precedence (a mid-run agent with
+        // buffered unread turns shows the spinner, so it classifies as in
+        // progress), while unread as a tier still ranks above in progress —
+        // the same split the macOS sidebar makes.
+        if ChatControllerCache.shared.isInProgress(session) { return 3 }
         if session.unreadCount > 0 { return 2 }
-        return 3
+        return 4
     }
 
     var body: some View {
@@ -156,8 +171,17 @@ struct HomeView: View {
                     newChatButton
                 }
             }
-            .navigationDestination(for: UUID.self) { sessionId in
-                WorkspaceScreen(sessionId: sessionId)
+            .navigationDestination(for: HomeRoute.self) { route in
+                switch route {
+                case .newChat:
+                    // The same screen, opened as a draft: it hosts the new
+                    // chat's composer and becomes that workspace in place on
+                    // the first send. No second screen, no hand-off, no
+                    // mid-send remount.
+                    WorkspaceScreen(sessionId: nil)
+                case let .workspace(sessionId):
+                    WorkspaceScreen(sessionId: sessionId)
+                }
             }
             .refreshable {
                 await projectList.refreshFromServer()
@@ -178,16 +202,6 @@ struct HomeView: View {
                         }
                 }
                 .presentationDragIndicator(.visible)
-            }
-            .navigationDestination(isPresented: $isComposingNewChat) {
-                NewChatScreen { session in
-                    isComposingNewChat = false
-                    // Swap the compose page for the started chat once the pop
-                    // has settled; pushing mid-dismissal drops the push.
-                    Task { @MainActor in
-                        path.append(session.id)
-                    }
-                }
             }
             .fullScreenCover(isPresented: showsOnboarding) {
                 onboardingStart = .welcome
@@ -257,7 +271,7 @@ struct HomeView: View {
             case .compact, .byWorkspace:
                 Section {
                     ForEach(visibleSessions) { session in
-                        NavigationLink(value: session.id) {
+                        NavigationLink(value: HomeRoute.workspace(session.id)) {
                             SessionRow(
                                 session: session,
                                 projectName: projectName(for: session),
@@ -286,7 +300,7 @@ struct HomeView: View {
                     if !sessions.isEmpty {
                         Section {
                             ForEach(sessions) { session in
-                                NavigationLink(value: session.id) {
+                                NavigationLink(value: HomeRoute.workspace(session.id)) {
                                     SessionRow(
                                         session: session,
                                         projectName: nil,
@@ -317,7 +331,7 @@ struct HomeView: View {
                 if !looseSessions.isEmpty {
                     Section {
                         ForEach(looseSessions) { session in
-                            NavigationLink(value: session.id) {
+                            NavigationLink(value: HomeRoute.workspace(session.id)) {
                                 SessionRow(
                                     session: session,
                                     projectName: nil,
@@ -408,7 +422,7 @@ struct HomeView: View {
             Text("Workspaces are where agents work on \(machines.selectedMachine.name). Start your first one.")
         } actions: {
             Button {
-                isComposingNewChat = true
+                path.append(.newChat)
             } label: {
                 Label("New Chat", systemImage: "plus")
                     .font(.body.weight(.semibold))
@@ -488,7 +502,7 @@ struct HomeView: View {
 
     private var newChatButton: some View {
         Button {
-            isComposingNewChat = true
+            path.append(.newChat)
         } label: {
             Label("New chat", systemImage: "plus")
                 .font(.body.weight(.semibold))
@@ -514,6 +528,7 @@ private struct SessionRow: View {
     private var needsAttention: Bool { session.actionRequired || session.pendingPlanApproval }
     private var hasError: Bool { session.hasUnreadError }
     private var isUnread: Bool { session.unreadCount > 0 }
+    private var isInProgress: Bool { ChatControllerCache.shared.isInProgress(session) }
 
     var body: some View {
         HStack(spacing: 10) {
@@ -552,16 +567,47 @@ private struct SessionRow: View {
         .padding(.vertical, 3)
     }
 
+    /// Error → attention → in progress → unread — the exact precedence of the
+    /// macOS sidebar's `ChatSessionLeadingIcon`, so a mid-run agent shows the
+    /// working glyph even while it has buffered unread turns.
     @ViewBuilder private var statusDot: some View {
         if hasError {
             Circle().fill(.red).frame(width: 8, height: 8)
         } else if needsAttention {
             Circle().fill(.orange).frame(width: 8, height: 8)
+        } else if isInProgress {
+            AgentActivityIndicator()
+                .frame(width: 8, height: 8)
         } else if isUnread {
             Circle().fill(.blue).frame(width: 8, height: 8)
         } else {
             Circle().fill(.clear).frame(width: 8, height: 8)
         }
+    }
+}
+
+/// The macOS sidebar's Herdr-inspired working glyph, ported: ten braille
+/// frames advancing at roughly eight steps per second in the status slot.
+private struct AgentActivityIndicator: View {
+    private static let frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 0.125, paused: reduceMotion)) { context in
+            let frame = reduceMotion ? Self.frames[0] : Self.frame(at: context.date)
+            Text(frame)
+                .font(.system(size: 13, design: .monospaced))
+                .foregroundStyle(.secondary)
+                .contentTransition(.identity)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Working")
+    }
+
+    private static func frame(at date: Date) -> String {
+        let tick = Int(date.timeIntervalSinceReferenceDate * 8)
+        return frames[tick % frames.count]
     }
 }
 

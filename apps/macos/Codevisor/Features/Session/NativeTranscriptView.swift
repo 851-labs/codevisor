@@ -624,6 +624,16 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
         let initialOptimisticRowKey = isInitialConfiguration && sendAnimationIsFresh
             ? newRows.last { $0.id == .optimistic }?.layoutKey
             : nil
+        // The optimistic row is a placeholder: when a chat already has a live
+        // model, its settled twin replaces it within a few frames — tearing
+        // down the very layer the send animation is running on, so only a
+        // sliver of the motion is ever seen. (That is exactly a workspace's new
+        // chat tab, which eagerly connects so its model and reasoning controls
+        // are ready.) Hand the request to the row that replaced it, so the
+        // motion plays out on a layer that survives.
+        let optimisticRowKey = TranscriptVirtualRow.ID.optimistic.layoutKey
+        let optimisticWasReplaced = previousRowKeys.contains(optimisticRowKey)
+            && !newRows.contains { $0.id == .optimistic }
 
         let layoutFingerprintChanged = layoutFingerprint != newLayoutFingerprint
         layoutFingerprint = newLayoutFingerprint
@@ -685,6 +695,10 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
             scrollToBottom()
         }
 
+        if sendAnimationIsFresh, optimisticWasReplaced, let insertedUserRowKey {
+            pendingSendAnimationDeadline = sendAnimationRequestedAt + Self.sendAnimationRequestLifetime
+            pendingSendAnimationRowKey = insertedUserRowKey
+        }
         if pendingSendAnimationDeadline != nil,
            let animationKey = insertedUserRowKey ?? initialOptimisticRowKey {
             pendingSendAnimationRowKey = animationKey

@@ -8,6 +8,79 @@ extension Notification.Name {
     static let codevisorOpenSettings = Notification.Name("codevisor.open-settings")
 }
 
+private extension AnyTransition {
+    /// How a sent message enters and leaves the transcript: it rises out of the
+    /// composer on arrival, and leaves with no motion at all.
+    ///
+    /// Asymmetric on purpose. A plain `.transition(.offset(...))` is symmetric —
+    /// SwiftUI replays it in reverse on removal — so the optimistic row slid
+    /// back DOWN toward the composer as it was removed, while the settled row
+    /// that replaced it already sat at the top: two identical bubbles on screen
+    /// for the length of the animation. Removal must be instant, because the
+    /// row that replaces an optimistic message renders the identical
+    /// `UserBubbleRow` in the same place on the same frame — there is nothing
+    /// to show leaving.
+    static func sendLift(_ distance: CGFloat) -> AnyTransition {
+        .asymmetric(insertion: .offset(y: distance), removal: .identity)
+    }
+}
+
+/// One row of the transcript, whatever the chat's connection state. The whole
+/// chat — an optimistic first message, worktree setup, settled turns, the
+/// streaming turn, loading and error status — is ONE ordered list of these,
+/// exactly like the macOS `ChatScreen`'s row builder.
+///
+/// This replaced three parallel scroll views (a connected transcript, a
+/// model-less "pending setup" column, and a model-less status column) that each
+/// re-implemented the same rows. Every visual inconsistency between "the first
+/// message in a new chat" and "a message in an existing chat" came from that
+/// fork: the send animation, the setup row's placement, and the loading/error
+/// rows all existed in two or three copies that drifted apart.
+private enum TranscriptRow: Identifiable {
+    /// Sentinel that pages in older history as it scrolls into view.
+    case olderHistory
+    /// Worktree creation / agent startup for this chat's one launch.
+    case setup
+    /// A settled or streaming conversation item.
+    case item(ConversationItem, isActive: Bool)
+    /// The just-sent message, before the server echoes it back. Rendered by
+    /// the same view as a settled user row — see `UserBubbleRow`.
+    case optimistic(text: String, attachments: [Attachment])
+    case activity(ActivityKind)
+    /// A session failure, which may offer harness authentication.
+    case sessionError(String)
+    /// A connection failure, which offers a plain retry.
+    case statusError(String)
+
+    enum ActivityKind: Equatable {
+        case loadingHistory
+        case startingAgent
+        case connecting(String)
+        case serverWait(String)
+
+        var id: String {
+            switch self {
+            case .loadingHistory: "loading-history"
+            case .startingAgent: "starting-agent"
+            case .connecting: "connecting"
+            case .serverWait: "server-wait"
+            }
+        }
+    }
+
+    var id: String {
+        switch self {
+        case .olderHistory: "older-history"
+        case .setup: "setup"
+        case let .item(item, isActive): "item-\(isActive ? "active-" : "")\(item.id)"
+        case .optimistic: "optimistic"
+        case let .activity(kind): "activity-\(kind.id)"
+        case .sessionError: "session-error"
+        case .statusError: "status-error"
+        }
+    }
+}
+
 /// The chat pane body: connects an existing session through the shared
 /// SessionController/SessionModel engine and renders the transcript with the
 /// shared row views. Hosted by WorkspaceScreen, which owns the navigation
@@ -15,7 +88,12 @@ extension Notification.Name {
 /// host as Phase 4 completes.
 struct SessionTranscriptView: View {
     @Bindable var controller: SessionController
-    let serverConfig: CodevisorServerConfig?
+    /// The new-chat page shows project/run-location chips above the composer;
+    /// the first chat inside a workspace doesn't (its directory is fixed).
+    /// This flag is the only difference between the two surfaces — everything
+    /// else (watermark, composer, expansion, notice rails) is shared here.
+    var showsRunPickers: Bool = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var disclosure = TranscriptDisclosureStore()
     /// The composer's resting height, used to size the transcript's bottom
     /// spacer and the mask that sits under the card.
@@ -29,6 +107,9 @@ struct SessionTranscriptView: View {
     @State private var scrollRequest = 0
     /// Height available to the chat area, used to cap composer expansion.
     @State private var availableHeight: CGFloat = 600
+    /// True while the composer is dragged to full height; the accessories
+    /// around it (scroll-to-bottom, notice rails) hide until it collapses.
+    @State private var composerExpanded = false
     /// The scroll view's own height: the transcript fills at least this much
     /// so a short conversation starts at the top instead of floating at the
     /// bottom of the viewport.
@@ -40,11 +121,30 @@ struct SessionTranscriptView: View {
     /// id-targeted scrollTo, scrolling to an edge works even when the bottom
     /// rows haven't been laid out by the lazy stack yet.
     @State private var scrollPosition = ScrollPosition()
-    /// The macOS send animation: a sent message rides the scroll up to the
-    /// top of the viewport, with the trailing spacer stretched so there's
-    /// room for the response to stream in below it.
-    @State private var awaitingSendScroll = false
-    @State private var sendPinActive = false
+    /// Where the transcript's content currently ends, and where the composer
+    /// begins — both in global space. Their gap IS the send lift: the distance
+    /// a just-sent message must travel from the composer to where it lands.
+    /// Measuring beats assuming, because the landing spot moves: a short
+    /// conversation is top-aligned with slack beneath it (long ride), while a
+    /// full one sits against the composer (short hop).
+    @State private var contentTailY: CGFloat = 0
+    @State private var composerTopY: CGFloat = 0
+    /// Text of the message currently shown as an optimistic row. The settled
+    /// row that replaces it is the SAME message coming back from the server —
+    /// a different row identity, so SwiftUI would run the lift a second time.
+    /// Remembering the text lets that echo arrive without re-animating.
+    /// Armed only when an optimistic row actually appeared (a model-less first
+    /// send), and cleared by every new send, so ordinary replies keep their lift.
+    @State private var optimisticLiftedText: String?
+    /// True only between a send and the row it produced landing. Rows arrive for
+    /// all sorts of reasons — history paging in when a chat opens, a turn
+    /// settling, status rows — and none of those are a send: opening a chat used
+    /// to run the lift on every user bubble in the history at once. Exactly one
+    /// row-list change is animated per send.
+    @State private var liftArmed = false
+    /// The transcript's first content is a screen opening, not a change to
+    /// follow: jump to the bottom, don't animate the scroll there.
+    @State private var hasOpened = false
 
     var body: some View {
         chat
@@ -59,31 +159,96 @@ struct SessionTranscriptView: View {
         .environment(\.attachmentImages, attachmentImages)
     }
 
-    /// The watermark shows while there's nothing to read: a model-less draft
-    /// (new-worktree chats deliberately don't connect until first send) or an
-    /// empty conversation.
+    private var model: SessionModel? { controller.model }
+
+    /// The watermark shows while the transcript has nothing to say at all — a
+    /// model-less draft (new-worktree chats deliberately don't connect until
+    /// first send) or an empty conversation. Equivalent to `rows.isEmpty`, but
+    /// O(1): the body re-evaluates on every streaming token, so this must not
+    /// build the row list.
     private var showsWatermark: Bool {
-        guard !showsModelLessStatus else { return false }
         guard controller.pendingUserText == nil, controller.setupPhases.isEmpty else { return false }
-        guard let model = controller.model else { return true }
+        guard controller.sessionErrorMessage == nil else { return false }
+        guard !controller.isLoadingInitialHistory, controller.serverWaitMessage == nil else { return false }
+        switch controller.status {
+        case .connecting, .failed: return false
+        case .idle: break
+        }
+        guard let model else { return true }
         return model.settledConversation.isEmpty && model.activeItem == nil
     }
 
-    /// The first send, before a model exists: the optimistic user message
-    /// with the live setup phases beneath it — worktree creation and agent
-    /// start render in the chat history exactly like macOS.
-    private var showsPendingSetup: Bool {
-        controller.model == nil
-            && (controller.pendingUserText != nil || !controller.setupPhases.isEmpty)
+    /// The scroll-to-bottom button only means something once there's a
+    /// conversation to scroll through.
+    private var hasScrollableContent: Bool {
+        guard let model else { return false }
+        return !model.settledConversation.isEmpty || model.activeItem != nil
     }
 
-    private var showsModelLessStatus: Bool {
-        guard controller.model == nil, !showsPendingSetup else { return false }
-        if controller.isLoadingInitialHistory || controller.serverWaitMessage != nil { return true }
-        switch controller.status {
-        case .idle: return false
-        case .connecting, .failed: return true
+    // MARK: - The row list
+
+    /// The whole chat as one ordered list, in macOS's order. Every state — no
+    /// model yet, connecting, streaming, failed — is expressed here rather than
+    /// by swapping in a different scroll view.
+    private var rows: [TranscriptRow] {
+        var rows: [TranscriptRow] = []
+        let settled = model?.settledConversation ?? []
+        let active = model?.activeItem
+        let hasSetup = !controller.setupPhases.isEmpty
+
+        if model?.hasOlderHistory == true {
+            rows.append(.olderHistory)
         }
+
+        // The opening block: the conversation hasn't landed yet. Covers the
+        // first send (with or without a model) and an empty connected chat.
+        if settled.isEmpty, active == nil {
+            if let text = controller.pendingUserText {
+                rows.append(.optimistic(text: text, attachments: controller.pendingUserAttachments))
+                // Until the first phase arrives there's nothing to show but
+                // that something is happening.
+                if !hasSetup { rows.append(.activity(.startingAgent)) }
+            }
+            if hasSetup { rows.append(.setup) }
+            if controller.pendingUserText == nil {
+                if controller.isLoadingInitialHistory {
+                    rows.append(.activity(.loadingHistory))
+                } else if let message = controller.serverWaitMessage {
+                    rows.append(.activity(.serverWait(message)))
+                } else if case let .connecting(message) = controller.status {
+                    rows.append(.activity(.connecting(message)))
+                }
+            }
+        }
+
+        // Setup is anchored to the START of the conversation — the one time it
+        // ran: ahead of a leading assistant turn, or right after the first user
+        // message, whose send triggered it.
+        for (index, item) in settled.enumerated() {
+            if index == 0, hasSetup, isAssistant(item) { rows.append(.setup) }
+            rows.append(.item(item, isActive: false))
+            if index == 0, hasSetup, isUser(item) { rows.append(.setup) }
+        }
+
+        if settled.isEmpty, active != nil, hasSetup { rows.append(.setup) }
+        if let active { rows.append(.item(active, isActive: true)) }
+
+        if !settled.isEmpty || active != nil {
+            if controller.isLoadingInitialHistory {
+                rows.append(.activity(.loadingHistory))
+            }
+            if let message = controller.serverWaitMessage {
+                rows.append(.activity(.serverWait(message)))
+            }
+        }
+
+        if let message = controller.sessionErrorMessage {
+            rows.append(.sessionError(message))
+        }
+        if case let .failed(message) = controller.status, message != controller.sessionErrorMessage {
+            rows.append(.statusError(message))
+        }
+        return rows
     }
 
     /// One chat surface for every connection state. The composer is mounted
@@ -111,27 +276,46 @@ struct SessionTranscriptView: View {
                     .allowsHitTesting(false)
                     .transition(.opacity)
             }
-            if let model = controller.model {
-                transcriptScroll(model)
-            } else if showsPendingSetup {
-                pendingSetupColumn
-            } else if showsModelLessStatus {
-                modelLessStatusColumn
-            }
+            // ONE transcript for every connection state, always mounted — so a
+            // row's transition actually runs (SwiftUI skips a child's
+            // transition when the parent itself is what got inserted, which is
+            // why the old model-less column needed a hand-rolled offset) and so
+            // rows can never disagree between states.
+            transcript
 
             VStack(spacing: 8) {
-                if controller.model != nil, !isAtBottom {
-                    HStack {
-                        Spacer()
-                        scrollToBottomButton
+                // A fully-expanded composer is a focused writing surface: the
+                // accessories above it hide and return on collapse.
+                if !composerExpanded {
+                    if !isAtBottom, hasScrollableContent {
+                        HStack {
+                            Spacer()
+                            scrollToBottomButton
+                        }
+                        .transition(.opacity)
                     }
+                    composerNoticeRail
+                        .transition(.opacity)
                 }
-                composerNoticeRail
                 ComposerBar(
                     controller: controller,
-                    maxHeight: availableHeight - 88,
-                    collapsedHeight: $composerHeight
+                    // Dragged fully open, the card reaches all the way up to
+                    // the top bar (a hair of breathing room; the run-picker
+                    // chips keep their slot above it on the new-chat page);
+                    // text-driven auto-resize keeps its own, much lower cap
+                    // inside ComposerBar.
+                    maxHeight: availableHeight - 12,
+                    collapsedHeight: $composerHeight,
+                    isExpanded: $composerExpanded,
+                    showsRunPickers: showsRunPickers
                 )
+                // Where a sent message starts its ride. Measured rather than
+                // assumed: the row has to travel from HERE to wherever it
+                // lands, and those two points are far apart in a short
+                // conversation and adjacent in a long one.
+                .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).minY } action: { top in
+                    composerTopY = top
+                }
             }
             .padding(.horizontal, 10)
             .padding(.bottom, 6)
@@ -139,43 +323,13 @@ struct SessionTranscriptView: View {
         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
             availableHeight = height
         }
+        // The watermark hands the space over rather than blinking out.
+        .animation(Motion.quick(reduceMotion: reduceMotion), value: showsWatermark)
         // Tab snapshots crop the composer out so previews show only content.
         .onChange(of: composerHeight, initial: true) { _, height in
             PaneSnapshotCache.shared.activeBottomChrome = height + 6
         }
         .background(Color(.systemGroupedBackground))
-    }
-
-    private var modelLessStatusColumn: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 12) {
-                modelLessStatusContent
-                Color.clear.frame(height: composerHeight + 24)
-            }
-            .padding(.horizontal, 16)
-            .padding(.top, 12)
-        }
-    }
-
-    @ViewBuilder
-    private var modelLessStatusContent: some View {
-        if case let .failed(message) = controller.status {
-            ChatErrorRow(
-                message,
-                actionTitle: "Retry",
-                action: { Task { await controller.retry() } }
-            )
-        } else if let message = controller.serverWaitMessage {
-            ChatActivityRow(
-                message,
-                systemImage: "arrow.triangle.2.circlepath",
-                shimmers: true
-            )
-        } else if controller.isLoadingInitialHistory {
-            ChatActivityRow("Loading conversation…")
-        } else if case let .connecting(message) = controller.status {
-            ChatActivityRow(message)
-        }
     }
 
     @ViewBuilder
@@ -216,141 +370,193 @@ struct SessionTranscriptView: View {
 
     private static let bottomAnchor = "transcript-bottom"
 
-    /// The model-less first send: optimistic user bubble, then either the
-    /// setup phases or a "Starting agent…" shimmer until the first phase
-    /// arrives.
-    private var pendingSetupColumn: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                if let text = controller.pendingUserText {
-                    OptimisticUserRow(text: text, attachments: controller.pendingUserAttachments)
-                }
-                if controller.setupPhases.isEmpty {
-                    Text("Starting agent…")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .shimmering()
-                } else {
-                    SessionSetupView(phases: controller.setupPhases)
-                }
-                Color.clear.frame(height: composerHeight + 24)
-            }
-            .padding(.horizontal, 16)
-            .padding(.top, 12)
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .scrollDismissesKeyboard(.interactively)
+    private func isUser(_ item: ConversationItem) -> Bool {
+        if case .user = item { return true }
+        return false
     }
 
-    private func transcriptScroll(_ model: SessionModel) -> some View {
-        ScrollViewReader { scroller in
+    private func isAssistant(_ item: ConversationItem) -> Bool {
+        if case .assistant = item { return true }
+        return false
+    }
+
+    // MARK: - The send lift
+
+    private static let sendLiftCurve: Animation = .snappy(duration: 0.38)
+
+    /// Even when the content already ends at the composer, start a hair behind
+    /// the card so the row emerges from under it rather than appearing on its
+    /// edge.
+    private static let minimumSendLift: CGFloat = 18
+
+    /// One rule for every sent message, in every chat state: start at the
+    /// composer and travel to wherever the row lands. The distance is the
+    /// measured gap between the content's tail and the composer's top — a long
+    /// ride in an empty or short conversation, a short hop in a full one.
+    ///
+    /// Measured, not assumed. A constant here (the earlier bug) is only correct
+    /// when the conversation is long enough to sit against the composer; in a
+    /// short one the row lands high on the screen, and a constant made it pop
+    /// in just below its destination instead of rising out of the composer.
+    private var sendLift: CGFloat {
+        max(Self.minimumSendLift, composerTopY - contentTailY)
+    }
+
+    /// The lift for a conversation row: the full ride for a newly sent message,
+    /// and none for the settled row that merely replaces its optimistic twin.
+    private func lift(for item: ConversationItem) -> CGFloat {
+        if case let .user(message) = item, message.text == optimisticLiftedText {
+            return 0
+        }
+        return sendLift
+    }
+
+    /// The one transcript. Always mounted, whatever the chat's state; its
+    /// content is `rows`.
+    private var transcript: some View {
+        // Built once per render: the body re-evaluates on every streaming
+        // token, and this walks the whole conversation.
+        let rows = rows
+        return ScrollViewReader { scroller in
             ScrollView {
-            LazyVStack(alignment: .leading, spacing: 20) {
-                if model.hasOlderHistory {
-                    // Older pages load themselves as the top scrolls into
-                    // view, matching the macOS transcript's near-top trigger.
-                    HStack {
-                        Spacer()
-                        ProgressView()
-                        Spacer()
+                LazyVStack(alignment: .leading, spacing: 20) {
+                    ForEach(rows) { row in
+                        transcriptRow(row, scroller: scroller)
                     }
-                    .frame(height: 36)
-                    .onScrollVisibilityChange(threshold: 0.1) { visible in
-                        guard visible else { return }
-                        loadOlderHistory(model, scroller)
-                    }
-                }
+                    // Only a send animates. Everything else — history loading,
+                    // a turn settling, status rows — arrives instantly, so
+                    // opening a chat is just the navigation push.
+                    .animation(
+                        reduceMotion || !liftArmed ? nil : Self.sendLiftCurve,
+                        value: rows.map(\.id)
+                    )
 
-                ForEach(model.settledConversation) { item in
-                    ConversationItemRow(item: item, isActive: false)
+                    // Breathing room past the composer so the newest content
+                    // can clear it, and the measurement point for where the
+                    // content currently ends.
+                    Color.clear
+                        .frame(height: composerHeight + 24)
+                        .id(Self.bottomAnchor)
+                        .onScrollVisibilityChange(threshold: 0.05) { visible in
+                            isAtBottom = visible
+                            followsLatest = visible
+                        }
+                        .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).minY } action: { tail in
+                            contentTailY = tail
+                        }
                 }
-                if !controller.setupPhases.isEmpty {
-                    SessionSetupView(phases: controller.setupPhases)
-                }
-                if let active = model.activeItem {
-                    ConversationItemRow(item: active, isActive: true)
-                }
-                if controller.isLoadingInitialHistory {
-                    ChatActivityRow("Loading conversation…")
-                }
-                if let message = controller.serverWaitMessage {
-                    ChatActivityRow(
-                        message,
-                        systemImage: "arrow.triangle.2.circlepath",
-                        shimmers: true
-                    )
-                }
-                if let message = controller.sessionErrorMessage {
-                    sessionErrorRow(message)
-                }
-                if case let .failed(message) = controller.status,
-                   message != controller.sessionErrorMessage {
-                    ChatErrorRow(
-                        message,
-                        actionTitle: "Retry",
-                        action: { Task { await controller.retry() } }
-                    )
-                }
-
-                // Breathing room past the composer so the newest content can
-                // clear it. While a send is pinned to the top (macOS-style),
-                // the spacer stretches to nearly a viewport so the response
-                // has room to stream in below the sent message.
-                Color.clear
-                    .frame(
-                        height: sendPinActive
-                            ? max(composerHeight + 24, viewportHeight - 140)
-                            : composerHeight + 24
-                    )
-                    .id(Self.bottomAnchor)
-                    .onScrollVisibilityChange(threshold: 0.05) { visible in
-                        isAtBottom = visible
-                        followsLatest = visible
-                        if visible { sendPinActive = false }
-                    }
+                .padding(.horizontal, 16)
+                .padding(.top, 12)
+                .frame(minHeight: viewportHeight, alignment: .top)
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 12)
-            .frame(minHeight: viewportHeight, alignment: .top)
-        }
-        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
-            viewportHeight = height
-        }
-        .scrollPosition($scrollPosition)
-        // The lazy stack's estimated row heights make the indicator grow and
-        // shrink as content materializes; hide it until the virtualizer
-        // provides stable content sizing.
-        .scrollIndicators(.hidden)
-        .defaultScrollAnchor(.bottom)
-        .scrollDismissesKeyboard(.interactively)
-        .environment(\.transcriptDisclosure, disclosure)
-        .environment(\.transcriptController, controller)
-        .environment(\.runningSubagentToolCallIds, controller.runningSubagentToolCallIds)
-        // Too-wide tables bleed their horizontal scroller through the
-        // transcript's 16pt text gutter to the screen edges (text keeps the
-        // gutter; a resting table stays aligned with it).
-        .environment(\.markdownTableBleed, 16)
-        // Streaming tokens, settled turns, and sends all re-pin while
-        // following; a send always returns to the newest content.
-        .onChange(of: model.activeItemRevision) { _, _ in
-            scrollToBottomIfFollowing(scroller)
-        }
-        .onChange(of: model.settledConversation.count) { _, _ in
-            if awaitingSendScroll {
-                pinSentMessageToTop(model, scroller)
-            } else {
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
+                viewportHeight = height
+            }
+            .scrollPosition($scrollPosition)
+            // The lazy stack's estimated row heights make the indicator grow
+            // and shrink as content materializes; hide it until the virtualizer
+            // provides stable content sizing.
+            .scrollIndicators(.hidden)
+            .defaultScrollAnchor(.bottom)
+            .scrollDismissesKeyboard(.interactively)
+            .environment(\.transcriptDisclosure, disclosure)
+            .environment(\.transcriptController, controller)
+            .environment(\.runningSubagentToolCallIds, controller.runningSubagentToolCallIds)
+            // Too-wide tables bleed their horizontal scroller through the
+            // transcript's 16pt text gutter to the screen edges (text keeps the
+            // gutter; a resting table stays aligned with it).
+            .environment(\.markdownTableBleed, 16)
+            // Streaming tokens and settled turns re-pin while following.
+            .onChange(of: model?.activeItemRevision) { _, _ in
                 scrollToBottomIfFollowing(scroller)
             }
+            .onChange(of: model?.settledConversation.count) { _, _ in
+                scrollToBottomIfFollowing(scroller)
+            }
+            // Sending re-arms follow and returns to the newest content —
+            // exactly what the macOS transcript does (`autoFollow = true` plus
+            // a scroll command), so the response streams in at the bottom with
+            // the view following it.
+            .onChange(of: controller.userSendSignal) { _, _ in
+                followsLatest = true
+                scrollToBottom(scroller, animated: true)
+                // A genuinely new send: whatever echo we were waiting to
+                // absorb is settled business, so this message lifts normally.
+                optimisticLiftedText = nil
+                // Arm the lift for the row this send is about to produce. It
+                // lands a beat later (the optimistic row after uploads settle,
+                // or the settled row once the model accepts it), so this can't
+                // be a same-update flag.
+                liftArmed = true
+            }
+            // An optimistic row appeared (only happens with no model yet): its
+            // echo must not lift again when it replaces this row.
+            .onChange(of: controller.pendingUserText) { _, current in
+                if let current { optimisticLiftedText = current }
+            }
+            // The sent row landed: spend the lift so nothing that follows —
+            // setup phases, the streaming turn, history — animates too.
+            .onChange(of: rows.map(\.id)) { _, _ in
+                if liftArmed { liftArmed = false }
+            }
+            .onChange(of: scrollRequest) { _, _ in
+                scrollToBottom(scroller, animated: true)
+            }
+            .onAppear { scrollToBottom(scroller, animated: false) }
         }
-        .onChange(of: controller.userSendSignal) { _, _ in
-            awaitingSendScroll = true
-            sendPinActive = true
-            pinSentMessageToTop(model, scroller)
-        }
-        .onChange(of: scrollRequest) { _, _ in
-            scrollToBottom(scroller, animated: true)
-        }
-        .onAppear { scrollToBottom(scroller, animated: false) }
+    }
+
+    @ViewBuilder
+    private func transcriptRow(_ row: TranscriptRow, scroller: ScrollViewProxy) -> some View {
+        switch row {
+        case .olderHistory:
+            // Older pages load themselves as the top scrolls into view,
+            // matching the macOS transcript's near-top trigger.
+            HStack {
+                Spacer()
+                ProgressView()
+                Spacer()
+            }
+            .frame(height: 36)
+            .onScrollVisibilityChange(threshold: 0.1) { visible in
+                guard visible else { return }
+                loadOlderHistory(scroller)
+            }
+        case .setup:
+            SessionSetupView(phases: controller.setupPhases)
+        case let .item(item, isActive):
+            ConversationItemRow(item: item, isActive: isActive, sendLift: lift(for: item))
+        case let .optimistic(text, attachments):
+            // The same bubble a settled user row renders, with the same lift —
+            // one view, so the first send and every later send cannot drift.
+            UserBubbleRow(text: text, attachments: attachments)
+                .transition(.sendLift(sendLift))
+        case let .activity(kind):
+            switch kind {
+            case .loadingHistory:
+                ChatActivityRow("Loading conversation…")
+            case .startingAgent:
+                Text("Starting agent…")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .shimmering()
+            case let .connecting(message):
+                ChatActivityRow(message)
+            case let .serverWait(message):
+                ChatActivityRow(
+                    message,
+                    systemImage: "arrow.triangle.2.circlepath",
+                    shimmers: true
+                )
+            }
+        case let .sessionError(message):
+            sessionErrorRow(message)
+        case let .statusError(message):
+            ChatErrorRow(
+                message,
+                actionTitle: "Retry",
+                action: { Task { await controller.retry() } }
+            )
         }
     }
 
@@ -377,8 +583,8 @@ struct SessionTranscriptView: View {
     /// item to the top of the viewport, so the prepended rows land above the
     /// fold instead of shoving the visible content down (and so the sentinel
     /// scrolls out of view rather than chain-loading every page).
-    private func loadOlderHistory(_ model: SessionModel, _ scroller: ScrollViewProxy) {
-        guard model.hasOlderHistory, !model.isLoadingOlderHistory else { return }
+    private func loadOlderHistory(_ scroller: ScrollViewProxy) {
+        guard let model, model.hasOlderHistory, !model.isLoadingOlderHistory else { return }
         let anchorId = model.settledConversation.first?.id
         Task {
             await model.loadOlderHistory()
@@ -388,23 +594,18 @@ struct SessionTranscriptView: View {
         }
     }
 
-    /// The sent message animates from the composer up to the top of the
-    /// viewport — the same motion as the macOS transcript's send handoff.
-    private func pinSentMessageToTop(_ model: SessionModel, _ scroller: ScrollViewProxy) {
-        guard case .user = model.settledConversation.last else { return }
-        guard let id = model.settledConversation.last?.id else { return }
-        awaitingSendScroll = false
-        // The response streams in below the pinned message; following the
-        // tail would immediately yank the view back down.
-        followsLatest = false
-        withAnimation(.snappy(duration: 0.45)) {
-            scroller.scrollTo(id, anchor: .top)
-        }
-    }
-
     private func scrollToBottomIfFollowing(_ scroller: ScrollViewProxy) {
         guard followsLatest else { return }
-        scrollToBottom(scroller, animated: true)
+        // Opening a chat JUMPS to the newest content; only changes that happen
+        // while you're watching scroll there. History arriving on open used to
+        // animate the scroll, so a chat visibly scrolled itself on entry.
+        //
+        // Decided here rather than from an `onChange` so it can't depend on the
+        // order SwiftUI happens to invoke sibling change handlers in: the first
+        // follow-scroll of this view's life is the opening one, full stop.
+        let isOpening = !hasOpened
+        if isOpening { hasOpened = true }
+        scrollToBottom(scroller, animated: !isOpening)
     }
 
     private func scrollToBottom(_ scroller: ScrollViewProxy, animated: Bool) {
@@ -422,34 +623,53 @@ struct SessionTranscriptView: View {
 /// The linear rendering (text and tools in stream order) is the interim shape;
 /// worked-section collapsing arrives with the full transcript port.
 private struct ConversationItemRow: View {
-    @Environment(\.theme) private var theme
     let item: ConversationItem
     let isActive: Bool
+    /// How far a user row travels from the composer on arrival — see
+    /// `SessionTranscriptView.sendLift`.
+    var sendLift: CGFloat = 0
 
     var body: some View {
         switch item {
         case let .user(message):
-            HStack {
-                Spacer(minLength: 40)
-                VStack(alignment: .trailing, spacing: 8) {
-                    if !message.attachments.isEmpty {
-                        // Thumbnails above the bubble, as on macOS.
-                        HStack(spacing: 8) {
-                            ForEach(message.attachments) { attachment in
-                                AttachmentThumbnailView(attachment: attachment)
-                            }
-                        }
-                    }
-                    if !message.text.isEmpty {
-                        Text(message.text)
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 9)
-                            .background(theme.bubbleBackground, in: RoundedRectangle(cornerRadius: 18))
-                    }
-                }
-            }
+            UserBubbleRow(text: message.text, attachments: message.attachments)
+                // Rises out of the composer it was just sent from. No fade: a
+                // cross-fade reads as the message appearing in place, which is
+                // exactly the "shortcut" look — it must travel.
+                .transition(.sendLift(sendLift))
         case let .assistant(message):
             AssistantTurnBody(turn: message.turn, turnId: message.id)
+        }
+    }
+}
+
+/// The trailing user bubble, with its attachment thumbnails above it as on
+/// macOS. One view for both the optimistic message (sent, not yet echoed back)
+/// and the settled row that replaces it, so the two are pixel-identical and the
+/// swap between them is invisible.
+private struct UserBubbleRow: View {
+    @Environment(\.theme) private var theme
+    let text: String
+    let attachments: [Attachment]
+
+    var body: some View {
+        HStack {
+            Spacer(minLength: 40)
+            VStack(alignment: .trailing, spacing: 8) {
+                if !attachments.isEmpty {
+                    HStack(spacing: 8) {
+                        ForEach(attachments) { attachment in
+                            AttachmentThumbnailView(attachment: attachment)
+                        }
+                    }
+                }
+                if !text.isEmpty {
+                    Text(text)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 9)
+                        .background(theme.bubbleBackground, in: RoundedRectangle(cornerRadius: 18))
+                }
+            }
         }
     }
 }
@@ -784,35 +1004,6 @@ private struct DeferredWorkedDetails: View {
                     if await !controller.loadTranscriptDetails(itemId) {
                         failed = true
                     }
-                }
-            }
-        }
-    }
-}
-
-/// The just-sent message, rendered before the server echoes it back — the
-/// same trailing bubble as a settled user row.
-private struct OptimisticUserRow: View {
-    @Environment(\.theme) private var theme
-    let text: String
-    let attachments: [Attachment]
-
-    var body: some View {
-        HStack {
-            Spacer(minLength: 40)
-            VStack(alignment: .trailing, spacing: 8) {
-                if !attachments.isEmpty {
-                    HStack(spacing: 8) {
-                        ForEach(attachments) { attachment in
-                            AttachmentThumbnailView(attachment: attachment)
-                        }
-                    }
-                }
-                if !text.isEmpty {
-                    Text(text)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 9)
-                        .background(theme.bubbleBackground, in: RoundedRectangle(cornerRadius: 18))
                 }
             }
         }

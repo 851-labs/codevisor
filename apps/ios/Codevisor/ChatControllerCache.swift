@@ -18,6 +18,11 @@ final class ChatControllerCache {
     }
 
     private var controllers: [Key: SessionController] = [:]
+    /// The retained new-chat draft controller per machine — the iOS
+    /// counterpart of the macOS store's `draftsByServer`. Unsent composer
+    /// state survives leaving the page and relaunches; the first send
+    /// promotes the controller to a real session and clears the draft.
+    private var draftsByServer: [String: SessionController] = [:]
     /// The chat currently on screen; its finished turns re-mark as read the
     /// moment they land (the server writes the attention event before the
     /// client sees the turn end — same dance as the macOS store).
@@ -73,24 +78,74 @@ final class ChatControllerCache {
         return controller
     }
 
+    /// Returns the retained draft controller for the new-chat page, restoring
+    /// its disk snapshot first or seeding it from last-used composer defaults
+    /// if none exists — the same contract as the macOS store's
+    /// `draft(project:)`. The draft is retained until its first send promotes
+    /// it to a real session, so unsent composer state survives navigation and
+    /// relaunches.
+    func draftController(
+        preferredProject: Project,
+        environment: AppEnvironment
+    ) -> SessionController {
+        let serverId = preferredProject.serverId
+        if let draft = draftsByServer[serverId], draft.serverSession == nil {
+            return draft
+        }
+        let persisted = environment.composerDrafts.draft(forServer: serverId)
+        let restoredProject = persisted.flatMap { saved in
+            environment.projectList.projects.first {
+                $0.serverId == serverId && $0.id == saved.projectId
+            }
+        } ?? preferredProject
+        let controller = SessionController(
+            project: restoredProject,
+            configCache: environment.configCache,
+            composerDefaults: environment.composerDefaults,
+            serverClient: environment.serverClient
+        )
+        controller.applyComposerDefaults()
+        // Fresh drafts start from the machine's remembered run-location
+        // choice (worktrees only apply to git projects). Retained drafts
+        // returned above keep whatever the user toggled.
+        controller.wantsNewWorktree = restoredProject.isGitRepository
+            && environment.composerDefaults.prefersWorktreeForNewWorkspaces(
+                forServer: serverId
+            )
+        if let persisted { controller.restoreDraft(persisted) }
+        controller.onDraftChange = { [weak drafts = environment.composerDrafts] draft in
+            drafts?.saveDraft(draft, forServer: serverId)
+        }
+        environment.composerDrafts.saveDraft(controller.draftSnapshot(), forServer: serverId)
+        draftsByServer[serverId] = controller
+        return controller
+    }
+
     /// Adopts a draft controller under its freshly created session id (the
     /// new-chat page's first send), so the workspace screen rebinds the SAME
     /// controller — mid-flight worktree setup, optimistic message and all —
-    /// instead of minting a fresh one.
+    /// instead of minting a fresh one. The promoted chat leaves the draft
+    /// slot behind and clears its persisted snapshot, exactly like the macOS
+    /// store's registration path.
     func register(
         _ controller: SessionController,
         for session: ChatSession,
-        projectList: ProjectListModel
+        environment: AppEnvironment
     ) {
         let key = Key(serverId: session.serverId, id: session.id)
         noteAccess(key)
         controllers[key] = controller
-        let markReadIfOpen = { [weak self, weak projectList] in
+        let markReadIfOpen = { [weak self, weak projectList = environment.projectList] in
             guard let self, self.openKey == key else { return }
             projectList?.markSessionRead(key.id, serverId: key.serverId)
         }
         controller.onTurnEnded = markReadIfOpen
         controller.onActionRequired = markReadIfOpen
+        if draftsByServer[session.serverId] === controller {
+            draftsByServer[session.serverId] = nil
+        }
+        controller.onDraftChange = nil
+        environment.composerDrafts.clearDraft(forServer: session.serverId)
         evictIfNeeded()
     }
 
@@ -100,6 +155,30 @@ final class ChatControllerCache {
         let key = Key(serverId: serverId, id: sessionId)
         openKey = key
         projectList.markSessionRead(sessionId, serverId: serverId)
+    }
+
+    /// The live controller for a chat if one is already cached, without
+    /// creating anything. Lets a screen render an in-flight chat on its FIRST
+    /// frame — the workspace opening onto a just-sent new chat would otherwise
+    /// flash a spinner while its async connect bound the very controller the
+    /// cache already held.
+    func existingController(sessionId: UUID, serverId: String) -> SessionController? {
+        controllers[Key(serverId: serverId, id: sessionId)]
+    }
+
+    /// Whether the chat's agent is actively working — the same classification
+    /// as the macOS sidebar (sending, running setup phases, or waiting on
+    /// background subagents; deliberately not `isConnecting`, which is client
+    /// plumbing, not agent work). Driven by the cached live controller: like
+    /// macOS, a chat with no cached controller reads as idle, because the
+    /// server doesn't sync a per-session "running" flag.
+    func isInProgress(_ session: ChatSession) -> Bool {
+        guard let controller = controllers[Key(serverId: session.serverId, id: session.id)] else {
+            return false
+        }
+        return controller.isSending
+            || controller.setupPhases.contains(where: \.isRunning)
+            || controller.isWaitingOnBackgroundTasks
     }
 
     func noteClosed(sessionId: UUID, serverId: String) {
