@@ -109,7 +109,7 @@ struct HomeView: View {
                 let lp = priority(for: lhs)
                 let rp = priority(for: rhs)
                 if lp != rp { return lp < rp }
-                return (lhs.updatedAt ?? lhs.createdAt) > (rhs.updatedAt ?? rhs.createdAt)
+                return lhs.sidebarStateChangedAt > rhs.sidebarStateChangedAt
             }
         case .created:
             return sessions.sorted { $0.createdAt > $1.createdAt }
@@ -123,7 +123,7 @@ struct HomeView: View {
                 let li = index[lhs.id] ?? Int.max
                 let ri = index[rhs.id] ?? Int.max
                 if li != ri { return li < ri }
-                return (lhs.updatedAt ?? lhs.createdAt) > (rhs.updatedAt ?? rhs.createdAt)
+                return lhs.sidebarStateChangedAt > rhs.sidebarStateChangedAt
             }
         }
     }

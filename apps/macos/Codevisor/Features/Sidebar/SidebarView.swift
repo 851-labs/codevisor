@@ -1675,9 +1675,9 @@ struct SidebarView: View {
     private func timestamp(for session: ChatSession) -> Date {
         switch order {
         case .none:
-            return session.updatedAt ?? session.createdAt
+            return session.sidebarStateChangedAt
         case .updated:
-            return session.updatedAt ?? session.createdAt
+            return session.sidebarStateChangedAt
         case .created:
             return session.createdAt
         }
@@ -1688,8 +1688,14 @@ struct SidebarView: View {
         case .none, .created:
             return project.createdAt
         case .updated:
-            return list.sessions(in: project)
-                .map { $0.updatedAt ?? $0.createdAt }
+            let sessions = list.sessions(in: project)
+            guard let leadingPriority = sessions
+                .map(sessionPriority)
+                .min(by: { $0.rawValue < $1.rawValue })
+            else { return project.createdAt }
+            return sessions
+                .filter { sessionPriority(for: $0) == leadingPriority }
+                .map(\.sidebarStateChangedAt)
                 .max() ?? project.createdAt
         }
     }
@@ -1715,8 +1721,8 @@ struct SidebarView: View {
     private func resetManualOrder() {
         let sessions = list.activeProjects.flatMap { list.sessions(in: $0) }
         saveSessionOrder(sessions.sorted { left, right in
-            let leftTimestamp = left.updatedAt ?? left.createdAt
-            let rightTimestamp = right.updatedAt ?? right.createdAt
+            let leftTimestamp = left.sidebarStateChangedAt
+            let rightTimestamp = right.sidebarStateChangedAt
             if leftTimestamp != rightTimestamp { return leftTimestamp > rightTimestamp }
             return left.title.localizedCaseInsensitiveCompare(right.title) == .orderedAscending
         }.map(\.id))

@@ -828,6 +828,88 @@ describe("@codevisor/db", () => {
     await Effect.runPromise(db.close)
   })
 
+  it("advances native sidebar ordering only when the visible state changes", async () => {
+    const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
+    const project = await run(db.createProject({ folderPath: "/tmp/sidebar-state" }))
+    const session = await run(db.createSession({ projectId: project.id, harnessId: "codex" }))
+
+    const initial = await run(db.getSessionSummary(session.id))
+    expect(initial).toMatchObject({
+      sidebarState: "idle",
+      sidebarStateChangedAt: initial.createdAt
+    })
+
+    await new Promise((resolve) => setTimeout(resolve, 2))
+    await run(
+      db.appendEvent("session.updated", session.id, {
+        initiatedBy: "user",
+        turnId: "turn-1",
+        turnState: "started"
+      })
+    )
+    const started = await run(db.getSessionSummary(session.id))
+    expect(started.sidebarState).toBe("inProgress")
+    expect(started.sidebarStateChangedAt).not.toBe(initial.sidebarStateChangedAt)
+
+    await run(
+      db.appendEvent("session.output", session.id, {
+        role: "assistant",
+        text: "streaming"
+      })
+    )
+    expect((await run(db.getSessionSummary(session.id))).sidebarStateChangedAt).toBe(
+      started.sidebarStateChangedAt
+    )
+
+    await run(
+      db.appendEvent("session.updated", session.id, {
+        backgroundTasks: [
+          {
+            id: "subagent-1",
+            description: "Investigate",
+            status: "running",
+            taskType: "subagent"
+          }
+        ]
+      })
+    )
+    await run(
+      db.appendEvent("session.updated", session.id, {
+        initiatedBy: "user",
+        stopReason: "end_turn",
+        turnId: "turn-1",
+        turnState: "ended"
+      })
+    )
+    const waitingOnBackground = await run(db.getSessionSummary(session.id))
+    expect(waitingOnBackground.sidebarState).toBe("inProgress")
+    expect(waitingOnBackground.sidebarStateChangedAt).toBe(started.sidebarStateChangedAt)
+
+    await new Promise((resolve) => setTimeout(resolve, 2))
+    await run(db.appendEvent("session.updated", session.id, { backgroundTasks: [] }))
+    const unread = await run(db.getSessionSummary(session.id))
+    expect(unread.sidebarState).toBe("unread")
+    expect(unread.sidebarStateChangedAt).not.toBe(started.sidebarStateChangedAt)
+
+    await run(
+      db.appendEvent("session.output", session.id, {
+        role: "assistant",
+        text: "late detail"
+      })
+    )
+    expect((await run(db.getSessionSummary(session.id))).sidebarStateChangedAt).toBe(
+      unread.sidebarStateChangedAt
+    )
+
+    await new Promise((resolve) => setTimeout(resolve, 2))
+    await run(db.markSessionRead(session.id))
+    const idle = await run(db.getSessionSummary(session.id))
+    expect(idle.sidebarState).toBe("idle")
+    expect(idle.sidebarStateChangedAt).not.toBe(unread.sidebarStateChangedAt)
+
+    await Effect.runPromise(db.close)
+  })
+
   it("waits for agent continuations and normalizes unknown runtime states", async () => {
     const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
     const project = await run(db.createProject({ folderPath: "/tmp/continued-attention" }))

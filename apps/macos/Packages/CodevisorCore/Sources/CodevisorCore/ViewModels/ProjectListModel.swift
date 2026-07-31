@@ -411,30 +411,6 @@ public final class ProjectListModel {
         return session
     }
 
-    /// Marks conversation activity after a finished in-app turn. Runtime
-    /// events are session-scoped, so they do not refresh the global sidebar
-    /// snapshot even though the server persists the transcript. Bump recency
-    /// locally at the completion edge and mirror it to the server.
-    public func touchSession(_ sessionId: UUID, serverId: String) {
-        guard let index = sessions.firstIndex(where: {
-            $0.serverId == serverId && $0.id == sessionId
-        }) else { return }
-        let now = Date()
-        sessions[index].updatedAt = now
-        persistSessions()
-        guard let serverClient, serverId == selectedServerId else { return }
-        Task {
-            do {
-                try await serverClient.touchSession(id: sessionId, updatedAt: now)
-            } catch {
-                // Recency-only mirror; the next sync carries the stamp.
-                Log.sync.debug(
-                    "Failed to touch session \(sessionId.uuidString, privacy: .public) on the server: \(String(describing: error), privacy: .public)"
-                )
-            }
-        }
-    }
-
     /// Shares read state through the server so opening a chat on one device
     /// clears it everywhere. A nil sequence means the session is actively
     /// visible and the server should acknowledge its current attention tip.

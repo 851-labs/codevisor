@@ -482,7 +482,9 @@ final class SessionStore {
     /// the harness icon and sidebar ordering does not make an idle row jump
     /// while its transcript connects.
     func isInProgress(_ session: ChatSession) -> Bool {
-        guard let controller = controllers[SessionKey(session)] else { return false }
+        guard let controller = controllers[SessionKey(session)] else {
+            return session.sidebarState == .inProgress
+        }
         return Self.isInProgress(controller)
     }
 
@@ -579,11 +581,6 @@ final class SessionStore {
 
     private func noteTurnEnded(for key: SessionKey) {
         activityRevision &+= 1
-        // Transcript/runtime events are session-scoped and intentionally do
-        // not invalidate the global projects snapshot. Advance the sidebar's
-        // local recency stamp at the completion edge instead of waiting for an
-        // unrelated metadata refresh to pick up the server's updated value.
-        environment.projectList.touchSession(key.sessionId, serverId: key.serverId)
         guard let controller = controllers[key] else { return }
 
         let failed = controller.lastTurnEndedWithError || goalNeedsErrorAttention(controller.goal)

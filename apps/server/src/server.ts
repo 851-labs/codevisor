@@ -4030,7 +4030,9 @@ const sessionAttentionSignature = (session: SessionSummary): string =>
     session.hasUnreadError,
     session.actionRequired,
     session.actionRequiredKind,
-    session.pendingPlanApproval
+    session.pendingPlanApproval,
+    session.sidebarState,
+    session.sidebarStateChangedAt
   ])
 
 const readSchema = async <S extends Schema.ConstraintDecoder<unknown>>(

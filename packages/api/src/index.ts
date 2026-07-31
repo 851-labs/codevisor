@@ -1113,6 +1113,19 @@ export const BranchDiffTotals = Schema.Struct({
 })
 export type BranchDiffTotals = typeof BranchDiffTotals.Type
 
+/** The mutually exclusive state rendered by native session sidebars. The
+ *  ordering priority is a presentation concern; this value records only what
+ *  the row currently shows so repeated events inside one state do not refresh
+ *  its ordering timestamp. */
+export const SessionSidebarState = Schema.Literals([
+  "idle",
+  "inProgress",
+  "waitingForUser",
+  "unread",
+  "errored"
+])
+export type SessionSidebarState = typeof SessionSidebarState.Type
+
 export const SessionSummary = Schema.Struct({
   id: Schema.String,
   projectId: Schema.String,
@@ -1135,6 +1148,10 @@ export const SessionSummary = Schema.Struct({
   configSelections: Schema.optional(Schema.Record(Schema.String, Schema.String)),
   createdAt: Schema.String,
   updatedAt: Schema.optional(Schema.String),
+  /** Native-sidebar state and the moment that visible state was entered.
+   *  Optional while native clients may connect to older servers. */
+  sidebarState: Schema.optional(SessionSidebarState),
+  sidebarStateChangedAt: Schema.optional(Schema.String),
   usage: Schema.optional(SessionUsage),
   /** Monotonic server-owned attention cursor. Optional for compatibility with
    * servers that predate durable cross-device read state. */

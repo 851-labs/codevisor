@@ -101,7 +101,9 @@ struct ProjectListModelTests {
             harnessId: "codex",
             agentSessionId: "agent-remote",
             title: "Remote session",
-            createdAt: Date(timeIntervalSince1970: 11)
+            createdAt: Date(timeIntervalSince1970: 11),
+            sidebarState: .inProgress,
+            sidebarStateChangedAt: Date(timeIntervalSince1970: 12)
         )
         let scopedSession = ChatSession(
             id: remoteSession.id,
@@ -110,7 +112,9 @@ struct ProjectListModelTests {
             harnessId: remoteSession.harnessId,
             agentSessionId: remoteSession.agentSessionId,
             title: remoteSession.title,
-            createdAt: remoteSession.createdAt
+            createdAt: remoteSession.createdAt,
+            sidebarState: remoteSession.sidebarState,
+            sidebarStateChangedAt: remoteSession.sidebarStateChangedAt
         )
         let fakeServer = FakeServerClient(
             projects: [serverProject(from: project)],
@@ -1116,6 +1120,8 @@ private func serverSession(from session: ChatSession) -> ServerSession {
         cwd: session.cwd,
         createdAt: serverDateString(from: session.createdAt),
         updatedAt: session.updatedAt.map(serverDateString),
+        sidebarState: session.sidebarState,
+        sidebarStateChangedAt: serverDateString(from: session.sidebarStateChangedAt),
         usage: nil
     )
 }

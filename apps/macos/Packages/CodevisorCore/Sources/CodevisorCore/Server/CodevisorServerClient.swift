@@ -279,7 +279,6 @@ public protocol CodevisorServerClienting: Sendable {
     func sessionEvents(id: UUID) async throws -> [ServerEventEnvelope]
     func upsertSession(_ session: ChatSession) async throws -> ServerSession
     func updateSession(_ session: ChatSession) async throws -> ServerSession
-    func touchSession(id: UUID, updatedAt: Date) async throws
     func markSessionRead(id: UUID, throughSequence: Int?) async throws -> ServerSession?
     func markSessionUnread(id: UUID) async throws -> ServerSession?
     func clearSessionPlanApproval(id: UUID) async throws
@@ -685,10 +684,6 @@ public extension CodevisorServerClienting {
     }
 
     func deleteQueuedPrompt(sessionId: UUID, queueItemId: String) async throws {}
-
-    /// Default no-op so fakes and older transports keep compiling; the HTTP
-    /// client overrides this with a PATCH carrying the activity stamp.
-    func touchSession(id: UUID, updatedAt: Date) async throws {}
 
     /// Defaults so fakes and older transports keep compiling; the HTTP client
     /// overrides these with the real worktree endpoints.
@@ -2024,6 +2019,8 @@ public struct ServerSession: Decodable, Equatable, Sendable {
     public var configSelections: [String: String]? = nil
     public var createdAt: String
     public var updatedAt: String?
+    public var sidebarState: SessionSidebarState? = nil
+    public var sidebarStateChangedAt: String? = nil
     public var usage: ServerSessionUsage?
     public var latestAttentionSequence: Int? = nil
     public var lastSeenAttentionSequence: Int? = nil
@@ -2061,6 +2058,12 @@ public struct ServerSession: Decodable, Equatable, Sendable {
             configSelections: configSelections,
             createdAt: try ServerDateCoding.date(from: createdAt),
             updatedAt: try updatedAt.map(ServerDateCoding.date),
+            sidebarState: sidebarState ?? .idle,
+            sidebarStateChangedAt: sidebarStateChangedAt.flatMap {
+                try? ServerDateCoding.date(from: $0)
+            } ?? updatedAt.flatMap {
+                try? ServerDateCoding.date(from: $0)
+            },
             latestAttentionSequence: latestAttentionSequence ?? 0,
             lastSeenAttentionSequence: lastSeenAttentionSequence ?? 0,
             unreadCount: unreadCount ?? 0,
@@ -3084,16 +3087,6 @@ public final class CodevisorServerClient: CodevisorServerClienting, @unchecked S
         )
     }
 
-    /// Marks conversation activity (a finished turn) without touching other
-    /// fields — the server orders sessions by this stamp.
-    public func touchSession(id: UUID, updatedAt: Date) async throws {
-        try await sendNoResponse(
-            "/v1/sessions/\(id.uuidString)",
-            method: "PATCH",
-            body: TouchSessionBody(updatedAt: ServerDateCoding.string(from: updatedAt))
-        )
-    }
-
     public func markSessionRead(id: UUID, throughSequence: Int?) async throws -> ServerSession? {
         do {
             return try await send(
@@ -3745,10 +3738,6 @@ private struct UpdateSessionBody: Encodable {
         harnessId = session.harnessId.isEmpty ? nil : session.harnessId
         harnessAccountId = session.harnessAccountId
     }
-}
-
-private struct TouchSessionBody: Encodable {
-    var updatedAt: String
 }
 
 private struct CreateScratchProjectBody: Encodable {

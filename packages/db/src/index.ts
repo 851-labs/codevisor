@@ -25,6 +25,7 @@ import type {
   QuestionPayload,
   SessionDetail,
   SessionGoal,
+  SessionSidebarState,
   SessionSummary,
   TranscriptItem,
   TranscriptItemDetails,
@@ -147,6 +148,8 @@ interface SessionRow {
   readonly workspace_id: string | null
   readonly created_at: string
   readonly updated_at: string | null
+  readonly sidebar_state: SessionSidebarState
+  readonly sidebar_state_changed_at: string
   readonly usage_used: number | null
   readonly usage_size: number | null
   readonly input_tokens: number | null
@@ -1389,6 +1392,57 @@ const migrations: ReadonlyArray<Migration> = [
       drop table if exists workspace_notes;
       delete from events where kind = 'workspace.notes.updated';
     `
+  },
+  {
+    id: 34,
+    name: "stable native sidebar state ordering",
+    sql: `
+      alter table sessions add column sidebar_state text not null default 'idle'
+        check(sidebar_state in ('idle', 'inProgress', 'waitingForUser', 'unread', 'errored'));
+      alter table sessions add column sidebar_state_changed_at text not null default '';
+
+      update sessions
+      set sidebar_state =
+        case
+          when exists (
+            select 1 from session_attention_events ae
+            where ae.session_id = sessions.id and ae.has_error = 1
+              and ae.sequence > coalesce((
+                select last_seen_sequence from session_read_state rs
+                where rs.session_id = sessions.id and rs.reader_id = 'owner'
+              ), 0)
+          ) then 'errored'
+          when pending_question is not null or coalesce((
+            select pending_plan_approval from session_attention_state ast
+            where ast.session_id = sessions.id
+          ), 0) = 1 then 'waitingForUser'
+          when coalesce((
+            select turn_active from session_attention_state ast
+            where ast.session_id = sessions.id
+          ), 0) = 1
+            or coalesce((
+              select case when has_runtime_state = 1 and runtime_state = 'running' then 1 else 0 end
+              from session_attention_state ast where ast.session_id = sessions.id
+            ), 0) = 1
+            or exists (
+              select 1 from json_each(sessions.background_tasks)
+              where json_extract(value, '$.terminalKey') is null
+            ) then 'inProgress'
+          when exists (
+            select 1 from session_attention_events ae
+            where ae.session_id = sessions.id
+              and ae.sequence > coalesce((
+                select last_seen_sequence from session_read_state rs
+                where rs.session_id = sessions.id and rs.reader_id = 'owner'
+              ), 0)
+          ) or coalesce((
+            select manually_unread from session_read_state rs
+            where rs.session_id = sessions.id and rs.reader_id = 'owner'
+          ), 0) = 1 then 'unread'
+          else 'idle'
+        end,
+        sidebar_state_changed_at = coalesce(updated_at, created_at);
+    `
   }
 ]
 
@@ -2215,6 +2269,85 @@ const projectSessionAttention = (sqlite: Database.Database, event: SessionEventR
   releasePendingSessionAttention(sqlite, event)
 }
 
+/** Computes the one mutually exclusive state rendered by native sidebars.
+ *  Classification mirrors the native icon precedence. In particular, unread
+ *  activity buffered behind a still-running turn remains `inProgress` until
+ *  the overall activity epoch settles. */
+const sessionSidebarState = (sqlite: Database.Database, sessionId: string): SessionSidebarState => {
+  const state = sqlite
+    .prepare(
+      `select s.pending_question, s.background_tasks,
+         coalesce(ast.turn_active, 0) as turn_active,
+         coalesce(ast.runtime_state, 'idle') as runtime_state,
+         coalesce(ast.has_runtime_state, 0) as has_runtime_state,
+         coalesce(ast.pending_plan_approval, 0) as pending_plan_approval,
+         coalesce(rs.last_seen_sequence, 0) as last_seen_sequence,
+         coalesce(rs.manually_unread, 0) as manually_unread
+       from sessions s
+       left join session_attention_state ast on ast.session_id = s.id
+       left join session_read_state rs
+         on rs.session_id = s.id and rs.reader_id = 'owner'
+       where s.id = ?`
+    )
+    .get(sessionId) as {
+    readonly pending_question: string | null
+    readonly background_tasks: string
+    readonly turn_active: number
+    readonly runtime_state: string
+    readonly has_runtime_state: number
+    readonly pending_plan_approval: number
+    readonly last_seen_sequence: number
+    readonly manually_unread: number
+  }
+
+  const unread = sqlite
+    .prepare(
+      `select count(*) as count,
+         coalesce(max(case when has_error = 1 then 1 else 0 end), 0) as has_error
+       from session_attention_events
+       where session_id = ? and sequence > ?`
+    )
+    .get(sessionId, state.last_seen_sequence) as {
+    readonly count: number
+    readonly has_error: number
+  }
+  if (unread.has_error === 1) return "errored"
+  if (state.pending_question !== null || state.pending_plan_approval === 1) {
+    return "waitingForUser"
+  }
+  const waitingOnBackgroundTasks = backgroundTasksFromRaw(state.background_tasks).some(
+    (task) => task.terminalKey === undefined
+  )
+  if (
+    state.turn_active === 1 ||
+    waitingOnBackgroundTasks ||
+    (state.has_runtime_state === 1 && state.runtime_state === "running")
+  ) {
+    return "inProgress"
+  }
+  if (state.manually_unread === 1 || unread.count > 0) return "unread"
+  return "idle"
+}
+
+/** Advances the ordering clock only when the visible native-sidebar state
+ *  actually changes. Callers run this in the same transaction as event
+ *  projections, so a snapshot cannot expose the new state with an old clock. */
+const projectSessionSidebarState = (
+  sqlite: Database.Database,
+  sessionId: string,
+  changedAt: string
+): boolean => {
+  const next = sessionSidebarState(sqlite, sessionId)
+  const current = sqlite
+    .prepare("select sidebar_state from sessions where id = ?")
+    .get(sessionId) as { readonly sidebar_state: SessionSidebarState }
+  if (current.sidebar_state === next) return false
+  sqlite
+    .prepare("update sessions set sidebar_state = ?, sidebar_state_changed_at = ? where id = ?")
+    .run(next, changedAt, sessionId)
+  return true
+}
+
 const insertSessionEvent = (
   sqlite: Database.Database,
   row: Omit<SessionEventRow, "revision" | "chat_item_id"> & {
@@ -2964,6 +3097,7 @@ const createService = (
           subjectRevision = sessionEvent.revision
           projectChatEvent(sqlite, sessionEvent)
           projectSessionAttention(sqlite, sessionEvent)
+          projectSessionSidebarState(sqlite, subjectId, createdAt)
           if (kind === "session.output") {
             sqlite
               .prepare("update sessions set updated_at = ? where id = ?")
@@ -3248,8 +3382,9 @@ const createService = (
         .prepare(
           `insert into sessions (
             id, project_id, server_id, harness_id, harness_account_id, agent_session_id,
-            title, origin, is_archived, worktree_name, workspace_id, created_at, updated_at
-          ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+            title, origin, is_archived, worktree_name, workspace_id, created_at, updated_at,
+            sidebar_state, sidebar_state_changed_at
+          ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'idle', ?)`
         )
         .run(
           id,
@@ -3264,7 +3399,8 @@ const createService = (
           request.worktreeName ?? null,
           request.workspaceId == null ? null : canonicalUuid(request.workspaceId),
           request.createdAt ?? now,
-          request.updatedAt ?? null
+          request.updatedAt ?? null,
+          request.updatedAt ?? request.createdAt ?? now
         )
       return getSession(id)
     })
@@ -3572,45 +3708,57 @@ const createService = (
           throughSequence === undefined || !Number.isFinite(throughSequence)
             ? latest
             : Math.max(0, Math.min(latest, Math.trunc(throughSequence)))
-        sqlite
-          .prepare(
-            `insert into session_read_state (
-               session_id, reader_id, last_seen_sequence, manually_unread, updated_at
-             ) values (?, 'owner', ?, 0, ?)
-             on conflict(session_id, reader_id) do update set
-               last_seen_sequence = max(last_seen_sequence, excluded.last_seen_sequence),
-               manually_unread = 0,
-               updated_at = excluded.updated_at`
-          )
-          .run(id, requested, isoTimestamp())
+        const changedAt = isoTimestamp()
+        sqlite.transaction(() => {
+          sqlite
+            .prepare(
+              `insert into session_read_state (
+                 session_id, reader_id, last_seen_sequence, manually_unread, updated_at
+               ) values (?, 'owner', ?, 0, ?)
+               on conflict(session_id, reader_id) do update set
+                 last_seen_sequence = max(last_seen_sequence, excluded.last_seen_sequence),
+                 manually_unread = 0,
+                 updated_at = excluded.updated_at`
+            )
+            .run(id, requested, changedAt)
+          projectSessionSidebarState(sqlite, id, changedAt)
+        })()
         return getSession(id)
       }),
     markSessionUnread: (rawId) =>
       attempt("markSessionUnread", () => {
         const id = canonicalUuid(rawId)
         getSession(id)
-        sqlite
-          .prepare(
-            `insert into session_read_state (
-               session_id, reader_id, last_seen_sequence, manually_unread, updated_at
-             ) values (?, 'owner', 0, 1, ?)
-             on conflict(session_id, reader_id) do update set
-               manually_unread = 1,
-               updated_at = excluded.updated_at`
-          )
-          .run(id, isoTimestamp())
+        const changedAt = isoTimestamp()
+        sqlite.transaction(() => {
+          sqlite
+            .prepare(
+              `insert into session_read_state (
+                 session_id, reader_id, last_seen_sequence, manually_unread, updated_at
+               ) values (?, 'owner', 0, 1, ?)
+               on conflict(session_id, reader_id) do update set
+                 manually_unread = 1,
+                 updated_at = excluded.updated_at`
+            )
+            .run(id, changedAt)
+          projectSessionSidebarState(sqlite, id, changedAt)
+        })()
         return getSession(id)
       }),
     clearSessionPlanApproval: (rawId) =>
       attempt("clearSessionPlanApproval", () => {
         const id = canonicalUuid(rawId)
         getSession(id)
-        ensureSessionAttentionState(sqlite, id)
-        sqlite
-          .prepare(
-            "update session_attention_state set pending_plan_approval = 0 where session_id = ?"
-          )
-          .run(id)
+        const changedAt = isoTimestamp()
+        sqlite.transaction(() => {
+          ensureSessionAttentionState(sqlite, id)
+          sqlite
+            .prepare(
+              "update session_attention_state set pending_plan_approval = 0 where session_id = ?"
+            )
+            .run(id)
+          projectSessionSidebarState(sqlite, id, changedAt)
+        })()
         return getSession(id)
       }),
     getSessionDetail: (rawId) =>
@@ -4838,6 +4986,8 @@ const sessionFromRow = (row: SessionRow, folderPath: string | undefined): Sessio
     ...(Object.keys(configSelections).length === 0 ? {} : { configSelections }),
     createdAt: row.created_at,
     ...(row.updated_at === null ? {} : { updatedAt: row.updated_at }),
+    sidebarState: row.sidebar_state,
+    sidebarStateChangedAt: row.sidebar_state_changed_at,
     latestAttentionSequence: row.attention_latest_sequence,
     lastSeenAttentionSequence: row.attention_last_seen_sequence,
     unreadCount: row.attention_unread_count,

@@ -81,6 +81,8 @@ struct ModelTests {
         #expect(session.projectId == projectId)
         #expect(session.worktreeName == nil)
         #expect(session.cwd == nil)
+        #expect(session.sidebarState == .idle)
+        #expect(session.sidebarStateChangedAt == session.createdAt)
     }
 
     @Test("Pre-rename origins decode as Codevisor")

@@ -25,6 +25,22 @@ public enum SessionOrigin: String, Sendable, Codable, Equatable {
     }
 }
 
+/// The mutually exclusive state shown by native session sidebars. The
+/// timestamp paired with this value advances only when the visible state
+/// changes, keeping repeated output inside one state from reshuffling rows.
+public enum SessionSidebarState: String, Sendable, Codable, Equatable {
+    case idle
+    case inProgress
+    case waitingForUser
+    case unread
+    case errored
+
+    public init(from decoder: any Decoder) throws {
+        let value = try decoder.singleValueContainer().decode(String.self)
+        self = SessionSidebarState(rawValue: value) ?? .idle
+    }
+}
+
 /// Codevisor's metadata overlay for a session. The harness is the source of truth
 /// for the transcript (restored via `session/load`); this stores only what
 /// Codevisor needs: the link to the agent session, grouping, archive state, and a
@@ -64,6 +80,8 @@ public struct ChatSession: Identifiable, Sendable, Codable, Equatable {
     public var configSelections: [String: String]?
     public var createdAt: Date
     public var updatedAt: Date?
+    public var sidebarState: SessionSidebarState
+    public var sidebarStateChangedAt: Date
     /// Server-owned attention state shared by every client of this session.
     public var latestAttentionSequence: Int
     public var lastSeenAttentionSequence: Int
@@ -89,6 +107,8 @@ public struct ChatSession: Identifiable, Sendable, Codable, Equatable {
         configSelections: [String: String]? = nil,
         createdAt: Date = Date(),
         updatedAt: Date? = nil,
+        sidebarState: SessionSidebarState = .idle,
+        sidebarStateChangedAt: Date? = nil,
         latestAttentionSequence: Int = 0,
         lastSeenAttentionSequence: Int = 0,
         unreadCount: Int = 0,
@@ -112,6 +132,8 @@ public struct ChatSession: Identifiable, Sendable, Codable, Equatable {
         self.configSelections = configSelections
         self.createdAt = createdAt
         self.updatedAt = updatedAt
+        self.sidebarState = sidebarState
+        self.sidebarStateChangedAt = sidebarStateChangedAt ?? updatedAt ?? createdAt
         self.latestAttentionSequence = latestAttentionSequence
         self.lastSeenAttentionSequence = lastSeenAttentionSequence
         self.unreadCount = unreadCount
@@ -124,6 +146,7 @@ public struct ChatSession: Identifiable, Sendable, Codable, Equatable {
     private enum Keys: String, CodingKey {
         case id, projectId, serverId, harnessId, harnessAccountId, agentSessionId, title, origin, isArchived, archivedAt
         case worktreeName, cwd, configSelections, createdAt, updatedAt
+        case sidebarState, sidebarStateChangedAt
         case latestAttentionSequence, lastSeenAttentionSequence, unreadCount, hasUnreadError
         case actionRequired, actionRequiredKind, pendingPlanApproval
         /// Pre-rename persisted sessions used this key for `projectId`.
@@ -152,6 +175,10 @@ public struct ChatSession: Identifiable, Sendable, Codable, Equatable {
         configSelections = try container.decodeIfPresent([String: String].self, forKey: .configSelections)
         createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
         updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt)
+        sidebarState = try container.decodeIfPresent(SessionSidebarState.self, forKey: .sidebarState) ?? .idle
+        sidebarStateChangedAt = try container.decodeIfPresent(Date.self, forKey: .sidebarStateChangedAt)
+            ?? updatedAt
+            ?? createdAt
         latestAttentionSequence = try container.decodeIfPresent(Int.self, forKey: .latestAttentionSequence) ?? 0
         lastSeenAttentionSequence = try container.decodeIfPresent(Int.self, forKey: .lastSeenAttentionSequence) ?? 0
         unreadCount = try container.decodeIfPresent(Int.self, forKey: .unreadCount) ?? 0
@@ -178,6 +205,8 @@ public struct ChatSession: Identifiable, Sendable, Codable, Equatable {
         try container.encodeIfPresent(configSelections, forKey: .configSelections)
         try container.encode(createdAt, forKey: .createdAt)
         try container.encodeIfPresent(updatedAt, forKey: .updatedAt)
+        try container.encode(sidebarState, forKey: .sidebarState)
+        try container.encode(sidebarStateChangedAt, forKey: .sidebarStateChangedAt)
         try container.encode(latestAttentionSequence, forKey: .latestAttentionSequence)
         try container.encode(lastSeenAttentionSequence, forKey: .lastSeenAttentionSequence)
         try container.encode(unreadCount, forKey: .unreadCount)

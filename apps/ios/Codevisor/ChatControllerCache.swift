@@ -184,12 +184,11 @@ final class ChatControllerCache {
     /// Whether the chat's agent is actively working — the same classification
     /// as the macOS sidebar (sending, running setup phases, or waiting on
     /// background subagents; deliberately not `isConnecting`, which is client
-    /// plumbing, not agent work). Driven by the cached live controller: like
-    /// macOS, a chat with no cached controller reads as idle, because the
-    /// server doesn't sync a per-session "running" flag.
+    /// plumbing, not agent work). A cached live controller is freshest; rows
+    /// without one use the server-projected sidebar state.
     func isInProgress(_ session: ChatSession) -> Bool {
         guard let controller = controllers[Key(serverId: session.serverId, id: session.id)] else {
-            return false
+            return session.sidebarState == .inProgress
         }
         return controller.isSending
             || controller.setupPhases.contains(where: \.isRunning)
