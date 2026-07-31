@@ -44,6 +44,46 @@ public func attachmentIsVideo(name: String, mimeType: String) -> Bool {
     return type.conforms(to: .movie)
 }
 
+/// One request to animate a user message from the composer into its transcript
+/// row. The token distinguishes requests even if a caller deliberately reuses
+/// a message id.
+public struct UserSendAnimationRequest: Equatable, Sendable {
+    public let token: UInt64
+    public let messageID: UUID
+
+    public init(token: UInt64, messageID: UUID) {
+        self.token = token
+        self.messageID = messageID
+    }
+}
+
+/// Exactly-once ownership for send animations. This state outlives native
+/// transcript views, so rebuilding a SwiftUI/AppKit surface cannot claim the
+/// same request again.
+struct UserSendAnimationCoordinator {
+    private var nextToken: UInt64 = 0
+    private var currentRequest: UserSendAnimationRequest?
+    private var claimedToken: UInt64?
+
+    mutating func issue(for messageID: UUID) -> UserSendAnimationRequest {
+        nextToken &+= 1
+        let request = UserSendAnimationRequest(token: nextToken, messageID: messageID)
+        currentRequest = request
+        return request
+    }
+
+    mutating func claim(_ request: UserSendAnimationRequest) -> Bool {
+        guard currentRequest == request, claimedToken != request.token else { return false }
+        claimedToken = request.token
+        return true
+    }
+
+    mutating func cancel(_ request: UserSendAnimationRequest) {
+        guard currentRequest == request else { return }
+        currentRequest = nil
+    }
+}
+
 /// One measured settled-row height. The revision prevents a stale height from
 /// being reused if the row's content changed while it was offscreen.
 public struct SessionMeasuredRow: Equatable {
@@ -185,8 +225,6 @@ final public class SessionController {
 
     public var composerText: String = "" { didSet { draftDidChange() } }
     public private(set) var composerAttachments: [ComposerAttachment] = [] { didSet { draftDidChange() } }
-    /// Attachments shown with the optimistic first message while connecting.
-    public private(set) var pendingUserAttachments: [Attachment] = []
     private var uploadTasks: [UUID: Task<Void, Never>] = [:]
     public private(set) var harnesses: [ServerHarness] = []
     public private(set) var preparationState: PreparationState = .loading
@@ -217,9 +255,12 @@ final public class SessionController {
     /// right after an app update). Non-nil only during that wait; the
     /// transcript renders it as a shimmer row instead of an error banner.
     public private(set) var serverWaitMessage: String?
-    /// The first prompt, held while the session record/agent are being created
-    /// so the UI can show it optimistically the instant the user sends.
-    public private(set) var pendingUserText: String?
+    /// A direct prompt staged at the accepted-send boundary. Both native
+    /// clients render this exact message immediately, then the model adopts
+    /// its id and retires this presentation copy. Keeping it for connected
+    /// models too guarantees that an animation request is never published
+    /// before its target row exists.
+    public private(set) var pendingUserMessage: UserMessage?
     /// The transcript scroll position, updated on every scroll tick and read
     /// back when the session screen remounts. Observation-ignored so the
     /// high-frequency writes don't invalidate views observing the controller.
@@ -243,12 +284,11 @@ final public class SessionController {
     /// Bumped on every user send; the session screen observes it to re-pin
     /// the transcript to the bottom (sending means "show me the newest").
     public private(set) var userSendSignal = 0
-    /// A fresh, monotonic request for the transcript to animate the next user
-    /// row out of the bottom chrome. Direct sends trigger it immediately;
-    /// queued sends trigger it only when the server promotes them into the
-    /// transcript, not when they first enter the queue.
-    public private(set) var userSendAnimationSignal = 0
-    public private(set) var userSendAnimationRequestedAt: TimeInterval = 0
+    /// The exact row eligible for the current send lift. Eligibility remains
+    /// pending until a mounted native row atomically claims it; the coordinator
+    /// remembers that claim across view rebuilds.
+    public private(set) var userSendAnimationRequest: UserSendAnimationRequest?
+    @ObservationIgnored private var userSendAnimationCoordinator = UserSendAnimationCoordinator()
 
     /// The project whose folder is used as the agent cwd. Settable so the
     /// new-chat page can change projects before the first send.
@@ -615,7 +655,7 @@ final public class SessionController {
         // boundary-guarded and allocation-free.
         settledConversation.isEmpty
             && !hasActiveItem
-            && pendingUserText == nil
+            && pendingUserMessage == nil
             && !isConnecting
             && serverSession?.agentSessionId == nil
             && resumeAgentSessionId == nil
@@ -1802,17 +1842,12 @@ final public class SessionController {
               !isSubmitting else { return }
         showsNewChatAfterSetupFailure = false
         status = .idle
-        let shouldAnimateTranscriptSend = !isSending
         // Ask at the first moment notifications become useful instead of at
         // launch: the user just started work that may finish while they are in
         // another app. The task is intentionally nonblocking for the send.
         if let notificationDelivery {
             Task { await notificationDelivery.prepareAuthorizationIfNeeded() }
         }
-        // Sending expresses "take me to the newest content": the transcript
-        // re-pins to the bottom on every send, even if the user had scrolled
-        // up to read history.
-        userSendSignal &+= 1
         isSubmitting = true
 
         // Settle eager uploads first; a failed attachment blocks the send with
@@ -1821,13 +1856,20 @@ final public class SessionController {
             isSubmitting = false
             return
         }
+        let outgoingMessage = UserMessage(text: text, attachments: attachments)
+        let shouldAnimateTranscriptSend = !isSending
+        // Sending expresses "take me to the newest content": the transcript
+        // re-pins only once the send is certain to proceed.
+        userSendSignal &+= 1
 
-        // Request the motion only once all attachments have settled and the
-        // send is certain to proceed. The row is inserted immediately after
-        // this point, which lets the transcript reject stale requests after a
-        // remount without losing slow attachment sends.
+        // Publish one client-owned optimistic row together with its animation
+        // request. A connected model will adopt this exact id synchronously;
+        // a model-less send keeps the same row visible while setup catches up.
+        // In either case the transcript never observes a request without its
+        // target, so native host readiness adds no extra send-state round trip.
         if shouldAnimateTranscriptSend {
-            requestUserSendAnimation()
+            pendingUserMessage = outgoingMessage
+            requestUserSendAnimation(for: outgoingMessage.id)
         }
 
         // A brand-new chat renders its pre-chat steps as setup sections; a
@@ -1853,16 +1895,12 @@ final public class SessionController {
         composerText = ""
         let staged = composerAttachments
         composerAttachments = []
-        if model == nil {
-            pendingUserText = text
-            pendingUserAttachments = attachments
-        }
 
         func restoreComposer() {
             composerText = text
             composerAttachments = staged
-            pendingUserText = nil
-            pendingUserAttachments = []
+            pendingUserMessage = nil
+            cancelUserSendAnimation(for: outgoingMessage.id)
         }
 
         // Materialize the worktree before the agent exists, so it is born
@@ -1877,9 +1915,10 @@ final public class SessionController {
         }
 
         if let model {
-            pendingUserText = nil
-            pendingUserAttachments = []
-            await model.send(text, attachments: attachments)
+            await model.send(outgoingMessage)
+            if pendingUserMessage?.id == outgoingMessage.id {
+                pendingUserMessage = nil
+            }
             return
         }
 
@@ -1896,9 +1935,10 @@ final public class SessionController {
             self.model = model
             setupPhases.removeAll { $0.id == SessionSetupPhase.agentPhaseId }
             status = .idle
-            pendingUserText = nil
-            pendingUserAttachments = []
-            await model.send(text, attachments: attachments)
+            await model.send(outgoingMessage)
+            if pendingUserMessage?.id == outgoingMessage.id {
+                pendingUserMessage = nil
+            }
         } catch {
             let message = serverErrorMessage(error)
             restoreComposer()
@@ -1906,9 +1946,21 @@ final public class SessionController {
         }
     }
 
-    private func requestUserSendAnimation() {
-        userSendAnimationSignal &+= 1
-        userSendAnimationRequestedAt = ProcessInfo.processInfo.systemUptime
+    private func requestUserSendAnimation(for messageID: UUID) {
+        userSendAnimationRequest = userSendAnimationCoordinator.issue(for: messageID)
+    }
+
+    /// Called by a native transcript only after the target row is mounted and
+    /// ready to start its animation. The coordinator, rather than the view,
+    /// owns consumption so remounting cannot replay the request.
+    public func claimUserSendAnimation(_ request: UserSendAnimationRequest) -> Bool {
+        userSendAnimationCoordinator.claim(request)
+    }
+
+    private func cancelUserSendAnimation(for messageID: UUID) {
+        guard let request = userSendAnimationRequest, request.messageID == messageID else { return }
+        userSendAnimationCoordinator.cancel(request)
+        userSendAnimationRequest = nil
     }
 
     /// Continues the failed response in place. Automatic retries remain
@@ -2166,7 +2218,7 @@ final public class SessionController {
         if session.agentSessionId == nil, let resumeAgentSessionId {
             session.agentSessionId = resumeAgentSessionId
         }
-        let loadsExistingHistory = session.agentSessionId?.isEmpty == false && pendingUserText == nil
+        let loadsExistingHistory = session.agentSessionId?.isEmpty == false
         if loadsExistingHistory {
             isLoadingInitialHistory = true
             initialHistoryLoadStartedAt = initialHistoryLoadStartedAt
@@ -2251,8 +2303,13 @@ final public class SessionController {
             self?.configurationAdjustmentMessage = nil
             self?.captureMessageSent(model: model, attachmentCount: attachmentCount, isQueued: isQueued)
         }
-        model.onQueuedPromptPromoted = { [weak self] in
-            self?.requestUserSendAnimation()
+        model.onLocalUserMessageAppended = { [weak self] messageID in
+            guard self?.pendingUserMessage?.id == messageID else { return }
+            self?.pendingUserMessage = nil
+        }
+        model.onQueuedPromptPromoted = { [weak self] messageID in
+            guard let messageID else { return }
+            self?.requestUserSendAnimation(for: messageID)
         }
         model.onQueuedPromptsChanged = { [weak self] in
             self?.onQueuedPromptsChanged?()
@@ -2282,7 +2339,7 @@ final public class SessionController {
         // transcript paints while the agent is still spawning — but never
         // during pre-chat setup. A setup failure must leave no half-connected
         // model behind for Retry to mistake for a ready conversation.
-        if pendingUserText == nil, setupPhases.isEmpty, self.model == nil {
+        if setupPhases.isEmpty, self.model == nil {
             self.model = model
         }
 

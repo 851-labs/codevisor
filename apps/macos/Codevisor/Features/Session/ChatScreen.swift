@@ -40,9 +40,11 @@ struct ChatScreen: View {
             hasOlderHistory: controller.hasOlderHistory,
             layoutFingerprint: dynamicTypeSize.hashValue,
             scrollCommand: scrollCommand,
-            sendAnimationSignal: controller.userSendAnimationSignal,
-            sendAnimationRequestedAt: controller.userSendAnimationRequestedAt,
+            sendAnimationRequest: controller.userSendAnimationRequest,
             reduceMotion: reduceMotion,
+            claimSendAnimation: { request in
+                controller.claimUserSendAnimation(request)
+            },
             rowContent: { row in
                 AnyView(
                     virtualRowContent(row)
@@ -179,6 +181,13 @@ struct ChatScreen: View {
     private var transcriptRows: [TranscriptVirtualRow] {
         var result: [TranscriptVirtualRow] = []
         let settled = controller.settledConversation
+        let pendingMessage = controller.pendingUserMessage.flatMap { pending in
+            settled.contains(where: { item in
+                if case let .user(message) = item { return message.id == pending.id }
+                return false
+            }) ? nil : pending
+        }
+        let pendingIsOpeningRow = settled.isEmpty && !controller.hasActiveItem
         let waitingDescription = controller.waitingBackgroundTaskDescription
         let waitingAssistantID: UUID? = {
             guard !controller.hasActiveItem,
@@ -195,20 +204,23 @@ struct ChatScreen: View {
                     content: .initialLoading,
                     estimatedHeight: 40
                 ))
-            } else if controller.isConnecting || controller.pendingUserText != nil {
-                let text = controller.pendingUserText
-                    ?? controller.composerText.trimmingCharacters(in: .whitespacesAndNewlines)
-                let message = UserMessage(
-                    text: text,
-                    attachments: controller.pendingUserAttachments
-                )
+            }
+            if let message = pendingMessage {
+                let showsStartingAgent = controller.setupPhases.isEmpty
                 result.append(.init(
-                    id: .optimistic,
+                    // The settled model adopts this exact id, so the native
+                    // virtualizer keeps one host — and one layer animation —
+                    // across the optimistic-to-settled handoff.
+                    id: .message(message.id),
                     content: .optimistic(
                         message,
-                        showsStartingAgent: controller.setupPhases.isEmpty
+                        showsStartingAgent: showsStartingAgent
                     ),
-                    estimatedHeight: 90
+                    estimatedHeight: 90,
+                    measurementRevision: Self.optimisticMeasurementRevision(
+                        for: message,
+                        showsStartingAgent: showsStartingAgent
+                    )
                 ))
             }
             if !controller.setupPhases.isEmpty {
@@ -299,6 +311,17 @@ struct ChatScreen: View {
         if controller.hasActiveItem {
             result.append(.init(id: .active, content: .active, estimatedHeight: 320))
         }
+        if !pendingIsOpeningRow, let message = pendingMessage {
+            result.append(.init(
+                id: .message(message.id),
+                content: .optimistic(message, showsStartingAgent: false),
+                estimatedHeight: 90,
+                measurementRevision: Self.optimisticMeasurementRevision(
+                    for: message,
+                    showsStartingAgent: false
+                )
+            ))
+        }
         if let waitingDescription, waitingAssistantID == nil, !controller.hasActiveItem {
             result.append(.init(
                 id: .backgroundTask,
@@ -358,6 +381,26 @@ struct ChatScreen: View {
     private static func planMeasurementRevision(_ markdown: String) -> Int {
         var hasher = Hasher()
         hasher.combine(markdown.utf8.count)
+        return hasher.finalize()
+    }
+
+    /// Optimistic content may temporarily include the startup indicator below
+    /// the user bubble. Give that presentation its own revision so the stable
+    /// message id preserves the host without preserving a stale row height
+    /// after the model adopts the message.
+    private static func optimisticMeasurementRevision(
+        for message: UserMessage,
+        showsStartingAgent: Bool
+    ) -> Int {
+        var hasher = Hasher()
+        hasher.combine(2)
+        hasher.combine(message.text.utf8.count)
+        hasher.combine(message.attachments.count)
+        for attachment in message.attachments {
+            hasher.combine(attachment.id)
+            hasher.combine(attachment.sizeBytes)
+        }
+        hasher.combine(showsStartingAgent)
         return hasher.finalize()
     }
 

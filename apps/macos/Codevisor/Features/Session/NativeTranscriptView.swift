@@ -15,7 +15,6 @@ struct TranscriptVirtualRow: Identifiable, Equatable {
         case assistantResult(UUID)
         case active
         case setup
-        case optimistic
         case initialLoading
         case backgroundTask
         case updateGate
@@ -32,7 +31,6 @@ struct TranscriptVirtualRow: Identifiable, Equatable {
             case let .assistantResult(id): "message:\(id.uuidString):result"
             case .active: "special:active"
             case .setup: "special:setup"
-            case .optimistic: "special:optimistic"
             case .initialLoading: "special:initial-loading"
             case .backgroundTask: "special:background"
             case .updateGate: "special:update-gate"
@@ -46,7 +44,7 @@ struct TranscriptVirtualRow: Identifiable, Equatable {
         var isCacheableSettledRow: Bool {
             switch self {
             case .message, .assistantPlanning, .plan, .assistantResult: true
-            case .active, .setup, .optimistic, .initialLoading, .backgroundTask, .updateGate, .serverWait,
+            case .active, .setup, .initialLoading, .backgroundTask, .updateGate, .serverWait,
                  .error, .statusError, .bottomSpacer: false
             }
         }
@@ -126,9 +124,9 @@ struct NativeTranscriptView: NSViewRepresentable {
     let hasOlderHistory: Bool
     let layoutFingerprint: Int
     let scrollCommand: TranscriptScrollCommand
-    let sendAnimationSignal: Int
-    let sendAnimationRequestedAt: TimeInterval
+    let sendAnimationRequest: UserSendAnimationRequest?
     let reduceMotion: Bool
+    let claimSendAnimation: @MainActor (UserSendAnimationRequest) -> Bool
     let rowContent: @MainActor (TranscriptVirtualRow) -> AnyView
     let onViewportChange: @MainActor (SessionScrollState) -> Void
     let onBottomStateChange: @MainActor (Bool) -> Void
@@ -149,9 +147,9 @@ struct NativeTranscriptView: NSViewRepresentable {
             hasOlderHistory: hasOlderHistory,
             layoutFingerprint: layoutFingerprint,
             scrollCommand: scrollCommand,
-            sendAnimationSignal: sendAnimationSignal,
-            sendAnimationRequestedAt: sendAnimationRequestedAt,
+            sendAnimationRequest: sendAnimationRequest,
             reduceMotion: reduceMotion,
+            claimSendAnimation: claimSendAnimation,
             rowContent: rowContent,
             onViewportChange: onViewportChange,
             onBottomStateChange: onBottomStateChange,
@@ -169,9 +167,9 @@ struct NativeTranscriptView: NSViewRepresentable {
             hasOlderHistory: hasOlderHistory,
             layoutFingerprint: layoutFingerprint,
             scrollCommand: scrollCommand,
-            sendAnimationSignal: sendAnimationSignal,
-            sendAnimationRequestedAt: sendAnimationRequestedAt,
+            sendAnimationRequest: sendAnimationRequest,
             reduceMotion: reduceMotion,
+            claimSendAnimation: claimSendAnimation,
             rowContent: rowContent,
             onViewportChange: onViewportChange,
             onBottomStateChange: onBottomStateChange,
@@ -363,7 +361,6 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
     private static let overscanCount = 2
     private static let atBottomThreshold: CGFloat = 2
     private static let maxMeasurementCacheCount = 3
-    private static let sendAnimationRequestLifetime: TimeInterval = 1.25
     private static let sendAnimationDuration: CFTimeInterval = 0.46
 
     private let transcriptDocumentView = FlippedTranscriptDocumentView()
@@ -413,9 +410,10 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
     private var followsLatest = true
     private var hasOlderHistory = false
     private var scrollCommand = TranscriptScrollCommand()
-    private var sendAnimationSignal = 0
-    private var pendingSendAnimationDeadline: TimeInterval?
+    private var receivedSendAnimationToken: UInt64?
+    private var pendingSendAnimationRequest: UserSendAnimationRequest?
     private var pendingSendAnimationRowKey: String?
+    private var claimSendAnimation: ((UserSendAnimationRequest) -> Bool)?
     private var reduceMotion = false
     /// Geometry changes and their compensating scroll are one transaction.
     /// The depth (rather than a Bool) keeps nested position restorations from
@@ -588,9 +586,9 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
         hasOlderHistory newHasOlderHistory: Bool,
         layoutFingerprint newLayoutFingerprint: Int,
         scrollCommand newScrollCommand: TranscriptScrollCommand,
-        sendAnimationSignal newSendAnimationSignal: Int,
-        sendAnimationRequestedAt: TimeInterval,
+        sendAnimationRequest newSendAnimationRequest: UserSendAnimationRequest?,
         reduceMotion newReduceMotion: Bool,
+        claimSendAnimation newClaimSendAnimation: @escaping (UserSendAnimationRequest) -> Bool,
         rowContent newRowContent: @escaping (TranscriptVirtualRow) -> AnyView,
         onViewportChange: @escaping (SessionScrollState) -> Void,
         onBottomStateChange: @escaping (Bool) -> Void,
@@ -604,36 +602,21 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
         self.onNearTop = onNearTop
         hasOlderHistory = newHasOlderHistory
         reduceMotion = newReduceMotion
+        claimSendAnimation = newClaimSendAnimation
 
-        let now = ProcessInfo.processInfo.systemUptime
-        let sendAnimationIsFresh = newSendAnimationSignal > 0
-            && now - sendAnimationRequestedAt <= Self.sendAnimationRequestLifetime
-        let isInitialConfiguration = !initialPositionConfigured
-        if newSendAnimationSignal != sendAnimationSignal {
-            sendAnimationSignal = newSendAnimationSignal
+        if newSendAnimationRequest?.token != receivedSendAnimationToken {
+            receivedSendAnimationToken = newSendAnimationRequest?.token
+            pendingSendAnimationRequest = newSendAnimationRequest
             pendingSendAnimationRowKey = nil
-            pendingSendAnimationDeadline = sendAnimationIsFresh
-                ? sendAnimationRequestedAt + Self.sendAnimationRequestLifetime
-                : nil
         }
-
-        let previousRowKeys = Set(rows.map(\.layoutKey))
-        let insertedUserRowKey = newRows.last { row in
-            !previousRowKeys.contains(row.layoutKey) && row.isUserMessage
-        }?.layoutKey
-        let initialOptimisticRowKey = isInitialConfiguration && sendAnimationIsFresh
-            ? newRows.last { $0.id == .optimistic }?.layoutKey
-            : nil
-        // The optimistic row is a placeholder: when a chat already has a live
-        // model, its settled twin replaces it within a few frames — tearing
-        // down the very layer the send animation is running on, so only a
-        // sliver of the motion is ever seen. (That is exactly a workspace's new
-        // chat tab, which eagerly connects so its model and reasoning controls
-        // are ready.) Hand the request to the row that replaced it, so the
-        // motion plays out on a layer that survives.
-        let optimisticRowKey = TranscriptVirtualRow.ID.optimistic.layoutKey
-        let optimisticWasReplaced = previousRowKeys.contains(optimisticRowKey)
-            && !newRows.contains { $0.id == .optimistic }
+        if let request = pendingSendAnimationRequest {
+            let requestedKey = TranscriptVirtualRow.ID.message(request.messageID).layoutKey
+            if newRows.contains(where: {
+                $0.layoutKey == requestedKey && $0.isUserMessage
+            }) {
+                pendingSendAnimationRowKey = requestedKey
+            }
+        }
 
         let layoutFingerprintChanged = layoutFingerprint != newLayoutFingerprint
         layoutFingerprint = newLayoutFingerprint
@@ -695,15 +678,6 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
             scrollToBottom()
         }
 
-        if sendAnimationIsFresh, optimisticWasReplaced, let insertedUserRowKey {
-            pendingSendAnimationDeadline = sendAnimationRequestedAt + Self.sendAnimationRequestLifetime
-            pendingSendAnimationRowKey = insertedUserRowKey
-        }
-        if pendingSendAnimationDeadline != nil,
-           let animationKey = insertedUserRowKey ?? initialOptimisticRowKey {
-            pendingSendAnimationRowKey = animationKey
-        }
-
         applyPendingInitialPositionIfPossible()
         startPendingSendAnimationIfPossible()
         checkForHistoryPrefetch()
@@ -716,24 +690,34 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
     /// Keeping layout geometry final throughout the flight means streaming and
     /// scroll compensation cannot fight the animation.
     private func startPendingSendAnimationIfPossible() {
+        guard let request = pendingSendAnimationRequest,
+              let rowKey = pendingSendAnimationRowKey,
+              let claimSendAnimation else { return }
+
+        func claimAndClear() -> Bool {
+            let claimed = claimSendAnimation(request)
+            pendingSendAnimationRequest = nil
+            pendingSendAnimationRowKey = nil
+            return claimed
+        }
+
+        // Reduced motion still consumes the request exactly once, but it does
+        // not need viewport geometry because no presentation flight will run.
         guard !reduceMotion else {
-            pendingSendAnimationDeadline = nil
-            pendingSendAnimationRowKey = nil
+            _ = claimAndClear()
             return
         }
-        guard let deadline = pendingSendAnimationDeadline,
-              let rowKey = pendingSendAnimationRowKey else { return }
-        guard ProcessInfo.processInfo.systemUptime <= deadline else {
-            pendingSendAnimationDeadline = nil
-            pendingSendAnimationRowKey = nil
-            return
-        }
-        // makeNSView is configured before SwiftUI gives the scroll view its
-        // first non-zero bounds. Keep the request alive until layout mounts
-        // the optimistic row instead of dropping first-send animations.
-        guard let host = mountedHosts[rowKey] else { return }
-        pendingSendAnimationDeadline = nil
-        pendingSendAnimationRowKey = nil
+
+        // makeNSView is configured before SwiftUI gives a newly promoted chat
+        // real bounds. Its overscan window can still mount the target host at
+        // placeholder geometry, so host existence alone is not readiness.
+        // Keep the token pending until first-position restoration and a real
+        // viewport have completed; layout() calls us again at that boundary.
+        guard initialPositionApplied,
+              contentView.bounds.width > 0,
+              contentView.bounds.height > 0,
+              let host = mountedHosts[rowKey]
+        else { return }
 
         let bottomSpacerHeight = rows.last { $0.id == .bottomSpacer }.flatMap { row -> CGFloat? in
             guard case let .bottomSpacer(height) = row.content else { return nil }
@@ -744,10 +728,23 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
         // above the queue/accessory stack (or the composer when it is alone).
         let sourceY = contentView.bounds.maxY - bottomSpacerHeight + 48
         let travel = sourceY - host.frame.minY
-        guard travel > 1 else { return }
+
+        // Valid geometry can legitimately leave no visible distance to travel.
+        // Consume that no-op only after readiness, never during placeholder
+        // layout where the same value would incorrectly spend the first send.
+        guard travel > 1 else {
+            _ = claimAndClear()
+            return
+        }
 
         host.wantsLayer = true
         guard let layer = host.layer else { return }
+
+        // Claim only when the real target host is ready. The controller keeps
+        // this claim across representable rebuilds, preventing the same
+        // request from replaying on a replacement NSView.
+        guard claimAndClear() else { return }
+
         layer.removeAnimation(forKey: "codevisor.user-send")
 
         let movement = CABasicAnimation(keyPath: "transform.translation.y")

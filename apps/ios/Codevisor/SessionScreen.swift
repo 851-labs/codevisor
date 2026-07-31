@@ -8,20 +8,59 @@ extension Notification.Name {
     static let codevisorOpenSettings = Notification.Name("codevisor.open-settings")
 }
 
-private extension AnyTransition {
-    /// How a sent message enters and leaves the transcript: it rises out of the
-    /// composer on arrival, and leaves with no motion at all.
-    ///
-    /// Asymmetric on purpose. A plain `.transition(.offset(...))` is symmetric —
-    /// SwiftUI replays it in reverse on removal — so the optimistic row slid
-    /// back DOWN toward the composer as it was removed, while the settled row
-    /// that replaced it already sat at the top: two identical bubbles on screen
-    /// for the length of the animation. Removal must be instant, because the
-    /// row that replaces an optimistic message renders the identical
-    /// `UserBubbleRow` in the same place on the same frame — there is nothing
-    /// to show leaving.
-    static func sendLift(_ distance: CGFloat) -> AnyTransition {
-        .asymmetric(insertion: .offset(y: distance), removal: .identity)
+/// Animates one stable user row for one targeted send request. This does not
+/// depend on whether SwiftUI observes the request before or after the row is
+/// inserted, and the row keeps this state when optimistic content settles.
+private struct UserSendLiftModifier: ViewModifier {
+    private static let animation: Animation = .snappy(duration: 0.38)
+
+    let messageID: UUID?
+    let distance: CGFloat
+    let request: UserSendAnimationRequest?
+    let controller: SessionController
+    let reduceMotion: Bool
+    let geometryReady: Bool
+    @State private var offset: CGFloat = 0
+    @State private var runningToken: UInt64?
+
+    func body(content: Content) -> some View {
+        content
+            .offset(y: offset)
+            .onAppear { animateIfNeeded() }
+            .onChange(of: request?.token) { _, _ in animateIfNeeded() }
+            .onChange(of: geometryReady) { _, _ in animateIfNeeded() }
+    }
+
+    private func animateIfNeeded() {
+        guard let request,
+              messageID == request.messageID
+        else { return }
+        // A newly promoted chat renders its optimistic row before SwiftUI has
+        // reported the transcript tail and composer positions. Do not spend
+        // the exactly-once token on the minimum-distance placeholder; the
+        // geometry change above retries as soon as both anchors are real.
+        guard reduceMotion || geometryReady else { return }
+        guard controller.claimUserSendAnimation(request) else { return }
+        guard !reduceMotion else {
+            offset = 0
+            return
+        }
+
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            offset = distance
+        }
+        runningToken = request.token
+        // A separate main-run-loop turn commits the source offset before the
+        // destination transaction begins. `Task.yield()` may resume within the
+        // same SwiftUI update and collapse both states into no animation.
+        DispatchQueue.main.async {
+            guard runningToken == request.token else { return }
+            withAnimation(Self.animation) {
+                offset = 0
+            }
+        }
     }
 }
 
@@ -41,11 +80,10 @@ private enum TranscriptRow: Identifiable {
     case olderHistory
     /// Worktree creation / agent startup for this chat's one launch.
     case setup
-    /// A settled or streaming conversation item.
+    /// A settled, streaming, or optimistic conversation item. A first prompt
+    /// is created before its model and retains this row identity when it
+    /// settles, so SwiftUI never removes and reinserts the sent bubble.
     case item(ConversationItem, isActive: Bool)
-    /// The just-sent message, before the server echoes it back. Rendered by
-    /// the same view as a settled user row — see `UserBubbleRow`.
-    case optimistic(text: String, attachments: [Attachment])
     case activity(ActivityKind)
     /// A session failure, which may offer harness authentication.
     case sessionError(String)
@@ -73,7 +111,6 @@ private enum TranscriptRow: Identifiable {
         case .olderHistory: "older-history"
         case .setup: "setup"
         case let .item(item, isActive): "item-\(isActive ? "active-" : "")\(item.id)"
-        case .optimistic: "optimistic"
         case let .activity(kind): "activity-\(kind.id)"
         case .sessionError: "session-error"
         case .statusError: "status-error"
@@ -129,19 +166,11 @@ struct SessionTranscriptView: View {
     /// full one sits against the composer (short hop).
     @State private var contentTailY: CGFloat = 0
     @State private var composerTopY: CGFloat = 0
-    /// Text of the message currently shown as an optimistic row. The settled
-    /// row that replaces it is the SAME message coming back from the server —
-    /// a different row identity, so SwiftUI would run the lift a second time.
-    /// Remembering the text lets that echo arrive without re-animating.
-    /// Armed only when an optimistic row actually appeared (a model-less first
-    /// send), and cleared by every new send, so ordinary replies keep their lift.
-    @State private var optimisticLiftedText: String?
-    /// True only between a send and the row it produced landing. Rows arrive for
-    /// all sorts of reasons — history paging in when a chat opens, a turn
-    /// settling, status rows — and none of those are a send: opening a chat used
-    /// to run the lift on every user bubble in the history at once. Exactly one
-    /// row-list change is animated per send.
-    @State private var liftArmed = false
+    /// First-send promotion mounts a brand-new transcript whose global
+    /// coordinates arrive asynchronously. The send token remains unclaimed
+    /// until both anchors have reported at least once.
+    @State private var hasMeasuredContentTail = false
+    @State private var hasMeasuredComposerTop = false
     /// The transcript's first content is a screen opening, not a change to
     /// follow: jump to the bottom, don't animate the scroll there.
     @State private var hasOpened = false
@@ -167,7 +196,7 @@ struct SessionTranscriptView: View {
     /// O(1): the body re-evaluates on every streaming token, so this must not
     /// build the row list.
     private var showsWatermark: Bool {
-        guard controller.pendingUserText == nil, controller.setupPhases.isEmpty else { return false }
+        guard controller.pendingUserMessage == nil, controller.setupPhases.isEmpty else { return false }
         guard controller.sessionErrorMessage == nil else { return false }
         guard !controller.isLoadingInitialHistory, controller.serverWaitMessage == nil else { return false }
         switch controller.status {
@@ -195,6 +224,13 @@ struct SessionTranscriptView: View {
         let settled = model?.settledConversation ?? []
         let active = model?.activeItem
         let hasSetup = !controller.setupPhases.isEmpty
+        let pendingMessage = controller.pendingUserMessage.flatMap { pending in
+            settled.contains(where: { item in
+                if case let .user(message) = item { return message.id == pending.id }
+                return false
+            }) ? nil : pending
+        }
+        let pendingIsOpeningRow = settled.isEmpty && active == nil
 
         if model?.hasOlderHistory == true {
             rows.append(.olderHistory)
@@ -203,17 +239,17 @@ struct SessionTranscriptView: View {
         // The opening block: the conversation hasn't landed yet. Covers the
         // first send (with or without a model) and an empty connected chat.
         if settled.isEmpty, active == nil {
-            if let text = controller.pendingUserText {
-                rows.append(.optimistic(text: text, attachments: controller.pendingUserAttachments))
+            if let message = pendingMessage {
+                rows.append(.item(.user(message), isActive: false))
                 // Until the first phase arrives there's nothing to show but
                 // that something is happening.
                 if !hasSetup { rows.append(.activity(.startingAgent)) }
             }
             if hasSetup { rows.append(.setup) }
-            if controller.pendingUserText == nil {
-                if controller.isLoadingInitialHistory {
-                    rows.append(.activity(.loadingHistory))
-                } else if let message = controller.serverWaitMessage {
+            if controller.isLoadingInitialHistory {
+                rows.append(.activity(.loadingHistory))
+            } else if pendingMessage == nil {
+                if let message = controller.serverWaitMessage {
                     rows.append(.activity(.serverWait(message)))
                 } else if case let .connecting(message) = controller.status {
                     rows.append(.activity(.connecting(message)))
@@ -232,6 +268,9 @@ struct SessionTranscriptView: View {
 
         if settled.isEmpty, active != nil, hasSetup { rows.append(.setup) }
         if let active { rows.append(.item(active, isActive: true)) }
+        if !pendingIsOpeningRow, let message = pendingMessage {
+            rows.append(.item(.user(message), isActive: false))
+        }
 
         if !settled.isEmpty || active != nil {
             if controller.isLoadingInitialHistory {
@@ -315,6 +354,7 @@ struct SessionTranscriptView: View {
                 // conversation and adjacent in a long one.
                 .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).minY } action: { top in
                     composerTopY = top
+                    hasMeasuredComposerTop = true
                 }
             }
             .padding(.horizontal, 10)
@@ -382,8 +422,6 @@ struct SessionTranscriptView: View {
 
     // MARK: - The send lift
 
-    private static let sendLiftCurve: Animation = .snappy(duration: 0.38)
-
     /// Even when the content already ends at the composer, start a hair behind
     /// the card so the row emerges from under it rather than appearing on its
     /// edge.
@@ -402,15 +440,6 @@ struct SessionTranscriptView: View {
         max(Self.minimumSendLift, composerTopY - contentTailY)
     }
 
-    /// The lift for a conversation row: the full ride for a newly sent message,
-    /// and none for the settled row that merely replaces its optimistic twin.
-    private func lift(for item: ConversationItem) -> CGFloat {
-        if case let .user(message) = item, message.text == optimisticLiftedText {
-            return 0
-        }
-        return sendLift
-    }
-
     /// The one transcript. Always mounted, whatever the chat's state; its
     /// content is `rows`.
     private var transcript: some View {
@@ -423,13 +452,6 @@ struct SessionTranscriptView: View {
                     ForEach(rows) { row in
                         transcriptRow(row, scroller: scroller)
                     }
-                    // Only a send animates. Everything else — history loading,
-                    // a turn settling, status rows — arrives instantly, so
-                    // opening a chat is just the navigation push.
-                    .animation(
-                        reduceMotion || !liftArmed ? nil : Self.sendLiftCurve,
-                        value: rows.map(\.id)
-                    )
 
                     // Breathing room past the composer so the newest content
                     // can clear it, and the measurement point for where the
@@ -443,6 +465,7 @@ struct SessionTranscriptView: View {
                         }
                         .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).minY } action: { tail in
                             contentTailY = tail
+                            hasMeasuredContentTail = true
                         }
                 }
                 .padding(.horizontal, 16)
@@ -479,25 +502,10 @@ struct SessionTranscriptView: View {
             // the view following it.
             .onChange(of: controller.userSendSignal) { _, _ in
                 followsLatest = true
-                scrollToBottom(scroller, animated: true)
-                // A genuinely new send: whatever echo we were waiting to
-                // absorb is settled business, so this message lifts normally.
-                optimisticLiftedText = nil
-                // Arm the lift for the row this send is about to produce. It
-                // lands a beat later (the optimistic row after uploads settle,
-                // or the settled row once the model accepts it), so this can't
-                // be a same-update flag.
-                liftArmed = true
-            }
-            // An optimistic row appeared (only happens with no model yet): its
-            // echo must not lift again when it replaces this row.
-            .onChange(of: controller.pendingUserText) { _, current in
-                if let current { optimisticLiftedText = current }
-            }
-            // The sent row landed: spend the lift so nothing that follows —
-            // setup phases, the streaming turn, history — animates too.
-            .onChange(of: rows.map(\.id)) { _, _ in
-                if liftArmed { liftArmed = false }
+                // Establish the final viewport before the bubble moves. An
+                // animated scroll composed with the row lift reads as a second
+                // send animation.
+                scrollToBottom(scroller, animated: false)
             }
             .onChange(of: scrollRequest) { _, _ in
                 scrollToBottom(scroller, animated: true)
@@ -525,12 +533,15 @@ struct SessionTranscriptView: View {
         case .setup:
             SessionSetupView(phases: controller.setupPhases)
         case let .item(item, isActive):
-            ConversationItemRow(item: item, isActive: isActive, sendLift: lift(for: item))
-        case let .optimistic(text, attachments):
-            // The same bubble a settled user row renders, with the same lift —
-            // one view, so the first send and every later send cannot drift.
-            UserBubbleRow(text: text, attachments: attachments)
-                .transition(.sendLift(sendLift))
+            ConversationItemRow(item: item, isActive: isActive)
+                .modifier(UserSendLiftModifier(
+                    messageID: isUser(item) ? item.id : nil,
+                    distance: sendLift,
+                    request: controller.userSendAnimationRequest,
+                    controller: controller,
+                    reduceMotion: reduceMotion,
+                    geometryReady: hasMeasuredContentTail && hasMeasuredComposerTop,
+                ))
         case let .activity(kind):
             switch kind {
             case .loadingHistory:
@@ -625,18 +636,11 @@ struct SessionTranscriptView: View {
 private struct ConversationItemRow: View {
     let item: ConversationItem
     let isActive: Bool
-    /// How far a user row travels from the composer on arrival — see
-    /// `SessionTranscriptView.sendLift`.
-    var sendLift: CGFloat = 0
 
     var body: some View {
         switch item {
         case let .user(message):
             UserBubbleRow(text: message.text, attachments: message.attachments)
-                // Rises out of the composer it was just sent from. No fade: a
-                // cross-fade reads as the message appearing in place, which is
-                // exactly the "shortcut" look — it must travel.
-                .transition(.sendLift(sendLift))
         case let .assistant(message):
             AssistantTurnBody(turn: message.turn, turnId: message.id)
         }
@@ -644,9 +648,8 @@ private struct ConversationItemRow: View {
 }
 
 /// The trailing user bubble, with its attachment thumbnails above it as on
-/// macOS. One view for both the optimistic message (sent, not yet echoed back)
-/// and the settled row that replaces it, so the two are pixel-identical and the
-/// swap between them is invisible.
+/// macOS. Optimistic and settled messages both render through this one view
+/// under the same client-generated row identity.
 private struct UserBubbleRow: View {
     @Environment(\.theme) private var theme
     let text: String

@@ -219,10 +219,14 @@ public final class SessionModel {
     /// Fires only after the server accepts a new prompt queue item. Carries
     /// counts/state only; prompt and attachment content never leave the model.
     public var onPromptAccepted: ((_ attachmentCount: Int, _ isQueued: Bool) -> Void)?
+    /// Fires synchronously after a direct user message and its assistant
+    /// placeholder have been appended locally, before any transport wait.
+    /// The controller uses this boundary to retire its matching pending row.
+    public var onLocalUserMessageAppended: ((UUID) -> Void)?
     /// Fires when a queued prompt is claimed by the server and materializes as
     /// a user transcript row. The stable server message id distinguishes this
     /// handoff from queue edits/deletions and unrelated remote messages.
-    public var onQueuedPromptPromoted: (() -> Void)?
+    public var onQueuedPromptPromoted: ((UUID?) -> Void)?
     /// Fires on every prompt-queue snapshot. A non-empty queue means more user
     /// turns are already committed, so attention consumers hold their epoch
     /// open until the queue drains (or the user clears it).
@@ -518,24 +522,37 @@ public final class SessionModel {
 
     /// Sends a prompt and streams the response into the conversation.
     public func send(_ text: String, attachments: [Attachment] = []) async {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty || !attachments.isEmpty else { return }
+        await send(UserMessage(text: text, attachments: attachments))
+    }
+
+    /// Sends a prompt whose client identity was created before a model was
+    /// available. New-chat surfaces render this exact message optimistically
+    /// while the agent starts; retaining its id here lets that same row settle
+    /// in place instead of being removed and inserted a second time.
+    public func send(_ outgoingMessage: UserMessage) async {
+        let trimmed = outgoingMessage.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty || !outgoingMessage.attachments.isEmpty else { return }
+        let message = UserMessage(
+            id: outgoingMessage.id,
+            text: trimmed,
+            attachments: outgoingMessage.attachments
+        )
 
         composerText = ""
         errorMessage = nil
         harnessAuthenticationErrorMessage = nil
 
         if isSending {
-            await enqueueWhileSending(trimmed, attachments: attachments)
+            await enqueueWhileSending(trimmed, attachments: message.attachments)
             return
         }
 
         settleActiveItem()
-        let message = UserMessage(text: trimmed, attachments: attachments)
         appendSettled(.user(message))
         startActiveBubble()
         isSending = true
         noteProviderActivity(.modelStream)
+        onLocalUserMessageAppended?(message.id)
 
         // Events are consumed by the long-lived consumer (started here if it
         // isn't already), so every prompt — first and follow-ups — streams.
@@ -547,10 +564,10 @@ public final class SessionModel {
             // only the fallback for older servers).
             _ = try await transport.prompt(
                 trimmed,
-                attachments: attachments,
+                attachments: message.attachments,
                 messageId: message.id.uuidString.lowercased()
             )
-            onPromptAccepted?(attachments.count, false)
+            onPromptAccepted?(message.attachments.count, false)
             await drain()
         } catch {
             await drain()
@@ -1222,7 +1239,9 @@ public final class SessionModel {
             appliedUpdateCount += 1
             let promotedFromQueue = consumeQueuePromotion(id: id)
             appendRemoteUserIfNeeded(id: id, text: text, attachments: attachments)
-            if promotedFromQueue { onQueuedPromptPromoted?() }
+            if promotedFromQueue {
+                onQueuedPromptPromoted?(id.flatMap(UUID.init(uuidString:)))
+            }
         case let .finished(stopReason, stopDetail, retryable, initiatedBy):
             finish(
                 stopReason: stopReason,

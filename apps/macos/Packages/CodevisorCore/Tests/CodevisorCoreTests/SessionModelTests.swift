@@ -14,6 +14,59 @@ struct SessionModelTests {
         SessionModel.cancellationTerminalEventWaitDelay = .zero
     }
 
+    @Test("A message created before model connection retains its identity")
+    func precreatedMessageRetainsIdentity() async {
+        let sessionId = UUID()
+        let messageId = UUID()
+        let client = FakeSessionServerClient(sessionId: sessionId)
+        client.echoOnPrompt = false
+        let model = SessionModel(
+            serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
+            sessionId: sessionId.uuidString
+        )
+        var locallyAppendedID: UUID?
+        model.onLocalUserMessageAppended = { locallyAppendedID = $0 }
+
+        await model.send(UserMessage(id: messageId, text: "  run pwd  "))
+
+        let sent = try! #require(userMessages(model).first)
+        #expect(sent.id == messageId)
+        #expect(sent.text == "run pwd")
+        #expect(locallyAppendedID == messageId)
+        #expect(client.promptedMessageIds == [messageId.uuidString.lowercased()])
+    }
+
+    @Test("The optimistic message is visible before prompt transport completes")
+    func optimisticMessagePrecedesTransportCompletion() async {
+        let sessionId = UUID()
+        let messageId = UUID()
+        let client = FakeSessionServerClient(sessionId: sessionId)
+        client.echoOnPrompt = false
+        let (gate, releasePrompt) = AsyncStream.makeStream(of: Void.self)
+        client.holdPrompts(until: gate)
+        let model = SessionModel(
+            serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
+            sessionId: sessionId.uuidString
+        )
+        var locallyAppendedID: UUID?
+        model.onLocalUserMessageAppended = { locallyAppendedID = $0 }
+
+        let send = Task {
+            await model.send(UserMessage(id: messageId, text: "show this now"))
+        }
+        await settleUntil {
+            locallyAppendedID == messageId && client.promptedMessageIds.count == 1
+        }
+
+        #expect(userMessages(model).map(\.id) == [messageId])
+        #expect(locallyAppendedID == messageId)
+        #expect(client.promptedMessageIds == [messageId.uuidString.lowercased()])
+
+        releasePrompt.yield()
+        releasePrompt.finish()
+        await send.value
+    }
+
     @Test("The prompt carries the optimistic message id; the echo reconciles by identity")
     func echoReconcilesByIdentity() async {
         let sessionId = UUID()
@@ -365,8 +418,8 @@ struct SessionModelTests {
             serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
             sessionId: sessionId.uuidString
         )
-        var promotionCount = 0
-        model.onQueuedPromptPromoted = { promotionCount += 1 }
+        var promotedMessageIDs: [UUID?] = []
+        model.onQueuedPromptPromoted = { promotedMessageIDs.append($0) }
 
         await model.send("first")
         client.emit(ServerEventEnvelope(
@@ -411,7 +464,7 @@ struct SessionModelTests {
         ))
         await settleUntil { userMessages(model).count == 2 }
 
-        #expect(promotionCount == 1)
+        #expect(promotedMessageIDs == [queueItemId])
         #expect(userMessages(model).last?.id == queueItemId)
 
         // Explicit deletion creates the same queue diff, but a later remote
@@ -454,7 +507,7 @@ struct SessionModelTests {
             ])
         ))
         await settleUntil { userMessages(model).count == 3 }
-        #expect(promotionCount == 1)
+        #expect(promotedMessageIDs == [queueItemId])
     }
 
     @Test("A new empty session negotiates the scoped stream before its first prompt")
@@ -2535,6 +2588,7 @@ private final class FakeSessionServerClient: CodevisorServerClienting, @unchecke
     private var _promptedTexts: [String] = []
     private var _promptedAttachments: [[ServerAttachmentRef]] = []
     private var _promptedMessageIds: [String?] = []
+    private var _promptGate: AsyncStream<Void>?
     private var _cancelCount = 0
     private var _configUpdates: [(String, String)] = []
     private var _configUpdateGate: AsyncStream<Void>?
@@ -2573,6 +2627,10 @@ private final class FakeSessionServerClient: CodevisorServerClienting, @unchecke
 
     var promptedMessageIds: [String?] {
         lock.withLock { _promptedMessageIds }
+    }
+
+    func holdPrompts(until gate: AsyncStream<Void>) {
+        lock.withLock { _promptGate = gate }
     }
 
     var cancelCount: Int {
@@ -2692,6 +2750,9 @@ private final class FakeSessionServerClient: CodevisorServerClienting, @unchecke
 
     func promptSession(id: UUID, text: String) async throws -> ServerPromptAccepted {
         lock.withLock { _promptedTexts.append(text) }
+        if let gate = lock.withLock({ _promptGate }) {
+            for await _ in gate { break }
+        }
         guard echoOnPrompt else {
             return ServerPromptAccepted(accepted: true, sessionId: id.uuidString)
         }

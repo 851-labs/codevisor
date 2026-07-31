@@ -93,24 +93,15 @@ final class SessionStore {
     /// Returns the cached controller for a session, creating + configuring it
     /// (resume id, harness, persistence callback) if needed.
     func controller(for session: ChatSession, project: Project) -> SessionController {
-        // A New Chat chosen from an in-workspace placeholder gets a durable
-        // session record before its first send, but its live configuration
-        // still belongs to the pane draft. Reuse (or create) that exact
-        // controller here. Minting an ordinary session controller would seed
-        // it from the harness default and let focus routing overwrite the
-        // workspace profile before the draft composer appears.
-        if session.agentSessionId?.isEmpty != false,
-           let location = paneDraftLocation(for: session) {
-            return paneDraft(
-                paneId: location.paneId,
-                project: project,
-                preCreatedSession: session,
-                workspaceId: location.workspaceId
-            )
-        }
         let key = SessionKey(session)
-        noteAccess(key)
+        // Registration is the durable draft -> live boundary. A first send
+        // registers its controller before the server has produced an agent
+        // session id, so it must win over the fallback inference below. If the
+        // pane-draft check runs first, the newly bound chat briefly receives a
+        // second empty controller and its optimistic row appears only when the
+        // agent id later forces lookup back through this cache.
         if let existing = controllers[key] {
+            noteAccess(key)
             // Only write on change: this runs during view bodies (chat panes
             // resolve their controllers there), and unconditional writes to
             // observed properties re-invalidate the views that read them.
@@ -122,6 +113,25 @@ final class SessionStore {
             }
             return existing
         }
+
+        // A New Chat chosen from an in-workspace placeholder gets a durable
+        // session record before its first send, but its live configuration
+        // still belongs to the pane draft UNTIL that controller is registered.
+        // Reuse (or create) that exact controller here. Minting an ordinary
+        // session controller would seed it from the harness default and let
+        // focus routing overwrite the workspace profile before the draft
+        // composer appears.
+        if session.agentSessionId?.isEmpty != false,
+           let location = paneDraftLocation(for: session) {
+            return paneDraft(
+                paneId: location.paneId,
+                project: project,
+                preCreatedSession: session,
+                workspaceId: location.workspaceId
+            )
+        }
+
+        noteAccess(key)
         let workspaceId = environment.workspaces.workspaceId(forSession: session.id)
         let controller = SessionController(
             project: project,

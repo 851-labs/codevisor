@@ -904,7 +904,7 @@ struct SessionContainerView: View {
             live.isConnected
                 || live.isConnecting
                 || live.isSending
-                || live.pendingUserText != nil
+                || live.pendingUserMessage != nil
         )
     }
 
