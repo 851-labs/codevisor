@@ -1,7 +1,6 @@
-// The pure-SwiftUI inline-code chip painter used where AppKit's TextKit
-// layer is unavailable (iOS): chip runs tagged by the parser are grouped per
-// line and a rounded background is drawn behind them by a TextRenderer —
-// the same visual contract as the TextKit rounded-background painter.
+// The pure-SwiftUI inline-code chip painter used by portable renderers such
+// as iOS table cells. Native transcript prose uses the matching TextKit chip
+// background painter.
 #if !canImport(AppKit)
 import SwiftUI
 

@@ -15,6 +15,7 @@ public struct StreamingMarkdownView: View {
     private let isComplete: Bool
     private let foregroundColor: Color?
     @Environment(\.markdownTheme) private var theme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// Per-view-identity incremental state (see `StreamingSegmenter`). A
     /// plain non-observable class held in `@State`: `body` runs far more
     /// often than the text changes (theme changes, sibling observable churn,
@@ -23,6 +24,9 @@ public struct StreamingMarkdownView: View {
     /// view. Fresh identities fall through to the process-level
     /// `MarkdownSegmentCache`.
     @State private var segmenter = StreamingSegmenter()
+    /// Message-wide visual cadence. Individual native text surfaces retain
+    /// their own word identities but draw start times from this one queue.
+    @State private var animationTimeline = StreamingTextAnimationTimeline()
 
     public init(
         _ text: String,
@@ -37,8 +41,15 @@ public struct StreamingMarkdownView: View {
     public var body: some View {
         MarkdownSegmentListView(
             segments: segmenter.segments(for: text, isComplete: isComplete),
-            foregroundColor: foregroundColor ?? theme.textForeground
+            foregroundColor: foregroundColor ?? theme.textForeground,
+            animationTimeline: isComplete ? nil : animationTimeline,
+            documentSource: text,
+            animationPath: "root",
+            reduceMotion: reduceMotion
         )
+        .onChange(of: isComplete, initial: true) { _, complete in
+            if complete { animationTimeline.reset() }
+        }
     }
 }
 
@@ -49,11 +60,19 @@ public struct StreamingMarkdownView: View {
 struct MarkdownSegmentsView: View {
     let blocks: [MarkdownBlock]
     let foregroundColor: Color
+    var animationTimeline: StreamingTextAnimationTimeline?
+    var documentSource = ""
+    var animationPath = "nested"
+    var reduceMotion = false
 
     var body: some View {
         MarkdownSegmentListView(
             segments: MarkdownSegment.segments(from: blocks),
-            foregroundColor: foregroundColor
+            foregroundColor: foregroundColor,
+            animationTimeline: animationTimeline,
+            documentSource: documentSource,
+            animationPath: animationPath,
+            reduceMotion: reduceMotion
         )
     }
 }
@@ -62,12 +81,24 @@ struct MarkdownSegmentsView: View {
 struct MarkdownSegmentListView: View {
     let segments: [MarkdownSegment]
     let foregroundColor: Color
+    let animationTimeline: StreamingTextAnimationTimeline?
+    let documentSource: String
+    let animationPath: String
+    let reduceMotion: Bool
     @Environment(\.markdownTheme) private var theme
 
     var body: some View {
         VStack(alignment: .leading, spacing: theme.blockSpacing) {
-            ForEach(Array(segments.enumerated()), id: \.offset) { _, segment in
-                MarkdownSegmentView(segment: segment, foregroundColor: foregroundColor)
+            ForEach(Array(segments.enumerated()), id: \.offset) { index, segment in
+                MarkdownSegmentView(
+                    segment: segment,
+                    foregroundColor: foregroundColor,
+                    animationTimeline: animationTimeline,
+                    animationEnabled: animationTimeline != nil,
+                    documentSource: documentSource,
+                    animationPath: "\(animationPath).\(index)",
+                    reduceMotion: reduceMotion
+                )
                     .equatable()
             }
         }
@@ -82,17 +113,49 @@ struct MarkdownSegmentListView: View {
 private struct MarkdownSegmentView: View, Equatable {
     let segment: MarkdownSegment
     let foregroundColor: Color
+    let animationTimeline: StreamingTextAnimationTimeline?
+    let animationEnabled: Bool
+    let documentSource: String
+    let animationPath: String
+    let reduceMotion: Bool
+
+    nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.segment == rhs.segment
+            && lhs.foregroundColor == rhs.foregroundColor
+            && lhs.animationEnabled == rhs.animationEnabled
+            && lhs.animationPath == rhs.animationPath
+            && lhs.reduceMotion == rhs.reduceMotion
+    }
 
     var body: some View {
         switch segment {
         case let .textRun(runBlocks):
-            #if canImport(AppKit)
-            MarkdownTextRunView(blocks: runBlocks, foregroundColor: foregroundColor)
+            #if canImport(AppKit) || canImport(UIKit)
+            MarkdownTextRunView(
+                blocks: runBlocks,
+                foregroundColor: foregroundColor,
+                animationContext: animationTimeline.map {
+                    StreamingTextAnimationContext(
+                        timeline: $0,
+                        sourceID: animationPath,
+                        documentSource: documentSource,
+                        isStreaming: true,
+                        reduceMotion: reduceMotion
+                    )
+                }
+            )
             #else
             MarkdownPortableTextRunView(blocks: runBlocks, foregroundColor: foregroundColor)
             #endif
         case let .block(block):
-            MarkdownBlockView(block: block, foregroundColor: foregroundColor)
+            MarkdownBlockView(
+                block: block,
+                foregroundColor: foregroundColor,
+                animationTimeline: animationTimeline,
+                documentSource: documentSource,
+                animationPath: animationPath,
+                reduceMotion: reduceMotion
+            )
         }
     }
 }
@@ -101,6 +164,10 @@ private struct MarkdownSegmentView: View, Equatable {
 struct MarkdownBlockView: View {
     let block: MarkdownBlock
     let foregroundColor: Color
+    var animationTimeline: StreamingTextAnimationTimeline?
+    var documentSource = ""
+    var animationPath = "block"
+    var reduceMotion = false
     @Environment(\.markdownTheme) private var theme
 
     var body: some View {
@@ -109,8 +176,20 @@ struct MarkdownBlockView: View {
             // Normally coalesced into a MarkdownTextRunView by
             // MarkdownSegmentsView; render standalone blocks the same way so
             // they stay selectable.
-            #if canImport(AppKit)
-            MarkdownTextRunView(blocks: [block], foregroundColor: foregroundColor)
+            #if canImport(AppKit) || canImport(UIKit)
+            MarkdownTextRunView(
+                blocks: [block],
+                foregroundColor: foregroundColor,
+                animationContext: animationTimeline.map {
+                    StreamingTextAnimationContext(
+                        timeline: $0,
+                        sourceID: animationPath,
+                        documentSource: documentSource,
+                        isStreaming: true,
+                        reduceMotion: reduceMotion
+                    )
+                }
+            )
             #else
             MarkdownPortableTextRunView(blocks: [block], foregroundColor: foregroundColor)
             #endif
@@ -123,7 +202,14 @@ struct MarkdownBlockView: View {
                 Rectangle()
                     .fill(theme.quoteBarColor)
                     .frame(width: 3)
-                MarkdownSegmentsView(blocks: blocks, foregroundColor: foregroundColor)
+                MarkdownSegmentsView(
+                    blocks: blocks,
+                    foregroundColor: foregroundColor,
+                    animationTimeline: animationTimeline,
+                    documentSource: documentSource,
+                    animationPath: "\(animationPath).quote",
+                    reduceMotion: reduceMotion
+                )
             }
             .fixedSize(horizontal: false, vertical: true)
 

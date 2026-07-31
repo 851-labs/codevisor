@@ -1,8 +1,8 @@
-// The AppKit/TextKit rendering layer. iOS gets a UIKit/TextKit 2
-// counterpart in the iOS transcript work; the parser, model, and theme
-// halves of StreamMarkdown are platform-neutral.
+// The AppKit/TextKit rendering layer. iOS uses the matching UIKit/TextKit
+// implementation in `SelectableTextView+UIKit.swift`.
 #if canImport(AppKit)
 import AppKit
+import QuartzCore
 import SwiftUI
 
 /// A non-editable TextKit 1 text view whose display and measurement paths use
@@ -16,10 +16,22 @@ public struct SelectableTextView: NSViewRepresentable {
 
     private let content: Content
     private let fillsWidth: Bool
+    private let streamingAnimation: StreamingTextAnimationContext?
 
     public init(attributedText: NSAttributedString, fillsWidth: Bool = true) {
         content = .attributed(attributedText)
         self.fillsWidth = fillsWidth
+        streamingAnimation = nil
+    }
+
+    init(
+        attributedText: NSAttributedString,
+        fillsWidth: Bool = true,
+        streamingAnimation: StreamingTextAnimationContext?
+    ) {
+        content = .attributed(attributedText)
+        self.fillsWidth = fillsWidth
+        self.streamingAnimation = streamingAnimation
     }
 
     public init(
@@ -38,6 +50,7 @@ public struct SelectableTextView: NSViewRepresentable {
             )
         )
         self.fillsWidth = fillsWidth
+        streamingAnimation = nil
     }
 
     public func makeCoordinator() -> Coordinator {
@@ -46,12 +59,20 @@ public struct SelectableTextView: NSViewRepresentable {
 
     public func makeNSView(context: Context) -> SelectableTextKitView {
         let view = SelectableTextKitView()
-        view.setContent(context.coordinator.attributedText(for: content))
+        let prepared = context.coordinator.preparedText(
+            for: content,
+            animation: streamingAnimation
+        )
+        view.setContent(prepared.text, latestAnimationEnd: prepared.latestAnimationEnd)
         return view
     }
 
     public func updateNSView(_ textView: SelectableTextKitView, context: Context) {
-        textView.setContent(context.coordinator.attributedText(for: content))
+        let prepared = context.coordinator.preparedText(
+            for: content,
+            animation: streamingAnimation
+        )
+        textView.setContent(prepared.text, latestAnimationEnd: prepared.latestAnimationEnd)
     }
 
     public func sizeThatFits(
@@ -59,7 +80,10 @@ public struct SelectableTextView: NSViewRepresentable {
         nsView _: SelectableTextKitView,
         context: Context
     ) -> CGSize? {
-        let text = context.coordinator.attributedText(for: content)
+        let text = context.coordinator.preparedText(
+            for: content,
+            animation: streamingAnimation
+        ).text
         let concreteProposal = proposal.width.flatMap { $0.isFinite ? $0 : nil }
         let width: CGFloat
         if fillsWidth, let concreteProposal {
@@ -75,12 +99,44 @@ public struct SelectableTextView: NSViewRepresentable {
     @MainActor
     public final class Coordinator {
         fileprivate let measurer = TextKitTextMeasurer()
+        private let animationState = StreamingTextAnimationState()
         private var attributedInput: NSAttributedString?
         private var stableAttributedText: NSAttributedString?
         private var plainModel: PlainTextModel?
         private var plainText: NSAttributedString?
+        private var preparedInput: NSAttributedString?
+        private var preparedSourceID: String?
+        private var preparedDocumentSource: String?
+        private var preparedIsStreaming = false
+        private var preparedReduceMotion = false
+        private var prepared: PreparedStreamingText?
 
-        fileprivate func attributedText(for content: Content) -> NSAttributedString {
+        fileprivate func preparedText(
+            for content: Content,
+            animation: StreamingTextAnimationContext?
+        ) -> PreparedStreamingText {
+            let text = attributedText(for: content)
+            if preparedInput === text,
+               preparedSourceID == animation?.sourceID,
+               preparedDocumentSource == animation?.documentSource,
+               preparedIsStreaming == (animation?.isStreaming ?? false),
+               preparedReduceMotion == (animation?.reduceMotion ?? false),
+               let prepared
+            {
+                return prepared
+            }
+
+            let value = animationState.prepare(text, context: animation)
+            preparedInput = text
+            preparedSourceID = animation?.sourceID
+            preparedDocumentSource = animation?.documentSource
+            preparedIsStreaming = animation?.isStreaming ?? false
+            preparedReduceMotion = animation?.reduceMotion ?? false
+            prepared = value
+            return value
+        }
+
+        private func attributedText(for content: Content) -> NSAttributedString {
             switch content {
             case let .attributed(text):
                 if attributedInput === text, let stableAttributedText {
@@ -149,10 +205,46 @@ extension NSAttributedString.Key {
 /// Paints inline-code backgrounds in the same TextKit layout that draws the
 /// selectable glyphs. Drawing before `super` leaves the native selection
 /// highlight on top of the chip.
-private final class RoundedBackgroundLayoutManager: NSLayoutManager {
+private final class StreamingTextLayoutManager: NSLayoutManager {
+    var animationTime = CACurrentMediaTime()
+
     override func drawBackground(forGlyphRange glyphsToShow: NSRange, at origin: NSPoint) {
         drawRoundedBackgrounds(forGlyphRange: glyphsToShow, at: origin)
         super.drawBackground(forGlyphRange: glyphsToShow, at: origin)
+    }
+
+    override func drawGlyphs(forGlyphRange glyphsToShow: NSRange, at origin: NSPoint) {
+        guard let textStorage, glyphsToShow.length > 0 else {
+            super.drawGlyphs(forGlyphRange: glyphsToShow, at: origin)
+            return
+        }
+
+        let characters = characterRange(forGlyphRange: glyphsToShow, actualGlyphRange: nil)
+        var drewRange = false
+        textStorage.enumerateAttribute(
+            .streamMarkdownFade,
+            in: characters,
+            options: [.longestEffectiveRangeNotRequired]
+        ) { value, characterRange, _ in
+            let glyphRange = self.glyphRange(
+                forCharacterRange: characterRange,
+                actualCharacterRange: nil
+            )
+            let visibleGlyphs = NSIntersectionRange(glyphRange, glyphsToShow)
+            guard visibleGlyphs.length > 0 else { return }
+            drewRange = true
+
+            let opacity = (value as? StreamingTextFadeMetadata)?
+                .opacity(at: self.animationTime) ?? 1
+            NSGraphicsContext.saveGraphicsState()
+            NSGraphicsContext.current?.cgContext.setAlpha(opacity)
+            super.drawGlyphs(forGlyphRange: visibleGlyphs, at: origin)
+            NSGraphicsContext.restoreGraphicsState()
+        }
+
+        if !drewRange {
+            super.drawGlyphs(forGlyphRange: glyphsToShow, at: origin)
+        }
     }
 
     private func drawRoundedBackgrounds(forGlyphRange glyphsToShow: NSRange, at origin: NSPoint) {
@@ -182,12 +274,22 @@ private final class RoundedBackgroundLayoutManager: NSLayoutManager {
                 rect.origin.x += origin.x
                 rect.origin.y += origin.y
                 rect = rect.insetBy(dx: 0, dy: 0.5)
+                let opacity = (
+                    textStorage.attribute(
+                        .streamMarkdownFade,
+                        at: characterRange.location,
+                        effectiveRange: nil
+                    ) as? StreamingTextFadeMetadata
+                )?.opacity(at: self.animationTime) ?? 1
+                NSGraphicsContext.saveGraphicsState()
+                NSGraphicsContext.current?.cgContext.setAlpha(opacity)
                 background.color.setFill()
                 NSBezierPath(
                     roundedRect: rect,
                     xRadius: min(background.cornerRadius, rect.height / 2),
                     yRadius: min(background.cornerRadius, rect.height / 2)
                 ).fill()
+                NSGraphicsContext.restoreGraphicsState()
             }
         }
     }
@@ -198,10 +300,12 @@ private final class RoundedBackgroundLayoutManager: NSLayoutManager {
 @MainActor
 public final class SelectableTextKitView: TranscriptSelectableTextView {
     private var representedText: NSAttributedString?
+    private var latestAnimationEnd: TimeInterval?
+    private var animationDisplayLink: CADisplayLink?
 
     init() {
         let textStorage = NSTextStorage()
-        let layoutManager = RoundedBackgroundLayoutManager()
+        let layoutManager = StreamingTextLayoutManager()
         textStorage.addLayoutManager(layoutManager)
         let textContainer = NSTextContainer(
             size: NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude)
@@ -244,10 +348,18 @@ public final class SelectableTextKitView: TranscriptSelectableTextView {
         fatalError("init(coder:) has not been implemented")
     }
 
-    func setContent(_ text: NSAttributedString) {
-        guard representedText !== text else { return }
+    func setContent(
+        _ text: NSAttributedString,
+        latestAnimationEnd: TimeInterval? = nil
+    ) {
+        updateAnimation(until: latestAnimationEnd)
+        guard representedText !== text else {
+            redrawStreamingText()
+            return
+        }
         if let representedText, representedText.isEqual(to: text) {
             self.representedText = text
+            redrawStreamingText()
             return
         }
         let selection = selectedRange()
@@ -257,6 +369,55 @@ public final class SelectableTextKitView: TranscriptSelectableTextView {
         let location = min(selection.location, text.length)
         let length = min(selection.length, text.length - location)
         setSelectedRange(NSRange(location: location, length: length))
+        redrawStreamingText()
+    }
+
+    public override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window == nil {
+            stopAnimation()
+        } else {
+            updateAnimation(until: latestAnimationEnd)
+        }
+    }
+
+    private func updateAnimation(until endTime: TimeInterval?) {
+        latestAnimationEnd = endTime
+        let now = CACurrentMediaTime()
+        streamingLayoutManager?.animationTime = now
+        guard let endTime, endTime > now else {
+            stopAnimation()
+            return
+        }
+        guard window != nil, animationDisplayLink == nil else { return }
+        let link = displayLink(target: self, selector: #selector(animationFrame(_:)))
+        link.add(to: .main, forMode: .common)
+        animationDisplayLink = link
+    }
+
+    @objc private func animationFrame(_ displayLink: CADisplayLink) {
+        streamingLayoutManager?.animationTime = displayLink.timestamp
+        redrawStreamingText()
+        if let latestAnimationEnd, displayLink.timestamp >= latestAnimationEnd {
+            stopAnimation()
+        }
+    }
+
+    private func stopAnimation() {
+        animationDisplayLink?.invalidate()
+        animationDisplayLink = nil
+    }
+
+    private var streamingLayoutManager: StreamingTextLayoutManager? {
+        layoutManager as? StreamingTextLayoutManager
+    }
+
+    private func redrawStreamingText() {
+        if let textStorage, textStorage.length > 0 {
+            layoutManager?.invalidateDisplay(
+                forCharacterRange: NSRange(location: 0, length: textStorage.length)
+            )
+        }
         needsDisplay = true
     }
 
@@ -656,7 +817,7 @@ extension NSRange {
 @MainActor
 final class TextKitTextMeasurer {
     private let storage = NSTextStorage()
-    private let layoutManager = RoundedBackgroundLayoutManager()
+    private let layoutManager = StreamingTextLayoutManager()
     private let container = NSTextContainer(
         size: NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude)
     )

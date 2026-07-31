@@ -1,9 +1,6 @@
-// Interim pure-SwiftUI text-run renderer used where AppKit's TextKit views
-// are unavailable (iOS). It renders the same MarkdownBlock model via
-// `InlineMarkdown.attributedString`, without the selection of the TextKit
-// layer (chips render via `portableInlineText`; tables have a full renderer
-// in `MarkdownPortableTableView`). The iOS transcript work replaces this with
-// a UIKit/TextKit 2 counterpart; macOS never uses it.
+// Pure-SwiftUI fallback retained for non-AppKit platforms and portable
+// previews. Native iOS transcript prose uses the UIKit/TextKit renderer;
+// portable tables still reuse `portableInlineText` for their cells.
 #if !canImport(AppKit)
 import SwiftUI
 
