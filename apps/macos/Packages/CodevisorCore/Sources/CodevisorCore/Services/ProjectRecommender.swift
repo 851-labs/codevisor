@@ -32,6 +32,7 @@ public enum ProjectRecommender {
         // recommendations only ever describe paths on the paired machine.
         managedWorktreesRoot: URL = URL(fileURLWithPath: NSHomeDirectory())
             .appendingPathComponent("codevisor", isDirectory: true),
+        temporaryDirectory: URL = FileManager.default.temporaryDirectory,
         directoryExists: (String) -> Bool = { path in
             var isDirectory: ObjCBool = false
             return FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory) && isDirectory.boolValue
@@ -63,6 +64,7 @@ public enum ProjectRecommender {
                   path != "/",
                   path != worktreesRootPath,
                   !path.hasPrefix(worktreesRootPath + "/"),
+                  !isExcludedSuggestionPath(path, temporaryDirectory: temporaryDirectory),
                   directoryExists(path)
             else { continue }
 
@@ -101,6 +103,53 @@ public enum ProjectRecommender {
             }
             .prefix(limit)
             .map { $0 }
+    }
+
+    /// Internal state and temporary working directories can appear in agent
+    /// session metadata, but neither is a useful project. Match `.codevisor`
+    /// as a complete path component so an unrelated folder such as
+    /// `my.codevisor.example` remains eligible.
+    private static func isExcludedSuggestionPath(_ path: String, temporaryDirectory: URL) -> Bool {
+        let standardizedPath = URL(fileURLWithPath: path).standardizedFileURL.path
+        if URL(fileURLWithPath: standardizedPath).pathComponents.contains(".codevisor") {
+            return true
+        }
+
+        let temporaryRoots = [
+            temporaryDirectory.standardizedFileURL.path,
+            "/tmp",
+            "/private/tmp",
+            "/var/tmp",
+            "/private/var/tmp"
+        ]
+        if temporaryRoots.contains(where: { isPath(standardizedPath, inside: $0) }) {
+            return true
+        }
+
+        // A paired Mac can have a different per-user temp root from this
+        // process. Recognize Darwin's /var/folders/<bucket>/<token>/T layout
+        // as well as the local FileManager-provided path above.
+        let components = URL(fileURLWithPath: standardizedPath).pathComponents
+        let varIndex: Int? = if components.starts(with: ["/", "var", "folders"]) {
+            1
+        } else if components.starts(with: ["/", "private", "var", "folders"]) {
+            2
+        } else {
+            nil
+        }
+        if let varIndex,
+           components.indices.contains(varIndex + 4),
+           components[varIndex + 4] == "T"
+        {
+            return true
+        }
+
+        return false
+    }
+
+    private static func isPath(_ path: String, inside root: String) -> Bool {
+        let standardizedRoot = URL(fileURLWithPath: root).standardizedFileURL.path
+        return path == standardizedRoot || path.hasPrefix(standardizedRoot + "/")
     }
 
     @usableFromInline

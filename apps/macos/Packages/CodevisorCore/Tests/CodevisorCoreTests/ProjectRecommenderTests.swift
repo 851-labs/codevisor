@@ -87,6 +87,48 @@ struct ProjectRecommenderTests {
         #expect(recommendations.map(\.name) == ["one", "two"])
     }
 
+    @Test("Skips temporary folders and their descendants")
+    func skipsTemporaryFolders() {
+        let sessions = [
+            session("user-temp", cwd: "/system/user-temp"),
+            session("user-temp-child", cwd: "/system/user-temp/extracted-project"),
+            session("unix-temp", cwd: "/tmp/agent-session"),
+            session("darwin-temp", cwd: "/var/folders/24/token/T"),
+            session("darwin-temp-child", cwd: "/private/var/folders/ab/token/T/agent-session"),
+            session("similar-layout", cwd: "/src/var/folders/ab/token/T"),
+            session("named-t", cwd: "/src/T")
+        ]
+
+        let recommendations = ProjectRecommender.recommend(
+            from: sessions,
+            temporaryDirectory: URL(fileURLWithPath: "/system/user-temp", isDirectory: true),
+            directoryExists: { _ in true }
+        )
+
+        #expect(
+            Set(recommendations.map(\.folderURL.path))
+                == Set(["/src/T", "/src/var/folders/ab/token/T"])
+        )
+    }
+
+    @Test("Skips Codevisor state folders")
+    func skipsCodevisorStateFolders() {
+        let sessions = [
+            session("state-root", cwd: "/Users/test/.codevisor"),
+            session("state-data", cwd: "/Users/test/.codevisor/data"),
+            session("state-remote", cwd: "/home/test/.codevisor/logs"),
+            session("similarly-named", cwd: "/src/my.codevisor.example")
+        ]
+
+        let recommendations = ProjectRecommender.recommend(
+            from: sessions,
+            temporaryDirectory: URL(fileURLWithPath: "/system/user-temp", isDirectory: true),
+            directoryExists: { _ in true }
+        )
+
+        #expect(recommendations.map(\.folderURL.path) == ["/src/my.codevisor.example"])
+    }
+
     @Test("Attributes Codevisor-managed worktrees to their primary checkout")
     func resolvesManagedWorktrees() {
         let sessions = [
