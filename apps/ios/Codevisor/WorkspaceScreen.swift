@@ -221,7 +221,17 @@ struct WorkspaceScreen: View {
 
     var body: some View {
         Group {
-            if missing {
+            if blocksServerContent {
+                let machine = environment.machines.selectedMachine
+                ServerAvailabilityView(
+                    machineId: machine.id,
+                    availability: environment.machines.selectedServerAvailability,
+                    machineName: machine.name,
+                    isLocal: false
+                ) {
+                    Task { await environment.machines.retrySelectedMachine() }
+                }
+            } else if missing {
                 ContentUnavailableView("Chat Not Found", systemImage: "questionmark.bubble")
             } else if isDraft, resolvedProject == nil, hasLoadedProjects {
                 // A machine with no projects can't start a chat yet: offer the
@@ -245,7 +255,7 @@ struct WorkspaceScreen: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 // Tabs belong to a workspace; an unsent draft has none yet.
-                if !isDraft {
+                if !blocksServerContent, !isDraft {
                     if baseShowsGrid {
                         Button {
                             addTab()
@@ -274,10 +284,26 @@ struct WorkspaceScreen: View {
                 setUpDraftIfNeeded()
             }
         }
-        .task { await prepare() }
+        .task(id: environment.machines.selectedServerAvailability) {
+            guard case .ready = environment.machines.selectedServerAvailability else { return }
+            await prepare()
+        }
+        .onChange(of: environment.machines.selectedServerAvailability) { _, availability in
+            if case .ready = availability { return }
+            // A full-screen pane otherwise sits above this navigation
+            // boundary and would hide the unified server-waiting surface.
+            showsPane = false
+        }
         .onChange(of: environment.projectList.activeProjects.map(\.id)) { _, _ in
             setUpDraftIfNeeded()
         }
+    }
+
+    private var blocksServerContent: Bool {
+        if case .ready = environment.machines.selectedServerAvailability {
+            return false
+        }
+        return true
     }
 
     /// The draft's empty state when the machine has no projects to work in.

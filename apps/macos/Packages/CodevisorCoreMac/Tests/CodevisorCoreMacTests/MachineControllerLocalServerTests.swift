@@ -54,6 +54,26 @@ struct MachineControllerLocalServerTests {
         #expect(client.rescans == 0)
     }
 
+    @Test("Concurrent machine preparation shares one readiness flow")
+    func concurrentPreparationIsCoalesced() async throws {
+        let client = RescanCountingClient()
+        let localServer = LocalCodevisorServer(
+            client: client,
+            entrypoint: URL(fileURLWithPath: "/tmp/main.js"),
+            launcher: { _ in Process() }
+        )
+        let (controller, _, _) = makeController(client: client, localServer: localServer)
+
+        let first = Task { await controller.prepareSelectedMachine() }
+        let second = Task { await controller.prepareSelectedMachine() }
+        await first.value
+        await second.value
+        try await waitForSync { client.rescans == 1 }
+        controller.stopEventSync()
+
+        #expect(client.rescans == 1)
+    }
+
     private func makeController(
         client: any CodevisorServerClienting,
         localServer: LocalCodevisorServer

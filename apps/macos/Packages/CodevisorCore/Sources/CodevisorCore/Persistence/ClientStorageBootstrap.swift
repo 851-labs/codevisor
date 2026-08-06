@@ -79,6 +79,51 @@ public enum ClientStorageBootstrap {
         migrateRenamedApplicationSupport: Bool = true,
         renamedLegacyDirectory: URL? = nil
     ) throws -> ClientStorage {
+        let storage = try openUnconfigured(
+            directory: directory,
+            legacyDefaults: legacyDefaults,
+            credentials: credentials,
+            fileManager: fileManager,
+            migrateRenamedApplicationSupport: migrateRenamedApplicationSupport,
+            renamedLegacyDirectory: renamedLegacyDirectory
+        )
+        ClientPreferences.shared.configure(database: storage.database)
+        return storage
+    }
+
+    /// Performs schema and legacy-data migrations away from the main actor so
+    /// the native apps can render an explicit whole-window bootstrap state.
+    /// Repositories are constructed only after this returns and preferences
+    /// are attached back on the main actor, preserving the same no-races
+    /// ordering as synchronous `open`.
+    public static func openAsync(
+        directory: URL,
+        credentials: any MachineCredentialStore = KeychainMachineCredentialStore.shared
+    ) async throws -> ClientStorage {
+        let storage = try await Task.detached(priority: .userInitiated) {
+            try openUnconfigured(
+                directory: directory,
+                legacyDefaults: .standard,
+                credentials: credentials,
+                fileManager: .default,
+                migrateRenamedApplicationSupport: true,
+                renamedLegacyDirectory: nil
+            )
+        }.value
+        await MainActor.run {
+            ClientPreferences.shared.configure(database: storage.database)
+        }
+        return storage
+    }
+
+    private static func openUnconfigured(
+        directory: URL,
+        legacyDefaults: UserDefaults,
+        credentials: any MachineCredentialStore,
+        fileManager: FileManager,
+        migrateRenamedApplicationSupport: Bool,
+        renamedLegacyDirectory: URL?
+    ) throws -> ClientStorage {
         let renamedDirectory = renamedLegacyDirectory
             ?? (migrateRenamedApplicationSupport
                 ? CodevisorAppVariant.legacyApplicationSupportURL(fileManager: fileManager)
@@ -129,7 +174,6 @@ public enum ClientStorageBootstrap {
         }
 
         pruneExpiredRecovery(in: directory, fileManager: fileManager)
-        ClientPreferences.shared.configure(database: database)
         return ClientStorage(
             database: database,
             store: store
@@ -143,7 +187,6 @@ public enum ClientStorageBootstrap {
         let digest: String
     }
 
-    @MainActor
     private static func importLegacyState(
         directories: [URL],
         defaults: UserDefaults,
@@ -237,7 +280,6 @@ public enum ClientStorageBootstrap {
         }
     }
 
-    @MainActor
     private static func cleanupLegacyState(
         directory: URL,
         legacyDirectories: [URL],
@@ -386,7 +428,6 @@ public enum ClientStorageBootstrap {
         let data: Data
     }
 
-    @MainActor
     private static func legacyPreferences(
         from defaults: UserDefaults
     ) throws -> [LegacyPreference] {
@@ -416,7 +457,6 @@ public enum ClientStorageBootstrap {
         }
     }
 
-    @MainActor
     private static func legacyPreferenceKeysPresent(in defaults: UserDefaults) -> [String] {
         defaults.dictionaryRepresentation().keys.filter { key in
             stringPreferenceKeys.contains(key)

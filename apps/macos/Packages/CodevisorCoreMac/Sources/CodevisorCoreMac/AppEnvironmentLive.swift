@@ -11,6 +11,12 @@ extension AppEnvironment {
             directory: CodevisorAppVariant.applicationSupportURL(),
             credentials: KeychainMachineCredentialStore.shared
         )
+        return live(storage: storage)
+    }
+
+    /// Builds the main-actor environment after the client database has been
+    /// opened and migrated by the app's asynchronous bootstrap surface.
+    public static func live(storage: ClientStorage) -> AppEnvironment {
         let store = storage.store
         let settings = AppSettingsModel(store: store)
         let serverClient = CodevisorServerClient(config: .localDefault)

@@ -11,29 +11,22 @@ struct CodevisorApp: App {
     @State private var serverAgent: MacServerAgentController
     @State private var sparkleUpdater: SparkleUpdateController?
     @State private var startupError: String?
+    @State private var startupInProgress = false
 
     init() {
         let serverAgent = MacServerAgentController()
-        let runtime: (environment: AppEnvironment, updater: SparkleUpdateController?)?
-        let startupError: String?
-        do {
-            runtime = try Self.makeRuntime(serverAgent: serverAgent)
-            startupError = nil
-        } catch {
-            runtime = nil
-            startupError = error.localizedDescription
-        }
-        _environment = State(initialValue: runtime?.environment)
+        _environment = State(initialValue: nil)
         _serverAgent = State(initialValue: serverAgent)
-        _sparkleUpdater = State(initialValue: runtime?.updater)
-        _startupError = State(initialValue: startupError)
+        _sparkleUpdater = State(initialValue: nil)
+        _startupError = State(initialValue: nil)
     }
 
     @MainActor
     private static func makeRuntime(
-        serverAgent: MacServerAgentController
-    ) throws -> (environment: AppEnvironment, updater: SparkleUpdateController?) {
-        let environment = try AppEnvironment.live()
+        serverAgent: MacServerAgentController,
+        storage: ClientStorage
+    ) -> (environment: AppEnvironment, updater: SparkleUpdateController?) {
+        let environment = AppEnvironment.live(storage: storage)
         if !CodevisorAppVariant.isDevelopment {
             environment.localServer?.configureManagedService(serverAgent.managedService)
         }
@@ -96,9 +89,9 @@ struct CodevisorApp: App {
                     // window that's already open; without this, macOS spawns a
                     // fresh window scene for every external URL event.
                     .handlesExternalEvents(preferring: ["*"], allowing: ["*"])
-            } else {
+            } else if let startupError {
                 ClientDataStartupFailureView(
-                    message: startupError ?? "The client database could not be opened.",
+                    message: startupError,
                     retry: retryStartup,
                     showDataFolder: {
                         NSWorkspace.shared.activateFileViewerSelecting([
@@ -107,6 +100,10 @@ struct CodevisorApp: App {
                     }
                 )
                 .frame(minWidth: 480, minHeight: 600)
+            } else {
+                ClientDataStartupView()
+                    .frame(minWidth: 480, minHeight: 600)
+                    .task { await startRuntimeIfNeeded() }
             }
         }
         .defaultSize(width: 1280, height: 820)
@@ -131,9 +128,9 @@ struct CodevisorApp: App {
                 SettingsView()
                     .themedRoot()
                     .environment(environment)
-            } else {
+            } else if let startupError {
                 ClientDataStartupFailureView(
-                    message: startupError ?? "The client database could not be opened.",
+                    message: startupError,
                     retry: retryStartup,
                     showDataFolder: {
                         NSWorkspace.shared.activateFileViewerSelecting([
@@ -141,13 +138,29 @@ struct CodevisorApp: App {
                         ])
                     }
                 )
+            } else {
+                ClientDataStartupView()
+                    .task { await startRuntimeIfNeeded() }
             }
         }
     }
 
     private func retryStartup() {
+        startupError = nil
+        Task { await startRuntimeIfNeeded() }
+    }
+
+    @MainActor
+    private func startRuntimeIfNeeded() async {
+        guard environment == nil, !startupInProgress else { return }
+        startupInProgress = true
+        defer { startupInProgress = false }
         do {
-            let runtime = try Self.makeRuntime(serverAgent: serverAgent)
+            let storage = try await ClientStorageBootstrap.openAsync(
+                directory: CodevisorAppVariant.applicationSupportURL(),
+                credentials: KeychainMachineCredentialStore.shared
+            )
+            let runtime = Self.makeRuntime(serverAgent: serverAgent, storage: storage)
             environment = runtime.environment
             sparkleUpdater = runtime.updater
             startupError = nil
@@ -194,12 +207,7 @@ struct RootView: View {
 
     var body: some View {
         Group {
-            if let progress = environment.localServer?.dataUpgradeProgress,
-               progress.state == "running" || progress.state == "failed" {
-                DataUpgradeView(progress: progress) {
-                    Task { await environment.localServer?.ensureRunning() }
-                }
-            } else if environment.settings.hasCompletedOnboarding {
+            if environment.settings.hasCompletedOnboarding {
                 mainSplit
             } else {
                 // Resumes where a mid-flow relaunch left off (granting Screen
@@ -448,45 +456,74 @@ struct RootView: View {
 
     @ViewBuilder
     private func detail(_ store: SessionStore) -> some View {
-        switch selection {
-        case let .session(serverId, sessionId):
-            if serverId == environment.machines.selectedMachineId,
-               let session = environment.projectList.sessions.first(where: {
-                   $0.serverId == serverId && $0.id == sessionId
-               }),
-               let project = environment.projectList.projects.first(where: {
-                   $0.serverId == serverId && $0.id == session.projectId
-               }) {
-                // Identity is the WORKSPACE, not the chat: clicking a
-                // sibling chat swaps only the routed session (the container
-                // selects + focuses it) instead of tearing down and
-                // rebuilding the same panes — which also cancelled the
-                // shared controllers' in-flight history loads. Sessions
-                // without a workspace yet (first open backfills one) fall
-                // back to session identity.
-                SessionContainerView(
-                    session: session,
-                    project: project,
-                    store: store,
-                    // Focus moved to a sibling chat: the sidebar selection
-                    // follows (same workspace identity — no remount, the
-                    // container just re-routes).
-                    onFocusedChatChanged: { chatId in
-                        selection = .session(serverId: serverId, id: chatId)
-                    }
-                )
-                .id("\(session.serverId):\((environment.workspaces.workspaceId(forSession: session.id) ?? session.id).uuidString)")
-                .onAppear { preferredProjectId = project.id }
-            } else {
-                // The routed session can't be resolved (machine switch,
-                // deletion): fall back to the new-chat page.
+        if blocksSelectedServerContent {
+            let machine = environment.machines.selectedMachine
+            ServerAvailabilityView(
+                machineId: machine.id,
+                availability: environment.machines.selectedServerAvailability,
+                machineName: machine.name,
+                isLocal: machine.isLocal,
+                dataUpgradeProgress: machine.isLocal
+                    ? environment.localServer?.dataUpgradeProgress
+                    : nil,
+                appUpdateInProgress: environment.appUpdate.isUpdating
+            ) {
+                Task { await environment.machines.retrySelectedMachine() }
+            }
+        } else {
+            switch selection {
+            case let .session(serverId, sessionId):
+                if serverId == environment.machines.selectedMachineId,
+                   let session = environment.projectList.sessions.first(where: {
+                       $0.serverId == serverId && $0.id == sessionId
+                   }),
+                   let project = environment.projectList.projects.first(where: {
+                       $0.serverId == serverId && $0.id == session.projectId
+                   }) {
+                    // Identity is the WORKSPACE, not the chat: clicking a
+                    // sibling chat swaps only the routed session (the container
+                    // selects + focuses it) instead of tearing down and
+                    // rebuilding the same panes — which also cancelled the
+                    // shared controllers' in-flight history loads. Sessions
+                    // without a workspace yet (first open backfills one) fall
+                    // back to session identity.
+                    SessionContainerView(
+                        session: session,
+                        project: project,
+                        store: store,
+                        // Focus moved to a sibling chat: the sidebar selection
+                        // follows (same workspace identity — no remount, the
+                        // container just re-routes).
+                        onFocusedChatChanged: { chatId in
+                            selection = .session(serverId: serverId, id: chatId)
+                        }
+                    )
+                    .id("\(session.serverId):\((environment.workspaces.workspaceId(forSession: session.id) ?? session.id).uuidString)")
+                    .onAppear { preferredProjectId = project.id }
+                } else {
+                    // The routed session can't be resolved (machine switch,
+                    // deletion): fall back to the new-chat page.
+                    newChat(store, projectId: nil)
+                }
+            case let .newChat(projectId):
+                newChat(store, projectId: projectId)
+            case .none:
                 newChat(store, projectId: nil)
             }
-        case let .newChat(projectId):
-            newChat(store, projectId: projectId)
-        case .none:
-            newChat(store, projectId: nil)
         }
+    }
+
+    private var blocksSelectedServerContent: Bool {
+        if environment.appUpdate.isUpdating { return true }
+        if environment.machines.selectedMachine.isLocal,
+           let progress = environment.localServer?.dataUpgradeProgress,
+           progress.state == "running" || progress.state == "failed" {
+            return true
+        }
+        if case .ready = environment.machines.selectedServerAvailability {
+            return false
+        }
+        return true
     }
 
     /// The standalone new-chat page. Creates NOTHING until the first message

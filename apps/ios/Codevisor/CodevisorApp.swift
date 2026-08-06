@@ -7,15 +7,11 @@ import SwiftUI
 struct CodevisorApp: App {
     @State private var environment: AppEnvironment?
     @State private var startupError: String?
+    @State private var startupInProgress = false
 
     init() {
-        do {
-            _environment = State(initialValue: try Self.makeEnvironment())
-            _startupError = State(initialValue: nil)
-        } catch {
-            _environment = State(initialValue: nil)
-            _startupError = State(initialValue: error.localizedDescription)
-        }
+        _environment = State(initialValue: nil)
+        _startupError = State(initialValue: nil)
     }
 
     var body: some Scene {
@@ -31,11 +27,14 @@ struct CodevisorApp: App {
                 // `codevisor://add-machine` deeplinks are handled inside
                 // HomeView, which owns the confirmation alerts and can present
                 // them over the onboarding cover.
-            } else {
+            } else if let startupError {
                 ClientDataStartupFailureView(
-                    message: startupError ?? "The client database could not be opened.",
+                    message: startupError,
                     retry: retryStartup
                 )
+            } else {
+                ClientDataStartupView()
+                    .task { await startEnvironmentIfNeeded() }
             }
         }
     }
@@ -51,13 +50,7 @@ struct CodevisorApp: App {
 
     /// A minimal iOS composition root: durable SQLite storage, no local
     /// server (iOS is a pure client — `localServer` stays nil).
-    private static func makeEnvironment() throws -> AppEnvironment {
-        let directory = URL.applicationSupportDirectory
-            .appendingPathComponent("Codevisor", isDirectory: true)
-        let storage = try ClientStorageBootstrap.open(
-            directory: directory,
-            credentials: KeychainMachineCredentialStore.shared
-        )
+    private static func makeEnvironment(storage: ClientStorage) -> AppEnvironment {
         let store = storage.store
         return AppEnvironment(
             projectRepository: DefaultProjectRepository(store: store),
@@ -75,8 +68,23 @@ struct CodevisorApp: App {
     }
 
     private func retryStartup() {
+        startupError = nil
+        Task { await startEnvironmentIfNeeded() }
+    }
+
+    @MainActor
+    private func startEnvironmentIfNeeded() async {
+        guard environment == nil, !startupInProgress else { return }
+        startupInProgress = true
+        defer { startupInProgress = false }
         do {
-            environment = try Self.makeEnvironment()
+            let directory = URL.applicationSupportDirectory
+                .appendingPathComponent("Codevisor", isDirectory: true)
+            let storage = try await ClientStorageBootstrap.openAsync(
+                directory: directory,
+                credentials: KeychainMachineCredentialStore.shared
+            )
+            environment = Self.makeEnvironment(storage: storage)
             startupError = nil
         } catch {
             startupError = error.localizedDescription

@@ -122,6 +122,7 @@ public final class MachineController {
     public private(set) var registry: MachineRegistry
     public private(set) var statusByMachineId: [String: MachineStatus] = [:]
     public private(set) var updateInfoByMachineId: [String: ServerUpdateInfo] = [:]
+    public private(set) var availabilityByMachineId: [String: ServerAvailability] = [:]
     /// The release feed remote server update checks follow — mirrors the
     /// app's alpha-updates setting. AppEnvironment keeps it in sync.
     public var serverUpdateChannel: ServerUpdateChannel = .stable
@@ -137,6 +138,7 @@ public final class MachineController {
     private let projectList: ProjectListModel
     private let localServer: (any LocalServerControlling)?
     private let clientFactory: ClientFactory
+    private let requestGate: ServerRequestGate
     private let key = "machines"
     /// How long to wait between reachability probes while the remote server
     /// restarts into its updated version. Injectable so tests run fast.
@@ -145,6 +147,9 @@ public final class MachineController {
     @ObservationIgnored private var credentialReadFailures: Set<String> = []
     @ObservationIgnored private var eventSyncTask: Task<Void, Never>?
     @ObservationIgnored private var pendingRefreshTask: Task<Void, Never>?
+    @ObservationIgnored private var preparationMachineId: String?
+    @ObservationIgnored private var preparationToken: UUID?
+    @ObservationIgnored private var preparationTask: Task<Void, Never>?
     /// Invoked when a `harness.lifecycle.updated` event arrives for a machine
     /// — the AppEnvironment bridges it to its harness-catalog revision so
     /// mounted pickers and settings panes refetch.
@@ -159,11 +164,19 @@ public final class MachineController {
         updatePollInterval: Duration = .seconds(2),
         updatePollAttempts: Int = 90
     ) {
+        let requestGate = ServerRequestGate()
         self.store = store
         self.credentialStore = credentialStore
         self.projectList = projectList
         self.localServer = localServer
-        self.clientFactory = clientFactory ?? { CodevisorServerClient(config: $0.serverConfig) }
+        self.requestGate = requestGate
+        self.clientFactory = clientFactory ?? {
+            CodevisorServerClient(
+                config: $0.serverConfig,
+                requestGate: requestGate,
+                machineId: $0.id
+            )
+        }
         self.updatePollInterval = updatePollInterval
         self.updatePollAttempts = updatePollAttempts
         if let data = store.loadData(forKey: "machines") {
@@ -229,6 +242,16 @@ public final class MachineController {
                 }
             }
         }
+        if clientFactory == nil {
+            beginWaiting(
+                for: selectedMachine.id,
+                reason: selectedMachine.isLocal ? .starting : .connecting
+            )
+        } else {
+            // Injected clients are previews/test transports with no external
+            // process lifecycle for this controller to await.
+            markReady(for: selectedMachine.id)
+        }
         projectList.selectServer(
             serverId: selectedMachine.id,
             serverClient: selectedClient,
@@ -254,6 +277,10 @@ public final class MachineController {
         client(for: selectedMachine.id)
     }
 
+    public var selectedServerAvailability: ServerAvailability {
+        availabilityByMachineId[selectedMachineId] ?? .ready
+    }
+
     public func machine(for id: String) -> CodevisorMachine? {
         machines.first { $0.id == id }
     }
@@ -266,6 +293,7 @@ public final class MachineController {
     public func selectMachine(_ id: String) {
         guard let machine = machine(for: id) else { return }
         registry.selectedMachineId = machine.id
+        beginWaiting(for: machine.id, reason: machine.isLocal ? .starting : .connecting)
         persist()
         projectList.selectServer(serverId: machine.id, serverClient: client(for: machine.id))
     }
@@ -284,9 +312,10 @@ public final class MachineController {
             }
             let existing = registry.remoteMachines[index]
             registry.selectedMachineId = existing.id
+            beginWaiting(for: existing.id, reason: .connecting)
             persist()
             projectList.selectServer(serverId: existing.id, serverClient: client(for: existing.id))
-            Task { await refreshStatus(for: existing.id) }
+            Task { await prepareSelectedMachine() }
             return existing
         }
         let baseId = Self.remoteId(for: baseURL)
@@ -300,11 +329,12 @@ public final class MachineController {
         )
         registry.remoteMachines.append(machine)
         registry.selectedMachineId = machine.id
+        beginWaiting(for: machine.id, reason: .connecting)
         persist()
         projectList.selectServer(serverId: machine.id, serverClient: client(for: machine.id))
         // Probe right away so a freshly added machine shows its real status
         // instead of waiting for the next periodic refresh.
-        Task { await refreshStatus(for: machine.id) }
+        Task { await prepareSelectedMachine() }
         return machine
     }
 
@@ -380,6 +410,7 @@ public final class MachineController {
         registry.remoteMachines.removeAll { $0.id == id }
         if registry.selectedMachineId == id {
             registry.selectedMachineId = CodevisorMachine.local.id
+            beginWaiting(for: CodevisorMachine.local.id, reason: .starting)
             projectList.selectServer(serverId: CodevisorMachine.local.id, serverClient: selectedClient)
         }
         persist()
@@ -397,6 +428,7 @@ public final class MachineController {
         }
         credentialReadFailures.removeAll()
         registry = MachineRegistry()
+        beginWaiting(for: CodevisorMachine.local.id, reason: .starting)
         persist()
         projectList.selectServer(
             serverId: CodevisorMachine.local.id,
@@ -405,14 +437,53 @@ public final class MachineController {
     }
 
     public func prepareSelectedMachine() async {
-        if selectedMachine.isLocal {
-            let serverState = await localServer?.ensureRunning()
+        let machine = selectedMachine
+        let machineId = machine.id
+        let client = client(for: machineId)
+
+        if preparationMachineId == machineId, let preparationTask {
+            await preparationTask.value
+            return
+        }
+
+        let token = UUID()
+        let task = Task { [weak self] in
+            guard let self else { return }
+            await self.performPreparation(
+                for: machine,
+                client: client
+            )
+        }
+        preparationMachineId = machineId
+        preparationToken = token
+        preparationTask = task
+        await task.value
+        if preparationToken == token {
+            preparationMachineId = nil
+            preparationToken = nil
+            preparationTask = nil
+        }
+    }
+
+    private func performPreparation(
+        for machine: CodevisorMachine,
+        client: any CodevisorServerClienting
+    ) async {
+        let machineId = machine.id
+
+        if machine.isLocal, let localServer {
+            let serverState = await localServer.ensureRunning()
+            guard machineId == selectedMachineId else { return }
+            if case let .unavailable(message) = serverState {
+                markFailed(for: machineId, message: message)
+                statusByMachineId[machineId] = MachineStatus(isReachable: false, label: message)
+                return
+            }
             if serverState == .alreadyRunning {
                 // The durable server's PATH is frozen at its launch; a CLI
                 // installed since then (followed by an app relaunch) stays
                 // invisible to it. Fire one rescan so it re-resolves PATH —
                 // off the critical path so machine prep isn't delayed.
-                let client = selectedClient
                 Task {
                     do {
                         _ = try await client.rescanHarnesses()
@@ -421,10 +492,33 @@ public final class MachineController {
                     }
                 }
             }
+        } else {
+            do {
+                // Unlike health, info also proves this device's connection
+                // token is accepted before ordinary requests are released.
+                _ = try await client.info()
+            } catch {
+                guard machineId == selectedMachineId else { return }
+                let message = serverErrorMessage(error)
+                markFailed(for: machineId, message: message)
+                statusByMachineId[machineId] = MachineStatus(isReachable: false, label: message)
+                return
+            }
         }
-        await refreshStatus(for: selectedMachine.id)
+
+        guard machineId == selectedMachineId else { return }
+        markReady(for: machineId)
+        await refreshStatus(for: machineId)
+        guard machineId == selectedMachineId else { return }
         await projectList.refreshFromServer()
+        guard machineId == selectedMachineId else { return }
         startEventSync()
+    }
+
+    public func retrySelectedMachine() async {
+        let machine = selectedMachine
+        beginWaiting(for: machine.id, reason: machine.isLocal ? .starting : .connecting)
+        await prepareSelectedMachine()
     }
 
     // MARK: - Live sync
@@ -586,10 +680,16 @@ public final class MachineController {
         let updateChannel = serverUpdateChannel
         let initialVersion = selectedServerUpdate?.currentVersion
         serverUpdatePhase = .updating
+        // Close the gate before dispatching the update request. The server
+        // may begin shutting down as soon as it handles that endpoint, before
+        // the response has made the round trip back to this client.
+        beginWaiting(for: machineId, reason: .updating)
         let initialHealth = try? await client.health()
         do {
             let applied = try await client.applyServerUpdate(channel: updateChannel)
             guard applied.accepted else {
+                markReady(for: machineId)
+                if machineId == selectedMachineId { startEventSync() }
                 if applied.reason == "busy" {
                     // The server still has chats mid-turn; updating now would
                     // kill them. The banner disables its button for this app's
@@ -636,16 +736,44 @@ public final class MachineController {
                     // a remote Mac may install an even newer release according
                     // to its own Sparkle channel.
                     serverUpdatePhase = .idle
+                    markReady(for: machineId)
                     await refreshStatus(for: machineId)
                     await projectList.refreshFromServer()
                     startEventSync()
                     return
                 }
             }
-            serverUpdatePhase = .failed("The server did not come back after updating. Check it on the machine directly.")
+            let message = "The server did not come back after updating. Check it on the machine directly."
+            serverUpdatePhase = .failed(message)
+            markFailed(for: machineId, message: message)
         } catch {
-            serverUpdatePhase = .failed(String(describing: error))
+            let message = serverErrorMessage(error)
+            serverUpdatePhase = .failed(message)
+            if (try? await client.info()) != nil {
+                markReady(for: machineId)
+                if machineId == selectedMachineId { startEventSync() }
+            } else {
+                markFailed(for: machineId, message: message)
+            }
         }
+    }
+
+    private func beginWaiting(for machineId: String, reason: ServerWaitingReason) {
+        if machineId == selectedMachineId {
+            stopEventSync()
+        }
+        availabilityByMachineId[machineId] = .waiting(reason)
+        requestGate.beginWaiting(for: machineId)
+    }
+
+    private func markReady(for machineId: String) {
+        availabilityByMachineId[machineId] = .ready
+        requestGate.markReady(for: machineId)
+    }
+
+    private func markFailed(for machineId: String, message: String) {
+        availabilityByMachineId[machineId] = .failed(message)
+        requestGate.markFailed(for: machineId, message: message)
     }
 
     public static func normalizedRemoteURL(from input: String) throws -> URL {

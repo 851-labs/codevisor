@@ -2276,15 +2276,21 @@ public final class CodevisorServerClient: CodevisorServerClienting, @unchecked S
     static let eventWebSocketMaximumMessageSize = 16 * 1024 * 1024
     private let config: CodevisorServerConfig
     private let urlSession: URLSession
+    private let requestGate: ServerRequestGate?
+    private let machineId: String?
     private let decoder = JSONDecoder()
     private let encoder = JSONEncoder()
 
     public init(
         config: CodevisorServerConfig = .localDefault,
-        urlSession: URLSession = .shared
+        urlSession: URLSession = .shared,
+        requestGate: ServerRequestGate? = nil,
+        machineId: String? = nil
     ) {
         self.config = config
         self.urlSession = urlSession
+        self.requestGate = requestGate
+        self.machineId = machineId
     }
 
     public func health() async throws -> ServerHealth {
@@ -3315,6 +3321,7 @@ public final class CodevisorServerClient: CodevisorServerClienting, @unchecked S
                 var failures = 0
                 while !Task.isCancelled {
                     do {
+                        try await waitForServerIfNeeded(path: path)
                         var request = URLRequest(url: try websocketURL(for: "\(path)?since=\(cursor)"))
                         applyAuthorization(to: &request)
                         let socket = urlSession.webSocketTask(with: request)
@@ -3435,6 +3442,7 @@ public final class CodevisorServerClient: CodevisorServerClienting, @unchecked S
         body: Body?,
         timeout: TimeInterval? = nil
     ) async throws -> Data {
+        try await waitForServerIfNeeded(path: path)
         var request = URLRequest(url: try url(for: path))
         request.httpMethod = method
         if let timeout {
@@ -3466,6 +3474,7 @@ public final class CodevisorServerClient: CodevisorServerClienting, @unchecked S
         body: Data?,
         contentType: String?
     ) async throws -> Data {
+        try await waitForServerIfNeeded(path: path)
         var request = URLRequest(url: try url(for: path))
         request.httpMethod = method
         applyAuthorization(to: &request)
@@ -3485,6 +3494,21 @@ public final class CodevisorServerClient: CodevisorServerClienting, @unchecked S
             throw CodevisorServerClientError.httpStatus(httpResponse.statusCode, message)
         }
         return data
+    }
+
+    /// Lifecycle requests are what establish/re-establish readiness and must
+    /// never wait on the gate they drive. Every other HTTP and WebSocket
+    /// request waits before dispatch while startup/update downtime is known.
+    private func waitForServerIfNeeded(path: String) async throws {
+        guard !Self.isLifecyclePath(path), let requestGate, let machineId else { return }
+        try await requestGate.waitUntilReady(for: machineId)
+    }
+
+    private static func isLifecyclePath(_ path: String) -> Bool {
+        path == "/v1/health"
+            || path == "/v1/info"
+            || path == "/v1/shutdown"
+            || path.hasPrefix("/v1/update")
     }
 
     private func applyAuthorization(to request: inout URLRequest) {
