@@ -763,6 +763,9 @@ struct HarnessesSettingsView: View {
     @State private var detailHarness: ServerHarness?
     @State private var showsCustomEditor = false
     @State private var editingCustomHarnessId: String?
+    /// Bridges the button click to the server's returned lifecycle snapshot;
+    /// otherwise the row can briefly fall back to Update after the 202 ack.
+    @State private var startingHarnessIds: Set<String> = []
 
     private var serverInstalled: [ServerHarness] { serverHarnesses.filter(\.isReady) }
     private var serverNotInstalled: [ServerHarness] { serverHarnesses.filter { !$0.isReady } }
@@ -889,10 +892,14 @@ struct HarnessesSettingsView: View {
                 Button("Sign In…") { authenticationHarness = harness }
                     .settingsActionTint(theme)
             } else {
-                if harness.lifecycle?.phase == "updating" {
+                if startingHarnessIds.contains(harness.id) || harness.lifecycle?.phase == "updating" {
                     ProgressView()
                         .controlSize(.small)
                         .help("Updating \(harness.name)…")
+                } else if harness.lifecycle?.phase == "pendingUpdate" {
+                    Text("Queued")
+                        .foregroundStyle(.secondary)
+                        .help("Updates when active \(harness.name) chats finish")
                 } else if harness.updateInfo?.updateAvailable == true {
                     Button(harness.lifecycle?.phase == "failed" ? "Try Again" : "Update") {
                         Task { await updateHarness(harness) }
@@ -968,9 +975,25 @@ struct HarnessesSettingsView: View {
     }
 
     private func updateHarness(_ harness: ServerHarness) async {
+        startingHarnessIds.insert(harness.id)
+        defer { startingHarnessIds.remove(harness.id) }
         let serverId = environment.machines.selectedMachineId
         do {
-            _ = try await environment.machines.client(for: serverId).updateHarness(id: harness.id)
+            let started = try await environment.machines.client(for: serverId)
+                .updateHarness(id: harness.id)
+            if let lifecycle = started.lifecycle,
+               let index = serverHarnesses.firstIndex(where: { $0.id == harness.id }) {
+                serverHarnesses[index].lifecycle = lifecycle
+                environment.setHarnessLifecycle(
+                    lifecycle,
+                    harnessId: harness.id,
+                    onServer: serverId
+                )
+            } else {
+                // Older servers do not return the lifecycle in the 202 body.
+                // Keep the local spinner visible through the fallback fetch.
+                await refreshList()
+            }
             environment.harnessCatalogDidChange(onServer: serverId)
         } catch {
             toggleError = ToggleError(

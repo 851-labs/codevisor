@@ -137,7 +137,15 @@ struct HarnessUpdateBannerView: View {
         defer { isStarting = false }
         let serverId = environment.machines.selectedMachineId
         do {
-            _ = try await environment.machines.client(for: serverId).updateHarness(id: harnessId)
+            let started = try await environment.machines.client(for: serverId)
+                .updateHarness(id: harnessId)
+            if let lifecycle = started.lifecycle {
+                environment.setHarnessLifecycle(lifecycle, harnessId: harnessId, onServer: serverId)
+            } else {
+                // Compatibility with older servers: keep the optimistic
+                // spinner up until a lifecycle-decorated refetch completes.
+                await environment.refreshHarnessLifecycle(for: serverId)
+            }
             environment.harnessCatalogDidChange(onServer: serverId)
         } catch {
             startError = error.localizedDescription
@@ -145,10 +153,13 @@ struct HarnessUpdateBannerView: View {
     }
 
     private func applyPending(_ harnessId: String) async {
+        isStarting = true
         startError = nil
+        defer { isStarting = false }
         let serverId = environment.machines.selectedMachineId
         do {
             try await environment.machines.client(for: serverId).applyPendingHarnessUpdate(id: harnessId)
+            await environment.refreshHarnessLifecycle(for: serverId)
             environment.harnessCatalogDidChange(onServer: serverId)
         } catch {
             startError = error.localizedDescription

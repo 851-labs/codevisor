@@ -485,6 +485,53 @@ describe("harness lifecycle install/update execution", () => {
     await flush()
   })
 
+  it("does not clear updating when a zero-exit updater has not installed the target", async () => {
+    const db = await makeDb()
+    const bin = makeBinDir(["npm"])
+    const agents = {
+      catalog: [installableDefinition],
+      discoverHarnesses: Effect.succeed([
+        harness("fake-cli", "/Users/dev/.local/bin/fake-cli", "1.0.0")
+      ]),
+      refreshEnvironment: Effect.void
+    } as unknown as AgentRuntimeService
+    const { terminal } = fakeTerminal()
+    const { processes, spawnShell } = fakeSpawner()
+    const lifecycle = makeHarnessLifecycleManager({
+      agents,
+      db,
+      fetchImpl: async () => jsonResponse({ "dist-tags": { latest: "2.0.0" } }),
+      home: "/Users/dev",
+      realpath: (path) => path,
+      resolveEnv: async () => ({ PATH: bin }),
+      spawnShell,
+      terminal,
+      updateVerificationPollIntervalMs: 1,
+      updateVerificationTimeoutMs: 20
+    })
+
+    await lifecycle.checkForUpdates(true)
+    const started = await lifecycle.beginUpdate("fake-cli")
+    expect(started.lifecycle?.phase).toBe("updating")
+    processes[0]?.emitExit(0)
+
+    const whileVerifying = await lifecycle.decorateHarnesses([
+      harness("fake-cli", "/Users/dev/.local/bin/fake-cli", "1.0.0")
+    ])
+    expect(whileVerifying[0]?.lifecycle?.phase).toBe("updating")
+    await expect
+      .poll(async () => {
+        const decorated = await lifecycle.decorateHarnesses([
+          harness("fake-cli", "/Users/dev/.local/bin/fake-cli", "1.0.0")
+        ])
+        return decorated[0]?.lifecycle
+      })
+      .toMatchObject({
+        error: expect.stringContaining("still 1.0.0; expected 2.0.0"),
+        phase: "failed"
+      })
+  })
+
   it("updates via reinstall for origins whose self-update is unsafe", async () => {
     const db = await makeDb()
     const bin = makeBinDir(["brew", "npm"])
@@ -530,11 +577,15 @@ describe("harness lifecycle install/update execution", () => {
     if (definition === undefined) return
 
     const binary = "/opt/homebrew/Caskroom/claude-code@latest/2.1.215/claude"
-    const installed = harness("claude-code", "/opt/homebrew/bin/claude", "2.1.215")
+    let installedVersion = "2.1.215"
     const agents = {
       catalog: [definition],
-      discoverHarnesses: Effect.succeed([installed]),
-      refreshEnvironment: Effect.void
+      discoverHarnesses: Effect.sync(() => [
+        harness("claude-code", "/opt/homebrew/bin/claude", installedVersion)
+      ]),
+      refreshEnvironment: Effect.sync(() => {
+        installedVersion = "2.1.216"
+      })
     } as unknown as AgentRuntimeService
     const requests: string[] = []
     const fetchImpl: FetchLike = async (url) => {
@@ -568,7 +619,9 @@ describe("harness lifecycle install/update execution", () => {
     await lifecycle.beginUpdate("claude-code")
     expect(spawns[0]?.command).toBe("brew upgrade --cask claude-code@latest")
     processes[0]?.emitExit(0)
-    await flush()
+    await expect
+      .poll(async () => (await run(db.listHarnessUpdateStates))[0]?.info.updateAvailable)
+      .toBe(false)
   })
 
   it("checks and updates npm-owned Claude through npm", async () => {
@@ -578,11 +631,15 @@ describe("harness lifecycle install/update execution", () => {
     if (definition === undefined) return
 
     const binary = "/opt/homebrew/lib/node_modules/@anthropic-ai/claude-code/cli.js"
-    const installed = harness("claude-code", "/opt/homebrew/bin/claude", "2.1.215")
+    let installedVersion = "2.1.215"
     const agents = {
       catalog: [definition],
-      discoverHarnesses: Effect.succeed([installed]),
-      refreshEnvironment: Effect.void
+      discoverHarnesses: Effect.sync(() => [
+        harness("claude-code", "/opt/homebrew/bin/claude", installedVersion)
+      ]),
+      refreshEnvironment: Effect.sync(() => {
+        installedVersion = "2.1.216"
+      })
     } as unknown as AgentRuntimeService
     const requests: string[] = []
     const fetchImpl: FetchLike = async (url) => {
@@ -616,7 +673,9 @@ describe("harness lifecycle install/update execution", () => {
     await lifecycle.beginUpdate("claude-code")
     expect(spawns[0]?.command).toBe("npm install -g @anthropic-ai/claude-code@latest")
     processes[0]?.emitExit(0)
-    await flush()
+    await expect
+      .poll(async () => (await run(db.listHarnessUpdateStates))[0]?.info.updateAvailable)
+      .toBe(false)
   })
 
   it("updates native Claude through Claude's self-updater", async () => {
@@ -626,11 +685,15 @@ describe("harness lifecycle install/update execution", () => {
     if (definition === undefined) return
 
     const binary = "/Users/dev/.local/share/claude/versions/2.1.215"
-    const installed = harness("claude-code", "/Users/dev/.local/bin/claude", "2.1.215")
+    let installedVersion = "2.1.215"
     const agents = {
       catalog: [definition],
-      discoverHarnesses: Effect.succeed([installed]),
-      refreshEnvironment: Effect.void
+      discoverHarnesses: Effect.sync(() => [
+        harness("claude-code", "/Users/dev/.local/bin/claude", installedVersion)
+      ]),
+      refreshEnvironment: Effect.sync(() => {
+        installedVersion = "2.1.216"
+      })
     } as unknown as AgentRuntimeService
     const { terminal } = fakeTerminal()
     const { processes, spawnShell, spawns } = fakeSpawner()
@@ -651,7 +714,9 @@ describe("harness lifecycle install/update execution", () => {
     await lifecycle.beginUpdate("claude-code")
     expect(spawns[0]?.command).toBe("/Users/dev/.local/bin/claude update")
     processes[0]?.emitExit(0)
-    await flush()
+    await expect
+      .poll(async () => (await run(db.listHarnessUpdateStates))[0]?.info.updateAvailable)
+      .toBe(false)
   })
 
   const appBundleDefinition: HarnessDefinition = {
@@ -698,7 +763,10 @@ describe("harness lifecycle install/update execution", () => {
     })
     lifecycle.subscribe((event) => events.push(event as never))
 
-    await expect(lifecycle.beginUpdate("fake-cli")).resolves.toEqual({ queued: false })
+    await expect(lifecycle.beginUpdate("fake-cli")).resolves.toMatchObject({
+      lifecycle: { phase: "updating" },
+      queued: false
+    })
     expect(events.at(-1)?.payload.lifecycle?.phase).toBe("updating")
     await expect.poll(() => events.at(-1)?.payload.lifecycle?.phase).toBe("idle")
     expect(swaps).toEqual([{ bundlePath: "/Applications/ChatGPT.app" }])
@@ -774,7 +842,10 @@ describe("harness lifecycle install/update execution", () => {
     // Two turns in flight → arm instead of running.
     lifecycle.notifyTurnStarted("fake-cli")
     lifecycle.notifyTurnStarted("fake-cli")
-    await expect(lifecycle.beginUpdate("fake-cli")).resolves.toEqual({ queued: true })
+    await expect(lifecycle.beginUpdate("fake-cli")).resolves.toMatchObject({
+      lifecycle: { phase: "pendingUpdate" },
+      queued: true
+    })
     expect(spawns).toHaveLength(0)
     expect(lifecycle.isGated("fake-cli")).toBe(false)
     await expect(run(db.listHarnessPendingUpdates)).resolves.toMatchObject([

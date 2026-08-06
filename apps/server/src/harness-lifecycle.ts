@@ -89,6 +89,11 @@ export interface HarnessLifecycleManagerConfig {
   readonly checkCacheMs?: number
   /// Kills a hung install/update run; default 10min.
   readonly operationTimeoutMs?: number
+  /// After an updater exits successfully, keep the lifecycle in `updating`
+  /// while the installed binary catches up to the requested target. Defaults
+  /// to 2min, with a 500ms local-version probe cadence.
+  readonly updateVerificationTimeoutMs?: number
+  readonly updateVerificationPollIntervalMs?: number
   /// Kill switch for the when-idle prompt gate (CODEVISOR_HARNESS_UPDATE_GATE=0):
   /// updates still run, prompts just dispatch on the old binary.
   readonly gateEnabled?: boolean
@@ -120,9 +125,13 @@ export interface HarnessLifecycleManager {
   /// bundle swap). With chats mid-turn on the harness, arms a durable pending
   /// update instead and returns `queued: true` — it executes when the last
   /// turn ends (or on forcePendingUpdate).
-  readonly beginUpdate: (
-    harnessId: string
-  ) => Promise<{ readonly queued: boolean; readonly terminalId?: string }>
+  readonly beginUpdate: (harnessId: string) => Promise<{
+    readonly queued: boolean
+    readonly terminalId?: string
+    /// Present on current servers so clients can hand their optimistic
+    /// spinner directly to the authoritative lifecycle without an event race.
+    readonly lifecycle?: HarnessLifecycleState
+  }>
   /// Turn accounting from the prompt dispatcher: drives "is this harness
   /// busy" and triggers pending updates when the last turn ends.
   readonly notifyTurnStarted: (harnessId: string) => void
@@ -211,7 +220,10 @@ const defaultSpawnShell = (command: string, env: NodeJS.ProcessEnv): LifecyclePr
     forward(`${cause.message}\n`)
     for (const listener of exitListeners) listener(undefined)
   })
-  child.once("exit", (code) => {
+  // `exit` can precede stdio closure when an updater hands work to a child
+  // process. `close` does not fire until the inherited pipes are closed, so
+  // it is the earliest safe point to begin target-version verification.
+  child.once("close", (code) => {
     for (const listener of exitListeners) listener(code ?? undefined)
   })
   return {
@@ -255,6 +267,8 @@ export const makeHarnessLifecycleManager = (
   const arch = config.arch ?? process.arch
   const checkCacheMs = config.checkCacheMs ?? 5 * 60_000
   const checkIntervalMs = config.checkIntervalMs ?? 6 * 60 * 60_000
+  const updateVerificationTimeoutMs = config.updateVerificationTimeoutMs ?? 2 * 60_000
+  const updateVerificationPollIntervalMs = config.updateVerificationPollIntervalMs ?? 500
   const readBundleShortVersion = config.readBundleShortVersion ?? defaultReadBundleShortVersion
 
   /// Last persisted state per harness, hydrated from the db on first use so
@@ -423,6 +437,77 @@ export const makeHarnessLifecycleManager = (
     return inFlight
   }
 
+  /// A completion check must never reuse a probe that began before the
+  /// updater changed the binary. Drain that work first, then force one new
+  /// check; concurrent callers naturally share the newly-created inFlight.
+  const checkForUpdatesFresh = async (): Promise<void> => {
+    const previous = inFlight
+    if (previous !== undefined) await previous.catch(() => undefined)
+    lastCheckAt = 0
+    await checkForUpdates(true).catch(() => undefined)
+  }
+
+  const delay = (milliseconds: number): Promise<void> =>
+    new Promise((resolve) => setTimeout(resolve, milliseconds))
+
+  /// Re-probes the local harness until it reaches the version the user was
+  /// offered. This is deliberately independent of the remote feed: a feed
+  /// outage after a successful install must not make a completed update look
+  /// unfinished, and a zero-exit no-op must not be reported as success.
+  const waitForInstalledTarget = async (
+    harnessId: string,
+    targetVersion: string
+  ): Promise<string> => {
+    const deadline = Date.now() + updateVerificationTimeoutMs
+    let observedVersion: string | undefined
+    while (true) {
+      await run(config.agents.refreshEnvironment).catch(() => undefined)
+      const harness = (await run(config.agents.discoverHarnesses).catch(() => [])).find(
+        (candidate) => candidate.id === harnessId
+      )
+      observedVersion = harness?.readiness.version
+      if (observedVersion !== undefined && !isNewerVersion(targetVersion, observedVersion)) {
+        return observedVersion
+      }
+      if (Date.now() >= deadline) {
+        const observed = observedVersion === undefined ? "unknown" : observedVersion
+        throw new Error(
+          `Updater exited successfully, but ${harnessId} is still ${observed}; expected ${targetVersion}`
+        )
+      }
+      await delay(updateVerificationPollIntervalMs)
+    }
+  }
+
+  /// The local target probe is stronger than a second network lookup. Merge
+  /// its observed version into the persisted/in-memory update knowledge so a
+  /// failed feed refresh cannot resurrect the same Update button.
+  const recordVerifiedInstalledVersion = async (
+    harnessId: string,
+    installedVersion: string
+  ): Promise<void> => {
+    const current = await loadStates()
+    const previous = current.get(harnessId)
+    if (previous === undefined) return
+    const info: HarnessUpdateInfo = {
+      ...previous,
+      installedVersion,
+      updateAvailable:
+        previous.latestVersion !== undefined &&
+        isNewerVersion(previous.latestVersion, installedVersion),
+      checkedAt: new Date(now()).toISOString()
+    }
+    current.set(harnessId, info)
+    await run(config.db.setHarnessUpdateState({ harnessId, info })).catch(() => undefined)
+    if (meaningfullyChanged(previous, info)) {
+      emit({
+        kind: "harness.lifecycle.updated",
+        payload: { harnessId, updateInfo: info },
+        subjectId: harnessId
+      })
+    }
+  }
+
   // ── Install/update execution ─────────────────────────────────────────
 
   const spawnShell = config.spawnShell ?? defaultSpawnShell
@@ -504,7 +589,7 @@ export const makeHarnessLifecycleManager = (
     readonly methodId?: string
     readonly targetVersion?: string
     readonly onSettled?: (success: boolean) => void
-  }): Promise<{ readonly terminalId: string }> => {
+  }): Promise<{ readonly lifecycle: HarnessLifecycleState; readonly terminalId: string }> => {
     const terminal = config.terminal
     if (terminal === undefined) {
       throw new Error("Harness install/update is unavailable on this server")
@@ -532,14 +617,35 @@ export const makeHarnessLifecycleManager = (
       clearTimeout(timeout)
       handle.exit(exitCode)
       if (exitCode === 0 && !timedOut) {
-        // Re-resolve PATH + re-probe versions so readiness reflects the new
-        // binary, then refresh update knowledge so badges clear promptly.
-        invalidateEnvCache()
-        await run(config.agents.refreshEnvironment).catch(() => undefined)
-        lastCheckAt = 0
-        await checkForUpdates(true).catch(() => undefined)
-        setOperation(options.harnessId, undefined)
-        options.onSettled?.(true)
+        try {
+          // Keep the operation visibly updating until the requested version
+          // is actually observable. Some native updaters return after handing
+          // replacement work to a descendant process.
+          invalidateEnvCache()
+          const installedVersion =
+            options.phase === "updating" && options.targetVersion !== undefined
+              ? await waitForInstalledTarget(options.harnessId, options.targetVersion)
+              : undefined
+          if (installedVersion === undefined) {
+            await run(config.agents.refreshEnvironment).catch(() => undefined)
+          }
+          await checkForUpdatesFresh()
+          if (installedVersion !== undefined) {
+            await recordVerifiedInstalledVersion(options.harnessId, installedVersion)
+          }
+          setOperation(options.harnessId, undefined)
+          options.onSettled?.(true)
+        } catch (cause) {
+          setOperation(options.harnessId, {
+            error:
+              `${cause instanceof Error ? cause.message : String(cause)}\n${outputTail.trim()}`.trim(),
+            phase: "failed",
+            terminalId: handle.terminalId,
+            ...(options.methodId === undefined ? {} : { methodId: options.methodId }),
+            ...(options.targetVersion === undefined ? {} : { targetVersion: options.targetVersion })
+          })
+          options.onSettled?.(false)
+        }
         return
       }
       const reason = timedOut
@@ -560,14 +666,15 @@ export const makeHarnessLifecycleManager = (
     }, operationTimeoutMs)
     timeout.unref()
     child.onExit((exitCode) => void settle(exitCode, false))
-    setOperation(options.harnessId, {
+    const lifecycle: HarnessLifecycleState = {
       phase: options.phase,
       startedAt: new Date(now()).toISOString(),
       terminalId: handle.terminalId,
       ...(options.methodId === undefined ? {} : { methodId: options.methodId }),
       ...(options.targetVersion === undefined ? {} : { targetVersion: options.targetVersion })
-    })
-    return { terminalId: handle.terminalId }
+    }
+    setOperation(options.harnessId, lifecycle)
+    return { lifecycle, terminalId: handle.terminalId }
   }
 
   const beginInstall = async (
@@ -638,7 +745,11 @@ export const makeHarnessLifecycleManager = (
 
   const beginUpdate = async (
     harnessId: string
-  ): Promise<{ readonly queued: boolean; readonly terminalId?: string }> => {
+  ): Promise<{
+    readonly queued: boolean
+    readonly terminalId?: string
+    readonly lifecycle?: HarnessLifecycleState
+  }> => {
     definitionOrThrow(harnessId)
     if (gateEnabled && isHarnessBusy(harnessId) && !pendingUpdates.has(harnessId)) {
       // Chats are mid-turn on this harness: arm a durable pending update that
@@ -652,12 +763,13 @@ export const makeHarnessLifecycleManager = (
       }
       pendingUpdates.set(harnessId, record)
       await run(config.db.setHarnessPendingUpdate(record)).catch(() => undefined)
-      setOperation(harnessId, {
+      const lifecycle: HarnessLifecycleState = {
         phase: "pendingUpdate",
         startedAt: record.requestedAt,
         ...(targetVersion === undefined ? {} : { targetVersion })
-      })
-      return { queued: true }
+      }
+      setOperation(harnessId, lifecycle)
+      return { lifecycle, queued: true }
     }
     return executeUpdateNow(harnessId)
   }
@@ -665,7 +777,11 @@ export const makeHarnessLifecycleManager = (
   const executeUpdateNow = async (
     harnessId: string,
     onSettled?: (success: boolean) => void
-  ): Promise<{ readonly queued: boolean; readonly terminalId?: string }> => {
+  ): Promise<{
+    readonly queued: boolean
+    readonly terminalId?: string
+    readonly lifecycle?: HarnessLifecycleState
+  }> => {
     const definition = definitionOrThrow(harnessId)
     const harnesses = await run(config.agents.discoverHarnesses)
     const harness = harnesses.find((candidate) => candidate.id === harnessId)
@@ -682,7 +798,7 @@ export const makeHarnessLifecycleManager = (
     const targetVersion = (await loadStates()).get(harnessId)?.latestVersion
     switch (source.apply.kind) {
       case "selfUpdate": {
-        const { terminalId } = await runOperation({
+        const { lifecycle, terminalId } = await runOperation({
           command: [path, ...source.apply.args].join(" "),
           harnessId,
           phase: "updating",
@@ -690,7 +806,7 @@ export const makeHarnessLifecycleManager = (
           ...(targetVersion === undefined ? {} : { targetVersion }),
           ...(onSettled === undefined ? {} : { onSettled })
         })
-        return { queued: false, terminalId }
+        return { lifecycle, queued: false, terminalId }
       }
       case "reinstall": {
         const detectedBrew =
@@ -710,7 +826,7 @@ export const makeHarnessLifecycleManager = (
             : { cask: detectedBrew.cask, formula: detectedBrew.formula, kind: "brew" }
         if (spec === undefined)
           throw new Error(`${harnessId} has no reinstall method for ${origin}`)
-        const { terminalId } = await runOperation({
+        const { lifecycle, terminalId } = await runOperation({
           command: upgradeCommand(spec),
           harnessId,
           methodId: spec.kind,
@@ -718,7 +834,7 @@ export const makeHarnessLifecycleManager = (
           ...(targetVersion === undefined ? {} : { targetVersion }),
           ...(onSettled === undefined ? {} : { onSettled })
         })
-        return { queued: false, terminalId }
+        return { lifecycle, queued: false, terminalId }
       }
       case "appBundleSwap": {
         if (platform !== "darwin" || origin !== "appBundle") {
@@ -731,14 +847,14 @@ export const makeHarnessLifecycleManager = (
         if (source.check.kind !== "sparkle") {
           throw new Error(`${definition.name}'s update feed is not a Sparkle appcast`)
         }
-        startBundleSwap({
+        const lifecycle = startBundleSwap({
           appcastUrl: sparkleFeedUrl(source.check),
           bundle,
           harnessId,
           ...(targetVersion === undefined ? {} : { targetVersion }),
           ...(onSettled === undefined ? {} : { onSettled })
         })
-        return { queued: false }
+        return { lifecycle, queued: false }
       }
     }
   }
@@ -758,28 +874,46 @@ export const makeHarnessLifecycleManager = (
     readonly appcastUrl: string
     readonly targetVersion?: string
     readonly onSettled?: (success: boolean) => void
-  }): void => {
-    const { appcastUrl, bundle, harnessId, onSettled, targetVersion } = options
+    /// A dual-install app swap must not overwrite the primary CLI's update
+    /// metadata with the bundled app's version.
+    readonly recordsHarnessVersion?: boolean
+  }): HarnessLifecycleState => {
+    const {
+      appcastUrl,
+      bundle,
+      harnessId,
+      onSettled,
+      recordsHarnessVersion = true,
+      targetVersion
+    } = options
     const runningPhase = operations.get(harnessId)?.phase
     if (runningPhase === "installing" || runningPhase === "updating") {
       throw new Error(`An operation is already running for ${harnessId}`)
     }
     const applySwap = config.applyBundleSwap ?? applyAppBundleSwap
-    setOperation(harnessId, {
+    const lifecycle: HarnessLifecycleState = {
       phase: "updating",
       startedAt: new Date(now()).toISOString(),
       ...(targetVersion === undefined ? {} : { targetVersion })
-    })
+    }
+    setOperation(harnessId, lifecycle)
     void (async () => {
       try {
         const response = await fetchImpl(appcastUrl, {
           signal: AbortSignal.timeout(30_000)
         })
         if (!response.ok) throw new Error(`Update feed unavailable (HTTP ${response.status})`)
-        await applySwap({ appcastXml: await response.text(), bundlePath: bundle })
+        const result = await applySwap({ appcastXml: await response.text(), bundlePath: bundle })
+        if (targetVersion !== undefined && isNewerVersion(targetVersion, result.installedVersion)) {
+          throw new Error(
+            `Bundle swap installed ${result.installedVersion}; expected ${targetVersion}`
+          )
+        }
         await run(config.agents.refreshEnvironment).catch(() => undefined)
-        lastCheckAt = 0
-        await checkForUpdates(true).catch(() => undefined)
+        await checkForUpdatesFresh()
+        if (recordsHarnessVersion) {
+          await recordVerifiedInstalledVersion(harnessId, result.installedVersion)
+        }
         setOperation(harnessId, undefined)
         onSettled?.(true)
       } catch (cause) {
@@ -791,6 +925,7 @@ export const makeHarnessLifecycleManager = (
         onSettled?.(false)
       }
     })()
+    return lifecycle
   }
 
   // ── Dual-install bundled app ─────────────────────────────────────────
@@ -868,6 +1003,7 @@ export const makeHarnessLifecycleManager = (
       appcastUrl: sparkleFeedUrl(target.check),
       bundle: target.bundle,
       harnessId,
+      recordsHarnessVersion: false,
       ...(latest.latestVersion === undefined ? {} : { targetVersion: latest.latestVersion })
     })
   }

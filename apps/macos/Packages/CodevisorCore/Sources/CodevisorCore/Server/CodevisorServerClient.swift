@@ -1054,11 +1054,20 @@ public struct ServerHarnessOperationStarted: Codable, Equatable, Sendable {
     public var accepted: Bool
     public var terminalId: String?
     public var queued: Bool?
+    /// Authoritative state installed by the server before it acknowledges the
+    /// operation. Optional for compatibility with older servers.
+    public var lifecycle: ServerHarnessLifecycleState?
 
-    public init(accepted: Bool, terminalId: String? = nil, queued: Bool? = nil) {
+    public init(
+        accepted: Bool,
+        terminalId: String? = nil,
+        queued: Bool? = nil,
+        lifecycle: ServerHarnessLifecycleState? = nil
+    ) {
         self.accepted = accepted
         self.terminalId = terminalId
         self.queued = queued
+        self.lifecycle = lifecycle
     }
 }
 

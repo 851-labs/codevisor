@@ -350,6 +350,21 @@ public final class AppEnvironment {
         harnessLifecycleByServer[serverId] = harnesses
     }
 
+    /// Installs the lifecycle returned by a successful start request before
+    /// the optimistic client spinner is released. Events remain the ongoing
+    /// source of truth; this closes the 202/event handoff gap.
+    public func setHarnessLifecycle(
+        _ lifecycle: ServerHarnessLifecycleState,
+        harnessId: String,
+        onServer serverId: String
+    ) {
+        guard var harnesses = harnessLifecycleByServer[serverId],
+              let index = harnesses.firstIndex(where: { $0.id == harnessId })
+        else { return }
+        harnesses[index].lifecycle = lifecycle
+        harnessLifecycleByServer[serverId] = harnesses
+    }
+
     /// Publishes that authentication, enablement, or discovery changed the
     /// harnesses available for new chats on a machine.
     public func harnessCatalogDidChange(onServer serverId: String) {

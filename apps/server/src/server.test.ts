@@ -6112,7 +6112,7 @@ describe("@codevisor/server", () => {
         beginUpdate: async (id: string) => {
           if (id === "kimi") throw new Error("kimi has no update source")
           calls.push(`update ${id}`)
-          return { queued: true }
+          return { lifecycle: { phase: "pendingUpdate" as const }, queued: true }
         },
         bundledAppInfo: async (id: string) =>
           id === "codex"
@@ -6175,7 +6175,11 @@ describe("@codevisor/server", () => {
 
       const update = await jsonRequest(server, "/v1/harnesses/codex/update", { method: "POST" })
       expect(update.status).toBe(202)
-      expect(update.body).toMatchObject({ accepted: true, queued: true })
+      expect(update.body).toMatchObject({
+        accepted: true,
+        lifecycle: { phase: "pendingUpdate" },
+        queued: true
+      })
       const badUpdate = await jsonRequest(server, "/v1/harnesses/kimi/update", { method: "POST" })
       expect(badUpdate.status).toBe(409)
 
