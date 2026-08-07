@@ -951,8 +951,15 @@ private struct TurnItemsView: View {
                     } else {
                         ToolCallRow(call: call, isTurnActive: isTurnActive)
                     }
-                case .contextCompaction:
-                    AgentStatusText.contextCompacted
+                case let .contextCompaction(_, status):
+                    switch status {
+                    case .started:
+                        ShimmeringText.compactingContext
+                    case .completed:
+                        AgentStatusText.contextCompacted
+                    case .failed:
+                        EmptyView()
+                    }
                 }
             }
         }
