@@ -687,9 +687,15 @@ private struct AssistantTurnBody: View {
     @Environment(\.transcriptDisclosure) private var disclosureStore
     @Environment(\.transcriptController) private var transcriptController
     @Environment(\.runningSubagentToolCallIds) private var runningSubagents
+    @State private var textAnimationPresentation = StreamingTextAnimationPresentation()
     let turn: AssistantTurn
     /// Stable identity for the turn's disclosure keys (the message id).
     let turnId: UUID
+
+    init(turn: AssistantTurn, turnId: UUID) {
+        self.turn = turn
+        self.turnId = turnId
+    }
 
     private var store: TranscriptDisclosureStore { disclosureStore ?? .previews }
     private var isGenerating: Bool { turn.isGenerating }
@@ -704,6 +710,10 @@ private struct AssistantTurnBody: View {
     @State private var hasActiveTextEntranceAnimation = false
 
     var body: some View {
+        let _ = textAnimationPresentation.establishBaseline(
+            settling: turn,
+            turnID: turnId
+        )
         VStack(alignment: .leading, spacing: 12) {
             workedSection(
                 items: turn.workedItemsBeforePlan,
@@ -739,8 +749,16 @@ private struct AssistantTurnBody: View {
                     ShimmeringText(text: "Waiting on harness...")
                 }
             }
-            if case let .text(_, markdown) = turn.finalText {
-                StreamingMarkdownView(markdown, isComplete: !isGenerating)
+            if case let .text(entryID, markdown) = turn.finalText {
+                StreamingMarkdownView(
+                    markdown,
+                    isComplete: !isGenerating,
+                    streamID: TranscriptStreamingTextIdentity.main(
+                        turnID: turnId,
+                        entryID: entryID
+                    ),
+                    animationPresentation: textAnimationPresentation
+                )
             }
             if let stopDetail = turn.stopDetail {
                 turnErrorRow(stopDetail)
@@ -840,7 +858,14 @@ private struct AssistantTurnBody: View {
                            let transcriptController {
                             DeferredWorkedDetails(controller: transcriptController, itemId: itemId)
                         } else {
-                            TurnItemsView(items: items, turn: turn, depth: 0, isTurnActive: isGenerating)
+                            TurnItemsView(
+                                items: items,
+                                turn: turn,
+                                turnId: turnId,
+                                depth: 0,
+                                isTurnActive: isGenerating,
+                                animationPresentation: textAnimationPresentation
+                            )
                         }
                     }
                     .padding(.top, 10)
@@ -884,8 +909,11 @@ private struct AssistantTurnBody: View {
 private struct TurnItemsView: View {
     let items: [WorkedItem]
     let turn: AssistantTurn
+    let turnId: UUID
     let depth: Int
     let isTurnActive: Bool
+    let animationPresentation: StreamingTextAnimationPresentation
+    var parentToolCallID: String? = nil
 
     private static let maxNestingDepth = 3
 
@@ -893,8 +921,13 @@ private struct TurnItemsView: View {
         VStack(alignment: .leading, spacing: 10) {
             ForEach(items) { item in
                 switch item {
-                case let .text(_, markdown):
-                    StreamingMarkdownView(markdown, isComplete: !isTurnActive)
+                case let .text(entryID, markdown):
+                    StreamingMarkdownView(
+                        markdown,
+                        isComplete: !isTurnActive,
+                        streamID: streamID(for: entryID),
+                        animationPresentation: animationPresentation
+                    )
                         .opacity(0.85)
                 case let .toolGroup(_, calls):
                     ToolGroupView(
@@ -907,7 +940,14 @@ private struct TurnItemsView: View {
                     )
                 case let .subagent(_, call):
                     if depth + 1 < Self.maxNestingDepth {
-                        SubagentSection(call: call, turn: turn, depth: depth, isTurnActive: isTurnActive)
+                        SubagentSection(
+                            call: call,
+                            turn: turn,
+                            turnId: turnId,
+                            depth: depth,
+                            isTurnActive: isTurnActive,
+                            animationPresentation: animationPresentation
+                        )
                     } else {
                         ToolCallRow(call: call, isTurnActive: isTurnActive)
                     }
@@ -922,6 +962,17 @@ private struct TurnItemsView: View {
         // takes its sizes from the markdown theme.
         .font(.callout)
     }
+
+    private func streamID(for entryID: String) -> String {
+        if let parentToolCallID {
+            return TranscriptStreamingTextIdentity.subagent(
+                turnID: turnId,
+                parentToolCallID: parentToolCallID,
+                entryID: entryID
+            )
+        }
+        return TranscriptStreamingTextIdentity.main(turnID: turnId, entryID: entryID)
+    }
 }
 
 /// The macOS SubagentSectionView: a wand header shimmering while the
@@ -931,8 +982,10 @@ private struct SubagentSection: View {
     @Environment(\.runningSubagentToolCallIds) private var runningSubagents
     let call: ToolCall
     let turn: AssistantTurn
+    let turnId: UUID
     let depth: Int
     let isTurnActive: Bool
+    let animationPresentation: StreamingTextAnimationPresentation
 
     private var store: TranscriptDisclosureStore { disclosureStore ?? .previews }
     private var key: TranscriptDisclosureStore.Key { .subagent(call.toolCallId) }
@@ -973,7 +1026,15 @@ private struct SubagentSection: View {
 
             TranscriptDisclosureContentReveal(isExpanded: isExpanded) {
                 VStack(alignment: .leading, spacing: 10) {
-                    TurnItemsView(items: items, turn: turn, depth: depth + 1, isTurnActive: isTurnActive)
+                    TurnItemsView(
+                        items: items,
+                        turn: turn,
+                        turnId: turnId,
+                        depth: depth + 1,
+                        isTurnActive: isTurnActive,
+                        animationPresentation: animationPresentation,
+                        parentToolCallID: call.toolCallId
+                    )
                     if isRunning, items.isEmpty {
                         ShimmeringText.startingAgent
                     }

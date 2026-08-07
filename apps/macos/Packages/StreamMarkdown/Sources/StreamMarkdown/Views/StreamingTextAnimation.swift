@@ -19,6 +19,47 @@ enum StreamingTextAnimationSpec {
     }
 }
 
+/// Remembers which semantic text streams have already been presented inside
+/// one mounted transcript turn. The owner seeds streams that existed before
+/// the turn view mounted; a stream first claimed afterward is genuinely new
+/// live output and may animate its initial content.
+///
+/// The presentation deliberately lives above AppKit/UIKit text coordinators.
+/// Native surfaces can be recreated by navigation, disclosure, virtualization,
+/// or Markdown tail reclassification without making old text new again.
+@MainActor
+public final class StreamingTextAnimationPresentation {
+    private var presentedStreamIDs: Set<String>
+    private var hasEstablishedBaseline: Bool
+
+    public init() {
+        presentedStreamIDs = []
+        hasEstablishedBaseline = false
+    }
+
+    public init(settledStreamIDs: [String]) {
+        presentedStreamIDs = Set(settledStreamIDs)
+        hasEstablishedBaseline = true
+    }
+
+    /// Records the streams present at the navigation/mount boundary. The
+    /// builder is deliberately lazy: SwiftUI may reconstruct its value on
+    /// every streamed flush, but collecting a turn's entries should happen
+    /// only once for this presentation object.
+    public func establishBaseline(_ streamIDs: () -> [String]) {
+        guard !hasEstablishedBaseline else { return }
+        presentedStreamIDs.formUnion(streamIDs())
+        hasEstablishedBaseline = true
+    }
+
+    /// Returns true only for a semantic stream first seen during this mounted
+    /// presentation. A later native-view remount of the same stream baselines
+    /// its current contents instead of replaying their entrance animation.
+    func claimInitialAnimation(for streamID: String) -> Bool {
+        presentedStreamIDs.insert(streamID).inserted
+    }
+}
+
 /// One timeline is shared by every prose surface inside a single
 /// `StreamingMarkdownView`. This keeps words in adjacent Markdown blocks on
 /// one cadence instead of restarting the delay at every paragraph.
@@ -131,6 +172,10 @@ struct StreamingTextAnimationContext {
     /// text) even though the provider stream itself remains append-only.
     let documentSource: String
     let isStreaming: Bool
+    /// False for the first render of a semantic stream that predates the
+    /// mounted transcript presentation. That render seeds the reconciler with
+    /// already-visible words; subsequent appends use normal live animation.
+    let animatesInitialContent: Bool
     let reduceMotion: Bool
 }
 
@@ -201,6 +246,20 @@ final class StreamingTextAnimationState {
         let oldWords = words
         var nextWords: [Word] = []
         nextWords.reserveCapacity(ranges.count)
+
+        if !context.animatesInitialContent {
+            // Navigation/remount baseline: populate the same word ledger the
+            // live path uses, but put every current word safely in the past.
+            // When the mount switches to live mode, an unchanged prefix keeps
+            // these starts and only later appended words receive fresh ones.
+            let settledStart = now - StreamingTextAnimationSpec.fadeDuration
+            for range in ranges {
+                nextWords.append(Word(text: range.text, startTime: settledStart))
+            }
+            documentSource = context.documentSource
+            words = nextWords
+            return PreparedStreamingText(text: base, latestAnimationEnd: nil)
+        }
 
         if context.reduceMotion {
             // Existing and currently visible content becomes settled. If the

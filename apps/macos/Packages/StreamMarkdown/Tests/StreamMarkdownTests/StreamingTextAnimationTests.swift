@@ -93,6 +93,7 @@ struct StreamingTextAnimationTests {
             sourceID: "paragraph-0",
             documentSource: "Hello",
             isStreaming: true,
+            animatesInitialContent: true,
             reduceMotion: false
         )
         let first = state.prepare(
@@ -112,6 +113,7 @@ struct StreamingTextAnimationTests {
             sourceID: "paragraph-0",
             documentSource: "Hello world",
             isStreaming: true,
+            animatesInitialContent: true,
             reduceMotion: false
         )
         let second = state.prepare(
@@ -144,6 +146,7 @@ struct StreamingTextAnimationTests {
                 sourceID: "paragraph-0",
                 documentSource: "Immediately visible",
                 isStreaming: true,
+                animatesInitialContent: true,
                 reduceMotion: true
             ),
             now: 1
@@ -158,11 +161,80 @@ struct StreamingTextAnimationTests {
                 sourceID: "paragraph-0",
                 documentSource: "Immediately visible",
                 isStreaming: false,
+                animatesInitialContent: true,
                 reduceMotion: false
             ),
             now: 1
         )
         #expect(complete.latestAnimationEnd == nil)
         #expect(complete.text.attribute(.streamMarkdownFade, at: 0, effectiveRange: nil) == nil)
+    }
+
+    @Test("A navigation baseline settles existing words and later appends still animate")
+    func navigationBaseline() {
+        let timeline = StreamingTextAnimationTimeline()
+        let state = StreamingTextAnimationState()
+        let baseline = state.prepare(
+            NSAttributedString(string: "Already here"),
+            context: StreamingTextAnimationContext(
+                timeline: timeline,
+                sourceID: "paragraph-0",
+                documentSource: "Already here",
+                isStreaming: true,
+                animatesInitialContent: false,
+                reduceMotion: false
+            ),
+            now: 1
+        )
+        #expect(baseline.latestAnimationEnd == nil)
+        #expect(baseline.text.attribute(.streamMarkdownFade, at: 0, effectiveRange: nil) == nil)
+
+        let appended = state.prepare(
+            NSAttributedString(string: "Already here now"),
+            context: StreamingTextAnimationContext(
+                timeline: timeline,
+                sourceID: "paragraph-0",
+                documentSource: "Already here now",
+                isStreaming: true,
+                animatesInitialContent: true,
+                reduceMotion: false
+            ),
+            now: 1.02
+        )
+        #expect(appended.text.attribute(.streamMarkdownFade, at: 0, effectiveRange: nil) == nil)
+        let newMetadata = appended.text.attribute(
+            .streamMarkdownFade,
+            at: 13,
+            effectiveRange: nil
+        ) as? StreamingTextFadeMetadata
+        #expect(newMetadata?.startTime == 1.02)
+    }
+
+    @Test("Presentation claims animate only the first live mount of a new semantic stream")
+    func presentationClaims() {
+        let presentation = StreamingTextAnimationPresentation(
+            settledStreamIDs: ["existing"]
+        )
+        #expect(!presentation.claimInitialAnimation(for: "existing"))
+        #expect(presentation.claimInitialAnimation(for: "new"))
+        #expect(!presentation.claimInitialAnimation(for: "new"))
+    }
+
+    @Test("Presentation establishes its navigation baseline only once")
+    func presentationBaseline() {
+        let presentation = StreamingTextAnimationPresentation()
+        var buildCount = 0
+        presentation.establishBaseline {
+            buildCount += 1
+            return ["existing"]
+        }
+        presentation.establishBaseline {
+            buildCount += 1
+            return ["later"]
+        }
+
+        #expect(buildCount == 1)
+        #expect(!presentation.claimInitialAnimation(for: "existing"))
+        #expect(presentation.claimInitialAnimation(for: "later"))
     }
 }

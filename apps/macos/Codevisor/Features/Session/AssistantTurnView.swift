@@ -1,9 +1,9 @@
 import ACPKit
 import AppKit
 import CodevisorCore
+import CodevisorUI
 import StreamMarkdown
 import SwiftUI
-import CodevisorUI
 
 /// Which chronological slice of a settled assistant turn this row owns.
 /// Active turns use `.complete`; settled plan turns split into planning and
@@ -40,6 +40,10 @@ struct AssistantTurnView: View {
     @Environment(\.transcriptInvalidateRowMeasurement) private var invalidateRowMeasurement
     @Environment(\.theme) private var theme
     @Environment(\.openSettings) private var openSettings
+    /// Turn-scoped semantic stream ledger. Existing entries are seeded as
+    /// settled when this row mounts (including a navigation remount); entries
+    /// first created afterward retain their initial live entrance animation.
+    @State private var textAnimationPresentation = StreamingTextAnimationPresentation()
     /// Transient one-shot guard for the finish/assert auto-collapse. Stays
     /// `@State`: it only matters while the turn is generating/settling, which
     /// is the mounted active row. A settled remount resets it harmlessly.
@@ -105,6 +109,10 @@ struct AssistantTurnView: View {
     }
 
     var body: some View {
+        let _ = textAnimationPresentation.establishBaseline(
+            settling: turn,
+            turnID: turnID
+        )
         let beforePlan = turn.workedItemsBeforePlan
         let afterPlan = turn.workedItemsAfterPlan
         // Hoisted: `finalText` re-scans the turn's entries per read, and this
@@ -166,7 +174,7 @@ struct AssistantTurnView: View {
             // newer text span starts — codex tags messages up front, so its
             // candidate never demotes.
             if presentation.showsResult,
-               let final = finalText, case let .text(_, markdown) = final {
+               let final = finalText, case let .text(entryID, markdown) = final {
                 // Selection lives inside each native TextKit run. Keeping it
                 // there avoids a selection modifier on the segment VStack and
                 // keeps first-click geometry identical to display geometry.
@@ -178,7 +186,12 @@ struct AssistantTurnView: View {
                 // one selectable TextKit storage.
                 StreamingMarkdownView(
                     markdown,
-                    isComplete: !turn.isGenerating
+                    isComplete: !turn.isGenerating,
+                    streamID: TranscriptStreamingTextIdentity.main(
+                        turnID: turnID,
+                        entryID: entryID
+                    ),
+                    animationPresentation: textAnimationPresentation
                 )
                 if let waitingOnBackgroundTask {
                     HStack(spacing: 8) {
@@ -344,7 +357,13 @@ struct AssistantTurnView: View {
                            let transcriptController {
                             DeferredTranscriptDetails(controller: transcriptController, itemId: itemId)
                         } else {
-                            TranscriptItemsView(items: items, turn: turn, isTurnActive: turn.isGenerating)
+                            TranscriptItemsView(
+                                items: items,
+                                turn: turn,
+                                turnID: turnID,
+                                isTurnActive: turn.isGenerating,
+                                animationPresentation: textAnimationPresentation
+                            )
                         }
                     }
                 }

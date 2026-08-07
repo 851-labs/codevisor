@@ -1,5 +1,54 @@
 import SwiftUI
 
+/// One SwiftUI identity's claim on a semantic text stream. A baseline lasts
+/// for exactly the first rendered pass, long enough for every native Markdown
+/// surface to seed its word reconciler, and then switches to normal live mode.
+@MainActor
+private final class StreamingMarkdownAnimationMount {
+    struct Resolution {
+        let animatesInitialContent: Bool
+        let activationToken: Int
+        let needsActivation: Bool
+    }
+
+    private var hasResolved = false
+    private var streamID: String?
+    private var presentationID: ObjectIdentifier?
+    private var isBaselining = false
+    private var activationToken = 0
+
+    func resolve(
+        streamID: String?,
+        presentation: StreamingTextAnimationPresentation?
+    ) -> Resolution {
+        let nextPresentationID = presentation.map(ObjectIdentifier.init)
+        if !hasResolved || self.streamID != streamID || presentationID != nextPresentationID {
+            hasResolved = true
+            self.streamID = streamID
+            presentationID = nextPresentationID
+            if let streamID, let presentation {
+                isBaselining = !presentation.claimInitialAnimation(for: streamID)
+            } else {
+                // Standalone callers retain the original behavior: an
+                // incomplete view animates the text it is first given.
+                isBaselining = false
+            }
+            if isBaselining { activationToken &+= 1 }
+        }
+        return Resolution(
+            animatesInitialContent: !isBaselining,
+            activationToken: activationToken,
+            needsActivation: isBaselining
+        )
+    }
+
+    func activate(token: Int) -> Bool {
+        guard isBaselining, token == activationToken else { return false }
+        isBaselining = false
+        return true
+    }
+}
+
 /// Renders markdown text, re-parsing on change so streamed responses display
 /// incrementally. Blocks render in document order, including tool output and
 /// partially-arrived code fences.
@@ -14,6 +63,8 @@ public struct StreamingMarkdownView: View {
     private let text: String
     private let isComplete: Bool
     private let foregroundColor: Color?
+    private let streamID: String?
+    private let animationPresentation: StreamingTextAnimationPresentation?
     @Environment(\.markdownTheme) private var theme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// Per-view-identity incremental state (see `StreamingSegmenter`). A
@@ -28,24 +79,41 @@ public struct StreamingMarkdownView: View {
     /// their own word identities but draw start times from this one queue.
     @State private var animationTimeline = StreamingTextAnimationTimeline()
     @State private var hasActiveEntranceAnimation = false
+    /// Separates a semantic stream's first live appearance from a native view
+    /// remount. The companion revision is only an invalidation signal after a
+    /// one-pass baseline; the mount object itself remains non-observable.
+    @State private var animationMount = StreamingMarkdownAnimationMount()
+    @State private var animationMountRevision = 0
 
     public init(
         _ text: String,
         isComplete: Bool = true,
-        foregroundColor: Color? = nil
+        foregroundColor: Color? = nil,
+        streamID: String? = nil,
+        animationPresentation: StreamingTextAnimationPresentation? = nil
     ) {
         self.text = text
         self.isComplete = isComplete
         self.foregroundColor = foregroundColor
+        self.streamID = streamID
+        self.animationPresentation = animationPresentation
     }
 
     public var body: some View {
+        let mount = animationMount.resolve(
+            streamID: streamID,
+            presentation: animationPresentation
+        )
+        let _ = animationMountRevision
         MarkdownSegmentListView(
             segments: segmenter.segments(for: text, isComplete: isComplete),
             foregroundColor: foregroundColor ?? theme.textForeground,
             animationTimeline: isComplete ? nil : animationTimeline,
+            animatesInitialContent: mount.animatesInitialContent,
             documentSource: text,
-            animationPath: "root",
+            // A reused SwiftUI/native surface must reset its word reconciler
+            // when the semantic transcript entry changes.
+            animationPath: streamID.map { "stream.\($0).root" } ?? "root",
             reduceMotion: reduceMotion
         )
         .preference(
@@ -66,6 +134,15 @@ public struct StreamingMarkdownView: View {
         }
         .onChange(of: reduceMotion) { _, reduced in
             if reduced { animationTimeline.reset() }
+        }
+        .task(id: mount.activationToken) {
+            guard mount.needsActivation else { return }
+            // The first native surfaces must consume the baseline before the
+            // same semantic stream becomes eligible for later append fades.
+            await Task.yield()
+            if animationMount.activate(token: mount.activationToken) {
+                animationMountRevision &+= 1
+            }
         }
     }
 }
@@ -89,6 +166,7 @@ struct MarkdownSegmentsView: View {
     let blocks: [MarkdownBlock]
     let foregroundColor: Color
     var animationTimeline: StreamingTextAnimationTimeline?
+    var animatesInitialContent = true
     var documentSource = ""
     var animationPath = "nested"
     var reduceMotion = false
@@ -98,6 +176,7 @@ struct MarkdownSegmentsView: View {
             segments: MarkdownSegment.segments(from: blocks),
             foregroundColor: foregroundColor,
             animationTimeline: animationTimeline,
+            animatesInitialContent: animatesInitialContent,
             documentSource: documentSource,
             animationPath: animationPath,
             reduceMotion: reduceMotion
@@ -110,6 +189,7 @@ struct MarkdownSegmentListView: View {
     let segments: [MarkdownSegment]
     let foregroundColor: Color
     let animationTimeline: StreamingTextAnimationTimeline?
+    let animatesInitialContent: Bool
     let documentSource: String
     let animationPath: String
     let reduceMotion: Bool
@@ -123,6 +203,7 @@ struct MarkdownSegmentListView: View {
                     foregroundColor: foregroundColor,
                     animationTimeline: animationTimeline,
                     animationEnabled: animationTimeline != nil,
+                    animatesInitialContent: animatesInitialContent,
                     documentSource: documentSource,
                     animationPath: "\(animationPath).\(index)",
                     reduceMotion: reduceMotion
@@ -143,6 +224,7 @@ private struct MarkdownSegmentView: View, Equatable {
     let foregroundColor: Color
     let animationTimeline: StreamingTextAnimationTimeline?
     let animationEnabled: Bool
+    let animatesInitialContent: Bool
     let documentSource: String
     let animationPath: String
     let reduceMotion: Bool
@@ -151,6 +233,7 @@ private struct MarkdownSegmentView: View, Equatable {
         lhs.segment == rhs.segment
             && lhs.foregroundColor == rhs.foregroundColor
             && lhs.animationEnabled == rhs.animationEnabled
+            && lhs.animatesInitialContent == rhs.animatesInitialContent
             && lhs.animationPath == rhs.animationPath
             && lhs.reduceMotion == rhs.reduceMotion
     }
@@ -168,6 +251,7 @@ private struct MarkdownSegmentView: View, Equatable {
                         sourceID: animationPath,
                         documentSource: documentSource,
                         isStreaming: true,
+                        animatesInitialContent: animatesInitialContent,
                         reduceMotion: reduceMotion
                     )
                 }
@@ -180,6 +264,7 @@ private struct MarkdownSegmentView: View, Equatable {
                 block: block,
                 foregroundColor: foregroundColor,
                 animationTimeline: animationTimeline,
+                animatesInitialContent: animatesInitialContent,
                 documentSource: documentSource,
                 animationPath: animationPath,
                 reduceMotion: reduceMotion
@@ -193,6 +278,7 @@ struct MarkdownBlockView: View {
     let block: MarkdownBlock
     let foregroundColor: Color
     var animationTimeline: StreamingTextAnimationTimeline?
+    var animatesInitialContent = true
     var documentSource = ""
     var animationPath = "block"
     var reduceMotion = false
@@ -214,6 +300,7 @@ struct MarkdownBlockView: View {
                         sourceID: animationPath,
                         documentSource: documentSource,
                         isStreaming: true,
+                        animatesInitialContent: animatesInitialContent,
                         reduceMotion: reduceMotion
                     )
                 }
@@ -234,6 +321,7 @@ struct MarkdownBlockView: View {
                     blocks: blocks,
                     foregroundColor: foregroundColor,
                     animationTimeline: animationTimeline,
+                    animatesInitialContent: animatesInitialContent,
                     documentSource: documentSource,
                     animationPath: "\(animationPath).quote",
                     reduceMotion: reduceMotion

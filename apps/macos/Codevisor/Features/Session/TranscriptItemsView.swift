@@ -1,8 +1,8 @@
 import ACPKit
 import CodevisorCore
+import CodevisorUI
 import StreamMarkdown
 import SwiftUI
-import CodevisorUI
 
 /// Renders a list of worked items — reasoning text, tool groups, and subagent
 /// sections. Shared by the top-level turn transcript and each nested subagent
@@ -12,7 +12,12 @@ struct TranscriptItemsView: View {
     @Environment(\.theme) private var theme
     /// The owning turn: subagent threads are looked up here by tool call id.
     let turn: AssistantTurn
+    let turnID: UUID
     let isTurnActive: Bool
+    let animationPresentation: StreamingTextAnimationPresentation
+    /// Nil for the main turn; a tool-call id for the subagent transcript
+    /// bucket currently being rendered.
+    var parentToolCallID: String? = nil
     var depth: Int = 0
 
     /// Depth at which further subagent sections render as plain tool rows.
@@ -26,14 +31,16 @@ struct TranscriptItemsView: View {
         let trailingToolCallIds = depth == 0 && isTurnActive ? turn.trailingToolCallIds : []
         ForEach(items) { item in
             switch item {
-            case let .text(_, markdown):
+            case let .text(entryID, markdown):
                 // Streaming render mode while the turn is live: commentary
                 // spans stream the same way the final answer does, so they get
                 // the same O(growing block) per-flush cost bound.
                 StreamingMarkdownView(
                     markdown,
                     isComplete: !isTurnActive,
-                    foregroundColor: theme.textSecondary
+                    foregroundColor: theme.textSecondary,
+                    streamID: streamID(for: entryID),
+                    animationPresentation: animationPresentation
                 )
             case let .toolGroup(_, calls):
                 ToolGroupView(
@@ -55,12 +62,30 @@ struct TranscriptItemsView: View {
                 }
             case let .subagent(_, call):
                 if depth + 1 < Self.maxNestingDepth {
-                    SubagentSectionView(call: call, turn: turn, isTurnActive: isTurnActive, depth: depth + 1)
+                    SubagentSectionView(
+                        call: call,
+                        turn: turn,
+                        turnID: turnID,
+                        isTurnActive: isTurnActive,
+                        animationPresentation: animationPresentation,
+                        depth: depth + 1
+                    )
                 } else {
                     ToolCallRow(call: call, isTurnActive: isTurnActive)
                 }
             }
         }
+    }
+
+    private func streamID(for entryID: String) -> String {
+        if let parentToolCallID {
+            return TranscriptStreamingTextIdentity.subagent(
+                turnID: turnID,
+                parentToolCallID: parentToolCallID,
+                entryID: entryID
+            )
+        }
+        return TranscriptStreamingTextIdentity.main(turnID: turnID, entryID: entryID)
     }
 }
 
@@ -70,7 +95,9 @@ struct TranscriptItemsView: View {
 struct SubagentSectionView: View {
     let call: ToolCall
     let turn: AssistantTurn
+    let turnID: UUID
     let isTurnActive: Bool
+    let animationPresentation: StreamingTextAnimationPresentation
     let depth: Int
     @Environment(\.theme) private var theme
     @Environment(\.transcriptDisclosure) private var disclosureStore
@@ -107,7 +134,15 @@ struct SubagentSectionView: View {
             header
             TranscriptDisclosureContentReveal(isExpanded: isExpanded) {
                 VStack(alignment: .leading, spacing: 12) {
-                    TranscriptItemsView(items: items, turn: turn, isTurnActive: isTurnActive, depth: depth)
+                    TranscriptItemsView(
+                        items: items,
+                        turn: turn,
+                        turnID: turnID,
+                        isTurnActive: isTurnActive,
+                        animationPresentation: animationPresentation,
+                        parentToolCallID: call.toolCallId,
+                        depth: depth
+                    )
                     if isRunning, transcript?.isThinking == true {
                         ShimmeringText.thinking
                     } else if isRunning, items.isEmpty {
@@ -187,7 +222,13 @@ struct SubagentSectionView: View {
     )
     return ScrollView {
         VStack(alignment: .leading, spacing: 12) {
-            TranscriptItemsView(items: turn.streamingItems, turn: turn, isTurnActive: true)
+            TranscriptItemsView(
+                items: turn.streamingItems,
+                turn: turn,
+                turnID: UUID(),
+                isTurnActive: true,
+                animationPresentation: StreamingTextAnimationPresentation()
+            )
         }
         .padding()
     }
