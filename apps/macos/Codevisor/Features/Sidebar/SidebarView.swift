@@ -141,6 +141,9 @@ struct SidebarView: View {
     @State private var workspaceRevision = 0
     @State private var draggingProjectID: UUID?
     @State private var draggingSessionID: UUID?
+    @State private var isPointerInsideSidebar = false
+    @State private var deferredProjectOrder = InteractionDeferredOrder<UUID>()
+    @State private var deferredSessionOrder = InteractionDeferredOrder<UUID>()
     @ClientPreference("sidebar.organization", default: SidebarOrganization.compact.rawValue)
     private var organizationRaw
     @ClientPreference("sidebar.order", default: SidebarOrder.updated.rawValue)
@@ -202,8 +205,10 @@ struct SidebarView: View {
 
     private var visibleProjects: [Project] {
         let active = list.activeProjects
-        guard order == .none else { return sortedProjects(active) }
-        return manuallyOrdered(active, ids: projectOrder, id: \.id)
+        if order == .none {
+            return manuallyOrdered(active, ids: projectOrder, id: \.id)
+        }
+        return deferredProjectOrder.applying(to: sortedProjects(active), id: \.id)
     }
 
     /// Projects shown as folders in "by project": scratch backing projects
@@ -224,10 +229,11 @@ struct SidebarView: View {
             .flatMap { project in
                 list.sessions(in: project).map { SidebarSessionListItem(session: $0, project: project) }
             }
-        guard order == .none else {
-            return sessions.sorted { left, right in
+        if order != .none {
+            let sorted = sessions.sorted { left, right in
                 compareSessions(left.session, right.session)
             }
+            return deferredSessionOrder.applying(to: sorted, id: \.id)
         }
         return manuallyOrderedSessions(sessions, session: \.session)
     }
@@ -447,6 +453,13 @@ struct SidebarView: View {
 
         }
         .themedSurface(.sidebar)
+        .hoverTracking($isPointerInsideSidebar, respectsSuspension: false)
+        .onChange(of: isPointerInsideSidebar) { _, isInside in
+            setAutomaticOrderDeferred(isInside)
+        }
+        .onDisappear {
+            releaseDeferredOrder(animated: false)
+        }
         .addProjectFlow(addProjectFlow) { project in
             expanded.insert(project.id)
             selection = .newChat(project.id)
@@ -535,8 +548,12 @@ struct SidebarView: View {
             backfillWorkspaces()
         }
         .onChange(of: chronologicalSessions.map(\.id)) { oldIDs, newIDs in
+            deferredSessionOrder.incorporate(newIDs)
             backfillWorkspaces()
             revealNewChatWorkspaces(Set(newIDs).subtracting(Set(oldIDs)))
+        }
+        .onChange(of: visibleProjects.map(\.id)) { _, newIDs in
+            deferredProjectOrder.incorporate(newIDs)
         }
         .sheet(item: $iconEditing) { project in
             IconPickerView(currentSymbol: project.symbolName) { symbol in
@@ -1553,8 +1570,38 @@ struct SidebarView: View {
 
     private func orderedSessions(in project: Project) -> [ChatSession] {
         let sessions = list.sessions(in: project)
-        guard order == .none else { return sessions.sorted(by: compareSessions) }
+        guard order == .none else {
+            return deferredSessionOrder.applying(
+                to: sessions.sorted(by: compareSessions),
+                id: \.id
+            )
+        }
         return manuallyOrderedSessions(sessions, session: \.self)
+    }
+
+    /// Automatic priority/recency updates keep changing row content while the
+    /// pointer is in the sidebar, but their identity order is held until the
+    /// pointer leaves. Manual drag order bypasses these snapshots entirely.
+    private func setAutomaticOrderDeferred(_ isDeferred: Bool) {
+        if isDeferred {
+            deferredProjectOrder.lock(to: visibleProjects.map(\.id))
+            deferredSessionOrder.lock(to: chronologicalSessions.map(\.id))
+        } else {
+            releaseDeferredOrder(animated: true)
+        }
+    }
+
+    private func releaseDeferredOrder(animated: Bool) {
+        guard deferredProjectOrder.isLocked || deferredSessionOrder.isLocked else { return }
+        if animated {
+            withAnimation(Motion.listReflow(reduceMotion: reduceMotion)) {
+                deferredProjectOrder.unlock()
+                deferredSessionOrder.unlock()
+            }
+        } else {
+            deferredProjectOrder.unlock()
+            deferredSessionOrder.unlock()
+        }
     }
 
     /// `activityColor` mirrors the foreground style the calling row applies, so

@@ -52,6 +52,7 @@ private enum HomeOrder: String, CaseIterable {
 /// to action at the bottom.
 struct HomeView: View {
     @Environment(AppEnvironment.self) private var environment
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @ClientPreference("sidebar.organization", default: HomeOrganization.compact.rawValue)
     private var organizationRaw
@@ -70,6 +71,9 @@ struct HomeView: View {
     @State private var path: [HomeRoute] = []
     @State private var pendingDeeplink: MachineDeeplink?
     @State private var deeplinkError: String?
+    @State private var isPointerInsideSidebar = false
+    @GestureState private var isTouchingSidebar = false
+    @State private var deferredSessionOrder = InteractionDeferredOrder<UUID>()
 
     private var organization: HomeOrganization {
         HomeOrganization(rawValue: organizationRaw) ?? .compact
@@ -101,31 +105,34 @@ struct HomeView: View {
     private var visibleSessions: [ChatSession] {
         let sessions = projectList.sessions
             .filter { $0.serverId == machines.selectedMachineId && !$0.isArchived }
+        let desired: [ChatSession]
         switch order {
         case .updated:
             // Priority first (errors, waiting, unread), then recency — the
             // macOS sidebar's default.
-            return sessions.sorted { lhs, rhs in
+            desired = sessions.sorted { lhs, rhs in
                 let lp = priority(for: lhs)
                 let rp = priority(for: rhs)
                 if lp != rp { return lp < rp }
                 return lhs.sidebarStateChangedAt > rhs.sidebarStateChangedAt
             }
         case .created:
-            return sessions.sorted { $0.createdAt > $1.createdAt }
+            desired = sessions.sorted { $0.createdAt > $1.createdAt }
         case .none:
             let ordered = manualSessionOrder
                 .split(separator: "\n")
                 .compactMap { UUID(uuidString: String($0)) }
             var index: [UUID: Int] = [:]
             for (position, id) in ordered.enumerated() { index[id] = position }
-            return sessions.sorted { lhs, rhs in
+            desired = sessions.sorted { lhs, rhs in
                 let li = index[lhs.id] ?? Int.max
                 let ri = index[rhs.id] ?? Int.max
                 if li != ri { return li < ri }
                 return lhs.sidebarStateChangedAt > rhs.sidebarStateChangedAt
             }
         }
+        guard order != .none else { return desired }
+        return deferredSessionOrder.applying(to: desired, id: \.id)
     }
 
     /// Sort tier for a chat row. Every state checked here is visible on the
@@ -157,6 +164,22 @@ struct HomeView: View {
                 } else {
                     sessionList
                 }
+            }
+            .onHover { isPointerInsideSidebar = $0 }
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 0)
+                    .updating($isTouchingSidebar) { _, isTouching, _ in
+                        isTouching = true
+                    }
+            )
+            .onChange(of: isPointerInsideSidebar || isTouchingSidebar) { _, isInteracting in
+                setAutomaticOrderDeferred(isInteracting)
+            }
+            .onChange(of: visibleSessions.map(\.id)) { _, newIDs in
+                deferredSessionOrder.incorporate(newIDs)
+            }
+            .onDisappear {
+                releaseDeferredOrder(animated: false)
             }
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -365,6 +388,25 @@ struct HomeView: View {
         var ids = visibleSessions.map(\.id)
         ids.move(fromOffsets: source, toOffset: destination)
         manualSessionOrder = ids.map(\.uuidString).joined(separator: "\n")
+    }
+
+    private func setAutomaticOrderDeferred(_ isDeferred: Bool) {
+        if isDeferred {
+            deferredSessionOrder.lock(to: visibleSessions.map(\.id))
+        } else {
+            releaseDeferredOrder(animated: true)
+        }
+    }
+
+    private func releaseDeferredOrder(animated: Bool) {
+        guard deferredSessionOrder.isLocked else { return }
+        if animated {
+            withAnimation(Motion.listReflow(reduceMotion: reduceMotion)) {
+                deferredSessionOrder.unlock()
+            }
+        } else {
+            deferredSessionOrder.unlock()
+        }
     }
 
     private func projectName(for session: ChatSession) -> String? {
