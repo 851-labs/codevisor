@@ -78,6 +78,9 @@ struct ChatInputEditor: NSViewRepresentable {
         textView.textContainer?.lineFragmentPadding = 0
 
         let scroll = NSScrollView()
+        let clipView = GrowingTextClipView()
+        clipView.maximumGrowingHeight = maxHeight
+        scroll.contentView = clipView
         scroll.drawsBackground = false
         scroll.hasVerticalScroller = false
         scroll.hasHorizontalScroller = false
@@ -108,6 +111,9 @@ struct ChatInputEditor: NSViewRepresentable {
         textView.onKeyCommand = onKeyCommand
         textView.onPasteAttachments = onPasteAttachments
         textView.isEditable = isEnabled
+        if let clipView = scrollView.contentView as? GrowingTextClipView {
+            clipView.maximumGrowingHeight = maxHeight
+        }
         if textView.string != text {
             textView.string = text
         }
@@ -131,13 +137,19 @@ struct ChatInputEditor: NSViewRepresentable {
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
-    private func recalculateHeight(_ textView: NSTextView) {
+    private func recalculateHeight(_ textView: NSTextView, synchronously: Bool = false) {
         guard let layoutManager = textView.layoutManager, let container = textView.textContainer else { return }
         layoutManager.ensureLayout(for: container)
         let used = layoutManager.usedRect(for: container).height + textView.textContainerInset.height * 2
         let clamped = min(max(used, minHeight), maxHeight)
         if abs(clamped - calculatedHeight) > 0.5 {
-            DispatchQueue.main.async { calculatedHeight = clamped }
+            if synchronously {
+                calculatedHeight = clamped
+            } else {
+                // Measurements made while SwiftUI is creating or updating the
+                // representable cannot write view state in that same update.
+                DispatchQueue.main.async { calculatedHeight = clamped }
+            }
         }
     }
 
@@ -184,9 +196,14 @@ struct ChatInputEditor: NSViewRepresentable {
 
         func textDidChange(_ notification: Notification) {
             guard let textView = notification.object as? NSTextView else { return }
-            parent.text = textView.string
             recordMeasurement(textView)
-            parent.recalculateHeight(textView)
+            parent.text = textView.string
+            // A native edit callback is outside updateNSView, so publish its
+            // height immediately. Deferring this by another main-queue turn
+            // lets NSTextView scroll the new caret inside the old, shorter
+            // viewport and produces a visible one-line jump before SwiftUI
+            // grows the composer.
+            parent.recalculateHeight(textView, synchronously: true)
         }
 
         func textViewDidChangeSelection(_ notification: Notification) {
@@ -214,6 +231,32 @@ struct ChatInputEditor: NSViewRepresentable {
                 return false
             }
         }
+    }
+}
+
+/// Keeps an auto-growing text view top-pinned until it reaches its height cap.
+///
+/// NSTextView scrolls its insertion point into view after notifying its
+/// delegate of an edit. At that instant SwiftUI may not have applied the new
+/// measured height to the enclosing NSScrollView yet. The default clip view
+/// therefore scrolls down by one line, briefly clipping the top of the draft.
+/// Content that still fits in the editor's growing range should never scroll;
+/// once the document is taller than the cap, normal AppKit caret-following
+/// behavior resumes.
+private final class GrowingTextClipView: NSClipView {
+    var maximumGrowingHeight: CGFloat = 0
+
+    override func constrainBoundsRect(_ proposedBounds: NSRect) -> NSRect {
+        var bounds = super.constrainBoundsRect(proposedBounds)
+        guard maximumGrowingHeight > 0,
+              let documentView,
+              documentView.frame.height <= maximumGrowingHeight + 0.5 else {
+            return bounds
+        }
+        bounds.origin.y = documentView.isFlipped
+            ? 0
+            : max(0, documentView.frame.height - bounds.height)
+        return bounds
     }
 }
 
