@@ -587,18 +587,7 @@ struct SidebarView: View {
                 }
             }
         }
-        .onAppear {
-            expanded = Set(
-                expandedProjectsRaw
-                    .split(separator: "\n")
-                    .compactMap { UUID(uuidString: String($0)) }
-            )
-            expandedWorkspaces = Set(
-                expandedWorkspacesRaw
-                    .split(separator: "\n")
-                    .compactMap { UUID(uuidString: String($0)) }
-            )
-        }
+        .onAppear(perform: restoreExpandedState)
         .onChange(of: expanded) { _, newValue in
             expandedProjectsRaw = newValue.map(\.uuidString).sorted().joined(separator: "\n")
         }
@@ -620,6 +609,18 @@ struct SidebarView: View {
     /// One shared flow: pick a folder on the machine or clone a repository.
     private func startAddProject() {
         addProjectFlow.begin()
+    }
+
+    private func restoreExpandedState() {
+        expanded = persistedIDs(from: expandedProjectsRaw)
+        expandedWorkspaces = persistedIDs(from: expandedWorkspacesRaw)
+    }
+
+    private func persistedIDs(from rawValue: String) -> Set<UUID> {
+        let ids: [UUID] = rawValue
+            .split(separator: "\n")
+            .compactMap { UUID(uuidString: String($0)) }
+        return Set(ids)
     }
 
     /// One skip entry per machine + version, so dismissing one machine's
