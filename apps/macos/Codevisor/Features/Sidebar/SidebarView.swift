@@ -334,6 +334,10 @@ struct SidebarView: View {
     }
 
     var body: some View {
+        sidebarConfiguredView
+    }
+
+    private var sidebarContent: some View {
         VStack(spacing: 0) {
             if let release = environment.appUpdate.availableRelease,
                release.version != skippedUpdateVersion {
@@ -452,6 +456,10 @@ struct SidebarView: View {
             }
 
         }
+    }
+
+    private var sidebarInteractionView: some View {
+        sidebarContent
         .themedSurface(.sidebar)
         .hoverTracking($isPointerInsideSidebar, respectsSuspension: false)
         .onChange(of: isPointerInsideSidebar) { _, isInside in
@@ -465,6 +473,10 @@ struct SidebarView: View {
             selection = .newChat(project.id)
             offerSessionImport(for: project)
         }
+    }
+
+    private var sidebarImportAndChatRenameAlertsView: some View {
+        sidebarInteractionView
         .alert(
             "Import Existing Chats?",
             isPresented: Binding(
@@ -496,6 +508,10 @@ struct SidebarView: View {
             }
             Button("Cancel", role: .cancel) {}
         }
+    }
+
+    private var sidebarRemainingAlertsView: some View {
+        sidebarImportAndChatRenameAlertsView
         .alert(
             "Rename Workspace",
             isPresented: Binding(
@@ -522,7 +538,7 @@ struct SidebarView: View {
         // just as likely to be exploratory as intentional. Confirm before
         // pulling the item back into the sidebar.
         .alert(
-            restoreRequest.map { "Restore \($0.kind)?" } ?? "Restore?",
+            restoreAlertTitle,
             isPresented: Binding(
                 get: { restoreRequest != nil },
                 set: { if !$0 { restoreRequest = nil } }
@@ -534,6 +550,10 @@ struct SidebarView: View {
         } message: { request in
             Text("“\(request.name)” will move back into the sidebar.")
         }
+    }
+
+    private var sidebarChangeObserversView: some View {
+        sidebarRemainingAlertsView
         // Collapsing resets paging so reopening starts at the newest page
         // instead of restoring a deep scroll the user has forgotten about.
         .onChange(of: archivedExpanded) { _, isExpanded in
@@ -555,6 +575,10 @@ struct SidebarView: View {
         .onChange(of: visibleProjects.map(\.id)) { _, newIDs in
             deferredProjectOrder.incorporate(newIDs)
         }
+    }
+
+    private var sidebarSheetsView: some View {
+        sidebarChangeObserversView
         .sheet(item: $iconEditing) { project in
             IconPickerView(currentSymbol: project.symbolName) { symbol in
                 list.setIcon(symbol, for: project)
@@ -587,6 +611,10 @@ struct SidebarView: View {
                 }
             }
         }
+    }
+
+    private var sidebarConfiguredView: some View {
+        sidebarSheetsView
         .onAppear(perform: restoreExpandedState)
         .onChange(of: expanded) { _, newValue in
             expandedProjectsRaw = newValue.map(\.uuidString).sorted().joined(separator: "\n")
@@ -604,6 +632,11 @@ struct SidebarView: View {
                 )
                 : nil
         )
+    }
+
+    private var restoreAlertTitle: String {
+        guard let restoreRequest else { return "Restore?" }
+        return "Restore \(restoreRequest.kind)?"
     }
 
     /// One shared flow: pick a folder on the machine or clone a repository.
