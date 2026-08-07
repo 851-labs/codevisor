@@ -43,6 +43,37 @@ struct StreamingTextAnimationTests {
         #expect(timeline.scheduleSegment(at: 5) == 5)
     }
 
+    @Test("Timeline stays active through the final scheduled glyph fade")
+    func activityLifetime() {
+        let timeline = StreamingTextAnimationTimeline()
+        let firstStart = timeline.scheduleSegment(at: 10)
+        let secondStart = timeline.scheduleSegment(at: 10)
+
+        #expect(timeline.isAnimationActive(at: firstStart))
+        #expect(timeline.isAnimationActive(at: secondStart + 0.149))
+        #expect(!timeline.isAnimationActive(at: secondStart + 0.150))
+
+        timeline.reset()
+        #expect(!timeline.isAnimationActive(at: 10))
+    }
+
+    @Test("Activity observer follows scheduling and reset")
+    func activityObserver() async {
+        let timeline = StreamingTextAnimationTimeline()
+        var reports: [Bool] = []
+        timeline.observeActivity { reports.append($0) }
+        await Task.yield()
+        #expect(reports == [false])
+
+        _ = timeline.scheduleSegment(at: ProcessInfo.processInfo.systemUptime)
+        await Task.yield()
+        #expect(reports.last == true)
+
+        timeline.reset()
+        await Task.yield()
+        #expect(reports.last == false)
+    }
+
     @Test("Fade curve is bounded, monotonic, and reaches both endpoints")
     func fadeCurve() {
         #expect(StreamingTextFadeCurve.value(at: 0) == 0)

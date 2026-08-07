@@ -25,6 +25,11 @@ enum StreamingTextAnimationSpec {
 @MainActor
 final class StreamingTextAnimationTimeline {
     private var nextSegmentStartTime: TimeInterval = 0
+    private var latestAnimationEndTime: TimeInterval?
+    private var activityObserver: ((Bool) -> Void)?
+    private var activityEndTask: Task<Void, Never>?
+    private var reportedActive = false
+    private var observerGeneration = 0
 
     func scheduleSegment(at now: TimeInterval) -> TimeInterval {
         let start = max(nextSegmentStartTime, now)
@@ -33,11 +38,86 @@ final class StreamingTextAnimationTimeline {
             ? StreamingTextAnimationSpec.segmentDelay
             : StreamingTextAnimationSpec.catchUpDelay
         nextSegmentStartTime = start + step
+        noteAnimation(until: start + StreamingTextAnimationSpec.fadeDuration, now: now)
         return start
     }
 
     func reset() {
         nextSegmentStartTime = 0
+        latestAnimationEndTime = nil
+        activityEndTask?.cancel()
+        activityEndTask = nil
+        reportActivity(false)
+    }
+
+    /// Lets the SwiftUI layer mirror the exact lifetime of the native glyph
+    /// fade. The transcript uses that signal to avoid claiming it is waiting
+    /// while commentary text is still visibly entering.
+    func observeActivity(_ observer: ((Bool) -> Void)?) {
+        observerGeneration &+= 1
+        activityObserver = observer
+        guard observer != nil else {
+            activityEndTask?.cancel()
+            activityEndTask = nil
+            reportedActive = false
+            return
+        }
+
+        let now = CACurrentMediaTime()
+        let active = isAnimationActive(at: now)
+        reportedActive = active
+        deliverActivity(active)
+        if active, let latestAnimationEndTime {
+            scheduleActivityEnd(at: latestAnimationEndTime, now: now)
+        }
+    }
+
+    func isAnimationActive(at time: TimeInterval) -> Bool {
+        latestAnimationEndTime.map { $0 > time } ?? false
+    }
+
+    private func noteAnimation(until endTime: TimeInterval, now: TimeInterval) {
+        guard endTime > latestAnimationEndTime ?? -.infinity else { return }
+        latestAnimationEndTime = endTime
+        guard activityObserver != nil else { return }
+        reportActivity(true)
+        scheduleActivityEnd(at: endTime, now: now)
+    }
+
+    private func scheduleActivityEnd(at endTime: TimeInterval, now: TimeInterval) {
+        activityEndTask?.cancel()
+        let delay = max(0, endTime - now)
+        activityEndTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(delay))
+            guard !Task.isCancelled, let self else { return }
+            let currentTime = CACurrentMediaTime()
+            if self.isAnimationActive(at: currentTime), let latestAnimationEndTime = self.latestAnimationEndTime {
+                self.scheduleActivityEnd(at: latestAnimationEndTime, now: currentTime)
+            } else {
+                self.activityEndTask = nil
+                self.reportActivity(false)
+            }
+        }
+    }
+
+    private func reportActivity(_ active: Bool) {
+        guard reportedActive != active else { return }
+        reportedActive = active
+        deliverActivity(active)
+    }
+
+    private func deliverActivity(_ active: Bool) {
+        guard let observer = activityObserver else { return }
+        let generation = observerGeneration
+        // Segment scheduling runs inside a representable update. Deferring the
+        // state write avoids mutating SwiftUI state during that render pass.
+        Task { @MainActor [weak self] in
+            guard let self,
+                  self.observerGeneration == generation,
+                  self.reportedActive == active,
+                  self.activityObserver != nil else { return }
+            observer(active)
+        }
     }
 }
 

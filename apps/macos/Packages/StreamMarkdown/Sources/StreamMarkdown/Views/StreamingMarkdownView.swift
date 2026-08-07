@@ -27,6 +27,7 @@ public struct StreamingMarkdownView: View {
     /// Message-wide visual cadence. Individual native text surfaces retain
     /// their own word identities but draw start times from this one queue.
     @State private var animationTimeline = StreamingTextAnimationTimeline()
+    @State private var hasActiveEntranceAnimation = false
 
     public init(
         _ text: String,
@@ -47,9 +48,36 @@ public struct StreamingMarkdownView: View {
             animationPath: "root",
             reduceMotion: reduceMotion
         )
+        .preference(
+            key: StreamingMarkdownEntranceAnimationPreferenceKey.self,
+            value: hasActiveEntranceAnimation
+        )
+        .onAppear {
+            animationTimeline.observeActivity { active in
+                hasActiveEntranceAnimation = active
+            }
+        }
+        .onDisappear {
+            animationTimeline.observeActivity(nil)
+            hasActiveEntranceAnimation = false
+        }
         .onChange(of: isComplete, initial: true) { _, complete in
             if complete { animationTimeline.reset() }
         }
+        .onChange(of: reduceMotion) { _, reduced in
+            if reduced { animationTimeline.reset() }
+        }
+    }
+}
+
+/// Aggregates the entrance-animation state of every streamed Markdown surface
+/// beneath a transcript row. Multiple commentary blocks can animate at once,
+/// so preference reduction is an OR rather than last-writer-wins.
+public struct StreamingMarkdownEntranceAnimationPreferenceKey: PreferenceKey {
+    public static let defaultValue = false
+
+    public static func reduce(value: inout Bool, nextValue: () -> Bool) {
+        value = value || nextValue()
     }
 }
 

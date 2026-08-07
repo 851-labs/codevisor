@@ -45,6 +45,7 @@ struct AssistantTurnView: View {
     /// is the mounted active row. A settled remount resets it harmlessly.
     @State private var hasAutoCollapsed = false
     @State private var isHovered = false
+    @State private var hasActiveTextEntranceAnimation = false
 
     init(
         turn: AssistantTurn,
@@ -151,7 +152,9 @@ struct AssistantTurnView: View {
                     )
                 } else if turn.isThinking {
                     ShimmeringText.thinking
-                } else {
+                } else if !hasActiveTextEntranceAnimation {
+                    // Commentary is not `finalText`, but its glyph fade is
+                    // still visible activity and wins over this idle fallback.
                     ShimmeringText(text: "Waiting on harness...")
                 }
             }
@@ -208,6 +211,9 @@ struct AssistantTurnView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .onPreferenceChange(StreamingMarkdownEntranceAnimationPreferenceKey.self) { active in
+            hasActiveTextEntranceAnimation = active
+        }
         // Whole-row hover target, full width and height: AppKit tracking
         // (not .onHover) so the transparent regions count too.
         .hoverTracking($isHovered)

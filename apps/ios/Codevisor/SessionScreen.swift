@@ -701,6 +701,7 @@ private struct AssistantTurnBody: View {
     }
 
     private var settled: Bool { !isGenerating && !hasRunningSubagent }
+    @State private var hasActiveTextEntranceAnimation = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -732,7 +733,9 @@ private struct AssistantTurnBody: View {
                     )
                 } else if turn.isThinking {
                     ShimmeringText.thinking
-                } else {
+                } else if !hasActiveTextEntranceAnimation {
+                    // Commentary is not `finalText`, but its glyph fade is
+                    // still visible activity and wins over this idle fallback.
                     ShimmeringText(text: "Waiting on harness...")
                 }
             }
@@ -744,6 +747,9 @@ private struct AssistantTurnBody: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .onPreferenceChange(StreamingMarkdownEntranceAnimationPreferenceKey.self) { active in
+            hasActiveTextEntranceAnimation = active
+        }
         // The macOS auto-collapse: sections fold into their summary line the
         // moment the turn (and its last background subagent) finishes.
         .onChange(of: settled) { _, isSettled in
