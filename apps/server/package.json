@@ -19,6 +19,8 @@
     "@babel/parser": "7.29.7",
     "@codevisor/agent-runtime": "workspace:*",
     "@codevisor/api": "workspace:*",
+    "@codevisor/cloud-client": "workspace:*",
+    "@codevisor/cloud-crypto": "workspace:*",
     "@codevisor/db": "workspace:*",
     "@codevisor/terminal": "workspace:*",
     "@earendil-works/pi-ai": "0.80.9",

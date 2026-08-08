@@ -312,6 +312,9 @@ struct RootView: View {
                         await environment.appUpdate.installUpdateUnattended()
                     }
                 }
+                // Restore the cloud account session (or adopt the dev cloud
+                // token) in the background; nothing at boot depends on it.
+                await environment.cloud.bootstrap()
             }
         }
         // codevisor://add-machine deeplinks, printed by `codevisor setup` on a
@@ -319,6 +322,10 @@ struct RootView: View {
         // alerts here pushed this already-large chain past the Swift type
         // checker's budget on release builds.
         .modifier(MachineDeeplinkHandling())
+        // codevisor://cloud-auth deeplinks — the browser handoff's fallback
+        // path when sign-in ran in the default browser instead of the
+        // ASWebAuthenticationSession sheet.
+        .modifier(CloudAuthDeeplinkHandling())
         .task(id: environment.machines.selectedMachineId) {
             // Warm the harness config cache in the background so the composer
             // pickers are populated instantly.
@@ -551,6 +558,27 @@ enum SidebarSelection: Hashable {
     RootView()
         .environment(AppEnvironment.preview())
         .frame(width: 1100, height: 720)
+}
+
+/// codevisor://cloud-auth?ott=… deeplink handling: completes a cloud sign-in
+/// that came back through the default browser (the in-app
+/// ASWebAuthenticationSession path never leaves the app) and routes to the
+/// Account settings tab so the result is visible.
+private struct CloudAuthDeeplinkHandling: ViewModifier {
+    @Environment(AppEnvironment.self) private var environment
+    @Environment(\.openSettings) private var openSettings
+
+    func body(content: Content) -> some View {
+        content
+            // No confirmation gate: the one-time token proves a sign-in this
+            // user just performed, is single-use, and expires in minutes.
+            .onOpenURL { url in
+                guard let deeplink = CloudAuthDeeplink.parse(url) else { return }
+                Task { await environment.cloud.completeSignIn(ott: deeplink.ott) }
+                SettingsRouter.shared.selectedTab = .machines
+                openSettings()
+            }
+    }
 }
 
 /// codevisor://add-machine deeplink handling: parse, confirm, add, and route

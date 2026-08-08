@@ -33,6 +33,10 @@ public struct MachineAppearance: Sendable, Codable, Equatable {
     public static let remoteDefault = MachineAppearance(
         symbolName: "network"
     )
+
+    public static let cloudDefault = MachineAppearance(
+        symbolName: "icloud"
+    )
 }
 
 public struct CodevisorMachine: Identifiable, Sendable, Codable, Equatable {
@@ -66,8 +70,19 @@ public struct CodevisorMachine: Identifiable, Sendable, Codable, Equatable {
 
     public var isLocal: Bool { id == Self.local.id }
 
+    /// True for machines reached through the Codevisor Cloud relay (their ids
+    /// are `cloud:<deviceId>`; they are synthesized from cloud presence, not
+    /// stored in the registry).
+    public var isCloud: Bool { id.hasPrefix(Self.cloudIdPrefix) }
+
     public var resolvedAppearance: MachineAppearance {
-        let fallback = isLocal ? MachineAppearance.localDefault : .remoteDefault
+        let fallback = if isLocal {
+            MachineAppearance.localDefault
+        } else if isCloud {
+            MachineAppearance.cloudDefault
+        } else {
+            MachineAppearance.remoteDefault
+        }
         guard let appearance,
               !appearance.symbolName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         else { return fallback }
@@ -84,6 +99,51 @@ public struct CodevisorMachine: Identifiable, Sendable, Codable, Equatable {
         baseURL: URL(string: "http://127.0.0.1:\(CodevisorServerConfig.localPort)")!,
         kind: "local"
     )
+
+    public static let cloudIdPrefix = "cloud:"
+    /// Cloud machines have no direct address; requests tunnel through the
+    /// relay, so their baseURL is a recognizable placeholder.
+    public static let cloudPlaceholderBaseURL = URL(string: "https://cloud-relay.invalid")!
+
+    /// The machine-list entry for a cloud presence entry that has no
+    /// configured (direct) machine. Its id is stable across launches because
+    /// the cloud device id is.
+    public static func cloud(from machine: CloudMachine) -> CodevisorMachine {
+        CodevisorMachine(
+            id: "\(cloudIdPrefix)\(machine.deviceId)",
+            name: machine.name,
+            baseURL: cloudPlaceholderBaseURL,
+            kind: "cloud"
+        )
+    }
+
+    /// The cloud device id for a `cloud:` machine id, nil otherwise.
+    public static func cloudDeviceId(forMachineId id: String) -> String? {
+        guard id.hasPrefix(cloudIdPrefix) else { return nil }
+        return String(id.dropFirst(cloudIdPrefix.count))
+    }
+}
+
+/// What the machine list needs from the cloud account feature: the signed-in
+/// account's machines plus relay-backed server configs for them. Implemented
+/// by CloudAccountController; fakes stand in for tests.
+@MainActor
+public protocol CloudMachineProviding: AnyObject {
+    var isCloudSignedIn: Bool { get }
+    var cloudMachines: [CloudMachine] { get }
+    /// A server config whose transports tunnel through the cloud relay to
+    /// this machine — nil when the relay isn't available (signed out).
+    func relayServerConfig(for machine: CloudMachine) -> CodevisorServerConfig?
+    /// A real `http://127.0.0.1:<port>` base URL for this machine, served by
+    /// an in-app loopback bridge that forwards plain HTTP/WebSocket onto the
+    /// relay — for baseURL consumers that spawn external processes (the
+    /// terminal proxy). Calling this may lazily start the bridge; nil until
+    /// it is listening (or when the implementation doesn't bridge).
+    func loopbackBaseURL(for machine: CloudMachine) -> URL?
+}
+
+public extension CloudMachineProviding {
+    func loopbackBaseURL(for machine: CloudMachine) -> URL? { nil }
 }
 
 public struct MachineRegistry: Sendable, Codable, Equatable {
@@ -107,6 +167,16 @@ public struct MachineRegistry: Sendable, Codable, Equatable {
 public struct MachineStatus: Sendable, Equatable {
     public var isReachable: Bool
     public var label: String
+    /// The machine's cloud device id (from /v1/info) when it is connected to
+    /// Codevisor Cloud — the identity that deduplicates it against the cloud
+    /// machine list.
+    public var cloudDeviceId: String?
+
+    public init(isReachable: Bool, label: String, cloudDeviceId: String? = nil) {
+        self.isReachable = isReachable
+        self.label = label
+        self.cloudDeviceId = cloudDeviceId
+    }
 }
 
 /// Progress of a client-triggered update of the selected machine's server.
@@ -259,10 +329,61 @@ public final class MachineController {
         )
     }
 
+    /// Bridges the cloud account feature in (set once at composition time).
+    /// While signed in, its machines join `allMachines` and its relay configs
+    /// back the clients for `cloud:` machine ids.
+    @ObservationIgnored public var cloudProvider: (any CloudMachineProviding)?
+
     public var machines: [CodevisorMachine] {
         var local = CodevisorMachine.local
         local.appearance = registry.localAppearance
         return [local] + registry.remoteMachines
+    }
+
+    /// Every machine the app can reach, however it arrives: the configured
+    /// (local + remote) machines plus one synthesized entry per cloud machine
+    /// that no configured machine already represents.
+    public var allMachines: [CodevisorMachine] {
+        machines + cloudOnlyMachines.map { cloud in
+            var machine = CodevisorMachine.cloud(from: cloud)
+            // A real loopback address (bridged onto the relay) replaces the
+            // placeholder once the machine's bridge is listening, so baseURL
+            // consumers like the external terminal proxy can actually dial it.
+            if let loopback = cloudProvider?.loopbackBaseURL(for: cloud) {
+                machine.baseURL = loopback
+            }
+            return machine
+        }
+    }
+
+    /// Cloud machines that aren't already represented by a configured machine,
+    /// so each machine appears exactly once. Primary match: the cloud device
+    /// id each connected server advertises via /v1/info. Fallback while a
+    /// server's status probe hasn't answered yet: display name. Empty while
+    /// signed out — cloud entries only exist alongside a live account.
+    public var cloudOnlyMachines: [CloudMachine] {
+        guard let cloudProvider, cloudProvider.isCloudSignedIn else { return [] }
+        // Statuses of cloud-synthesized entries also carry the device id;
+        // only configured machines' statuses count for deduplication or every
+        // probed cloud machine would deduplicate itself away.
+        let knownCloudIds = Set(
+            statusByMachineId
+                .filter { !$0.key.hasPrefix(CodevisorMachine.cloudIdPrefix) }
+                .values
+                .compactMap(\.cloudDeviceId)
+        )
+        let knownNames = Set(machines.map(\.name))
+        return cloudProvider.cloudMachines.filter {
+            !knownCloudIds.contains($0.deviceId) && !knownNames.contains($0.name)
+        }
+    }
+
+    /// The cloud presence entry backing a `cloud:` machine id, if any.
+    public func cloudMachine(forMachineId id: String) -> CloudMachine? {
+        guard let deviceId = CodevisorMachine.cloudDeviceId(forMachineId: id),
+              let cloudProvider, cloudProvider.isCloudSignedIn
+        else { return nil }
+        return cloudProvider.cloudMachines.first { $0.deviceId == deviceId }
     }
 
     public var selectedMachineId: String {
@@ -282,12 +403,37 @@ public final class MachineController {
     }
 
     public func machine(for id: String) -> CodevisorMachine? {
-        machines.first { $0.id == id }
+        allMachines.first { $0.id == id }
     }
 
     public func client(for machineId: String) -> any CodevisorServerClienting {
+        // Cloud machines get a real HTTP client whose transports tunnel every
+        // request/WebSocket through the account's encrypted relay, so all
+        // existing features work unchanged.
+        if let config = relayServerConfig(forMachineId: machineId) {
+            return CodevisorServerClient(
+                config: config,
+                requestGate: requestGate,
+                machineId: machineId
+            )
+        }
         let machine = machine(for: machineId) ?? CodevisorMachine.local
         return clientFactory(machine)
+    }
+
+    /// The server config for a machine id — relay-backed for cloud machines,
+    /// plain otherwise. Consumers that build their own transports from a
+    /// config (terminals) use this so cloud machines tunnel automatically.
+    public func serverConfig(for machineId: String) -> CodevisorServerConfig {
+        if let config = relayServerConfig(forMachineId: machineId) {
+            return config
+        }
+        return (machine(for: machineId) ?? selectedMachine).serverConfig
+    }
+
+    private func relayServerConfig(forMachineId machineId: String) -> CodevisorServerConfig? {
+        guard let cloud = cloudMachine(forMachineId: machineId) else { return nil }
+        return cloudProvider?.relayServerConfig(for: cloud)
     }
 
     public func selectMachine(_ id: String) {
@@ -296,6 +442,38 @@ public final class MachineController {
         beginWaiting(for: machine.id, reason: machine.isLocal ? .starting : .connecting)
         persist()
         projectList.selectServer(serverId: machine.id, serverClient: client(for: machine.id))
+    }
+
+    /// A cloud selection persisted across launches resolves to the local
+    /// machine until the account's machine list arrives. Once it does, rewire
+    /// project list and gate to the now-available cloud machine.
+    public func reconcileCloudSelection() {
+        let selectedId = selectedMachineId
+        guard selectedId.hasPrefix(CodevisorMachine.cloudIdPrefix),
+              machine(for: selectedId) != nil,
+              projectList.selectedServerId != selectedId
+        else { return }
+        selectMachine(selectedId)
+        // The shell's selection-change task is keyed on the machine id, which
+        // never changed here (the persisted selection was this cloud machine
+        // all along) — it will not refire, and without preparation the
+        // request gate would stay waiting forever. Kick it explicitly, like
+        // addRemote does for a freshly added machine.
+        Task { await prepareSelectedMachine() }
+    }
+
+    /// Cloud entries only exist while signed in; when the account signs out
+    /// with a cloud machine selected, fall back to the local machine so the
+    /// app never points at a machine that no longer exists.
+    public func handleCloudAccountSignedOut() {
+        guard selectedMachineId.hasPrefix(CodevisorMachine.cloudIdPrefix) else { return }
+        registry.selectedMachineId = CodevisorMachine.local.id
+        beginWaiting(for: CodevisorMachine.local.id, reason: .starting)
+        persist()
+        projectList.selectServer(
+            serverId: CodevisorMachine.local.id,
+            serverClient: client(for: CodevisorMachine.local.id)
+        )
     }
 
     @discardableResult
@@ -613,7 +791,11 @@ public final class MachineController {
         let client = client(for: id)
         do {
             let info = try await client.info()
-            statusByMachineId[id] = MachineStatus(isReachable: true, label: "\(info.name) \(info.version)")
+            statusByMachineId[id] = MachineStatus(
+                isReachable: true,
+                label: "\(info.name) \(info.version)",
+                cloudDeviceId: info.cloudDeviceId
+            )
             do {
                 updateInfoByMachineId[id] = try await client.updateInfo(
                     refresh: true,
@@ -846,8 +1028,13 @@ private extension MachineRegistry {
     func normalized() -> MachineRegistry {
         let remotes = remoteMachines.filter { !$0.isLocal }
         let allIds = Set(remotes.map(\.id)).union([CodevisorMachine.local.id])
+        // Cloud selections persist by id (stable across launches); when the
+        // machine isn't available (signed out), selection falls back to
+        // local at resolution time instead of being rewritten here.
+        let keepsSelection = allIds.contains(selectedMachineId)
+            || selectedMachineId.hasPrefix(CodevisorMachine.cloudIdPrefix)
         return MachineRegistry(
-            selectedMachineId: allIds.contains(selectedMachineId) ? selectedMachineId : CodevisorMachine.local.id,
+            selectedMachineId: keepsSelection ? selectedMachineId : CodevisorMachine.local.id,
             remoteMachines: remotes,
             localAppearance: localAppearance
         )

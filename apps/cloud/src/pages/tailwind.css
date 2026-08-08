@@ -1,0 +1,9 @@
+@import "tailwindcss";
+
+/* Sources: class names live in the page templates next to this file. */
+@source "./pages.tsx";
+
+@theme {
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
+}

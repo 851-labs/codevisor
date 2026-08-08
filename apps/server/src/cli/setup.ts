@@ -11,6 +11,7 @@ import {
   type CliDeps,
   type CommandOptions
 } from "./support.js"
+import { readCloudCredentials } from "./cloud-auth.js"
 
 export interface SelectChoice<A> {
   readonly title: string
@@ -135,9 +136,16 @@ const chooseHost = async (
   return entered.trim().length === 0 ? undefined : { host: entered.trim(), firewallNote: false }
 }
 
+export interface SetupOptions extends CommandOptions {
+  /// Runs the cloud device-code login (and restarts the server so it joins
+  /// the hub). Wired by cli.ts; when absent — tests, programmatic use — the
+  /// optional cloud step is skipped entirely.
+  readonly cloudLogin?: () => Promise<number>
+}
+
 export const setupCommand = async (
   deps: SetupDeps,
-  options: CommandOptions = {}
+  options: SetupOptions = {}
 ): Promise<number> => {
   if (deps.env["CODEVISOR_NO_SETUP"] === "1") {
     deps.log("Skipping setup (CODEVISOR_NO_SETUP=1). Run later with: codevisor setup")
@@ -196,6 +204,34 @@ export const setupCommand = async (
   deps.log(`  ${deeplink}`)
   deps.log("")
   deps.log("Keep the token private — anyone with it can run agents on this machine.")
+
+  // Optional last step: connect this machine to a Codevisor Cloud account so
+  // it shows up in the user's apps everywhere, no manual pairing. Never
+  // required, and setup succeeds regardless of how this step goes.
+  if (options.cloudLogin !== undefined && readCloudCredentials(deps) === undefined) {
+    deps.log("")
+    const wantsCloud = await deps.prompts.select("Connect this machine to Codevisor Cloud?", [
+      {
+        title: "Sign in",
+        value: true,
+        description:
+          "See and connect to this machine from your Codevisor apps anywhere — end-to-end encrypted."
+      },
+      {
+        title: "Skip for now",
+        value: false,
+        description: "You can connect it any time with: codevisor auth login"
+      }
+    ])
+    if (wantsCloud) {
+      const result = await options.cloudLogin()
+      if (result === 0) {
+        deps.log("✓ This machine is connected to your cloud account.")
+      } else {
+        deps.error("Cloud sign-in didn't finish; run `codevisor auth login` to try again.")
+      }
+    }
+  }
   return 0
 }
 

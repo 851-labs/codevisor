@@ -39,3 +39,7 @@ tmp/
 # Generated per-worktree iOS dev icon (scripts/dev-ios.mjs)
 apps/ios/Codevisor/Resources/AppIconDevGenerated.icon/
 apps/macos/Codevisor/Resources/AppIconDevGenerated.icon/
+
+# apps/cloud build artifacts
+apps/cloud/src/pages/generated/
+.dev.vars

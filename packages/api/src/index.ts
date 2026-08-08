@@ -1,6 +1,7 @@
 import { Schema } from "effect"
 import { BackgroundTask, QuestionAnswerEntry, QuestionPayload } from "./session-updates.js"
 
+export * from "./cloud-protocol.js"
 export * from "./session-updates.js"
 
 export const isoTimestamp = (): string => new Date().toISOString()

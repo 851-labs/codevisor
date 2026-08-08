@@ -1,9 +1,9 @@
 import { createHash, X509Certificate } from "node:crypto"
-import { spawn } from "node:child_process"
+import { execFileSync, spawn } from "node:child_process"
 import { access, cp, mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises"
 import { createServer } from "node:net"
 import { homedir } from "node:os"
-import { basename, join } from "node:path"
+import { basename, join, resolve } from "node:path"
 import process from "node:process"
 import { fileURLToPath } from "node:url"
 
@@ -47,6 +47,46 @@ const wwwPort = requestedWwwPort ?? (await findAvailablePort(preferredWwwPort, 6
 const remotePort = await findAvailablePort(port + 1, 51_000, 10_000)
 const remoteName = `Dev Remote (${worktreeName})`
 
+// The cloud dev instance (apps/cloud on `wrangler dev`): auth + relay hub,
+// running fully locally with DEV_AUTH enabled and state under tmp/.
+// Pin CODEVISOR_DEV_CLOUD_PORT (e.g. 8787) when testing real GitHub OAuth —
+// OAuth apps allow exactly one callback URL, so it must be a stable port that
+// matches the app's registered http://localhost:<port>/api/auth/callback/github.
+// Optional cloud dev vars (real GitHub OAuth, pinned port) live in
+// apps/cloud/.dev.vars — gitignored, created once in the MAIN clone. Worktrees
+// read the main clone's copy automatically, so a new worktree needs zero
+// setup; a worktree-local .dev.vars takes precedence when present. See
+// apps/cloud/.dev.vars.example.
+const cloudDevVariables = await readCloudDevVariables()
+// GitHub OAuth apps register one exact callback URL (localhost:8787 by
+// convention — see .dev.vars.example), so the port pins itself whenever OAuth
+// credentials are configured. CODEVISOR_DEV_CLOUD_PORT env overrides for
+// anyone whose OAuth app uses a different port.
+const hasGithubOAuth =
+  cloudDevVariables.GITHUB_CLIENT_ID !== undefined &&
+  cloudDevVariables.GITHUB_CLIENT_SECRET !== undefined
+const requestedCloudPort =
+  parsePort(process.env.CODEVISOR_DEV_CLOUD_PORT, "CODEVISOR_DEV_CLOUD_PORT") ??
+  (hasGithubOAuth ? 8787 : undefined)
+// The pinned port sits outside the hashed dev range, so probe it directly
+// (findAvailablePort's ring arithmetic assumes preferred ∈ [base, base+range)).
+const cloudPort =
+  requestedCloudPort !== undefined && (await isPortAvailable(requestedCloudPort))
+    ? requestedCloudPort
+    : await findAvailablePort(remotePort + 1, 51_000, 10_000)
+if (requestedCloudPort !== undefined && cloudPort !== requestedCloudPort) {
+  console.warn(
+    `Cloud dev port ${requestedCloudPort} is busy (another worktree?); ` +
+      `using ${cloudPort} — GitHub OAuth callbacks will not match this instance.`
+  )
+}
+const cloudUrl = `http://localhost:${cloudPort}`
+const cloudExtraVariables = Object.entries(cloudDevVariables)
+  // Keys prefixed CODEVISOR_DEV_ configure this script, not the Worker.
+  .filter(([key]) => !key.startsWith("CODEVISOR_DEV_"))
+  .flatMap(([key, value]) => ["--var", `${key}:${value}`])
+const cloudPersistPath = join(tmpRoot, "wrangler")
+
 // One-time move of an earlier instance's state into the current data dir, so
 // relocating (Application Support → .codevisor → tmp/codevisor) never drops
 // the machines/projects you added. Checks each prior location in order.
@@ -74,6 +114,7 @@ console.log(`  app:      ${appName}`)
 console.log(`  server:   http://127.0.0.1:${port}`)
 console.log(`  www:      http://localhost:${wwwPort}`)
 console.log(`  remote:   http://127.0.0.1:${remotePort}  (${remoteName})`)
+console.log(`  cloud:    ${cloudUrl}`)
 console.log(`  data:     ${dataDirectory}`)
 console.log(`  worktrees:${worktreesDirectory}`)
 console.log(`  icon:     ${developmentIconColor.hex}`)
@@ -83,6 +124,54 @@ if (!(await pathExists(join(repoRoot, "node_modules", ".bin", "tsc")))) {
 }
 await ensureGhosttyFramework()
 await run("bun", ["run", "--cwd", "apps/server", "build"])
+
+// The local cloud instance: real Workers runtime (workerd) with local D1 and
+// Durable Objects, persisted under tmp/ like all other dev state. Started
+// before the app build so it is healthy — and the dev session is signed in —
+// by the time the servers spawn and need CODEVISOR_DEV_CLOUD_TOKEN.
+// cwd apps/cloud so bunx resolves the workspace's wrangler version — a
+// stray/global wrangler brings its own (older) workerd, which cannot read
+// local D1/DO state written by the workspace version. Failures fall through
+// to prepareCloudSession's "continuing without it" path instead of crashing.
+await run(
+  "bun",
+  [
+    "x",
+    "wrangler",
+    "d1",
+    "migrations",
+    "apply",
+    "codevisor-cloud",
+    "--local",
+    "--persist-to",
+    cloudPersistPath
+  ],
+  join(repoRoot, "apps/cloud")
+).catch((error) => {
+  console.error(`Cloud dev migrations failed (${error instanceof Error ? error.message : error})`)
+})
+const cloud = spawn(
+  "bun",
+  [
+    "x",
+    "wrangler",
+    "dev",
+    "--port",
+    String(cloudPort),
+    "--persist-to",
+    cloudPersistPath,
+    "--var",
+    "DEV_AUTH:1",
+    "--var",
+    `PUBLIC_BASE_URL:${cloudUrl}`,
+    "--var",
+    `INSTANCE_NAME:Codevisor Cloud (${worktreeName})`,
+    ...cloudExtraVariables,
+    "--show-interactive-dev-session=false"
+  ],
+  { cwd: join(repoRoot, "apps/cloud"), env: process.env, stdio: "inherit" }
+)
+
 const generatedIconDirectory = await createDevelopmentAppIcon()
 const developmentSigningArguments = await resolveDevelopmentSigningArguments()
 try {
@@ -124,10 +213,19 @@ const sharedEnvironment = {
   CODEVISOR_DEV_REMOTE_HOST: "127.0.0.1",
   CODEVISOR_DEV_REMOTE_PORT: String(remotePort),
   CODEVISOR_DEV_REMOTE_NAME: remoteName,
-  CODEVISOR_DEV_REMOTE_TOKEN: ""
+  CODEVISOR_DEV_REMOTE_TOKEN: "",
+  // The local cloud instance (auth + relay). The token is a dev-user session
+  // filled in once the cloud is healthy, so clients can sign in without any
+  // GitHub OAuth setup.
+  CODEVISOR_DEV_CLOUD_URL: cloudUrl,
+  CODEVISOR_DEV_CLOUD_TOKEN: ""
 }
 const databasePath = join(dataDirectory, "codevisor-server.sqlite")
 const upgradeStatusPath = join(dataDirectory, "data-upgrade.json")
+// Sign into the dev cloud BEFORE spawning servers, so their environment
+// carries a real session token and they auto-provision into the hub.
+await prepareCloudSession()
+
 const server = spawn(
   "node",
   [
@@ -187,7 +285,11 @@ const remoteServer = spawn(
       CODEVISOR_DEV_INSTANCE_ID: `${instanceName}-remote`,
       CODEVISOR_DATA_DIR: remoteDataDirectory,
       CODEVISOR_WORKTREES_ROOT: join(remoteDataDirectory, "worktrees"),
-      CODEVISOR_REPOS_ROOT: join(remoteDataDirectory, "repos")
+      CODEVISOR_REPOS_ROOT: join(remoteDataDirectory, "repos"),
+      // The Dev Remote joins the dev cloud too — a realistic second machine
+      // in the hub's machine list.
+      CODEVISOR_DEV_CLOUD_URL: cloudUrl,
+      CODEVISOR_DEV_CLOUD_TOKEN: sharedEnvironment.CODEVISOR_DEV_CLOUD_TOKEN
     },
     stdio: "inherit"
   }
@@ -207,6 +309,7 @@ const stop = async (exitCode = 0) => {
   }
   app?.kill("SIGTERM")
   www.kill("SIGTERM")
+  cloud.kill("SIGTERM")
 
   for (const [servicePort, child] of [
     [port, server],
@@ -245,6 +348,12 @@ const serverExit = Promise.all([
 void waitForExit(www).then((result) => {
   if (!stopping) {
     console.error(`www dev server exited unexpectedly (${describeExit(result)}).`)
+  }
+})
+
+void waitForExit(cloud).then((result) => {
+  if (!stopping) {
+    console.error(`cloud dev server exited unexpectedly (${describeExit(result)}).`)
   }
 })
 
@@ -300,6 +409,77 @@ async function announceDevRemote() {
   console.log(`  Token:   ${token}`)
   console.log(`  Or open: ${deeplink}`)
   console.log("")
+}
+
+// Wait for the cloud Worker, sign in as the dev user, and hand the session
+// token to the app (Settings → Account works with zero GitHub OAuth setup).
+// Non-fatal throughout: local dev must keep working when the cloud piece is
+// broken or slow — it's additive, never required.
+async function prepareCloudSession() {
+  try {
+    for (let attempt = 0; attempt < 120; attempt += 1) {
+      if (cloud.exitCode !== null) return
+      try {
+        const health = await fetch(`${cloudUrl}/health`)
+        if (health.ok) break
+      } catch {
+        // wrangler is still starting.
+      }
+      await delay(250)
+    }
+    const response = await fetch(`${cloudUrl}/dev/login`, { method: "POST" })
+    if (!response.ok) throw new Error(`dev login returned ${response.status}`)
+    const { token } = await response.json()
+    sharedEnvironment.CODEVISOR_DEV_CLOUD_TOKEN = token
+    console.log("")
+    console.log(`Cloud dev instance ready at ${cloudUrl}`)
+    console.log(`  Dev account session handed to the app — sign in via "Use Development Account".`)
+    console.log(`  Device approvals: ${cloudUrl}/device`)
+    console.log("")
+  } catch (error) {
+    console.error(
+      `Cloud dev instance unavailable (${error instanceof Error ? error.message : error}); continuing without it.`
+    )
+  }
+}
+
+// Locate apps/cloud/.dev.vars: this worktree first, then the main clone (via
+// git's common dir), so per-developer cloud config is created once and shared
+// by every worktree — including app-created ones. Returns {} when absent or
+// git is unavailable; the cloud runs fine on dev login alone.
+async function readCloudDevVariables() {
+  const candidates = [join(repoRoot, "apps/cloud/.dev.vars")]
+  try {
+    const commonDir = execFileSync("git", ["rev-parse", "--git-common-dir"], {
+      cwd: repoRoot,
+      encoding: "utf8"
+    }).trim()
+    const mainRoot = resolve(repoRoot, commonDir, "..")
+    if (mainRoot !== repoRoot) candidates.push(join(mainRoot, "apps/cloud/.dev.vars"))
+  } catch {
+    // Not a git checkout (or git missing): worktree-local file only.
+  }
+  for (const candidate of candidates) {
+    let content
+    try {
+      content = await readFile(candidate, "utf8")
+    } catch {
+      continue
+    }
+    const variables = {}
+    for (const line of content.split("\n")) {
+      const trimmed = line.trim()
+      if (trimmed === "" || trimmed.startsWith("#")) continue
+      const separator = trimmed.indexOf("=")
+      if (separator === -1) continue
+      variables[trimmed.slice(0, separator).trim()] = trimmed
+        .slice(separator + 1)
+        .trim()
+        .replace(/^"(.*)"$/, "$1")
+    }
+    return variables
+  }
+  return {}
 }
 
 function parsePort(value, name) {
@@ -404,9 +584,9 @@ function isPortAvailable(port) {
   })
 }
 
-function run(command, arguments_) {
+function run(command, arguments_, cwd = repoRoot) {
   console.log(`\n$ ${command} ${arguments_.join(" ")}`)
-  const child = spawn(command, arguments_, { cwd: repoRoot, env: process.env, stdio: "inherit" })
+  const child = spawn(command, arguments_, { cwd, env: process.env, stdio: "inherit" })
   return waitForExit(child).then((result) => {
     if (result.code === 0) return
     throw new Error(`${command} failed (${describeExit(result)})`)

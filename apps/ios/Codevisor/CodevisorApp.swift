@@ -61,6 +61,7 @@ struct CodevisorApp: App {
             settings: AppSettingsModel(store: store),
             machineStore: store,
             machineCredentialStore: KeychainMachineCredentialStore.shared,
+            cloudCredentialStore: KeychainCloudCredentialStore.shared,
             legacyCacheMigrationStore: store,
             paneGroups: DefaultPaneGroupRepository(store: store),
             workspaces: DefaultWorkspaceRepository(store: store)
@@ -99,6 +100,9 @@ struct CodevisorApp: App {
         // automatically — it shows up as a quick add in onboarding and
         // Settings → Machines (CodevisorAppVariant.developmentRemote).
         await environment.prepareSelectedMachine()
+        // Restore the cloud account session (or adopt the dev cloud token);
+        // nothing at boot depends on it, so it runs after machine prep.
+        await environment.cloud.bootstrap()
     }
 }
 

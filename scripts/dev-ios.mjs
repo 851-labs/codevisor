@@ -49,6 +49,11 @@ if (!(await pathExists(join(repoRoot, "node_modules", ".bin", "tsc")))) {
 }
 await run("bun", ["run", "--cwd", "apps/server", "build"])
 
+// Sign into the dev cloud first (when available) so the standalone server
+// below boots cloud-connected — testing the dev account then always has this
+// machine online in the hub.
+const cloudSession = await resolveCloudSession()
+
 const server = spawn(
   "node",
   [
@@ -76,7 +81,13 @@ const server = spawn(
       CODEVISOR_DEV_INSTANCE_ID: `${instanceName}-remote`,
       CODEVISOR_DATA_DIR: remoteDataDirectory,
       CODEVISOR_WORKTREES_ROOT: join(remoteDataDirectory, "worktrees"),
-      CODEVISOR_REPOS_ROOT: join(remoteDataDirectory, "repos")
+      CODEVISOR_REPOS_ROOT: join(remoteDataDirectory, "repos"),
+      ...(cloudSession === undefined
+        ? {}
+        : {
+            CODEVISOR_DEV_CLOUD_URL: cloudSession.url,
+            CODEVISOR_DEV_CLOUD_TOKEN: cloudSession.token
+          })
     },
     stdio: "inherit"
   }
@@ -162,8 +173,17 @@ try {
   // Same contract as the macOS dev app (CodevisorAppVariant.developmentRemote):
   // the app offers this remote as a one-tap quick add in onboarding and
   // Settings → Machines, instead of pairing automatically.
+  // The simulator app gets the same dev-cloud session the server booted with.
+  const cloudEnvironment =
+    cloudSession === undefined
+      ? {}
+      : {
+          SIMCTL_CHILD_CODEVISOR_DEV_CLOUD_URL: cloudSession.url,
+          SIMCTL_CHILD_CODEVISOR_DEV_CLOUD_TOKEN: cloudSession.token
+        }
   await runWithEnvironment("xcrun", ["simctl", "launch", simulator.udid, bundleIdentifier], {
     ...process.env,
+    ...cloudEnvironment,
     SIMCTL_CHILD_CODEVISOR_DEV_REMOTE_HOST: "127.0.0.1",
     SIMCTL_CHILD_CODEVISOR_DEV_REMOTE_PORT: String(remotePort),
     SIMCTL_CHILD_CODEVISOR_DEV_REMOTE_TOKEN: token,
@@ -363,6 +383,29 @@ function capture(command, arguments_) {
     if (result.code === 0) return output
     throw new Error(`${command} failed (${describeExit(result)})`)
   })
+}
+
+// Signs into the dev cloud when one is reachable: CODEVISOR_DEV_CLOUD_URL if
+// set, else the conventional pinned port 8787 (where `bun run dev` or a
+// standalone `wrangler dev` hosts it). Fully optional — absent or unreachable
+// means the server and app simply run without a cloud account.
+async function resolveCloudSession() {
+  const cloudUrl = (process.env.CODEVISOR_DEV_CLOUD_URL ?? "http://localhost:8787").replace(
+    /\/+$/,
+    ""
+  )
+  try {
+    const response = await fetch(`${cloudUrl}/dev/login`, { method: "POST" })
+    if (!response.ok) throw new Error(`dev login returned ${response.status}`)
+    const { token } = await response.json()
+    console.log(`Cloud dev instance: ${cloudUrl} (dev account session issued)`)
+    return { url: cloudUrl, token }
+  } catch (error) {
+    console.warn(
+      `Cloud dev instance unavailable (${error instanceof Error ? error.message : error}); continuing without it.`
+    )
+    return undefined
+  }
 }
 
 async function pathExists(path) {

@@ -12,6 +12,7 @@ import { mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from "node:f
 import { hostname } from "node:os"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
+import { authLoginCommand, authLogoutCommand, authStatusCommand } from "./cli/cloud-auth.js"
 import { qrCommand, setupCommand, type SetupDeps } from "./cli/setup.js"
 import {
   logsCommand,
@@ -240,7 +241,18 @@ const makeSetupDeps = (): SetupDeps => ({
 const setup = Command.make("setup", { port: portFlag }, ({ port }) =>
   Effect.promise(async () => {
     process.exitCode = await setupCommand(makeSetupDeps(), {
-      port: Option.getOrUndefined(port)
+      port: Option.getOrUndefined(port),
+      // The optional cloud step: device-code login, then a server restart so
+      // the machine connects to the hub immediately (the cloud bridge reads
+      // its credentials at boot).
+      cloudLogin: async () => {
+        const deps = makeDeps()
+        const result = await authLoginCommand(deps, { machineName: hostname() })
+        if (result === 0) {
+          await restartCommand(deps, { port: Option.getOrUndefined(port) })
+        }
+        return result
+      }
     })
   })
 ).pipe(
@@ -265,9 +277,54 @@ const qr = Command.make(
     )
 ).pipe(Command.withDescription("Print the pairing QR code for the Codevisor phone app"))
 
+const authLogin = Command.make(
+  "login",
+  {
+    server: optionalString(
+      "server",
+      "Cloud instance base URL (self-hosted or dev; defaults to Codevisor Cloud)"
+    ),
+    name: optionalString("name", "Display name for this machine (defaults to the hostname)")
+  },
+  ({ server, name }) =>
+    runCli((deps) =>
+      authLoginCommand(deps, {
+        ...(Option.isSome(server) ? { server: server.value } : {}),
+        machineName: Option.getOrElse(name, () => hostname())
+      })
+    )
+).pipe(
+  Command.withDescription("Connect this machine to your Codevisor Cloud account (device code)")
+)
+
+const authStatus = Command.make("status", {}, () => runCli((deps) => authStatusCommand(deps))).pipe(
+  Command.withDescription("Show this machine's cloud account connection")
+)
+
+const authLogout = Command.make("logout", {}, () => runCli((deps) => authLogoutCommand(deps))).pipe(
+  Command.withDescription("Disconnect this machine from its cloud account")
+)
+
+const auth = Command.make("auth").pipe(
+  Command.withDescription("Connect this machine to a Codevisor Cloud account"),
+  Command.withSubcommands([authLogin, authStatus, authLogout])
+)
+
 const root = Command.make("codevisor").pipe(
   Command.withDescription("Control the Codevisor server on this machine"),
-  Command.withSubcommands([serve, setup, qr, start, stop, restart, status, token, update, logs])
+  Command.withSubcommands([
+    serve,
+    setup,
+    qr,
+    auth,
+    start,
+    stop,
+    restart,
+    status,
+    token,
+    update,
+    logs
+  ])
 )
 
 const program = Command.run(root, {

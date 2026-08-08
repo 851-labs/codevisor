@@ -178,6 +178,10 @@ export interface CodevisorServerConfig {
   /// exit (used by the macOS app to swap in an updated server runtime).
   readonly onShutdownRequested?: (() => void) | undefined
   readonly updater?: CodevisorServerUpdater | undefined
+  /// This machine's Codevisor Cloud device id (from `codevisor auth login`),
+  /// advertised via /v1/info so clients can match this machine to its cloud
+  /// presence entry instead of guessing by display name.
+  readonly cloudDeviceId?: string | undefined
 }
 
 export interface CodevisorServerServices {
@@ -398,7 +402,8 @@ export const defaultServerConfig = (
   },
   corsOrigins: overrides.corsOrigins,
   onShutdownRequested: overrides.onShutdownRequested,
-  updater: overrides.updater
+  updater: overrides.updater,
+  cloudDeviceId: overrides.cloudDeviceId
 })
 
 export const makeCodevisorServerApp = (
@@ -800,7 +805,8 @@ const handleRequest = async (
         features: ["canonical-chat-v1", "session-event-stream-v1", "transcript-pagination-v1"],
         machineId: await run(services.db.getOrCreateInstanceId),
         arch: process.arch,
-        hostname: hostname()
+        hostname: hostname(),
+        ...(config.cloudDeviceId === undefined ? {} : { cloudDeviceId: config.cloudDeviceId })
       })
       return
     }

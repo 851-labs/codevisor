@@ -15,7 +15,9 @@ struct MachinePickerToolbarMenu: View {
 
     var body: some View {
         Menu {
-            ForEach(machines.machines) { machine in
+            // One list for everything the app can reach: configured machines
+            // and cloud-relay machines alike, all selectable the same way.
+            ForEach(machines.allMachines) { machine in
                 Toggle(isOn: Binding(
                     get: { machine.id == machines.selectedMachineId },
                     set: { isOn in

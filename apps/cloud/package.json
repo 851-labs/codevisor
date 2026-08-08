@@ -1,0 +1,36 @@
+{
+  "name": "@codevisor/cloud",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev --var DEV_AUTH:1 --var PUBLIC_BASE_URL:http://localhost:8787 --var 'INSTANCE_NAME:Codevisor Cloud (dev)'",
+    "build": "bun run build:css && tsc --noEmit",
+    "build:css": "tailwindcss -i src/pages/tailwind.css -o src/pages/generated/styles.css --minify",
+    "typecheck": "bun run build:css && tsc --noEmit --pretty false",
+    "test": "bun run build:css && vitest run",
+    "test:coverage": "bun run test",
+    "cf-typegen": "wrangler types",
+    "deploy": "wrangler deploy",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate:local": "wrangler d1 migrations apply codevisor-cloud --local"
+  },
+  "dependencies": {
+    "@better-auth/api-key": "1.6.26",
+    "@better-auth/drizzle-adapter": "1.6.26",
+    "@codevisor/api": "workspace:*",
+    "@codevisor/cloud-crypto": "workspace:*",
+    "better-auth": "1.6.26",
+    "drizzle-orm": "0.45.2",
+    "effect": "4.0.0-beta.92",
+    "hono": "4.12.27"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "0.20.3",
+    "@tailwindcss/cli": "4.3.3",
+    "drizzle-kit": "0.31.10",
+    "tailwindcss": "4.3.3",
+    "typescript": "6.0.2",
+    "vitest": "4.1.6",
+    "wrangler": "^4.110.0"
+  }
+}

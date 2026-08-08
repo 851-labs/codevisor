@@ -28,6 +28,8 @@ struct MachinesSettingsView: View {
     @State private var removing: CodevisorMachine?
     @State private var tokenNotice: String?
     @State private var actionError: MachineActionError?
+    @State private var renamingCloud: CloudMachine?
+    @State private var removingCloud: CloudMachine?
 
     private var machines: MachineController { environment.machines }
 
@@ -45,8 +47,16 @@ struct MachinesSettingsView: View {
     var body: some View {
         Form {
             Section {
-                ForEach(machines.machines) { machine in
-                    machineRow(machine)
+                // One list for every machine, however it arrives: configured
+                // (local + remote) machines plus cloud-relay machines the
+                // account knows about, deduplicated in the controller.
+                ForEach(machines.allMachines) { machine in
+                    if machine.isCloud,
+                       let presence = machines.cloudMachine(forMachineId: machine.id) {
+                        cloudMachineRow(machine, presence: presence)
+                    } else {
+                        machineRow(machine)
+                    }
                 }
                 Button {
                     showingAdd = true
@@ -57,6 +67,9 @@ struct MachinesSettingsView: View {
             } header: {
                 Text("Machines")
             }
+            // The cloud account (sign-in, cloud machine list, self-hosted
+            // server) lives here as its own "Cloud" section.
+            CloudSettingsView()
             if discovery.isAvailable && !discovery.discovered.isEmpty {
                 Section {
                     ForEach(discovery.discovered) { machine in
@@ -84,6 +97,29 @@ struct MachinesSettingsView: View {
         }
         .onChange(of: machines.machines.map(\.id)) { _, _ in
             Task { await discovery.refresh(registeredHosts: registeredHosts) }
+        }
+        .sheet(item: $renamingCloud) { machine in
+            RenameCloudMachineSheet(machine: machine) { name in
+                Task { await environment.cloud.rename(deviceId: machine.deviceId, name: name) }
+            }
+        }
+        .confirmationDialog(
+            "Disconnect “\(removingCloud?.name ?? "")”?",
+            isPresented: Binding(
+                get: { removingCloud != nil },
+                set: { if !$0 { removingCloud = nil } }
+            ),
+            titleVisibility: .visible,
+            presenting: removingCloud
+        ) { machine in
+            Button("Disconnect Machine", role: .destructive) {
+                Task { await environment.cloud.remove(deviceId: machine.deviceId) }
+            }
+            .settingsActionTint(theme)
+            Button("Cancel", role: .cancel) {}
+                .settingsActionTint(theme)
+        } message: { machine in
+            Text("“\(machine.name)” will be signed out of your cloud account. Nothing on the machine itself is changed — run `codevisor auth login` there to reconnect it.")
         }
         .sheet(item: $addingDiscovered) { machine in
             RemoteMachineSheet(name: machine.name, host: machine.host) { host, name, token in
@@ -304,6 +340,74 @@ struct MachinesSettingsView: View {
             .settingsActionTint(theme)
         }
         .padding(.vertical, 2)
+    }
+
+    /// A machine reached through the cloud account's relay: connectable like
+    /// any other machine, with presence and cloud account actions.
+    private func cloudMachineRow(_ machine: CodevisorMachine, presence: CloudMachine) -> some View {
+        let isSelected = machine.id == machines.selectedMachineId
+        return HStack(spacing: 10) {
+            Image(systemName: presence.os == "linux" ? "server.rack" : "desktopcomputer")
+                .symbolRenderingMode(.monochrome)
+                .foregroundStyle(theme.textPrimary)
+                .frame(width: 20)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text(presence.name)
+                        .fontWeight(.medium)
+                    if isSelected {
+                        Text("Connected")
+                            .font(.caption2.weight(.semibold))
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Capsule().fill(theme.accent.opacity(0.15)))
+                            .foregroundStyle(theme.textPrimary)
+                    }
+                }
+                Label("Codevisor Cloud", systemImage: "icloud")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 12)
+            HStack(spacing: 5) {
+                Circle()
+                    .fill(presence.online ? theme.statusOK : Color.gray)
+                    .frame(width: 7, height: 7)
+                    .accessibilityHidden(true)
+                Text(presence.online ? "Online" : "Offline")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            if !isSelected {
+                Button("Connect") {
+                    machines.selectMachine(machine.id)
+                    Task { await machines.refreshStatus(for: machine.id) }
+                }
+                .settingsActionTint(theme)
+                .controlSize(.small)
+            }
+            Menu {
+                Button("Rename…") { renamingCloud = presence }
+                Divider()
+                Button("Disconnect…", role: .destructive) { removingCloud = presence }
+            } label: {
+                Image(systemName: "ellipsis.circle")
+                    .foregroundStyle(.secondary)
+            }
+            .menuStyle(.button)
+            .buttonStyle(.plain)
+            .settingsActionTint(theme)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .help("Machine actions")
+            .accessibilityLabel("Actions for \(presence.name)")
+        }
+        .contextMenu {
+            Button("Rename…") { renamingCloud = presence }
+            Button("Disconnect…", role: .destructive) { removingCloud = presence }
+        }
+        .accessibilityElement(children: .combine)
     }
 
     private func machineRow(_ machine: CodevisorMachine) -> some View {

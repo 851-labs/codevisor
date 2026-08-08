@@ -601,8 +601,7 @@ struct WorkspaceScreen: View {
                 return
             }
             self.project = project
-            serverConfig = environment.machines.machine(for: session.serverId)?.serverConfig
-                ?? environment.machines.selectedMachine.serverConfig
+            serverConfig = environment.machines.serverConfig(for: session.serverId)
         }
         await connectChat(sessionId: sessionId)
     }
@@ -622,8 +621,7 @@ struct WorkspaceScreen: View {
             preferredProject: project,
             environment: environment
         )
-        serverConfig = environment.machines.machine(for: controller.project.serverId)?.serverConfig
-            ?? environment.machines.selectedMachine.serverConfig
+        serverConfig = environment.machines.serverConfig(for: controller.project.serverId)
         // Pin the draft's pane group NOW: `centerInitial` mints a fresh pane id
         // each call, so leaving it computed would hand the chat view a new
         // identity every render — remounting it constantly.

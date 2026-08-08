@@ -2312,6 +2312,20 @@ describe("@codevisor/server", () => {
     })
   })
 
+  it("advertises the cloud device id when the machine is cloud-connected", async () => {
+    const { services } = await makeServices("server-cloud")
+    const server = await run(
+      startCodevisorServer(
+        services,
+        defaultServerConfig({ id: "server-cloud", port: 0, cloudDeviceId: "device-123" })
+      )
+    )
+    runningServers.push(server)
+    expect((await jsonRequest(server, "/v1/info")).body).toMatchObject({
+      cloudDeviceId: "device-123"
+    })
+  })
+
   it("serves health, info, OpenAPI, update state, pairing, and auth", async () => {
     const { server, services } = await start()
 
@@ -2330,6 +2344,8 @@ describe("@codevisor/server", () => {
       arch: process.arch,
       hostname: expect.any(String)
     })
+    // cloudDeviceId is only advertised when the machine is cloud-connected.
+    expect((await jsonRequest(server, "/v1/info")).body).not.toHaveProperty("cloudDeviceId")
     const discovery = await jsonRequest(server, "/v1/discovery")
     expect(discovery.body).toMatchObject({
       serverId: "server-a",

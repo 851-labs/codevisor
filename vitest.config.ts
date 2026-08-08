@@ -25,6 +25,13 @@ export default defineConfig({
         // (harness-lifecycle.test.ts) cover the state machine and gating;
         // route-level coverage is enforced in server.ts.
         "apps/server/src/harness-lifecycle.ts",
+        // The cloud bridge is an integration boundary over `ws`, live
+        // terminals, and the filesystem. Everything it composes is fully
+        // covered elsewhere: connection/channel/crypto logic in
+        // packages/cloud-client and packages/cloud-crypto, credential parsing
+        // and the login flow in apps/server/src/cli/cloud-auth.ts, and the
+        // hub itself in apps/cloud's workerd integration suite.
+        "apps/server/src/cloud-bridge.ts",
         // Browser/Computer Use is an integration boundary over Chrome CDP,
         // WebSockets, QuickJS, native desktop bridges, and long-lived MCP
         // sessions. Focused tests still run for every adapter and gateway,

@@ -732,6 +732,109 @@ public extension CodevisorServerClienting {
     }
 }
 
+// MARK: - Transport seams
+
+/// How a server client dispatches one HTTP request. The default is a plain
+/// URLSession; cloud machines swap in a relay-backed transport that tunnels
+/// the same requests through an end-to-end encrypted channel.
+public protocol ServerRequestTransport: Sendable {
+    func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse)
+}
+
+/// URLSession-backed default request transport.
+public struct URLSessionRequestTransport: ServerRequestTransport {
+    private let session: URLSession
+
+    public init(session: URLSession = .shared) {
+        self.session = session
+    }
+
+    public func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        let (data, response) = try await session.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw CodevisorServerClientError.invalidResponse
+        }
+        return (data, httpResponse)
+    }
+}
+
+/// A WebSocket message independent of URLSessionWebSocketTask, so relay-backed
+/// and fake connections don't need Foundation's task types.
+public enum ServerWebSocketMessage: Sendable, Equatable {
+    case data(Data)
+    case string(String)
+}
+
+/// One live WebSocket connection (already resumed). `receive` throws when the
+/// connection dies — callers treat that as a disconnect and reconnect.
+public protocol ServerWebSocketConnecting: AnyObject, Sendable {
+    func send(_ message: ServerWebSocketMessage) async throws
+    func receive() async throws -> ServerWebSocketMessage
+    func cancel(with closeCode: URLSessionWebSocketTask.CloseCode, reason: Data?)
+    /// The server-sent close code once the connection has closed, `.invalid`
+    /// while it hasn't.
+    var closeCode: URLSessionWebSocketTask.CloseCode { get }
+}
+
+/// How a server client opens WebSocket connections — the socket sibling of
+/// `ServerRequestTransport`.
+public protocol ServerWebSocketTransport: Sendable {
+    func connect(_ request: URLRequest, maximumMessageSize: Int) -> any ServerWebSocketConnecting
+}
+
+/// URLSessionWebSocketTask-backed default WebSocket transport.
+public struct URLSessionWebSocketTransport: ServerWebSocketTransport {
+    private let session: URLSession
+
+    public init(session: URLSession = .shared) {
+        self.session = session
+    }
+
+    public func connect(_ request: URLRequest, maximumMessageSize: Int) -> any ServerWebSocketConnecting {
+        let task = session.webSocketTask(with: request)
+        task.maximumMessageSize = maximumMessageSize
+        task.resume()
+        return URLSessionWebSocketConnection(task: task)
+    }
+}
+
+/// Thin adapter putting a URLSessionWebSocketTask behind the seam.
+public final class URLSessionWebSocketConnection: ServerWebSocketConnecting, @unchecked Sendable {
+    private let task: URLSessionWebSocketTask
+
+    public init(task: URLSessionWebSocketTask) {
+        self.task = task
+    }
+
+    public func send(_ message: ServerWebSocketMessage) async throws {
+        switch message {
+        case let .data(data):
+            try await task.send(.data(data))
+        case let .string(text):
+            try await task.send(.string(text))
+        }
+    }
+
+    public func receive() async throws -> ServerWebSocketMessage {
+        switch try await task.receive() {
+        case let .data(data):
+            return .data(data)
+        case let .string(text):
+            return .string(text)
+        @unknown default:
+            throw CodevisorServerClientError.invalidResponse
+        }
+    }
+
+    public func cancel(with closeCode: URLSessionWebSocketTask.CloseCode, reason: Data?) {
+        task.cancel(with: closeCode, reason: reason)
+    }
+
+    public var closeCode: URLSessionWebSocketTask.CloseCode {
+        task.closeCode
+    }
+}
+
 public struct CodevisorServerConfig: Equatable, Sendable {
     public static let productionPort = CodevisorAppVariant.productionPort
     public static let developmentPort = CodevisorAppVariant.developmentPort
@@ -742,13 +845,27 @@ public struct CodevisorServerConfig: Equatable, Sendable {
 
     public var baseURL: URL
     public var bearerToken: String?
+    /// Optional transport overrides. Nil keeps the URLSession defaults; cloud
+    /// machines carry relay-backed transports here so every consumer of a
+    /// config (server client, terminal transport) tunnels automatically.
+    /// Excluded from Equatable: transports are plumbing, not identity.
+    public var requestTransport: (any ServerRequestTransport)?
+    public var webSocketTransport: (any ServerWebSocketTransport)?
 
     public init(
         baseURL: URL = URL(string: "http://127.0.0.1:\(CodevisorServerConfig.localPort)")!,
-        bearerToken: String? = nil
+        bearerToken: String? = nil,
+        requestTransport: (any ServerRequestTransport)? = nil,
+        webSocketTransport: (any ServerWebSocketTransport)? = nil
     ) {
         self.baseURL = baseURL
         self.bearerToken = bearerToken
+        self.requestTransport = requestTransport
+        self.webSocketTransport = webSocketTransport
+    }
+
+    public static func == (lhs: CodevisorServerConfig, rhs: CodevisorServerConfig) -> Bool {
+        lhs.baseURL == rhs.baseURL && lhs.bearerToken == rhs.bearerToken
     }
 
     public static let localDefault = CodevisorServerConfig()
@@ -783,6 +900,9 @@ public struct ServerInfo: Decodable, Equatable, Sendable {
     public var platform: String
     public var bindHost: String
     public var features: [String]?
+    /// The machine's Codevisor Cloud device id, when it is cloud-connected —
+    /// lets clients match this machine to its cloud presence entry.
+    public var cloudDeviceId: String?
 }
 
 /// A device on a paired machine's tailnet, from `GET /v1/tailnet/peers`.
@@ -2275,7 +2395,8 @@ public final class CodevisorServerClient: CodevisorServerClienting, @unchecked S
     /// leave bounded headroom without altering the event payload.
     static let eventWebSocketMaximumMessageSize = 16 * 1024 * 1024
     private let config: CodevisorServerConfig
-    private let urlSession: URLSession
+    private let requestTransport: any ServerRequestTransport
+    private let webSocketTransport: any ServerWebSocketTransport
     private let requestGate: ServerRequestGate?
     private let machineId: String?
     private let decoder = JSONDecoder()
@@ -2288,7 +2409,10 @@ public final class CodevisorServerClient: CodevisorServerClienting, @unchecked S
         machineId: String? = nil
     ) {
         self.config = config
-        self.urlSession = urlSession
+        self.requestTransport = config.requestTransport
+            ?? URLSessionRequestTransport(session: urlSession)
+        self.webSocketTransport = config.webSocketTransport
+            ?? URLSessionWebSocketTransport(session: urlSession)
         self.requestGate = requestGate
         self.machineId = machineId
     }
@@ -3324,9 +3448,10 @@ public final class CodevisorServerClient: CodevisorServerClienting, @unchecked S
                         try await waitForServerIfNeeded(path: path)
                         var request = URLRequest(url: try websocketURL(for: "\(path)?since=\(cursor)"))
                         applyAuthorization(to: &request)
-                        let socket = urlSession.webSocketTask(with: request)
-                        socket.maximumMessageSize = Self.eventWebSocketMaximumMessageSize
-                        socket.resume()
+                        let socket = webSocketTransport.connect(
+                            request,
+                            maximumMessageSize: Self.eventWebSocketMaximumMessageSize
+                        )
                         defer { socket.cancel(with: .goingAway, reason: nil) }
 
                         while !Task.isCancelled {
@@ -3378,14 +3503,12 @@ public final class CodevisorServerClient: CodevisorServerClienting, @unchecked S
         return .milliseconds(base + jitter)
     }
 
-    private static func data(from message: URLSessionWebSocketTask.Message) -> Data? {
+    private static func data(from message: ServerWebSocketMessage) -> Data? {
         switch message {
         case let .data(data):
             return data
         case let .string(text):
             return text.data(using: .utf8)
-        @unknown default:
-            return nil
         }
     }
 
@@ -3455,10 +3578,7 @@ public final class CodevisorServerClient: CodevisorServerClienting, @unchecked S
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         }
 
-        let (data, response) = try await urlSession.data(for: request)
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw CodevisorServerClientError.invalidResponse
-        }
+        let (data, httpResponse) = try await requestTransport.data(for: request)
         guard (200..<300).contains(httpResponse.statusCode) else {
             let message = String(data: data, encoding: .utf8) ?? ""
             throw CodevisorServerClientError.httpStatus(httpResponse.statusCode, message)
@@ -3485,10 +3605,7 @@ public final class CodevisorServerClient: CodevisorServerClienting, @unchecked S
             request.setValue(contentType, forHTTPHeaderField: "Content-Type")
         }
 
-        let (data, response) = try await urlSession.data(for: request)
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw CodevisorServerClientError.invalidResponse
-        }
+        let (data, httpResponse) = try await requestTransport.data(for: request)
         guard (200..<300).contains(httpResponse.statusCode) else {
             let message = String(data: data, encoding: .utf8) ?? ""
             throw CodevisorServerClientError.httpStatus(httpResponse.statusCode, message)

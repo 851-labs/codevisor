@@ -1,0 +1,19 @@
+# Optional: real GitHub sign-in in local cloud dev. Without this file, dev
+# login (DEV_AUTH) covers everything except the real OAuth redirect dance.
+#
+# EASY MODE — run once, everything below happens automatically:
+#   bun run setup:github-oauth
+#
+# Manual mode: create a GitHub App (or classic OAuth app) at
+# https://github.com/settings/apps with callback URL
+# http://localhost:8787/api/auth/callback/github (GitHub Apps also need
+# Account Permissions → Email addresses → Read-only), then copy this file to
+# .dev.vars (gitignored) in your MAIN clone — every worktree's `bun run dev`
+# reads the main clone's copy automatically (a worktree-local .dev.vars takes
+# precedence if you need one to differ).
+# When these are set, `bun run dev` automatically pins the cloud to port 8787
+# so the callback URL matches (another worktree already holding it falls back
+# to a free port with a warning). If your OAuth app uses a different port, set
+# the CODEVISOR_DEV_CLOUD_PORT environment variable.
+GITHUB_CLIENT_ID=your-client-id
+GITHUB_CLIENT_SECRET=your-client-secret

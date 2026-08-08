@@ -56,10 +56,17 @@ echo "Building GhosttyKit.xcframework (this takes a while)…"
 cd "$GHOSTTY_DIR"
 rm -rf "$GHOSTTY_DIR/macos/GhosttyKit.xcframework" "$GHOSTTY_DIR/zig-out"
 set +e
+# -Dsentry=false: libghostty's sentry-native init races ghostty_init's
+# ensureLocale — the sentry-init thread iterates `environ` (environMap) while
+# the main thread mutates it with setenv/unsetenv, segfaulting the app at
+# launch (EXC_BAD_ACCESS on thread "sentry-init", wild addresses). Codevisor
+# never collects ghostty's local crash dumps (the app has its own crash
+# reporting), so dropping the thread costs nothing and removes the race.
 zig build \
   -Demit-xcframework=true \
   -Dxcframework-target=universal \
   -Demit-macos-app=false \
+  -Dsentry=false \
   -Doptimize=ReleaseFast
 BUILD_STATUS=$?
 set -e

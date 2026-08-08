@@ -24,20 +24,28 @@ public enum TerminalEvent: Sendable {
 /// Auth note: the server honors the `Authorization: Bearer` handshake header
 /// (the web client's `?token=` query is ignored and only works on loopback),
 /// so this transport always authenticates via the header.
+///
+/// Both the HTTP create call and the WebSocket go through the config's
+/// transport seams, so a cloud machine's relay-backed config makes terminals
+/// tunnel with no changes here or at call sites.
 @MainActor
 public final class TerminalTransport {
     public typealias EventHandler = @MainActor (TerminalEvent) -> Void
 
     private let config: CodevisorServerConfig
-    private let urlSession: URLSession
+    private let requestTransport: any ServerRequestTransport
+    private let webSocketTransport: any ServerWebSocketTransport
     private let onEvent: EventHandler
     private let clientId = UUID().uuidString
     private var clientSeq = 0
     private var lastOutputSeq = 0
     private var websocketPath: String?
-    private var socketTask: URLSessionWebSocketTask?
+    private var socket: (any ServerWebSocketConnecting)?
     private var receiveTask: Task<Void, Never>?
     private var reconnectTask: Task<Void, Never>?
+    /// Serializes outbound frames: WebSocket sends through the seam are async,
+    /// and input/resize frames must arrive in the order they were produced.
+    private var sendChain: Task<Void, Never> = Task {}
     private var failures = 0
     private var closed = false
 
@@ -47,7 +55,10 @@ public final class TerminalTransport {
         onEvent: @escaping EventHandler
     ) {
         self.config = config
-        self.urlSession = urlSession
+        self.requestTransport = config.requestTransport
+            ?? URLSessionRequestTransport(session: urlSession)
+        self.webSocketTransport = config.webSocketTransport
+            ?? URLSessionWebSocketTransport(session: urlSession)
         self.onEvent = onEvent
     }
 
@@ -75,8 +86,8 @@ public final class TerminalTransport {
         request.httpBody = try JSONEncoder().encode(
             Body(sessionId: sessionId, cwd: cwd, cols: cols, rows: rows, attachOnly: attachOnly ? true : nil)
         )
-        let (data, response) = try await urlSession.data(for: request)
-        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+        let (data, http) = try await requestTransport.data(for: request)
+        guard (200...299).contains(http.statusCode) else {
             let message = String(data: data, encoding: .utf8) ?? ""
             throw URLError(.badServerResponse, userInfo: [NSLocalizedDescriptionKey: message])
         }
@@ -131,7 +142,7 @@ public final class TerminalTransport {
     }
 
     private func sendFrame(type: String, data: String? = nil, cols: Int? = nil, rows: Int? = nil) {
-        guard let socketTask else { return }
+        guard let socket else { return }
         clientSeq += 1
         let frame = ClientFrame(
             type: type, clientId: clientId, clientSeq: clientSeq,
@@ -139,7 +150,10 @@ public final class TerminalTransport {
         )
         guard let encoded = try? JSONEncoder().encode(frame),
               let text = String(data: encoded, encoding: .utf8) else { return }
-        socketTask.send(.string(text)) { _ in }
+        sendChain = Task { [previous = sendChain] in
+            await previous.value
+            try? await socket.send(.string(text))
+        }
     }
 
     // MARK: - Socket lifecycle
@@ -154,19 +168,17 @@ public final class TerminalTransport {
         guard let url = components.url else { return }
         var request = URLRequest(url: url)
         applyAuthorization(&request)
-        let task = urlSession.webSocketTask(with: request)
-        task.maximumMessageSize = 8 * 1024 * 1024
-        socketTask = task
-        task.resume()
+        let socket = webSocketTransport.connect(request, maximumMessageSize: 8 * 1024 * 1024)
+        self.socket = socket
         receiveTask = Task { [weak self] in
-            await self?.receiveLoop(task)
+            await self?.receiveLoop(socket)
         }
     }
 
-    private func receiveLoop(_ task: URLSessionWebSocketTask) async {
+    private func receiveLoop(_ socket: any ServerWebSocketConnecting) async {
         while !Task.isCancelled {
             do {
-                let message = try await task.receive()
+                let message = try await socket.receive()
                 failures = 0
                 guard case let .string(text) = message,
                       let frame = try? JSONDecoder().decode(ServerFrame.self, from: Data(text.utf8))
@@ -186,7 +198,7 @@ public final class TerminalTransport {
                     continue
                 }
             } catch {
-                if socketTask === task, !closed {
+                if self.socket === socket, !closed {
                     scheduleReconnect()
                 }
                 return
@@ -210,8 +222,8 @@ public final class TerminalTransport {
     private func teardownSocket() {
         receiveTask?.cancel()
         receiveTask = nil
-        socketTask?.cancel(with: .goingAway, reason: nil)
-        socketTask = nil
+        socket?.cancel(with: .goingAway, reason: nil)
+        socket = nil
     }
 
     private func applyAuthorization(_ request: inout URLRequest) {

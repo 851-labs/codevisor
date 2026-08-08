@@ -15,9 +15,10 @@ interface FakeOptions {
   readonly exec?: Record<string, ExecResult>
   readonly http?: Record<string, ReadonlyArray<{ status: number; body?: unknown } | undefined>>
   readonly env?: Record<string, string | undefined>
+  readonly files?: Record<string, string>
   readonly isInteractive?: boolean
   /// Values returned by successive select prompts (by index).
-  readonly selections?: ReadonlyArray<string>
+  readonly selections?: ReadonlyArray<unknown>
   /// Values returned by successive text prompts (by index).
   readonly textEntries?: ReadonlyArray<string>
 }
@@ -57,7 +58,7 @@ const makeWorld = (options: FakeOptions = {}): FakeWorld => {
         response === undefined ? undefined : { status: response.status, body: response.body }
       )
     },
-    readTextFile: () => undefined,
+    readTextFile: (path) => options.files?.[path],
     writeTextFile: () => undefined,
     removeFile: () => undefined,
     processAlive: () => false,
@@ -206,6 +207,70 @@ describe("codevisor setup", () => {
     expect(output).toContain("Scan this QR code")
     expect(output).toContain("▄")
     expect(output).not.toContain("Firewall")
+  })
+
+  it("offers the optional cloud sign-in and reports success", async () => {
+    let loginCalls = 0
+    const world = makeWorld({
+      exec: { "tailscale status --json": tailscaleStatus({ dnsName: "box.tail.net." }) },
+      http: { [health]: [ok], [pairing]: [tokenResponse] },
+      selections: ["tailscale", true]
+    })
+    expect(
+      await setupCommand(world.deps, {
+        cloudLogin: () => {
+          loginCalls += 1
+          return Promise.resolve(0)
+        }
+      })
+    ).toBe(0)
+    expect(loginCalls).toBe(1)
+    expect(world.selectMessages.at(-1)).toContain("Codevisor Cloud")
+    expect(world.logs.join("\n")).toContain("connected to your cloud account")
+  })
+
+  it("keeps setup successful when the cloud sign-in fails or is declined", async () => {
+    const failed = makeWorld({
+      exec: { "tailscale status --json": tailscaleStatus({ dnsName: "box.tail.net." }) },
+      http: { [health]: [ok], [pairing]: [tokenResponse] },
+      selections: ["tailscale", true]
+    })
+    expect(await setupCommand(failed.deps, { cloudLogin: () => Promise.resolve(1) })).toBe(0)
+    expect(failed.errors.join("\n")).toContain("codevisor auth login")
+
+    let declinedCalls = 0
+    const declined = makeWorld({
+      exec: { "tailscale status --json": tailscaleStatus({ dnsName: "box.tail.net." }) },
+      http: { [health]: [ok], [pairing]: [tokenResponse] },
+      selections: ["tailscale", false]
+    })
+    expect(
+      await setupCommand(declined.deps, {
+        cloudLogin: () => {
+          declinedCalls += 1
+          return Promise.resolve(0)
+        }
+      })
+    ).toBe(0)
+    expect(declinedCalls).toBe(0)
+  })
+
+  it("skips the cloud prompt when the machine is already connected", async () => {
+    const world = makeWorld({
+      exec: { "tailscale status --json": tailscaleStatus({ dnsName: "box.tail.net." }) },
+      http: { [health]: [ok], [pairing]: [tokenResponse] },
+      files: {
+        "/home/user/.codevisor/data/cloud.json": JSON.stringify({
+          serverUrl: "https://cloud.example",
+          deviceId: "d",
+          publicKey: "p",
+          secretKey: "s",
+          apiKey: "k"
+        })
+      }
+    })
+    expect(await setupCommand(world.deps, { cloudLogin: () => Promise.resolve(0) })).toBe(0)
+    expect(world.selectMessages.join("\n")).not.toContain("Codevisor Cloud")
   })
 
   it("renders the deeplink as scannable terminal QR lines", () => {

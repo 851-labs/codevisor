@@ -8,7 +8,8 @@ import CodevisorUI
 
 /// First-launch onboarding, presented as a short paginated flow:
 /// 1. Welcome, 2. Choose your harnesses, 3. System permissions,
-/// 4. Choose your projects, 5. Choose analytics and crash-report sharing.
+/// 4. Choose your projects, 5. Choose analytics and crash-report sharing,
+/// 6. Optionally sign in to Codevisor Cloud.
 /// The project step is a multi-select over suggested folders; completing it
 /// adds every selected folder as a project and opens a new chat in the first.
 struct OnboardingView: View {
@@ -26,8 +27,12 @@ struct OnboardingView: View {
     /// (the first of the user's selected folders).
     var onComplete: (Project?) -> Void
 
+    /// Raw values are persisted as mid-flow resume state, so existing cases
+    /// must never be reordered — new steps are appended. Flow order matches
+    /// raw-value order (Back navigates via `rawValue - 1`), so `account`
+    /// lands last, after analytics.
     enum Step: Int, CaseIterable {
-        case welcome, harnesses, permissions, project, analytics
+        case welcome, harnesses, permissions, project, analytics, account
     }
 
     /// Where harness detection stands. Distinguishes "the server isn't up
@@ -190,6 +195,7 @@ struct OnboardingView: View {
         case .analytics: analyticsStep
         case .harnesses: harnessesStep
         case .project: projectStep
+        case .account: accountStep
         }
     }
 
@@ -313,6 +319,109 @@ struct OnboardingView: View {
                 .padding(.top, 16)
         }
         .frame(maxWidth: .infinity)
+    }
+
+    // MARK: - Cloud account
+
+    /// The optional last step: connect the Codevisor Cloud account. Signing
+    /// in is never required — "Skip for now" finishes setup, and the account
+    /// stays available in Settings → Account. A dev environment may already
+    /// be signed in (bootstrap adopts the dev cloud token), in which case the
+    /// confirmation shows instead of the button.
+    private var accountStep: some View {
+        VStack(spacing: 20) {
+            stepHeader(
+                symbol: "icloud",
+                title: "Connect your machines",
+                subtitle: "Sign in to see and connect to all of your machines from anywhere. End-to-end encrypted."
+            )
+
+            Group {
+                switch environment.cloud.state {
+                case .signedOut:
+                    VStack(spacing: 10) {
+                        if environment.cloud.supportsGitHubSignIn {
+                            CloudSignInProviderButton(
+                                title: "Sign in with GitHub",
+                                icon: .asset("GitHubMark")
+                            ) { startCloudSignIn() }
+                                .controlSize(.large)
+                        }
+                        if environment.cloud.developmentAccountAvailable {
+                            CloudSignInProviderButton(
+                                title: "Use Development Account",
+                                icon: .system("person.crop.circle.dashed")
+                            ) {
+                                Task { await environment.cloud.signInWithDevelopmentAccount() }
+                            }
+                            .controlSize(.large)
+                        }
+                        if let lastError = environment.cloud.lastError {
+                            Text(lastError)
+                                .font(.callout)
+                                .foregroundStyle(theme.statusWarn)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                case .validating:
+                    HStack(spacing: 8) {
+                        ProgressView().controlSize(.small)
+                        Text("Signing in…")
+                            .foregroundStyle(.secondary)
+                    }
+                case let .signedIn(userEmail):
+                    VStack(spacing: 10) {
+                        HStack(spacing: 10) {
+                            Image(systemName: "person.crop.circle.badge.checkmark")
+                                .font(.title3)
+                                .foregroundStyle(.secondary)
+                                .accessibilityHidden(true)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(userEmail ?? "Signed in")
+                                    .fontWeight(.medium)
+                                Text("Your machines will show up here and on your other devices.")
+                                    .font(.callout)
+                                    .foregroundStyle(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
+                        .padding(16)
+                        .frame(maxWidth: 420, alignment: .leading)
+                        .background(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .fill(theme.cardBackground)
+                        )
+                        // Escape hatch for switching accounts mid-onboarding —
+                        // in dev the app arrives pre-signed-in (dev-token
+                        // adoption), and this is how you reach the real
+                        // sign-in flow.
+                        Button("Use a Different Account…") {
+                            environment.cloud.signOut()
+                        }
+                        .buttonStyle(.link)
+                        .font(.callout)
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    /// The URL scheme this build registered (codevisor-dev for development
+    /// builds), read from Info.plist so it always matches what the browser
+    /// can actually call back to. Mirrors CloudSettingsView.
+    private var cloudCallbackScheme: String {
+        let registered = (Bundle.main.object(forInfoDictionaryKey: "CFBundleURLTypes") as? [[String: Any]])?
+            .compactMap { ($0["CFBundleURLSchemes"] as? [String])?.first }
+            .first { $0.hasPrefix("codevisor") }
+        return registered ?? (CodevisorAppVariant.isDevelopment ? "codevisor-dev" : "codevisor")
+    }
+
+    /// Opens the sign-in URL in the user's default browser; the handoff page
+    /// bounces back via the cloud-auth deeplink handled in ContentView.
+    private func startCloudSignIn() {
+        environment.cloud.lastError = nil
+        NSWorkspace.shared.open(environment.cloud.signInURL(scheme: cloudCallbackScheme))
     }
 
     // MARK: - Step header
@@ -685,6 +794,14 @@ struct OnboardingView: View {
                 .buttonStyle(.bordered)
                 .controlSize(.large)
                 .frame(minWidth: 96)
+        } else if step == .account, !environment.cloud.state.isSignedIn {
+            // Sign-in is optional; until it happens the only way forward is
+            // to skip, which finishes setup exactly like Continue would.
+            Button("Skip for Now") { advance() }
+                .buttonStyle(.bordered)
+                .controlSize(.large)
+                .frame(minWidth: 96)
+                .disabled(isFinishing)
         } else {
             primaryButton
         }
@@ -721,6 +838,7 @@ struct OnboardingView: View {
         case .harnesses: return "Continue"
         case .project: return "Continue"
         case .analytics: return "Continue"
+        case .account: return "Continue"
         }
     }
 
@@ -732,6 +850,7 @@ struct OnboardingView: View {
         case .harnesses: return detection == .connecting
         case .project: return projectSetup.selectedFolders.isEmpty
         case .analytics: return false
+        case .account: return false
         }
     }
 
@@ -794,12 +913,20 @@ struct OnboardingView: View {
         case .analytics:
             environment.setShareAnalytics(shareAnalytics)
             environment.setShareCrashReports(shareCrashReports)
+            navigate(to: .account, back: false)
+        case .account:
+            // Signing in is optional — Continue (signed in) and Skip for Now
+            // (signed out) both land here and finish setup.
             finish()
         }
     }
 
     private func finish() {
-        guard !projectSetup.selectedFolders.isEmpty else { return }
+        // No empty-selection guard here: the project step's Continue already
+        // requires a selection, but a mid-flow relaunch resumes PAST that step
+        // with a fresh (empty) in-memory projectSetup — finishing must still
+        // work then, just without adding projects.
+        guard !isFinishing else { return }
         isFinishing = true
         Task {
             // Cloned projects were registered the moment the clone finished;
@@ -838,6 +965,12 @@ struct OnboardingView: View {
 
 #Preview("Project") {
     OnboardingView(initialStep: .project) { _ in }
+        .environment(AppEnvironment.preview(hasOnboarded: false))
+        .frame(width: 900, height: 700)
+}
+
+#Preview("Account") {
+    OnboardingView(initialStep: .account) { _ in }
         .environment(AppEnvironment.preview(hasOnboarded: false))
         .frame(width: 900, height: 700)
 }

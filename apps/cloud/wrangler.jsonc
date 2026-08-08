@@ -1,0 +1,36 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "codevisor-cloud",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-07-13",
+  "compatibility_flags": ["nodejs_compat"],
+  "routes": [{ "pattern": "cloud.codevisor.dev", "custom_domain": true }],
+  "observability": {
+    "enabled": true
+  },
+  // Inline the generated Tailwind stylesheet as a text module so the Worker
+  // stays fully self-contained (no static-asset hosting required to self-host).
+  "rules": [{ "type": "Text", "globs": ["**/*.css"] }],
+  "durable_objects": {
+    "bindings": [{ "name": "USER_HUB", "class_name": "UserHub" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["UserHub"] }],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "codevisor-cloud",
+      // Self-hosters: replace with the id from `wrangler d1 create
+      // codevisor-cloud` on your account (and change `routes` above).
+      "database_id": "3daedd29-b7cb-4b07-bc92-a49c239cc4bc",
+      "migrations_dir": "drizzle"
+    }
+  ],
+  // Production values. Local dev overrides these with --var flags (see
+  // scripts/dev.mjs and the package `dev` script); tests override them via
+  // miniflare bindings in vitest.config.ts. DEV_AUTH is deliberately absent
+  // here — it must never be set on a deployed instance.
+  "vars": {
+    "PUBLIC_BASE_URL": "https://cloud.codevisor.dev",
+    "INSTANCE_NAME": "Codevisor Cloud"
+  }
+}

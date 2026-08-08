@@ -16,6 +16,7 @@ public final class AppEnvironment {
     public let settings: AppSettingsModel
     public let theme: ThemeManager
     public let machines: MachineController
+    public let cloud: CloudAccountController
     public let localServer: (any LocalServerControlling)?
     public let appUpdate: AppUpdateModel
     /// Set at launch when an already-onboarded install is missing the system
@@ -63,6 +64,7 @@ public final class AppEnvironment {
         settings: AppSettingsModel,
         machineStore: any PersistenceStore = InMemoryStore(),
         machineCredentialStore: (any MachineCredentialStore)? = nil,
+        cloudCredentialStore: (any CloudCredentialStore)? = nil,
         legacyCacheMigrationStore: (any PersistenceStore)? = nil,
         paneGroups: any PaneGroupRepository = DefaultPaneGroupRepository(store: InMemoryStore()),
         workspaces: any WorkspaceRepository = DefaultWorkspaceRepository(store: InMemoryStore()),
@@ -106,6 +108,20 @@ public final class AppEnvironment {
             localServer: localServer,
             clientFactory: machineClientFactory
         )
+        // Previews/tests without a device credential store stay hermetic: an
+        // in-memory store, and no networking until someone calls bootstrap().
+        self.cloud = CloudAccountController(
+            credentialStore: cloudCredentialStore ?? InMemoryCloudCredentialStore()
+        )
+        // Cloud machines are first-class members of the machine list: the
+        // controller reads presence (and relay transports) from the account.
+        machines.cloudProvider = cloud
+        cloud.onSignedOut = { [weak self] in
+            self?.machines.handleCloudAccountSignedOut()
+        }
+        cloud.onMachinesRefreshed = { [weak self] in
+            self?.machines.reconcileCloudSelection()
+        }
         projectList.showsImportedSessions = settings.importExternalSessions
         machines.serverUpdateChannel = settings.alphaUpdatesEnabled ? .alpha : .stable
         machines.onHarnessLifecycleChanged = { [weak self] serverId in

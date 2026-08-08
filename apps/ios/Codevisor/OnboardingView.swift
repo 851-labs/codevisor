@@ -116,6 +116,9 @@ private struct ConnectMachineStep: View {
     @State private var isConnecting = false
     @State private var developmentError: String?
 
+    @State private var cloudSignIn = CloudSignInCoordinator()
+    @State private var isSigningInToCloud = false
+
     var body: some View {
         List {
             setupSection
@@ -123,6 +126,7 @@ private struct ConnectMachineStep: View {
                 tailnetSection
             }
             manualSection
+            cloudSection
             if let devRemote = CodevisorAppVariant.developmentRemote {
                 developmentSection(devRemote)
             }
@@ -235,6 +239,68 @@ private struct ConnectMachineStep: View {
             } label: {
                 Label("Add Machine Manually", systemImage: "plus.circle")
             }
+        }
+    }
+
+    // MARK: Codevisor Cloud
+
+    /// Optional sign-in affordance: pairing works without an account, but
+    /// signing in surfaces every machine already connected to it. Uses the
+    /// same coordinator as Settings → Account; skipping is just not tapping.
+    private var cloudSection: some View {
+        Section {
+            switch environment.cloud.state {
+            case .signedOut:
+                if environment.cloud.supportsGitHubSignIn {
+                    Button {
+                        startCloudSignIn()
+                    } label: {
+                        HStack {
+                            Label("Sign in to Codevisor Cloud", systemImage: "icloud")
+                            if isSigningInToCloud {
+                                Spacer()
+                                ProgressView()
+                            }
+                        }
+                    }
+                    .disabled(isSigningInToCloud)
+                }
+                if environment.cloud.developmentAccountAvailable {
+                    Button("Use Development Account") {
+                        Task { await environment.cloud.signInWithDevelopmentAccount() }
+                    }
+                    .disabled(isSigningInToCloud)
+                }
+            case .validating:
+                HStack(spacing: 8) {
+                    ProgressView()
+                    Text("Signing in…")
+                        .foregroundStyle(.secondary)
+                }
+            case let .signedIn(userEmail):
+                Label(userEmail ?? "Signed in to Codevisor Cloud", systemImage: "person.crop.circle.badge.checkmark")
+                    .foregroundStyle(.secondary)
+            }
+        } header: {
+            Text("Codevisor Cloud")
+        } footer: {
+            Text("Sign in to see and connect to all of your machines from anywhere. End-to-end encrypted.")
+        }
+    }
+
+    private func startCloudSignIn() {
+        let scheme = CloudSignInCoordinator.callbackScheme
+        isSigningInToCloud = true
+        environment.cloud.lastError = nil
+        cloudSignIn.start(
+            url: environment.cloud.signInURL(scheme: scheme),
+            callbackScheme: scheme
+        ) { callbackURL in
+            isSigningInToCloud = false
+            guard let callbackURL,
+                  let deeplink = CloudAuthDeeplink.parse(callbackURL)
+            else { return }
+            Task { await environment.cloud.completeSignIn(ott: deeplink.ott) }
         }
     }
 

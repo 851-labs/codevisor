@@ -31,6 +31,7 @@ import { pipeline } from "node:stream/promises"
 import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { startBackgroundTerminalHost, wrapBackgroundCommand } from "./background-terminal-host.js"
+import { startCloudBridge } from "./cloud-bridge.js"
 import { canonicalDatabasePaths, codevisorRoot, defaultDatabasePath } from "./data-dir.js"
 import {
   customHarnessDefinition,
@@ -664,6 +665,23 @@ export const runServe = (args: Record<string, string>): Promise<void> => {
           })
     const terminal = makeTerminalManager()
     const backgroundTerminals = yield* Effect.promise(() => backgroundTerminalIntegration(terminal))
+    // Cloud relay: when this machine is connected to a Codevisor Cloud
+    // account (`codevisor auth login`, or dev auto-provisioning), hold a
+    // presence connection to the user's hub and serve end-to-end encrypted
+    // terminal channels. Optional — local operation never depends on it.
+    const cloudBridge = yield* Effect.promise(() =>
+      initializeOptionalServerFeatureAsync("Cloud connection", async () =>
+        startCloudBridge({
+          credentialsPath: join(dirname(databasePath), "cloud.json"),
+          machineName: args.name ?? hostname(),
+          appVersion: version ?? "unknown",
+          localBaseUrl: `http://127.0.0.1:${port}`,
+          terminal,
+          env: process.env,
+          log: (line) => console.error(line)
+        })
+      )
+    )
     // Start resolving the GUI process's minimal environment without delaying
     // server boot. The first Git operation awaits this shared result so
     // checkout hooks and filters can find user-installed tools such as
@@ -790,6 +808,8 @@ export const runServe = (args: Record<string, string>): Promise<void> => {
         name: args.name ?? (host === "127.0.0.1" ? "Local Codevisor" : hostname()),
         port,
         worktreeNameStyle,
+        // Lets clients match this machine to its cloud presence entry.
+        cloudDeviceId: cloudBridge?.deviceId,
         bootId,
         processId: process.pid,
         appOwned,

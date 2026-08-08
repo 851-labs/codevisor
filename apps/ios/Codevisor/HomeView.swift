@@ -87,7 +87,7 @@ struct HomeView: View {
     private var projectList: ProjectListModel { environment.projectList }
 
     private var hasRemoteMachines: Bool {
-        machines.machines.contains { !$0.isLocal }
+        machines.allMachines.contains { !$0.isLocal }
     }
 
     /// Onboarding presents itself whenever no machine is paired. There is no
@@ -252,6 +252,14 @@ struct HomeView: View {
             // explicit confirmation always sits between the link and the
             // machine list (same contract as macOS).
             .onOpenURL { url in
+                // codevisor://cloud-auth deeplinks — the browser handoff back
+                // from a cloud sign-in. The one-time token is proof by itself
+                // (it expires within minutes and is single-use), so no
+                // confirmation gate sits in front of the exchange.
+                if let auth = CloudAuthDeeplink.parse(url) {
+                    Task { await environment.cloud.completeSignIn(ott: auth.ott) }
+                    return
+                }
                 guard let link = MachineDeeplink.parse(url) else { return }
                 pendingDeeplink = link
             }
@@ -496,7 +504,7 @@ struct HomeView: View {
     /// checked, then Manage Machines at the bottom.
     private var machineMenu: some View {
         Menu {
-            ForEach(machines.machines.filter { !$0.isLocal }) { machine in
+            ForEach(machines.allMachines.filter { !$0.isLocal }) { machine in
                 Button {
                     machines.selectMachine(machine.id)
                     Task { await environment.prepareSelectedMachine() }

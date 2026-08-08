@@ -30,6 +30,7 @@
     "release:scripts:test": "node --test scripts/release/*.test.mjs",
     "release:macos": "scripts/release/build-macos-app.sh",
     "release:tap": "node scripts/release/update-homebrew-tap.mjs",
+    "setup:github-oauth": "node scripts/setup-github-oauth.mjs",
     "swift:test": "swift test --package-path apps/macos/Packages",
     "swift:build:ios": "xcodebuild -project apps/ios/Codevisor.xcodeproj -scheme Codevisor -destination 'generic/platform=iOS Simulator' -derivedDataPath tmp/DerivedData-iOS-check -quiet build",
     "xcode:list": "xcodebuild -list -project apps/macos/Codevisor.xcodeproj"

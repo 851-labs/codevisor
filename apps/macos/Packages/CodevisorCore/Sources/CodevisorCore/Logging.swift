@@ -25,6 +25,7 @@ public enum Log {
     public static let attachments = Logger(subsystem: subsystem, category: "attachments")
     public static let computerUse = Logger(subsystem: subsystem, category: "computer-use")
     public static let onboarding = Logger(subsystem: subsystem, category: "onboarding")
+    public static let cloud = Logger(subsystem: subsystem, category: "cloud")
     /// Errors that were also surfaced to the user (mirrors every
     /// `ErrorReporter.report` so the banner text is findable in logs).
     public static let surfaced = Logger(subsystem: subsystem, category: "surfaced")

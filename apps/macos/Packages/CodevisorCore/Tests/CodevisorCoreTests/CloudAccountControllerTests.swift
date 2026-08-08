@@ -1,0 +1,368 @@
+import Foundation
+import Testing
+@testable import CodevisorCore
+
+/// A scriptable stand-in for the cloud REST client.
+private final class FakeCloudClient: CloudAccountClienting, @unchecked Sendable {
+    private let lock = NSLock()
+
+    var discoverResult: Result<CloudInstanceInfo, any Error> = .success(
+        CloudInstanceInfo(service: "codevisor-cloud", instance: "Test Cloud")
+    )
+    var verifyResult: Result<String, any Error> = .failure(CloudAccountClientError.missingToken)
+    /// Tokens the fake accepts, mapped to the user get-session reports.
+    var sessions: [String: CloudSessionUser] = [:]
+    var machinesResult: Result<[CloudMachine], any Error> = .success([])
+    var renameError: (any Error)?
+    var removeError: (any Error)?
+
+    private(set) var sessionTokens: [String] = []
+    private(set) var machineTokens: [String] = []
+    private(set) var renames: [(deviceId: String, name: String)] = []
+    private(set) var removals: [String] = []
+
+    func discover() async throws -> CloudInstanceInfo {
+        try lock.withLock { discoverResult }.get()
+    }
+
+    func verifyOneTimeToken(_ ott: String) async throws -> String {
+        try lock.withLock { verifyResult }.get()
+    }
+
+    func session(token: String) async throws -> CloudSessionUser? {
+        lock.withLock {
+            sessionTokens.append(token)
+            return sessions[token]
+        }
+    }
+
+    func machines(token: String) async throws -> [CloudMachine] {
+        try lock.withLock {
+            machineTokens.append(token)
+            return machinesResult
+        }.get()
+    }
+
+    func rename(deviceId: String, name: String, token: String) async throws {
+        let error: (any Error)? = lock.withLock {
+            renames.append((deviceId: deviceId, name: name))
+            return renameError
+        }
+        if let error { throw error }
+    }
+
+    func removeMachine(deviceId: String, token: String) async throws {
+        let error: (any Error)? = lock.withLock {
+            removals.append(deviceId)
+            return removeError
+        }
+        if let error { throw error }
+    }
+}
+
+/// Every call fails like an unreachable host.
+private struct OfflineError: Error {}
+
+private struct OfflineCloudClient: CloudAccountClienting {
+    func discover() async throws -> CloudInstanceInfo { throw OfflineError() }
+    func verifyOneTimeToken(_ ott: String) async throws -> String { throw OfflineError() }
+    func session(token: String) async throws -> CloudSessionUser? { throw OfflineError() }
+    func machines(token: String) async throws -> [CloudMachine] { throw OfflineError() }
+    func rename(deviceId: String, name: String, token: String) async throws { throw OfflineError() }
+    func removeMachine(deviceId: String, token: String) async throws { throw OfflineError() }
+}
+
+@MainActor
+@Suite("CloudAccountController")
+struct CloudAccountControllerTests {
+    private static func machine(
+        _ deviceId: String,
+        name: String = "Mac Studio",
+        online: Bool = true
+    ) -> CloudMachine {
+        CloudMachine(
+            deviceId: deviceId,
+            name: name,
+            os: "macos",
+            appVersion: "1.0.0",
+            publicKey: "pk_\(deviceId)",
+            online: online,
+            lastSeenAt: "2026-08-07T00:00:00.000Z"
+        )
+    }
+
+    private func makeController(
+        client: FakeCloudClient = FakeCloudClient(),
+        store: InMemoryCloudCredentialStore = InMemoryCloudCredentialStore(),
+        environmentCloud: CodevisorAppVariant.DevelopmentCloud? = nil
+    ) -> (controller: CloudAccountController, client: FakeCloudClient, store: InMemoryCloudCredentialStore) {
+        let controller = CloudAccountController(
+            clientFactory: { _ in client },
+            credentialStore: store,
+            environmentCloud: environmentCloud
+        )
+        return (controller, client, store)
+    }
+
+    @Test("Server URL resolution: custom beats dev cloud beats default")
+    func serverURLResolution() throws {
+        let dev = CodevisorAppVariant.DevelopmentCloud(
+            url: URL(string: "http://127.0.0.1:8787")!,
+            token: nil
+        )
+
+        let bare = makeController()
+        #expect(bare.controller.serverURL == URL(string: "https://cloud.codevisor.dev")!)
+
+        let withDev = makeController(environmentCloud: dev)
+        #expect(withDev.controller.serverURL == URL(string: "http://127.0.0.1:8787")!)
+
+        let custom = makeController(
+            store: InMemoryCloudCredentialStore(serverURL: URL(string: "https://cloud.example.com")!),
+            environmentCloud: dev
+        )
+        #expect(custom.controller.serverURL == URL(string: "https://cloud.example.com")!)
+    }
+
+    @Test("Bootstrap never signs in automatically — the dev account is an explicit action")
+    func bootstrapDoesNotAdoptDevToken() async throws {
+        let client = FakeCloudClient()
+        client.sessions["dev-token"] = CloudSessionUser(userId: "u1", email: "dev@example.com")
+        let (controller, _, store) = makeController(
+            client: client,
+            environmentCloud: CodevisorAppVariant.DevelopmentCloud(
+                url: URL(string: "http://127.0.0.1:8787")!,
+                token: "dev-token"
+            )
+        )
+
+        await controller.bootstrap()
+
+        #expect(controller.state == .signedOut)
+        #expect(try store.token() == nil)
+        #expect(controller.developmentAccountAvailable)
+    }
+
+    @Test("Signing in with the development account is explicit and stores the token")
+    func signInWithDevelopmentAccount() async throws {
+        let client = FakeCloudClient()
+        client.sessions["dev-token"] = CloudSessionUser(userId: "u1", email: "dev@example.com")
+        client.machinesResult = .success([Self.machine("dev-1")])
+        let (controller, _, store) = makeController(
+            client: client,
+            environmentCloud: CodevisorAppVariant.DevelopmentCloud(
+                url: URL(string: "http://127.0.0.1:8787")!,
+                token: "dev-token"
+            )
+        )
+
+        await controller.signInWithDevelopmentAccount()
+
+        #expect(controller.state == .signedIn(userEmail: "dev@example.com"))
+        #expect(try store.token() == "dev-token")
+        #expect(controller.machines.map(\.deviceId) == ["dev-1"])
+
+        // Without a dev environment the action (and its button) don't exist.
+        let (bare, _, _) = makeController(client: FakeCloudClient())
+        #expect(!bare.developmentAccountAvailable)
+        await bare.signInWithDevelopmentAccount()
+        #expect(bare.state == .signedOut)
+    }
+
+    @Test("GitHub sign-in is offered only when the server advertises it")
+    func gitHubProviderGating() async throws {
+        let devOnly = FakeCloudClient()
+        devOnly.discoverResult = .success(
+            CloudInstanceInfo(service: "codevisor-cloud", instance: "Dev", authProviders: ["dev"])
+        )
+        let (controller, _, _) = makeController(client: devOnly)
+        #expect(controller.supportsGitHubSignIn) // unknown yet → assume GitHub
+        await controller.bootstrap()
+        #expect(!controller.supportsGitHubSignIn)
+
+        let withGitHub = FakeCloudClient()
+        withGitHub.discoverResult = .success(
+            CloudInstanceInfo(
+                service: "codevisor-cloud",
+                instance: "Cloud",
+                authProviders: ["github", "dev"]
+            )
+        )
+        let (hosted, _, _) = makeController(client: withGitHub)
+        await hosted.bootstrap()
+        #expect(hosted.supportsGitHubSignIn)
+
+        // Discovery failure keeps the assume-GitHub default.
+        let offline = CloudAccountController(
+            clientFactory: { _ in OfflineCloudClient() },
+            credentialStore: InMemoryCloudCredentialStore(),
+            environmentCloud: nil
+        )
+        await offline.bootstrap()
+        #expect(offline.supportsGitHubSignIn)
+    }
+
+    @Test("Bootstrap clears a token the server no longer recognizes")
+    func bootstrapClearsInvalidToken() async throws {
+        let (controller, _, store) = makeController(
+            store: InMemoryCloudCredentialStore(token: "stale")
+        )
+
+        await controller.bootstrap()
+
+        #expect(controller.state == .signedOut)
+        #expect(try store.token() == nil)
+    }
+
+    @Test("Bootstrap keeps the token when the server is unreachable")
+    func bootstrapKeepsTokenOnNetworkFailure() async throws {
+        // session(token:) returning nil means "server answered: no session"
+        // and clears; a thrown error means "couldn't ask" and must not.
+        let store = InMemoryCloudCredentialStore(token: "kept")
+        let controller = CloudAccountController(
+            clientFactory: { _ in OfflineCloudClient() },
+            credentialStore: store,
+            environmentCloud: nil
+        )
+
+        await controller.bootstrap()
+
+        #expect(controller.state == .signedOut)
+        #expect(try store.token() == "kept")
+    }
+
+    @Test("Sign-in exchanges the one-time token and loads machines")
+    func completeSignInHappyPath() async throws {
+        let client = FakeCloudClient()
+        client.verifyResult = .success("session-token")
+        client.sessions["session-token"] = CloudSessionUser(userId: "u1", email: "me@example.com")
+        client.machinesResult = .success([Self.machine("m1"), Self.machine("m2", online: false)])
+        let (controller, _, store) = makeController(client: client)
+
+        await controller.completeSignIn(ott: "ott-1")
+
+        #expect(controller.state == .signedIn(userEmail: "me@example.com"))
+        #expect(try store.token() == "session-token")
+        #expect(controller.machines.map(\.deviceId) == ["m1", "m2"])
+        #expect(controller.lastError == nil)
+    }
+
+    @Test("A failed one-time-token exchange signs out with an error")
+    func completeSignInFailure() async throws {
+        let client = FakeCloudClient()
+        client.verifyResult = .failure(CloudAccountClientError.httpStatus(401))
+        let (controller, _, store) = makeController(client: client)
+
+        await controller.completeSignIn(ott: "expired")
+
+        #expect(controller.state == .signedOut)
+        #expect(try store.token() == nil)
+        #expect(controller.lastError != nil)
+    }
+
+    @Test("Sign-out clears the token and machines but keeps the custom server")
+    func signOutKeepsCustomServer() async throws {
+        let client = FakeCloudClient()
+        client.verifyResult = .success("session-token")
+        client.sessions["session-token"] = CloudSessionUser(userId: "u1", email: "me@example.com")
+        client.machinesResult = .success([Self.machine("m1")])
+        let store = InMemoryCloudCredentialStore(serverURL: URL(string: "https://cloud.example.com")!)
+        let (controller, _, _) = makeController(client: client, store: store)
+        await controller.completeSignIn(ott: "ott-1")
+
+        controller.signOut()
+
+        #expect(controller.state == .signedOut)
+        #expect(controller.machines.isEmpty)
+        #expect(try store.token() == nil)
+        #expect(try store.serverURL() == URL(string: "https://cloud.example.com")!)
+    }
+
+    @Test("Rename applies optimistically, calls the server, and refreshes")
+    func renameMachine() async throws {
+        let client = FakeCloudClient()
+        client.verifyResult = .success("t")
+        client.sessions["t"] = CloudSessionUser(userId: "u1", email: nil)
+        client.machinesResult = .success([Self.machine("m1", name: "Old Name")])
+        let (controller, _, _) = makeController(client: client)
+        await controller.completeSignIn(ott: "ott")
+
+        client.machinesResult = .success([Self.machine("m1", name: "Studio")])
+        await controller.rename(deviceId: "m1", name: "  Studio  ")
+
+        #expect(client.renames.count == 1)
+        #expect(client.renames.first?.deviceId == "m1")
+        #expect(client.renames.first?.name == "Studio")
+        #expect(controller.machines.first?.name == "Studio")
+    }
+
+    @Test("Remove drops the machine optimistically and on the server")
+    func removeMachine() async throws {
+        let client = FakeCloudClient()
+        client.verifyResult = .success("t")
+        client.sessions["t"] = CloudSessionUser(userId: "u1", email: nil)
+        client.machinesResult = .success([Self.machine("m1"), Self.machine("m2")])
+        let (controller, _, _) = makeController(client: client)
+        await controller.completeSignIn(ott: "ott")
+
+        client.machinesResult = .success([Self.machine("m2")])
+        await controller.remove(deviceId: "m1")
+
+        #expect(client.removals == ["m1"])
+        #expect(controller.machines.map(\.deviceId) == ["m2"])
+    }
+
+    @Test("Custom server validation rejects non-cloud instances")
+    func customServerRejectsNonCloud() async throws {
+        let client = FakeCloudClient()
+        client.discoverResult = .success(CloudInstanceInfo(service: "some-other-service"))
+        let (controller, _, store) = makeController(client: client)
+
+        await #expect(throws: CloudAccountClientError.notACloudInstance) {
+            try await controller.setCustomServer(URL(string: "https://not-cloud.example.com")!)
+        }
+        #expect(try store.serverURL() == nil)
+        #expect(controller.serverURL == CloudAccountController.defaultServerURL)
+    }
+
+    @Test("A validated custom server is saved and the old session dropped")
+    func customServerAcceptsCloudInstance() async throws {
+        let client = FakeCloudClient()
+        client.verifyResult = .success("t")
+        client.sessions["t"] = CloudSessionUser(userId: "u1", email: "me@example.com")
+        client.discoverResult = .success(
+            CloudInstanceInfo(service: "codevisor-cloud", instance: "My Homelab")
+        )
+        let (controller, _, store) = makeController(client: client)
+        await controller.completeSignIn(ott: "ott")
+
+        try await controller.setCustomServer(URL(string: "https://cloud.example.com")!)
+
+        #expect(try store.serverURL() == URL(string: "https://cloud.example.com")!)
+        #expect(controller.customInstanceName == "My Homelab")
+        #expect(controller.state == .signedOut)
+        #expect(try store.token() == nil)
+
+        // Clearing restores the default instance.
+        try await controller.setCustomServer(nil)
+        #expect(try store.serverURL() == nil)
+        #expect(controller.customInstanceName == nil)
+    }
+
+    @Test("Sign-in URL percent-encodes the handoff redirect")
+    func signInURLEncoding() {
+        let (controller, _, _) = makeController()
+        #expect(
+            controller.signInURL(scheme: "codevisor-dev").absoluteString
+                == "https://cloud.codevisor.dev/login/github?redirect=/auth/handoff%3Fapp%3Dcodevisor-dev"
+        )
+
+        let custom = makeController(
+            store: InMemoryCloudCredentialStore(serverURL: URL(string: "https://cloud.example.com/")!)
+        )
+        #expect(
+            custom.controller.signInURL(scheme: "codevisor").absoluteString
+                == "https://cloud.example.com/login/github?redirect=/auth/handoff%3Fapp%3Dcodevisor"
+        )
+    }
+}
