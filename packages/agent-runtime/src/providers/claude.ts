@@ -899,13 +899,17 @@ export const makeClaudeProvider = (
             // dispatch duck-types the payload and stops at the first arm that
             // matches, so folding the notice and the option snapshot into one
             // payload would drop whichever arm loses.
-            applyClaudeModelFromProvider(created, message.fallback_model)
+            const fallbackModel = applyClaudeModelFromProvider(created, message.fallback_model)
             void created.emit({
               kind: "session.updated",
               payload: {
                 modelFallback: {
                   originalModel: message.original_model,
-                  fallbackModel: created.currentModel,
+                  // Prefer the picker's canonical value when the provider's
+                  // concrete id can be reconciled with it. If it cannot, keep
+                  // the provider id: reporting an unfamiliar fallback is more
+                  // truthful than substituting the model that just refused.
+                  fallbackModel,
                   // Open string on the wire — new categories ship ahead of
                   // schema updates, so this passes through untouched.
                   category: message.api_refusal_category ?? null
@@ -1056,18 +1060,52 @@ export const makeClaudeProvider = (
   const supportsFastMode = (session: ClaudeSession): boolean =>
     currentClaudeModelFor(session)?.supportsFastMode === true
 
-  const applyClaudeModelFromProvider = (session: ClaudeSession, value: string): void => {
+  const claudeModelFamily = (value: string): string | undefined => {
+    const normalized = sanitizeModelValue(value).toLowerCase()
+    return ["opus", "sonnet", "haiku", "fable"].find(
+      (family) =>
+        normalized === family ||
+        normalized.startsWith(`${family}[`) ||
+        normalized.includes(`-${family}-`) ||
+        normalized.endsWith(`-${family}`)
+    )
+  }
+
+  const knownClaudeModelFromProvider = (
+    models: ReadonlyArray<ClaudeModel>,
+    value: string
+  ): ClaudeModel | undefined => {
+    const exact = findKnownModel(models, value)
+    if (exact !== undefined) return exact
+
+    // Claude's runtime events use concrete ids (`claude-opus-4-8`) while
+    // supportedModels can expose settable aliases (`opus[1m]`). Reconcile a
+    // concrete id only when its family identifies exactly one picker option;
+    // choosing between multiple aliases would invent information the event
+    // does not carry (for example ordinary vs 1M context).
+    const family = claudeModelFamily(value)
+    if (family === undefined) return undefined
+    const familyMatches = models.filter((model) => claudeModelFamily(model.value) === family)
+    return familyMatches.length === 1 ? familyMatches[0] : undefined
+  }
+
+  /// Applies a provider-reported model where it maps unambiguously to the
+  /// picker and returns the best truthful value for notices. An unknown model
+  /// leaves the picker unchanged but is returned raw so callers never relabel
+  /// it as the previous model.
+  const applyClaudeModelFromProvider = (session: ClaudeSession, value: string): string => {
     const sanitized = sanitizeModelValue(value)
     if (session.models.length === 0) {
       session.currentModel = sanitized
-      return
+      return sanitized
     }
-    const matched = findKnownModel(session.models, sanitized)
+    const matched = knownClaudeModelFromProvider(session.models, sanitized)
     if (matched !== undefined) {
       session.currentModel = matched.value
-      return
+      return matched.value
     }
     currentClaudeModelFor(session)
+    return sanitized
   }
 
   const currentClaudeModelFor = (session: ClaudeSession): ClaudeModel | undefined => {

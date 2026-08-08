@@ -535,6 +535,94 @@ describe("ClaudeProvider", () => {
     expect(effort?.currentValue).toBe("high")
   })
 
+  it("reconciles refusal fallback model ids with unambiguous picker aliases", async () => {
+    const fake = new FakeQuery()
+    vi.spyOn(fake, "supportedModels").mockResolvedValue([
+      {
+        description: "",
+        displayName: "Fable",
+        supportedEffortLevels: ["low", "medium", "high", "xhigh", "max"],
+        supportsEffort: true,
+        value: "claude-fable-5"
+      },
+      { description: "", displayName: "Opus (1M context)", value: "opus[1m]" },
+      { description: "", displayName: "Sonnet", value: "sonnet" },
+      { description: "", displayName: "Haiku", value: "haiku" }
+    ])
+    const provider = makeProvider(fake)
+    const events: Array<RuntimeEvent> = []
+    const createPromise = run(
+      provider.createSession(definition, "/tmp", async (event) => {
+        events.push(event)
+      })
+    )
+    await settle()
+    fake.push(initMessage())
+    await createPromise
+
+    fake.push(
+      systemMessage("model_refusal_fallback", {
+        api_refusal_category: "cyber",
+        fallback_model: "claude-opus-4-8",
+        original_model: "claude-fable-5"
+      })
+    )
+    await settle()
+
+    const updates = events
+      .filter((event) => event.kind === "session.updated")
+      .map((event) => event.payload as Record<string, unknown>)
+    expect(updates).toContainEqual({
+      modelFallback: {
+        category: "cyber",
+        fallbackModel: "opus[1m]",
+        originalModel: "claude-fable-5"
+      }
+    })
+    expect(updates).toContainEqual(
+      expect.objectContaining({
+        configId: "model",
+        value: "opus[1m]",
+        configOptions: expect.arrayContaining([
+          expect.objectContaining({ currentValue: "opus[1m]", id: "model" })
+        ])
+      })
+    )
+  })
+
+  it("reports an unknown refusal fallback without relabeling it as the current model", async () => {
+    const fake = new FakeQuery()
+    vi.spyOn(fake, "supportedModels").mockResolvedValue([
+      { description: "", displayName: "Fable", value: "claude-fable-5" }
+    ])
+    const provider = makeProvider(fake)
+    const events: Array<RuntimeEvent> = []
+    const createPromise = run(
+      provider.createSession(definition, "/tmp", async (event) => {
+        events.push(event)
+      })
+    )
+    await settle()
+    fake.push(initMessage())
+    await createPromise
+
+    fake.push(
+      systemMessage("model_refusal_fallback", {
+        fallback_model: "claude-unknown-fallback-1",
+        original_model: "claude-fable-5"
+      })
+    )
+    await settle()
+
+    expect(events.map((event) => event.payload)).toContainEqual({
+      modelFallback: {
+        category: null,
+        fallbackModel: "claude-unknown-fallback-1",
+        originalModel: "claude-fable-5"
+      }
+    })
+  })
+
   it("exposes speed for fast-mode models and applies it via flag settings", async () => {
     const fake = new FakeQuery()
     const provider = makeProvider(fake)

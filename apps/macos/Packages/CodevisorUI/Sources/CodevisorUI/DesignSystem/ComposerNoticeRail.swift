@@ -60,10 +60,16 @@ public struct ComposerNoticeRail: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(foregroundColor.opacity(0.08))
-        )
+        .background {
+            ZStack {
+                // Notices float beyond the transcript mask, so their base must
+                // be opaque or transcript text bleeds through the status tint.
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(theme.windowBackground)
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(foregroundColor.opacity(0.08))
+            }
+        }
         .accessibilityElement(children: .combine)
     }
 
