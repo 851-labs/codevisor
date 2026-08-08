@@ -148,19 +148,55 @@ public extension CloudMachineProviding {
 
 public struct MachineRegistry: Sendable, Codable, Equatable {
     public var selectedMachineId: String
+    /// True once the user has explicitly chosen a machine (an actual tap in
+    /// the picker). While false, the controller may auto-select the best
+    /// available real machine so a fresh sign-in doesn't strand the user on
+    /// the local placeholder (which is non-functional on iOS). Auto-selection
+    /// never sets this, so a vanished auto-pick can be replaced next refresh.
+    public var hasExplicitMachineSelection: Bool
     public var remoteMachines: [CodevisorMachine]
     /// The local machine isn't stored in `remoteMachines`, so its optional
     /// appearance override lives alongside the remote registry.
     public var localAppearance: MachineAppearance?
+    /// Appearance overrides for cloud-relay machines, keyed by their stable
+    /// `cloud:<deviceId>` machine id. Cloud machines are synthesized from
+    /// cloud presence rather than stored in `remoteMachines`, so their icons
+    /// live here. Entries for machines that leave the account are kept — a
+    /// reconnecting machine gets its icon back for free.
+    public var cloudAppearances: [String: MachineAppearance]
 
     public init(
         selectedMachineId: String = CodevisorMachine.local.id,
+        hasExplicitMachineSelection: Bool = false,
         remoteMachines: [CodevisorMachine] = [],
-        localAppearance: MachineAppearance? = nil
+        localAppearance: MachineAppearance? = nil,
+        cloudAppearances: [String: MachineAppearance] = [:]
     ) {
         self.selectedMachineId = selectedMachineId
+        self.hasExplicitMachineSelection = hasExplicitMachineSelection
         self.remoteMachines = remoteMachines
         self.localAppearance = localAppearance
+        self.cloudAppearances = cloudAppearances
+    }
+
+    /// Custom decode so registries persisted before `cloudAppearances`
+    /// existed load with an empty map instead of failing (which would look
+    /// like corruption and reset the machine list).
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        selectedMachineId = try container.decode(String.self, forKey: .selectedMachineId)
+        // Registries persisted before this flag existed decode as "no explicit
+        // choice yet", so they benefit from auto-selection like fresh installs.
+        hasExplicitMachineSelection = try container.decodeIfPresent(
+            Bool.self,
+            forKey: .hasExplicitMachineSelection
+        ) ?? false
+        remoteMachines = try container.decode([CodevisorMachine].self, forKey: .remoteMachines)
+        localAppearance = try container.decodeIfPresent(MachineAppearance.self, forKey: .localAppearance)
+        cloudAppearances = try container.decodeIfPresent(
+            [String: MachineAppearance].self,
+            forKey: .cloudAppearances
+        ) ?? [:]
     }
 }
 
@@ -352,6 +388,10 @@ public final class MachineController {
             if let loopback = cloudProvider?.loopbackBaseURL(for: cloud) {
                 machine.baseURL = loopback
             }
+            // Cloud machines aren't stored in the registry, so their saved
+            // icon lives in a side map keyed by the stable `cloud:` id. Nil
+            // resolves to the icloud default.
+            machine.appearance = registry.cloudAppearances[machine.id]
             return machine
         }
     }
@@ -364,11 +404,15 @@ public final class MachineController {
     public var cloudOnlyMachines: [CloudMachine] {
         guard let cloudProvider, cloudProvider.isCloudSignedIn else { return [] }
         // Statuses of cloud-synthesized entries also carry the device id;
-        // only configured machines' statuses count for deduplication or every
-        // probed cloud machine would deduplicate itself away.
+        // only CURRENTLY CONFIGURED machines' statuses count for
+        // deduplication — a cloud entry dedups itself through its own probe,
+        // and a machine removed from the registry (individually or by the
+        // delete-all-data reset) must not keep hiding its cloud twin through
+        // a stale status left in this in-memory map.
+        let configuredIds = Set(machines.map(\.id))
         let knownCloudIds = Set(
             statusByMachineId
-                .filter { !$0.key.hasPrefix(CodevisorMachine.cloudIdPrefix) }
+                .filter { configuredIds.contains($0.key) }
                 .values
                 .compactMap(\.cloudDeviceId)
         )
@@ -437,6 +481,18 @@ public final class MachineController {
     }
 
     public func selectMachine(_ id: String) {
+        guard machine(for: id) != nil else { return }
+        // An explicit tap is a durable choice: record it so auto-selection
+        // stops preferring another machine over the user's decision.
+        registry.hasExplicitMachineSelection = true
+        applySelection(id)
+    }
+
+    /// Points the registry, request gate, and project list at `id` without
+    /// touching `hasExplicitMachineSelection`. Auto-selection uses this so an
+    /// auto-pick can be superseded (or replaced) later; `selectMachine` layers
+    /// the explicit-choice flag on top.
+    private func applySelection(_ id: String) {
         guard let machine = machine(for: id) else { return }
         registry.selectedMachineId = machine.id
         beginWaiting(for: machine.id, reason: machine.isLocal ? .starting : .connecting)
@@ -444,22 +500,60 @@ public final class MachineController {
         projectList.selectServer(serverId: machine.id, serverClient: client(for: machine.id))
     }
 
+    /// When the user hasn't made an explicit choice yet and only the local
+    /// placeholder is selected, adopt the best available real machine. On iOS
+    /// the local machine is a non-functional placeholder, so a fresh sign-in
+    /// that has cloud machines should land on one of them instead of stranding
+    /// the user on "Local". No-op once the user has explicitly chosen, or when
+    /// no non-local machine exists (e.g. macOS with only its local server).
+    private func autoSelectPreferredMachineIfNeeded() {
+        guard !registry.hasExplicitMachineSelection,
+              selectedMachineId == CodevisorMachine.local.id,
+              let candidate = preferredAutoSelectionCandidate()
+        else { return }
+        // Deliberately not selectMachine: the auto-pick must stay non-explicit
+        // so it can be re-picked if this machine later disappears.
+        applySelection(candidate.id)
+        Task { await prepareSelectedMachine() }
+    }
+
+    /// The machine auto-selection should adopt: any non-local machine, with an
+    /// online one preferred over an offline one; ties (and the all-offline
+    /// case) break by `allMachines` list order (local first, then configured
+    /// remotes, then cloud-only entries). With a single cloud machine present,
+    /// that machine is the only candidate and is chosen.
+    private func preferredAutoSelectionCandidate() -> CodevisorMachine? {
+        let candidates = allMachines.filter { !$0.isLocal }
+        return candidates.first { isMachineOnline($0) } ?? candidates.first
+    }
+
+    private func isMachineOnline(_ machine: CodevisorMachine) -> Bool {
+        if machine.isCloud {
+            return cloudMachine(forMachineId: machine.id)?.online ?? false
+        }
+        return statusByMachineId[machine.id]?.isReachable ?? false
+    }
+
     /// A cloud selection persisted across launches resolves to the local
     /// machine until the account's machine list arrives. Once it does, rewire
     /// project list and gate to the now-available cloud machine.
     public func reconcileCloudSelection() {
         let selectedId = selectedMachineId
-        guard selectedId.hasPrefix(CodevisorMachine.cloudIdPrefix),
-              machine(for: selectedId) != nil,
-              projectList.selectedServerId != selectedId
-        else { return }
-        selectMachine(selectedId)
-        // The shell's selection-change task is keyed on the machine id, which
-        // never changed here (the persisted selection was this cloud machine
-        // all along) — it will not refire, and without preparation the
-        // request gate would stay waiting forever. Kick it explicitly, like
-        // addRemote does for a freshly added machine.
-        Task { await prepareSelectedMachine() }
+        if selectedId.hasPrefix(CodevisorMachine.cloudIdPrefix),
+           machine(for: selectedId) != nil,
+           projectList.selectedServerId != selectedId {
+            selectMachine(selectedId)
+            // The shell's selection-change task is keyed on the machine id,
+            // which never changed here (the persisted selection was this cloud
+            // machine all along) — it will not refire, and without preparation
+            // the request gate would stay waiting forever. Kick it explicitly,
+            // like addRemote does for a freshly added machine.
+            Task { await prepareSelectedMachine() }
+            return
+        }
+        // A fresh sign-in with machines but no explicit choice: adopt one so
+        // the user isn't left on the local placeholder.
+        autoSelectPreferredMachineIfNeeded()
     }
 
     /// Cloud entries only exist while signed in; when the account signs out
@@ -571,6 +665,8 @@ public final class MachineController {
 
         if machine.isLocal {
             registry.localAppearance = normalized
+        } else if machine.isCloud {
+            registry.cloudAppearances[machine.id] = normalized
         } else if let index = registry.remoteMachines.firstIndex(where: { $0.id == id }) {
             registry.remoteMachines[index].appearance = normalized
         }
@@ -586,6 +682,13 @@ public final class MachineController {
         guard id != CodevisorMachine.local.id else { throw MachineControllerError.cannotRemoveLocal }
         try credentialStore?.removeToken(forMachineID: id)
         registry.remoteMachines.removeAll { $0.id == id }
+        // Drop the removed machine's in-memory state. Its status in
+        // particular carries the cloud device id that deduplicates the cloud
+        // machine list — left behind, it would keep hiding the machine's
+        // cloud twin from `allMachines`.
+        statusByMachineId[id] = nil
+        updateInfoByMachineId[id] = nil
+        availabilityByMachineId[id] = nil
         if registry.selectedMachineId == id {
             registry.selectedMachineId = CodevisorMachine.local.id
             beginWaiting(for: CodevisorMachine.local.id, reason: .starting)
@@ -603,6 +706,12 @@ public final class MachineController {
                     "Failed to remove credential for \(machine.id, privacy: .public): \(String(describing: error), privacy: .public)"
                 )
             }
+            // Same as removeMachine: the app-data reset runs in-process, so
+            // a removed machine's stale status (with its cloud device id)
+            // would otherwise survive and dedup its cloud twin away.
+            statusByMachineId[machine.id] = nil
+            updateInfoByMachineId[machine.id] = nil
+            availabilityByMachineId[machine.id] = nil
         }
         credentialReadFailures.removeAll()
         registry = MachineRegistry()
@@ -1035,8 +1144,10 @@ private extension MachineRegistry {
             || selectedMachineId.hasPrefix(CodevisorMachine.cloudIdPrefix)
         return MachineRegistry(
             selectedMachineId: keepsSelection ? selectedMachineId : CodevisorMachine.local.id,
+            hasExplicitMachineSelection: hasExplicitMachineSelection,
             remoteMachines: remotes,
-            localAppearance: localAppearance
+            localAppearance: localAppearance,
+            cloudAppearances: cloudAppearances
         )
     }
 }

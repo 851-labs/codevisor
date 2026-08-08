@@ -1,11 +1,18 @@
 import CodevisorCore
 import SwiftUI
 
-/// First-launch onboarding: a welcome page, then a guided "connect your
-/// machine" page. Pairing works three ways — scan the QR that
-/// `codevisor setup` prints (the camera deeplink adds the machine and
-/// onboarding closes itself), pick a Codevisor server discovered on the
-/// tailnet, or enter an address manually in the same form macOS uses.
+/// First-launch onboarding: a welcome page, then a cloud-first "connect"
+/// page. The connect step is state-driven off `environment.cloud`:
+/// signed out leads with Codevisor Cloud sign-in, signed-in-with-no-machines
+/// shows install-and-login instructions (the machine logs itself into the
+/// same account), and signed-in-with-machines is a brief success state before
+/// the cover dismisses itself. A secondary "Set up a machine manually" path
+/// keeps the old QR / tailnet / manual-entry pairing behind a NavigationLink.
+///
+/// Layout follows the iOS onboarding convention throughout: the hero glyph,
+/// title, and supporting content sit in the upper/centre of the screen while
+/// the primary actions are pinned to the bottom safe area as full-width
+/// buttons. All colours are semantic so both light and dark mode adapt.
 struct OnboardingView: View {
     enum Step {
         case welcome
@@ -30,82 +37,380 @@ struct OnboardingView: View {
 
 private struct WelcomeStep: View {
     var body: some View {
-        VStack(spacing: 0) {
+        VStack(spacing: 16) {
+            // Anchored in the top third: a fixed top offset, hero, then a
+            // flexible Spacer fills the rest so the bottom action stays put.
             Spacer()
+                .frame(height: 96)
             Image("hunk")
                 .resizable()
                 .scaledToFit()
-                .frame(width: 72, height: 72)
+                .frame(width: 76, height: 76)
                 .foregroundStyle(.tint)
+                .accessibilityHidden(true)
             Text("Welcome to Codevisor")
                 .font(.largeTitle.bold())
                 .multilineTextAlignment(.center)
-                .padding(.top, 20)
-            Text("Your coding agents, anywhere.")
+                // Take the vertical room to wrap onto two lines rather than
+                // truncating "Codevisor" to an ellipsis.
+                .fixedSize(horizontal: false, vertical: true)
+            Text("Control your agents from anywhere.")
                 .font(.title3)
                 .foregroundStyle(.secondary)
-                .padding(.top, 6)
-            Spacer()
-            VStack(alignment: .leading, spacing: 22) {
-                featureRow(
-                    symbol: "desktopcomputer",
-                    title: "Runs on your machines",
-                    detail: "Agents work on a Mac or Linux machine you pair — your code never leaves it."
-                )
-                featureRow(
-                    symbol: "bubble.left.and.bubble.right",
-                    title: "Every agent, one app",
-                    detail: "Chat with Claude Code, Codex, and more, side by side in workspaces."
-                )
-                featureRow(
-                    symbol: "arrow.triangle.branch",
-                    title: "Safe to walk away",
-                    detail: "Branch work into worktrees, watch live progress, and pick up from any device."
-                )
-            }
-            .padding(.horizontal, 12)
-            Spacer()
-            Spacer()
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 28)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(.systemBackground))
+        .safeAreaInset(edge: .bottom) {
             NavigationLink {
                 ConnectMachineStep()
             } label: {
                 Text("Get Started")
-                    .font(.body.weight(.semibold))
-                    .foregroundStyle(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 6)
             }
-            .buttonStyle(.borderedProminent)
-            .padding(.bottom, 20)
+            .buttonStyle(OnboardingFilledButtonStyle(background: .accentColor, foreground: .white))
+            .accessibilityLabel("Get Started")
+            .padding(.horizontal, 20)
+            .padding(.top, 8)
+            .padding(.bottom, 12)
         }
-        .padding(.horizontal, 28)
         .toolbarVisibility(.hidden, for: .navigationBar)
-    }
-
-    private func featureRow(symbol: String, title: String, detail: String) -> some View {
-        HStack(alignment: .top, spacing: 14) {
-            Image(systemName: symbol)
-                .font(.title2)
-                .foregroundStyle(.tint)
-                .frame(width: 34)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(.subheadline.weight(.semibold))
-                Text(detail)
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            }
-        }
     }
 }
 
 // MARK: - Connect
 
-/// The guided pairing page: setup steps for the remote machine, an
-/// "On Your Tailnet" section that appears only when discovery actually
-/// finds Codevisor servers, and a manual-entry button that opens the same
-/// address + token form macOS shows for Add Remote Machine.
+/// The cloud-first connect page. Sign-in is the primary path; the manual QR /
+/// tailnet / add-machine flow lives one tap away behind "Set up a machine
+/// manually" so it never crowds the initial screen.
 private struct ConnectMachineStep: View {
+    @Environment(AppEnvironment.self) private var environment
+
+    @State private var cloudSignIn = CloudSignInCoordinator()
+    @State private var isSigningInToCloud = false
+
+    private var cloud: CloudAccountController { environment.cloud }
+
+    var body: some View {
+        Group {
+            switch cloud.state {
+            case .signedOut:
+                signedOutContent
+            case .validating:
+                validatingContent
+            case let .signedIn(userEmail):
+                if cloud.machines.isEmpty {
+                    installAndLoginContent(userEmail: userEmail)
+                } else {
+                    signedInReadyContent(userEmail: userEmail)
+                }
+            }
+        }
+        .background(Color(.systemBackground))
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    // MARK: Signed out (primary path)
+
+    private var signedOutContent: some View {
+        VStack(spacing: 0) {
+            // Same top-third anchor as the Welcome screen: fixed top offset,
+            // hero, then a flexible Spacer down to the bottom action stack.
+            Spacer()
+                .frame(height: 96)
+            hero(
+                symbol: "lock.icloud",
+                title: "Connect your machines",
+                subtitle: "See and connect to all of your machines from anywhere. End-to-end encrypted."
+            )
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .safeAreaInset(edge: .bottom) {
+            VStack(spacing: 12) {
+                if let lastError = cloud.lastError {
+                    Text(lastError)
+                        .font(.footnote)
+                        .foregroundStyle(.red)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.bottom, 2)
+                }
+
+                if cloud.supportsGitHubSignIn {
+                    Button(action: startCloudSignIn) {
+                        Label {
+                            Text("Sign in with GitHub")
+                        } icon: {
+                            gitHubMark
+                        }
+                    }
+                    .buttonStyle(
+                        OnboardingFilledButtonStyle(
+                            background: Color(.label),
+                            foreground: Color(.systemBackground)
+                        )
+                    )
+                    .disabled(isSigningInToCloud)
+                    .accessibilityLabel("Sign in with GitHub")
+                }
+
+                if cloud.developmentAccountAvailable {
+                    Button {
+                        Task { await cloud.signInWithDevelopmentAccount() }
+                    } label: {
+                        Label {
+                            Text("Use Development Account")
+                        } icon: {
+                            Image(systemName: "hammer")
+                        }
+                    }
+                    .buttonStyle(OnboardingOutlineButtonStyle())
+                    .disabled(isSigningInToCloud)
+                    .accessibilityLabel("Use Development Account")
+                }
+
+                secondaryManualLink
+                    .padding(.top, 4)
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 12)
+            .padding(.bottom, 12)
+        }
+    }
+
+    // MARK: Validating
+
+    private var validatingContent: some View {
+        VStack(spacing: 12) {
+            ProgressView()
+            Text("Signing in…")
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    // MARK: Signed in, machines ready (brief success)
+
+    private func signedInReadyContent(userEmail: String?) -> some View {
+        VStack(spacing: 16) {
+            Image(systemName: "checkmark.circle.fill")
+                .font(.system(size: 56))
+                .foregroundStyle(.tint)
+                .accessibilityHidden(true)
+            Text("You're all set")
+                .font(.title.bold())
+            VStack(spacing: 4) {
+                Text("Signed in as \(userEmail ?? "your account").")
+                Text("Your machines are ready.")
+            }
+            .font(.callout)
+            .foregroundStyle(.secondary)
+            .multilineTextAlignment(.center)
+        }
+        .padding(.horizontal, 32)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    // MARK: Signed in, no machines yet (install + login instructions)
+
+    private func installAndLoginContent(userEmail _: String?) -> some View {
+        ScrollView {
+            VStack(spacing: 8) {
+                Spacer()
+                    .frame(height: 40)
+                Text("Add your first machine")
+                    .font(.headline)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                Text("Run these on the Mac or Linux machine you want to use — it signs itself into this account.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                VStack(spacing: 0) {
+                    instructionStep(
+                        1,
+                        text: "Install Codevisor.",
+                        command: "curl -fsSL https://www.codevisor.dev/install.sh | sh"
+                    )
+                    Divider().padding(.leading, 46)
+                    instructionStep(
+                        2,
+                        text: "Sign in on that machine.",
+                        command: "codevisor auth login"
+                    )
+                }
+                .padding(.vertical, 4)
+                .background(
+                    Color(.secondarySystemBackground),
+                    in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+                )
+                .padding(.top, 6)
+            }
+            .padding(.horizontal, 20)
+            .padding(.bottom, 24)
+        }
+        .safeAreaInset(edge: .bottom) {
+            secondaryManualLink
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 12)
+        }
+        // Poll while this state is on screen so a machine that logs into the
+        // same account shows up without any user action — when it arrives the
+        // list becomes non-empty and the flow advances / the cover dismisses.
+        .task {
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(5))
+                if Task.isCancelled { break }
+                await cloud.refreshMachines()
+            }
+        }
+    }
+
+    // MARK: Building blocks
+
+    private func hero(symbol: String, title: String, subtitle: String) -> some View {
+        VStack(spacing: 16) {
+            Image(systemName: symbol)
+                .font(.system(size: 60))
+                .foregroundStyle(.tint)
+                .accessibilityHidden(true)
+            Text(title)
+                .font(.largeTitle.bold())
+                .multilineTextAlignment(.center)
+            Text(subtitle)
+                .font(.body)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 8)
+        }
+        .padding(.horizontal, 24)
+    }
+
+    private var gitHubMark: some View {
+        Image("GitHubMark")
+            .renderingMode(.template)
+            .resizable()
+            .scaledToFit()
+            .frame(width: 20, height: 20)
+    }
+
+    private var secondaryManualLink: some View {
+        NavigationLink {
+            ManualSetupView()
+        } label: {
+            Text("Set up a machine manually")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.tint)
+                .frame(minHeight: 44)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Set up a machine manually")
+    }
+
+    private func instructionStep(_ number: Int, text: String, command: String) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            stepNumber(number)
+            VStack(alignment: .leading, spacing: 8) {
+                Text(text)
+                    .font(.subheadline.weight(.medium))
+                CommandChip(command: command)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(14)
+    }
+
+    private func stepNumber(_ number: Int) -> some View {
+        Text("\(number)")
+            .font(.footnote.weight(.bold))
+            .foregroundStyle(.tint)
+            .frame(width: 24, height: 24)
+            .background(Color.accentColor.opacity(0.14), in: Circle())
+    }
+
+    // MARK: Cloud sign-in
+
+    private func startCloudSignIn() {
+        let scheme = CloudSignInCoordinator.callbackScheme
+        isSigningInToCloud = true
+        environment.cloud.lastError = nil
+        cloudSignIn.start(
+            url: environment.cloud.signInURL(scheme: scheme),
+            callbackScheme: scheme
+        ) { callbackURL in
+            isSigningInToCloud = false
+            guard let callbackURL,
+                  let deeplink = CloudAuthDeeplink.parse(callbackURL)
+            else { return }
+            Task { await environment.cloud.completeSignIn(ott: deeplink.ott) }
+        }
+    }
+}
+
+// MARK: - Onboarding button styles
+
+/// A full-width, large filled button shared by the onboarding CTAs so the
+/// "Get Started" and "Sign in with GitHub" actions line up pixel-for-pixel.
+/// Colours are passed in so the same style renders both the accent primary
+/// and the classic label-on-background OAuth look.
+private struct OnboardingFilledButtonStyle: ButtonStyle {
+    var background: Color
+    var foreground: Color
+    var showsProgress = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: 10) {
+            configuration.label
+                .font(.body.weight(.semibold))
+            if showsProgress {
+                ProgressView()
+                    .controlSize(.small)
+                    .tint(foreground)
+            }
+        }
+        .foregroundStyle(foreground)
+        .frame(maxWidth: .infinity, minHeight: 50)
+        .background(
+            background.opacity(configuration.isPressed ? 0.82 : 1),
+            in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+        )
+        .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+}
+
+/// A full-width, large outlined secondary button — a clean tinted outline,
+/// never a filled gray blob.
+private struct OnboardingOutlineButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.body.weight(.semibold))
+            .foregroundStyle(.tint)
+            .frame(maxWidth: .infinity, minHeight: 50)
+            .background(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(Color.accentColor.opacity(configuration.isPressed ? 0.12 : 0))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .strokeBorder(Color(.separator), lineWidth: 1)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+}
+
+// MARK: - Manual setup (secondary path)
+
+/// The old pairing surface, now reached from "Set up a machine manually": the
+/// QR setup steps, the tailnet section (when discovery finds servers), the
+/// same Add-Machine form macOS uses, and the dev-remote quick-add.
+private struct ManualSetupView: View {
     @Environment(AppEnvironment.self) private var environment
     @Environment(\.dismiss) private var dismiss
 
@@ -116,9 +421,6 @@ private struct ConnectMachineStep: View {
     @State private var isConnecting = false
     @State private var developmentError: String?
 
-    @State private var cloudSignIn = CloudSignInCoordinator()
-    @State private var isSigningInToCloud = false
-
     var body: some View {
         List {
             setupSection
@@ -126,14 +428,13 @@ private struct ConnectMachineStep: View {
                 tailnetSection
             }
             manualSection
-            cloudSection
             if let devRemote = CodevisorAppVariant.developmentRemote {
                 developmentSection(devRemote)
             }
         }
         .listStyle(.insetGrouped)
-        .navigationTitle("Connect a Machine")
-        .navigationBarTitleDisplayMode(.large)
+        .navigationTitle("Set Up Manually")
+        .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $isAddingManually) {
             AddMachineSheet()
         }
@@ -242,68 +543,6 @@ private struct ConnectMachineStep: View {
         }
     }
 
-    // MARK: Codevisor Cloud
-
-    /// Optional sign-in affordance: pairing works without an account, but
-    /// signing in surfaces every machine already connected to it. Uses the
-    /// same coordinator as Settings → Account; skipping is just not tapping.
-    private var cloudSection: some View {
-        Section {
-            switch environment.cloud.state {
-            case .signedOut:
-                if environment.cloud.supportsGitHubSignIn {
-                    Button {
-                        startCloudSignIn()
-                    } label: {
-                        HStack {
-                            Label("Sign in to Codevisor Cloud", systemImage: "icloud")
-                            if isSigningInToCloud {
-                                Spacer()
-                                ProgressView()
-                            }
-                        }
-                    }
-                    .disabled(isSigningInToCloud)
-                }
-                if environment.cloud.developmentAccountAvailable {
-                    Button("Use Development Account") {
-                        Task { await environment.cloud.signInWithDevelopmentAccount() }
-                    }
-                    .disabled(isSigningInToCloud)
-                }
-            case .validating:
-                HStack(spacing: 8) {
-                    ProgressView()
-                    Text("Signing in…")
-                        .foregroundStyle(.secondary)
-                }
-            case let .signedIn(userEmail):
-                Label(userEmail ?? "Signed in to Codevisor Cloud", systemImage: "person.crop.circle.badge.checkmark")
-                    .foregroundStyle(.secondary)
-            }
-        } header: {
-            Text("Codevisor Cloud")
-        } footer: {
-            Text("Sign in to see and connect to all of your machines from anywhere. End-to-end encrypted.")
-        }
-    }
-
-    private func startCloudSignIn() {
-        let scheme = CloudSignInCoordinator.callbackScheme
-        isSigningInToCloud = true
-        environment.cloud.lastError = nil
-        cloudSignIn.start(
-            url: environment.cloud.signInURL(scheme: scheme),
-            callbackScheme: scheme
-        ) { callbackURL in
-            isSigningInToCloud = false
-            guard let callbackURL,
-                  let deeplink = CloudAuthDeeplink.parse(callbackURL)
-            else { return }
-            Task { await environment.cloud.completeSignIn(ott: deeplink.ott) }
-        }
-    }
-
     // MARK: Development
 
     /// Dev-only shortcut, mirroring macOS Settings → Machines: the dev remote
@@ -365,7 +604,6 @@ private struct ConnectMachineStep: View {
             developmentError = ErrorReporter.userFacingMessage(for: error)
         }
     }
-
 }
 
 // MARK: - Command chip
@@ -381,6 +619,9 @@ private struct CommandChip: View {
             Text(command)
                 .font(.callout.monospaced())
                 .foregroundStyle(.primary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
+            Spacer(minLength: 0)
             Button {
                 UIPasteboard.general.string = command
                 withAnimation(.snappy(duration: 0.2)) { copied = true }
@@ -397,7 +638,7 @@ private struct CommandChip: View {
             .accessibilityLabel("Copy command")
         }
         .padding(.horizontal, 10)
-        .padding(.vertical, 6)
+        .padding(.vertical, 8)
         .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 8))
     }
 }

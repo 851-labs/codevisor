@@ -162,6 +162,74 @@ struct MachineControllerCloudTests {
         #expect(controller.allMachines.map(\.id) == ["local", remote.id, "cloud:dev-only"])
     }
 
+    /// A controller with one configured remote whose status probe advertises
+    /// `deviceId`, plus a cloud twin of that remote on the provider — the
+    /// setup for every stale-status deduplication regression below.
+    private func makeDedupedRemote(
+        deviceId: String
+    ) async throws -> (controller: MachineController, provider: FakeCloudProvider, remote: CodevisorMachine) {
+        let remoteTransport = FakeRelayRequestTransport()
+        remoteTransport.responsesByPath["/v1/info"] = """
+        {"id":"studio","name":"Studio","kind":"remote","version":"1.0.0",
+         "platform":"darwin","bindHost":"0.0.0.0","cloudDeviceId":"\(deviceId)"}
+        """
+        let (controller, _, provider) = makeController(clientFactory: { machine in
+            CodevisorServerClient(config: CodevisorServerConfig(
+                baseURL: machine.baseURL,
+                requestTransport: remoteTransport,
+                webSocketTransport: UnusedWebSocketTransport()
+            ))
+        })
+        let remote = try controller.addRemote(host: "studio.tailnet.ts.net")
+        await controller.refreshStatus(for: remote.id)
+        provider.cloudMachines = [makeCloudMachine(deviceId: deviceId, name: "Studio (Cloud)")]
+        #expect(controller.cloudOnlyMachines.isEmpty)
+        return (controller, provider, remote)
+    }
+
+    @Test("Removing a machine frees its cloud twin for the unified list")
+    func removedMachineStatusDoesNotDeduplicate() async throws {
+        let deviceId = "dev-removed"
+        let (controller, _, remote) = try await makeDedupedRemote(deviceId: deviceId)
+
+        try controller.removeMachine(remote.id)
+
+        #expect(controller.statusByMachineId[remote.id] == nil)
+        #expect(controller.cloudOnlyMachines.map(\.deviceId) == [deviceId])
+        #expect(controller.allMachines.map(\.id) == ["local", "cloud:\(deviceId)"])
+    }
+
+    @Test("The delete-all-data reset frees cloud twins of removed machines")
+    func resetFreesCloudTwins() async throws {
+        // The exact post-reset regression: "reset app data" runs in-process
+        // (removeAllRemoteMachines), so without pruning, the removed dev
+        // remote's stale status kept hiding its cloud entry after the user
+        // re-onboarded and signed back in.
+        let deviceId = "dev-reset"
+        let (controller, _, _) = try await makeDedupedRemote(deviceId: deviceId)
+
+        controller.removeAllRemoteMachines()
+
+        #expect(controller.cloudOnlyMachines.map(\.deviceId) == [deviceId])
+        #expect(controller.allMachines.map(\.id) == ["local", "cloud:\(deviceId)"])
+    }
+
+    @Test("A status probe landing after removal still doesn't hide the twin")
+    func lateProbeAfterRemovalDoesNotDeduplicate() async throws {
+        // An in-flight refreshStatus can re-create the removed machine's
+        // status entry after removal pruned it. Deduplication must only count
+        // statuses of currently configured machines, so even that stale entry
+        // cannot hide the cloud twin.
+        let deviceId = "dev-late-probe"
+        let (controller, _, remote) = try await makeDedupedRemote(deviceId: deviceId)
+
+        try controller.removeMachine(remote.id)
+        await controller.refreshStatus(for: remote.id)
+
+        #expect(controller.statusByMachineId[remote.id]?.cloudDeviceId == deviceId)
+        #expect(controller.cloudOnlyMachines.map(\.deviceId) == [deviceId])
+    }
+
     @Test("Selecting a cloud machine persists and yields a relay-backed client")
     func cloudSelection() async throws {
         let store = InMemoryStore()
@@ -235,6 +303,73 @@ struct MachineControllerCloudTests {
         #expect(controller.serverConfig(for: "cloud:dev-1").requestTransport != nil)
     }
 
+    @Test("Setting a cloud machine's appearance reflects in allMachines and persists")
+    func cloudAppearance() throws {
+        let store = InMemoryStore()
+        let (controller, _, provider) = makeController(store: store)
+        provider.cloudMachines = [makeCloudMachine()]
+        #expect(controller.machine(for: "cloud:dev-1")?.resolvedAppearance == .cloudDefault)
+
+        controller.setAppearance(MachineAppearance(symbolName: "server.rack"), for: "cloud:dev-1")
+        #expect(
+            controller.machine(for: "cloud:dev-1")?.resolvedAppearance.symbolName == "server.rack"
+        )
+        // Other machines keep their own appearance.
+        #expect(controller.machine(for: "local")?.resolvedAppearance == .localDefault)
+
+        // A simulated relaunch over the same persisted registry keeps the
+        // icon — the `cloud:<deviceId>` key is stable across launches.
+        let projectList = ProjectListModel(
+            projectRepository: DefaultProjectRepository(store: InMemoryStore()),
+            sessionRepository: DefaultSessionRepository(store: InMemoryStore())
+        )
+        let second = MachineController(store: store, projectList: projectList)
+        let secondProvider = FakeCloudProvider()
+        secondProvider.cloudMachines = [makeCloudMachine()]
+        second.cloudProvider = secondProvider
+        #expect(
+            second.machine(for: "cloud:dev-1")?.resolvedAppearance.symbolName == "server.rack"
+        )
+    }
+
+    @Test("An invalid cloud appearance falls back to the cloud default")
+    func cloudAppearanceInvalidFallsBack() {
+        let (controller, _, provider) = makeController()
+        provider.cloudMachines = [makeCloudMachine()]
+
+        controller.setAppearance(MachineAppearance(symbolName: "   "), for: "cloud:dev-1")
+        #expect(controller.machine(for: "cloud:dev-1")?.resolvedAppearance == .cloudDefault)
+    }
+
+    @Test("The delete-all-data reset drops saved cloud appearances")
+    func resetDropsCloudAppearances() throws {
+        let store = InMemoryStore()
+        let (controller, _, provider) = makeController(store: store)
+        provider.cloudMachines = [makeCloudMachine()]
+        controller.setAppearance(MachineAppearance(symbolName: "server.rack"), for: "cloud:dev-1")
+        #expect(!controller.registry.cloudAppearances.isEmpty)
+
+        controller.removeAllRemoteMachines()
+
+        #expect(controller.registry.cloudAppearances.isEmpty)
+        #expect(controller.machine(for: "cloud:dev-1")?.resolvedAppearance == .cloudDefault)
+        let persisted = try JSONDecoder().decode(
+            MachineRegistry.self,
+            from: #require(store.loadData(forKey: "machines"))
+        )
+        #expect(persisted.cloudAppearances.isEmpty)
+    }
+
+    @Test("Registries persisted before cloudAppearances decode with an empty map")
+    func registryDecodeCompatibility() throws {
+        let legacy = """
+        {"selectedMachineId":"local","remoteMachines":[]}
+        """
+        let registry = try JSONDecoder().decode(MachineRegistry.self, from: Data(legacy.utf8))
+        #expect(registry.cloudAppearances.isEmpty)
+        #expect(registry.selectedMachineId == "local")
+    }
+
     @Test("Sign-out with a cloud machine selected falls back to local")
     func signOutFallsBackToLocal() {
         let (controller, projectList, provider) = makeController()
@@ -247,6 +382,101 @@ struct MachineControllerCloudTests {
         #expect(controller.selectedMachineId == "local")
         #expect(controller.selectedMachine == .local)
         #expect(projectList.selectedServerId == "local")
+    }
+
+    @Test("A cloud machine arriving with no explicit selection is auto-selected")
+    func autoSelectsCloudMachineWhenNoExplicitChoice() async throws {
+        let store = InMemoryStore()
+        let (controller, projectList, provider) = makeController(store: store)
+        provider.requestTransport.responsesByPath["/v1/info"] = """
+        {"id":"m1","name":"Dev Remote","kind":"remote","version":"2.0.0",
+         "platform":"darwin","bindHost":"127.0.0.1","cloudDeviceId":"dev-1"}
+        """
+        // Fresh registry: local placeholder selected, no explicit choice.
+        #expect(controller.selectedMachineId == "local")
+        #expect(controller.registry.hasExplicitMachineSelection == false)
+
+        provider.cloudMachines = [makeCloudMachine()]
+        controller.reconcileCloudSelection()
+
+        #expect(controller.selectedMachine.isCloud)
+        #expect(controller.selectedMachineId == "cloud:dev-1")
+        #expect(projectList.selectedServerId == "cloud:dev-1")
+        // Auto-selection must NOT masquerade as an explicit choice.
+        #expect(controller.registry.hasExplicitMachineSelection == false)
+        // The prepareSelectedMachine path connects through the relay client.
+        await controller.prepareSelectedMachine()
+        #expect(provider.configRequests.contains("dev-1"))
+        #expect(provider.requestTransport.paths.contains("/v1/info"))
+
+        // The auto-selection persists so a relaunch resolves the same machine.
+        let persisted = try JSONDecoder().decode(
+            MachineRegistry.self,
+            from: #require(store.loadData(forKey: "machines"))
+        )
+        #expect(persisted.selectedMachineId == "cloud:dev-1")
+        #expect(persisted.hasExplicitMachineSelection == false)
+    }
+
+    @Test("An explicit local choice is never overridden by an arriving cloud machine")
+    func explicitLocalSelectionIsNotStolen() {
+        let (controller, projectList, provider) = makeController()
+        // The user explicitly taps Local.
+        controller.selectMachine("local")
+        #expect(controller.registry.hasExplicitMachineSelection)
+
+        provider.cloudMachines = [makeCloudMachine()]
+        controller.reconcileCloudSelection()
+
+        #expect(controller.selectedMachineId == "local")
+        #expect(projectList.selectedServerId == "local")
+    }
+
+    @Test("Auto-selection prefers an online machine over list order")
+    func autoSelectPrefersOnlineMachine() {
+        let (controller, _, provider) = makeController()
+        // Offline machine first in list order, online machine second.
+        provider.cloudMachines = [
+            makeCloudMachine(deviceId: "dev-offline", name: "Offline Mac", online: false),
+            makeCloudMachine(deviceId: "dev-online", name: "Online Mac", online: true),
+        ]
+        controller.reconcileCloudSelection()
+
+        // Online preference beats list order.
+        #expect(controller.selectedMachineId == "cloud:dev-online")
+    }
+
+    @Test("Auto-selection falls back to list order when no machine is online")
+    func autoSelectFallsBackToListOrderWhenAllOffline() {
+        let (controller, _, provider) = makeController()
+        provider.cloudMachines = [
+            makeCloudMachine(deviceId: "dev-a", name: "A Mac", online: false),
+            makeCloudMachine(deviceId: "dev-b", name: "B Mac", online: false),
+        ]
+        controller.reconcileCloudSelection()
+
+        // No online candidate: the first in list order wins.
+        #expect(controller.selectedMachineId == "cloud:dev-a")
+    }
+
+    @Test("With only the local machine present, auto-selection stays on local")
+    func autoSelectStaysLocalWithNoOtherMachines() {
+        let (controller, projectList, _) = makeController()
+        // No cloud machines, no remotes: nothing to prefer over local.
+        controller.reconcileCloudSelection()
+
+        #expect(controller.selectedMachineId == "local")
+        #expect(projectList.selectedServerId == "local")
+        #expect(controller.registry.hasExplicitMachineSelection == false)
+    }
+
+    @Test("Registries persisted before hasExplicitMachineSelection decode to false")
+    func registryDecodesExplicitFlagCompat() throws {
+        let legacy = """
+        {"selectedMachineId":"local","remoteMachines":[]}
+        """
+        let registry = try JSONDecoder().decode(MachineRegistry.self, from: Data(legacy.utf8))
+        #expect(registry.hasExplicitMachineSelection == false)
     }
 
     @Test("A persisted cloud selection resolves to local until the account arrives")

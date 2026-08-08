@@ -8,6 +8,32 @@ import process from "node:process"
 import { fileURLToPath } from "node:url"
 
 const repoRoot = await realpath(fileURLToPath(new URL("..", import.meta.url)))
+
+// Sanitize ambient Codevisor variables before anything inherits our env.
+// This script is often launched from inside a running Codevisor instance
+// (agent sessions, app terminals) whose server exports CODEVISOR_* state —
+// e.g. CODEVISOR_APP_HOSTED=1 — which must never leak into the dev app or
+// dev servers (a dev app that inherits APP_HOSTED thinks it manages its own
+// server and hangs at "Starting Codevisor Server"). Only the documented
+// dev-runner inputs survive.
+const ambientAllowlist = new Set([
+  "CODEVISOR_DEV_PORT",
+  "HERDMAN_DEV_PORT",
+  "CODEVISOR_DEV_WWW_PORT",
+  "CODEVISOR_DEV_CLOUD_PORT",
+  "CODEVISOR_DEV_DATA_DIR",
+  "HERDMAN_DEV_DATA_DIR",
+  "CODEVISOR_WORKTREES_ROOT",
+  "HERDMAN_WORKTREES_ROOT",
+  "CODEVISOR_IOS_SIMULATOR",
+  "CODEVISOR_VERSION",
+  "HERDMAN_VERSION"
+])
+for (const key of Object.keys(process.env)) {
+  if ((key.startsWith("CODEVISOR_") || key.startsWith("HERDMAN_")) && !ambientAllowlist.has(key)) {
+    delete process.env[key]
+  }
+}
 const worktreeName = basename(repoRoot)
 const instanceHash = createHash("sha256").update(repoRoot).digest("hex").slice(0, 10)
 const worktreeHash = createHash("sha256").update(worktreeName).digest("hex")

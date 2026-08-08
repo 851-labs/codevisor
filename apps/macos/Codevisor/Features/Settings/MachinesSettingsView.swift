@@ -346,8 +346,13 @@ struct MachinesSettingsView: View {
     /// any other machine, with presence and cloud account actions.
     private func cloudMachineRow(_ machine: CodevisorMachine, presence: CloudMachine) -> some View {
         let isSelected = machine.id == machines.selectedMachineId
+        // A saved icon wins; without one, fall back to the presence-derived
+        // glyph this row has always shown.
+        let symbolName = machine.appearance != nil
+            ? machine.resolvedAppearance.symbolName
+            : (presence.os == "linux" ? "server.rack" : "desktopcomputer")
         return HStack(spacing: 10) {
-            Image(systemName: presence.os == "linux" ? "server.rack" : "desktopcomputer")
+            Image(systemName: symbolName)
                 .symbolRenderingMode(.monochrome)
                 .foregroundStyle(theme.textPrimary)
                 .frame(width: 20)
@@ -365,7 +370,7 @@ struct MachinesSettingsView: View {
                             .foregroundStyle(theme.textPrimary)
                     }
                 }
-                Label("Codevisor Cloud", systemImage: "icloud")
+                Text("Codevisor Cloud")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -388,6 +393,7 @@ struct MachinesSettingsView: View {
                 .controlSize(.small)
             }
             Menu {
+                Button("Change icon") { iconEditing = machine }
                 Button("Rename…") { renamingCloud = presence }
                 Divider()
                 Button("Disconnect…", role: .destructive) { removingCloud = presence }
@@ -404,6 +410,7 @@ struct MachinesSettingsView: View {
             .accessibilityLabel("Actions for \(presence.name)")
         }
         .contextMenu {
+            Button("Change icon") { iconEditing = machine }
             Button("Rename…") { renamingCloud = presence }
             Button("Disconnect…", role: .destructive) { removingCloud = presence }
         }
