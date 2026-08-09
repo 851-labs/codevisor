@@ -10,6 +10,8 @@
     { "path": "../../packages/api" },
     { "path": "../../packages/db" },
     { "path": "../../packages/agent-runtime" },
-    { "path": "../../packages/terminal" }
+    { "path": "../../packages/terminal" },
+    { "path": "../../packages/cloud-client" },
+    { "path": "../../packages/cloud-crypto" }
   ]
 }
