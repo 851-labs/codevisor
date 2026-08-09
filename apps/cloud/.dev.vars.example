@@ -11,9 +11,9 @@
 # .dev.vars (gitignored) in your MAIN clone — every worktree's `bun run dev`
 # reads the main clone's copy automatically (a worktree-local .dev.vars takes
 # precedence if you need one to differ).
-# When these are set, `bun run dev` automatically pins the cloud to port 8787
-# so the callback URL matches (another worktree already holding it falls back
-# to a free port with a warning). If your OAuth app uses a different port, set
-# the CODEVISOR_DEV_CLOUD_PORT environment variable.
+# `bun run dev` normally assigns each worktree its own deterministic cloud
+# port. To test this real OAuth callback in one worktree, launch that worktree
+# with CODEVISOR_DEV_CLOUD_PORT=8787. Other worktrees continue to use their own
+# ports and the built-in development account.
 GITHUB_CLIENT_ID=your-client-id
 GITHUB_CLIENT_SECRET=your-client-secret

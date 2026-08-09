@@ -124,6 +124,7 @@ const socketFactory = (url: string, headers: Record<string, string>): CloudSocke
   const adapted: CloudSocket = {
     send: (data) => socket.send(data),
     close: (code, reason) => socket.close(code, reason),
+    terminate: () => socket.terminate(),
     onopen: null,
     onmessage: null,
     onclose: null
@@ -326,11 +327,23 @@ const makeBridge = (
     },
     onStateChange: (state) => {
       if (state === "connected") options.log(`Cloud: connected to ${credentials.serverUrl}`)
+      if (state === "reconnecting") options.log("Cloud: reconnecting to relay")
       if (state === "revoked") {
         options.log("Cloud: this machine's credential was revoked; disconnecting.")
       }
       if (state === "unsupported-protocol") {
         options.log("Cloud: relay requires a newer server version; disconnecting.")
+      }
+    },
+    onDisconnect: (reason) => {
+      if (reason.kind === "socket-closed") {
+        options.log(`Cloud: relay socket closed with code ${reason.code}`)
+      } else if (reason.kind === "welcome-timeout") {
+        options.log("Cloud: relay handshake timed out; replacing the socket")
+      } else if (reason.kind === "heartbeat-timeout") {
+        options.log("Cloud: relay heartbeat timed out; replacing the socket")
+      } else {
+        options.log(`Cloud: relay ${reason.phase} send failed; replacing the socket`)
       }
     }
   })

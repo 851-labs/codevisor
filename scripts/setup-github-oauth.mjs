@@ -187,7 +187,9 @@ try {
   console.log(`✅ Wrote credentials to ${outPath}`)
   if (!options.prod) {
     console.log("")
-    console.log("Every worktree's `bun run dev` now has GitHub sign-in (cloud pinned to :8787).")
+    console.log("GitHub sign-in is configured for a cloud launched with:")
+    console.log("  CODEVISOR_DEV_CLOUD_PORT=8787 bun run dev")
+    console.log("Ordinary `bun run dev` instances keep their isolated worktree cloud ports.")
   }
 } catch (error) {
   console.error(`Setup failed: ${error.message}`)

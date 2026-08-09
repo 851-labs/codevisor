@@ -571,6 +571,15 @@ describe("hub relay", () => {
     const app = await connectApp(token)
     app.socket.send(encodeCloudFrame({ t: "ping" }))
     expect((await app.reader.next()).t).toBe("pong")
+
+    // Machine heartbeats use the same hibernation-safe auto-response. This is
+    // the liveness contract that lets a machine detect a half-open socket
+    // without periodically waking the account's Durable Object.
+    const machine = await connectMachine(token, "heartbeat-vps")
+    expect((await app.reader.next()).t).toBe("presence")
+    machine.socket.send(encodeCloudFrame({ t: "ping" }))
+    expect((await machine.reader.next()).t).toBe("pong")
+
     app.socket.send("this is not json")
     const error = (await app.reader.next()) as Extract<HubToApp, { t: "error" }>
     expect(error.code).toBe("invalid-frame")

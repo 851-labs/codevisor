@@ -74,38 +74,29 @@ const remotePort = await findAvailablePort(port + 1, 51_000, 10_000)
 const remoteName = `Dev Remote (${worktreeName})`
 
 // The cloud dev instance (apps/cloud on `wrangler dev`): auth + relay hub,
-// running fully locally with DEV_AUTH enabled and state under tmp/.
-// Pin CODEVISOR_DEV_CLOUD_PORT (e.g. 8787) when testing real GitHub OAuth —
-// OAuth apps allow exactly one callback URL, so it must be a stable port that
-// matches the app's registered http://localhost:<port>/api/auth/callback/github.
-// Optional cloud dev vars (real GitHub OAuth, pinned port) live in
-// apps/cloud/.dev.vars — gitignored, created once in the MAIN clone. Worktrees
-// read the main clone's copy automatically, so a new worktree needs zero
-// setup; a worktree-local .dev.vars takes precedence when present. See
-// apps/cloud/.dev.vars.example.
+// running fully locally with DEV_AUTH enabled and state under tmp/. Like the
+// server and www ports, its preferred port is stable for this worktree and it
+// scans its own range when that port is occupied. Pin CODEVISOR_DEV_CLOUD_PORT
+// only when testing real GitHub OAuth — OAuth apps allow exactly one callback
+// URL, so it must match the registered
+// http://localhost:<port>/api/auth/callback/github exactly.
+// Optional cloud dev vars live in apps/cloud/.dev.vars — gitignored, created
+// once in the MAIN clone. Worktrees read the main clone's copy automatically;
+// a worktree-local .dev.vars takes precedence. See .dev.vars.example.
 const cloudDevVariables = await readCloudDevVariables()
-// GitHub OAuth apps register one exact callback URL (localhost:8787 by
-// convention — see .dev.vars.example), so the port pins itself whenever OAuth
-// credentials are configured. CODEVISOR_DEV_CLOUD_PORT env overrides for
-// anyone whose OAuth app uses a different port.
-const hasGithubOAuth =
-  cloudDevVariables.GITHUB_CLIENT_ID !== undefined &&
-  cloudDevVariables.GITHUB_CLIENT_SECRET !== undefined
-const requestedCloudPort =
-  parsePort(process.env.CODEVISOR_DEV_CLOUD_PORT, "CODEVISOR_DEV_CLOUD_PORT") ??
-  (hasGithubOAuth ? 8787 : undefined)
-// The pinned port sits outside the hashed dev range, so probe it directly
-// (findAvailablePort's ring arithmetic assumes preferred ∈ [base, base+range)).
-const cloudPort =
-  requestedCloudPort !== undefined && (await isPortAvailable(requestedCloudPort))
-    ? requestedCloudPort
-    : await findAvailablePort(remotePort + 1, 51_000, 10_000)
-if (requestedCloudPort !== undefined && cloudPort !== requestedCloudPort) {
-  console.warn(
-    `Cloud dev port ${requestedCloudPort} is busy (another worktree?); ` +
-      `using ${cloudPort} — GitHub OAuth callbacks will not match this instance.`
+const preferredCloudPort = 41_000 + (Number.parseInt(instanceHash.slice(0, 8), 16) % 10_000)
+const requestedCloudPort = parsePort(
+  process.env.CODEVISOR_DEV_CLOUD_PORT,
+  "CODEVISOR_DEV_CLOUD_PORT"
+)
+if (requestedCloudPort !== undefined && !(await isPortAvailable(requestedCloudPort))) {
+  throw new Error(
+    `CODEVISOR_DEV_CLOUD_PORT ${requestedCloudPort} is already in use; ` +
+      "stop its owner or choose a different explicit port."
   )
 }
+const cloudPort =
+  requestedCloudPort ?? (await findAvailablePort(preferredCloudPort, 41_000, 10_000))
 const cloudUrl = `http://localhost:${cloudPort}`
 const cloudExtraVariables = Object.entries(cloudDevVariables)
   // Keys prefixed CODEVISOR_DEV_ configure this script, not the Worker.

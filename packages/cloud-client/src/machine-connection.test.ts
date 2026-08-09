@@ -13,27 +13,46 @@ import {
   reconnectDelayMs,
   type CloudSocket,
   type IncomingChannel,
+  type MachineDisconnectReason,
   type MachineConnectionState
 } from "./index.js"
 
 class FakeSocket implements CloudSocket {
   sent: MachineToHub[] = []
   closed: { code?: number; reason?: string } | undefined
+  terminated = false
+  sendError: Error | undefined
+  onSend: ((frame: MachineToHub) => void) | undefined
   onopen: (() => void) | null = null
   onmessage: ((data: string) => void) | null = null
   onclose: ((code: number) => void) | null = null
 
   send(data: string): void {
-    this.sent.push(decodeMachineToHub(data))
+    if (this.sendError !== undefined) throw this.sendError
+    const frame = decodeMachineToHub(data)
+    this.sent.push(frame)
+    this.onSend?.(frame)
   }
 
   close(code?: number, reason?: string): void {
     this.closed = code !== undefined ? { code, ...(reason !== undefined ? { reason } : {}) } : {}
   }
 
+  terminate(): void {
+    this.terminated = true
+  }
+
   receive(frame: HubToMachine): void {
     this.onmessage?.(encodeCloudFrame(frame))
   }
+}
+
+interface ScheduledTimeout {
+  delayMs: number
+  cancelled: boolean
+  fired: boolean
+  run(): void
+  invoke(): void
 }
 
 const machineKeys = generateDeviceKeyPair()
@@ -53,6 +72,8 @@ interface Harness {
   headers: Record<string, string>[]
   states: MachineConnectionState[]
   reconnects: { callback: () => void; delayMs: number }[]
+  timeouts: ScheduledTimeout[]
+  disconnects: MachineDisconnectReason[]
   channels: IncomingChannel[]
 }
 
@@ -67,6 +88,8 @@ const harness = (
   const headers: Record<string, string>[] = []
   const states: MachineConnectionState[] = []
   const reconnects: { callback: () => void; delayMs: number }[] = []
+  const timeouts: ScheduledTimeout[] = []
+  const disconnects: MachineDisconnectReason[] = []
   const channels: IncomingChannel[] = []
   const connection = new CloudMachineConnection({
     credentials,
@@ -80,10 +103,49 @@ const harness = (
     },
     channelHandlers: overrides.handlers ?? { echo: (channel) => channels.push(channel) },
     onStateChange: (state) => states.push(state),
+    onDisconnect: (reason) => disconnects.push(reason),
     scheduleReconnect: (callback, delayMs) => reconnects.push({ callback, delayMs }),
+    scheduleTimeout: (callback, delayMs) => {
+      const timeout: ScheduledTimeout = {
+        delayMs,
+        cancelled: false,
+        fired: false,
+        run: () => {
+          if (timeout.cancelled || timeout.fired) return
+          timeout.invoke()
+        },
+        invoke: () => {
+          if (timeout.fired) return
+          timeout.fired = true
+          callback()
+        }
+      }
+      timeouts.push(timeout)
+      return () => {
+        timeout.cancelled = true
+      }
+    },
     random: () => 0.5
   })
-  return { connection, sockets, urls, headers, states, reconnects, channels }
+  return {
+    connection,
+    sockets,
+    urls,
+    headers,
+    states,
+    reconnects,
+    timeouts,
+    disconnects,
+    channels
+  }
+}
+
+const activeTimeout = (h: Harness, delayMs: number): ScheduledTimeout => {
+  const timeout = h.timeouts.find(
+    (candidate) => candidate.delayMs === delayMs && !candidate.cancelled && !candidate.fired
+  )
+  if (timeout === undefined) throw new Error(`No active ${delayMs}ms timeout`)
+  return timeout
 }
 
 const connect = (h: Harness): FakeSocket => {
@@ -172,6 +234,124 @@ describe("connection lifecycle", () => {
     expect(h.reconnects[2]!.delayMs).toBe(250) // attempts reset by welcome
   })
 
+  it("reconnects when a half-open socket misses its heartbeat pong", () => {
+    const h = harness()
+    const socket = connect(h)
+    openEcho(socket, "peer-1", "ch-1")
+    const channelCloses: string[] = []
+    h.channels[0]!.onClosed = (reason) => channelCloses.push(reason)
+    activeTimeout(h, 30_000).run()
+    expect(socket.sent.at(-1)).toEqual({ t: "ping" })
+
+    activeTimeout(h, 10_000).run()
+    expect(socket.terminated).toBe(true)
+    expect(channelCloses).toEqual(["peer-gone"])
+    expect(h.disconnects).toEqual([{ kind: "heartbeat-timeout" }])
+    expect(h.connection.state).toBe("reconnecting")
+    expect(h.reconnects).toHaveLength(1)
+    expect(h.reconnects[0]!.delayMs).toBe(250)
+
+    // Reconnect does not depend on the zombie socket ever emitting close.
+    h.reconnects[0]!.callback()
+    expect(h.sockets).toHaveLength(2)
+  })
+
+  it("keeps a healthy socket alive while pongs arrive", () => {
+    const h = harness()
+    const socket = connect(h)
+    activeTimeout(h, 30_000).run()
+    const firstDeadline = activeTimeout(h, 10_000)
+    socket.receive({ t: "pong" })
+
+    expect(firstDeadline.cancelled).toBe(true)
+    expect(socket.terminated).toBe(false)
+    expect(h.reconnects).toHaveLength(0)
+    activeTimeout(h, 30_000).run()
+    expect(socket.sent.filter((frame) => frame.t === "ping")).toHaveLength(2)
+  })
+
+  it("reconnects when a socket never completes the welcome handshake", () => {
+    const h = harness()
+    h.connection.start()
+    const socket = h.sockets[0]!
+    socket.onopen?.()
+    activeTimeout(h, 15_000).run()
+
+    expect(socket.terminated).toBe(true)
+    expect(h.disconnects).toEqual([{ kind: "welcome-timeout" }])
+    expect(h.connection.state).toBe("reconnecting")
+    expect(h.reconnects[0]!.delayMs).toBe(250)
+  })
+
+  it("reconnects when hello or heartbeat sends fail", () => {
+    const hello = harness()
+    hello.connection.start()
+    hello.sockets[0]!.sendError = new Error("hello failed")
+    hello.sockets[0]!.onopen?.()
+    expect(hello.sockets[0]!.terminated).toBe(true)
+    expect(hello.disconnects).toEqual([{ kind: "send-failed", phase: "hello" }])
+    expect(hello.connection.state).toBe("reconnecting")
+
+    const heartbeat = harness()
+    const socket = connect(heartbeat)
+    socket.sendError = new Error("heartbeat failed")
+    activeTimeout(heartbeat, 30_000).run()
+    expect(socket.terminated).toBe(true)
+    expect(heartbeat.disconnects).toEqual([{ kind: "send-failed", phase: "heartbeat" }])
+    expect(heartbeat.connection.state).toBe("reconnecting")
+  })
+
+  it("falls back to a graceful close when immediate termination is unavailable", () => {
+    const h = harness()
+    h.connection.start()
+    const socket = h.sockets[0]!
+    Reflect.set(socket, "terminate", undefined)
+    activeTimeout(h, 15_000).run()
+
+    expect(socket.closed).toEqual({ code: 4001, reason: "welcome-timeout" })
+    expect(h.connection.state).toBe("reconnecting")
+  })
+
+  it("ignores stale socket and queued liveness callbacks", () => {
+    const h = harness()
+    h.connection.start()
+    const first = h.sockets[0]!
+    const staleWelcome = activeTimeout(h, 15_000)
+    first.onclose?.(1006)
+
+    // These may already be queued by an event loop when the socket is
+    // superseded. None may revive or disturb the detached transport.
+    first.onopen?.()
+    first.receive({ t: "pong" })
+    staleWelcome.invoke()
+    expect(h.reconnects).toHaveLength(1)
+
+    h.reconnects[0]!.callback()
+    const second = h.sockets[1]!
+    second.onopen?.()
+    second.receive({ t: "welcome", protocol: CLOUD_PROTOCOL_VERSION, connectionId: "next" })
+    const staleHeartbeat = activeTimeout(h, 30_000)
+    second.onclose?.(1006)
+    staleHeartbeat.invoke()
+    expect(h.reconnects).toHaveLength(2)
+  })
+
+  it("does not arm a pong deadline after send synchronously closes the socket", () => {
+    const h = harness()
+    const socket = connect(h)
+    socket.onSend = (frame) => {
+      if (frame.t === "ping") socket.onclose?.(1006)
+    }
+    activeTimeout(h, 30_000).run()
+
+    expect(h.reconnects).toHaveLength(1)
+    expect(
+      h.timeouts.some(
+        (timeout) => timeout.delayMs === 10_000 && !timeout.cancelled && !timeout.fired
+      )
+    ).toBe(false)
+  })
+
   it("treats hub 42xx close codes as fatal", () => {
     const revoked = harness()
     connect(revoked)
@@ -195,6 +375,7 @@ describe("connection lifecycle", () => {
     expect(socket.closed?.code).toBe(1000)
     expect(h.connection.state).toBe("stopped")
     expect(closes).toEqual(["peer-gone"])
+    expect(h.timeouts.every((timeout) => timeout.cancelled || timeout.fired)).toBe(true)
     socket.onclose?.(1000)
     expect(h.reconnects).toHaveLength(0)
     // stop() twice is a no-op.
@@ -209,6 +390,19 @@ describe("connection lifecycle", () => {
     h.connection.stop()
     h.reconnects[0]!.callback()
     expect(h.sockets).toHaveLength(1)
+  })
+
+  it("ignores stale backoff after the connection is stopped and restarted", () => {
+    const h = harness()
+    connect(h)
+    h.sockets[0]!.onclose?.(1006)
+    const staleReconnect = h.reconnects[0]!.callback
+
+    h.connection.stop()
+    h.connection.start()
+    expect(h.sockets).toHaveLength(2)
+    staleReconnect()
+    expect(h.sockets).toHaveLength(2)
   })
 
   it("ignores close events from superseded sockets and stray frames", () => {
@@ -512,6 +706,7 @@ describe("incoming channels", () => {
 describe("defaults", () => {
   it("falls back to real timers and Math.random for reconnects", () => {
     vi.useFakeTimers()
+    const random = vi.spyOn(Math, "random").mockReturnValue(1)
     try {
       const sockets: FakeSocket[] = []
       const connection = new CloudMachineConnection({
@@ -526,11 +721,11 @@ describe("defaults", () => {
       })
       connection.start()
       sockets[0]!.onclose?.(1006)
-      // Max backoff is 30s; a fresh connection must exist by then.
-      vi.advanceTimersByTime(30_001)
+      vi.advanceTimersByTime(501)
       expect(sockets).toHaveLength(2)
       connection.stop()
     } finally {
+      random.mockRestore()
       vi.useRealTimers()
     }
   })

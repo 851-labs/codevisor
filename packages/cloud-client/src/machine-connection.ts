@@ -13,6 +13,10 @@ import type { MachineCredentials } from "./login.js"
 export interface CloudSocket {
   send(data: string): void
   close(code?: number, reason?: string): void
+  /// Immediately tears down the underlying transport. Node's `ws.terminate()`
+  /// is essential for half-open TCP connections where a graceful close can
+  /// wait forever; browser-style adapters may omit it and fall back to close.
+  terminate?: () => void
   onopen: (() => void) | null
   onmessage: ((data: string) => void) | null
   onclose: ((code: number) => void) | null
@@ -45,6 +49,14 @@ export interface IncomingChannel {
 
 export type ChannelHandler = (channel: IncomingChannel) => void
 
+export type MachineDisconnectReason =
+  | { kind: "socket-closed"; code: number }
+  | { kind: "welcome-timeout" }
+  | { kind: "heartbeat-timeout" }
+  | { kind: "send-failed"; phase: "hello" | "heartbeat" }
+
+type CancelTimeout = () => void
+
 /// Exponential backoff with full jitter; exported for tests and reuse.
 export const reconnectDelayMs = (
   attempt: number,
@@ -61,7 +73,12 @@ export interface MachineConnectionOptions {
   /// close reason "unsupported".
   channelHandlers: Record<string, ChannelHandler>
   onStateChange?: (state: MachineConnectionState) => void
+  onDisconnect?: (reason: MachineDisconnectReason) => void
   scheduleReconnect?: (callback: () => void, delayMs: number) => void
+  scheduleTimeout?: (callback: () => void, delayMs: number) => CancelTimeout
+  welcomeTimeoutMs?: number
+  heartbeatIntervalMs?: number
+  pongTimeoutMs?: number
   random?: () => number
 }
 
@@ -77,6 +94,10 @@ export class CloudMachineConnection {
   #state: MachineConnectionState = "stopped"
   #attempt = 0
   #stopped = true
+  #reconnectGeneration = 0
+  #cancelWelcomeTimeout: CancelTimeout | undefined
+  #cancelHeartbeat: CancelTimeout | undefined
+  #cancelPongTimeout: CancelTimeout | undefined
   /// Keyed by `${peerId}/${channelId}`.
   #channels = new Map<string, LiveChannel>()
 
@@ -95,9 +116,12 @@ export class CloudMachineConnection {
 
   stop(): void {
     this.#stopped = true
+    this.#reconnectGeneration += 1
     this.#setState("stopped")
-    this.#socket?.close(1000, "stopping")
+    this.#clearLivenessTimers()
+    const socket = this.#socket
     this.#socket = undefined
+    socket?.close(1000, "stopping")
     this.#dropAllChannels("peer-gone")
   }
 
@@ -113,7 +137,12 @@ export class CloudMachineConnection {
     const url = `${credentials.serverUrl.replace(/^http/, "ws")}/connect`
     const socket = this.options.socketFactory(url, { "x-api-key": credentials.apiKey })
     this.#socket = socket
+    this.#cancelWelcomeTimeout = this.#scheduleTimeout(() => {
+      this.#cancelWelcomeTimeout = undefined
+      this.#forceReconnect(socket, { kind: "welcome-timeout" })
+    }, this.options.welcomeTimeoutMs ?? 15_000)
     socket.onopen = () => {
+      if (this.#socket !== socket) return
       const device = {
         deviceId: credentials.deviceId,
         kind: "machine" as const,
@@ -124,42 +153,34 @@ export class CloudMachineConnection {
           ? { appVersion: this.options.device.appVersion }
           : {})
       }
-      socket.send(encodeCloudFrame({ t: "hello", protocol: CLOUD_PROTOCOL_VERSION, device }))
+      try {
+        socket.send(encodeCloudFrame({ t: "hello", protocol: CLOUD_PROTOCOL_VERSION, device }))
+      } catch {
+        this.#forceReconnect(socket, { kind: "send-failed", phase: "hello" })
+      }
     }
     socket.onmessage = (data) => this.#onFrame(socket, data)
-    socket.onclose = (code) => {
-      // Also true after stop(): stop clears #socket before closing it.
-      if (this.#socket !== socket) return
-      this.#socket = undefined
-      this.#dropAllChannels("peer-gone")
-      if (code === 4201) {
-        this.#setState("revoked")
-        return
-      }
-      if (code === 4200) {
-        this.#setState("unsupported-protocol")
-        return
-      }
-      const delay = reconnectDelayMs(this.#attempt, this.options.random ?? Math.random)
-      this.#attempt += 1
-      this.#setState("reconnecting")
-      const schedule =
-        this.options.scheduleReconnect ??
-        ((callback: () => void, ms: number) => void setTimeout(callback, ms))
-      schedule(() => {
-        if (!this.#stopped) this.#connect()
-      }, delay)
-    }
+    socket.onclose = (code) => this.#onSocketClosed(socket, code)
   }
 
   #onFrame(socket: CloudSocket, data: string): void {
+    if (this.#socket !== socket) return
     const frame = decodeHubToMachine(data)
     switch (frame.t) {
       case "welcome":
         this.#attempt = 0
+        this.#cancelWelcomeTimeout?.()
+        this.#cancelWelcomeTimeout = undefined
         this.#setState("connected")
+        this.#scheduleHeartbeat(socket)
         return
       case "pong":
+        if (this.#cancelPongTimeout !== undefined) {
+          this.#cancelPongTimeout()
+          this.#cancelPongTimeout = undefined
+          this.#scheduleHeartbeat(socket)
+        }
+        return
       case "error":
         return
       case "peer-gone": {
@@ -175,6 +196,93 @@ export class CloudMachineConnection {
         this.#onRelay(socket, frame.peerId, frame.frame, frame.peerPublicKey)
         return
     }
+  }
+
+  #scheduleHeartbeat(socket: CloudSocket): void {
+    this.#cancelHeartbeat?.()
+    this.#cancelHeartbeat = this.#scheduleTimeout(() => {
+      this.#cancelHeartbeat = undefined
+      if (this.#socket !== socket || this.#state !== "connected") return
+      try {
+        socket.send(encodeCloudFrame({ t: "ping" }))
+      } catch {
+        this.#forceReconnect(socket, { kind: "send-failed", phase: "heartbeat" })
+        return
+      }
+      // A send implementation may synchronously surface a close; do not arm a
+      // deadline for a socket that its close handler already detached.
+      if (this.#socket !== socket) return
+      this.#cancelPongTimeout?.()
+      this.#cancelPongTimeout = this.#scheduleTimeout(() => {
+        this.#cancelPongTimeout = undefined
+        this.#forceReconnect(socket, { kind: "heartbeat-timeout" })
+      }, this.options.pongTimeoutMs ?? 10_000)
+    }, this.options.heartbeatIntervalMs ?? 30_000)
+  }
+
+  #onSocketClosed(socket: CloudSocket, code: number): void {
+    // Also true after stop() and forced reconnect: both clear #socket before
+    // closing or terminating the old transport.
+    if (this.#socket !== socket) return
+    this.#socket = undefined
+    this.#clearLivenessTimers()
+    this.#dropAllChannels("peer-gone")
+    this.options.onDisconnect?.({ kind: "socket-closed", code })
+    if (code === 4201) {
+      this.#setState("revoked")
+      return
+    }
+    if (code === 4200) {
+      this.#setState("unsupported-protocol")
+      return
+    }
+    this.#scheduleReconnect()
+  }
+
+  #forceReconnect(socket: CloudSocket, reason: MachineDisconnectReason): void {
+    if (this.#socket !== socket || this.#stopped) return
+    this.#socket = undefined
+    this.#clearLivenessTimers()
+    this.#dropAllChannels("peer-gone")
+    this.options.onDisconnect?.(reason)
+    try {
+      if (socket.terminate !== undefined) socket.terminate()
+      else socket.close(4001, reason.kind)
+    } catch {
+      // The connection is already detached locally; reconnect does not depend
+      // on a broken transport completing its close handshake.
+    }
+    this.#scheduleReconnect()
+  }
+
+  #scheduleReconnect(): void {
+    const delay = reconnectDelayMs(this.#attempt, this.options.random ?? Math.random)
+    this.#attempt += 1
+    this.#setState("reconnecting")
+    const schedule =
+      this.options.scheduleReconnect ??
+      ((callback: () => void, ms: number) => void setTimeout(callback, ms))
+    const generation = ++this.#reconnectGeneration
+    schedule(() => {
+      if (!this.#stopped && generation === this.#reconnectGeneration) this.#connect()
+    }, delay)
+  }
+
+  #scheduleTimeout(callback: () => void, delayMs: number): CancelTimeout {
+    if (this.options.scheduleTimeout !== undefined) {
+      return this.options.scheduleTimeout(callback, delayMs)
+    }
+    const timeout = setTimeout(callback, delayMs)
+    return () => clearTimeout(timeout)
+  }
+
+  #clearLivenessTimers(): void {
+    this.#cancelWelcomeTimeout?.()
+    this.#cancelHeartbeat?.()
+    this.#cancelPongTimeout?.()
+    this.#cancelWelcomeTimeout = undefined
+    this.#cancelHeartbeat = undefined
+    this.#cancelPongTimeout = undefined
   }
 
   #onRelay(
