@@ -31,7 +31,7 @@ import { pipeline } from "node:stream/promises"
 import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { startBackgroundTerminalHost, wrapBackgroundCommand } from "./background-terminal-host.js"
-import { startCloudBridge } from "./cloud-bridge.js"
+import { connectCloudBridge, removeCloudCredentials, startCloudBridge } from "./cloud-bridge.js"
 import { canonicalDatabasePaths, codevisorRoot, defaultDatabasePath } from "./data-dir.js"
 import {
   customHarnessDefinition,
@@ -669,19 +669,40 @@ export const runServe = (args: Record<string, string>): Promise<void> => {
     // account (`codevisor auth login`, or dev auto-provisioning), hold a
     // presence connection to the user's hub and serve end-to-end encrypted
     // terminal channels. Optional — local operation never depends on it.
+    const cloudBridgeOptions = {
+      credentialsPath: join(dirname(databasePath), "cloud.json"),
+      machineName: args.name ?? hostname(),
+      appVersion: version ?? "unknown",
+      localBaseUrl: `http://127.0.0.1:${port}`,
+      terminal,
+      env: process.env,
+      log: (line: string) => console.error(line)
+    }
     const cloudBridge = yield* Effect.promise(() =>
       initializeOptionalServerFeatureAsync("Cloud connection", async () =>
-        startCloudBridge({
-          credentialsPath: join(dirname(databasePath), "cloud.json"),
-          machineName: args.name ?? hostname(),
-          appVersion: version ?? "unknown",
-          localBaseUrl: `http://127.0.0.1:${port}`,
-          terminal,
-          env: process.env,
-          log: (line) => console.error(line)
-        })
+        startCloudBridge(cloudBridgeOptions)
       )
     )
+    // Live cloud registration control for /v1/cloud routes: the desktop app
+    // connects/disconnects this machine as its account session changes, so a
+    // signed-in Mac appears on the account without `codevisor auth login`.
+    const cloudBridgeHolder: { current: typeof cloudBridge } = { current: cloudBridge }
+    const cloudControl = {
+      deviceId: () => cloudBridgeHolder.current?.deviceId,
+      state: () => cloudBridgeHolder.current?.state(),
+      managedBy: () => cloudBridgeHolder.current?.managedBy,
+      connect: async (serverUrl: string, sessionToken: string) => {
+        const bridge = await connectCloudBridge(cloudBridgeOptions, { serverUrl, sessionToken })
+        cloudBridgeHolder.current?.stop()
+        cloudBridgeHolder.current = bridge
+        return bridge.deviceId
+      },
+      disconnect: async () => {
+        cloudBridgeHolder.current?.stop()
+        cloudBridgeHolder.current = undefined
+        await removeCloudCredentials(cloudBridgeOptions.credentialsPath)
+      }
+    }
     // Start resolving the GUI process's minimal environment without delaying
     // server boot. The first Git operation awaits this shared result so
     // checkout hooks and filters can find user-installed tools such as
@@ -808,8 +829,10 @@ export const runServe = (args: Record<string, string>): Promise<void> => {
         name: args.name ?? (host === "127.0.0.1" ? "Local Codevisor" : hostname()),
         port,
         worktreeNameStyle,
-        // Lets clients match this machine to its cloud presence entry.
-        cloudDeviceId: cloudBridge?.deviceId,
+        // Lets clients match this machine to its cloud presence entry, and
+        // drive its registration live via /v1/cloud as the app's account
+        // session changes.
+        cloud: cloudControl,
         bootId,
         processId: process.pid,
         appOwned,

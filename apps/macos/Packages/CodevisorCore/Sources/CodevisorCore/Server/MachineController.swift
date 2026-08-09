@@ -140,10 +140,15 @@ public protocol CloudMachineProviding: AnyObject {
     /// terminal proxy). Calling this may lazily start the bridge; nil until
     /// it is listening (or when the implementation doesn't bridge).
     func loopbackBaseURL(for machine: CloudMachine) -> URL?
+    /// Registers the machine this app runs on with the signed-in account.
+    /// Nudged from local status refreshes so a server that starts after
+    /// sign-in still registers.
+    func registerLocalMachineIfNeeded()
 }
 
 public extension CloudMachineProviding {
     func loopbackBaseURL(for machine: CloudMachine) -> URL? { nil }
+    func registerLocalMachineIfNeeded() {}
 }
 
 public struct MachineRegistry: Sendable, Codable, Equatable {
@@ -905,6 +910,12 @@ public final class MachineController {
                 label: "\(info.name) \(info.version)",
                 cloudDeviceId: info.cloudDeviceId
             )
+            // A signed-in account with an unregistered local server (it may
+            // have started after sign-in): register it now so this machine
+            // shows up on the user's other devices.
+            if id == CodevisorMachine.local.id, info.cloudDeviceId == nil {
+                cloudProvider?.registerLocalMachineIfNeeded()
+            }
             do {
                 updateInfoByMachineId[id] = try await client.updateInfo(
                     refresh: true,

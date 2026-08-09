@@ -17,7 +17,7 @@ import {
 import type { TerminalManagerService } from "@codevisor/terminal"
 import { Effect } from "effect"
 import { WebSocket } from "ws"
-import { readFile, writeFile } from "node:fs/promises"
+import { readFile, rm, writeFile } from "node:fs/promises"
 import {
   appendBodyChunk,
   chunkFrames,
@@ -53,17 +53,28 @@ export interface CloudBridgeOptions {
   readonly log: (line: string) => void
 }
 
+/// Who created this machine's cloud registration. "app" registrations were
+/// provisioned by the signed-in desktop app and follow its account session
+/// (sign-out disconnects them); "external" ones came from `codevisor auth
+/// login` or dev auto-provisioning and outlive the app's viewer session.
+export type CloudBridgeManagedBy = "app" | "external"
+
 export interface CloudBridge {
   readonly stop: () => void
   readonly state: () => MachineConnectionState
   /// This machine's cloud device id, advertised via /v1/info so clients can
   /// match the machine to its cloud presence entry.
   readonly deviceId: string
+  readonly managedBy: CloudBridgeManagedBy
 }
 
-const readCredentials = async (path: string): Promise<MachineCredentials | undefined> => {
+const readCredentials = async (
+  path: string
+): Promise<{ credentials: MachineCredentials; managedBy: CloudBridgeManagedBy } | undefined> => {
   try {
-    const parsed = JSON.parse(await readFile(path, "utf8")) as Partial<MachineCredentials>
+    const parsed = JSON.parse(await readFile(path, "utf8")) as Partial<MachineCredentials> & {
+      managedBy?: unknown
+    }
     if (
       typeof parsed.serverUrl === "string" &&
       typeof parsed.deviceId === "string" &&
@@ -71,7 +82,10 @@ const readCredentials = async (path: string): Promise<MachineCredentials | undef
       typeof parsed.secretKey === "string" &&
       typeof parsed.apiKey === "string"
     ) {
-      return parsed as MachineCredentials
+      return {
+        credentials: parsed as MachineCredentials,
+        managedBy: parsed.managedBy === "app" ? "app" : "external"
+      }
     }
     return undefined
   } catch {
@@ -291,17 +305,12 @@ const validateOrReprovision = async (
   return (await devProvision(options)) ?? credentials
 }
 
-/// Starts the bridge when credentials exist (stored, or dev auto-provision).
-/// Returns undefined when this machine is not connected to a cloud account.
-export const startCloudBridge = async (
-  options: CloudBridgeOptions
-): Promise<CloudBridge | undefined> => {
-  const stored = await readCredentials(options.credentialsPath)
-  const credentials =
-    stored !== undefined
-      ? await validateOrReprovision(options, stored)
-      : await devProvision(options)
-  if (credentials === undefined) return undefined
+/// Constructs and starts the relay connection for known-good credentials.
+const makeBridge = (
+  options: CloudBridgeOptions,
+  credentials: MachineCredentials,
+  managedBy: CloudBridgeManagedBy
+): CloudBridge => {
   const connection = new CloudMachineConnection({
     credentials,
     device: {
@@ -329,6 +338,53 @@ export const startCloudBridge = async (
   return {
     stop: () => connection.stop(),
     state: () => connection.state,
-    deviceId: credentials.deviceId
+    deviceId: credentials.deviceId,
+    managedBy
   }
+}
+
+/// Starts the bridge when credentials exist (stored, or dev auto-provision).
+/// Returns undefined when this machine is not connected to a cloud account.
+export const startCloudBridge = async (
+  options: CloudBridgeOptions
+): Promise<CloudBridge | undefined> => {
+  const stored = await readCredentials(options.credentialsPath)
+  if (stored !== undefined) {
+    const credentials = await validateOrReprovision(options, stored.credentials)
+    return makeBridge(options, credentials, stored.managedBy)
+  }
+  const provisioned = await devProvision(options)
+  if (provisioned === undefined) return undefined
+  return makeBridge(options, provisioned, "external")
+}
+
+/// Registers this machine on the signed-in user's account and starts the
+/// bridge immediately — the desktop app calls this (via POST
+/// /v1/cloud/connect) after cloud sign-in so the local machine appears on the
+/// account without a separate `codevisor auth login`. The stored credential
+/// is tagged app-managed so sign-out knows it may disconnect it.
+export const connectCloudBridge = async (
+  options: CloudBridgeOptions,
+  params: { readonly serverUrl: string; readonly sessionToken: string }
+): Promise<CloudBridge> => {
+  const serverUrl = params.serverUrl.replace(/\/+$/, "")
+  const credentials = await provisionMachine(
+    (input, init) => fetch(input, init),
+    serverUrl,
+    params.sessionToken,
+    options.machineName === "" ? hostname() : options.machineName
+  )
+  await writeFile(
+    options.credentialsPath,
+    JSON.stringify({ ...credentials, managedBy: "app" }, null, 2),
+    { mode: 0o600 }
+  )
+  return makeBridge(options, credentials, "app")
+}
+
+/// Forgets this machine's stored cloud credential (the caller stops the
+/// bridge). Revoking the api key server-side is the app's job — it holds the
+/// account session; this machine only holds its own credential.
+export const removeCloudCredentials = async (credentialsPath: string): Promise<void> => {
+  await rm(credentialsPath, { force: true })
 }

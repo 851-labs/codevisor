@@ -116,6 +116,12 @@ public final class AppEnvironment {
         // Cloud machines are first-class members of the machine list: the
         // controller reads presence (and relay transports) from the account.
         machines.cloudProvider = cloud
+        // Platforms with an embedded server (macOS) register this machine on
+        // the signed-in account automatically, so it appears on the user's
+        // other devices without a separate `codevisor auth login`.
+        if localServer != nil {
+            cloud.localServerClient = machines.client(for: CodevisorMachine.local.id)
+        }
         cloud.onSignedOut = { [weak self] in
             self?.machines.handleCloudAccountSignedOut()
         }

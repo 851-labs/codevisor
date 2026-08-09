@@ -93,6 +93,14 @@ public func serverErrorMessage(_ error: any Error) -> String {
 public protocol CodevisorServerClienting: Sendable {
     func health() async throws -> ServerHealth
     func info() async throws -> ServerInfo
+    /// This machine's cloud registration (`GET /v1/cloud`).
+    func cloudRegistration() async throws -> ServerCloudRegistration
+    /// Registers the machine on the account behind `sessionToken` and returns
+    /// the new cloud device id (`POST /v1/cloud/connect`).
+    func connectCloud(serverURL: URL, sessionToken: String) async throws -> String
+    /// Stops the machine's cloud connection and forgets its credential
+    /// (`POST /v1/cloud/disconnect`).
+    func disconnectCloud() async throws
     /// The machine's view of its tailnet, for clients that can't enumerate
     /// peers themselves (iOS). `available` is false when the machine has no
     /// running Tailscale.
@@ -327,6 +335,18 @@ public protocol CodevisorServerClienting: Sendable {
 }
 
 public extension CodevisorServerClienting {
+    /// Defaults for fakes and relay transports that don't manage a machine's
+    /// cloud registration: report "not registered" and refuse to change it.
+    func cloudRegistration() async throws -> ServerCloudRegistration {
+        ServerCloudRegistration(connected: false)
+    }
+
+    func connectCloud(serverURL _: URL, sessionToken _: String) async throws -> String {
+        throw CodevisorServerClientError.invalidResponse
+    }
+
+    func disconnectCloud() async throws {}
+
     /// Cached-read stable-channel default so existing call sites keep
     /// compiling; pass `refresh: true` (and the user's channel) when the
     /// result is shown to the user right away.
@@ -903,6 +923,29 @@ public struct ServerInfo: Decodable, Equatable, Sendable {
     /// The machine's Codevisor Cloud device id, when it is cloud-connected —
     /// lets clients match this machine to its cloud presence entry.
     public var cloudDeviceId: String?
+}
+
+/// The machine's cloud registration, from `GET /v1/cloud`.
+public struct ServerCloudRegistration: Decodable, Equatable, Sendable {
+    public var connected: Bool
+    public var deviceId: String?
+    public var state: String?
+    /// "app" when the desktop app provisioned this registration (it follows
+    /// the app's account session); "external" when `codevisor auth login` or
+    /// dev auto-provisioning did (the app never tears those down).
+    public var managedBy: String?
+
+    public init(
+        connected: Bool,
+        deviceId: String? = nil,
+        state: String? = nil,
+        managedBy: String? = nil
+    ) {
+        self.connected = connected
+        self.deviceId = deviceId
+        self.state = state
+        self.managedBy = managedBy
+    }
 }
 
 /// A device on a paired machine's tailnet, from `GET /v1/tailnet/peers`.
@@ -2423,6 +2466,30 @@ public final class CodevisorServerClient: CodevisorServerClienting, @unchecked S
 
     public func info() async throws -> ServerInfo {
         try await get("/v1/info")
+    }
+
+    public func cloudRegistration() async throws -> ServerCloudRegistration {
+        try await get("/v1/cloud")
+    }
+
+    public func connectCloud(serverURL: URL, sessionToken: String) async throws -> String {
+        struct Body: Encodable {
+            let serverUrl: String
+            let sessionToken: String
+        }
+        struct Response: Decodable {
+            let deviceId: String
+        }
+        let response: Response = try await send(
+            "/v1/cloud/connect",
+            method: "POST",
+            body: Body(serverUrl: serverURL.absoluteString, sessionToken: sessionToken)
+        )
+        return response.deviceId
+    }
+
+    public func disconnectCloud() async throws {
+        try await sendNoResponse("/v1/cloud/disconnect", method: "POST")
     }
 
     public func tailnetPeers() async throws -> ServerTailnetPeers {

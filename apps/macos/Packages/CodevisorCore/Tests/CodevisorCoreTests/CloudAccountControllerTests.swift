@@ -60,6 +60,99 @@ private final class FakeCloudClient: CloudAccountClienting, @unchecked Sendable 
     }
 }
 
+/// The embedded local server, reduced to its /v1/cloud registration surface.
+/// Everything else is the minimal boilerplate the protocol requires.
+private final class FakeLocalServerClient: CodevisorServerClienting, @unchecked Sendable {
+    private let lock = NSLock()
+    private var _registration: ServerCloudRegistration
+    private var _connects: [(serverURL: URL, sessionToken: String)] = []
+    private var _disconnects = 0
+    var connectError: (any Error)?
+
+    init(registration: ServerCloudRegistration = ServerCloudRegistration(connected: false)) {
+        _registration = registration
+    }
+
+    var connects: [(serverURL: URL, sessionToken: String)] { lock.withLock { _connects } }
+    var disconnects: Int { lock.withLock { _disconnects } }
+
+    func cloudRegistration() async throws -> ServerCloudRegistration {
+        lock.withLock { _registration }
+    }
+
+    func connectCloud(serverURL: URL, sessionToken: String) async throws -> String {
+        if let connectError { throw connectError }
+        return lock.withLock {
+            _connects.append((serverURL: serverURL, sessionToken: sessionToken))
+            _registration = ServerCloudRegistration(
+                connected: true,
+                deviceId: "local-device-1",
+                state: "connected",
+                managedBy: "app"
+            )
+            return "local-device-1"
+        }
+    }
+
+    func disconnectCloud() async throws {
+        lock.withLock {
+            _disconnects += 1
+            _registration = ServerCloudRegistration(connected: false)
+        }
+    }
+
+    // MARK: - Unused protocol surface
+
+    func health() async throws -> ServerHealth {
+        ServerHealth(ok: true, version: "0.1.0", database: "ready", bootId: nil)
+    }
+
+    func info() async throws -> ServerInfo {
+        ServerInfo(
+            id: "local", name: "Local", kind: "local", version: "0.1.0",
+            platform: "darwin", bindHost: "127.0.0.1"
+        )
+    }
+
+    func rescanHarnesses() async throws -> [ServerHarness] { [] }
+    func listHarnesses() async throws -> [ServerHarness] { [] }
+    func updateInfo(refresh: Bool, channel: ServerUpdateChannel) async throws -> ServerUpdateInfo {
+        ServerUpdateInfo(
+            currentVersion: "0.1.0", latestVersion: "0.1.0", updateAvailable: false,
+            channel: "stable", checkedAt: nil, migrationState: "idle"
+        )
+    }
+
+    func issuePairingToken() async throws -> ServerPairingToken { fatalError("unused") }
+    func capabilities(cwd: String) async throws -> ServerCapabilities {
+        ServerCapabilities(harnesses: [])
+    }
+
+    func setHarnessEnabled(id: String, enabled: Bool) async throws -> ServerHarness {
+        fatalError("unused")
+    }
+
+    func listProjects() async throws -> [ServerProject] { [] }
+    func upsertProject(_ project: Project) async throws -> ServerProject { fatalError("unused") }
+    func updateProject(_ project: Project) async throws -> ServerProject { fatalError("unused") }
+    func deleteProject(id: UUID) async throws {}
+    func listSessions() async throws -> [ServerSession] { [] }
+    func sessionDetail(id: UUID) async throws -> ServerSessionDetail { fatalError("unused") }
+    func upsertSession(_ session: ChatSession) async throws -> ServerSession { fatalError("unused") }
+    func updateSession(_ session: ChatSession) async throws -> ServerSession { fatalError("unused") }
+    func deleteSession(id: UUID) async throws {}
+    func promptSession(id: UUID, text: String) async throws -> ServerPromptAccepted {
+        ServerPromptAccepted(accepted: true, sessionId: id.uuidString)
+    }
+
+    func cancelSession(id: UUID) async throws {}
+    func setSessionMode(id: UUID, modeId: String) async throws {}
+    func setSessionConfig(id: UUID, configId: String, value: String) async throws {}
+    func eventStream(since: Int) -> AsyncThrowingStream<ServerEventEnvelope, any Error> {
+        AsyncThrowingStream { continuation in continuation.finish() }
+    }
+}
+
 /// Every call fails like an unreachable host.
 private struct OfflineError: Error {}
 
@@ -167,6 +260,115 @@ struct CloudAccountControllerTests {
         #expect(!bare.developmentAccountAvailable)
         await bare.signInWithDevelopmentAccount()
         #expect(bare.state == .signedOut)
+    }
+
+    /// Drains chained registration attempts (a successful connect re-refreshes
+    /// the machine list, which re-probes and finds the registration in place).
+    private func awaitLocalRegistration(_ controller: CloudAccountController) async {
+        while let task = controller.localRegistrationTask {
+            await task.value
+        }
+    }
+
+    private func makeSignedInWithLocalServer(
+        registration: ServerCloudRegistration = ServerCloudRegistration(connected: false)
+    ) async -> (CloudAccountController, FakeCloudClient, FakeLocalServerClient) {
+        let client = FakeCloudClient()
+        client.sessions["dev-token"] = CloudSessionUser(userId: "u1", email: "dev@example.com")
+        let (controller, _, _) = makeController(
+            client: client,
+            environmentCloud: CodevisorAppVariant.DevelopmentCloud(
+                url: URL(string: "http://127.0.0.1:8787")!,
+                token: "dev-token"
+            )
+        )
+        let localServer = FakeLocalServerClient(registration: registration)
+        controller.localServerClient = localServer
+        await controller.signInWithDevelopmentAccount()
+        await awaitLocalRegistration(controller)
+        return (controller, client, localServer)
+    }
+
+    @Test("Signing in registers the local machine on the account")
+    func signInRegistersLocalMachine() async throws {
+        let (controller, client, localServer) = await makeSignedInWithLocalServer()
+
+        #expect(localServer.connects.count == 1)
+        #expect(localServer.connects.first?.serverURL == controller.serverURL)
+        #expect(localServer.connects.first?.sessionToken == "dev-token")
+        // The successful registration re-refreshes the account machine list
+        // so the new machine shows up everywhere immediately.
+        #expect(client.machineTokens.count >= 2)
+    }
+
+    @Test("An existing registration (CLI or dev-provisioned) is left alone")
+    func signInLeavesExistingRegistrationAlone() async throws {
+        let (_, _, localServer) = await makeSignedInWithLocalServer(
+            registration: ServerCloudRegistration(
+                connected: true,
+                deviceId: "cli-device",
+                state: "connected",
+                managedBy: "external"
+            )
+        )
+
+        #expect(localServer.connects.isEmpty)
+    }
+
+    @Test("Registration retries on the next refresh after a failed attempt")
+    func registrationRetriesAfterFailure() async throws {
+        let client = FakeCloudClient()
+        client.sessions["dev-token"] = CloudSessionUser(userId: "u1", email: "dev@example.com")
+        let (controller, _, _) = makeController(
+            client: client,
+            environmentCloud: CodevisorAppVariant.DevelopmentCloud(
+                url: URL(string: "http://127.0.0.1:8787")!,
+                token: "dev-token"
+            )
+        )
+        struct ServerStartingUp: Error {}
+        let localServer = FakeLocalServerClient()
+        localServer.connectError = ServerStartingUp()
+        controller.localServerClient = localServer
+        await controller.signInWithDevelopmentAccount()
+        await awaitLocalRegistration(controller)
+        #expect(localServer.disconnects == 0)
+
+        localServer.connectError = nil
+        await controller.refreshMachines()
+        await awaitLocalRegistration(controller)
+        #expect(localServer.connects.count == 1)
+    }
+
+    @Test("Sign-out deregisters an app-managed local machine and revokes it")
+    func signOutDeregistersAppManagedMachine() async throws {
+        let (controller, client, localServer) = await makeSignedInWithLocalServer()
+        #expect(localServer.connects.count == 1)
+
+        controller.signOut()
+        await controller.localDeregistrationTask?.value
+
+        #expect(localServer.disconnects == 1)
+        // The machine's api key is revoked with the pre-sign-out session.
+        #expect(client.removals == ["local-device-1"])
+    }
+
+    @Test("Sign-out leaves CLI-managed registrations connected")
+    func signOutLeavesExternalRegistrationAlone() async throws {
+        let (controller, client, localServer) = await makeSignedInWithLocalServer(
+            registration: ServerCloudRegistration(
+                connected: true,
+                deviceId: "cli-device",
+                state: "connected",
+                managedBy: "external"
+            )
+        )
+
+        controller.signOut()
+        await controller.localDeregistrationTask?.value
+
+        #expect(localServer.disconnects == 0)
+        #expect(client.removals.isEmpty)
     }
 
     @Test("GitHub sign-in is offered only when the server advertises it")

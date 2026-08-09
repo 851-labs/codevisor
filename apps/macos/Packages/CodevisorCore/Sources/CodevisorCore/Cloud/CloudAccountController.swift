@@ -68,6 +68,18 @@ public final class CloudAccountController {
     /// Fired after the machine list refreshes, so consumers deduplicating
     /// against it (MachineController.allMachines) can reconcile selections.
     @ObservationIgnored public var onMachinesRefreshed: (() -> Void)?
+    /// The embedded local server's client, when this platform runs one
+    /// (macOS). While signed in, the account controller registers that server
+    /// on the account via its /v1/cloud routes so this machine appears on the
+    /// user's other devices without a separate `codevisor auth login` — and
+    /// tears the registration down again on sign-out (app-managed ones only).
+    @ObservationIgnored public var localServerClient: (any CodevisorServerClienting)?
+    /// Reentrancy guard for registration: one probe/connect in flight at a
+    /// time; failed attempts retry on the next refresh. Internal so tests can
+    /// await completion.
+    @ObservationIgnored var localRegistrationTask: Task<Void, Never>?
+    /// The best-effort sign-out deregistration, kept so tests can await it.
+    @ObservationIgnored var localDeregistrationTask: Task<Void, Never>?
 
     public init(
         clientFactory: @escaping ClientFactory = { CloudAccountClient(baseURL: $0) },
@@ -203,6 +215,13 @@ public final class CloudAccountController {
     /// Signs out locally: the token is cleared (a custom server choice is
     /// kept), the machine list emptied, and the relay connection torn down.
     public func signOut() {
+        // Capture before the token is cleared: deregistering this machine
+        // needs the session to revoke its api key on the account.
+        let token = storedToken
+        let localClient = localServerClient
+        let accountClient = client
+        localRegistrationTask?.cancel()
+        localRegistrationTask = nil
         do {
             try credentialStore.removeToken()
         } catch {
@@ -215,6 +234,27 @@ public final class CloudAccountController {
             self.hub = nil
             Task { await hub.shutdown() }
         }
+        // Best-effort: a registration this app created follows its account
+        // session, so signing out disconnects the local machine and revokes
+        // its credential. CLI (`codevisor auth login`) and dev-provisioned
+        // registrations are external — leave them alone.
+        if let localClient {
+            localDeregistrationTask = Task {
+                do {
+                    let registration = try await localClient.cloudRegistration()
+                    guard registration.managedBy == "app", let deviceId = registration.deviceId else {
+                        return
+                    }
+                    try await localClient.disconnectCloud()
+                    if let token {
+                        try? await accountClient.removeMachine(deviceId: deviceId, token: token)
+                    }
+                    Log.cloud.log("Deregistered this machine from the cloud account on sign-out")
+                } catch {
+                    Log.cloud.error("Local machine cloud deregistration failed: \(String(describing: error), privacy: .public)")
+                }
+            }
+        }
         onSignedOut?()
     }
 
@@ -225,6 +265,7 @@ public final class CloudAccountController {
             pruneLoopbackBridges()
             lastError = nil
             onMachinesRefreshed?()
+            registerLocalMachineIfNeeded()
         } catch {
             Log.cloud.error("Cloud machine refresh failed: \(String(describing: error), privacy: .public)")
             lastError = error.localizedDescription
@@ -233,6 +274,39 @@ public final class CloudAccountController {
                 // showing a stale signed-in pane forever.
                 signOut()
             }
+        }
+    }
+
+    /// Registers the machine this app runs on with the signed-in account, so
+    /// it appears on the user's other devices without `codevisor auth login`.
+    /// No-ops while signed out, on platforms without an embedded server
+    /// (iOS), when the local server is unreachable (it retries on the next
+    /// machine refresh), or when the machine already holds a registration —
+    /// its own from a prior sign-in, the CLI, or dev auto-provisioning.
+    public func registerLocalMachineIfNeeded() {
+        guard state.isSignedIn, let token = storedToken, let localClient = localServerClient else {
+            return
+        }
+        guard localRegistrationTask == nil else { return }
+        let serverURL = serverURL
+        localRegistrationTask = Task { [weak self] in
+            do {
+                let registration = try await localClient.cloudRegistration()
+                if !registration.connected, !Task.isCancelled {
+                    let deviceId = try await localClient.connectCloud(
+                        serverURL: serverURL,
+                        sessionToken: token
+                    )
+                    Log.cloud.log("Registered this machine on the cloud account as \(deviceId, privacy: .public)")
+                    guard let self, !Task.isCancelled else { return }
+                    self.localRegistrationTask = nil
+                    await self.refreshMachines()
+                    return
+                }
+            } catch {
+                Log.cloud.debug("Local machine cloud registration skipped: \(String(describing: error), privacy: .public)")
+            }
+            self?.localRegistrationTask = nil
         }
     }
 
