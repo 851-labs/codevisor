@@ -240,6 +240,13 @@ jobs:
         if: steps.ghosttykit-cache.outputs.cache-hit != 'true'
         with:
           determinate: true
+      # Ghostty's renderer compiles Metal shaders, and Xcode 16+ ships the
+      # Metal Toolchain as a separately downloadable component. Idempotent: a
+      # no-op once installed, so it only costs time on a fresh runner. Gated on
+      # the GhosttyKit cache miss so warm builds skip it entirely.
+      - name: Ensure Metal Toolchain
+        if: steps.ghosttykit-cache.outputs.cache-hit != 'true'
+        run: xcodebuild -downloadComponent MetalToolchain
       - name: Build GhosttyKit
         if: steps.ghosttykit-cache.outputs.cache-hit != 'true'
         run: nix develop ./.repos/ghostty -c apps/macos/scripts/build-ghostty.sh
