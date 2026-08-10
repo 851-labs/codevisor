@@ -1,82 +1,103 @@
 import Foundation
-#if os(macOS)
-import LocalAuthentication
-#endif
 import Security
 import Testing
 @testable import CodevisorCore
 
 @Suite("Keychain credential stores")
 struct KeychainCredentialStoreTests {
-    @Test("Cloud credentials read from the data-protection Keychain once")
-    func cloudReadsModernValueOnce() throws {
-        let keychain = FakeKeychain()
-        keychain.put("token", service: "cloud", account: "session-token", modern: true)
-        let store = KeychainCloudCredentialStore(service: "cloud", operations: keychain.operations)
+    @Test("Released builds retain the existing credential service names")
+    func releasedServiceNamesRemainStable() {
+        let machine = KeychainCredentialServices.scopedService(
+            productionService: KeychainCredentialServices.productionMachine,
+            isDevelopment: false,
+            developmentInstanceID: "ignored",
+            bundleIdentifier: "com.example.ignored"
+        )
+        let cloud = KeychainCredentialServices.scopedService(
+            productionService: KeychainCredentialServices.productionCloud,
+            isDevelopment: false,
+            developmentInstanceID: "ignored",
+            bundleIdentifier: "com.example.ignored"
+        )
 
-        #expect(try store.token() == "token")
-        #expect(try store.token() == "token")
-        #expect(keychain.copyCount(service: "cloud", account: "session-token", modern: true) == 1)
-        #expect(keychain.legacyCopyCount == 0)
+        #expect(machine == "com.851labs.Codevisor.machine-token")
+        #expect(cloud == "com.851labs.Codevisor.cloud-session")
     }
 
-    #if os(macOS)
-    @Test("An accessible login-Keychain value migrates silently")
-    func legacyValueMigratesSilently() throws {
-        let keychain = FakeKeychain()
-        keychain.put("legacy-token", service: "cloud", account: "session-token", modern: false)
-        let store = KeychainCloudCredentialStore(service: "cloud", operations: keychain.operations)
+    @Test("Development credentials are isolated by app instance and purpose")
+    func developmentServicesAreIsolated() {
+        let machineA = scopedDevelopmentService(
+            KeychainCredentialServices.productionMachine,
+            instanceID: "worktree-a"
+        )
+        let machineB = scopedDevelopmentService(
+            KeychainCredentialServices.productionMachine,
+            instanceID: "worktree-b"
+        )
+        let cloudA = scopedDevelopmentService(
+            KeychainCredentialServices.productionCloud,
+            instanceID: "worktree-a"
+        )
 
-        #expect(try store.token() == "legacy-token")
-        #expect(keychain.value(service: "cloud", account: "session-token", modern: true) == "legacy-token")
-        let migrationWasNonInteractive = keychain.legacyQueries.allSatisfy(\.forbidsInteraction)
-        #expect(migrationWasNonInteractive)
-
-        // A new process/store now finds the migrated value directly and does
-        // not return to the login Keychain.
-        let relaunched = KeychainCloudCredentialStore(service: "cloud", operations: keychain.operations)
-        #expect(try relaunched.token() == "legacy-token")
-        #expect(keychain.legacyCopyCount == 1)
+        #expect(machineA == "com.851labs.Codevisor.machine-token.development.worktree-a")
+        #expect(machineA != machineB)
+        #expect(machineA != cloudA)
     }
 
-    @Test("A protected legacy value never asks for authorization")
-    func protectedLegacyValueDoesNotPrompt() throws {
-        let keychain = FakeKeychain()
-        keychain.legacyReadStatus = errSecInteractionNotAllowed
-        let store = KeychainCloudCredentialStore(service: "cloud", operations: keychain.operations)
+    @Test("A bare development launch falls back to its bundle identifier")
+    func developmentServiceFallsBackToBundleIdentifier() {
+        let service = KeychainCredentialServices.scopedService(
+            productionService: KeychainCredentialServices.productionCloud,
+            isDevelopment: true,
+            developmentInstanceID: "  ",
+            bundleIdentifier: "com.851labs.Codevisor.Development.abc123"
+        )
 
-        #expect(try store.token() == nil)
-        #expect(try store.token() == nil)
-        #expect(keychain.legacyCopyCount == 1)
-        let lookupWasNonInteractive = keychain.legacyQueries.allSatisfy(\.forbidsInteraction)
-        #expect(lookupWasNonInteractive)
+        #expect(
+            service
+                == "com.851labs.Codevisor.cloud-session.development.com.851labs.Codevisor.Development.abc123"
+        )
     }
 
-    @Test("Removing a migrated value cannot resurrect its legacy copy")
-    func removalTombstonesLegacyValue() throws {
+    @Test("Machine and cloud credentials share platform-default Keychain behavior")
+    func credentialStoresSharePlatformKeychainBehavior() throws {
         let keychain = FakeKeychain()
-        keychain.put("legacy-token", service: "cloud", account: "session-token", modern: false)
-        let store = KeychainCloudCredentialStore(service: "cloud", operations: keychain.operations)
+        let machine = KeychainMachineCredentialStore(
+            service: "machine.dev-a",
+            operations: keychain.operations
+        )
+        let cloud = KeychainCloudCredentialStore(
+            service: "cloud.dev-a",
+            operations: keychain.operations
+        )
 
-        #expect(try store.token() == "legacy-token")
-        try store.removeToken()
+        try machine.saveToken("machine-token", forMachineID: "machine-1")
+        try cloud.saveToken("cloud-token")
+        try cloud.saveServerURL(URL(string: "https://cloud.example")!)
 
-        let relaunched = KeychainCloudCredentialStore(service: "cloud", operations: keychain.operations)
-        #expect(try relaunched.token() == nil)
-        #expect(keychain.legacyCopyCount == 1)
+        #expect(try machine.token(forMachineID: "machine-1") == "machine-token")
+        #expect(try cloud.token() == "cloud-token")
+        #expect(try cloud.serverURL() == URL(string: "https://cloud.example"))
+        #expect(keychain.value(service: "machine.dev-a", account: "machine-1") == "machine-token")
+        #expect(keychain.value(service: "cloud.dev-a", account: "session-token") == "cloud-token")
+        #expect(keychain.records.allSatisfy { !$0.usesDataProtectionKeychain })
+
+        try machine.removeToken(forMachineID: "machine-1")
+        try cloud.removeToken()
+        #expect(try machine.token(forMachineID: "machine-1") == nil)
+        #expect(try cloud.token() == nil)
     }
-    #endif
 
-    @Test("Machine credentials use the data-protection Keychain")
-    func machineCredentialsUseModernStore() throws {
-        let keychain = FakeKeychain()
-        let store = KeychainMachineCredentialStore(service: "machine", operations: keychain.operations)
-
-        try store.saveToken("machine-token", forMachineID: "machine-1")
-        #expect(try store.token(forMachineID: "machine-1") == "machine-token")
-        #expect(keychain.value(service: "machine", account: "machine-1", modern: true) == "machine-token")
-        let allMutationsWereModern = keychain.mutationQueries.allSatisfy(\.modern)
-        #expect(allMutationsWereModern)
+    private func scopedDevelopmentService(
+        _ productionService: String,
+        instanceID: String
+    ) -> String {
+        KeychainCredentialServices.scopedService(
+            productionService: productionService,
+            isDevelopment: true,
+            developmentInstanceID: instanceID,
+            bundleIdentifier: "com.example.fallback"
+        )
     }
 }
 
@@ -84,21 +105,17 @@ private final class FakeKeychain: @unchecked Sendable {
     struct QueryRecord: Sendable {
         let service: String
         let account: String
-        let modern: Bool
-        let forbidsInteraction: Bool
+        let usesDataProtectionKeychain: Bool
     }
 
     private struct Item: Hashable {
         let service: String
         let account: String
-        let modern: Bool
     }
 
     private let lock = NSLock()
     private var items: [Item: Data] = [:]
-    private var copied: [QueryRecord] = []
-    private var mutated: [QueryRecord] = []
-    var legacyReadStatus: OSStatus?
+    private var recordedQueries: [QueryRecord] = []
 
     var operations: KeychainOperations {
         KeychainOperations(
@@ -109,44 +126,20 @@ private final class FakeKeychain: @unchecked Sendable {
         )
     }
 
-    var legacyQueries: [QueryRecord] {
-        lock.withLock { copied.filter { !$0.modern } }
+    var records: [QueryRecord] {
+        lock.withLock { recordedQueries }
     }
 
-    var legacyCopyCount: Int {
-        legacyQueries.count
-    }
-
-    var mutationQueries: [QueryRecord] {
-        lock.withLock { mutated }
-    }
-
-    func put(_ value: String, service: String, account: String, modern: Bool) {
+    func value(service: String, account: String) -> String? {
         lock.withLock {
-            items[Item(service: service, account: account, modern: modern)] = Data(value.utf8)
-        }
-    }
-
-    func value(service: String, account: String, modern: Bool) -> String? {
-        lock.withLock {
-            items[Item(service: service, account: account, modern: modern)]
+            items[Item(service: service, account: account)]
                 .map { String(decoding: $0, as: UTF8.self) }
         }
     }
 
-    func copyCount(service: String, account: String, modern: Bool) -> Int {
-        lock.withLock {
-            copied.count { $0.service == service && $0.account == account && $0.modern == modern }
-        }
-    }
-
     private func copy(_ query: [String: Any]) -> (status: OSStatus, result: Any?) {
-        let record = queryRecord(query)
-        return lock.withLock {
-            copied.append(record)
-            if !record.modern, let legacyReadStatus {
-                return (legacyReadStatus, nil)
-            }
+        lock.withLock {
+            recordedQueries.append(record(query))
             guard let value = items[item(query)] else {
                 return (errSecItemNotFound, nil)
             }
@@ -155,9 +148,8 @@ private final class FakeKeychain: @unchecked Sendable {
     }
 
     private func update(_ query: [String: Any], _ attributes: [String: Any]) -> OSStatus {
-        let record = queryRecord(query)
-        return lock.withLock {
-            mutated.append(record)
+        lock.withLock {
+            recordedQueries.append(record(query))
             let key = item(query)
             guard items[key] != nil else { return errSecItemNotFound }
             guard let data = attributes[kSecValueData as String] as? Data else { return errSecParam }
@@ -167,9 +159,8 @@ private final class FakeKeychain: @unchecked Sendable {
     }
 
     private func add(_ attributes: [String: Any]) -> OSStatus {
-        let record = queryRecord(attributes)
-        return lock.withLock {
-            mutated.append(record)
+        lock.withLock {
+            recordedQueries.append(record(attributes))
             let key = item(attributes)
             guard items[key] == nil else { return errSecDuplicateItem }
             guard let data = attributes[kSecValueData as String] as? Data else { return errSecParam }
@@ -179,33 +170,25 @@ private final class FakeKeychain: @unchecked Sendable {
     }
 
     private func delete(_ query: [String: Any]) -> OSStatus {
-        let record = queryRecord(query)
-        return lock.withLock {
-            mutated.append(record)
+        lock.withLock {
+            recordedQueries.append(record(query))
             return items.removeValue(forKey: item(query)) == nil ? errSecItemNotFound : errSecSuccess
         }
     }
 
     private func item(_ query: [String: Any]) -> Item {
-        let record = queryRecord(query)
-        return Item(service: record.service, account: record.account, modern: record.modern)
+        Item(
+            service: query[kSecAttrService as String] as? String ?? "",
+            account: query[kSecAttrAccount as String] as? String ?? ""
+        )
     }
 
-    private func queryRecord(_ query: [String: Any]) -> QueryRecord {
-        let service = query[kSecAttrService as String] as? String ?? ""
-        let account = query[kSecAttrAccount as String] as? String ?? ""
-        let modern = query[kSecUseDataProtectionKeychain as String] as? Bool == true
-        #if os(macOS)
-        let forbidsInteraction =
-            (query[kSecUseAuthenticationContext as String] as? LAContext)?.interactionNotAllowed == true
-        #else
-        let forbidsInteraction = false
-        #endif
-        return QueryRecord(
-            service: service,
-            account: account,
-            modern: modern,
-            forbidsInteraction: forbidsInteraction
+    private func record(_ query: [String: Any]) -> QueryRecord {
+        QueryRecord(
+            service: query[kSecAttrService as String] as? String ?? "",
+            account: query[kSecAttrAccount as String] as? String ?? "",
+            usesDataProtectionKeychain:
+                query[kSecUseDataProtectionKeychain as String] as? Bool == true
         )
     }
 }

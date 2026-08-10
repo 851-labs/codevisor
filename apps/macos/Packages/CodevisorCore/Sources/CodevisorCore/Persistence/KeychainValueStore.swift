@@ -1,12 +1,56 @@
 import Foundation
-#if os(macOS)
-import LocalAuthentication
-#endif
 import Security
 
-/// Injectable SecItem surface. Production uses Security.framework; tests use
-/// an in-memory implementation so migration behavior is deterministic and
-/// never touches the developer's real Keychain.
+/// The Keychain services used by released builds are permanent identifiers:
+/// changing them would orphan credentials already stored by Alpha users.
+/// Development builds use a per-instance suffix so a differently signed dev
+/// app never asks macOS for access to an Alpha build's login-Keychain items.
+enum KeychainCredentialServices {
+    static let productionMachine = "com.851labs.Codevisor.machine-token"
+    static let productionCloud = "com.851labs.Codevisor.cloud-session"
+
+    static var machine: String {
+        scopedService(productionService: productionMachine)
+    }
+
+    static var cloud: String {
+        scopedService(productionService: productionCloud)
+    }
+
+    private static func scopedService(productionService: String) -> String {
+        scopedService(
+            productionService: productionService,
+            isDevelopment: CodevisorAppVariant.isDevelopment,
+            developmentInstanceID: CodevisorAppVariant.developmentInstanceID,
+            bundleIdentifier: Bundle.main.bundleIdentifier
+        )
+    }
+
+    /// Pure service-name resolution for deterministic tests.
+    static func scopedService(
+        productionService: String,
+        isDevelopment: Bool,
+        developmentInstanceID: String?,
+        bundleIdentifier: String?
+    ) -> String {
+        guard isDevelopment else { return productionService }
+
+        let scope = nonempty(developmentInstanceID)
+            ?? nonempty(bundleIdentifier)
+            ?? "default"
+        return "\(productionService).development.\(scope)"
+    }
+
+    private static func nonempty(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+}
+
+/// Injectable SecItem surface. Production calls Security.framework directly;
+/// tests use an in-memory implementation and never touch the developer's real
+/// Keychain.
 struct KeychainOperations: @unchecked Sendable {
     let copyMatching: ([String: Any]) -> (status: OSStatus, result: Any?)
     let update: ([String: Any], [String: Any]) -> OSStatus
@@ -36,29 +80,14 @@ struct KeychainStorageFailure: Error, Sendable {
     let status: OSStatus
 }
 
-/// String values in the app-private data-protection Keychain access group.
+/// Shared string-value storage for both machine and cloud credentials.
 ///
-/// Older Codevisor builds accidentally used macOS's file-based login
-/// Keychain. A modern miss gets one silent legacy lookup: an already-trusted
-/// item migrates automatically, while an item that would require UI is left in
-/// place. Background startup and reconnect tasks must never summon a Keychain
-/// authorization dialog.
-final class DataProtectionKeychainValueStore: @unchecked Sendable {
-    private enum LegacyLookup {
-        case value(String)
-        case missing
-        case interactionRequired
-    }
-
+/// Omitting `kSecUseDataProtectionKeychain` is intentional: macOS uses the
+/// classic login Keychain, which does not require a provisioning-profile
+/// access group, while iOS continues to use its normal platform Keychain.
+final class KeychainValueStore: @unchecked Sendable {
     private let service: String
     private let operations: KeychainOperations
-    private let lock = NSLock()
-    private var cachedReads: [String: Result<String?, KeychainStorageFailure>] = [:]
-
-    /// A marker prevents a deliberate removal from resurrecting the untouched
-    /// legacy value on the next launch. It also avoids probing the legacy
-    /// Keychain forever for accounts that never had an old value.
-    private static let migrationMarkerPrefix = "codevisor.data-protection-migrated."
 
     init(service: String, operations: KeychainOperations = .live) {
         self.service = service
@@ -66,92 +95,7 @@ final class DataProtectionKeychainValueStore: @unchecked Sendable {
     }
 
     func value(forAccount account: String) throws -> String? {
-        lock.lock()
-        defer { lock.unlock() }
-
-        if let cached = cachedReads[account] {
-            return try cached.get()
-        }
-
-        do {
-            let value = try loadValue(forAccount: account)
-            cachedReads[account] = .success(value)
-            return value
-        } catch let failure as KeychainStorageFailure {
-            // A broken or unavailable Keychain must not become a hot-looping
-            // system call when a relay transport retries in the background.
-            cachedReads[account] = .failure(failure)
-            throw failure
-        }
-    }
-
-    func saveValue(_ value: String, forAccount account: String) throws {
-        lock.lock()
-        defer { lock.unlock() }
-
-        do {
-            try writeModernValue(value, forAccount: account)
-            cachedReads[account] = .success(value)
-        } catch let failure as KeychainStorageFailure {
-            cachedReads[account] = .failure(failure)
-            throw failure
-        }
-    }
-
-    func removeValue(forAccount account: String) throws {
-        lock.lock()
-        defer { lock.unlock() }
-
-        do {
-            // Commit the tombstone before deleting the modern value. If the
-            // delete fails, the still-present modern value continues to win;
-            // if it succeeds, legacy fallback stays disabled.
-            try writeModernValue("1", forAccount: migrationMarkerAccount(for: account))
-            let status = operations.delete(modernQuery(account: account))
-            guard status == errSecSuccess || status == errSecItemNotFound else {
-                throw KeychainStorageFailure(operation: "delete", status: status)
-            }
-            cachedReads[account] = .success(nil)
-        } catch let failure as KeychainStorageFailure {
-            cachedReads[account] = .failure(failure)
-            throw failure
-        }
-    }
-
-    private func loadValue(forAccount account: String) throws -> String? {
-        if let modern = try readModernValue(forAccount: account) {
-            return modern
-        }
-        if try readModernValue(forAccount: migrationMarkerAccount(for: account)) != nil {
-            return nil
-        }
-
-        #if os(macOS)
-        switch try readLegacyValueSilently(forAccount: account) {
-        case let .value(value):
-            try writeModernValue(value, forAccount: account)
-            guard try readModernValue(forAccount: account) == value else {
-                throw KeychainStorageFailure(operation: "migration verification", status: errSecDecode)
-            }
-            return value
-        case .missing:
-            // Best effort: failure only means another silent legacy probe next
-            // launch, not failure to read a credential that does not exist.
-            try? writeModernValue("1", forAccount: migrationMarkerAccount(for: account))
-            return nil
-        case .interactionRequired:
-            // The current app signature is not trusted for this legacy item.
-            // Treat it as unavailable; sign-in/pairing writes a new isolated
-            // value without showing an authorization-dialog storm.
-            return nil
-        }
-        #else
-        return nil
-        #endif
-    }
-
-    private func readModernValue(forAccount account: String) throws -> String? {
-        var query = modernQuery(account: account)
+        var query = baseQuery(account: account)
         query[kSecReturnData as String] = true
         query[kSecMatchLimit as String] = kSecMatchLimitOne
         let response = operations.copyMatching(query)
@@ -160,41 +104,21 @@ final class DataProtectionKeychainValueStore: @unchecked Sendable {
               let data = response.result as? Data,
               let value = String(data: data, encoding: .utf8)
         else {
-            throw KeychainStorageFailure(operation: "read", status: response.status == errSecSuccess ? errSecDecode : response.status)
+            throw KeychainStorageFailure(
+                operation: "read",
+                status: response.status == errSecSuccess ? errSecDecode : response.status
+            )
         }
         return value
     }
 
-    #if os(macOS)
-    private func readLegacyValueSilently(forAccount account: String) throws -> LegacyLookup {
-        var query = legacyQuery(account: account)
-        query[kSecReturnData as String] = true
-        query[kSecMatchLimit as String] = kSecMatchLimitOne
-        let authenticationContext = LAContext()
-        authenticationContext.interactionNotAllowed = true
-        query[kSecUseAuthenticationContext as String] = authenticationContext
-        let response = operations.copyMatching(query)
-        if response.status == errSecItemNotFound { return .missing }
-        if response.status == errSecInteractionNotAllowed
-            || response.status == errSecAuthFailed
-            || response.status == errSecUserCanceled {
-            return .interactionRequired
-        }
-        guard response.status == errSecSuccess,
-              let data = response.result as? Data,
-              let value = String(data: data, encoding: .utf8)
-        else {
-            throw KeychainStorageFailure(operation: "legacy read", status: response.status == errSecSuccess ? errSecDecode : response.status)
-        }
-        return .value(value)
-    }
-    #endif
-
-    private func writeModernValue(_ value: String, forAccount account: String) throws {
+    func saveValue(_ value: String, forAccount account: String) throws {
         let data = Data(value.utf8)
-        let query = modernQuery(account: account)
-        let update = [kSecValueData as String: data]
-        let updateStatus = operations.update(query, update)
+        let query = baseQuery(account: account)
+        let updateStatus = operations.update(
+            query,
+            [kSecValueData as String: data]
+        )
         if updateStatus == errSecSuccess { return }
         guard updateStatus == errSecItemNotFound else {
             throw KeychainStorageFailure(operation: "update", status: updateStatus)
@@ -209,28 +133,18 @@ final class DataProtectionKeychainValueStore: @unchecked Sendable {
         }
     }
 
-    private func modernQuery(account: String) -> [String: Any] {
-        [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-            // Explicitly select the iOS-style data-protection implementation
-            // on macOS. Other Apple platforms already behave this way.
-            kSecUseDataProtectionKeychain as String: true,
-        ]
+    func removeValue(forAccount account: String) throws {
+        let status = operations.delete(baseQuery(account: account))
+        guard status == errSecSuccess || status == errSecItemNotFound else {
+            throw KeychainStorageFailure(operation: "delete", status: status)
+        }
     }
 
-    #if os(macOS)
-    private func legacyQuery(account: String) -> [String: Any] {
+    private func baseQuery(account: String) -> [String: Any] {
         [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
         ]
-    }
-    #endif
-
-    private func migrationMarkerAccount(for account: String) -> String {
-        Self.migrationMarkerPrefix + account
     }
 }

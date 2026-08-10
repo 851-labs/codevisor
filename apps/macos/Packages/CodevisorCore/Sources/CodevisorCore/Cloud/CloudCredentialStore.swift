@@ -80,14 +80,18 @@ public final class KeychainCloudCredentialStore: CloudCredentialStore, @unchecke
     private static let appDeviceIdAccount = "app-device-id"
     private static let appSecretKeyAccount = "app-device-secret-key"
 
-    private let values: DataProtectionKeychainValueStore
+    private let values: KeychainValueStore
 
-    public init(service: String = "com.851labs.Codevisor.cloud-session") {
-        values = DataProtectionKeychainValueStore(service: service)
+    public convenience init() {
+        self.init(service: KeychainCredentialServices.cloud)
+    }
+
+    public init(service: String) {
+        values = KeychainValueStore(service: service)
     }
 
     init(service: String, operations: KeychainOperations) {
-        values = DataProtectionKeychainValueStore(service: service, operations: operations)
+        values = KeychainValueStore(service: service, operations: operations)
     }
 
     public func token() throws -> String? {

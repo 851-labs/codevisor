@@ -40,7 +40,6 @@ const worktreeHash = createHash("sha256").update(worktreeName).digest("hex")
 const developmentIconColor = colorFromHash(worktreeHash)
 const instanceName = `${worktreeName}-${instanceHash}`
 const appName = `Codevisor (${worktreeName})`
-const developmentBundleIdentifier = `com.851labs.Codevisor.Development.${instanceHash}`
 // All build/server scratch is colocated under a single gitignored tmp/ dir so
 // the worktree root stays tidy and everything is removed with the worktree.
 const tmpRoot = join(repoRoot, "tmp")
@@ -204,7 +203,7 @@ try {
     derivedDataPath,
     `CODEVISOR_DEV_PRODUCT_NAME=${appName}`,
     `CODEVISOR_DEV_DISPLAY_NAME=${appName}`,
-    `CODEVISOR_DEV_BUNDLE_IDENTIFIER=${developmentBundleIdentifier}`,
+    `CODEVISOR_DEV_BUNDLE_IDENTIFIER=com.851labs.Codevisor.Development.${instanceHash}`,
     "ASSETCATALOG_COMPILER_APPICON_NAME=AppIconDevGenerated",
     "INFOPLIST_KEY_CFBundleIconFile=AppIconDevGenerated",
     "INFOPLIST_KEY_CFBundleIconName=AppIconDevGenerated",
@@ -214,8 +213,6 @@ try {
 } finally {
   await rm(generatedIconDirectory, { recursive: true, force: true })
 }
-const appBundle = join(derivedDataPath, "Build", "Products", "Debug", `${appName}.app`)
-await verifyDataProtectionKeychainSigning(appBundle, developmentBundleIdentifier)
 const developmentBrowserIconDirectory = await createDevelopmentBrowserExtensionIcons()
 
 const sharedEnvironment = {
@@ -381,6 +378,7 @@ try {
   await waitForHealth(port, server)
   await waitForHealth(remotePort, remoteServer)
   await announceDevRemote()
+  const appBundle = join(derivedDataPath, "Build", "Products", "Debug", `${appName}.app`)
   const launchEnvironment = Object.entries(sharedEnvironment).filter(
     ([key]) =>
       key.startsWith("CODEVISOR_") || key.startsWith("HERDMAN_") || key.startsWith("GHOSTTY_")
@@ -661,74 +659,27 @@ async function resolveDevelopmentSigningArguments() {
   const identities = await capture("security", ["find-identity", "-v", "-p", "codesigning"])
   const match = identities.match(/[0-9]+\)\s+([0-9A-F]+)\s+"(Apple Development:[^"]+)"/)
   if (match === null) {
-    throw new Error(
-      "No Apple Development signing identity was found. The data-protection Keychain " +
-        "requires an Apple Development signature and an authorized provisioning profile."
+    console.warn(
+      "\nNo Apple Development signing identity was found. This build will be ad-hoc signed, so macOS may require Accessibility permission again after a rebuild."
     )
+    return []
   }
   const [, hash, identity] = match
   const certificate = await capture("security", ["find-certificate", "-c", identity, "-p"])
   const team = new X509Certificate(certificate).toLegacyObject().subject.OU
   if (typeof team !== "string" || team.length === 0) {
-    throw new Error(
-      `The ${identity} certificate has no signing team identifier. The data-protection ` +
-        "Keychain cannot be used without an authorized team identity."
+    console.warn(
+      `\nThe ${identity} certificate has no signing team identifier. This build will be ad-hoc signed, so macOS may require Accessibility permission again after a rebuild.`
     )
+    return []
   }
   console.log(`Using stable development signing identity ${hash} (${team})`)
   return [
-    "CODE_SIGN_IDENTITY=Apple Development",
+    `CODE_SIGN_IDENTITY=${hash}`,
     `DEVELOPMENT_TEAM=${team}`,
-    "CODE_SIGN_STYLE=Automatic",
-    "-allowProvisioningUpdates"
+    "CODE_SIGN_STYLE=Manual",
+    "PROVISIONING_PROFILE_SPECIFIER="
   ]
-}
-
-async function verifyDataProtectionKeychainSigning(appBundle, bundleIdentifier) {
-  const embeddedProfile = join(appBundle, "Contents", "embedded.provisionprofile")
-  if (!(await pathExists(embeddedProfile))) {
-    throw new Error(
-      `The signed development app has no embedded provisioning profile at ${embeddedProfile}. ` +
-        "The data-protection Keychain would fail with errSecMissingEntitlement."
-    )
-  }
-
-  let entitlements
-  try {
-    const xml = execFileSync("/usr/bin/codesign", ["-d", "--entitlements", ":-", appBundle], {
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "pipe"]
-    })
-    entitlements = JSON.parse(
-      execFileSync("/usr/bin/plutil", ["-convert", "json", "-o", "-", "-"], {
-        encoding: "utf8",
-        input: xml,
-        stdio: ["pipe", "pipe", "pipe"]
-      })
-    )
-  } catch (error) {
-    throw new Error(
-      `Could not inspect the development app's code-signing entitlements: ${error instanceof Error ? error.message : error}`
-    )
-  }
-
-  const applicationIdentifier = entitlements["com.apple.application-identifier"]
-  const accessGroups = entitlements["keychain-access-groups"]
-  if (
-    typeof applicationIdentifier !== "string" ||
-    !applicationIdentifier.endsWith(`.${bundleIdentifier}`) ||
-    !Array.isArray(accessGroups) ||
-    !accessGroups.includes(applicationIdentifier)
-  ) {
-    throw new Error(
-      `The development app is not authorized for its data-protection Keychain group. ` +
-        `Expected an application identifier ending in .${bundleIdentifier} and the same ` +
-        "keychain-access-groups entry."
-    )
-  }
-
-  execFileSync("/usr/bin/codesign", ["--verify", "--strict", appBundle], { stdio: "inherit" })
-  console.log(`Verified data-protection Keychain signing for ${applicationIdentifier}`)
 }
 
 async function pathExists(path) {

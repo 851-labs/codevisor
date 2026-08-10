@@ -14,9 +14,6 @@ Contents/Resources/server, optionally signs/notarizes, and writes:
 
 Optional environment:
   APPLE_CODESIGN_IDENTITY       Developer ID Application identity, or empty for ad-hoc signing.
-  APPLE_PROVISIONING_PROFILE_PATH
-                                Developer ID provisioning profile authorizing
-                                com.851labs.HerdMan and Keychain access groups.
   APPLE_ID                      Apple ID used for notarization.
   APPLE_APP_SPECIFIC_PASSWORD   App-specific password for notarytool.
   APPLE_TEAM_ID                 Apple team id for notarytool.
@@ -63,7 +60,6 @@ repo_root="$(cd "$script_dir/../.." && pwd)"
 derived_data="$repo_root/dist/release/DerivedData"
 runtime_root="$repo_root/dist/release/work/app-server-runtimes"
 node_entitlements="$script_dir/node-entitlements.plist"
-app_entitlements_template="$script_dir/codevisor-entitlements.plist"
 host_target="$("$script_dir/detect-target.sh")"
 build_number="${CODEVISOR_BUILD_NUMBER:-${GITHUB_RUN_NUMBER:-1}}"
 source_revision="${CODEVISOR_SOURCE_REVISION:-${GITHUB_SHA:-unknown}}"
@@ -254,119 +250,11 @@ rm -f "$app_path/Contents/Resources/$(basename "$launch_agent_source")"
 chmod +x "$agent_destination"
 find "$app_path" -name "._*" -delete
 
-identifier_matches_profile_pattern() {
-  local allowed="$1" expected="$2" prefix suffix
-  if [[ "$allowed" == "$expected" ]]; then
-    return 0
-  fi
-  if [[ "$allowed" != *"*"* ]]; then
-    return 1
-  fi
-  prefix="${allowed%%\**}"
-  suffix="${allowed#*\*}"
-  [[ "$expected" == "$prefix"*"$suffix" ]]
-}
-
-profile_array_allows_identifier() {
-  local profile="$1" key="$2" expected="$3" index=0 allowed
-  while allowed="$(/usr/libexec/PlistBuddy -c "Print :Entitlements:$key:$index" "$profile" 2>/dev/null)"; do
-    if identifier_matches_profile_pattern "$allowed" "$expected"; then
-      return 0
-    fi
-    index=$((index + 1))
-  done
-  return 1
-}
-
-sign_app_bundle() {
-  local bundle="$1"
-  if [[ -n "$app_entitlements" ]]; then
-    codesign "${sign_args[@]}" --entitlements "$app_entitlements" "$bundle"
-  else
-    codesign "${sign_args[@]}" "$bundle"
-  fi
-}
-
-verify_data_protection_keychain_signature() {
-  local bundle="$1" label="$2" signed_entitlements application_identifier access_group signature_team
-  if [[ -z "$app_entitlements" ]]; then
-    return 0
-  fi
-  if [[ ! -f "$bundle/Contents/embedded.provisionprofile" ]]; then
-    echo "error: $label app is missing its embedded provisioning profile." >&2
-    return 1
-  fi
-  signed_entitlements="$repo_root/dist/release/work/$label-signed-entitlements.plist"
-  codesign -d --entitlements :- "$bundle" > "$signed_entitlements"
-  application_identifier="$(/usr/libexec/PlistBuddy -c 'Print :com.apple.application-identifier' "$signed_entitlements")"
-  access_group="$(/usr/libexec/PlistBuddy -c 'Print :keychain-access-groups:0' "$signed_entitlements")"
-  signature_team="$(codesign -dv --verbose=4 "$bundle" 2>&1 | sed -n 's/^TeamIdentifier=//p' | head -n 1)"
-  if [[ "$application_identifier" != "$expected_application_identifier" \
-    || "$access_group" != "$expected_application_identifier" \
-    || "$signature_team" != "$profile_team_identifier" ]]; then
-    echo "error: $label app lost its data-protection Keychain signing contract." >&2
-    echo "expected app/group/team $expected_application_identifier/$expected_application_identifier/$profile_team_identifier" >&2
-    echo "found app/group/team $application_identifier/$access_group/$signature_team" >&2
-    return 1
-  fi
-  echo "Verified $label data-protection Keychain signature for $application_identifier"
-}
-
 identity="${APPLE_CODESIGN_IDENTITY:-}"
 if [[ -n "$identity" ]]; then
   sign_args=(--force --options runtime --timestamp --sign "$identity")
-
-  provisioning_profile="${APPLE_PROVISIONING_PROFILE_PATH:-}"
-  if [[ -z "$provisioning_profile" || ! -f "$provisioning_profile" ]]; then
-    echo "error: APPLE_PROVISIONING_PROFILE_PATH must name a Developer ID profile that authorizes Codevisor's Keychain access group." >&2
-    exit 1
-  fi
-
-  profile_plist="$repo_root/dist/release/work/codevisor-provisioning-profile.plist"
-  app_entitlements="$repo_root/dist/release/work/codevisor-entitlements.plist"
-  security cms -D -i "$provisioning_profile" -o "$profile_plist"
-
-  profile_platform="$(/usr/libexec/PlistBuddy -c 'Print :Platform:0' "$profile_plist")"
-  profile_team_identifier="$(/usr/libexec/PlistBuddy -c 'Print :TeamIdentifier:0' "$profile_plist")"
-  profile_app_identifier_prefix="$(/usr/libexec/PlistBuddy -c 'Print :ApplicationIdentifierPrefix:0' "$profile_plist")"
-  profile_application_identifier="$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:com.apple.application-identifier' "$profile_plist")"
-  profile_expiration="$(plutil -extract ExpirationDate raw -o - "$profile_plist")"
-  profile_expiration_epoch="$(date -j -u -f '%Y-%m-%dT%H:%M:%SZ' "$profile_expiration" '+%s')"
-  profile_provisions_all_devices="$(/usr/libexec/PlistBuddy -c 'Print :ProvisionsAllDevices' "$profile_plist" 2>/dev/null || true)"
-  bundle_identifier="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$plist_path")"
-  expected_application_identifier="$profile_app_identifier_prefix.$bundle_identifier"
-
-  if [[ "$profile_platform" != "OSX" \
-    || "$profile_provisions_all_devices" != "true" \
-    || "$profile_app_identifier_prefix" != "$profile_team_identifier" \
-    || "$profile_expiration_epoch" -le "$(date -u '+%s')" ]]; then
-    echo "error: the provisioning profile must be an unexpired Developer ID macOS profile whose App ID prefix matches its team." >&2
-    exit 1
-  fi
-  if ! identifier_matches_profile_pattern "$profile_application_identifier" "$expected_application_identifier"; then
-    echo "error: provisioning profile allows $profile_application_identifier, not $expected_application_identifier." >&2
-    exit 1
-  fi
-  if ! profile_array_allows_identifier "$profile_plist" keychain-access-groups "$expected_application_identifier"; then
-    echo "error: provisioning profile does not authorize Keychain group $expected_application_identifier." >&2
-    exit 1
-  fi
-  if [[ -n "${APPLE_TEAM_ID:-}" && "$APPLE_TEAM_ID" != "$profile_team_identifier" ]]; then
-    echo "error: APPLE_TEAM_ID $APPLE_TEAM_ID does not match provisioning profile team $profile_team_identifier." >&2
-    exit 1
-  fi
-
-  cp "$provisioning_profile" "$app_path/Contents/embedded.provisionprofile"
-  cp "$app_entitlements_template" "$app_entitlements"
-  /usr/libexec/PlistBuddy -c "Set :com.apple.application-identifier $expected_application_identifier" "$app_entitlements"
-  /usr/libexec/PlistBuddy -c "Set :com.apple.developer.team-identifier $profile_team_identifier" "$app_entitlements"
-  /usr/libexec/PlistBuddy -c "Set :keychain-access-groups:0 $expected_application_identifier" "$app_entitlements"
 else
   sign_args=(--force --sign -)
-  app_entitlements=""
-  profile_team_identifier=""
-  expected_application_identifier=""
-  echo "warning: ad-hoc app has no authorized data-protection Keychain access; use Developer ID signing for a functional artifact." >&2
 fi
 
 # Xcode copies the prebuilt Sparkle framework while code signing is disabled.
@@ -432,8 +320,7 @@ done < "$macho_manifest"
 { grep -v "/bin/node$" "$macho_manifest" || true; } | tr '\n' '\0' \
   | xargs -0 -n 8 -P 4 codesign "${sign_args[@]}"
 
-sign_app_bundle "$app_path"
-verify_data_protection_keychain_signature "$app_path" universal
+codesign "${sign_args[@]}" "$app_path"
 
 # Exercise the signed runtime before archiving. This catches production-only
 # signing and native-addon ABI drift that the Debug app cannot expose.
@@ -558,9 +445,8 @@ make_variant() {
     echo "error: $suffix variant lost its server runtime during thinning" >&2
     exit 1
   fi
-  sign_app_bundle "$variant_app"
+  codesign "${sign_args[@]}" "$variant_app"
   codesign --verify --deep --strict "$variant_app"
-  verify_data_protection_keychain_signature "$variant_app" "$suffix"
 
   ditto --norsrc -c -k --keepParent "$variant_app" "$output_dir/Codevisor-macOS-$suffix.zip"
   make_dmg "$variant_app" "$output_dir/Codevisor-$suffix.dmg" "$suffix"

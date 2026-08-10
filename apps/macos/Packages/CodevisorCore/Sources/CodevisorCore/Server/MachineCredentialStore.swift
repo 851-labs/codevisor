@@ -21,14 +21,18 @@ public struct MachineCredentialError: Error, LocalizedError, Sendable {
 public final class KeychainMachineCredentialStore: MachineCredentialStore, @unchecked Sendable {
     public static let shared = KeychainMachineCredentialStore()
 
-    private let values: DataProtectionKeychainValueStore
+    private let values: KeychainValueStore
 
-    public init(service: String = "com.851labs.Codevisor.machine-token") {
-        values = DataProtectionKeychainValueStore(service: service)
+    public convenience init() {
+        self.init(service: KeychainCredentialServices.machine)
+    }
+
+    public init(service: String) {
+        values = KeychainValueStore(service: service)
     }
 
     init(service: String, operations: KeychainOperations) {
-        values = DataProtectionKeychainValueStore(service: service, operations: operations)
+        values = KeychainValueStore(service: service, operations: operations)
     }
 
     public func token(forMachineID id: String) throws -> String? {
