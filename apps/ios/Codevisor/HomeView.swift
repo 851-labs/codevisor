@@ -92,7 +92,9 @@ struct HomeView: View {
     @State private var newChatFlow: NewChatFlow?
     @State private var newChatSheetPath = NavigationPath()
     @State private var newChatDetent = Self.newChatComposeDetent
-    @State private var path = NavigationPath()
+    // A typed path lets Home identify the workspace currently presented and
+    // pop it when a remote server refresh archives that chat.
+    @State private var path: [HomeRoute] = []
     @State private var pendingDeeplink: MachineDeeplink?
     @State private var deeplinkError: String?
     @State private var isPointerInsideSidebar = false
@@ -202,6 +204,14 @@ struct HomeView: View {
             }
             .onChange(of: visibleSessions.map(\.id)) { _, newIDs in
                 deferredSessionOrder.incorporate(newIDs)
+            }
+            .onChange(of: presentedSessionIsArchived, initial: true) { _, isArchived in
+                guard isArchived else { return }
+                // WorkspaceScreen may currently have a pane cover above it;
+                // clearing the owning stack closes the whole workspace and
+                // returns to the navigation list in one state transition.
+                newChatFlow = nil
+                path.removeAll()
             }
             .onDisappear {
                 releaseDeferredOrder(animated: false)
@@ -448,6 +458,16 @@ struct HomeView: View {
             )
         }
         path.append(HomeRoute.workspace(session.id))
+    }
+
+    /// Whether the workspace at the top of Home's stack has been archived by
+    /// the latest authoritative server snapshot. Workspace archives cascade
+    /// to their chats, so this covers both chat and workspace archive events.
+    private var presentedSessionIsArchived: Bool {
+        guard case let .workspace(sessionId)? = path.last else { return false }
+        return projectList.sessions.first {
+            $0.serverId == machines.selectedMachineId && $0.id == sessionId
+        }?.isArchived == true
     }
 
     private func setAutomaticOrderDeferred(_ isDeferred: Bool) {

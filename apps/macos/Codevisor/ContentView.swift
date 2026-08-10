@@ -254,6 +254,17 @@ struct RootView: View {
                 store.clearOpenSession()
             }
         }
+        // A server refresh can archive the route from another device. The
+        // archived record remains in the local model for the archive section,
+        // so destination resolution alone would otherwise keep its workspace
+        // mounted indefinitely. Local sidebar archives move `selection`
+        // synchronously first, so this guard affects only a route that is
+        // still pointing at an archived chat.
+        .onChange(of: selectedSessionIsArchived, initial: true) { _, isArchived in
+            guard isArchived else { return }
+            preferredProjectId = nil
+            selection = .newChat(nil)
+        }
         .onChange(of: controlActiveState, initial: true) { _, state in
             store?.setWindowFocused(state == .key)
         }
@@ -398,6 +409,15 @@ struct RootView: View {
         }) else { return }
         preferredProjectId = session.projectId
         selection = .session(serverId: serverId, id: sessionId)
+    }
+
+    /// Whether the route currently shown in the detail column has become
+    /// archived in the authoritative session snapshot.
+    private var selectedSessionIsArchived: Bool {
+        guard case let .session(serverId, sessionId) = selection else { return false }
+        return environment.projectList.sessions.first {
+            $0.serverId == serverId && $0.id == sessionId
+        }?.isArchived == true
     }
 
     /// The top-level split: the NATIVE NavigationSplitView + NSToolbar pair
