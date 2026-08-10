@@ -122,6 +122,7 @@ import { WebSocket, WebSocketServer } from "ws"
 import { CODEVISOR_BROWSER_EXTENSION_ID } from "./browser-extension-relay.js"
 import { readTailnetPeers } from "./tailnet.js"
 import type { ServerUpdateChannel } from "./release-source.js"
+import type { SessionActivityController } from "./active-work-sleep-inhibitor.js"
 import type { HarnessAuthManager } from "./harness-auth.js"
 import type { HarnessLifecycleManager } from "./harness-lifecycle.js"
 import { parseCustomHarnessDocument, type CustomHarnessStore } from "./custom-harnesses.js"
@@ -178,6 +179,10 @@ export interface CodevisorServerConfig {
   /// exit (used by the macOS app to swap in an updated server runtime).
   readonly onShutdownRequested?: (() => void) | undefined
   readonly updater?: CodevisorServerUpdater | undefined
+  /// Host power policy for active locally hosted turns. The production macOS
+  /// server supplies a scoped idle-sleep assertion; other platforms/tests
+  /// omit it.
+  readonly sessionActivity?: SessionActivityController | undefined
   /// This machine's Codevisor Cloud device id (from `codevisor auth login`),
   /// advertised via /v1/info so clients can match this machine to its cloud
   /// presence entry instead of guessing by display name. When `cloud` is
@@ -422,6 +427,7 @@ export const defaultServerConfig = (
   corsOrigins: overrides.corsOrigins,
   onShutdownRequested: overrides.onShutdownRequested,
   updater: overrides.updater,
+  sessionActivity: overrides.sessionActivity,
   cloudDeviceId: overrides.cloudDeviceId,
   cloud: overrides.cloud
 })
@@ -438,6 +444,29 @@ export const makeCodevisorServerApp = (
     pendingPromptActions: new Set(),
     pendingSessionCreates: new Map()
   }
+  const activeSessionIds = new Set<string>()
+  const unsubscribeSessionActivity = config.sessionActivity
+    ? fanout.subscribe((event) => {
+        if (event.kind !== "session.attention.updated") return
+        const payload = event.payload
+        if (
+          typeof payload !== "object" ||
+          payload === null ||
+          !("sidebarState" in payload) ||
+          typeof payload.sidebarState !== "string"
+        ) {
+          return
+        }
+        const active = payload.sidebarState === "inProgress"
+        if (active) {
+          if (activeSessionIds.has(event.subjectId)) return
+          activeSessionIds.add(event.subjectId)
+        } else {
+          if (!activeSessionIds.delete(event.subjectId)) return
+        }
+        config.sessionActivity?.update(event.subjectId, active)
+      })
+    : undefined
   /* v8 ignore next -- the auth manager invokes this thin event-forwarding callback. */
   const unsubscribeAuth = services.auth?.subscribe((event) => {
     void appendAndPublish(services.db, fanout, event.kind, event.subjectId, event.payload).catch(
@@ -476,6 +505,9 @@ export const makeCodevisorServerApp = (
       void handleUpgrade(services, config, fanout, request, socket, head, webSocketServer)
     },
     close: serverAttempt("closeApp", () => {
+      unsubscribeSessionActivity?.()
+      activeSessionIds.clear()
+      config.sessionActivity?.stop()
       unsubscribeAuth?.()
       unsubscribeLifecycle?.()
       unsubscribeGate?.()

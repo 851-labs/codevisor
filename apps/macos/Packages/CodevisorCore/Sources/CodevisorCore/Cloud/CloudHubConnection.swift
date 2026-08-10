@@ -167,12 +167,17 @@ public actor CloudHubConnection {
     private let deviceOS: String
     private let appVersion: String?
     private let readyTimeout: Duration
+    private let heartbeatInterval: Duration
+    private let heartbeatTimeout: Duration
     private let decoder = JSONDecoder()
     private let encoder = JSONEncoder()
 
     private var runTask: Task<Void, Never>?
     private var socket: (any ServerWebSocketConnecting)?
+    private var socketID: UUID?
     private var isWelcomed = false
+    private var heartbeatTimeoutTask: Task<Void, Never>?
+    private var awaitingPongOnSocketID: UUID?
     private var fatalFailure: CloudHubConnectionError?
     private var waiterSeq = 0
     private var readyWaiters: [Int: CheckedContinuation<Void, any Error>] = [:]
@@ -220,7 +225,9 @@ public actor CloudHubConnection {
         deviceOS: String = CloudHubConnection.defaultDeviceOS,
         appVersion: String? = nil,
         webSocketTransport: any ServerWebSocketTransport = URLSessionWebSocketTransport(),
-        readyTimeout: Duration = .seconds(15)
+        readyTimeout: Duration = .seconds(15),
+        heartbeatInterval: Duration = .seconds(30),
+        heartbeatTimeout: Duration = .seconds(10)
     ) {
         self.serverURL = serverURL
         self.credentialStore = credentialStore
@@ -229,6 +236,8 @@ public actor CloudHubConnection {
         self.appVersion = appVersion
         self.webSocketTransport = webSocketTransport
         self.readyTimeout = readyTimeout
+        self.heartbeatInterval = heartbeatInterval
+        self.heartbeatTimeout = heartbeatTimeout
     }
 
     public static var defaultDeviceName: String {
@@ -263,12 +272,31 @@ public actor CloudHubConnection {
     public func shutdown() {
         runTask?.cancel()
         runTask = nil
+        resetHeartbeat()
         socket?.cancel(with: .goingAway, reason: nil)
         socket = nil
+        socketID = nil
         isWelcomed = false
         failAllChannels()
         failWaiters(with: CloudHubConnectionError.disconnected)
         failMachineWaiters(with: CloudHubConnectionError.disconnected)
+    }
+
+    /// Replaces the live socket without discarding account credentials. App
+    /// lifecycle recovery uses this after returning to the foreground: every
+    /// relay channel is ephemeral, so its owner reconnects from its durable
+    /// cursor on the newly welcomed socket.
+    public func reconnect() {
+        guard fatalFailure == nil else { return }
+        guard let socket else {
+            connect()
+            return
+        }
+        Log.cloud.info("Replacing the cloud hub connection")
+        isWelcomed = false
+        resetHeartbeat()
+        failAllChannels()
+        socket.cancel(with: .goingAway, reason: nil)
     }
 
     /// Waits until the hub has welcomed this connection (bounded by the ready
@@ -312,7 +340,10 @@ public actor CloudHubConnection {
                     request,
                     maximumMessageSize: Self.maximumMessageSize
                 )
+                let socketID = UUID()
                 self.socket = socket
+                self.socketID = socketID
+                sendChain = Task {}
                 try sendHello(identity: identity)
                 // Keepalive: Cloudflare's edge (and local workerd) closes
                 // idle WebSockets after ~100s, and URLSessionWebSocketTask
@@ -322,9 +353,10 @@ public actor CloudHubConnection {
                 // without even waking the Durable Object.
                 let keepalive = Task { [weak self] in
                     while !Task.isCancelled {
-                        try? await Task.sleep(for: .seconds(30))
+                        guard let self else { return }
+                        try? await Task.sleep(for: self.heartbeatInterval)
                         guard !Task.isCancelled else { return }
-                        await self?.sendKeepalivePing()
+                        await self.sendKeepalivePing(on: socketID)
                     }
                 }
                 defer { keepalive.cancel() }
@@ -344,8 +376,10 @@ public actor CloudHubConnection {
                 }
             }
             let closeCode = socket?.closeCode.rawValue ?? 0
+            resetHeartbeat()
             socket?.cancel(with: .goingAway, reason: nil)
             socket = nil
+            socketID = nil
             isWelcomed = false
             failAllChannels()
             if Self.fatalCloseCodes.contains(closeCode) {
@@ -532,13 +566,57 @@ public actor CloudHubConnection {
         try enqueueSend(hello)
     }
 
-    /// Best-effort protocol ping; a send failure here is the receive loop's
-    /// problem to notice (it will throw and reconnect).
-    private func sendKeepalivePing() {
+    /// Sends one protocol ping and arms a bounded pong deadline. A half-open
+    /// URLSession socket does not necessarily make `receive()` throw, so the
+    /// deadline explicitly tears it down and lets the run loop reconnect.
+    private func sendKeepalivePing(on expectedSocketID: UUID) {
+        guard socketID == expectedSocketID, isWelcomed else { return }
         struct Ping: Encodable {
             var t = "ping"
         }
-        try? enqueueSend(Ping())
+        awaitingPongOnSocketID = expectedSocketID
+        heartbeatTimeoutTask?.cancel()
+        let timeout = heartbeatTimeout
+        heartbeatTimeoutTask = Task { [weak self] in
+            try? await Task.sleep(for: timeout)
+            guard !Task.isCancelled else { return }
+            await self?.expireHeartbeat(on: expectedSocketID)
+        }
+        do {
+            try enqueueSend(Ping())
+        } catch {
+            handleSocketFailure(on: expectedSocketID, error: error)
+        }
+    }
+
+    private func receivePong() {
+        guard awaitingPongOnSocketID == socketID else { return }
+        heartbeatTimeoutTask?.cancel()
+        heartbeatTimeoutTask = nil
+        awaitingPongOnSocketID = nil
+    }
+
+    private func expireHeartbeat(on expectedSocketID: UUID) {
+        guard socketID == expectedSocketID,
+              awaitingPongOnSocketID == expectedSocketID else { return }
+        handleSocketFailure(on: expectedSocketID, error: CloudHubConnectionError.timedOut)
+    }
+
+    private func resetHeartbeat() {
+        heartbeatTimeoutTask?.cancel()
+        heartbeatTimeoutTask = nil
+        awaitingPongOnSocketID = nil
+    }
+
+    private func handleSocketFailure(on expectedSocketID: UUID, error: any Error) {
+        guard socketID == expectedSocketID else { return }
+        Log.cloud.error(
+            "Cloud hub socket is unhealthy; reconnecting: \(String(describing: error), privacy: .public)"
+        )
+        isWelcomed = false
+        resetHeartbeat()
+        failAllChannels()
+        socket?.cancel(with: .goingAway, reason: nil)
     }
 
     private func sendRelay(machineId: String, frame: CloudRelayFrame) throws {
@@ -550,11 +628,15 @@ public actor CloudHubConnection {
     /// concurrent senders must not overtake each other between allocating a
     /// seq and the frame reaching the socket.
     private func enqueueSend(_ message: some Encodable) throws {
-        guard let socket else { throw CloudHubConnectionError.disconnected }
+        guard let socket, let socketID else { throw CloudHubConnectionError.disconnected }
         let text = String(decoding: try encoder.encode(message), as: UTF8.self)
-        sendChain = Task { [previous = sendChain] in
+        sendChain = Task { [weak self, previous = sendChain] in
             await previous.value
-            try? await socket.send(.string(text))
+            do {
+                try await socket.send(.string(text))
+            } catch {
+                await self?.handleSocketFailure(on: socketID, error: error)
+            }
         }
     }
 
@@ -729,18 +811,32 @@ public actor CloudHubConnection {
                 (machine \(failure.machineId ?? "-", privacy: .public), channel \(failure.channelId ?? "-", privacy: .public))
                 """
             )
-            if let channelId = failure.channelId {
+            if failure.code == "machine-offline", let machineId = failure.machineId {
+                markMachineOffline(machineId)
+                closeChannels(for: machineId)
+            } else if let channelId = failure.channelId {
                 channels.removeValue(forKey: channelId)?.onClosed(nil)
             } else if let machineId = failure.machineId {
-                let affected = channels.filter { $0.value.machineDeviceId == machineId }
-                for (id, state) in affected {
-                    channels.removeValue(forKey: id)
-                    state.onClosed(nil)
-                }
+                closeChannels(for: machineId)
             }
+        case "pong":
+            receivePong()
         default:
-            // pong and future message kinds.
+            // Future message kinds.
             break
+        }
+    }
+
+    private func markMachineOffline(_ machineId: String) {
+        guard let index = machines.firstIndex(where: { $0.deviceId == machineId }) else { return }
+        machines[index].online = false
+    }
+
+    private func closeChannels(for machineId: String) {
+        let affected = channels.filter { $0.value.machineDeviceId == machineId }
+        for (id, state) in affected {
+            channels.removeValue(forKey: id)
+            state.onClosed(nil)
         }
     }
 

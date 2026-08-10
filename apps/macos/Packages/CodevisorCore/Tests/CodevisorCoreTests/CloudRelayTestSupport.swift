@@ -14,6 +14,7 @@ final class FakeWebSocketConnection: ServerWebSocketConnecting, @unchecked Senda
     private var sentMessages: [ServerWebSocketMessage] = []
     var onSend: (@Sendable (ServerWebSocketMessage) -> Void)?
     var closeCodeOnDisconnect: URLSessionWebSocketTask.CloseCode = .invalid
+    var failsSends = false
 
     init() {
         (inbound, inboundContinuation) =
@@ -45,6 +46,7 @@ final class FakeWebSocketConnection: ServerWebSocketConnecting, @unchecked Senda
     }
 
     func send(_ message: ServerWebSocketMessage) async throws {
+        if failsSends { throw URLError(.networkConnectionLost) }
         lock.withLock { sentMessages.append(message) }
         onSend?(message)
     }
@@ -108,6 +110,7 @@ final class ScriptedCloudHub: @unchecked Sendable {
     var onRelay: (@Sendable (RelayEnvelope) -> Void)?
     private(set) var sawHello = false
     var appPublicKey: String?
+    var respondsToPing = true
 
     init(machines: [CloudMachine] = []) {
         self.machines = machines
@@ -136,6 +139,28 @@ final class ScriptedCloudHub: @unchecked Sendable {
             var machine: CloudMachine
         }
         let data = try! JSONEncoder().encode(Envelope(machine: machine))
+        socket.push(.string(String(decoding: data, as: UTF8.self)))
+    }
+
+    func errorToApp(
+        code: String,
+        message: String,
+        machineId: String? = nil,
+        channelId: String? = nil
+    ) {
+        struct Envelope: Encodable {
+            var t = "error"
+            var code: String
+            var message: String
+            var machineId: String?
+            var channelId: String?
+        }
+        let data = try! JSONEncoder().encode(Envelope(
+            code: code,
+            message: message,
+            machineId: machineId,
+            channelId: channelId
+        ))
         socket.push(.string(String(decoding: data, as: UTF8.self)))
     }
 
@@ -169,6 +194,10 @@ final class ScriptedCloudHub: @unchecked Sendable {
             guard let envelope = try? JSONDecoder().decode(RelayEnvelope.self, from: data) else { return }
             lock.withLock { relayed.append(envelope) }
             onRelay?(envelope)
+        case "ping":
+            if respondsToPing {
+                socket.pushJSON(#"{"t":"pong"}"#)
+            }
         default:
             break
         }

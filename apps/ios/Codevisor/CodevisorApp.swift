@@ -1,13 +1,19 @@
 import CodevisorCore
 import CodevisorTheming
 import CodevisorUI
+import Combine
+import Network
 import SwiftUI
 
 @main
 struct CodevisorApp: App {
+    @Environment(\.scenePhase) private var scenePhase
+    @StateObject private var networkPath = NetworkPathObserver()
     @State private var environment: AppEnvironment?
     @State private var startupError: String?
     @State private var startupInProgress = false
+    @State private var hasCompletedBootstrap = false
+    @State private var recoveryInProgress = false
 
     init() {
         _environment = State(initialValue: nil)
@@ -24,6 +30,14 @@ struct CodevisorApp: App {
                     .environment(environment)
                     .preferredColorScheme(colorScheme(for: environment))
                     .task { await bootstrap(environment: environment) }
+                    .onChange(of: scenePhase) { _, phase in
+                        guard phase == .active, hasCompletedBootstrap else { return }
+                        Task { await recoverAfterForeground(environment: environment) }
+                    }
+                    .onChange(of: networkPath.recoveryToken) { _, _ in
+                        guard scenePhase == .active, hasCompletedBootstrap else { return }
+                        Task { await recoverAfterForeground(environment: environment) }
+                    }
                 // `codevisor://add-machine` deeplinks are handled inside
                 // HomeView, which owns the confirmation alerts and can present
                 // them over the onboarding cover.
@@ -103,6 +117,56 @@ struct CodevisorApp: App {
         // Restore the cloud account session (or adopt the dev cloud token);
         // nothing at boot depends on it, so it runs after machine prep.
         await environment.cloud.bootstrap()
+        hasCompletedBootstrap = true
+    }
+
+    /// iOS can preserve a half-open URLSession WebSocket across suspension or
+    /// a network handoff. Replace it on foreground, then re-prepare the
+    /// selected machine so metadata and event streams reconcile immediately.
+    private func recoverAfterForeground(environment: AppEnvironment) async {
+        guard !recoveryInProgress else { return }
+        recoveryInProgress = true
+        defer { recoveryInProgress = false }
+        await environment.cloud.reconnectHub()
+        await environment.prepareSelectedMachine()
+    }
+}
+
+/// Emits only after a real path transition (not the monitor's initial
+/// snapshot). A satisfied Wi-Fi/cellular handoff is enough reason to replace
+/// a WebSocket whose old TCP path can remain half-open indefinitely.
+private final class NetworkPathObserver: ObservableObject, @unchecked Sendable {
+    @Published private(set) var recoveryToken = 0
+
+    private let monitor = NWPathMonitor()
+    private let queue = DispatchQueue(label: "dev.codevisor.ios.network-path")
+    private var previousSignature: String?
+
+    init() {
+        monitor.pathUpdateHandler = { [weak self] path in
+            guard let self else { return }
+            let signature = [
+                String(describing: path.status),
+                path.usesInterfaceType(.wifi) ? "wifi" : "",
+                path.usesInterfaceType(.cellular) ? "cellular" : "",
+                path.usesInterfaceType(.wiredEthernet) ? "ethernet" : "",
+                path.isExpensive ? "expensive" : "",
+                path.isConstrained ? "constrained" : "",
+            ].joined(separator: ":")
+            let shouldRecover = self.previousSignature != nil
+                && self.previousSignature != signature
+                && path.status == .satisfied
+            self.previousSignature = signature
+            guard shouldRecover else { return }
+            DispatchQueue.main.async { [weak self] in
+                self?.recoveryToken &+= 1
+            }
+        }
+        monitor.start(queue: queue)
+    }
+
+    deinit {
+        monitor.cancel()
     }
 }
 

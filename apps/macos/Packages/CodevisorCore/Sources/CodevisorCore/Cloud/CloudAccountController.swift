@@ -383,6 +383,18 @@ public final class CloudAccountController {
         return hub
     }
 
+    /// Replaces an existing relay socket after the app returns to the
+    /// foreground. Channel owners observe the close and reopen from their
+    /// durable cursors; the account refresh keeps machine-list presence in
+    /// step with the new hub welcome.
+    public func reconnectHub() async {
+        guard state.isSignedIn else { return }
+        if let hub {
+            await hub.reconnect()
+        }
+        await refreshMachines()
+    }
+
     // MARK: - Loopback bridges
 
     /// Starts (idempotently) this machine's loopback bridge and publishes its

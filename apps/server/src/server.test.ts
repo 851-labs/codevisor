@@ -58,7 +58,7 @@ import {
   type RunningCodevisorServer
 } from "./server.js"
 import type { HarnessAuthManager } from "./harness-auth.js"
-import type { CodevisorServerServices } from "./server.js"
+import type { CodevisorServerConfig, CodevisorServerServices } from "./server.js"
 import { readTailnetPeers } from "./tailnet.js"
 
 // The tailnet route shells out to the machine's Tailscale CLI; mock the
@@ -607,13 +607,14 @@ const start = async (auth = { allowLocalhostWithoutAuth: true, requireBearerToke
 
 const startWithApp = async (
   services: CodevisorServerServices,
-  fanout?: EventFanout
+  fanout?: EventFanout,
+  configOverrides: Partial<CodevisorServerConfig> = {}
 ): Promise<RunningCodevisorServer> => {
   const appFanout = fanout ?? (await run(makeEventFanout))
   return await new Promise((resolve, reject) => {
     const app = makeCodevisorServerApp(
       services,
-      defaultServerConfig({ id: "server-a", port: 0 }),
+      defaultServerConfig({ id: "server-a", port: 0, ...configOverrides }),
       appFanout
     )
     const httpServer = createServer(app.handleRequest)
@@ -749,6 +750,45 @@ describe("@codevisor/server", () => {
   it("bounds long-lived OAuth refresh timers to Node's supported range", () => {
     expect(boundedMcpTimerDelay(2_591_232_324)).toBe(2_147_000_000)
     expect(boundedMcpTimerDelay(3_480_000)).toBe(3_480_000)
+  })
+
+  it("holds host sleep only while at least one session is active", async () => {
+    const { services } = await makeServices("server-a")
+    const fanout = await run(makeEventFanout)
+    const updates: Array<readonly [string, boolean]> = []
+    const sessionActivity = {
+      update: vi.fn((sessionId: string, active: boolean) => {
+        updates.push([sessionId, active])
+      }),
+      stop: vi.fn()
+    }
+    const server = await startWithApp(services, fanout, { sessionActivity })
+    const event = (subjectId: string, sidebarState: "inProgress" | "idle") => ({
+      id: 1,
+      serverId: "server-a",
+      kind: "session.attention.updated" as const,
+      subjectId,
+      createdAt: new Date().toISOString(),
+      payload: { sidebarState }
+    })
+
+    await run(fanout.publish(event("session-a", "inProgress")))
+    await run(fanout.publish(event("session-a", "inProgress")))
+    await run(fanout.publish(event("session-b", "inProgress")))
+    await run(fanout.publish({ ...event("ignored-kind", "idle"), kind: "session.updated" }))
+    await run(fanout.publish({ ...event("invalid-payload", "idle"), payload: null }))
+    await run(fanout.publish(event("session-a", "idle")))
+    await run(fanout.publish(event("session-b", "idle")))
+    await run(fanout.publish(event("session-b", "idle")))
+
+    expect(updates).toEqual([
+      ["session-a", true],
+      ["session-b", true],
+      ["session-a", false],
+      ["session-b", false]
+    ])
+    await run(server.close)
+    expect(sessionActivity.stop).toHaveBeenCalledOnce()
   })
 
   it("gates HTTP and websocket clients until startup recovery finishes", async () => {

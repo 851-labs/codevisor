@@ -31,6 +31,7 @@ import { pipeline } from "node:stream/promises"
 import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { startBackgroundTerminalHost, wrapBackgroundCommand } from "./background-terminal-host.js"
+import { makeActiveWorkSleepInhibitor } from "./active-work-sleep-inhibitor.js"
 import { connectCloudBridge, removeCloudCredentials, startCloudBridge } from "./cloud-bridge.js"
 import { canonicalDatabasePaths, codevisorRoot, defaultDatabasePath } from "./data-dir.js"
 import {
@@ -732,6 +733,7 @@ export const runServe = (args: Record<string, string>): Promise<void> => {
         : { extraHarnesses: customHarnesses.definitions }),
       resolveEnv: () => resolveShellEnv()
     })
+    const sessionActivity = makeActiveWorkSleepInhibitor()
     // The same inference defaultServerConfig() applies below: an explicit
     // --kind wins, otherwise a network bind means this is a remote server.
     const resolvedKind = kind ?? (host === "127.0.0.1" ? "local" : "remote")
@@ -855,6 +857,7 @@ export const runServe = (args: Record<string, string>): Promise<void> => {
             void lease.release().finally(() => process.exit(0))
           }, 250)
         },
+        sessionActivity,
         updater
       })
     )

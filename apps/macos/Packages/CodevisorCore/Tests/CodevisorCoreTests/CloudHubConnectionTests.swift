@@ -84,7 +84,9 @@ struct CloudHubConnectionTests {
     }
 
     private func makeHub(
-        _ scripted: ScriptedCloudHub
+        _ scripted: ScriptedCloudHub,
+        heartbeatInterval: Duration = .seconds(30),
+        heartbeatTimeout: Duration = .seconds(10)
     ) -> (hub: CloudHubConnection, store: InMemoryCloudCredentialStore) {
         let store = InMemoryCloudCredentialStore(token: "session-token")
         let hub = CloudHubConnection(
@@ -93,7 +95,9 @@ struct CloudHubConnectionTests {
             deviceName: "Test App",
             deviceOS: "macOS",
             webSocketTransport: FakeWebSocketTransport { _ in scripted.socket },
-            readyTimeout: .seconds(2)
+            readyTimeout: .seconds(2),
+            heartbeatInterval: heartbeatInterval,
+            heartbeatTimeout: heartbeatTimeout
         )
         return (hub, store)
     }
@@ -207,6 +211,131 @@ struct CloudHubConnectionTests {
         scripted.presenceToApp(onlinePresence)
         _ = try await openTask.value
         #expect(await waitUntil { scripted.relayEnvelopes.count == 1 })
+        await hub.shutdown()
+    }
+
+    @Test("A machine-offline hub error updates presence and parks later channel opens")
+    func machineOfflineErrorParksChannelOpen() async throws {
+        let machine = ScriptedRelayMachine()
+        let scripted = ScriptedCloudHub(machines: [machine.presence])
+        let (hub, _) = makeHub(scripted)
+        let recorder = Recorder()
+
+        let first = try await hub.openChannel(
+            machineDeviceId: machine.deviceId,
+            machinePublicKey: machine.publicKey,
+            channelType: "test",
+            params: nil,
+            onMessage: { _ in },
+            onClosed: { recorder.recordClose($0) }
+        )
+        #expect(await waitUntil { scripted.relayEnvelopes.count == 1 })
+
+        scripted.errorToApp(
+            code: "machine-offline",
+            message: "machine is not connected",
+            machineId: machine.deviceId,
+            channelId: first.id
+        )
+        #expect(await waitUntil { recorder.closes == [nil] })
+        #expect(await hub.machines.first?.online == false)
+
+        let secondOpen = Task {
+            try await hub.openChannel(
+                machineDeviceId: machine.deviceId,
+                machinePublicKey: machine.publicKey,
+                channelType: "test",
+                params: nil,
+                onMessage: { _ in },
+                onClosed: { _ in }
+            )
+        }
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(scripted.relayEnvelopes.count == 1)
+
+        scripted.presenceToApp(machine.presence)
+        _ = try await secondOpen.value
+        #expect(await waitUntil { scripted.relayEnvelopes.count == 2 })
+        await hub.shutdown()
+    }
+
+    @Test("A missing heartbeat pong replaces a half-open socket")
+    func heartbeatTimeoutReconnects() async throws {
+        let first = ScriptedCloudHub()
+        first.respondsToPing = false
+        let second = ScriptedCloudHub()
+        let sockets = SocketQueue([first.socket, second.socket])
+        let transport = FakeWebSocketTransport { _ in sockets.next() }
+        let store = InMemoryCloudCredentialStore(token: "session-token")
+        let hub = CloudHubConnection(
+            serverURL: URL(string: "https://cloud.example.com")!,
+            credentialStore: store,
+            deviceName: "Test App",
+            deviceOS: "macOS",
+            webSocketTransport: transport,
+            readyTimeout: .seconds(2),
+            heartbeatInterval: .milliseconds(20),
+            heartbeatTimeout: .milliseconds(20)
+        )
+
+        try await hub.waitUntilReady()
+        #expect(await waitUntil(timeout: .seconds(3)) { transport.requests.count >= 2 })
+        try await hub.waitUntilReady()
+        await hub.shutdown()
+    }
+
+    @Test("An outbound send failure replaces the hub socket")
+    func sendFailureReconnects() async throws {
+        let machine = ScriptedRelayMachine()
+        let first = ScriptedCloudHub(machines: [machine.presence])
+        let second = ScriptedCloudHub(machines: [machine.presence])
+        let sockets = SocketQueue([first.socket, second.socket])
+        let transport = FakeWebSocketTransport { _ in sockets.next() }
+        let store = InMemoryCloudCredentialStore(token: "session-token")
+        let hub = CloudHubConnection(
+            serverURL: URL(string: "https://cloud.example.com")!,
+            credentialStore: store,
+            deviceName: "Test App",
+            deviceOS: "macOS",
+            webSocketTransport: transport,
+            readyTimeout: .seconds(2)
+        )
+
+        try await hub.waitUntilReady()
+        first.socket.failsSends = true
+        _ = try await hub.openChannel(
+            machineDeviceId: machine.deviceId,
+            machinePublicKey: machine.publicKey,
+            channelType: "test",
+            params: nil,
+            onMessage: { _ in },
+            onClosed: { _ in }
+        )
+        #expect(await waitUntil(timeout: .seconds(3)) { transport.requests.count >= 2 })
+        try await hub.waitUntilReady()
+        await hub.shutdown()
+    }
+
+    @Test("Lifecycle reconnect immediately replaces the current socket")
+    func lifecycleReconnect() async throws {
+        let first = ScriptedCloudHub()
+        let second = ScriptedCloudHub()
+        let sockets = SocketQueue([first.socket, second.socket])
+        let transport = FakeWebSocketTransport { _ in sockets.next() }
+        let store = InMemoryCloudCredentialStore(token: "session-token")
+        let hub = CloudHubConnection(
+            serverURL: URL(string: "https://cloud.example.com")!,
+            credentialStore: store,
+            deviceName: "Test App",
+            deviceOS: "macOS",
+            webSocketTransport: transport,
+            readyTimeout: .seconds(2)
+        )
+
+        try await hub.waitUntilReady()
+        await hub.reconnect()
+        #expect(await waitUntil(timeout: .seconds(3)) { transport.requests.count >= 2 })
+        try await hub.waitUntilReady()
         await hub.shutdown()
     }
 
