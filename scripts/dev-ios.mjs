@@ -1,12 +1,13 @@
 // iOS development loop: starts the standalone "Dev Remote" Codevisor server on
 // this Mac (the same isolated instance scripts/dev.mjs runs alongside the macOS
-// app), then builds and launches the iOS app in the visible Simulator. No macOS
-// app is built or launched — the iOS app is a pure client of the dev remote.
+// app), starts a development cloud, then builds and launches the iOS app in the
+// visible Simulator. No macOS app is built or launched — the iOS app is a pure
+// client of the dev remote.
 import { createHash } from "node:crypto"
 import { spawn } from "node:child_process"
 import { access, cp, mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises"
 import { createServer } from "node:net"
-import { basename, join } from "node:path"
+import { basename, join, resolve } from "node:path"
 import process from "node:process"
 import { fileURLToPath } from "node:url"
 
@@ -34,6 +35,29 @@ const preferredPort = 51_000 + (Number.parseInt(instanceHash.slice(0, 8), 16) % 
 const requestedPort = parsePort(process.env.CODEVISOR_DEV_REMOTE_PORT, "CODEVISOR_DEV_REMOTE_PORT")
 const remotePort = requestedPort ?? (await findAvailablePort(preferredPort + 1, 51_000, 10_000))
 const serverURL = `http://127.0.0.1:${remotePort}`
+const configuredCloudURL = process.env.CODEVISOR_DEV_CLOUD_URL?.replace(/\/+$/, "")
+const externalCloudURL = configuredCloudURL === "" ? undefined : configuredCloudURL
+const preferredCloudPort = 41_000 + (Number.parseInt(instanceHash.slice(0, 8), 16) % 10_000)
+const requestedCloudPort = parsePort(
+  process.env.CODEVISOR_DEV_CLOUD_PORT,
+  "CODEVISOR_DEV_CLOUD_PORT"
+)
+if (
+  externalCloudURL === undefined &&
+  requestedCloudPort !== undefined &&
+  !(await isPortAvailable(requestedCloudPort))
+) {
+  throw new Error(
+    `CODEVISOR_DEV_CLOUD_PORT ${requestedCloudPort} is already in use; ` +
+      "stop its owner or choose a different explicit port."
+  )
+}
+const cloudPort =
+  externalCloudURL === undefined
+    ? (requestedCloudPort ?? (await findAvailablePort(preferredCloudPort, 41_000, 10_000)))
+    : undefined
+const cloudURL = externalCloudURL ?? `http://localhost:${cloudPort}`
+const cloudPersistPath = join(tmpRoot, "wrangler")
 
 await mkdir(remoteDataDirectory, { recursive: true })
 
@@ -43,16 +67,69 @@ console.log(`  data:      ${remoteDataDirectory}`)
 console.log(`  simulator: ${simulatorName}`)
 console.log(`  app:       ${appDisplayName} (${bundleIdentifier})`)
 console.log(`  icon:      ${developmentIconColor.hex}`)
+console.log(`  cloud:     ${cloudURL}${externalCloudURL === undefined ? " (managed)" : ""}`)
 
 if (!(await pathExists(join(repoRoot, "node_modules", ".bin", "tsc")))) {
   await run("bun", ["install", "--frozen-lockfile"])
 }
 await run("bun", ["run", "--cwd", "apps/server", "build"])
 
-// Sign into the dev cloud first (when available) so the standalone server
-// below boots cloud-connected — testing the dev account then always has this
-// machine online in the hub.
-const cloudSession = await resolveCloudSession()
+// Match the macOS development runner: unless an external dev cloud was
+// explicitly supplied, own a worktree-isolated Worker and hand its dev-user
+// session to both the standalone server and the iOS app. This keeps the
+// development-account sign-in button available without requiring a separate
+// `wrangler dev` process.
+let cloud
+if (externalCloudURL === undefined) {
+  await run("bun", ["run", "build:css"], join(repoRoot, "apps/cloud"))
+  await run(
+    "bun",
+    [
+      "x",
+      "wrangler",
+      "d1",
+      "migrations",
+      "apply",
+      "codevisor-cloud",
+      "--local",
+      "--persist-to",
+      cloudPersistPath
+    ],
+    join(repoRoot, "apps/cloud"),
+    { ...process.env, CI: "1" }
+  ).catch((error) => {
+    console.error(`Cloud dev migrations failed (${error instanceof Error ? error.message : error})`)
+  })
+  const cloudDevVariables = await readCloudDevVariables()
+  const cloudExtraVariables = Object.entries(cloudDevVariables)
+    .filter(([key]) => !key.startsWith("CODEVISOR_DEV_"))
+    .flatMap(([key, value]) => ["--var", `${key}:${value}`])
+  cloud = spawn(
+    "bun",
+    [
+      "x",
+      "wrangler",
+      "dev",
+      "--port",
+      String(cloudPort),
+      "--persist-to",
+      cloudPersistPath,
+      "--var",
+      "DEV_AUTH:1",
+      "--var",
+      `PUBLIC_BASE_URL:${cloudURL}`,
+      "--var",
+      `INSTANCE_NAME:Codevisor Cloud (${worktreeName})`,
+      ...cloudExtraVariables,
+      "--show-interactive-dev-session=false"
+    ],
+    { cwd: join(repoRoot, "apps/cloud"), env: process.env, stdio: "inherit" }
+  )
+}
+
+// Sign into the dev cloud first so the standalone server boots cloud-connected
+// and the app can offer the explicit development-account action.
+const cloudSession = await resolveCloudSession(cloudURL, cloud)
 
 const server = spawn(
   "node",
@@ -109,6 +186,7 @@ const stop = async (exitCode = 0) => {
   } catch {
     server.kill("SIGTERM")
   }
+  cloud?.kill("SIGTERM")
   await Promise.race([waitForExit(server), delay(2_000)])
   if (server.exitCode === null) server.kill("SIGTERM")
   process.exitCode = exitCode
@@ -170,10 +248,11 @@ try {
   await run("xcrun", ["simctl", "install", simulator.udid, appBundle])
   spawn("xcrun", ["simctl", "terminate", simulator.udid, bundleIdentifier], { stdio: "ignore" })
   await delay(500)
-  // Same contract as the macOS dev app (CodevisorAppVariant.developmentRemote):
-  // the app offers this remote as a one-tap quick add in onboarding and
-  // Settings → Machines, instead of pairing automatically.
-  // The simulator app gets the same dev-cloud session the server booted with.
+  // Same contract as the macOS dev app (CodevisorAppVariant): identify this
+  // as a configured development launch so the app stashes the remote and cloud
+  // environment for later simulator-icon relaunches. The app offers the remote
+  // as a one-tap quick add instead of pairing automatically, and gets the same
+  // dev-cloud session the server booted with.
   const cloudEnvironment =
     cloudSession === undefined
       ? {}
@@ -184,6 +263,9 @@ try {
   await runWithEnvironment("xcrun", ["simctl", "launch", simulator.udid, bundleIdentifier], {
     ...process.env,
     ...cloudEnvironment,
+    SIMCTL_CHILD_CODEVISOR_DEV_WORKTREE: worktreeName,
+    SIMCTL_CHILD_CODEVISOR_DEV_INSTANCE_ID: instanceName,
+    SIMCTL_CHILD_CODEVISOR_DEV_ICON_COLOR: developmentIconColor.hex,
     SIMCTL_CHILD_CODEVISOR_DEV_REMOTE_HOST: "127.0.0.1",
     SIMCTL_CHILD_CODEVISOR_DEV_REMOTE_PORT: String(remotePort),
     SIMCTL_CHILD_CODEVISOR_DEV_REMOTE_TOKEN: token,
@@ -355,8 +437,13 @@ function isPortAvailable(port) {
   })
 }
 
-function run(command, arguments_) {
-  return runWithEnvironment(command, arguments_, process.env)
+function run(command, arguments_, cwd = repoRoot, environment = process.env) {
+  console.log(`\n$ ${command} ${arguments_.join(" ")}`)
+  const child = spawn(command, arguments_, { cwd, env: environment, stdio: "inherit" })
+  return waitForExit(child).then((result) => {
+    if (result.code === 0) return
+    throw new Error(`${command} failed (${describeExit(result)})`)
+  })
 }
 
 function runWithEnvironment(command, arguments_, environment) {
@@ -385,27 +472,71 @@ function capture(command, arguments_) {
   })
 }
 
-// Signs into the dev cloud when one is reachable: CODEVISOR_DEV_CLOUD_URL if
-// set, else the conventional pinned port 8787 (where `bun run dev` or a
-// standalone `wrangler dev` hosts it). Fully optional — absent or unreachable
-// means the server and app simply run without a cloud account.
-async function resolveCloudSession() {
-  const cloudUrl = (process.env.CODEVISOR_DEV_CLOUD_URL ?? "http://localhost:8787").replace(
-    /\/+$/,
-    ""
-  )
-  try {
-    const response = await fetch(`${cloudUrl}/dev/login`, { method: "POST" })
-    if (!response.ok) throw new Error(`dev login returned ${response.status}`)
-    const { token } = await response.json()
-    console.log(`Cloud dev instance: ${cloudUrl} (dev account session issued)`)
-    return { url: cloudUrl, token }
-  } catch (error) {
-    console.warn(
-      `Cloud dev instance unavailable (${error instanceof Error ? error.message : error}); continuing without it.`
-    )
-    return undefined
+// Signs into the selected dev cloud. A managed Worker gets a short readiness
+// window; an explicitly supplied instance gets one bounded probe so a dead URL
+// cannot stall the entire iOS runner.
+async function resolveCloudSession(cloudUrl, ownedCloud) {
+  const attempts = ownedCloud === undefined ? 1 : 120
+  let lastError
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    if (
+      ownedCloud !== undefined &&
+      (ownedCloud.exitCode !== null || ownedCloud.signalCode !== null)
+    ) {
+      break
+    }
+    try {
+      const response = await fetch(`${cloudUrl}/dev/login`, {
+        method: "POST",
+        signal: AbortSignal.timeout(1_000)
+      })
+      if (!response.ok) throw new Error(`dev login returned ${response.status}`)
+      const { token } = await response.json()
+      console.log(`Cloud dev instance: ${cloudUrl} (dev account session issued)`)
+      return { url: cloudUrl, token }
+    } catch (error) {
+      lastError = error
+      if (attempt + 1 < attempts) await delay(250)
+    }
   }
+  console.warn(
+    `Cloud dev instance unavailable (${lastError instanceof Error ? lastError.message : lastError}); continuing without it.`
+  )
+  return undefined
+}
+
+// Locate apps/cloud/.dev.vars in this worktree or the main checkout so the
+// managed iOS cloud offers the same configured providers as `bun run dev`.
+async function readCloudDevVariables() {
+  const candidates = [join(repoRoot, "apps/cloud/.dev.vars")]
+  try {
+    const commonDir = (await capture("git", ["rev-parse", "--git-common-dir"])).trim()
+    const mainRoot = resolve(repoRoot, commonDir, "..")
+    if (mainRoot !== repoRoot) candidates.push(join(mainRoot, "apps/cloud/.dev.vars"))
+  } catch {
+    // Not a git checkout (or git missing): worktree-local file only.
+  }
+  for (const candidate of candidates) {
+    let content
+    try {
+      content = await readFile(candidate, "utf8")
+    } catch {
+      continue
+    }
+    const variables = {}
+    for (const line of content.split("\n")) {
+      const trimmed = line.trim()
+      if (trimmed === "" || trimmed.startsWith("#")) continue
+      const separator = trimmed.indexOf("=")
+      if (separator === -1) continue
+      variables[trimmed.slice(0, separator).trim()] = trimmed
+        .slice(separator + 1)
+        .trim()
+        .replace(/^"(.*)"$/, "$1")
+    }
+    return variables
+  }
+  return {}
 }
 
 async function pathExists(path) {

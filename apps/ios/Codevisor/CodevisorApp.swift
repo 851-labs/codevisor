@@ -23,31 +23,41 @@ struct CodevisorApp: App {
     var body: some Scene {
         WindowGroup {
             if let environment {
-                HomeView()
-                    // Order matters: ThemedRoot reads AppEnvironment, so the
-                    // environment injection must wrap it (i.e. come after).
-                    .modifier(ThemedRoot())
-                    .environment(environment)
-                    .preferredColorScheme(colorScheme(for: environment))
-                    .task { await bootstrap(environment: environment) }
-                    .onChange(of: scenePhase) { _, phase in
-                        guard phase == .active, hasCompletedBootstrap else { return }
-                        Task { await recoverAfterForeground(environment: environment) }
-                    }
-                    .onChange(of: networkPath.recoveryToken) { _, _ in
-                        guard scenePhase == .active, hasCompletedBootstrap else { return }
-                        Task { await recoverAfterForeground(environment: environment) }
-                    }
-                // `codevisor://add-machine` deeplinks are handled inside
-                // HomeView, which owns the confirmation alerts and can present
-                // them over the onboarding cover.
+                if shouldWaitForCloudRestore(environment: environment) {
+                    // A cloud-only machine list is unknown until the persisted
+                    // account session has been validated and its first machine
+                    // snapshot arrives. Keep the honest startup state mounted
+                    // instead of briefly claiming no machine is connected.
+                    CodevisorStartupSplashView()
+                        .preferredColorScheme(colorScheme(for: environment))
+                        .task { await environment.cloud.bootstrap() }
+                } else {
+                    HomeView()
+                        // Order matters: ThemedRoot reads AppEnvironment, so the
+                        // environment injection must wrap it (i.e. come after).
+                        .modifier(ThemedRoot())
+                        .environment(environment)
+                        .preferredColorScheme(colorScheme(for: environment))
+                        .task { await bootstrap(environment: environment) }
+                        .onChange(of: scenePhase) { _, phase in
+                            guard phase == .active, hasCompletedBootstrap else { return }
+                            Task { await recoverAfterForeground(environment: environment) }
+                        }
+                        .onChange(of: networkPath.recoveryToken) { _, _ in
+                            guard scenePhase == .active, hasCompletedBootstrap else { return }
+                            Task { await recoverAfterForeground(environment: environment) }
+                        }
+                    // `codevisor://add-machine` deeplinks are handled inside
+                    // HomeView, which owns the confirmation alerts and can present
+                    // them over the onboarding cover.
+                }
             } else if let startupError {
                 ClientDataStartupFailureView(
                     message: startupError,
                     retry: retryStartup
                 )
             } else {
-                ClientDataStartupView()
+                CodevisorStartupSplashView()
                     .task { await startEnvironmentIfNeeded() }
             }
         }
@@ -60,6 +70,17 @@ struct CodevisorApp: App {
         case .dark: .dark
         case .system: nil
         }
+    }
+
+    /// Locally configured remotes are available synchronously and need no
+    /// launch gate. Cloud-only installs (and persisted cloud selections) do:
+    /// their apparent empty list is merely unresolved until account bootstrap.
+    private func shouldWaitForCloudRestore(environment: AppEnvironment) -> Bool {
+        guard environment.cloud.isRestoringPersistedSession else { return false }
+        let machines = environment.machines
+        let hasConfiguredRemote = machines.machines.contains { !$0.isLocal }
+        return machines.selectedMachineId.hasPrefix(CodevisorMachine.cloudIdPrefix)
+            || !hasConfiguredRemote
     }
 
     /// A minimal iOS composition root: durable SQLite storage, no local
@@ -107,16 +128,23 @@ struct CodevisorApp: App {
     }
 
     private func bootstrap(environment: AppEnvironment) async {
-        // Refreshes machine status, pulls projects/sessions, starts the
-        // event-stream sync. On iOS the selected machine is always remote;
-        // prepareSelectedMachine never starts a local server here.
-        // The dev remote that `bun run dev:ios` starts is never paired
-        // automatically — it shows up as a quick add in onboarding and
-        // Settings → Machines (CodevisorAppVariant.developmentRemote).
-        await environment.prepareSelectedMachine()
-        // Restore the cloud account session (or adopt the dev cloud token);
-        // nothing at boot depends on it, so it runs after machine prep.
-        await environment.cloud.bootstrap()
+        let machines = environment.machines
+        let selectedIsConfiguredRemote = machines.machines.contains {
+            $0.id == machines.selectedMachineId && !$0.isLocal
+        }
+        if selectedIsConfiguredRemote {
+            // Locally persisted remotes resolve synchronously. Preserve their
+            // fast path and collect status first so the later cloud snapshot
+            // can deduplicate the same machine by its advertised device id.
+            await environment.prepareSelectedMachine()
+            await environment.cloud.bootstrap()
+        } else {
+            // Cloud entries are synthesized rather than stored in the local
+            // registry, so restore them before resolving and preparing a
+            // persisted cloud selection (or auto-selecting on a fresh setup).
+            await environment.cloud.bootstrap()
+            await environment.prepareSelectedMachine()
+        }
         hasCompletedBootstrap = true
     }
 
@@ -129,6 +157,55 @@ struct CodevisorApp: App {
         defer { recoveryInProgress = false }
         await environment.cloud.reconnectHub()
         await environment.prepareSelectedMachine()
+    }
+}
+
+/// The brief full-screen state shown while iOS opens its local data and
+/// restores a persisted cloud session. Keep it visually branded but quiet:
+/// startup normally lasts only a moment.
+private struct CodevisorStartupSplashView: View {
+    @State private var showsSpinner = false
+
+    private var title: String {
+        guard CodevisorAppVariant.isDevelopment,
+              CodevisorAppVariant.developmentInstanceID != nil
+        else { return "Codevisor" }
+        return "Codevisor (\(CodevisorAppVariant.developmentWorktreeName))"
+    }
+
+    var body: some View {
+        ZStack {
+            Color(.systemBackground)
+                .ignoresSafeArea()
+
+            VStack(spacing: 18) {
+                CodevisorAppIconView(size: 112)
+
+                Text(title)
+                    .font(.title2.weight(.semibold))
+
+                ZStack {
+                    if showsSpinner {
+                        ProgressView()
+                            .controlSize(.regular)
+                            .tint(.secondary)
+                            .transition(.opacity)
+                    }
+                }
+                .frame(height: 24)
+                .accessibilityHidden(!showsSpinner)
+            }
+            .task {
+                do {
+                    try await Task.sleep(for: .milliseconds(500))
+                } catch {
+                    return
+                }
+                withAnimation(.easeInOut(duration: 0.15)) {
+                    showsSpinner = true
+                }
+            }
+        }
     }
 }
 

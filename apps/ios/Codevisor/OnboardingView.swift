@@ -36,19 +36,21 @@ struct OnboardingView: View {
 // MARK: - Welcome
 
 private struct WelcomeStep: View {
+    private var title: String {
+        guard CodevisorAppVariant.isDevelopment,
+              CodevisorAppVariant.developmentInstanceID != nil
+        else { return "Codevisor" }
+        return "Codevisor (\(CodevisorAppVariant.developmentWorktreeName))"
+    }
+
     var body: some View {
         VStack(spacing: 16) {
             // Anchored in the top third: a fixed top offset, hero, then a
             // flexible Spacer fills the rest so the bottom action stays put.
             Spacer()
                 .frame(height: 96)
-            Image("hunk")
-                .resizable()
-                .scaledToFit()
-                .frame(width: 76, height: 76)
-                .foregroundStyle(.tint)
-                .accessibilityHidden(true)
-            Text("Welcome to Codevisor")
+            CodevisorAppIconView(size: 96)
+            Text(title)
                 .font(.largeTitle.bold())
                 .multilineTextAlignment(.center)
                 // Take the vertical room to wrap onto two lines rather than

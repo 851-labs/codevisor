@@ -23,6 +23,11 @@ public final class CloudAccountController {
 
     public private(set) var state: CloudAccountState = .signedOut
     public private(set) var machines: [CloudMachine] = []
+    /// False until the app has checked any persisted account session and, when
+    /// valid, loaded its first machine snapshot. Callers must not interpret an
+    /// empty `machines` array as an authoritative "no machines" result before
+    /// this becomes true.
+    public private(set) var hasCompletedBootstrap = false
     public var lastError: String?
     /// The validated instance name of the current custom server, for display
     /// in Settings. Only populated after a successful `setCustomServer`.
@@ -109,6 +114,13 @@ public final class CloudAccountController {
         (try? credentialStore.token()) ?? nil
     }
 
+    /// Whether launch still needs the network-backed account restoration path.
+    /// Signed-out installs have no cloud machines to recover and can render
+    /// their locally persisted machine state immediately.
+    public var isRestoringPersistedSession: Bool {
+        !hasCompletedBootstrap && storedToken != nil
+    }
+
     private var client: any CloudAccountClienting {
         clientFactory(serverURL)
     }
@@ -136,6 +148,12 @@ public final class CloudAccountController {
     /// builds offer it as an explicit "Use Development Account" action
     /// (`signInWithDevelopmentAccount`).
     public func bootstrap() async {
+        guard !hasCompletedBootstrap else { return }
+        defer {
+            if !Task.isCancelled {
+                hasCompletedBootstrap = true
+            }
+        }
         await refreshAuthProviders()
         guard let token = storedToken else {
             state = .signedOut

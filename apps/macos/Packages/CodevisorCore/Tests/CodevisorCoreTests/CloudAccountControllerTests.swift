@@ -416,6 +416,28 @@ struct CloudAccountControllerTests {
         #expect(try store.token() == nil)
     }
 
+    @Test("Persisted cloud machines remain unresolved until bootstrap completes")
+    func persistedSessionRestorationState() async throws {
+        let client = FakeCloudClient()
+        client.sessions["persisted"] = CloudSessionUser(userId: "u1", email: "me@example.com")
+        client.machinesResult = .success([Self.machine("m1")])
+        let (controller, _, _) = makeController(
+            client: client,
+            store: InMemoryCloudCredentialStore(token: "persisted")
+        )
+
+        #expect(controller.isRestoringPersistedSession)
+        #expect(!controller.hasCompletedBootstrap)
+        #expect(controller.machines.isEmpty)
+
+        await controller.bootstrap()
+
+        #expect(!controller.isRestoringPersistedSession)
+        #expect(controller.hasCompletedBootstrap)
+        #expect(controller.state == .signedIn(userEmail: "me@example.com"))
+        #expect(controller.machines.map(\.deviceId) == ["m1"])
+    }
+
     @Test("Bootstrap keeps the token when the server is unreachable")
     func bootstrapKeepsTokenOnNetworkFailure() async throws {
         // session(token:) returning nil means "server answered: no session"
