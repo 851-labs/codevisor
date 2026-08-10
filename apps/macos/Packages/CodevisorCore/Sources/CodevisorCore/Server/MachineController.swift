@@ -509,10 +509,12 @@ public final class MachineController {
     /// placeholder is selected, adopt the best available real machine. On iOS
     /// the local machine is a non-functional placeholder, so a fresh sign-in
     /// that has cloud machines should land on one of them instead of stranding
-    /// the user on "Local". No-op once the user has explicitly chosen, or when
-    /// no non-local machine exists (e.g. macOS with only its local server).
+    /// the user on "Local". macOS supplies a working local server and keeps it
+    /// as the default, even when cloud machines are already on the account.
+    /// No-op once the user has explicitly chosen or no non-local machine exists.
     private func autoSelectPreferredMachineIfNeeded() {
         guard !registry.hasExplicitMachineSelection,
+              localServer == nil,
               selectedMachineId == CodevisorMachine.local.id,
               let candidate = preferredAutoSelectionCandidate()
         else { return }

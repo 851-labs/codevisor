@@ -1,4 +1,5 @@
 import Foundation
+import Observation
 import Testing
 @testable import CodevisorCore
 
@@ -80,6 +81,7 @@ struct MachineControllerCloudTests {
 
     private func makeController(
         store: InMemoryStore = InMemoryStore(),
+        localServer: (any LocalServerControlling)? = nil,
         clientFactory: MachineController.ClientFactory? = nil
     ) -> (controller: MachineController, projectList: ProjectListModel, provider: FakeCloudProvider) {
         let projectList = ProjectListModel(
@@ -89,6 +91,7 @@ struct MachineControllerCloudTests {
         let controller = MachineController(
             store: store,
             projectList: projectList,
+            localServer: localServer,
             clientFactory: clientFactory
         )
         let provider = FakeCloudProvider()
@@ -432,6 +435,21 @@ struct MachineControllerCloudTests {
         #expect(projectList.selectedServerId == "local")
     }
 
+    @Test("A working local server remains the default when cloud machines arrive")
+    func localServerRemainsDefault() {
+        let (controller, projectList, provider) = makeController(
+            localServer: StubLocalServer()
+        )
+        #expect(controller.registry.hasExplicitMachineSelection == false)
+
+        provider.cloudMachines = [makeCloudMachine()]
+        controller.reconcileCloudSelection()
+
+        #expect(controller.selectedMachineId == "local")
+        #expect(projectList.selectedServerId == "local")
+        #expect(controller.registry.hasExplicitMachineSelection == false)
+    }
+
     @Test("Auto-selection prefers an online machine over list order")
     func autoSelectPrefersOnlineMachine() {
         let (controller, _, provider) = makeController()
@@ -505,4 +523,17 @@ struct MachineControllerCloudTests {
         #expect(second.selectedMachine.isCloud)
         #expect(projectList.selectedServerId == "cloud:dev-1")
     }
+}
+
+@MainActor
+@Observable
+private final class StubLocalServer: LocalServerControlling {
+    var state: LocalCodevisorServerState = .idle
+    var dataUpgradeProgress: LocalDataUpgradeProgress?
+    var onUpdateRequested: (@MainActor () -> Void)?
+
+    func configureManagedService(_ service: LocalCodevisorManagedService) {}
+    func ensureRunning() async -> LocalCodevisorServerState { state }
+    func prepareForAppUpdate() async -> Bool { true }
+    func shutdown() async -> Bool { true }
 }
