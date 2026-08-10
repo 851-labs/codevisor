@@ -3,6 +3,7 @@ import CodevisorCore
 import CodevisorUI
 import PhotosUI
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// The iOS composer, matching the macOS composer's structure: the input on its
 /// own line with the toolbar row beneath it (attach, model/thinking chip,
@@ -287,6 +288,7 @@ struct ComposerBar: View {
                     isEditable: !(controller.isSubmitting || controller.isResolvingQuestion),
                     focusRequest: initialFocusRequest,
                     onFocusRequestFulfilled: onInitialFocusRequestFulfilled,
+                    onPasteAttachments: handlePastedAttachments,
                     // Scrolling stays off unless the text really overflows,
                     // so a drag on the card is never swallowed by the editor.
                     isScrollEnabled: editorHeight < measuredTextHeight,
@@ -542,6 +544,20 @@ struct ComposerBar: View {
         max(0, SessionController.maxAttachments - controller.composerAttachments.count)
     }
 
+    /// Routes file and image pasteboard content through the same staging paths
+    /// as the attachment menu. The paste delegate consumes these items so it
+    /// does not also insert a filename or object-replacement character.
+    private func handlePastedAttachments(_ pasted: [PastedAttachment]) {
+        for item in pasted {
+            switch item {
+            case let .fileURL(url):
+                ComposerAttachmentStaging.stage(pickedURLs: [url], into: controller)
+            case let .image(data, suggestedName):
+                controller.attachImageData(data, suggestedName: suggestedName)
+            }
+        }
+    }
+
     private var attachButton: some View {
         Menu {
             Button {
@@ -701,6 +717,7 @@ private struct ComposerTextView: UIViewRepresentable {
     var isEditable: Bool
     var focusRequest: UUID?
     var onFocusRequestFulfilled: ((UUID) -> Void)?
+    var onPasteAttachments: ([PastedAttachment]) -> Void
     var isScrollEnabled: Bool
     @Binding var contentHeight: CGFloat
     var onResizePanChanged: (CGFloat) -> Void
@@ -717,6 +734,15 @@ private struct ComposerTextView: UIViewRepresentable {
         // Prompts are code-adjacent — no auto-capitalized first letters.
         view.autocapitalizationType = .none
         view.delegate = context.coordinator
+        // A plain UITextView implicitly accepts only strings. Declare the two
+        // attachment representations as pasteable too, then let the paste
+        // delegate consume them without inserting rich text into the prompt.
+        view.pasteConfiguration = UIPasteConfiguration(acceptableTypeIdentifiers: [
+            UTType.plainText.identifier,
+            UTType.fileURL.identifier,
+            UTType.image.identifier
+        ])
+        view.pasteDelegate = context.coordinator
         view.setContentHuggingPriority(.defaultLow, for: .horizontal)
         view.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         // Height flows from the view's own layout, not from updateUIView: a
@@ -746,6 +772,7 @@ private struct ComposerTextView: UIViewRepresentable {
             view.isEditable = isEditable
         }
         view.onFocusRequestFulfilled = onFocusRequestFulfilled
+        context.coordinator.onPasteAttachments = onPasteAttachments
         view.requestInitialFocus(focusRequest)
         if view.isScrollEnabled != isScrollEnabled {
             view.isScrollEnabled = isScrollEnabled
@@ -757,19 +784,58 @@ private struct ComposerTextView: UIViewRepresentable {
     }
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(text: $text)
+        Coordinator(text: $text, onPasteAttachments: onPasteAttachments)
     }
 
-    final class Coordinator: NSObject, UITextViewDelegate {
+    final class Coordinator: NSObject, UITextViewDelegate, UITextPasteDelegate {
         private let text: Binding<String>
+        var onPasteAttachments: ([PastedAttachment]) -> Void
 
-        init(text: Binding<String>) {
+        init(
+            text: Binding<String>,
+            onPasteAttachments: @escaping ([PastedAttachment]) -> Void
+        ) {
             self.text = text
+            self.onPasteAttachments = onPasteAttachments
         }
 
         func textViewDidChange(_ textView: UITextView) {
             text.wrappedValue = textView.text
             (textView as? HeightReportingTextView)?.reportContentHeight()
+        }
+
+        /// UIKit supplies item providers only after the user invokes Paste,
+        /// preserving the system's paste privacy behavior. Files win over
+        /// image previews, matching the macOS composer; plain text delegates
+        /// back to UITextView's standard transformation.
+        func textPasteConfigurationSupporting(
+            _ textPasteConfigurationSupporting: any UITextPasteConfigurationSupporting,
+            transform item: any UITextPasteItem
+        ) {
+            let provider = item.itemProvider
+            if provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
+                item.setNoResult()
+                provider.loadObject(ofClass: NSURL.self) { [weak self] object, _ in
+                    guard let url = object as? NSURL else { return }
+                    Task { @MainActor [weak self] in
+                        self?.onPasteAttachments([.fileURL(url as URL)])
+                    }
+                }
+                return
+            }
+            if provider.canLoadObject(ofClass: UIImage.self) {
+                item.setNoResult()
+                provider.loadObject(ofClass: UIImage.self) { [weak self] object, _ in
+                    guard let image = object as? UIImage,
+                          let data = image.pngData()
+                    else { return }
+                    Task { @MainActor [weak self] in
+                        self?.onPasteAttachments([.image(data: data, suggestedName: nil)])
+                    }
+                }
+                return
+            }
+            item.setDefaultResult()
         }
     }
 }

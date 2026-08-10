@@ -3,6 +3,13 @@ import PhotosUI
 import SwiftUI
 import UniformTypeIdentifiers
 
+/// Attachment-worthy content intercepted from the iOS composer's pasteboard.
+enum PastedAttachment {
+    case fileURL(URL)
+    /// PNG-normalized image bytes.
+    case image(data: Data, suggestedName: String?)
+}
+
 /// Staging picked media/files for the composer. Everything funnels through a
 /// temporary file and `SessionController.attachFileURLs`, so the shared
 /// staging path derives the mime type and kind, and the eager upload starts

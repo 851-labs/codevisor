@@ -126,7 +126,6 @@ struct AttachmentThumbnailView: View {
     let attachment: Attachment
 
     @State private var image: UIImage?
-    @State private var didLoad = false
     @State private var quickLookURL: QuickLookURL?
 
     var body: some View {
@@ -143,10 +142,16 @@ struct AttachmentThumbnailView: View {
                 fileChip
             }
         }
-        .task(id: attachment.fileId) {
-            guard attachment.hasVisualPreview, !didLoad else { return }
-            didLoad = true
-            image = await attachmentImages?.image(for: attachment)
+        // The store is installed by SessionTranscriptView.onAppear. Include
+        // its identity in the task key so a thumbnail that first renders with
+        // a nil environment store retries as soon as the store is available.
+        // SwiftUI already runs this task once per key, so a separate
+        // "didLoad" latch would only recreate the original race.
+        .task(id: AttachmentThumbnailLoadID(attachment: attachment, store: attachmentImages)) {
+            guard attachment.hasVisualPreview, let attachmentImages else { return }
+            let loaded = await attachmentImages.image(for: attachment)
+            guard !Task.isCancelled else { return }
+            image = loaded
         }
         .sheet(item: $quickLookURL) { item in
             QuickLookPreview(url: item.url)
@@ -219,6 +224,16 @@ struct AttachmentThumbnailView: View {
                 quickLookURL = QuickLookURL(url: url)
             } catch {}
         }
+    }
+}
+
+private struct AttachmentThumbnailLoadID: Hashable {
+    let fileId: String
+    let storeID: ObjectIdentifier?
+
+    init(attachment: Attachment, store: AttachmentImageStore?) {
+        fileId = attachment.fileId
+        storeID = store.map { ObjectIdentifier($0) }
     }
 }
 
