@@ -141,9 +141,6 @@ struct WorkspaceScreen: View {
     @State private var draftController: SessionController?
     /// The draft's first send landed: the run pickers collapse away.
     @State private var hasStarted = false
-    /// The project list's first refresh hasn't answered yet: show a spinner,
-    /// not the file picker.
-    @State private var hasLoadedProjects = false
     /// Stands in for the session id a draft doesn't have yet, so its pane
     /// group can exist (and keep a STABLE pane id) from the first frame.
     @State private var draftPlaceholderId = UUID()
@@ -186,6 +183,13 @@ struct WorkspaceScreen: View {
     }
 
     private var rootSession: ChatSession? { activeSessionId.flatMap(session(for:)) }
+
+    /// The persisted project snapshot is good enough to construct New Chat's
+    /// draft immediately. The server refresh that follows may update this
+    /// list, but it must not hold the sheet behind a loading surface.
+    private var draftProjectCandidate: Project? {
+        environment.projectList.activeProjects.first { !$0.isScratch }
+    }
 
     /// The workspace's project. `prepare()` caches it in state, but it also
     /// resolves synchronously from the already-loaded project list, so the
@@ -262,10 +266,19 @@ struct WorkspaceScreen: View {
                 }
             } else if missing {
                 ContentUnavailableView("Chat Not Found", systemImage: "questionmark.bubble")
-            } else if isDraft, resolvedProject == nil, hasLoadedProjects {
-                // No intermediary empty state: choosing New Chat on a machine
-                // without projects opens directly into the remote file picker.
-                initialProjectPicker
+            } else if isDraft, draftController == nil {
+                if draftProjectCandidate == nil {
+                    // Match macOS's stale-while-revalidate behavior: an empty
+                    // persisted snapshot opens project setup immediately. If
+                    // the background refresh finds a project, onChange below
+                    // replaces this with the draft composer.
+                    initialProjectPicker
+                } else {
+                    // setUpDraftIfNeeded() runs synchronously at the start of
+                    // prepare(). Keep the sheet calm for that initial actor
+                    // turn rather than flashing either setup or a spinner.
+                    Color.clear
+                }
             } else if resolvedProject == nil {
                 ProgressView()
             } else if baseShowsGrid {
@@ -628,9 +641,11 @@ struct WorkspaceScreen: View {
 
     private func prepare() async {
         guard let sessionId = activeSessionId else {
-            // A new chat: no session, no panes to load — just the draft.
+            // Stale while revalidate, matching macOS New Chat: construct from
+            // the persisted project snapshot before the first suspension, then
+            // refresh metadata without holding the sheet behind a spinner.
+            setUpDraftIfNeeded()
             await environment.projectList.refreshFromServer()
-            hasLoadedProjects = true
             setUpDraftIfNeeded()
             return
         }
@@ -657,8 +672,7 @@ struct WorkspaceScreen: View {
     /// arrives.
     private func setUpDraftIfNeeded(preferredProject: Project? = nil) {
         guard isDraft, draftController == nil else { return }
-        guard let project = preferredProject
-            ?? environment.projectList.activeProjects.first(where: { !$0.isScratch })
+        guard let project = preferredProject ?? draftProjectCandidate
         else { return }
         // The retained draft: leaving and coming back — or relaunching —
         // restores the unsent message, attachments, and picked run location.
