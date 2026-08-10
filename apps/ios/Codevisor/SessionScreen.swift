@@ -130,6 +130,10 @@ struct SessionTranscriptView: View {
     /// This flag is the only difference between the two surfaces — everything
     /// else (watermark, composer, expansion, notice rails) is shared here.
     var showsRunPickers: Bool = false
+    /// New Chat supplies one request for its initial presentation. Existing
+    /// chats leave this nil and never steal keyboard focus when opened.
+    var initialComposerFocusRequest: UUID? = nil
+    var onInitialComposerFocusRequestFulfilled: ((UUID) -> Void)? = nil
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var disclosure = TranscriptDisclosureStore()
     /// The composer's resting height, used to size the transcript's bottom
@@ -346,7 +350,10 @@ struct SessionTranscriptView: View {
                     maxHeight: availableHeight - 12,
                     collapsedHeight: $composerHeight,
                     isExpanded: $composerExpanded,
-                    showsRunPickers: showsRunPickers
+                    showsRunPickers: showsRunPickers,
+                    initialFocusRequest: initialComposerFocusRequest,
+                    onInitialFocusRequestFulfilled:
+                        onInitialComposerFocusRequestFulfilled
                 )
                 // Where a sent message starts its ride. Measured rather than
                 // assumed: the row has to travel from HERE to wherever it

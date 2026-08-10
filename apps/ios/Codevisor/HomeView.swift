@@ -20,14 +20,29 @@ private enum HomeOrganization: String, CaseIterable {
     }
 }
 
-/// The screens this list pushes. One route type (rather than a `[UUID]` path
-/// plus a separate boolean destination for the compose page) so the new-chat
-/// handoff can replace the whole stack in ONE state change: a send swaps
-/// compose → workspace atomically instead of popping and then pushing, which
-/// read as two stacked slide transitions.
+/// Every destination in Home's authoritative navigation stack. New Chat is
+/// deliberately absent: it is a real modal sheet until its first send creates
+/// a workspace, at which point that workspace is mounted here.
 private enum HomeRoute: Hashable {
-    case newChat
     case workspace(UUID)
+}
+
+/// State shared across the native New Chat sheet and the workspace mounted
+/// beneath it during first-send promotion. Keeping the durable controller in
+/// `ChatControllerCache` and the handoff state here means neither presentation
+/// container has to masquerade as the other.
+@MainActor @Observable
+private final class NewChatFlow: Identifiable {
+    let id = UUID()
+    var composerFocusRequest: UUID? = UUID()
+    var sessionId: UUID?
+    var isWorkspaceReady = false
+    var isSheetExpanded = false
+
+    func consumeFocusRequest(_ request: UUID) {
+        guard composerFocusRequest == request else { return }
+        composerFocusRequest = nil
+    }
 }
 
 /// Ordering, matching the macOS sidebar: manual (drag), priority + recency,
@@ -48,9 +63,15 @@ private enum HomeOrder: String, CaseIterable {
 
 /// The workspaces navigation screen: every workspace on the paired machine,
 /// organized and ordered like the macOS sidebar, with settings at the top
-/// left, the organize menu at the top right, and a fixed New Chat call
-/// to action at the bottom.
+/// left, the organize menu at the top right, and a fixed compose button at
+/// the bottom trailing edge.
 struct HomeView: View {
+    private static let newChatTransitionID = "home-new-chat"
+    /// Use the system's maximum-height sheet from the first frame. Its inset
+    /// top edge, corners, backdrop, safe areas, and keyboard coordination all
+    /// remain presentation-controller owned.
+    private static let newChatComposeDetent = PresentationDetent.large
+
     @Environment(AppEnvironment.self) private var environment
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -68,12 +89,16 @@ struct HomeView: View {
     @State private var readyForOnboarding = false
     @State private var isShowingSettings = false
     @State private var isManagingMachines = false
-    @State private var path: [HomeRoute] = []
+    @State private var newChatFlow: NewChatFlow?
+    @State private var newChatSheetPath = NavigationPath()
+    @State private var newChatDetent = Self.newChatComposeDetent
+    @State private var path = NavigationPath()
     @State private var pendingDeeplink: MachineDeeplink?
     @State private var deeplinkError: String?
     @State private var isPointerInsideSidebar = false
     @GestureState private var isTouchingSidebar = false
     @State private var deferredSessionOrder = InteractionDeferredOrder<UUID>()
+    @Namespace private var newChatTransition
 
     private var organization: HomeOrganization {
         HomeOrganization(rawValue: organizationRaw) ?? .compact
@@ -136,9 +161,9 @@ struct HomeView: View {
     }
 
     /// Sort tier for a chat row. Every state checked here is visible on the
-    /// row as `SessionRow.statusDot` in the same precedence (error →
+    /// row as `SessionRow.statusIndicator` in the same precedence (error →
     /// attention → in progress → unread, matching the macOS sidebar); keep
-    /// the two in sync. If sorting ever consults a state the dot doesn't
+    /// the two in sync. If sorting ever consults a state the icon doesn't
     /// show (the macOS sidebar once sorted a spinning chat by its hidden
     /// unread count), opening a chat reorders the list with no visible
     /// state change.
@@ -181,7 +206,8 @@ struct HomeView: View {
             .onDisappear {
                 releaseDeferredOrder(animated: false)
             }
-            .navigationBarTitleDisplayMode(.inline)
+            .navigationTitle(organization.title)
+            .navigationBarTitleDisplayMode(.large)
             .toolbar {
                 // One glass group on the left: settings, then the machine
                 // picker, mirroring the macOS toolbar's machine menu.
@@ -191,7 +217,7 @@ struct HomeView: View {
                 }
                 ToolbarItem(placement: .topBarTrailing) { organizeMenu }
             }
-            .safeAreaInset(edge: .bottom) {
+            .safeAreaInset(edge: .bottom, alignment: .trailing, spacing: 0) {
                 // The empty states carry their own single call to action; a
                 // second floating button would just compete with it.
                 if hasRemoteMachines && !visibleSessions.isEmpty {
@@ -200,14 +226,11 @@ struct HomeView: View {
             }
             .navigationDestination(for: HomeRoute.self) { route in
                 switch route {
-                case .newChat:
-                    // The same screen, opened as a draft: it hosts the new
-                    // chat's composer and becomes that workspace in place on
-                    // the first send. No second screen, no hand-off, no
-                    // mid-send remount.
-                    WorkspaceScreen(sessionId: nil)
                 case let .workspace(sessionId):
-                    WorkspaceScreen(sessionId: sessionId)
+                    WorkspaceScreen(
+                        sessionId: sessionId,
+                        onWorkspaceReady: markPromotedWorkspaceReady
+                    )
                 }
             }
             .refreshable {
@@ -229,6 +252,9 @@ struct HomeView: View {
                         }
                 }
                 .presentationDragIndicator(.visible)
+            }
+            .sheet(item: $newChatFlow, onDismiss: resetNewChatPresentation) { flow in
+                newChatSheet(flow)
             }
             .fullScreenCover(isPresented: showsOnboarding) {
                 onboardingStart = .welcome
@@ -313,6 +339,11 @@ struct HomeView: View {
                                 harnessSymbol: harnessSymbol(for: session)
                             )
                         }
+                        .modifier(
+                            FullWidthTopSeparatorModifier(
+                                isVisible: session.id == visibleSessions.first?.id
+                            )
+                        )
                         .swipeActions(edge: .trailing) {
                             Button {
                                 _ = environment.archiveSessionAndWorkspaceIfEmpty(session)
@@ -386,7 +417,9 @@ struct HomeView: View {
                 }
             }
         }
-        .listStyle(.insetGrouped)
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .background(Color(.systemBackground))
         // Room for the floating call to action so the last row can scroll
         // clear of it.
         .contentMargins(.bottom, 64, for: .scrollContent)
@@ -476,7 +509,7 @@ struct HomeView: View {
             Text("Workspaces are where agents work on \(machines.selectedMachine.name). Start your first one.")
         } actions: {
             Button {
-                path.append(.newChat)
+                presentNewChat()
             } label: {
                 Label("New Chat", systemImage: "plus")
                     .font(.body.weight(.semibold))
@@ -486,6 +519,10 @@ struct HomeView: View {
             }
             .buttonStyle(.borderedProminent)
             .buttonBorderShape(.capsule)
+            .matchedTransitionSource(
+                id: Self.newChatTransitionID,
+                in: newChatTransition
+            )
         }
     }
 
@@ -556,25 +593,149 @@ struct HomeView: View {
 
     private var newChatButton: some View {
         Button {
-            path.append(.newChat)
+            presentNewChat()
         } label: {
-            Label("New chat", systemImage: "plus")
-                .font(.body.weight(.semibold))
-                .foregroundStyle(.white)
-                .padding(.horizontal, 18)
-                .padding(.vertical, 4)
+            Image(systemName: "square.and.pencil")
+                .font(.system(size: 18, weight: .semibold))
         }
-        .buttonStyle(.borderedProminent)
-        .buttonBorderShape(.capsule)
+        .buttonStyle(.glass)
+        .buttonBorderShape(.circle)
+        .controlSize(.large)
+        .matchedTransitionSource(
+            id: Self.newChatTransitionID,
+            in: newChatTransition
+        )
+        .padding(.trailing, 16)
         .padding(.bottom, 8)
         .accessibilityLabel("New chat")
     }
+
+    private func presentNewChat() {
+        newChatSheetPath = NavigationPath()
+        newChatDetent = Self.newChatComposeDetent
+        newChatFlow = NewChatFlow()
+    }
+
+    private func beginNewChatPromotion(_ sessionId: UUID, flow: NewChatFlow) {
+        guard newChatFlow === flow, flow.sessionId == nil else { return }
+        flow.sessionId = sessionId
+
+        // The real workspace is pushed underneath the opaque sheet. Its
+        // normal route never receives the compose button's zoom transition,
+        // so its eventual edge swipe is an ordinary navigation pop.
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            path.append(HomeRoute.workspace(sessionId))
+        }
+
+        guard newChatDetent != .large else {
+            flow.isSheetExpanded = true
+            finishNewChatPromotionIfReady(flow)
+            return
+        }
+        withAnimation(.smooth, completionCriteria: .logicallyComplete) {
+            newChatDetent = .large
+        } completion: {
+            guard newChatFlow === flow else { return }
+            flow.isSheetExpanded = true
+            finishNewChatPromotionIfReady(flow)
+        }
+    }
+
+    private func markPromotedWorkspaceReady(_ sessionId: UUID) {
+        guard let flow = newChatFlow, flow.sessionId == sessionId else { return }
+        flow.isWorkspaceReady = true
+        finishNewChatPromotionIfReady(flow)
+    }
+
+    private func finishNewChatPromotionIfReady(_ flow: NewChatFlow) {
+        guard newChatFlow === flow,
+              flow.isSheetExpanded,
+              flow.isWorkspaceReady
+        else { return }
+
+        // At `.large` the system sheet is opaque and the mounted destination
+        // beneath it renders the same cached controller. Remove only the
+        // presentation container; there is no second visible animation.
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            newChatFlow = nil
+        }
+    }
+
+    @ViewBuilder private func newChatSheet(_ flow: NewChatFlow) -> some View {
+        NavigationStack(path: $newChatSheetPath) {
+            WorkspaceScreen(
+                sessionId: nil,
+                isNewChatPresentation: true,
+                initialComposerFocusRequest: flow.composerFocusRequest,
+                onInitialComposerFocusRequestFulfilled: flow.consumeFocusRequest,
+                onDraftStarted: { beginNewChatPromotion($0, flow: flow) },
+                onInitialProjectAdded: returnToNewChatRoot
+            )
+        }
+        .presentationDetents([.large], selection: $newChatDetent)
+        .presentationDragIndicator(.hidden)
+        .interactiveDismissDisabled(flow.sessionId != nil)
+        .navigationTransition(
+            .zoom(sourceID: Self.newChatTransitionID, in: newChatTransition)
+        )
+    }
+
+    private func resetNewChatPresentation() {
+        newChatSheetPath = NavigationPath()
+        newChatDetent = Self.newChatComposeDetent
+    }
+
+    /// Folder rows add type-erased values to the sheet's own NavigationPath.
+    /// Selecting one keeps the draft sheet alive and removes only those
+    /// browser pushes.
+    private func returnToNewChatRoot() {
+        guard !newChatSheetPath.isEmpty else { return }
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            newChatSheetPath.removeLast(newChatSheetPath.count)
+        }
+    }
 }
 
-/// One chat row, Mail-style: unread/status dot on the far left, the
-/// harness's icon, then the title over "workspace · worktree". No timestamp —
-/// ordering already tells recency.
+/// The first separator belongs to the list as a whole, rather than to the
+/// first row's text column. Later separators retain the standard Mail-style
+/// leading inset beneath the row copy.
+private struct FullWidthTopSeparatorModifier: ViewModifier {
+    let isVisible: Bool
+
+    func body(content: Content) -> some View {
+        if isVisible {
+            content
+                .listRowSeparator(.hidden, edges: .top)
+                .listRowBackground(
+                    Color.clear.overlay(alignment: .top) {
+                        Divider()
+                            .padding(.horizontal, 16)
+                    }
+                )
+        } else {
+            content
+        }
+    }
+}
+
+/// One chat row: status, harness icon, then the title over
+/// "workspace · worktree". No timestamp — ordering already tells recency.
 private struct SessionRow: View {
+    private static let statusWidth: CGFloat = 10
+    private static let statusToHarnessSpacing: CGFloat = 5
+    private static let harnessWidth: CGFloat = 38
+    private static let harnessToCopySpacing: CGFloat = 10
+    private static let copyLeadingOffset = statusWidth
+        + statusToHarnessSpacing
+        + harnessWidth
+        + harnessToCopySpacing
+
     let session: ChatSession
     let projectName: String?
     let harnessSymbol: String
@@ -585,21 +746,11 @@ private struct SessionRow: View {
     private var isInProgress: Bool { ChatControllerCache.shared.isInProgress(session) }
 
     var body: some View {
-        HStack(spacing: 10) {
-            statusDot
-            RoundedRectangle(cornerRadius: 9)
-                .fill(Color(.tertiarySystemFill))
-                .frame(width: 38, height: 38)
-                .overlay {
-                    // The same bundled brand glyphs as the macOS harness
-                    // picker, kept quiet like Mail's sender avatars.
-                    HarnessIconView(
-                        harnessId: session.harnessId,
-                        fallbackSymbolName: harnessSymbol,
-                        size: 20
-                    )
-                    .foregroundStyle(.secondary)
-                }
+        HStack(spacing: Self.harnessToCopySpacing) {
+            HStack(spacing: Self.statusToHarnessSpacing) {
+                statusIndicator
+                harnessIcon
+            }
             VStack(alignment: .leading, spacing: 2) {
                 Text(session.title.isEmpty ? "New Chat" : session.title)
                     .lineLimit(1)
@@ -619,24 +770,47 @@ private struct SessionRow: View {
             Spacer(minLength: 4)
         }
         .padding(.vertical, 3)
+        // SwiftUI otherwise infers a full-width bottom separator whenever a
+        // visible status dot is the row's first child. Pin every row divider
+        // to the copy column; only the custom title divider stays full width.
+        .alignmentGuide(.listRowSeparatorLeading) { _ in
+            Self.copyLeadingOffset
+        }
     }
 
-    /// Error → attention → in progress → unread — the exact precedence of the
-    /// macOS sidebar's `ChatSessionLeadingIcon`, so a mid-run agent shows the
-    /// working glyph even while it has buffered unread turns.
-    @ViewBuilder private var statusDot: some View {
-        if hasError {
-            Circle().fill(.red).frame(width: 8, height: 8)
-        } else if needsAttention {
-            Circle().fill(.orange).frame(width: 8, height: 8)
-        } else if isInProgress {
-            AgentActivityIndicator()
-                .frame(width: 8, height: 8)
-        } else if isUnread {
-            Circle().fill(.blue).frame(width: 8, height: 8)
-        } else {
-            Circle().fill(.clear).frame(width: 8, height: 8)
+    /// Messages-style status gutter. Error → attention → in progress → unread
+    /// is the same precedence as `ChatSessionLeadingIcon`, so a mid-run agent
+    /// shows the working glyph even while it has buffered unread turns. The
+    /// transparent idle state preserves avatar and copy alignment across rows.
+    private var statusIndicator: some View {
+        Group {
+            if hasError {
+                Circle().fill(.red).frame(width: 8, height: 8)
+            } else if needsAttention {
+                Circle().fill(.orange).frame(width: 8, height: 8)
+            } else if isInProgress {
+                AgentActivityIndicator()
+            } else if isUnread {
+                Circle().fill(.blue).frame(width: 8, height: 8)
+            } else {
+                Color.clear
+            }
         }
+        .frame(width: Self.statusWidth, height: Self.harnessWidth)
+    }
+
+    private var harnessIcon: some View {
+        RoundedRectangle(cornerRadius: 9)
+            .fill(Color(.tertiarySystemFill))
+            .frame(width: Self.harnessWidth, height: Self.harnessWidth)
+            .overlay {
+                HarnessIconView(
+                    harnessId: session.harnessId,
+                    fallbackSymbolName: harnessSymbol,
+                    size: 20
+                )
+                .foregroundStyle(.secondary)
+            }
     }
 }
 

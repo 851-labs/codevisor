@@ -27,6 +27,12 @@ struct ComposerBar: View {
     /// The new-chat page shows the project/run-location chips above the
     /// card; established chats never do (their directory is fixed).
     var showsRunPickers: Bool = false
+    /// A stable, one-shot request for New Chat's initial focus. The token is
+    /// intentionally not a Bool: after the user dismisses the keyboard,
+    /// ordinary SwiftUI updates must not make the editor first responder
+    /// again.
+    var initialFocusRequest: UUID? = nil
+    var onInitialFocusRequestFulfilled: ((UUID) -> Void)? = nil
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
@@ -279,6 +285,8 @@ struct ComposerBar: View {
                 ComposerTextView(
                     text: $text,
                     isEditable: !(controller.isSubmitting || controller.isResolvingQuestion),
+                    focusRequest: initialFocusRequest,
+                    onFocusRequestFulfilled: onInitialFocusRequestFulfilled,
                     // Scrolling stays off unless the text really overflows,
                     // so a drag on the card is never swallowed by the editor.
                     isScrollEnabled: editorHeight < measuredTextHeight,
@@ -691,6 +699,8 @@ private struct ConfigChip: View {
 private struct ComposerTextView: UIViewRepresentable {
     @Binding var text: String
     var isEditable: Bool
+    var focusRequest: UUID?
+    var onFocusRequestFulfilled: ((UUID) -> Void)?
     var isScrollEnabled: Bool
     @Binding var contentHeight: CGFloat
     var onResizePanChanged: (CGFloat) -> Void
@@ -735,6 +745,8 @@ private struct ComposerTextView: UIViewRepresentable {
         if view.isEditable != isEditable {
             view.isEditable = isEditable
         }
+        view.onFocusRequestFulfilled = onFocusRequestFulfilled
+        view.requestInitialFocus(focusRequest)
         if view.isScrollEnabled != isScrollEnabled {
             view.isScrollEnabled = isScrollEnabled
         }
@@ -785,8 +797,14 @@ private final class HeightReportingTextView: UITextView {
     /// commit path.
     var onResizePanEnded: ((CGFloat, CGFloat) -> Void)?
     var onResizePanCancelled: (() -> Void)?
+    var onFocusRequestFulfilled: ((UUID) -> Void)?
 
     private var lastReportedHeight: CGFloat = 0
+    /// A request can arrive before SwiftUI has inserted this view into a
+    /// window. Keep it pending until `didMoveToWindow`, then remember that it
+    /// was fulfilled so later updates cannot reopen a dismissed keyboard.
+    private var pendingFocusRequest: UUID?
+    private var fulfilledFocusRequest: UUID?
 
     private lazy var expansionPan: UIPanGestureRecognizer = {
         let pan = UIPanGestureRecognizer(target: self, action: #selector(handleExpansionPan))
@@ -802,6 +820,32 @@ private final class HeightReportingTextView: UITextView {
     @available(*, unavailable)
     required init?(coder: NSCoder) {
         fatalError("init(coder:) is not supported")
+    }
+
+    func requestInitialFocus(_ request: UUID?) {
+        guard let request, request != fulfilledFocusRequest else { return }
+        pendingFocusRequest = request
+        fulfillPendingFocusRequestIfPossible()
+    }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        fulfillPendingFocusRequestIfPossible()
+    }
+
+    private func fulfillPendingFocusRequestIfPossible() {
+        guard let request = pendingFocusRequest,
+              window != nil,
+              isEditable
+        else { return }
+        guard becomeFirstResponder() else { return }
+        fulfilledFocusRequest = request
+        pendingFocusRequest = nil
+        // UIKit may attach during a SwiftUI update. Acknowledge on the next
+        // main-actor turn so the source can clear the request safely.
+        Task { @MainActor [onFocusRequestFulfilled] in
+            onFocusRequestFulfilled?(request)
+        }
     }
 
     override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
